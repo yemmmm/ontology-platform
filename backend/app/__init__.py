@@ -1,0 +1,2 @@
+"""Ontology Platform backend package."""
+

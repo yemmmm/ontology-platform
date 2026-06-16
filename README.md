@@ -1,0 +1,110 @@
+# Ontology Platform
+
+Ontology Platform is an MVP for managing lightweight ontology schemas and Neo4j-backed knowledge graph instances. It exposes an HTTP API for the web UI and semantic MCP tools for external agents.
+
+The MVP uses a custom schema model: projects contain ontologies; ontologies define classes, properties, and relation types; graph entities and relations are validated against that schema before being stored.
+
+## Repository Layout
+
+```text
+backend/
+  app/
+    api/              # FastAPI HTTP routes
+    mcp/              # MCP server entrypoint
+    repositories/     # PostgreSQL and Neo4j access
+    services/         # Validation and application services
+frontend/
+  src/                # React/Vite operational UI
+docs/
+  api.md
+  architecture.md
+  mcp.md
+  ui.md
+```
+
+## Local Startup
+
+Start PostgreSQL and Neo4j:
+
+```bash
+docker compose up -d postgres neo4j
+```
+
+Create local backend configuration:
+
+```bash
+cp .env.example backend/.env
+```
+
+Install and run database migrations:
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+alembic upgrade head
+```
+
+Run the backend API:
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
+The API is available at `http://localhost:8000/api`. FastAPI docs are available at `http://localhost:8000/docs`.
+
+Run the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Run the MCP server:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m app.mcp.server
+```
+
+## Environment Variables
+
+The backend reads `.env` from the process working directory. The commands above run backend processes from `backend/`, so the local file should be `backend/.env`.
+
+| Variable | Purpose | Default/example |
+| --- | --- | --- |
+| `APP_ENV` | Runtime environment label. | `development` |
+| `DATABASE_URL` | SQLAlchemy PostgreSQL URL. | `postgresql+psycopg://ontology:ontology@localhost:5432/ontology_platform` |
+| `NEO4J_URI` | Neo4j Bolt URI. | `bolt://localhost:7687` |
+| `NEO4J_USER` | Neo4j username. | `neo4j` |
+| `NEO4J_PASSWORD` | Neo4j password. | `ontology-platform` |
+| `ADMIN_TOKEN` | Intended shared secret for administrative HTTP calls. | `change-me-admin-token` |
+| `MCP_API_KEY` | Intended shared secret for MCP clients. | `change-me-mcp-key` |
+| `LLM_BASE_URL` | OpenAI-compatible API base URL for demo agent answers. | `https://api.openai.com/v1` |
+| `LLM_API_KEY` | Optional demo agent API key. | empty |
+| `LLM_MODEL` | Optional demo agent model. | empty |
+| `LLM_TEMPERATURE` | Demo agent temperature. | `0.2` |
+
+## Auth Tokens
+
+`ADMIN_TOKEN` is enforced on metadata, graph, import/export, and agent-test HTTP routes. Health routes remain public for local readiness checks.
+
+HTTP convention:
+
+```http
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
+MCP tools accept an `api_key` argument and compare it with `MCP_API_KEY`.
+
+## Documentation
+
+- [HTTP API](docs/api.md)
+- [MCP Tools](docs/mcp.md)
+- [UI](docs/ui.md)
+- [Architecture](docs/architecture.md)
