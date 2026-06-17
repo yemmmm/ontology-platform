@@ -24,13 +24,15 @@ docs/
 
 ## Local Startup
 
-Start PostgreSQL and Neo4j:
+Start the local development stack:
 
 ```bash
-docker compose up -d postgres neo4j
+./scripts/start-local.sh
 ```
 
-Create local backend configuration:
+The script checks PostgreSQL and Neo4j first. If either service is not running, it starts the native local installation, then syncs backend dependencies with `uv`, runs migrations, and starts the backend API and frontend.
+
+If you prefer to run the services manually, create local backend configuration first:
 
 ```bash
 cp .env.example backend/.env
@@ -40,18 +42,15 @@ Install and run database migrations:
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-alembic upgrade head
+uv sync --extra dev
+uv run alembic upgrade head
 ```
 
 Run the backend API:
 
 ```bash
 cd backend
-source .venv/bin/activate
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 The API is available at `http://localhost:8000/api`. FastAPI docs are available at `http://localhost:8000/docs`.
@@ -68,8 +67,7 @@ Run the MCP server:
 
 ```bash
 cd backend
-source .venv/bin/activate
-python -m app.mcp.server
+uv run python -m app.mcp.server
 ```
 
 ## Environment Variables
@@ -79,7 +77,7 @@ The backend reads `.env` from the process working directory. The commands above 
 | Variable | Purpose | Default/example |
 | --- | --- | --- |
 | `APP_ENV` | Runtime environment label. | `development` |
-| `DATABASE_URL` | SQLAlchemy PostgreSQL URL. | `postgresql+psycopg://ontology:ontology@localhost:5432/ontology_platform` |
+| `DATABASE_URL` | SQLAlchemy PostgreSQL URL. | `postgresql+psycopg://ontology:ontology@localhost:5432/ontology_platform?client_encoding=utf8` |
 | `NEO4J_URI` | Neo4j Bolt URI. | `bolt://localhost:7687` |
 | `NEO4J_USER` | Neo4j username. | `neo4j` |
 | `NEO4J_PASSWORD` | Neo4j password. | `ontology-platform` |
