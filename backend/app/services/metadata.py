@@ -356,7 +356,10 @@ def create_relation_type(
         external_mappings=payload.external_mappings,
     )
     session.add(relation_type)
-    commit_or_409(session, "Relation type name must be unique within the ontology")
+    commit_or_409(
+        session,
+        "Relation type name must be unique for the same source and target classes",
+    )
     session.refresh(relation_type)
     return relation_type
 

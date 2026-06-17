@@ -8,16 +8,21 @@ import {
   GitBranch,
   Layers,
   Link2,
+  Maximize2,
   Network,
   Play,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Server,
   Settings,
   Shield,
+  SlidersHorizontal,
   Trash2,
   Waypoints,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import "./styles.css";
 
@@ -31,10 +36,17 @@ declare global {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api").replace(/\/$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 const TOKEN_KEY = "ontology-platform-admin-token";
+const UI_STATE_KEYS = {
+  tab: "ontology-platform-ui-tab",
+  selectedProjectId: "ontology-platform-ui-selected-project",
+  selectedOntologyId: "ontology-platform-ui-selected-ontology",
+  selectedClassId: "ontology-platform-ui-selected-class",
+} as const;
 
-type Tab = "projects" | "designer" | "graph" | "agent" | "health";
+const tabIds = ["projects", "designer", "graph", "recall", "agent", "health"] as const;
+type Tab = (typeof tabIds)[number];
 type JsonObject = Record<string, unknown>;
 
 type Project = {
@@ -112,6 +124,16 @@ type Relation = {
   properties: JsonObject;
 };
 
+type EntitySearchResult = {
+  results: Entity[];
+  count: number;
+};
+
+type RelatedEntity = {
+  entity: Entity;
+  relations: Relation[];
+};
+
 type Health = Record<string, unknown>;
 type Notice = { kind: "ok" | "error"; message: string } | null;
 
@@ -144,6 +166,55 @@ function compactId(id: string) {
 function nameFor<T extends { id: string; name?: string }>(items: T[], id: string | null | undefined) {
   if (!id) return "None";
   return items.find((item) => item.id === id)?.name ?? compactId(id);
+}
+
+function relationTypeLabel(relationType: RelationType, classes: ClassDef[]) {
+  return `${relationType.name} (${nameFor(classes, relationType.source_class_id)} -> ${nameFor(classes, relationType.target_class_id)})`;
+}
+
+function isTab(value: string): value is Tab {
+  return tabIds.some((tab) => tab === value);
+}
+
+function useStoredStringState(key: string, fallback = "") {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Ignore storage failures so the app remains usable in restricted browser modes.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+function useStoredTabState(key: string, fallback: Tab) {
+  const [value, setValue] = useState<Tab>(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored && isTab(stored) ? stored : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Ignore storage failures so the app remains usable in restricted browser modes.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
 }
 
 function ErrorText({ message }: { message?: string | null }) {
@@ -184,7 +255,7 @@ async function apiRequest<T>(path: string, token: string, options: RequestInit =
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
-  const [tab, setTab] = useState<Tab>("projects");
+  const [tab, setTab] = useStoredTabState(UI_STATE_KEYS.tab, "projects");
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
   const [classes, setClasses] = useState<ClassDef[]>([]);
@@ -193,9 +264,9 @@ function App() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [relations, setRelations] = useState<Relation[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [selectedOntologyId, setSelectedOntologyId] = useState("");
-  const [selectedClassId, setSelectedClassId] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useStoredStringState(UI_STATE_KEYS.selectedProjectId);
+  const [selectedOntologyId, setSelectedOntologyId] = useStoredStringState(UI_STATE_KEYS.selectedOntologyId);
+  const [selectedClassId, setSelectedClassId] = useStoredStringState(UI_STATE_KEYS.selectedClassId);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
 
@@ -325,6 +396,7 @@ function App() {
     { id: "projects" as const, label: "Projects", icon: Layers },
     { id: "designer" as const, label: "Ontology Designer", icon: Waypoints },
     { id: "graph" as const, label: "Graph Manager", icon: Network },
+    { id: "recall" as const, label: "KG Recall Test", icon: Search },
     { id: "agent" as const, label: "MCP/Agent Test", icon: Send },
     { id: "health" as const, label: "Health", icon: Activity },
   ];
@@ -428,6 +500,9 @@ function App() {
             request={request}
             reloadGraph={loadGraph}
           />
+        )}
+        {tab === "recall" && (
+          <RecallPage classes={classes} mutate={mutate} ontologyId={selectedOntologyId} request={request} />
         )}
         {tab === "agent" && <AgentPage ontology={selectedOntology} project={selectedProject} request={request} mutate={mutate} />}
         {tab === "health" && <HealthPage health={health} request={request} setHealth={setHealth} showError={showError} />}
@@ -915,6 +990,7 @@ function GraphPage(props: {
   const [relationForm, setRelationForm] = useState({ relationTypeId: "", sourceEntityId: "", targetEntityId: "", properties: "{}" });
   const [entityJsonError, setEntityJsonError] = useState("");
   const [relationJsonError, setRelationJsonError] = useState("");
+  const [selectedEntityId, setSelectedEntityId] = useState("");
 
   useEffect(() => {
     if (!entityForm.classId && props.classes[0]) setEntityForm((current) => ({ ...current, classId: props.classes[0].id }));
@@ -976,6 +1052,12 @@ function GraphPage(props: {
     }, "Relation created");
   }
 
+  useEffect(() => {
+    setSelectedEntityId((current) =>
+      current && props.entities.some((entity) => entity.id === current) ? current : props.entities[0]?.id || "",
+    );
+  }, [props.entities]);
+
   return (
     <section className="graphGrid">
       <Panel title="Entities" icon={<Database size={17} />}>
@@ -997,11 +1079,13 @@ function GraphPage(props: {
           </button>
         </form>
         <DataTable
+          onSelect={setSelectedEntityId}
           rows={props.entities.map((entity) => ({
             id: entity.id,
             first: entity.name,
             second: entity.class_label,
             meta: JSON.stringify(entity.properties),
+            selected: entity.id === selectedEntityId,
           }))}
         />
       </Panel>
@@ -1016,7 +1100,7 @@ function GraphPage(props: {
             <option value="">Relation type</option>
             {props.relationTypes.map((relationType) => (
               <option key={relationType.id} value={relationType.id}>
-                {relationType.name}
+                {relationTypeLabel(relationType, props.classes)}
               </option>
             ))}
           </select>
@@ -1061,65 +1145,172 @@ function GraphPage(props: {
       </Panel>
 
       <Panel title="Graph View" icon={<Network size={17} />} wide>
-        <GraphSvg entities={props.entities} relations={props.relations} relationTypes={props.relationTypes} />
+        <GraphSvg
+          entities={props.entities}
+          relations={props.relations}
+          relationTypes={props.relationTypes}
+          selectedEntityId={selectedEntityId}
+          setSelectedEntityId={setSelectedEntityId}
+          reloadGraph={props.reloadGraph}
+        />
       </Panel>
     </section>
   );
 }
 
-function GraphSvg({ entities, relations, relationTypes }: { entities: Entity[]; relations: Relation[]; relationTypes: RelationType[] }) {
+function GraphSvg({
+  entities,
+  relations,
+  relationTypes,
+  selectedEntityId,
+  setSelectedEntityId,
+  reloadGraph,
+}: {
+  entities: Entity[];
+  relations: Relation[];
+  relationTypes: RelationType[];
+  selectedEntityId: string;
+  setSelectedEntityId: (id: string) => void;
+  reloadGraph: () => Promise<void>;
+}) {
+  const [zoom, setZoom] = useState(1);
   const nodes = useMemo(() => {
     const count = Math.max(entities.length, 1);
+    const radiusX = Math.max(180, Math.min(300, 90 + count * 18));
+    const radiusY = Math.max(120, Math.min(185, 70 + count * 12));
     return entities.map((entity, index) => {
       const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
       return {
         entity,
-        x: 320 + Math.cos(angle) * 230,
-        y: 205 + Math.sin(angle) * 145,
+        x: 360 + Math.cos(angle) * radiusX,
+        y: 230 + Math.sin(angle) * radiusY,
       };
     });
   }, [entities]);
   const byId = new Map(nodes.map((node) => [node.entity.id, node]));
+  const selectedEntity = entities.find((entity) => entity.id === selectedEntityId) ?? null;
+  const selectedRelations = selectedEntity
+    ? relations.filter((relation) => relation.source_entity_id === selectedEntity.id || relation.target_entity_id === selectedEntity.id)
+    : [];
+
+  function setBoundedZoom(nextZoom: number) {
+    setZoom(Math.min(1.8, Math.max(0.55, Number(nextZoom.toFixed(2)))));
+  }
 
   if (!entities.length) {
     return <div className="emptyGraph">No entities to render.</div>;
   }
 
   return (
-    <svg className="graphSvg" viewBox="0 0 640 410" role="img" aria-label="Knowledge graph">
-      <defs>
-        <marker id="arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
-          <path d="M0,0 L8,4 L0,8 Z" fill="#49656f" />
-        </marker>
-      </defs>
-      {relations.map((relation) => {
-        const source = byId.get(relation.source_entity_id);
-        const target = byId.get(relation.target_entity_id);
-        if (!source || !target) return null;
-        const label = relationTypes.find((item) => item.id === relation.relation_type_id)?.name ?? relation.relation_type;
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
-        return (
-          <g key={relation.id}>
-            <line className="edge" markerEnd="url(#arrow)" x1={source.x} x2={target.x} y1={source.y} y2={target.y} />
-            <text className="edgeLabel" x={midX} y={midY - 6}>
-              {label}
-            </text>
+    <div className="graphExplorer">
+      <div className="graphToolbar">
+        <div className="graphStats">
+          <strong>{entities.length}</strong>
+          <span>entities</span>
+          <strong>{relations.length}</strong>
+          <span>relations</span>
+        </div>
+        <div className="graphActions">
+          <button className="iconButton" onClick={() => setBoundedZoom(zoom - 0.15)} title="Zoom out" type="button">
+            <ZoomOut size={16} />
+          </button>
+          <span className="zoomValue">{Math.round(zoom * 100)}%</span>
+          <button className="iconButton" onClick={() => setBoundedZoom(zoom + 0.15)} title="Zoom in" type="button">
+            <ZoomIn size={16} />
+          </button>
+          <button className="iconButton" onClick={() => setZoom(1)} title="Reset zoom" type="button">
+            <Maximize2 size={16} />
+          </button>
+          <button className="iconButton" onClick={() => reloadGraph()} title="Refresh graph" type="button">
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="graphWorkspace">
+        <svg className="graphSvg" viewBox="0 0 720 460" role="img" aria-label="Knowledge graph">
+          <defs>
+            <marker id="arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
+              <path d="M0,0 L8,4 L0,8 Z" fill="#49656f" />
+            </marker>
+          </defs>
+          <g transform={`translate(${360 - 360 * zoom} ${230 - 230 * zoom}) scale(${zoom})`}>
+            {relations.map((relation) => {
+              const source = byId.get(relation.source_entity_id);
+              const target = byId.get(relation.target_entity_id);
+              if (!source || !target) return null;
+              const label = relationTypes.find((item) => item.id === relation.relation_type_id)?.name ?? relation.relation_type;
+              const midX = (source.x + target.x) / 2;
+              const midY = (source.y + target.y) / 2;
+              const highlighted = relation.source_entity_id === selectedEntityId || relation.target_entity_id === selectedEntityId;
+              return (
+                <g key={relation.id} className={classNames("edgeGroup", highlighted && "selected")}>
+                  <line className="edge" markerEnd="url(#arrow)" x1={source.x} x2={target.x} y1={source.y} y2={target.y} />
+                  <text className="edgeLabel" x={midX} y={midY - 8}>
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            {nodes.map((node) => {
+              const selected = node.entity.id === selectedEntityId;
+              return (
+                <g
+                  className={classNames("graphNode", selected && "selected")}
+                  key={node.entity.id}
+                  onClick={() => setSelectedEntityId(node.entity.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") setSelectedEntityId(node.entity.id);
+                  }}
+                >
+                  <circle className="node" cx={node.x} cy={node.y} r="36" />
+                  <text className="nodeTitle" x={node.x} y={node.y - 4}>
+                    {node.entity.name.slice(0, 18)}
+                  </text>
+                  <text className="nodeMeta" x={node.x} y={node.y + 14}>
+                    {node.entity.class_label.slice(0, 20)}
+                  </text>
+                </g>
+              );
+            })}
           </g>
-        );
-      })}
-      {nodes.map((node) => (
-        <g key={node.entity.id}>
-          <circle className="node" cx={node.x} cy={node.y} r="34" />
-          <text className="nodeTitle" x={node.x} y={node.y - 3}>
-            {node.entity.name.slice(0, 18)}
-          </text>
-          <text className="nodeMeta" x={node.x} y={node.y + 14}>
-            {node.entity.class_label}
-          </text>
-        </g>
-      ))}
-    </svg>
+        </svg>
+        <aside className="graphDetail">
+          {selectedEntity ? (
+            <>
+              <h3>{selectedEntity.name}</h3>
+              <dl>
+                <dt>Class</dt>
+                <dd>{selectedEntity.class_label}</dd>
+                <dt>ID</dt>
+                <dd>{compactId(selectedEntity.id)}</dd>
+                <dt>Aliases</dt>
+                <dd>{selectedEntity.aliases.length ? selectedEntity.aliases.join(", ") : "None"}</dd>
+                <dt>Connected relations</dt>
+                <dd>{selectedRelations.length}</dd>
+              </dl>
+              <h3>Properties</h3>
+              <pre className="jsonBlock">{JSON.stringify(selectedEntity.properties, null, 2)}</pre>
+              <h3>Relations</h3>
+              <div className="relationList">
+                {selectedRelations.map((relation) => (
+                  <div className="relationPill" key={relation.id}>
+                    <strong>{relation.relation_type}</strong>
+                    <span>
+                      {nameFor(entities, relation.source_entity_id)} {"->"} {nameFor(entities, relation.target_entity_id)}
+                    </span>
+                  </div>
+                ))}
+                {!selectedRelations.length && <span className="mutedText">No connected relations.</span>}
+              </div>
+            </>
+          ) : (
+            <div className="emptyGraph">Select a node.</div>
+          )}
+        </aside>
+      </div>
+    </div>
   );
 }
 
@@ -1176,6 +1367,190 @@ function AgentPage(props: {
   );
 }
 
+function RecallPage(props: {
+  ontologyId: string;
+  classes: ClassDef[];
+  request: <T>(path: string, options?: RequestInit) => Promise<T>;
+  mutate: (action: () => Promise<void>, success: string) => Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    query: "",
+    classId: "",
+    limit: 10,
+    depth: 1,
+    direction: "both",
+    includeRelated: true,
+  });
+  const [searchResult, setSearchResult] = useState<EntitySearchResult | null>(null);
+  const [relatedByEntityId, setRelatedByEntityId] = useState<Record<string, RelatedEntity[]>>({});
+  const [selectedEntityId, setSelectedEntityId] = useState("");
+
+  const selectedEntity =
+    searchResult?.results.find((entity) => entity.id === selectedEntityId) ?? searchResult?.results[0] ?? null;
+  const selectedRelated = selectedEntity ? (relatedByEntityId[selectedEntity.id] ?? []) : [];
+
+  function buildSearchPath() {
+    const params = new URLSearchParams({
+      query: form.query,
+      limit: String(form.limit),
+    });
+    if (form.classId) params.set("class_id", form.classId);
+    return `/ontologies/${props.ontologyId}/entities/search?${params.toString()}`;
+  }
+
+  function buildRelatedPath(entityId: string) {
+    const params = new URLSearchParams({
+      depth: String(form.depth),
+      direction: form.direction,
+      limit: String(form.limit),
+    });
+    return `/ontologies/${props.ontologyId}/entities/${entityId}/related?${params.toString()}`;
+  }
+
+  function run(event: FormEvent) {
+    event.preventDefault();
+    props.mutate(async () => {
+      const response = await props.request<EntitySearchResult>(buildSearchPath());
+      setSearchResult(response);
+      setSelectedEntityId(response.results[0]?.id ?? "");
+
+      if (!form.includeRelated || response.results.length === 0) {
+        setRelatedByEntityId({});
+        return;
+      }
+
+      const relatedPairs = await Promise.all(
+        response.results.map(async (entity) => [entity.id, await props.request<RelatedEntity[]>(buildRelatedPath(entity.id))] as const),
+      );
+      setRelatedByEntityId(Object.fromEntries(relatedPairs));
+    }, "Recall test completed");
+  }
+
+  return (
+    <section className="recallGrid">
+      <Panel title="Recall Query" icon={<SlidersHorizontal size={17} />}>
+        <form className="stackForm" onSubmit={run}>
+          <textarea
+            className="questionBox"
+            required
+            value={form.query}
+            onChange={(event) => setForm({ ...form, query: event.target.value })}
+            placeholder="Enter terms to recall matching graph entities"
+          />
+          <select value={form.classId} onChange={(event) => setForm({ ...form, classId: event.target.value })}>
+            <option value="">All classes</option>
+            {props.classes.map((classDef) => (
+              <option key={classDef.id} value={classDef.id}>
+                {classDef.name}
+              </option>
+            ))}
+          </select>
+          <div className="formPair">
+            <label>
+              Limit
+              <input
+                max={100}
+                min={1}
+                type="number"
+                value={form.limit}
+                onChange={(event) => setForm({ ...form, limit: Number(event.target.value) })}
+              />
+            </label>
+            <label>
+              Depth
+              <input
+                max={3}
+                min={1}
+                type="number"
+                value={form.depth}
+                onChange={(event) => setForm({ ...form, depth: Number(event.target.value) })}
+              />
+            </label>
+          </div>
+          <select value={form.direction} onChange={(event) => setForm({ ...form, direction: event.target.value })}>
+            <option value="both">Both directions</option>
+            <option value="outgoing">Outgoing only</option>
+            <option value="incoming">Incoming only</option>
+          </select>
+          <div className="checkRow">
+            <label>
+              <input
+                checked={form.includeRelated}
+                onChange={(event) => setForm({ ...form, includeRelated: event.target.checked })}
+                type="checkbox"
+              />
+              Include related entities
+            </label>
+          </div>
+          <button className="primaryButton" disabled={!props.ontologyId} type="submit">
+            <Search size={16} /> Run recall
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title="Hits" icon={<Database size={17} />}>
+        <div className="recallSummary">
+          <strong>{searchResult?.count ?? 0}</strong>
+          <span>matched entities</span>
+        </div>
+        <DataTable
+          onSelect={setSelectedEntityId}
+          rows={(searchResult?.results ?? []).map((entity) => ({
+            id: entity.id,
+            first: entity.name,
+            second: `${entity.class_label} - ${entity.aliases.length ? entity.aliases.join(", ") : compactId(entity.id)}`,
+            meta: `${relatedByEntityId[entity.id]?.length ?? 0} related`,
+            selected: entity.id === selectedEntity?.id,
+          }))}
+        />
+        {searchResult && searchResult.results.length === 0 && <div className="emptyGraph">No matching entities.</div>}
+        {!searchResult && <div className="emptyGraph">No recall run yet.</div>}
+      </Panel>
+
+      <Panel title="Recall Context" icon={<Network size={17} />} wide>
+        {selectedEntity ? (
+          <div className="recallContext">
+            <section className="entityCard">
+              <div>
+                <h3>{selectedEntity.name}</h3>
+                <span>{selectedEntity.class_label}</span>
+              </div>
+              <code>{compactId(selectedEntity.id)}</code>
+              <pre className="jsonBlock">{JSON.stringify(selectedEntity.properties, null, 2)}</pre>
+            </section>
+            <div className="relatedGrid">
+              {selectedRelated.map((item) => (
+                <section className="relatedCard" key={item.entity.id}>
+                  <div className="relatedHeader">
+                    <div>
+                      <strong>{item.entity.name}</strong>
+                      <span>{item.entity.class_label}</span>
+                    </div>
+                    <code>{item.relations.length} edges</code>
+                  </div>
+                  <div className="relationList">
+                    {item.relations.map((relation) => (
+                      <div className="relationPill" key={relation.id}>
+                        <strong>{relation.relation_type}</strong>
+                        <span>
+                          {compactId(relation.source_entity_id)} {"->"} {compactId(relation.target_entity_id)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+              {!selectedRelated.length && <div className="emptyGraph">No related entities for the selected hit.</div>}
+            </div>
+          </div>
+        ) : (
+          <div className="emptyGraph">Select a recalled entity to inspect context.</div>
+        )}
+      </Panel>
+    </section>
+  );
+}
+
 function HealthPage(props: {
   health: Health | null;
   request: <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -1216,15 +1591,28 @@ function Panel({ title, icon, children, wide }: { title: string; icon: React.Rea
   );
 }
 
-function DataTable({ rows }: { rows: Array<{ id: string; first: string; second: string; meta: string }> }) {
+function DataTable({
+  rows,
+  onSelect,
+}: {
+  rows: Array<{ id: string; first: string; second: string; meta: string; selected?: boolean }>;
+  onSelect?: (id: string) => void;
+}) {
   return (
     <div className="listTable compact">
       {rows.map((row) => (
-        <div className="row" key={row.id}>
-          <div className="rowMain static">
-            <strong>{row.first}</strong>
-            <span>{row.second}</span>
-          </div>
+        <div className={classNames("row", row.selected && "selected")} key={row.id}>
+          {onSelect ? (
+            <button className="rowMain" onClick={() => onSelect(row.id)} type="button">
+              <strong>{row.first}</strong>
+              <span>{row.second}</span>
+            </button>
+          ) : (
+            <div className="rowMain static">
+              <strong>{row.first}</strong>
+              <span>{row.second}</span>
+            </div>
+          )}
           <code>{row.meta}</code>
         </div>
       ))}

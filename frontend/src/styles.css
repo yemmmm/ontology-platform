@@ -267,6 +267,7 @@ textarea:focus {
 .twoColumn,
 .designerGrid,
 .graphGrid,
+.recallGrid,
 .agentGrid {
   display: grid;
   gap: 14px;
@@ -283,6 +284,10 @@ textarea:focus {
 
 .graphGrid {
   grid-template-columns: 360px 390px minmax(420px, 1fr);
+}
+
+.recallGrid {
+  grid-template-columns: 340px 390px minmax(420px, 1fr);
 }
 
 .agentGrid {
@@ -333,6 +338,17 @@ textarea:focus {
 .checkRow input {
   width: auto;
   min-height: 0;
+}
+
+.formPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.formPair label {
+  display: grid;
+  gap: 5px;
 }
 
 .listTable {
@@ -401,15 +417,62 @@ textarea:focus {
 
 .graphSvg {
   width: 100%;
-  min-height: 360px;
+  min-height: 430px;
   border: 1px solid #e0e7e9;
   border-radius: 8px;
   background: #f8faf9;
 }
 
+.graphExplorer {
+  display: grid;
+  gap: 10px;
+}
+
+.graphToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.graphStats,
+.graphActions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.graphStats {
+  color: #63737a;
+  font-size: 12px;
+}
+
+.graphStats strong {
+  color: #172026;
+  font-size: 14px;
+}
+
+.zoomValue {
+  min-width: 44px;
+  color: #52626a;
+  font-size: 12px;
+  text-align: center;
+}
+
+.graphWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+}
+
 .edge {
   stroke: #49656f;
   stroke-width: 1.6;
+}
+
+.edgeGroup.selected .edge {
+  stroke: #176b5b;
+  stroke-width: 2.6;
 }
 
 .edgeLabel {
@@ -427,9 +490,27 @@ textarea:focus {
   stroke-width: 2;
 }
 
+.graphNode {
+  cursor: pointer;
+  outline: none;
+}
+
+.graphNode:hover .node,
+.graphNode:focus .node {
+  fill: #eef8f4;
+  stroke: #0c5d4e;
+}
+
+.graphNode.selected .node {
+  fill: #dff3ec;
+  stroke: #0b6958;
+  stroke-width: 3;
+}
+
 .nodeTitle,
 .nodeMeta {
   text-anchor: middle;
+  pointer-events: none;
 }
 
 .nodeTitle {
@@ -460,8 +541,141 @@ textarea:focus {
   background: #ffffff;
 }
 
+.graphDetail {
+  min-width: 0;
+  border: 1px solid #dfe7e9;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.graphDetail h3 {
+  margin: 0 0 9px;
+}
+
+.graphDetail h3:not(:first-child) {
+  margin-top: 14px;
+}
+
+.graphDetail dl {
+  display: grid;
+  grid-template-columns: 94px minmax(0, 1fr);
+  gap: 7px 10px;
+  margin: 0;
+}
+
+.graphDetail dt {
+  color: #65757c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.graphDetail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #22333b;
+  font-size: 12px;
+}
+
+.relationList {
+  display: grid;
+  gap: 7px;
+}
+
+.relationPill {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e1e7e9;
+  border-radius: 7px;
+  background: #fbfcfc;
+  padding: 8px;
+}
+
+.relationPill strong {
+  color: #1b2b33;
+  font-size: 12px;
+}
+
+.relationPill span,
+.mutedText {
+  color: #64727a;
+  font-size: 12px;
+}
+
 .questionBox {
   min-height: 150px;
+}
+
+.recallSummary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  color: #63737a;
+  font-size: 12px;
+}
+
+.recallSummary strong {
+  color: #172026;
+  font-size: 18px;
+}
+
+.recallContext {
+  display: grid;
+  gap: 12px;
+}
+
+.entityCard,
+.relatedCard {
+  min-width: 0;
+  border: 1px solid #e1e7e9;
+  border-radius: 7px;
+  background: #fbfcfc;
+  padding: 11px;
+}
+
+.entityCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.entityCard .jsonBlock {
+  grid-column: 1 / -1;
+}
+
+.entityCard span,
+.relatedHeader span {
+  display: block;
+  margin-top: 3px;
+  color: #64727a;
+  font-size: 12px;
+}
+
+.relatedGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relatedHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.relatedHeader strong {
+  color: #1b2b33;
+  font-size: 13px;
+}
+
+.entityCard code,
+.relatedHeader code {
+  color: #5f6f76;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .resultField {
@@ -499,12 +713,17 @@ textarea:focus {
 
 @media (max-width: 1200px) {
   .designerGrid,
-  .graphGrid {
+  .graphGrid,
+  .recallGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .widePanel {
     grid-column: 1 / -1;
+  }
+
+  .graphWorkspace {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -519,7 +738,7 @@ textarea:focus {
   }
 
   nav {
-    grid-template-columns: repeat(5, minmax(150px, 1fr));
+    grid-template-columns: repeat(6, minmax(150px, 1fr));
     overflow-x: auto;
   }
 
@@ -542,8 +761,20 @@ textarea:focus {
   .twoColumn,
   .designerGrid,
   .graphGrid,
+  .recallGrid,
   .agentGrid,
-  .inlineForm {
+  .inlineForm,
+  .relatedGrid {
     grid-template-columns: 1fr;
+  }
+
+  .graphToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .graphActions {
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 }

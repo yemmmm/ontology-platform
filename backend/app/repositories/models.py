@@ -180,7 +180,15 @@ class PropertyDefModel(Base):
 
 class RelationTypeModel(Base):
     __tablename__ = "relation_types"
-    __table_args__ = (UniqueConstraint("ontology_id", "name", name="uq_relation_types_ontology_name"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "ontology_id",
+            "name",
+            "source_class_id",
+            "target_class_id",
+            name="uq_relation_types_ontology_name_source_target",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     ontology_id: Mapped[str] = mapped_column(

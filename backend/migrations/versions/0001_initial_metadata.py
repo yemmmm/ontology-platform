@@ -143,7 +143,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["source_class_id"], ["classes.id"]),
         sa.ForeignKeyConstraint(["target_class_id"], ["classes.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("ontology_id", "name", name="uq_relation_types_ontology_name"),
+        sa.UniqueConstraint(
+            "ontology_id",
+            "name",
+            "source_class_id",
+            "target_class_id",
+            name="uq_relation_types_ontology_name_source_target",
+        ),
     )
 
 
