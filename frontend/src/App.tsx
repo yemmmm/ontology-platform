@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowLeft,
   ArrowDownToLine,
   Box,
   Braces,
@@ -65,7 +66,8 @@ import {
   splitCsv,
 } from "./utils";
 
-type Tab = "workspace" | "classes" | "relations" | "graph" | "import" | "agent" | "settings";
+type Tab = "workspace" | "graph" | "import" | "agent" | "settings";
+type WorkspaceView = "home" | "new-project" | "ontology" | "class";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 
 const UI_KEYS = {
@@ -77,8 +79,6 @@ const UI_KEYS = {
 
 const tabs: Array<{ id: Tab; label: string; detail: string; icon: typeof Network }> = [
   { id: "workspace", label: "Workspace", detail: "Projects and ontologies", icon: Layers },
-  { id: "classes", label: "Classes", detail: "Class schema and properties", icon: Box },
-  { id: "relations", label: "Relation Types", detail: "Schema edges", icon: GitBranch },
   { id: "graph", label: "Graph Data", detail: "Entities and relations", icon: Network },
   { id: "import", label: "Import / Export", detail: "Portable JSON", icon: FileJson },
   { id: "agent", label: "Agent Lab", detail: "Question tests", icon: Send },
@@ -133,6 +133,7 @@ function useStoredTab(key: string, fallback: Tab) {
 export function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [tab, setTab] = useStoredTab(UI_KEYS.tab, "workspace");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("home");
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
   const [classes, setClasses] = useState<ClassDef[]>([]);
@@ -333,11 +334,18 @@ export function App() {
           <div className="topActions">
             <ContextSwitcher
               ontologies={ontologies}
+              onNewProject={() => {
+                setTab("workspace");
+                setWorkspaceView("new-project");
+              }}
               projects={projects}
               selectedOntologyId={selectedOntologyId}
               selectedProjectId={selectedProjectId}
               setSelectedOntologyId={setSelectedOntologyId}
-              setSelectedProjectId={setSelectedProjectId}
+              setSelectedProjectId={(id) => {
+                setSelectedProjectId(id);
+                setWorkspaceView("home");
+              }}
             />
             <Tooltip title="Refresh workspace data">
               <button className="iconButton" disabled={loading} onClick={refreshAll} type="button">
@@ -362,37 +370,15 @@ export function App() {
             request={request}
             selectedOntology={selectedOntology}
             selectedProjectId={selectedProjectId}
+            selectedClassId={selectedClassId}
+            setSelectedClassId={setSelectedClassId}
             setSelectedOntologyId={setSelectedOntologyId}
             setSelectedProjectId={setSelectedProjectId}
+            view={workspaceView}
+            setView={setWorkspaceView}
+            propertiesByClass={propertiesByClass}
             reloadOntologies={loadOntologies}
             reloadProjects={loadProjects}
-          />
-        )}
-        {tab === "classes" && (
-          <OntologyDesignerPage
-            classes={classes}
-            mode="classes"
-            mutate={mutate}
-            ontologyId={selectedOntologyId}
-            propertiesByClass={propertiesByClass}
-            relationTypes={relationTypes}
-            request={request}
-            selectedClassId={selectedClassId}
-            setSelectedClassId={setSelectedClassId}
-            reloadSchema={loadSchema}
-          />
-        )}
-        {tab === "relations" && (
-          <OntologyDesignerPage
-            classes={classes}
-            mode="relations"
-            mutate={mutate}
-            ontologyId={selectedOntologyId}
-            propertiesByClass={propertiesByClass}
-            relationTypes={relationTypes}
-            request={request}
-            selectedClassId={selectedClassId}
-            setSelectedClassId={setSelectedClassId}
             reloadSchema={loadSchema}
           />
         )}
@@ -442,18 +428,29 @@ function ContextSwitcher(props: {
   selectedOntologyId: string;
   setSelectedProjectId: (id: string) => void;
   setSelectedOntologyId: (id: string) => void;
+  onNewProject: () => void;
 }) {
   return (
     <section className="contextStrip">
       <label>
         <span>Project</span>
-        <select value={props.selectedProjectId} onChange={(event) => props.setSelectedProjectId(event.target.value)}>
+        <select
+          value={props.selectedProjectId}
+          onChange={(event) => {
+            if (event.target.value === "__new_project__") {
+              props.onNewProject();
+              return;
+            }
+            props.setSelectedProjectId(event.target.value);
+          }}
+        >
           <option value="">Select project</option>
           {props.projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
             </option>
           ))}
+          <option value="__new_project__">New project...</option>
         </select>
       </label>
       <label>
@@ -476,6 +473,571 @@ function ContextSwitcher(props: {
 }
 
 function WorkspacePage(props: {
+  projects: Project[];
+  ontologies: Ontology[];
+  selectedProjectId: string;
+  selectedOntology: Ontology | null;
+  selectedClassId: string;
+  classes: ClassDef[];
+  relationTypes: RelationType[];
+  entities: Entity[];
+  relations: Relation[];
+  propertiesByClass: Record<string, PropertyDef[]>;
+  view: WorkspaceView;
+  setView: (view: WorkspaceView) => void;
+  request: Requester;
+  mutate: (action: () => Promise<void>, success: string) => Promise<void>;
+  reloadProjects: () => Promise<void>;
+  reloadOntologies: (projectId?: string) => Promise<void>;
+  reloadSchema: () => Promise<void>;
+  setSelectedProjectId: (id: string) => void;
+  setSelectedOntologyId: (id: string) => void;
+  setSelectedClassId: (id: string) => void;
+}) {
+  const [projectForm, setProjectForm] = useState({ name: "", description: "" });
+  const [ontologyForm, setOntologyForm] = useState({ name: "", description: "" });
+  const [classForm, setClassForm] = useState({ name: "", description: "", aliases: "", parents: [] as string[] });
+  const [relationForm, setRelationForm] = useState({
+    name: "",
+    description: "",
+    aliases: "",
+    sourceClassId: "",
+    targetClassId: "",
+    inverseName: "",
+  });
+  const [editingRelation, setEditingRelation] = useState<RelationType | null>(null);
+
+  const selectedClass = props.classes.find((item) => item.id === props.selectedClassId) ?? null;
+  const selectedProperties = selectedClass ? props.propertiesByClass[selectedClass.id] ?? [] : [];
+  const outgoingRelationTypes = selectedClass
+    ? props.relationTypes.filter((relationType) => relationType.source_class_id === selectedClass.id)
+    : [];
+  const incomingRelationTypes = selectedClass
+    ? props.relationTypes.filter((relationType) => relationType.target_class_id === selectedClass.id)
+    : [];
+
+  useEffect(() => {
+    if (selectedClass && props.view === "class") {
+      setClassForm({
+        name: selectedClass.name,
+        description: selectedClass.description ?? "",
+        aliases: csv(selectedClass.aliases),
+        parents: selectedClass.parent_class_ids,
+      });
+    }
+  }, [selectedClass, props.view]);
+
+  useEffect(() => {
+    if (editingRelation) {
+      setRelationForm({
+        name: editingRelation.name,
+        description: editingRelation.description ?? "",
+        aliases: csv(editingRelation.aliases),
+        sourceClassId: editingRelation.source_class_id,
+        targetClassId: editingRelation.target_class_id,
+        inverseName: editingRelation.inverse_name ?? "",
+      });
+      return;
+    }
+    if (selectedClass && props.view === "class" && !relationForm.sourceClassId) {
+      setRelationForm((current) => ({
+        ...current,
+        sourceClassId: selectedClass.id,
+        targetClassId: props.classes.find((classDef) => classDef.id !== selectedClass.id)?.id ?? selectedClass.id,
+      }));
+    }
+  }, [editingRelation, selectedClass, props.classes, props.view, relationForm.sourceClassId]);
+
+  function createProject(event: FormEvent) {
+    event.preventDefault();
+    props.mutate(async () => {
+      const created = await props.request<Project>("/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: projectForm.name, description: projectForm.description || null }),
+      });
+      setProjectForm({ name: "", description: "" });
+      props.setSelectedProjectId(created.id);
+      await props.reloadProjects();
+      props.setView("home");
+    }, "Project created");
+  }
+
+  function createOntology(event: FormEvent) {
+    event.preventDefault();
+    if (!props.selectedProjectId) return;
+    props.mutate(async () => {
+      const created = await props.request<Ontology>(`/projects/${props.selectedProjectId}/ontologies`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: ontologyForm.name,
+          description: ontologyForm.description || null,
+          external_mappings: {},
+        }),
+      });
+      setOntologyForm({ name: "", description: "" });
+      props.setSelectedOntologyId(created.id);
+      await props.reloadOntologies(props.selectedProjectId);
+      props.setView("ontology");
+    }, "Ontology created");
+  }
+
+  function saveClass(event: FormEvent) {
+    event.preventDefault();
+    const ontology = props.selectedOntology;
+    if (!ontology) return;
+    props.mutate(async () => {
+      const body = {
+        name: classForm.name,
+        description: classForm.description || null,
+        aliases: splitCsv(classForm.aliases),
+        parent_class_ids: classForm.parents,
+        external_mappings: selectedClass && props.view === "class" ? selectedClass.external_mappings ?? {} : {},
+      };
+      if (selectedClass && props.view === "class") {
+        await props.request<ClassDef>(`/classes/${selectedClass.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        const created = await props.request<ClassDef>(`/ontologies/${ontology.id}/classes`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        props.setSelectedClassId(created.id);
+        props.setView("class");
+      }
+      setClassForm({ name: "", description: "", aliases: "", parents: [] });
+      await props.reloadSchema();
+    }, selectedClass && props.view === "class" ? "Class updated" : "Class created");
+  }
+
+  function saveRelationType(event: FormEvent) {
+    event.preventDefault();
+    const ontology = props.selectedOntology;
+    if (!ontology) return;
+    props.mutate(async () => {
+      const body = {
+        name: relationForm.name,
+        description: relationForm.description || null,
+        aliases: splitCsv(relationForm.aliases),
+        parent_relation_type_id: editingRelation?.parent_relation_type_id ?? null,
+        source_class_id: relationForm.sourceClassId,
+        target_class_id: relationForm.targetClassId,
+        inverse_name: relationForm.inverseName || null,
+        external_mappings: editingRelation?.external_mappings ?? {},
+      };
+      if (editingRelation) {
+        await props.request<RelationType>(`/relation-types/${editingRelation.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      } else {
+        await props.request<RelationType>(`/ontologies/${ontology.id}/relation-types`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+      }
+      setEditingRelation(null);
+      setRelationForm({ name: "", description: "", aliases: "", sourceClassId: "", targetClassId: "", inverseName: "" });
+      await props.reloadSchema();
+    }, editingRelation ? "Relation type updated" : "Relation type created");
+  }
+
+  function selectOntology(ontology: Ontology) {
+    props.setSelectedOntologyId(ontology.id);
+    props.setSelectedClassId("");
+    setClassForm({ name: "", description: "", aliases: "", parents: [] });
+    props.setView("ontology");
+  }
+
+  function selectClass(classDef: ClassDef) {
+    props.setSelectedClassId(classDef.id);
+    setEditingRelation(null);
+    props.setView("class");
+  }
+
+  if (props.view === "new-project") {
+    return (
+      <section className="pageGrid workspaceGrid">
+        <Panel title="New project" icon={<Layers size={17} />} wide>
+          <button className="secondaryButton" onClick={() => props.setView("home")} type="button">
+            <ArrowLeft size={15} /> Workspace
+          </button>
+          <form className="stackForm spacedForm" onSubmit={createProject}>
+            <input
+              required
+              placeholder="Project name"
+              value={projectForm.name}
+              onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
+            />
+            <textarea
+              placeholder="Description"
+              value={projectForm.description}
+              onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
+            />
+            <button className="primaryButton" type="submit">
+              <Plus size={15} /> Create project
+            </button>
+          </form>
+        </Panel>
+      </section>
+    );
+  }
+
+  if (props.view === "ontology") {
+    return (
+      <section className="workspaceStack">
+        <button className="secondaryButton" onClick={() => props.setView("home")} type="button">
+          <ArrowLeft size={15} /> Ontologies
+        </button>
+        <div className="metricGrid">
+          <Metric label="Classes" value={props.classes.length} icon={<Box size={18} />} />
+          <Metric label="Relation types" value={props.relationTypes.length} icon={<GitBranch size={18} />} />
+          <Metric label="Entities" value={props.entities.length} icon={<Database size={18} />} />
+          <Metric label="Relations" value={props.relations.length} icon={<Link2 size={18} />} />
+        </div>
+        <section className="pageGrid classWorkspaceGrid">
+          <Panel title={props.selectedOntology?.name ?? "Ontology"} icon={<Waypoints size={17} />} wide>
+            {props.selectedOntology ? (
+              <div className="overview">
+                <p>{props.selectedOntology.description || "No description provided."}</p>
+                <dl className="detailList">
+                  <dt>Status</dt>
+                  <dd><Badge>{props.selectedOntology.status}</Badge></dd>
+                  <dt>Current version</dt>
+                  <dd>{compactId(props.selectedOntology.current_version_id)}</dd>
+                  <dt>Updated</dt>
+                  <dd>{formatDate(props.selectedOntology.updated_at)}</dd>
+                </dl>
+              </div>
+            ) : (
+              <EmptyState icon={<Database size={22} />} title="Select an ontology" />
+            )}
+          </Panel>
+          <Panel title="Create class" icon={<Plus size={17} />}>
+            <form className="stackForm" onSubmit={saveClass}>
+              <input
+                required
+                placeholder="Class name"
+                value={classForm.name}
+                onChange={(event) => setClassForm({ ...classForm, name: event.target.value })}
+              />
+              <textarea
+                placeholder="Description"
+                value={classForm.description}
+                onChange={(event) => setClassForm({ ...classForm, description: event.target.value })}
+              />
+              <input
+                placeholder="Aliases, comma separated"
+                value={classForm.aliases}
+                onChange={(event) => setClassForm({ ...classForm, aliases: event.target.value })}
+              />
+              <button className="primaryButton" disabled={!props.selectedOntology} type="submit">
+                <Plus size={15} /> Create class
+              </button>
+            </form>
+          </Panel>
+          <Panel title="Classes" icon={<Box size={17} />} wide>
+            <DataList
+              empty="No classes"
+              items={props.classes.map((classDef) => ({
+                id: classDef.id,
+                title: classDef.name,
+                subtitle: classDef.description || classDef.normalized_label || compactId(classDef.id),
+                meta: `${(props.propertiesByClass[classDef.id] ?? []).length} props`,
+                onSelect: () => selectClass(classDef),
+                actions: (
+                  <button
+                    className="iconButton danger"
+                    onClick={() =>
+                      props.mutate(async () => {
+                        await props.request<void>(`/classes/${classDef.id}`, { method: "DELETE" });
+                        await props.reloadSchema();
+                      }, "Class deleted")
+                    }
+                    title="Delete class"
+                    type="button"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                ),
+              }))}
+            />
+          </Panel>
+        </section>
+      </section>
+    );
+  }
+
+  if (props.view === "class") {
+    const relationItems = [...outgoingRelationTypes, ...incomingRelationTypes];
+    return (
+      <section className="workspaceStack">
+        <button className="secondaryButton" onClick={() => props.setView("ontology")} type="button">
+          <ArrowLeft size={15} /> Classes
+        </button>
+        {selectedClass ? (
+          <section className="pageGrid classDetailGrid">
+            <Panel title="Class details" icon={<Box size={17} />}>
+              <form className="stackForm" onSubmit={saveClass}>
+                <input
+                  required
+                  placeholder="Class name"
+                  value={classForm.name}
+                  onChange={(event) => setClassForm({ ...classForm, name: event.target.value })}
+                />
+                <textarea
+                  placeholder="Description"
+                  value={classForm.description}
+                  onChange={(event) => setClassForm({ ...classForm, description: event.target.value })}
+                />
+                <input
+                  placeholder="Aliases, comma separated"
+                  value={classForm.aliases}
+                  onChange={(event) => setClassForm({ ...classForm, aliases: event.target.value })}
+                />
+                <label>
+                  <span>Parent classes</span>
+                  <select
+                    multiple
+                    value={classForm.parents}
+                    onChange={(event) =>
+                      setClassForm({
+                        ...classForm,
+                        parents: Array.from(event.currentTarget.selectedOptions).map((option) => option.value),
+                      })
+                    }
+                  >
+                    {props.classes
+                      .filter((classDef) => classDef.id !== selectedClass.id)
+                      .map((classDef) => (
+                        <option key={classDef.id} value={classDef.id}>
+                          {classDef.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <button className="primaryButton" type="submit">
+                  <Save size={15} /> Save class
+                </button>
+              </form>
+            </Panel>
+
+            <Panel title="Related relations" icon={<GitBranch size={17} />}>
+              <div className="relationSummary">
+                <Boundary title="As source" text={`${outgoingRelationTypes.length} relation types`} />
+                <Boundary title="As target" text={`${incomingRelationTypes.length} relation types`} />
+              </div>
+              <DataList
+                empty="No relation types for this class"
+                items={relationItems.map((relationType) => ({
+                  id: relationType.id,
+                  title: relationType.name,
+                  subtitle: `${nameFor(props.classes, relationType.source_class_id)} -> ${nameFor(
+                    props.classes,
+                    relationType.target_class_id,
+                  )}`,
+                  selected: editingRelation?.id === relationType.id,
+                  onSelect: () => setEditingRelation(relationType),
+                  actions: (
+                    <button
+                      className="iconButton danger"
+                      onClick={() =>
+                        props.mutate(async () => {
+                          await props.request<void>(`/relation-types/${relationType.id}`, { method: "DELETE" });
+                          await props.reloadSchema();
+                        }, "Relation type deleted")
+                      }
+                      title="Delete relation type"
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ),
+                }))}
+              />
+            </Panel>
+
+            <Panel title={editingRelation ? "Edit relation" : "Create relation"} icon={<GitBranch size={17} />}>
+              <form className="stackForm" onSubmit={saveRelationType}>
+                <input
+                  required
+                  placeholder="Relation type name"
+                  value={relationForm.name}
+                  onChange={(event) => setRelationForm({ ...relationForm, name: event.target.value })}
+                />
+                <input
+                  placeholder="Aliases"
+                  value={relationForm.aliases}
+                  onChange={(event) => setRelationForm({ ...relationForm, aliases: event.target.value })}
+                />
+                <textarea
+                  placeholder="Description"
+                  value={relationForm.description}
+                  onChange={(event) => setRelationForm({ ...relationForm, description: event.target.value })}
+                />
+                <div className="buttonRow">
+                  <button
+                    className="secondaryButton"
+                    onClick={() => setRelationForm({ ...relationForm, sourceClassId: selectedClass.id })}
+                    type="button"
+                  >
+                    Source here
+                  </button>
+                  <button
+                    className="secondaryButton"
+                    onClick={() => setRelationForm({ ...relationForm, targetClassId: selectedClass.id })}
+                    type="button"
+                  >
+                    Target here
+                  </button>
+                </div>
+                <div className="formPair">
+                  <label>
+                    <span>Source class</span>
+                    <select
+                      required
+                      value={relationForm.sourceClassId}
+                      onChange={(event) => setRelationForm({ ...relationForm, sourceClassId: event.target.value })}
+                    >
+                      <option value="">Source class</option>
+                      {props.classes.map((classDef) => (
+                        <option key={classDef.id} value={classDef.id}>
+                          {classDef.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Target class</span>
+                    <select
+                      required
+                      value={relationForm.targetClassId}
+                      onChange={(event) => setRelationForm({ ...relationForm, targetClassId: event.target.value })}
+                    >
+                      <option value="">Target class</option>
+                      {props.classes.map((classDef) => (
+                        <option key={classDef.id} value={classDef.id}>
+                          {classDef.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <input
+                  placeholder="Inverse name"
+                  value={relationForm.inverseName}
+                  onChange={(event) => setRelationForm({ ...relationForm, inverseName: event.target.value })}
+                />
+                <div className="buttonRow">
+                  <button className="primaryButton" disabled={props.classes.length < 1} type="submit">
+                    <Save size={15} /> {editingRelation ? "Save relation" : "Create relation"}
+                  </button>
+                  {editingRelation && (
+                    <button
+                      className="secondaryButton"
+                      onClick={() => {
+                        setEditingRelation(null);
+                        setRelationForm({
+                          name: "",
+                          description: "",
+                          aliases: "",
+                          sourceClassId: selectedClass.id,
+                          targetClassId: props.classes.find((classDef) => classDef.id !== selectedClass.id)?.id ?? selectedClass.id,
+                          inverseName: "",
+                        });
+                      }}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </Panel>
+
+            <Panel title="Properties" icon={<Braces size={17} />}>
+              <DataList
+                empty="No properties for this class"
+                items={selectedProperties.map((property) => ({
+                  id: property.id,
+                  title: property.name,
+                  subtitle: `${property.type}${property.required ? " - required" : ""}${property.multi_valued ? " - multi" : ""}`,
+                }))}
+              />
+            </Panel>
+          </section>
+        ) : (
+          <EmptyState icon={<Box size={22} />} title="Select a class" />
+        )}
+      </section>
+    );
+  }
+
+  const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
+
+  return (
+    <section className="workspaceStack">
+      <div className="metricGrid">
+        <Metric label="Ontologies" value={props.ontologies.length} icon={<Waypoints size={18} />} />
+        <Metric label="Classes" value={props.classes.length} icon={<Box size={18} />} />
+        <Metric label="Relation types" value={props.relationTypes.length} icon={<GitBranch size={18} />} />
+        <Metric label="Entities" value={props.entities.length} icon={<Database size={18} />} />
+      </div>
+      <section className="pageGrid workspaceGrid">
+        <Panel title="Ontologies" icon={<Waypoints size={17} />} wide>
+          {props.ontologies.length ? (
+            <div className="ontologyCardGrid">
+              {props.ontologies.map((ontology) => (
+                <button
+                  className={classNames("ontologyCard", ontology.id === props.selectedOntology?.id && "selected")}
+                  key={ontology.id}
+                  onClick={() => selectOntology(ontology)}
+                  type="button"
+                >
+                  <span className="ontologyCardTop">
+                    <strong>{ontology.name}</strong>
+                    <Badge>{ontology.status}</Badge>
+                  </span>
+                  <span>{ontology.description || "No description provided."}</span>
+                  <dl>
+                    <dt>Updated</dt>
+                    <dd>{formatDate(ontology.updated_at)}</dd>
+                    <dt>Version</dt>
+                    <dd>{compactId(ontology.current_version_id)}</dd>
+                  </dl>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={<Database size={22} />} title="No ontologies" />
+          )}
+        </Panel>
+        <Panel title="Create ontology" icon={<Plus size={17} />}>
+          <form className="stackForm" onSubmit={createOntology}>
+            <input
+              required
+              placeholder="Ontology name"
+              value={ontologyForm.name}
+              onChange={(event) => setOntologyForm({ ...ontologyForm, name: event.target.value })}
+            />
+            <textarea
+              placeholder="Description"
+              value={ontologyForm.description}
+              onChange={(event) => setOntologyForm({ ...ontologyForm, description: event.target.value })}
+            />
+            <button className="primaryButton" disabled={!props.selectedProjectId} type="submit">
+              <Plus size={15} /> Create ontology
+            </button>
+          </form>
+          <div className="callout quiet">
+            <strong>{selectedProject?.name ?? "No project selected"}</strong>
+            <span>Use the project selector above to switch project scope or create a new project.</span>
+          </div>
+        </Panel>
+      </section>
+    </section>
+  );
+}
+
+function LegacyWorkspacePage(props: {
   projects: Project[];
   ontologies: Ontology[];
   selectedProjectId: string;

@@ -418,6 +418,20 @@ textarea:focus {
   grid-template-columns: minmax(0, 1.25fr) minmax(330px, 0.75fr);
 }
 
+.workspaceStack {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.classWorkspaceGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 0.42fr);
+}
+
+.classDetailGrid {
+  grid-template-columns: minmax(300px, 0.75fr) minmax(340px, 0.9fr) minmax(380px, 1fr);
+}
+
 .classDesignerGrid {
   grid-template-columns: minmax(260px, 0.72fr) minmax(310px, 0.86fr) minmax(370px, 1fr);
 }
@@ -580,6 +594,10 @@ textarea:focus {
 
 .panel .stackForm {
   max-width: 520px;
+}
+
+.spacedForm {
+  margin-top: 14px;
 }
 
 .graphLeft .stackForm,
@@ -756,6 +774,86 @@ textarea:focus {
 
 .dataRow code {
   max-width: 92px;
+}
+
+.ontologyCardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.ontologyCard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  min-height: 164px;
+  padding: 14px;
+  text-align: left;
+  transition:
+    border-color 130ms ease,
+    box-shadow 130ms ease,
+    transform 130ms ease;
+}
+
+.ontologyCard:hover,
+.ontologyCard.selected {
+  border-color: #c9bfff;
+  box-shadow: 0 14px 28px rgba(36, 41, 67, 0.08);
+  transform: translateY(-1px);
+}
+
+.ontologyCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ontologyCardTop strong {
+  color: #171821;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.ontologyCard > span:not(.ontologyCardTop) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ontologyCard dl {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: auto 0 0;
+}
+
+.ontologyCard dt,
+.ontologyCard dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ontologyCard dt {
+  color: var(--muted);
+  font-weight: 740;
+}
+
+.ontologyCard dd {
+  color: #252838;
+}
+
+.relationSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .graphWorkbench {
@@ -1099,6 +1197,8 @@ textarea:focus {
 
 @media (max-width: 1320px) {
   .graphWorkbench,
+  .classWorkspaceGrid,
+  .classDetailGrid,
   .classDesignerGrid,
   .relationTypesGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1149,6 +1249,8 @@ textarea:focus {
   .workspaceGrid,
   .importGrid,
   .systemGrid,
+  .classWorkspaceGrid,
+  .classDetailGrid,
   .classDesignerGrid,
   .relationTypesGrid,
   .graphWorkbench,
@@ -1158,7 +1260,9 @@ textarea:focus {
   .boundaryGrid,
   .relationEditor,
   .searchForm,
-  .formPair {
+  .formPair,
+  .ontologyCardGrid,
+  .relationSummary {
     grid-template-columns: 1fr;
   }
 
