@@ -29,7 +29,7 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ontology-platform 'RETURN 1' >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -38,4 +38,3 @@ volumes:
   postgres_data:
   neo4j_data:
   neo4j_logs:
-
