@@ -72,7 +72,11 @@ import {
   propertyTypes,
   splitCsv,
 } from "./utils";
-import { EntityGraphCanvas, pickColor } from "./components/EntityGraphCanvas";
+import {
+  EntityGraphCanvas,
+  pickColor,
+  type EntityGraphLayout,
+} from "./components/EntityGraphCanvas";
 import { EntityDetailDrawer } from "./components/EntityDetailDrawer";
 
 type AppView = "home" | "workspace";
@@ -1483,6 +1487,7 @@ function EntitiesPage(props: {
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [graphLayout, setGraphLayout] = useState<EntityGraphLayout>("force");
 
   const classLabels = useMemo(
     () => Array.from(new Set(props.classes.map((classDef) => classDef.name))).sort(),
@@ -1603,6 +1608,26 @@ function EntitiesPage(props: {
           {visibleEntities.length} entities · {visibleRelations.length} relations
           {props.entities.length === 0 && " · No entities yet"}
         </span>
+        <div aria-label="Graph layout" className="entityLayoutSwitch" role="group">
+          <button
+            aria-pressed={graphLayout === "hierarchical"}
+            className={classNames(graphLayout === "hierarchical" && "active")}
+            onClick={() => setGraphLayout("hierarchical")}
+            title="Arrange relations from left to right and reduce crossings"
+            type="button"
+          >
+            <GitBranch size={14} /> Hierarchy
+          </button>
+          <button
+            aria-pressed={graphLayout === "force"}
+            className={classNames(graphLayout === "force" && "active")}
+            onClick={() => setGraphLayout("force")}
+            title="Arrange dense or cyclic relations as a force-directed network"
+            type="button"
+          >
+            <Network size={14} /> Force
+          </button>
+        </div>
         <button className="primaryButton entityCreateButton" onClick={() => setMode("create")} type="button">
           <Plus size={15} /> New entity
         </button>
@@ -1626,6 +1651,7 @@ function EntitiesPage(props: {
             classFilter={classFilter}
             searchQuery={searchQuery}
             classLabels={classLabels}
+            layoutMode={graphLayout}
           />
         )}
         <EntityDetailDrawer
@@ -2158,6 +2184,7 @@ function EntitiesSearchPage(props: {
   request: Requester;
 }) {
   const [mode, setMode] = useState<"text" | "id">("text");
+  const [retrievalMode, setRetrievalMode] = useState<"text" | "vector" | "hybrid">("hybrid");
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [entityId, setEntityId] = useState("");
@@ -2181,7 +2208,7 @@ function EntitiesSearchPage(props: {
     setLocalError("");
     setDetail(null);
     try {
-      const params = new URLSearchParams({ query, limit: "20" });
+      const params = new URLSearchParams({ query, limit: "20", mode: retrievalMode });
       if (classFilter) params.set("class_id", classFilter);
       const data = await props.request<EntitySearchResult>(
         `/ontologies/${props.ontologyId}/entities/search?${params.toString()}`,
@@ -2219,6 +2246,17 @@ function EntitiesSearchPage(props: {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+            <label>
+              <span>Retrieval mode</span>
+              <select
+                value={retrievalMode}
+                onChange={(event) => setRetrievalMode(event.target.value as typeof retrievalMode)}
+              >
+                <option value="hybrid">Hybrid</option>
+                <option value="vector">Vector</option>
+                <option value="text">Text</option>
+              </select>
+            </label>
             <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
               <option value="">All classes</option>
               {props.classes.map((classDef) => (
@@ -2255,7 +2293,7 @@ function EntitiesSearchPage(props: {
               id: entity.id,
               title: entity.name,
               subtitle: entity.class_label,
-              meta: compactId(entity.id),
+              meta: `${entity.match_source} · ${entity.score.toFixed(4)} · ${compactId(entity.id)}`,
               selected: detail?.id === entity.id,
               onSelect: () => loadEntityDetail(entity.id),
             }))}
@@ -2302,9 +2340,6 @@ function AgentTestPage(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
 }) {
   const [question, setQuestion] = useState("");
-  const [model, setModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [temperature, setTemperature] = useState("0.2");
   const [result, setResult] = useState<AgentTestResponse | null>(null);
 
   function run(event: FormEvent) {
@@ -2313,11 +2348,8 @@ function AgentTestPage(props: {
       const response = await props.request<AgentTestResponse>("/agent-test/run", {
         method: "POST",
         body: JSON.stringify({
-          base_url: baseUrl || null,
-          model: model || null,
           ontology_id: props.ontology.id,
           question,
-          temperature: temperature ? Number(temperature) : null,
         }),
       });
       setResult(response);
@@ -2334,20 +2366,6 @@ function AgentTestPage(props: {
             placeholder="Ask a question against the selected ontology"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-          />
-          <input placeholder="Model override" value={model} onChange={(event) => setModel(event.target.value)} />
-          <input
-            placeholder="OpenAI-compatible base URL"
-            value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-          />
-          <input
-            max="2"
-            min="0"
-            step="0.1"
-            type="number"
-            value={temperature}
-            onChange={(event) => setTemperature(event.target.value)}
           />
           <button className="primaryButton" type="submit">
             <Play size={15} /> Run
@@ -2375,7 +2393,7 @@ function AgentTestPage(props: {
 
 function McpToolsPage() {
   const tools = [
-    ["search_entities", "Search entities by text within an ontology."],
+    ["search_entities", "Recall entities globally with text, vector, or hybrid search."],
     ["get_entity", "Fetch one entity and direct relations by entity id."],
     ["find_related_entities", "Find related entities by depth and direction."],
     ["validate_entity", "Validate entity data against class schema."],

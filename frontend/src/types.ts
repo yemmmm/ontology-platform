@@ -85,7 +85,10 @@ export type Relation = {
 };
 
 export type EntitySearchResult = {
-  results: Entity[];
+  results: Array<Entity & {
+    score: number;
+    match_source: "text" | "vector" | "hybrid";
+  }>;
   count: number;
 };
 

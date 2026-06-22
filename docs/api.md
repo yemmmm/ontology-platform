@@ -119,8 +119,9 @@ curl -X POST http://localhost:8000/api/classes/{class_id}/properties \
 
 | Method | Path | Description |
 | --- | --- | --- |
+| `GET` | `/entities/search?query=&mode=hybrid&ontology_id=&class_id=&limit=20` | Recall entities globally with optional filters. |
 | `GET` | `/ontologies/{ontology_id}/entities?class_id=&limit=50` | List entities. |
-| `GET` | `/ontologies/{ontology_id}/entities/search?query=&class_id=&limit=20` | Search entities by text. |
+| `GET` | `/ontologies/{ontology_id}/entities/search?query=&mode=text&class_id=&limit=20` | Search within one ontology using text, vector, or hybrid mode. |
 | `POST` | `/ontologies/{ontology_id}/entities` | Create entity after ontology validation. |
 | `GET` | `/ontologies/{ontology_id}/entities/{entity_id}?include_relations=true` | Get entity and optional relation context. |
 | `POST` | `/ontologies/{ontology_id}/entities/validate` | Validate entity properties without writing. |
@@ -143,6 +144,21 @@ curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/entities \
     "properties": {"status": "active"}
   }'
 ```
+
+Entity create and searchable updates synchronously call Zhipu Embedding-3. Configure
+`EMBEDDING_API_KEY`; provider failures return `502` without writing stale graph data. Search hits
+include `score` and `match_source` (`text`, `vector`, or `hybrid`). The global endpoint defaults to
+hybrid retrieval, while the ontology-scoped endpoint defaults to text for compatibility.
+
+Backfill existing entities after enabling embeddings:
+
+```bash
+cd backend
+uv run python -m app.cli.backfill_embeddings
+```
+
+Use `--ontology-id ID` to limit the run or `--force` to regenerate current vectors. Batches are
+committed incrementally, so rerunning the command resumes by skipping unchanged entities.
 
 Response:
 
@@ -193,11 +209,12 @@ Request:
 ```json
 {
   "ontology_id": "ontology-id",
-  "question": "Which service depends on Payment API?",
-  "model": "optional-override",
-  "base_url": "optional-openai-compatible-base-url",
-  "temperature": 0.2
+  "question": "Which service depends on Payment API?"
 }
 ```
 
-Response includes `answer`, `tool_calls`, `graph_context`, `prompt_preview`, `warnings`, and `errors`. If `LLM_API_KEY` or `LLM_MODEL` is missing, the endpoint returns a graph-context fallback answer with a warning.
+Model, API endpoint, API key, and temperature are configured centrally through the
+`LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_TEMPERATURE` settings. Response
+includes `answer`, `tool_calls`, `graph_context`, `prompt_preview`, `warnings`, and
+`errors`. If `LLM_API_KEY` or `LLM_MODEL` is missing, the endpoint returns a
+graph-context fallback answer with a warning.

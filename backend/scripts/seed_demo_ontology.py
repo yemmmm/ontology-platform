@@ -20,6 +20,7 @@ from app.repositories.models import ProjectModel
 from app.repositories.neo4j import create_neo4j_driver, ensure_graph_constraints
 from app.repositories.postgres import create_session_factory
 from app.services import graph as graph_service
+from app.services.embedding import EmbeddingClient
 from app.services import metadata as metadata_service
 
 
@@ -301,6 +302,7 @@ def create_entities(
     driver: Any,
     ontology_id: str,
     class_ids: dict[str, str],
+    embedding_client: EmbeddingClient,
 ) -> dict[str, str]:
     entity_ids: dict[str, str] = {}
     for class_name, entities in ENTITY_SPECS.items():
@@ -315,6 +317,7 @@ def create_entities(
                     aliases=entity_spec.get("aliases", []),
                     properties=entity_spec["properties"],
                 ),
+                embedding_client,
             )
             entity_ids[entity["name"]] = entity["id"]
     return entity_ids
@@ -415,7 +418,8 @@ def main() -> None:
     settings = Settings()
     session_factory = create_session_factory(settings)
     driver = create_neo4j_driver(settings)
-    ensure_graph_constraints(driver)
+    ensure_graph_constraints(driver, settings.embedding_dimensions)
+    embedding_client = EmbeddingClient(settings)
 
     with session_factory() as session:
         cleanup_existing_demo(session, driver)
@@ -437,7 +441,9 @@ def main() -> None:
         )
         class_ids = create_classes(session, ontology.id)
         relation_type_ids = create_relation_types(session, ontology.id, class_ids)
-        entity_ids = create_entities(session, driver, ontology.id, class_ids)
+        entity_ids = create_entities(
+            session, driver, ontology.id, class_ids, embedding_client
+        )
         relation_count = create_relations(session, driver, ontology.id, relation_type_ids, entity_ids)
 
         print(f"Seeded project: {project.name} ({project.id})")

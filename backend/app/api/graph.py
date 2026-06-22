@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver
+from app.api.deps import get_db_session, get_embedding_client, get_neo4j_driver
 from app.api.schemas import (
     EntityCreate,
     EntityExplainRead,
@@ -16,8 +16,32 @@ from app.api.schemas import (
     ValidationResult,
 )
 from app.services import graph as service
+from app.services.embedding import EmbeddingClient
 
 router = APIRouter(tags=["graph"])
+
+
+@router.get("/entities/search", response_model=EntitySearchResult)
+def search_all_entities(
+    query: str,
+    mode: str = Query(default="hybrid", pattern="^(text|vector|hybrid)$"),
+    ontology_id: str | None = None,
+    class_id: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
+):
+    return service.search_all_entities(
+        session,
+        driver,
+        query,
+        class_id,
+        ontology_id,
+        limit,
+        mode,
+        embedding_client,
+    )
 
 
 @router.get("/ontologies/{ontology_id}/entities", response_model=list[EntityRead])
@@ -35,12 +59,16 @@ def list_entities(
 def search_entities(
     ontology_id: str,
     query: str = "",
+    mode: str = Query(default="text", pattern="^(text|vector|hybrid)$"),
     class_id: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_db_session),
     driver: Driver = Depends(get_neo4j_driver),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
 ):
-    return service.search_entities(session, driver, ontology_id, query, class_id, limit)
+    return service.search_entities(
+        session, driver, ontology_id, query, class_id, limit, mode, embedding_client
+    )
 
 
 @router.post(
@@ -53,8 +81,9 @@ def create_entity(
     payload: EntityCreate,
     session: Session = Depends(get_db_session),
     driver: Driver = Depends(get_neo4j_driver),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
 ):
-    return service.create_entity(session, driver, ontology_id, payload)
+    return service.create_entity(session, driver, ontology_id, payload, embedding_client)
 
 
 @router.get("/ontologies/{ontology_id}/entities/{entity_id}", response_model=EntityWithRelationsRead)
@@ -135,8 +164,11 @@ def update_entity(
     payload: EntityUpdate,
     session: Session = Depends(get_db_session),
     driver: Driver = Depends(get_neo4j_driver),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
 ):
-    return service.update_entity(session, driver, ontology_id, entity_id, payload)
+    return service.update_entity(
+        session, driver, ontology_id, entity_id, payload, embedding_client
+    )
 
 
 @router.delete("/ontologies/{ontology_id}/entities/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)

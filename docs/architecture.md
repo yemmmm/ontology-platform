@@ -21,7 +21,7 @@ PostgreSQL
   relation types, constraints table, ontology versions table, API keys table.
 
 Neo4j
-  Knowledge graph instances: Entity nodes and typed relationships.
+  Knowledge graph instances, typed relationships, entity embeddings, and ANN vector index.
 
 MCP
   FastMCP tools for search, get entity, related entities, validation,
@@ -53,7 +53,11 @@ Graph data in Neo4j:
   class_label,
   name,
   aliases,
-  properties_json
+  properties_json,
+  embedding,
+  embedding_model,
+  embedding_dimensions,
+  embedding_source_hash
 })
 ```
 
@@ -69,7 +73,10 @@ Graph data in Neo4j:
 }]->(:Entity)
 ```
 
-`properties_json` is decoded by the API/MCP layer so clients still see `properties` as JSON objects. Dynamic Neo4j labels and relationship types are normalized by the backend before use.
+`properties_json` is decoded by the API/MCP layer so clients still see `properties` as JSON objects.
+Embedding fields stay internal. Entity name, aliases, and canonical properties JSON are embedded with
+Zhipu Embedding-3 and queried through a 1024-dimensional cosine ANN index. Dynamic Neo4j labels and
+relationship types are normalized by the backend before use.
 
 PostgreSQL remains authoritative for ontology metadata copied onto graph instances. Class and
 relation-type updates propagate their normalized names to Neo4j. Metadata deletion is rejected while
@@ -108,7 +115,6 @@ These are not implemented in the MVP:
 
 - full user accounts, RBAC, or organization tenancy
 - RDF/OWL/SHACL as the primary internal model
-- vector search or embedding indexes
 - ontology version publishing and migration workflows
 - automatic extraction from code, documents, schemas, or logs
 - graph inference, rule engines, or reasoning services

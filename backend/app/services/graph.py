@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 from neo4j import Driver
@@ -16,10 +16,22 @@ from app.services.metadata import (
     new_id,
     not_found,
 )
+from app.services.embedding import (
+    EmbeddingClient,
+    EmbeddingServiceError,
+    create_entity_embedding,
+    embedding_properties,
+)
+
+SearchMode = Literal["text", "vector", "hybrid"]
 
 
 def graph_conflict(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
+
+
+def embedding_unavailable(exc: EmbeddingServiceError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
 def clamp_limit(limit: int, maximum: int = 100) -> int:
@@ -178,6 +190,7 @@ def create_entity(
     driver: Driver,
     ontology_id: str,
     payload: EntityCreate,
+    embedding_client: EmbeddingClient,
 ) -> dict[str, Any]:
     ontology, class_, classes_by_id = ensure_ontology_and_class(session, ontology_id, payload.class_id)
     validate_entity_properties(class_, classes_by_id, payload.properties)
@@ -192,6 +205,10 @@ def create_entity(
         "aliases": payload.aliases,
         "properties": payload.properties,
     }
+    try:
+        values.update(embedding_properties(create_entity_embedding(embedding_client, values)))
+    except EmbeddingServiceError as exc:
+        raise embedding_unavailable(exc) from exc
     return graph_repo.create_entity_node(driver, class_.normalized_label, values)
 
 
@@ -223,21 +240,129 @@ def search_entities(
     query: str,
     class_id: str | None = None,
     limit: int = 20,
+    mode: SearchMode = "text",
+    embedding_client: EmbeddingClient | None = None,
 ) -> dict[str, Any]:
     ontology = get_ontology(session, ontology_id)
-    if class_id is not None:
-        class_ = get_class_with_properties(session, class_id)
-        if class_.ontology_id != ontology_id:
-            raise bad_request("Class must belong to the ontology")
-    results = graph_repo.search_entity_nodes(
+    return _search_entities(
+        session,
         driver,
-        ontology.project_id,
-        ontology.id,
         query,
         class_id,
-        clamp_limit(limit),
+        limit,
+        mode,
+        embedding_client,
+        ontology.project_id,
+        ontology.id,
     )
+
+
+def search_all_entities(
+    session: Session,
+    driver: Driver,
+    query: str,
+    class_id: str | None = None,
+    ontology_id: str | None = None,
+    limit: int = 20,
+    mode: SearchMode = "hybrid",
+    embedding_client: EmbeddingClient | None = None,
+) -> dict[str, Any]:
+    project_id = None
+    if ontology_id is not None:
+        ontology = get_ontology(session, ontology_id)
+        project_id = ontology.project_id
+    return _search_entities(
+        session,
+        driver,
+        query,
+        class_id,
+        limit,
+        mode,
+        embedding_client,
+        project_id,
+        ontology_id,
+    )
+
+
+def _search_entities(
+    session: Session,
+    driver: Driver,
+    query: str,
+    class_id: str | None,
+    limit: int,
+    mode: SearchMode,
+    embedding_client: EmbeddingClient | None,
+    project_id: str | None,
+    ontology_id: str | None,
+) -> dict[str, Any]:
+    if class_id is not None:
+        class_ = get_class_with_properties(session, class_id)
+        if ontology_id is not None and class_.ontology_id != ontology_id:
+            raise bad_request("Class must belong to the ontology")
+        if ontology_id is None:
+            ontology_id = class_.ontology_id
+            ontology = get_ontology(session, ontology_id)
+            project_id = ontology.project_id
+    bounded_limit = clamp_limit(limit)
+    if mode == "text":
+        results = graph_repo.search_entity_nodes(
+            driver, project_id, ontology_id, query, class_id, bounded_limit
+        )
+    elif mode in {"vector", "hybrid"}:
+        if not query.strip():
+            raise bad_request("Query must not be empty for vector search")
+        if embedding_client is None:
+            raise embedding_unavailable(EmbeddingServiceError("Embedding client is unavailable"))
+        try:
+            vector = embedding_client.embed([query[:2000]])[0]
+        except EmbeddingServiceError as exc:
+            raise embedding_unavailable(exc) from exc
+        candidate_limit = min(max(bounded_limit + 10, bounded_limit * 2), 200)
+        vector_results = graph_repo.search_entity_vectors(
+            driver,
+            vector,
+            project_id,
+            ontology_id,
+            class_id,
+            candidate_limit,
+            bounded_limit,
+        )
+        if mode == "vector":
+            results = vector_results
+        else:
+            text_results = graph_repo.search_entity_nodes(
+                driver, project_id, ontology_id, query, class_id, bounded_limit
+            )
+            results = _reciprocal_rank_fusion(text_results, vector_results, bounded_limit)
+    else:
+        raise bad_request(f"Unsupported search mode: {mode}")
     return {"results": results, "count": len(results)}
+
+
+def _reciprocal_rank_fusion(
+    text_results: list[dict[str, Any]],
+    vector_results: list[dict[str, Any]],
+    limit: int,
+    rank_constant: int = 60,
+) -> list[dict[str, Any]]:
+    fused: dict[str, dict[str, Any]] = {}
+    sources: dict[str, set[str]] = {}
+    scores: dict[str, float] = {}
+    for source, results in (("text", text_results), ("vector", vector_results)):
+        for rank, entity in enumerate(results, start=1):
+            entity_id = entity["id"]
+            fused[entity_id] = entity
+            sources.setdefault(entity_id, set()).add(source)
+            scores[entity_id] = scores.get(entity_id, 0.0) + 1.0 / (rank_constant + rank)
+    ranked_ids = sorted(scores, key=lambda entity_id: (-scores[entity_id], entity_id))[:limit]
+    return [
+        {
+            **fused[entity_id],
+            "score": scores[entity_id],
+            "match_source": "hybrid" if len(sources[entity_id]) == 2 else next(iter(sources[entity_id])),
+        }
+        for entity_id in ranked_ids
+    ]
 
 
 def get_entity(
@@ -289,6 +414,7 @@ def update_entity(
     ontology_id: str,
     entity_id: str,
     payload: EntityUpdate,
+    embedding_client: EmbeddingClient,
 ) -> dict[str, Any]:
     ontology = get_ontology(session, ontology_id)
     entity = graph_repo.get_entity_node(driver, entity_id, ontology.project_id, ontology.id)
@@ -299,6 +425,17 @@ def update_entity(
         class_ = get_class_with_properties(session, entity["class_id"])
         classes_by_id = list_classes_for_ontology(session, ontology_id)
         validate_entity_properties(class_, classes_by_id, data["properties"])
+    if {"name", "aliases", "properties"}.intersection(data):
+        embedding_entity = {
+            **entity,
+            **{key: value for key, value in data.items() if key in {"name", "aliases", "properties"}},
+        }
+        try:
+            data.update(
+                embedding_properties(create_entity_embedding(embedding_client, embedding_entity))
+            )
+        except EmbeddingServiceError as exc:
+            raise embedding_unavailable(exc) from exc
     updated = graph_repo.update_entity_node(driver, entity_id, ontology.project_id, ontology.id, data)
     if updated is None:
         raise not_found("Entity")

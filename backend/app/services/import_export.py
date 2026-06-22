@@ -15,6 +15,7 @@ from app.api.schemas import (
 from app.repositories.models import OntologyModel, RelationTypeModel
 from app.services import graph as graph_service
 from app.services import metadata as metadata_service
+from app.services.embedding import EmbeddingClient
 
 
 def ontology_to_dict(ontology: OntologyModel) -> dict[str, Any]:
@@ -82,6 +83,7 @@ def import_ontology(
     driver: Driver,
     project_id: str,
     payload: OntologyImportPayload,
+    embedding_client: EmbeddingClient,
 ) -> dict[str, Any]:
     ontology = metadata_service.create_ontology(
         session,
@@ -159,6 +161,7 @@ def import_ontology(
                 properties=item.get("properties", {}),
                 ontology_version_id=item.get("ontology_version_id"),
             ),
+            embedding_client,
         )
         if item.get("id"):
             entity_id_map[item["id"]] = created["id"]

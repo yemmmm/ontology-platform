@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.repositories.models import ClassModel, PropertyDefModel
 from app.services import graph
+from app.services.embedding import EmbeddingServiceError
 
 
 def make_property(
@@ -184,3 +185,46 @@ def test_delete_relation_reports_missing_relation() -> None:
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Relation not found"
+
+
+def test_reciprocal_rank_fusion_marks_shared_results() -> None:
+    text = [
+        {"id": "shared", "score": 1.0, "match_source": "text"},
+        {"id": "text", "score": 0.8, "match_source": "text"},
+    ]
+    vector = [
+        {"id": "vector", "score": 0.9, "match_source": "vector"},
+        {"id": "shared", "score": 0.7, "match_source": "vector"},
+    ]
+
+    results = graph._reciprocal_rank_fusion(text, vector, limit=3)
+
+    assert results[0]["id"] == "shared"
+    assert results[0]["match_source"] == "hybrid"
+    assert {item["id"] for item in results} == {"shared", "text", "vector"}
+
+
+def test_create_entity_does_not_write_when_embedding_fails() -> None:
+    ontology = SimpleNamespace(id="ontology", project_id="project", current_version_id=None)
+    class_ = make_class("person")
+    embedding_client = Mock()
+    embedding_client.model = "embedding-3"
+    embedding_client.dimensions = 1024
+    embedding_client.embed.side_effect = EmbeddingServiceError("provider unavailable")
+
+    with (
+        patch.object(graph, "ensure_ontology_and_class", return_value=(ontology, class_, {})),
+        patch.object(graph, "validate_entity_properties"),
+        patch.object(graph.graph_repo, "create_entity_node") as create_node,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        graph.create_entity(
+            Mock(),
+            Mock(),
+            "ontology",
+            graph.EntityCreate(class_id="person", name="Alice"),
+            embedding_client,
+        )
+
+    assert exc_info.value.status_code == 502
+    create_node.assert_not_called()

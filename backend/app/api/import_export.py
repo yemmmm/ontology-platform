@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, status
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver
+from app.api.deps import get_db_session, get_embedding_client, get_neo4j_driver
 from app.api.schemas import OntologyExportRead, OntologyImportPayload
 from app.services import import_export as service
+from app.services.embedding import EmbeddingClient
 
 router = APIRouter(tags=["import-export"])
 
@@ -28,5 +29,6 @@ def import_ontology(
     payload: OntologyImportPayload,
     session: Session = Depends(get_db_session),
     driver: Driver = Depends(get_neo4j_driver),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
 ):
-    return service.import_ontology(session, driver, project_id, payload)
+    return service.import_ontology(session, driver, project_id, payload, embedding_client)

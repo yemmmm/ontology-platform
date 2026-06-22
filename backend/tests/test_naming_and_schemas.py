@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.schemas import AgentTestRequest, EntityCreate, ProjectCreate
+from app.core.config import Settings
 from app.domain.naming import normalize_neo4j_label, normalize_neo4j_relationship_type
 
 
@@ -47,6 +48,25 @@ def test_schema_rejects_empty_project_name() -> None:
         ProjectCreate(name="")
 
 
-def test_agent_request_rejects_temperature_outside_supported_range() -> None:
+def test_agent_request_contains_only_test_input() -> None:
+    request = AgentTestRequest(ontology_id="ontology", question="Who is Alice?")
+
+    assert request.model_dump() == {
+        "ontology_id": "ontology",
+        "question": "Who is Alice?",
+    }
+    assert {"model", "base_url", "temperature"}.isdisjoint(AgentTestRequest.model_fields)
+
+
+def test_agent_request_rejects_model_overrides() -> None:
     with pytest.raises(ValidationError):
-        AgentTestRequest(ontology_id="ontology", question="Who is Alice?", temperature=2.1)
+        AgentTestRequest(
+            ontology_id="ontology",
+            question="Who is Alice?",
+            model="request-level-model",
+        )
+
+
+def test_settings_rejects_temperature_outside_supported_range() -> None:
+    with pytest.raises(ValidationError):
+        Settings(llm_temperature=2.1, _env_file=None)

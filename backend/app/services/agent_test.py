@@ -9,25 +9,22 @@ from sqlalchemy.orm import Session
 from app.api.schemas import AgentTestRequest
 from app.core.config import Settings
 from app.services import graph as graph_service
+from app.services.embedding import EmbeddingClient
 
 
 def _call_openai_compatible(
     settings: Settings,
-    payload: AgentTestRequest,
     prompt: str,
 ) -> tuple[str | None, str | None]:
-    model = payload.model or settings.llm_model
+    model = settings.llm_model
     api_key = settings.llm_api_key
     if not api_key or not model:
         return None, "LLM_API_KEY and LLM_MODEL are not configured; returned graph-context answer."
 
-    base_url = (payload.base_url or settings.llm_base_url).rstrip("/")
-    temperature = payload.temperature
-    if temperature is None:
-        temperature = settings.llm_temperature
+    base_url = settings.llm_base_url.rstrip("/")
     body = {
         "model": model,
-        "temperature": temperature,
+        "temperature": settings.llm_temperature,
         "messages": [
             {
                 "role": "system",
@@ -67,6 +64,7 @@ def run_agent_test(
     driver: Driver,
     settings: Settings,
     payload: AgentTestRequest,
+    embedding_client: EmbeddingClient,
 ) -> dict[str, Any]:
     warnings: list[str] = []
     errors: list[str] = []
@@ -79,6 +77,8 @@ def run_agent_test(
         payload.question,
         class_id=None,
         limit=5,
+        mode="hybrid",
+        embedding_client=embedding_client,
     )
     tool_calls.append(
         {
@@ -114,7 +114,7 @@ def run_agent_test(
     context_text = json.dumps(graph_context, ensure_ascii=False, default=str, indent=2)
     prompt = f"Question:\n{payload.question}\n\nOntology graph context:\n{context_text}"
 
-    answer, warning = _call_openai_compatible(settings, payload, prompt)
+    answer, warning = _call_openai_compatible(settings, prompt)
     if warning:
         warnings.append(warning)
     if answer is None:

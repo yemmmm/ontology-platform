@@ -29,18 +29,20 @@ On failure they return:
 
 ### `search_entities`
 
-Search entities inside one ontology.
+Recall entities globally using hybrid search by default. Ontology and class filters are optional.
 
 ```json
 {
-  "ontology_id": "ontology-id",
   "query": "payment",
+  "mode": "hybrid",
+  "ontology_id": "optional-ontology-id",
   "class_id": "optional-class-id",
   "limit": 10
 }
 ```
 
-Returns `data.results` and `data.count`.
+`mode` accepts `text`, `vector`, or `hybrid`. Returns `data.results` and `data.count`; each result
+includes a relevance `score` and `match_source`.
 
 ### `get_entity`
 

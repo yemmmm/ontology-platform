@@ -11,12 +11,14 @@ from app.core.config import Settings
 from app.repositories.neo4j import create_neo4j_driver, ensure_graph_constraints
 from app.repositories.postgres import create_session_factory
 from app.services import graph as graph_service
+from app.services.embedding import EmbeddingClient
 
 mcp = FastMCP("ontology-platform")
 
 _settings: Settings | None = None
 _session_factory: sessionmaker | None = None
 _driver: Driver | None = None
+_embedding_client: EmbeddingClient | None = None
 
 T = TypeVar("T")
 
@@ -25,23 +27,25 @@ def _jsonable(data: Any) -> Any:
     return json.loads(json.dumps(data, ensure_ascii=False, default=str))
 
 
-def _resources() -> tuple[sessionmaker, Driver]:
-    global _settings, _session_factory, _driver
+def _resources() -> tuple[sessionmaker, Driver, EmbeddingClient]:
+    global _settings, _session_factory, _driver, _embedding_client
     if _settings is None:
         _settings = Settings()
     if _session_factory is None:
         _session_factory = create_session_factory(_settings)
     if _driver is None:
         _driver = create_neo4j_driver(_settings)
-        ensure_graph_constraints(_driver)
-    return _session_factory, _driver
+        ensure_graph_constraints(_driver, _settings.embedding_dimensions)
+    if _embedding_client is None:
+        _embedding_client = EmbeddingClient(_settings)
+    return _session_factory, _driver, _embedding_client
 
 
-def _run_tool(fn: Callable[[Session, Driver], T]) -> dict[str, Any]:
-    session_factory, driver = _resources()
+def _run_tool(fn: Callable[[Session, Driver, EmbeddingClient], T]) -> dict[str, Any]:
+    session_factory, driver, embedding_client = _resources()
     try:
         with session_factory() as session:
-            return {"ok": True, "data": _jsonable(fn(session, driver))}
+            return {"ok": True, "data": _jsonable(fn(session, driver, embedding_client))}
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         return {"ok": False, "error": detail, "status_code": exc.status_code}
@@ -51,20 +55,23 @@ def _run_tool(fn: Callable[[Session, Driver], T]) -> dict[str, Any]:
 
 @mcp.tool()
 def search_entities(
-    ontology_id: str,
     query: str,
+    ontology_id: str | None = None,
     class_id: str | None = None,
     limit: int = 10,
+    mode: str = "hybrid",
 ) -> dict[str, Any]:
-    """Search ontology graph entities by text and optional class filter."""
+    """Recall graph entities globally with optional ontology and class filters."""
     return _run_tool(
-        lambda session, driver: graph_service.search_entities(
+        lambda session, driver, embedding_client: graph_service.search_all_entities(
             session,
             driver,
-            ontology_id,
             query,
             class_id,
+            ontology_id,
             limit,
+            mode,
+            embedding_client,
         ),
     )
 
@@ -78,7 +85,7 @@ def get_entity(
 ) -> dict[str, Any]:
     """Fetch one entity and, optionally, its incoming/outgoing relations."""
     return _run_tool(
-        lambda session, driver: graph_service.get_entity_with_relations(
+        lambda session, driver, _embedding_client: graph_service.get_entity_with_relations(
             session,
             driver,
             ontology_id,
@@ -101,7 +108,7 @@ def find_related_entities(
 ) -> dict[str, Any]:
     """Find graph neighbors for an entity with semantic filters."""
     return _run_tool(
-        lambda session, driver: graph_service.find_related_entities(
+        lambda session, driver, _embedding_client: graph_service.find_related_entities(
             session,
             driver,
             ontology_id,
@@ -123,7 +130,7 @@ def validate_entity(
 ) -> dict[str, Any]:
     """Validate entity properties against effective ontology class schema."""
     return _run_tool(
-        lambda session, _driver: graph_service.validate_entity_payload(
+        lambda session, _driver, _embedding_client: graph_service.validate_entity_payload(
             session,
             ontology_id,
             class_id,
@@ -141,7 +148,7 @@ def explain_entity(
 ) -> dict[str, Any]:
     """Return one entity with schema, relation context, and a short explanation."""
     return _run_tool(
-        lambda session, driver: graph_service.explain_entity(
+        lambda session, driver, _embedding_client: graph_service.explain_entity(
             session,
             driver,
             ontology_id,

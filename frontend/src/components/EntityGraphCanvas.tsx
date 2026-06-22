@@ -1,3 +1,4 @@
+import dagre from "@dagrejs/dagre";
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
 import { useEffect, useMemo, useRef } from "react";
@@ -14,7 +15,10 @@ type EntityGraphCanvasProps = {
   classFilter: string[];
   searchQuery: string;
   classLabels?: string[];
+  layoutMode: EntityGraphLayout;
 };
+
+export type EntityGraphLayout = "hierarchical" | "force";
 
 export const CLASS_PALETTE = [
   "#6c4df6",
@@ -40,6 +44,44 @@ const NODE_MIN_SIZE = 24;
 const NODE_MAX_SIZE = 56;
 const LABEL_VISIBILITY_THRESHOLD = 24;
 const EDGE_LABEL_GAP = 4;
+const HIERARCHICAL_NODE_SEPARATION = 38;
+const HIERARCHICAL_RANK_SEPARATION = 130;
+
+function hierarchicalPositions(cy: Core) {
+  const graph = new dagre.graphlib.Graph({ multigraph: true })
+    .setDefaultEdgeLabel(() => ({}))
+    .setGraph({
+      acyclicer: "greedy",
+      edgesep: 28,
+      marginx: 40,
+      marginy: 40,
+      nodesep: HIERARCHICAL_NODE_SEPARATION,
+      rankdir: "LR",
+      ranker: "network-simplex",
+      ranksep: HIERARCHICAL_RANK_SEPARATION,
+    });
+
+  cy.nodes()
+    .sort((left, right) => left.id().localeCompare(right.id()))
+    .forEach((node) => {
+      const baseSize = Number(node.data("baseSize")) || NODE_MIN_SIZE;
+      const labelWidth = Math.min(140, Math.max(baseSize, String(node.data("label")).length * 7));
+      graph.setNode(node.id(), { height: baseSize + 22, width: labelWidth });
+    });
+  cy.edges()
+    .sort((left, right) => left.id().localeCompare(right.id()))
+    .forEach((edge) => {
+      graph.setEdge(edge.source().id(), edge.target().id(), {}, edge.id());
+    });
+
+  dagre.layout(graph);
+  return Object.fromEntries(
+    cy.nodes().map((node) => {
+      const position = graph.node(node.id());
+      return [node.id(), { x: position?.x ?? 0, y: position?.y ?? 0 }];
+    }),
+  );
+}
 
 function computeDegreeStats(degrees: number[]) {
   if (degrees.length === 0) return { mean: 0, std: 0 };
@@ -342,30 +384,45 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     cy.elements().remove();
     if (elements.length === 0) return;
     cy.add(elements);
-    const shouldRandomize = cy.nodes().length > 12;
-    const layout = cy.layout({
-      name: "fcose",
+    const sharedLayoutOptions = {
       animate: true,
       animationDuration: 320,
       animationEasing: "ease-out",
-      randomize: shouldRandomize,
-      nodeSep: 60,
-      idealEdgeLength: 130,
-      uniformNodeDimensions: true,
-    } as unknown as cytoscape.LayoutOptions);
+      fit: false,
+    };
+    const layout = props.layoutMode === "hierarchical"
+      ? cy.layout({
+          ...sharedLayoutOptions,
+          name: "preset",
+          positions: hierarchicalPositions(cy),
+        } as unknown as cytoscape.LayoutOptions)
+      : cy.layout({
+          ...sharedLayoutOptions,
+          name: "fcose",
+          idealEdgeLength: 130,
+          nodeRepulsion: 7000,
+          nodeSeparation: 90,
+          numIter: 3200,
+          quality: "default",
+          randomize: cy.nodes().length > 12,
+          tile: true,
+          tilingPaddingHorizontal: 24,
+          tilingPaddingVertical: 24,
+          uniformNodeDimensions: true,
+        } as unknown as cytoscape.LayoutOptions);
     layout.one("layoutstop", () => {
       applyEdgeLabelOffsets(cy);
       cy.fit(undefined, 50);
       applyLabelVisibility(cy);
     });
     layout.run();
-  }, [elements]);
+  }, [elements, props.layoutMode]);
 
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     applyVisualState(cy, props.entities, props.selectedEntityId, props.searchQuery);
-  }, [props.selectedEntityId, props.searchQuery, props.entities, elements]);
+  }, [props.selectedEntityId, props.searchQuery, props.entities, props.layoutMode, elements]);
 
   return <div className="entityGraphCanvas" ref={containerRef} />;
 }

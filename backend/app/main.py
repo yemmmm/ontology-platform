@@ -4,6 +4,7 @@ from app.api.deps import build_neo4j_driver, build_session_factory
 from app.api.routes import router
 from app.core.config import Settings
 from app.repositories.neo4j import ensure_graph_constraints
+from app.services.embedding import EmbeddingClient
 
 
 def create_app() -> FastAPI:
@@ -12,11 +13,12 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.session_factory = build_session_factory(settings)
     app.state.neo4j_driver = build_neo4j_driver(settings)
+    app.state.embedding_client = EmbeddingClient(settings)
     app.include_router(router, prefix="/api")
 
     @app.on_event("startup")
     def initialize_graph() -> None:
-        ensure_graph_constraints(app.state.neo4j_driver)
+        ensure_graph_constraints(app.state.neo4j_driver, settings.embedding_dimensions)
 
     @app.on_event("shutdown")
     def close_resources() -> None:

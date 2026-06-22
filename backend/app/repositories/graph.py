@@ -283,23 +283,33 @@ def list_entity_nodes(
 
 def search_entity_nodes(
     driver: Driver,
-    project_id: str,
-    ontology_id: str,
+    project_id: str | None,
+    ontology_id: str | None,
     query_text: str,
     class_id: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
     query = """
-    MATCH (entity:Entity {project_id: $project_id, ontology_id: $ontology_id})
-    WHERE ($class_id IS NULL OR entity.class_id = $class_id)
+    MATCH (entity:Entity)
+    WHERE ($project_id IS NULL OR entity.project_id = $project_id)
+      AND ($ontology_id IS NULL OR entity.ontology_id = $ontology_id)
+      AND ($class_id IS NULL OR entity.class_id = $class_id)
       AND (
         $query_text = ""
         OR toLower(entity.name) CONTAINS $query_text
         OR any(alias IN coalesce(entity.aliases, []) WHERE toLower(alias) CONTAINS $query_text)
         OR toLower(coalesce(entity.properties_json, "")) CONTAINS $query_text
       )
-    RETURN entity
-    ORDER BY entity.name ASC
+    WITH entity, CASE
+      WHEN toLower(entity.name) = $query_text THEN 1.0
+      WHEN any(alias IN coalesce(entity.aliases, []) WHERE toLower(alias) = $query_text) THEN 0.95
+      WHEN toLower(entity.name) CONTAINS $query_text THEN 0.8
+      WHEN any(alias IN coalesce(entity.aliases, []) WHERE toLower(alias) CONTAINS $query_text) THEN 0.7
+      WHEN $query_text = "" THEN 0.1
+      ELSE 0.5
+    END AS score
+    RETURN entity, score
+    ORDER BY score DESC, entity.name ASC
     LIMIT $limit
     """
     with driver.session() as session:
@@ -311,7 +321,94 @@ def search_entity_nodes(
             class_id=class_id,
             limit=limit,
         )
-        return [_entity_from_node(record["entity"]) for record in records]
+        return [
+            {**_entity_from_node(record["entity"]), "score": record["score"], "match_source": "text"}
+            for record in records
+        ]
+
+
+def search_entity_vectors(
+    driver: Driver,
+    vector: list[float],
+    project_id: str | None,
+    ontology_id: str | None,
+    class_id: str | None,
+    candidate_limit: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    query = """
+    CALL db.index.vector.queryNodes('entity_embedding', $candidate_limit, $vector)
+    YIELD node AS entity, score
+    WHERE ($project_id IS NULL OR entity.project_id = $project_id)
+      AND ($ontology_id IS NULL OR entity.ontology_id = $ontology_id)
+      AND ($class_id IS NULL OR entity.class_id = $class_id)
+    RETURN entity, score
+    ORDER BY score DESC
+    LIMIT $limit
+    """
+    with driver.session() as session:
+        records = session.run(
+            query,
+            vector=vector,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            class_id=class_id,
+            candidate_limit=candidate_limit,
+            limit=limit,
+        )
+        return [
+            {
+                **_entity_from_node(record["entity"]),
+                "score": record["score"],
+                "match_source": "vector",
+            }
+            for record in records
+        ]
+
+
+def list_entity_embedding_records(
+    driver: Driver,
+    ontology_id: str | None,
+    after_id: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    query = """
+    MATCH (entity:Entity)
+    WHERE ($ontology_id IS NULL OR entity.ontology_id = $ontology_id)
+      AND entity.id > $after_id
+    RETURN entity
+    ORDER BY entity.id ASC
+    LIMIT $limit
+    """
+    with driver.session() as session:
+        records = session.run(query, ontology_id=ontology_id, after_id=after_id, limit=limit)
+        result = []
+        for record in records:
+            node = record["entity"]
+            raw = dict(node)
+            result.append(
+                {
+                    **_entity_from_node(node),
+                    "embedding_model": raw.get("embedding_model"),
+                    "embedding_dimensions": raw.get("embedding_dimensions"),
+                    "embedding_source_hash": raw.get("embedding_source_hash"),
+                    "has_embedding": isinstance(raw.get("embedding"), list),
+                }
+            )
+        return result
+
+
+def update_entity_embedding(
+    driver: Driver,
+    entity_id: str,
+    values: dict[str, Any],
+) -> None:
+    with driver.session() as session:
+        session.run(
+            "MATCH (entity:Entity {id: $entity_id}) SET entity += $values",
+            entity_id=entity_id,
+            values=values,
+        ).consume()
 
 
 def delete_entity_node(

@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 from app.api.schemas import OntologyImportPayload
 from app.services import import_export
@@ -66,7 +66,9 @@ def test_import_ontology_remaps_cross_references() -> None:
         patch.object(import_export.graph_service, "create_relation") as create_relation,
         patch.object(import_export, "export_ontology", return_value={"exported": True}),
     ):
-        result = import_export.import_ontology(object(), object(), "project", payload)
+        result = import_export.import_ontology(
+            object(), object(), "project", payload, Mock(name="embedding_client")
+        )
 
     assert result == {"exported": True}
     assert create_class.call_args_list[1].args[2].parent_class_ids == ["new-person"]

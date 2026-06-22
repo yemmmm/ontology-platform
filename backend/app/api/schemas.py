@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -228,8 +228,13 @@ class ValidationResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class EntitySearchHit(EntityRead):
+    score: float
+    match_source: Literal["text", "vector", "hybrid"]
+
+
 class EntitySearchResult(BaseModel):
-    results: list[EntityRead]
+    results: list[EntitySearchHit]
     count: int
 
 
@@ -263,11 +268,10 @@ class OntologyImportPayload(BaseModel):
 
 
 class AgentTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ontology_id: str
     question: str = Field(min_length=1, max_length=4000)
-    model: str | None = None
-    base_url: str | None = None
-    temperature: float | None = Field(default=None, ge=0, le=2)
 
 
 class AgentTestResponse(BaseModel):
