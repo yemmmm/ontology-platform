@@ -96,6 +96,57 @@ function applyEdgeLabelOffsets(cy: Core) {
   });
 }
 
+function applyVisualState(
+  cy: Core,
+  entities: Entity[],
+  selectedEntityId: string | null,
+  searchQuery: string,
+) {
+  cy.nodes().removeClass("dimmed highlighted").unselect();
+  cy.edges().removeClass("dimmed highlighted");
+
+  if (selectedEntityId) {
+    const selectedNode = cy.getElementById(selectedEntityId);
+    if (selectedNode.nonempty()) {
+      selectedNode.select();
+      const connectedEdges = selectedNode.connectedEdges();
+      const neighborhoodIds = new Set<string>([selectedEntityId]);
+
+      connectedEdges.forEach((edge) => {
+        neighborhoodIds.add(edge.source().id());
+        neighborhoodIds.add(edge.target().id());
+        edge.addClass("highlighted");
+      });
+      cy.nodes().forEach((node) => {
+        if (node.id() === selectedEntityId) return;
+        node.addClass(neighborhoodIds.has(node.id()) ? "highlighted" : "dimmed");
+      });
+      cy.edges().forEach((edge) => {
+        if (!edge.hasClass("highlighted")) edge.addClass("dimmed");
+      });
+      return;
+    }
+  }
+
+  const query = searchQuery.trim().toLowerCase();
+  if (!query) return;
+  const matched = new Set<string>();
+  cy.nodes().forEach((node) => {
+    const label = String(node.data("label") || "").toLowerCase();
+    const entity = entities.find((item) => item.id === node.id());
+    const aliasHit = entity?.aliases.some((alias) => alias.toLowerCase().includes(query)) ?? false;
+    if (label.includes(query) || aliasHit) {
+      matched.add(node.id());
+    } else {
+      node.addClass("dimmed");
+    }
+  });
+  cy.edges().forEach((edge) => {
+    const connected = matched.has(edge.source().id()) || matched.has(edge.target().id());
+    if (!connected) edge.addClass("dimmed");
+  });
+}
+
 const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: "node",
@@ -156,6 +207,21 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "text-rotation": "autorotate",
       "text-margin-x": (edge: EdgeSingular) => Number(edge.data("labelMarginX")) || 0,
       "text-margin-y": (edge: EdgeSingular) => Number(edge.data("labelMarginY")) || 0,
+    },
+  },
+  {
+    selector: "edge.highlighted",
+    style: {
+      width: 3,
+      "line-color": "#6c4df6",
+      "line-opacity": 0.95,
+      "target-arrow-color": "#6c4df6",
+      "arrow-scale": 1,
+      color: "#5d3fec",
+      "font-size": 6,
+      "font-weight": 600,
+      "text-opacity": 1,
+      "z-index": 10,
     },
   },
   {
@@ -298,40 +364,8 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    const query = props.searchQuery.trim().toLowerCase();
-    cy.nodes().removeClass("dimmed highlighted");
-    cy.edges().removeClass("dimmed");
-    if (!query) return;
-    const matched = new Set<string>();
-    cy.nodes().forEach((node) => {
-      const label = String(node.data("label") || "").toLowerCase();
-      const aliases: string[] = [];
-      const entity = props.entities.find((item) => item.id === node.id());
-      if (entity) aliases.push(...entity.aliases.map((alias) => alias.toLowerCase()));
-      const hit = label.includes(query) || aliases.some((alias) => alias.includes(query));
-      if (hit) {
-        matched.add(node.id());
-      } else {
-        node.addClass("dimmed");
-      }
-    });
-    cy.edges().forEach((edge) => {
-      const connected = matched.has(edge.source().id()) || matched.has(edge.target().id());
-      if (!connected) edge.addClass("dimmed");
-    });
-  }, [props.searchQuery, props.entities, elements]);
-
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy) return;
-    cy.nodes().unselect();
-    if (props.selectedEntityId) {
-      const node = cy.getElementById(props.selectedEntityId);
-      if (node && node.nonempty()) {
-        node.select();
-      }
-    }
-  }, [props.selectedEntityId, elements]);
+    applyVisualState(cy, props.entities, props.selectedEntityId, props.searchQuery);
+  }, [props.selectedEntityId, props.searchQuery, props.entities, elements]);
 
   return <div className="entityGraphCanvas" ref={containerRef} />;
 }
