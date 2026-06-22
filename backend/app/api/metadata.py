@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Response, status
+from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session
+from app.api.deps import get_db_session, get_neo4j_driver
 from app.api.schemas import (
     ClassCreate,
     ClassRead,
@@ -21,6 +22,7 @@ from app.api.schemas import (
     RelationTypeUpdate,
 )
 from app.services import metadata as service
+from app.services import consistency
 
 router = APIRouter(tags=["metadata"])
 
@@ -50,7 +52,12 @@ def update_project(
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: str, session: Session = Depends(get_db_session)):
+def delete_project(
+    project_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    consistency.ensure_metadata_not_in_use(driver, "project", project_id=project_id)
     service.delete_project(session, project_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -93,7 +100,12 @@ def update_ontology(
 
 
 @router.delete("/ontologies/{ontology_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_ontology(ontology_id: str, session: Session = Depends(get_db_session)):
+def delete_ontology(
+    ontology_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    consistency.ensure_metadata_not_in_use(driver, "ontology", ontology_id=ontology_id)
     service.delete_ontology(session, ontology_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -126,12 +138,20 @@ def update_class(
     class_id: str,
     payload: ClassUpdate,
     session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
 ):
-    return service.update_class(session, class_id, payload)
+    class_ = service.update_class(session, class_id, payload)
+    consistency.synchronize_class(session, driver, class_id)
+    return class_
 
 
 @router.delete("/classes/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_class(class_id: str, session: Session = Depends(get_db_session)):
+def delete_class(
+    class_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    consistency.ensure_metadata_not_in_use(driver, "class", class_id=class_id)
     service.delete_class(session, class_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -202,11 +222,21 @@ def update_relation_type(
     relation_type_id: str,
     payload: RelationTypeUpdate,
     session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
 ):
-    return service.update_relation_type(session, relation_type_id, payload)
+    relation_type = service.update_relation_type(session, relation_type_id, payload)
+    consistency.synchronize_relation_type(session, driver, relation_type_id)
+    return relation_type
 
 
 @router.delete("/relation-types/{relation_type_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_relation_type(relation_type_id: str, session: Session = Depends(get_db_session)):
+def delete_relation_type(
+    relation_type_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    consistency.ensure_metadata_not_in_use(
+        driver, "relation type", relation_type_id=relation_type_id
+    )
     service.delete_relation_type(session, relation_type_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

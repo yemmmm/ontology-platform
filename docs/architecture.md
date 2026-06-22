@@ -71,6 +71,11 @@ Graph data in Neo4j:
 
 `properties_json` is decoded by the API/MCP layer so clients still see `properties` as JSON objects. Dynamic Neo4j labels and relationship types are normalized by the backend before use.
 
+PostgreSQL remains authoritative for ontology metadata copied onto graph instances. Class and
+relation-type updates propagate their normalized names to Neo4j. Metadata deletion is rejected while
+graph instances still reference it. The graph-consistency API audits and repairs historical stale
+labels/types; orphaned graph data is reported but never deleted automatically.
+
 ## Validation
 
 Implemented validation covers:

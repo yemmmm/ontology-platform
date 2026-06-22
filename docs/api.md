@@ -39,6 +39,8 @@ Common status codes: `400` invalid ontology/graph data, `404` missing resource, 
 | `GET` | `/health/postgres` | PostgreSQL check. |
 | `GET` | `/health/neo4j` | Neo4j check. |
 | `GET` | `/health/dependencies` | PostgreSQL and Neo4j checks. |
+| `GET` | `/ontologies/{ontology_id}/graph-consistency` | Audit copied metadata in Neo4j against PostgreSQL. |
+| `POST` | `/ontologies/{ontology_id}/graph-consistency/repair` | Repair stale class and relation metadata in Neo4j. |
 
 Example:
 

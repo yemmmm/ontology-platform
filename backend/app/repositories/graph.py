@@ -5,7 +5,138 @@ from neo4j import Driver
 
 
 def _escape_symbol(symbol: str) -> str:
-    return f"`{symbol}`"
+    return f"`{symbol.replace('`', '``')}`"
+
+
+def inspect_ontology_graph(driver: Driver, ontology_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Return the metadata copied into Neo4j for consistency checks."""
+    query = """
+    MATCH (entity:Entity {ontology_id: $ontology_id})
+    OPTIONAL MATCH (entity)-[relation]->(target:Entity {ontology_id: $ontology_id})
+    RETURN collect(DISTINCT {
+      id: entity.id,
+      project_id: entity.project_id,
+      class_id: entity.class_id,
+      class_label: entity.class_label,
+      labels: labels(entity)
+    }) AS entities,
+    collect(DISTINCT CASE WHEN relation IS NULL THEN NULL ELSE {
+      id: relation.id,
+      project_id: relation.project_id,
+      relation_type_id: relation.relation_type_id,
+      relation_type: relation.relation_type,
+      neo4j_type: type(relation)
+    } END) AS relations
+    """
+    with driver.session() as session:
+        record = session.run(query, ontology_id=ontology_id).single(strict=True)
+        return {
+            "entities": [dict(item) for item in record["entities"] if item is not None],
+            "relations": [dict(item) for item in record["relations"] if item is not None],
+        }
+
+
+def synchronize_class_entities(
+    driver: Driver,
+    ontology_id: str,
+    class_id: str,
+    project_id: str,
+    class_label: str,
+) -> int:
+    """Refresh denormalized class metadata and the dynamic label on matching nodes."""
+    with driver.session() as session:
+        labels_record = session.run(
+            """
+            MATCH (entity:Entity {ontology_id: $ontology_id, class_id: $class_id})
+            RETURN DISTINCT labels(entity) AS labels
+            """,
+            ontology_id=ontology_id,
+            class_id=class_id,
+        )
+        old_labels = {
+            label
+            for record in labels_record
+            for label in record["labels"]
+            if label != "Entity" and label != class_label
+        }
+        remove_clause = "".join(f" REMOVE entity:{_escape_symbol(label)}" for label in old_labels)
+        query = f"""
+        MATCH (entity:Entity {{ontology_id: $ontology_id, class_id: $class_id}})
+        SET entity.project_id = $project_id,
+            entity.class_label = $class_label,
+            entity:{_escape_symbol(class_label)}
+        {remove_clause}
+        RETURN count(entity) AS updated_count
+        """
+        record = session.run(
+            query,
+            ontology_id=ontology_id,
+            class_id=class_id,
+            project_id=project_id,
+            class_label=class_label,
+        ).single(strict=True)
+        return record["updated_count"]
+
+
+def synchronize_relation_type_edges(
+    driver: Driver,
+    ontology_id: str,
+    relation_type_id: str,
+    project_id: str,
+    relation_type: str,
+) -> int:
+    """Refresh relationship metadata, recreating edges when their Neo4j type changed."""
+    escaped_type = _escape_symbol(relation_type)
+    query = f"""
+    MATCH (source:Entity)-[old]->(target:Entity)
+    WHERE old.ontology_id = $ontology_id AND old.relation_type_id = $relation_type_id
+    CREATE (source)-[new:{escaped_type}]->(target)
+    SET new = properties(old),
+        new.project_id = $project_id,
+        new.relation_type = $relation_type
+    DELETE old
+    RETURN count(new) AS updated_count
+    """
+    with driver.session() as session:
+        record = session.run(
+            query,
+            ontology_id=ontology_id,
+            relation_type_id=relation_type_id,
+            project_id=project_id,
+            relation_type=relation_type,
+        ).single(strict=True)
+        return record["updated_count"]
+
+
+def count_graph_usage(
+    driver: Driver,
+    *,
+    project_id: str | None = None,
+    ontology_id: str | None = None,
+    class_id: str | None = None,
+    relation_type_id: str | None = None,
+) -> int:
+    query = """
+    MATCH (entity:Entity)
+    WHERE ($project_id IS NULL OR entity.project_id = $project_id)
+      AND ($ontology_id IS NULL OR entity.ontology_id = $ontology_id)
+      AND ($class_id IS NULL OR entity.class_id = $class_id)
+    OPTIONAL MATCH (entity)-[relation]->()
+    WHERE $relation_type_id IS NULL OR relation.relation_type_id = $relation_type_id
+    RETURN CASE
+      WHEN $relation_type_id IS NULL THEN count(DISTINCT entity)
+      ELSE count(DISTINCT relation)
+    END AS usage_count
+    """
+    with driver.session() as session:
+        record = session.run(
+            query,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            class_id=class_id,
+            relation_type_id=relation_type_id,
+        ).single(strict=True)
+        return record["usage_count"]
 
 
 def _decode_properties(data: dict[str, Any]) -> dict[str, Any]:
