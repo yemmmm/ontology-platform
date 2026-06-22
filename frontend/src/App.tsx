@@ -85,6 +85,7 @@ type WorkspaceTab =
   | "mcp-tools"
   | "setting";
 type ClassPageMode = "topology" | "create" | "edit";
+type EntityPageMode = "topology" | "create";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 type ParentClassPickerProps = {
   classes: ClassDef[];
@@ -737,6 +738,7 @@ function WorkspaceContent(props: {
         entities={props.entities}
         mutate={props.mutate}
         ontologyId={props.ontology.id}
+        propertiesByClass={props.propertiesByClass}
         relations={props.relations}
         relationTypes={props.relationTypes}
         reloadGraph={props.reloadGraph}
@@ -1469,6 +1471,7 @@ function ClassEditorPage(props: {
 function EntitiesPage(props: {
   ontologyId: string;
   classes: ClassDef[];
+  propertiesByClass: Record<string, PropertyDef[]>;
   relationTypes: RelationType[];
   entities: Entity[];
   relations: Relation[];
@@ -1476,6 +1479,7 @@ function EntitiesPage(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadGraph: () => Promise<void>;
 }) {
+  const [mode, setMode] = useState<EntityPageMode>("topology");
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1510,6 +1514,25 @@ function EntitiesPage(props: {
   const selectedEntity = selectedEntityId
     ? props.entities.find((entity) => entity.id === selectedEntityId) ?? null
     : null;
+
+  if (mode === "create") {
+    return (
+      <EntityCreatePage
+        classes={props.classes}
+        entities={props.entities}
+        mutate={props.mutate}
+        onBack={() => setMode("topology")}
+        onCreated={(entityId) => {
+          setSelectedEntityId(entityId);
+          setMode("topology");
+        }}
+        ontologyId={props.ontologyId}
+        propertiesByClass={props.propertiesByClass}
+        reloadGraph={props.reloadGraph}
+        request={props.request}
+      />
+    );
+  }
 
   return (
     <section className="entityGraphPage">
@@ -1565,6 +1588,9 @@ function EntitiesPage(props: {
           {visibleEntities.length} entities · {visibleRelations.length} relations
           {props.entities.length === 0 && " · No entities yet"}
         </span>
+        <button className="primaryButton entityCreateButton" onClick={() => setMode("create")} type="button">
+          <Plus size={15} /> New entity
+        </button>
       </div>
 
       <div className="entityGraphCanvasWrap">
@@ -1595,6 +1621,285 @@ function EntitiesPage(props: {
         />
       </div>
     </section>
+  );
+}
+
+function effectivePropertiesForClass(
+  classId: string,
+  classes: ClassDef[],
+  propertiesByClass: Record<string, PropertyDef[]>,
+  seen = new Set<string>(),
+): PropertyDef[] {
+  if (seen.has(classId)) return [];
+  const nextSeen = new Set(seen).add(classId);
+  const classDef = classes.find((item) => item.id === classId);
+  if (!classDef) return [];
+
+  const properties = new Map<string, PropertyDef>();
+  classDef.parent_class_ids.forEach((parentId) => {
+    effectivePropertiesForClass(parentId, classes, propertiesByClass, nextSeen).forEach((property) => {
+      properties.set(property.name, property);
+    });
+  });
+  (propertiesByClass[classId] ?? []).forEach((property) => properties.set(property.name, property));
+  return Array.from(properties.values());
+}
+
+function parseEntityPropertyValue(property: PropertyDef, value: unknown): unknown {
+  if (property.multi_valued) {
+    const values = Array.isArray(value) ? value : [];
+    return values
+      .filter((item) => item !== undefined && item !== null && item !== "")
+      .map((item) => parseEntityPropertyValue({ ...property, multi_valued: false }, item));
+  }
+  if (property.type === "number") return Number(value);
+  if (property.type === "boolean") return value === "true";
+  if (property.type === "json") return JSON.parse(String(value));
+  return String(value);
+}
+
+function hasEntityPropertyValue(property: PropertyDef, value: unknown) {
+  if (property.multi_valued) {
+    return Array.isArray(value) && value.some((item) => item !== undefined && item !== null && item !== "");
+  }
+  return value !== undefined && value !== null && value !== "";
+}
+
+function EntityCreatePage(props: {
+  ontologyId: string;
+  classes: ClassDef[];
+  entities: Entity[];
+  propertiesByClass: Record<string, PropertyDef[]>;
+  request: Requester;
+  mutate: (action: () => Promise<void>, success: string) => Promise<void>;
+  reloadGraph: () => Promise<void>;
+  onBack: () => void;
+  onCreated: (entityId: string) => void;
+}) {
+  const [form, setForm] = useState({ aliases: "", classId: props.classes[0]?.id ?? "", name: "" });
+  const [propertyValues, setPropertyValues] = useState<Record<string, unknown>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const selectedClass = props.classes.find((item) => item.id === form.classId) ?? null;
+  const properties = useMemo(
+    () => effectivePropertiesForClass(form.classId, props.classes, props.propertiesByClass),
+    [form.classId, props.classes, props.propertiesByClass],
+  );
+
+  function setPropertyValue(name: string, value: unknown) {
+    setPropertyValues((current) => ({ ...current, [name]: value }));
+  }
+
+  async function saveEntity(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedClass || submitting) return;
+    setSubmitting(true);
+    try {
+      await props.mutate(async () => {
+        const missing = properties.filter(
+          (property) => property.required && !hasEntityPropertyValue(property, propertyValues[property.name]),
+        );
+        if (missing.length) throw new Error(`Required properties: ${missing.map((item) => item.name).join(", ")}`);
+
+        const entityProperties: JsonObject = {};
+        properties.forEach((property) => {
+          const value = propertyValues[property.name];
+          if (hasEntityPropertyValue(property, value)) {
+            entityProperties[property.name] = parseEntityPropertyValue(property, value);
+          }
+        });
+        const created = await props.request<Entity>(`/ontologies/${props.ontologyId}/entities`, {
+          method: "POST",
+          body: JSON.stringify({
+            aliases: splitCsv(form.aliases),
+            class_id: form.classId,
+            name: form.name,
+            properties: entityProperties,
+          }),
+        });
+        await props.reloadGraph();
+        props.onCreated(created.id);
+      }, "Entity created");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="entityCreatePage">
+      <header className="pageSubHeader">
+        <button aria-label="Back to entity topology" className="iconButton subtle" onClick={props.onBack} type="button">
+          <ArrowLeft size={17} />
+        </button>
+        <div>
+          <span className="eyebrow">Entity editor</span>
+          <h2>Create entity</h2>
+          <p>Choose a class and add an instance that conforms to its property schema.</p>
+        </div>
+      </header>
+
+      <form className="entityCreateForm" onSubmit={saveEntity}>
+        <Panel className="entityIdentityPanel" icon={<Database size={17} />} title="Identity">
+          <div className="stackForm">
+            <label>
+              <span>Class</span>
+              <select
+                onChange={(event) => {
+                  setForm((current) => ({ ...current, classId: event.target.value }));
+                  setPropertyValues({});
+                }}
+                required
+                value={form.classId}
+              >
+                {!props.classes.length && <option value="">No classes available</option>}
+                {props.classes.map((classDef) => <option key={classDef.id} value={classDef.id}>{classDef.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Name</span>
+              <input
+                maxLength={300}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Entity name"
+                required
+                value={form.name}
+              />
+            </label>
+            <label>
+              <span>Aliases</span>
+              <input
+                onChange={(event) => setForm((current) => ({ ...current, aliases: event.target.value }))}
+                placeholder="Comma-separated aliases"
+                value={form.aliases}
+              />
+            </label>
+            {selectedClass && (
+              <div className="entityClassSummary">
+                <span>{selectedClass.normalized_label || selectedClass.name}</span>
+                <p>{selectedClass.description || "No class description."}</p>
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel className="entityPropertiesPanel" icon={<Braces size={17} />} title="Properties">
+          {!selectedClass ? (
+            <EmptyState icon={<Box size={20} />} title="Create a class before adding entities" />
+          ) : properties.length === 0 ? (
+            <div className="entityNoProperties">
+              <Check size={18} />
+              <div><strong>No properties required</strong><span>This class can be instantiated with identity fields only.</span></div>
+            </div>
+          ) : (
+            <div className="entityPropertyList">
+              {properties.map((property) => (
+                <EntityPropertyField
+                  entities={props.entities}
+                  key={property.id}
+                  onChange={(value) => setPropertyValue(property.name, value)}
+                  property={property}
+                  value={propertyValues[property.name]}
+                />
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <footer className="entityCreateActions">
+          <button className="secondaryButton" disabled={submitting} onClick={props.onBack} type="button">Cancel</button>
+          <button className="primaryButton" disabled={!selectedClass || !form.name.trim() || submitting} type="submit">
+            {submitting ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+            {submitting ? "Creating..." : "Create entity"}
+          </button>
+        </footer>
+      </form>
+    </section>
+  );
+}
+
+function EntityPropertyField(props: {
+  property: PropertyDef;
+  value: unknown;
+  entities: Entity[];
+  onChange: (value: unknown) => void;
+}) {
+  const { property } = props;
+  const values = property.multi_valued && Array.isArray(props.value) ? props.value : [];
+
+  if (property.multi_valued) {
+    return (
+      <div className="entityPropertyField">
+        <EntityPropertyLabel property={property} />
+        <div className="entityMultiValues">
+          {values.map((value, index) => (
+            <div className="entityMultiValue" key={`${property.id}-${index}`}>
+              <EntityPropertyControl
+                entities={props.entities}
+                onChange={(nextValue) => props.onChange(values.map((item, itemIndex) => itemIndex === index ? nextValue : item))}
+                property={{ ...property, multi_valued: false }}
+                value={value}
+              />
+              <button
+                aria-label={`Remove ${property.name} value`}
+                className="iconButton danger"
+                onClick={() => props.onChange(values.filter((_, itemIndex) => itemIndex !== index))}
+                type="button"
+              ><Trash2 size={14} /></button>
+            </div>
+          ))}
+          <button className="secondaryButton entityAddValue" onClick={() => props.onChange([...values, ""])} type="button">
+            <Plus size={14} /> Add value
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <label className="entityPropertyField">
+      <EntityPropertyLabel property={property} />
+      <EntityPropertyControl entities={props.entities} onChange={props.onChange} property={property} value={props.value} />
+    </label>
+  );
+}
+
+function EntityPropertyLabel({ property }: { property: PropertyDef }) {
+  return (
+    <span className="entityPropertyLabel">
+      <span>{property.name}{property.required && <b aria-label="required"> *</b>}</span>
+      <small>{property.type}{property.multi_valued ? " · multiple" : ""}</small>
+      {property.description && <em>{property.description}</em>}
+    </span>
+  );
+}
+
+function EntityPropertyControl(props: {
+  property: PropertyDef;
+  value: unknown;
+  entities: Entity[];
+  onChange: (value: unknown) => void;
+}) {
+  const value = props.value === undefined ? "" : String(props.value);
+  if (props.property.type === "boolean") {
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Not set</option><option value="true">True</option><option value="false">False</option></select>;
+  }
+  if (props.property.type === "enum") {
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Select a value</option>{props.property.enum_values.map((item) => <option key={item} value={item}>{item}</option>)}</select>;
+  }
+  if (props.property.type === "reference") {
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Select an entity</option>{props.entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name} · {entity.class_label}</option>)}</select>;
+  }
+  if (props.property.type === "json") {
+    return <textarea aria-label={props.property.name} className="codeArea small" onChange={(event) => props.onChange(event.target.value)} placeholder='{"key": "value"}' value={value} />;
+  }
+  return (
+    <input
+      aria-label={props.property.name}
+      onChange={(event) => props.onChange(event.target.value)}
+      placeholder={props.property.type === "number" ? "0" : props.property.name}
+      step={props.property.type === "number" ? "any" : undefined}
+      type={props.property.type === "number" ? "number" : props.property.type === "date" ? "date" : "text"}
+      value={value}
+    />
   );
 }
 
