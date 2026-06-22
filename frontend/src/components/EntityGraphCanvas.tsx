@@ -36,6 +36,39 @@ export function pickColor(classLabel: string, allLabels: string[]) {
   return CLASS_PALETTE[(idx >= 0 ? idx : 0) % CLASS_PALETTE.length];
 }
 
+const NODE_MIN_SIZE = 24;
+const NODE_MAX_SIZE = 56;
+const LABEL_VISIBILITY_THRESHOLD = 24;
+
+function computeDegreeStats(degrees: number[]) {
+  if (degrees.length === 0) return { mean: 0, std: 0 };
+  const mean = degrees.reduce((sum, d) => sum + d, 0) / degrees.length;
+  const variance =
+    degrees.reduce((sum, d) => sum + (d - mean) ** 2, 0) / degrees.length;
+  return { mean, std: Math.sqrt(variance) };
+}
+
+function nodeBaseSize(degree: number, mean: number, std: number) {
+  if (std < 1e-6) return NODE_MIN_SIZE;
+  const z = (degree - mean) / std;
+  const t = Math.tanh(z * 0.5) * 0.5 + 0.5;
+  return NODE_MIN_SIZE + t * (NODE_MAX_SIZE - NODE_MIN_SIZE);
+}
+
+function applyLabelVisibility(cy: Core) {
+  const zoom = cy.zoom();
+  cy.nodes().forEach((node) => {
+    const base = Number(node.data("baseSize")) || NODE_MIN_SIZE;
+    node.toggleClass("label-hidden", base * zoom < LABEL_VISIBILITY_THRESHOLD);
+  });
+  cy.edges().forEach((edge) => {
+    const endpointsHidden =
+      edge.source().hasClass("label-hidden") ||
+      edge.target().hasClass("label-hidden");
+    edge.toggleClass("label-hidden", endpointsHidden);
+  });
+}
+
 const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: "node",
@@ -51,8 +84,8 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "text-margin-y": 5,
       "text-outline-width": 2,
       "text-outline-color": "#ffffff",
-      width: 34,
-      height: 34,
+      width: "data(baseSize)",
+      height: "data(baseSize)",
       "border-width": 0,
       "transition-property": "width, height, opacity, border-width",
       "transition-duration": 180,
@@ -64,8 +97,6 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "border-width": 3,
       "border-color": "#171821",
       "border-opacity": 0.9,
-      width: 46,
-      height: 46,
     },
   },
   {
@@ -95,14 +126,7 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       label: "data(label)",
       "font-size": 9,
       color: "#74788d",
-      "text-background-color": "#ffffff",
-      "text-background-opacity": 0.85,
-      "text-background-padding": "2px",
-      "text-background-shape": "roundrectangle",
       "text-rotation": "autorotate",
-      "text-border-color": "#eceef6",
-      "text-border-width": 1,
-      "text-border-opacity": 1,
     },
   },
   {
@@ -111,6 +135,18 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "line-opacity": 0.08,
       "target-arrow-color": "#eceef6",
       "text-opacity": 0.0,
+    },
+  },
+  {
+    selector: "node.label-hidden",
+    style: {
+      label: "",
+    },
+  },
+  {
+    selector: "edge.label-hidden",
+    style: {
+      label: "",
     },
   },
 ];
@@ -142,14 +178,28 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
         visibleIds.has(relation.source_entity_id) && visibleIds.has(relation.target_entity_id),
     );
 
-    const nodes: ElementDefinition[] = visibleEntities.map((entity) => ({
-      data: {
-        id: entity.id,
-        label: entity.name,
-        classLabel: entity.class_label,
-        color: pickColor(entity.class_label, allClassLabels),
-      },
-    }));
+    const degree = new Map<string, number>();
+    visibleRelations.forEach((relation) => {
+      degree.set(relation.source_entity_id, (degree.get(relation.source_entity_id) ?? 0) + 1);
+      degree.set(relation.target_entity_id, (degree.get(relation.target_entity_id) ?? 0) + 1);
+    });
+
+    const degreeValues = visibleEntities.map((entity) => degree.get(entity.id) ?? 0);
+    const { mean, std } = computeDegreeStats(degreeValues);
+
+    const nodes: ElementDefinition[] = visibleEntities.map((entity) => {
+      const nodeDegree = degree.get(entity.id) ?? 0;
+      return {
+        data: {
+          id: entity.id,
+          label: entity.name,
+          classLabel: entity.class_label,
+          color: pickColor(entity.class_label, allClassLabels),
+          degree: nodeDegree,
+          baseSize: nodeBaseSize(nodeDegree, mean, std),
+        },
+      };
+    });
     const edges: ElementDefinition[] = visibleRelations.map((relation) => ({
       data: {
         id: relation.id,
@@ -176,8 +226,11 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     cy.on("tap", (event) => {
       if (event.target === cy) onSelectRef.current(null);
     });
+    const onViewportChange = () => applyLabelVisibility(cy);
+    cy.on("zoom pan", onViewportChange);
     cyRef.current = cy;
     return () => {
+      cy.off("zoom pan", onViewportChange);
       cy.destroy();
       cyRef.current = null;
     };
@@ -190,7 +243,7 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     if (elements.length === 0) return;
     cy.add(elements);
     const shouldRandomize = cy.nodes().length > 12;
-    cy.layout({
+    const layout = cy.layout({
       name: "fcose",
       animate: true,
       animationDuration: 320,
@@ -199,8 +252,12 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
       nodeSep: 60,
       idealEdgeLength: 130,
       uniformNodeDimensions: true,
-    } as unknown as cytoscape.LayoutOptions).run();
-    cy.fit(undefined, 50);
+    } as unknown as cytoscape.LayoutOptions);
+    layout.one("layoutstop", () => {
+      cy.fit(undefined, 50);
+      applyLabelVisibility(cy);
+    });
+    layout.run();
   }, [elements]);
 
   useEffect(() => {
