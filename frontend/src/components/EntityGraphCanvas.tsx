@@ -1,7 +1,7 @@
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
 import { useEffect, useMemo, useRef } from "react";
-import type { Core, ElementDefinition } from "cytoscape";
+import type { Core, EdgeSingular, ElementDefinition } from "cytoscape";
 import type { Entity, Relation } from "../types";
 
 cytoscape.use(fcose);
@@ -39,6 +39,7 @@ export function pickColor(classLabel: string, allLabels: string[]) {
 const NODE_MIN_SIZE = 24;
 const NODE_MAX_SIZE = 56;
 const LABEL_VISIBILITY_THRESHOLD = 24;
+const EDGE_LABEL_GAP = 4;
 
 function computeDegreeStats(degrees: number[]) {
   if (degrees.length === 0) return { mean: 0, std: 0 };
@@ -66,6 +67,32 @@ function applyLabelVisibility(cy: Core) {
       edge.source().hasClass("label-hidden") ||
       edge.target().hasClass("label-hidden");
     edge.toggleClass("label-hidden", endpointsHidden);
+  });
+}
+
+function applyEdgeLabelOffsets(cy: Core) {
+  cy.edges().forEach((edge) => {
+    const source = edge.source().position();
+    const target = edge.target().position();
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const length = Math.hypot(dx, dy);
+
+    if (length < 1e-6) {
+      edge.data("labelMarginX", 0);
+      edge.data("labelMarginY", -EDGE_LABEL_GAP);
+      return;
+    }
+
+    let normalX = -dy / length;
+    let normalY = dx / length;
+    // Keep labels on the upper (or right-hand, for vertical edges) side for consistency.
+    if (normalY > 0 || (Math.abs(normalY) < 1e-6 && normalX < 0)) {
+      normalX *= -1;
+      normalY *= -1;
+    }
+    edge.data("labelMarginX", normalX * EDGE_LABEL_GAP);
+    edge.data("labelMarginY", normalY * EDGE_LABEL_GAP);
   });
 }
 
@@ -124,9 +151,11 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "curve-style": "bezier",
       "arrow-scale": 0.85,
       label: "data(label)",
-      "font-size": 9,
+      "font-size": 4.5,
       color: "#74788d",
       "text-rotation": "autorotate",
+      "text-margin-x": (edge: EdgeSingular) => Number(edge.data("labelMarginX")) || 0,
+      "text-margin-y": (edge: EdgeSingular) => Number(edge.data("labelMarginY")) || 0,
     },
   },
   {
@@ -206,6 +235,8 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
         source: relation.source_entity_id,
         target: relation.target_entity_id,
         label: relation.relation_type,
+        labelMarginX: 0,
+        labelMarginY: 0,
       },
     }));
     return [...nodes, ...edges];
@@ -227,10 +258,13 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
       if (event.target === cy) onSelectRef.current(null);
     });
     const onViewportChange = () => applyLabelVisibility(cy);
+    const onNodePositionSettled = () => applyEdgeLabelOffsets(cy);
     cy.on("zoom pan", onViewportChange);
+    cy.on("free", "node", onNodePositionSettled);
     cyRef.current = cy;
     return () => {
       cy.off("zoom pan", onViewportChange);
+      cy.off("free", "node", onNodePositionSettled);
       cy.destroy();
       cyRef.current = null;
     };
@@ -254,6 +288,7 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
       uniformNodeDimensions: true,
     } as unknown as cytoscape.LayoutOptions);
     layout.one("layoutstop", () => {
+      applyEdgeLabelOffsets(cy);
       cy.fit(undefined, 50);
       applyLabelVisibility(cy);
     });
