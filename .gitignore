@@ -12,3 +12,9 @@ build/
 *.tsbuildinfo
 
 .DS_Store
+
+# Agent tooling (external skills, caches, critique output)
+.agents/
+skills-lock.json
+frontend/.od-skills/
+frontend/critique.json
