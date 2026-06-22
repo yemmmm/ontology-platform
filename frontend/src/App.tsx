@@ -1760,7 +1760,7 @@ function EntityFormPage(props: {
     });
     return targets;
   });
-  const [relationQuery, setRelationQuery] = useState("");
+  const [relationQueries, setRelationQueries] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const selectedClass = props.classes.find((item) => item.id === form.classId) ?? null;
   const properties = useMemo(
@@ -1792,16 +1792,6 @@ function EntityFormPage(props: {
       return choices;
     });
   }, [form.classId, props.classes, props.entities, props.relationTypes]);
-  const visibleRelationChoices = useMemo(() => {
-    const query = relationQuery.trim().toLocaleLowerCase();
-    if (!query) return relationChoices;
-    return relationChoices.filter(({ relationType }) =>
-      [relationType.name, ...relationType.aliases].some((value) =>
-        value.toLocaleLowerCase().includes(query),
-      ),
-    );
-  }, [relationChoices, relationQuery]);
-
   function setPropertyValue(name: string, value: unknown) {
     setPropertyValues((current) => ({ ...current, [name]: value }));
   }
@@ -1994,25 +1984,20 @@ function EntityFormPage(props: {
                 <div><strong>No relations defined</strong><span>This class has no compatible relation types.</span></div>
               </div>
             ) : (
-              <>
-                <label className="entityRelationSearch">
-                  <Search size={14} />
-                  <input
-                    aria-label="Search relation types by name or alias"
-                    onChange={(event) => setRelationQuery(event.target.value)}
-                    placeholder="Search relations by name or alias"
-                    type="search"
-                    value={relationQuery}
-                  />
-                </label>
-                {visibleRelationChoices.length === 0 ? (
-                  <div className="entityRelationNoResults">No relation types match “{relationQuery}”.</div>
-                ) : <div className="entityRelationChoices">
-                {visibleRelationChoices.map((choice) => {
+              <div className="entityRelationChoices">
+                {relationChoices.map((choice) => {
                   const key = `${choice.direction}:${choice.relationType.id}`;
                   const expectedClassId = choice.direction === "outgoing"
                     ? choice.relationType.target_class_id
                     : choice.relationType.source_class_id;
+                  const query = (relationQueries[key] ?? "").trim().toLowerCase();
+                  const visibleCandidates = query
+                    ? choice.candidates.filter((entity) =>
+                        [entity.name, ...entity.aliases].some((value) =>
+                          value.toLowerCase().includes(query),
+                        ),
+                      )
+                    : choice.candidates;
                   return (
                     <section className="entityRelationChoice" key={key}>
                       <div className="entityRelationChoiceHeader">
@@ -2028,11 +2013,27 @@ function EntityFormPage(props: {
                         {choice.direction === "outgoing" ? `${selectedClass.name} → ` : `${nameFor(props.classes, expectedClassId)} → `}
                         {choice.direction === "outgoing" ? nameFor(props.classes, expectedClassId) : selectedClass.name}
                       </p>
+                      <label className="entityRelationSearch">
+                        <Search size={13} />
+                        <input
+                          aria-label={`Search ${choice.relationType.name} instances by name or alias`}
+                          disabled={choice.candidates.length === 0}
+                          onChange={(event) => setRelationQueries((current) => ({
+                            ...current,
+                            [key]: event.target.value,
+                          }))}
+                          placeholder="Search instances by name or alias"
+                          type="search"
+                          value={relationQueries[key] ?? ""}
+                        />
+                      </label>
                       {choice.candidates.length === 0 ? (
                         <small>No compatible {nameFor(props.classes, expectedClassId)} entities available.</small>
+                      ) : visibleCandidates.length === 0 ? (
+                        <div className="entityRelationNoResults">No instances match “{relationQueries[key]}”.</div>
                       ) : (
                         <div className="entityRelationTargets">
-                          {choice.candidates.map((entity) => (
+                          {visibleCandidates.map((entity) => (
                             <label key={entity.id}>
                               <input
                                 checked={(relationTargets[key] ?? []).includes(entity.id)}
@@ -2048,8 +2049,7 @@ function EntityFormPage(props: {
                     </section>
                   );
                 })}
-                </div>}
-              </>
+              </div>
             )}
           </Panel>
 

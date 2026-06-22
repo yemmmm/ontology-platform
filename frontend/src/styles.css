@@ -2156,7 +2156,7 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-top: 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 10px;
@@ -2176,10 +2176,15 @@ textarea:focus {
   box-shadow: none;
 }
 
+.entityRelationSearch:has(input:disabled) {
+  opacity: 0.6;
+}
+
 .entityRelationNoResults {
   border: 1px dashed var(--line);
   border-radius: 8px;
-  padding: 18px;
+  margin-top: 9px;
+  padding: 12px;
   color: var(--muted);
   font-size: 12px;
   text-align: center;
