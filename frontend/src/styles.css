@@ -122,6 +122,11 @@ code {
   margin-top: 22px;
 }
 
+.navGroup {
+  display: grid;
+  gap: 7px;
+}
+
 .navButton {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -281,32 +286,15 @@ h3 {
   flex-wrap: wrap;
 }
 
-.contextStrip {
-  display: grid;
-  grid-template-columns: 168px 168px auto;
-  align-items: end;
-  gap: 8px;
-  max-width: 500px;
-}
-
 label {
   color: #61667b;
   font-size: 12px;
   font-weight: 720;
 }
 
-.contextStrip label,
 .stackForm label {
   display: grid;
   gap: 7px;
-}
-
-.contextStrip label {
-  gap: 5px;
-}
-
-.contextStrip label span {
-  font-size: 11px;
 }
 
 input,
@@ -331,8 +319,208 @@ textarea {
   resize: vertical;
 }
 
-select[multiple] {
+.parentPicker {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--field);
+  max-height: 228px;
   min-height: 92px;
+  overflow: auto;
+  padding: 7px;
+}
+
+.parentOption {
+  --level: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(108, 77, 246, 0.07), transparent 58%)
+      calc(var(--level) * 16px) 0 / 1px 100% no-repeat,
+    #ffffff;
+  min-height: 46px;
+  padding: 7px 8px 7px calc(8px + var(--level) * 16px);
+  color: var(--ink);
+  text-align: left;
+  transition:
+    border-color 130ms ease,
+    background 130ms ease,
+    box-shadow 130ms ease,
+    transform 130ms ease;
+}
+
+.parentOption:hover {
+  border-color: #d9d3ff;
+  background:
+    linear-gradient(90deg, rgba(108, 77, 246, 0.12), transparent 58%)
+      calc(var(--level) * 16px) 0 / 1px 100% no-repeat,
+    #fbfaff;
+  transform: translateY(-1px);
+}
+
+.parentOption:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(108, 77, 246, 0.14);
+}
+
+.parentOption.selected {
+  border-color: #c9bfff;
+  background:
+    linear-gradient(90deg, rgba(108, 77, 246, 0.18), transparent 58%)
+      calc(var(--level) * 16px) 0 / 1px 100% no-repeat,
+    #f7f5ff;
+}
+
+.parentOptionMain {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.parentOptionMain strong {
+  overflow: hidden;
+  color: #1d2030;
+  font-size: 13px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parentOptionMain span:not(.parentOptionLevel) {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parentOptionLevel,
+.parentOptionState {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.parentOptionLevel {
+  grid-row: span 2;
+  border: 1px solid #e3e5ef;
+  border-radius: 999px;
+  background: #f7f8fc;
+  min-width: 34px;
+  height: 22px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.parentOption.selected .parentOptionLevel {
+  border-color: #c9bfff;
+  background: #ece8ff;
+  color: var(--accent);
+}
+
+.parentOptionState {
+  border-radius: 999px;
+  background: #f0f2f8;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+
+.parentOption.selected .parentOptionState {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.workspacePathNav {
+  display: grid;
+  gap: 5px;
+  border-left: 1px solid #e7e9f3;
+  margin-left: 17px;
+  padding: 1px 0 5px 10px;
+}
+
+.pathGroup {
+  display: grid;
+  gap: 4px;
+}
+
+.pathChildren {
+  display: grid;
+  gap: 4px;
+  padding-left: 12px;
+}
+
+.pathItem,
+.pathAction {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  min-height: 30px;
+  padding: 6px 7px;
+  color: #74798d;
+  text-align: left;
+  transition:
+    background 130ms ease,
+    border-color 130ms ease,
+    color 130ms ease;
+}
+
+.pathItem span,
+.pathAction span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pathItem:hover,
+.pathAction:hover,
+.pathItem.active {
+  border-color: #e5e1ff;
+  background: var(--rail-soft);
+  color: #171821;
+}
+
+.pathItem.child {
+  color: #8a8fa2;
+}
+
+.pathItem.child.active {
+  color: var(--accent);
+}
+
+.pathAction {
+  color: #5f6477;
+}
+
+.pathEmpty {
+  padding: 5px 7px;
+  color: #a0a4b6;
+  font-size: 11px;
+}
+
+.parentPickerEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 76px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 input:focus,
@@ -341,32 +529,6 @@ textarea:focus {
   border-color: var(--accent);
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(108, 77, 246, 0.12);
-}
-
-.contextMetric {
-  display: grid;
-  gap: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  min-height: 54px;
-  min-width: 126px;
-  padding: 8px 10px;
-  box-shadow: 0 8px 22px rgba(36, 41, 67, 0.04);
-}
-
-.contextMetric span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 720;
-}
-
-.contextMetric strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .notice {
@@ -602,6 +764,7 @@ textarea:focus {
 
 .graphLeft .stackForm,
 .graphRight .stackForm,
+.graphMapSide .stackForm,
 .agentLayout .stackForm {
   max-width: none;
 }
@@ -858,13 +1021,14 @@ textarea:focus {
 
 .graphWorkbench {
   display: grid;
-  grid-template-columns: 330px minmax(430px, 1fr) 360px;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
   gap: 16px;
   margin-top: 0;
 }
 
 .graphLeft,
-.graphRight {
+.graphRight,
+.graphMapSide {
   display: grid;
   align-content: start;
   gap: 16px;
@@ -874,9 +1038,23 @@ textarea:focus {
   min-height: 680px;
 }
 
+.graphMapPage {
+  display: grid;
+  grid-template-columns: minmax(640px, 1fr) 360px;
+  gap: 16px;
+}
+
+.graphMapCanvas {
+  min-height: 760px;
+}
+
+.graphMapCanvas .graphSvg {
+  min-height: 650px;
+}
+
 .graphExplorer {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .graphToolbar {
@@ -889,6 +1067,7 @@ textarea:focus {
 .graphStats {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   color: var(--muted);
   font-size: 12px;
@@ -906,36 +1085,88 @@ textarea:focus {
   text-align: center;
 }
 
+.graphModePill {
+  border: 1px solid color-mix(in srgb, var(--accent-2) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-2) 11%, transparent);
+  padding: 3px 8px;
+  color: color-mix(in srgb, var(--accent-2) 76%, #12372d);
+  font-weight: 800;
+}
+
 .graphSvg {
   display: block;
   width: 100%;
-  min-height: 560px;
-  border: 1px solid #eceef6;
-  border-radius: 8px;
-  background:
-    linear-gradient(#eef0f8 1px, transparent 1px),
-    linear-gradient(90deg, #eef0f8 1px, transparent 1px),
-    #fbfcff;
-  background-size: 28px 28px;
+  min-height: 650px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 80%, #d7cec2);
+  border-radius: 10px;
+  background: #e9e2d8;
+  cursor: grab;
+  touch-action: pan-x pan-y pinch-zoom;
+}
+
+.graphExplorer.dragging .graphSvg {
+  cursor: grabbing;
+}
+
+.graphBackdrop {
+  fill: #e9e2d8;
+}
+
+.graphGrid {
+  fill: url("#graphMicroGrid");
+  opacity: 1;
+}
+
+.graphGridDot {
+  fill: color-mix(in srgb, #7d7468 20%, transparent);
+}
+
+.communityHalo circle {
+  fill: color-mix(in srgb, var(--node-color) 10%, transparent);
+  stroke: color-mix(in srgb, var(--node-color) 22%, transparent);
+  stroke-width: 1;
+}
+
+.communityHalo text {
+  fill: color-mix(in srgb, var(--node-color) 68%, #5e574f);
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.82;
+  pointer-events: none;
+  text-anchor: middle;
 }
 
 .edge {
-  stroke: #8d91a4;
-  stroke-width: 1.5;
+  fill: none;
+  stroke: color-mix(in srgb, #48515a 34%, transparent);
+  stroke-linecap: round;
+  stroke-width: 1.1;
+}
+
+.graphWorld.labelDotOnly .edge {
+  stroke: color-mix(in srgb, #48515a 24%, transparent);
+  stroke-width: 0.85;
+}
+
+#graphArrow path {
+  fill: color-mix(in srgb, #48515a 42%, transparent);
 }
 
 .edgeGroup.selected .edge {
-  stroke: var(--accent);
-  stroke-width: 2.8;
+  stroke: color-mix(in srgb, var(--accent) 72%, #4a3c30);
+  stroke-width: 2.2;
 }
 
 .edgeLabel {
-  fill: #64697d;
+  fill: color-mix(in srgb, #514b45 78%, transparent);
   font-size: 11px;
   paint-order: stroke;
-  stroke: #fbfcff;
-  stroke-width: 5px;
+  stroke: #e9e2d8;
+  stroke-width: 6px;
   text-anchor: middle;
+  pointer-events: none;
+  opacity: 0.82;
 }
 
 .graphNode {
@@ -943,21 +1174,37 @@ textarea:focus {
   outline: none;
 }
 
+.nodeAura {
+  fill: color-mix(in srgb, var(--node-color) 13%, transparent);
+  pointer-events: none;
+}
+
+.graphWorld.labelDotOnly .nodeAura {
+  opacity: 0.42;
+}
+
 .node {
-  fill: #ffffff;
-  stroke: var(--accent-2);
-  stroke-width: 2;
+  fill: color-mix(in srgb, var(--node-color) 72%, #f6f0e9);
+  stroke: color-mix(in srgb, var(--node-color) 80%, #342f2b);
+  stroke-width: 1.4;
+  transition:
+    fill 0.16s ease,
+    stroke-width 0.16s ease;
+}
+
+.graphWorld.labelDotOnly .node {
+  stroke-width: 0.9;
 }
 
 .graphNode:hover .node,
 .graphNode:focus .node {
-  fill: #effbf7;
-  stroke: #21a77a;
+  fill: color-mix(in srgb, var(--node-color) 84%, #fffaf4);
+  stroke-width: 2.2;
 }
 
 .graphNode.selected .node {
-  fill: #f1edff;
-  stroke: var(--accent);
+  fill: color-mix(in srgb, var(--node-color) 92%, #ffffff);
+  stroke: #221b16;
   stroke-width: 3;
 }
 
@@ -965,17 +1212,30 @@ textarea:focus {
 .nodeMeta {
   pointer-events: none;
   text-anchor: middle;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
 }
 
 .nodeTitle {
-  fill: #171821;
-  font-size: 12px;
-  font-weight: 780;
+  fill: #241f1a;
+  font-size: 11px;
+  font-weight: 850;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, #e9e2d8 86%, transparent);
+  stroke-width: 4px;
+}
+
+.graphWorld.labelTitleOnly .nodeTitle {
+  font-size: 10px;
 }
 
 .nodeMeta {
-  fill: #6e7387;
-  font-size: 10px;
+  fill: color-mix(in srgb, #423b35 74%, transparent);
+  font-size: 9px;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, #e9e2d8 82%, transparent);
+  stroke-width: 3px;
 }
 
 .inspector {
@@ -1195,17 +1455,326 @@ textarea:focus {
   }
 }
 
+.homeShell {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 100vh;
+  padding: 24px 28px 34px;
+}
+
+.homeTopBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.homeLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+}
+
+.homePrimary,
+.homeSide,
+.classesPage,
+.classEditorPage,
+.entitySearchPage,
+.mcpToolsPage,
+.reservedTopology {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.homeFilterBar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  box-shadow: 0 10px 24px rgba(36, 41, 67, 0.05);
+}
+
+.homeFilterBar label {
+  display: grid;
+  gap: 7px;
+  width: min(360px, 100%);
+}
+
+.homeOntologyGrid {
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+}
+
+.ontologyCard {
+  position: relative;
+}
+
+.ontologyCardMain {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.ontologyCardMain > span:not(.ontologyCardTop) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ontologyCardDelete {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+}
+
+.ontologyCardMain dl {
+  padding-right: 48px;
+}
+
+.brandButton {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.crumbButton {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+}
+
+.classesToolbar,
+.pageSubHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.pageSubHeader {
+  justify-content: flex-start;
+}
+
+.pageSubHeader > div {
+  display: grid;
+  gap: 4px;
+}
+
+.pageSubHeader p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.classSearchStack {
+  position: relative;
+  width: min(620px, 100%);
+}
+
+.classSearch {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--field);
+  padding: 0 11px;
+}
+
+.classSearch svg {
+  color: var(--muted);
+}
+
+.classSearch input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-left: 0;
+}
+
+.classSearchResults {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  box-shadow: 0 18px 42px rgba(36, 41, 67, 0.12);
+}
+
+.searchResultItem {
+  display: grid;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  padding: 8px;
+  text-align: left;
+}
+
+.searchResultItem:hover,
+.searchResultItem.selected {
+  border-color: #e5e1ff;
+  background: var(--rail-soft);
+}
+
+.searchResultItem strong {
+  color: #171821;
+  font-size: 13px;
+}
+
+.searchResultItem span,
+.searchEmpty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.classTopologyPanel .ant-card-body {
+  padding: 0;
+}
+
+.classFlowCanvas {
+  height: min(760px, calc(100vh - 245px));
+  min-height: 560px;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #fbfcff 0, #f5f6fb 100%);
+}
+
+.classFlowNode {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.classFlowNodeBody {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  width: 216px;
+  border: 1px solid #dfe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #171821;
+  padding: 11px 12px;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(36, 41, 67, 0.08);
+}
+
+.classFlowNodeBody.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(108, 77, 246, 0.13),
+    0 14px 30px rgba(36, 41, 67, 0.1);
+}
+
+.classFlowNode .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border-color: #ffffff;
+  background: var(--accent);
+}
+
+.classFlowNodeBody strong {
+  font-size: 14px;
+}
+
+.classFlowNodeBody span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.classFlowNodeBody div {
+  display: flex;
+  gap: 6px;
+}
+
+.classFlowNodeBody small {
+  border-radius: 999px;
+  background: #f4f5fa;
+  color: #6f7388;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.react-flow__edge-textbg {
+  fill: #ffffff;
+}
+
+.react-flow__edge-text {
+  fill: #60657a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.classEditorPage .classDetailGrid {
+  margin-top: 0;
+}
+
+.dangerText {
+  color: var(--danger);
+}
+
+.entitySearchPage {
+  grid-template-columns: 360px minmax(360px, 0.75fr) minmax(0, 1fr);
+}
+
+.entitySearchPage .wide {
+  grid-column: auto;
+}
+
+.mcpToolsPage .toolRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 @media (max-width: 1320px) {
   .graphWorkbench,
+  .graphMapPage,
   .classWorkspaceGrid,
   .classDetailGrid,
   .classDesignerGrid,
-  .relationTypesGrid {
+  .relationTypesGrid,
+  .homeLayout,
+  .entitySearchPage {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .graphCenter,
-  .wide {
+  .graphMapCanvas,
+  .wide,
+  .homePrimary {
     grid-column: 1 / -1;
   }
 
@@ -1234,8 +1803,12 @@ textarea:focus {
     overflow-x: auto;
   }
 
+  .navGroup {
+    flex: 0 0 210px;
+  }
+
   .navButton {
-    flex: 0 0 168px;
+    width: 100%;
   }
 
   .topBar,
@@ -1244,7 +1817,6 @@ textarea:focus {
     align-items: stretch;
   }
 
-  .contextStrip,
   .pageGrid,
   .workspaceGrid,
   .importGrid,
@@ -1254,6 +1826,7 @@ textarea:focus {
   .classDesignerGrid,
   .relationTypesGrid,
   .graphWorkbench,
+  .graphMapPage,
   .agentLayout,
   .metricGrid,
   .resultGrid,
@@ -1262,23 +1835,38 @@ textarea:focus {
   .searchForm,
   .formPair,
   .ontologyCardGrid,
-  .relationSummary {
+  .relationSummary,
+  .homeLayout,
+  .homeOntologyGrid,
+  .entitySearchPage {
     grid-template-columns: 1fr;
   }
 
   .span2,
   .wide,
-  .graphCenter {
+  .graphCenter,
+  .graphMapCanvas,
+  .homePrimary {
     grid-column: auto;
+  }
+
+  .homeShell {
+    padding: 18px;
+  }
+
+  .homeTopBar,
+  .classesToolbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .workbench {
     padding: 18px;
   }
 
-  .contextStrip {
-    width: 100%;
-    max-width: none;
+  .workspacePathNav {
+    max-height: 150px;
+    overflow: auto;
   }
 
   .contentFrame {
@@ -1294,11 +1882,372 @@ textarea:focus {
     min-height: 420px;
   }
 
+  .classFlowCanvas {
+    height: 520px;
+    min-height: 420px;
+  }
+
   .dataRow {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .dataRow code {
     display: none;
+  }
+}
+
+/* ====== Entities tab — topology graph page ====== */
+.entityGraphPage {
+  display: flex;
+  flex-direction: column;
+  height: min(820px, calc(100vh - 210px));
+  min-height: 480px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.entityGraphToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.entityGraphToolbar .toolbarIcon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.entityGraphToolbar input {
+  min-width: 240px;
+  padding: 7px 11px;
+  font-size: 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.entityGraphToolbar input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.entityGraphToolbar .toolbarDivider {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.entityGraphToolbar .toolbarLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.entityGraphToolbar .toolbarStats {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.entityGraphToolbar .toolbarEmptyHint {
+  font-size: 12px;
+  color: var(--faint);
+  font-style: italic;
+}
+
+.classChipRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.classChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.classChip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.classChip.active {
+  background: var(--chip-color, var(--accent-soft));
+  border-color: var(--chip-color, var(--accent));
+  color: #ffffff;
+}
+
+.classChipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.classChip.active .classChipDot {
+  background: #ffffff;
+}
+
+.classChipClear {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.classChipClear:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.entityGraphCanvasWrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(108, 77, 246, 0.04), transparent 60%),
+    radial-gradient(circle at 80% 70%, rgba(47, 191, 143, 0.04), transparent 60%),
+    var(--panel-soft);
+}
+
+.entityGraphCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.entityGraphCanvas canvas {
+  outline: none;
+}
+
+.entityGraphEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+}
+
+.entityGraphEmpty h3 {
+  margin: 12px 0 6px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.entityGraphEmpty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* ====== Entity detail drawer (slide-out from right) ====== */
+.entityDrawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(400px, 88vw);
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -12px 0 32px rgba(15, 17, 32, 0.08);
+  transform: translateX(102%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+  z-index: 10;
+  overflow-y: auto;
+  visibility: hidden;
+}
+
+.entityDrawer.open {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.entityDrawerInner {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 24px 28px;
+}
+
+.entityDrawerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.entityDrawerHeaderMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.entityDrawerHeader h2 {
+  font-size: 19px;
+  margin: 8px 0 0;
+  color: var(--ink);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.entityDrawerClassBadge {
+  display: inline-block;
+  padding: 3px 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.entityDrawerAliases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.aliasChip {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.entityDrawerSection h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+
+.entityDrawerDesc {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.entityDrawerEmpty {
+  font-size: 13px;
+  color: var(--faint);
+  font-style: italic;
+  margin: 0;
+}
+
+.entityDrawerRelations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entityDrawerRelItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.entityDrawerRelItemIncoming {
+  background: rgba(108, 77, 246, 0.04);
+}
+
+.entityDrawerRelType {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.entityDrawerRelArrow {
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+.entityDrawerRelTarget {
+  color: var(--ink);
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityDrawerProps {
+  font-size: 11.5px;
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.entityDrawerFooter {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.entityDrawerId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (max-width: 720px) {
+  .entityGraphToolbar input {
+    min-width: 0;
+    flex: 1;
+  }
+  .entityGraphToolbar .toolbarStats {
+    width: 100%;
+    margin-left: 0;
+  }
+  .entityDrawer {
+    width: 100%;
   }
 }

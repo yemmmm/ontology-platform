@@ -12,7 +12,7 @@ React/Vite UI
   health view, and demo agent test view.
 
 FastAPI HTTP API
-  Health checks, shared-token admin auth, project CRUD, ontology CRUD,
+  Health checks, project CRUD, ontology CRUD,
   class/property/relation-type CRUD, entity CRUD/query, relation create/list,
   JSON import/export, and demo agent-test endpoint.
 

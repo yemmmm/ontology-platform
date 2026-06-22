@@ -3,8 +3,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_env: str = "development"
-    admin_token: str = "change-me-admin-token"
-    mcp_api_key: str = "change-me-mcp-key"
 
     database_url: str = (
         "postgresql+psycopg://ontology:ontology@localhost:5432/"

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, require_admin_token
+from app.api.deps import get_db_session
 from app.api.schemas import (
     ClassCreate,
     ClassRead,
@@ -22,7 +22,7 @@ from app.api.schemas import (
 )
 from app.services import metadata as service
 
-router = APIRouter(tags=["metadata"], dependencies=[Depends(require_admin_token)])
+router = APIRouter(tags=["metadata"])
 
 
 @router.get("/projects", response_model=list[ProjectRead])

@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, get_settings, require_admin_token
+from app.api.deps import get_db_session, get_neo4j_driver, get_settings
 from app.api.schemas import AgentTestRequest, AgentTestResponse
 from app.core.config import Settings
 from app.services import agent_test as service
 
-router = APIRouter(tags=["agent-test"], dependencies=[Depends(require_admin_token)])
+router = APIRouter(tags=["agent-test"])
 
 
 @router.post("/agent-test/run", response_model=AgentTestResponse)

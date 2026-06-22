@@ -11,17 +11,11 @@ declare global {
 }
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
-export const TOKEN_KEY = "ontology-platform-admin-token";
 
-export async function apiRequest<T>(
-  path: string,
-  token: string,
-  options: RequestInit = {},
-): Promise<T> {
+export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (token.trim()) headers.set("Authorization", `Bearer ${token.trim()}`);
 
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   const text = await response.text();

@@ -1,7 +1,6 @@
 from collections.abc import Generator
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Request
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
@@ -9,28 +8,9 @@ from app.core.config import Settings
 from app.repositories.neo4j import create_neo4j_driver
 from app.repositories.postgres import create_session_factory
 
-admin_bearer = HTTPBearer(auto_error=False)
-
 
 def get_settings(request: Request) -> Settings:
     return request.app.state.settings
-
-
-def require_admin_token(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(admin_bearer),
-) -> None:
-    settings: Settings = request.app.state.settings
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing bearer token",
-        )
-    if credentials.credentials != settings.admin_token:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin token",
-        )
 
 
 def get_db_session(request: Request) -> Generator[Session, None, None]:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, require_admin_token
+from app.api.deps import get_db_session, get_neo4j_driver
 from app.api.schemas import (
     EntityCreate,
     EntityExplainRead,
@@ -17,7 +17,7 @@ from app.api.schemas import (
 )
 from app.services import graph as service
 
-router = APIRouter(tags=["graph"], dependencies=[Depends(require_admin_token)])
+router = APIRouter(tags=["graph"])
 
 
 @router.get("/ontologies/{ontology_id}/entities", response_model=list[EntityRead])

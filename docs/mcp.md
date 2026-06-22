@@ -7,8 +7,6 @@ cd backend
 python -m app.mcp.server
 ```
 
-Each tool accepts an optional `api_key` argument. It must match `MCP_API_KEY` from the backend environment.
-
 All tools return:
 
 ```json
@@ -23,7 +21,7 @@ On failure they return:
 ```json
 {
   "ok": false,
-  "error": "Invalid MCP API key"
+  "error": "Error message"
 }
 ```
 
@@ -38,8 +36,7 @@ Search entities inside one ontology.
   "ontology_id": "ontology-id",
   "query": "payment",
   "class_id": "optional-class-id",
-  "limit": 10,
-  "api_key": "change-me-mcp-key"
+  "limit": 10
 }
 ```
 
@@ -54,8 +51,7 @@ Fetch one entity and optional relation context.
   "ontology_id": "ontology-id",
   "entity_id": "entity-id",
   "include_relations": true,
-  "relation_limit": 50,
-  "api_key": "change-me-mcp-key"
+  "relation_limit": 50
 }
 ```
 
@@ -73,8 +69,7 @@ Traverse nearby graph context.
   "direction": "both",
   "relation_type_ids": ["optional-relation-type-id"],
   "target_class_ids": ["optional-class-id"],
-  "limit": 20,
-  "api_key": "change-me-mcp-key"
+  "limit": 20
 }
 ```
 
@@ -88,8 +83,7 @@ Validate proposed properties against the ontology class schema without writing d
 {
   "ontology_id": "ontology-id",
   "class_id": "class-id",
-  "properties": {"status": "active"},
-  "api_key": "change-me-mcp-key"
+  "properties": {"status": "active"}
 }
 ```
 
@@ -111,8 +105,7 @@ Return entity, class schema, direct relations, related entities, and a short exp
   "ontology_id": "ontology-id",
   "entity_id": "entity-id",
   "depth": 1,
-  "limit": 20,
-  "api_key": "change-me-mcp-key"
+  "limit": 20
 }
 ```
 
@@ -124,10 +117,7 @@ Return entity, class schema, direct relations, related entities, and a short exp
     "ontology-platform": {
       "command": "python",
       "args": ["-m", "app.mcp.server"],
-      "cwd": "/home/yangxiang/ontology-platform/backend",
-      "env": {
-        "MCP_API_KEY": "change-me-mcp-key"
-      }
+      "cwd": "/home/yangxiang/ontology-platform/backend"
     }
   }
 }

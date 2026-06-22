@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, status
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, require_admin_token
+from app.api.deps import get_db_session, get_neo4j_driver
 from app.api.schemas import OntologyExportRead, OntologyImportPayload
 from app.services import import_export as service
 
-router = APIRouter(tags=["import-export"], dependencies=[Depends(require_admin_token)])
+router = APIRouter(tags=["import-export"])
 
 
 @router.get("/ontologies/{ontology_id}/export", response_model=OntologyExportRead)

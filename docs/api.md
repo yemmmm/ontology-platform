@@ -4,16 +4,6 @@ Base URL: `http://localhost:8000/api`
 
 The API manages ontology metadata in PostgreSQL and graph instances in Neo4j. Current routes are intended for local MVP use.
 
-## Auth
-
-Metadata, graph, import/export, and agent-test routes require:
-
-```http
-Authorization: Bearer <ADMIN_TOKEN>
-```
-
-Health routes are public. Do not expose the MVP API directly to untrusted networks; this is a shared-token local development model, not full user auth or RBAC.
-
 ## Error Format
 
 FastAPI errors use a `detail` field:
@@ -91,7 +81,6 @@ Create a project:
 
 ```bash
 curl -X POST http://localhost:8000/api/projects \
-  -H 'Authorization: Bearer change-me-admin-token' \
   -H 'Content-Type: application/json' \
   -d '{"name":"Demo","description":"Local ontology workspace"}'
 ```
@@ -112,7 +101,6 @@ Create a class:
 
 ```bash
 curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/classes \
-  -H 'Authorization: Bearer change-me-admin-token' \
   -H 'Content-Type: application/json' \
   -d '{"name":"Tool","aliases":["Capability"],"parent_class_ids":[]}'
 ```
@@ -121,7 +109,6 @@ Create a property:
 
 ```bash
 curl -X POST http://localhost:8000/api/classes/{class_id}/properties \
-  -H 'Authorization: Bearer change-me-admin-token' \
   -H 'Content-Type: application/json' \
   -d '{"name":"status","type":"enum","required":true,"enum_values":["active","deprecated"]}'
 ```
@@ -146,7 +133,6 @@ Create an entity:
 
 ```bash
 curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/entities \
-  -H 'Authorization: Bearer change-me-admin-token' \
   -H 'Content-Type: application/json' \
   -d '{
     "class_id": "class-id",
@@ -176,7 +162,6 @@ Create a relation:
 
 ```bash
 curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/relations \
-  -H 'Authorization: Bearer change-me-admin-token' \
   -H 'Content-Type: application/json' \
   -d '{
     "relation_type_id": "relation-type-id",

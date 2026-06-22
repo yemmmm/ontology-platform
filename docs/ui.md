@@ -14,7 +14,7 @@ Set `VITE_API_BASE_URL` to override the default `http://localhost:8000/api`.
 
 ## Implemented Pages
 
-- Projects: enter admin token, list/create/delete projects, list/create/delete ontologies, select active context.
+- Projects: list/create/delete projects, list/create/delete ontologies, select active context.
 - Ontology Designer: list/create/delete classes, properties, and relation types.
 - Graph Manager: list/create entities and relations, inspect a simple SVG graph view.
 - MCP/Agent Test: send a question to `POST /api/agent-test/run`, inspect answer, tool calls, graph context, and prompt preview.
@@ -24,12 +24,12 @@ Set `VITE_API_BASE_URL` to override the default `http://localhost:8000/api`.
 
 ```text
 React UI
-  -> FastAPI /api routes with Authorization: Bearer <ADMIN_TOKEN>
+  -> FastAPI /api routes
   -> PostgreSQL for ontology metadata
   -> Neo4j for graph instances
 ```
 
-The UI stores the admin token in localStorage for local development convenience. It never connects directly to PostgreSQL or Neo4j.
+The UI never connects directly to PostgreSQL or Neo4j.
 
 ## Future Work
 

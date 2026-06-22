@@ -340,11 +340,11 @@ def find_related_entity_nodes(
     UNWIND path_relations AS relation
     WITH neighbor, relation
     MATCH (source:Entity)-[relation]->(target:Entity)
-    WITH neighbor, collect(DISTINCT {
+    WITH neighbor, collect(DISTINCT {{
       relation: properties(relation),
       source_id: source.id,
       target_id: target.id
-    }) AS relation_records
+    }}) AS relation_records
     RETURN neighbor, relation_records
     ORDER BY neighbor.name ASC
     LIMIT $limit
