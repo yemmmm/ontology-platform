@@ -251,7 +251,7 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
       layout: { name: "fcose", animate: false, randomize: false } as cytoscape.LayoutOptions,
       minZoom: 0.18,
       maxZoom: 3,
-      wheelSensitivity: 0.3,
+      wheelSensitivity: 2,
     });
     cy.on("tap", "node", (event) => onSelectRef.current(String(event.target.id())));
     cy.on("tap", (event) => {

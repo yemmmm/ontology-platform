@@ -371,6 +371,27 @@ def create_relation_edge(
         return _relation_from_record(record)
 
 
+def delete_relation_edge(
+    driver: Driver,
+    relation_id: str,
+    project_id: str,
+    ontology_id: str,
+) -> bool:
+    query = """
+    MATCH ()-[relation {id: $relation_id, project_id: $project_id, ontology_id: $ontology_id}]->()
+    DELETE relation
+    RETURN count(relation) AS deleted_count
+    """
+    with driver.session() as session:
+        record = session.run(
+            query,
+            relation_id=relation_id,
+            project_id=project_id,
+            ontology_id=ontology_id,
+        ).single()
+        return bool(record and record["deleted_count"])
+
+
 def list_relation_edges(
     driver: Driver,
     project_id: str,

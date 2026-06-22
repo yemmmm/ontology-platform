@@ -2148,6 +2148,127 @@ textarea:focus {
   padding-bottom: 0;
 }
 
+.entityRelationsPanel {
+  grid-column: 1 / -1;
+}
+
+.entityRelationSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.entityRelationSearch:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.entityRelationSearch input {
+  width: 100%;
+  border: 0;
+  padding-inline: 0;
+  box-shadow: none;
+}
+
+.entityRelationNoResults {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.entityRelationChoices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.entityRelationChoice {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 11px;
+}
+
+.entityRelationChoiceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.entityRelationChoiceHeader strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.entityRelationChoiceHeader > span {
+  border-radius: 999px;
+  background: var(--accent-soft);
+  padding: 2px 7px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.entityRelationChoice > p,
+.entityRelationChoice > small {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.entityRelationChoice .entityRelationAliases {
+  display: block;
+  color: var(--faint);
+}
+
+.entityRelationTargets {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.entityRelationTargets label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border-radius: 6px;
+  padding: 6px 7px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.entityRelationTargets label:hover {
+  background: var(--accent-soft);
+}
+
+.entityRelationTargets span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityRelationTargets small {
+  color: var(--faint);
+  font-size: 10px;
+}
+
 .entityPropertyLabel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2293,6 +2414,49 @@ textarea:focus {
 .entityDrawerHeaderMain {
   flex: 1;
   min-width: 0;
+}
+
+.entityDrawerHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entityDeleteConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(203, 62, 62, 0.28);
+  border-radius: 8px;
+  background: rgba(203, 62, 62, 0.06);
+}
+
+.entityDeleteConfirm > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.entityDeleteConfirm strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.entityDeleteConfirm span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.entityDeleteConfirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.entityDrawerEdit {
+  padding: 7px 10px;
 }
 
 .entityDrawerHeader h2 {

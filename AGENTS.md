@@ -34,6 +34,11 @@ Frontend code uses TypeScript, React, and ES modules. Use `PascalCase` for compo
 
 Backend dev dependencies include `pytest`; place tests under `backend/tests/` with names like `test_metadata.py` or `test_graph_validation.py`, then run `cd backend && uv run pytest`. Prefer service-level tests for validation rules.
 
+Any change under `backend/` must include new or updated tests when behavior changes and must be
+verified with `cd backend && uv run pytest` before the work is considered complete. Do not report a
+backend change as complete while tests are failing. If the test command cannot be run because an
+external dependency is unavailable, document the exact blocker and the narrower checks that were run.
+
 No frontend test runner is configured yet. For UI changes, run `cd frontend && npm run build` and document manual browser checks.
 
 ## Commit & Pull Request Guidelines

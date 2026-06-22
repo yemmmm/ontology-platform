@@ -174,3 +174,17 @@ def create_relation(
     driver: Driver = Depends(get_neo4j_driver),
 ):
     return service.create_relation(session, driver, ontology_id, payload)
+
+
+@router.delete(
+    "/ontologies/{ontology_id}/relations/{relation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_relation(
+    ontology_id: str,
+    relation_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    service.delete_relation(session, driver, ontology_id, relation_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

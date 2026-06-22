@@ -1,4 +1,5 @@
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { Entity, Relation } from "../types";
 import { classNames, compactId, prettyJson } from "../utils";
 
@@ -7,6 +8,8 @@ type EntityDetailDrawerProps = {
   relations: Relation[];
   entities: Entity[];
   onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 };
 
 function relationsFor(entity: Entity, relations: Relation[]) {
@@ -23,6 +26,17 @@ export function EntityDetailDrawer(props: EntityDetailDrawerProps) {
   const { entity, onClose } = props;
   const open = entity !== null;
   const descriptionValue = entity ? readDescription(entity.properties) : "";
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const relationCount = entity
+    ? props.relations.filter(
+        (relation) =>
+          relation.source_entity_id === entity.id || relation.target_entity_id === entity.id,
+      ).length
+    : 0;
+
+  useEffect(() => {
+    setConfirmingDelete(false);
+  }, [entity?.id]);
 
   return (
     <aside
@@ -46,10 +60,50 @@ export function EntityDetailDrawer(props: EntityDetailDrawerProps) {
                 </div>
               )}
             </div>
-            <button className="iconButton" onClick={onClose} type="button" aria-label="Close detail">
-              <X size={16} />
-            </button>
+            <div className="entityDrawerHeaderActions">
+              <button className="secondaryButton entityDrawerEdit" onClick={props.onEdit} type="button">
+                <Pencil size={14} /> Edit
+              </button>
+              <button
+                aria-label={`Delete ${entity.name}`}
+                className="iconButton danger"
+                onClick={() => setConfirmingDelete(true)}
+                title="Delete entity"
+                type="button"
+              >
+                <Trash2 size={15} />
+              </button>
+              <button className="iconButton" onClick={onClose} type="button" aria-label="Close detail">
+                <X size={16} />
+              </button>
+            </div>
           </header>
+
+          {confirmingDelete && (
+            <div className="entityDeleteConfirm" role="alert">
+              <div>
+                <strong>Delete this entity?</strong>
+                <span>
+                  {relationCount > 0
+                    ? `This entity has ${relationCount} connected ${relationCount === 1 ? "relation" : "relations"}. Remove them before deleting the entity.`
+                    : "This action cannot be undone."}
+                </span>
+              </div>
+              <div className="entityDeleteConfirmActions">
+                <button className="secondaryButton" onClick={() => setConfirmingDelete(false)} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="secondaryButton dangerText"
+                  disabled={relationCount > 0}
+                  onClick={props.onDelete}
+                  type="button"
+                >
+                  <Trash2 size={14} /> Delete entity
+                </button>
+              </div>
+            </div>
+          )}
 
           <section className="entityDrawerSection">
             <h3>Description</h3>

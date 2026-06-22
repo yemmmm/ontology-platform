@@ -85,7 +85,7 @@ type WorkspaceTab =
   | "mcp-tools"
   | "setting";
 type ClassPageMode = "topology" | "create" | "edit";
-type EntityPageMode = "topology" | "create";
+type EntityPageMode = "topology" | "create" | "edit";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 type ParentClassPickerProps = {
   classes: ClassDef[];
@@ -1515,11 +1515,25 @@ function EntitiesPage(props: {
     ? props.entities.find((entity) => entity.id === selectedEntityId) ?? null
     : null;
 
-  if (mode === "create") {
+  function deleteSelectedEntity() {
+    if (!selectedEntity) return;
+    props.mutate(async () => {
+      await props.request<void>(
+        `/ontologies/${props.ontologyId}/entities/${selectedEntity.id}`,
+        { method: "DELETE" },
+      );
+      setSelectedEntityId(null);
+      await props.reloadGraph();
+    }, "Entity deleted");
+  }
+
+  if (mode === "create" || (mode === "edit" && selectedEntity)) {
     return (
-      <EntityCreatePage
+      <EntityFormPage
         classes={props.classes}
+        entity={mode === "edit" ? selectedEntity ?? undefined : undefined}
         entities={props.entities}
+        relations={props.relations}
         mutate={props.mutate}
         onBack={() => setMode("topology")}
         onCreated={(entityId) => {
@@ -1528,6 +1542,7 @@ function EntitiesPage(props: {
         }}
         ontologyId={props.ontologyId}
         propertiesByClass={props.propertiesByClass}
+        relationTypes={props.relationTypes}
         reloadGraph={props.reloadGraph}
         request={props.request}
       />
@@ -1618,6 +1633,8 @@ function EntitiesPage(props: {
           relations={props.relations}
           entities={props.entities}
           onClose={() => setSelectedEntityId(null)}
+          onDelete={deleteSelectedEntity}
+          onEdit={() => setMode("edit")}
         />
       </div>
     </section>
@@ -1665,28 +1682,140 @@ function hasEntityPropertyValue(property: PropertyDef, value: unknown) {
   return value !== undefined && value !== null && value !== "";
 }
 
-function EntityCreatePage(props: {
+function editablePropertyValue(property: PropertyDef, value: unknown): unknown {
+  if (property.multi_valued) {
+    return Array.isArray(value)
+      ? value.map((item) => editablePropertyValue({ ...property, multi_valued: false }, item))
+      : [];
+  }
+  if (property.type === "json" && value !== undefined) return JSON.stringify(value, null, 2);
+  if (property.type === "boolean" && typeof value === "boolean") return String(value);
+  return value;
+}
+
+function classMatchesRelation(
+  actualClassId: string,
+  expectedClassId: string,
+  classes: ClassDef[],
+  seen = new Set<string>(),
+): boolean {
+  if (actualClassId === expectedClassId) return true;
+  if (seen.has(actualClassId)) return false;
+  const classDef = classes.find((item) => item.id === actualClassId);
+  if (!classDef) return false;
+  const nextSeen = new Set(seen).add(actualClassId);
+  return classDef.parent_class_ids.some((parentId) =>
+    classMatchesRelation(parentId, expectedClassId, classes, nextSeen),
+  );
+}
+
+type EntityRelationChoice = {
+  direction: "incoming" | "outgoing";
+  relationType: RelationType;
+  candidates: Entity[];
+};
+
+function EntityFormPage(props: {
   ontologyId: string;
   classes: ClassDef[];
   entities: Entity[];
+  relations: Relation[];
   propertiesByClass: Record<string, PropertyDef[]>;
+  relationTypes: RelationType[];
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadGraph: () => Promise<void>;
   onBack: () => void;
   onCreated: (entityId: string) => void;
+  entity?: Entity;
 }) {
-  const [form, setForm] = useState({ aliases: "", classId: props.classes[0]?.id ?? "", name: "" });
-  const [propertyValues, setPropertyValues] = useState<Record<string, unknown>>({});
+  const [form, setForm] = useState({
+    aliases: props.entity?.aliases.join(", ") ?? "",
+    classId: props.entity?.class_id ?? props.classes[0]?.id ?? "",
+    name: props.entity?.name ?? "",
+  });
+  const initialProperties = effectivePropertiesForClass(
+    props.entity?.class_id ?? props.classes[0]?.id ?? "",
+    props.classes,
+    props.propertiesByClass,
+  );
+  const [propertyValues, setPropertyValues] = useState<Record<string, unknown>>(() =>
+    Object.fromEntries(initialProperties.map((property) => [
+      property.name,
+      editablePropertyValue(property, props.entity?.properties[property.name]),
+    ])),
+  );
+  const [relationTargets, setRelationTargets] = useState<Record<string, string[]>>(() => {
+    if (!props.entity) return {};
+    const targets: Record<string, string[]> = {};
+    props.relations.forEach((relation) => {
+      if (relation.source_entity_id === props.entity?.id) {
+        const key = `outgoing:${relation.relation_type_id}`;
+        targets[key] = [...(targets[key] ?? []), relation.target_entity_id];
+      }
+      if (relation.target_entity_id === props.entity?.id) {
+        const key = `incoming:${relation.relation_type_id}`;
+        targets[key] = [...(targets[key] ?? []), relation.source_entity_id];
+      }
+    });
+    return targets;
+  });
+  const [relationQuery, setRelationQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const selectedClass = props.classes.find((item) => item.id === form.classId) ?? null;
   const properties = useMemo(
     () => effectivePropertiesForClass(form.classId, props.classes, props.propertiesByClass),
     [form.classId, props.classes, props.propertiesByClass],
   );
+  const relationChoices = useMemo<EntityRelationChoice[]>(() => {
+    if (!form.classId) return [];
+    return props.relationTypes.flatMap((relationType) => {
+      const choices: EntityRelationChoice[] = [];
+      if (classMatchesRelation(form.classId, relationType.source_class_id, props.classes)) {
+        choices.push({
+          direction: "outgoing",
+          relationType,
+          candidates: props.entities.filter((entity) =>
+            classMatchesRelation(entity.class_id, relationType.target_class_id, props.classes),
+          ),
+        });
+      }
+      if (classMatchesRelation(form.classId, relationType.target_class_id, props.classes)) {
+        choices.push({
+          direction: "incoming",
+          relationType,
+          candidates: props.entities.filter((entity) =>
+            classMatchesRelation(entity.class_id, relationType.source_class_id, props.classes),
+          ),
+        });
+      }
+      return choices;
+    });
+  }, [form.classId, props.classes, props.entities, props.relationTypes]);
+  const visibleRelationChoices = useMemo(() => {
+    const query = relationQuery.trim().toLocaleLowerCase();
+    if (!query) return relationChoices;
+    return relationChoices.filter(({ relationType }) =>
+      [relationType.name, ...relationType.aliases].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [relationChoices, relationQuery]);
 
   function setPropertyValue(name: string, value: unknown) {
     setPropertyValues((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleRelationTarget(key: string, entityId: string) {
+    setRelationTargets((current) => {
+      const selected = current[key] ?? [];
+      return {
+        ...current,
+        [key]: selected.includes(entityId)
+          ? selected.filter((item) => item !== entityId)
+          : [...selected, entityId],
+      };
+    });
   }
 
   async function saveEntity(event: FormEvent) {
@@ -1700,25 +1829,75 @@ function EntityCreatePage(props: {
         );
         if (missing.length) throw new Error(`Required properties: ${missing.map((item) => item.name).join(", ")}`);
 
-        const entityProperties: JsonObject = {};
+        const entityProperties: JsonObject = { ...(props.entity?.properties ?? {}) };
         properties.forEach((property) => {
           const value = propertyValues[property.name];
           if (hasEntityPropertyValue(property, value)) {
             entityProperties[property.name] = parseEntityPropertyValue(property, value);
+          } else {
+            delete entityProperties[property.name];
           }
         });
-        const created = await props.request<Entity>(`/ontologies/${props.ontologyId}/entities`, {
-          method: "POST",
+        const saved = await props.request<Entity>(
+          props.entity
+            ? `/ontologies/${props.ontologyId}/entities/${props.entity.id}`
+            : `/ontologies/${props.ontologyId}/entities`, {
+          method: props.entity ? "PATCH" : "POST",
           body: JSON.stringify({
             aliases: splitCsv(form.aliases),
-            class_id: form.classId,
+            ...(!props.entity && { class_id: form.classId }),
             name: form.name,
             properties: entityProperties,
           }),
         });
+        const desiredRelations = new Map<string, {
+          relationTypeId: string;
+          sourceEntityId: string;
+          targetEntityId: string;
+        }>();
+        relationChoices.forEach((choice) => {
+          const key = `${choice.direction}:${choice.relationType.id}`;
+          (relationTargets[key] ?? []).forEach((targetEntityId) => {
+            const sourceEntityId = choice.direction === "outgoing" ? saved.id : targetEntityId;
+            const targetId = choice.direction === "outgoing" ? targetEntityId : saved.id;
+            desiredRelations.set(
+              `${choice.relationType.id}:${sourceEntityId}:${targetId}`,
+              { relationTypeId: choice.relationType.id, sourceEntityId, targetEntityId: targetId },
+            );
+          });
+        });
+        const existingRelations = props.entity
+          ? props.relations.filter((relation) =>
+              relation.source_entity_id === saved.id || relation.target_entity_id === saved.id,
+            )
+          : [];
+        const existingKeys = new Set(existingRelations.map((relation) =>
+          `${relation.relation_type_id}:${relation.source_entity_id}:${relation.target_entity_id}`,
+        ));
+        const createRequests = [...desiredRelations.entries()]
+          .filter(([key]) => !existingKeys.has(key))
+          .map(([, relation]) =>
+              props.request<Relation>(`/ontologies/${props.ontologyId}/relations`, {
+                method: "POST",
+                body: JSON.stringify({
+                  relation_type_id: relation.relationTypeId,
+                  source_entity_id: relation.sourceEntityId,
+                  target_entity_id: relation.targetEntityId,
+                  properties: {},
+                }),
+              }));
+        const deleteRequests = existingRelations
+          .filter((relation) => !desiredRelations.has(
+            `${relation.relation_type_id}:${relation.source_entity_id}:${relation.target_entity_id}`,
+          ))
+          .map((relation) => props.request<void>(
+            `/ontologies/${props.ontologyId}/relations/${relation.id}`,
+            { method: "DELETE" },
+          ));
+        await Promise.all([...createRequests, ...deleteRequests]);
         await props.reloadGraph();
-        props.onCreated(created.id);
-      }, "Entity created");
+        props.onCreated(saved.id);
+      }, props.entity ? "Entity updated" : "Entity created");
     } finally {
       setSubmitting(false);
     }
@@ -1732,8 +1911,8 @@ function EntityCreatePage(props: {
         </button>
         <div>
           <span className="eyebrow">Entity editor</span>
-          <h2>Create entity</h2>
-          <p>Choose a class and add an instance that conforms to its property schema.</p>
+          <h2>{props.entity ? "Edit entity" : "Create entity"}</h2>
+          <p>{props.entity ? "Update the node identity and schema-defined properties." : "Choose a class and add an instance that conforms to its property schema."}</p>
         </div>
       </header>
 
@@ -1746,8 +1925,10 @@ function EntityCreatePage(props: {
                 onChange={(event) => {
                   setForm((current) => ({ ...current, classId: event.target.value }));
                   setPropertyValues({});
+                  setRelationTargets({});
                 }}
                 required
+                disabled={Boolean(props.entity)}
                 value={form.classId}
               >
                 {!props.classes.length && <option value="">No classes available</option>}
@@ -1804,11 +1985,79 @@ function EntityCreatePage(props: {
           )}
         </Panel>
 
+        <Panel className="entityRelationsPanel" icon={<GitBranch size={17} />} title="Relations">
+            {!selectedClass ? (
+              <EmptyState icon={<GitBranch size={20} />} title="Select a class to configure relations" />
+            ) : relationChoices.length === 0 ? (
+              <div className="entityNoProperties">
+                <Check size={18} />
+                <div><strong>No relations defined</strong><span>This class has no compatible relation types.</span></div>
+              </div>
+            ) : (
+              <>
+                <label className="entityRelationSearch">
+                  <Search size={14} />
+                  <input
+                    aria-label="Search relation types by name or alias"
+                    onChange={(event) => setRelationQuery(event.target.value)}
+                    placeholder="Search relations by name or alias"
+                    type="search"
+                    value={relationQuery}
+                  />
+                </label>
+                {visibleRelationChoices.length === 0 ? (
+                  <div className="entityRelationNoResults">No relation types match “{relationQuery}”.</div>
+                ) : <div className="entityRelationChoices">
+                {visibleRelationChoices.map((choice) => {
+                  const key = `${choice.direction}:${choice.relationType.id}`;
+                  const expectedClassId = choice.direction === "outgoing"
+                    ? choice.relationType.target_class_id
+                    : choice.relationType.source_class_id;
+                  return (
+                    <section className="entityRelationChoice" key={key}>
+                      <div className="entityRelationChoiceHeader">
+                        <strong>{choice.relationType.name}</strong>
+                        <span>{choice.direction === "outgoing" ? "Outgoing" : "Incoming"}</span>
+                      </div>
+                      {choice.relationType.aliases.length > 0 && (
+                        <small className="entityRelationAliases">
+                          Aliases: {choice.relationType.aliases.join(", ")}
+                        </small>
+                      )}
+                      <p>
+                        {choice.direction === "outgoing" ? `${selectedClass.name} → ` : `${nameFor(props.classes, expectedClassId)} → `}
+                        {choice.direction === "outgoing" ? nameFor(props.classes, expectedClassId) : selectedClass.name}
+                      </p>
+                      {choice.candidates.length === 0 ? (
+                        <small>No compatible {nameFor(props.classes, expectedClassId)} entities available.</small>
+                      ) : (
+                        <div className="entityRelationTargets">
+                          {choice.candidates.map((entity) => (
+                            <label key={entity.id}>
+                              <input
+                                checked={(relationTargets[key] ?? []).includes(entity.id)}
+                                onChange={() => toggleRelationTarget(key, entity.id)}
+                                type="checkbox"
+                              />
+                              <span>{entity.name}</span>
+                              <small>{entity.class_label}</small>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+                </div>}
+              </>
+            )}
+          </Panel>
+
         <footer className="entityCreateActions">
           <button className="secondaryButton" disabled={submitting} onClick={props.onBack} type="button">Cancel</button>
           <button className="primaryButton" disabled={!selectedClass || !form.name.trim() || submitting} type="submit">
             {submitting ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
-            {submitting ? "Creating..." : "Create entity"}
+            {submitting ? (props.entity ? "Saving..." : "Creating...") : (props.entity ? "Save changes" : "Create entity")}
           </button>
         </footer>
       </form>

@@ -378,6 +378,23 @@ def create_relation(
     return graph_repo.create_relation_edge(driver, relation_type.normalized_type, values)
 
 
+def delete_relation(
+    session: Session,
+    driver: Driver,
+    ontology_id: str,
+    relation_id: str,
+) -> None:
+    ontology = get_ontology(session, ontology_id)
+    deleted = graph_repo.delete_relation_edge(
+        driver,
+        relation_id,
+        ontology.project_id,
+        ontology.id,
+    )
+    if not deleted:
+        raise not_found("Relation")
+
+
 def list_relations(
     session: Session,
     driver: Driver,
