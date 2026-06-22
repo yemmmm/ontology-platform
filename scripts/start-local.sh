@@ -246,6 +246,9 @@ main() {
 
   install_frontend_dependencies
 
+  log "Building frontend production assets"
+  (cd "$FRONTEND_DIR" && npm run build)
+
   trap cleanup EXIT INT TERM
 
   ensure_port_available "Backend API" "$BACKEND_HOST" "$BACKEND_PORT"
@@ -257,8 +260,8 @@ main() {
 
   wait_for_tcp "Backend API" "$BACKEND_HOST" "$BACKEND_PORT" 60
 
-  log "Starting frontend at http://$FRONTEND_HOST:$FRONTEND_PORT"
-  (cd "$FRONTEND_DIR" && npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort) &
+  log "Starting frontend production preview at http://$FRONTEND_HOST:$FRONTEND_PORT"
+  (cd "$FRONTEND_DIR" && npm run preview -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort) &
   FRONTEND_PID="$!"
 
   wait_for_tcp "Frontend" "$FRONTEND_HOST" "$FRONTEND_PORT" 60

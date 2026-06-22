@@ -30,7 +30,9 @@ Start the local development stack:
 ./scripts/start-local.sh
 ```
 
-The script checks PostgreSQL and Neo4j first. If either service is not running, it starts the native local installation, then syncs backend dependencies with `uv`, runs migrations, and starts the backend API and frontend.
+The script checks PostgreSQL and Neo4j first, syncs backend dependencies with `uv`, runs migrations,
+builds the frontend production assets, and starts the backend API plus a frontend preview server.
+The preview server proxies `/api` to the backend without enabling Vite hot reload.
 
 If you prefer to run the services manually, create local backend configuration first:
 
