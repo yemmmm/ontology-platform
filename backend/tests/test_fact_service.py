@@ -155,3 +155,155 @@ def test_generate_rejects_non_draft_version() -> None:
 
     with pytest.raises(HTTPException, match="Only draft versions"):
         facts.generate_fact_claims(session, MagicMock(), "v1")
+
+
+def _make_claim(**overrides) -> FactClaimModel:
+    defaults = dict(
+        id="c", ontology_version_id="v1", claim_type="direct", layer="entity_attribute",
+        subject={"entity_id": "e"}, predicate="p", value=1, evidence_ids=[],
+        generation_reason="entity_property", confidence=1.0, audit_status="pending",
+        claim_key="entity_attribute:e:p:1",
+    )
+    defaults.update(overrides)
+    return FactClaimModel(**defaults)
+
+
+def test_sample_fact_claims_returns_stratified_subset_per_layer() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claims = [
+        _make_claim(id=f"a{i}", predicate="p", value=i, claim_key=f"entity_attribute:e:p:{i}")
+        for i in range(10)
+    ] + [
+        _make_claim(
+            id=f"r{i}", predicate="r", value=i, layer="low_confidence",
+            claim_type="low_confidence", confidence=0.3,
+            claim_key=f"low_confidence:e:r:{i}",
+        )
+        for i in range(5)
+    ]
+    session.scalars.return_value = claims
+
+    sampled = facts.sample_fact_claims(
+        session, "v1", {"entity_attribute": 3, "low_confidence": 2}
+    )
+
+    layers: dict[str, int] = {}
+    for claim in sampled:
+        layers[claim.layer] = layers.get(claim.layer, 0) + 1
+    assert layers == {"entity_attribute": 3, "low_confidence": 2}
+
+
+def test_sample_prioritizes_pending_and_stale_claims() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claims = [
+        _make_claim(id="approved1", audit_status="approved", claim_key="k1"),
+        _make_claim(id="pending1", audit_status="pending", claim_key="k2"),
+        _make_claim(id="stale1", audit_status="pending", stale=True, claim_key="k3"),
+    ]
+    session.scalars.return_value = claims
+
+    sampled = facts.sample_fact_claims(session, "v1", {"entity_attribute": 2})
+
+    ids = [c.id for c in sampled]
+    assert ids == ["stale1", "pending1"]
+
+
+def test_review_fact_claim_approved_marks_status() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claim = _make_claim(id="c1")
+    session.get.return_value = claim
+
+    facts.review_fact_claim(
+        session, "c1", decision="approved", reviewer_id="user-1", reason="ok"
+    )
+
+    assert claim.audit_status == "approved"
+    assert claim.review_decision["reviewer_id"] == "user-1"
+    assert claim.reviewed_at is not None
+
+
+def test_review_fact_claim_rejected_requires_fix_proposal() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claim = _make_claim(id="c1")
+    session.get.return_value = claim
+
+    with pytest.raises(HTTPException, match="linked_fix_proposal_id"):
+        facts.review_fact_claim(
+            session, "c1", decision="rejected", reviewer_id="u", reason="wrong"
+        )
+
+
+def test_review_fact_claim_rejected_with_fix_links_proposal() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claim = _make_claim(id="c1")
+    session.get.return_value = claim
+
+    facts.review_fact_claim(
+        session, "c1", decision="rejected", reviewer_id="u",
+        reason="wrong", linked_fix_proposal_id="prop-1",
+    )
+
+    assert claim.audit_status == "rejected"
+    assert claim.linked_fix_proposal_id == "prop-1"
+
+
+def test_review_fact_claim_invalid_decision_rejected() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    claim = _make_claim(id="c1")
+    session.get.return_value = claim
+
+    with pytest.raises(HTTPException, match="Unsupported decision"):
+        facts.review_fact_claim(session, "c1", decision="maybe", reviewer_id="u")
+
+
+def test_invalidate_for_graph_change_marks_affected_pending_claims() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    direct = _make_claim(
+        id="c1", subject={"entity_id": "e1"},
+        graph_path=[{"node": "e1"}],
+    )
+    relation_claim = _make_claim(
+        id="c2", subject={"entity_id": "e2"},
+        graph_path=[{"node": "e2"}, {"edge": "r1"}, {"node": "e1"}],
+    )
+    unrelated = _make_claim(
+        id="c3", subject={"entity_id": "e9"},
+        graph_path=[{"node": "e9"}],
+    )
+    session.scalars.return_value = [direct, relation_claim, unrelated]
+
+    affected = facts.invalidate_for_graph_change(
+        session, "o1", "v1", entity_ids={"e1"}, relation_ids=set()
+    )
+
+    assert affected == 2
+    assert direct.stale is True
+    assert relation_claim.stale is True
+    assert not unrelated.stale
+    session.commit.assert_called_once()
+
+
+def test_invalidate_for_graph_change_noops_without_changes() -> None:
+    from app.services import facts
+
+    session = MagicMock()
+    affected = facts.invalidate_for_graph_change(
+        session, "o1", "v1", entity_ids=set(), relation_ids=set()
+    )
+
+    assert affected == 0
+    session.commit.assert_not_called()

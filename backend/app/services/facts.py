@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -312,3 +313,118 @@ def list_fact_claims(
     return list(
         session.scalars(statement.order_by(FactClaimModel.layer, FactClaimModel.created_at))
     )
+
+
+DEFAULT_STRATIFIED_SAMPLE: dict[str, int] = {
+    "entity_attribute": 5,
+    "entity_relation": 5,
+    "inferred_inverse": 3,
+    "low_confidence": 5,
+    "value_conflict": 5,
+}
+
+
+def sample_fact_claims(
+    session: Session, version_id: str, config: dict[str, int] | None = None
+) -> list[FactClaimModel]:
+    config = config or DEFAULT_STRATIFIED_SAMPLE
+    rows = list(
+        session.scalars(
+            select(FactClaimModel).where(FactClaimModel.ontology_version_id == version_id)
+        )
+    )
+    by_layer: dict[str, list[FactClaimModel]] = defaultdict(list)
+    for row in rows:
+        by_layer[row.layer].append(row)
+    sampled: list[FactClaimModel] = []
+    for layer, count in config.items():
+        bucket = by_layer.get(layer, [])
+        # Prefer non-reviewed and stale first so reviewers see the riskiest claims.
+        bucket_sorted = sorted(
+            bucket,
+            key=lambda c: (
+                c.audit_status != "pending",
+                not c.stale,
+                c.created_at if c.created_at else "",
+            ),
+        )
+        sampled.extend(bucket_sorted[:count])
+    return sampled
+
+
+ALLOWED_DECISIONS = {"approved", "rejected", "needs_correction"}
+
+
+def review_fact_claim(
+    session: Session,
+    claim_id: str,
+    decision: str,
+    reviewer_id: str | None = None,
+    reason: str | None = None,
+    linked_fix_proposal_id: str | None = None,
+) -> FactClaimModel:
+    claim = session.get(FactClaimModel, claim_id)
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Fact claim not found")
+    if decision not in ALLOWED_DECISIONS:
+        raise HTTPException(status_code=422, detail=f"Unsupported decision: {decision}")
+    if decision == "rejected" and not linked_fix_proposal_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Rejected facts must reference a linked_fix_proposal_id",
+        )
+    claim.audit_status = decision
+    claim.review_decision = {
+        "decision": decision,
+        "reviewer_id": reviewer_id,
+        "reason": reason,
+        "at": _now().isoformat(),
+    }
+    claim.reviewed_at = _now()
+    if decision == "rejected":
+        claim.linked_fix_proposal_id = linked_fix_proposal_id
+    session.commit()
+    session.refresh(claim)
+    return claim
+
+
+def invalidate_for_graph_change(
+    session: Session,
+    ontology_id: str,
+    version_id: str,
+    entity_ids: set[str],
+    relation_ids: set[str],
+) -> int:
+    """Mark pending Fact Claims stale when their referenced graph data changes."""
+    if not entity_ids and not relation_ids:
+        return 0
+    rows = list(
+        session.scalars(
+            select(FactClaimModel).where(
+                FactClaimModel.ontology_version_id == version_id,
+                FactClaimModel.audit_status == "pending",
+            )
+        )
+    )
+    affected = 0
+    for claim in rows:
+        subject_id = (
+            claim.subject.get("entity_id") if isinstance(claim.subject, dict) else None
+        )
+        path_ids = {
+            step.get("node") if isinstance(step, dict) else None
+            for step in (claim.graph_path or [])
+        }
+        path_ids.discard(None)
+        touched = (
+            (subject_id in entity_ids)
+            or (path_ids & entity_ids)
+            or (path_ids & relation_ids)
+        )
+        if touched:
+            claim.stale = True
+            claim.stale_reason = "graph_data_changed"
+            affected += 1
+    if affected:
+        session.commit()
+    return affected
