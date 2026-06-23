@@ -1116,14 +1116,6 @@ def publish_version(
     return publication_service.publish_version(session, driver, version_id, confirm=confirm)
 
 
-def get_publication_readiness(
-    session: Session, driver: Driver, version_id: str
-) -> dict[str, Any]:
-    from app.services import publication as publication_service
-
-    return publication_service.evaluate_readiness(session, driver, version_id)
-
-
 def version_diff(session: Session, driver: Driver, from_id: str, to_id: str) -> dict[str, Any]:
     before = _version(session, from_id)
     after = _version(session, to_id)

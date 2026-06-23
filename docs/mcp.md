@@ -21,8 +21,7 @@ The `ontology-builder` Skill uses these additional semantic tools:
 - `propose_schema_changes`: force a proposal to the `schema_change` type.
 - `validate_draft`: validate all editable proposals targeting a draft version.
 - `list_review_items`: list review batches, counts, states, and deep links for an ontology.
-- `get_review_batch`: retrieve one stable batch after an interruption or while waiting.
-- `get_review_workspace_link`: retrieve the exact workbench deep link for a batch.
+- `get_review_batch`: retrieve one stable batch after an interruption or while waiting; the response includes the workbench `deep_link`.
 - `get_publication_readiness`: evaluate publication gates without publishing.
 
 Fact audit decisions, proposal approval/rejection, conflict resolution, waivers, merges, and
@@ -51,9 +50,13 @@ On failure they return:
 ```json
 {
   "ok": false,
-  "error": "Error message"
+  "error": "Human-readable message",
+  "error_code": "not_found"
 }
 ```
+
+`error_code` is one of: `not_found`, `validation_error`, `conflict`,
+`governance_rejection`, `dependency_error`, `internal_error`.
 
 ## Tools
 
@@ -67,7 +70,7 @@ Recall entities globally using hybrid search by default. Ontology and class filt
   "mode": "hybrid",
   "ontology_id": "optional-ontology-id",
   "class_id": "optional-class-id",
-  "limit": 10
+  "limit": 20
 }
 ```
 
@@ -184,8 +187,21 @@ Suggested flow:
 - `propose_relations(proposal)`
 - `propose_entity_merges(proposal)`
 
-The three proposal tools force their corresponding proposal type and only create governance
-candidates. Entity and relation items require persisted Evidence. Merge proposals never merge
-entities at submission time and still require validation plus an explicit platform review decision.
-Files are uploaded through the authenticated HTTP endpoint so binary content is not embedded in MCP
-arguments. `validate_proposal` runs current Schema and graph endpoint checks using the shared service.
+The three `propose_*` tools are convenience wrappers around `submit_proposal` that force the
+matching `proposal_type` (`entity` / `relation` / `merge`); they accept the same payload shape.
+Entity and relation items require persisted Evidence. Merge proposals never merge entities at
+submission time and still require validation plus an explicit platform review decision. Files are
+uploaded through the authenticated HTTP endpoint so binary content is not embedded in MCP arguments.
+`validate_proposal` runs current Schema and graph endpoint checks using the shared service.
+
+### Fact audit tools
+
+- `generate_fact_claims(version_id)`: deterministically regenerate structured Fact Claims from the draft graph.
+- `list_fact_claims(version_id, layer?, claim_type?)`: list Fact Claims stratified by audit layer.
+- `sample_fact_claims(version_id, config?)`: return a stratified fact sample for human audit.
+
+All three tools emit the full `FactClaimRead` shape (id, claim_key, layer, claim_type, subject,
+predicate, value, graph_path, evidence_ids, generation_reason, confidence, audit_status, stale,
+stale_reason, reviewed_at, review_decision, linked_fix_proposal_id, project_id, ontology_id,
+ontology_version_id, created_at, updated_at). Fact review decisions
+(approve/reject/needs_correction) are HTTP-only.

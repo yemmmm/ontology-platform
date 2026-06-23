@@ -1,0 +1,107 @@
+"""Interview / Project Brief / Competency Question MCP tools."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+
+from app.api.schemas import (
+    CompetencyQuestionCreate,
+    CompetencyQuestionRead,
+    InterviewAnswerCreate,
+    InterviewAnswerRead,
+    ProjectBriefUpdate,
+)
+from app.mcp.runtime import _run_tool
+from app.services import interview as interview_service
+
+
+def register_interview(server: FastMCP) -> None:
+    @server.tool()
+    def get_build_context(project_id: str) -> dict[str, Any]:
+        """Read durable project, interview, ontology, and question workflow state."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: interview_service.get_build_context(
+                session, project_id
+            )
+        )
+
+    @server.tool()
+    def get_project_brief(project_id: str) -> dict[str, Any]:
+        """Read Project Brief completeness and up to three high-value clarification items."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: interview_service.get_project_brief(
+                session, project_id
+            )
+        )
+
+    @server.tool()
+    def save_interview_answer(
+        project_id: str,
+        answer: str,
+        source_type: str = "conversation",
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Save a user answer so Project Brief fields and questions can cite it."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: InterviewAnswerRead.model_validate(
+                interview_service.create_answer(
+                    session,
+                    project_id,
+                    InterviewAnswerCreate(
+                        answer=answer, source_type=source_type, actor_id=actor_id
+                    ),
+                )
+            ).model_dump()
+        )
+
+    @server.tool()
+    def update_project_brief(project_id: str, update: dict[str, Any]) -> dict[str, Any]:
+        """Update and confirm interview fields with saved-answer source links."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: interview_service.update_project_brief(
+                session, project_id, ProjectBriefUpdate.model_validate(update)
+            )
+        )
+
+    @server.tool()
+    def list_competency_questions(
+        project_id: str, include_inactive: bool = False
+    ) -> dict[str, Any]:
+        """List ordered competency questions and their validation states."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: [
+                CompetencyQuestionRead.model_validate(item).model_dump()
+                for item in interview_service.list_questions(
+                    session, project_id, include_inactive
+                )
+            ]
+        )
+
+    @server.tool()
+    def propose_competency_questions(
+        project_id: str, questions: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Create ordered draft competency questions; this does not approve them."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: [
+                CompetencyQuestionRead.model_validate(
+                    interview_service.create_question(
+                        session,
+                        project_id,
+                        CompetencyQuestionCreate.model_validate(question),
+                    )
+                ).model_dump()
+                for question in questions
+            ]
+        )
+
+    @server.tool()
+    def validate_competency_question(question_id: str) -> dict[str, Any]:
+        """Run the bound query definition and record pass/fail result."""
+        return _run_tool(
+            lambda session, driver, _embedding_client: interview_service.run_question_validation(
+                session, driver, question_id
+            )
+        )

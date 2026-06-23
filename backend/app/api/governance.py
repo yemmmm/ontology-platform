@@ -19,6 +19,7 @@ from app.api.schemas import (
     VersionDiffRead,
 )
 from app.services import governance as service
+from app.services import publication as publication_service
 
 router = APIRouter(tags=["governance"])
 
@@ -151,7 +152,7 @@ def publication_readiness(
     session: Session = Depends(get_db_session),
     driver: Driver = Depends(get_neo4j_driver),
 ):
-    return service.get_publication_readiness(session, driver, version_id)
+    return publication_service.evaluate_readiness(session, driver, version_id)
 
 
 @router.get("/ontologies/{ontology_id}/knowledge-conflicts", response_model=list[KnowledgeConflictRead])
