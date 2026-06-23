@@ -4,6 +4,25 @@ Base URL: `http://localhost:8000/api`
 
 The API manages ontology metadata in PostgreSQL and graph instances in Neo4j. Current routes are intended for local MVP use.
 
+## v0.3 Governance Foundation
+
+Version and proposal writes are scoped to a draft `OntologyVersion`. A proposal follows
+`proposed -> validating -> validated -> approved/rejected -> applied`; approval and application are
+separate operations. Reusing a `(project_id, idempotency_key)` returns the original proposal.
+
+- `POST /api/ontologies/{ontology_id}/versions`: create an initial or successor draft.
+- `GET /api/ontologies/{ontology_id}/versions`: list version lineage.
+- `GET /api/versions/{from_id}/diff/{to_id}`: compare Schema snapshots and graph counts.
+- `POST /api/proposals`: submit a version-scoped proposal and evidence.
+- `GET /api/proposals/{proposal_id}`: read its audit log and evidence chain.
+- `POST /api/proposals/{proposal_id}/validate`: run deterministic batch validation.
+- `POST /api/proposals/{proposal_id}/review`: approve or reject a validated proposal.
+- `POST /api/proposals/{proposal_id}/apply`: atomically apply an approved batch.
+- `POST /api/versions/{version_id}/publish`: capture immutable Schema and graph snapshots.
+
+Published and deprecated versions reject writes with HTTP `409`. Editing after publication requires a
+successor draft whose `parent_version_id` points to the published version.
+
 ## Error Format
 
 FastAPI errors use a `detail` field:

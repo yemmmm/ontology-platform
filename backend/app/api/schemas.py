@@ -281,3 +281,102 @@ class AgentTestResponse(BaseModel):
     prompt_preview: str
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+
+class OntologyVersionCreate(BaseModel):
+    parent_version_id: str | None = None
+
+
+class OntologyVersionRead(BaseModel):
+    id: str
+    ontology_id: str
+    parent_version_id: str | None
+    version_number: int
+    status: str
+    workflow_status: str
+    schema_snapshot: dict[str, Any]
+    graph_snapshot: dict[str, Any]
+    created_at: datetime
+    published_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EvidenceCreate(BaseModel):
+    source_type: Literal["document", "conversation", "user_statement", "system"]
+    document_id: str | None = None
+    page_number: int | None = Field(default=None, ge=1)
+    chunk_id: str | None = None
+    char_start: int | None = Field(default=None, ge=0)
+    char_end: int | None = Field(default=None, ge=0)
+    quote: str = Field(min_length=1)
+    content_hash: str = Field(min_length=64, max_length=64)
+
+
+class EvidenceRead(EvidenceCreate):
+    id: str
+    proposal_id: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProposalCreate(BaseModel):
+    project_id: str
+    ontology_id: str
+    target_version_id: str
+    proposal_type: Literal[
+        "schema_change", "entity", "relation", "merge", "constraint"
+    ]
+    source_type: str = Field(min_length=1, max_length=40)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    payload: dict[str, Any]
+    created_by_type: Literal["agent", "user", "system"]
+    created_by: str | None = None
+    model_identifier: str | None = None
+    prompt_version: str | None = None
+    evidence: list[EvidenceCreate] = Field(default_factory=list)
+
+
+class ProposalRead(BaseModel):
+    id: str
+    project_id: str
+    ontology_id: str
+    target_version_id: str
+    proposal_type: str
+    status: str
+    source_type: str
+    idempotency_key: str
+    payload: dict[str, Any]
+    created_by_type: str
+    created_by: str | None
+    model_identifier: str | None
+    prompt_version: str | None
+    validation_result: dict[str, Any]
+    review_result: dict[str, Any]
+    application_result: dict[str, Any]
+    audit_log: list[dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+    applied_at: datetime | None
+    evidence: list[EvidenceRead] = Field(default_factory=list)
+    decisions: list[dict[str, Any]] = Field(default_factory=list)
+    validation_runs: list[dict[str, Any]] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReviewDecisionCreate(BaseModel):
+    decision: Literal["approved", "rejected"]
+    reviewer_type: Literal["user", "service"] = "user"
+    reviewer_id: str | None = None
+    reason: str | None = None
+
+
+class VersionDiffRead(BaseModel):
+    from_version_id: str
+    to_version_id: str
+    schema_diff: dict[str, Any] = Field(alias="schema")
+    graph: dict[str, Any]
+
+    model_config = ConfigDict(populate_by_name=True)

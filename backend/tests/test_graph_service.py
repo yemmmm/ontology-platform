@@ -166,6 +166,11 @@ def test_delete_relation_scopes_delete_to_ontology() -> None:
 
     with (
         patch.object(graph, "get_ontology", return_value=ontology),
+        patch.object(
+            graph.graph_repo,
+            "get_relation_edge",
+            return_value={"ontology_version_id": None},
+        ),
         patch.object(graph.graph_repo, "delete_relation_edge", return_value=True) as delete_edge,
     ):
         graph.delete_relation(session, driver, "ontology", "relation")
@@ -178,6 +183,11 @@ def test_delete_relation_reports_missing_relation() -> None:
 
     with (
         patch.object(graph, "get_ontology", return_value=ontology),
+        patch.object(
+            graph.graph_repo,
+            "get_relation_edge",
+            return_value={"ontology_version_id": None},
+        ),
         patch.object(graph.graph_repo, "delete_relation_edge", return_value=False),
         pytest.raises(HTTPException) as exc_info,
     ):

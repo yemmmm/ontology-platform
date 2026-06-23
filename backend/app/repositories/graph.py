@@ -206,6 +206,94 @@ def create_entity_node(driver: Driver, class_label: str, values: dict[str, Any])
         return _entity_from_node(record["entity"])
 
 
+def apply_graph_batch(
+    driver: Driver,
+    *,
+    ontology_id: str,
+    version_id: str,
+    entities: list[dict[str, Any]],
+    relations: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Apply a prevalidated entity/relation batch in one Neo4j transaction."""
+    def apply(tx: Any) -> dict[str, list[str]]:
+        entity_ids: list[str] = []
+        relation_ids: list[str] = []
+        for item in entities:
+            label = _escape_symbol(item["class_label"])
+            values = _encode_graph_values(item)
+            record = tx.run(
+                f"""
+                MERGE (entity:Entity:{label} {{
+                  ontology_id: $ontology_id, ontology_version_id: $version_id,
+                  proposal_item_key: $item_key
+                }})
+                ON CREATE SET entity = $values
+                RETURN entity.id AS id
+                """,
+                ontology_id=ontology_id,
+                version_id=version_id,
+                item_key=values["proposal_item_key"],
+                values=values,
+            ).single(strict=True)
+            entity_ids.append(record["id"])
+        for item in relations:
+            relation_type = _escape_symbol(item["relation_type"])
+            values = _encode_graph_values(item)
+            record = tx.run(
+                f"""
+                MATCH (source:Entity {{id: $source_id, ontology_id: $ontology_id}})
+                MATCH (target:Entity {{id: $target_id, ontology_id: $ontology_id}})
+                MERGE (source)-[relation:{relation_type} {{
+                  ontology_id: $ontology_id, ontology_version_id: $version_id,
+                  proposal_item_key: $item_key
+                }}]->(target)
+                ON CREATE SET relation = $values
+                RETURN relation.id AS id
+                """,
+                source_id=values["source_entity_id"],
+                target_id=values["target_entity_id"],
+                ontology_id=ontology_id,
+                version_id=version_id,
+                item_key=values["proposal_item_key"],
+                values=values,
+            ).single(strict=True)
+            relation_ids.append(record["id"])
+        return {"entity_ids": entity_ids, "relation_ids": relation_ids}
+
+    # execute_write retries the complete callback; MERGE keys make retries idempotent.
+    with driver.session() as session:
+        return session.execute_write(apply)
+
+
+def graph_version_stats(driver: Driver, ontology_id: str, version_id: str) -> dict[str, Any]:
+    with driver.session() as session:
+        entity_rows = list(session.run(
+            """
+            MATCH (entity:Entity {ontology_id: $ontology_id, ontology_version_id: $version_id})
+            RETURN entity.class_id AS key, count(entity) AS count
+            """,
+            ontology_id=ontology_id,
+            version_id=version_id,
+        ))
+        relation_rows = list(session.run(
+            """
+            MATCH ()-[relation {ontology_id: $ontology_id,
+              ontology_version_id: $version_id}]->()
+            RETURN relation.relation_type_id AS key, count(relation) AS count
+            """,
+            ontology_id=ontology_id,
+            version_id=version_id,
+        ))
+        entities_by_class = {row["key"]: row["count"] for row in entity_rows}
+        relations_by_type = {row["key"]: row["count"] for row in relation_rows}
+        return {
+            "entities": sum(entities_by_class.values()),
+            "relations": sum(relations_by_type.values()),
+            "entities_by_class": entities_by_class,
+            "relations_by_type": relations_by_type,
+        }
+
+
 def update_entity_node(
     driver: Driver,
     entity_id: str,
@@ -487,6 +575,23 @@ def delete_relation_edge(
             ontology_id=ontology_id,
         ).single()
         return bool(record and record["deleted_count"])
+
+
+def get_relation_edge(
+    driver: Driver, relation_id: str, project_id: str, ontology_id: str
+) -> dict[str, Any] | None:
+    with driver.session() as session:
+        record = session.run(
+            """
+            MATCH (source:Entity)-[relation {id: $relation_id, project_id: $project_id,
+              ontology_id: $ontology_id}]->(target:Entity)
+            RETURN relation, source.id AS source_id, target.id AS target_id
+            """,
+            relation_id=relation_id,
+            project_id=project_id,
+            ontology_id=ontology_id,
+        ).single()
+        return _relation_from_record(record) if record else None
 
 
 def list_relation_edges(

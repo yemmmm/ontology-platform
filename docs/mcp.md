@@ -1,5 +1,15 @@
 # MCP Tools
 
+## v0.3 Governance Tools
+
+- `submit_proposal`: create or retrieve an idempotent proposal; it never writes formal data.
+- `validate_proposal`: run deterministic proposal validation.
+- `get_proposal_status`: retrieve the complete audit and evidence chain.
+- `apply_approved_proposal`: apply only an already approved proposal to a mutable draft.
+
+MCP proposal writes use the same governance service and immutability checks as HTTP. Approval and
+publication remain explicit governance actions rather than natural-language interpretations.
+
 Run the MCP server from the backend environment:
 
 ```bash

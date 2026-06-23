@@ -6,6 +6,7 @@ from app.api.deps import get_db_session, get_neo4j_driver
 from app.api.agent_test import router as agent_test_router
 from app.api.consistency import router as consistency_router
 from app.api.graph import router as graph_router
+from app.api.governance import router as governance_router
 from app.api.import_export import router as import_export_router
 from app.api.metadata import router as metadata_router
 from app.services.health import check_neo4j, check_postgres
@@ -16,6 +17,7 @@ router.include_router(graph_router)
 router.include_router(import_export_router)
 router.include_router(agent_test_router)
 router.include_router(consistency_router)
+router.include_router(governance_router)
 
 
 @router.get("/health")

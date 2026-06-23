@@ -25,6 +25,7 @@ from app.repositories.models import (
     PropertyDefModel,
     RelationTypeModel,
 )
+from app.repositories.postgres import assert_version_mutable
 
 
 def new_id() -> str:
@@ -89,6 +90,9 @@ def update_project(session: Session, project_id: str, payload: ProjectUpdate) ->
 
 def delete_project(session: Session, project_id: str) -> None:
     project = get_project(session, project_id)
+    for ontology in project.ontologies:
+        if isinstance(ontology.current_version_id, str) and ontology.current_version_id:
+            ensure_ontology_mutable(session, ontology.id)
     session.delete(project)
     commit_or_409(session, "Project could not be deleted")
 
@@ -108,6 +112,13 @@ def get_ontology(session: Session, ontology_id: str) -> OntologyModel:
     if ontology is None:
         raise not_found("Ontology")
     return ontology
+
+
+def ensure_ontology_mutable(session: Session, ontology_id: str) -> None:
+    """Protect all legacy metadata write routes once an ontology is version-managed."""
+    ontology = get_ontology(session, ontology_id)
+    if isinstance(ontology.current_version_id, str) and ontology.current_version_id:
+        assert_version_mutable(session, ontology.current_version_id)
 
 
 def get_ontology_schema(session: Session, ontology_id: str) -> OntologyModel:
@@ -151,6 +162,7 @@ def update_ontology(session: Session, ontology_id: str, payload: OntologyUpdate)
 
 def delete_ontology(session: Session, ontology_id: str) -> None:
     ontology = get_ontology(session, ontology_id)
+    ensure_ontology_mutable(session, ontology_id)
     session.delete(ontology)
     commit_or_409(session, "Ontology could not be deleted")
 
@@ -193,7 +205,7 @@ def ensure_class_ids_belong_to_ontology(
 
 
 def create_class(session: Session, ontology_id: str, payload: ClassCreate) -> ClassModel:
-    get_ontology(session, ontology_id)
+    ensure_ontology_mutable(session, ontology_id)
     ensure_class_ids_belong_to_ontology(session, ontology_id, payload.parent_class_ids)
     class_ = ClassModel(
         id=new_id(),
@@ -213,6 +225,7 @@ def create_class(session: Session, ontology_id: str, payload: ClassCreate) -> Cl
 
 def update_class(session: Session, class_id: str, payload: ClassUpdate) -> ClassModel:
     class_ = get_class(session, class_id)
+    ensure_ontology_mutable(session, class_.ontology_id)
     data = payload.model_dump(exclude_unset=True)
     if "parent_class_ids" in data:
         parent_ids = data["parent_class_ids"]
@@ -230,6 +243,7 @@ def update_class(session: Session, class_id: str, payload: ClassUpdate) -> Class
 
 def delete_class(session: Session, class_id: str) -> None:
     class_ = get_class(session, class_id)
+    ensure_ontology_mutable(session, class_.ontology_id)
     session.delete(class_)
     commit_or_409(session, "Class could not be deleted because it is still referenced")
 
@@ -256,7 +270,8 @@ def create_property(
     class_id: str,
     payload: PropertyDefCreate,
 ) -> PropertyDefModel:
-    get_class(session, class_id)
+    class_ = get_class(session, class_id)
+    ensure_ontology_mutable(session, class_.ontology_id)
     property_ = PropertyDefModel(
         id=new_id(),
         class_id=class_id,
@@ -281,6 +296,7 @@ def update_property(
     payload: PropertyDefUpdate,
 ) -> PropertyDefModel:
     property_ = get_property(session, property_id)
+    ensure_ontology_mutable(session, property_.class_.ontology_id)
     data = payload.model_dump(exclude_unset=True)
     if "type" in data:
         data["type"] = data["type"].value if hasattr(data["type"], "value") else data["type"]
@@ -293,6 +309,7 @@ def update_property(
 
 def delete_property(session: Session, property_id: str) -> None:
     property_ = get_property(session, property_id)
+    ensure_ontology_mutable(session, property_.class_.ontology_id)
     session.delete(property_)
     commit_or_409(session, "Property definition could not be deleted")
 
@@ -331,7 +348,7 @@ def create_relation_type(
     ontology_id: str,
     payload: RelationTypeCreate,
 ) -> RelationTypeModel:
-    get_ontology(session, ontology_id)
+    ensure_ontology_mutable(session, ontology_id)
     ensure_class_ids_belong_to_ontology(
         session,
         ontology_id,
@@ -370,6 +387,7 @@ def update_relation_type(
     payload: RelationTypeUpdate,
 ) -> RelationTypeModel:
     relation_type = get_relation_type(session, relation_type_id)
+    ensure_ontology_mutable(session, relation_type.ontology_id)
     data = payload.model_dump(exclude_unset=True)
     class_ids = [
         value
@@ -395,5 +413,6 @@ def update_relation_type(
 
 def delete_relation_type(session: Session, relation_type_id: str) -> None:
     relation_type = get_relation_type(session, relation_type_id)
+    ensure_ontology_mutable(session, relation_type.ontology_id)
     session.delete(relation_type)
     commit_or_409(session, "Relation type could not be deleted because it is still referenced")

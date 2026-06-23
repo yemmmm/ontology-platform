@@ -15,6 +15,12 @@ class OntologyStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class VersionStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    DEPRECATED = "deprecated"
+
+
 class ConstraintSeverity(StrEnum):
     ERROR = "error"
     WARNING = "warning"
@@ -100,9 +106,15 @@ class OntologyVersionModel(Base):
         ForeignKey("ontologies.id", ondelete="CASCADE"),
         nullable=False,
     )
+    parent_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="SET NULL")
+    )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    status: Mapped[str] = mapped_column(String(32), default=OntologyStatus.DRAFT.value, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=VersionStatus.DRAFT.value, nullable=False)
+    workflow_status: Mapped[str] = mapped_column(String(32), default="gathering", nullable=False)
     schema_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    graph_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -112,6 +124,10 @@ class OntologyVersionModel(Base):
     ontology: Mapped[OntologyModel] = relationship(
         back_populates="versions",
         foreign_keys=[ontology_id],
+    )
+    parent_version: Mapped["OntologyVersionModel | None"] = relationship(
+        remote_side=[id],
+        foreign_keys=[parent_version_id],
     )
 
 
@@ -271,3 +287,163 @@ class ApiKeyModel(Base):
         nullable=False,
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectBriefModel(Base):
+    __tablename__ = "project_briefs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class CompetencyQuestionModel(Base):
+    __tablename__ = "competency_questions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    importance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    query_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    validation_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ProposalModel(Base):
+    __tablename__ = "proposals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_proposals_project_idempotency"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
+    target_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    proposal_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="proposed", nullable=False)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    model_identifier: Mapped[str | None] = mapped_column(String(255))
+    prompt_version: Mapped[str | None] = mapped_column(String(255))
+    validation_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    review_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    application_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    audit_log: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReviewBatchModel(Base):
+    __tablename__ = "review_batches"
+    __table_args__ = (UniqueConstraint("stable_key", name="uq_review_batches_stable_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    stable_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
+    ontology_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE")
+    )
+    review_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    item_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    counts: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class EvidenceModel(Base):
+    __tablename__ = "evidence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(
+        ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    document_id: Mapped[str | None] = mapped_column(String(36))
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    chunk_id: Mapped[str | None] = mapped_column(String(100))
+    char_start: Mapped[int | None] = mapped_column(Integer)
+    char_end: Mapped[int | None] = mapped_column(Integer)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ReviewDecisionModel(Base):
+    __tablename__ = "review_decisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(
+        ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reviewer_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    reviewer_id: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ValidationRunModel(Base):
+    __tablename__ = "validation_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(
+        ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    errors: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PublicationGateModel(Base):
+    __tablename__ = "publication_gates"
+    __table_args__ = (
+        UniqueConstraint("ontology_version_id", "gate_type", name="uq_publication_gate_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    gate_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

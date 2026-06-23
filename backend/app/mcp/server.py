@@ -11,6 +11,8 @@ from app.core.config import Settings
 from app.repositories.neo4j import create_neo4j_driver, ensure_graph_constraints
 from app.repositories.postgres import create_session_factory
 from app.services import graph as graph_service
+from app.services import governance as governance_service
+from app.api.schemas import ProposalCreate
 from app.services.embedding import EmbeddingClient
 
 mcp = FastMCP("ontology-platform")
@@ -156,6 +158,47 @@ def explain_entity(
             depth,
             limit,
         ),
+    )
+
+
+@mcp.tool()
+def submit_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
+    """Submit an idempotent, version-scoped governance proposal; never writes formal data."""
+    return _run_tool(
+        lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+            session,
+            governance_service.create_proposal(session, ProposalCreate.model_validate(proposal)).id,
+        )
+    )
+
+
+@mcp.tool()
+def validate_proposal(proposal_id: str) -> dict[str, Any]:
+    """Run deterministic validation for a proposed batch."""
+    return _run_tool(
+        lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+            session, governance_service.validate_proposal(session, proposal_id).id
+        )
+    )
+
+
+@mcp.tool()
+def get_proposal_status(proposal_id: str) -> dict[str, Any]:
+    """Read the complete proposal audit trail and evidence chain."""
+    return _run_tool(
+        lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+            session, proposal_id
+        )
+    )
+
+
+@mcp.tool()
+def apply_approved_proposal(proposal_id: str) -> dict[str, Any]:
+    """Apply an already approved proposal atomically to its draft version."""
+    return _run_tool(
+        lambda session, driver, _embedding_client: governance_service.proposal_detail(
+            session, governance_service.apply_proposal(session, driver, proposal_id).id
+        )
     )
 
 

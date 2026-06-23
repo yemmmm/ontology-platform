@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.schemas import EntityCreate, EntityUpdate, RelationCreate
 from app.repositories import graph as graph_repo
 from app.repositories.models import ClassModel, OntologyModel, PropertyDefModel, RelationTypeModel
+from app.repositories.postgres import assert_version_mutable
 from app.services.metadata import (
     bad_request,
     ensure_class_ids_belong_to_ontology,
@@ -185,6 +186,18 @@ def ensure_ontology_and_class(
     return ontology, class_, classes_by_id
 
 
+def ensure_graph_write_version(
+    session: Session, ontology: OntologyModel, requested_version_id: str | None
+) -> str | None:
+    version_id = requested_version_id or getattr(ontology, "current_version_id", None)
+    if version_id is None:
+        return None  # Backward-compatible for ontologies created before version governance.
+    version = assert_version_mutable(session, version_id)
+    if version.ontology_id != ontology.id:
+        raise bad_request("Ontology version must belong to the ontology")
+    return version_id
+
+
 def create_entity(
     session: Session,
     driver: Driver,
@@ -193,12 +206,13 @@ def create_entity(
     embedding_client: EmbeddingClient,
 ) -> dict[str, Any]:
     ontology, class_, classes_by_id = ensure_ontology_and_class(session, ontology_id, payload.class_id)
+    version_id = ensure_graph_write_version(session, ontology, payload.ontology_version_id)
     validate_entity_properties(class_, classes_by_id, payload.properties)
     values = {
         "id": new_id(),
         "project_id": ontology.project_id,
         "ontology_id": ontology.id,
-        "ontology_version_id": payload.ontology_version_id or ontology.current_version_id,
+        "ontology_version_id": version_id,
         "class_id": class_.id,
         "class_label": class_.normalized_label,
         "name": payload.name,
@@ -420,6 +434,10 @@ def update_entity(
     entity = graph_repo.get_entity_node(driver, entity_id, ontology.project_id, ontology.id)
     if entity is None:
         raise not_found("Entity")
+    entity_version_id = entity.get("ontology_version_id")
+    ensure_graph_write_version(session, ontology, entity_version_id)
+    if payload.ontology_version_id and payload.ontology_version_id != entity_version_id:
+        raise graph_conflict("Entities cannot be moved between ontology versions")
     data = payload.model_dump(exclude_unset=True)
     if "properties" in data:
         class_ = get_class_with_properties(session, entity["class_id"])
@@ -449,6 +467,10 @@ def delete_entity(
     entity_id: str,
 ) -> None:
     ontology = get_ontology(session, ontology_id)
+    entity = graph_repo.get_entity_node(driver, entity_id, ontology.project_id, ontology.id)
+    if entity is None:
+        raise not_found("Entity")
+    ensure_graph_write_version(session, ontology, entity.get("ontology_version_id"))
     deleted = graph_repo.delete_entity_node(driver, entity_id, ontology.project_id, ontology.id)
     if not deleted:
         existing = graph_repo.get_entity_node(driver, entity_id, ontology.project_id, ontology.id)
@@ -477,6 +499,7 @@ def create_relation(
     payload: RelationCreate,
 ) -> dict[str, Any]:
     ontology = get_ontology(session, ontology_id)
+    version_id = ensure_graph_write_version(session, ontology, payload.ontology_version_id)
     relation_type = get_relation_type_for_ontology(session, ontology_id, payload.relation_type_id)
     source = graph_repo.get_entity_node(
         driver,
@@ -505,7 +528,7 @@ def create_relation(
         "id": new_id(),
         "project_id": ontology.project_id,
         "ontology_id": ontology.id,
-        "ontology_version_id": payload.ontology_version_id or ontology.current_version_id,
+        "ontology_version_id": version_id,
         "relation_type_id": relation_type.id,
         "relation_type": relation_type.normalized_type,
         "source_entity_id": payload.source_entity_id,
@@ -522,6 +545,11 @@ def delete_relation(
     relation_id: str,
 ) -> None:
     ontology = get_ontology(session, ontology_id)
+    relation = graph_repo.get_relation_edge(driver, relation_id, ontology.project_id, ontology.id)
+    if relation is None:
+        raise not_found("Relation")
+    if isinstance(relation, dict):
+        ensure_graph_write_version(session, ontology, relation.get("ontology_version_id"))
     deleted = graph_repo.delete_relation_edge(
         driver,
         relation_id,
