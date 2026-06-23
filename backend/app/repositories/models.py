@@ -2,7 +2,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -297,6 +307,8 @@ class ProjectBriefModel(Base):
         ForeignKey("projects.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    field_states: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    field_sources: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -313,7 +325,11 @@ class CompetencyQuestionModel(Base):
     ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
     question: Mapped[str] = mapped_column(Text, nullable=False)
     importance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    source_answer_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    source_brief_fields: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     query_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     validation_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -321,6 +337,98 @@ class CompetencyQuestionModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class InterviewAnswerModel(Base):
+    __tablename__ = "interview_answers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), default="conversation", nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class SourceDocumentModel(Base):
+    __tablename__ = "source_documents"
+    __table_args__ = (
+        UniqueConstraint("project_id", "content_hash", name="uq_source_documents_content"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    parse_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    parse_error: Mapped[str | None] = mapped_column(Text)
+    parser_version: Mapped[str] = mapped_column(String(40), default="v1", nullable=False)
+    parse_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SourceChunkModel(Base):
+    __tablename__ = "source_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id", "parse_revision", "sequence", name="uq_source_chunks_sequence"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class KnowledgeConflictModel(Base):
+    __tablename__ = "knowledge_conflicts"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "item_key", "field", name="uq_knowledge_conflict_item"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    proposal_id: Mapped[str] = mapped_column(
+        ForeignKey("proposals.id", ondelete="CASCADE"), nullable=False
+    )
+    item_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    field: Mapped[str] = mapped_column(String(255), nullable=False)
+    existing_value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    proposed_value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    resolution: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 
@@ -447,3 +555,43 @@ class PublicationGateModel(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FactClaimModel(Base):
+    __tablename__ = "fact_claims"
+    __table_args__ = (
+        UniqueConstraint("ontology_version_id", "claim_key", name="uq_fact_claims_version_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    claim_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    layer: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    predicate: Mapped[str] = mapped_column(String(255), nullable=False)
+    value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    graph_path: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    generation_reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    confidence: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    audit_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    review_decision: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    linked_fix_proposal_id: Mapped[str | None] = mapped_column(String(36))
+    stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    stale_reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
