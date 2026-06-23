@@ -1085,35 +1085,20 @@ def _schema_snapshot(session: Session, ontology_id: str) -> dict[str, Any]:
     }
 
 
-def publish_version(session: Session, driver: Driver, version_id: str) -> OntologyVersionModel:
-    version = assert_version_mutable(session, version_id)
-    unapplied = session.scalar(
-        select(func.count()).select_from(ProposalModel).where(
-            ProposalModel.target_version_id == version_id,
-            ProposalModel.status.in_(["validated", "approved"]),
-        )
-    )
-    if unapplied:
-        raise HTTPException(status_code=409, detail="All validated proposals must be decided and applied")
-    failed_gate = session.scalar(
-        select(PublicationGateModel).where(
-            PublicationGateModel.ontology_version_id == version_id,
-            PublicationGateModel.status != "passed",
-        )
-    )
-    if failed_gate is not None:
-        raise HTTPException(status_code=409, detail="Publication gates have not passed")
-    version.schema_snapshot = _schema_snapshot(session, version.ontology_id)
-    version.graph_snapshot = graph_repo.graph_version_stats(driver, version.ontology_id, version.id)
-    version.status = VersionStatus.PUBLISHED.value
-    version.workflow_status = "published"
-    version.published_at = _now()
-    ontology = session.get(OntologyModel, version.ontology_id)
-    ontology.current_version_id = version.id
-    ontology.status = "active"
-    session.commit()
-    session.refresh(version)
-    return version
+def publish_version(
+    session: Session, driver: Driver, version_id: str, confirm: bool = False
+) -> OntologyVersionModel:
+    from app.services import publication as publication_service
+
+    return publication_service.publish_version(session, driver, version_id, confirm=confirm)
+
+
+def get_publication_readiness(
+    session: Session, driver: Driver, version_id: str
+) -> dict[str, Any]:
+    from app.services import publication as publication_service
+
+    return publication_service.evaluate_readiness(session, driver, version_id)
 
 
 def version_diff(session: Session, driver: Driver, from_id: str, to_id: str) -> dict[str, Any]:

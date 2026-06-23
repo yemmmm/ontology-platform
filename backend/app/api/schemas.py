@@ -296,6 +296,7 @@ class OntologyVersionRead(BaseModel):
     workflow_status: str
     schema_snapshot: dict[str, Any]
     graph_snapshot: dict[str, Any]
+    publication_report: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     published_at: datetime | None
 
@@ -311,6 +312,63 @@ class EvidenceCreate(BaseModel):
     char_end: int | None = Field(default=None, ge=0)
     quote: str = Field(min_length=1)
     content_hash: str = Field(min_length=64, max_length=64)
+
+
+class SourceChunkRead(BaseModel):
+    id: str
+    document_id: str
+    sequence: int
+    parse_revision: int
+    page_number: int | None
+    char_start: int
+    char_end: int
+    text: str
+    content_hash: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SourceDocumentRead(BaseModel):
+    id: str
+    project_id: str
+    filename: str
+    media_type: str
+    size_bytes: int
+    content_hash: str
+    parse_status: str
+    parse_error: str | None
+    parser_version: str
+    parse_count: int
+    parse_revision: int
+    reused: bool = False
+    chunk_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KnowledgeConflictRead(BaseModel):
+    id: str
+    project_id: str
+    ontology_id: str
+    proposal_id: str
+    item_key: str
+    field: str
+    existing_value: Any
+    proposed_value: Any
+    status: str
+    resolution: dict[str, Any]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConflictResolutionCreate(BaseModel):
+    action: Literal["keep_existing", "accept_proposed", "manual"]
+    value: Any | None = None
+    reviewer_id: str | None = None
 
 
 class EvidenceRead(EvidenceCreate):
@@ -362,6 +420,7 @@ class ProposalRead(BaseModel):
     evidence: list[EvidenceRead] = Field(default_factory=list)
     decisions: list[dict[str, Any]] = Field(default_factory=list)
     validation_runs: list[dict[str, Any]] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -373,6 +432,40 @@ class ReviewDecisionCreate(BaseModel):
     reason: str | None = None
 
 
+class ProposalItemReview(BaseModel):
+    action: Literal["approved", "rejected", "edited", "merged"]
+    reviewer_type: Literal["user", "service"] = "user"
+    reviewer_id: str | None = None
+    reason: str | None = None
+    data: dict[str, Any] | None = None
+    merge_into_key: str | None = None
+
+
+class ProposalBatchReview(BaseModel):
+    item_keys: list[str] = Field(min_length=1)
+    action: Literal["approved", "rejected"]
+    reviewer_type: Literal["user", "service"] = "user"
+    reviewer_id: str | None = None
+    reason: str | None = None
+
+
+class ReviewBatchRead(BaseModel):
+    id: str
+    stable_key: str
+    project_id: str
+    ontology_id: str
+    ontology_version_id: str
+    review_type: str
+    status: str
+    item_ids: list[str]
+    counts: dict[str, Any]
+    deep_link: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class VersionDiffRead(BaseModel):
     from_version_id: str
     to_version_id: str
@@ -380,3 +473,79 @@ class VersionDiffRead(BaseModel):
     graph: dict[str, Any]
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class InterviewAnswerCreate(BaseModel):
+    answer: str = Field(min_length=1, max_length=20000)
+    source_type: Literal["conversation", "user_statement"] = "conversation"
+    actor_id: str | None = Field(default=None, max_length=255)
+
+
+class InterviewAnswerRead(InterviewAnswerCreate):
+    id: str
+    project_id: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectBriefUpdate(BaseModel):
+    fields: dict[str, Any] = Field(default_factory=dict)
+    confirmed_fields: list[str] = Field(default_factory=list)
+    skipped_fields: list[str] = Field(default_factory=list)
+    source_answer_ids: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class ProjectBriefRead(BaseModel):
+    id: str | None = None
+    project_id: str
+    fields: dict[str, Any]
+    field_states: dict[str, str]
+    field_sources: dict[str, list[str]]
+    missing_fields: list[str]
+    clarification_items: list[dict[str, str]]
+    completeness: float
+
+
+class CompetencyQuestionCreate(BaseModel):
+    ontology_id: str
+    question: str = Field(min_length=1, max_length=4000)
+    importance: int = Field(default=3, ge=1, le=5)
+    position: int | None = Field(default=None, ge=0)
+    query_definition: dict[str, Any] = Field(default_factory=dict)
+    source_answer_ids: list[str] = Field(default_factory=list)
+    source_brief_fields: list[str] = Field(default_factory=list)
+
+
+class CompetencyQuestionUpdate(BaseModel):
+    question: str | None = Field(default=None, min_length=1, max_length=4000)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    position: int | None = Field(default=None, ge=0)
+    query_definition: dict[str, Any] | None = None
+    source_answer_ids: list[str] | None = None
+    source_brief_fields: list[str] | None = None
+    active: bool | None = None
+
+
+class CompetencyQuestionStatusUpdate(BaseModel):
+    status: Literal["approved", "testable", "passed", "failed"]
+    validation_result: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompetencyQuestionRead(BaseModel):
+    id: str
+    project_id: str
+    ontology_id: str
+    question: str
+    importance: int
+    position: int
+    status: str
+    active: bool
+    query_definition: dict[str, Any]
+    validation_result: dict[str, Any]
+    source_answer_ids: list[str]
+    source_brief_fields: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

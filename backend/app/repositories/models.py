@@ -125,6 +125,7 @@ class OntologyVersionModel(Base):
     schema_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     graph_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    publication_report: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
