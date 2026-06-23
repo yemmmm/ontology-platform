@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
+from neo4j import Driver
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -386,3 +388,52 @@ def set_question_status(
     session.commit()
     session.refresh(question)
     return question
+
+
+def run_question_validation(
+    session: Session, driver: Driver, question_id: str
+) -> dict[str, Any]:
+    """Run the question's bound query definition and record pass/fail."""
+    question = _question(session, question_id)
+    if question.status != "testable":
+        raise HTTPException(status_code=409, detail="Only testable questions can be validated")
+    definition = question.query_definition or {}
+    kind = definition.get("kind")
+    if kind == "entity_count":
+        class_id = definition.get("class_id")
+        if not class_id:
+            raise HTTPException(status_code=422, detail="entity_count query requires class_id")
+        query = """
+        MATCH (entity:Entity {ontology_id: $ontology_id, class_id: $class_id})
+        RETURN count(entity) AS count
+        """
+        params = {"ontology_id": question.ontology_id, "class_id": class_id}
+    elif kind == "relation_count":
+        rt_id = definition.get("relation_type_id")
+        if not rt_id:
+            raise HTTPException(status_code=422, detail="relation_count query requires relation_type_id")
+        query = """
+        MATCH ()-[relation {ontology_id: $ontology_id, relation_type_id: $rt_id}]->()
+        RETURN count(relation) AS count
+        """
+        params = {"ontology_id": question.ontology_id, "rt_id": rt_id}
+    else:
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported query definition kind: {kind}"
+        )
+    with driver.session() as graph_session:
+        record = graph_session.run(query, **params).single()
+    matches = int((record or {}).get("count", 0)) if isinstance(record, dict) else int(record["count"])
+    expected_min = int(definition.get("min_count", 0))
+    passed = matches >= expected_min
+    result = {
+        "matches": matches,
+        "expected_min": expected_min,
+        "passed": passed,
+        "validated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    question.status = "passed" if passed else "failed"
+    question.validation_result = result
+    session.commit()
+    session.refresh(question)
+    return result

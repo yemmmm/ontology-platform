@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -165,3 +166,79 @@ def test_graph_change_invalidation_noops_without_changes() -> None:
 
     assert affected == 0
     assert passed.status == "passed"
+
+
+def _graph_session(count: int) -> MagicMock:
+    session = MagicMock()
+    record = SimpleNamespace()
+    record.__getitem__ = lambda self, key: {"count": count}[key]
+    driver = MagicMock()
+    graph_session = MagicMock()
+    graph_session.run.return_value.single.return_value = {"count": count}
+    driver.session.return_value.__enter__.return_value = graph_session
+    return driver
+
+
+def test_run_question_validation_passes_when_count_meets_threshold() -> None:
+    session = MagicMock()
+    driver = _graph_session(3)
+    item = question(
+        status="testable",
+        query_definition={"kind": "entity_count", "class_id": "c1", "min_count": 1},
+    )
+    session.get.return_value = item
+
+    result = interview.run_question_validation(session, driver, item.id)
+
+    assert item.status == "passed"
+    assert result["passed"] is True
+    assert result["matches"] == 3
+    session.commit.assert_called_once()
+
+
+def test_run_question_validation_fails_below_threshold() -> None:
+    session = MagicMock()
+    driver = _graph_session(2)
+    item = question(
+        status="testable",
+        query_definition={"kind": "entity_count", "class_id": "c1", "min_count": 5},
+    )
+    session.get.return_value = item
+
+    result = interview.run_question_validation(session, driver, item.id)
+
+    assert item.status == "failed"
+    assert result["passed"] is False
+
+
+def test_run_question_validation_rejects_unsupported_definition() -> None:
+    session = MagicMock()
+    item = question(status="testable", query_definition={"kind": "unknown"})
+    session.get.return_value = item
+
+    with pytest.raises(HTTPException, match="Unsupported query definition"):
+        interview.run_question_validation(session, MagicMock(), item.id)
+
+
+def test_run_question_validation_rejects_non_testable_status() -> None:
+    session = MagicMock()
+    item = question(status="draft", query_definition={"kind": "entity_count", "class_id": "c1"})
+    session.get.return_value = item
+
+    with pytest.raises(HTTPException, match="Only testable"):
+        interview.run_question_validation(session, MagicMock(), item.id)
+
+
+def test_run_question_validation_relation_count_uses_relation_type_filter() -> None:
+    session = MagicMock()
+    driver = _graph_session(7)
+    item = question(
+        status="testable",
+        query_definition={"kind": "relation_count", "relation_type_id": "rt1", "min_count": 5},
+    )
+    session.get.return_value = item
+
+    result = interview.run_question_validation(session, driver, item.id)
+
+    assert result["passed"] is True
+    assert result["matches"] == 7
