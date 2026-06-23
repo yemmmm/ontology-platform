@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Clipboard,
   Database,
+  FileText,
   GitBranch,
   Layers,
   Link2,
@@ -35,6 +36,7 @@ import {
   Send,
   Settings,
   Trash2,
+  Upload,
   Waypoints,
   Wrench,
   X,
@@ -57,6 +59,11 @@ import type {
   Ontology,
   Project,
   PropertyDef,
+  Proposal,
+  ProposalItem,
+  SourceChunk,
+  SourceDocument,
+  KnowledgeConflict,
   RelatedEntity,
   Relation,
   RelationType,
@@ -82,6 +89,9 @@ import { EntityDetailDrawer } from "./components/EntityDetailDrawer";
 type AppView = "home" | "workspace";
 type WorkspaceTab =
   | "topology"
+  | "schema-review"
+  | "sources"
+  | "graph-review"
   | "classes"
   | "entities"
   | "entities-search"
@@ -117,6 +127,9 @@ const workspaceTabs: Array<{
   icon: typeof Network;
 }> = [
   { id: "topology", label: "Topology", detail: "Reserved canvas", icon: Network },
+  { id: "schema-review", label: "Schema Review", detail: "Governance queue", icon: Clipboard },
+  { id: "sources", label: "Sources", detail: "Documents & chunks", icon: FileText },
+  { id: "graph-review", label: "Graph Review", detail: "Knowledge candidates", icon: GitBranch },
   { id: "classes", label: "Classes", detail: "Class topology", icon: Box },
   { id: "entities", label: "Entities", detail: "Entity editor", icon: Database },
   { id: "entities-search", label: "Entities Search", detail: "Retrieval tests", icon: Search },
@@ -127,6 +140,14 @@ const workspaceTabs: Array<{
 
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
   return workspaceTabs.some((tab) => tab.id === value);
+}
+
+function queryValue(name: string) {
+  try {
+    return new URLSearchParams(window.location.search).get(name) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function useStoredString(key: string, fallback = "") {
@@ -235,8 +256,12 @@ function ParentClassPicker(props: ParentClassPickerProps) {
 }
 
 export function App() {
-  const [view, setView] = useState<AppView>("home");
-  const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(UI_KEYS.workspaceTab, "classes");
+  const [view, setView] = useState<AppView>(() => queryValue("ontology") ? "workspace" : "home");
+  const requestedTab = queryValue("tab");
+  const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(
+    UI_KEYS.workspaceTab,
+    isWorkspaceTab(requestedTab) ? requestedTab : "classes",
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
   const [classes, setClasses] = useState<ClassDef[]>([]);
@@ -245,8 +270,8 @@ export function App() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [relations, setRelations] = useState<Relation[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useStoredString(UI_KEYS.project);
-  const [selectedOntologyId, setSelectedOntologyId] = useStoredString(UI_KEYS.ontology);
+  const [selectedProjectId, setSelectedProjectId] = useStoredString(UI_KEYS.project, queryValue("project"));
+  const [selectedOntologyId, setSelectedOntologyId] = useStoredString(UI_KEYS.ontology, queryValue("ontology"));
   const [selectedClassId, setSelectedClassId] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(false);
@@ -257,6 +282,15 @@ export function App() {
 
   const request = useCallback(<T,>(path: string, options?: RequestInit) => apiRequest<T>(path, options), []);
   const showError = useCallback((error: unknown) => setNotice(errorNotice(error)), []);
+
+  useEffect(() => {
+    const linkedProject = queryValue("project");
+    const linkedOntology = queryValue("ontology");
+    const linkedTab = queryValue("tab");
+    if (linkedProject) setSelectedProjectId(linkedProject);
+    if (linkedOntology) setSelectedOntologyId(linkedOntology);
+    if (isWorkspaceTab(linkedTab)) setWorkspaceTab(linkedTab);
+  }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
 
   const loadProjects = useCallback(async () => {
     const data = await request<Project[]>("/projects");
@@ -735,6 +769,31 @@ function WorkspaceContent(props: {
     );
   }
 
+  if (props.tab === "schema-review") {
+    return (
+      <SchemaReviewPage
+        classes={props.classes}
+        ontology={props.ontology}
+        reloadSchema={props.reloadSchema}
+        request={props.request}
+      />
+    );
+  }
+
+  if (props.tab === "sources") {
+    return <SourceDocumentsPage projectId={props.ontology.project_id} request={props.request} />;
+  }
+
+  if (props.tab === "graph-review") {
+    return (
+      <GraphReviewPage
+        ontology={props.ontology}
+        reloadGraph={props.reloadGraph}
+        request={props.request}
+      />
+    );
+  }
+
   if (props.tab === "entities") {
     return (
       <EntitiesPage
@@ -771,6 +830,363 @@ function WorkspaceContent(props: {
       setHealth={props.setHealth}
       showError={props.showError}
     />
+  );
+}
+
+function SourceDocumentsPage(props: { projectId: string; request: Requester }) {
+  const [documents, setDocuments] = useState<SourceDocument[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [chunks, setChunks] = useState<SourceChunk[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const data = await props.request<SourceDocument[]>(`/projects/${props.projectId}/source-documents`);
+    setDocuments(data);
+    setSelectedId((current) => data.some((item) => item.id === current) ? current : data[0]?.id || "");
+  }, [props.projectId, props.request]);
+
+  useEffect(() => { load().catch((cause) => setError(String(cause))); }, [load]);
+  useEffect(() => {
+    if (!selectedId) { setChunks([]); return; }
+    props.request<SourceChunk[]>(`/source-documents/${selectedId}/chunks`).then(setChunks).catch((cause) => setError(String(cause)));
+  }, [props.request, selectedId]);
+
+  async function upload(event: FormEvent) {
+    event.preventDefault();
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const uploaded = await props.request<SourceDocument>(`/projects/${props.projectId}/source-documents`, { method: "POST", body });
+      setSelectedId(uploaded.id);
+      setFile(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selected = documents.find((document) => document.id === selectedId);
+  return (
+    <section className="sourcePage">
+      <aside className="sourceSidebar">
+        <form className="sourceUpload" onSubmit={upload}>
+          <label><Upload size={16} /><span>PDF, Markdown or text</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
+          <button className="primaryButton" disabled={!file || busy} type="submit">Upload & parse</button>
+        </form>
+        {documents.map((document) => (
+          <button className={classNames("sourceDocument", document.id === selectedId && "active")} key={document.id} onClick={() => setSelectedId(document.id)} type="button">
+            <strong>{document.filename}</strong>
+            <span><Badge>{document.parse_status}</Badge>{document.chunk_count} chunks · {(document.size_bytes / 1024).toFixed(1)} KB</span>
+          </button>
+        ))}
+      </aside>
+      <main className="sourceSurface">
+        {error && <div className="reviewError">{error}</div>}
+        {!selected ? <EmptyState icon={<FileText size={24} />} title="Upload a source document" /> : <>
+          <header className="reviewHeader"><div><span className="eyebrow">Source document</span><h2>{selected.filename}</h2><p>SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div></header>
+          {selected.parse_error && <div className="reviewError">{selected.parse_error}</div>}
+          <div className="chunkList">{chunks.map((chunk) => <article className="sourceChunk" key={chunk.id}><header><strong>Chunk {chunk.sequence + 1}</strong><span>{chunk.page_number ? `Page ${chunk.page_number} · ` : ""}characters {chunk.char_start}–{chunk.char_end}</span></header><pre>{chunk.text}</pre><code>{chunk.content_hash.slice(0, 20)}…</code></article>)}</div>
+        </>}
+      </main>
+    </section>
+  );
+}
+
+function GraphReviewPage(props: { ontology: Ontology; request: Requester; reloadGraph: () => Promise<void> }) {
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [conflicts, setConflicts] = useState<KnowledgeConflict[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const [all, conflictData] = await Promise.all([
+      props.request<Proposal[]>(`/ontologies/${props.ontology.id}/proposals`),
+      props.request<KnowledgeConflict[]>(`/ontologies/${props.ontology.id}/knowledge-conflicts`),
+    ]);
+    const knowledge = all.filter((item) => ["entity", "relation", "merge"].includes(item.proposal_type));
+    setProposals(knowledge);
+    setConflicts(conflictData);
+    setSelectedId((current) => knowledge.some((item) => item.id === current) ? current : knowledge[0]?.id || "");
+  }, [props.ontology.id, props.request]);
+
+  useEffect(() => { load().catch((cause) => setError(String(cause))); }, [load]);
+  const selected = proposals.find((proposal) => proposal.id === selectedId);
+  const selectedConflicts = conflicts.filter((conflict) => conflict.proposal_id === selectedId);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true); setError("");
+    try { await action(); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); }
+  }
+
+  function proposalAction(action: "validate" | "approve" | "reject" | "apply") {
+    if (!selected) return;
+    void run(async () => {
+      if (action === "validate" || action === "apply") await props.request(`/proposals/${selected.id}/${action}`, { method: "POST" });
+      else await props.request(`/proposals/${selected.id}/review`, { method: "POST", body: JSON.stringify({ decision: action === "approve" ? "approved" : "rejected", reviewer_type: "user" }) });
+      if (action === "apply") await props.reloadGraph();
+    });
+  }
+
+  function resolve(conflictId: string, action: "keep_existing" | "accept_proposed") {
+    void run(() => props.request(`/knowledge-conflicts/${conflictId}/resolve`, { method: "POST", body: JSON.stringify({ action }) }));
+  }
+
+  return <section className="schemaReviewPage">
+    <aside className="reviewQueue"><header><div><span className="eyebrow">Review queue</span><h2>Graph candidates</h2></div></header>{proposals.map((proposal) => <button className={classNames("reviewQueueItem", proposal.id === selectedId && "active")} key={proposal.id} onClick={() => setSelectedId(proposal.id)} type="button"><span><strong>{proposal.payload.items?.length ?? 0} {proposal.proposal_type}</strong><Badge>{proposal.status}</Badge></span><small>{formatDate(proposal.created_at)} · {compactId(proposal.id)}</small></button>)}</aside>
+    <main className="reviewSurface">{error && <div className="reviewError">{error}</div>}{!selected ? <EmptyState icon={<GitBranch size={24} />} title="No knowledge candidates" /> : <>
+      <header className="reviewHeader"><div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{selected.payload.items?.length ?? 0} candidates</h2><p>Evidence remains attached to each candidate. Applying a merge always requires this explicit review.</p></div><div className="reviewHeaderActions">{selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button">Validate</button>}{selected.status === "validated" && <><button className="secondaryButton" disabled={busy} onClick={() => proposalAction("reject")} type="button">Reject</button><button className="primaryButton" disabled={busy || selectedConflicts.some((item) => item.status === "pending")} onClick={() => proposalAction("approve")} type="button">Approve</button></>}{selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button">Apply atomically</button>}</div></header>
+      {selectedConflicts.map((conflict) => <article className="conflictCard" key={conflict.id}><div><Badge>{conflict.status}</Badge><strong>{conflict.item_key} · {conflict.field}</strong><p>Existing: {prettyJson(conflict.existing_value)}<br />Proposed: {prettyJson(conflict.proposed_value)}</p></div>{conflict.status === "pending" && <div><button onClick={() => resolve(conflict.id, "keep_existing")} type="button">Keep existing</button><button onClick={() => resolve(conflict.id, "accept_proposed")} type="button">Accept proposed</button></div>}</article>)}
+      <div className="reviewItems">{(selected.payload.items ?? []).map((item) => { const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id)); return <article className="reviewItem" key={item.key}><div className="reviewItemBody"><header><div><Badge>{item.kind}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div><Badge>{item.review_status ?? "pending"}</Badge></header><pre>{prettyJson(item.data)}</pre>{evidence.map((record) => <blockquote key={record.id}>{record.quote}<cite>{record.page_number ? `Page ${record.page_number}` : `Characters ${record.char_start}–${record.char_end}`}</cite></blockquote>)}</div></article>; })}</div>
+    </>}</main>
+  </section>;
+}
+
+function SchemaReviewPage(props: {
+  ontology: Ontology;
+  classes: ClassDef[];
+  request: Requester;
+  reloadSchema: () => Promise<void>;
+}) {
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [editingKey, setEditingKey] = useState("");
+  const [editorValue, setEditorValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const data = await props.request<Proposal[]>(
+      `/ontologies/${props.ontology.id}/proposals?proposal_type=schema_change`,
+    );
+    setProposals(data);
+    setSelectedId((current) => {
+      const requested = queryValue("proposal");
+      if (current && data.some((item) => item.id === current)) return current;
+      return data.some((item) => item.id === requested) ? requested : data[0]?.id || "";
+    });
+  }, [props.ontology.id, props.request]);
+
+  useEffect(() => {
+    load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [load]);
+
+  const selected = proposals.find((proposal) => proposal.id === selectedId) ?? null;
+  const items = selected?.payload.items ?? [];
+  const classNamesById = useMemo(
+    () => new Map(props.classes.map((classDef) => [classDef.id, classDef.name])),
+    [props.classes],
+  );
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function reviewItem(itemKey: string, action: "approved" | "rejected") {
+    if (!selected) return;
+    void run(async () => {
+      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ action, reviewer_type: "user" }),
+      });
+    });
+  }
+
+  function batchReview(action: "approved" | "rejected") {
+    if (!selected || !selectedKeys.length) return;
+    void run(async () => {
+      await props.request(`/proposals/${selected.id}/items/review`, {
+        method: "POST",
+        body: JSON.stringify({ item_keys: selectedKeys, action, reviewer_type: "user" }),
+      });
+      setSelectedKeys([]);
+    });
+  }
+
+  function saveEdit(item: ProposalItem) {
+    if (!selected) return;
+    let data: JsonObject;
+    try {
+      data = JSON.parse(editorValue) as JsonObject;
+    } catch {
+      setError("Edited item data must be valid JSON.");
+      return;
+    }
+    void run(async () => {
+      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(item.key)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ action: "edited", reviewer_type: "user", data }),
+      });
+      setEditingKey("");
+    });
+  }
+
+  function mergeItem(itemKey: string, mergeIntoKey: string) {
+    if (!selected || !mergeIntoKey) return;
+    void run(async () => {
+      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
+        method: "POST",
+        body: JSON.stringify({ action: "merged", reviewer_type: "user", merge_into_key: mergeIntoKey }),
+      });
+    });
+  }
+
+  function proposalAction(action: "validate" | "approve" | "reject" | "apply") {
+    if (!selected) return;
+    void run(async () => {
+      if (action === "validate" || action === "apply") {
+        await props.request(`/proposals/${selected.id}/${action}`, { method: "POST" });
+      } else {
+        await props.request(`/proposals/${selected.id}/review`, {
+          method: "POST",
+          body: JSON.stringify({ decision: action === "approve" ? "approved" : "rejected", reviewer_type: "user" }),
+        });
+      }
+      if (action === "apply") await props.reloadSchema();
+    });
+  }
+
+  return (
+    <section className="schemaReviewPage">
+      <aside className="reviewQueue" aria-label="Schema proposal batches">
+        <header>
+          <div><span className="eyebrow">Review queue</span><h2>Schema batches</h2></div>
+          <button className="iconButton" disabled={busy} onClick={() => void load()} type="button">
+            <RefreshCw className={busy ? "spin" : ""} size={16} />
+          </button>
+        </header>
+        {proposals.length ? proposals.map((proposal) => (
+          <button
+            className={classNames("reviewQueueItem", proposal.id === selectedId && "active")}
+            key={proposal.id}
+            onClick={() => { setSelectedId(proposal.id); setSelectedKeys([]); }}
+            type="button"
+          >
+            <span><strong>{proposal.payload.items?.length ?? 0} changes</strong><Badge>{proposal.status}</Badge></span>
+            <small>{formatDate(proposal.created_at)} · {compactId(proposal.id)}</small>
+          </button>
+        )) : <EmptyState icon={<Clipboard size={20} />} title="No schema proposals" />}
+      </aside>
+
+      <main className="reviewSurface">
+        {error && <div className="reviewError">{error}</div>}
+        {!selected ? (
+          <EmptyState icon={<Clipboard size={24} />} title="Select a schema proposal" />
+        ) : (
+          <>
+            <header className="reviewHeader">
+              <div>
+                <span className="eyebrow">Schema change proposal</span>
+                <h2>{items.length} candidate changes</h2>
+                <p>Draft {compactId(selected.target_version_id)} · evidence and deterministic validation remain attached.</p>
+              </div>
+              <div className="reviewHeaderActions">
+                {selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button"><Play size={14} /> Validate</button>}
+                {selected.status === "validated" && <button className="primaryButton" disabled={busy || items.some((item) => !item.review_status || item.review_status === "pending")} onClick={() => proposalAction("approve")} title="Every candidate needs an explicit decision" type="button"><Check size={14} /> Approve proposal</button>}
+                {selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button"><Save size={14} /> Apply atomically</button>}
+              </div>
+            </header>
+
+            <div className="reviewSummary">
+              <div><strong>{items.filter((item) => item.review_status === "approved").length}</strong><span>Approved</span></div>
+              <div><strong>{items.filter((item) => item.review_status === "rejected").length}</strong><span>Rejected</span></div>
+              <div><strong>{items.filter((item) => !item.review_status || item.review_status === "pending").length}</strong><span>Pending</span></div>
+              <div><strong>{selected.evidence.length}</strong><span>Evidence records</span></div>
+            </div>
+
+            {(selected.validation_result.errors?.length || selected.validation_result.ambiguities?.length) ? (
+              <div className="validationStrip">
+                {(selected.validation_result.errors ?? []).map((message) => <span className="validationError" key={message}>{message}</span>)}
+                {(selected.validation_result.ambiguities ?? []).map((item, index) => <span className="validationAmbiguity" key={index}>{String(item.message ?? "Modeling ambiguity requires review")}</span>)}
+              </div>
+            ) : null}
+
+            {selectedKeys.length > 0 && (
+              <div className="batchBar">
+                <strong>{selectedKeys.length} selected</strong>
+                <button onClick={() => batchReview("approved")} type="button"><Check size={14} /> Approve</button>
+                <button onClick={() => batchReview("rejected")} type="button"><X size={14} /> Reject</button>
+              </div>
+            )}
+
+            <div className="reviewItems">
+              {items.map((item) => {
+                const checked = selectedKeys.includes(item.key);
+                const currentClass = item.kind === "class"
+                  ? props.classes.find((classDef) => classDef.name === item.data.name)
+                  : null;
+                const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id));
+                return (
+                  <article className={classNames("reviewItem", `status-${item.review_status ?? "pending"}`)} key={item.key}>
+                    <div className="reviewItemSelect">
+                      <input
+                        aria-label={`Select ${item.key}`}
+                        checked={checked}
+                        onChange={() => setSelectedKeys(checked ? selectedKeys.filter((key) => key !== item.key) : [...selectedKeys, item.key])}
+                        type="checkbox"
+                      />
+                    </div>
+                    <div className="reviewItemBody">
+                      <header>
+                        <div><Badge>{item.kind.replace("_", " ")}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div>
+                        <div className="reviewItemMeta"><span>{Math.round((item.confidence ?? 0) * 100)}% confidence</span><Badge>{item.review_status ?? "pending"}</Badge></div>
+                      </header>
+                      <div className="schemaDiff">
+                        <div><span>Before</span><pre>{currentClass ? prettyJson(currentClass) : "Not defined"}</pre></div>
+                        <div><span>After</span><pre>{prettyJson(item.data)}</pre></div>
+                      </div>
+                      <div className="reviewFacts">
+                        <span>Impact: {item.kind === "class" ? `${props.classes.filter((classDef) => classDef.parent_class_ids.includes(String(item.data.id ?? ""))).length} child classes` : classNamesById.get(String(item.data.class_id ?? "")) ?? "Schema only"}</span>
+                        <span>Sources: {item.evidence_ids?.length ?? 0} evidence · {item.competency_question_ids?.length ?? 0} questions</span>
+                      </div>
+                      {evidence.map((record) => <blockquote key={record.id}>{record.quote}<cite>{record.source_type}{record.page_number ? ` · page ${record.page_number}` : ""}</cite></blockquote>)}
+                      {editingKey === item.key && (
+                        <div className="reviewEditor">
+                          <textarea value={editorValue} onChange={(event) => setEditorValue(event.target.value)} />
+                          <button className="primaryButton" onClick={() => saveEdit(item)} type="button">Save candidate</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="reviewItemActions">
+                      <button title="Approve" onClick={() => reviewItem(item.key, "approved")} type="button"><Check size={15} /></button>
+                      <button title="Edit" onClick={() => { setEditingKey(item.key); setEditorValue(prettyJson(item.data)); }} type="button"><Braces size={15} /></button>
+                      <button title="Reject" onClick={() => reviewItem(item.key, "rejected")} type="button"><X size={15} /></button>
+                      <select
+                        aria-label={`Merge ${item.key} into another candidate`}
+                        onChange={(event) => mergeItem(item.key, event.target.value)}
+                        value=""
+                      >
+                        <option value="">Merge…</option>
+                        {items.filter((candidate) => candidate.key !== item.key && candidate.kind === item.kind).map((candidate) => (
+                          <option key={candidate.key} value={candidate.key}>{String(candidate.data.name ?? candidate.key)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </main>
+    </section>
   );
 }
 

@@ -76,6 +76,11 @@ def list_review_batches(ontology_id: str, session: Session = Depends(get_db_sess
     return service.list_review_batches(session, ontology_id)
 
 
+@router.get("/review-batches/{review_batch_id}", response_model=ReviewBatchRead)
+def get_review_batch(review_batch_id: str, session: Session = Depends(get_db_session)):
+    return service.get_review_batch(session, review_batch_id)
+
+
 @router.post("/proposals/{proposal_id}/validate", response_model=ProposalRead)
 def validate_proposal(
     proposal_id: str,

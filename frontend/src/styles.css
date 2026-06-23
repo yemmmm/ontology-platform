@@ -890,6 +890,112 @@ textarea:focus {
   overflow: auto;
 }
 
+.sourcePage {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 620px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sourceSidebar {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  border-right: 1px solid var(--line);
+  background: #f8f9fc;
+}
+
+.sourceUpload {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sourceUpload label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sourceDocument {
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.sourceDocument.active {
+  border-color: #c9bfff;
+  background: #fff;
+}
+
+.sourceDocument span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sourceSurface {
+  min-width: 0;
+  padding: 20px;
+  background: #fff;
+}
+
+.chunkList {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.sourceChunk,
+.conflictCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 13px;
+}
+
+.sourceChunk header,
+.conflictCard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sourceChunk header span,
+.sourceChunk code {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sourceChunk pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.conflictCard {
+  margin: 12px 0;
+  border-color: #f0c36a;
+  background: #fffaf0;
+}
+
+.conflictCard > div:last-child {
+  display: flex;
+  gap: 8px;
+}
+
 .dataRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -2654,4 +2760,221 @@ textarea:focus {
   .entityDrawer {
     width: 100%;
   }
+}
+
+/* Schema governance workbench: dense, evidence-first review surface. */
+.schemaReviewPage {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  min-height: calc(100vh - 164px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.reviewQueue {
+  border-right: 1px solid var(--line);
+  background: #f8f9fc;
+  padding: 18px 12px;
+}
+
+.reviewQueue > header,
+.reviewHeader,
+.reviewItem header,
+.reviewQueueItem > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reviewQueue h2,
+.reviewHeader h2 {
+  color: var(--ink);
+  font-size: 17px;
+  margin-top: 4px;
+}
+
+.reviewQueueItem {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  padding: 12px;
+  text-align: left;
+}
+
+.reviewQueueItem:hover,
+.reviewQueueItem.active {
+  border-color: #dcd7ff;
+  background: #fff;
+  box-shadow: 0 5px 14px rgba(40, 39, 62, 0.06);
+}
+
+.reviewQueueItem small,
+.reviewHeader p,
+.reviewFacts,
+.reviewItemMeta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.reviewSurface {
+  min-width: 0;
+  background: #fff;
+  padding: 22px;
+}
+
+.reviewHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 18px;
+}
+
+.reviewHeader p {
+  margin-top: 6px;
+}
+
+.reviewHeaderActions,
+.reviewItemActions,
+.batchBar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.reviewSummary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0;
+}
+
+.reviewSummary > div {
+  display: grid;
+  gap: 2px;
+  border-right: 1px solid var(--line);
+  padding: 0 18px;
+}
+
+.reviewSummary > div:first-child { padding-left: 0; }
+.reviewSummary > div:last-child { border-right: 0; }
+.reviewSummary strong { font-size: 19px; }
+.reviewSummary span { color: var(--muted); font-size: 11px; }
+
+.validationStrip {
+  display: grid;
+  gap: 5px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  font-size: 12px;
+}
+
+.validationError { color: #b72f3d; }
+.validationAmbiguity { color: #8a6207; }
+
+.batchBar {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  margin: 14px 0;
+  border: 1px solid #d8d2ff;
+  border-radius: 7px;
+  background: #f7f5ff;
+  padding: 9px 12px;
+}
+
+.batchBar button,
+.reviewItemActions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 6px 9px;
+}
+
+.batchBar strong { margin-right: auto; font-size: 12px; }
+.reviewItems { display: grid; gap: 10px; margin-top: 14px; }
+
+.reviewItem {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #c8cbd6;
+  border-radius: 7px;
+  padding: 14px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.reviewItem:hover { border-color: #ccc6f5; box-shadow: 0 8px 18px rgba(38, 38, 58, 0.05); }
+.reviewItem.status-approved { border-left-color: var(--accent-2); }
+.reviewItem.status-rejected { border-left-color: var(--danger); opacity: 0.72; }
+.reviewItemSelect { padding-top: 3px; }
+.reviewItemBody { min-width: 0; }
+.reviewItem h3 { display: inline; margin-left: 8px; font-size: 14px; }
+.reviewItemMeta { display: flex; align-items: center; gap: 8px; }
+
+.schemaDiff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.schemaDiff > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  padding: 9px;
+}
+
+.schemaDiff span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.schemaDiff pre { overflow: auto; max-height: 160px; margin: 7px 0 0; color: #3a3d4d; font-size: 10px; white-space: pre-wrap; }
+.reviewFacts { display: flex; gap: 18px; margin-top: 10px; }
+
+.reviewItem blockquote {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  border-left: 2px solid #dcd7ff;
+  background: #faf9ff;
+  color: #444758;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.reviewItem cite { color: var(--muted); font-size: 10px; font-style: normal; }
+.reviewItemActions { align-self: start; }
+.reviewItemActions button { padding: 6px; }
+.reviewItemActions select { max-width: 110px; border-color: var(--line-strong); background: #fff; font-size: 11px; padding: 5px; }
+.reviewEditor { display: grid; gap: 8px; margin-top: 10px; }
+.reviewEditor textarea { min-height: 180px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+.reviewEditor .primaryButton { width: max-content; }
+.reviewError { margin-bottom: 12px; border: 1px solid #f2c8cc; border-radius: 6px; background: var(--error-bg); color: #a92532; padding: 10px; font-size: 12px; }
+
+@media (max-width: 980px) {
+  .schemaReviewPage { grid-template-columns: 1fr; }
+  .reviewQueue { border-right: 0; border-bottom: 1px solid var(--line); }
+  .reviewQueueItem { display: inline-grid; width: min(240px, 100%); margin-right: 8px; }
+  .schemaDiff { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .reviewSurface { padding: 14px; }
+  .reviewHeader { display: grid; }
+  .reviewSummary { grid-template-columns: 1fr 1fr; gap: 12px 0; }
+  .reviewSummary > div:nth-child(2) { border-right: 0; }
+  .reviewItem { grid-template-columns: 22px minmax(0, 1fr); }
+  .reviewItemActions { grid-column: 2; }
 }

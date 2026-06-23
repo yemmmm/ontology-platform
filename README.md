@@ -15,6 +15,8 @@ backend/
     services/         # Validation and application services
 frontend/
   src/                # React/Vite operational UI
+skills/
+  ontology-builder/   # Installable external-agent workflow
 docs/
   api.md
   architecture.md
@@ -71,6 +73,20 @@ Run the MCP server:
 cd backend
 uv run python -m app.mcp.server
 ```
+
+## Install the ontology-builder Skill in Codex
+
+The v0.3 workflow ships as a repository-owned Skill and runs against the semantic MCP server above.
+Install it for Codex with a symlink so repository updates remain visible:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+ln -sfn "$PWD/skills/ontology-builder" "${CODEX_HOME:-$HOME/.codex}/skills/ontology-builder"
+```
+
+Configure the `ontology-platform` MCP server as shown in [docs/mcp.md](docs/mcp.md), restart Codex,
+and invoke `$ontology-builder` with a project ID. The Skill always resumes from platform state and
+routes approvals, conflict decisions, fact audit, and publication to the review workbench.
 
 ## Environment Variables
 

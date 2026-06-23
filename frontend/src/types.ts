@@ -128,3 +128,83 @@ export type AgentTestResponse = {
 };
 
 export type Health = Record<string, unknown>;
+
+export type Evidence = {
+  id: string;
+  proposal_id: string;
+  source_type: string;
+  quote: string;
+  document_id: string | null;
+  page_number: number | null;
+  chunk_id: string | null;
+  char_start: number | null;
+  char_end: number | null;
+  content_hash: string;
+};
+
+export type ProposalItem = {
+  key: string;
+  kind: "class" | "property" | "relation_type" | "constraint" | "entity" | "relation" | "merge";
+  data: JsonObject;
+  confidence?: number;
+  evidence_ids?: string[];
+  competency_question_ids?: string[];
+  review_status?: "pending" | "approved" | "rejected";
+  modified?: boolean;
+  merged_into_key?: string;
+};
+
+export type Proposal = {
+  id: string;
+  ontology_id: string;
+  target_version_id: string;
+  proposal_type: string;
+  status: string;
+  source_type: string;
+  payload: { items?: ProposalItem[]; [key: string]: unknown };
+  validation_result: { valid?: boolean; errors?: string[]; ambiguities?: JsonObject[] };
+  application_result: JsonObject;
+  evidence: Evidence[];
+  created_at: string;
+};
+
+export type SourceDocument = {
+  id: string;
+  project_id: string;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  content_hash: string;
+  parse_status: string;
+  parse_error: string | null;
+  parser_version: string;
+  parse_count: number;
+  parse_revision: number;
+  reused: boolean;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SourceChunk = {
+  id: string;
+  document_id: string;
+  sequence: number;
+  parse_revision: number;
+  page_number: number | null;
+  char_start: number;
+  char_end: number;
+  text: string;
+  content_hash: string;
+};
+
+export type KnowledgeConflict = {
+  id: string;
+  proposal_id: string;
+  item_key: string;
+  field: string;
+  existing_value: unknown;
+  proposed_value: unknown;
+  status: string;
+  resolution: JsonObject;
+};

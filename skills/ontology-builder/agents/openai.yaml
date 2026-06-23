@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Builder"
+  short_description: "Build governed ontologies from conversations and documents"
+  default_prompt: "Use $ontology-builder to continue building my ontology from the platform state."

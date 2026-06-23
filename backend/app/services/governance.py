@@ -749,6 +749,19 @@ def list_proposals(
     return [proposal_detail(session, row.id) for row in session.scalars(statement)]
 
 
+def list_version_proposals(session: Session, version_id: str) -> list[ProposalModel]:
+    version = session.get(OntologyVersionModel, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="Ontology version not found")
+    return list(
+        session.scalars(
+            select(ProposalModel)
+            .where(ProposalModel.target_version_id == version_id)
+            .order_by(ProposalModel.created_at)
+        )
+    )
+
+
 def list_review_batches(session: Session, ontology_id: str) -> list[dict[str, Any]]:
     rows = session.scalars(
         select(ReviewBatchModel)
@@ -756,16 +769,27 @@ def list_review_batches(session: Session, ontology_id: str) -> list[dict[str, An
         .order_by(ReviewBatchModel.created_at.desc())
     )
     return [
-        {
-            **{column.name: getattr(row, column.name) for column in row.__table__.columns},
-            "deep_link": (
-                f"/?project={row.project_id}&ontology={row.ontology_id}"
-                f"&tab={'schema-review' if row.review_type == 'schema' else 'graph-review'}"
-                f"&batch={row.id}"
-            ),
-        }
+        review_batch_detail(row)
         for row in rows
     ]
+
+
+def review_batch_detail(row: ReviewBatchModel) -> dict[str, Any]:
+    return {
+        **{column.name: getattr(row, column.name) for column in row.__table__.columns},
+        "deep_link": (
+            f"/?project={row.project_id}&ontology={row.ontology_id}"
+            f"&tab={'schema-review' if row.review_type == 'schema' else 'graph-review'}"
+            f"&batch={row.id}"
+        ),
+    }
+
+
+def get_review_batch(session: Session, review_batch_id: str) -> dict[str, Any]:
+    row = session.get(ReviewBatchModel, review_batch_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Review batch not found")
+    return review_batch_detail(row)
 
 
 def _apply_schema(session: Session, proposal: ProposalModel) -> dict[str, Any]:

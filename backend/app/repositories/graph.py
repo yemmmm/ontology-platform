@@ -18,20 +18,28 @@ def inspect_ontology_graph(driver: Driver, ontology_id: str) -> dict[str, list[d
       project_id: entity.project_id,
       class_id: entity.class_id,
       class_label: entity.class_label,
-      labels: labels(entity)
+      labels: labels(entity),
+      properties: entity.properties,
+      properties_json: entity.properties_json
     }) AS entities,
     collect(DISTINCT CASE WHEN relation IS NULL THEN NULL ELSE {
       id: relation.id,
       project_id: relation.project_id,
       relation_type_id: relation.relation_type_id,
       relation_type: relation.relation_type,
-      neo4j_type: type(relation)
+      neo4j_type: type(relation),
+      source_entity_id: entity.id,
+      target_entity_id: target.id
     } END) AS relations
     """
     with driver.session() as session:
         record = session.run(query, ontology_id=ontology_id).single(strict=True)
         return {
-            "entities": [dict(item) for item in record["entities"] if item is not None],
+            "entities": [
+                {**dict(item), "properties": _decode_properties(dict(item))}
+                for item in record["entities"]
+                if item is not None
+            ],
             "relations": [dict(item) for item in record["relations"] if item is not None],
         }
 
@@ -261,6 +269,103 @@ def apply_graph_batch(
         return {"entity_ids": entity_ids, "relation_ids": relation_ids}
 
     # execute_write retries the complete callback; MERGE keys make retries idempotent.
+    with driver.session() as session:
+        return session.execute_write(apply)
+
+
+def _merge_entity_tx(
+    tx: Any,
+    *,
+    project_id: str,
+    ontology_id: str,
+    source_entity_id: str,
+    target_entity_id: str,
+) -> bool:
+    nodes = tx.run(
+            """
+            MATCH (source:Entity {id: $source_id, project_id: $project_id, ontology_id: $ontology_id})
+            MATCH (target:Entity {id: $target_id, project_id: $project_id, ontology_id: $ontology_id})
+            WHERE source.class_id = target.class_id AND source <> target
+            RETURN source, target
+            """,
+            source_id=source_entity_id, target_id=target_entity_id,
+            project_id=project_id, ontology_id=ontology_id,
+    ).single()
+    if nodes is None:
+        return False
+    source, target = dict(nodes["source"]), dict(nodes["target"])
+    aliases = list(target.get("aliases", []))
+    for alias in [source.get("name"), *source.get("aliases", [])]:
+        if alias and alias != target.get("name") and alias not in aliases:
+            aliases.append(alias)
+    relationships = list(
+        tx.run(
+                """
+                MATCH (source:Entity {id: $source_id})-[relation]-(other:Entity)
+                RETURN type(relation) AS type, properties(relation) AS properties,
+                       startNode(relation).id = $source_id AS outgoing, other.id AS other_id
+                """,
+                source_id=source_entity_id,
+        )
+    )
+    for row in relationships:
+        relation_type = _escape_symbol(row["type"])
+        direction = "(target)-[copy:" if row["outgoing"] else "(other)-[copy:"
+        endpoint = "]->(other)" if row["outgoing"] else "]->(target)"
+        tx.run(
+                f"""
+                MATCH (target:Entity {{id: $target_id}}), (other:Entity {{id: $other_id}})
+                CREATE {direction}{relation_type}{endpoint}
+                SET copy = $properties
+                """,
+                target_id=target_entity_id,
+                other_id=target_entity_id if row["other_id"] == source_entity_id else row["other_id"],
+                properties=row["properties"],
+        ).consume()
+    tx.run(
+        "MATCH (source:Entity {id: $source_id}) DETACH DELETE source",
+        source_id=source_entity_id,
+    ).consume()
+    tx.run(
+        "MATCH (target:Entity {id: $target_id}) SET target.aliases = $aliases",
+        target_id=target_entity_id,
+        aliases=aliases,
+    ).consume()
+    return True
+
+
+def merge_entity_nodes(
+    driver: Driver,
+    *,
+    project_id: str,
+    ontology_id: str,
+    source_entity_id: str,
+    target_entity_id: str,
+) -> bool:
+    """Merge only after governance approval, preserving target values and all graph edges."""
+    with driver.session() as session:
+        return session.execute_write(
+            lambda tx: _merge_entity_tx(
+                tx, project_id=project_id, ontology_id=ontology_id,
+                source_entity_id=source_entity_id, target_entity_id=target_entity_id,
+            )
+        )
+
+
+def merge_entity_batch(
+    driver: Driver, *, project_id: str, ontology_id: str, merges: list[dict[str, str]]
+) -> bool:
+    """Apply a reviewed merge batch in one Neo4j transaction."""
+    def apply(tx: Any) -> bool:
+        for item in merges:
+            if not _merge_entity_tx(
+                tx, project_id=project_id, ontology_id=ontology_id,
+                source_entity_id=item["source_entity_id"],
+                target_entity_id=item["target_entity_id"],
+            ):
+                raise ValueError("Merge batch contains missing or incompatible entities")
+        return True
+
     with driver.session() as session:
         return session.execute_write(apply)
 

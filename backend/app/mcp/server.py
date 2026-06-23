@@ -182,6 +182,12 @@ def submit_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
+def propose_schema_changes(proposal: dict[str, Any]) -> dict[str, Any]:
+    """Submit a governed Schema candidate batch; never writes formal Schema directly."""
+    return _propose_knowledge(proposal, "schema_change")
+
+
+@mcp.tool()
 def validate_proposal(proposal_id: str) -> dict[str, Any]:
     """Run deterministic validation for a proposed batch."""
     return _run_tool(
@@ -189,6 +195,30 @@ def validate_proposal(proposal_id: str) -> dict[str, Any]:
             session, governance_service.validate_proposal(session, proposal_id, driver).id
         )
     )
+
+
+@mcp.tool()
+def validate_draft(version_id: str) -> dict[str, Any]:
+    """Validate every editable proposal for a draft and return deterministic results."""
+
+    def validate(session: Session, driver: Driver, _embedding_client: EmbeddingClient) -> Any:
+        proposals = governance_service.list_version_proposals(session, version_id)
+        results = []
+        for proposal in proposals:
+            if proposal.status == "proposed":
+                governance_service.validate_proposal(session, proposal.id, driver)
+            detail = governance_service.proposal_detail(session, proposal.id)
+            results.append(
+                {
+                    "proposal_id": proposal.id,
+                    "proposal_type": proposal.proposal_type,
+                    "status": detail["status"],
+                    "validation_result": detail["validation_result"],
+                }
+            )
+        return {"version_id": version_id, "proposals": results}
+
+    return _run_tool(validate)
 
 
 @mcp.tool()
@@ -202,13 +232,34 @@ def get_proposal_status(proposal_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def apply_approved_proposal(proposal_id: str) -> dict[str, Any]:
-    """Apply an already approved proposal atomically to its draft version."""
+def list_review_items(ontology_id: str) -> dict[str, Any]:
+    """List review batches with counts and exact workbench deep links."""
     return _run_tool(
-        lambda session, driver, _embedding_client: governance_service.proposal_detail(
-            session, governance_service.apply_proposal(session, driver, proposal_id).id
+        lambda session, _driver, _embedding_client: governance_service.list_review_batches(
+            session, ontology_id
         )
     )
+
+
+@mcp.tool()
+def get_review_batch(review_batch_id: str) -> dict[str, Any]:
+    """Read one stable review batch, its status, counts, and workbench deep link."""
+    return _run_tool(
+        lambda session, _driver, _embedding_client: governance_service.get_review_batch(
+            session, review_batch_id
+        )
+    )
+
+
+@mcp.tool()
+def get_review_workspace_link(review_batch_id: str) -> dict[str, Any]:
+    """Return the exact platform workbench link for a review batch."""
+
+    def link(session: Session, _driver: Driver, _embedding_client: EmbeddingClient) -> Any:
+        batch = governance_service.get_review_batch(session, review_batch_id)
+        return {"review_batch_id": review_batch_id, "deep_link": batch["deep_link"]}
+
+    return _run_tool(link)
 
 
 @mcp.tool()
@@ -422,36 +473,6 @@ def sample_fact_claims(
             for c in facts_service.sample_fact_claims(session, version_id, config)
         ]
     )
-
-
-@mcp.tool()
-def review_fact_claim(
-    claim_id: str,
-    decision: str,
-    reviewer_id: str | None = None,
-    reason: str | None = None,
-    linked_fix_proposal_id: str | None = None,
-) -> dict[str, Any]:
-    """Human-only: approve, reject (with fix), or mark a fact for correction."""
-    from app.services import facts as facts_service
-
-    def review(session: Session, _driver: Driver, _embedding_client: EmbeddingClient) -> Any:
-        claim = facts_service.review_fact_claim(
-            session,
-            claim_id,
-            decision,
-            reviewer_id=reviewer_id,
-            reason=reason,
-            linked_fix_proposal_id=linked_fix_proposal_id,
-        )
-        return {
-            "id": claim.id,
-            "audit_status": claim.audit_status,
-            "review_decision": claim.review_decision,
-            "linked_fix_proposal_id": claim.linked_fix_proposal_id,
-        }
-
-    return _run_tool(review)
 
 
 @mcp.tool()

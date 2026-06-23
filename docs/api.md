@@ -23,6 +23,22 @@ separate operations. Reusing a `(project_id, idempotency_key)` returns the origi
 Published and deprecated versions reject writes with HTTP `409`. Editing after publication requires a
 successor draft whose `parent_version_id` points to the published version.
 
+## v0.3 Schema Review
+
+- `GET /api/ontologies/{ontology_id}/proposals?proposal_type=schema_change` lists Schema batches.
+- `GET /api/ontologies/{ontology_id}/review-batches` lists stable batches and workbench deep links.
+- `GET /api/review-batches/{review_batch_id}` reads one stable batch for interrupted Agent recovery.
+- `POST /api/proposals/{proposal_id}/items/{item_key}/review` approves, rejects, edits, or merges one
+  candidate. Editing or merging invalidates its previous validation.
+- `POST /api/proposals/{proposal_id}/items/review` approves or rejects multiple candidates.
+
+Schema validation detects name conflicts, inheritance cycles, cross-ontology references, invalid
+Property domain/range, invalid RelationType endpoints and duplicate definitions. It also returns
+Class-versus-Entity and Property-versus-RelationType ambiguities for human review. Proposal items may
+be `class`, `property`, `relation_type`, or `constraint` and must cite Evidence or competency
+questions. Final approval requires an explicit decision on every item. Applying the batch uses one
+PostgreSQL transaction and records a non-destructive compatibility check of existing graph data.
+
 ## Error Format
 
 FastAPI errors use a `detail` field:
@@ -217,6 +233,25 @@ curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/relations \
 
 Export includes `ontology`, `classes`, `relation_types`, `entities`, and `relations`.
 
+## Project Interview and Competency Questions
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/projects/{project_id}/build-context` | Resume from durable interview and ontology state. |
+| `GET` | `/projects/{project_id}/brief` | Read fields, completeness, missing fields, and up to three clarification items. |
+| `PATCH` | `/projects/{project_id}/brief` | Update, confirm, or skip fields and attach saved answer IDs. |
+| `POST` | `/projects/{project_id}/interview-answers` | Save a traceable conversation answer. |
+| `GET` | `/projects/{project_id}/competency-questions` | List active questions in explicit order. |
+| `POST` | `/projects/{project_id}/competency-questions` | Create a draft question with answer or brief sources. |
+| `PATCH` | `/competency-questions/{question_id}` | Edit, reorder, deactivate, or reactivate a question. |
+| `POST` | `/competency-questions/{question_id}/status` | Apply a validated question state transition. |
+
+Required brief fields are `domain_name`, `business_goal`, `scope`, `core_concepts`, and
+`expected_granularity`. Optional fields may be skipped; the response explains the quality impact.
+Question transitions are `draft -> approved -> testable -> passed/failed`. Approval requires a
+saved answer or confirmed Project Brief source. Changing a cited brief field moves a tested question
+back to `approved` with `validation_result.stale=true`.
+
 ## Agent Test
 
 | Method | Path | Description |
@@ -237,3 +272,28 @@ Model, API endpoint, API key, and temperature are configured centrally through t
 includes `answer`, `tool_calls`, `graph_context`, `prompt_preview`, `warnings`, and
 `errors`. If `LLM_API_KEY` or `LLM_MODEL` is missing, the endpoint returns a
 graph-context fallback answer with a warning.
+
+## v0.3 Document Ingestion and Knowledge Candidates
+
+- `POST /api/projects/{project_id}/source-documents` uploads a multipart `file` (PDF,
+  Markdown, or UTF-8 text), parses it synchronously, and returns parse status and chunk count.
+- `GET /api/projects/{project_id}/source-documents` lists source status.
+- `GET /api/source-documents/{document_id}` reads one source status.
+- `POST /api/source-documents/{document_id}/reparse?force=true` creates a new parse revision;
+  old chunks remain immutable so existing Evidence stays valid. Without `force`, unchanged
+  successfully parsed content reuses the current revision.
+- `GET /api/source-documents/{document_id}/chunks` returns the current parse revision with page,
+  sequence, document-relative character range, text, and SHA-256 hash.
+- `GET /api/source-documents/{document_id}/proposals` lists all candidates derived from a source.
+- `GET /api/proposals/{proposal_id}/items/{item_key}/sources` returns all Evidence for one item.
+- `GET /api/ontologies/{ontology_id}/knowledge-conflicts` lists conflicting candidate values.
+- `POST /api/knowledge-conflicts/{conflict_id}/resolve` records an explicit human resolution.
+
+Entity and relation proposal items support canonical `name`, `aliases`, `properties`, relation
+properties, and `confidence`. Every item must bind at least one saved document or user-statement
+Evidence record. Document Evidence is rejected unless its document, chunk, page, character range,
+quote, and chunk hash agree. Repeated extraction runs should reuse the same project-scoped proposal
+`idempotency_key`; retries return the existing proposal and Neo4j application uses stable item keys.
+
+Document bytes and extracted text are inert source data. The ingestion service does not interpret
+commands in a document or invoke models/tools while parsing.
