@@ -549,3 +549,53 @@ class CompetencyQuestionRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FactClaimRead(BaseModel):
+    id: str
+    claim_key: str
+    project_id: str
+    ontology_id: str
+    ontology_version_id: str
+    claim_type: str
+    layer: str
+    subject: dict[str, Any]
+    predicate: str
+    value: Any
+    graph_path: list[dict[str, Any]]
+    evidence_ids: list[str]
+    generation_reason: str
+    confidence: float
+    audit_status: str
+    review_decision: dict[str, Any]
+    linked_fix_proposal_id: str | None
+    stale: bool
+    stale_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+    reviewed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FactClaimReviewCreate(BaseModel):
+    decision: Literal["approved", "rejected", "needs_correction"]
+    reviewer_id: str | None = None
+    reason: str | None = None
+    linked_fix_proposal_id: str | None = None
+
+
+class FactClaimSampleCreate(BaseModel):
+    config: dict[str, int] = Field(default_factory=dict)
+
+
+class PublicationReadinessRead(BaseModel):
+    version_id: str
+    ready: bool
+    gates: list[dict[str, Any]]
+    blocking: list[str]
+    warnings: list[str]
+
+
+class PublicationConfirm(BaseModel):
+    confirm: bool
