@@ -208,3 +208,171 @@ export type KnowledgeConflict = {
   status: string;
   resolution: JsonObject;
 };
+
+export type WorkflowStatus =
+  | "gathering"
+  | "schema_draft"
+  | "schema_review"
+  | "graph_building"
+  | "graph_review"
+  | "validated"
+  | "published";
+
+export type VersionStatus = "draft" | "published";
+
+export type OntologyVersion = {
+  id: string;
+  ontology_id: string;
+  parent_version_id: string | null;
+  version_number: number;
+  status: VersionStatus;
+  workflow_status: WorkflowStatus;
+  schema_snapshot: JsonObject;
+  graph_snapshot: JsonObject;
+  publication_report: JsonObject;
+  created_at: string;
+  published_at: string | null;
+};
+
+export type VersionDiff = {
+  from_version_id: string;
+  to_version_id: string;
+  schema: JsonObject;
+  graph: JsonObject;
+};
+
+export type BriefFieldState = "missing" | "answered" | "confirmed" | "skipped";
+
+export type BriefClarificationItem = {
+  field: string;
+  question: string;
+  reason: string;
+};
+
+export type ProjectBrief = {
+  id: string | null;
+  project_id: string;
+  fields: JsonObject;
+  field_states: Record<string, BriefFieldState>;
+  field_sources: Record<string, string[]>;
+  missing_fields: string[];
+  clarification_items: BriefClarificationItem[];
+  completeness: number;
+};
+
+export type BuildContextVersionSummary = Pick<
+  OntologyVersion,
+  "status" | "workflow_status" | "version_number"
+>;
+
+export type BuildContextOntology = {
+  id: string;
+  name: string;
+  status: string;
+  current_version_id: string | null;
+  current_version: BuildContextVersionSummary | null;
+};
+
+export type BuildContext = {
+  project: Pick<Project, "id" | "name" | "description">;
+  project_brief: ProjectBrief;
+  ontologies: BuildContextOntology[];
+  competency_question_counts: Record<string, number>;
+};
+
+export type CompetencyQuestionStatus = "draft" | "approved" | "testable" | "passed" | "failed";
+
+export type CompetencyQuestion = {
+  id: string;
+  project_id: string;
+  ontology_id: string;
+  question: string;
+  importance: number;
+  position: number;
+  status: CompetencyQuestionStatus;
+  active: boolean;
+  query_definition: JsonObject;
+  validation_result: JsonObject;
+  source_answer_ids: string[];
+  source_brief_fields: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReviewBatchType = "schema" | "entity" | "relation" | "merge" | "conflict" | "fact";
+export type ReviewBatchStatus = "pending" | "in_review" | "completed";
+
+export type ReviewBatch = {
+  id: string;
+  stable_key: string;
+  project_id: string;
+  ontology_id: string;
+  ontology_version_id: string;
+  review_type: ReviewBatchType;
+  status: ReviewBatchStatus;
+  item_ids: string[];
+  counts: Record<string, number>;
+  deep_link: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FactClaimType = "direct" | "inferred" | "conflict" | "low_confidence";
+export type FactClaimLayer =
+  | "entity_attribute"
+  | "entity_relation"
+  | "inferred_inverse"
+  | "low_confidence"
+  | "value_conflict"
+  | "cq_answer";
+export type FactAuditStatus = "pending" | "approved" | "rejected" | "needs_correction";
+
+export type FactClaim = {
+  id: string;
+  claim_key: string;
+  project_id: string;
+  ontology_id: string;
+  ontology_version_id: string;
+  claim_type: FactClaimType;
+  layer: FactClaimLayer;
+  subject: JsonObject;
+  predicate: string;
+  value: unknown;
+  graph_path: JsonObject[];
+  evidence_ids: string[];
+  generation_reason: string;
+  confidence: number;
+  audit_status: FactAuditStatus;
+  review_decision: JsonObject;
+  linked_fix_proposal_id: string | null;
+  stale: boolean;
+  stale_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  reviewed_at: string | null;
+};
+
+export type PublicationGateType =
+  | "schema_validation"
+  | "pending_proposals"
+  | "unresolved_conflicts"
+  | "low_confidence_review"
+  | "evidence_coverage"
+  | "competency_questions"
+  | "fact_audit";
+export type PublicationGateStatus = "pending" | "passed" | "failed" | "warning";
+
+export type PublicationGate = {
+  gate_type: PublicationGateType;
+  status: PublicationGateStatus;
+  details: JsonObject;
+  checked_at: string;
+};
+
+export type PublicationReadiness = {
+  version_id: string;
+  ready: boolean;
+  gates: PublicationGate[];
+  blocking: PublicationGateType[];
+  warnings: PublicationGateType[];
+};

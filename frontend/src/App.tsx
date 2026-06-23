@@ -16,14 +16,20 @@ import "@xyflow/react/dist/style.css";
 import {
   Activity,
   ArrowLeft,
+  BookOpen,
   Box,
   Braces,
   Check,
   ChevronRight,
+  CircleGauge,
+  CircleHelp,
   Clipboard,
   Database,
+  FileCheck2,
   FileText,
+  Flag,
   GitBranch,
+  History,
   Layers,
   Link2,
   Loader2,
@@ -35,6 +41,7 @@ import {
   Search,
   Send,
   Settings,
+  ShieldCheck,
   Trash2,
   Upload,
   Waypoints,
@@ -61,9 +68,11 @@ import type {
   PropertyDef,
   Proposal,
   ProposalItem,
+  ReviewBatch,
   SourceChunk,
   SourceDocument,
   KnowledgeConflict,
+  OntologyVersion,
   RelatedEntity,
   Relation,
   RelationType,
@@ -85,16 +94,30 @@ import {
   type EntityGraphLayout,
 } from "./components/EntityGraphCanvas";
 import { EntityDetailDrawer } from "./components/EntityDetailDrawer";
+import { BuildOverviewPage } from "./pages/BuildOverviewPage";
+import { CompetencyQuestionsPage } from "./pages/CompetencyQuestionsPage";
+import { ProjectBriefPage } from "./pages/ProjectBriefPage";
+import { FactAuditPage } from "./pages/FactAuditPage";
+import { PublicationPage } from "./pages/PublicationPage";
+import { VersionsPage } from "./pages/VersionsPage";
+import { EvidenceExplorer } from "./pages/EvidenceExplorer";
 
 type AppView = "home" | "workspace";
 type WorkspaceTab =
+  | "overview"
+  | "brief"
+  | "questions"
   | "topology"
   | "schema-review"
   | "sources"
   | "graph-review"
+  | "facts"
+  | "publication"
   | "classes"
   | "entities"
   | "entities-search"
+  | "versions"
+  | "evidence"
   | "agent-test"
   | "mcp-tools"
   | "setting";
@@ -122,20 +145,27 @@ const UI_KEYS = {
 
 const workspaceTabs: Array<{
   id: WorkspaceTab;
+  group: "Build" | "Review" | "Model" | "Tools";
   label: string;
   detail: string;
   icon: typeof Network;
 }> = [
-  { id: "topology", label: "Topology", detail: "Reserved canvas", icon: Network },
-  { id: "schema-review", label: "Schema Review", detail: "Governance queue", icon: Clipboard },
-  { id: "sources", label: "Sources", detail: "Documents & chunks", icon: FileText },
-  { id: "graph-review", label: "Graph Review", detail: "Knowledge candidates", icon: GitBranch },
-  { id: "classes", label: "Classes", detail: "Class topology", icon: Box },
-  { id: "entities", label: "Entities", detail: "Entity editor", icon: Database },
-  { id: "entities-search", label: "Entities Search", detail: "Retrieval tests", icon: Search },
-  { id: "agent-test", label: "Agent Test", detail: "Question runs", icon: Send },
-  { id: "mcp-tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
-  { id: "setting", label: "Setting", detail: "Runtime status", icon: Settings },
+  { id: "overview", group: "Build", label: "Overview", detail: "Progress & next actions", icon: CircleGauge },
+  { id: "brief", group: "Build", label: "Brief", detail: "Scope & intent", icon: BookOpen },
+  { id: "questions", group: "Build", label: "Questions", detail: "Competency validation", icon: CircleHelp },
+  { id: "sources", group: "Build", label: "Sources", detail: "Documents & chunks", icon: FileText },
+  { id: "schema-review", group: "Review", label: "Schema", detail: "Schema proposals", icon: Clipboard },
+  { id: "graph-review", group: "Review", label: "Graph", detail: "Knowledge candidates", icon: GitBranch },
+  { id: "facts", group: "Review", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
+  { id: "publication", group: "Review", label: "Publication", detail: "Readiness & release", icon: Flag },
+  { id: "classes", group: "Model", label: "Classes", detail: "Class topology", icon: Box },
+  { id: "entities", group: "Model", label: "Entities", detail: "Entity editor", icon: Database },
+  { id: "versions", group: "Model", label: "Versions", detail: "Lineage & diff", icon: History },
+  { id: "evidence", group: "Model", label: "Evidence", detail: "Source traceability", icon: ShieldCheck },
+  { id: "entities-search", group: "Tools", label: "Search", detail: "Retrieval tests", icon: Search },
+  { id: "agent-test", group: "Tools", label: "Agent Test", detail: "Question runs", icon: Send },
+  { id: "mcp-tools", group: "Tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
+  { id: "setting", group: "Tools", label: "Settings", detail: "Runtime status", icon: Settings },
 ];
 
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
@@ -260,7 +290,7 @@ export function App() {
   const requestedTab = queryValue("tab");
   const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(
     UI_KEYS.workspaceTab,
-    isWorkspaceTab(requestedTab) ? requestedTab : "classes",
+    isWorkspaceTab(requestedTab) ? requestedTab : "overview",
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
@@ -269,19 +299,36 @@ export function App() {
   const [relationTypes, setRelationTypes] = useState<RelationType[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
   const [relations, setRelations] = useState<Relation[]>([]);
+  const [versions, setVersions] = useState<OntologyVersion[]>([]);
+  const [selectedVersionId, setSelectedVersionId] = useState(() => queryValue("version"));
   const [health, setHealth] = useState<Health | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useStoredString(UI_KEYS.project, queryValue("project"));
   const [selectedOntologyId, setSelectedOntologyId] = useStoredString(UI_KEYS.ontology, queryValue("ontology"));
   const [selectedClassId, setSelectedClassId] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(false);
+  const [pageDirty, setPageDirty] = useState(false);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedOntology = ontologies.find((ontology) => ontology.id === selectedOntologyId) ?? null;
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
   const activeTab = workspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
 
   const request = useCallback(<T,>(path: string, options?: RequestInit) => apiRequest<T>(path, options), []);
   const showError = useCallback((error: unknown) => setNotice(errorNotice(error)), []);
+  const navigateWorkspace = useCallback((tab: string, params: Record<string, string> = {}) => {
+    if (!isWorkspaceTab(tab)) return;
+    if (pageDirty && !window.confirm("Discard unsaved changes and leave this page?")) return;
+    setPageDirty(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    for (const key of ["batch", "proposal", "claim", "item", "evidence", "document"]) {
+      if (!(key in params)) url.searchParams.delete(key);
+    }
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    window.history.pushState(null, "", url);
+    setWorkspaceTab(tab);
+  }, [pageDirty, setWorkspaceTab]);
 
   useEffect(() => {
     const linkedProject = queryValue("project");
@@ -290,13 +337,26 @@ export function App() {
     if (linkedProject) setSelectedProjectId(linkedProject);
     if (linkedOntology) setSelectedOntologyId(linkedOntology);
     if (isWorkspaceTab(linkedTab)) setWorkspaceTab(linkedTab);
+    const linkedVersion = queryValue("version");
+    if (linkedVersion) setSelectedVersionId(linkedVersion);
   }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
+
+  useEffect(() => {
+    if (view !== "workspace" || !selectedProjectId || !selectedOntologyId) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("project", selectedProjectId);
+    params.set("ontology", selectedOntologyId);
+    params.set("tab", workspaceTab);
+    if (selectedVersionId) params.set("version", selectedVersionId);
+    else params.delete("version");
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }, [selectedOntologyId, selectedProjectId, selectedVersionId, view, workspaceTab]);
 
   const loadProjects = useCallback(async () => {
     const data = await request<Project[]>("/projects");
     setProjects(data);
     setSelectedProjectId((current) =>
-      current && data.some((project) => project.id === current) ? current : data[0]?.id || "",
+      current || data[0]?.id || "",
     );
   }, [request, setSelectedProjectId]);
 
@@ -310,7 +370,7 @@ export function App() {
       const data = await request<Ontology[]>(`/projects/${projectId}/ontologies`);
       setOntologies(data);
       setSelectedOntologyId((current) =>
-        current && data.some((ontology) => ontology.id === current) ? current : "",
+        current || "",
       );
     },
     [request, selectedProjectId, setSelectedOntologyId],
@@ -362,6 +422,22 @@ export function App() {
     [request, selectedOntologyId],
   );
 
+  const loadVersions = useCallback(
+    async (ontologyId = selectedOntologyId) => {
+      if (!ontologyId) {
+        setVersions([]);
+        setSelectedVersionId("");
+        return;
+      }
+      const data = await request<OntologyVersion[]>(`/ontologies/${ontologyId}/versions`);
+      setVersions(data);
+      setSelectedVersionId(
+        (current) => current || selectedOntology?.current_version_id || data[data.length - 1]?.id || "",
+      );
+    },
+    [request, selectedOntology?.current_version_id, selectedOntologyId],
+  );
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setNotice(null);
@@ -383,14 +459,8 @@ export function App() {
   }, [selectedProjectId, loadOntologies, showError]);
 
   useEffect(() => {
-    Promise.all([loadSchema(), loadGraph()]).catch(showError);
-  }, [selectedOntologyId, loadSchema, loadGraph, showError]);
-
-  useEffect(() => {
-    if (view === "workspace" && selectedOntologyId && !selectedOntology && ontologies.length) {
-      setView("home");
-    }
-  }, [view, selectedOntologyId, selectedOntology, ontologies.length]);
+    Promise.all([loadSchema(), loadGraph(), loadVersions()]).catch(showError);
+  }, [selectedOntologyId, loadSchema, loadGraph, loadVersions, showError]);
 
   async function mutate(action: () => Promise<void>, success: string) {
     setLoading(true);
@@ -408,7 +478,8 @@ export function App() {
   function openOntology(ontology: Ontology) {
     setSelectedOntologyId(ontology.id);
     setSelectedClassId("");
-    setWorkspaceTab("classes");
+    setSelectedVersionId(ontology.current_version_id ?? "");
+    setWorkspaceTab("overview");
     setView("workspace");
   }
 
@@ -472,23 +543,25 @@ export function App() {
               </div>
             </button>
             <nav className="mainNav" aria-label="Ontology workspace navigation">
-              {workspaceTabs.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    className={classNames("navButton", workspaceTab === item.id && "active")}
-                    key={item.id}
-                    onClick={() => setWorkspaceTab(item.id)}
-                    type="button"
-                  >
-                    <Icon size={17} />
-                    <span>
-                      <strong>{item.label}</strong>
-                      <small>{item.detail}</small>
-                    </span>
-                  </button>
-                );
-              })}
+              {(["Build", "Review", "Model", "Tools"] as const).map((group) => (
+                <section className="navGroup" key={group}>
+                  <span className="navGroupLabel">{group}</span>
+                  {workspaceTabs.filter((item) => item.group === group).map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        className={classNames("navButton", workspaceTab === item.id && "active")}
+                        key={item.id}
+                        onClick={() => navigateWorkspace(item.id)}
+                        type="button"
+                      >
+                        <Icon size={17} />
+                        <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+                      </button>
+                    );
+                  })}
+                </section>
+              ))}
             </nav>
             <div className="railFooter">
               <span>API</span>
@@ -512,6 +585,22 @@ export function App() {
                 </div>
               </div>
               <div className="topActions">
+                <label className="versionSelector">
+                  <span>Version</span>
+                  <select
+                    aria-label="Active ontology version"
+                    onChange={(event) => setSelectedVersionId(event.target.value)}
+                    value={selectedVersionId}
+                  >
+                    {!versions.length && <option value="">No versions</option>}
+                    {versions.map((version) => (
+                      <option key={version.id} value={version.id}>
+                        v{version.version_number} · {version.status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedVersion?.status === "published" && <span className="readOnlyPill">Read-only</span>}
                 <button className="secondaryButton" onClick={() => setView("home")} type="button">
                   <ArrowLeft size={15} /> Ontologies
                 </button>
@@ -519,7 +608,7 @@ export function App() {
                   <button
                     className="iconButton"
                     disabled={loading}
-                    onClick={() => Promise.all([loadSchema(), loadGraph()]).catch(showError)}
+                    onClick={() => Promise.all([loadSchema(), loadGraph(), loadVersions()]).catch(showError)}
                     type="button"
                   >
                     {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
@@ -531,8 +620,11 @@ export function App() {
             {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
 
             <div className="contentFrame">
-              {!selectedOntology ? (
-                <EmptyState icon={<Waypoints size={22} />} title="Select an ontology from the home page" />
+              {!selectedOntology || !selectedProject ? (
+                <EmptyState
+                  icon={<Waypoints size={22} />}
+                  title="The linked project and ontology context is not available"
+                />
               ) : (
                 <WorkspaceContent
                   classes={classes}
@@ -540,6 +632,10 @@ export function App() {
                   health={health}
                   mutate={mutate}
                   ontology={selectedOntology}
+                  project={selectedProject}
+                  selectedVersion={selectedVersion}
+                  selectedVersionId={selectedVersionId}
+                  versions={versions}
                   propertiesByClass={propertiesByClass}
                   relations={relations}
                   relationTypes={relationTypes}
@@ -549,6 +645,10 @@ export function App() {
                   selectedClassId={selectedClassId}
                   setHealth={setHealth}
                   setSelectedClassId={setSelectedClassId}
+                  setSelectedVersionId={setSelectedVersionId}
+                  reloadVersions={loadVersions}
+                  navigateWorkspace={navigateWorkspace}
+                  setPageDirty={setPageDirty}
                   showError={showError}
                   tab={workspaceTab}
                 />
@@ -727,7 +827,11 @@ function OntologyHomePage(props: {
 
 function WorkspaceContent(props: {
   tab: WorkspaceTab;
+  project: Project;
   ontology: Ontology;
+  selectedVersion: OntologyVersion | null;
+  selectedVersionId: string;
+  versions: OntologyVersion[];
   classes: ClassDef[];
   relationTypes: RelationType[];
   propertiesByClass: Record<string, PropertyDef[]>;
@@ -740,9 +844,69 @@ function WorkspaceContent(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadSchema: () => Promise<void>;
   reloadGraph: () => Promise<void>;
+  reloadVersions: () => Promise<void>;
+  setSelectedVersionId: (id: string) => void;
+  navigateWorkspace: (tab: string, params?: Record<string, string>) => void;
+  setPageDirty: (dirty: boolean) => void;
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
 }) {
+  const readOnly = props.selectedVersion?.status === "published";
+  const governedRequest: Requester = (path, options) => {
+    const method = (options?.method ?? "GET").toUpperCase();
+    if (readOnly && method !== "GET" && method !== "HEAD") {
+      return Promise.reject(new Error("Published ontology versions are immutable. Create a successor draft to make changes."));
+    }
+    return props.request(path, options);
+  };
+
+  if (props.tab === "overview") {
+    return <BuildOverviewPage onNavigate={props.navigateWorkspace} onRefresh={props.reloadVersions} ontologyId={props.ontology.id} projectId={props.project.id} readOnly={readOnly} request={governedRequest} versionId={props.selectedVersionId} />;
+  }
+
+  if (props.tab === "brief") {
+    return <ProjectBriefPage onDirtyChange={props.setPageDirty} projectId={props.project.id} readOnly={readOnly} request={governedRequest} />;
+  }
+
+  if (props.tab === "questions") {
+    return <CompetencyQuestionsPage ontologyId={props.ontology.id} projectId={props.project.id} readOnly={readOnly} request={governedRequest} versionId={props.selectedVersionId} />;
+  }
+
+  if (props.tab === "facts" || props.tab === "publication") {
+    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title="Select a valid ontology version" />;
+    const context = { ontology: props.ontology, project: props.project, readOnly, request: governedRequest, version: props.selectedVersion };
+    if (props.tab === "facts") return <FactAuditWithBatch {...context} batchId={queryValue("batch") || undefined} initialClaimId={queryValue("claim") || undefined} />;
+    return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onPublished={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
+  }
+
+  if (props.tab === "versions") {
+    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title="Select a valid ontology version" />;
+    return (
+      <VersionsPage
+        ontology={props.ontology}
+        project={props.project}
+        request={governedRequest}
+        version={props.selectedVersion}
+        onVersionChange={(version) => {
+          props.setSelectedVersionId(version.id);
+          void props.reloadVersions();
+        }}
+      />
+    );
+  }
+
+  if (props.tab === "evidence") {
+    return (
+      <EvidenceExplorer
+        documentId={queryValue("document") || undefined}
+        evidenceIds={(queryValue("evidence") || "").split(",").filter(Boolean)}
+        itemKey={queryValue("item") || undefined}
+        proposalId={queryValue("proposal") || undefined}
+        request={governedRequest}
+      />
+    );
+  }
+
   if (props.tab === "topology") {
     return (
       <section className="reservedTopology">
@@ -762,7 +926,7 @@ function WorkspaceContent(props: {
         propertiesByClass={props.propertiesByClass}
         relationTypes={props.relationTypes}
         reloadSchema={props.reloadSchema}
-        request={props.request}
+        request={governedRequest}
         selectedClassId={props.selectedClassId}
         setSelectedClassId={props.setSelectedClassId}
       />
@@ -772,24 +936,28 @@ function WorkspaceContent(props: {
   if (props.tab === "schema-review") {
     return (
       <SchemaReviewPage
+        batchId={queryValue("batch") || undefined}
         classes={props.classes}
         ontology={props.ontology}
         reloadSchema={props.reloadSchema}
-        request={props.request}
+        request={governedRequest}
+        versionId={props.selectedVersionId}
       />
     );
   }
 
   if (props.tab === "sources") {
-    return <SourceDocumentsPage projectId={props.ontology.project_id} request={props.request} />;
+    return <SourceDocumentsPage navigate={props.navigateWorkspace} projectId={props.ontology.project_id} readOnly={readOnly} request={governedRequest} />;
   }
 
   if (props.tab === "graph-review") {
     return (
       <GraphReviewPage
+        batchId={queryValue("batch") || undefined}
         ontology={props.ontology}
         reloadGraph={props.reloadGraph}
-        request={props.request}
+        request={governedRequest}
+        versionId={props.selectedVersionId}
       />
     );
   }
@@ -805,17 +973,17 @@ function WorkspaceContent(props: {
         relations={props.relations}
         relationTypes={props.relationTypes}
         reloadGraph={props.reloadGraph}
-        request={props.request}
+        request={governedRequest}
       />
     );
   }
 
   if (props.tab === "entities-search") {
-    return <EntitiesSearchPage classes={props.classes} ontologyId={props.ontology.id} request={props.request} />;
+    return <EntitiesSearchPage classes={props.classes} ontologyId={props.ontology.id} request={governedRequest} />;
   }
 
   if (props.tab === "agent-test") {
-    return <AgentTestPage ontology={props.ontology} request={props.request} mutate={props.mutate} />;
+    return <AgentTestPage ontology={props.ontology} request={governedRequest} mutate={props.mutate} />;
   }
 
   if (props.tab === "mcp-tools") {
@@ -833,7 +1001,41 @@ function WorkspaceContent(props: {
   );
 }
 
-function SourceDocumentsPage(props: { projectId: string; request: Requester }) {
+function FactAuditWithBatch(props: {
+  project: Project;
+  ontology: Ontology;
+  version: OntologyVersion;
+  request: Requester;
+  readOnly: boolean;
+  batchId?: string;
+  initialClaimId?: string;
+}) {
+  const [batch, setBatch] = useState<ReviewBatch | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!props.batchId) {
+      setBatch(null);
+      return;
+    }
+    props.request<ReviewBatch>(`/review-batches/${props.batchId}`).then((value) => {
+      if (value.ontology_id !== props.ontology.id || value.ontology_version_id !== props.version.id || value.review_type !== "fact") {
+        throw new Error("This review batch does not match the selected ontology version or fact review type.");
+      }
+      setBatch(value);
+    }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  }, [props.batchId, props.ontology.id, props.request, props.version.id]);
+
+  if (error) return <div className="reviewError">{error}</div>;
+  return (
+    <div className="workspaceStack">
+      {batch && <div className="batchContext"><strong>Review batch · facts</strong><span>{batch.status} · {batch.item_ids.length} scoped claims</span></div>}
+      <FactAuditPage {...props} batchItemIds={batch?.item_ids} />
+    </div>
+  );
+}
+
+function SourceDocumentsPage(props: { projectId: string; request: Requester; navigate: (tab: string, params?: Record<string, string>) => void; readOnly: boolean }) {
   const [documents, setDocuments] = useState<SourceDocument[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [chunks, setChunks] = useState<SourceChunk[]>([]);
@@ -872,13 +1074,46 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester }) {
     }
   }
 
+  async function reparse() {
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      await props.request<SourceDocument>(`/source-documents/${selectedId}/reparse`, { method: "POST" });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openProposals() {
+    if (!selectedId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const proposals = await props.request<Proposal[]>(`/source-documents/${selectedId}/proposals`);
+      const first = proposals[0];
+      if (!first) {
+        setError("This document has not generated any proposals yet.");
+        return;
+      }
+      props.navigate(first.proposal_type === "schema_change" ? "schema-review" : "graph-review", { proposal: first.id });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const selected = documents.find((document) => document.id === selectedId);
   return (
     <section className="sourcePage">
       <aside className="sourceSidebar">
         <form className="sourceUpload" onSubmit={upload}>
           <label><Upload size={16} /><span>PDF, Markdown or text</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
-          <button className="primaryButton" disabled={!file || busy} type="submit">Upload & parse</button>
+          <button className="primaryButton" disabled={!file || busy || props.readOnly} type="submit">Upload & parse</button>
         </form>
         {documents.map((document) => (
           <button className={classNames("sourceDocument", document.id === selectedId && "active")} key={document.id} onClick={() => setSelectedId(document.id)} type="button">
@@ -890,7 +1125,7 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester }) {
       <main className="sourceSurface">
         {error && <div className="reviewError">{error}</div>}
         {!selected ? <EmptyState icon={<FileText size={24} />} title="Upload a source document" /> : <>
-          <header className="reviewHeader"><div><span className="eyebrow">Source document</span><h2>{selected.filename}</h2><p>SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div></header>
+          <header className="reviewHeader"><div><span className="eyebrow">Source document</span><h2>{selected.filename}</h2><p>SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div><div className="reviewHeaderActions"><button className="secondaryButton" disabled={busy} onClick={() => void openProposals()} type="button">Generated proposals</button><button className="secondaryButton" disabled={busy || props.readOnly || selected.parse_status === "parsing"} onClick={() => void reparse()} type="button"><RefreshCw className={busy ? "spin" : ""} size={14} />{selected.parse_status === "failed" ? "Retry parse" : "Reparse"}</button></div></header>
           {selected.parse_error && <div className="reviewError">{selected.parse_error}</div>}
           <div className="chunkList">{chunks.map((chunk) => <article className="sourceChunk" key={chunk.id}><header><strong>Chunk {chunk.sequence + 1}</strong><span>{chunk.page_number ? `Page ${chunk.page_number} · ` : ""}characters {chunk.char_start}–{chunk.char_end}</span></header><pre>{chunk.text}</pre><code>{chunk.content_hash.slice(0, 20)}…</code></article>)}</div>
         </>}
@@ -899,27 +1134,39 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester }) {
   );
 }
 
-function GraphReviewPage(props: { ontology: Ontology; request: Requester; reloadGraph: () => Promise<void> }) {
+function GraphReviewPage(props: { ontology: Ontology; request: Requester; reloadGraph: () => Promise<void>; batchId?: string; versionId: string }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [conflicts, setConflicts] = useState<KnowledgeConflict[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [batch, setBatch] = useState<ReviewBatch | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [editingKey, setEditingKey] = useState("");
+  const [editorValue, setEditorValue] = useState("");
+  const [manualValues, setManualValues] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [all, conflictData] = await Promise.all([
+    const [all, conflictData, batchData] = await Promise.all([
       props.request<Proposal[]>(`/ontologies/${props.ontology.id}/proposals`),
       props.request<KnowledgeConflict[]>(`/ontologies/${props.ontology.id}/knowledge-conflicts`),
+      props.batchId ? props.request<ReviewBatch>(`/review-batches/${props.batchId}`) : Promise.resolve(null),
     ]);
+    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || !["entity", "relation", "merge", "conflict"].includes(batchData.review_type))) {
+      throw new Error("This review batch does not belong to the selected ontology version or graph review type.");
+    }
     const knowledge = all.filter((item) => ["entity", "relation", "merge"].includes(item.proposal_type));
     setProposals(knowledge);
     setConflicts(conflictData);
-    setSelectedId((current) => knowledge.some((item) => item.id === current) ? current : knowledge[0]?.id || "");
-  }, [props.ontology.id, props.request]);
+    setBatch(batchData);
+    const batchProposalId = batchData?.stable_key.split(":")[1] ?? "";
+    setSelectedId((current) => batchProposalId || (knowledge.some((item) => item.id === current) ? current : knowledge[0]?.id || ""));
+  }, [props.batchId, props.ontology.id, props.request, props.versionId]);
 
   useEffect(() => { load().catch((cause) => setError(String(cause))); }, [load]);
   const selected = proposals.find((proposal) => proposal.id === selectedId);
   const selectedConflicts = conflicts.filter((conflict) => conflict.proposal_id === selectedId);
+  const items = (selected?.payload.items ?? []).filter((item) => !batch || batch.item_ids.includes(item.key));
 
   async function run(action: () => Promise<void>) {
     setBusy(true); setError("");
@@ -935,16 +1182,58 @@ function GraphReviewPage(props: { ontology: Ontology; request: Requester; reload
     });
   }
 
-  function resolve(conflictId: string, action: "keep_existing" | "accept_proposed") {
-    void run(() => props.request(`/knowledge-conflicts/${conflictId}/resolve`, { method: "POST", body: JSON.stringify({ action }) }));
+  function reviewItem(itemKey: string, action: "approved" | "rejected" | "edited", data?: JsonObject) {
+    if (!selected) return;
+    void run(() => props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
+      method: "POST",
+      body: JSON.stringify({ action, reviewer_type: "user", ...(data ? { data } : {}) }),
+    }));
+  }
+
+  function batchReview(action: "approved" | "rejected") {
+    if (!selected || selectedKeys.length === 0) return;
+    void run(async () => {
+      await props.request(`/proposals/${selected.id}/items/review`, {
+        method: "POST",
+        body: JSON.stringify({ item_keys: selectedKeys, action, reviewer_type: "user" }),
+      });
+      setSelectedKeys([]);
+    });
+  }
+
+  function saveEdit(itemKey: string) {
+    try {
+      reviewItem(itemKey, "edited", JSON.parse(editorValue) as JsonObject);
+      setEditingKey("");
+    } catch {
+      setError("Edited candidate data must be valid JSON.");
+    }
+  }
+
+  function resolve(conflictId: string, action: "keep_existing" | "accept_proposed" | "manual") {
+    let value: unknown;
+    if (action === "manual") {
+      try {
+        value = JSON.parse(manualValues[conflictId] ?? "");
+      } catch {
+        setError("Manual conflict values must be valid JSON.");
+        return;
+      }
+    }
+    void run(() => props.request(`/knowledge-conflicts/${conflictId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ action, ...(action === "manual" ? { value } : {}) }),
+    }));
   }
 
   return <section className="schemaReviewPage">
     <aside className="reviewQueue"><header><div><span className="eyebrow">Review queue</span><h2>Graph candidates</h2></div></header>{proposals.map((proposal) => <button className={classNames("reviewQueueItem", proposal.id === selectedId && "active")} key={proposal.id} onClick={() => setSelectedId(proposal.id)} type="button"><span><strong>{proposal.payload.items?.length ?? 0} {proposal.proposal_type}</strong><Badge>{proposal.status}</Badge></span><small>{formatDate(proposal.created_at)} · {compactId(proposal.id)}</small></button>)}</aside>
     <main className="reviewSurface">{error && <div className="reviewError">{error}</div>}{!selected ? <EmptyState icon={<GitBranch size={24} />} title="No knowledge candidates" /> : <>
-      <header className="reviewHeader"><div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{selected.payload.items?.length ?? 0} candidates</h2><p>Evidence remains attached to each candidate. Applying a merge always requires this explicit review.</p></div><div className="reviewHeaderActions">{selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button">Validate</button>}{selected.status === "validated" && <><button className="secondaryButton" disabled={busy} onClick={() => proposalAction("reject")} type="button">Reject</button><button className="primaryButton" disabled={busy || selectedConflicts.some((item) => item.status === "pending")} onClick={() => proposalAction("approve")} type="button">Approve</button></>}{selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button">Apply atomically</button>}</div></header>
-      {selectedConflicts.map((conflict) => <article className="conflictCard" key={conflict.id}><div><Badge>{conflict.status}</Badge><strong>{conflict.item_key} · {conflict.field}</strong><p>Existing: {prettyJson(conflict.existing_value)}<br />Proposed: {prettyJson(conflict.proposed_value)}</p></div>{conflict.status === "pending" && <div><button onClick={() => resolve(conflict.id, "keep_existing")} type="button">Keep existing</button><button onClick={() => resolve(conflict.id, "accept_proposed")} type="button">Accept proposed</button></div>}</article>)}
-      <div className="reviewItems">{(selected.payload.items ?? []).map((item) => { const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id)); return <article className="reviewItem" key={item.key}><div className="reviewItemBody"><header><div><Badge>{item.kind}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div><Badge>{item.review_status ?? "pending"}</Badge></header><pre>{prettyJson(item.data)}</pre>{evidence.map((record) => <blockquote key={record.id}>{record.quote}<cite>{record.page_number ? `Page ${record.page_number}` : `Characters ${record.char_start}–${record.char_end}`}</cite></blockquote>)}</div></article>; })}</div>
+      <header className="reviewHeader"><div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{items.length} candidates</h2><p>{selected.proposal_type === "merge" ? "Compare the source and target identities before approving the merge." : "Every knowledge candidate keeps its structured data and traceable evidence."}</p></div><div className="reviewHeaderActions">{selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button">Validate</button>}{selected.status === "validated" && <><button className="secondaryButton" disabled={busy} onClick={() => proposalAction("reject")} type="button">Reject</button><button className="primaryButton" disabled={busy || selectedConflicts.some((item) => item.status === "pending") || items.some((item) => !item.review_status || item.review_status === "pending")} onClick={() => proposalAction("approve")} type="button">Approve proposal</button></>}{selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button">Apply atomically</button>}</div></header>
+      {selectedConflicts.map((conflict) => <article className="conflictCard" key={conflict.id}><div><Badge>{conflict.status}</Badge><strong>{conflict.item_key} · {conflict.field}</strong><p>Existing: {prettyJson(conflict.existing_value)}<br />Proposed: {prettyJson(conflict.proposed_value)}</p></div>{conflict.status === "pending" && <div className="conflictActions"><button onClick={() => resolve(conflict.id, "keep_existing")} type="button">Keep existing</button><button onClick={() => resolve(conflict.id, "accept_proposed")} type="button">Accept proposed</button><input aria-label={`Manual value for ${conflict.field}`} onChange={(event) => setManualValues((current) => ({ ...current, [conflict.id]: event.target.value }))} placeholder="Manual JSON value" value={manualValues[conflict.id] ?? ""} /><button onClick={() => resolve(conflict.id, "manual")} type="button">Use manual</button></div>}</article>)}
+      {batch && <div className="batchContext"><strong>Review batch · {batch.review_type}</strong><span>{batch.status} · {batch.item_ids.length} scoped items</span><button className="secondaryButton" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("batch"); window.location.assign(url); }} type="button">Exit batch</button></div>}
+      {selectedKeys.length > 0 && <div className="batchBar"><strong>{selectedKeys.length} selected</strong><button onClick={() => batchReview("approved")} type="button"><Check size={14} /> Approve</button><button onClick={() => batchReview("rejected")} type="button"><X size={14} /> Reject</button></div>}
+      <div className="reviewItems">{items.map((item) => { const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id)); const checked = selectedKeys.includes(item.key); return <article className={classNames("reviewItem", `status-${item.review_status ?? "pending"}`)} key={item.key}><div className="reviewItemSelect"><input aria-label={`Select ${item.key}`} checked={checked} onChange={() => setSelectedKeys(checked ? selectedKeys.filter((key) => key !== item.key) : [...selectedKeys, item.key])} type="checkbox" /></div><div className="reviewItemBody"><header><div><Badge>{item.kind}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div><Badge>{item.review_status ?? "pending"}</Badge></header>{item.kind === "merge" ? <div className="schemaDiff"><div><span>Source entity</span><pre>{prettyJson(item.data.source_entity_id ?? item.data.source ?? "New entity")}</pre></div><div><span>Merge target</span><pre>{prettyJson(item.data.target_entity_id ?? item.data.target ?? "Existing entity")}</pre></div></div> : <pre className="jsonBlock">{prettyJson(item.data)}</pre>}{editingKey === item.key && <div className="reviewEditor"><textarea onChange={(event) => setEditorValue(event.target.value)} value={editorValue} /><button className="primaryButton" onClick={() => saveEdit(item.key)} type="button">Save candidate</button></div>}<EvidenceExplorer compact evidence={evidence} request={props.request} /></div><div className="reviewItemActions"><button aria-label={`Approve ${item.key}`} onClick={() => reviewItem(item.key, "approved")} type="button"><Check size={15} /></button><button aria-label={`Edit ${item.key}`} onClick={() => { setEditingKey(item.key); setEditorValue(prettyJson(item.data)); }} type="button"><Braces size={15} /></button><button aria-label={`Reject ${item.key}`} onClick={() => reviewItem(item.key, "rejected")} type="button"><X size={15} /></button></div></article>; })}</div>
     </>}</main>
   </section>;
 }
@@ -954,6 +1243,8 @@ function SchemaReviewPage(props: {
   classes: ClassDef[];
   request: Requester;
   reloadSchema: () => Promise<void>;
+  batchId?: string;
+  versionId: string;
 }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -962,25 +1253,33 @@ function SchemaReviewPage(props: {
   const [editorValue, setEditorValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [batch, setBatch] = useState<ReviewBatch | null>(null);
 
   const load = useCallback(async () => {
-    const data = await props.request<Proposal[]>(
-      `/ontologies/${props.ontology.id}/proposals?proposal_type=schema_change`,
-    );
+    const [data, batchData] = await Promise.all([
+      props.request<Proposal[]>(`/ontologies/${props.ontology.id}/proposals?proposal_type=schema_change`),
+      props.batchId ? props.request<ReviewBatch>(`/review-batches/${props.batchId}`) : Promise.resolve(null),
+    ]);
+    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || batchData.review_type !== "schema")) {
+      throw new Error("This review batch does not belong to the selected ontology version or schema review type.");
+    }
+    setBatch(batchData);
     setProposals(data);
     setSelectedId((current) => {
+      const batchProposalId = batchData?.stable_key.startsWith("proposal:") ? batchData.stable_key.slice(9) : "";
+      if (batchProposalId) return batchProposalId;
       const requested = queryValue("proposal");
       if (current && data.some((item) => item.id === current)) return current;
       return data.some((item) => item.id === requested) ? requested : data[0]?.id || "";
     });
-  }, [props.ontology.id, props.request]);
+  }, [props.batchId, props.ontology.id, props.request, props.versionId]);
 
   useEffect(() => {
     load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }, [load]);
 
   const selected = proposals.find((proposal) => proposal.id === selectedId) ?? null;
-  const items = selected?.payload.items ?? [];
+  const items = (selected?.payload.items ?? []).filter((item) => !batch || batch.item_ids.includes(item.key));
   const classNamesById = useMemo(
     () => new Map(props.classes.map((classDef) => [classDef.id, classDef.name])),
     [props.classes],
@@ -1087,6 +1386,7 @@ function SchemaReviewPage(props: {
 
       <main className="reviewSurface">
         {error && <div className="reviewError">{error}</div>}
+        {batch && <div className="batchContext"><strong>Review batch · schema</strong><span>{batch.status} · {batch.item_ids.length} scoped items</span><button className="secondaryButton" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("batch"); window.location.assign(url); }} type="button">Exit batch</button></div>}
         {!selected ? (
           <EmptyState icon={<Clipboard size={24} />} title="Select a schema proposal" />
         ) : (
@@ -1156,10 +1456,10 @@ function SchemaReviewPage(props: {
                         <span>Impact: {item.kind === "class" ? `${props.classes.filter((classDef) => classDef.parent_class_ids.includes(String(item.data.id ?? ""))).length} child classes` : classNamesById.get(String(item.data.class_id ?? "")) ?? "Schema only"}</span>
                         <span>Sources: {item.evidence_ids?.length ?? 0} evidence · {item.competency_question_ids?.length ?? 0} questions</span>
                       </div>
-                      {evidence.map((record) => <blockquote key={record.id}>{record.quote}<cite>{record.source_type}{record.page_number ? ` · page ${record.page_number}` : ""}</cite></blockquote>)}
+                      <EvidenceExplorer compact evidence={evidence} request={props.request} />
                       {editingKey === item.key && (
                         <div className="reviewEditor">
-                          <textarea value={editorValue} onChange={(event) => setEditorValue(event.target.value)} />
+                          <SchemaItemEditor item={item} onChange={setEditorValue} value={editorValue} />
                           <button className="primaryButton" onClick={() => saveEdit(item)} type="button">Save candidate</button>
                         </div>
                       )}
@@ -1187,6 +1487,43 @@ function SchemaReviewPage(props: {
         )}
       </main>
     </section>
+  );
+}
+
+function SchemaItemEditor(props: { item: ProposalItem; value: string; onChange: (value: string) => void }) {
+  let data: JsonObject = {};
+  try {
+    data = JSON.parse(props.value) as JsonObject;
+  } catch {
+    return <textarea aria-label="Advanced candidate JSON" onChange={(event) => props.onChange(event.target.value)} value={props.value} />;
+  }
+
+  const fieldsByKind: Record<ProposalItem["kind"], string[]> = {
+    class: ["name", "description", "aliases", "parent_class_ids"],
+    property: ["name", "class_id", "type", "description", "required", "multi_valued"],
+    relation_type: ["name", "source_class_id", "target_class_id", "description", "inverse_name"],
+    constraint: ["name", "class_id", "expression", "severity", "description"],
+    entity: ["name"],
+    relation: ["relation_type_id"],
+    merge: ["source_entity_id", "target_entity_id"],
+  };
+
+  function update(field: string, value: unknown) {
+    props.onChange(prettyJson({ ...data, [field]: value }));
+  }
+
+  return (
+    <div className="structuredEditor">
+      {fieldsByKind[props.item.kind].map((field) => {
+        const current = data[field];
+        if (typeof current === "boolean" || field === "required" || field === "multi_valued") {
+          return <label key={field}><span>{field.replace(/_/g, " ")}</span><input checked={Boolean(current)} onChange={(event) => update(field, event.target.checked)} type="checkbox" /></label>;
+        }
+        const arrayValue = Array.isArray(current);
+        return <label key={field}><span>{field.replace(/_/g, " ")}</span><input onChange={(event) => update(field, arrayValue ? splitCsv(event.target.value) : event.target.value)} value={arrayValue ? current.join(", ") : current === undefined || current === null ? "" : String(current)} /></label>;
+      })}
+      <details><summary>Advanced JSON</summary><textarea aria-label="Advanced candidate JSON" onChange={(event) => props.onChange(event.target.value)} value={props.value} /></details>
+    </div>
   );
 }
 
