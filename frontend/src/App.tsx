@@ -852,16 +852,22 @@ function WorkspaceContent(props: {
   showError: (error: unknown) => void;
 }) {
   const readOnly = props.selectedVersion?.status === "published";
-  const governedRequest: Requester = (path, options) => {
-    const method = (options?.method ?? "GET").toUpperCase();
-    if (readOnly && method !== "GET" && method !== "HEAD") {
-      return Promise.reject(new Error("Published ontology versions are immutable. Create a successor draft to make changes."));
-    }
-    return props.request(path, options);
-  };
+  // Stable identity is required: child pages (BuildOverviewPage et al.) put `request`
+  // in their `load` useCallback deps, and a fresh inline function here would retrigger
+  // their load effect on every parent render, producing an infinite fetch/Skeleton loop.
+  const governedRequest = useCallback<Requester>(
+    (path, options) => {
+      const method = (options?.method ?? "GET").toUpperCase();
+      if (readOnly && method !== "GET" && method !== "HEAD") {
+        return Promise.reject(new Error("Published ontology versions are immutable. Create a successor draft to make changes."));
+      }
+      return props.request(path, options);
+    },
+    [props.request, readOnly],
+  );
 
   if (props.tab === "overview") {
-    return <BuildOverviewPage onNavigate={props.navigateWorkspace} onRefresh={props.reloadVersions} ontologyId={props.ontology.id} projectId={props.project.id} readOnly={readOnly} request={governedRequest} versionId={props.selectedVersionId} />;
+    return <BuildOverviewPage onNavigate={props.navigateWorkspace} ontologyId={props.ontology.id} projectId={props.project.id} readOnly={readOnly} request={governedRequest} versionId={props.selectedVersionId} />;
   }
 
   if (props.tab === "brief") {

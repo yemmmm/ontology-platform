@@ -36,7 +36,6 @@ export type BuildOverviewPageProps = {
   readOnly?: boolean;
   request: WorkbenchRequest;
   onNavigate: WorkbenchNavigate;
-  onRefresh?: () => void | Promise<void>;
 };
 
 export function BuildOverviewPage({
@@ -46,7 +45,6 @@ export function BuildOverviewPage({
   readOnly = false,
   request,
   onNavigate,
-  onRefresh,
 }: BuildOverviewPageProps) {
   const [context, setContext] = useState<BuildContext | null>(null);
   const [versions, setVersions] = useState<OntologyVersionSummary[]>([]);
@@ -66,13 +64,12 @@ export function BuildOverviewPage({
       setContext(nextContext);
       setVersions(nextVersions);
       setBatches(nextBatches);
-      await onRefresh?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setLoading(false);
     }
-  }, [ontologyId, onRefresh, projectId, request]);
+  }, [ontologyId, projectId, request]);
 
   useEffect(() => {
     void load();
