@@ -28,7 +28,6 @@ from app.repositories.models import (
     OntologyVersionModel,
     ProposalModel,
     PropertyDefModel,
-    PublicationGateModel,
     RelationTypeModel,
     ReviewDecisionModel,
     ReviewBatchModel,

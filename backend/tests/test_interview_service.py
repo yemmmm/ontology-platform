@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -169,9 +168,6 @@ def test_graph_change_invalidation_noops_without_changes() -> None:
 
 
 def _graph_session(count: int) -> MagicMock:
-    session = MagicMock()
-    record = SimpleNamespace()
-    record.__getitem__ = lambda self, key: {"count": count}[key]
     driver = MagicMock()
     graph_session = MagicMock()
     graph_session.run.return_value.single.return_value = {"count": count}

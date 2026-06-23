@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from neo4j import Driver
 from sqlalchemy.orm import Session
 

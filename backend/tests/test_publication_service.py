@@ -6,11 +6,9 @@ from fastapi import HTTPException
 
 from app.repositories.models import (
     CompetencyQuestionModel,
-    EvidenceModel,
     FactClaimModel,
     KnowledgeConflictModel,
     OntologyVersionModel,
-    ProposalModel,
     VersionStatus,
 )
 from app.services import publication
@@ -172,7 +170,6 @@ def test_publish_action_blocks_when_already_published() -> None:
 
 
 def test_publish_creates_immutable_snapshot_with_report() -> None:
-    from app.repositories.models import OntologyModel
 
     session = MagicMock()
     v = version()
@@ -204,3 +201,53 @@ def test_publish_creates_immutable_snapshot_with_report() -> None:
     assert ontology.status == "active"
     assert captured["readiness"]["ready"] is True
     session.commit.assert_called()
+
+
+def test_end_to_end_readiness_flow_from_draft_to_publishable() -> None:
+    """Phase 5 acceptance: a clean draft with no pending work is publishable."""
+    session, _ = _make_readiness_session(
+        scalars_returns=[[], [], [], [], [], []],
+        scalar_returns=[0, 0],
+    )
+
+    with patch.object(
+        publication, "_fact_audit_summary",
+        return_value={
+            "total": 4, "approved": 4, "unaudited": 0,
+            "rejected_unfixed": 0, "accuracy": 1.0,
+        },
+    ):
+        readiness = publication.evaluate_readiness(session, MagicMock(), "v1")
+
+    assert readiness["ready"] is True
+    assert readiness["blocking"] == []
+    assert {g["status"] for g in readiness["gates"]} == {"passed"}
+    assert {g["gate_type"] for g in readiness["gates"]} == {
+        "schema_validation",
+        "pending_proposals",
+        "unresolved_conflicts",
+        "low_confidence_review",
+        "evidence_coverage",
+        "competency_questions",
+        "fact_audit",
+    }
+    session.add.assert_called()  # gates persisted
+    session.commit.assert_called()
+
+
+def test_readiness_lists_explicit_blockers_when_multiple_gates_fail() -> None:
+    """Phase 5 acceptance: hard gate failures return explicit blocking reasons."""
+    pending_question = _mock_question(status="testable")
+    unreviewed = _mock_fact_claim(layer="low_confidence", claim_type="low_confidence", confidence=0.3)
+    session, _ = _make_readiness_session(
+        scalars_returns=[[], [unreviewed], [], [pending_question], [], []],
+        scalar_returns=[1, 0],  # pending_proposals=1, unresolved_conflicts=0
+    )
+
+    result = publication.evaluate_readiness(session, MagicMock(), "v1")
+
+    assert "pending_proposals" in result["blocking"]
+    assert "low_confidence_review" in result["blocking"]
+    assert "competency_questions" in result["blocking"]
+    assert "fact_audit" in result["blocking"]  # patch not applied; fact_audit reads nothing
+    assert result["ready"] is False
