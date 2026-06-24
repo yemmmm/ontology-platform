@@ -41,7 +41,7 @@ from app.services import facts as facts_service
 from app.services import interview as interview_service
 
 ALLOWED_TRANSITIONS = {
-    "proposed": {"validating"},
+    "proposed": {"validating", "rejected"},
     "validating": {"validated", "proposed"},
     "validated": {"approved", "rejected"},
     "approved": {"applied"},

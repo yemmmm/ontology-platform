@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
 
     database_url: str = (
-        "postgresql+psycopg://ontology:ontology@localhost:5432/"
+        "postgresql+psycopg://ontology:ontology@localhost:5434/"
         "ontology_platform?client_encoding=utf8"
     )
     neo4j_uri: str = "bolt://localhost:7687"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -14,10 +15,34 @@ from app.services import governance as governance_service
 from app.services.embedding import EmbeddingClient
 
 
+def _parse_proposal_json(proposal_json: str) -> dict[str, Any]:
+    """Parse the string transport used by models that cannot emit nested tool arguments."""
+    try:
+        proposal = json.loads(proposal_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"proposal_json must be valid JSON: {exc.msg}") from exc
+    if not isinstance(proposal, dict):
+        raise ValueError("proposal_json must decode to a JSON object")
+    return proposal
+
+
 def register_proposals(server: FastMCP) -> None:
     @server.tool()
     def submit_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
         """Submit an idempotent, version-scoped governance proposal; never writes formal data."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+                session,
+                governance_service.create_proposal(
+                    session, ProposalCreate.model_validate(proposal)
+                ).id,
+            )
+        )
+
+    @server.tool()
+    def submit_proposal_json(proposal_json: str) -> dict[str, Any]:
+        """Submit a proposal encoded as JSON text when nested MCP arguments are unsupported."""
+        proposal = _parse_proposal_json(proposal_json)
         return _run_tool(
             lambda session, _driver, _embedding_client: governance_service.proposal_detail(
                 session,

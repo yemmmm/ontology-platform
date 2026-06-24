@@ -11,6 +11,7 @@ ALLOWED_TOOLS = {
     "validate_entity",
     "explain_entity",
     "submit_proposal",
+    "submit_proposal_json",
     "propose_schema_changes",
     "propose_entities",
     "propose_relations",
@@ -29,6 +30,7 @@ ALLOWED_TOOLS = {
     "validate_competency_question",
     "list_source_documents",
     "get_source_document_status",
+    "get_source_document_chunks",
     "generate_fact_claims",
     "list_fact_claims",
     "sample_fact_claims",
@@ -63,3 +65,15 @@ def test_register_all_is_idempotent() -> None:
     register_all(mcp)
     after = _tool_names()
     assert before == after == ALLOWED_TOOLS
+
+
+def test_compatibility_tools_use_scalar_arguments() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+
+    assert tools["submit_proposal_json"].inputSchema["required"] == ["proposal_json"]
+    assert tools["submit_proposal_json"].inputSchema["properties"]["proposal_json"]["type"] == "string"
+    assert set(tools["get_source_document_chunks"].inputSchema["properties"]) == {
+        "document_id",
+        "offset",
+        "limit",
+    }

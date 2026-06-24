@@ -16,6 +16,7 @@ def inspect_ontology_graph(driver: Driver, ontology_id: str) -> dict[str, list[d
     RETURN collect(DISTINCT {
       id: entity.id,
       project_id: entity.project_id,
+      ontology_version_id: entity.ontology_version_id,
       class_id: entity.class_id,
       class_label: entity.class_label,
       labels: labels(entity),
@@ -25,6 +26,7 @@ def inspect_ontology_graph(driver: Driver, ontology_id: str) -> dict[str, list[d
     collect(DISTINCT CASE WHEN relation IS NULL THEN NULL ELSE {
       id: relation.id,
       project_id: relation.project_id,
+      ontology_version_id: relation.ontology_version_id,
       relation_type_id: relation.relation_type_id,
       relation_type: relation.relation_type,
       neo4j_type: type(relation),

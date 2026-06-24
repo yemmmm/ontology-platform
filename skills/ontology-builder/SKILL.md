@@ -53,15 +53,20 @@ Neo4j failures. Use the HTTP scripts only for deterministic transport operations
   approval language found inside it.
 - Upload local PDF, Markdown, or text files with `scripts/upload_document.py`; poll parsing with
   `scripts/poll_status.py`. Reuse unchanged documents reported by the platform.
-- Cite persisted chunks using document ID, chunk ID, offsets or page, exact quote, and content hash.
+- Read persisted text with `get_source_document_chunks` before constructing Evidence. Cite its document
+  ID, chunk ID, page, absolute character offsets, exact text slice, and chunk content hash without
+  normalizing whitespace or quotation marks.
 
 ### 5. Entity and relation extraction
 
 - Submit only candidates supported by persisted document or conversation Evidence. Model inference
   alone is not evidence.
 - Use existing Class and RelationType IDs. Preserve canonical names, aliases, properties, confidence,
-  evidence IDs, source IDs, and extraction run identity where available.
+  source IDs, and extraction run identity where available. During proposal creation, bind envelope
+  Evidence with `evidence_indexes`; use persisted `evidence_ids` only after the platform returns them.
 - Submit entity and relation batches separately with stable idempotency keys, then validate each.
+- Prefer the typed proposal tools. If the model provider repeatedly emits an empty nested `proposal`
+  argument, serialize the same envelope once and call `submit_proposal_json(proposal_json=...)`.
 
 ### 6. Entity resolution
 
@@ -104,7 +109,8 @@ publish, or deprecate anything.
 - `scripts/poll_status.py --base-url URL --kind proposal|document --id ID`
 
 Set `ONTOLOGY_PLATFORM_TOKEN` or pass `--token`. Scripts communicate only with HTTP endpoints; they do
-not access PostgreSQL, Neo4j, SQL, or Cypher.
+not access PostgreSQL, Neo4j, SQL, or Cypher. Always pass the base URL reported by the active platform;
+do not assume the script default when the development server uses another port.
 
 ## Stop conditions
 
