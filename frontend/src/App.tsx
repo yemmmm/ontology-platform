@@ -104,6 +104,7 @@ import { EvidenceExplorer } from "./pages/EvidenceExplorer";
 import { CatalogWizardPage } from "./pages/CatalogWizardPage";
 import { GraphReviewPage, SchemaReviewPage } from "./pages/ReviewPages";
 import { WorkflowProgress } from "./components/WorkflowProgress";
+import { ConfirmActionDialog } from "./components/workbench";
 
 type AppView = "home" | "workspace";
 type WorkspaceTab =
@@ -764,6 +765,7 @@ function OntologyHomePage(props: {
 }) {
   const [projectForm, setProjectForm] = useState({ name: "", description: "" });
   const [ontologyForm, setOntologyForm] = useState({ name: "", description: "" });
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 
   function createProject(event: FormEvent) {
@@ -805,6 +807,21 @@ function OntologyHomePage(props: {
     }, "Ontology deleted");
   }
 
+  function deleteProject() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    props.mutate(async () => {
+      await props.request<void>(`/projects/${target.id}`, { method: "DELETE" });
+      if (props.selectedProjectId === target.id) {
+        props.setSelectedProjectId("");
+        props.setSelectedOntologyId("");
+      }
+      setDeleteTarget(null);
+      await props.reloadProjects();
+      await props.reloadOntologies("");
+    }, "Project deleted");
+  }
+
   return (
     <section className="homeLayout">
       <div className="homePrimary">
@@ -826,6 +843,16 @@ function OntologyHomePage(props: {
               )}
             </select>
           </label>
+          {selectedProject && (
+            <button
+              className="iconButton danger"
+              onClick={() => setDeleteTarget(selectedProject)}
+              title="Delete project"
+              type="button"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
         </div>
 
         {props.ontologies.length ? (
@@ -909,6 +936,18 @@ function OntologyHomePage(props: {
           </Panel>
         )}
       </aside>
+
+      <ConfirmActionDialog
+        open={deleteTarget !== null}
+        title="Delete project"
+        danger
+        confirmLabel="Delete project"
+        warning={`This permanently deletes "${deleteTarget?.name ?? ""}" and all ontologies, entities, relations, evidence, and proposals inside it.`}
+        onConfirm={deleteProject}
+        onCancel={() => setDeleteTarget(null)}
+      >
+        <p>This cannot be undone.</p>
+      </ConfirmActionDialog>
     </section>
   );
 }
