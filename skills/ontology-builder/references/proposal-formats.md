@@ -14,7 +14,7 @@ Every proposal envelope contains:
   "created_by_type": "agent",
   "created_by": "agent-id",
   "model_identifier": "model-id",
-  "prompt_version": "ontology-builder/v0.3",
+  "prompt_version": "ontology-builder/v0.4",
   "evidence": []
 }
 ```
@@ -65,7 +65,7 @@ Do not replace line breaks, normalize whitespace, change quotation marks, or use
   "created_by_type": "agent",
   "created_by": "agent-id",
   "model_identifier": "model-id",
-  "prompt_version": "ontology-builder/v0.3",
+  "prompt_version": "ontology-builder/v0.4",
   "evidence": [
     {
       "source_type": "document",
@@ -88,8 +88,26 @@ If a provider cannot serialize the nested `proposal` argument, encode this entir
 string and call `submit_proposal_json`; do not reshape or relocate its fields.
 
 Schema item kinds are `class`, `property`, `relation_type`, and `constraint`. Entity items include a
-reviewed `class_id`, canonical `name`, aliases, and properties. Merge items identify both entity IDs and
-evidence supporting identity equivalence.
+reviewed `class_id`, canonical `name`, aliases, and properties. Relation items may represent schema-
+allowed edges or entity-level instance facts when their reviewed relation type permits it. Merge items
+identify both entity IDs and evidence supporting identity equivalence.
+
+## v0.4 proposal kinds
+
+`mapping` proposals describe Semantic Mapping. Each item should identify the ontology object or entity,
+external system, external resource, external field, identifier type, join key, validity window, owner,
+and confidence. Use this for facts such as `AssessmentResult.score` being stored in an external grade
+system.
+
+`catalog` proposals describe Data Catalog entries. Each item should identify data source, resource,
+field, authoritative status, freshness, sensitivity, access policy, masking rule, approval instruction,
+and audit requirement. Use this for fields such as `student_pii.id_card_number` that must not be stored
+as graph properties.
+
+`entity_relation` proposals describe instance-specific relations that do not change ontology schema.
+Each item should include `relation_type_id`, `source_entity_id`, `target_entity_id`, `scope=instance`,
+status, validity window, and relation properties. Use this for facts such as
+`entity1 --CONFLICTS_WITH--> entity2`.
 
 Build idempotency keys from stable inputs such as project, version, source content hash, extraction stage,
 and deterministic batch number. Retrying the same logical batch must reuse its key. Changed content or a
