@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ontology-platform": {
+      "command": "/home/yangxiang/projects/ontology-platform/backend/.venv/bin/python",
+      "args": ["-m", "app.mcp.server"],
+      "cwd": "/home/yangxiang/projects/ontology-platform/backend"
+    }
+  }
+}

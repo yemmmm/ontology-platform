@@ -1,0 +1,74 @@
+{
+  "project_id": "ef3054df-b2fc-418a-b011-527a57f47a7e",
+  "ontology_id": "1a3b660e-2080-4599-9f70-eec8163b2b42",
+  "target_version_id": "e79b9964-589d-4d33-b50f-1a2e0ce67b4b",
+  "proposal_type": "entity",
+  "source_type": "agent",
+  "idempotency_key": "customer-support-v1-entities-001",
+  "created_by_type": "agent",
+  "created_by": "claude-code",
+  "model_identifier": "deepseek-v4-pro",
+  "prompt_version": "ontology-builder/v0.3",
+  "payload": {
+    "items": [
+      {
+        "key": "customer-c001",
+        "kind": "entity",
+        "confidence": 0.98,
+        "evidence_ids": [0],
+        "data": {
+          "class_id": "0773792b-5f94-48a4-999d-a956654f22e8",
+          "name": "星海科技",
+          "aliases": [],
+          "properties": {
+            "customerName": "星海科技",
+            "customerCode": "C001"
+          }
+        }
+      },
+      {
+        "key": "product-p001",
+        "kind": "entity",
+        "confidence": 0.98,
+        "evidence_ids": [0],
+        "data": {
+          "class_id": "f5aff014-438c-4d33-a9df-130015e5c67c",
+          "name": "CloudDesk 云桌面",
+          "aliases": [],
+          "properties": {
+            "productName": "CloudDesk 云桌面",
+            "productCode": "P001"
+          }
+        }
+      },
+      {
+        "key": "ticket-t001",
+        "kind": "entity",
+        "confidence": 0.98,
+        "evidence_ids": [0],
+        "data": {
+          "class_id": "8ca97989-d2d0-4f70-9deb-ef669209977f",
+          "name": "T001",
+          "aliases": [],
+          "properties": {
+            "ticketNumber": "T001",
+            "title": "客户端无法登录",
+            "priority": "high",
+            "status": "open"
+          }
+        }
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "source_type": "document",
+      "document_id": "a921f09c-944e-438b-9c0b-6610ea8a7d09",
+      "chunk_id": "d076c822-c52e-42a5-86fc-d56aa5a9a107",
+      "char_start": 0,
+      "char_end": 146,
+      "quote": "客服工单业务样例；客户\"星海科技\"的客户编码是 C001。产品\"CloudDesk 云桌面\"的产品编码是 P001。工单 T001 的标题是\"客户端无法登录\"，优先级为 high，当前状态为 open。该工单由客户 C001（星海科技）提交，涉及产品 P001（CloudDesk 云桌面）。",
+      "content_hash": "960c754acccda660039018ebf84d8abfabefa944907e8a2506b61e6b816e3111"
+    }
+  ]
+}

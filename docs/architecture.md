@@ -4,6 +4,41 @@
 
 Ontology Platform provides a lightweight ontology layer for applications and agents. The MVP focuses on a custom schema model and structured graph data, not full RDF/OWL semantics or agent orchestration.
 
+## Interaction Model
+
+The platform operates with three distinct parties:
+
+| Party | Role | Surface |
+|-------|------|---------|
+| **User** | Domain expert, governance decision-maker. Approves/rejects proposals, audits facts, resolves conflicts, publishes versions. | Review Workbench (UI) |
+| **Agent** | Conversation driver, workflow orchestrator. Understands user intent, drives the ontology-builder Skill, submits proposals, reads platform state. Interacts with the platform exclusively through MCP tools and HTTP API. Cannot approve, reject, apply, or publish. | MCP / HTTP API |
+| **Platform** | Durable state authority, governance enforcer. Stores schema, graph instances, evidence, proposals, and review state. Runs deterministic validation, manages version immutability, enforces the draft→published lifecycle. | FastAPI + PostgreSQL + Neo4j |
+
+**Information production (build/modify ontology):**
+
+```
+User ──(natural language)──▶ Agent ──(MCP: propose/validate)──▶ Platform
+                                                                  │
+User ◀──(review link)──────── Agent ◀──(batch status)─────────────┘
+  │
+  └──(workbench: approve/reject)──▶ Platform (state updated)
+                                       │
+User ◀──(status update)── Agent ◀──(MCP: read state)──────────────┘
+```
+
+**Information consumption (query data):**
+
+```
+User ──(natural language question)──▶ Agent
+                                        │
+                                        ├──(MCP: search_entities, get_entity, graph_query)
+                                        │        ▶ Platform ──▶ Neo4j
+                                        │
+                                        ◀───────── results ──────────┘
+                                        │
+User ◀──(answer in natural language)────┘
+```
+
 ## Implemented MVP
 
 ```text
@@ -38,7 +73,7 @@ Metadata in PostgreSQL:
 - `PropertyDef`: property definition for a class.
 - `RelationType`: typed relationship between source and target classes.
 - `Constraint`: stored metadata placeholder; no custom rule engine is exposed.
-- `OntologyVersion`: stored metadata placeholder; no version workflow is exposed.
+- `OntologyVersion`: draft/published/deprecated states with schema snapshots and publication reports.
 - `ApiKey`: stored metadata placeholder; no API key lifecycle UI is exposed.
 
 Graph data in Neo4j:
@@ -107,15 +142,26 @@ Not implemented:
 
 ## Boundaries
 
-The HTTP API is the write boundary for metadata and graph instances. Raw Cypher is not exposed. MCP exposes read/query/validation tools only; graph writes still go through controlled HTTP API endpoints.
+The HTTP API is the authoritative write boundary for governance decisions (approve, reject, publish, resolve conflicts). Raw Cypher is not exposed. MCP exposes semantic tools for both read operations (search, get entity, related entities, graph query, fact claims) and Agent-initiated write operations (submit proposals, validate proposals, propose entities/relations, save interview answers). Governance decisions that require explicit human authorization remain HTTP-only and are enforced through the Review Workbench.
+
+## Implemented in v0.3
+
+- Governed ontology version lifecycle: draft → published → deprecated, with immutable published snapshots
+- Proposal-based workflow: Agent submits schema/entity/relation proposals; platform validates and tracks state
+- Human review via Review Workbench: approve, reject, edit, merge, waive
+- Publication readiness gates: schema validation, evidence coverage, competency question pass rate, fact audit
+- Fact claim generation, stratified audit sampling, and stale invalidation on graph changes
+- MCP semantic tools for Agent-driven build workflow (propose, validate, read state)
+- Document ingestion with evidence tracking and untrusted-content boundaries
+- Idempotency keys for safe Agent retry
 
 ## Planned Future Capabilities
 
-These are not implemented in the MVP:
-
 - full user accounts, RBAC, or organization tenancy
 - RDF/OWL/SHACL as the primary internal model
-- ontology version publishing and migration workflows
-- automatic extraction from code, documents, schemas, or logs
+- external entity backends: entity data sourced from external databases or APIs
+- entity-level external_mappings for cross-system data federation
+- field-level data_source declarations with sensitivity and access policy metadata
+- cross-system proxy query: platform routes Agent queries to external data sources
 - graph inference, rule engines, or reasoning services
 - multi-agent orchestration or agent lifecycle management
