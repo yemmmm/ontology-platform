@@ -5,12 +5,16 @@
 This repository contains a FastAPI backend and a Vite/React frontend for an ontology and knowledge graph platform. Key paths:
 
 - `backend/app/api/`: HTTP routes, dependencies, and schemas.
+- `backend/app/api/catalog.py`: catalog, semantic mapping, connector, and identifier-resolution routes.
 - `backend/app/domain/`: ontology and graph domain models.
 - `backend/app/repositories/`: PostgreSQL and Neo4j persistence.
 - `backend/app/services/`: validation and application workflows.
+- `backend/app/services/catalog.py`: catalog, mapping, and connector service logic.
 - `backend/app/mcp/`: MCP server entrypoint.
+- `backend/app/mcp/tools/catalog.py`: MCP tools for catalog, connector, and identifier analysis.
 - `backend/migrations/`: Alembic migrations.
 - `frontend/src/`: React UI entrypoint and styles.
+- `frontend/src/pages/CatalogPage.tsx`: catalog and connector workspace UI.
 - `docs/`: architecture, API, MCP, UI docs, and ADRs.
 
 ## Build, Test, and Development Commands
@@ -23,6 +27,7 @@ This repository contains a FastAPI backend and a Vite/React frontend for an onto
 - `cd frontend && npm install`: installs frontend dependencies.
 - `cd frontend && npm run dev`: starts the Vite dev server.
 - `cd frontend && npm run build`: type-checks and builds the frontend.
+- `cd frontend && npx playwright test`: runs the browser smoke checks used for workspace verification.
 
 ## Coding Style & Naming Conventions
 
@@ -35,11 +40,14 @@ Frontend code uses TypeScript, React, and ES modules. Use `PascalCase` for compo
 Backend dev dependencies include `pytest`; place tests under `backend/tests/` with names like `test_metadata.py` or `test_graph_validation.py`, then run `cd backend && uv run pytest`. Prefer service-level tests for validation rules.
 
 Any change under `backend/` must include new or updated tests when behavior changes and must be
-verified with `cd backend && uv run pytest` before the work is considered complete. Do not report a
-backend change as complete while tests are failing. If the test command cannot be run because an
-external dependency is unavailable, document the exact blocker and the narrower checks that were run.
+verified with `cd backend && uv run pytest` before the work is considered complete. v0.4 work
+should keep coverage around catalog service behavior, relation metadata, governance application,
+and import/export round-trips. Do not report a backend change as complete while tests are failing.
+If the test command cannot be run because an external dependency is unavailable, document the exact
+blocker and the narrower checks that were run.
 
-No frontend test runner is configured yet. For UI changes, run `cd frontend && npm run build` and document manual browser checks.
+For UI changes, run `cd frontend && npm run build` and `cd frontend && npx playwright test`, then
+document any manual browser checks that were necessary.
 
 ## Commit & Pull Request Guidelines
 

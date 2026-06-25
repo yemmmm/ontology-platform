@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_neo4j_driver
 from app.api.agent_test import router as agent_test_router
+from app.api.catalog import router as catalog_router
 from app.api.consistency import router as consistency_router
 from app.api.documents import router as documents_router
 from app.api.facts import router as facts_router
@@ -16,6 +17,7 @@ from app.services.health import check_neo4j, check_postgres
 
 router = APIRouter()
 router.include_router(metadata_router)
+router.include_router(catalog_router)
 router.include_router(graph_router)
 router.include_router(import_export_router)
 router.include_router(agent_test_router)

@@ -30,18 +30,20 @@ BRIEF_FIELDS = (
     "business_goal",
     "scope",
     "core_concepts",
+    "identity_rules",
     "expected_granularity",
     "data_sources",
     "boundaries",
     "terminology",
     "inference_scope",
 )
-REQUIRED_FIELDS = BRIEF_FIELDS[:5]
+REQUIRED_FIELDS = BRIEF_FIELDS[:6]
 FIELD_PROMPTS = {
     "domain_name": "What business domain should this ontology describe?",
     "business_goal": "What business outcome should the knowledge graph support?",
     "scope": "What is in scope and explicitly out of scope?",
     "core_concepts": "What are the core concepts, events, and participants?",
+    "identity_rules": "Which identity keys and lifecycle rules distinguish entities?",
     "expected_granularity": "What level of detail should entities and facts use?",
     "data_sources": "Which sources are available and which are most trustworthy?",
     "boundaries": "What time, geography, or version boundaries apply?",

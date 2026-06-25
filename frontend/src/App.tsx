@@ -69,8 +69,8 @@ import type {
   Proposal,
   ProposalItem,
   ReviewBatch,
-  SourceChunk,
-  SourceDocument,
+  EvidenceChunk,
+  EvidenceArtifact,
   KnowledgeConflict,
   OntologyVersion,
   RelatedEntity,
@@ -101,6 +101,9 @@ import { FactAuditPage } from "./pages/FactAuditPage";
 import { PublicationPage } from "./pages/PublicationPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { EvidenceExplorer } from "./pages/EvidenceExplorer";
+import { CatalogWizardPage } from "./pages/CatalogWizardPage";
+import { GraphReviewPage, SchemaReviewPage } from "./pages/ReviewPages";
+import { WorkflowProgress } from "./components/WorkflowProgress";
 
 type AppView = "home" | "workspace";
 type WorkspaceTab =
@@ -115,12 +118,14 @@ type WorkspaceTab =
   | "publication"
   | "classes"
   | "entities"
+  | "catalog"
   | "entities-search"
   | "versions"
   | "evidence"
   | "agent-test"
   | "mcp-tools"
   | "setting";
+type WorkspaceStage = "intake" | "schema" | "graph" | "facts" | "publish" | "catalog" | "tools";
 type ClassPageMode = "topology" | "create" | "edit";
 type EntityPageMode = "topology" | "create" | "edit";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
@@ -143,29 +148,66 @@ const UI_KEYS = {
   workspaceTab: "ontology-platform-ui-workspace-tab-v3",
 } as const;
 
+const stageMeta: Array<{
+  id: WorkspaceStage;
+  label: string;
+  detail: string;
+  icon: typeof Network;
+  workflowStatuses?: string[];
+}> = [
+  { id: "intake", label: "Intake", detail: "Brief · questions · evidence", icon: BookOpen, workflowStatuses: ["gathering"] },
+  { id: "schema", label: "Schema", detail: "Classes · schema review", icon: Box, workflowStatuses: ["schema_draft", "schema_review"] },
+  { id: "graph", label: "Graph", detail: "Entities · graph review", icon: GitBranch, workflowStatuses: ["graph_building", "graph_review"] },
+  { id: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2, workflowStatuses: ["validated"] },
+  { id: "publish", label: "Publish", detail: "Publication · versions", icon: Flag, workflowStatuses: ["published"] },
+  { id: "catalog", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
+  { id: "tools", label: "Tools", detail: "Search · agent · MCP · settings", icon: Wrench },
+];
+
+const stageDefaultTab: Record<WorkspaceStage, WorkspaceTab> = {
+  intake: "overview",
+  schema: "schema-review",
+  graph: "graph-review",
+  facts: "facts",
+  publish: "publication",
+  catalog: "catalog",
+  tools: "entities-search",
+};
+
+const workflowStatusToStage: Record<string, WorkspaceStage> = {
+  gathering: "intake",
+  schema_draft: "schema",
+  schema_review: "schema",
+  graph_building: "graph",
+  graph_review: "graph",
+  validated: "facts",
+  published: "publish",
+};
+
 const workspaceTabs: Array<{
   id: WorkspaceTab;
-  group: "Build" | "Review" | "Model" | "Tools";
+  stage: WorkspaceStage;
   label: string;
   detail: string;
   icon: typeof Network;
 }> = [
-  { id: "overview", group: "Build", label: "Overview", detail: "Progress & next actions", icon: CircleGauge },
-  { id: "brief", group: "Build", label: "Brief", detail: "Scope & intent", icon: BookOpen },
-  { id: "questions", group: "Build", label: "Questions", detail: "Competency validation", icon: CircleHelp },
-  { id: "sources", group: "Build", label: "Sources", detail: "Documents & chunks", icon: FileText },
-  { id: "schema-review", group: "Review", label: "Schema", detail: "Schema proposals", icon: Clipboard },
-  { id: "graph-review", group: "Review", label: "Graph", detail: "Knowledge candidates", icon: GitBranch },
-  { id: "facts", group: "Review", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
-  { id: "publication", group: "Review", label: "Publication", detail: "Readiness & release", icon: Flag },
-  { id: "classes", group: "Model", label: "Classes", detail: "Class topology", icon: Box },
-  { id: "entities", group: "Model", label: "Entities", detail: "Entity editor", icon: Database },
-  { id: "versions", group: "Model", label: "Versions", detail: "Lineage & diff", icon: History },
-  { id: "evidence", group: "Model", label: "Evidence", detail: "Source traceability", icon: ShieldCheck },
-  { id: "entities-search", group: "Tools", label: "Search", detail: "Retrieval tests", icon: Search },
-  { id: "agent-test", group: "Tools", label: "Agent Test", detail: "Question runs", icon: Send },
-  { id: "mcp-tools", group: "Tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
-  { id: "setting", group: "Tools", label: "Settings", detail: "Runtime status", icon: Settings },
+  { id: "overview", stage: "intake", label: "Overview", detail: "Progress & next actions", icon: CircleGauge },
+  { id: "brief", stage: "intake", label: "Brief", detail: "Scope & intent", icon: BookOpen },
+  { id: "questions", stage: "intake", label: "Questions", detail: "Competency validation", icon: CircleHelp },
+  { id: "sources", stage: "intake", label: "Files", detail: "Evidence originals", icon: FileText },
+  { id: "schema-review", stage: "schema", label: "Schema Review", detail: "Schema proposals", icon: Clipboard },
+  { id: "classes", stage: "schema", label: "Classes", detail: "Class topology", icon: Box },
+  { id: "graph-review", stage: "graph", label: "Graph Review", detail: "Knowledge candidates", icon: GitBranch },
+  { id: "entities", stage: "graph", label: "Entities", detail: "Entity editor", icon: Database },
+  { id: "facts", stage: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
+  { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
+  { id: "versions", stage: "publish", label: "Versions", detail: "Lineage & diff", icon: History },
+  { id: "catalog", stage: "catalog", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
+  { id: "entities-search", stage: "tools", label: "Search", detail: "Retrieval tests", icon: Search },
+  { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
+  { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
+  { id: "evidence", stage: "tools", label: "Evidence", detail: "Source traceability", icon: ShieldCheck },
+  { id: "setting", stage: "tools", label: "Settings", detail: "Runtime status", icon: Settings },
 ];
 
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
@@ -543,25 +585,52 @@ export function App() {
               </div>
             </button>
             <nav className="mainNav" aria-label="Ontology workspace navigation">
-              {(["Build", "Review", "Model", "Tools"] as const).map((group) => (
-                <section className="navGroup" key={group}>
-                  <span className="navGroupLabel">{group}</span>
-                  {workspaceTabs.filter((item) => item.group === group).map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        className={classNames("navButton", workspaceTab === item.id && "active")}
-                        key={item.id}
-                        onClick={() => navigateWorkspace(item.id)}
-                        type="button"
-                      >
-                        <Icon size={17} />
-                        <span><strong>{item.label}</strong><small>{item.detail}</small></span>
-                      </button>
-                    );
-                  })}
-                </section>
-              ))}
+              {stageMeta.map((stage) => {
+                const tabsInStage = workspaceTabs.filter((item) => item.stage === stage.id);
+                if (!tabsInStage.length) return null;
+                const StageIcon = stage.icon;
+                const activeStage = workflowStatusToStage[selectedVersion?.workflow_status ?? "gathering"] ?? "intake";
+                const tabStage = workspaceTabs.find((item) => item.id === workspaceTab)?.stage;
+                const isActiveStage = tabStage === stage.id;
+                const isWorkflowStage = stage.id === activeStage;
+                return (
+                  <section
+                    className={classNames(
+                      "navGroup",
+                      "navStage",
+                      isActiveStage && "stageActive",
+                      isWorkflowStage && "stageCurrent",
+                    )}
+                    key={stage.id}
+                  >
+                    <button
+                      className="navStageHeader"
+                      onClick={() => navigateWorkspace(stageDefaultTab[stage.id])}
+                      type="button"
+                    >
+                      <StageIcon size={15} />
+                      <span><strong>{stage.label}</strong><small>{stage.detail}</small></span>
+                      {isWorkflowStage && <span className="navStageDot" aria-label="Current workflow stage" />}
+                    </button>
+                    <div className="navStageTabs">
+                      {tabsInStage.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            className={classNames("navButton", "navStageButton", workspaceTab === item.id && "active")}
+                            key={item.id}
+                            onClick={() => navigateWorkspace(item.id)}
+                            type="button"
+                          >
+                            <Icon size={15} />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
             </nav>
             <div className="railFooter">
               <span>API</span>
@@ -616,6 +685,25 @@ export function App() {
                 </Tooltip>
               </div>
             </header>
+
+            {selectedVersion && (
+              <div className="workflowProgressHost">
+                <WorkflowProgress
+                  status={selectedVersion.workflow_status}
+                  variant="compact"
+                  stageDefaultTab={{
+                    gathering: "overview",
+                    schema_draft: "classes",
+                    schema_review: "schema-review",
+                    graph_building: "entities",
+                    graph_review: "graph-review",
+                    validated: "facts",
+                    published: "publication",
+                  }}
+                  onStageClick={(_stage, tab) => navigateWorkspace(tab)}
+                />
+              </div>
+            )}
 
             {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
 
@@ -904,6 +992,7 @@ function WorkspaceContent(props: {
   if (props.tab === "evidence") {
     return (
       <EvidenceExplorer
+        artifactId={queryValue("artifact") || undefined}
         documentId={queryValue("document") || undefined}
         evidenceIds={(queryValue("evidence") || "").split(",").filter(Boolean)}
         itemKey={queryValue("item") || undefined}
@@ -953,7 +1042,7 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "sources") {
-    return <SourceDocumentsPage navigate={props.navigateWorkspace} projectId={props.ontology.project_id} readOnly={readOnly} request={governedRequest} />;
+    return <EvidenceArtifactsPage navigate={props.navigateWorkspace} projectId={props.ontology.project_id} readOnly={readOnly} request={governedRequest} />;
   }
 
   if (props.tab === "graph-review") {
@@ -979,6 +1068,21 @@ function WorkspaceContent(props: {
         relations={props.relations}
         relationTypes={props.relationTypes}
         reloadGraph={props.reloadGraph}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "catalog") {
+    return (
+      <CatalogWizardPage
+        classes={props.classes}
+        entities={props.entities}
+        ontologyId={props.ontology.id}
+        projectId={props.project.id}
+        propertiesByClass={props.propertiesByClass}
+        readOnly={readOnly}
+        relationTypes={props.relationTypes}
         request={governedRequest}
       />
     );
@@ -1041,24 +1145,24 @@ function FactAuditWithBatch(props: {
   );
 }
 
-function SourceDocumentsPage(props: { projectId: string; request: Requester; navigate: (tab: string, params?: Record<string, string>) => void; readOnly: boolean }) {
-  const [documents, setDocuments] = useState<SourceDocument[]>([]);
+function EvidenceArtifactsPage(props: { projectId: string; request: Requester; navigate: (tab: string, params?: Record<string, string>) => void; readOnly: boolean }) {
+  const [artifacts, setArtifacts] = useState<EvidenceArtifact[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [chunks, setChunks] = useState<SourceChunk[]>([]);
+  const [chunks, setChunks] = useState<EvidenceChunk[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const data = await props.request<SourceDocument[]>(`/projects/${props.projectId}/source-documents`);
-    setDocuments(data);
+    const data = await props.request<EvidenceArtifact[]>(`/projects/${props.projectId}/evidence-artifacts`);
+    setArtifacts(data);
     setSelectedId((current) => data.some((item) => item.id === current) ? current : data[0]?.id || "");
   }, [props.projectId, props.request]);
 
   useEffect(() => { load().catch((cause) => setError(String(cause))); }, [load]);
   useEffect(() => {
     if (!selectedId) { setChunks([]); return; }
-    props.request<SourceChunk[]>(`/source-documents/${selectedId}/chunks`).then(setChunks).catch((cause) => setError(String(cause)));
+    props.request<EvidenceChunk[]>(`/evidence-artifacts/${selectedId}/chunks`).then(setChunks).catch((cause) => setError(String(cause)));
   }, [props.request, selectedId]);
 
   async function upload(event: FormEvent) {
@@ -1069,7 +1173,7 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester; nav
     try {
       const body = new FormData();
       body.append("file", file);
-      const uploaded = await props.request<SourceDocument>(`/projects/${props.projectId}/source-documents`, { method: "POST", body });
+      const uploaded = await props.request<EvidenceArtifact>(`/projects/${props.projectId}/evidence-artifacts`, { method: "POST", body });
       setSelectedId(uploaded.id);
       setFile(null);
       await load();
@@ -1085,7 +1189,7 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester; nav
     setBusy(true);
     setError("");
     try {
-      await props.request<SourceDocument>(`/source-documents/${selectedId}/reparse`, { method: "POST" });
+      await props.request<EvidenceArtifact>(`/evidence-artifacts/${selectedId}/reparse`, { method: "POST" });
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1099,10 +1203,10 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester; nav
     setBusy(true);
     setError("");
     try {
-      const proposals = await props.request<Proposal[]>(`/source-documents/${selectedId}/proposals`);
+      const proposals = await props.request<Proposal[]>(`/evidence-artifacts/${selectedId}/proposals`);
       const first = proposals[0];
       if (!first) {
-        setError("This document has not generated any proposals yet.");
+        setError("No proposals cite this evidence artifact yet. Agent extraction must submit candidates with evidence references first.");
         return;
       }
       props.navigate(first.proposal_type === "schema_change" ? "schema-review" : "graph-review", { proposal: first.id });
@@ -1113,25 +1217,26 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester; nav
     }
   }
 
-  const selected = documents.find((document) => document.id === selectedId);
+  const selected = artifacts.find((artifact) => artifact.id === selectedId);
   return (
     <section className="sourcePage">
       <aside className="sourceSidebar">
         <form className="sourceUpload" onSubmit={upload}>
-          <label><Upload size={16} /><span>PDF, Markdown or text</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
-          <button className="primaryButton" disabled={!file || busy || props.readOnly} type="submit">Upload & parse</button>
+          <label><Upload size={16} /><span>PDF, Markdown or text evidence</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
+          <button className="primaryButton" disabled={!file || busy || props.readOnly} type="submit">Store evidence</button>
         </form>
-        {documents.map((document) => (
-          <button className={classNames("sourceDocument", document.id === selectedId && "active")} key={document.id} onClick={() => setSelectedId(document.id)} type="button">
-            <strong>{document.filename}</strong>
-            <span><Badge>{document.parse_status}</Badge>{document.chunk_count} chunks · {(document.size_bytes / 1024).toFixed(1)} KB</span>
+        {artifacts.map((artifact) => (
+          <button className={classNames("sourceDocument", artifact.id === selectedId && "active")} key={artifact.id} onClick={() => setSelectedId(artifact.id)} type="button">
+            <strong>{artifact.filename}</strong>
+            <span><Badge>{artifact.parse_status}</Badge>{artifact.chunk_count} chunks · {(artifact.size_bytes / 1024).toFixed(1)} KB</span>
           </button>
         ))}
       </aside>
       <main className="sourceSurface">
         {error && <div className="reviewError">{error}</div>}
-        {!selected ? <EmptyState icon={<FileText size={24} />} title="Upload a source document" /> : <>
-          <header className="reviewHeader"><div><span className="eyebrow">Source document</span><h2>{selected.filename}</h2><p>SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div><div className="reviewHeaderActions"><button className="secondaryButton" disabled={busy} onClick={() => void openProposals()} type="button">Generated proposals</button><button className="secondaryButton" disabled={busy || props.readOnly || selected.parse_status === "parsing"} onClick={() => void reparse()} type="button"><RefreshCw className={busy ? "spin" : ""} size={14} />{selected.parse_status === "failed" ? "Retry parse" : "Reparse"}</button></div></header>
+        {!selected ? <EmptyState icon={<FileText size={24} />} title="Store an evidence artifact" /> : <>
+          <header className="reviewHeader"><div><span className="eyebrow">Evidence artifact</span><h2>{selected.filename}</h2><p>Stored original · SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div><div className="reviewHeaderActions"><button className="secondaryButton" disabled={busy} onClick={() => void openProposals()} type="button">Linked proposals</button><button className="secondaryButton" disabled={busy || props.readOnly || selected.parse_status === "parsing"} onClick={() => void reparse()} type="button"><RefreshCw className={busy ? "spin" : ""} size={14} />{selected.parse_status === "failed" ? "Retry parse" : "Reparse chunks"}</button></div></header>
+          <div className="infoBanner">Artifacts are stored as evidence for Agent-extracted candidates. The platform parses chunks for traceability, but does not infer graph knowledge from the original text.</div>
           {selected.parse_error && <div className="reviewError">{selected.parse_error}</div>}
           <div className="chunkList">{chunks.map((chunk) => <article className="sourceChunk" key={chunk.id}><header><strong>Chunk {chunk.sequence + 1}</strong><span>{chunk.page_number ? `Page ${chunk.page_number} · ` : ""}characters {chunk.char_start}–{chunk.char_end}</span></header><pre>{chunk.text}</pre><code>{chunk.content_hash.slice(0, 20)}…</code></article>)}</div>
         </>}
@@ -1140,397 +1245,6 @@ function SourceDocumentsPage(props: { projectId: string; request: Requester; nav
   );
 }
 
-function GraphReviewPage(props: { ontology: Ontology; request: Requester; reloadGraph: () => Promise<void>; batchId?: string; versionId: string }) {
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [conflicts, setConflicts] = useState<KnowledgeConflict[]>([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [batch, setBatch] = useState<ReviewBatch | null>(null);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [editingKey, setEditingKey] = useState("");
-  const [editorValue, setEditorValue] = useState("");
-  const [manualValues, setManualValues] = useState<Record<string, string>>({});
-
-  const load = useCallback(async () => {
-    const [all, conflictData, batchData] = await Promise.all([
-      props.request<Proposal[]>(`/ontologies/${props.ontology.id}/proposals`),
-      props.request<KnowledgeConflict[]>(`/ontologies/${props.ontology.id}/knowledge-conflicts`),
-      props.batchId ? props.request<ReviewBatch>(`/review-batches/${props.batchId}`) : Promise.resolve(null),
-    ]);
-    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || !["entity", "relation", "merge", "conflict"].includes(batchData.review_type))) {
-      throw new Error("This review batch does not belong to the selected ontology version or graph review type.");
-    }
-    const knowledge = all.filter((item) => ["entity", "relation", "merge"].includes(item.proposal_type));
-    setProposals(knowledge);
-    setConflicts(conflictData);
-    setBatch(batchData);
-    const batchProposalId = batchData?.stable_key.split(":")[1] ?? "";
-    setSelectedId((current) => batchProposalId || (knowledge.some((item) => item.id === current) ? current : knowledge[0]?.id || ""));
-  }, [props.batchId, props.ontology.id, props.request, props.versionId]);
-
-  useEffect(() => { load().catch((cause) => setError(String(cause))); }, [load]);
-  const selected = proposals.find((proposal) => proposal.id === selectedId);
-  const selectedConflicts = conflicts.filter((conflict) => conflict.proposal_id === selectedId);
-  const items = (selected?.payload.items ?? []).filter((item) => !batch || batch.item_ids.includes(item.key));
-
-  async function run(action: () => Promise<void>) {
-    setBusy(true); setError("");
-    try { await action(); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); }
-  }
-
-  function proposalAction(action: "validate" | "approve" | "reject" | "apply") {
-    if (!selected) return;
-    void run(async () => {
-      if (action === "validate" || action === "apply") await props.request(`/proposals/${selected.id}/${action}`, { method: "POST" });
-      else await props.request(`/proposals/${selected.id}/review`, { method: "POST", body: JSON.stringify({ decision: action === "approve" ? "approved" : "rejected", reviewer_type: "user" }) });
-      if (action === "apply") await props.reloadGraph();
-    });
-  }
-
-  function reviewItem(itemKey: string, action: "approved" | "rejected" | "edited", data?: JsonObject) {
-    if (!selected) return;
-    void run(() => props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
-      method: "POST",
-      body: JSON.stringify({ action, reviewer_type: "user", ...(data ? { data } : {}) }),
-    }));
-  }
-
-  function batchReview(action: "approved" | "rejected") {
-    if (!selected || selectedKeys.length === 0) return;
-    void run(async () => {
-      await props.request(`/proposals/${selected.id}/items/review`, {
-        method: "POST",
-        body: JSON.stringify({ item_keys: selectedKeys, action, reviewer_type: "user" }),
-      });
-      setSelectedKeys([]);
-    });
-  }
-
-  function saveEdit(itemKey: string) {
-    try {
-      reviewItem(itemKey, "edited", JSON.parse(editorValue) as JsonObject);
-      setEditingKey("");
-    } catch {
-      setError("Edited candidate data must be valid JSON.");
-    }
-  }
-
-  function resolve(conflictId: string, action: "keep_existing" | "accept_proposed" | "manual") {
-    let value: unknown;
-    if (action === "manual") {
-      try {
-        value = JSON.parse(manualValues[conflictId] ?? "");
-      } catch {
-        setError("Manual conflict values must be valid JSON.");
-        return;
-      }
-    }
-    void run(() => props.request(`/knowledge-conflicts/${conflictId}/resolve`, {
-      method: "POST",
-      body: JSON.stringify({ action, ...(action === "manual" ? { value } : {}) }),
-    }));
-  }
-
-  return <section className="schemaReviewPage">
-    <aside className="reviewQueue"><header><div><span className="eyebrow">Review queue</span><h2>Graph candidates</h2></div></header>{proposals.map((proposal) => <button className={classNames("reviewQueueItem", proposal.id === selectedId && "active")} key={proposal.id} onClick={() => setSelectedId(proposal.id)} type="button"><span><strong>{proposal.payload.items?.length ?? 0} {proposal.proposal_type}</strong><Badge>{proposal.status}</Badge></span><small>{formatDate(proposal.created_at)} · {compactId(proposal.id)}</small></button>)}</aside>
-    <main className="reviewSurface">{error && <div className="reviewError">{error}</div>}{!selected ? <EmptyState icon={<GitBranch size={24} />} title="No knowledge candidates" /> : <>
-      <header className="reviewHeader"><div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{items.length} candidates</h2><p>{selected.proposal_type === "merge" ? "Compare the source and target identities before approving the merge." : "Every knowledge candidate keeps its structured data and traceable evidence."}</p></div><div className="reviewHeaderActions">{(selected.status === "proposed" || selected.status === "validated") && <><button className="secondaryButton" disabled={busy} onClick={() => proposalAction("reject")} type="button">Reject</button>{selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button">Validate</button>}{selected.status === "validated" && <button className="primaryButton" disabled={busy || selectedConflicts.some((item) => item.status === "pending") || items.some((item) => !item.review_status || item.review_status === "pending")} onClick={() => proposalAction("approve")} type="button">Approve proposal</button>}</>}{selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button">Apply atomically</button>}</div></header>
-      {selectedConflicts.map((conflict) => <article className="conflictCard" key={conflict.id}><div><Badge>{conflict.status}</Badge><strong>{conflict.item_key} · {conflict.field}</strong><p>Existing: {prettyJson(conflict.existing_value)}<br />Proposed: {prettyJson(conflict.proposed_value)}</p></div>{conflict.status === "pending" && <div className="conflictActions"><button onClick={() => resolve(conflict.id, "keep_existing")} type="button">Keep existing</button><button onClick={() => resolve(conflict.id, "accept_proposed")} type="button">Accept proposed</button><input aria-label={`Manual value for ${conflict.field}`} onChange={(event) => setManualValues((current) => ({ ...current, [conflict.id]: event.target.value }))} placeholder="Manual JSON value" value={manualValues[conflict.id] ?? ""} /><button onClick={() => resolve(conflict.id, "manual")} type="button">Use manual</button></div>}</article>)}
-      {batch && <div className="batchContext"><strong>Review batch · {batch.review_type}</strong><span>{batch.status} · {batch.item_ids.length} scoped items</span><button className="secondaryButton" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("batch"); window.location.assign(url); }} type="button">Exit batch</button></div>}
-      {selectedKeys.length > 0 && <div className="batchBar"><strong>{selectedKeys.length} selected</strong><button onClick={() => batchReview("approved")} type="button"><Check size={14} /> Approve</button><button onClick={() => batchReview("rejected")} type="button"><X size={14} /> Reject</button></div>}
-      <div className="reviewItems">{items.map((item) => { const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id)); const checked = selectedKeys.includes(item.key); return <article className={classNames("reviewItem", `status-${item.review_status ?? "pending"}`)} key={item.key}><div className="reviewItemSelect"><input aria-label={`Select ${item.key}`} checked={checked} onChange={() => setSelectedKeys(checked ? selectedKeys.filter((key) => key !== item.key) : [...selectedKeys, item.key])} type="checkbox" /></div><div className="reviewItemBody"><header><div><Badge>{item.kind}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div><Badge>{item.review_status ?? "pending"}</Badge></header>{item.kind === "merge" ? <div className="schemaDiff"><div><span>Source entity</span><pre>{prettyJson(item.data.source_entity_id ?? item.data.source ?? "New entity")}</pre></div><div><span>Merge target</span><pre>{prettyJson(item.data.target_entity_id ?? item.data.target ?? "Existing entity")}</pre></div></div> : <pre className="jsonBlock">{prettyJson(item.data)}</pre>}{editingKey === item.key && <div className="reviewEditor"><textarea onChange={(event) => setEditorValue(event.target.value)} value={editorValue} /><button className="primaryButton" onClick={() => saveEdit(item.key)} type="button">Save candidate</button></div>}<EvidenceExplorer compact evidence={evidence} request={props.request} /></div><div className="reviewItemActions"><button aria-label={`Approve ${item.key}`} onClick={() => reviewItem(item.key, "approved")} type="button"><Check size={15} /></button><button aria-label={`Edit ${item.key}`} onClick={() => { setEditingKey(item.key); setEditorValue(prettyJson(item.data)); }} type="button"><Braces size={15} /></button><button aria-label={`Reject ${item.key}`} onClick={() => reviewItem(item.key, "rejected")} type="button"><X size={15} /></button></div></article>; })}</div>
-    </>}</main>
-  </section>;
-}
-
-function SchemaReviewPage(props: {
-  ontology: Ontology;
-  classes: ClassDef[];
-  request: Requester;
-  reloadSchema: () => Promise<void>;
-  batchId?: string;
-  versionId: string;
-}) {
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [editingKey, setEditingKey] = useState("");
-  const [editorValue, setEditorValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [batch, setBatch] = useState<ReviewBatch | null>(null);
-
-  const load = useCallback(async () => {
-    const [data, batchData] = await Promise.all([
-      props.request<Proposal[]>(`/ontologies/${props.ontology.id}/proposals?proposal_type=schema_change`),
-      props.batchId ? props.request<ReviewBatch>(`/review-batches/${props.batchId}`) : Promise.resolve(null),
-    ]);
-    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || batchData.review_type !== "schema")) {
-      throw new Error("This review batch does not belong to the selected ontology version or schema review type.");
-    }
-    setBatch(batchData);
-    setProposals(data);
-    setSelectedId((current) => {
-      const batchProposalId = batchData?.stable_key.startsWith("proposal:") ? batchData.stable_key.slice(9) : "";
-      if (batchProposalId) return batchProposalId;
-      const requested = queryValue("proposal");
-      if (current && data.some((item) => item.id === current)) return current;
-      return data.some((item) => item.id === requested) ? requested : data[0]?.id || "";
-    });
-  }, [props.batchId, props.ontology.id, props.request, props.versionId]);
-
-  useEffect(() => {
-    load().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-  }, [load]);
-
-  const selected = proposals.find((proposal) => proposal.id === selectedId) ?? null;
-  const items = (selected?.payload.items ?? []).filter((item) => !batch || batch.item_ids.includes(item.key));
-  const classNamesById = useMemo(
-    () => new Map(props.classes.map((classDef) => [classDef.id, classDef.name])),
-    [props.classes],
-  );
-
-  async function run(action: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function reviewItem(itemKey: string, action: "approved" | "rejected") {
-    if (!selected) return;
-    void run(async () => {
-      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
-        method: "POST",
-        body: JSON.stringify({ action, reviewer_type: "user" }),
-      });
-    });
-  }
-
-  function batchReview(action: "approved" | "rejected") {
-    if (!selected || !selectedKeys.length) return;
-    void run(async () => {
-      await props.request(`/proposals/${selected.id}/items/review`, {
-        method: "POST",
-        body: JSON.stringify({ item_keys: selectedKeys, action, reviewer_type: "user" }),
-      });
-      setSelectedKeys([]);
-    });
-  }
-
-  function saveEdit(item: ProposalItem) {
-    if (!selected) return;
-    let data: JsonObject;
-    try {
-      data = JSON.parse(editorValue) as JsonObject;
-    } catch {
-      setError("Edited item data must be valid JSON.");
-      return;
-    }
-    void run(async () => {
-      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(item.key)}/review`, {
-        method: "POST",
-        body: JSON.stringify({ action: "edited", reviewer_type: "user", data }),
-      });
-      setEditingKey("");
-    });
-  }
-
-  function mergeItem(itemKey: string, mergeIntoKey: string) {
-    if (!selected || !mergeIntoKey) return;
-    void run(async () => {
-      await props.request(`/proposals/${selected.id}/items/${encodeURIComponent(itemKey)}/review`, {
-        method: "POST",
-        body: JSON.stringify({ action: "merged", reviewer_type: "user", merge_into_key: mergeIntoKey }),
-      });
-    });
-  }
-
-  function proposalAction(action: "validate" | "approve" | "reject" | "apply") {
-    if (!selected) return;
-    void run(async () => {
-      if (action === "validate" || action === "apply") {
-        await props.request(`/proposals/${selected.id}/${action}`, { method: "POST" });
-      } else {
-        await props.request(`/proposals/${selected.id}/review`, {
-          method: "POST",
-          body: JSON.stringify({ decision: action === "approve" ? "approved" : "rejected", reviewer_type: "user" }),
-        });
-      }
-      if (action === "apply") await props.reloadSchema();
-    });
-  }
-
-  return (
-    <section className="schemaReviewPage">
-      <aside className="reviewQueue" aria-label="Schema proposal batches">
-        <header>
-          <div><span className="eyebrow">Review queue</span><h2>Schema batches</h2></div>
-          <button className="iconButton" disabled={busy} onClick={() => void load()} type="button">
-            <RefreshCw className={busy ? "spin" : ""} size={16} />
-          </button>
-        </header>
-        {proposals.length ? proposals.map((proposal) => (
-          <button
-            className={classNames("reviewQueueItem", proposal.id === selectedId && "active")}
-            key={proposal.id}
-            onClick={() => { setSelectedId(proposal.id); setSelectedKeys([]); }}
-            type="button"
-          >
-            <span><strong>{proposal.payload.items?.length ?? 0} changes</strong><Badge>{proposal.status}</Badge></span>
-            <small>{formatDate(proposal.created_at)} · {compactId(proposal.id)}</small>
-          </button>
-        )) : <EmptyState icon={<Clipboard size={20} />} title="No schema proposals" />}
-      </aside>
-
-      <main className="reviewSurface">
-        {error && <div className="reviewError">{error}</div>}
-        {batch && <div className="batchContext"><strong>Review batch · schema</strong><span>{batch.status} · {batch.item_ids.length} scoped items</span><button className="secondaryButton" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("batch"); window.location.assign(url); }} type="button">Exit batch</button></div>}
-        {!selected ? (
-          <EmptyState icon={<Clipboard size={24} />} title="Select a schema proposal" />
-        ) : (
-          <>
-            <header className="reviewHeader">
-              <div>
-                <span className="eyebrow">Schema change proposal</span>
-                <h2>{items.length} candidate changes</h2>
-                <p>Draft {compactId(selected.target_version_id)} · evidence and deterministic validation remain attached.</p>
-              </div>
-              <div className="reviewHeaderActions">
-                {(selected.status === "proposed" || selected.status === "validated") && <><button className="secondaryButton" disabled={busy} onClick={() => proposalAction("reject")} type="button"><X size={14} /> Reject</button>{selected.status === "proposed" && <button className="secondaryButton" disabled={busy} onClick={() => proposalAction("validate")} type="button"><Play size={14} /> Validate</button>}{selected.status === "validated" && <button className="primaryButton" disabled={busy || items.some((item) => !item.review_status || item.review_status === "pending")} onClick={() => proposalAction("approve")} title="Every candidate needs an explicit decision" type="button"><Check size={14} /> Approve proposal</button>}</>}
-                {selected.status === "approved" && <button className="primaryButton" disabled={busy} onClick={() => proposalAction("apply")} type="button"><Save size={14} /> Apply atomically</button>}
-              </div>
-            </header>
-
-            <div className="reviewSummary">
-              <div><strong>{items.filter((item) => item.review_status === "approved").length}</strong><span>Approved</span></div>
-              <div><strong>{items.filter((item) => item.review_status === "rejected").length}</strong><span>Rejected</span></div>
-              <div><strong>{items.filter((item) => !item.review_status || item.review_status === "pending").length}</strong><span>Pending</span></div>
-              <div><strong>{selected.evidence.length}</strong><span>Evidence records</span></div>
-            </div>
-
-            {(selected.validation_result.errors?.length || selected.validation_result.ambiguities?.length) ? (
-              <div className="validationStrip">
-                {(selected.validation_result.errors ?? []).map((message) => <span className="validationError" key={message}>{message}</span>)}
-                {(selected.validation_result.ambiguities ?? []).map((item, index) => <span className="validationAmbiguity" key={index}>{String(item.message ?? "Modeling ambiguity requires review")}</span>)}
-              </div>
-            ) : null}
-
-            {selectedKeys.length > 0 && (
-              <div className="batchBar">
-                <strong>{selectedKeys.length} selected</strong>
-                <button onClick={() => batchReview("approved")} type="button"><Check size={14} /> Approve</button>
-                <button onClick={() => batchReview("rejected")} type="button"><X size={14} /> Reject</button>
-              </div>
-            )}
-
-            <div className="reviewItems">
-              {items.map((item) => {
-                const checked = selectedKeys.includes(item.key);
-                const currentClass = item.kind === "class"
-                  ? props.classes.find((classDef) => classDef.name === item.data.name)
-                  : null;
-                const evidence = selected.evidence.filter((record) => item.evidence_ids?.includes(record.id));
-                return (
-                  <article className={classNames("reviewItem", `status-${item.review_status ?? "pending"}`)} key={item.key}>
-                    <div className="reviewItemSelect">
-                      <input
-                        aria-label={`Select ${item.key}`}
-                        checked={checked}
-                        onChange={() => setSelectedKeys(checked ? selectedKeys.filter((key) => key !== item.key) : [...selectedKeys, item.key])}
-                        type="checkbox"
-                      />
-                    </div>
-                    <div className="reviewItemBody">
-                      <header>
-                        <div><Badge>{item.kind.replace("_", " ")}</Badge><h3>{String(item.data.name ?? item.key)}</h3></div>
-                        <div className="reviewItemMeta"><span>{Math.round((item.confidence ?? 0) * 100)}% confidence</span><Badge>{item.review_status ?? "pending"}</Badge></div>
-                      </header>
-                      <div className="schemaDiff">
-                        <div><span>Before</span><pre>{currentClass ? prettyJson(currentClass) : "Not defined"}</pre></div>
-                        <div><span>After</span><pre>{prettyJson(item.data)}</pre></div>
-                      </div>
-                      <div className="reviewFacts">
-                        <span>Impact: {item.kind === "class" ? `${props.classes.filter((classDef) => classDef.parent_class_ids.includes(String(item.data.id ?? ""))).length} child classes` : classNamesById.get(String(item.data.class_id ?? "")) ?? "Schema only"}</span>
-                        <span>Sources: {item.evidence_ids?.length ?? 0} evidence · {item.competency_question_ids?.length ?? 0} questions</span>
-                      </div>
-                      <EvidenceExplorer compact evidence={evidence} request={props.request} />
-                      {editingKey === item.key && (
-                        <div className="reviewEditor">
-                          <SchemaItemEditor item={item} onChange={setEditorValue} value={editorValue} />
-                          <button className="primaryButton" onClick={() => saveEdit(item)} type="button">Save candidate</button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="reviewItemActions">
-                      <button title="Approve" onClick={() => reviewItem(item.key, "approved")} type="button"><Check size={15} /></button>
-                      <button title="Edit" onClick={() => { setEditingKey(item.key); setEditorValue(prettyJson(item.data)); }} type="button"><Braces size={15} /></button>
-                      <button title="Reject" onClick={() => reviewItem(item.key, "rejected")} type="button"><X size={15} /></button>
-                      <select
-                        aria-label={`Merge ${item.key} into another candidate`}
-                        onChange={(event) => mergeItem(item.key, event.target.value)}
-                        value=""
-                      >
-                        <option value="">Merge…</option>
-                        {items.filter((candidate) => candidate.key !== item.key && candidate.kind === item.kind).map((candidate) => (
-                          <option key={candidate.key} value={candidate.key}>{String(candidate.data.name ?? candidate.key)}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </main>
-    </section>
-  );
-}
-
-function SchemaItemEditor(props: { item: ProposalItem; value: string; onChange: (value: string) => void }) {
-  let data: JsonObject = {};
-  try {
-    data = JSON.parse(props.value) as JsonObject;
-  } catch {
-    return <textarea aria-label="Advanced candidate JSON" onChange={(event) => props.onChange(event.target.value)} value={props.value} />;
-  }
-
-  const fieldsByKind: Record<ProposalItem["kind"], string[]> = {
-    class: ["name", "description", "aliases", "parent_class_ids"],
-    property: ["name", "class_id", "type", "description", "required", "multi_valued"],
-    relation_type: ["name", "source_class_id", "target_class_id", "description", "inverse_name"],
-    constraint: ["name", "class_id", "expression", "severity", "description"],
-    entity: ["name"],
-    relation: ["relation_type_id"],
-    merge: ["source_entity_id", "target_entity_id"],
-  };
-
-  function update(field: string, value: unknown) {
-    props.onChange(prettyJson({ ...data, [field]: value }));
-  }
-
-  return (
-    <div className="structuredEditor">
-      {fieldsByKind[props.item.kind].map((field) => {
-        const current = data[field];
-        if (typeof current === "boolean" || field === "required" || field === "multi_valued") {
-          return <label key={field}><span>{field.replace(/_/g, " ")}</span><input checked={Boolean(current)} onChange={(event) => update(field, event.target.checked)} type="checkbox" /></label>;
-        }
-        const arrayValue = Array.isArray(current);
-        return <label key={field}><span>{field.replace(/_/g, " ")}</span><input onChange={(event) => update(field, arrayValue ? splitCsv(event.target.value) : event.target.value)} value={arrayValue ? current.join(", ") : current === undefined || current === null ? "" : String(current)} /></label>;
-      })}
-      <details><summary>Advanced JSON</summary><textarea aria-label="Advanced candidate JSON" onChange={(event) => props.onChange(event.target.value)} value={props.value} /></details>
-    </div>
-  );
-}
 
 function ClassesPage(props: {
   ontologyId: string;

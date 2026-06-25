@@ -10,6 +10,7 @@ from typing import Any
 
 
 REQUIRED_SCENARIOS = {
+    "background-first-intake",
     "conversation-only-intake",
     "conversation-with-document",
     "conflicting-documents",

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.ontology import PropertyType
 
@@ -134,6 +134,12 @@ class RelationTypeCreate(BaseModel):
     source_class_id: str
     target_class_id: str
     inverse_name: str | None = None
+    scope_policy: Literal["schema_allowed", "entity_only", "both"] = "both"
+    symmetric: bool = False
+    transitive: bool = False
+    status: str = "active"
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
     external_mappings: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -145,6 +151,12 @@ class RelationTypeUpdate(BaseModel):
     source_class_id: str | None = None
     target_class_id: str | None = None
     inverse_name: str | None = None
+    scope_policy: Literal["schema_allowed", "entity_only", "both"] | None = None
+    symmetric: bool | None = None
+    transitive: bool | None = None
+    status: str | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
     external_mappings: dict[str, Any] | None = None
 
 
@@ -159,6 +171,12 @@ class RelationTypeRead(BaseModel):
     target_class_id: str
     inverse_name: str | None
     normalized_type: str
+    scope_policy: str
+    symmetric: bool
+    transitive: bool
+    status: str
+    valid_from: datetime | None
+    valid_to: datetime | None
     external_mappings: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -204,6 +222,10 @@ class RelationCreate(BaseModel):
     target_entity_id: str
     properties: dict[str, Any] = Field(default_factory=dict)
     ontology_version_id: str | None = None
+    scope: Literal["instance"] = "instance"
+    status: str = "active"
+    valid_from: str | None = None
+    valid_to: str | None = None
 
 
 class RelationRead(BaseModel):
@@ -216,6 +238,10 @@ class RelationRead(BaseModel):
     source_entity_id: str
     target_entity_id: str
     properties: dict[str, Any]
+    scope: str = "instance"
+    status: str = "active"
+    valid_from: str | None = None
+    valid_to: str | None = None
 
 
 class EntityWithRelationsRead(EntityRead):
@@ -257,6 +283,199 @@ class OntologyExportRead(BaseModel):
     relation_types: list[RelationTypeRead]
     entities: list[EntityRead]
     relations: list[RelationRead]
+
+
+class DataSourceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    source_type: str = Field(min_length=1, max_length=80)
+    owner: str | None = None
+    authority_level: str = "unknown"
+    status: str = "available"
+    description: str | None = None
+    connection_policy: dict[str, Any] = Field(default_factory=dict)
+
+
+class DataSourceRead(DataSourceCreate):
+    id: str
+    project_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DataSourceUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    source_type: str | None = Field(default=None, min_length=1, max_length=80)
+    owner: str | None = None
+    authority_level: str | None = None
+    status: str | None = None
+    description: str | None = None
+    connection_policy: dict[str, Any] | None = None
+
+
+class DataResourceCreate(BaseModel):
+    data_source_id: str
+    name: str = Field(min_length=1, max_length=200)
+    resource_type: str = "table"
+    owner: str | None = None
+    authority_level: str = "unknown"
+    status: str = "available"
+    description: str | None = None
+
+
+class DataResourceRead(DataResourceCreate):
+    id: str
+    project_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DataResourceUpdate(BaseModel):
+    data_source_id: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    resource_type: str | None = None
+    owner: str | None = None
+    authority_level: str | None = None
+    status: str | None = None
+    description: str | None = None
+
+
+class ExternalFieldCreate(BaseModel):
+    data_resource_id: str
+    name: str = Field(min_length=1, max_length=200)
+    data_type: str = "string"
+    sensitivity: Literal["public", "internal", "confidential", "restricted"] = "public"
+    access_policy: Literal["allow", "mask", "approval_required", "deny"] = "allow"
+    masking_rule: str | None = None
+    approval_note: str | None = None
+    audit_required: bool = False
+    description: str | None = None
+
+
+class ExternalFieldRead(ExternalFieldCreate):
+    id: str
+    project_id: str
+    data_source_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ExternalFieldUpdate(BaseModel):
+    data_resource_id: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    data_type: str | None = None
+    sensitivity: Literal["public", "internal", "confidential", "restricted"] | None = None
+    access_policy: Literal["allow", "mask", "approval_required", "deny"] | None = None
+    masking_rule: str | None = None
+    approval_note: str | None = None
+    audit_required: bool | None = None
+    description: str | None = None
+
+
+class SemanticMappingCreate(BaseModel):
+    ontology_id: str
+    ontology_version_id: str | None = None
+    target_type: Literal["class", "property", "relation_type", "entity"]
+    target_id: str
+    field_id: str
+    join_key: dict[str, Any] = Field(default_factory=dict)
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    owner: str | None = None
+    status: str = "active"
+
+
+class SemanticMappingRead(SemanticMappingCreate):
+    id: str
+    project_id: str
+    data_source_id: str
+    resource_id: str
+    external_resource_name: str
+    external_field_name: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticMappingUpdate(BaseModel):
+    ontology_version_id: str | None = None
+    target_type: Literal["class", "property", "relation_type", "entity"] | None = None
+    target_id: str | None = None
+    field_id: str | None = None
+    join_key: dict[str, Any] | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    owner: str | None = None
+    status: str | None = None
+
+
+class ConnectorTemplateCreate(BaseModel):
+    data_source_id: str
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    allowed_field_ids: list[str] = Field(default_factory=list)
+    parameter_schema: dict[str, Any] = Field(default_factory=dict)
+    result_schema: dict[str, Any] = Field(default_factory=dict)
+    access_policy: Literal["allow", "approval_required", "deny"] = "allow"
+
+
+class ConnectorTemplateRead(ConnectorTemplateCreate):
+    id: str
+    project_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConnectorTemplateUpdate(BaseModel):
+    data_source_id: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    allowed_field_ids: list[str] | None = None
+    parameter_schema: dict[str, Any] | None = None
+    result_schema: dict[str, Any] | None = None
+    access_policy: Literal["allow", "approval_required", "deny"] | None = None
+
+
+class ConnectorQueryRequest(BaseModel):
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    actor_id: str | None = None
+    approved: bool = False
+
+
+class ConnectorQueryResult(BaseModel):
+    template_id: str
+    authorized: bool
+    denial_reason: str | None = None
+    source: dict[str, Any]
+    queried_at: datetime
+    audit: dict[str, Any]
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class IdentifierResolutionRequest(BaseModel):
+    left_values: list[str]
+    right_values: list[str]
+
+
+class IdentifierResolutionStats(BaseModel):
+    left_count: int
+    right_count: int
+    overlap_count: int
+    left_coverage: float
+    right_coverage: float
+    one_to_one: bool
+    unmapped_left: list[str]
+    unmapped_right: list[str]
 
 
 class OntologyImportPayload(BaseModel):
@@ -305,6 +524,7 @@ class OntologyVersionRead(BaseModel):
 
 class EvidenceCreate(BaseModel):
     source_type: Literal["document", "conversation", "user_statement", "system"]
+    artifact_id: str | None = None
     document_id: str | None = None
     page_number: int | None = Field(default=None, ge=1)
     chunk_id: str | None = None
@@ -313,9 +533,18 @@ class EvidenceCreate(BaseModel):
     quote: str = Field(min_length=1)
     content_hash: str = Field(min_length=64, max_length=64)
 
+    @model_validator(mode="after")
+    def sync_artifact_alias(self) -> "EvidenceCreate":
+        if self.document_id is None and self.artifact_id is not None:
+            self.document_id = self.artifact_id
+        if self.artifact_id is None and self.document_id is not None:
+            self.artifact_id = self.document_id
+        return self
 
-class SourceChunkRead(BaseModel):
+
+class EvidenceChunkRead(BaseModel):
     id: str
+    artifact_id: str | None = None
     document_id: str
     sequence: int
     parse_revision: int
@@ -328,9 +557,16 @@ class SourceChunkRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="after")
+    def sync_artifact_alias(self) -> "EvidenceChunkRead":
+        if self.artifact_id is None:
+            self.artifact_id = self.document_id
+        return self
 
-class SourceDocumentRead(BaseModel):
+
+class EvidenceArtifactRead(BaseModel):
     id: str
+    artifact_id: str | None = None
     project_id: str
     filename: str
     media_type: str
@@ -347,6 +583,12 @@ class SourceDocumentRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def sync_artifact_alias(self) -> "EvidenceArtifactRead":
+        if self.artifact_id is None:
+            self.artifact_id = self.id
+        return self
 
 
 class KnowledgeConflictRead(BaseModel):

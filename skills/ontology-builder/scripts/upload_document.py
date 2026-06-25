@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload a PDF, Markdown, or text document using multipart/form-data."""
+"""Upload a PDF, Markdown, or text evidence artifact using multipart/form-data."""
 
 import argparse
 import mimetypes
@@ -41,7 +41,7 @@ def main() -> None:
     print_json(
         request(
             args.base_url,
-            f"/projects/{args.project_id}/source-documents",
+            f"/projects/{args.project_id}/evidence-artifacts",
             method="POST",
             body=body,
             content_type=content_type,

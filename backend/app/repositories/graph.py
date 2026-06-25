@@ -200,6 +200,10 @@ def _relation_from_values(relation: dict[str, Any], source_id: str, target_id: s
         "source_entity_id": source_id,
         "target_entity_id": target_id,
         "properties": _decode_properties(relation),
+        "scope": relation.get("scope", "instance"),
+        "status": relation.get("status", "active"),
+        "valid_from": relation.get("valid_from"),
+        "valid_to": relation.get("valid_to"),
     }
 
 

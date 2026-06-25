@@ -25,8 +25,9 @@ bind items to entries in the envelope's `evidence` array with `evidence_indexes`
 platform replaces this creation-only field with durable `evidence_ids`; clients must not invent those
 IDs.
 
-For document Evidence, first call `get_source_document_chunks`. Use the returned `document_id`, chunk
-`id`, `page_number`, absolute `char_start`/`char_end`, exact `text` slice, and chunk `content_hash`.
+For artifact Evidence, first call `get_evidence_artifact_chunks`. Use the returned `artifact_id`,
+compatibility `document_id`, chunk `id`, `page_number`, absolute `char_start`/`char_end`, exact
+`text` slice, and chunk `content_hash`.
 Validation requires both of these equalities:
 
 ```text
@@ -69,7 +70,8 @@ Do not replace line breaks, normalize whitespace, change quotation marks, or use
   "evidence": [
     {
       "source_type": "document",
-      "document_id": "document-id",
+      "artifact_id": "artifact-id",
+      "document_id": "artifact-id",
       "page_number": null,
       "chunk_id": "chunk-id",
       "char_start": 10,
@@ -92,23 +94,35 @@ reviewed `class_id`, canonical `name`, aliases, and properties. Relation items m
 allowed edges or entity-level instance facts when their reviewed relation type permits it. Merge items
 identify both entity IDs and evidence supporting identity equivalence.
 
-## v0.4 proposal kinds
+## v0.4 modeling outside the proposal envelope
 
-`mapping` proposals describe Semantic Mapping. Each item should identify the ontology object or entity,
-external system, external resource, external field, identifier type, join key, validity window, owner,
-and confidence. Use this for facts such as `AssessmentResult.score` being stored in an external grade
-system.
+v0.4 does not introduce new `proposal_type` values. Semantic Mapping, Data Catalog, and Connector
+configuration are managed as first-class project resources through dedicated MCP tools and HTTP
+endpoints, separate from the governance proposal queue.
 
-`catalog` proposals describe Data Catalog entries. Each item should identify data source, resource,
-field, authoritative status, freshness, sensitivity, access policy, masking rule, approval instruction,
-and audit requirement. Use this for fields such as `student_pii.id_card_number` that must not be stored
-as graph properties.
+- **Semantic Mapping** (ontology object ↔ external field): use the `create_semantic_mapping` MCP
+  tool (or `POST /api/projects/{project_id}/semantic-mappings`). Include `ontology_id`,
+  `target_type` (`class` / `property` / `relation_type` / `entity`), `target_id`, `field_id`,
+  `join_key`, validity window, `confidence`, and `owner`. Use this for facts such as
+  `AssessmentResult.score` being stored in an external grade system. Update with
+  `update_semantic_mapping` (renaming the underlying resource or field auto-propagates).
+- **Data Catalog** (source, resource, field sensitivity, access policy): use `create_data_source`,
+  `create_data_resource`, and `create_external_field`. Each field records `sensitivity`
+  (`public` / `internal` / `confidential` / `restricted`), `access_policy`
+  (`allow` / `mask` / `approval_required` / `deny`), masking rule, and audit requirement. Use this
+  for fields such as `student_pii.id_card_number` that must not enter the graph.
+- **Instance-scoped entity relations** (no schema change): use `propose_relations` with the existing
+  `relation` proposal type, but mark each item's `data` with `scope: "instance"`, optional
+  `valid_from` / `valid_to`, and `status`. Use this for facts such as
+  `entity1 --CONFLICTS_WITH--> entity2` when the RelationType is marked `entity_only` or `both`.
+- **Governed connector queries**: use `run_connector_query` after defining a template with
+  `create_connector_template`. The platform records an audit row and applies field-level masking
+  and approval policies before returning data.
 
-`entity_relation` proposals describe instance-specific relations that do not change ontology schema.
-Each item should include `relation_type_id`, `source_entity_id`, `target_entity_id`, `scope=instance`,
-status, validity window, and relation properties. Use this for facts such as
-`entity1 --CONFLICTS_WITH--> entity2`.
+Build idempotency keys for proposals (schema/entity/relation/merge) from stable inputs such as
+project, version, artifact content hash, extraction stage, and deterministic batch number. Retrying
+the same logical batch must reuse its key. Changed content or a deliberately revised batch must use
+a new key.
 
-Build idempotency keys from stable inputs such as project, version, source content hash, extraction stage,
-and deterministic batch number. Retrying the same logical batch must reuse its key. Changed content or a
-deliberately revised batch must use a new key.
+The legacy MCP tools `get_source_document_status` and `get_source_document_chunks` remain
+compatibility aliases. Prefer the evidence artifact tool names in new traces.

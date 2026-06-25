@@ -501,6 +501,8 @@ def create_relation(
     ontology = get_ontology(session, ontology_id)
     version_id = ensure_graph_write_version(session, ontology, payload.ontology_version_id)
     relation_type = get_relation_type_for_ontology(session, ontology_id, payload.relation_type_id)
+    if relation_type.scope_policy == "schema_allowed":
+        raise bad_request("Relation type is schema-only and cannot be used for entity relations")
     source = graph_repo.get_entity_node(
         driver,
         payload.source_entity_id,
@@ -534,6 +536,10 @@ def create_relation(
         "source_entity_id": payload.source_entity_id,
         "target_entity_id": payload.target_entity_id,
         "properties": payload.properties,
+        "scope": payload.scope,
+        "status": payload.status,
+        "valid_from": payload.valid_from,
+        "valid_to": payload.valid_to,
     }
     return graph_repo.create_relation_edge(driver, relation_type.normalized_type, values)
 

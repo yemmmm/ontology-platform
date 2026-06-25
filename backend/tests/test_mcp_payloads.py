@@ -37,6 +37,7 @@ def test_chunk_page_preserves_exact_evidence_fields() -> None:
     result = _chunk_page(rows, "document-1", offset=0, limit=20)
 
     assert result == {
+        "artifact_id": "document-1",
         "document_id": "document-1",
         "offset": 0,
         "limit": 20,
@@ -44,6 +45,7 @@ def test_chunk_page_preserves_exact_evidence_fields() -> None:
         "chunks": [
             {
                 "id": "chunk-1",
+                "artifact_id": "document-1",
                 "document_id": "document-1",
                 "sequence": 0,
                 "parse_revision": 2,

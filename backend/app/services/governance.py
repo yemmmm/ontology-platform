@@ -31,8 +31,8 @@ from app.repositories.models import (
     RelationTypeModel,
     ReviewDecisionModel,
     ReviewBatchModel,
-    SourceChunkModel,
-    SourceDocumentModel,
+    EvidenceChunkModel,
+    EvidenceArtifactModel,
     ValidationRunModel,
     VersionStatus,
 )
@@ -150,7 +150,10 @@ def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
     if ontology is None or ontology.project_id != payload.project_id:
         raise HTTPException(status_code=400, detail="Project, ontology and version do not match")
     _validate_evidence_payload(session, payload)
-    evidence_rows = [EvidenceModel(id=_id(), proposal_id="", **item.model_dump()) for item in payload.evidence]
+    evidence_rows = [
+        EvidenceModel(id=_id(), proposal_id="", **item.model_dump(exclude={"artifact_id"}))
+        for item in payload.evidence
+    ]
     proposal_payload = dict(payload.payload)
     if evidence_rows:
         proposal_items: list[Any] = []
@@ -242,23 +245,23 @@ def _validate_evidence_payload(session: Session, payload: ProposalCreate) -> Non
             continue
         if not evidence.document_id or not evidence.chunk_id:
             raise HTTPException(status_code=422, detail=f"evidence[{index}] must identify a document and chunk")
-        document = session.get(SourceDocumentModel, evidence.document_id)
-        chunk = session.get(SourceChunkModel, evidence.chunk_id)
+        document = session.get(EvidenceArtifactModel, evidence.document_id)
+        chunk = session.get(EvidenceChunkModel, evidence.chunk_id)
         if document is None or chunk is None or chunk.document_id != document.id:
-            raise HTTPException(status_code=422, detail=f"evidence[{index}] does not identify a valid source chunk")
+            raise HTTPException(status_code=422, detail=f"evidence[{index}] does not identify a valid evidence chunk")
         if document.project_id != payload.project_id:
             raise HTTPException(status_code=422, detail=f"evidence[{index}] belongs to another project")
         if evidence.page_number != chunk.page_number:
-            raise HTTPException(status_code=422, detail=f"evidence[{index}] page does not match its source chunk")
+            raise HTTPException(status_code=422, detail=f"evidence[{index}] page does not match its evidence chunk")
         if evidence.char_start is None or evidence.char_end is None:
             raise HTTPException(status_code=422, detail=f"evidence[{index}] requires a character range")
         if evidence.char_start < chunk.char_start or evidence.char_end > chunk.char_end:
-            raise HTTPException(status_code=422, detail=f"evidence[{index}] range is outside its source chunk")
+            raise HTTPException(status_code=422, detail=f"evidence[{index}] range is outside its evidence chunk")
         relative_start = evidence.char_start - chunk.char_start
         relative_end = evidence.char_end - chunk.char_start
         source_quote = chunk.text[relative_start:relative_end]
         if source_quote != evidence.quote or evidence.content_hash != chunk.content_hash:
-            raise HTTPException(status_code=422, detail=f"evidence[{index}] quote or hash does not match the source chunk")
+            raise HTTPException(status_code=422, detail=f"evidence[{index}] quote or hash does not match the evidence chunk")
 
 
 def _proposal(session: Session, proposal_id: str) -> ProposalModel:
@@ -269,6 +272,12 @@ def _proposal(session: Session, proposal_id: str) -> ProposalModel:
 
 
 PROPERTY_TYPES = {"string", "number", "boolean", "date", "enum", "reference", "json"}
+SCHEMA_SOURCE_KINDS = {
+    "domain_concept",
+    "data_source_structure",
+    "domain_fact",
+    "governance_metadata",
+}
 
 
 def _item_ref(data: dict[str, Any], key_name: str, id_name: str, created: dict[str, str]) -> str | None:
@@ -287,8 +296,10 @@ def _schema_validation(session: Session, proposal: ProposalModel) -> tuple[list[
     has_question_source = any(
         isinstance(item, dict) and bool(item.get("competency_question_ids")) for item in items
     )
-    if not has_evidence and not has_question_source:
-        errors.append("schema proposal must cite evidence or competency questions")
+    if not has_question_source:
+        errors.append("schema proposal must cite at least one competency question")
+    if not has_evidence:
+        errors.append("schema proposal must cite evidence")
     current_classes = list(
         session.scalars(select(ClassModel).where(ClassModel.ontology_id == proposal.ontology_id))
     )
@@ -322,6 +333,9 @@ def _schema_validation(session: Session, proposal: ProposalModel) -> tuple[list[
             if not data.get("scope") or not data.get("kind"):
                 errors.append(f"constraint {key} requires scope and kind")
             continue
+        source_kind = data.get("source_kind")
+        if source_kind is not None and source_kind not in SCHEMA_SOURCE_KINDS:
+            errors.append(f"{kind} {key} has invalid source_kind")
         name = data.get("name")
         if not isinstance(name, str) or not name.strip():
             errors.append(f"items[{index}].data.name is required")
@@ -391,6 +405,8 @@ def _schema_validation(session: Session, proposal: ProposalModel) -> tuple[list[
             target = _item_ref(data, "target_class_key", "target_class_id", class_keys)
             if source not in known_classes or target not in known_classes:
                 errors.append(f"relation type {key} has invalid or cross-ontology endpoints")
+            if data.get("scope_policy", "both") not in {"schema_allowed", "entity_only", "both"}:
+                errors.append(f"relation type {key} has invalid scope_policy")
             parent = _item_ref(data, "parent_relation_type_key", "parent_relation_type_id", relation_keys)
             if parent is not None and parent not in known_relations:
                 errors.append(f"relation type {key} has invalid or cross-ontology parent relation")
@@ -490,6 +506,8 @@ def _knowledge_validation(
             if relation_type is None:
                 errors.append(f"relation {item['key']} has an invalid or cross-ontology relation type")
                 continue
+            if relation_type.scope_policy == "schema_allowed":
+                errors.append(f"relation {item['key']} uses a schema-only relation type")
             if not data.get("source_entity_id") or not data.get("target_entity_id"):
                 errors.append(f"relation {item['key']} requires source and target entities")
             elif driver is not None:
@@ -852,6 +870,12 @@ def _apply_schema(session: Session, proposal: ProposalModel) -> dict[str, Any]:
                 source_class_id=source_id, target_class_id=target_id,
                 inverse_name=data.get("inverse_name"),
                 normalized_type=normalize_neo4j_relationship_type(data["name"]),
+                scope_policy=data.get("scope_policy", "both"),
+                symmetric=data.get("symmetric", False),
+                transitive=data.get("transitive", False),
+                status=data.get("status", "active"),
+                valid_from=data.get("valid_from"),
+                valid_to=data.get("valid_to"),
                 external_mappings=data.get("external_mappings", {}),
             )
             session.add(model)
@@ -892,6 +916,10 @@ def _apply_graph(session: Session, driver: Driver, proposal: ProposalModel) -> d
                 "source_entity_id": data["source_entity_id"],
                 "target_entity_id": data["target_entity_id"],
                 "properties": data.get("properties", {}),
+                "scope": data.get("scope", "instance"),
+                "status": data.get("status", "active"),
+                "valid_from": data.get("valid_from"),
+                "valid_to": data.get("valid_to"),
                 "proposal_item_key": f"{proposal.id}:{item['key']}",
             })
     return graph_repo.apply_graph_batch(
@@ -1101,8 +1129,21 @@ def _schema_snapshot(session: Session, ontology_id: str) -> dict[str, Any]:
             key=lambda row: row["id"],
         ),
         "relation_types": sorted(
-            [{"id": row.id, "name": row.name, "source": row.source_class_id,
-              "target": row.target_class_id} for row in relations],
+            [
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "source": row.source_class_id,
+                    "target": row.target_class_id,
+                    "scope_policy": row.scope_policy,
+                    "symmetric": row.symmetric,
+                    "transitive": row.transitive,
+                    "status": row.status,
+                    "valid_from": row.valid_from.isoformat() if row.valid_from else None,
+                    "valid_to": row.valid_to.isoformat() if row.valid_to else None,
+                }
+                for row in relations
+            ],
             key=lambda row: row["id"],
         ),
     }

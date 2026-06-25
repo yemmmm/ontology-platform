@@ -8,6 +8,7 @@ const fieldConfig = [
   ["business_goal", "业务目标", "领域目标"],
   ["scope", "范围及明确排除项", "范围"],
   ["core_concepts", "核心概念、事件和参与者", "核心概念"],
+  ["identity_rules", "关键身份规则和生命周期", "身份规则"],
   ["expected_granularity", "期望粒度", "粒度"],
   ["data_sources", "数据来源及可信度优先级", "来源"],
   ["boundaries", "时间、地域和版本边界", "边界"],
@@ -15,7 +16,7 @@ const fieldConfig = [
   ["inference_scope", "允许的推理范围", "推理范围"],
 ] as const;
 
-const requiredFields = new Set(["domain_name", "business_goal", "scope", "core_concepts", "expected_granularity"]);
+const requiredFields = new Set(["domain_name", "business_goal", "scope", "core_concepts", "identity_rules", "expected_granularity"]);
 
 function textValue(value: unknown): string {
   if (value === undefined || value === null) return "";

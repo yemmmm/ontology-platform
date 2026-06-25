@@ -27,7 +27,16 @@ def proposal(status: str = "proposed") -> ProposalModel:
         status=status,
         source_type="agent",
         idempotency_key="request-1",
-        payload={"items": [{"key": "person", "kind": "class", "data": {"name": "Person"}}]},
+        payload={
+            "items": [
+                {
+                    "key": "person",
+                    "kind": "class",
+                    "data": {"name": "Person", "source_kind": "domain_concept"},
+                    "competency_question_ids": ["question-1"],
+                }
+            ]
+        },
         created_by_type="agent",
         validation_result={},
         review_result={},
@@ -247,6 +256,29 @@ def test_schema_validation_rejects_cross_ontology_parent_and_relation_endpoint()
     assert any("cross-ontology endpoints" in error for error in errors)
 
 
+def test_schema_validation_rejects_invalid_relation_scope_policy() -> None:
+    item = proposal()
+    item.payload = {
+        "items": [
+            {"key": "course", "kind": "class", "data": {"name": "Course"}},
+            {
+                "key": "conflicts",
+                "kind": "relation_type",
+                "data": {
+                    "name": "CONFLICTS_WITH",
+                    "source_class_key": "course",
+                    "target_class_key": "course",
+                    "scope_policy": "invalid",
+                },
+            },
+        ]
+    }
+
+    errors, _ = governance._validate_items(schema_validation_session(), item)
+
+    assert "relation type conflicts has invalid scope_policy" in errors
+
+
 def test_schema_validation_detects_duplicate_names_and_invalid_property_type() -> None:
     existing = ClassModel(
         id="existing", ontology_id="ontology", name="Person", normalized_label="Person"
@@ -269,13 +301,45 @@ def test_schema_validation_detects_duplicate_names_and_invalid_property_type() -
     assert "property age has unsupported type: integer" in errors
 
 
-def test_schema_validation_requires_traceable_source() -> None:
+def test_schema_validation_requires_evidence_and_competency_question() -> None:
     session = schema_validation_session()
     session.scalar.return_value = 0
+    item = proposal()
+    item.payload = {
+        "items": [
+            {"key": "person", "kind": "class", "data": {"name": "Person"}}
+        ]
+    }
 
-    errors, _ = governance._validate_items(session, proposal())
+    errors, _ = governance._validate_items(session, item)
 
-    assert "schema proposal must cite evidence or competency questions" in errors
+    assert "schema proposal must cite evidence" in errors
+    assert "schema proposal must cite at least one competency question" in errors
+
+
+def test_schema_validation_accepts_source_kind_and_rejects_invalid_source_kind() -> None:
+    item = proposal()
+    item.payload = {
+        "items": [
+            {
+                "key": "student",
+                "kind": "class",
+                "data": {"name": "Student", "source_kind": "domain_concept"},
+                "competency_question_ids": ["q1"],
+            },
+            {
+                "key": "raw-table",
+                "kind": "class",
+                "data": {"name": "student_table", "source_kind": "database_table"},
+                "competency_question_ids": ["q1"],
+            },
+        ]
+    }
+
+    errors, _ = governance._validate_items(schema_validation_session(), item)
+
+    assert "class raw-table has invalid source_kind" in errors
+    assert not any("class student has invalid source_kind" in error for error in errors)
 
 
 def test_schema_batch_accepts_constraint_and_rejects_duplicate_class_property() -> None:
@@ -307,6 +371,167 @@ def test_schema_batch_accepts_constraint_and_rejects_duplicate_class_property() 
 
     assert any("property name conflicts" in error for error in errors)
     assert not any("constraint" in error for error in errors)
+
+
+def test_apply_schema_persists_relation_type_v0_4_metadata() -> None:
+    session = MagicMock()
+    item = proposal(status="approved")
+    item.payload = {
+        "items": [
+            {"key": "course", "kind": "class", "data": {"id": "course", "name": "Course"}},
+            {
+                "key": "conflicts",
+                "kind": "relation_type",
+                "data": {
+                    "id": "conflicts",
+                    "name": "CONFLICTS_WITH",
+                    "source_class_key": "course",
+                    "target_class_key": "course",
+                    "scope_policy": "entity_only",
+                    "symmetric": True,
+                    "transitive": False,
+                    "status": "active",
+                    "valid_from": "2026-06-25T00:00:00+00:00",
+                    "valid_to": None,
+                },
+            },
+        ]
+    }
+
+    governance._apply_schema(session, item)
+
+    relation_type = [
+        call.args[0]
+        for call in session.add.call_args_list
+        if isinstance(call.args[0], RelationTypeModel)
+    ][0]
+    assert relation_type.scope_policy == "entity_only"
+    assert relation_type.symmetric is True
+    assert relation_type.transitive is False
+    assert relation_type.status == "active"
+    assert relation_type.valid_from == "2026-06-25T00:00:00+00:00"
+    assert relation_type.valid_to is None
+
+
+def test_graph_validation_rejects_schema_only_relation_type() -> None:
+    session = MagicMock()
+    relation_type = RelationTypeModel(
+        id="rel",
+        ontology_id="ontology",
+        name="REL",
+        normalized_type="REL",
+        source_class_id="class",
+        target_class_id="class",
+        external_mappings={},
+        scope_policy="schema_allowed",
+    )
+    item = proposal()
+    item.proposal_type = "relation"
+    item.payload = {
+        "items": [
+            {
+                "key": "r1",
+                "kind": "relation",
+                "data": {
+                    "relation_type_id": "rel",
+                    "source_entity_id": "e1",
+                    "target_entity_id": "e2",
+                },
+                "evidence_ids": ["ev"],
+            }
+        ]
+    }
+    session.scalars.side_effect = [["ev"], [], [relation_type]]
+
+    errors, _ = governance._validate_items(session, item, driver=None)
+
+    assert "relation r1 uses a schema-only relation type" in errors
+
+
+def test_apply_graph_preserves_relation_instance_metadata() -> None:
+    session = MagicMock()
+    driver = MagicMock()
+    ontology = SimpleNamespace(id="ontology", project_id="project")
+    relation_type = RelationTypeModel(
+        id="rel",
+        ontology_id="ontology",
+        name="REL",
+        normalized_type="REL",
+        source_class_id="class",
+        target_class_id="class",
+        external_mappings={},
+        scope_policy="entity_only",
+    )
+    item = proposal(status="approved")
+    item.proposal_type = "relation"
+    item.payload = {
+        "items": [
+            {
+                "key": "r1",
+                "kind": "relation",
+                "data": {
+                    "id": "r1",
+                    "relation_type_id": "rel",
+                    "source_entity_id": "e1",
+                    "target_entity_id": "e2",
+                    "scope": "instance",
+                    "status": "active",
+                    "valid_from": "2026-06-25",
+                    "valid_to": None,
+                    "properties": {"reason": "same time slot"},
+                },
+            }
+        ]
+    }
+    session.get.side_effect = lambda model, _id: (
+        ontology if model.__name__ == "OntologyModel" else relation_type
+    )
+
+    with patch.object(governance.graph_repo, "apply_graph_batch", return_value={}) as apply_batch:
+        governance._apply_graph(session, driver, item)
+
+    relation = apply_batch.call_args.kwargs["relations"][0]
+    assert relation["scope"] == "instance"
+    assert relation["status"] == "active"
+    assert relation["valid_from"] == "2026-06-25"
+    assert relation["valid_to"] is None
+
+
+def test_schema_snapshot_includes_relation_type_scope_metadata() -> None:
+    session = MagicMock()
+    relation_type = RelationTypeModel(
+        id="rel",
+        ontology_id="ontology",
+        name="CONFLICTS_WITH",
+        normalized_type="CONFLICTS_WITH",
+        source_class_id="course",
+        target_class_id="course",
+        external_mappings={},
+        scope_policy="entity_only",
+        symmetric=True,
+        transitive=False,
+        status="active",
+        valid_from=None,
+        valid_to=None,
+    )
+    session.scalars.side_effect = [[], [relation_type]]
+
+    snapshot = governance._schema_snapshot(session, "ontology")
+
+    assert snapshot["relation_types"] == [
+        {
+            "id": "rel",
+            "name": "CONFLICTS_WITH",
+            "source": "course",
+            "target": "course",
+            "scope_policy": "entity_only",
+            "symmetric": True,
+            "transitive": False,
+            "status": "active",
+            "valid_from": None,
+            "valid_to": None,
+        }
+    ]
 
 
 def test_schema_item_edit_keeps_item_editable_and_invalidates_validation() -> None:

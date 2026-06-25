@@ -57,6 +57,12 @@ export type RelationType = {
   target_class_id: string;
   inverse_name: string | null;
   normalized_type?: string;
+  scope_policy?: "schema_allowed" | "entity_only" | "both";
+  symmetric?: boolean;
+  transitive?: boolean;
+  status?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
   external_mappings?: JsonObject;
 };
 
@@ -82,6 +88,112 @@ export type Relation = {
   source_entity_id: string;
   target_entity_id: string;
   properties: JsonObject;
+  scope?: string;
+  status?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+};
+
+export type DataSource = {
+  id: string;
+  project_id: string;
+  name: string;
+  source_type: string;
+  owner: string | null;
+  authority_level: string;
+  status: string;
+  description: string | null;
+  connection_policy: JsonObject;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DataResource = {
+  id: string;
+  project_id: string;
+  data_source_id: string;
+  name: string;
+  resource_type: string;
+  owner: string | null;
+  authority_level: string;
+  status: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExternalField = {
+  id: string;
+  project_id: string;
+  data_source_id: string;
+  data_resource_id: string;
+  name: string;
+  data_type: string;
+  sensitivity: "public" | "internal" | "confidential" | "restricted";
+  access_policy: "allow" | "mask" | "approval_required" | "deny";
+  masking_rule: string | null;
+  approval_note: string | null;
+  audit_required: boolean;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SemanticMapping = {
+  id: string;
+  project_id: string;
+  ontology_id: string;
+  ontology_version_id: string | null;
+  target_type: "class" | "property" | "relation_type" | "entity";
+  target_id: string;
+  data_source_id: string;
+  resource_id: string;
+  field_id: string;
+  external_resource_name: string;
+  external_field_name: string;
+  join_key: JsonObject;
+  valid_from: string | null;
+  valid_to: string | null;
+  confidence: number;
+  owner: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConnectorTemplate = {
+  id: string;
+  project_id: string;
+  data_source_id: string;
+  name: string;
+  description: string | null;
+  allowed_field_ids: string[];
+  parameter_schema: JsonObject;
+  result_schema: JsonObject;
+  access_policy: "allow" | "approval_required" | "deny";
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConnectorQueryResult = {
+  template_id: string;
+  authorized: boolean;
+  denial_reason: string | null;
+  source: JsonObject;
+  queried_at: string;
+  audit: JsonObject;
+  rows: JsonObject[];
+};
+
+export type IdentifierResolutionStats = {
+  left_count: number;
+  right_count: number;
+  overlap_count: number;
+  left_coverage: number;
+  right_coverage: number;
+  one_to_one: boolean;
+  unmapped_left: string[];
+  unmapped_right: string[];
 };
 
 export type EntitySearchResult = {
@@ -134,6 +246,7 @@ export type Evidence = {
   proposal_id: string;
   source_type: string;
   quote: string;
+  artifact_id?: string | null;
   document_id: string | null;
   page_number: number | null;
   chunk_id: string | null;
@@ -168,8 +281,9 @@ export type Proposal = {
   created_at: string;
 };
 
-export type SourceDocument = {
+export type EvidenceArtifact = {
   id: string;
+  artifact_id?: string;
   project_id: string;
   filename: string;
   media_type: string;
@@ -186,8 +300,9 @@ export type SourceDocument = {
   updated_at: string;
 };
 
-export type SourceChunk = {
+export type EvidenceChunk = {
   id: string;
+  artifact_id?: string;
   document_id: string;
   sequence: number;
   parse_revision: number;

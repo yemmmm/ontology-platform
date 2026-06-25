@@ -23,6 +23,38 @@ separate operations. Reusing a `(project_id, idempotency_key)` returns the origi
 Published and deprecated versions reject writes with HTTP `409`. Editing after publication requires a
 successor draft whose `parent_version_id` points to the published version.
 
+## v0.4 Semantic Mapping, Catalog, and Connectors
+
+v0.4 separates ontology semantics from external storage. Ontology Classes, Properties,
+RelationTypes, and Entities can be mapped to cataloged external fields without changing a published
+ontology version. Connector templates are whitelisted query shapes; the API records every query
+attempt and returns authorization metadata instead of exposing database credentials or arbitrary SQL.
+
+- `POST /api/projects/{project_id}/data-sources`: register an external system and owner.
+- `POST /api/projects/{project_id}/data-resources`: register a table, endpoint, or file-like resource.
+- `POST /api/projects/{project_id}/external-fields`: register field sensitivity, access policy,
+  masking, approval, and audit metadata.
+- `POST /api/projects/{project_id}/semantic-mappings`: map a class, property, relation type, or
+  entity to an external field with join keys, validity, confidence, and owner.
+- `POST /api/projects/{project_id}/connector-templates`: define a whitelisted query template and
+  the external fields it may return.
+- `POST /api/projects/{project_id}/connector-templates/{template_id}/query`: perform policy checks,
+  record an audit row, and return source/query authorization metadata.
+- `POST /api/projects/{project_id}/identity-resolution/analyze`: compare identifier sets and return
+  deterministic overlap/coverage statistics without creating `SAME_AS` or merge facts.
+
+RelationTypes now include `scope_policy` (`schema_allowed`, `entity_only`, or `both`), `symmetric`,
+`transitive`, and `status`. Entity-level relations are stored with `scope="instance"`, `status`,
+`valid_from`, and `valid_to`; a RelationType explicitly marked `schema_allowed` is rejected for
+entity relation writes.
+
+For the local v0.4 connector implementation, `result_schema.rows` can hold whitelisted static rows.
+Authorized connector queries filter those rows by exact parameter matches and apply field masking or
+approval/deny policies before returning data.
+Catalog, field, mapping, and connector template resources expose `PATCH` routes. Renaming an external
+resource or field updates the denormalized mapping location metadata and does not require a new
+ontology version.
+
 ## v0.3 Schema Review
 
 - `GET /api/ontologies/{ontology_id}/proposals?proposal_type=schema_change` lists Schema batches.
@@ -35,9 +67,12 @@ successor draft whose `parent_version_id` points to the published version.
 Schema validation detects name conflicts, inheritance cycles, cross-ontology references, invalid
 Property domain/range, invalid RelationType endpoints and duplicate definitions. It also returns
 Class-versus-Entity and Property-versus-RelationType ambiguities for human review. Proposal items may
-be `class`, `property`, `relation_type`, or `constraint` and must cite Evidence or competency
-questions. Final approval requires an explicit decision on every item. Applying the batch uses one
-PostgreSQL transaction and records a non-destructive compatibility check of existing graph data.
+be `class`, `property`, `relation_type`, or `constraint`; schema proposals must cite persisted
+Evidence and at least one competency question before validation can pass. Candidate data may include
+`source_kind` as `domain_concept`, `data_source_structure`, `domain_fact`, or
+`governance_metadata` so reviewers can distinguish domain concepts from storage-derived structures.
+Final approval requires an explicit decision on every item. Applying the batch uses one PostgreSQL
+transaction and records a non-destructive compatibility check of existing graph data.
 
 ## Error Format
 
@@ -220,9 +255,35 @@ curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/relations \
     "relation_type_id": "relation-type-id",
     "source_entity_id": "source-entity-id",
     "target_entity_id": "target-entity-id",
-    "properties": {}
+    "properties": {},
+    "scope": "instance",
+    "status": "active",
+    "valid_from": "2026-06-25",
+    "valid_to": null
   }'
 ```
+
+## Catalog Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/projects/{project_id}/data-sources` | List external data sources. |
+| `POST` | `/projects/{project_id}/data-sources` | Register an external data source. |
+| `PATCH` | `/projects/{project_id}/data-sources/{data_source_id}` | Update source metadata. |
+| `GET` | `/projects/{project_id}/data-resources` | List catalog resources. |
+| `POST` | `/projects/{project_id}/data-resources` | Register a source resource. |
+| `PATCH` | `/projects/{project_id}/data-resources/{resource_id}` | Update resource metadata and mapping location names. |
+| `GET` | `/projects/{project_id}/external-fields` | List fields with sensitivity and policy metadata. |
+| `POST` | `/projects/{project_id}/external-fields` | Register an external field. |
+| `PATCH` | `/projects/{project_id}/external-fields/{field_id}` | Update field policy/location metadata. |
+| `GET` | `/projects/{project_id}/semantic-mappings` | List mappings, optionally filtered by ontology and target. |
+| `POST` | `/projects/{project_id}/semantic-mappings` | Create a semantic mapping to an external field. |
+| `PATCH` | `/projects/{project_id}/semantic-mappings/{mapping_id}` | Update mapping target, join key, validity, confidence, owner, or field. |
+| `GET` | `/projects/{project_id}/connector-templates` | List whitelisted connector templates. |
+| `POST` | `/projects/{project_id}/connector-templates` | Create a connector template. |
+| `PATCH` | `/projects/{project_id}/connector-templates/{template_id}` | Update whitelisted connector template metadata. |
+| `POST` | `/projects/{project_id}/connector-templates/{template_id}/query` | Run policy checks and audit a connector query. |
+| `POST` | `/projects/{project_id}/identity-resolution/analyze` | Analyze cross-system identifier overlap. |
 
 ## Import/Export
 
@@ -246,8 +307,9 @@ Export includes `ontology`, `classes`, `relation_types`, `entities`, and `relati
 | `PATCH` | `/competency-questions/{question_id}` | Edit, reorder, deactivate, or reactivate a question. |
 | `POST` | `/competency-questions/{question_id}/status` | Apply a validated question state transition. |
 
-Required brief fields are `domain_name`, `business_goal`, `scope`, `core_concepts`, and
-`expected_granularity`. Optional fields may be skipped; the response explains the quality impact.
+Required brief fields are `domain_name`, `business_goal`, `scope`, `core_concepts`,
+`identity_rules`, and `expected_granularity`. Optional fields may be skipped; the response explains
+the quality impact.
 Question transitions are `draft -> approved -> testable -> passed/failed`. Approval requires a
 saved answer or confirmed Project Brief source. Changing a cited brief field moves a tested question
 back to `approved` with `validation_result.stale=true`.
@@ -273,27 +335,28 @@ includes `answer`, `tool_calls`, `graph_context`, `prompt_preview`, `warnings`, 
 `errors`. If `LLM_API_KEY` or `LLM_MODEL` is missing, the endpoint returns a
 graph-context fallback answer with a warning.
 
-## v0.3 Document Ingestion and Knowledge Candidates
+## v0.3 Evidence Artifact Storage and Knowledge Candidates
 
-- `POST /api/projects/{project_id}/source-documents` uploads a multipart `file` (PDF,
+- `POST /api/projects/{project_id}/evidence-artifacts` uploads a multipart `file` (PDF,
   Markdown, or UTF-8 text), parses it synchronously, and returns parse status and chunk count.
-- `GET /api/projects/{project_id}/source-documents` lists source status.
-- `GET /api/source-documents/{document_id}` reads one source status.
-- `POST /api/source-documents/{document_id}/reparse?force=true` creates a new parse revision;
+- `GET /api/projects/{project_id}/evidence-artifacts` lists artifact status.
+- `GET /api/evidence-artifacts/{artifact_id}` reads one artifact status.
+- `POST /api/evidence-artifacts/{artifact_id}/reparse?force=true` creates a new parse revision;
   old chunks remain immutable so existing Evidence stays valid. Without `force`, unchanged
   successfully parsed content reuses the current revision.
-- `GET /api/source-documents/{document_id}/chunks` returns the current parse revision with page,
+- `GET /api/evidence-artifacts/{artifact_id}/chunks` returns the current parse revision with page,
   sequence, document-relative character range, text, and SHA-256 hash.
-- `GET /api/source-documents/{document_id}/proposals` lists all candidates derived from a source.
+- `GET /api/evidence-artifacts/{artifact_id}/proposals` lists all candidates citing an artifact.
 - `GET /api/proposals/{proposal_id}/items/{item_key}/sources` returns all Evidence for one item.
 - `GET /api/ontologies/{ontology_id}/knowledge-conflicts` lists conflicting candidate values.
 - `POST /api/knowledge-conflicts/{conflict_id}/resolve` records an explicit human resolution.
 
 Entity and relation proposal items support canonical `name`, `aliases`, `properties`, relation
-properties, and `confidence`. Every item must bind at least one saved document or user-statement
-Evidence record. Document Evidence is rejected unless its document, chunk, page, character range,
+properties, and `confidence`. Every item must bind at least one saved artifact or user-statement
+Evidence record. Artifact Evidence is rejected unless its artifact, chunk, page, character range,
 quote, and chunk hash agree. Repeated extraction runs should reuse the same project-scoped proposal
 `idempotency_key`; retries return the existing proposal and Neo4j application uses stable item keys.
 
-Document bytes and extracted text are inert source data. The ingestion service does not interpret
-commands in a document or invoke models/tools while parsing.
+Artifact bytes and extracted text are inert evidence data. The ingestion service does not interpret
+commands in an artifact or invoke models/tools while parsing. External Agents read chunks, extract
+candidate knowledge, and submit evidence-bound proposals.

@@ -370,6 +370,12 @@ def create_relation_type(
         target_class_id=payload.target_class_id,
         inverse_name=payload.inverse_name,
         normalized_type=normalize_neo4j_relationship_type(payload.name),
+        scope_policy=payload.scope_policy,
+        symmetric=payload.symmetric,
+        transitive=payload.transitive,
+        status=payload.status,
+        valid_from=payload.valid_from,
+        valid_to=payload.valid_to,
         external_mappings=payload.external_mappings,
     )
     session.add(relation_type)

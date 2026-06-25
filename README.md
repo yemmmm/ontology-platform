@@ -124,3 +124,4 @@ MCP tools accept an `api_key` argument and compare it with `MCP_API_KEY`.
 - [MCP Tools](docs/mcp.md)
 - [UI](docs/ui.md)
 - [Architecture](docs/architecture.md)
+- [Platform Guide](docs/platform-guide.md)

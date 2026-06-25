@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
@@ -26,6 +27,11 @@ def test_import_ontology_remaps_cross_references() -> None:
                 "name": "manages",
                 "source_class_id": "old-manager",
                 "target_class_id": "old-person",
+                "scope_policy": "entity_only",
+                "symmetric": False,
+                "transitive": False,
+                "status": "active",
+                "valid_from": "2026-06-25",
             }
         ],
         entities=[
@@ -37,6 +43,9 @@ def test_import_ontology_remaps_cross_references() -> None:
                 "relation_type_id": "old-manages",
                 "source_entity_id": "old-alice",
                 "target_entity_id": "old-bob",
+                "scope": "instance",
+                "status": "active",
+                "valid_from": "2026-06-25",
             }
         ],
     )
@@ -76,6 +85,8 @@ def test_import_ontology_remaps_cross_references() -> None:
     relation_payload = create_relation_type.call_args.args[2]
     assert relation_payload.source_class_id == "new-manager"
     assert relation_payload.target_class_id == "new-person"
+    assert relation_payload.scope_policy == "entity_only"
+    assert relation_payload.valid_from == datetime(2026, 6, 25)
     assert [item.args[3].class_id for item in create_entity.call_args_list] == [
         "new-manager",
         "new-person",
@@ -84,6 +95,7 @@ def test_import_ontology_remaps_cross_references() -> None:
     assert imported_relation.relation_type_id == "new-manages"
     assert imported_relation.source_entity_id == "new-alice"
     assert imported_relation.target_entity_id == "new-bob"
+    assert imported_relation.valid_from == "2026-06-25"
 
 
 def test_export_ontology_collects_metadata_and_graph_data() -> None:
@@ -98,7 +110,27 @@ def test_export_ontology_collects_metadata_and_graph_data() -> None:
         created_at=None,
         updated_at=None,
         classes=[],
-        relation_types=[],
+        relation_types=[
+            SimpleNamespace(
+                id="rel",
+                ontology_id="ontology",
+                name="REL",
+                description=None,
+                aliases=[],
+                parent_relation_type_id=None,
+                source_class_id="source",
+                target_class_id="target",
+                inverse_name=None,
+                normalized_type="REL",
+                scope_policy="entity_only",
+                symmetric=True,
+                transitive=False,
+                status="active",
+                external_mappings={},
+                created_at=None,
+                updated_at=None,
+            )
+        ],
     )
 
     with (
@@ -109,6 +141,8 @@ def test_export_ontology_collects_metadata_and_graph_data() -> None:
         result = import_export.export_ontology(object(), object(), "ontology")
 
     assert result["ontology"]["name"] == "Company"
+    assert result["relation_types"][0]["scope_policy"] == "entity_only"
+    assert result["relation_types"][0]["symmetric"] is True
     assert result["entities"] == [{"id": "entity"}]
     assert result["relations"] == [{"id": "relation"}]
     assert entities.call_args == call(

@@ -36,6 +36,12 @@ class ConstraintSeverity(StrEnum):
     WARNING = "warning"
 
 
+class RelationTypeScope(StrEnum):
+    SCHEMA_ALLOWED = "schema_allowed"
+    ENTITY_ONLY = "entity_only"
+    BOTH = "both"
+
+
 class ProjectModel(Base):
     __tablename__ = "projects"
 
@@ -232,6 +238,16 @@ class RelationTypeModel(Base):
     target_class_id: Mapped[str] = mapped_column(ForeignKey("classes.id"), nullable=False)
     inverse_name: Mapped[str | None] = mapped_column(String(200))
     normalized_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    scope_policy: Mapped[str] = mapped_column(
+        String(32),
+        default=RelationTypeScope.BOTH.value,
+        nullable=False,
+    )
+    symmetric: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    transitive: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     external_mappings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -354,10 +370,10 @@ class InterviewAnswerModel(Base):
     )
 
 
-class SourceDocumentModel(Base):
-    __tablename__ = "source_documents"
+class EvidenceArtifactModel(Base):
+    __tablename__ = "evidence_artifacts"
     __table_args__ = (
-        UniqueConstraint("project_id", "content_hash", name="uq_source_documents_content"),
+        UniqueConstraint("project_id", "content_hash", name="uq_evidence_artifacts_content"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -382,17 +398,17 @@ class SourceDocumentModel(Base):
     )
 
 
-class SourceChunkModel(Base):
-    __tablename__ = "source_chunks"
+class EvidenceChunkModel(Base):
+    __tablename__ = "evidence_chunks"
     __table_args__ = (
         UniqueConstraint(
-            "document_id", "parse_revision", "sequence", name="uq_source_chunks_sequence"
+            "document_id", "parse_revision", "sequence", name="uq_evidence_chunks_sequence"
         ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     document_id: Mapped[str] = mapped_column(
-        ForeignKey("source_documents.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("evidence_artifacts.id", ondelete="CASCADE"), nullable=False
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     parse_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -404,6 +420,11 @@ class SourceChunkModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# Compatibility aliases for callers that still use the v0.3 source-document naming.
+SourceDocumentModel = EvidenceArtifactModel
+SourceChunkModel = EvidenceChunkModel
 
 
 class KnowledgeConflictModel(Base):
@@ -596,3 +617,161 @@ class FactClaimModel(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DataSourceModel(Base):
+    __tablename__ = "data_sources"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_data_sources_project_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    owner: Mapped[str | None] = mapped_column(String(200))
+    authority_level: Mapped[str] = mapped_column(String(40), default="unknown", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="available", nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    connection_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class DataResourceModel(Base):
+    __tablename__ = "data_resources"
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", name="uq_data_resources_source_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    data_source_id: Mapped[str] = mapped_column(
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(80), default="table", nullable=False)
+    owner: Mapped[str | None] = mapped_column(String(200))
+    authority_level: Mapped[str] = mapped_column(String(40), default="unknown", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="available", nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ExternalFieldModel(Base):
+    __tablename__ = "external_fields"
+    __table_args__ = (
+        UniqueConstraint("data_resource_id", "name", name="uq_external_fields_resource_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    data_source_id: Mapped[str] = mapped_column(
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    data_resource_id: Mapped[str] = mapped_column(
+        ForeignKey("data_resources.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    data_type: Mapped[str] = mapped_column(String(80), default="string", nullable=False)
+    sensitivity: Mapped[str] = mapped_column(String(40), default="public", nullable=False)
+    access_policy: Mapped[str] = mapped_column(String(80), default="allow", nullable=False)
+    masking_rule: Mapped[str | None] = mapped_column(String(200))
+    approval_note: Mapped[str | None] = mapped_column(Text)
+    audit_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SemanticMappingModel(Base):
+    __tablename__ = "semantic_mappings"
+    __table_args__ = (
+        UniqueConstraint("ontology_id", "target_type", "target_id", "field_id", name="uq_semantic_mapping_target_field"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    ontology_id: Mapped[str] = mapped_column(ForeignKey("ontologies.id", ondelete="CASCADE"))
+    ontology_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="SET NULL")
+    )
+    target_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    data_source_id: Mapped[str] = mapped_column(
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    resource_id: Mapped[str] = mapped_column(
+        ForeignKey("data_resources.id", ondelete="CASCADE"), nullable=False
+    )
+    field_id: Mapped[str] = mapped_column(
+        ForeignKey("external_fields.id", ondelete="CASCADE"), nullable=False
+    )
+    external_resource_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    external_field_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    join_key: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confidence: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    owner: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ConnectorTemplateModel(Base):
+    __tablename__ = "connector_templates"
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", name="uq_connector_templates_source_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    data_source_id: Mapped[str] = mapped_column(
+        ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    allowed_field_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    parameter_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    result_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    access_policy: Mapped[str] = mapped_column(String(80), default="allow", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ConnectorQueryAuditModel(Base):
+    __tablename__ = "connector_query_audits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    template_id: Mapped[str] = mapped_column(
+        ForeignKey("connector_templates.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[str | None] = mapped_column(String(255))
+    authorized: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    denial_reason: Mapped[str | None] = mapped_column(Text)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    queried_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

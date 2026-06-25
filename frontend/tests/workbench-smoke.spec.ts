@@ -60,6 +60,11 @@ async function mockApi(page: Page) {
     };
     else if (path === `/projects/${project.id}/brief`) body = brief;
     else if (path.startsWith(`/projects/${project.id}/competency-questions`)) body = [];
+    else if (path === `/projects/${project.id}/data-sources`) body = [];
+    else if (path === `/projects/${project.id}/data-resources`) body = [];
+    else if (path === `/projects/${project.id}/external-fields`) body = [];
+    else if (path.startsWith(`/projects/${project.id}/semantic-mappings`)) body = [];
+    else if (path === `/projects/${project.id}/connector-templates`) body = [];
     else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
     else if (path === `/ontologies/${ontology.id}/proposals`) body = [schemaProposal];
     else if (path === "/review-batches/batch-1") body = {
@@ -103,14 +108,17 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 768, height: 900 
       ["Facts", "Fact Audit"],
       ["Publication", "Publication"],
       ["Versions", "Versions"],
+      ["Catalog", "Data Catalog"],
       ["Evidence", "Evidence Explorer"],
     ] as const) {
-      await page.getByRole("button", { name: new RegExp(`^${nav}`) }).click();
+      await page.locator(".navStageButton").filter({ hasText: nav }).first().click();
       await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible();
       if (nav === "Publication") await expect(page.getByRole("button", { name: /publish/i }).last()).toBeDisabled();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${nav} should not overflow the ${viewport.width}px viewport`).toBeLessThanOrEqual(1);
     }
+
+    await expect(page.locator(".workflowProgressItem.current")).toBeVisible();
   });
 }
 
@@ -120,4 +128,49 @@ test("schema review batch deep link restores exact context", async ({ page }) =>
   await expect(page.getByText("Review batch · schema")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Supplier" })).toBeVisible();
   await expect(page).toHaveURL(/batch=batch-1/);
+});
+
+test("catalog wizard renders step indicator and Test toggle", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=catalog`);
+  await expect(page.getByRole("heading", { name: "Data Catalog" })).toBeVisible();
+  await expect(page.getByText("数据源 · Step 1 / 5")).toBeVisible();
+  await expect(page.getByRole("button", { name: "创建并继续" })).toBeVisible();
+  await page.getByRole("tab", { name: /Test/ }).click();
+  await expect(page.getByText("Governed connector query").first()).toBeVisible();
+  await expect(page.getByText("Identifier resolution analysis").first()).toBeVisible();
+});
+
+test("schema review auto-validates proposed batch and exposes approve-and-apply", async ({ page }) => {
+  const proposedProposal = { ...schemaProposal, id: "proposal-proposed", status: "proposed" };
+  const state: { proposal: typeof schemaProposal } = { proposal: proposedProposal };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
+    const method = route.request().method();
+    let body: unknown = [];
+    if (path === "/projects") body = [project];
+    else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
+    else if (path === `/projects/${project.id}/build-context`) body = {
+      project,
+      project_brief: brief,
+      ontologies: [{ ...ontology, current_version: version }],
+      competency_question_counts: {},
+    };
+    else if (path === `/ontologies/${ontology.id}/proposals`) body = [state.proposal];
+    else if (method === "POST" && path === `/proposals/${state.proposal.id}/validate`) {
+      state.proposal = { ...state.proposal, status: "validated" };
+      body = state.proposal;
+    }
+    else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
+    else if (path === "/health/dependencies") body = { postgres: { status: "ok" }, neo4j: { status: "ok" } };
+    await route.fulfill({ json: body });
+  });
+
+  const validateRequest = page.waitForRequest(
+    (request) => request.url().includes(`/proposals/${proposedProposal.id}/validate`) && request.method() === "POST",
+  );
+
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=schema-review`);
+  await validateRequest;
+  await expect(page.getByRole("button", { name: /Approve proposal.*& apply/ })).toBeVisible();
 });

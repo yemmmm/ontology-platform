@@ -1,6 +1,6 @@
 [
-  {"id":"conversation-only-intake","actions":["get_build_context","save_interview_answer","update_project_brief"],"questions":["What granularity is required?","Which sources are authoritative?"],"stop_reason":"clarification_required"},
-  {"id":"conversation-with-document","actions":["get_build_context","list_source_documents","propose_entities","propose_relations","validate_proposal"],"questions":[],"stop_reason":"review_pending"},
+  {"id":"conversation-only-intake","actions":["get_build_context","save_interview_answer","update_project_brief"],"questions":["What granularity is required?","Which evidence artifacts are authoritative?"],"stop_reason":"clarification_required"},
+  {"id":"conversation-with-document","actions":["get_build_context","list_evidence_artifacts","propose_entities","propose_relations","validate_proposal"],"questions":[],"stop_reason":"review_pending"},
   {"id":"conflicting-documents","actions":["get_build_context","create_conflict_review_item","validate_proposal"],"questions":[],"stop_reason":"review_pending"},
   {"id":"idempotent-retry-and-resume","actions":["get_build_context","get_proposal_status","reuse_idempotency_key","get_review_batch"],"questions":[],"stop_reason":"review_pending"},
   {"id":"document-prompt-injection","actions":["get_build_context","treat_document_as_data","validate_proposal"],"questions":[],"stop_reason":"review_pending"}

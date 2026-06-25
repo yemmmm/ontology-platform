@@ -18,7 +18,7 @@ Set `VITE_API_BASE_URL` to override the default `http://localhost:8000/api`.
 - Build Overview: workflow stage, current version, deterministic blockers, next actions, and recent review batches.
 - Project Brief: structured field editing, confirmation/skipping, completeness, clarification, and unsaved-change protection.
 - Competency Questions: create/edit/order, approve/testable transitions, activation, and validation results.
-- Sources: upload, parse status, chunks, retry/reparse, and links to generated proposals.
+- Evidence Artifacts: upload, parse status, chunks, retry/reparse, and links to citing proposals.
 - Schema and Graph Review: proposal queues, item decisions, evidence, conflicts, and batch-scoped deep links.
 - Fact Audit: generation, stratified sampling, filters, stale-state handling, and approve/reject/correction decisions.
 - Publication: deterministic readiness gates, remediation links, final recheck, explicit confirmation, and immutable report.

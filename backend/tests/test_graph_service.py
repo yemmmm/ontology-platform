@@ -238,3 +238,34 @@ def test_create_entity_does_not_write_when_embedding_fails() -> None:
 
     assert exc_info.value.status_code == 502
     create_node.assert_not_called()
+
+
+def test_create_relation_rejects_schema_only_relation_type() -> None:
+    ontology = SimpleNamespace(id="ontology", project_id="project", current_version_id=None)
+    relation_type = SimpleNamespace(
+        id="conflicts",
+        ontology_id="ontology",
+        scope_policy="schema_allowed",
+    )
+
+    with (
+        patch.object(graph, "get_ontology", return_value=ontology),
+        patch.object(graph, "ensure_graph_write_version", return_value=None),
+        patch.object(graph, "get_relation_type_for_ontology", return_value=relation_type),
+        patch.object(graph.graph_repo, "get_entity_node") as get_entity_node,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        graph.create_relation(
+            Mock(),
+            Mock(),
+            "ontology",
+            graph.RelationCreate(
+                relation_type_id="conflicts",
+                source_entity_id="entity-1",
+                target_entity_id="entity-2",
+            ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "schema-only" in exc_info.value.detail
+    get_entity_node.assert_not_called()

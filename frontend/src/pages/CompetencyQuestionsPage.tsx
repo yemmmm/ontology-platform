@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Check, Edit3, Play, Plus, Power, RefreshCw } from "
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CompetencyQuestion, WorkbenchRequest } from "./workbenchTypes";
 
-const briefFields = ["domain_name", "business_goal", "scope", "core_concepts", "expected_granularity", "data_sources", "boundaries", "terminology", "inference_scope"];
+const briefFields = ["domain_name", "business_goal", "scope", "core_concepts", "identity_rules", "expected_granularity", "data_sources", "boundaries", "terminology", "inference_scope"];
 
 function parseObject(text: string): Record<string, unknown> {
   if (!text.trim()) return {};

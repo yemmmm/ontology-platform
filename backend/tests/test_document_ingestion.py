@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from pypdf import PdfWriter
 
 from app.api.schemas import EvidenceCreate, ProposalCreate
-from app.repositories.models import ClassModel, ProposalModel, SourceChunkModel, SourceDocumentModel
+from app.repositories.models import ClassModel, ProposalModel, EvidenceChunkModel, EvidenceArtifactModel
 from app.services import documents, governance
 
 
@@ -40,7 +40,7 @@ def test_pdf_markdown_and_text_are_supported_without_executing_content() -> None
 
 def test_unchanged_document_reuses_existing_parse_and_chunks() -> None:
     session = MagicMock()
-    existing = SourceDocumentModel(
+    existing = EvidenceArtifactModel(
         id="document", project_id="project", filename="source.md", media_type="text/markdown",
         size_bytes=5, content_hash=sha256(b"hello").hexdigest(), content=b"hello",
         parse_status="parsed", parser_version="v1", parse_count=1,
@@ -58,7 +58,7 @@ def test_unchanged_document_reuses_existing_parse_and_chunks() -> None:
 
 def test_reparse_without_changes_reuses_chunks() -> None:
     session = MagicMock()
-    document = SourceDocumentModel(
+    document = EvidenceArtifactModel(
         id="document", project_id="project", filename="source.txt", media_type="text/plain",
         size_bytes=5, content_hash=sha256(b"hello").hexdigest(), content=b"hello",
         parse_status="parsed", parser_version=documents.PARSER_VERSION, parse_count=1,
@@ -75,7 +75,7 @@ def test_reparse_without_changes_reuses_chunks() -> None:
 
 def test_forced_reparse_creates_new_revision_without_deleting_evidence_chunks() -> None:
     session = MagicMock()
-    document = SourceDocumentModel(
+    document = EvidenceArtifactModel(
         id="document", project_id="project", filename="source.txt", media_type="text/plain",
         size_bytes=5, content_hash=sha256(b"hello").hexdigest(), content=b"hello",
         parse_status="parsed", parser_version=documents.PARSER_VERSION, parse_count=1,
@@ -89,7 +89,7 @@ def test_forced_reparse_creates_new_revision_without_deleting_evidence_chunks() 
     assert result["reused"] is False
     assert document.parse_revision == 2
     added = session.add.call_args.args[0]
-    assert isinstance(added, SourceChunkModel)
+    assert isinstance(added, EvidenceChunkModel)
     assert added.parse_revision == 2
     session.execute.assert_not_called()
 
@@ -138,17 +138,17 @@ def test_entity_proposal_rejects_unsupported_model_only_inference() -> None:
 
 def test_document_evidence_must_match_exact_source_location() -> None:
     session = MagicMock()
-    document = SourceDocumentModel(
+    document = EvidenceArtifactModel(
         id="document", project_id="project", filename="source.txt", media_type="text/plain",
         size_bytes=11, content_hash=sha256(b"hello world").hexdigest(), content=b"hello world",
         parse_status="parsed", parser_version="v1", parse_count=1,
     )
-    chunk = SourceChunkModel(
+    chunk = EvidenceChunkModel(
         id="chunk", document_id=document.id, sequence=0, page_number=None,
         char_start=0, char_end=11, text="hello world",
         content_hash=sha256(b"hello world").hexdigest(),
     )
-    session.get.side_effect = lambda model, _id: document if model is SourceDocumentModel else chunk
+    session.get.side_effect = lambda model, _id: document if model is EvidenceArtifactModel else chunk
     evidence = EvidenceCreate(
         source_type="document", document_id=document.id, chunk_id=chunk.id,
         char_start=0, char_end=5, quote="wrong", content_hash=chunk.content_hash,

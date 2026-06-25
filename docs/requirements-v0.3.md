@@ -366,8 +366,8 @@ ontology-publication
 - `update_project_brief`
 - `list_competency_questions`
 - `propose_competency_questions`
-- `list_source_documents`
-- `get_source_document_status`
+- `list_evidence_artifacts`
+- `get_evidence_artifact_status`
 - `propose_schema_changes`
 - `propose_entities`
 - `propose_relations`
@@ -409,7 +409,7 @@ Cypher 或绕过服务层的通用 CRUD。
 - 当前阶段、完成度、阻塞项和下一步建议。
 - Project Brief 编辑器。
 - Competency Question 列表及验证状态。
-- Source Document 上传、解析状态和分块预览。
+- Evidence Artifact 上传、解析状态和分块预览。
 - Schema Proposal 差异审核。
 - Entity、Relation、Merge 和 Conflict Proposal 批量审核。
 - 原文证据定位和多来源对比。
@@ -433,7 +433,7 @@ Cypher 或绕过服务层的通用 CRUD。
 
 - Project Brief 和 Competency Question。
 - 本体 Schema、约束和不可变版本快照。
-- Source Document 元数据、Source Chunk 和 Evidence。
+- Evidence Artifact 元数据、Source Chunk 和 Evidence。
 - Extraction Run、Proposal、Review Batch、Review Decision 和 Validation Run。
 - Fact Claim 审核记录和 Publication Gate 结果。
 

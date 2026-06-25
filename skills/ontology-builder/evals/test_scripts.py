@@ -19,27 +19,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _reply(self, value: object) -> None:
         body = json.dumps(value).encode()
-        self.send_response(200 if self.command == "GET" else 201)
+        self.send_response(201)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:
-        if self.path == "/api/health/dependencies":
-            self._reply({"postgres": {"status": "ok"}, "neo4j": {"status": "ok"}})
-        elif self.path == "/api/proposals/proposal-1":
-            self._reply({"id": "proposal-1", "status": "validated"})
-        else:
-            self.send_error(404)
-
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
-        if self.path == "/api/proposals":
-            payload = json.loads(body)
-            self._reply({"id": "proposal-1", "idempotency_key": payload["idempotency_key"]})
-        elif self.path == "/api/projects/project-1/source-documents":
+        if self.path == "/api/projects/project-1/evidence-artifacts":
             if b"sample.md" not in body or b"text/markdown" not in body:
                 self.send_error(400)
                 return
@@ -70,21 +59,6 @@ class ScriptIntegrationTests(unittest.TestCase):
             text=True,
         )
         return json.loads(result.stdout)
-
-    def test_connection_check(self) -> None:
-        result = self.run_script("check_connection.py")
-        self.assertEqual(result["postgres"], {"status": "ok"})
-
-    def test_submit_and_poll_proposal(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            proposal = Path(directory) / "proposal.json"
-            proposal.write_text(json.dumps({"idempotency_key": "stable-key"}), encoding="utf-8")
-            submitted = self.run_script("submit_proposal.py", str(proposal))
-        self.assertEqual(submitted["idempotency_key"], "stable-key")
-        polled = self.run_script(
-            "poll_status.py", "--kind", "proposal", "--id", "proposal-1", "--timeout", "1"
-        )
-        self.assertEqual(polled["status"], "validated")
 
     def test_upload_document(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

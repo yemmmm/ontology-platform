@@ -34,19 +34,19 @@ def test_brief_assessment_prioritizes_required_missing_fields() -> None:
         {"domain_name": ["answer-1"], "business_goal": ["answer-1"]},
     )
 
-    assert result["missing_fields"][:3] == ["scope", "core_concepts", "expected_granularity"]
+    assert result["missing_fields"][:3] == ["scope", "core_concepts", "identity_rules"]
     assert [item["field"] for item in result["clarification_items"]] == [
         "scope",
         "core_concepts",
-        "expected_granularity",
+        "identity_rules",
     ]
-    assert result["completeness"] == pytest.approx(2 / 9, abs=0.001)
+    assert result["completeness"] == pytest.approx(2 / 10, abs=0.001)
 
 
 def test_confirmed_and_skipped_fields_are_not_reasked() -> None:
     content = {key: f"value-{key}" for key in interview.REQUIRED_FIELDS}
     states = {key: "confirmed" for key in interview.REQUIRED_FIELDS}
-    states.update({key: "skipped" for key in interview.BRIEF_FIELDS[5:]})
+    states.update({key: "skipped" for key in interview.BRIEF_FIELDS[len(interview.REQUIRED_FIELDS):]})
 
     result = interview.assess_brief(content, states, {})
 

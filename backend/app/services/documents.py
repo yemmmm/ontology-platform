@@ -15,8 +15,8 @@ from app.repositories.models import (
     EvidenceModel,
     ProjectModel,
     ProposalModel,
-    SourceChunkModel,
-    SourceDocumentModel,
+    EvidenceChunkModel,
+    EvidenceArtifactModel,
 )
 
 PARSER_VERSION = "v1"
@@ -87,143 +87,164 @@ def chunk_pages(pages: list[tuple[int | None, str]]) -> list[dict[str, Any]]:
     return chunks
 
 
-def _document_result(session: Session, document: SourceDocumentModel, reused: bool = False) -> dict[str, Any]:
+def _artifact_result(session: Session, artifact: EvidenceArtifactModel, reused: bool = False) -> dict[str, Any]:
     chunk_count = session.scalar(
-        select(func.count()).select_from(SourceChunkModel).where(SourceChunkModel.document_id == document.id)
+        select(func.count()).select_from(EvidenceChunkModel).where(EvidenceChunkModel.document_id == artifact.id)
     )
     return {
-        **{column.name: getattr(document, column.name) for column in document.__table__.columns if column.name != "content"},
+        **{column.name: getattr(artifact, column.name) for column in artifact.__table__.columns if column.name != "content"},
+        "artifact_id": artifact.id,
         "reused": reused,
         "chunk_count": int(chunk_count or 0),
     }
 
 
-def ingest_document(
+def ingest_artifact(
     session: Session, project_id: str, filename: str, media_type: str, content: bytes
 ) -> dict[str, Any]:
     if not content:
         raise HTTPException(status_code=422, detail="Uploaded document is empty")
     if len(content) > MAX_DOCUMENT_BYTES:
-        raise HTTPException(status_code=413, detail="Source documents are limited to 25 MiB")
+        raise HTTPException(status_code=413, detail="Evidence artifacts are limited to 25 MiB")
     if session.get(ProjectModel, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
     kind = _kind(filename, media_type)
     digest = sha256(content).hexdigest()
     existing = session.scalar(
-        select(SourceDocumentModel).where(
-            SourceDocumentModel.project_id == project_id,
-            SourceDocumentModel.content_hash == digest,
+        select(EvidenceArtifactModel).where(
+            EvidenceArtifactModel.project_id == project_id,
+            EvidenceArtifactModel.content_hash == digest,
         )
     )
     if existing is not None:
-        return _document_result(session, existing, reused=True)
-    document = SourceDocumentModel(
+        return _artifact_result(session, existing, reused=True)
+    artifact = EvidenceArtifactModel(
         id=_id(), project_id=project_id, filename=filename, media_type=media_type,
         size_bytes=len(content), content_hash=digest, content=content,
         parse_status="parsing", parser_version=PARSER_VERSION, parse_count=0, parse_revision=1,
     )
-    session.add(document)
+    session.add(artifact)
     try:
         session.flush()
         parsed = chunk_pages(_pages(content, kind))
         for item in parsed:
             session.add(
-                SourceChunkModel(
-                    id=_id(), document_id=document.id, parse_revision=document.parse_revision, **item
+                EvidenceChunkModel(
+                    id=_id(), document_id=artifact.id, parse_revision=artifact.parse_revision, **item
                 )
             )
-        document.parse_status = "parsed"
-        document.parse_count = 1
+        artifact.parse_status = "parsed"
+        artifact.parse_count = 1
         session.commit()
     except IntegrityError:
         session.rollback()
         existing = session.scalar(
-            select(SourceDocumentModel).where(
-                SourceDocumentModel.project_id == project_id,
-                SourceDocumentModel.content_hash == digest,
+            select(EvidenceArtifactModel).where(
+                EvidenceArtifactModel.project_id == project_id,
+                EvidenceArtifactModel.content_hash == digest,
             )
         )
         if existing is None:
             raise
-        return _document_result(session, existing, reused=True)
+        return _artifact_result(session, existing, reused=True)
     except Exception as exc:
         session.rollback()
-        document = SourceDocumentModel(
+        artifact = EvidenceArtifactModel(
             id=_id(), project_id=project_id, filename=filename, media_type=media_type,
             size_bytes=len(content), content_hash=digest, content=content,
             parse_status="failed", parse_error=str(exc), parser_version=PARSER_VERSION,
             parse_count=1, parse_revision=1,
         )
-        session.add(document)
+        session.add(artifact)
         session.commit()
-    session.refresh(document)
-    return _document_result(session, document)
+    session.refresh(artifact)
+    return _artifact_result(session, artifact)
 
 
-def reparse_document(session: Session, document_id: str, force: bool = False) -> dict[str, Any]:
-    document = session.get(SourceDocumentModel, document_id)
-    if document is None:
-        raise HTTPException(status_code=404, detail="Source document not found")
-    if not force and document.parse_status == "parsed" and document.parser_version == PARSER_VERSION:
-        return _document_result(session, document, reused=True)
-    kind = _kind(document.filename, document.media_type)
+def reparse_artifact(session: Session, artifact_id: str, force: bool = False) -> dict[str, Any]:
+    artifact = session.get(EvidenceArtifactModel, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Evidence artifact not found")
+    if not force and artifact.parse_status == "parsed" and artifact.parser_version == PARSER_VERSION:
+        return _artifact_result(session, artifact, reused=True)
+    kind = _kind(artifact.filename, artifact.media_type)
     try:
-        parsed = chunk_pages(_pages(document.content, kind))
-        document.parse_revision += 1
+        parsed = chunk_pages(_pages(artifact.content, kind))
+        artifact.parse_revision += 1
         for item in parsed:
             session.add(
-                SourceChunkModel(
-                    id=_id(), document_id=document.id,
-                    parse_revision=document.parse_revision, **item,
+                EvidenceChunkModel(
+                    id=_id(), document_id=artifact.id,
+                    parse_revision=artifact.parse_revision, **item,
                 )
             )
-        document.parse_status = "parsed"
-        document.parse_error = None
-        document.parser_version = PARSER_VERSION
-        document.parse_count += 1
+        artifact.parse_status = "parsed"
+        artifact.parse_error = None
+        artifact.parser_version = PARSER_VERSION
+        artifact.parse_count += 1
         session.commit()
     except Exception as exc:
         session.rollback()
-        document.parse_status = "failed"
-        document.parse_error = str(exc)
-        document.parse_count += 1
+        artifact.parse_status = "failed"
+        artifact.parse_error = str(exc)
+        artifact.parse_count += 1
         session.commit()
-    session.refresh(document)
-    return _document_result(session, document)
+    session.refresh(artifact)
+    return _artifact_result(session, artifact)
 
 
-def list_documents(session: Session, project_id: str) -> list[dict[str, Any]]:
+def list_artifacts(session: Session, project_id: str) -> list[dict[str, Any]]:
     rows = session.scalars(
-        select(SourceDocumentModel).where(SourceDocumentModel.project_id == project_id).order_by(SourceDocumentModel.created_at.desc())
+        select(EvidenceArtifactModel).where(EvidenceArtifactModel.project_id == project_id).order_by(EvidenceArtifactModel.created_at.desc())
     )
-    return [_document_result(session, row) for row in rows]
+    return [_artifact_result(session, row) for row in rows]
 
 
-def get_document(session: Session, document_id: str) -> dict[str, Any]:
-    document = session.get(SourceDocumentModel, document_id)
-    if document is None:
-        raise HTTPException(status_code=404, detail="Source document not found")
-    return _document_result(session, document)
+def get_artifact(session: Session, artifact_id: str) -> dict[str, Any]:
+    artifact = session.get(EvidenceArtifactModel, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Evidence artifact not found")
+    return _artifact_result(session, artifact)
 
 
-def list_chunks(session: Session, document_id: str) -> list[SourceChunkModel]:
-    if session.get(SourceDocumentModel, document_id) is None:
-        raise HTTPException(status_code=404, detail="Source document not found")
-    document = session.get(SourceDocumentModel, document_id)
+def list_chunks(session: Session, artifact_id: str) -> list[EvidenceChunkModel]:
+    if session.get(EvidenceArtifactModel, artifact_id) is None:
+        raise HTTPException(status_code=404, detail="Evidence artifact not found")
+    artifact = session.get(EvidenceArtifactModel, artifact_id)
     return list(
         session.scalars(
-            select(SourceChunkModel)
+            select(EvidenceChunkModel)
             .where(
-                SourceChunkModel.document_id == document_id,
-                SourceChunkModel.parse_revision == document.parse_revision,
+                EvidenceChunkModel.document_id == artifact_id,
+                EvidenceChunkModel.parse_revision == artifact.parse_revision,
             )
-            .order_by(SourceChunkModel.sequence)
+            .order_by(EvidenceChunkModel.sequence)
         )
     )
 
 
+def list_artifact_proposals(session: Session, artifact_id: str) -> list[str]:
+    return list(session.scalars(select(EvidenceModel.proposal_id).where(EvidenceModel.document_id == artifact_id).distinct()))
+
+
+def ingest_document(session: Session, project_id: str, filename: str, media_type: str, content: bytes) -> dict[str, Any]:
+    return ingest_artifact(session, project_id, filename, media_type, content)
+
+
+def reparse_document(session: Session, document_id: str, force: bool = False) -> dict[str, Any]:
+    return reparse_artifact(session, document_id, force)
+
+
+def list_documents(session: Session, project_id: str) -> list[dict[str, Any]]:
+    return list_artifacts(session, project_id)
+
+
+def get_document(session: Session, document_id: str) -> dict[str, Any]:
+    return get_artifact(session, document_id)
+
+
 def list_document_proposals(session: Session, document_id: str) -> list[str]:
-    return list(session.scalars(select(EvidenceModel.proposal_id).where(EvidenceModel.document_id == document_id).distinct()))
+    return list_artifact_proposals(session, document_id)
 
 
 def list_item_sources(session: Session, proposal_id: str, item_key: str) -> list[EvidenceModel]:
