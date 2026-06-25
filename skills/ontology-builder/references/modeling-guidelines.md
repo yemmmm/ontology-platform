@@ -13,6 +13,53 @@ Ontology is the stable semantic model of a domain. It is not a copy of database 
 Never put table names, physical column names, SQL joins, credentials, or access policy rules into the
 published ontology schema unless they are genuine domain concepts.
 
+## Ontology partitioning
+
+Do not put every concept into one ontology. Partition by semantic stability, governance boundary,
+reuse scope, and change frequency, not by database table or UI module.
+
+- Use Core ontologies for stable cross-domain concepts such as `Entity`, `Agent`, `Organization`,
+  `Person`, `Location`, `Event`, `TimeInterval`, `Identifier`, and `Provenance`.
+- Use Domain ontologies for business-domain semantics such as `Customer`, `Contract`, `Product`,
+  `Risk`, `Student`, `Course`, or `Assessment`.
+- Use Application ontologies for application-specific workflow, dashboard, report, import, or
+  integration concepts that should not pollute shared domain meaning.
+- Split ontologies when different teams own definition, approval, release cadence, or stewardship.
+- Split high-change vocabularies, status lists, categories, and classifications into Taxonomy or
+  controlled vocabulary resources instead of changing stable ontology schema.
+- Keep Ontology, Taxonomy, Semantic Mapping, Data Catalog, and Connector concerns separate. Mappings
+  explain how external fields align to semantic concepts; they do not define domain meaning.
+- Use bounded context judgment. If `Customer` means different things in CRM, billing, legal, and
+  support contexts, preserve the context-specific concepts and bridge them with Mapping or a small
+  bridge ontology. Avoid strong equivalence unless the identity and meaning are genuinely the same.
+- Use import relationships for reuse. Application ontologies import Domain ontologies; Domain
+  ontologies import Core ontologies and relevant Taxonomies. Do not copy shared classes into each
+  ontology.
+
+Split an ontology when releases require unrelated reviewers, concepts share no competency questions,
+stable schema is blocked by fast-changing categories, naming conflicts become frequent, or external
+system fields start appearing as first-class ontology concepts.
+
+Example structure:
+
+```text
+core/entity
+core/agent
+core/time
+core/provenance
+domains/customer
+domains/product
+domains/contract
+domains/risk
+taxonomies/industry
+taxonomies/geography
+taxonomies/product-category
+mappings/crm
+mappings/erp
+applications/catalog-ui
+applications/analytics
+```
+
 ## Class, Entity, Property, Relation
 
 - Use a Class for a reusable category with stable meaning, identity rules, and lifecycle.
