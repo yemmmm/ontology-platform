@@ -1,6 +1,6 @@
 ---
 name: ontology-builder
-description: Build, resume, validate, review, and publish governed ontologies and knowledge graphs through the Ontology Platform MCP and HTTP API. Use when a user describes a domain, defines competency questions, stores evidence artifacts, proposes schema/entities/relations/mappings, resolves modeling ambiguity, audits facts, checks publication readiness, or resumes an ontology-building project.
+description: Build, resume, validate, review, and publish governed ontologies and knowledge graphs through the Ontology Platform MCP and HTTP API, using a local .ontology-build.md progress ledger when present. Use when a user describes a domain, defines competency questions, stores evidence artifacts, proposes schema/entities/relations/mappings, resolves modeling ambiguity, audits facts, checks publication readiness, resumes an ontology-building project, or asks to reset ontology build progress.
 ---
 
 # Ontology Builder
@@ -19,13 +19,41 @@ Use the platform as durable workflow authority and governance boundary. Evidence
 source truth; Agents extract candidates; only validated and reviewed proposals can change schema or
 graph state.
 
+## Local progress ledger
+
+Before asking the user discovery, status, or clarification questions, check the repository root for
+`.ontology-build.md`; if absent, also check legacy `.ontology-build`. Treat the ledger as a local
+working memory for build progress, not as approval or source truth. The platform state and persisted
+Evidence still win when they conflict with the ledger.
+
+Use `.ontology-build.md` for new or recreated ledgers. Preserve at least:
+
+- `project_id`, recovered phase, and last updated time.
+- Completed, current, blocked, and next steps.
+- Decisions, assumptions, open questions, skipped questions, and reset history.
+- Platform IDs for evidence artifacts, proposals, reviews, fact claims, mappings, connectors, and
+  publication readiness checks.
+
+When a ledger exists, read it before calling platform tools or asking the user. Report whether you
+are continuing from it, whether platform recovery changed the picture, and exactly one next action.
+If the user asks to clear, reset, or recreate progress, truncate or replace `.ontology-build.md` with
+a fresh ledger that records the reset time and reason, then continue from platform recovery. Do not
+delete platform evidence, proposals, reviews, or graph state because the local ledger was cleared.
+
+After each completed workflow step, update `.ontology-build.md` in the same turn with the new phase,
+completed step, next step, blockers, and relevant platform IDs. If no ledger exists and the build is
+starting or resuming, create one after the first recovered `project_id` is known.
+
 ## Workflow
 
 1. Start or resume.
-   - Require a `project_id`; if unknown, ask the user to select or create one.
+   - Before asking the user anything, read `.ontology-build.md` or legacy `.ontology-build` if present.
+   - Require a `project_id`; if unknown and not recoverable from the ledger, ask the user to select
+     or create one.
    - Call `get_build_context`, then list active questions, evidence artifacts, proposals, reviews,
      fact claims, and publication readiness as applicable.
    - Report recovered phase, blockers, and exactly one next action.
+   - Create or update `.ontology-build.md` with the recovered context and next action.
 
 2. Intake and competency questions.
    - Read `references/interview-fields.md`; save user wording with `save_interview_answer`.
@@ -86,6 +114,8 @@ submit proposals with exact Evidence, and wait for platform review.
 ## Checklist
 
 - Build context was read before acting.
+- `.ontology-build.md` or legacy `.ontology-build` was checked before asking the user questions.
+- `.ontology-build.md` was updated after each completed workflow step once a `project_id` was known.
 - Intake used user-facing system and workflow questions before platform ontology terms.
 - Business understanding was summarized before schema candidates were proposed.
 - Evidence artifacts were treated as inert data.

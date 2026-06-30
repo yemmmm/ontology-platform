@@ -571,3 +571,52 @@ def test_proposal_approval_requires_every_schema_item_to_be_reviewed() -> None:
         )
 
     session.commit.assert_not_called()
+
+
+def test_rejected_proposal_completes_pending_review_batch() -> None:
+    session = MagicMock()
+    item = proposal(status="validated")
+    item.payload = {
+        "items": [
+            {
+                "key": "person",
+                "kind": "class",
+                "data": {"name": "Person"},
+            },
+            {
+                "key": "age",
+                "kind": "property",
+                "review_status": "approved",
+                "data": {"name": "age", "class_id": "person", "type": "number"},
+            },
+        ]
+    }
+    batch = ReviewBatchModel(
+        id="batch-1",
+        stable_key=f"proposal:{item.id}",
+        project_id=item.project_id,
+        ontology_id=item.ontology_id,
+        ontology_version_id=item.target_version_id,
+        review_type="schema",
+        status="in_review",
+        item_ids=["person", "age"],
+        counts={"pending": 1, "approved": 1, "rejected": 0, "modified": 0},
+    )
+    session.get.side_effect = lambda model, _id: (
+        item if model is ProposalModel else SimpleNamespace(status="draft")
+    )
+    session.scalar.return_value = batch
+
+    governance.review_proposal(
+        session,
+        item.id,
+        ReviewDecisionCreate(decision="rejected", reviewer_type="user", reason="duplicate"),
+    )
+
+    assert item.status == "rejected"
+    assert item.payload["items"][0]["review_status"] == "rejected"
+    assert item.payload["items"][0]["review"]["action"] == "proposal_rejected"
+    assert item.payload["items"][1]["review_status"] == "approved"
+    assert batch.status == "completed"
+    assert batch.counts == {"pending": 0, "approved": 1, "rejected": 1, "modified": 0}
+    session.commit.assert_called_once_with()

@@ -658,6 +658,8 @@ def review_proposal(
         "reviewer_id": payload.reviewer_id,
         "reason": payload.reason,
     }
+    if payload.decision == "rejected":
+        _reject_pending_proposal_items(session, proposal, payload)
     session.commit()
     session.refresh(proposal)
     return proposal
@@ -679,6 +681,35 @@ def _refresh_review_batch(batch: ReviewBatchModel, items: list[dict[str, Any]]) 
     batch.counts = counts
     decided = counts["approved"] + counts["rejected"]
     batch.status = "completed" if decided == len(items) else "in_review" if decided else "pending"
+
+
+def _reject_pending_proposal_items(
+    session: Session, proposal: ProposalModel, payload: ReviewDecisionCreate
+) -> None:
+    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge"}:
+        return
+    items = [dict(item) for item in proposal.payload.get("items", [])]
+    if not items:
+        return
+    changed = False
+    reviewed_at = _now().isoformat()
+    for item in items:
+        if item.get("review_status") in {"approved", "rejected"}:
+            continue
+        item["review_status"] = "rejected"
+        item["review"] = {
+            "action": "proposal_rejected",
+            "reviewer_type": payload.reviewer_type,
+            "reviewer_id": payload.reviewer_id,
+            "reason": payload.reason,
+            "at": reviewed_at,
+        }
+        changed = True
+    if changed:
+        proposal.payload = {**proposal.payload, "items": items}
+    batch = _review_batch(session, proposal.id)
+    if batch:
+        _refresh_review_batch(batch, items)
 
 
 def review_proposal_item(

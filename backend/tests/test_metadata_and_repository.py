@@ -1,12 +1,13 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from app.api.schemas import ClassUpdate, ProjectCreate, RelationTypeUpdate
+from app.api.schemas import ClassUpdate, ProjectCreate, PropertyDefRead, RelationTypeUpdate
 from app.repositories import graph as graph_repository
-from app.repositories.models import ClassModel, RelationTypeModel
+from app.repositories.models import ClassModel, PropertyDefModel, RelationTypeModel
 from app.services import metadata
 
 
@@ -80,6 +81,29 @@ def test_update_relation_type_rejects_self_parent() -> None:
             )
 
     session.commit.assert_not_called()
+
+
+def test_property_read_defaults_legacy_null_json_fields() -> None:
+    now = datetime.now(UTC)
+    property_ = PropertyDefModel(
+        id="status",
+        class_id="person",
+        name="status",
+        type="string",
+        required=False,
+        multi_valued=False,
+        enum_values=None,
+        constraints=None,
+        external_mappings=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    result = PropertyDefRead.model_validate(property_)
+
+    assert result.enum_values == []
+    assert result.constraints == {}
+    assert result.external_mappings == {}
 
 
 def test_graph_property_encoding_round_trips() -> None:

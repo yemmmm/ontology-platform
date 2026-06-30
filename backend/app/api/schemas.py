@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.ontology import PropertyType
 
@@ -124,6 +124,16 @@ class PropertyDefRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("enum_values", mode="before")
+    @classmethod
+    def default_enum_values(cls, value: list[str] | None) -> list[str]:
+        return value or []
+
+    @field_validator("constraints", "external_mappings", mode="before")
+    @classmethod
+    def default_json_object(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        return value or {}
 
 
 class RelationTypeCreate(BaseModel):
