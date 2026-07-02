@@ -63,6 +63,7 @@ def _evaluate_schema_validation(
             .where(
                 ProposalModel.target_version_id == version.id,
                 ProposalModel.proposal_type.in_(["schema_change", "constraint"]),
+                ProposalModel.status.notin_(["rejected"]),
             )
             .order_by(ValidationRunModel.started_at.desc())
         )
@@ -138,7 +139,7 @@ def _evaluate_low_confidence_review(
 
 
 def _evaluate_evidence_coverage(
-    session: Session, version: OntologyVersionModel
+    session: Session, version: OntologyVersionModel, driver: Driver | None = None
 ) -> dict[str, Any]:
     classes = list(
         session.scalars(
@@ -164,6 +165,13 @@ def _evaluate_evidence_coverage(
                 class_id = data.get("class_id")
                 if class_id:
                     covered.add(class_id)
+    # Also treat classes with directly-created entities (non-proposal) as covered
+    if driver is not None:
+        from app.repositories.graph import graph_version_stats
+        stats = graph_version_stats(driver, version.ontology_id, version.id)
+        for class_id, count in stats.get("entities_by_class", {}).items():
+            if count > 0:
+                covered.add(class_id)
     missing = sorted({c.id for c in classes} - covered)
     return _gate(
         "evidence_coverage",
@@ -264,7 +272,11 @@ def evaluate_readiness(
     version = session.get(OntologyVersionModel, version_id)
     if version is None:
         raise HTTPException(status_code=404, detail="Ontology version not found")
-    gates = [GATE_EVALUATORS[name](session, version) for name in GATE_ORDER]
+    gates = [
+        fn(session, version, driver) if name == "evidence_coverage" and driver is not None
+        else fn(session, version)
+        for name, fn in [(n, GATE_EVALUATORS[n]) for n in GATE_ORDER]
+    ]
     _persist_gates(session, version_id, gates)
     blocking = [g["gate_type"] for g in gates if g["status"] == "failed"]
     warnings = [g["gate_type"] for g in gates if g["status"] == "warning"]
