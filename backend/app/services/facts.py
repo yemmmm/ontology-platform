@@ -958,6 +958,220 @@ def recall_entity_knowledge(
     return results
 
 
+def _class_chain_for_entity(
+    session: Session,
+    ontology_id: str,
+    class_id: str,
+) -> list[ClassModel]:
+    classes = list(session.scalars(select(ClassModel).where(ClassModel.ontology_id == ontology_id)))
+    by_id = {class_.id: class_ for class_ in classes}
+    chain: list[ClassModel] = []
+
+    def visit(current_id: str, seen: set[str]) -> None:
+        if current_id in seen:
+            return
+        class_ = by_id.get(current_id)
+        if class_ is None:
+            return
+        chain.append(class_)
+        next_seen = {*seen, current_id}
+        for parent_id in class_.parent_class_ids or []:
+            visit(parent_id, next_seen)
+
+    visit(class_id, set())
+    return chain
+
+
+def _rule_summary(rule: RuleDefinitionModel) -> dict[str, Any]:
+    return {
+        "id": rule.id,
+        "rule_type": rule.rule_type,
+        "scope": rule.scope,
+        "condition": rule.condition,
+        "conclusion": rule.conclusion,
+        "status": rule.status,
+        "priority": rule.priority,
+        "evidence_ids": rule.evidence_ids,
+        "version": rule.version,
+    }
+
+
+def _knowledge_item(
+    claim: FactClaimModel,
+    *,
+    source_type: str,
+    authorized: bool = False,
+    relation_id: str | None = None,
+    rule_id: str | None = None,
+    inherited_from_class_id: str | None = None,
+) -> dict[str, Any]:
+    value, access_decision, redacted = _redacted_value(
+        claim.value,
+        sensitivity=claim.sensitivity,
+        access_policy=claim.access_policy,
+        authorized=authorized,
+    )
+    return {
+        "source_type": source_type,
+        "claim_id": claim.id,
+        "predicate": claim.predicate,
+        "value": value,
+        "anchor": claim.anchor or {},
+        "layer": claim.layer,
+        "audit_status": claim.audit_status,
+        "confidence": claim.confidence,
+        "sensitivity": claim.sensitivity,
+        "access_policy": claim.access_policy,
+        "access_decision": access_decision,
+        "redacted": redacted,
+        "evidence_ids": claim.evidence_ids,
+        "generation_reason": claim.generation_reason,
+        "relation_id": relation_id,
+        "rule_id": rule_id,
+        "inherited_from_class_id": inherited_from_class_id,
+        "overrides": claim.override_of_claim_id,
+        "overridden": False,
+    }
+
+
+def get_entity_knowledge_context(
+    session: Session,
+    driver: Driver,
+    version_id: str,
+    entity_id: str,
+    *,
+    authorized: bool = False,
+) -> dict[str, Any]:
+    version = session.get(OntologyVersionModel, version_id)
+    if version is None:
+        raise HTTPException(status_code=404, detail="Ontology version not found")
+    ontology = session.get(OntologyModel, version.ontology_id)
+    if ontology is None:
+        raise HTTPException(status_code=404, detail="Ontology not found")
+    entity = graph_repo.get_entity_node(driver, entity_id, ontology.project_id, ontology.id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    relations = graph_repo.list_relation_edges(
+        driver,
+        ontology.project_id,
+        ontology.id,
+        entity_id,
+        relation_type_id=None,
+        limit=100,
+    )
+    relation_ids = {relation["id"] for relation in relations}
+    class_chain = _class_chain_for_entity(session, ontology.id, entity["class_id"])
+    class_ids = {class_.id for class_ in class_chain}
+
+    claims = list(
+        session.scalars(
+            select(FactClaimModel).where(
+                FactClaimModel.ontology_version_id == version_id,
+                FactClaimModel.stale.is_(False),
+                FactClaimModel.audit_status.in_(["pending", "approved"]),
+            )
+        )
+    )
+
+    context: dict[str, Any] = {
+        "entity": entity,
+        "class_chain": class_chain,
+        "relation_ids": sorted(relation_ids),
+        "properties": [
+            {
+                "source_type": "entity_property",
+                "predicate": name,
+                "value": value,
+                "anchor": {"type": "entity", "target_id": entity_id},
+            }
+            for name, value in (entity.get("properties") or {}).items()
+        ],
+        "entity_assertions": [],
+        "inherited_class_assertions": [],
+        "relation_assertions": [],
+        "rule_assertions": [],
+        "rules": [],
+    }
+    rule_ids: set[str] = set()
+
+    for claim in claims:
+        anchor = claim.anchor or {}
+        anchor_type = anchor.get("type")
+        target_id = anchor.get("target_id")
+        output_anchor = anchor.get("output_anchor") if isinstance(anchor.get("output_anchor"), dict) else {}
+        subject_entity_id = claim.subject.get("entity_id") if isinstance(claim.subject, dict) else None
+
+        if anchor_type == "entity" and target_id == entity_id:
+            context["entity_assertions"].append(
+                _knowledge_item(claim, source_type="entity_assertion", authorized=authorized)
+            )
+            continue
+
+        if anchor_type == "class" and target_id in class_ids:
+            context["inherited_class_assertions"].append(
+                _knowledge_item(
+                    claim,
+                    source_type="class_assertion",
+                    authorized=authorized,
+                    inherited_from_class_id=str(target_id),
+                )
+            )
+            continue
+
+        if anchor_type == "relation" and target_id in relation_ids:
+            context["relation_assertions"].append(
+                _knowledge_item(
+                    claim,
+                    source_type="relation_assertion",
+                    authorized=authorized,
+                    relation_id=str(target_id),
+                )
+            )
+            continue
+
+        rule_id = None
+        if anchor_type == "rule" and isinstance(target_id, str):
+            rule_id = target_id
+        elif claim.generation_reason.startswith("rule:"):
+            rule_id = claim.generation_reason.removeprefix("rule:").split(":", 1)[0]
+        applies_to_entity = (
+            subject_entity_id == entity_id
+            or output_anchor.get("target_id") == entity_id
+        )
+        if rule_id and applies_to_entity:
+            rule_ids.add(rule_id)
+            context["rule_assertions"].append(
+                _knowledge_item(
+                    claim,
+                    source_type=claim.layer,
+                    authorized=authorized,
+                    rule_id=rule_id,
+                )
+            )
+
+    all_items = (
+        context["entity_assertions"]
+        + context["inherited_class_assertions"]
+        + context["relation_assertions"]
+        + context["rule_assertions"]
+    )
+    overridden = {item["overrides"] for item in all_items if item.get("overrides")}
+    for item in all_items:
+        if item.get("claim_id") in overridden:
+            item["overridden"] = True
+
+    if rule_ids:
+        rules = session.scalars(
+            select(RuleDefinitionModel).where(
+                RuleDefinitionModel.ontology_version_id == version_id,
+                RuleDefinitionModel.id.in_(rule_ids),
+            )
+        )
+        context["rules"] = [_rule_summary(rule) for rule in rules]
+    return context
+
+
 def generate_fact_claims(
     session: Session, driver: Driver, version_id: str
 ) -> list[FactClaimModel]:

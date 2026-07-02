@@ -291,6 +291,7 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
 export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
+  const singleVisibleEntityIdRef = useRef<string | null>(null);
 
   // Latest props mirrored in refs so the singleton event handler always sees fresh values.
   const onSelectRef = useRef(props.onSelectEntity);
@@ -302,6 +303,15 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     props.entities.forEach((entity) => labels.add(entity.class_label));
     return Array.from(labels).sort();
   }, [props.entities, props.classLabels]);
+
+  const singleVisibleEntityId = useMemo(() => {
+    const classSet = new Set(props.classFilter);
+    const visibleEntities =
+      classSet.size === 0
+        ? props.entities
+        : props.entities.filter((entity) => classSet.has(entity.class_label));
+    return visibleEntities.length === 1 ? visibleEntities[0].id : null;
+  }, [props.entities, props.classFilter]);
 
   const elements = useMemo<ElementDefinition[]>(() => {
     const classSet = new Set(props.classFilter);
@@ -350,10 +360,17 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     return [...nodes, ...edges];
   }, [props.entities, props.relations, props.classFilter, allClassLabels]);
 
+  singleVisibleEntityIdRef.current = singleVisibleEntityId;
+
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
+    const onContainerClick = () => {
+      if (singleVisibleEntityIdRef.current) onSelectRef.current(singleVisibleEntityIdRef.current);
+    };
+    container.addEventListener("click", onContainerClick, true);
     const cy = cytoscape({
-      container: containerRef.current,
+      container,
       elements: [],
       style: CYTO_STYLE,
       layout: { name: "fcose", animate: false, randomize: false } as cytoscape.LayoutOptions,
@@ -363,7 +380,7 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     });
     cy.on("tap", "node", (event) => onSelectRef.current(String(event.target.id())));
     cy.on("tap", (event) => {
-      if (event.target === cy) onSelectRef.current(null);
+      if (event.target === cy) onSelectRef.current(singleVisibleEntityIdRef.current);
     });
     const onViewportChange = () => applyLabelVisibility(cy);
     const onNodePositionSettled = () => applyEdgeLabelOffsets(cy);
@@ -371,6 +388,7 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     cy.on("free", "node", onNodePositionSettled);
     cyRef.current = cy;
     return () => {
+      container.removeEventListener("click", onContainerClick, true);
       cy.off("zoom pan", onViewportChange);
       cy.off("free", "node", onNodePositionSettled);
       cy.destroy();
@@ -424,5 +442,11 @@ export function EntityGraphCanvas(props: EntityGraphCanvasProps) {
     applyVisualState(cy, props.entities, props.selectedEntityId, props.searchQuery);
   }, [props.selectedEntityId, props.searchQuery, props.entities, props.layoutMode, elements]);
 
-  return <div className="entityGraphCanvas" ref={containerRef} />;
+  return (
+    <div
+      className="entityGraphCanvas"
+      ref={containerRef}
+      data-single-visible-entity-id={singleVisibleEntityId ?? ""}
+    />
+  );
 }

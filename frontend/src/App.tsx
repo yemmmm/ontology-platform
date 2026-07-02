@@ -1107,6 +1107,8 @@ function WorkspaceContent(props: {
         relations={props.relations}
         relationTypes={props.relationTypes}
         reloadGraph={props.reloadGraph}
+        versionId={props.selectedVersionId}
+        onOpenFact={(claimId) => props.navigateWorkspace("facts", { claim: claimId })}
         request={governedRequest}
       />
     );
@@ -1990,9 +1992,11 @@ function EntitiesPage(props: {
   relationTypes: RelationType[];
   entities: Entity[];
   relations: Relation[];
+  versionId: string;
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadGraph: () => Promise<void>;
+  onOpenFact: (claimId: string) => void;
 }) {
   const [mode, setMode] = useState<EntityPageMode>("topology");
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -2169,9 +2173,12 @@ function EntitiesPage(props: {
           entity={selectedEntity}
           relations={props.relations}
           entities={props.entities}
+          versionId={props.versionId}
+          request={props.request}
           onClose={() => setSelectedEntityId(null)}
           onDelete={deleteSelectedEntity}
           onEdit={() => setMode("edit")}
+          onOpenFact={props.onOpenFact}
         />
       </div>
     </section>

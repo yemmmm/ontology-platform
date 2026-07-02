@@ -834,6 +834,52 @@ class FactClaimRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EntityKnowledgeItemRead(BaseModel):
+    source_type: str
+    claim_id: str | None = None
+    predicate: str
+    value: Any
+    anchor: dict[str, Any] = Field(default_factory=dict)
+    layer: str | None = None
+    audit_status: str | None = None
+    confidence: float | None = None
+    sensitivity: str | None = None
+    access_policy: dict[str, Any] = Field(default_factory=dict)
+    access_decision: str | None = None
+    redacted: bool = False
+    evidence_ids: list[str] = Field(default_factory=list)
+    generation_reason: str | None = None
+    relation_id: str | None = None
+    rule_id: str | None = None
+    inherited_from_class_id: str | None = None
+    overrides: str | None = None
+    overridden: bool = False
+
+
+class EntityKnowledgeRuleRead(BaseModel):
+    id: str
+    rule_type: str
+    scope: dict[str, Any]
+    condition: dict[str, Any]
+    conclusion: dict[str, Any]
+    status: str
+    priority: int
+    evidence_ids: list[str]
+    version: int
+
+
+class EntityKnowledgeContextRead(BaseModel):
+    entity: EntityRead
+    class_chain: list[ClassRead]
+    relation_ids: list[str]
+    properties: list[EntityKnowledgeItemRead]
+    entity_assertions: list[EntityKnowledgeItemRead]
+    inherited_class_assertions: list[EntityKnowledgeItemRead]
+    relation_assertions: list[EntityKnowledgeItemRead]
+    rule_assertions: list[EntityKnowledgeItemRead]
+    rules: list[EntityKnowledgeRuleRead]
+
+
 class AssertionCreate(BaseModel):
     anchor: dict[str, Any]
     subject: dict[str, Any]

@@ -8,6 +8,7 @@ from app.api.schemas import (
     BackgroundKnowledgePromotionCreate,
     BackgroundKnowledgePromotionRead,
     BackgroundRecallCreate,
+    EntityKnowledgeContextRead,
     EntityKnowledgeRecallCreate,
     FactClaimRead,
     FactClaimReviewCreate,
@@ -156,6 +157,19 @@ def recall_entity_knowledge(
         background_query=payload.background_query,
         authorized=payload.authorized,
     )
+
+
+@router.get(
+    "/versions/{version_id}/entities/{entity_id}/knowledge-context",
+    response_model=EntityKnowledgeContextRead,
+)
+def get_entity_knowledge_context(
+    version_id: str,
+    entity_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    return service.get_entity_knowledge_context(session, driver, version_id, entity_id)
 
 
 @router.get("/versions/{version_id}/fact-claims", response_model=list[FactClaimRead])

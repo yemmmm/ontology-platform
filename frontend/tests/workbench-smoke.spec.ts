@@ -63,6 +63,48 @@ const ruleProposal = {
     }],
   },
 };
+const buildingClass = {
+  id: "building",
+  ontology_id: ontology.id,
+  name: "Building",
+  normalized_label: "building",
+  description: null,
+  aliases: [],
+  parent_class_ids: [],
+  external_mappings: {},
+};
+const labClass = {
+  id: "lab",
+  ontology_id: ontology.id,
+  name: "Lab",
+  normalized_label: "lab",
+  description: null,
+  aliases: [],
+  parent_class_ids: ["building"],
+  external_mappings: {},
+};
+const labEntity = {
+  id: "lab-1",
+  project_id: project.id,
+  ontology_id: ontology.id,
+  ontology_version_id: version.id,
+  class_id: "lab",
+  class_label: "Lab",
+  name: "Lab 1",
+  aliases: [],
+  properties: { floor: 2, description: "North wing lab" },
+};
+const labRelation = {
+  id: "rel-lab-self",
+  project_id: project.id,
+  ontology_id: ontology.id,
+  ontology_version_id: version.id,
+  relation_type_id: "rt-linked",
+  relation_type: "LINKED_TO",
+  source_entity_id: "lab-1",
+  target_entity_id: "lab-1",
+  properties: {},
+};
 const derivedClaim = {
   id: "claim-rule-1",
   claim_key: "rule_derived:rule-1:s1:student_status:a",
@@ -91,6 +133,107 @@ const derivedClaim = {
   updated_at: "2026-06-23T00:00:00Z",
   reviewed_at: null,
 };
+const nodeKnowledgeContext = {
+  entity: labEntity,
+  class_chain: [labClass, buildingClass],
+  relation_ids: [labRelation.id],
+  properties: [{
+    source_type: "entity_property",
+    claim_id: null,
+    predicate: "floor",
+    value: 2,
+    anchor: { type: "entity", target_id: labEntity.id },
+    layer: null,
+    audit_status: null,
+    confidence: null,
+    sensitivity: null,
+    access_policy: {},
+    access_decision: null,
+    redacted: false,
+    evidence_ids: [],
+    generation_reason: null,
+    relation_id: null,
+    rule_id: null,
+    inherited_from_class_id: null,
+    overrides: null,
+    overridden: false,
+  }],
+  entity_assertions: [],
+  inherited_class_assertions: [{
+    source_type: "class_assertion",
+    claim_id: "claim-class-close",
+    predicate: "closes_at",
+    value: "23:00",
+    anchor: { type: "class", target_id: "building" },
+    layer: "class_assertion",
+    audit_status: "approved",
+    confidence: 1,
+    sensitivity: "normal",
+    access_policy: {},
+    access_decision: "allow",
+    redacted: false,
+    evidence_ids: [],
+    generation_reason: "direct_user_statement",
+    relation_id: null,
+    rule_id: null,
+    inherited_from_class_id: "building",
+    overrides: null,
+    overridden: false,
+  }],
+  relation_assertions: [{
+    source_type: "relation_assertion",
+    claim_id: "claim-relation-verified",
+    predicate: "verified_by",
+    value: "registry",
+    anchor: { type: "relation", target_id: labRelation.id },
+    layer: "relation_assertion",
+    audit_status: "pending",
+    confidence: 0.9,
+    sensitivity: "normal",
+    access_policy: {},
+    access_decision: "allow",
+    redacted: false,
+    evidence_ids: [],
+    generation_reason: "direct_user_statement",
+    relation_id: labRelation.id,
+    rule_id: null,
+    inherited_from_class_id: null,
+    overrides: null,
+    overridden: false,
+  }],
+  rule_assertions: [{
+    source_type: "rule_derived",
+    claim_id: derivedClaim.id,
+    predicate: derivedClaim.predicate,
+    value: derivedClaim.value,
+    anchor: derivedClaim.anchor,
+    layer: "rule_derived",
+    audit_status: "pending",
+    confidence: 1,
+    sensitivity: "normal",
+    access_policy: {},
+    access_decision: "allow",
+    redacted: false,
+    evidence_ids: [],
+    generation_reason: "rule:rule-1",
+    relation_id: null,
+    rule_id: "rule-1",
+    inherited_from_class_id: null,
+    overrides: null,
+    overridden: false,
+  }],
+  rules: [{
+    id: "rule-1",
+    rule_type: "validation",
+    scope: { class: "lab" },
+    condition: {},
+    conclusion: { assert: { predicate: "needs_inspection", value: true } },
+    status: "active",
+    priority: 1,
+    evidence_ids: [],
+    version: 1,
+  }],
+};
 
 async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
@@ -113,8 +256,15 @@ async function mockApi(page: Page) {
     else if (path.startsWith(`/projects/${project.id}/semantic-mappings`)) body = [];
     else if (path === `/projects/${project.id}/connector-templates`) body = [];
     else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
+    else if (path === `/ontologies/${ontology.id}/classes`) body = [buildingClass, labClass];
+    else if (path === `/classes/${buildingClass.id}/properties`) body = [];
+    else if (path === `/classes/${labClass.id}/properties`) body = [];
+    else if (path === `/ontologies/${ontology.id}/relation-types`) body = [];
+    else if (path === `/ontologies/${ontology.id}/entities`) body = [labEntity];
+    else if (path === `/ontologies/${ontology.id}/relations`) body = [labRelation];
     else if (path === `/ontologies/${ontology.id}/proposals`) body = [schemaProposal, ruleProposal];
     else if (path === `/versions/${version.id}/fact-claims`) body = [derivedClaim];
+    else if (path === `/versions/${version.id}/entities/${labEntity.id}/knowledge-context`) body = nodeKnowledgeContext;
     else if (method === "POST" && path === `/versions/${version.id}/rule-definitions:execute`) body = [derivedClaim];
     else if (method === "POST" && path === `/versions/${version.id}/background-knowledge:recall`) body = [{
       source_type: "background_recall",
@@ -200,6 +350,37 @@ test("v0.5 fact audit exposes rule execution and background recall", async ({ pa
   await page.getByRole("button", { name: "Recall" }).click();
   await expect(page.getByText("background_recall")).toBeVisible();
   await expect(page.getByText("Sleep background")).toBeVisible();
+});
+
+test("entity graph drawer shows inherited relation and rule knowledge", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=entities`);
+  const canvas = page.locator(".entityGraphCanvas");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-single-visible-entity-id", labEntity.id);
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.waitForTimeout(500);
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  const heading = page.getByRole("heading", { name: "Lab 1" });
+  for (const xRatio of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+    for (const yRatio of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+      await page.mouse.click(box!.x + box!.width * xRatio, box!.y + box!.height * yRatio);
+      if (await heading.isVisible().catch(() => false)) break;
+    }
+    if (await heading.isVisible().catch(() => false)) break;
+  }
+  await expect(page.getByRole("heading", { name: "Lab 1" })).toBeVisible();
+  await page.getByRole("button", { name: "Knowledge" }).click();
+  await expect(page.getByText("Inherited class knowledge")).toBeVisible();
+  await expect(page.getByText("closes_at")).toBeVisible();
+  await expect(page.getByText("verified_by")).toBeVisible();
+  await expect(page.getByText("student_status")).toBeVisible();
+  await page.getByRole("button", { name: "Rules" }).click();
+  await expect(page.getByText("validation")).toBeVisible();
+  await expect(page.getByText("Produced assertions")).toBeVisible();
 });
 
 test("graph review includes governed rule proposals", async ({ page }) => {

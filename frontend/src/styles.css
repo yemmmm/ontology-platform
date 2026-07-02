@@ -2904,6 +2904,35 @@ textarea:focus {
   margin-top: 8px;
 }
 
+.entityDrawerTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--panel-soft);
+}
+
+.entityDrawerTabs button {
+  min-width: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 7px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.entityDrawerTabs button.active,
+.entityDrawerTabs button:hover {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(15, 17, 32, 0.08);
+}
+
 .aliasChip {
   font-size: 11px;
   color: var(--muted);
@@ -2920,6 +2949,12 @@ textarea:focus {
   color: var(--muted);
   margin: 0 0 10px;
   font-weight: 700;
+}
+
+.entityKnowledgeHeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .entityDrawerDesc {
@@ -2989,6 +3024,134 @@ textarea:focus {
   margin: 0;
   max-height: 280px;
   overflow: auto;
+}
+
+.entityKnowledgeList {
+  display: grid;
+  gap: 8px;
+}
+
+.entityKnowledgeItem,
+.entityRuleCard {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 10px;
+}
+
+.entityKnowledgeItem.overridden {
+  opacity: 0.68;
+}
+
+.entityKnowledgeItem header,
+.entityRuleCard header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.entityKnowledgeItem header > div,
+.entityRuleCard header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.entityKnowledgeItem strong,
+.entityRuleCard strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.entityKnowledgeItem header span,
+.entityRuleCard header span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.entityKnowledgeBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 46%;
+}
+
+.entityKnowledgeBadges span,
+.entityRuleCard header > span {
+  border: 1px solid #dde2ef;
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 2px 7px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.entityKnowledgeValue {
+  margin: 0;
+  max-height: 128px;
+  overflow: auto;
+  font-size: 11px;
+}
+
+.entityKnowledgeItem footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.entityKnowledgeItem footer button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 4px 8px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.entityRuleGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.entityRuleGrid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.entityRuleGrid pre {
+  margin: 0;
+  max-height: 132px;
+  overflow: auto;
+  font-size: 11px;
+}
+
+.entityDrawerAlert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid rgba(203, 62, 62, 0.25);
+  border-radius: 8px;
+  background: rgba(203, 62, 62, 0.06);
+  padding: 10px;
+  color: #8f2828;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .entityDrawerFooter {

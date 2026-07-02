@@ -209,6 +209,52 @@ export type EntityWithRelations = Entity & {
   incoming: Relation[];
 };
 
+export type EntityKnowledgeItem = {
+  source_type: string;
+  claim_id: string | null;
+  predicate: string;
+  value: unknown;
+  anchor: JsonObject;
+  layer: string | null;
+  audit_status: string | null;
+  confidence: number | null;
+  sensitivity: string | null;
+  access_policy: JsonObject;
+  access_decision: string | null;
+  redacted: boolean;
+  evidence_ids: string[];
+  generation_reason: string | null;
+  relation_id: string | null;
+  rule_id: string | null;
+  inherited_from_class_id: string | null;
+  overrides: string | null;
+  overridden: boolean;
+};
+
+export type EntityKnowledgeRule = {
+  id: string;
+  rule_type: string;
+  scope: JsonObject;
+  condition: JsonObject;
+  conclusion: JsonObject;
+  status: string;
+  priority: number;
+  evidence_ids: string[];
+  version: number;
+};
+
+export type EntityKnowledgeContext = {
+  entity: Entity;
+  class_chain: ClassDef[];
+  relation_ids: string[];
+  properties: EntityKnowledgeItem[];
+  entity_assertions: EntityKnowledgeItem[];
+  inherited_class_assertions: EntityKnowledgeItem[];
+  relation_assertions: EntityKnowledgeItem[];
+  rule_assertions: EntityKnowledgeItem[];
+  rules: EntityKnowledgeRule[];
+};
+
 export type RelatedEntity = {
   entity: Entity;
   relations: Relation[];

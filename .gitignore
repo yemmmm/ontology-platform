@@ -15,6 +15,7 @@ build/
 
 # Agent tooling (external skills, caches, critique output)
 .agents/
+workspaces/
 skills-lock.json
 frontend/.od-skills/
 frontend/critique.json

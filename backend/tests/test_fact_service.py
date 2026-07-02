@@ -642,6 +642,75 @@ def test_recall_entity_knowledge_returns_sensitive_value_when_authorized() -> No
     assert results[0]["access_decision"] == "allow"
 
 
+def test_entity_knowledge_context_includes_inherited_relation_and_rule_assertions() -> None:
+    from app.services import facts
+
+    version = OntologyVersionModel(id="v1", ontology_id="o1", version_number=1, status="draft")
+    ontology = OntologyModel(id="o1", project_id="p1", name="Campus")
+    parent = ClassModel(
+        id="building", ontology_id="o1", name="Building", normalized_label="building",
+        description=None, aliases=[], parent_class_ids=[], external_mappings={},
+    )
+    child = ClassModel(
+        id="lab", ontology_id="o1", name="Lab", normalized_label="lab",
+        description=None, aliases=[], parent_class_ids=["building"], external_mappings={},
+    )
+    entity = {
+        "id": "lab1", "project_id": "p1", "ontology_id": "o1", "ontology_version_id": "v1",
+        "class_id": "lab", "class_label": "Lab", "name": "Lab 1", "aliases": [],
+        "properties": {"floor": 2},
+    }
+    relation = {
+        "id": "rel1", "project_id": "p1", "ontology_id": "o1", "ontology_version_id": "v1",
+        "relation_type_id": "rt1", "relation_type": "LOCATED_IN",
+        "source_entity_id": "lab1", "target_entity_id": "campus1", "properties": {},
+    }
+    class_claim = _make_claim(
+        id="class-default", layer="class_assertion", subject={"class_id": "building"},
+        predicate="closes_at", value="23:00",
+        anchor={"type": "class", "target_id": "building"},
+        audit_status="approved", claim_key="class-default",
+    )
+    relation_claim = _make_claim(
+        id="relation-claim", layer="relation_assertion", subject={"relation_id": "rel1"},
+        predicate="verified_by", value="registry",
+        anchor={"type": "relation", "target_id": "rel1"},
+        audit_status="pending", claim_key="relation-claim",
+    )
+    rule_claim = _make_claim(
+        id="rule-claim", layer="rule_derived", claim_type="derived",
+        subject={"entity_id": "lab1"}, predicate="needs_inspection", value=True,
+        anchor={"type": "rule", "target_id": "rule1", "output_anchor": {"type": "entity", "target_id": "lab1"}},
+        generation_reason="rule:rule1", audit_status="pending", claim_key="rule-claim",
+    )
+    rule = RuleDefinitionModel(
+        id="rule1", project_id="p1", ontology_id="o1", ontology_version_id="v1",
+        rule_type="validation", scope={"class": "lab"}, condition={}, conclusion={},
+        priority=3, status="active", evidence_ids=[], version=1,
+    )
+    session = MagicMock()
+    session.get.side_effect = lambda model, _id: (
+        version if model is OntologyVersionModel else ontology if model is OntologyModel else None
+    )
+    session.scalars.side_effect = [
+        [child, parent],
+        [class_claim, relation_claim, rule_claim],
+        [rule],
+    ]
+
+    with patch.object(facts.graph_repo, "get_entity_node", return_value=entity), \
+         patch.object(facts.graph_repo, "list_relation_edges", return_value=[relation]):
+        context = facts.get_entity_knowledge_context(session, MagicMock(), "v1", "lab1")
+
+    assert context["properties"][0]["predicate"] == "floor"
+    assert context["class_chain"] == [child, parent]
+    assert context["inherited_class_assertions"][0]["claim_id"] == "class-default"
+    assert context["inherited_class_assertions"][0]["inherited_from_class_id"] == "building"
+    assert context["relation_assertions"][0]["relation_id"] == "rel1"
+    assert context["rule_assertions"][0]["rule_id"] == "rule1"
+    assert context["rules"][0]["id"] == "rule1"
+
+
 def test_validate_rule_definition_rejects_non_numeric_comparison_property() -> None:
     from app.services import facts
 
