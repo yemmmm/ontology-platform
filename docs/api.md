@@ -360,3 +360,39 @@ quote, and chunk hash agree. Repeated extraction runs should reuse the same proj
 Artifact bytes and extracted text are inert evidence data. The ingestion service does not interpret
 commands in an artifact or invoke models/tools while parsing. External Agents read chunks, extract
 candidate knowledge, and submit evidence-bound proposals.
+
+## v0.5 Anchored Assertions, Background Recall, and Rules
+
+- `POST /api/versions/{version_id}/assertions` creates an anchored Assertion backed by the
+  extended Fact Claim model. `anchor.type` must be one of `unanchored`, `entity`, `relation`,
+  `class`, or `rule`; Class and Rule anchors are validated against the current ontology.
+- `POST /api/versions/{version_id}/background-knowledge` stores unanchored background knowledge
+  with source, summary, embedding, tags, confidence, and applicability. It is stored separately from
+  core Assertions and does not participate in publication gates.
+- `POST /api/versions/{version_id}/background-knowledge:recall` returns background hits marked as
+  `source_type=background_recall` and `core_fact=false`.
+- `POST /api/versions/{version_id}/background-knowledge/{knowledge_id}:promote` creates a normal
+  governed Proposal from background knowledge and records `promoted_proposal_id`; the promoted
+  content must still pass Proposal, Evidence, Review, and Assertion/RuleDefinition application.
+- `POST /api/versions/{version_id}/rule-definitions` stores a validated `RuleDefinition`.
+  Supported `rule_type` values are `classification`, `derived_relation`, `validation`, and
+  `workflow`.
+- Rule candidates should normally enter through `POST /api/proposals` with `proposal_type=rule`
+  and `items[].kind=rule`; validation checks referenced Class, Property, RelationType, enum values,
+  conditions, and Assertion templates before review and application create the `RuleDefinition`.
+- `POST /api/versions/{version_id}/rule-definitions:execute` runs active deterministic rules
+  against the current graph snapshot and writes only derived or validation Assertions for review.
+- `POST /api/versions/{version_id}/knowledge:recall` merges entity properties, entity Assertions,
+  Class defaults and inherited Class Assertions, overrides, rule-derived Assertions, and optional
+  background recall in one response. The request defaults to `authorized=false`; sensitive
+  Assertions are masked or withheld according to `access_policy` unless an authorized service
+  context explicitly sets `authorized=true`.
+
+`POST /api/versions/{version_id}/fact-claims:generate` refreshes only graph-generated layers such
+as direct entity attributes, relation facts, inferred inverse relations, low-confidence flags, and
+value-conflict facts. Core v0.5 Assertion and rule layers are preserved across graph fact
+regeneration.
+
+Publication readiness now treats pending, stale, rejected-unfixed, and conflicting core Assertions
+as blockers. Entity-level overrides are represented with `override_of_claim_id` and are not treated
+as conflicts with the Class default they override.

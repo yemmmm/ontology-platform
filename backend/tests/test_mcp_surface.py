@@ -34,6 +34,7 @@ ALLOWED_TOOLS = {
     "propose_entities",
     "propose_relations",
     "propose_entity_merges",
+    "propose_rules",
     "validate_proposal",
     "validate_draft",
     "get_proposal_status",
@@ -55,6 +56,8 @@ ALLOWED_TOOLS = {
     "generate_fact_claims",
     "list_fact_claims",
     "sample_fact_claims",
+    "execute_rule_definitions",
+    "recall_background_knowledge",
     "get_publication_readiness",
 }
 

@@ -49,3 +49,30 @@ def register_facts(server: FastMCP) -> None:
                 facts_service.sample_fact_claims(session, version_id, config)
             )
         )
+
+    @server.tool()
+    def execute_rule_definitions(version_id: str) -> dict[str, Any]:
+        """Run active deterministic rules and create derived Assertions for review."""
+        return _run_tool(
+            lambda session, driver, _embedding_client: _serialize(
+                facts_service.execute_rule_definitions(session, driver, version_id)
+            )
+        )
+
+    @server.tool()
+    def recall_background_knowledge(
+        version_id: str,
+        query: str | None = None,
+        query_embedding: list[float] | None = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Recall unanchored background knowledge separately from governed facts."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: facts_service.recall_background_knowledge(
+                session,
+                version_id,
+                query=query,
+                query_embedding=query_embedding,
+                limit=limit,
+            )
+        )

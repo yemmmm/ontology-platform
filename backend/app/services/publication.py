@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +39,15 @@ GATE_ORDER = [
 ]
 DEFAULT_FACT_ACCURACY_THRESHOLD = 0.8
 CRITICAL_QUESTION_IMPORTANCE = 4
+CORE_ASSERTION_LAYERS = {
+    "entity_assertion",
+    "relation_assertion",
+    "class_assertion",
+    "rule_assertion",
+    "rule_derived",
+    "rule_validation",
+    "workflow",
+}
 
 
 def _now() -> datetime:
@@ -109,11 +119,61 @@ def _evaluate_unresolved_conflicts(
             KnowledgeConflictModel.status == "pending",
         )
     )
+    assertion_conflicts = _assertion_conflicts(session, version.id)
+    total = int(count or 0) + len(assertion_conflicts)
     return _gate(
         "unresolved_conflicts",
-        "passed" if not count else "failed",
-        {"pending_conflicts": int(count or 0)},
+        "passed" if not total else "failed",
+        {
+            "pending_conflicts": int(count or 0),
+            "assertion_conflicts": assertion_conflicts[:10],
+        },
     )
+
+
+def _subject_key(claim: FactClaimModel) -> str:
+    subject = claim.subject or {}
+    for key in ("entity_id", "relation_id", "class_id", "workflow_instance_id"):
+        if subject.get(key):
+            return f"{key}:{subject[key]}"
+    return json.dumps(subject, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _value_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _assertion_conflicts(session: Session, version_id: str) -> list[dict[str, Any]]:
+    claims = list(
+        session.scalars(
+            select(FactClaimModel).where(
+                FactClaimModel.ontology_version_id == version_id,
+                FactClaimModel.layer.in_(CORE_ASSERTION_LAYERS),
+                FactClaimModel.audit_status.in_(["pending", "approved"]),
+                FactClaimModel.stale.is_(False),
+            )
+        )
+    )
+    overridden_ids = {claim.override_of_claim_id for claim in claims if claim.override_of_claim_id}
+    grouped: dict[tuple[str, str], list[FactClaimModel]] = {}
+    for claim in claims:
+        if claim.id in overridden_ids or claim.override_of_claim_id:
+            continue
+        grouped.setdefault((_subject_key(claim), claim.predicate), []).append(claim)
+    conflicts: list[dict[str, Any]] = []
+    for (subject, predicate), bucket in grouped.items():
+        value_keys = {_value_key(claim.value) for claim in bucket}
+        if len(value_keys) <= 1:
+            continue
+        conflicts.append(
+            {
+                "subject": subject,
+                "predicate": predicate,
+                "claim_ids": [claim.id for claim in bucket],
+                "values": [claim.value for claim in bucket],
+            }
+        )
+    return conflicts
 
 
 def _evaluate_low_confidence_review(
@@ -213,6 +273,7 @@ def _fact_audit_summary(session: Session, version_id: str) -> dict[str, Any]:
                     [
                         "entity_attribute",
                         "entity_relation",
+                        *CORE_ASSERTION_LAYERS,
                         "inferred_inverse",
                         "value_conflict",
                     ]
@@ -228,12 +289,14 @@ def _fact_audit_summary(session: Session, version_id: str) -> dict[str, Any]:
         if r.audit_status == "rejected" and not r.linked_fix_proposal_id
     )
     unaudited = sum(1 for r in rows if r.audit_status == "pending")
+    stale = sum(1 for r in rows if r.stale)
     accuracy = approved / total if total else 0.0
     return {
         "total": total,
         "approved": approved,
         "unaudited": unaudited,
         "rejected_unfixed": rejected_unfixed,
+        "stale": stale,
         "accuracy": accuracy,
     }
 
@@ -246,6 +309,7 @@ def _evaluate_fact_audit(
     ok = (
         summary["unaudited"] == 0
         and summary["rejected_unfixed"] == 0
+        and summary.get("stale", 0) == 0
         and summary["accuracy"] >= threshold
     )
     return _gate(

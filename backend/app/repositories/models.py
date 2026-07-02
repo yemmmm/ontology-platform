@@ -601,10 +601,14 @@ class FactClaimModel(Base):
     subject: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     predicate: Mapped[str] = mapped_column(String(255), nullable=False)
     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    anchor: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     graph_path: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     generation_reason: Mapped[str] = mapped_column(String(255), nullable=False)
     confidence: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    sensitivity: Mapped[str] = mapped_column(String(32), default="normal", nullable=False)
+    access_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    override_of_claim_id: Mapped[str | None] = mapped_column(String(36))
     audit_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     review_decision: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     linked_fix_proposal_id: Mapped[str | None] = mapped_column(String(36))
@@ -617,6 +621,63 @@ class FactClaimModel(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RuleDefinitionModel(Base):
+    __tablename__ = "rule_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    rule_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    condition: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    conclusion: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    created_from_proposal_id: Mapped[str | None] = mapped_column(String(36))
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class UnanchoredKnowledgeModel(Base):
+    __tablename__ = "unanchored_knowledge"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_version_id: Mapped[str] = mapped_column(
+        ForeignKey("ontology_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(JSONB, default=list, nullable=False)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    confidence: Mapped[float] = mapped_column(default=0.0, nullable=False)
+    applicability: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="background", nullable=False)
+    promoted_proposal_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class DataSourceModel(Base):

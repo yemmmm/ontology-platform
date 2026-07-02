@@ -12,6 +12,7 @@ from app.repositories.models import (
     ProposalModel,
     RelationTypeModel,
     ReviewBatchModel,
+    RuleDefinitionModel,
 )
 from app.repositories.postgres import assert_version_mutable
 from app.services import governance
@@ -43,6 +44,31 @@ def proposal(status: str = "proposed") -> ProposalModel:
         application_result={},
         audit_log=[],
     )
+
+
+def rule_proposal(status: str = "proposed") -> ProposalModel:
+    item = proposal(status)
+    item.proposal_type = "rule"
+    item.payload = {
+        "items": [
+            {
+                "key": "excellent-student",
+                "kind": "rule",
+                "data": {
+                    "rule_type": "classification",
+                    "scope": {"class": "student"},
+                    "condition": {">": [{"property": "average_score"}, 90]},
+                    "conclusion": {
+                        "assert": {"predicate": "student_status", "value": "excellent"}
+                    },
+                    "status": "active",
+                    "version": 1,
+                },
+                "evidence_ids": ["ev1"],
+            }
+        ]
+    }
+    return item
 
 
 def test_proposal_state_machine_rejects_skipping_validation() -> None:
@@ -89,6 +115,70 @@ def test_duplicate_idempotency_key_returns_existing_proposal() -> None:
 
     assert result is existing
     session.add.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_rule_proposal_requires_evidence() -> None:
+    session = MagicMock()
+    session.scalar.return_value = None
+    version = OntologyVersionModel(id="version", ontology_id="ontology", version_number=1, status="draft")
+    ontology = SimpleNamespace(id="ontology", project_id="project")
+
+    def get(model, _id):
+        return version if model is OntologyVersionModel else ontology
+
+    session.get.side_effect = get
+    payload = ProposalCreate(
+        project_id="project",
+        ontology_id="ontology",
+        target_version_id="version",
+        proposal_type="rule",
+        source_type="agent",
+        idempotency_key="rule-request-1",
+        payload=rule_proposal().payload,
+        created_by_type="agent",
+    )
+
+    with pytest.raises(HTTPException, match="rule proposals require"):
+        governance.create_proposal(session, payload)
+
+
+def test_rule_proposal_validation_rejects_invalid_rule_payload() -> None:
+    session = MagicMock()
+    item = rule_proposal()
+    item.payload["items"][0]["data"]["condition"] = {">": [{"property": "average_score"}, 90]}
+    class_ = ClassModel(id="student", ontology_id="ontology", name="Student", normalized_label="student")
+    score = PropertyDefModel(id="score", class_id="student", name="average_score", type="string")
+    session.get.return_value = class_
+    session.scalars.return_value = [score]
+
+    errors, ambiguities = governance._validate_items(session, item)
+
+    assert ambiguities == []
+    assert "rule excellent-student: condition property must be numeric: average_score" in errors
+
+
+def test_apply_rule_proposal_persists_rule_definition_without_committing_early() -> None:
+    session = MagicMock()
+    item = rule_proposal(status="approved")
+    class_ = ClassModel(id="student", ontology_id="ontology", name="Student", normalized_label="student")
+    score = PropertyDefModel(id="score", class_id="student", name="average_score", type="number")
+    status = PropertyDefModel(
+        id="status", class_id="student", name="student_status", type="string",
+        enum_values=["excellent", "normal"],
+    )
+    session.get.return_value = class_
+    session.scalars.return_value = [score, status]
+
+    result = governance._apply_rules(session, item)
+
+    added_rule = session.add.call_args.args[0]
+    assert isinstance(added_rule, RuleDefinitionModel)
+    assert added_rule.rule_type == "classification"
+    assert added_rule.created_from_proposal_id == item.id
+    assert added_rule.evidence_ids == ["ev1"]
+    assert result["created_rule_definition_ids"]["excellent-student"] == added_rule.id
+    session.flush.assert_called_once()
     session.commit.assert_not_called()
 
 

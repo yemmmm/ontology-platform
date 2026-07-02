@@ -45,10 +45,57 @@ const schemaProposal = {
   evidence: [],
   created_at: "2026-06-23T00:00:00Z",
 };
+const ruleProposal = {
+  ...schemaProposal,
+  id: "proposal-rule",
+  proposal_type: "rule",
+  payload: {
+    items: [{
+      key: "excellent-student",
+      kind: "rule",
+      data: {
+        rule_type: "classification",
+        scope: { class: "student" },
+        condition: { ">": [{ property: "average_score" }, 90] },
+        conclusion: { assert: { predicate: "student_status", value: "excellent" } },
+      },
+      review_status: "pending",
+    }],
+  },
+};
+const derivedClaim = {
+  id: "claim-rule-1",
+  claim_key: "rule_derived:rule-1:s1:student_status:a",
+  project_id: project.id,
+  ontology_id: ontology.id,
+  ontology_version_id: version.id,
+  claim_type: "derived",
+  layer: "rule_derived",
+  subject: { entity_id: "student-1", name: "小明", class_id: "student" },
+  predicate: "student_status",
+  value: "excellent",
+  anchor: { type: "rule", target_id: "rule-1", output_anchor: { type: "entity", target_id: "student-1" } },
+  graph_path: [{ node: "student-1", kind: "entity" }, { rule: "rule-1", version: 1 }],
+  evidence_ids: [],
+  generation_reason: "rule:rule-1",
+  confidence: 1,
+  sensitivity: "normal",
+  access_policy: {},
+  override_of_claim_id: null,
+  audit_status: "pending",
+  review_decision: {},
+  linked_fix_proposal_id: null,
+  stale: false,
+  stale_reason: null,
+  created_at: "2026-06-23T00:00:00Z",
+  updated_at: "2026-06-23T00:00:00Z",
+  reviewed_at: null,
+};
 
 async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
+    const method = route.request().method();
     let body: unknown = [];
     if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
@@ -66,7 +113,19 @@ async function mockApi(page: Page) {
     else if (path.startsWith(`/projects/${project.id}/semantic-mappings`)) body = [];
     else if (path === `/projects/${project.id}/connector-templates`) body = [];
     else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
-    else if (path === `/ontologies/${ontology.id}/proposals`) body = [schemaProposal];
+    else if (path === `/ontologies/${ontology.id}/proposals`) body = [schemaProposal, ruleProposal];
+    else if (path === `/versions/${version.id}/fact-claims`) body = [derivedClaim];
+    else if (method === "POST" && path === `/versions/${version.id}/rule-definitions:execute`) body = [derivedClaim];
+    else if (method === "POST" && path === `/versions/${version.id}/background-knowledge:recall`) body = [{
+      source_type: "background_recall",
+      knowledge_id: "bg-1",
+      text: "8 小时睡眠能保证上课状态",
+      summary: "Sleep background",
+      tags: ["sleep"],
+      confidence: 0.6,
+      score: 1,
+      core_fact: false,
+    }];
     else if (path === "/review-batches/batch-1") body = {
       id: "batch-1",
       stable_key: `proposal:${schemaProposal.id}`,
@@ -128,6 +187,28 @@ test("schema review batch deep link restores exact context", async ({ page }) =>
   await expect(page.getByText("Review batch · schema")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Supplier" })).toBeVisible();
   await expect(page).toHaveURL(/batch=batch-1/);
+});
+
+test("v0.5 fact audit exposes rule execution and background recall", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=facts`);
+  await expect(page.getByRole("heading", { name: "Fact Audit" })).toBeVisible();
+  await expect(page.getByText("rule derived").first()).toBeVisible();
+  await page.getByRole("button", { name: "Run rules" }).click();
+  await expect(page.getByText(/created 1 derived assertions/i)).toBeVisible();
+  await page.getByPlaceholder("Search unanchored knowledge without treating it as governed fact").fill("sleep");
+  await page.getByRole("button", { name: "Recall" }).click();
+  await expect(page.getByText("background_recall")).toBeVisible();
+  await expect(page.getByText("Sleep background")).toBeVisible();
+});
+
+test("graph review includes governed rule proposals", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-review`);
+  await expect(page.getByText("1 rule")).toBeVisible();
+  await page.getByText("1 rule").click();
+  await expect(page.getByText("Rule candidates are validated before becoming deterministic RuleDefinitions.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "excellent-student" })).toBeVisible();
 });
 
 test("catalog wizard renders step indicator and Test toggle", async ({ page }) => {

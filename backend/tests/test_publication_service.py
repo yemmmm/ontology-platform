@@ -79,7 +79,7 @@ def test_evaluate_readiness_blocks_when_pending_proposals_exist() -> None:
 def test_evaluate_readiness_blocks_when_testable_critical_question_is_not_passed() -> None:
     pending_question = _mock_question(status="testable")
     session, _ = _make_readiness_session(
-        scalars_returns=[[], [], [], [pending_question], [], []],
+        scalars_returns=[[], [], [], [], [pending_question], []],
         scalar_returns=[0, 0],
     )
 
@@ -92,7 +92,7 @@ def test_evaluate_readiness_blocks_when_testable_critical_question_is_not_passed
 def test_evaluate_readiness_blocks_when_low_confidence_facts_unreviewed() -> None:
     unreviewed = _mock_fact_claim(layer="low_confidence", claim_type="low_confidence", confidence=0.3)
     session, _ = _make_readiness_session(
-        scalars_returns=[[], [unreviewed], [], [], [], []],
+        scalars_returns=[[], [], [unreviewed], [], [], []],
         scalar_returns=[0, 0],
     )
 
@@ -118,6 +118,77 @@ def test_evaluate_readiness_blocks_when_conflict_pending() -> None:
     gate = next(g for g in result["gates"] if g["gate_type"] == "unresolved_conflicts")
     assert gate["status"] == "failed"
     assert conflict.status == "pending"
+
+
+def test_evaluate_readiness_blocks_on_assertion_value_conflicts() -> None:
+    first = _mock_fact_claim(
+        id="c1", layer="rule_derived", claim_type="derived", audit_status="approved",
+        subject={"entity_id": "student-1"}, predicate="student_status", value="excellent",
+        claim_key="rule_derived:r1:student-1:student_status:a",
+    )
+    second = _mock_fact_claim(
+        id="c2", layer="rule_derived", claim_type="derived", audit_status="approved",
+        subject={"entity_id": "student-1"}, predicate="student_status", value="normal",
+        claim_key="rule_derived:r2:student-1:student_status:b",
+    )
+    session, _ = _make_readiness_session(
+        scalars_returns=[[], [first, second], [], [], [], []],
+        scalar_returns=[0, 0],
+    )
+
+    result = publication.evaluate_readiness(session, MagicMock(), "v1")
+
+    gate = next(g for g in result["gates"] if g["gate_type"] == "unresolved_conflicts")
+    assert gate["status"] == "failed"
+    assert gate["details"]["assertion_conflicts"][0]["claim_ids"] == ["c1", "c2"]
+
+
+def test_evaluate_readiness_does_not_treat_override_as_assertion_conflict() -> None:
+    class_default = _mock_fact_claim(
+        id="class-default", layer="class_assertion", audit_status="approved",
+        subject={"class_id": "building"}, predicate="closes_at", value="23:00",
+        claim_key="class_assertion:building:closes_at:a",
+    )
+    entity_override = _mock_fact_claim(
+        id="entity-override", layer="entity_assertion", audit_status="approved",
+        subject={"entity_id": "lab-1"}, predicate="closes_at", value="22:30",
+        override_of_claim_id="class-default",
+        claim_key="entity_assertion:lab-1:closes_at:b",
+    )
+    session, _ = _make_readiness_session(
+        scalars_returns=[[], [class_default, entity_override], [], [], [], []],
+        scalar_returns=[0, 0],
+    )
+
+    with patch.object(
+        publication, "_fact_audit_summary",
+        return_value={
+            "total": 2, "approved": 2, "unaudited": 0,
+            "rejected_unfixed": 0, "stale": 0, "accuracy": 1.0,
+        },
+    ):
+        result = publication.evaluate_readiness(session, MagicMock(), "v1")
+
+    gate = next(g for g in result["gates"] if g["gate_type"] == "unresolved_conflicts")
+    assert gate["status"] == "passed"
+    assert gate["details"]["assertion_conflicts"] == []
+
+
+def test_evaluate_readiness_blocks_when_core_assertion_is_stale() -> None:
+    stale_claim = _mock_fact_claim(
+        layer="rule_derived", claim_type="derived", audit_status="approved", stale=True
+    )
+    session, _ = _make_readiness_session(
+        scalars_returns=[[], [], [], [], [], [stale_claim]],
+        scalar_returns=[0, 0],
+    )
+
+    result = publication.evaluate_readiness(session, MagicMock(), "v1")
+
+    gate = next(g for g in result["gates"] if g["gate_type"] == "fact_audit")
+    assert gate["status"] == "failed"
+    assert gate["details"]["stale"] == 1
+    assert "fact_audit" in result["blocking"]
 
 
 def test_evaluate_readiness_passes_when_all_gates_green() -> None:
@@ -240,7 +311,7 @@ def test_readiness_lists_explicit_blockers_when_multiple_gates_fail() -> None:
     pending_question = _mock_question(status="testable")
     unreviewed = _mock_fact_claim(layer="low_confidence", claim_type="low_confidence", confidence=0.3)
     session, _ = _make_readiness_session(
-        scalars_returns=[[], [unreviewed], [], [pending_question], [], []],
+        scalars_returns=[[], [], [unreviewed], [], [pending_question], []],
         scalar_returns=[1, 0],  # pending_proposals=1, unresolved_conflicts=0
     )
 

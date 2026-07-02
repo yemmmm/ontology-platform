@@ -13,7 +13,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { Check, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, Play, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EvidenceExplorer } from "./EvidenceExplorer";
@@ -31,10 +31,14 @@ type FactClaim = {
   subject: Record<string, unknown>;
   predicate: string;
   value: unknown;
+  anchor: Record<string, unknown>;
   graph_path: Array<Record<string, unknown>>;
   evidence_ids: string[];
   generation_reason: string;
   confidence: number;
+  sensitivity: string;
+  access_policy: Record<string, unknown>;
+  override_of_claim_id: string | null;
   audit_status: string;
   review_decision: Record<string, unknown>;
   linked_fix_proposal_id: string | null;
@@ -43,6 +47,17 @@ type FactClaim = {
   created_at: string;
   updated_at: string;
   reviewed_at: string | null;
+};
+
+type BackgroundRecall = {
+  source_type: "background_recall";
+  knowledge_id: string;
+  text: string;
+  summary: string | null;
+  tags: string[];
+  confidence: number;
+  score: number;
+  core_fact: boolean;
 };
 
 type FactAuditPageProps = GovernancePageContext & {
@@ -56,6 +71,13 @@ const layers = [
   "inferred_inverse",
   "low_confidence",
   "value_conflict",
+  "entity_assertion",
+  "relation_assertion",
+  "class_assertion",
+  "rule_assertion",
+  "rule_derived",
+  "rule_validation",
+  "workflow",
 ];
 
 function subjectLabel(subject: Record<string, unknown>): string {
@@ -89,6 +111,8 @@ export function FactAuditPage({
   const [sampleSize, setSampleSize] = useState(5);
   const [reason, setReason] = useState("");
   const [fixProposalId, setFixProposalId] = useState("");
+  const [backgroundQuery, setBackgroundQuery] = useState("");
+  const [backgroundHits, setBackgroundHits] = useState<BackgroundRecall[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,6 +168,40 @@ export function FactAuditPage({
       setSuccess(`Generated ${data.length} deterministic facts.`);
     } catch (generateError) {
       setError(messageFrom(generateError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function executeRules() {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await request<FactClaim[]>(`/versions/${version.id}/rule-definitions:execute`, {
+        method: "POST",
+      });
+      await load();
+      setSelectedId(data[0]?.id ?? selectedId);
+      setSuccess(`Executed active rules and created ${data.length} derived assertions.`);
+    } catch (executeError) {
+      setError(messageFrom(executeError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recallBackground() {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await request<BackgroundRecall[]>(`/versions/${version.id}/background-knowledge:recall`, {
+        method: "POST",
+        body: JSON.stringify({ query: backgroundQuery.trim() || null, limit: 5 }),
+      });
+      setBackgroundHits(data);
+      setSuccess(`Loaded ${data.length} background recall item${data.length === 1 ? "" : "s"}.`);
+    } catch (recallError) {
+      setError(messageFrom(recallError));
     } finally {
       setBusy(false);
     }
@@ -210,6 +268,7 @@ export function FactAuditPage({
           <InputNumber min={1} max={100} value={sampleSize} onChange={(value) => setSampleSize(value ?? 5)} />
           <Button onClick={() => void sample()} disabled={busy || claims.length === 0}>Sample</Button>
           <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>Refresh</Button>
+          <Button icon={<Play size={15} />} onClick={() => void executeRules()} disabled={busy || readOnly}>Run rules</Button>
           <Button type="primary" icon={<Sparkles size={15} />} onClick={() => void generate()} disabled={busy || readOnly}>Generate</Button>
         </Space>
       </div>
@@ -229,6 +288,27 @@ export function FactAuditPage({
           <Select aria-label="Audit status" value={auditStatus} onChange={setAuditStatus} style={{ width: 170 }} options={["all", "pending", "approved", "rejected", "needs_correction"].map((value) => ({ value, label: value === "all" ? "All audit states" : value.replace(/_/g, " ") }))} />
           <Select aria-label="Stale state" value={stale} onChange={setStale} style={{ width: 150 }} options={[{ value: "all", label: "Fresh and stale" }, { value: "no", label: "Fresh only" }, { value: "yes", label: "Stale only" }]} />
           <InputNumber aria-label="Minimum confidence" min={0} max={1} step={0.05} value={minimumConfidence} onChange={(value) => setMinimumConfidence(value ?? 0)} addonBefore="Confidence ≥" />
+        </Space>
+      </Card>
+      <Card size="small" title="Background recall">
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Space.Compact style={{ width: "100%" }}>
+            <Input value={backgroundQuery} onChange={(event) => setBackgroundQuery(event.target.value)} placeholder="Search unanchored knowledge without treating it as governed fact" />
+            <Button icon={<Search size={15} />} onClick={() => void recallBackground()} disabled={busy}>Recall</Button>
+          </Space.Compact>
+          {backgroundHits.length > 0 && (
+            <Space direction="vertical" size={8} style={{ width: "100%" }}>
+              {backgroundHits.map((item) => (
+                <Card size="small" key={item.knowledge_id}>
+                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                    <Space wrap><Tag color="blue">background_recall</Tag><Tag>{Math.round(item.confidence * 100)}% confidence</Tag>{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</Space>
+                    <Typography.Text>{item.summary || item.text}</Typography.Text>
+                    {item.summary && <Typography.Text type="secondary">{item.text}</Typography.Text>}
+                  </Space>
+                </Card>
+              ))}
+            </Space>
+          )}
         </Space>
       </Card>
       <div className="factAuditLayout">
@@ -256,6 +336,9 @@ export function FactAuditPage({
                 { key: "subject", label: "Subject", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.subject)}</pre> },
                 { key: "predicate", label: "Predicate", children: selected.predicate },
                 { key: "value", label: "Object / value", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.value)}</pre> },
+                { key: "anchor", label: "Anchor", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.anchor)}</pre> },
+                { key: "policy", label: "Sensitivity / access", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText({ sensitivity: selected.sensitivity, access_policy: selected.access_policy })}</pre> },
+                { key: "override", label: "Override", children: selected.override_of_claim_id ?? "None" },
                 { key: "reason", label: "Generated because", children: selected.generation_reason },
                 { key: "path", label: "Graph path", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.graph_path)}</pre> },
                 { key: "history", label: "Review record", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.review_decision)}</pre> },

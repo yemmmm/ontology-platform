@@ -29,6 +29,7 @@ from app.repositories.models import (
     ProposalModel,
     PropertyDefModel,
     RelationTypeModel,
+    RuleDefinitionModel,
     ReviewDecisionModel,
     ReviewBatchModel,
     EvidenceChunkModel,
@@ -197,7 +198,7 @@ def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
         for evidence in evidence_rows:
             evidence.proposal_id = proposal.id
             session.add(evidence)
-        if payload.proposal_type in {"schema_change", "constraint", "entity", "relation", "merge"}:
+        if payload.proposal_type in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
             keys = [
                 item.get("key")
                 for item in payload.payload.get("items", [])
@@ -233,10 +234,10 @@ def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
 
 
 def _validate_evidence_payload(session: Session, payload: ProposalCreate) -> None:
-    if payload.proposal_type in {"entity", "relation"} and not payload.evidence:
+    if payload.proposal_type in {"entity", "relation", "rule"} and not payload.evidence:
         raise HTTPException(
             status_code=422,
-            detail="Entity and relation proposals require document or user-statement evidence",
+            detail="Entity, relation and rule proposals require document or user-statement evidence",
         )
     for index, evidence in enumerate(payload.evidence):
         if evidence.char_end is not None and evidence.char_start is not None and evidence.char_end <= evidence.char_start:
@@ -565,6 +566,7 @@ def _validate_items(
         "entity": {"entity"},
         "relation": {"relation"},
         "merge": {"merge"},
+        "rule": {"rule"},
     }[proposal.proposal_type]
     keys: set[str] = set()
     for index, item in enumerate(items):
@@ -590,7 +592,22 @@ def _validate_items(
         graph_errors, graph_ambiguities = _knowledge_validation(session, proposal, driver)
         errors.extend(graph_errors)
         ambiguities.extend(graph_ambiguities)
+    elif proposal.proposal_type == "rule" and not errors:
+        rule_errors = _rule_validation(session, proposal)
+        errors.extend(rule_errors)
     return errors, ambiguities
+
+
+def _rule_validation(session: Session, proposal: ProposalModel) -> list[str]:
+    errors: list[str] = []
+    for index, item in enumerate(proposal.payload.get("items", [])):
+        if item.get("review_status") == "rejected" or item.get("merged_into_key"):
+            continue
+        data = item.get("data") or {}
+        result = facts_service.validate_rule_definition(session, proposal.ontology_id, data)
+        for error in result["errors"]:
+            errors.append(f"rule {item.get('key', index)}: {error}")
+    return errors
 
 
 def validate_proposal(
@@ -636,7 +653,7 @@ def review_proposal(
                 status_code=409,
                 detail="All knowledge conflicts must be resolved before approval",
             )
-    if payload.decision == "approved" and proposal.proposal_type in {"schema_change", "constraint"}:
+    if payload.decision == "approved" and proposal.proposal_type in {"schema_change", "constraint", "rule"}:
         pending = [
             item.get("key")
             for item in proposal.payload.get("items", [])
@@ -645,7 +662,7 @@ def review_proposal(
         if pending:
             raise HTTPException(
                 status_code=409,
-                detail=f"All schema items must be reviewed before approval: {', '.join(pending)}",
+                detail=f"All proposal items must be reviewed before approval: {', '.join(pending)}",
             )
     _transition(proposal, payload.decision, reviewer_id=payload.reviewer_id, reason=payload.reason)
     decision = ReviewDecisionModel(
@@ -686,7 +703,7 @@ def _refresh_review_batch(batch: ReviewBatchModel, items: list[dict[str, Any]]) 
 def _reject_pending_proposal_items(
     session: Session, proposal: ProposalModel, payload: ReviewDecisionCreate
 ) -> None:
-    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge"}:
+    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
         return
     items = [dict(item) for item in proposal.payload.get("items", [])]
     if not items:
@@ -717,7 +734,7 @@ def review_proposal_item(
 ) -> ProposalModel:
     proposal = _proposal(session, proposal_id)
     assert_version_mutable(session, proposal.target_version_id)
-    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge"}:
+    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
         raise HTTPException(status_code=409, detail="Item review is not supported for this proposal")
     if proposal.status not in {"proposed", "validated"}:
         raise HTTPException(status_code=409, detail="Proposal is not editable in its current state")
@@ -971,6 +988,40 @@ def _apply_merges(driver: Driver, proposal: ProposalModel) -> dict[str, Any]:
     return {"merged": merged}
 
 
+def _apply_rules(session: Session, proposal: ProposalModel) -> dict[str, Any]:
+    created: dict[str, str] = {}
+    for item in proposal.payload["items"]:
+        if item.get("review_status") == "rejected" or item.get("merged_into_key"):
+            continue
+        data = {
+            **item["data"],
+            "evidence_ids": item.get("evidence_ids") or item["data"].get("evidence_ids") or [],
+            "created_from_proposal_id": proposal.id,
+        }
+        validation = facts_service.validate_rule_definition(session, proposal.ontology_id, data)
+        if not validation["valid"]:
+            raise ValueError("; ".join(validation["errors"]))
+        rule = RuleDefinitionModel(
+            id=data.get("id", _id()),
+            project_id=proposal.project_id,
+            ontology_id=proposal.ontology_id,
+            ontology_version_id=proposal.target_version_id,
+            rule_type=data["rule_type"],
+            scope=data.get("scope") or {},
+            condition=data.get("condition") or {},
+            conclusion=data.get("conclusion") or {},
+            priority=int(data.get("priority", 0)),
+            status=data.get("status", "active"),
+            evidence_ids=data.get("evidence_ids") or [],
+            created_from_proposal_id=proposal.id,
+            version=int(data.get("version", 1)),
+        )
+        session.add(rule)
+        created[item["key"]] = rule.id
+    session.flush()
+    return {"created_rule_definition_ids": created}
+
+
 def _revalidate_affected_graph(session: Session, driver: Driver, ontology_id: str) -> dict[str, Any]:
     """Report incompatibilities after schema changes without mutating graph data."""
     from app.services.graph import validate_entity_properties
@@ -1032,6 +1083,8 @@ def apply_proposal(session: Session, driver: Driver, proposal_id: str) -> Propos
             result = _apply_graph(session, driver, proposal)
         elif proposal.proposal_type == "merge":
             result = _apply_merges(driver, proposal)
+        elif proposal.proposal_type == "rule":
+            result = _apply_rules(session, proposal)
         else:
             raise ValueError("Unsupported proposal type")
         proposal.application_result = {"success": True, **result}

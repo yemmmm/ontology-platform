@@ -127,3 +127,8 @@ def register_proposals(server: FastMCP) -> None:
     def propose_entity_merges(proposal: dict[str, Any]) -> dict[str, Any]:
         """Submit possible duplicate entities for explicit human review; does not merge them."""
         return _propose_knowledge(proposal, "merge")
+
+    @server.tool()
+    def propose_rules(proposal: dict[str, Any]) -> dict[str, Any]:
+        """Submit evidence-bound RuleDefinition candidates; never activates rules directly."""
+        return _propose_knowledge(proposal, "rule")

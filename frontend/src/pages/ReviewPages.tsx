@@ -410,10 +410,10 @@ export function GraphReviewPage(props: { ontology: Ontology; request: WorkbenchR
       props.request<KnowledgeConflict[]>(`/ontologies/${props.ontology.id}/knowledge-conflicts`),
       props.batchId ? props.request<ReviewBatch>(`/review-batches/${props.batchId}`) : Promise.resolve(null),
     ]);
-    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || !["entity", "relation", "merge", "conflict"].includes(batchData.review_type))) {
+    if (batchData && (batchData.ontology_id !== props.ontology.id || batchData.ontology_version_id !== props.versionId || !["entity", "relation", "merge", "rule", "conflict"].includes(batchData.review_type))) {
       throw new Error("This review batch does not belong to the selected ontology version or graph review type.");
     }
-    const knowledge = all.filter((item) => ["entity", "relation", "merge"].includes(item.proposal_type));
+    const knowledge = all.filter((item) => ["entity", "relation", "merge", "rule"].includes(item.proposal_type));
     setProposals(knowledge);
     setConflicts(conflictData);
     setBatch(batchData);
@@ -549,7 +549,7 @@ export function GraphReviewPage(props: { ontology: Ontology; request: WorkbenchR
       {error && <div className="reviewError">{error}</div>}
       {!selected ? <EmptyState icon={<GitBranch size={24} />} title="No knowledge candidates" /> : <>
         <header className="reviewHeader">
-          <div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{items.length} candidates</h2><p>{selected.proposal_type === "merge" ? "Compare the source and target identities before approving the merge." : "Every knowledge candidate keeps its structured data and traceable evidence."}</p></div>
+          <div><span className="eyebrow">{selected.proposal_type} proposal</span><h2>{items.length} candidates</h2><p>{selected.proposal_type === "merge" ? "Compare the source and target identities before approving the merge." : selected.proposal_type === "rule" ? "Rule candidates are validated before becoming deterministic RuleDefinitions." : "Every knowledge candidate keeps its structured data and traceable evidence."}</p></div>
           <div className="reviewHeaderActions">
             {(selected.status === "proposed" || selected.status === "validated") && (
               <>

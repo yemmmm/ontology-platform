@@ -22,6 +22,7 @@ not infer those decisions from chat text.
 The `ontology-builder` Skill uses these additional semantic tools:
 
 - `propose_schema_changes`: force a proposal to the `schema_change` type.
+- `propose_rules`: force a proposal to the `rule` type for governed RuleDefinition candidates.
 - `validate_draft`: validate all editable proposals targeting a draft version.
 - `list_review_items`: list review batches, counts, states, and deep links for an ontology.
 - `get_review_batch`: retrieve one stable batch after an interruption or while waiting; the response includes the workbench `deep_link`.
@@ -338,13 +339,15 @@ Suggested flow:
 - `propose_entities(proposal)`
 - `propose_relations(proposal)`
 - `propose_entity_merges(proposal)`
+- `propose_rules(proposal)`
 
-The three `propose_*` tools are convenience wrappers around `submit_proposal` that force the
-matching `proposal_type` (`entity` / `relation` / `merge`); they accept the same payload shape.
-Entity and relation items require persisted Evidence. Merge proposals never merge entities at
-submission time and still require validation plus an explicit platform review decision. Files are
-uploaded as evidence artifacts through the authenticated HTTP endpoint so binary content is not
-embedded in MCP arguments.
+The `propose_*` tools are convenience wrappers around `submit_proposal` that force the matching
+`proposal_type` (`entity` / `relation` / `merge` / `rule`); they accept the same payload shape.
+Entity, relation, and rule items require persisted Evidence. Merge proposals never merge entities at
+submission time and still require validation plus an explicit platform review decision. Rule
+proposals validate Class, Property, RelationType, enum values, conditions, and Assertion templates
+before a human review can approve them. Files are uploaded as evidence artifacts through the
+authenticated HTTP endpoint so binary content is not embedded in MCP arguments.
 `validate_proposal` runs current Schema and graph endpoint checks using the shared service.
 
 ### Fact audit tools
@@ -352,9 +355,12 @@ embedded in MCP arguments.
 - `generate_fact_claims(version_id)`: deterministically regenerate structured Fact Claims from the draft graph.
 - `list_fact_claims(version_id, layer?, claim_type?)`: list Fact Claims stratified by audit layer.
 - `sample_fact_claims(version_id, config?)`: return a stratified fact sample for human audit.
+- `execute_rule_definitions(version_id)`: run active deterministic rules and write derived Assertions for review.
+- `recall_background_knowledge(version_id, query?, query_embedding?, limit?)`: recall unanchored background knowledge separately from governed facts.
 
-All three tools emit the full `FactClaimRead` shape (id, claim_key, layer, claim_type, subject,
-predicate, value, graph_path, evidence_ids, generation_reason, confidence, audit_status, stale,
-stale_reason, reviewed_at, review_decision, linked_fix_proposal_id, project_id, ontology_id,
-ontology_version_id, created_at, updated_at). Fact review decisions
+Fact-generating tools emit the full `FactClaimRead` shape (id, claim_key, layer, claim_type,
+subject, predicate, value, anchor, graph_path, evidence_ids, generation_reason, confidence,
+sensitivity, access_policy, override_of_claim_id, audit_status, stale, stale_reason, reviewed_at,
+review_decision, linked_fix_proposal_id, project_id, ontology_id, ontology_version_id, created_at,
+updated_at). Fact review decisions
 (approve/reject/needs_correction) are HTTP-only.

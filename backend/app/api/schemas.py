@@ -636,7 +636,7 @@ class ProposalCreate(BaseModel):
     ontology_id: str
     target_version_id: str
     proposal_type: Literal[
-        "schema_change", "entity", "relation", "merge", "constraint"
+        "schema_change", "entity", "relation", "merge", "constraint", "rule"
     ]
     source_type: str = Field(min_length=1, max_length=40)
     idempotency_key: str = Field(min_length=1, max_length=255)
@@ -814,10 +814,14 @@ class FactClaimRead(BaseModel):
     subject: dict[str, Any]
     predicate: str
     value: Any
+    anchor: dict[str, Any]
     graph_path: list[dict[str, Any]]
     evidence_ids: list[str]
     generation_reason: str
     confidence: float
+    sensitivity: str
+    access_policy: dict[str, Any]
+    override_of_claim_id: str | None
     audit_status: str
     review_decision: dict[str, Any]
     linked_fix_proposal_id: str | None
@@ -828,6 +832,104 @@ class FactClaimRead(BaseModel):
     reviewed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssertionCreate(BaseModel):
+    anchor: dict[str, Any]
+    subject: dict[str, Any]
+    predicate: str = Field(min_length=1, max_length=255)
+    value: Any
+    evidence_ids: list[str] = Field(default_factory=list)
+    generation_reason: str = "direct_user_statement"
+    claim_type: str = "direct"
+    layer: str | None = None
+    graph_path: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    sensitivity: str = "normal"
+    access_policy: dict[str, Any] = Field(default_factory=dict)
+    override_of_claim_id: str | None = None
+
+
+class UnanchoredKnowledgeCreate(BaseModel):
+    text: str = Field(min_length=1)
+    source: dict[str, Any] = Field(default_factory=dict)
+    summary: str | None = None
+    embedding: list[float] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    applicability: str | None = None
+
+
+class UnanchoredKnowledgeRead(BaseModel):
+    id: str
+    project_id: str
+    ontology_id: str
+    ontology_version_id: str
+    text: str
+    source: dict[str, Any]
+    summary: str | None
+    embedding: list[float]
+    tags: list[str]
+    confidence: float
+    applicability: str | None
+    status: str
+    promoted_proposal_id: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BackgroundRecallCreate(BaseModel):
+    query: str | None = None
+    query_embedding: list[float] = Field(default_factory=list)
+    limit: int = Field(default=5, ge=1, le=50)
+
+
+class BackgroundKnowledgePromotionCreate(BaseModel):
+    proposal: ProposalCreate
+
+
+class BackgroundKnowledgePromotionRead(BaseModel):
+    knowledge: UnanchoredKnowledgeRead
+    proposal: ProposalRead
+
+
+class RuleDefinitionCreate(BaseModel):
+    rule_type: Literal["classification", "derived_relation", "validation", "workflow"]
+    scope: dict[str, Any] = Field(default_factory=dict)
+    condition: dict[str, Any] = Field(default_factory=dict)
+    conclusion: dict[str, Any] = Field(default_factory=dict)
+    priority: int = 0
+    status: Literal["draft", "active", "deprecated"] = "active"
+    evidence_ids: list[str] = Field(default_factory=list)
+    created_from_proposal_id: str | None = None
+    version: int = Field(default=1, ge=1)
+
+
+class RuleDefinitionRead(BaseModel):
+    id: str
+    project_id: str
+    ontology_id: str
+    ontology_version_id: str
+    rule_type: str
+    scope: dict[str, Any]
+    condition: dict[str, Any]
+    conclusion: dict[str, Any]
+    priority: int
+    status: str
+    evidence_ids: list[str]
+    created_from_proposal_id: str | None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EntityKnowledgeRecallCreate(BaseModel):
+    entity: dict[str, Any]
+    background_query: str | None = None
+    authorized: bool = False
 
 
 class FactClaimReviewCreate(BaseModel):
