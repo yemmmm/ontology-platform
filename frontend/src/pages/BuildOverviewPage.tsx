@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   BuildContext,
   OntologyVersionSummary,
-  ReviewBatchSummary,
+  ProposalSummary,
   WorkbenchNavigate,
   WorkbenchRequest,
 } from "./workbenchTypes";
@@ -22,9 +22,9 @@ const workflow = [
 const labels: Record<string, string> = {
   gathering: "需求收集",
   schema_draft: "Schema 草拟",
-  schema_review: "Schema 审核",
+  schema_review: "Schema 校验",
   graph_building: "图谱构建",
-  graph_review: "图谱审核",
+  graph_review: "图谱校验",
   validated: "验证完成",
   published: "已发布",
 };
@@ -48,7 +48,7 @@ export function BuildOverviewPage({
 }: BuildOverviewPageProps) {
   const [context, setContext] = useState<BuildContext | null>(null);
   const [versions, setVersions] = useState<OntologyVersionSummary[]>([]);
-  const [batches, setBatches] = useState<ReviewBatchSummary[]>([]);
+  const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,14 +56,14 @@ export function BuildOverviewPage({
     setLoading(true);
     setError(null);
     try {
-      const [nextContext, nextVersions, nextBatches] = await Promise.all([
+      const [nextContext, nextVersions, nextProposals] = await Promise.all([
         request<BuildContext>(`/projects/${projectId}/build-context`),
         request<OntologyVersionSummary[]>(`/ontologies/${ontologyId}/versions`),
-        request<ReviewBatchSummary[]>(`/ontologies/${ontologyId}/review-batches`),
+        request<ProposalSummary[]>(`/ontologies/${ontologyId}/proposals`),
       ]);
       setContext(nextContext);
       setVersions(nextVersions);
-      setBatches(nextBatches);
+      setProposals(nextProposals);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -84,10 +84,10 @@ export function BuildOverviewPage({
   const questionCounts = context?.competency_question_counts ?? {};
   const totalQuestions = Object.values(questionCounts).reduce((sum, count) => sum + count, 0);
   const effectiveVersionId = versionId ?? selectedVersion?.id;
-  const activeBatches = batches
-    .filter((batch) => !effectiveVersionId || batch.ontology_version_id === effectiveVersionId)
+  const activeProposals = proposals
+    .filter((proposal) => !effectiveVersionId || proposal.target_version_id === effectiveVersionId)
     .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
-  const pendingReview = activeBatches.reduce((sum, batch) => sum + (batch.counts.pending ?? 0), 0);
+  const unresolvedProposals = activeProposals.filter((proposal) => proposal.status !== "applied");
 
   const actions = useMemo(() => {
     if (!context) return [];
@@ -100,14 +100,14 @@ export function BuildOverviewPage({
     } else if ((questionCounts.draft ?? 0) > 0) {
       result.push({ label: "批准能力问题", detail: `${questionCounts.draft} 个草稿待批准`, tab: "questions" });
     }
-    if (pendingReview > 0) {
-      result.push({ label: "继续提案审核", detail: `${pendingReview} 个项目待处理`, tab: "schema-review" });
+    if (unresolvedProposals.length > 0) {
+      result.push({ label: "查看未应用变更", detail: `${unresolvedProposals.length} 个批次未应用`, tab: "classes" });
     }
     if (stage === "validated") {
       result.push({ label: "检查发布门槛", detail: "运行确定性 readiness 检查", tab: "publication" });
     }
     return result.slice(0, 3);
-  }, [context, pendingReview, questionCounts, stage, totalQuestions]);
+  }, [context, questionCounts, stage, totalQuestions, unresolvedProposals.length]);
 
   if (loading) return <Card className="panel"><Skeleton active paragraph={{ rows: 8 }} /></Card>;
   if (error) return <Alert type="error" showIcon message="构建概览加载失败" description={error} action={<button className="secondaryButton" onClick={() => void load()}>重试</button>} />;
@@ -117,7 +117,7 @@ export function BuildOverviewPage({
   return (
     <div className="workspaceStack">
       <div className="pageSubHeader">
-        <div><h2>构建概览</h2><p>服务端构建状态、治理队列和下一步操作。</p></div>
+        <div><h2>构建概览</h2><p>服务端构建状态、自动变更批次和下一步操作。</p></div>
         <div className="rowActions">
           {(readOnly || selectedVersion?.status === "published") && <Tag color="blue">已发布 · 只读</Tag>}
           <button className="secondaryButton" onClick={() => void load()}><RefreshCw size={15} />刷新</button>
@@ -138,7 +138,7 @@ export function BuildOverviewPage({
       <div className="metricGrid">
         <button className="metric" onClick={() => onNavigate("brief")}><div><CheckCircle2 size={18} /></div><strong>{Math.round(context.project_brief.completeness * 100)}%</strong><span>Brief 完整度</span></button>
         <button className="metric" onClick={() => onNavigate("questions")}><div><Circle size={18} /></div><strong>{totalQuestions}</strong><span>能力问题</span></button>
-        <button className="metric" onClick={() => onNavigate("schema-review")}><div><Clock3 size={18} /></div><strong>{pendingReview}</strong><span>待审核项</span></button>
+        <button className="metric" onClick={() => onNavigate("classes")}><div><Clock3 size={18} /></div><strong>{unresolvedProposals.length}</strong><span>未应用批次</span></button>
         <button className="metric" onClick={() => onNavigate("versions")}><div><CheckCircle2 size={18} /></div><strong>v{selectedVersion?.version_number ?? "—"}</strong><span>{selectedVersion?.status ?? "无版本"}</span></button>
       </div>
 
@@ -158,16 +158,16 @@ export function BuildOverviewPage({
       </div>
 
       <Card className="panel" title="确定性阻塞项">
-        {context.project_brief.missing_fields.length === 0 && pendingReview === 0
-          ? <div className="emptyState">Build Context 与审核批次当前未报告可展示的阻塞项；完整发布门槛请在 Publication 页面运行。</div>
+        {context.project_brief.missing_fields.length === 0 && unresolvedProposals.length === 0
+          ? <div className="emptyState">Build Context 与变更批次当前未报告可展示的阻塞项；完整发布门槛请在 Publication 页面运行。</div>
           : <div className="dataList">
             {context.project_brief.missing_fields.length > 0 && <button className="dataRow" onClick={() => onNavigate("brief")}><span className="rowContent"><strong>Project Brief 尚不完整</strong><span>{context.project_brief.missing_fields.join("、")}</span></span><ArrowRight size={16} /></button>}
-            {pendingReview > 0 && <button className="dataRow" onClick={() => onNavigate("schema-review")}><span className="rowContent"><strong>存在待审核提案</strong><span>{pendingReview} 个批次项目尚未决策</span></span><ArrowRight size={16} /></button>}
+            {unresolvedProposals.length > 0 && <button className="dataRow" onClick={() => onNavigate("classes")}><span className="rowContent"><strong>存在未应用变更批次</strong><span>{unresolvedProposals.length} 个批次需要修正后重新提交</span></span><ArrowRight size={16} /></button>}
           </div>}
       </Card>
 
-      <Card className="panel" title="最近审核批次">
-        {activeBatches.length ? <div className="dataList">{activeBatches.slice(0, 6).map((batch) => <button className="dataRow" key={batch.id} onClick={() => onNavigate(batch.review_type === "schema" ? "schema-review" : "graph-review", { batch: batch.id })}><span className="rowContent"><strong>{batch.review_type}</strong><span>{batch.status} · 待处理 {batch.counts.pending ?? 0} · 更新于 {new Date(batch.updated_at).toLocaleString()}</span></span><ArrowRight size={16} /></button>)}</div> : <div className="emptyState">尚无审核批次。</div>}
+      <Card className="panel" title="最近变更批次">
+        {activeProposals.length ? <div className="dataList">{activeProposals.slice(0, 6).map((proposal) => <button className="dataRow" key={proposal.id} onClick={() => onNavigate(proposal.proposal_type === "schema_change" ? "classes" : "entities", { proposal: proposal.id })}><span className="rowContent"><strong>{proposal.proposal_type}</strong><span>{proposal.status} · 更新于 {new Date(proposal.updated_at).toLocaleString()}</span></span><ArrowRight size={16} /></button>)}</div> : <div className="emptyState">尚无变更批次。</div>}
       </Card>
     </div>
   );

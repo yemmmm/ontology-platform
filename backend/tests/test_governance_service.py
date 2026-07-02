@@ -4,15 +4,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.api.schemas import ProposalCreate, ProposalItemReview, ReviewDecisionCreate
+from app.api.schemas import ProposalCreate
 from app.repositories.models import (
     ClassModel,
     OntologyVersionModel,
     PropertyDefModel,
     ProposalModel,
     RelationTypeModel,
-    ReviewBatchModel,
     RuleDefinitionModel,
+    VersionStatus,
 )
 from app.repositories.postgres import assert_version_mutable
 from app.services import governance
@@ -226,39 +226,6 @@ def test_apply_is_idempotent_after_proposal_is_applied() -> None:
     session.commit.assert_not_called()
 
 
-def test_get_review_batch_returns_stable_workbench_deep_link() -> None:
-    session = MagicMock()
-    batch = ReviewBatchModel(
-        id="batch-1",
-        stable_key="proposal:proposal",
-        project_id="project",
-        ontology_id="ontology",
-        ontology_version_id="version",
-        review_type="schema",
-        status="pending",
-        item_ids=["person"],
-        counts={"pending": 1, "approved": 0, "rejected": 0, "modified": 0},
-    )
-    session.get.return_value = batch
-
-    result = governance.get_review_batch(session, batch.id)
-
-    assert result["id"] == "batch-1"
-    assert result["deep_link"] == (
-        "/?project=project&ontology=ontology&tab=schema-review&batch=batch-1"
-    )
-
-
-def test_get_review_batch_rejects_unknown_id() -> None:
-    session = MagicMock()
-    session.get.return_value = None
-
-    with pytest.raises(HTTPException, match="Review batch not found") as exc_info:
-        governance.get_review_batch(session, "missing")
-
-    assert exc_info.value.status_code == 404
-
-
 def test_list_version_proposals_rejects_unknown_version() -> None:
     session = MagicMock()
     session.get.return_value = None
@@ -278,7 +245,7 @@ def test_rejected_proposal_cannot_modify_formal_data() -> None:
 
     with (
         patch.object(governance, "_apply_schema") as apply_schema,
-        pytest.raises(HTTPException, match="Only approved"),
+        pytest.raises(HTTPException, match="Only validated"),
     ):
         governance.apply_proposal(session, MagicMock(), item.id)
 
@@ -624,89 +591,22 @@ def test_schema_snapshot_includes_relation_type_scope_metadata() -> None:
     ]
 
 
-def test_schema_item_edit_keeps_item_editable_and_invalidates_validation() -> None:
+def test_set_version_mutability_locks_and_unlocks_version() -> None:
     session = MagicMock()
-    item = proposal(status="validated")
-    item.payload["items"][0]["review_status"] = "approved"
-    session.get.side_effect = lambda model, _id: (
-        item if model is ProposalModel else SimpleNamespace(status="draft")
-    )
-    session.scalar.return_value = None
+    version = OntologyVersionModel(id="version", ontology_id="ontology", version_number=1, status="draft")
+    ontology = SimpleNamespace(id="ontology", current_version_id="version", status="draft")
+    session.get.side_effect = lambda model, _id: version if model is OntologyVersionModel else ontology
 
-    governance.review_proposal_item(
-        session,
-        item.id,
-        "person",
-        ProposalItemReview(action="edited", data={"name": "Human"}),
-    )
+    with patch("app.services.publication.capture_publication_snapshot") as capture:
+        governance.set_version_mutability(session, MagicMock(), version.id, mutable=False)
 
-    assert item.status == "proposed"
-    assert item.payload["items"][0]["data"] == {"name": "Human"}
-    assert item.payload["items"][0]["review_status"] == "pending"
-    assert item.payload["items"][0]["modified"] is True
+    capture.assert_called_once()
+    assert version.status == VersionStatus.PUBLISHED.value
+    assert version.workflow_status == "published"
+    assert ontology.status == "active"
 
+    governance.set_version_mutability(session, MagicMock(), version.id, mutable=True)
 
-def test_proposal_approval_requires_every_schema_item_to_be_reviewed() -> None:
-    session = MagicMock()
-    item = proposal(status="validated")
-    session.get.side_effect = lambda model, _id: (
-        item if model is ProposalModel else SimpleNamespace(status="draft")
-    )
-
-    with pytest.raises(HTTPException, match="must be reviewed"):
-        governance.review_proposal(
-            session,
-            item.id,
-            ReviewDecisionCreate(decision="approved", reviewer_type="user"),
-        )
-
-    session.commit.assert_not_called()
-
-
-def test_rejected_proposal_completes_pending_review_batch() -> None:
-    session = MagicMock()
-    item = proposal(status="validated")
-    item.payload = {
-        "items": [
-            {
-                "key": "person",
-                "kind": "class",
-                "data": {"name": "Person"},
-            },
-            {
-                "key": "age",
-                "kind": "property",
-                "review_status": "approved",
-                "data": {"name": "age", "class_id": "person", "type": "number"},
-            },
-        ]
-    }
-    batch = ReviewBatchModel(
-        id="batch-1",
-        stable_key=f"proposal:{item.id}",
-        project_id=item.project_id,
-        ontology_id=item.ontology_id,
-        ontology_version_id=item.target_version_id,
-        review_type="schema",
-        status="in_review",
-        item_ids=["person", "age"],
-        counts={"pending": 1, "approved": 1, "rejected": 0, "modified": 0},
-    )
-    session.get.side_effect = lambda model, _id: (
-        item if model is ProposalModel else SimpleNamespace(status="draft")
-    )
-    session.scalar.return_value = batch
-
-    governance.review_proposal(
-        session,
-        item.id,
-        ReviewDecisionCreate(decision="rejected", reviewer_type="user", reason="duplicate"),
-    )
-
-    assert item.status == "rejected"
-    assert item.payload["items"][0]["review_status"] == "rejected"
-    assert item.payload["items"][0]["review"]["action"] == "proposal_rejected"
-    assert item.payload["items"][1]["review_status"] == "approved"
-    assert batch.status == "completed"
-    assert batch.counts == {"pending": 0, "approved": 1, "rejected": 1, "modified": 0}
-    session.commit.assert_called_once_with()
+    assert version.status == VersionStatus.DRAFT.value
+    assert version.workflow_status == "gathering"
+    assert ontology.status == "draft"

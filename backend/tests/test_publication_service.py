@@ -208,13 +208,16 @@ def test_evaluate_readiness_passes_when_all_gates_green() -> None:
     assert {g["status"] for g in result["gates"]} == {"passed"}
 
 
-def test_publish_rejects_when_readiness_fails() -> None:
+def test_publish_locks_version_even_when_readiness_has_blockers() -> None:
     session, _ = _make_readiness_session(
         scalars_returns=[[], [], [], [], [], []],
         scalar_returns=[1, 0],
     )
 
-    with pytest.raises(HTTPException, match="Publication gates have not passed"):
+    with patch.object(
+        publication, "_fact_audit_summary",
+        return_value={"total": 0, "approved": 0, "unaudited": 0, "rejected_unfixed": 0, "accuracy": 1.0},
+    ):
         publication.publish_version(session, MagicMock(), "v1", confirm=True)
 
 

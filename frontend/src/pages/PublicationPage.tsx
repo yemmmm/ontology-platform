@@ -1,5 +1,5 @@
-import { Alert, Button, Card, Collapse, Descriptions, Empty, Modal, Space, Spin, Tag, Typography } from "antd";
-import { CheckCircle2, RefreshCw, ShieldAlert } from "lucide-react";
+import { Alert, Button, Card, Collapse, Descriptions, Empty, Space, Spin, Switch, Tag, Typography } from "antd";
+import { CheckCircle2, LockKeyhole, RefreshCw, ShieldAlert, UnlockKeyhole } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { GovernancePageContext, OntologyVersion } from "./governanceTypes";
@@ -21,7 +21,7 @@ type PublicationReadiness = {
 };
 
 type PublicationPageProps = GovernancePageContext & {
-  onPublished?: (version: OntologyVersion) => void | Promise<void>;
+  onVersionChanged?: (version: OntologyVersion) => void | Promise<void>;
 };
 
 const gateLabels: Record<string, string> = {
@@ -39,16 +39,13 @@ export function PublicationPage({
   ontology,
   version,
   request,
-  readOnly = false,
   onNavigate,
-  onPublished,
+  onVersionChanged,
 }: PublicationPageProps) {
   const [readiness, setReadiness] = useState<PublicationReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
 
   const check = useCallback(async () => {
     setLoading(true);
@@ -74,37 +71,18 @@ export function PublicationPage({
     [readiness],
   );
 
-  async function preparePublish() {
-    setBusy(true);
-    const before = readiness;
-    const current = await check();
-    setBusy(false);
-    if (!current?.ready) {
-      setError("Publication readiness changed or still contains blocking gates.");
-      return;
-    }
-    const stableGates = (value: PublicationReadiness) => value.gates.map(({ gate_type, status, details }) => ({ gate_type, status, details }));
-    if (before && JSON.stringify(stableGates(before)) !== JSON.stringify(stableGates(current))) {
-      setError("Gate results changed during the final check. Review the new results before publishing.");
-      return;
-    }
-    setConfirmed(false);
-    setConfirmOpen(true);
-  }
-
-  async function publish() {
-    if (!confirmed) return;
+  async function setMutable(mutable: boolean) {
     setBusy(true);
     setError("");
     try {
-      const published = await request<OntologyVersion>(`/versions/${version.id}/publish`, {
-        method: "POST",
-        body: JSON.stringify({ confirm: true }),
+      const updated = await request<OntologyVersion>(`/versions/${version.id}/mutability`, {
+        method: "PATCH",
+        body: JSON.stringify({ mutable }),
       });
-      setConfirmOpen(false);
-      await onPublished?.(published);
-    } catch (publishError) {
-      setError(messageFrom(publishError));
+      await onVersionChanged?.(updated);
+      void check();
+    } catch (toggleError) {
+      setError(messageFrom(toggleError));
     } finally {
       setBusy(false);
     }
@@ -112,26 +90,46 @@ export function PublicationPage({
 
   if (loading && !readiness) return <Spin tip="Evaluating publication gates…" />;
 
-  const published = version.status === "published";
+  const locked = version.status === "published";
+  const mutable = !locked;
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <div className="topBar">
         <div>
-          <span className="eyebrow">Review / immutable release</span>
+          <span className="eyebrow">Version mutability</span>
           <h1>Publication</h1>
           <div className="crumbTrail">{project.name} / {ontology.name} / v{version.version_number}</div>
         </div>
         <Button icon={<RefreshCw size={15} />} onClick={() => void check()} loading={loading}>Recheck gates</Button>
       </div>
       {error && <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />}
-      {published && <Alert type="success" showIcon message={`Version ${version.version_number} is published and immutable.`} description={`Published ${formatTimestamp(version.published_at)}`} />}
+      {locked && <Alert type="success" showIcon message={`Version ${version.version_number} is locked and immutable.`} description={`Locked ${formatTimestamp(version.published_at)}`} />}
       <Card title="Target version">
         <Descriptions column={{ xs: 1, sm: 2, lg: 4 }} items={[
           { key: "ontology", label: "Ontology", children: ontology.name },
           { key: "version", label: "Version", children: `v${version.version_number}` },
           { key: "workflow", label: "Workflow", children: <Tag>{version.workflow_status}</Tag> },
-          { key: "status", label: "Snapshot", children: <Tag color={published ? "green" : "gold"}>{version.status}</Tag> },
+          { key: "status", label: "Mutability", children: <Tag color={locked ? "green" : "gold"}>{locked ? "locked" : "editable"}</Tag> },
         ]} />
+      </Card>
+      <Card title="Version edit switch">
+        <Space direction="vertical" size={12}>
+          <Space wrap>
+            {mutable ? <UnlockKeyhole size={18} color="#168764" /> : <LockKeyhole size={18} color="#c33542" />}
+            <Switch
+              checked={mutable}
+              checkedChildren="Editable"
+              unCheckedChildren="Locked"
+              loading={busy}
+              disabled={busy}
+              onChange={(next) => void setMutable(next)}
+            />
+            <Tag color={mutable ? "warning" : "success"}>{mutable ? "Schema, entity, assertion and rule writes are allowed" : "Schema, entity, assertion and rule writes are blocked"}</Tag>
+          </Space>
+          <Typography.Paragraph style={{ margin: 0 }}>
+            Turning mutability off captures the current schema and graph snapshot and makes version-scoped write APIs reject changes. Turning it back on reopens the same version for editing.
+          </Typography.Paragraph>
+        </Space>
       </Card>
       <Card title={`Publication gates · ${passed}/${readiness?.gates.length ?? 0} passed`}>
         {!readiness?.gates.length ? <Empty description="No gate result is available" /> : (
@@ -156,24 +154,11 @@ export function PublicationPage({
         )}
       </Card>
       {readiness && !readiness.ready && (
-        <Alert type="warning" showIcon message="Publication is blocked" description={`Blocking gates: ${readiness.blocking.map((name) => gateLabels[name] ?? name).join(", ") || "unknown"}`} />
+        <Alert type="warning" showIcon message="Readiness has warnings or blockers" description={`Blocking gates: ${readiness.blocking.map((name) => gateLabels[name] ?? name).join(", ") || "none"}`} />
       )}
-      <Card title="Explicit publication confirmation">
-        <Space direction="vertical" size={12}>
-          <Typography.Paragraph style={{ margin: 0 }}>Publishing creates an immutable schema and graph snapshot. Further changes require a successor draft.</Typography.Paragraph>
-          <Button type="primary" danger onClick={() => void preparePublish()} loading={busy} disabled={readOnly || published || !readiness?.ready}>Run final check and publish…</Button>
-          {!readiness?.ready && <Typography.Text type="secondary">The action remains disabled until every hard gate passes.</Typography.Text>}
-        </Space>
-      </Card>
-      {published && Object.keys(version.publication_report).length > 0 && (
-        <Card title="Publication report"><pre style={{ overflow: "auto", whiteSpace: "pre-wrap" }}>{jsonText(version.publication_report)}</pre></Card>
+      {locked && Object.keys(version.publication_report).length > 0 && (
+        <Card title="Lock snapshot report"><pre style={{ overflow: "auto", whiteSpace: "pre-wrap" }}>{jsonText(version.publication_report)}</pre></Card>
       )}
-      <Modal title="Publish immutable version" open={confirmOpen} onCancel={() => setConfirmOpen(false)} onOk={() => void publish()} okText="Publish now" okButtonProps={{ danger: true, disabled: !confirmed, loading: busy }}>
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          <Alert type="warning" showIcon message={`${ontology.name} · v${version.version_number}`} description={`${readiness?.gates.length ?? 0} gates checked; ${passed} passed. This operation is irreversible.`} />
-          <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} style={{ width: 16, minHeight: 16 }} />I understand that this version becomes immutable.</label>
-        </Space>
-      </Modal>
     </Space>
   );
 }

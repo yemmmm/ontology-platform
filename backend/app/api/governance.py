@@ -9,13 +9,10 @@ from app.api.schemas import (
     OntologyVersionCreate,
     OntologyVersionRead,
     ProposalCreate,
-    ProposalBatchReview,
-    ProposalItemReview,
     ProposalRead,
     PublicationConfirm,
     PublicationReadinessRead,
-    ReviewBatchRead,
-    ReviewDecisionCreate,
+    VersionMutabilityUpdate,
     VersionDiffRead,
 )
 from app.services import governance as service
@@ -53,8 +50,12 @@ def version_diff(
 
 
 @router.post("/proposals", response_model=ProposalRead, status_code=status.HTTP_201_CREATED)
-def create_proposal(payload: ProposalCreate, session: Session = Depends(get_db_session)):
-    proposal = service.create_proposal(session, payload)
+def create_proposal(
+    payload: ProposalCreate,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    proposal = service.create_proposal(session, payload, driver)
     return service.proposal_detail(session, proposal.id)
 
 
@@ -72,16 +73,6 @@ def list_proposals(
     return service.list_proposals(session, ontology_id, proposal_type)
 
 
-@router.get("/ontologies/{ontology_id}/review-batches", response_model=list[ReviewBatchRead])
-def list_review_batches(ontology_id: str, session: Session = Depends(get_db_session)):
-    return service.list_review_batches(session, ontology_id)
-
-
-@router.get("/review-batches/{review_batch_id}", response_model=ReviewBatchRead)
-def get_review_batch(review_batch_id: str, session: Session = Depends(get_db_session)):
-    return service.get_review_batch(session, review_batch_id)
-
-
 @router.post("/proposals/{proposal_id}/validate", response_model=ProposalRead)
 def validate_proposal(
     proposal_id: str,
@@ -89,37 +80,6 @@ def validate_proposal(
     driver: Driver = Depends(get_neo4j_driver),
 ):
     service.validate_proposal(session, proposal_id, driver)
-    return service.proposal_detail(session, proposal_id)
-
-
-@router.post("/proposals/{proposal_id}/review", response_model=ProposalRead)
-def review_proposal(
-    proposal_id: str,
-    payload: ReviewDecisionCreate,
-    session: Session = Depends(get_db_session),
-):
-    service.review_proposal(session, proposal_id, payload)
-    return service.proposal_detail(session, proposal_id)
-
-
-@router.post("/proposals/{proposal_id}/items/{item_key}/review", response_model=ProposalRead)
-def review_proposal_item(
-    proposal_id: str,
-    item_key: str,
-    payload: ProposalItemReview,
-    session: Session = Depends(get_db_session),
-):
-    service.review_proposal_item(session, proposal_id, item_key, payload)
-    return service.proposal_detail(session, proposal_id)
-
-
-@router.post("/proposals/{proposal_id}/items/review", response_model=ProposalRead)
-def batch_review_proposal_items(
-    proposal_id: str,
-    payload: ProposalBatchReview,
-    session: Session = Depends(get_db_session),
-):
-    service.batch_review_proposal_items(session, proposal_id, payload)
     return service.proposal_detail(session, proposal_id)
 
 
@@ -131,6 +91,16 @@ def apply_proposal(
 ):
     service.apply_proposal(session, driver, proposal_id)
     return service.proposal_detail(session, proposal_id)
+
+
+@router.patch("/versions/{version_id}/mutability", response_model=OntologyVersionRead)
+def set_version_mutability(
+    version_id: str,
+    payload: VersionMutabilityUpdate,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    return service.set_version_mutability(session, driver, version_id, payload.mutable)
 
 
 @router.post("/versions/{version_id}/publish", response_model=OntologyVersionRead)

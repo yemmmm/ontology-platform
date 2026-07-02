@@ -16,7 +16,6 @@ from app.mcp.tools.graph import register_graph
 from app.mcp.tools.interview import register_interview
 from app.mcp.tools.proposals import register_proposals
 from app.mcp.tools.publication import register_publication
-from app.mcp.tools.review import register_review
 from app.mcp.tools.system import register_system
 
 
@@ -26,7 +25,6 @@ def register_all(server: FastMCP) -> None:
     register_graph(server)
     register_catalog(server)
     register_proposals(server)
-    register_review(server)
     register_interview(server)
     register_documents(server)
     register_facts(server)

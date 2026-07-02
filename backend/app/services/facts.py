@@ -544,6 +544,8 @@ def create_rule_definition(
     status: str = "active",
 ) -> RuleDefinitionModel:
     version, ontology = _ontology_for_version(session, version_id)
+    if version.status != VersionStatus.DRAFT.value:
+        raise HTTPException(status_code=409, detail="Locked ontology versions are immutable")
     validation = validate_rule_definition(session, ontology.id, payload)
     if not validation["valid"]:
         raise HTTPException(status_code=422, detail=validation)

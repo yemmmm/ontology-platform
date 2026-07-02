@@ -68,7 +68,6 @@ import type {
   PropertyDef,
   Proposal,
   ProposalItem,
-  ReviewBatch,
   EvidenceChunk,
   EvidenceArtifact,
   KnowledgeConflict,
@@ -102,7 +101,6 @@ import { PublicationPage } from "./pages/PublicationPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { EvidenceExplorer } from "./pages/EvidenceExplorer";
 import { CatalogWizardPage } from "./pages/CatalogWizardPage";
-import { GraphReviewPage, SchemaReviewPage } from "./pages/ReviewPages";
 import { WorkflowProgress } from "./components/WorkflowProgress";
 import { ConfirmActionDialog } from "./components/workbench";
 
@@ -112,9 +110,7 @@ type WorkspaceTab =
   | "brief"
   | "questions"
   | "topology"
-  | "schema-review"
   | "sources"
-  | "graph-review"
   | "facts"
   | "publication"
   | "classes"
@@ -157,8 +153,8 @@ const stageMeta: Array<{
   workflowStatuses?: string[];
 }> = [
   { id: "intake", label: "Intake", detail: "Brief · questions · evidence", icon: BookOpen, workflowStatuses: ["gathering"] },
-  { id: "schema", label: "Schema", detail: "Classes · schema review", icon: Box, workflowStatuses: ["schema_draft", "schema_review"] },
-  { id: "graph", label: "Graph", detail: "Entities · graph review", icon: GitBranch, workflowStatuses: ["graph_building", "graph_review"] },
+  { id: "schema", label: "Schema", detail: "Classes · relation types", icon: Box, workflowStatuses: ["schema_draft", "schema_review"] },
+  { id: "graph", label: "Graph", detail: "Entities · relations", icon: GitBranch, workflowStatuses: ["graph_building", "graph_review"] },
   { id: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2, workflowStatuses: ["validated"] },
   { id: "publish", label: "Publish", detail: "Publication · versions", icon: Flag, workflowStatuses: ["published"] },
   { id: "catalog", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
@@ -167,8 +163,8 @@ const stageMeta: Array<{
 
 const stageDefaultTab: Record<WorkspaceStage, WorkspaceTab> = {
   intake: "overview",
-  schema: "schema-review",
-  graph: "graph-review",
+  schema: "classes",
+  graph: "entities",
   facts: "facts",
   publish: "publication",
   catalog: "catalog",
@@ -196,9 +192,7 @@ const workspaceTabs: Array<{
   { id: "brief", stage: "intake", label: "Brief", detail: "Scope & intent", icon: BookOpen },
   { id: "questions", stage: "intake", label: "Questions", detail: "Competency validation", icon: CircleHelp },
   { id: "sources", stage: "intake", label: "Files", detail: "Evidence originals", icon: FileText },
-  { id: "schema-review", stage: "schema", label: "Schema Review", detail: "Schema proposals", icon: Clipboard },
   { id: "classes", stage: "schema", label: "Classes", detail: "Class topology", icon: Box },
-  { id: "graph-review", stage: "graph", label: "Graph Review", detail: "Knowledge candidates", icon: GitBranch },
   { id: "entities", stage: "graph", label: "Entities", detail: "Entity editor", icon: Database },
   { id: "facts", stage: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
@@ -695,9 +689,9 @@ export function App() {
                   stageDefaultTab={{
                     gathering: "overview",
                     schema_draft: "classes",
-                    schema_review: "schema-review",
+                    schema_review: "classes",
                     graph_building: "entities",
-                    graph_review: "graph-review",
+                    graph_review: "entities",
                     validated: "facts",
                     published: "publication",
                   }}
@@ -985,8 +979,9 @@ function WorkspaceContent(props: {
   const governedRequest = useCallback<Requester>(
     (path, options) => {
       const method = (options?.method ?? "GET").toUpperCase();
-      if (readOnly && method !== "GET" && method !== "HEAD") {
-        return Promise.reject(new Error("Published ontology versions are immutable. Create a successor draft to make changes."));
+      const mutabilityToggle = /^\/versions\/[^/]+\/mutability$/.test(path);
+      if (readOnly && method !== "GET" && method !== "HEAD" && !mutabilityToggle) {
+        return Promise.reject(new Error("Locked ontology versions are immutable. Turn mutability back on before making changes."));
       }
       return props.request(path, options);
     },
@@ -1008,8 +1003,8 @@ function WorkspaceContent(props: {
   if (props.tab === "facts" || props.tab === "publication") {
     if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title="Select a valid ontology version" />;
     const context = { ontology: props.ontology, project: props.project, readOnly, request: governedRequest, version: props.selectedVersion };
-    if (props.tab === "facts") return <FactAuditWithBatch {...context} batchId={queryValue("batch") || undefined} initialClaimId={queryValue("claim") || undefined} />;
-    return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onPublished={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
+    if (props.tab === "facts") return <FactAuditPage {...context} initialClaimId={queryValue("claim") || undefined} />;
+    return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onVersionChanged={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
   }
 
   if (props.tab === "versions") {
@@ -1067,33 +1062,8 @@ function WorkspaceContent(props: {
     );
   }
 
-  if (props.tab === "schema-review") {
-    return (
-      <SchemaReviewPage
-        batchId={queryValue("batch") || undefined}
-        classes={props.classes}
-        ontology={props.ontology}
-        reloadSchema={props.reloadSchema}
-        request={governedRequest}
-        versionId={props.selectedVersionId}
-      />
-    );
-  }
-
   if (props.tab === "sources") {
     return <EvidenceArtifactsPage navigate={props.navigateWorkspace} projectId={props.ontology.project_id} readOnly={readOnly} request={governedRequest} />;
-  }
-
-  if (props.tab === "graph-review") {
-    return (
-      <GraphReviewPage
-        batchId={queryValue("batch") || undefined}
-        ontology={props.ontology}
-        reloadGraph={props.reloadGraph}
-        request={governedRequest}
-        versionId={props.selectedVersionId}
-      />
-    );
   }
 
   if (props.tab === "entities") {
@@ -1149,40 +1119,6 @@ function WorkspaceContent(props: {
       setHealth={props.setHealth}
       showError={props.showError}
     />
-  );
-}
-
-function FactAuditWithBatch(props: {
-  project: Project;
-  ontology: Ontology;
-  version: OntologyVersion;
-  request: Requester;
-  readOnly: boolean;
-  batchId?: string;
-  initialClaimId?: string;
-}) {
-  const [batch, setBatch] = useState<ReviewBatch | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!props.batchId) {
-      setBatch(null);
-      return;
-    }
-    props.request<ReviewBatch>(`/review-batches/${props.batchId}`).then((value) => {
-      if (value.ontology_id !== props.ontology.id || value.ontology_version_id !== props.version.id || value.review_type !== "fact") {
-        throw new Error("This review batch does not match the selected ontology version or fact review type.");
-      }
-      setBatch(value);
-    }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-  }, [props.batchId, props.ontology.id, props.request, props.version.id]);
-
-  if (error) return <div className="reviewError">{error}</div>;
-  return (
-    <div className="workspaceStack">
-      {batch && <div className="batchContext"><strong>Review batch · facts</strong><span>{batch.status} · {batch.item_ids.length} scoped claims</span></div>}
-      <FactAuditPage {...props} batchItemIds={batch?.item_ids} />
-    </div>
   );
 }
 
@@ -1250,7 +1186,7 @@ function EvidenceArtifactsPage(props: { projectId: string; request: Requester; n
         setError("No proposals cite this evidence artifact yet. Agent extraction must submit candidates with evidence references first.");
         return;
       }
-      props.navigate(first.proposal_type === "schema_change" ? "schema-review" : "graph-review", { proposal: first.id });
+      props.navigate(first.proposal_type === "schema_change" ? "classes" : "entities", { proposal: first.id });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

@@ -460,24 +460,6 @@ export type CompetencyQuestion = {
   updated_at: string;
 };
 
-export type ReviewBatchType = "schema" | "entity" | "relation" | "merge" | "conflict" | "fact";
-export type ReviewBatchStatus = "pending" | "in_review" | "completed";
-
-export type ReviewBatch = {
-  id: string;
-  stable_key: string;
-  project_id: string;
-  ontology_id: string;
-  ontology_version_id: string;
-  review_type: ReviewBatchType;
-  status: ReviewBatchStatus;
-  item_ids: string[];
-  counts: Record<string, number>;
-  deep_link: string;
-  created_at: string;
-  updated_at: string;
-};
-
 export type FactClaimType = "direct" | "inferred" | "conflict" | "low_confidence";
 export type FactClaimLayer =
   | "entity_attribute"

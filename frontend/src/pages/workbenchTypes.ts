@@ -58,17 +58,13 @@ export type OntologyVersionSummary = {
   published_at: string | null;
 };
 
-export type ReviewBatchSummary = {
+export type ProposalSummary = {
   id: string;
-  stable_key: string;
   project_id: string;
   ontology_id: string;
-  ontology_version_id: string;
-  review_type: string;
+  target_version_id: string;
+  proposal_type: string;
   status: string;
-  item_ids: string[];
-  counts: Record<string, number>;
-  deep_link: string;
   created_at: string;
   updated_at: string;
 };

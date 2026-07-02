@@ -38,8 +38,6 @@ ALLOWED_TOOLS = {
     "validate_proposal",
     "validate_draft",
     "get_proposal_status",
-    "list_review_items",
-    "get_review_batch",
     "get_build_context",
     "get_project_brief",
     "save_interview_answer",

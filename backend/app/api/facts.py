@@ -107,11 +107,12 @@ def promote_background_knowledge(
     knowledge_id: str,
     payload: BackgroundKnowledgePromotionCreate,
     session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
 ):
     if payload.proposal.target_version_id != version_id:
         raise HTTPException(status_code=400, detail="Proposal target version must match URL version")
     service.get_background_knowledge(session, version_id, knowledge_id)
-    proposal = governance_service.create_proposal(session, payload.proposal)
+    proposal = governance_service.create_proposal(session, payload.proposal, driver)
     knowledge = service.mark_background_knowledge_promoted(
         session,
         version_id,

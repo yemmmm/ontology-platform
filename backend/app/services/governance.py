@@ -11,10 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
-    ProposalBatchReview,
     ProposalCreate,
-    ProposalItemReview,
-    ReviewDecisionCreate,
 )
 from app.domain.naming import normalize_neo4j_label, normalize_neo4j_relationship_type
 from app.repositories import graph as graph_repo
@@ -31,7 +28,6 @@ from app.repositories.models import (
     RelationTypeModel,
     RuleDefinitionModel,
     ReviewDecisionModel,
-    ReviewBatchModel,
     EvidenceChunkModel,
     EvidenceArtifactModel,
     ValidationRunModel,
@@ -44,7 +40,7 @@ from app.services import interview as interview_service
 ALLOWED_TRANSITIONS = {
     "proposed": {"validating", "rejected"},
     "validating": {"validated", "proposed"},
-    "validated": {"approved", "rejected"},
+    "validated": {"approved", "rejected", "applied"},
     "approved": {"applied"},
     "rejected": set(),
     "applied": set(),
@@ -135,7 +131,13 @@ def list_versions(session: Session, ontology_id: str) -> list[OntologyVersionMod
     )
 
 
-def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
+def create_proposal(
+    session: Session,
+    payload: ProposalCreate,
+    driver: Driver | None = None,
+    *,
+    auto_apply: bool = True,
+) -> ProposalModel:
     existing = session.scalar(
         select(ProposalModel).where(
             ProposalModel.project_id == payload.project_id,
@@ -198,25 +200,6 @@ def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
         for evidence in evidence_rows:
             evidence.proposal_id = proposal.id
             session.add(evidence)
-        if payload.proposal_type in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
-            keys = [
-                item.get("key")
-                for item in payload.payload.get("items", [])
-                if isinstance(item, dict) and item.get("key")
-            ]
-            session.add(
-                ReviewBatchModel(
-                    id=_id(),
-                    stable_key=f"proposal:{proposal.id}",
-                    project_id=payload.project_id,
-                    ontology_id=payload.ontology_id,
-                    ontology_version_id=payload.target_version_id,
-                    review_type="schema" if payload.proposal_type in {"schema_change", "constraint"} else payload.proposal_type,
-                    status="pending",
-                    item_ids=keys,
-                    counts={"pending": len(keys), "approved": 0, "rejected": 0, "modified": 0},
-                )
-            )
         session.commit()
     except IntegrityError:
         session.rollback()
@@ -230,6 +213,12 @@ def create_proposal(session: Session, payload: ProposalCreate) -> ProposalModel:
             raise
         return existing
     session.refresh(proposal)
+    if auto_apply:
+        validate_proposal(session, proposal.id, driver)
+        session.refresh(proposal)
+        if proposal.status == "validated":
+            apply_proposal(session, driver, proposal.id)
+            session.refresh(proposal)
     return proposal
 
 
@@ -535,21 +524,6 @@ def _knowledge_validation(
             {"kind": "value_conflict", "conflict_id": row.id, "item_key": row.item_key, "field": row.field}
             for row in conflicts
         )
-        batch = session.scalar(
-            select(ReviewBatchModel).where(ReviewBatchModel.stable_key == f"conflict:{proposal.id}")
-        )
-        if batch is None:
-            batch = ReviewBatchModel(
-                id=_id(), stable_key=f"conflict:{proposal.id}", project_id=proposal.project_id,
-                ontology_id=proposal.ontology_id, ontology_version_id=proposal.target_version_id,
-                review_type="conflict", status="pending", item_ids=[row.id for row in conflicts],
-                counts={"pending": len(conflicts), "approved": 0, "rejected": 0, "modified": 0},
-            )
-            session.add(batch)
-        else:
-            batch.item_ids = [row.id for row in conflicts]
-            batch.status = "pending"
-            batch.counts = {"pending": len(conflicts), "approved": 0, "rejected": 0, "modified": 0}
     return errors, ambiguities
 
 
@@ -636,175 +610,6 @@ def validate_proposal(
     return proposal
 
 
-def review_proposal(
-    session: Session, proposal_id: str, payload: ReviewDecisionCreate
-) -> ProposalModel:
-    proposal = _proposal(session, proposal_id)
-    assert_version_mutable(session, proposal.target_version_id)
-    if payload.decision == "approved" and proposal.proposal_type in {"entity", "relation", "merge"}:
-        pending_conflicts = session.scalar(
-            select(func.count()).select_from(KnowledgeConflictModel).where(
-                KnowledgeConflictModel.proposal_id == proposal.id,
-                KnowledgeConflictModel.status == "pending",
-            )
-        )
-        if pending_conflicts:
-            raise HTTPException(
-                status_code=409,
-                detail="All knowledge conflicts must be resolved before approval",
-            )
-    if payload.decision == "approved" and proposal.proposal_type in {"schema_change", "constraint", "rule"}:
-        pending = [
-            item.get("key")
-            for item in proposal.payload.get("items", [])
-            if item.get("review_status", "pending") == "pending"
-        ]
-        if pending:
-            raise HTTPException(
-                status_code=409,
-                detail=f"All proposal items must be reviewed before approval: {', '.join(pending)}",
-            )
-    _transition(proposal, payload.decision, reviewer_id=payload.reviewer_id, reason=payload.reason)
-    decision = ReviewDecisionModel(
-        id=_id(), proposal_id=proposal.id, **payload.model_dump()
-    )
-    session.add(decision)
-    proposal.review_result = {
-        "decision": payload.decision,
-        "reviewer_type": payload.reviewer_type,
-        "reviewer_id": payload.reviewer_id,
-        "reason": payload.reason,
-    }
-    if payload.decision == "rejected":
-        _reject_pending_proposal_items(session, proposal, payload)
-    session.commit()
-    session.refresh(proposal)
-    return proposal
-
-
-def _review_batch(session: Session, proposal_id: str) -> ReviewBatchModel | None:
-    return session.scalar(
-        select(ReviewBatchModel).where(ReviewBatchModel.stable_key == f"proposal:{proposal_id}")
-    )
-
-
-def _refresh_review_batch(batch: ReviewBatchModel, items: list[dict[str, Any]]) -> None:
-    counts = {"pending": 0, "approved": 0, "rejected": 0, "modified": 0}
-    for item in items:
-        state = item.get("review_status", "pending")
-        counts[state if state in {"approved", "rejected"} else "pending"] += 1
-        if item.get("modified"):
-            counts["modified"] += 1
-    batch.counts = counts
-    decided = counts["approved"] + counts["rejected"]
-    batch.status = "completed" if decided == len(items) else "in_review" if decided else "pending"
-
-
-def _reject_pending_proposal_items(
-    session: Session, proposal: ProposalModel, payload: ReviewDecisionCreate
-) -> None:
-    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
-        return
-    items = [dict(item) for item in proposal.payload.get("items", [])]
-    if not items:
-        return
-    changed = False
-    reviewed_at = _now().isoformat()
-    for item in items:
-        if item.get("review_status") in {"approved", "rejected"}:
-            continue
-        item["review_status"] = "rejected"
-        item["review"] = {
-            "action": "proposal_rejected",
-            "reviewer_type": payload.reviewer_type,
-            "reviewer_id": payload.reviewer_id,
-            "reason": payload.reason,
-            "at": reviewed_at,
-        }
-        changed = True
-    if changed:
-        proposal.payload = {**proposal.payload, "items": items}
-    batch = _review_batch(session, proposal.id)
-    if batch:
-        _refresh_review_batch(batch, items)
-
-
-def review_proposal_item(
-    session: Session, proposal_id: str, item_key: str, payload: ProposalItemReview
-) -> ProposalModel:
-    proposal = _proposal(session, proposal_id)
-    assert_version_mutable(session, proposal.target_version_id)
-    if proposal.proposal_type not in {"schema_change", "constraint", "entity", "relation", "merge", "rule"}:
-        raise HTTPException(status_code=409, detail="Item review is not supported for this proposal")
-    if proposal.status not in {"proposed", "validated"}:
-        raise HTTPException(status_code=409, detail="Proposal is not editable in its current state")
-    items = [dict(item) for item in proposal.payload.get("items", [])]
-    target = next((item for item in items if item.get("key") == item_key), None)
-    if target is None:
-        raise HTTPException(status_code=404, detail="Proposal item not found")
-    if payload.action == "edited":
-        if payload.data is None:
-            raise HTTPException(status_code=422, detail="Edited items require data")
-        target["data"] = payload.data
-        target["modified"] = True
-        target["review_status"] = "pending"
-        target.pop("merged_into_key", None)
-    elif payload.action == "merged":
-        destination = next(
-            (item for item in items if item.get("key") == payload.merge_into_key), None
-        )
-        if destination is None or destination is target:
-            raise HTTPException(status_code=422, detail="merge_into_key must identify another item")
-        if destination.get("kind") != target.get("kind"):
-            raise HTTPException(status_code=422, detail="Only items of the same kind can be merged")
-        target["review_status"] = "rejected"
-        target["merged_into_key"] = payload.merge_into_key
-        target["modified"] = True
-    else:
-        target["review_status"] = payload.action
-    target["review"] = {
-        "action": payload.action,
-        "reviewer_type": payload.reviewer_type,
-        "reviewer_id": payload.reviewer_id,
-        "reason": payload.reason,
-        "at": _now().isoformat(),
-    }
-    proposal.payload = {**proposal.payload, "items": items}
-    if proposal.status == "validated" and payload.action in {"edited", "merged"}:
-        proposal.status = "proposed"
-        proposal.validation_result = {}
-    proposal.audit_log = [*proposal.audit_log, _event("item_reviewed", item_key=item_key, review_action=payload.action)]
-    batch = _review_batch(session, proposal.id)
-    if batch:
-        _refresh_review_batch(batch, items)
-    session.commit()
-    session.refresh(proposal)
-    return proposal
-
-
-def batch_review_proposal_items(
-    session: Session, proposal_id: str, payload: ProposalBatchReview
-) -> ProposalModel:
-    proposal = _proposal(session, proposal_id)
-    item_keys = {item.get("key") for item in proposal.payload.get("items", [])}
-    missing = sorted(set(payload.item_keys) - item_keys)
-    if missing:
-        raise HTTPException(status_code=404, detail=f"Proposal items not found: {', '.join(missing)}")
-    for item_key in payload.item_keys:
-        proposal = review_proposal_item(
-            session,
-            proposal_id,
-            item_key,
-            ProposalItemReview(
-                action=payload.action,
-                reviewer_type=payload.reviewer_type,
-                reviewer_id=payload.reviewer_id,
-                reason=payload.reason,
-            ),
-        )
-    return proposal
-
-
 def list_proposals(
     session: Session, ontology_id: str, proposal_type: str | None = None
 ) -> list[dict[str, Any]]:
@@ -826,36 +631,6 @@ def list_version_proposals(session: Session, version_id: str) -> list[ProposalMo
             .order_by(ProposalModel.created_at)
         )
     )
-
-
-def list_review_batches(session: Session, ontology_id: str) -> list[dict[str, Any]]:
-    rows = session.scalars(
-        select(ReviewBatchModel)
-        .where(ReviewBatchModel.ontology_id == ontology_id)
-        .order_by(ReviewBatchModel.created_at.desc())
-    )
-    return [
-        review_batch_detail(row)
-        for row in rows
-    ]
-
-
-def review_batch_detail(row: ReviewBatchModel) -> dict[str, Any]:
-    return {
-        **{column.name: getattr(row, column.name) for column in row.__table__.columns},
-        "deep_link": (
-            f"/?project={row.project_id}&ontology={row.ontology_id}"
-            f"&tab={'schema-review' if row.review_type == 'schema' else 'graph-review'}"
-            f"&batch={row.id}"
-        ),
-    }
-
-
-def get_review_batch(session: Session, review_batch_id: str) -> dict[str, Any]:
-    row = session.get(ReviewBatchModel, review_batch_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="Review batch not found")
-    return review_batch_detail(row)
 
 
 def _apply_schema(session: Session, proposal: ProposalModel) -> dict[str, Any]:
@@ -1022,10 +797,21 @@ def _apply_rules(session: Session, proposal: ProposalModel) -> dict[str, Any]:
     return {"created_rule_definition_ids": created}
 
 
-def _revalidate_affected_graph(session: Session, driver: Driver, ontology_id: str) -> dict[str, Any]:
+def _revalidate_affected_graph(
+    session: Session, driver: Driver | None, ontology_id: str
+) -> dict[str, Any]:
     """Report incompatibilities after schema changes without mutating graph data."""
     from app.services.graph import validate_entity_properties
 
+    if driver is None:
+        return {
+            "checked_entities": 0,
+            "checked_relations": 0,
+            "compatible": True,
+            "issues": [],
+            "deleted": 0,
+            "skipped": True,
+        }
     graph = graph_repo.inspect_ontology_graph(driver, ontology_id)
     classes = list(session.scalars(select(ClassModel).where(ClassModel.ontology_id == ontology_id)))
     by_id = {row.id: row for row in classes}
@@ -1071,8 +857,8 @@ def apply_proposal(session: Session, driver: Driver, proposal_id: str) -> Propos
     assert_version_mutable(session, proposal.target_version_id)
     if proposal.status == "applied":
         return proposal
-    if proposal.status != "approved":
-        raise HTTPException(status_code=409, detail="Only approved proposals can be applied")
+    if proposal.status not in {"validated", "approved"}:
+        raise HTTPException(status_code=409, detail="Only validated proposals can be applied")
     try:
         if proposal.proposal_type in {"schema_change", "constraint"}:
             result = _apply_schema(session, proposal)
@@ -1183,20 +969,6 @@ def resolve_conflict(
         "reviewer_id": reviewer_id,
         "resolved_at": _now().isoformat(),
     }
-    batch = session.scalar(
-        select(ReviewBatchModel).where(ReviewBatchModel.stable_key == f"conflict:{conflict.proposal_id}")
-    )
-    session.flush()
-    if batch is not None:
-        pending = session.scalar(
-            select(func.count()).select_from(KnowledgeConflictModel).where(
-                KnowledgeConflictModel.proposal_id == conflict.proposal_id,
-                KnowledgeConflictModel.status == "pending",
-            )
-        )
-        total = len(batch.item_ids)
-        batch.counts = {"pending": int(pending or 0), "approved": total - int(pending or 0), "rejected": 0, "modified": 0}
-        batch.status = "completed" if not pending else "in_review"
     session.commit()
     session.refresh(conflict)
     return conflict
@@ -1239,6 +1011,46 @@ def publish_version(
     from app.services import publication as publication_service
 
     return publication_service.publish_version(session, driver, version_id, confirm=confirm)
+
+
+def set_version_mutability(
+    session: Session, driver: Driver, version_id: str, mutable: bool
+) -> OntologyVersionModel:
+    version = _version(session, version_id)
+    if mutable:
+        if version.status == VersionStatus.DRAFT.value:
+            return version
+        version.status = VersionStatus.DRAFT.value
+        version.workflow_status = "gathering"
+        ontology = session.get(OntologyModel, version.ontology_id)
+        if ontology is not None:
+            ontology.current_version_id = version.id
+            ontology.status = "draft"
+        session.commit()
+        session.refresh(version)
+        return version
+
+    if version.status == VersionStatus.PUBLISHED.value:
+        return version
+
+    from app.services import publication as publication_service
+
+    publication_service.capture_publication_snapshot(session, driver, version)
+    version.status = VersionStatus.PUBLISHED.value
+    version.workflow_status = "published"
+    version.published_at = _now()
+    version.publication_report = {
+        **(version.publication_report or {}),
+        "locked_by": "user",
+        "locked_at": version.published_at.isoformat(),
+    }
+    ontology = session.get(OntologyModel, version.ontology_id)
+    if ontology is not None:
+        ontology.current_version_id = version.id
+        ontology.status = "active"
+    session.commit()
+    session.refresh(version)
+    return version
 
 
 def version_diff(session: Session, driver: Driver, from_id: str, to_id: str) -> dict[str, Any]:

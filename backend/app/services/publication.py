@@ -405,26 +405,26 @@ def _persist_published_snapshot(
     version.published_at = _now()
 
 
+def capture_publication_snapshot(
+    session: Session,
+    driver: Driver,
+    version: OntologyVersionModel,
+) -> None:
+    """Capture the current schema and graph before locking a version."""
+    readiness = evaluate_readiness(session, driver, version.id)
+    _persist_published_snapshot(session, driver, version, readiness)
+
+
 def publish_version(
     session: Session, driver: Driver, version_id: str, confirm: bool
 ) -> OntologyVersionModel:
     version = assert_version_mutable(session, version_id)
-    readiness = evaluate_readiness(session, driver, version_id)
-    if readiness["blocking"]:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "Publication gates have not passed",
-                "blocking": readiness["blocking"],
-                "gates": readiness["gates"],
-            },
-        )
     if not confirm:
         raise HTTPException(
             status_code=428,
-            detail="Publication requires explicit confirmation (confirm=true)",
+            detail="Locking a version requires explicit confirmation (confirm=true)",
         )
-    _persist_published_snapshot(session, driver, version, readiness)
+    capture_publication_snapshot(session, driver, version)
     version.status = VersionStatus.PUBLISHED.value
     ontology = session.get(OntologyModel, version.ontology_id)
     if ontology is not None:

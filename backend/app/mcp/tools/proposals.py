@@ -29,12 +29,12 @@ def _parse_proposal_json(proposal_json: str) -> dict[str, Any]:
 def register_proposals(server: FastMCP) -> None:
     @server.tool()
     def submit_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
-        """Submit an idempotent, version-scoped governance proposal; never writes formal data."""
+        """Submit an idempotent, version-scoped change batch and apply it after validation."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+            lambda session, driver, _embedding_client: governance_service.proposal_detail(
                 session,
                 governance_service.create_proposal(
-                    session, ProposalCreate.model_validate(proposal)
+                    session, ProposalCreate.model_validate(proposal), driver
                 ).id,
             )
         )
@@ -44,10 +44,10 @@ def register_proposals(server: FastMCP) -> None:
         """Submit a proposal encoded as JSON text when nested MCP arguments are unsupported."""
         proposal = _parse_proposal_json(proposal_json)
         return _run_tool(
-            lambda session, _driver, _embedding_client: governance_service.proposal_detail(
+            lambda session, driver, _embedding_client: governance_service.proposal_detail(
                 session,
                 governance_service.create_proposal(
-                    session, ProposalCreate.model_validate(proposal)
+                    session, ProposalCreate.model_validate(proposal), driver
                 ).id,
             )
         )
@@ -98,24 +98,24 @@ def register_proposals(server: FastMCP) -> None:
 
     def _propose_knowledge(proposal: dict[str, Any], expected_type: str) -> dict[str, Any]:
         def create(
-            session: Session, _driver: Driver, _embedding_client: EmbeddingClient
+            session: Session, driver: Driver, _embedding_client: EmbeddingClient
         ) -> Any:
             payload = ProposalCreate.model_validate(
                 {**proposal, "proposal_type": expected_type}
             )
-            created = governance_service.create_proposal(session, payload)
+            created = governance_service.create_proposal(session, payload, driver)
             return governance_service.proposal_detail(session, created.id)
 
         return _run_tool(create)
 
     @server.tool()
     def propose_schema_changes(proposal: dict[str, Any]) -> dict[str, Any]:
-        """Submit a governed Schema candidate batch; never writes formal Schema directly."""
+        """Submit a Schema change batch; validation success writes formal Schema directly."""
         return _propose_knowledge(proposal, "schema_change")
 
     @server.tool()
     def propose_entities(proposal: dict[str, Any]) -> dict[str, Any]:
-        """Submit evidence-bound entity candidates; never merges or writes graph data directly."""
+        """Submit evidence-bound entities; validation success writes graph data directly."""
         return _propose_knowledge(proposal, "entity")
 
     @server.tool()
@@ -125,10 +125,10 @@ def register_proposals(server: FastMCP) -> None:
 
     @server.tool()
     def propose_entity_merges(proposal: dict[str, Any]) -> dict[str, Any]:
-        """Submit possible duplicate entities for explicit human review; does not merge them."""
+        """Submit entity merges; validation success applies the merges directly."""
         return _propose_knowledge(proposal, "merge")
 
     @server.tool()
     def propose_rules(proposal: dict[str, Any]) -> dict[str, Any]:
-        """Submit evidence-bound RuleDefinition candidates; never activates rules directly."""
+        """Submit evidence-bound RuleDefinition changes; validation success activates them directly."""
         return _propose_knowledge(proposal, "rule")

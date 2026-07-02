@@ -197,7 +197,7 @@ def test_same_name_candidate_is_reviewed_not_auto_merged() -> None:
     assert item.status == "proposed"
 
 
-def test_merge_is_only_applied_from_approved_proposal() -> None:
+def test_merge_applies_from_validated_proposal_without_review() -> None:
     session = MagicMock()
     item = ProposalModel(
         id="merge", project_id="project", ontology_id="ontology", target_version_id="version",
@@ -207,7 +207,8 @@ def test_merge_is_only_applied_from_approved_proposal() -> None:
     )
     session.get.side_effect = lambda model, _id: item if model is ProposalModel else SimpleNamespace(status="draft")
 
-    with patch.object(governance.graph_repo, "merge_entity_nodes") as merge, pytest.raises(HTTPException, match="Only approved"):
+    with patch.object(governance.graph_repo, "merge_entity_batch") as merge:
         governance.apply_proposal(session, MagicMock(), item.id)
 
-    merge.assert_not_called()
+    merge.assert_called_once()
+    assert item.status == "applied"

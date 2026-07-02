@@ -532,6 +532,10 @@ class OntologyVersionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class VersionMutabilityUpdate(BaseModel):
+    mutable: bool
+
+
 class EvidenceCreate(BaseModel):
     source_type: Literal["document", "conversation", "user_statement", "system"]
     artifact_id: str | None = None
@@ -673,47 +677,6 @@ class ProposalRead(BaseModel):
     decisions: list[dict[str, Any]] = Field(default_factory=list)
     validation_runs: list[dict[str, Any]] = Field(default_factory=list)
     conflicts: list[dict[str, Any]] = Field(default_factory=list)
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ReviewDecisionCreate(BaseModel):
-    decision: Literal["approved", "rejected"]
-    reviewer_type: Literal["user", "service"] = "user"
-    reviewer_id: str | None = None
-    reason: str | None = None
-
-
-class ProposalItemReview(BaseModel):
-    action: Literal["approved", "rejected", "edited", "merged"]
-    reviewer_type: Literal["user", "service"] = "user"
-    reviewer_id: str | None = None
-    reason: str | None = None
-    data: dict[str, Any] | None = None
-    merge_into_key: str | None = None
-
-
-class ProposalBatchReview(BaseModel):
-    item_keys: list[str] = Field(min_length=1)
-    action: Literal["approved", "rejected"]
-    reviewer_type: Literal["user", "service"] = "user"
-    reviewer_id: str | None = None
-    reason: str | None = None
-
-
-class ReviewBatchRead(BaseModel):
-    id: str
-    stable_key: str
-    project_id: str
-    ontology_id: str
-    ontology_version_id: str
-    review_type: str
-    status: str
-    item_ids: list[str]
-    counts: dict[str, Any]
-    deep_link: str
-    created_at: datetime
-    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
