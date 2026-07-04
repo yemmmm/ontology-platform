@@ -396,6 +396,24 @@ class OntologyExportRead(BaseModel):
     relations: list[RelationRead]
 
 
+class SemanticNamespaceRead(BaseModel):
+    context: dict[str, Any]
+    iri_patterns: dict[str, str]
+
+
+class SemanticProjectionParseRequest(BaseModel):
+    format: Literal["trig", "turtle", "json-ld"]
+    content: str
+
+
+class SemanticCompactProjectionRead(BaseModel):
+    classes: list[dict[str, Any]]
+    relation_types: list[dict[str, Any]]
+    entities: list[dict[str, Any]]
+    relations: list[dict[str, Any]]
+    fact_claims: list[dict[str, Any]]
+
+
 class DataSourceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     source_type: str = Field(min_length=1, max_length=80)

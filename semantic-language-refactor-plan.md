@@ -130,6 +130,8 @@ Acceptance criteria:
 Goal: define the platform's stable semantic language and prove the current model can be represented
 in RDF/OWL/SKOS/SHACL before changing canonical writes.
 
+Detailed implementation note: `docs/semantic/phase2-namespace-mapping-export.md`.
+
 Implementation focus:
 
 1. Document namespace and IRI conventions for projects, versions, ontology graphs, data graphs,
