@@ -1,5 +1,6 @@
 import { Alert, Modal } from "antd";
 import type { ReactNode } from "react";
+import { useT } from "../../i18n";
 
 export type ConfirmActionDialogProps = {
   open: boolean;
@@ -28,12 +29,13 @@ export function ConfirmActionDialog({
   onConfirm,
   onCancel,
 }: ConfirmActionDialogProps) {
+  const t = useT();
   return (
     <Modal
       open={open}
       title={title}
-      okText={confirmLabel}
-      cancelText={cancelLabel}
+      okText={t(confirmLabel)}
+      cancelText={t(cancelLabel)}
       okButtonProps={{ danger, disabled }}
       confirmLoading={loading}
       closable={!loading}

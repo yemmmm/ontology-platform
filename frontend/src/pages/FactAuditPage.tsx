@@ -16,6 +16,7 @@ import {
 import { Check, Play, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useT } from "../i18n";
 import { EvidenceExplorer } from "./EvidenceExplorer";
 import type { GovernancePageContext } from "./governanceTypes";
 import { jsonText, messageFrom } from "./governanceTypes";
@@ -80,12 +81,12 @@ const layers = [
   "workflow",
 ];
 
-function subjectLabel(subject: Record<string, unknown>): string {
+function subjectLabel(subject: Record<string, unknown>, fallback: string): string {
   const name = subject.name;
   if (typeof name === "string" && name) return name;
   const entityId = subject.entity_id;
   if (typeof entityId === "string" && entityId) return entityId;
-  return "Structured subject";
+  return fallback;
 }
 
 export function FactAuditPage({
@@ -97,6 +98,7 @@ export function FactAuditPage({
   batchItemIds,
   initialClaimId,
 }: FactAuditPageProps) {
+  const t = useT();
   const [claims, setClaims] = useState<FactClaim[]>([]);
   const [selectedId, setSelectedId] = useState(initialClaimId ?? "");
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,7 @@ export function FactAuditPage({
       });
       setClaims(data);
       setSelectedId(data[0]?.id ?? "");
-      setSuccess(`Generated ${data.length} deterministic facts.`);
+      setSuccess(t("Generated {n} deterministic facts.", { n: data.length }));
     } catch (generateError) {
       setError(messageFrom(generateError));
     } finally {
@@ -182,7 +184,7 @@ export function FactAuditPage({
       });
       await load();
       setSelectedId(data[0]?.id ?? selectedId);
-      setSuccess(`Executed active rules and created ${data.length} derived assertions.`);
+      setSuccess(t("Executed active rules and created {n} derived assertions.", { n: data.length }));
     } catch (executeError) {
       setError(messageFrom(executeError));
     } finally {
@@ -199,7 +201,11 @@ export function FactAuditPage({
         body: JSON.stringify({ query: backgroundQuery.trim() || null, limit: 5 }),
       });
       setBackgroundHits(data);
-      setSuccess(`Loaded ${data.length} background recall item${data.length === 1 ? "" : "s"}.`);
+      setSuccess(
+        data.length === 1
+          ? t("Loaded {n} background recall item.", { n: data.length })
+          : t("Loaded {n} background recall items.", { n: data.length }),
+      );
     } catch (recallError) {
       setError(messageFrom(recallError));
     } finally {
@@ -218,7 +224,7 @@ export function FactAuditPage({
       });
       setClaims(data);
       setSelectedId(data[0]?.id ?? "");
-      setSuccess(`Loaded a stratified sample of ${data.length} facts.`);
+      setSuccess(t("Loaded a stratified sample of {n} facts.", { n: data.length }));
     } catch (sampleError) {
       setError(messageFrom(sampleError));
     } finally {
@@ -229,7 +235,7 @@ export function FactAuditPage({
   async function review(decision: "approved" | "rejected" | "needs_correction") {
     if (!selected || selected.stale) return;
     if (decision === "rejected" && (!reason.trim() || !fixProposalId.trim())) {
-      setError("Reject requires both a reason and a linked fix proposal ID.");
+      setError(t("Reject requires both a reason and a linked fix proposal ID."));
       return;
     }
     setBusy(true);
@@ -244,7 +250,7 @@ export function FactAuditPage({
         }),
       });
       setClaims((current) => current.map((claim) => (claim.id === updated.id ? updated : claim)));
-      setSuccess(`Fact marked ${decision.replace("_", " ")}.`);
+      setSuccess(t("Fact marked {decision}.", { decision: decision.replace("_", " ") }));
       setReason("");
       setFixProposalId("");
     } catch (reviewError) {
@@ -254,54 +260,54 @@ export function FactAuditPage({
     }
   }
 
-  if (loading) return <Spin tip="Loading fact audit…" />;
+  if (loading) return <Spin tip={t("Loading fact audit…")} />;
 
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <div className="topBar">
         <div>
-          <span className="eyebrow">Review / deterministic facts</span>
-          <h1>Fact Audit</h1>
+          <span className="eyebrow">{t("Review / deterministic facts")}</span>
+          <h1>{t("Fact Audit")}</h1>
           <div className="crumbTrail">{project.name} / {ontology.name} / v{version.version_number}</div>
         </div>
         <Space wrap>
           <InputNumber min={1} max={100} value={sampleSize} onChange={(value) => setSampleSize(value ?? 5)} />
-          <Button onClick={() => void sample()} disabled={busy || claims.length === 0}>Sample</Button>
-          <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>Refresh</Button>
-          <Button icon={<Play size={15} />} onClick={() => void executeRules()} disabled={busy || readOnly}>Run rules</Button>
-          <Button type="primary" icon={<Sparkles size={15} />} onClick={() => void generate()} disabled={busy || readOnly}>Generate</Button>
+          <Button onClick={() => void sample()} disabled={busy || claims.length === 0}>{t("Sample")}</Button>
+          <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>{t("Refresh")}</Button>
+          <Button icon={<Play size={15} />} onClick={() => void executeRules()} disabled={busy || readOnly}>{t("Run rules")}</Button>
+          <Button type="primary" icon={<Sparkles size={15} />} onClick={() => void generate()} disabled={busy || readOnly}>{t("Generate")}</Button>
         </Space>
       </div>
       {error && <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />}
       {success && <Alert type="success" showIcon message={success} closable onClose={() => setSuccess("")} />}
-      {readOnly && <Alert type="info" showIcon message="This published version is read-only. Fact generation and review are disabled." />}
+      {readOnly && <Alert type="info" showIcon message={t("This published version is read-only. Fact generation and review are disabled.")} />}
       <Space wrap size={24}>
-        <Statistic title="All facts" value={counts.total} />
-        <Statistic title="Pending" value={counts.pending} />
-        <Statistic title="Approved" value={counts.approved} />
-        <Statistic title="Stale" value={counts.stale} />
+        <Statistic title={t("All facts")} value={counts.total} />
+        <Statistic title={t("Pending")} value={counts.pending} />
+        <Statistic title={t("Approved")} value={counts.approved} />
+        <Statistic title={t("Stale")} value={counts.stale} />
       </Space>
-      <Card size="small" title="Filters">
+      <Card size="small" title={t("Filters")}>
         <Space wrap style={{ width: "100%" }}>
-          <Select aria-label="Layer" value={layer} onChange={setLayer} style={{ width: 190 }} options={[{ value: "all", label: "All layers" }, ...layers.map((value) => ({ value, label: value.replace(/_/g, " ") }))]} />
-          <Select aria-label="Claim type" value={claimType} onChange={setClaimType} style={{ width: 170 }} options={["all", "direct", "inferred", "conflict", "low_confidence"].map((value) => ({ value, label: value === "all" ? "All claim types" : value.replace(/_/g, " ") }))} />
-          <Select aria-label="Audit status" value={auditStatus} onChange={setAuditStatus} style={{ width: 170 }} options={["all", "pending", "approved", "rejected", "needs_correction"].map((value) => ({ value, label: value === "all" ? "All audit states" : value.replace(/_/g, " ") }))} />
-          <Select aria-label="Stale state" value={stale} onChange={setStale} style={{ width: 150 }} options={[{ value: "all", label: "Fresh and stale" }, { value: "no", label: "Fresh only" }, { value: "yes", label: "Stale only" }]} />
-          <InputNumber aria-label="Minimum confidence" min={0} max={1} step={0.05} value={minimumConfidence} onChange={(value) => setMinimumConfidence(value ?? 0)} addonBefore="Confidence ≥" />
+          <Select aria-label={t("Layer")} value={layer} onChange={setLayer} style={{ width: 190 }} options={[{ value: "all", label: t("All layers") }, ...layers.map((value) => ({ value, label: value.replace(/_/g, " ") }))]} />
+          <Select aria-label={t("Claim type")} value={claimType} onChange={setClaimType} style={{ width: 170 }} options={["all", "direct", "inferred", "conflict", "low_confidence"].map((value) => ({ value, label: value === "all" ? t("All claim types") : value.replace(/_/g, " ") }))} />
+          <Select aria-label={t("Audit status")} value={auditStatus} onChange={setAuditStatus} style={{ width: 170 }} options={["all", "pending", "approved", "rejected", "needs_correction"].map((value) => ({ value, label: value === "all" ? t("All audit states") : value.replace(/_/g, " ") }))} />
+          <Select aria-label={t("Stale state")} value={stale} onChange={setStale} style={{ width: 150 }} options={[{ value: "all", label: t("Fresh and stale") }, { value: "no", label: t("Fresh only") }, { value: "yes", label: t("Stale only") }]} />
+          <InputNumber aria-label={t("Minimum confidence")} min={0} max={1} step={0.05} value={minimumConfidence} onChange={(value) => setMinimumConfidence(value ?? 0)} addonBefore={t("Confidence ≥")} />
         </Space>
       </Card>
-      <Card size="small" title="Background recall">
+      <Card size="small" title={t("Background recall")}>
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
           <Space.Compact style={{ width: "100%" }}>
-            <Input value={backgroundQuery} onChange={(event) => setBackgroundQuery(event.target.value)} placeholder="Search unanchored knowledge without treating it as governed fact" />
-            <Button icon={<Search size={15} />} onClick={() => void recallBackground()} disabled={busy}>Recall</Button>
+            <Input value={backgroundQuery} onChange={(event) => setBackgroundQuery(event.target.value)} placeholder={t("Search unanchored knowledge without treating it as governed fact")} />
+            <Button icon={<Search size={15} />} onClick={() => void recallBackground()} disabled={busy}>{t("Recall")}</Button>
           </Space.Compact>
           {backgroundHits.length > 0 && (
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
               {backgroundHits.map((item) => (
                 <Card size="small" key={item.knowledge_id}>
                   <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                    <Space wrap><Tag color="blue">background_recall</Tag><Tag>{Math.round(item.confidence * 100)}% confidence</Tag>{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</Space>
+                    <Space wrap><Tag color="blue">{t("background_recall")}</Tag><Tag>{t("{pct}% confidence", { pct: Math.round(item.confidence * 100) })}</Tag>{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</Space>
                     <Typography.Text>{item.summary || item.text}</Typography.Text>
                     {item.summary && <Typography.Text type="secondary">{item.text}</Typography.Text>}
                   </Space>
@@ -312,14 +318,14 @@ export function FactAuditPage({
         </Space>
       </Card>
       <div className="factAuditLayout">
-        <Card title={`Fact queue · ${scopedClaims.length}`} styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}>
-          {scopedClaims.length === 0 ? <Empty description={claims.length ? "No facts match these filters" : "Generate facts to start an audit"} /> : (
+        <Card title={t("Fact queue · {n}", { n: scopedClaims.length })} styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}>
+          {scopedClaims.length === 0 ? <Empty description={claims.length ? t("No facts match these filters") : t("Generate facts to start an audit")} /> : (
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               {scopedClaims.map((claim) => (
                 <Button key={claim.id} block type={selected?.id === claim.id ? "primary" : "default"} onClick={() => setSelectedId(claim.id)} style={{ height: "auto", padding: 10, textAlign: "left", whiteSpace: "normal" }}>
                   <Space direction="vertical" size={3} style={{ width: "100%" }}>
-                    <Space wrap><Tag>{claim.layer.replace(/_/g, " ")}</Tag><Tag>{claim.claim_type}</Tag>{claim.stale && <Tag color="warning">STALE</Tag>}</Space>
-                    <strong>{subjectLabel(claim.subject)} · {claim.predicate}</strong>
+                    <Space wrap><Tag>{claim.layer.replace(/_/g, " ")}</Tag><Tag>{claim.claim_type}</Tag>{claim.stale && <Tag color="warning">{t("STALE")}</Tag>}</Space>
+                    <strong>{subjectLabel(claim.subject, t("Structured subject"))} · {claim.predicate}</strong>
                     <Typography.Text type="secondary" ellipsis>{jsonText(claim.value)}</Typography.Text>
                   </Space>
                 </Button>
@@ -327,29 +333,29 @@ export function FactAuditPage({
             </Space>
           )}
         </Card>
-        <Card title="Fact inspector">
-          {!selected ? <Empty description="Select a fact" /> : (
+        <Card title={t("Fact inspector")}>
+          {!selected ? <Empty description={t("Select a fact")} /> : (
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
-              {selected.stale && <Alert type="warning" showIcon message="This fact is stale and cannot be reviewed. Regenerate facts from the current graph first." description={selected.stale_reason ?? undefined} />}
-              <Space wrap><Tag color={selected.claim_type === "inferred" ? "geekblue" : "green"}>{selected.claim_type.toUpperCase()}</Tag><Tag>{selected.audit_status}</Tag><Tag>{Math.round(selected.confidence * 100)}% confidence</Tag></Space>
+              {selected.stale && <Alert type="warning" showIcon message={t("This fact is stale and cannot be reviewed. Regenerate facts from the current graph first.")} description={selected.stale_reason ?? undefined} />}
+              <Space wrap><Tag color={selected.claim_type === "inferred" ? "geekblue" : "green"}>{selected.claim_type.toUpperCase()}</Tag><Tag>{selected.audit_status}</Tag><Tag>{t("{pct}% confidence", { pct: Math.round(selected.confidence * 100) })}</Tag></Space>
               <Descriptions size="small" bordered column={1} items={[
-                { key: "subject", label: "Subject", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.subject)}</pre> },
-                { key: "predicate", label: "Predicate", children: selected.predicate },
-                { key: "value", label: "Object / value", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.value)}</pre> },
-                { key: "anchor", label: "Anchor", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.anchor)}</pre> },
-                { key: "policy", label: "Sensitivity / access", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText({ sensitivity: selected.sensitivity, access_policy: selected.access_policy })}</pre> },
-                { key: "override", label: "Override", children: selected.override_of_claim_id ?? "None" },
-                { key: "reason", label: "Generated because", children: selected.generation_reason },
-                { key: "path", label: "Graph path", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.graph_path)}</pre> },
-                { key: "history", label: "Review record", children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.review_decision)}</pre> },
+                { key: "subject", label: t("Subject"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.subject)}</pre> },
+                { key: "predicate", label: t("Predicate"), children: selected.predicate },
+                { key: "value", label: t("Object / value"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.value)}</pre> },
+                { key: "anchor", label: t("Anchor"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.anchor)}</pre> },
+                { key: "policy", label: t("Sensitivity / access"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText({ sensitivity: selected.sensitivity, access_policy: selected.access_policy })}</pre> },
+                { key: "override", label: t("Override"), children: selected.override_of_claim_id ?? t("None") },
+                { key: "reason", label: t("Generated because"), children: selected.generation_reason },
+                { key: "path", label: t("Graph path"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.graph_path)}</pre> },
+                { key: "history", label: t("Review record"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.review_decision)}</pre> },
               ]} />
               <EvidenceExplorer request={request} evidenceIds={selected.evidence_ids} compact />
-              <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Review reason (required for rejection)" disabled={busy || readOnly || selected.stale} />
-              <Input value={fixProposalId} onChange={(event) => setFixProposalId(event.target.value)} placeholder="Linked fix proposal ID (required for rejection)" disabled={busy || readOnly || selected.stale} />
+              <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Review reason (required for rejection)")} disabled={busy || readOnly || selected.stale} />
+              <Input value={fixProposalId} onChange={(event) => setFixProposalId(event.target.value)} placeholder={t("Linked fix proposal ID (required for rejection)")} disabled={busy || readOnly || selected.stale} />
               <Space wrap>
-                <Button type="primary" icon={<Check size={15} />} onClick={() => void review("approved")} disabled={busy || readOnly || selected.stale}>Approve</Button>
-                <Button danger icon={<X size={15} />} onClick={() => void review("rejected")} disabled={busy || readOnly || selected.stale}>Reject</Button>
-                <Button onClick={() => void review("needs_correction")} disabled={busy || readOnly || selected.stale}>Needs correction</Button>
+                <Button type="primary" icon={<Check size={15} />} onClick={() => void review("approved")} disabled={busy || readOnly || selected.stale}>{t("Approve")}</Button>
+                <Button danger icon={<X size={15} />} onClick={() => void review("rejected")} disabled={busy || readOnly || selected.stale}>{t("Reject")}</Button>
+                <Button onClick={() => void review("needs_correction")} disabled={busy || readOnly || selected.stale}>{t("Needs correction")}</Button>
               </Space>
             </Space>
           )}

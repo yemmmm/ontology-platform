@@ -1,0 +1,128 @@
+# Ontology Platform
+
+This context defines the language for governed ontology and knowledge graph modeling in the
+platform. It keeps semantic-web refactor terms distinct from current storage and UI terms.
+
+## Language
+
+**Semantic Resource**:
+A thing identified by a stable IRI in the platform's semantic model, such as a class, property,
+entity, proposal, evidence item, review decision, rule, or policy.
+_Avoid_: row, record, node
+
+**Named Graph**:
+A semantic or governance boundary inside an RDF Dataset that contains statements for the actual
+ontology model, actual business data, evidence item, reasoning result, rule result, review/audit
+metadata, policy, or import.
+_Avoid_: table, project graph, Neo4j graph
+
+**Graph Set**:
+The group of named graphs that together define the current semantic state, such as an ontology
+graph plus its data graph, governing policy graph, and current effective reasoning/rule result
+graphs where inferred or derived statements are needed.
+_Avoid_: snapshot, bundle
+
+**Actual Graph**:
+The named graph that semantic edits affect when graph editing is enabled.
+_Avoid_: draft graph, published graph
+
+**Editable Graph**:
+An actual graph whose own editability switch allows validated semantic changes to be applied.
+_Avoid_: draft graph
+
+**Locked Graph**:
+An actual graph whose own editability switch prevents ordinary semantic changes. In the current
+platform target, locking is a collaboration state and not a permission boundary.
+_Avoid_: published graph
+
+**Lock Audit**:
+The record of who or what locked or unlocked a graph, when it happened, and why. It is not a record
+of every failed edit attempt.
+_Avoid_: approval
+
+**Rule Result Graph**:
+A named graph that stores statements produced by deterministic rule execution, separate from the
+source graph the rule read.
+_Avoid_: source graph mutation, hidden update
+
+**Reasoning Result Graph**:
+A named graph that stores statements inferred by the OWL reasoning service, separate from the source
+ontology or data graphs used as input. It is rebuildable derived data; older result graphs may be
+deleted after a newer result for the same graph set succeeds.
+_Avoid_: source graph mutation, asserted fact
+
+**Fact Write**:
+A semantic edit that adds, changes, or removes a concrete business fact about a real class member,
+relationship, event, measurement, or assertion.
+_Avoid_: model edit, schema change
+
+**Evidence Status**:
+The recorded state that says whether a fact has supporting evidence, is missing evidence, or still
+needs later verification.
+_Avoid_: proof
+
+**Missing-Evidence Fact**:
+A fact that is allowed into the actual graph without supporting evidence, but must be clearly
+marked and surfaced with a warning during recall.
+_Avoid_: verified fact
+
+**Derived Risk Warning**:
+A warning carried by a rule result when the result depends on missing-evidence input.
+_Avoid_: verified conclusion
+
+**Model Structure Edit**:
+A semantic edit that changes the ontology model itself, such as a class, property, relation type,
+shape, label, alias, or hierarchy.
+_Avoid_: fact write
+
+**Edit Audit**:
+The required record of a semantic edit, including who or what made the edit, when it happened, why
+it happened, what input was used, and how validation ended.
+_Avoid_: evidence
+
+**Validation Service**:
+The backend service responsible for checking semantic data against SHACL shapes and platform
+validation rules. It reads graph data from the RDF store but is not the RDF store itself.
+_Avoid_: Oxigraph native validation, database constraint
+
+**OWL Reasoning Service**:
+The semantic service that runs OWL reasoning over selected ontology/data graph sets to check
+consistency, compute class/property hierarchies, classify individuals, and answer entailment
+questions. It reads from the RDF store but does not own source graph truth.
+_Avoid_: SHACL validation service, business rule engine, Oxigraph storage
+
+**Projection**:
+A rebuildable operational representation derived from canonical semantic state for product APIs,
+UI screens, search, vector retrieval, or property-graph traversal.
+_Avoid_: source of truth, cache when it implies semantic ownership
+
+**Property-Graph Projection**:
+A Neo4j-backed graph view rebuilt from canonical RDF data for visualization and high-speed traversal.
+It is not allowed to own semantic truth or accept independent semantic writes.
+_Avoid_: canonical graph, ontology store, truth store
+
+**Technical Route**:
+The Phase 0 decision stage that establishes the intended RDF-native foundation for the current
+standardized semantic-language refactor version while keeping user-facing functionality small.
+_Avoid_: throwaway stack, in-memory-only prototype, shipped version
+
+**Direct Semantic Modeling Interface**:
+The agent-facing or expert-facing input surface that accepts semantic modeling statements such as
+TriG, Turtle, JSON-LD, SHACL, OWL, or constrained SPARQL Update as governed graph edits.
+_Avoid_: CRUD API, raw write endpoint
+
+**Agent SPARQL Query Interface**:
+The agent-facing read surface that accepts SPARQL queries for flexible exploration of canonical
+semantic data. It is separate from semantic write/edit interfaces.
+_Avoid_: fixed CRUD API, semantic edit endpoint
+
+**Constrained SPARQL Update**:
+A SPARQL-based semantic write patch that is accepted only through the governed semantic edit
+interface. It may express complex inserts/deletes, but it must still be validated, audited, and
+checked against graph editability before commit.
+_Avoid_: raw database write, query endpoint
+
+**Structured Product API**:
+The business-friendly input surface for ordinary workflows, such as creating classes, submitting
+assertions, validating graph edits, and controlling graph editability.
+_Avoid_: semantic core, canonical store

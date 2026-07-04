@@ -103,6 +103,8 @@ import { EvidenceExplorer } from "./pages/EvidenceExplorer";
 import { CatalogWizardPage } from "./pages/CatalogWizardPage";
 import { WorkflowProgress } from "./components/WorkflowProgress";
 import { ConfirmActionDialog } from "./components/workbench";
+import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { useT } from "./i18n";
 
 type AppView = "home" | "workspace";
 type WorkspaceTab =
@@ -122,7 +124,7 @@ type WorkspaceTab =
   | "agent-test"
   | "mcp-tools"
   | "setting";
-type WorkspaceStage = "intake" | "schema" | "graph" | "facts" | "publish" | "catalog" | "tools";
+type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools";
 type ClassPageMode = "topology" | "create" | "edit";
 type EntityPageMode = "topology" | "create" | "edit";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
@@ -153,31 +155,25 @@ const stageMeta: Array<{
   workflowStatuses?: string[];
 }> = [
   { id: "intake", label: "Intake", detail: "Brief · questions · evidence", icon: BookOpen, workflowStatuses: ["gathering"] },
-  { id: "schema", label: "Schema", detail: "Classes · relation types", icon: Box, workflowStatuses: ["schema_draft", "schema_review"] },
-  { id: "graph", label: "Graph", detail: "Entities · relations", icon: GitBranch, workflowStatuses: ["graph_building", "graph_review"] },
-  { id: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2, workflowStatuses: ["validated"] },
+  { id: "knowledge", label: "Modeling", detail: "Classes · entities · facts · catalog", icon: GitBranch, workflowStatuses: ["schema_draft", "schema_review", "graph_building", "graph_review", "validated"] },
   { id: "publish", label: "Publish", detail: "Publication · versions", icon: Flag, workflowStatuses: ["published"] },
-  { id: "catalog", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
   { id: "tools", label: "Tools", detail: "Search · agent · MCP · settings", icon: Wrench },
 ];
 
 const stageDefaultTab: Record<WorkspaceStage, WorkspaceTab> = {
   intake: "overview",
-  schema: "classes",
-  graph: "entities",
-  facts: "facts",
+  knowledge: "classes",
   publish: "publication",
-  catalog: "catalog",
   tools: "entities-search",
 };
 
 const workflowStatusToStage: Record<string, WorkspaceStage> = {
   gathering: "intake",
-  schema_draft: "schema",
-  schema_review: "schema",
-  graph_building: "graph",
-  graph_review: "graph",
-  validated: "facts",
+  schema_draft: "knowledge",
+  schema_review: "knowledge",
+  graph_building: "knowledge",
+  graph_review: "knowledge",
+  validated: "knowledge",
   published: "publish",
 };
 
@@ -192,12 +188,12 @@ const workspaceTabs: Array<{
   { id: "brief", stage: "intake", label: "Brief", detail: "Scope & intent", icon: BookOpen },
   { id: "questions", stage: "intake", label: "Questions", detail: "Competency validation", icon: CircleHelp },
   { id: "sources", stage: "intake", label: "Files", detail: "Evidence originals", icon: FileText },
-  { id: "classes", stage: "schema", label: "Classes", detail: "Class topology", icon: Box },
-  { id: "entities", stage: "graph", label: "Entities", detail: "Entity editor", icon: Database },
-  { id: "facts", stage: "facts", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
+  { id: "classes", stage: "knowledge", label: "Classes", detail: "Class topology", icon: Box },
+  { id: "entities", stage: "knowledge", label: "Entities", detail: "Entity editor", icon: Database },
+  { id: "facts", stage: "knowledge", label: "Facts", detail: "Layered fact audit", icon: FileCheck2 },
+  { id: "catalog", stage: "knowledge", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
   { id: "versions", stage: "publish", label: "Versions", detail: "Lineage & diff", icon: History },
-  { id: "catalog", stage: "catalog", label: "Catalog", detail: "Mappings & connectors", icon: Link2 },
   { id: "entities-search", stage: "tools", label: "Search", detail: "Retrieval tests", icon: Search },
   { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
   { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
@@ -323,6 +319,7 @@ function ParentClassPicker(props: ParentClassPickerProps) {
 }
 
 export function App() {
+  const t = useT();
   const [view, setView] = useState<AppView>(() => queryValue("ontology") ? "workspace" : "home");
   const requestedTab = queryValue("tab");
   const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(
@@ -355,7 +352,7 @@ export function App() {
   const showError = useCallback((error: unknown) => setNotice(errorNotice(error)), []);
   const navigateWorkspace = useCallback((tab: string, params: Record<string, string> = {}) => {
     if (!isWorkspaceTab(tab)) return;
-    if (pageDirty && !window.confirm("Discard unsaved changes and leave this page?")) return;
+    if (pageDirty && !window.confirm(t("Discard unsaved changes and leave this page?"))) return;
     setPageDirty(false);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
@@ -537,19 +534,22 @@ export function App() {
         <main className="homeShell">
           <header className="homeTopBar">
             <div>
-              <span className="eyebrow">Ontology workspace</span>
-              <h1>Ontologies</h1>
+              <span className="eyebrow">{t("Ontology workspace")}</span>
+              <h1>{t("Ontologies")}</h1>
               <div className="crumbTrail">
-                <span>{selectedProject?.name ?? "No project"}</span>
+                <span>{selectedProject?.name ?? t("No project")}</span>
                 <ChevronRight size={13} />
-                <span>{ontologies.length} ontologies</span>
+                <span>{t("{count} ontologies", { count: ontologies.length })}</span>
               </div>
             </div>
-            <Tooltip title="Refresh workspace data">
-              <button className="iconButton" disabled={loading} onClick={refreshAll} type="button">
-                {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
-              </button>
-            </Tooltip>
+            <div className="topActions">
+              <LanguageSwitcher />
+              <Tooltip title={t("Refresh workspace data")}>
+                <button className="iconButton" disabled={loading} onClick={refreshAll} type="button">
+                  {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
+                </button>
+              </Tooltip>
+            </div>
           </header>
           {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
           <OntologyHomePage
@@ -575,11 +575,11 @@ export function App() {
             <button className="brandMark brandButton" onClick={() => setView("home")} type="button">
               <Network size={22} />
               <div>
-                <strong>Ontology Platform</strong>
-                <span>Back to ontology list</span>
+                <strong>{t("Ontology Platform")}</strong>
+                <span>{t("Back to ontology list")}</span>
               </div>
             </button>
-            <nav className="mainNav" aria-label="Ontology workspace navigation">
+            <nav className="mainNav" aria-label={t("Ontology workspace navigation")}>
               {stageMeta.map((stage) => {
                 const tabsInStage = workspaceTabs.filter((item) => item.stage === stage.id);
                 if (!tabsInStage.length) return null;
@@ -604,8 +604,8 @@ export function App() {
                       type="button"
                     >
                       <StageIcon size={15} />
-                      <span><strong>{stage.label}</strong><small>{stage.detail}</small></span>
-                      {isWorkflowStage && <span className="navStageDot" aria-label="Current workflow stage" />}
+                      <span><strong>{t(stage.label)}</strong><small>{t(stage.detail)}</small></span>
+                      {isWorkflowStage && <span className="navStageDot" aria-label={t("Current workflow stage")} />}
                     </button>
                     <div className="navStageTabs">
                       {tabsInStage.map((item) => {
@@ -618,7 +618,7 @@ export function App() {
                             type="button"
                           >
                             <Icon size={15} />
-                            <span>{item.label}</span>
+                            <span>{t(item.label)}</span>
                           </button>
                         );
                       })}
@@ -628,47 +628,48 @@ export function App() {
               })}
             </nav>
             <div className="railFooter">
-              <span>API</span>
+              <span>{t("API")}</span>
               <code>{API_BASE_URL}</code>
+              <div className="railFooterSwitcher"><LanguageSwitcher /></div>
             </div>
           </aside>
 
           <section className="workbench">
             <header className="topBar">
               <div className="titleBlock">
-                <span className="eyebrow">Ontology workspace</span>
-                <h1>{activeTab.label}</h1>
+                <span className="eyebrow">{t("Ontology workspace")}</span>
+                <h1>{t(activeTab.label)}</h1>
                 <div className="crumbTrail">
                   <button className="crumbButton" onClick={() => setView("home")} type="button">
-                    {selectedProject?.name ?? "Projects"}
+                    {selectedProject?.name ?? t("Projects")}
                   </button>
                   <ChevronRight size={13} />
-                  <span>{selectedOntology?.name ?? "No ontology"}</span>
+                  <span>{selectedOntology?.name ?? t("No ontology")}</span>
                   <ChevronRight size={13} />
-                  <span>{activeTab.label}</span>
+                  <span>{t(activeTab.label)}</span>
                 </div>
               </div>
               <div className="topActions">
                 <label className="versionSelector">
-                  <span>Version</span>
+                  <span>{t("Version")}</span>
                   <select
-                    aria-label="Active ontology version"
+                    aria-label={t("Active ontology version")}
                     onChange={(event) => setSelectedVersionId(event.target.value)}
                     value={selectedVersionId}
                   >
-                    {!versions.length && <option value="">No versions</option>}
+                    {!versions.length && <option value="">{t("No versions")}</option>}
                     {versions.map((version) => (
                       <option key={version.id} value={version.id}>
-                        v{version.version_number} · {version.status}
+                        {t("v{n} · {status}", { n: version.version_number, status: version.status })}
                       </option>
                     ))}
                   </select>
                 </label>
-                {selectedVersion?.status === "published" && <span className="readOnlyPill">Read-only</span>}
+                {selectedVersion?.status === "published" && <span className="readOnlyPill">{t("Read-only")}</span>}
                 <button className="secondaryButton" onClick={() => setView("home")} type="button">
-                  <ArrowLeft size={15} /> Ontologies
+                  <ArrowLeft size={15} /> {t("Ontologies")}
                 </button>
-                <Tooltip title="Refresh ontology data">
+                <Tooltip title={t("Refresh ontology data")}>
                   <button
                     className="iconButton"
                     disabled={loading}
@@ -706,7 +707,7 @@ export function App() {
               {!selectedOntology || !selectedProject ? (
                 <EmptyState
                   icon={<Waypoints size={22} />}
-                  title="The linked project and ontology context is not available"
+                  title={t("The linked project and ontology context is not available")}
                 />
               ) : (
                 <WorkspaceContent
@@ -757,6 +758,7 @@ function OntologyHomePage(props: {
   reloadProjects: () => Promise<void>;
   reloadOntologies: (projectId?: string) => Promise<void>;
 }) {
+  const t = useT();
   const [projectForm, setProjectForm] = useState({ name: "", description: "" });
   const [ontologyForm, setOntologyForm] = useState({ name: "", description: "" });
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
@@ -772,7 +774,7 @@ function OntologyHomePage(props: {
       setProjectForm({ name: "", description: "" });
       props.setSelectedProjectId(created.id);
       await props.reloadProjects();
-    }, "Project created");
+    }, t("Project created"));
   }
 
   function createOntology(event: FormEvent) {
@@ -790,7 +792,7 @@ function OntologyHomePage(props: {
       setOntologyForm({ name: "", description: "" });
       props.setSelectedOntologyId(created.id);
       await props.reloadOntologies(props.selectedProjectId);
-    }, "Ontology created");
+    }, t("Ontology created"));
   }
 
   function deleteOntology(ontology: Ontology) {
@@ -798,7 +800,7 @@ function OntologyHomePage(props: {
       await props.request<void>(`/ontologies/${ontology.id}`, { method: "DELETE" });
       if (props.selectedOntologyId === ontology.id) props.setSelectedOntologyId("");
       await props.reloadOntologies(props.selectedProjectId);
-    }, "Ontology deleted");
+    }, t("Ontology deleted"));
   }
 
   function deleteProject() {
@@ -813,7 +815,7 @@ function OntologyHomePage(props: {
       setDeleteTarget(null);
       await props.reloadProjects();
       await props.reloadOntologies("");
-    }, "Project deleted");
+    }, t("Project deleted"));
   }
 
   return (
@@ -821,7 +823,7 @@ function OntologyHomePage(props: {
       <div className="homePrimary">
         <div className="homeFilterBar">
           <label>
-            <span>Project</span>
+            <span>{t("Project")}</span>
             <select
               value={props.selectedProjectId}
               onChange={(event) => props.setSelectedProjectId(event.target.value)}
@@ -833,7 +835,7 @@ function OntologyHomePage(props: {
                   </option>
                 ))
               ) : (
-                <option value="">No projects</option>
+                <option value="">{t("No projects")}</option>
               )}
             </select>
           </label>
@@ -841,7 +843,7 @@ function OntologyHomePage(props: {
             <button
               className="iconButton danger"
               onClick={() => setDeleteTarget(selectedProject)}
-              title="Delete project"
+              title={t("Delete project")}
               type="button"
             >
               <Trash2 size={15} />
@@ -861,18 +863,18 @@ function OntologyHomePage(props: {
                     <strong>{ontology.name}</strong>
                     <Badge>{ontology.status}</Badge>
                   </span>
-                  <span>{ontology.description || "No description provided."}</span>
+                  <span>{ontology.description || t("No description provided.")}</span>
                   <dl>
-                    <dt>Updated</dt>
+                    <dt>{t("Updated")}</dt>
                     <dd>{formatDate(ontology.updated_at)}</dd>
-                    <dt>Version</dt>
+                    <dt>{t("Version")}</dt>
                     <dd>{compactId(ontology.current_version_id)}</dd>
                   </dl>
                 </button>
                 <button
                   className="iconButton danger ontologyCardDelete"
                   onClick={() => deleteOntology(ontology)}
-                  title="Delete ontology"
+                  title={t("Delete ontology")}
                   type="button"
                 >
                   <Trash2 size={15} />
@@ -881,50 +883,50 @@ function OntologyHomePage(props: {
             ))}
           </div>
         ) : (
-          <EmptyState icon={<Waypoints size={22} />} title="No ontologies in this project" />
+          <EmptyState icon={<Waypoints size={22} />} title={t("No ontologies in this project")} />
         )}
       </div>
 
       <aside className="homeSide">
-        <Panel title="Add ontology" icon={<Plus size={17} />}>
+        <Panel title={t("Add ontology")} icon={<Plus size={17} />}>
           <form className="stackForm" onSubmit={createOntology}>
             <input
               required
-              placeholder="Ontology name"
+              placeholder={t("Ontology name")}
               value={ontologyForm.name}
               onChange={(event) => setOntologyForm({ ...ontologyForm, name: event.target.value })}
             />
             <textarea
-              placeholder="Description"
+              placeholder={t("Description")}
               value={ontologyForm.description}
               onChange={(event) => setOntologyForm({ ...ontologyForm, description: event.target.value })}
             />
             <button className="primaryButton" disabled={!props.selectedProjectId} type="submit">
-              <Plus size={15} /> Create ontology
+              <Plus size={15} /> {t("Create ontology")}
             </button>
           </form>
           <div className="callout quiet">
-            <strong>{selectedProject?.name ?? "No project selected"}</strong>
-            <span>New ontologies are created inside the selected project.</span>
+            <strong>{selectedProject?.name ?? t("No project selected")}</strong>
+            <span>{t("New ontologies are created inside the selected project.")}</span>
           </div>
         </Panel>
 
         {!props.projects.length && (
-          <Panel title="Create project" icon={<Layers size={17} />}>
+          <Panel title={t("Create project")} icon={<Layers size={17} />}>
             <form className="stackForm" onSubmit={createProject}>
               <input
                 required
-                placeholder="Project name"
+                placeholder={t("Project name")}
                 value={projectForm.name}
                 onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
               />
               <textarea
-                placeholder="Description"
+                placeholder={t("Description")}
                 value={projectForm.description}
                 onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
               />
               <button className="primaryButton" type="submit">
-                <Plus size={15} /> Create project
+                <Plus size={15} /> {t("Create project")}
               </button>
             </form>
           </Panel>
@@ -933,14 +935,14 @@ function OntologyHomePage(props: {
 
       <ConfirmActionDialog
         open={deleteTarget !== null}
-        title="Delete project"
+        title={t("Delete project")}
         danger
-        confirmLabel="Delete project"
-        warning={`This permanently deletes "${deleteTarget?.name ?? ""}" and all ontologies, entities, relations, evidence, and proposals inside it.`}
+        confirmLabel={t("Delete project")}
+        warning={t("This permanently deletes \"{name}\" and all ontologies, entities, relations, evidence, and proposals inside it.", { name: deleteTarget?.name ?? "" })}
         onConfirm={deleteProject}
         onCancel={() => setDeleteTarget(null)}
       >
-        <p>This cannot be undone.</p>
+        <p>{t("This cannot be undone.")}</p>
       </ConfirmActionDialog>
     </section>
   );
@@ -973,6 +975,7 @@ function WorkspaceContent(props: {
   showError: (error: unknown) => void;
 }) {
   const readOnly = props.selectedVersion?.status === "published";
+  const t = useT();
   // Stable identity is required: child pages (BuildOverviewPage et al.) put `request`
   // in their `load` useCallback deps, and a fresh inline function here would retrigger
   // their load effect on every parent render, producing an infinite fetch/Skeleton loop.
@@ -981,11 +984,11 @@ function WorkspaceContent(props: {
       const method = (options?.method ?? "GET").toUpperCase();
       const mutabilityToggle = /^\/versions\/[^/]+\/mutability$/.test(path);
       if (readOnly && method !== "GET" && method !== "HEAD" && !mutabilityToggle) {
-        return Promise.reject(new Error("Locked ontology versions are immutable. Turn mutability back on before making changes."));
+        return Promise.reject(new Error(t("Locked ontology versions are immutable. Turn mutability back on before making changes.")));
       }
       return props.request(path, options);
     },
-    [props.request, readOnly],
+    [props.request, readOnly, t],
   );
 
   if (props.tab === "overview") {
@@ -1001,14 +1004,14 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "facts" || props.tab === "publication") {
-    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title="Select a valid ontology version" />;
+    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
     const context = { ontology: props.ontology, project: props.project, readOnly, request: governedRequest, version: props.selectedVersion };
     if (props.tab === "facts") return <FactAuditPage {...context} initialClaimId={queryValue("claim") || undefined} />;
     return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onVersionChanged={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
   }
 
   if (props.tab === "versions") {
-    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title="Select a valid ontology version" />;
+    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
     return (
       <VersionsPage
         ontology={props.ontology}
@@ -1123,6 +1126,7 @@ function WorkspaceContent(props: {
 }
 
 function EvidenceArtifactsPage(props: { projectId: string; request: Requester; navigate: (tab: string, params?: Record<string, string>) => void; readOnly: boolean }) {
+  const t = useT();
   const [artifacts, setArtifacts] = useState<EvidenceArtifact[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [chunks, setChunks] = useState<EvidenceChunk[]>([]);
@@ -1183,7 +1187,7 @@ function EvidenceArtifactsPage(props: { projectId: string; request: Requester; n
       const proposals = await props.request<Proposal[]>(`/evidence-artifacts/${selectedId}/proposals`);
       const first = proposals[0];
       if (!first) {
-        setError("No proposals cite this evidence artifact yet. Agent extraction must submit candidates with evidence references first.");
+        setError(t("No proposals cite this evidence artifact yet. Agent extraction must submit candidates with evidence references first."));
         return;
       }
       props.navigate(first.proposal_type === "schema_change" ? "classes" : "entities", { proposal: first.id });
@@ -1199,8 +1203,8 @@ function EvidenceArtifactsPage(props: { projectId: string; request: Requester; n
     <section className="sourcePage">
       <aside className="sourceSidebar">
         <form className="sourceUpload" onSubmit={upload}>
-          <label><Upload size={16} /><span>PDF, Markdown or text evidence</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
-          <button className="primaryButton" disabled={!file || busy || props.readOnly} type="submit">Store evidence</button>
+          <label><Upload size={16} /><span>{t("PDF, Markdown or text evidence")}</span><input accept=".pdf,.md,.markdown,.txt,text/plain,text/markdown,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" /></label>
+          <button className="primaryButton" disabled={!file || busy || props.readOnly} type="submit">{t("Store evidence")}</button>
         </form>
         {artifacts.map((artifact) => (
           <button className={classNames("sourceDocument", artifact.id === selectedId && "active")} key={artifact.id} onClick={() => setSelectedId(artifact.id)} type="button">
@@ -1211,11 +1215,11 @@ function EvidenceArtifactsPage(props: { projectId: string; request: Requester; n
       </aside>
       <main className="sourceSurface">
         {error && <div className="reviewError">{error}</div>}
-        {!selected ? <EmptyState icon={<FileText size={24} />} title="Store an evidence artifact" /> : <>
-          <header className="reviewHeader"><div><span className="eyebrow">Evidence artifact</span><h2>{selected.filename}</h2><p>Stored original · SHA-256 {selected.content_hash.slice(0, 16)}… · parser {selected.parser_version} · parsed {selected.parse_count} time(s)</p></div><div className="reviewHeaderActions"><button className="secondaryButton" disabled={busy} onClick={() => void openProposals()} type="button">Linked proposals</button><button className="secondaryButton" disabled={busy || props.readOnly || selected.parse_status === "parsing"} onClick={() => void reparse()} type="button"><RefreshCw className={busy ? "spin" : ""} size={14} />{selected.parse_status === "failed" ? "Retry parse" : "Reparse chunks"}</button></div></header>
-          <div className="infoBanner">Artifacts are stored as evidence for Agent-extracted candidates. The platform parses chunks for traceability, but does not infer graph knowledge from the original text.</div>
+        {!selected ? <EmptyState icon={<FileText size={24} />} title={t("Store an evidence artifact")} /> : <>
+          <header className="reviewHeader"><div><span className="eyebrow">{t("Evidence artifact")}</span><h2>{selected.filename}</h2><p>{t("Stored original · SHA-256 {hash}… · parser {parser} · parsed {count} time(s)", { hash: selected.content_hash.slice(0, 16), parser: selected.parser_version, count: selected.parse_count })}</p></div><div className="reviewHeaderActions"><button className="secondaryButton" disabled={busy} onClick={() => void openProposals()} type="button">{t("Linked proposals")}</button><button className="secondaryButton" disabled={busy || props.readOnly || selected.parse_status === "parsing"} onClick={() => void reparse()} type="button"><RefreshCw className={busy ? "spin" : ""} size={14} />{selected.parse_status === "failed" ? t("Retry parse") : t("Reparse chunks")}</button></div></header>
+          <div className="infoBanner">{t("Artifacts are stored as evidence for Agent-extracted candidates. The platform parses chunks for traceability, but does not infer graph knowledge from the original text.")}</div>
           {selected.parse_error && <div className="reviewError">{selected.parse_error}</div>}
-          <div className="chunkList">{chunks.map((chunk) => <article className="sourceChunk" key={chunk.id}><header><strong>Chunk {chunk.sequence + 1}</strong><span>{chunk.page_number ? `Page ${chunk.page_number} · ` : ""}characters {chunk.char_start}–{chunk.char_end}</span></header><pre>{chunk.text}</pre><code>{chunk.content_hash.slice(0, 20)}…</code></article>)}</div>
+          <div className="chunkList">{chunks.map((chunk) => <article className="sourceChunk" key={chunk.id}><header><strong>{t("Chunk {n}", { n: chunk.sequence + 1 })}</strong><span>{chunk.page_number ? t("Page {n} · ", { n: chunk.page_number }) : ""}{t("characters {start}–{end}", { start: chunk.char_start, end: chunk.char_end })}</span></header><pre>{chunk.text}</pre><code>{chunk.content_hash.slice(0, 20)}…</code></article>)}</div>
         </>}
       </main>
     </section>
@@ -1234,6 +1238,7 @@ function ClassesPage(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadSchema: () => Promise<void>;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<ClassPageMode>("topology");
   const [query, setQuery] = useState("");
   const searchResults = useMemo(() => {
@@ -1273,7 +1278,7 @@ function ClassesPage(props: {
           <form className="classSearch" onSubmit={(event) => event.preventDefault()}>
             <Search size={16} />
             <input
-              placeholder="Search classes"
+              placeholder={t("Search classes")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -1293,18 +1298,18 @@ function ClassesPage(props: {
                   </button>
                 ))
               ) : (
-                <span className="searchEmpty">No matching classes</span>
+                <span className="searchEmpty">{t("No matching classes")}</span>
               )}
             </div>
           )}
         </div>
         <button className="primaryButton" onClick={newClass} type="button">
-          <Plus size={15} /> New class
+          <Plus size={15} /> {t("New class")}
         </button>
       </header>
 
       {mode === "topology" ? (
-        <Panel title="Class topology" icon={<Waypoints size={17} />} className="classTopologyPanel" wide>
+        <Panel title={t("Class topology")} icon={<Waypoints size={17} />} className="classTopologyPanel" wide>
           <ClassTopologyCanvas
             classes={props.classes}
             onSelectClass={selectClass}
@@ -1340,6 +1345,7 @@ function ClassTopologyCanvas(props: {
   selectedClassId: string;
   onSelectClass: (classId: string) => void;
 }) {
+  const t = useT();
   const { nodes, edges } = useMemo(
     () =>
       buildClassTopology(props.classes, props.relationTypes, props.propertiesByClass, props.selectedClassId),
@@ -1351,7 +1357,7 @@ function ClassTopologyCanvas(props: {
   );
 
   if (!props.classes.length) {
-    return <EmptyState icon={<Box size={22} />} title="No classes yet" />;
+    return <EmptyState icon={<Box size={22} />} title={t("No classes yet")} />;
   }
 
   return (
@@ -1379,14 +1385,15 @@ const classNodeTypes = {
 };
 
 function ClassFlowNode(props: NodeProps<Node<ClassNodeData>>) {
+  const t = useT();
   return (
     <div className={classNames("classFlowNodeBody", props.selected && "selected")}>
       <Handle position={Position.Left} type="target" />
       <strong>{props.data.label}</strong>
       <span>{props.data.description}</span>
       <div>
-        <small>{props.data.propertyCount} props</small>
-        <small>{props.data.relationCount} rels</small>
+        <small>{t("{n} props", { n: props.data.propertyCount })}</small>
+        <small>{t("{n} rels", { n: props.data.relationCount })}</small>
       </div>
       <Handle position={Position.Right} type="source" />
     </div>
@@ -1479,6 +1486,7 @@ function ClassEditorPage(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadSchema: () => Promise<void>;
 }) {
+  const t = useT();
   const selectedClass = props.classes.find((item) => item.id === props.selectedClassId) ?? null;
   const selectedProperties = selectedClass ? props.propertiesByClass[selectedClass.id] ?? [] : [];
   const relatedRelationTypes = selectedClass
@@ -1581,7 +1589,7 @@ function ClassEditorPage(props: {
         props.setMode("edit");
       }
       await props.reloadSchema();
-    }, props.mode === "edit" ? "Class updated" : "Class created");
+    }, props.mode === "edit" ? t("Class updated") : t("Class created"));
   }
 
   function deleteClass() {
@@ -1591,7 +1599,7 @@ function ClassEditorPage(props: {
       props.setSelectedClassId("");
       props.setMode("topology");
       await props.reloadSchema();
-    }, "Class deleted");
+    }, t("Class deleted"));
   }
 
   function saveProperty(event: FormEvent) {
@@ -1629,7 +1637,7 @@ function ClassEditorPage(props: {
         enumValues: "",
       });
       await props.reloadSchema();
-    }, editingProperty ? "Property updated" : "Property created");
+    }, editingProperty ? t("Property updated") : t("Property created"));
   }
 
   function saveRelationType(event: FormEvent) {
@@ -1659,7 +1667,7 @@ function ClassEditorPage(props: {
       setEditingRelationId("");
       setRelationForm({ name: "", description: "", aliases: "", sourceClassId: "", targetClassId: "", inverseName: "" });
       await props.reloadSchema();
-    }, editingRelation ? "Relation updated" : "Relation created");
+    }, editingRelation ? t("Relation updated") : t("Relation created"));
   }
 
   function resetRelationForm() {
@@ -1678,35 +1686,35 @@ function ClassEditorPage(props: {
     <section className="classEditorPage">
       <div className="pageSubHeader">
         <button className="secondaryButton" onClick={props.onBack} type="button">
-          <ArrowLeft size={15} /> Topology
+          <ArrowLeft size={15} /> {t("Topology")}
         </button>
         <div>
-          <h2>{props.mode === "create" ? "Create class" : selectedClass?.name ?? "Edit class"}</h2>
-          <p>{props.mode === "create" ? "Define a new ontology class." : "Edit class fields, properties, and relation types."}</p>
+          <h2>{props.mode === "create" ? t("Create class") : selectedClass?.name ?? t("Edit class")}</h2>
+          <p>{props.mode === "create" ? t("Define a new ontology class.") : t("Edit class fields, properties, and relation types.")}</p>
         </div>
       </div>
 
       <section className="pageGrid classDetailGrid">
-        <Panel title="Class information" icon={<Box size={17} />}>
+        <Panel title={t("Class information")} icon={<Box size={17} />}>
           <form className="stackForm" onSubmit={saveClass}>
             <input
               required
-              placeholder="Class name"
+              placeholder={t("Class name")}
               value={classForm.name}
               onChange={(event) => setClassForm({ ...classForm, name: event.target.value })}
             />
             <textarea
-              placeholder="Description"
+              placeholder={t("Description")}
               value={classForm.description}
               onChange={(event) => setClassForm({ ...classForm, description: event.target.value })}
             />
             <input
-              placeholder="Aliases, comma separated"
+              placeholder={t("Aliases, comma separated")}
               value={classForm.aliases}
               onChange={(event) => setClassForm({ ...classForm, aliases: event.target.value })}
             />
             <label>
-              <span>Parent classes</span>
+              <span>{t("Parent classes")}</span>
               <ParentClassPicker
                 classes={props.classes}
                 excludedClassId={selectedClass?.id}
@@ -1716,24 +1724,24 @@ function ClassEditorPage(props: {
             </label>
             <div className="buttonRow">
               <button className="primaryButton" disabled={!props.ontologyId} type="submit">
-                <Save size={15} /> {props.mode === "create" ? "Create class" : "Save class"}
+                <Save size={15} /> {props.mode === "create" ? t("Create class") : t("Save class")}
               </button>
               {selectedClass && (
                 <button className="secondaryButton dangerText" onClick={deleteClass} type="button">
-                  <Trash2 size={15} /> Delete
+                  <Trash2 size={15} /> {t("Delete")}
                 </button>
               )}
             </div>
           </form>
         </Panel>
 
-        <Panel title="Properties" icon={<Braces size={17} />}>
+        <Panel title={t("Properties")} icon={<Braces size={17} />}>
           {selectedClass ? (
             <>
               <form className="stackForm" onSubmit={saveProperty}>
                 <input
                   required
-                  placeholder="Property name"
+                  placeholder={t("Property name")}
                   value={propertyForm.name}
                   onChange={(event) => setPropertyForm({ ...propertyForm, name: event.target.value })}
                 />
@@ -1749,13 +1757,13 @@ function ClassEditorPage(props: {
                     ))}
                   </select>
                   <input
-                    placeholder="Enum values"
+                    placeholder={t("Enum values")}
                     value={propertyForm.enumValues}
                     onChange={(event) => setPropertyForm({ ...propertyForm, enumValues: event.target.value })}
                   />
                 </div>
                 <textarea
-                  placeholder="Description"
+                  placeholder={t("Description")}
                   value={propertyForm.description}
                   onChange={(event) => setPropertyForm({ ...propertyForm, description: event.target.value })}
                 />
@@ -1766,7 +1774,7 @@ function ClassEditorPage(props: {
                       onChange={(event) => setPropertyForm({ ...propertyForm, required: event.target.checked })}
                       type="checkbox"
                     />
-                    Required
+                    {t("Required")}
                   </label>
                   <label>
                     <input
@@ -1774,26 +1782,26 @@ function ClassEditorPage(props: {
                       onChange={(event) => setPropertyForm({ ...propertyForm, multiValued: event.target.checked })}
                       type="checkbox"
                     />
-                    Multi-valued
+                    {t("Multi-valued")}
                   </label>
                 </div>
                 <div className="buttonRow">
                   <button className="primaryButton" type="submit">
-                    <Save size={15} /> {editingProperty ? "Save property" : "Add property"}
+                    <Save size={15} /> {editingProperty ? t("Save property") : t("Add property")}
                   </button>
                   {editingProperty && (
                     <button className="secondaryButton" onClick={() => setEditingPropertyId("")} type="button">
-                      Cancel
+                      {t("Cancel")}
                     </button>
                   )}
                 </div>
               </form>
               <DataList
-                empty="No properties"
+                empty={t("No properties")}
                 items={selectedProperties.map((property) => ({
                   id: property.id,
                   title: property.name,
-                  subtitle: `${property.type}${property.required ? " - required" : ""}${property.multi_valued ? " - multi" : ""}`,
+                  subtitle: `${property.type}${property.required ? t(" - required") : ""}${property.multi_valued ? t(" - multi") : ""}`,
                   selected: editingPropertyId === property.id,
                   onSelect: () => setEditingPropertyId(property.id),
                   actions: (
@@ -1803,9 +1811,9 @@ function ClassEditorPage(props: {
                         props.mutate(async () => {
                           await props.request<void>(`/properties/${property.id}`, { method: "DELETE" });
                           await props.reloadSchema();
-                        }, "Property deleted")
+                        }, t("Property deleted"))
                       }
-                      title="Delete property"
+                      title={t("Delete property")}
                       type="button"
                     >
                       <Trash2 size={15} />
@@ -1815,42 +1823,42 @@ function ClassEditorPage(props: {
               />
             </>
           ) : (
-            <EmptyState icon={<Braces size={20} />} title="Create the class before adding properties" />
+            <EmptyState icon={<Braces size={20} />} title={t("Create the class before adding properties")} />
           )}
         </Panel>
 
-        <Panel title="Relation information" icon={<GitBranch size={17} />}>
+        <Panel title={t("Relation information")} icon={<GitBranch size={17} />}>
           {selectedClass ? (
             <>
               <button className="secondaryButton fullWidth" onClick={resetRelationForm} type="button">
-                <Plus size={15} /> New relation
+                <Plus size={15} /> {t("New relation")}
               </button>
               <form className="stackForm" onSubmit={saveRelationType}>
                 <input
                   required
-                  placeholder="Relation type name"
+                  placeholder={t("Relation type name")}
                   value={relationForm.name}
                   onChange={(event) => setRelationForm({ ...relationForm, name: event.target.value })}
                 />
                 <input
-                  placeholder="Aliases"
+                  placeholder={t("Aliases")}
                   value={relationForm.aliases}
                   onChange={(event) => setRelationForm({ ...relationForm, aliases: event.target.value })}
                 />
                 <textarea
-                  placeholder="Description"
+                  placeholder={t("Description")}
                   value={relationForm.description}
                   onChange={(event) => setRelationForm({ ...relationForm, description: event.target.value })}
                 />
                 <div className="formPair">
                   <label>
-                    <span>Source class</span>
+                    <span>{t("Source class")}</span>
                     <select
                       required
                       value={relationForm.sourceClassId}
                       onChange={(event) => setRelationForm({ ...relationForm, sourceClassId: event.target.value })}
                     >
-                      <option value="">Source class</option>
+                      <option value="">{t("Source class")}</option>
                       {props.classes.map((classDef) => (
                         <option key={classDef.id} value={classDef.id}>
                           {classDef.name}
@@ -1859,13 +1867,13 @@ function ClassEditorPage(props: {
                     </select>
                   </label>
                   <label>
-                    <span>Target class</span>
+                    <span>{t("Target class")}</span>
                     <select
                       required
                       value={relationForm.targetClassId}
                       onChange={(event) => setRelationForm({ ...relationForm, targetClassId: event.target.value })}
                     >
-                      <option value="">Target class</option>
+                      <option value="">{t("Target class")}</option>
                       {props.classes.map((classDef) => (
                         <option key={classDef.id} value={classDef.id}>
                           {classDef.name}
@@ -1875,16 +1883,16 @@ function ClassEditorPage(props: {
                   </label>
                 </div>
                 <input
-                  placeholder="Inverse name"
+                  placeholder={t("Inverse name")}
                   value={relationForm.inverseName}
                   onChange={(event) => setRelationForm({ ...relationForm, inverseName: event.target.value })}
                 />
                 <button className="primaryButton" disabled={!props.classes.length} type="submit">
-                  <Save size={15} /> {editingRelation ? "Save relation" : "Create relation"}
+                  <Save size={15} /> {editingRelation ? t("Save relation") : t("Create relation")}
                 </button>
               </form>
               <DataList
-                empty="No relation types for this class"
+                empty={t("No relation types for this class")}
                 items={relatedRelationTypes.map((relationType) => ({
                   id: relationType.id,
                   title: relationType.name,
@@ -1901,9 +1909,9 @@ function ClassEditorPage(props: {
                         props.mutate(async () => {
                           await props.request<void>(`/relation-types/${relationType.id}`, { method: "DELETE" });
                           await props.reloadSchema();
-                        }, "Relation type deleted")
+                        }, t("Relation type deleted"))
                       }
-                      title="Delete relation type"
+                      title={t("Delete relation type")}
                       type="button"
                     >
                       <Trash2 size={15} />
@@ -1913,7 +1921,7 @@ function ClassEditorPage(props: {
               />
             </>
           ) : (
-            <EmptyState icon={<GitBranch size={20} />} title="Create the class before adding relations" />
+            <EmptyState icon={<GitBranch size={20} />} title={t("Create the class before adding relations")} />
           )}
         </Panel>
       </section>
@@ -1934,6 +1942,7 @@ function EntitiesPage(props: {
   reloadGraph: () => Promise<void>;
   onOpenFact: (claimId: string) => void;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<EntityPageMode>("topology");
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string[]>([]);
@@ -1980,7 +1989,7 @@ function EntitiesPage(props: {
       );
       setSelectedEntityId(null);
       await props.reloadGraph();
-    }, "Entity deleted");
+    }, t("Entity deleted"));
   }
 
   if (mode === "create" || (mode === "edit" && selectedEntity)) {
@@ -2010,15 +2019,15 @@ function EntitiesPage(props: {
       <div className="entityGraphToolbar">
         <Search size={15} className="toolbarIcon" />
         <input
-          placeholder="Search entities by name or alias"
+          placeholder={t("Search entities by name or alias")}
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
         />
         <span className="toolbarDivider" />
-        <span className="toolbarLabel">Classes</span>
+        <span className="toolbarLabel">{t("Classes")}</span>
         <div className="classChipRow">
           {props.classes.length === 0 ? (
-            <span className="toolbarEmptyHint">No classes defined</span>
+            <span className="toolbarEmptyHint">{t("No classes defined")}</span>
           ) : (
             props.classes.map((classDef) => {
               const active = classFilter.includes(classDef.name);
@@ -2051,36 +2060,36 @@ function EntitiesPage(props: {
               onClick={() => setClassFilter([])}
               type="button"
             >
-              Clear ({classFilter.length})
+              {t("Clear ({n})", { n: classFilter.length })}
             </button>
           )}
         </div>
         <span className="toolbarStats">
-          {visibleEntities.length} entities · {visibleRelations.length} relations
-          {props.entities.length === 0 && " · No entities yet"}
+          {t("{entities} entities · {relations} relations", { entities: visibleEntities.length, relations: visibleRelations.length })}
+          {props.entities.length === 0 && t(" · No entities yet")}
         </span>
-        <div aria-label="Graph layout" className="entityLayoutSwitch" role="group">
+        <div aria-label={t("Graph layout")} className="entityLayoutSwitch" role="group">
           <button
             aria-pressed={graphLayout === "hierarchical"}
             className={classNames(graphLayout === "hierarchical" && "active")}
             onClick={() => setGraphLayout("hierarchical")}
-            title="Arrange relations from left to right and reduce crossings"
+            title={t("Arrange relations from left to right and reduce crossings")}
             type="button"
           >
-            <GitBranch size={14} /> Hierarchy
+            <GitBranch size={14} /> {t("Hierarchy")}
           </button>
           <button
             aria-pressed={graphLayout === "force"}
             className={classNames(graphLayout === "force" && "active")}
             onClick={() => setGraphLayout("force")}
-            title="Arrange dense or cyclic relations as a force-directed network"
+            title={t("Arrange dense or cyclic relations as a force-directed network")}
             type="button"
           >
-            <Network size={14} /> Force
+            <Network size={14} /> {t("Force")}
           </button>
         </div>
         <button className="primaryButton entityCreateButton" onClick={() => setMode("create")} type="button">
-          <Plus size={15} /> New entity
+          <Plus size={15} /> {t("New entity")}
         </button>
       </div>
 
@@ -2089,8 +2098,8 @@ function EntitiesPage(props: {
           <div className="entityGraphEmpty">
             <div>
               <Database size={28} />
-              <h3>No entities yet</h3>
-              <p>Entities will appear here as a topology graph once created.</p>
+              <h3>{t("No entities yet")}</h3>
+              <p>{t("Entities will appear here as a topology graph once created.")}</p>
             </div>
           </div>
         ) : (
@@ -2209,6 +2218,7 @@ function EntityFormPage(props: {
   onCreated: (entityId: string) => void;
   entity?: Entity;
 }) {
+  const t = useT();
   const [form, setForm] = useState({
     aliases: props.entity?.aliases.join(", ") ?? "",
     classId: props.entity?.class_id ?? props.classes[0]?.id ?? "",
@@ -2297,7 +2307,7 @@ function EntityFormPage(props: {
         const missing = properties.filter(
           (property) => property.required && !hasEntityPropertyValue(property, propertyValues[property.name]),
         );
-        if (missing.length) throw new Error(`Required properties: ${missing.map((item) => item.name).join(", ")}`);
+        if (missing.length) throw new Error(t("Required properties: {names}", { names: missing.map((item) => item.name).join(", ") }));
 
         const entityProperties: JsonObject = { ...(props.entity?.properties ?? {}) };
         properties.forEach((property) => {
@@ -2367,7 +2377,7 @@ function EntityFormPage(props: {
         await Promise.all([...createRequests, ...deleteRequests]);
         await props.reloadGraph();
         props.onCreated(saved.id);
-      }, props.entity ? "Entity updated" : "Entity created");
+      }, props.entity ? t("Entity updated") : t("Entity created"));
     } finally {
       setSubmitting(false);
     }
@@ -2376,21 +2386,21 @@ function EntityFormPage(props: {
   return (
     <section className="entityCreatePage">
       <header className="pageSubHeader">
-        <button aria-label="Back to entity topology" className="iconButton subtle" onClick={props.onBack} type="button">
+        <button aria-label={t("Back to entity topology")} className="iconButton subtle" onClick={props.onBack} type="button">
           <ArrowLeft size={17} />
         </button>
         <div>
-          <span className="eyebrow">Entity editor</span>
-          <h2>{props.entity ? "Edit entity" : "Create entity"}</h2>
-          <p>{props.entity ? "Update the node identity and schema-defined properties." : "Choose a class and add an instance that conforms to its property schema."}</p>
+          <span className="eyebrow">{t("Entity editor")}</span>
+          <h2>{props.entity ? t("Edit entity") : t("Create entity")}</h2>
+          <p>{props.entity ? t("Update the node identity and schema-defined properties.") : t("Choose a class and add an instance that conforms to its property schema.")}</p>
         </div>
       </header>
 
       <form className="entityCreateForm" onSubmit={saveEntity}>
-        <Panel className="entityIdentityPanel" icon={<Database size={17} />} title="Identity">
+        <Panel className="entityIdentityPanel" icon={<Database size={17} />} title={t("Identity")}>
           <div className="stackForm">
             <label>
-              <span>Class</span>
+              <span>{t("Class")}</span>
               <select
                 onChange={(event) => {
                   setForm((current) => ({ ...current, classId: event.target.value }));
@@ -2401,44 +2411,44 @@ function EntityFormPage(props: {
                 disabled={Boolean(props.entity)}
                 value={form.classId}
               >
-                {!props.classes.length && <option value="">No classes available</option>}
+                {!props.classes.length && <option value="">{t("No classes available")}</option>}
                 {props.classes.map((classDef) => <option key={classDef.id} value={classDef.id}>{classDef.name}</option>)}
               </select>
             </label>
             <label>
-              <span>Name</span>
+              <span>{t("Name")}</span>
               <input
                 maxLength={300}
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="Entity name"
+                placeholder={t("Entity name")}
                 required
                 value={form.name}
               />
             </label>
             <label>
-              <span>Aliases</span>
+              <span>{t("Aliases")}</span>
               <input
                 onChange={(event) => setForm((current) => ({ ...current, aliases: event.target.value }))}
-                placeholder="Comma-separated aliases"
+                placeholder={t("Comma-separated aliases")}
                 value={form.aliases}
               />
             </label>
             {selectedClass && (
               <div className="entityClassSummary">
                 <span>{selectedClass.normalized_label || selectedClass.name}</span>
-                <p>{selectedClass.description || "No class description."}</p>
+                <p>{selectedClass.description || t("No class description.")}</p>
               </div>
             )}
           </div>
         </Panel>
 
-        <Panel className="entityPropertiesPanel" icon={<Braces size={17} />} title="Properties">
+        <Panel className="entityPropertiesPanel" icon={<Braces size={17} />} title={t("Properties")}>
           {!selectedClass ? (
-            <EmptyState icon={<Box size={20} />} title="Create a class before adding entities" />
+            <EmptyState icon={<Box size={20} />} title={t("Create a class before adding entities")} />
           ) : properties.length === 0 ? (
             <div className="entityNoProperties">
               <Check size={18} />
-              <div><strong>No properties required</strong><span>This class can be instantiated with identity fields only.</span></div>
+              <div><strong>{t("No properties required")}</strong><span>{t("This class can be instantiated with identity fields only.")}</span></div>
             </div>
           ) : (
             <div className="entityPropertyList">
@@ -2455,13 +2465,13 @@ function EntityFormPage(props: {
           )}
         </Panel>
 
-        <Panel className="entityRelationsPanel" icon={<GitBranch size={17} />} title="Relations">
+        <Panel className="entityRelationsPanel" icon={<GitBranch size={17} />} title={t("Relations")}>
             {!selectedClass ? (
-              <EmptyState icon={<GitBranch size={20} />} title="Select a class to configure relations" />
+              <EmptyState icon={<GitBranch size={20} />} title={t("Select a class to configure relations")} />
             ) : relationChoices.length === 0 ? (
               <div className="entityNoProperties">
                 <Check size={18} />
-                <div><strong>No relations defined</strong><span>This class has no compatible relation types.</span></div>
+                <div><strong>{t("No relations defined")}</strong><span>{t("This class has no compatible relation types.")}</span></div>
               </div>
             ) : (
               <div className="entityRelationChoices">
@@ -2482,11 +2492,11 @@ function EntityFormPage(props: {
                     <section className="entityRelationChoice" key={key}>
                       <div className="entityRelationChoiceHeader">
                         <strong>{choice.relationType.name}</strong>
-                        <span>{choice.direction === "outgoing" ? "Outgoing" : "Incoming"}</span>
+                        <span>{choice.direction === "outgoing" ? t("Outgoing") : t("Incoming")}</span>
                       </div>
                       {choice.relationType.aliases.length > 0 && (
                         <small className="entityRelationAliases">
-                          Aliases: {choice.relationType.aliases.join(", ")}
+                          {t("Aliases: {values}", { values: choice.relationType.aliases.join(", ") })}
                         </small>
                       )}
                       <p>
@@ -2496,21 +2506,21 @@ function EntityFormPage(props: {
                       <label className="entityRelationSearch">
                         <Search size={13} />
                         <input
-                          aria-label={`Search ${choice.relationType.name} instances by name or alias`}
+                          aria-label={t("Search {name} instances by name or alias", { name: choice.relationType.name })}
                           disabled={choice.candidates.length === 0}
                           onChange={(event) => setRelationQueries((current) => ({
                             ...current,
                             [key]: event.target.value,
                           }))}
-                          placeholder="Search instances by name or alias"
+                          placeholder={t("Search instances by name or alias")}
                           type="search"
                           value={relationQueries[key] ?? ""}
                         />
                       </label>
                       {choice.candidates.length === 0 ? (
-                        <small>No compatible {nameFor(props.classes, expectedClassId)} entities available.</small>
+                        <small>{t("No compatible {class} entities available.", { class: nameFor(props.classes, expectedClassId) })}</small>
                       ) : visibleCandidates.length === 0 ? (
-                        <div className="entityRelationNoResults">No instances match “{relationQueries[key]}”.</div>
+                        <div className="entityRelationNoResults">{t("No instances match \"{query}\".", { query: relationQueries[key] })}</div>
                       ) : (
                         <div className="entityRelationTargets">
                           {visibleCandidates.map((entity) => (
@@ -2534,10 +2544,10 @@ function EntityFormPage(props: {
           </Panel>
 
         <footer className="entityCreateActions">
-          <button className="secondaryButton" disabled={submitting} onClick={props.onBack} type="button">Cancel</button>
+          <button className="secondaryButton" disabled={submitting} onClick={props.onBack} type="button">{t("Cancel")}</button>
           <button className="primaryButton" disabled={!selectedClass || !form.name.trim() || submitting} type="submit">
             {submitting ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
-            {submitting ? (props.entity ? "Saving..." : "Creating...") : (props.entity ? "Save changes" : "Create entity")}
+            {submitting ? (props.entity ? t("Saving...") : t("Creating...")) : (props.entity ? t("Save changes") : t("Create entity"))}
           </button>
         </footer>
       </form>
@@ -2551,6 +2561,7 @@ function EntityPropertyField(props: {
   entities: Entity[];
   onChange: (value: unknown) => void;
 }) {
+  const t = useT();
   const { property } = props;
   const values = property.multi_valued && Array.isArray(props.value) ? props.value : [];
 
@@ -2568,7 +2579,7 @@ function EntityPropertyField(props: {
                 value={value}
               />
               <button
-                aria-label={`Remove ${property.name} value`}
+                aria-label={t("Remove {name} value", { name: property.name })}
                 className="iconButton danger"
                 onClick={() => props.onChange(values.filter((_, itemIndex) => itemIndex !== index))}
                 type="button"
@@ -2576,7 +2587,7 @@ function EntityPropertyField(props: {
             </div>
           ))}
           <button className="secondaryButton entityAddValue" onClick={() => props.onChange([...values, ""])} type="button">
-            <Plus size={14} /> Add value
+            <Plus size={14} /> {t("Add value")}
           </button>
         </div>
       </div>
@@ -2592,10 +2603,11 @@ function EntityPropertyField(props: {
 }
 
 function EntityPropertyLabel({ property }: { property: PropertyDef }) {
+  const t = useT();
   return (
     <span className="entityPropertyLabel">
-      <span>{property.name}{property.required && <b aria-label="required"> *</b>}</span>
-      <small>{property.type}{property.multi_valued ? " · multiple" : ""}</small>
+      <span>{property.name}{property.required && <b aria-label={t("Required")}> *</b>}</span>
+      <small>{property.type}{property.multi_valued ? t(" · multiple") : ""}</small>
       {property.description && <em>{property.description}</em>}
     </span>
   );
@@ -2607,15 +2619,16 @@ function EntityPropertyControl(props: {
   entities: Entity[];
   onChange: (value: unknown) => void;
 }) {
+  const t = useT();
   const value = props.value === undefined ? "" : String(props.value);
   if (props.property.type === "boolean") {
-    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Not set</option><option value="true">True</option><option value="false">False</option></select>;
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">{t("Not set")}</option><option value="true">{t("True")}</option><option value="false">{t("False")}</option></select>;
   }
   if (props.property.type === "enum") {
-    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Select a value</option>{props.property.enum_values.map((item) => <option key={item} value={item}>{item}</option>)}</select>;
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">{t("Select a value")}</option>{props.property.enum_values.map((item) => <option key={item} value={item}>{item}</option>)}</select>;
   }
   if (props.property.type === "reference") {
-    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">Select an entity</option>{props.entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name} · {entity.class_label}</option>)}</select>;
+    return <select aria-label={props.property.name} onChange={(event) => props.onChange(event.target.value)} value={value}><option value="">{t("Select an entity")}</option>{props.entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name} · {entity.class_label}</option>)}</select>;
   }
   if (props.property.type === "json") {
     return <textarea aria-label={props.property.name} className="codeArea small" onChange={(event) => props.onChange(event.target.value)} placeholder='{"key": "value"}' value={value} />;
@@ -2637,6 +2650,7 @@ function EntitiesSearchPage(props: {
   classes: ClassDef[];
   request: Requester;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<"text" | "id">("text");
   const [retrievalMode, setRetrievalMode] = useState<"text" | "vector" | "hybrid">("hybrid");
   const [query, setQuery] = useState("");
@@ -2682,13 +2696,13 @@ function EntitiesSearchPage(props: {
 
   return (
     <section className="entitySearchPage">
-      <Panel title="Retrieval test" icon={<Search size={17} />}>
+      <Panel title={t("Retrieval test")} icon={<Search size={17} />}>
         <div className="segmented">
           <button className={classNames(mode === "text" && "active")} onClick={() => setMode("text")} type="button">
-            Text
+            {t("Text")}
           </button>
           <button className={classNames(mode === "id" && "active")} onClick={() => setMode("id")} type="button">
-            Entity ID
+            {t("Entity ID")}
           </button>
         </div>
         {mode === "text" ? (
@@ -2696,23 +2710,23 @@ function EntitiesSearchPage(props: {
             <textarea
               className="questionBox"
               required
-              placeholder="Input text to match similar entities"
+              placeholder={t("Input text to match similar entities")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
             <label>
-              <span>Retrieval mode</span>
+              <span>{t("Retrieval mode")}</span>
               <select
                 value={retrievalMode}
                 onChange={(event) => setRetrievalMode(event.target.value as typeof retrievalMode)}
               >
-                <option value="hybrid">Hybrid</option>
-                <option value="vector">Vector</option>
-                <option value="text">Text</option>
+                <option value="hybrid">{t("Hybrid")}</option>
+                <option value="vector">{t("Vector")}</option>
+                <option value="text">{t("Text")}</option>
               </select>
             </label>
             <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>
-              <option value="">All classes</option>
+              <option value="">{t("All classes")}</option>
               {props.classes.map((classDef) => (
                 <option key={classDef.id} value={classDef.id}>
                   {classDef.name}
@@ -2720,29 +2734,29 @@ function EntitiesSearchPage(props: {
               ))}
             </select>
             <button className="primaryButton" disabled={!props.ontologyId} type="submit">
-              <Search size={15} /> Match
+              <Search size={15} /> {t("Match")}
             </button>
           </form>
         ) : (
           <form className="stackForm" onSubmit={lookupById}>
             <input
               required
-              placeholder="Entity ID"
+              placeholder={t("Entity ID")}
               value={entityId}
               onChange={(event) => setEntityId(event.target.value)}
             />
             <button className="primaryButton" disabled={!props.ontologyId} type="submit">
-              <Search size={15} /> Lookup
+              <Search size={15} /> {t("Lookup")}
             </button>
           </form>
         )}
         <ErrorText message={localError} />
       </Panel>
 
-      <Panel title="Matches" icon={<Database size={17} />}>
+      <Panel title={t("Matches")} icon={<Database size={17} />}>
         {mode === "text" ? (
           <DataList
-            empty="No matches yet"
+            empty={t("No matches yet")}
             items={(results?.results ?? []).map((entity) => ({
               id: entity.id,
               title: entity.name,
@@ -2753,27 +2767,27 @@ function EntitiesSearchPage(props: {
             }))}
           />
         ) : (
-          <EmptyState icon={<Search size={20} />} title="Use the Entity ID lookup form" />
+          <EmptyState icon={<Search size={20} />} title={t("Use the Entity ID lookup form")} />
         )}
       </Panel>
 
-      <Panel title="Entity detail" icon={<Clipboard size={17} />} wide>
+      <Panel title={t("Entity detail")} icon={<Clipboard size={17} />} wide>
         {detail ? (
           <div className="inspector">
             <h2>{detail.name}</h2>
             <p>{detail.class_label}</p>
             <dl className="detailList">
-              <dt>ID</dt>
+              <dt>{t("ID")}</dt>
               <dd>{detail.id}</dd>
-              <dt>Outgoing</dt>
+              <dt>{t("Outgoing")}</dt>
               <dd>{detail.outgoing.length}</dd>
-              <dt>Incoming</dt>
+              <dt>{t("Incoming")}</dt>
               <dd>{detail.incoming.length}</dd>
             </dl>
             <pre className="jsonBlock tall">{prettyJson(detail)}</pre>
           </div>
         ) : (
-          <EmptyState icon={<Clipboard size={20} />} title="Select or lookup an entity" />
+          <EmptyState icon={<Clipboard size={20} />} title={t("Select or lookup an entity")} />
         )}
       </Panel>
     </section>
@@ -2793,6 +2807,7 @@ function AgentTestPage(props: {
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
 }) {
+  const t = useT();
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<AgentTestResponse | null>(null);
 
@@ -2807,38 +2822,38 @@ function AgentTestPage(props: {
         }),
       });
       setResult(response);
-    }, "Agent test completed");
+    }, t("Agent test completed"));
   }
 
   return (
     <section className="agentLayout">
-      <Panel title="Agent test" icon={<Play size={17} />}>
+      <Panel title={t("Agent test")} icon={<Play size={17} />}>
         <form className="stackForm" onSubmit={run}>
           <textarea
             className="questionBox"
             required
-            placeholder="Ask a question against the selected ontology"
+            placeholder={t("Ask a question against the selected ontology")}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
           />
           <button className="primaryButton" type="submit">
-            <Play size={15} /> Run
+            <Play size={15} /> {t("Run")}
           </button>
         </form>
       </Panel>
 
-      <Panel title="Run output" icon={<Clipboard size={17} />} className="agentOutput">
+      <Panel title={t("Run output")} icon={<Clipboard size={17} />} className="agentOutput">
         {result ? (
           <div className="resultGrid">
-            <ResultBlock title="Answer" value={result.answer} />
-            <Timeline title="Tool calls" items={result.tool_calls} />
-            <ResultBlock title="Graph context" value={result.graph_context} copyable />
-            <ResultBlock title="Prompt preview" value={result.prompt_preview} />
-            <ResultBlock title="Warnings" value={result.warnings} />
-            <ResultBlock title="Errors" value={result.errors} />
+            <ResultBlock title={t("Answer")} value={result.answer} />
+            <Timeline title={t("Tool calls")} items={result.tool_calls} />
+            <ResultBlock title={t("Graph context")} value={result.graph_context} copyable />
+            <ResultBlock title={t("Prompt preview")} value={result.prompt_preview} />
+            <ResultBlock title={t("Warnings")} value={result.warnings} />
+            <ResultBlock title={t("Errors")} value={result.errors} />
           </div>
         ) : (
-          <EmptyState icon={<Send size={22} />} title="No run output yet" />
+          <EmptyState icon={<Send size={22} />} title={t("No run output yet")} />
         )}
       </Panel>
     </section>
@@ -2846,6 +2861,7 @@ function AgentTestPage(props: {
 }
 
 function McpToolsPage() {
+  const t = useT();
   const tools = [
     ["search_entities", "Recall entities globally with text, vector, or hybrid search."],
     ["get_entity", "Fetch one entity and direct relations by entity id."],
@@ -2856,15 +2872,15 @@ function McpToolsPage() {
 
   return (
     <section className="mcpToolsPage">
-      <Panel title="MCP tools" icon={<Wrench size={17} />} wide>
+      <Panel title={t("MCP tools")} icon={<Wrench size={17} />} wide>
         <div className="toolList">
           {tools.map(([tool, description]) => (
             <div className="toolRow" key={tool}>
               <div>
                 <strong>{tool}</strong>
-                <span>{description}</span>
+                <span>{t(description)}</span>
               </div>
-              <Badge>server</Badge>
+              <Badge>{t("server")}</Badge>
             </div>
           ))}
         </div>
@@ -2880,6 +2896,7 @@ function SystemPage(props: {
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
 }) {
+  const t = useT();
   async function checkHealth() {
     try {
       props.setHealth(await props.request<Health>("/health/dependencies"));
@@ -2890,32 +2907,32 @@ function SystemPage(props: {
 
   return (
     <section className="pageGrid systemGrid">
-      <Panel title="Ontology" icon={<Waypoints size={17} />}>
+      <Panel title={t("Ontology")} icon={<Waypoints size={17} />}>
         <dl className="detailList">
-          <dt>Name</dt>
+          <dt>{t("Name")}</dt>
           <dd>{props.ontology.name}</dd>
-          <dt>Status</dt>
+          <dt>{t("Status")}</dt>
           <dd><Badge>{props.ontology.status}</Badge></dd>
-          <dt>Version</dt>
+          <dt>{t("Version")}</dt>
           <dd>{compactId(props.ontology.current_version_id)}</dd>
-          <dt>Updated</dt>
+          <dt>{t("Updated")}</dt>
           <dd>{formatDate(props.ontology.updated_at)}</dd>
         </dl>
       </Panel>
-      <Panel title="Connection" icon={<Activity size={17} />}>
+      <Panel title={t("Connection")} icon={<Activity size={17} />}>
         <dl className="detailList">
-          <dt>API base URL</dt>
+          <dt>{t("API base URL")}</dt>
           <dd><code>{API_BASE_URL}</code></dd>
         </dl>
       </Panel>
-      <Panel title="Dependencies" icon={<Activity size={17} />} wide>
+      <Panel title={t("Dependencies")} icon={<Activity size={17} />} wide>
         <button className="primaryButton" onClick={checkHealth} type="button">
-          <RefreshCw size={15} /> Check
+          <RefreshCw size={15} /> {t("Check")}
         </button>
         {props.health ? (
           <pre className="jsonBlock">{prettyJson(props.health)}</pre>
         ) : (
-          <EmptyState icon={<Activity size={20} />} title="No health check yet" />
+          <EmptyState icon={<Activity size={20} />} title={t("No health check yet")} />
         )}
       </Panel>
     </section>

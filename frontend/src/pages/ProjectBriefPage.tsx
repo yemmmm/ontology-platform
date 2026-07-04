@@ -1,6 +1,7 @@
 import { Alert, Card, Progress, Skeleton, Tag } from "antd";
 import { Check, RotateCcw, Save, SkipForward } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useT } from "../i18n";
 import type { ProjectBrief, WorkbenchRequest } from "./workbenchTypes";
 
 const fieldConfig = [
@@ -43,6 +44,7 @@ export type ProjectBriefPageProps = {
 };
 
 export function ProjectBriefPage({ projectId, readOnly = false, request, onRefresh, onDirtyChange }: ProjectBriefPageProps) {
+  const t = useT();
   const [brief, setBrief] = useState<ProjectBrief | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -103,7 +105,7 @@ export function ProjectBriefPage({ projectId, readOnly = false, request, onRefre
       });
       setBrief(next);
       resetDraft(next);
-      setSuccess(skippedFields.length ? "字段已跳过。" : confirmedFields.length ? "字段已确认。" : "Brief 草稿已保存。引用该字段的已验证能力问题可能被标记为过期。");
+      setSuccess(skippedFields.length ? t("字段已跳过。") : confirmedFields.length ? t("字段已确认。") : t("Brief 草稿已保存。引用该字段的已验证能力问题可能被标记为过期。"));
       await onRefresh?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -113,7 +115,7 @@ export function ProjectBriefPage({ projectId, readOnly = false, request, onRefre
   };
 
   if (loading) return <Card className="panel"><Skeleton active paragraph={{ rows: 10 }} /></Card>;
-  if (!brief) return <Alert type="error" showIcon message="Project Brief 加载失败" description={error} action={<button className="secondaryButton" onClick={() => void load()}>重试</button>} />;
+  if (!brief) return <Alert type="error" showIcon message={t("Project Brief 加载失败")} description={error} action={<button className="secondaryButton" onClick={() => void load()}>{t("重试")}</button>} />;
 
   const known = new Set(fieldConfig.map(([key]) => key));
   const extensions = Object.entries(brief.fields).filter(([key]) => !known.has(key as typeof fieldConfig[number][0]));
@@ -121,42 +123,42 @@ export function ProjectBriefPage({ projectId, readOnly = false, request, onRefre
   return (
     <div className="workspaceStack">
       <div className="pageSubHeader">
-        <div><h2>Project Brief</h2><p>维护领域边界和质量约束；确认后的字段可作为能力问题来源。</p></div>
-        {readOnly && <Tag color="blue">已发布 · 只读</Tag>}
+        <div><h2>{t("Project Brief")}</h2><p>{t("维护领域边界和质量约束；确认后的字段可作为能力问题来源。")}</p></div>
+        {readOnly && <Tag color="blue">{t("已发布 · 只读")}</Tag>}
       </div>
-      {error && <Alert type="error" showIcon closable onClose={() => setError(null)} message="操作失败" description={error} />}
+      {error && <Alert type="error" showIcon closable onClose={() => setError(null)} message={t("操作失败")} description={error} />}
       {success && <Alert type="success" showIcon closable onClose={() => setSuccess(null)} message={success} />}
 
       <div className="pageGrid">
-        <Card className="panel wide" title="结构化需求">
+        <Card className="panel wide" title={t("结构化需求")}>
           <div className="stackForm" style={{ maxWidth: "none" }}>
             {fieldConfig.map(([key, label, group]) => {
               const state = brief.field_states[key] ?? (brief.missing_fields.includes(key) ? "missing" : "answered");
               return <label key={key}>
-                <span>{group} · {label} {requiredFields.has(key) && <Tag color="red">必填</Tag>} <Tag>{state}</Tag> <small className="muted">来源 {brief.field_sources[key]?.length ?? 0}</small></span>
+                <span>{t(group)} · {t(label)} {requiredFields.has(key) && <Tag color="red">{t("必填")}</Tag>} <Tag>{state}</Tag> <small className="muted">{t("来源 {n}", { n: brief.field_sources[key]?.length ?? 0 })}</small></span>
                 <textarea rows={key === "core_concepts" || key === "scope" ? 4 : 3} value={draft[key] ?? ""} disabled={readOnly || saving} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} />
                 {!readOnly && <span className="rowActions">
-                  <button className="secondaryButton" disabled={saving || !draft[key]?.trim()} onClick={() => void mutate([key])}><Check size={14} />确认字段</button>
-                  {!requiredFields.has(key) && <button className="secondaryButton" disabled={saving} onClick={() => void mutate([], [key])}><SkipForward size={14} />跳过</button>}
+                  <button className="secondaryButton" disabled={saving || !draft[key]?.trim()} onClick={() => void mutate([key])}><Check size={14} />{t("确认字段")}</button>
+                  {!requiredFields.has(key) && <button className="secondaryButton" disabled={saving} onClick={() => void mutate([], [key])}><SkipForward size={14} />{t("跳过")}</button>}
                 </span>}
               </label>;
             })}
           </div>
           {!readOnly && <div className="buttonRow" style={{ marginTop: 16 }}>
-            <button className="primaryButton" disabled={saving || !dirty} onClick={() => void mutate()}><Save size={15} />{saving ? "保存中" : "保存草稿"}</button>
-            <button className="secondaryButton" disabled={saving || !dirty} onClick={() => resetDraft(brief)}><RotateCcw size={15} />撤销修改</button>
+            <button className="primaryButton" disabled={saving || !dirty} onClick={() => void mutate()}><Save size={15} />{saving ? t("保存中") : t("保存草稿")}</button>
+            <button className="secondaryButton" disabled={saving || !dirty} onClick={() => resetDraft(brief)}><RotateCcw size={15} />{t("撤销修改")}</button>
           </div>}
         </Card>
 
         <div className="workspaceStack">
-          <Card className="panel" title="完整度">
+          <Card className="panel" title={t("完整度")}>
             <Progress percent={Math.round(brief.completeness * 100)} status={brief.completeness === 1 ? "success" : "active"} />
-            <p className="muted">缺失 {brief.missing_fields.length} 个字段，未保存修改{dirty ? "存在" : "不存在"}。</p>
+            <p className="muted">{t("缺失 {n} 个字段，未保存修改{state}。", { n: brief.missing_fields.length, state: dirty ? t("存在") : t("不存在") })}</p>
           </Card>
-          <Card className="panel" title="待澄清">
-            {brief.clarification_items.length ? <div className="dataList">{brief.clarification_items.map((item) => <div className="callout quiet" key={`${item.field}-${item.reason}`}><strong>{item.field}</strong><span>{item.question}</span><span>{item.reason}</span></div>)}</div> : <div className="emptyState">没有待澄清项。</div>}
+          <Card className="panel" title={t("待澄清")}>
+            {brief.clarification_items.length ? <div className="dataList">{brief.clarification_items.map((item) => <div className="callout quiet" key={`${item.field}-${item.reason}`}><strong>{item.field}</strong><span>{item.question}</span><span>{item.reason}</span></div>)}</div> : <div className="emptyState">{t("没有待澄清项。")}</div>}
           </Card>
-          {extensions.length > 0 && <Card className="panel" title="扩展字段（只读）"><div className="dataList">{extensions.map(([key, value]) => <div className="callout quiet" key={key}><strong>{key}</strong><pre className="jsonBlock">{textValue(value)}</pre></div>)}</div></Card>}
+          {extensions.length > 0 && <Card className="panel" title={t("扩展字段（只读）")}><div className="dataList">{extensions.map(([key, value]) => <div className="callout quiet" key={key}><strong>{key}</strong><pre className="jsonBlock">{textValue(value)}</pre></div>)}</div></Card>}
         </div>
       </div>
     </div>

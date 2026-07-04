@@ -32,6 +32,7 @@ import type {
   SemanticMapping,
 } from "../types";
 import { compactId, prettyJson, splitCsv } from "../utils";
+import { useT } from "../i18n";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
 type CatalogPageProps = {
@@ -144,6 +145,7 @@ const wizardSteps = [
 type WizardStepId = (typeof wizardSteps)[number]["id"];
 
 export function CatalogWizardPage(props: CatalogPageProps) {
+  const t = useT();
   const readOnly = props.readOnly ?? false;
   const [mode, setMode] = useState<"wizard" | "test">("wizard");
   const [sources, setSources] = useState<DataSource[]>([]);
@@ -201,11 +203,11 @@ export function CatalogWizardPage(props: CatalogPageProps) {
     <section className="catalogPage">
       <header className="pageSubHeader">
         <div>
-          <h2>Data Catalog</h2>
-          <p>注册外部系统、把本体目标路由到字段、运行受控 Connector 查询。</p>
+          <h2>{t("Data Catalog")}</h2>
+          <p>{t("注册外部系统、把本体目标路由到字段、运行受控 Connector 查询。")}</p>
         </div>
         <div className="rowActions">
-          {readOnly && <Tag color="blue">已发布 · 只读</Tag>}
+          {readOnly && <Tag color="blue">{t("已发布 · 只读")}</Tag>}
           <div className="catalogSegmented" role="tablist">
             <button
               className={classNames("catalogSegmentedItem", mode === "wizard" && "active")}
@@ -214,7 +216,7 @@ export function CatalogWizardPage(props: CatalogPageProps) {
               aria-selected={mode === "wizard"}
               type="button"
             >
-              <Route size={14} /> 向导
+              <Route size={14} /> {t("向导")}
             </button>
             <button
               className={classNames("catalogSegmentedItem", mode === "test" && "active")}
@@ -223,22 +225,22 @@ export function CatalogWizardPage(props: CatalogPageProps) {
               aria-selected={mode === "test"}
               type="button"
             >
-              <FlaskConical size={14} /> Test
+              <FlaskConical size={14} /> {t("Test")}
             </button>
           </div>
           <button className="secondaryButton" disabled={busy} onClick={() => void load()} type="button">
-            <RefreshCw className={busy ? "spin" : ""} size={15} /> Refresh
+            <RefreshCw className={busy ? "spin" : ""} size={15} /> {t("Refresh")}
           </button>
         </div>
       </header>
 
-      {error && <Alert type="error" showIcon closable onClose={() => setError("")} message="Catalog operation failed" description={error} />}
+      {error && <Alert type="error" showIcon closable onClose={() => setError("")} message={t("Catalog operation failed")} description={error} />}
 
       <div className="catalogSummary">
-        <Metric icon={<Database size={17} />} label="Sources" value={sources.length} />
-        <Metric icon={<ShieldCheck size={17} />} label="External fields" value={fields.length} />
-        <Metric icon={<Link2 size={17} />} label="Mappings" value={mappings.length} />
-        <Metric icon={<Route size={17} />} label="Connector templates" value={templates.length} />
+        <Metric icon={<Database size={17} />} label={t("Sources")} value={sources.length} />
+        <Metric icon={<ShieldCheck size={17} />} label={t("External fields")} value={fields.length} />
+        <Metric icon={<Link2 size={17} />} label={t("Mappings")} value={mappings.length} />
+        <Metric icon={<Route size={17} />} label={t("Connector templates")} value={templates.length} />
       </div>
 
       {mode === "wizard" ? (
@@ -260,12 +262,12 @@ export function CatalogWizardPage(props: CatalogPageProps) {
         />
       )}
 
-      <Card className="panel" title="Catalog records">
+      <Card className="panel" title={t("Catalog records")}>
         <div className="catalogRecords">
           {sources.map((source) => <RecordItem key={source.id} title={source.name} meta={`${source.source_type} · ${source.authority_level}`} tag={source.status} />)}
           {fields.map((field) => <RecordItem key={field.id} title={field.name} meta={`${field.data_type} · ${field.access_policy}`} tag={field.sensitivity} />)}
           {mappings.map((mapping) => <RecordItem key={mapping.id} title={`${mapping.target_type} ${compactId(mapping.target_id)}`} meta={`${mapping.external_resource_name}.${mapping.external_field_name}`} tag={mapping.status} />)}
-          {!sources.length && !fields.length && !mappings.length && <div className="emptyState">No catalog records yet.</div>}
+          {!sources.length && !fields.length && !mappings.length && <div className="emptyState">{t("No catalog records yet.")}</div>}
         </div>
       </Card>
     </section>
@@ -289,6 +291,7 @@ type WizardShared = {
 };
 
 function CatalogWizard(props: WizardShared) {
+  const t = useT();
   const [step, setStep] = useState<WizardStepId>(1);
   const [sourceForm, setSourceForm] = useState<SourceForm>(defaultSource);
   const [resourceForm, setResourceForm] = useState<ResourceForm>(defaultResource);
@@ -415,16 +418,16 @@ function CatalogWizard(props: WizardShared) {
 
   const targetOptions = useMemo(() => {
     if (mappingForm.targetType === "class") {
-      return props.classes.map((item) => ({ value: item.id, label: `${item.name} · class` }));
+      return props.classes.map((item) => ({ value: item.id, label: t("{name} · class", { name: item.name }) }));
     }
     if (mappingForm.targetType === "property") {
-      return Object.values(props.propertiesByClass).flat().map((item) => ({ value: item.id, label: `${item.name} · property` }));
+      return Object.values(props.propertiesByClass).flat().map((item) => ({ value: item.id, label: t("{name} · property", { name: item.name }) }));
     }
     if (mappingForm.targetType === "relation_type") {
-      return props.relationTypes.map((item) => ({ value: item.id, label: `${item.name} · relation type` }));
+      return props.relationTypes.map((item) => ({ value: item.id, label: t("{name} · relation type", { name: item.name }) }));
     }
-    return props.entities.map((item) => ({ value: item.id, label: `${item.name} · entity` }));
-  }, [mappingForm.targetType, props.classes, props.entities, props.propertiesByClass, props.relationTypes]);
+    return props.entities.map((item) => ({ value: item.id, label: t("{name} · entity", { name: item.name }) }));
+  }, [mappingForm.targetType, props.classes, props.entities, props.propertiesByClass, props.relationTypes, t]);
 
   function submitMapping(advance: boolean) {
     void props.run(async () => {
@@ -515,10 +518,10 @@ function CatalogWizard(props: WizardShared) {
                     {isComplete ? <Check size={14} /> : <Icon size={14} />}
                   </span>
                   <span className="wizardStepMeta">
-                    <strong>{item.label}</strong>
-                    <small>{item.detail}</small>
+                    <strong>{t(item.label)}</strong>
+                    <small>{t(item.detail)}</small>
                   </span>
-                  <span className="wizardStepIndex">Step {index + 1}</span>
+                  <span className="wizardStepIndex">{t("Step {n}", { n: index + 1 })}</span>
                 </button>
                 {index < wizardSteps.length - 1 && <span className="wizardStepConnector" aria-hidden />}
               </li>
@@ -532,14 +535,14 @@ function CatalogWizard(props: WizardShared) {
         title={
           <span className="wizardCardTitle">
             <activeDef.icon size={16} />
-            <span>{activeDef.label} · Step {stepIndex + 1} / {wizardSteps.length}</span>
+            <span>{t("{label} · Step {cur} / {total}", { label: t(activeDef.label), cur: stepIndex + 1, total: wizardSteps.length })}</span>
           </span>
         }
       >
         {props.readOnly && (
           <div className="callout quiet">
-            <strong>当前版本只读</strong>
-            <span>已发布版本的 catalog 配置不可写入；如需修改请新建后继草稿。</span>
+            <strong>{t("当前版本只读")}</strong>
+            <span>{t("已发布版本的 catalog 配置不可写入；如需修改请新建后继草稿。")}</span>
           </div>
         )}
 
@@ -632,24 +635,25 @@ type SourceStepProps = {
 };
 
 function SourceStep(props: SourceStepProps) {
+  const t = useT();
   return (
     <div className="wizardGrid">
       <div className="stackForm">
-        <div className="wizardHelp">注册一个新的外部系统（Postgres / API / File）。提交后自动进入下一步。</div>
-        <input placeholder="Data source name" value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
+        <div className="wizardHelp">{t("注册一个新的外部系统（Postgres / API / File）。提交后自动进入下一步。")}</div>
+        <input placeholder={t("Data source name")} value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
         <select value={props.form.sourceType} onChange={(event) => props.setForm({ ...props.form, sourceType: event.target.value })} disabled={props.readOnly}>
           <option value="postgres">PostgreSQL</option>
           <option value="api">API</option>
           <option value="file">File</option>
         </select>
-        <input placeholder="Owner" value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
-        <textarea placeholder="Description" value={props.form.description} onChange={(event) => props.setForm({ ...props.form, description: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Owner")} value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
+        <textarea placeholder={t("Description")} value={props.form.description} onChange={(event) => props.setForm({ ...props.form, description: event.target.value })} disabled={props.readOnly} />
         <button className="primaryButton" disabled={props.busy || props.readOnly || !props.form.name.trim()} onClick={props.onCreate} type="button">
-          <Plus size={15} /> 创建并继续
+          <Plus size={15} /> {t("创建并继续")}
         </button>
       </div>
       <div className="wizardSide">
-        <strong>已有数据源 ({props.existing.length})</strong>
+        <strong>{t("已有数据源 ({n})", { n: props.existing.length })}</strong>
         {props.existing.length ? (
           <div className="dataList">
             {props.existing.map((source) => (
@@ -663,7 +667,7 @@ function SourceStep(props: SourceStepProps) {
             ))}
           </div>
         ) : (
-          <div className="emptyState">暂无数据源。先创建一个。</div>
+          <div className="emptyState">{t("暂无数据源。先创建一个。")}</div>
         )}
       </div>
     </div>
@@ -684,6 +688,7 @@ type ResourceStepProps = {
 };
 
 function ResourceStep(props: ResourceStepProps) {
+  const t = useT();
   const scopedSource = props.sources.find((item) => item.id === props.form.dataSourceId);
   const filtered = props.scopedSourceId
     ? props.existing.filter((item) => item.data_source_id === props.scopedSourceId)
@@ -693,25 +698,25 @@ function ResourceStep(props: ResourceStepProps) {
       <div className="stackForm">
         <div className="wizardHelp">
           {props.scopedSourceId
-            ? <>绑定到上一步的数据源：<strong>{scopedSource?.name ?? props.form.dataSourceId}</strong></>
-            : "选择一个已有数据源，或返回上一步创建。"}
+            ? t("绑定到上一步的数据源：{name}", { name: scopedSource?.name ?? props.form.dataSourceId })
+            : t("选择一个已有数据源，或返回上一步创建。")}
         </div>
         <select value={props.form.dataSourceId} onChange={(event) => props.setForm({ ...props.form, dataSourceId: event.target.value })} disabled={props.readOnly}>
-          <option value="">Select source</option>
+          <option value="">{t("Select source")}</option>
           {props.sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
         </select>
-        <input placeholder="Resource name, table, endpoint" value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
-        <input placeholder="Resource type" value={props.form.resourceType} onChange={(event) => props.setForm({ ...props.form, resourceType: event.target.value })} disabled={props.readOnly} />
-        <input placeholder="Owner" value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Resource name, table, endpoint")} value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Resource type")} value={props.form.resourceType} onChange={(event) => props.setForm({ ...props.form, resourceType: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Owner")} value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
         <div className="wizardActions">
-          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> 上一步</button>
+          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> {t("上一步")}</button>
           <button className="primaryButton" disabled={props.busy || props.readOnly || !props.form.dataSourceId || !props.form.name.trim()} onClick={props.onCreate} type="button">
-            <Plus size={15} /> 创建并继续
+            <Plus size={15} /> {t("创建并继续")}
           </button>
         </div>
       </div>
       <div className="wizardSide">
-        <strong>该源的现有资源 ({filtered.length})</strong>
+        <strong>{t("该源的现有资源 ({n})", { n: filtered.length })}</strong>
         {filtered.length ? (
           <div className="dataList">
             {filtered.map((resource) => (
@@ -725,7 +730,7 @@ function ResourceStep(props: ResourceStepProps) {
             ))}
           </div>
         ) : (
-          <div className="emptyState">该源下尚无资源。</div>
+          <div className="emptyState">{t("该源下尚无资源。")}</div>
         )}
       </div>
     </div>
@@ -746,6 +751,7 @@ type FieldStepProps = {
 };
 
 function FieldStep(props: FieldStepProps) {
+  const t = useT();
   const scopedResource = props.resources.find((item) => item.id === props.form.dataResourceId);
   const loopRows = props.scopedResourceId
     ? props.existing.filter((item) => item.data_resource_id === props.scopedResourceId)
@@ -755,16 +761,16 @@ function FieldStep(props: FieldStepProps) {
       <div className="stackForm">
         <div className="wizardHelp">
           {props.scopedResourceId
-            ? <>绑定资源：<strong>{scopedResource?.name ?? props.form.dataResourceId}</strong>。可循环添加多个字段。</>
-            : "选择一个资源，或返回上一步创建。"}
-          {props.addedCount > 0 && <Tag color="green" className="wizardTag">本轮已加 {props.addedCount} 个字段</Tag>}
+            ? t("绑定资源：{name}。可循环添加多个字段。", { name: scopedResource?.name ?? props.form.dataResourceId })
+            : t("选择一个资源，或返回上一步创建。")}
+          {props.addedCount > 0 && <Tag color="green" className="wizardTag">{t("本轮已加 {n} 个字段", { n: props.addedCount })}</Tag>}
         </div>
         <select value={props.form.dataResourceId} onChange={(event) => props.setForm({ ...props.form, dataResourceId: event.target.value })} disabled={props.readOnly}>
-          <option value="">Select resource</option>
+          <option value="">{t("Select resource")}</option>
           {props.resources.map((resource) => <option key={resource.id} value={resource.id}>{resource.name}</option>)}
         </select>
-        <input placeholder="Field name" value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
-        <input placeholder="Data type" value={props.form.dataType} onChange={(event) => props.setForm({ ...props.form, dataType: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Field name")} value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Data type")} value={props.form.dataType} onChange={(event) => props.setForm({ ...props.form, dataType: event.target.value })} disabled={props.readOnly} />
         <select value={props.form.sensitivity} onChange={(event) => props.setForm({ ...props.form, sensitivity: event.target.value as ExternalField["sensitivity"] })} disabled={props.readOnly}>
           <option value="public">public</option>
           <option value="internal">internal</option>
@@ -774,22 +780,22 @@ function FieldStep(props: FieldStepProps) {
         <select value={props.form.accessPolicy} onChange={(event) => props.setForm({ ...props.form, accessPolicy: event.target.value as ExternalField["access_policy"] })} disabled={props.readOnly}>
           <option value="allow">allow</option>
           <option value="mask">mask</option>
-          <option value="approval_required">approval required</option>
+          <option value="approval_required">{t("approval required")}</option>
           <option value="deny">deny</option>
         </select>
-        <input placeholder="Masking rule" value={props.form.maskingRule} onChange={(event) => props.setForm({ ...props.form, maskingRule: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Masking rule")} value={props.form.maskingRule} onChange={(event) => props.setForm({ ...props.form, maskingRule: event.target.value })} disabled={props.readOnly} />
         <div className="wizardActions">
-          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> 上一步</button>
+          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> {t("上一步")}</button>
           <button className="secondaryButton" disabled={props.busy || props.readOnly || !props.form.dataResourceId || !props.form.name.trim()} onClick={() => props.onCreate(false)} type="button">
-            <Plus size={15} /> 保存并继续添加
+            <Plus size={15} /> {t("保存并继续添加")}
           </button>
           <button className="primaryButton" disabled={props.busy || props.readOnly || !props.form.dataResourceId || !props.form.name.trim()} onClick={() => props.onCreate(true)} type="button">
-            保存并下一步 <ArrowRight size={15} />
+            {t("保存并下一步")} <ArrowRight size={15} />
           </button>
         </div>
       </div>
       <div className="wizardSide">
-        <strong>该资源已注册字段 ({loopRows.length})</strong>
+        <strong>{t("该资源已注册字段 ({n})", { n: loopRows.length })}</strong>
         {loopRows.length ? (
           <div className="dataList">
             {loopRows.map((field) => (
@@ -802,7 +808,7 @@ function FieldStep(props: FieldStepProps) {
             ))}
           </div>
         ) : (
-          <div className="emptyState">该资源尚无字段。</div>
+          <div className="emptyState">{t("该资源尚无字段。")}</div>
         )}
       </div>
     </div>
@@ -823,12 +829,13 @@ type MappingStepProps = {
 };
 
 function MappingStep(props: MappingStepProps) {
+  const t = useT();
   return (
     <div className="wizardGrid">
       <div className="stackForm">
         <div className="wizardHelp">
-          将本体元素（实体 / 类 / 属性 / 关系类型）映射到外部字段。可循环添加多条。
-          {props.addedCount > 0 && <Tag color="green" className="wizardTag">本轮已加 {props.addedCount} 条映射</Tag>}
+          {t("将本体元素（实体 / 类 / 属性 / 关系类型）映射到外部字段。可循环添加多条。")}
+          {props.addedCount > 0 && <Tag color="green" className="wizardTag">{t("本轮已加 {n} 条映射", { n: props.addedCount })}</Tag>}
         </div>
         <select value={props.form.targetType} onChange={(event) => props.setForm({ ...props.form, targetType: event.target.value as SemanticMapping["target_type"], targetId: "" })} disabled={props.readOnly}>
           <option value="entity">Entity</option>
@@ -840,29 +847,29 @@ function MappingStep(props: MappingStepProps) {
           showSearch
           optionFilterProp="label"
           options={props.targetOptions}
-          placeholder="Ontology target"
+          placeholder={t("Ontology target")}
           value={props.form.targetId || undefined}
           onChange={(value) => props.setForm({ ...props.form, targetId: value })}
           disabled={props.readOnly}
         />
         <select value={props.form.fieldId} onChange={(event) => props.setForm({ ...props.form, fieldId: event.target.value })} disabled={props.readOnly}>
-          <option value="">Select external field</option>
+          <option value="">{t("Select external field")}</option>
           {props.existing.map((field) => <option key={field.id} value={field.id}>{field.name} · {field.sensitivity}</option>)}
         </select>
         <textarea rows={5} value={props.form.joinKey} onChange={(event) => props.setForm({ ...props.form, joinKey: event.target.value })} disabled={props.readOnly} />
-        <input placeholder="Owner" value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Owner")} value={props.form.owner} onChange={(event) => props.setForm({ ...props.form, owner: event.target.value })} disabled={props.readOnly} />
         <div className="wizardActions">
-          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> 上一步</button>
+          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> {t("上一步")}</button>
           <button className="secondaryButton" disabled={props.busy || props.readOnly || !props.form.targetId || !props.form.fieldId} onClick={() => props.onCreate(false)} type="button">
-            <Plus size={15} /> 保存并继续添加
+            <Plus size={15} /> {t("保存并继续添加")}
           </button>
           <button className="primaryButton" disabled={props.busy || props.readOnly || !props.form.targetId || !props.form.fieldId} onClick={() => props.onCreate(true)} type="button">
-            保存并下一步 <ArrowRight size={15} />
+            {t("保存并下一步")} <ArrowRight size={15} />
           </button>
         </div>
       </div>
       <div className="wizardSide">
-        <strong>已有外部字段 ({props.existing.length})</strong>
+        <strong>{t("已有外部字段 ({n})", { n: props.existing.length })}</strong>
         {props.existing.length ? (
           <div className="dataList">
             {props.existing.slice(0, 20).map((field) => (
@@ -876,7 +883,7 @@ function MappingStep(props: MappingStepProps) {
             ))}
           </div>
         ) : (
-          <div className="emptyState">尚无外部字段，请返回字段步骤创建。</div>
+          <div className="emptyState">{t("尚无外部字段，请返回字段步骤创建。")}</div>
         )}
       </div>
     </div>
@@ -899,18 +906,19 @@ type TemplateStepProps = {
 };
 
 function TemplateStep(props: TemplateStepProps) {
+  const t = useT();
   const scopedSource = props.sources.find((item) => item.id === props.form.dataSourceId);
   if (props.done !== "pending") {
     return (
       <div className="wizardDone">
         <CheckCircle2 size={36} />
         <div>
-          <strong>{props.done === "created" ? "Connector 模板已创建" : "已跳过 Connector 模板"}</strong>
-          <span>向导已完成。可在 Test 探测页运行受控查询，或重新开始一轮配置。</span>
+          <strong>{props.done === "created" ? t("Connector 模板已创建") : t("已跳过 Connector 模板")}</strong>
+          <span>{t("向导已完成。可在 Test 探测页运行受控查询，或重新开始一轮配置。")}</span>
         </div>
         <div className="wizardActions">
-          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> 返回映射</button>
-          <button className="primaryButton" onClick={props.onRestart} type="button"><RefreshCw size={15} /> 开始新一轮</button>
+          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> {t("返回映射")}</button>
+          <button className="primaryButton" onClick={props.onRestart} type="button"><RefreshCw size={15} /> {t("开始新一轮")}</button>
         </div>
       </div>
     );
@@ -920,41 +928,41 @@ function TemplateStep(props: TemplateStepProps) {
       <div className="stackForm">
         <div className="wizardHelp">
           {props.scopedSourceId
-            ? <>为数据源 <strong>{scopedSource?.name ?? props.form.dataSourceId}</strong> 注册一个受控查询模板（可跳过）。</>
-            : "选择已有数据源注册 Connector 模板；如不需要可直接跳过。"}
+            ? t("为数据源 {name} 注册一个受控查询模板（可跳过）。", { name: scopedSource?.name ?? props.form.dataSourceId })
+            : t("选择已有数据源注册 Connector 模板；如不需要可直接跳过。")}
         </div>
         <select value={props.form.dataSourceId} onChange={(event) => props.setForm({ ...props.form, dataSourceId: event.target.value, allowedFieldIds: [] })} disabled={props.readOnly}>
-          <option value="">Select source</option>
+          <option value="">{t("Select source")}</option>
           {props.sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
         </select>
-        <input placeholder="Template name" value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
+        <input placeholder={t("Template name")} value={props.form.name} onChange={(event) => props.setForm({ ...props.form, name: event.target.value })} disabled={props.readOnly} />
         <Select
           mode="multiple"
           optionFilterProp="label"
           options={props.existingFields
             .filter((field) => !props.form.dataSourceId || field.data_source_id === props.form.dataSourceId)
             .map((field) => ({ value: field.id, label: `${field.name} · ${field.access_policy}` }))}
-          placeholder="Allowed fields"
+          placeholder={t("Allowed fields")}
           value={props.form.allowedFieldIds}
           onChange={(value) => props.setForm({ ...props.form, allowedFieldIds: value })}
           disabled={props.readOnly}
         />
         <select value={props.form.accessPolicy} onChange={(event) => props.setForm({ ...props.form, accessPolicy: event.target.value as ConnectorTemplate["access_policy"] })} disabled={props.readOnly}>
           <option value="allow">allow</option>
-          <option value="approval_required">approval required</option>
+          <option value="approval_required">{t("approval required")}</option>
           <option value="deny">deny</option>
         </select>
         <textarea rows={5} value={props.form.resultRows} onChange={(event) => props.setForm({ ...props.form, resultRows: event.target.value })} disabled={props.readOnly} />
         <div className="wizardActions">
-          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> 上一步</button>
-          <button className="secondaryButton" onClick={props.onSkip} type="button"><SkipForward size={15} /> 跳过</button>
+          <button className="secondaryButton" onClick={props.onBack} type="button"><ArrowLeft size={15} /> {t("上一步")}</button>
+          <button className="secondaryButton" onClick={props.onSkip} type="button"><SkipForward size={15} /> {t("跳过")}</button>
           <button className="primaryButton" disabled={props.busy || props.readOnly || !props.form.dataSourceId || !props.form.name.trim()} onClick={props.onCreate} type="button">
-            <Plus size={15} /> 创建模板
+            <Plus size={15} /> {t("创建模板")}
           </button>
         </div>
       </div>
       <div className="wizardSide">
-        <strong>当前源可选字段</strong>
+        <strong>{t("当前源可选字段")}</strong>
         <FieldAllowList fields={props.existingFields} sourceId={props.form.dataSourceId} />
       </div>
     </div>
@@ -962,8 +970,9 @@ function TemplateStep(props: TemplateStepProps) {
 }
 
 function FieldAllowList(props: { fields: ExternalField[]; sourceId: string }) {
+  const t = useT();
   const filtered = props.sourceId ? props.fields.filter((field) => field.data_source_id === props.sourceId) : props.fields;
-  if (!filtered.length) return <div className="emptyState">所选源下暂无字段。</div>;
+  if (!filtered.length) return <div className="emptyState">{t("所选源下暂无字段。")}</div>;
   return (
     <div className="dataList">
       {filtered.slice(0, 20).map((field) => (
@@ -987,6 +996,7 @@ type CatalogTestProps = {
 };
 
 function CatalogTest(props: CatalogTestProps) {
+  const t = useT();
   const [queryTemplateId, setQueryTemplateId] = useState("");
   const [queryParams, setQueryParams] = useState('{"student_number": "S1"}');
   const [queryApproved, setQueryApproved] = useState(false);
@@ -1040,24 +1050,24 @@ function CatalogTest(props: CatalogTestProps) {
 
   return (
     <div className="catalogGrid two">
-      <Card className="panel" title="Governed connector query">
+      <Card className="panel" title={t("Governed connector query")}>
         <div className="stackForm">
           <select value={queryTemplateId} onChange={(event) => setQueryTemplateId(event.target.value)}>
-            <option value="">Select template</option>
+            <option value="">{t("Select template")}</option>
             {props.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
           </select>
           <textarea rows={4} value={queryParams} onChange={(event) => setQueryParams(event.target.value)} />
-          <label className="inlineCheck"><input checked={queryApproved} onChange={(event) => setQueryApproved(event.target.checked)} type="checkbox" /> Approval granted</label>
-          <button className="primaryButton" disabled={props.busy || !queryTemplateId} onClick={runConnectorQuery} type="button"><Play size={15} /> Run template</button>
+          <label className="inlineCheck"><input checked={queryApproved} onChange={(event) => setQueryApproved(event.target.checked)} type="checkbox" /> {t("Approval granted")}</label>
+          <button className="primaryButton" disabled={props.busy || !queryTemplateId} onClick={runConnectorQuery} type="button"><Play size={15} /> {t("Run template")}</button>
         </div>
         {queryResult && <ConnectorResult result={queryResult} />}
       </Card>
 
-      <Card className="panel" title="Identifier resolution analysis">
+      <Card className="panel" title={t("Identifier resolution analysis")}>
         <div className="stackForm">
           <textarea rows={3} value={leftIds} onChange={(event) => setLeftIds(event.target.value)} />
           <textarea rows={3} value={rightIds} onChange={(event) => setRightIds(event.target.value)} />
-          <button className="secondaryButton" disabled={props.busy} onClick={analyzeResolution} type="button"><Route size={15} /> Analyze overlap</button>
+          <button className="secondaryButton" disabled={props.busy} onClick={analyzeResolution} type="button"><Route size={15} /> {t("Analyze overlap")}</button>
         </div>
         {resolutionStats && <pre className="jsonBlock">{prettyJson(resolutionStats)}</pre>}
       </Card>
@@ -1074,11 +1084,12 @@ function RecordItem(props: { title: string; meta: string; tag: string }) {
 }
 
 function ConnectorResult(props: { result: ConnectorQueryResult }) {
+  const t = useT();
   return (
     <div className="connectorResult">
       <div className="connectorState">
-        <Tag color={props.result.authorized ? "green" : "red"}>{props.result.authorized ? "authorized" : "denied"}</Tag>
-        <span>{props.result.denial_reason ?? `${props.result.rows.length} row(s)`}</span>
+        <Tag color={props.result.authorized ? "green" : "red"}>{props.result.authorized ? t("authorized") : t("denied")}</Tag>
+        <span>{props.result.denial_reason ?? t("{n} row(s)", { n: props.result.rows.length })}</span>
       </div>
       <pre className="jsonBlock">{prettyJson({ source: props.result.source, audit: props.result.audit, rows: props.result.rows })}</pre>
     </div>

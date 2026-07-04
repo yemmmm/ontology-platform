@@ -1,5 +1,6 @@
 import { Card, Tag } from "antd";
 import type { ReactNode } from "react";
+import { useT } from "../../i18n";
 
 export type StatusSummaryTone = "default" | "success" | "warning" | "danger" | "info";
 
@@ -24,8 +25,9 @@ export function StatusSummary({ items, ariaLabel = "Status summary" }: {
   items: StatusSummaryItem[];
   ariaLabel?: string;
 }) {
+  const t = useT();
   return (
-    <section className="status-summary" aria-label={ariaLabel}>
+    <section className="status-summary" aria-label={t(ariaLabel)}>
       {items.map((item) => {
         const content = (
           <Card size="small" className={`status-summary__item status-summary__item--${item.tone ?? "default"}`}>

@@ -1,5 +1,6 @@
 import { CheckCircle2, Circle, Clock3 } from "lucide-react";
 import { Tag } from "antd";
+import { useT } from "../i18n";
 
 export const workflowStages = [
   "gathering",
@@ -31,6 +32,7 @@ export type WorkflowProgressProps = {
 };
 
 export function WorkflowProgress(props: WorkflowProgressProps) {
+  const t = useT();
   const stageIndex = Math.max(0, workflowStages.indexOf(props.status as WorkflowStage));
   const isFull = props.variant !== "compact";
 
@@ -57,8 +59,8 @@ export function WorkflowProgress(props: WorkflowProgressProps) {
                 <Icon size={isFull ? 16 : 13} />
               </span>
               <span className="workflowProgressMeta">
-                <strong>{workflowStageLabels[stage]}</strong>
-                {isCurrent && isFull && <Tag color="purple">当前阶段</Tag>}
+                <strong>{t(workflowStageLabels[stage])}</strong>
+                {isCurrent && isFull && <Tag color="purple">{t("当前阶段")}</Tag>}
               </span>
             </button>
             {index < workflowStages.length - 1 && <span className="workflowProgressConnector" aria-hidden />}

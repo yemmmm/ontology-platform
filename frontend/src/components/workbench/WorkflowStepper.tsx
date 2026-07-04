@@ -1,5 +1,6 @@
 import { Steps } from "antd";
 import type { WorkflowStatus } from "../../types";
+import { useT } from "../../i18n";
 
 export const workflowSteps: Array<{ status: WorkflowStatus; title: string }> = [
   { status: "gathering", title: "Gathering" },
@@ -15,16 +16,17 @@ export function WorkflowStepper({ current, compact = false }: {
   current: WorkflowStatus;
   compact?: boolean;
 }) {
+  const t = useT();
   const currentIndex = workflowSteps.findIndex((step) => step.status === current);
   return (
     <Steps
-      aria-label="Ontology build workflow"
+      aria-label={t("Ontology build workflow")}
       current={Math.max(currentIndex, 0)}
       direction={compact ? "vertical" : "horizontal"}
       responsive
       size="small"
       status={currentIndex < 0 ? "error" : "process"}
-      items={workflowSteps.map((step) => ({ title: step.title }))}
+      items={workflowSteps.map((step) => ({ title: t(step.title) }))}
     />
   );
 }
