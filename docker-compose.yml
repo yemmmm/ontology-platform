@@ -34,7 +34,22 @@ services:
       timeout: 5s
       retries: 12
 
+  oxigraph:
+    image: oxigraph/oxigraph:latest
+    container_name: ontology-platform-oxigraph
+    command: ["serve", "--location", "/data", "--bind", "0.0.0.0:7878"]
+    ports:
+      - "7878:7878"
+    volumes:
+      - oxigraph_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/oxigraph", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   postgres_data:
   neo4j_data:
   neo4j_logs:
+  oxigraph_data:

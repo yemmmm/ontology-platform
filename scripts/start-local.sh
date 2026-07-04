@@ -16,6 +16,8 @@ NEO4J_BOLT_PORT="${NEO4J_BOLT_PORT:-7687}"
 NEO4J_HTTP_PORT="${NEO4J_HTTP_PORT:-7474}"
 NEO4J_USER="${NEO4J_USER:-neo4j}"
 NEO4J_PASSWORD="${NEO4J_PASSWORD:-ontology-platform}"
+OXIGRAPH_HOST="${OXIGRAPH_HOST:-localhost}"
+OXIGRAPH_PORT="${OXIGRAPH_PORT:-7878}"
 BACKEND_HOST="${BACKEND_HOST:-0.0.0.0}"
 BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
@@ -82,7 +84,7 @@ wait_for_neo4j() {
 }
 
 start_docker_services() {
-  log "Starting PostgreSQL and Neo4j via Docker Compose"
+  log "Starting PostgreSQL, Neo4j, and Oxigraph via Docker Compose"
   docker compose -f "$COMPOSE_FILE" up -d
 
   log "Waiting for PostgreSQL..."
@@ -90,6 +92,8 @@ start_docker_services() {
   log "Waiting for Neo4j..."
   wait_for_tcp "Neo4j HTTP" "$NEO4J_HOST" "$NEO4J_HTTP_PORT" 30
   wait_for_neo4j 120
+  log "Waiting for Oxigraph..."
+  wait_for_tcp "Oxigraph HTTP" "$OXIGRAPH_HOST" "$OXIGRAPH_PORT" 60
 }
 
 ensure_backend_env() {

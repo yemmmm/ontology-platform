@@ -24,4 +24,14 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=1024, ge=256, le=2048)
     embedding_timeout_seconds: float = Field(default=45, gt=0, le=300)
 
+    oxigraph_url: str = "http://localhost:7878"
+    semantic_base_iri: str = "http://ontology-platform.local/semantic/"
+    semantic_graph_iri_prefix: str = "http://ontology-platform.local/semantic/graph/"
+    semantic_query_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    semantic_query_result_limit: int = Field(default=1000, ge=1, le=10000)
+    semantic_shacl_inference: str = "none"
+    semantic_reasoner_command: str = ""
+    semantic_reasoner_timeout_seconds: float = Field(default=60, gt=0, le=600)
+    semantic_neo4j_projection_enabled: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

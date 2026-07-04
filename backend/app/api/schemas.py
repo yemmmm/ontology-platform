@@ -259,6 +259,107 @@ class EntityWithRelationsRead(EntityRead):
     incoming: list[RelationRead] = Field(default_factory=list)
 
 
+class SemanticDatasetLoadRequest(BaseModel):
+    content: str
+    format: Literal["trig", "turtle", "json-ld"]
+    base_iri: str | None = None
+
+
+class SemanticDatasetLoadResponse(BaseModel):
+    loaded: bool
+    format: str
+    graph_count: int | None = None
+    triple_count: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticSparqlQueryRequest(BaseModel):
+    query: str
+    timeout_seconds: float | None = Field(default=None, gt=0)
+    result_limit: int | None = Field(default=None, gt=0)
+
+
+class SemanticSparqlQueryResponse(BaseModel):
+    result: Any
+    result_format: str
+    truncated: bool = False
+
+
+class SemanticValidationRunRequest(BaseModel):
+    data_graph_iris: list[str]
+    shape_graph_iris: list[str]
+    inference: str | None = None
+
+
+class SemanticValidationRunResponse(BaseModel):
+    run_id: str
+    status: str
+    conforms: bool | None = None
+    report_text: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class SemanticReasoningRunRequest(BaseModel):
+    source_graph_iris: list[str]
+    tasks: list[str] = Field(default_factory=lambda: ["consistency"])
+    persist_result_graph: bool = False
+
+
+class SemanticReasoningRunResponse(BaseModel):
+    run_id: str
+    status: str
+    consistent: bool | None = None
+    classification: dict[str, Any] = Field(default_factory=dict)
+    entailments: list[dict[str, Any]] = Field(default_factory=list)
+    result_graph_iri: str | None = None
+    error: str | None = None
+
+
+class SemanticEditRequest(BaseModel):
+    format: Literal["trig", "turtle", "json-ld", "sparql-update"]
+    content: str
+    target_graph_iri: str | None = None
+    validate_edit: bool = Field(default=True, alias="validate")
+    shape_graph_iris: list[str] = Field(default_factory=list)
+    actor: str | None = None
+    reason: str | None = None
+
+
+class SemanticEditResponse(BaseModel):
+    applied: bool
+    affected_graph_iris: list[str]
+    delta: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+    validation: dict[str, Any] | None = None
+
+
+class SemanticGraphEditabilityRequest(BaseModel):
+    editable: bool
+    actor: str | None = None
+    reason: str | None = None
+
+
+class SemanticGraphEditabilityResponse(BaseModel):
+    graph_iri: str
+    editable: bool
+    updated_by: str | None = None
+    reason: str | None = None
+
+
+class SemanticProjectionRequest(BaseModel):
+    source_graph_iris: list[str]
+    reasoning_result_graph_iri: str | None = None
+
+
+class SemanticProjectionResponse(BaseModel):
+    job_id: str
+    status: str
+    node_count: int
+    relationship_count: int
+    error: str | None = None
+
+
 class ValidationResult(BaseModel):
     valid: bool
     errors: list[str] = Field(default_factory=list)

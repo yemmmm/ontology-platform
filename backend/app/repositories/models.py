@@ -836,3 +836,65 @@ class ConnectorQueryAuditModel(Base):
     queried_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SemanticGraphStateModel(Base):
+    __tablename__ = "semantic_graph_states"
+    __table_args__ = (UniqueConstraint("graph_iri", name="uq_semantic_graph_states_graph_iri"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    editable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SemanticValidationRunModel(Base):
+    __tablename__ = "semantic_validation_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    data_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    shape_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    conforms: Mapped[bool | None] = mapped_column(Boolean)
+    report_graph_iri: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticReasoningRunModel(Base):
+    __tablename__ = "semantic_reasoning_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    result_graph_iri: Mapped[str | None] = mapped_column(Text)
+    reasoner: Mapped[str] = mapped_column(String(255), default="command", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    consistent: Mapped[bool | None] = mapped_column(Boolean)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticProjectionJobModel(Base):
+    __tablename__ = "semantic_projection_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    reasoning_result_graph_iri: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    node_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    relationship_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    job_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)

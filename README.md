@@ -32,7 +32,7 @@ Start the local development stack:
 ./scripts/start-local.sh
 ```
 
-The script checks PostgreSQL and Neo4j first, syncs backend dependencies with `uv`, runs migrations,
+The script checks PostgreSQL, Neo4j, and Oxigraph first, syncs backend dependencies with `uv`, runs migrations,
 builds the frontend production assets, and starts the backend API plus a frontend preview server.
 The preview server proxies `/api` to the backend without enabling Vite hot reload.
 
@@ -105,6 +105,15 @@ The backend reads `.env` from the process working directory. The commands above 
 | `LLM_API_KEY` | Optional demo agent API key. | empty |
 | `LLM_MODEL` | Optional demo agent model. | empty |
 | `LLM_TEMPERATURE` | Demo agent temperature. | `0.2` |
+| `OXIGRAPH_URL` | Oxigraph HTTP endpoint for the Phase 1 semantic runtime POC. | `http://localhost:7878` |
+| `SEMANTIC_BASE_IRI` | Base IRI for generated semantic resources. | `http://ontology-platform.local/semantic/` |
+| `SEMANTIC_GRAPH_IRI_PREFIX` | Guardrail prefix for platform-managed graph IRIs. | `http://ontology-platform.local/semantic/graph/` |
+| `SEMANTIC_QUERY_TIMEOUT_SECONDS` | Default SPARQL query timeout. | `10` |
+| `SEMANTIC_QUERY_RESULT_LIMIT` | Default SPARQL query result limit. | `1000` |
+| `SEMANTIC_SHACL_INFERENCE` | Default pySHACL inference mode. | `none` |
+| `SEMANTIC_REASONER_COMMAND` | Optional command for the OWL reasoner boundary. | empty |
+| `SEMANTIC_REASONER_TIMEOUT_SECONDS` | OWL reasoner command timeout. | `60` |
+| `SEMANTIC_NEO4J_PROJECTION_ENABLED` | Enables the Phase 1 RDF-to-Neo4j projection POC. | `false` |
 
 ## Auth Tokens
 
