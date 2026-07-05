@@ -74,6 +74,13 @@ ALLOWED_TOOLS = {
     "inspect_semantic_projection_status",
     "start_semantic_projection_job",
     "inspect_semantic_statement_provenance",
+    "preflight_semantic_migration",
+    "create_semantic_migration_run",
+    "run_next_semantic_migration_batch",
+    "run_semantic_migration_parity_check",
+    "cutover_semantic_migration_run",
+    "rollback_semantic_migration_run",
+    "compile_and_apply_canonical_command",
 }
 
 

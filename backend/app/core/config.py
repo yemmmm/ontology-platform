@@ -35,4 +35,16 @@ class Settings(BaseSettings):
     semantic_neo4j_projection_enabled: bool = False
     semantic_graph_visibility_labels: dict[str, str] = Field(default_factory=dict)
 
+    # Phase 7 canonical RDF dataset migration controls. These settings govern the
+    # source-of-truth transition from legacy product behavior to the governed RDF
+    # dataset path. Modes are resolved per scope by the migration orchestrator.
+    semantic_canonical_store: str = "legacy"
+    semantic_product_write_mode: str = "legacy_only"
+    semantic_read_mode: str = "legacy"
+    semantic_legacy_write_blocked: bool = False
+    semantic_migration_batch_size: int = Field(default=200, ge=1, le=10_000)
+    semantic_migration_parity_required: bool = True
+    semantic_migration_phase2_mapping_version: str = "phase2-v1"
+    semantic_migration_default_scope: str = "ad_hoc"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

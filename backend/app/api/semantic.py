@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
 from app.api.schemas import (
+    SemanticCanonicalModeRead,
+    SemanticCanonicalProductWriteRequest,
+    SemanticCanonicalProductWriteResponse,
     SemanticDatasetLoadRequest,
     SemanticDatasetLoadResponse,
     SemanticDerivedResultReconcileResponse,
@@ -29,6 +32,15 @@ from app.api.schemas import (
     SemanticGraphSetRuleRunRequest,
     SemanticGraphSetValidationRunRequest,
     SemanticGovernanceStatusResponse,
+    SemanticMigrationBatchRunResponse,
+    SemanticMigrationCreateRequest,
+    SemanticMigrationCutoverResponse,
+    SemanticMigrationParityCheckResponse,
+    SemanticMigrationPreflightRequest,
+    SemanticMigrationPreflightResponse,
+    SemanticMigrationRollbackResponse,
+    SemanticMigrationRunListResponse,
+    SemanticMigrationRunRead,
     SemanticMissingEvidenceSummary,
     SemanticProjectionJobCreate,
     SemanticProjectionJobListResponse,
@@ -103,6 +115,18 @@ from app.services.semantic_rule_execution import (
     SemanticRuleExecutionService,
 )
 from app.services.semantic_validation import SemanticValidationService
+from app.services.semantic_canonical_write import (
+    CanonicalSemanticWriteError,
+    CanonicalSemanticWriteService,
+)
+from app.services.semantic_command_compiler import (
+    CommandCompilerError,
+    compile_command,
+)
+from app.services.semantic_migration import (
+    MigrationError,
+    SemanticMigrationService,
+)
 
 router = APIRouter(prefix="/semantic", tags=["semantic"])
 
@@ -888,6 +912,253 @@ def get_governance_status(
     service = _service(session, rdf_store, settings)
     summary = service.governance_status()
     return SemanticGovernanceStatusResponse(**summary)
+
+
+# ----------------------------------------------------------------------------
+# Phase 7 — canonical RDF dataset migration runs, batches, and parity reports
+# ----------------------------------------------------------------------------
+
+
+def _migration_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+) -> SemanticMigrationService:
+    return SemanticMigrationService(session, rdf_store, settings)
+
+
+def _canonical_write_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+) -> CanonicalSemanticWriteService:
+    return CanonicalSemanticWriteService(session, rdf_store, settings)
+
+
+@router.post("/migrations:preflight", response_model=SemanticMigrationPreflightResponse)
+def preflight_migration(
+    request: SemanticMigrationPreflightRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationPreflightResponse:
+    service = _migration_service(session, rdf_store, settings)
+    summary = service.preflight(
+        scope_type=request.scope_type,
+        scope_id=request.scope_id,
+        target_graph_set_id=request.target_graph_set_id,
+    )
+    return SemanticMigrationPreflightResponse(**summary)
+
+
+@router.post("/migrations", response_model=SemanticMigrationRunRead, status_code=201)
+def create_migration_run(
+    request: SemanticMigrationCreateRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationRunRead:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        run = service.create_run(
+            scope_type=request.scope_type,
+            scope_id=request.scope_id,
+            mode=request.mode,
+            target_graph_set_id=request.target_graph_set_id,
+            batch_size=request.batch_size,
+            created_by=request.created_by,
+            metadata=request.metadata,
+        )
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return SemanticMigrationRunRead(**run)
+
+
+@router.get("/migrations", response_model=SemanticMigrationRunListResponse)
+def list_migration_runs(
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationRunListResponse:
+    service = _migration_service(session, rdf_store, settings)
+    return SemanticMigrationRunListResponse(**service.list_runs(limit=limit))
+
+
+@router.get("/migrations/{run_id}", response_model=SemanticMigrationRunRead)
+def get_migration_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationRunRead:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        run = service.get_run(run_id)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 404), detail=str(exc)
+        ) from exc
+    return SemanticMigrationRunRead(**run)
+
+
+@router.post(
+    "/migrations/{run_id}:run-next-batch",
+    response_model=SemanticMigrationBatchRunResponse,
+)
+def run_next_migration_batch(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationBatchRunResponse:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        result = service.run_next_batch(run_id)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    payload = {**result}
+    batch = payload.pop("batch", None)
+    return SemanticMigrationBatchRunResponse(
+        **payload,
+        batch=batch,
+    )
+
+
+@router.post(
+    "/migrations/{run_id}:rerun-failed-batches",
+    response_model=SemanticMigrationRunRead,
+)
+def rerun_failed_migration_batches(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationRunRead:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        service.rerun_failed_batches(run_id)
+        run = service.get_run(run_id)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return SemanticMigrationRunRead(**run)
+
+
+@router.post(
+    "/migrations/{run_id}:parity-check",
+    response_model=SemanticMigrationParityCheckResponse,
+)
+def run_migration_parity_check(
+    run_id: str,
+    check_name: Annotated[str | None, Query()] = None,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationParityCheckResponse:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        result = service.run_parity_check(run_id, check_name=check_name)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return SemanticMigrationParityCheckResponse(**result)
+
+
+@router.post(
+    "/migrations/{run_id}:cutover",
+    response_model=SemanticMigrationCutoverResponse,
+)
+def cutover_migration_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationCutoverResponse:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        result = service.cutover(run_id)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 409), detail=str(exc)
+        ) from exc
+    return SemanticMigrationCutoverResponse(**result)
+
+
+@router.post(
+    "/migrations/{run_id}:rollback",
+    response_model=SemanticMigrationRollbackResponse,
+)
+def rollback_migration_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMigrationRollbackResponse:
+    service = _migration_service(session, rdf_store, settings)
+    try:
+        result = service.rollback(run_id)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 409), detail=str(exc)
+        ) from exc
+    return SemanticMigrationRollbackResponse(**result)
+
+
+@router.post(
+    "/canonical-writes:compile-and-apply",
+    response_model=SemanticCanonicalProductWriteResponse,
+)
+def compile_and_apply_product_command(
+    request: SemanticCanonicalProductWriteRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticCanonicalProductWriteResponse:
+    service = _canonical_write_service(session, rdf_store, settings)
+    try:
+        result = service.apply_command(
+            request.command_kind,
+            request.payload,
+            graph_set_id=request.graph_set_id,
+            actor=request.actor,
+            reason=request.reason,
+            validate=request.validate_edit,
+            shape_graph_iris=request.shape_graph_iris,
+        )
+    except CanonicalSemanticWriteError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    except CommandCompilerError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return SemanticCanonicalProductWriteResponse(**result)
+
+
+@router.get("/canonical-mode", response_model=SemanticCanonicalModeRead)
+def get_canonical_mode(
+    settings: Settings = Depends(get_settings),
+) -> SemanticCanonicalModeRead:
+    return SemanticCanonicalModeRead(
+        canonical_store=settings.semantic_canonical_store,
+        product_write_mode=settings.semantic_product_write_mode,
+        read_mode=settings.semantic_read_mode,
+        legacy_write_blocked=settings.semantic_legacy_write_blocked,
+        scope_type=None,
+        scope_id=None,
+        notes=[
+            "Modes are resolved per scope by the migration orchestrator. "
+            "These settings reflect the current global defaults.",
+        ],
+    )
 
 
 # ----------------------------------------------------------------------------

@@ -1498,3 +1498,192 @@ class SemanticProjectionReconcileResponse(BaseModel):
     marked_stale: list[str]
     warnings: list[dict[str, str]] = Field(default_factory=list)
 
+
+# ----------------------------------------------------------------------------
+# Phase 7 — canonical RDF dataset migration runs, batches, and parity reports
+# ----------------------------------------------------------------------------
+
+
+class SemanticMigrationPreflightRequest(BaseModel):
+    scope_type: Literal[
+        "project",
+        "ontology",
+        "version",
+        "catalog_source",
+        "connector_source",
+        "global",
+        "ad_hoc",
+    ]
+    scope_id: str | None = None
+    target_graph_set_id: str | None = None
+
+
+class SemanticMigrationPreflightResponse(BaseModel):
+    scope_type: str
+    scope_id: str | None
+    ready: bool
+    checks: list[dict[str, Any]]
+    inventory: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticMigrationCreateRequest(BaseModel):
+    scope_type: Literal[
+        "project",
+        "ontology",
+        "version",
+        "catalog_source",
+        "connector_source",
+        "global",
+        "ad_hoc",
+    ]
+    scope_id: str | None = None
+    mode: Literal["dry_run", "shadow", "dual_write_backfill", "cutover", "rollback"]
+    target_graph_set_id: str | None = None
+    batch_size: int | None = Field(default=None, ge=1, le=10_000)
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticMigrationBatchRead(BaseModel):
+    id: str
+    migration_run_id: str
+    batch_index: int
+    object_kind: str
+    source_ids: list[str]
+    target_graph_iris: list[str]
+    status: str
+    inserted_quad_count: int
+    deleted_quad_count: int
+    source_hash: str
+    target_hash: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    error: str | None
+    metadata: dict[str, Any]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticMigrationParityReportRead(BaseModel):
+    id: str
+    migration_run_id: str
+    check_name: str
+    scope_type: str
+    scope_id: str | None
+    status: str
+    legacy_count: int | None
+    rdf_count: int | None
+    diff_summary: dict[str, Any]
+    sample_diffs: list[Any]
+    created_at: datetime
+    metadata: dict[str, Any]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticMigrationRunRead(BaseModel):
+    id: str
+    scope_type: str
+    scope_id: str | None
+    mode: str
+    status: str
+    phase2_mapping_version: str
+    source_snapshot_signature: str
+    target_graph_set_id: str | None
+    started_at: datetime
+    finished_at: datetime | None
+    created_by: str | None
+    error: str | None
+    metadata: dict[str, Any]
+    batches: list[SemanticMigrationBatchRead] = Field(default_factory=list)
+    parity_reports: list[SemanticMigrationParityReportRead] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticMigrationRunListResponse(BaseModel):
+    items: list[SemanticMigrationRunRead]
+    total: int
+
+
+class SemanticMigrationBatchRunResponse(BaseModel):
+    run_id: str
+    status: str
+    batch: SemanticMigrationBatchRead | None = None
+    applied: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticMigrationParityCheckResponse(BaseModel):
+    run_id: str
+    status: str
+    reports: list[SemanticMigrationParityReportRead]
+    mandatory_passed: bool
+    blocking_failures: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticMigrationCutoverResponse(BaseModel):
+    run_id: str
+    status: str
+    previous_modes: dict[str, Any]
+    new_modes: dict[str, Any]
+    gates_passed: bool
+    blocking_failures: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticMigrationRollbackResponse(BaseModel):
+    run_id: str
+    status: str
+    restored_modes: dict[str, Any]
+    rolled_back_graphs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SemanticCanonicalProductWriteRequest(BaseModel):
+    """Phase 7 product command compiler entry point.
+
+    Used to demonstrate that structured product APIs compile to the same canonical
+    RDF graph delta as direct semantic edits. Each ``command_kind`` maps to a
+    compiler that produces an :class:`RdfGraphDelta` for the canonical writer.
+    """
+
+    command_kind: Literal[
+        "create_class",
+        "create_relation_type",
+        "submit_assertion",
+        "update_evidence_status",
+    ]
+    graph_set_id: str
+    target_graph_iri: str | None = None
+    payload: dict[str, Any]
+    actor: str | None = None
+    reason: str | None = None
+    validate_edit: bool = True
+    shape_graph_iris: list[str] = Field(default_factory=list)
+
+
+class SemanticCanonicalProductWriteResponse(BaseModel):
+    audit_id: str
+    applied: bool
+    command_kind: str
+    affected_graph_iris: list[str]
+    delta: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+    validation: dict[str, Any] | None = None
+    graph_revisions: dict[str, int] = Field(default_factory=dict)
+    stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SemanticCanonicalModeRead(BaseModel):
+    canonical_store: str
+    product_write_mode: str
+    read_mode: str
+    legacy_write_blocked: bool
+    scope_type: str | None
+    scope_id: str | None
+    notes: list[str] = Field(default_factory=list)
+
+

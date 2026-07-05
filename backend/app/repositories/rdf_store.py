@@ -52,6 +52,12 @@ class SparqlUpdateRejected(RdfStoreError):
     status_code = 400
 
 
+class GraphHashMismatch(RdfStoreError):
+    """Raised when a hash-guarded replacement detects a concurrent write."""
+
+    status_code = 409
+
+
 @dataclass
 class DatasetLoadResult:
     loaded: bool
@@ -73,6 +79,63 @@ class SparqlResult:
 class UpdateResult:
     applied: bool = True
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GraphWriteResult:
+    graph_iri: str
+    applied: bool = True
+    previous_hash: str | None = None
+    new_hash: str | None = None
+    inserted_quad_count: int | None = None
+    deleted_quad_count: int | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GraphDropResult:
+    graph_iri: str
+    dropped: bool = True
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RdfGraphDelta:
+    """A scoped set of insert/delete operations against named graphs.
+
+    Phase 7 canonical write path and migration writer both produce deltas in this
+    shape so that audit, idempotency, and graph revision updates share one type.
+    """
+
+    inserts: list[tuple[str, str, str, str]] = field(default_factory=list)
+    deletes: list[tuple[str, str, str, str]] = field(default_factory=list)
+    clear_graphs: list[str] = field(default_factory=list)
+    drop_graphs: list[str] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (
+            self.inserts
+            or self.deletes
+            or self.clear_graphs
+            or self.drop_graphs
+        )
+
+    def affected_graph_iris(self) -> list[str]:
+        iris: list[str] = []
+        seen: set[str] = set()
+        for quad in (*self.inserts, *self.deletes):
+            graph_iri = quad[3]
+            if graph_iri not in seen:
+                seen.add(graph_iri)
+                iris.append(graph_iri)
+        for graph_iri in (*self.clear_graphs, *self.drop_graphs):
+            if graph_iri not in seen:
+                seen.add(graph_iri)
+                iris.append(graph_iri)
+        return iris
+
+
 
 
 class RdfStoreRepository:
@@ -170,6 +233,114 @@ class RdfStoreRepository:
         """
         update = f"DROP SILENT GRAPH <{graph_iri}>"
         return self.update_sparql(update)
+
+    def drop_named_graph(self, graph_iri: str) -> GraphDropResult:
+        """Drop a named graph and its contents entirely.
+
+        Distinct from ``clear_graph`` because callers (migration rollback, graph
+        GC) treat drop as a destructive operation that must be recorded as a
+        graph-removal rather than a content reset.
+        """
+        self.update_sparql(f"DROP SILENT GRAPH <{graph_iri}>")
+        return GraphDropResult(graph_iri=graph_iri, dropped=True)
+
+    def export_named_graph(self, graph_iri: str, format: str) -> str:
+        """Return the named graph serialized in the requested format."""
+        return self.get_graph(graph_iri, format)
+
+    def put_named_graph(self, graph_iri: str, content: str, format: str) -> GraphWriteResult:
+        """Replace the named graph atomically with the supplied content.
+
+        Oxigraph's SPARQL 1.1 HTTP graph protocol exposes PUT to ``/store?graph=``
+        as a graph-scoped replacement; we use it so that concurrent writers cannot
+        interleave statements from the previous and incoming payloads.
+        """
+        previous_hash = self.graph_content_hash(graph_iri)
+        content_type = _content_type(format)
+        try:
+            response = httpx.put(
+                f"{self.base_url}/store",
+                params={"graph": graph_iri},
+                content=content,
+                headers={"content-type": content_type},
+                timeout=60,
+            )
+        except httpx.RequestError as exc:
+            raise RdfStoreUnavailable(str(exc)) from exc
+        _raise_for_rdf_response(response, parse_error=RdfParseFailure)
+        new_hash = self.graph_content_hash(graph_iri)
+        return GraphWriteResult(
+            graph_iri=graph_iri,
+            applied=True,
+            previous_hash=previous_hash,
+            new_hash=new_hash,
+        )
+
+    def replace_named_graph_if_hash_matches(
+        self,
+        graph_iri: str,
+        content: str,
+        format: str,
+        expected_previous_hash: str | None,
+    ) -> GraphWriteResult:
+        """Replace the named graph only when the current hash matches expectation.
+
+        Phase 7 idempotent rerun and shadow backfill rely on this guard to make
+        every batch safe to retry. When the store is empty for the graph and the
+        caller also expects ``None``, the replacement still proceeds.
+        """
+        observed = self.graph_content_hash(graph_iri)
+        if observed != expected_previous_hash:
+            raise GraphHashMismatch(
+                f"Graph {graph_iri} hash mismatch: expected "
+                f"{expected_previous_hash!r}, observed {observed!r}"
+            )
+        result = self.put_named_graph(graph_iri, content, format)
+        result.previous_hash = observed
+        return result
+
+    def apply_dataset_delta(self, delta: RdfGraphDelta) -> GraphWriteResult:
+        """Apply an insert/delete/clear/drop delta as a single SPARQL Update.
+
+        Combines all operations into one request so partial failures leave the
+        store in a deterministic state and graph revisions increment once per
+        logical change.
+        """
+        if delta.is_empty:
+            return GraphWriteResult(graph_iri="", applied=False)
+        parts: list[str] = []
+        if delta.drop_graphs:
+            parts.extend(f"DROP SILENT GRAPH <{iri}>" for iri in delta.drop_graphs)
+        if delta.clear_graphs:
+            parts.extend(f"CLEAR SILENT GRAPH <{iri}>" for iri in delta.clear_graphs)
+        if delta.deletes:
+            grouped: dict[str, list[tuple[str, str, str]]] = {}
+            for subject, predicate, obj, graph_iri in delta.deletes:
+                grouped.setdefault(graph_iri, []).append((subject, predicate, obj))
+            for graph_iri, triples in grouped.items():
+                block = " . ".join(
+                    f"{subject} {predicate} {obj}" for subject, predicate, obj in triples
+                )
+                parts.append(f"DELETE DATA {{ GRAPH <{graph_iri}> {{ {block} }} }}")
+        if delta.inserts:
+            grouped_inserts: dict[str, list[tuple[str, str, str]]] = {}
+            for subject, predicate, obj, graph_iri in delta.inserts:
+                grouped_inserts.setdefault(graph_iri, []).append((subject, predicate, obj))
+            for graph_iri, triples in grouped_inserts.items():
+                block = " . ".join(
+                    f"{subject} {predicate} {obj}" for subject, predicate, obj in triples
+                )
+                parts.append(f"INSERT DATA {{ GRAPH <{graph_iri}> {{ {block} }} }}")
+        update = " ;\n".join(parts)
+        self.update_sparql(update)
+        affected = delta.affected_graph_iris()
+        primary = affected[0] if affected else ""
+        return GraphWriteResult(
+            graph_iri=primary,
+            applied=True,
+            inserted_quad_count=len(delta.inserts),
+            deleted_quad_count=len(delta.deletes) + len(delta.clear_graphs) + len(delta.drop_graphs),
+        )
 
     def graph_content_hash(self, graph_iri: str) -> str | None:
         """Return a deterministic content hash for the graph or None when empty."""

@@ -1142,3 +1142,108 @@ class SemanticRuleRunModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticMigrationRunModel(Base):
+    """Phase 7 canonical RDF dataset migration run.
+
+    Each run records the scope, mode, source signature, and parity reports for
+    one backfill / dual-write / cutover / rollback attempt. Runs are scoped by
+    ontology version, project, catalog source, connector source, or globally.
+    """
+
+    __tablename__ = "semantic_migration_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope_id: Mapped[str | None] = mapped_column(String(255))
+    mode: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    phase2_mapping_version: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="phase2-v1"
+    )
+    source_snapshot_signature: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    target_graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    error: Mapped[str | None] = mapped_column(Text)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+    batches: Mapped[list["SemanticMigrationBatchModel"]] = relationship(
+        back_populates="migration_run",
+        cascade="all, delete-orphan",
+        order_by="SemanticMigrationBatchModel.batch_index",
+    )
+    parity_reports: Mapped[list["SemanticMigrationParityReportModel"]] = relationship(
+        back_populates="migration_run",
+        cascade="all, delete-orphan",
+        order_by="SemanticMigrationParityReportModel.created_at",
+    )
+
+
+class SemanticMigrationBatchModel(Base):
+    """Phase 7 batch record for one migration run.
+
+    A batch is the unit of idempotent rerun. Two batches with identical source
+    hash and target hash for the same run are considered redundant and must not
+    mutate the target graph set when re-applied.
+    """
+
+    __tablename__ = "semantic_migration_batches"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    migration_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("semantic_migration_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    batch_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    object_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    target_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    inserted_quad_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    deleted_quad_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    target_hash: Mapped[str | None] = mapped_column(String(128))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    batch_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+    migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="batches")
+
+
+class SemanticMigrationParityReportModel(Base):
+    """Phase 7 parity check report comparing legacy and RDF-derived projections."""
+
+    __tablename__ = "semantic_migration_parity_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    migration_run_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("semantic_migration_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    check_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope_id: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    legacy_count: Mapped[int | None] = mapped_column(Integer)
+    rdf_count: Mapped[int | None] = mapped_column(Integer)
+    diff_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    sample_diffs: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    parity_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+    migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="parity_reports")
+

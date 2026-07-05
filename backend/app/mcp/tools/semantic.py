@@ -412,6 +412,101 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
+    # ------------------------------------------------------------------
+    # Phase 7 — canonical RDF dataset migration tools
+    # ------------------------------------------------------------------
+
+    @server.tool()
+    def preflight_semantic_migration(
+        scope_type: str,
+        scope_id: str | None = None,
+        target_graph_set_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Run Phase 7 migration preflight for a scope."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(session).preflight(
+                scope_type, scope_id, target_graph_set_id=target_graph_set_id
+            )
+        )
+
+    @server.tool()
+    def create_semantic_migration_run(
+        scope_type: str,
+        mode: str,
+        scope_id: str | None = None,
+        target_graph_set_id: str | None = None,
+        batch_size: int | None = None,
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(session).create_run(
+                scope_type=scope_type,
+                scope_id=scope_id,
+                mode=mode,
+                target_graph_set_id=target_graph_set_id,
+                batch_size=batch_size,
+                created_by=created_by,
+            )
+        )
+
+    @server.tool()
+    def run_next_semantic_migration_batch(run_id: str) -> dict[str, Any]:
+        """Execute the next pending batch of a Phase 7 migration run."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(session).run_next_batch(
+                run_id
+            )
+        )
+
+    @server.tool()
+    def run_semantic_migration_parity_check(
+        run_id: str, check_name: str | None = None
+    ) -> dict[str, Any]:
+        """Run parity checks for a Phase 7 migration run."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(
+                session
+            ).run_parity_check(run_id, check_name=check_name)
+        )
+
+    @server.tool()
+    def cutover_semantic_migration_run(run_id: str) -> dict[str, Any]:
+        """Execute the guarded RDF-primary cutover for a Phase 7 migration run."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(session).cutover(run_id)
+        )
+
+    @server.tool()
+    def rollback_semantic_migration_run(run_id: str) -> dict[str, Any]:
+        """Roll back a Phase 7 cutover and restore legacy-primary mode."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _migration_service(session).rollback(run_id)
+        )
+
+    @server.tool()
+    def compile_and_apply_canonical_command(
+        command_kind: str,
+        graph_set_id: str,
+        payload: dict[str, Any],
+        actor: str | None = None,
+        reason: str | None = None,
+        shape_graph_iris: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Compile and apply a structured product command through the Phase 7 canonical writer."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _canonical_write_service(
+                session
+            ).apply_command(
+                command_kind,
+                payload,
+                graph_set_id=graph_set_id,
+                actor=actor,
+                reason=reason,
+                shape_graph_iris=shape_graph_iris or [],
+            )
+        )
+
 
 def _missing_evidence_summary(session, graph_set_id: str) -> dict[str, Any]:
     settings = Settings()
@@ -488,6 +583,20 @@ def _projection_job_service(session, driver) -> SemanticProjectionJobService:
         writers=writers,
         scope_resolver_builder=SemanticReadScopeResolver,
     )
+
+
+def _migration_service(session):
+    settings = Settings()
+    from app.services.semantic_migration import SemanticMigrationService
+
+    return SemanticMigrationService(session, _rdf_store(), settings)
+
+
+def _canonical_write_service(session):
+    settings = Settings()
+    from app.services.semantic_canonical_write import CanonicalSemanticWriteService
+
+    return CanonicalSemanticWriteService(session, _rdf_store(), settings)
 
 
 def _read_model(
