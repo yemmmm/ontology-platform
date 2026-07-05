@@ -24,15 +24,28 @@ RESULT_GRAPH = "http://ontology-platform.local/semantic/graph/reasoning-result/r
 
 
 class FakeStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        construct_result: str | None = None,
+        select_result: dict[str, Any] | None = None,
+    ) -> None:
         self.updates = []
         self.clears: list[str] = []
         self.queries: list[str] = []
         self._graphs: set[str] = set()
+        self._stored: dict[str, str] = {}
+        self._construct_result = construct_result
+        self._select_result = select_result or {
+            "head": {"vars": ["s"]},
+            "results": {"bindings": []},
+        }
 
     def query_sparql(self, query, timeout_seconds, limit):
         self.queries.append(query)
-        return SparqlResult(result={"head": {"vars": ["s"]}, "results": {"bindings": []}})
+        if "CONSTRUCT" in query.upper() and self._construct_result is not None:
+            return SparqlResult(result=self._construct_result)
+        return SparqlResult(result=self._select_result)
 
     def update_sparql(self, update):
         self.updates.append(update)
@@ -45,7 +58,11 @@ class FakeStore:
         return graph_iri in self._graphs
 
     def get_graph(self, graph_iri, format):
-        return ""
+        return self._stored.get(graph_iri, "")
+
+    def set_graph(self, graph_iri, content):
+        self._stored[graph_iri] = content
+        self._graphs.add(graph_iri)
 
     def clear_graph(self, graph_iri):
         self.clears.append(graph_iri)
@@ -310,3 +327,248 @@ def test_gc_endpoint_executes_clear_for_eligible_superseded(in_memory_session) -
     assert body["deleted_count"] == 1
     assert RESULT_GRAPH in body["deleted_graph_iris"]
     assert store.clears == [RESULT_GRAPH]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 endpoints: rule definitions, rule runs, graph-set validation
+# ---------------------------------------------------------------------------
+
+
+PREFIX = "http://ontology-platform.local/semantic/graph/"
+
+
+def _create_graph_set(client, members=None) -> str:
+    members = members or [{"graph_iri": f"{PREFIX}data/demo", "role": "asserted_data"}]
+    response = client.post(
+        "/api/semantic/graph-sets",
+        json={
+            "name": "gs",
+            "scope_type": "version",
+            "scope_id": "v1",
+            "members": members,
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
+def test_rule_definition_endpoint_creates_active_dsl_rule(in_memory_session) -> None:
+    client = _client(FakeStore(), in_memory_session)
+
+    response = client.post(
+        "/api/semantic/rule-definitions",
+        json={
+            "rule_iri": f"{PREFIX}rule/test",
+            "name": "test rule",
+            "language": "platform_dsl",
+            "body": {
+                "when": [
+                    {"s": "?s", "p": "<http://example.test/score>", "o": "?score"},
+                    {"filter": {"gte": ["?score", 90]}},
+                ],
+                "then": [
+                    {
+                        "s": "?s",
+                        "p": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+                        "o": "<http://example.test/ExcellentStudent>",
+                    }
+                ],
+            },
+            "input_roles": ["asserted_data"],
+            "status": "active",
+            "priority": 10,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["language"] == "platform_dsl"
+    assert body["status"] == "active"
+    assert body["version"].startswith("sha256:")
+
+
+def test_rule_definition_endpoint_rejects_unsafe_construct_template(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+
+    response = client.post(
+        "/api/semantic/rule-definitions",
+        json={
+            "rule_iri": f"{PREFIX}rule/bad",
+            "name": "bad",
+            "language": "sparql_construct",
+            "body": {
+                "template": (
+                    "CONSTRUCT { ?s ?p ?o } WHERE { "
+                    "SERVICE <http://example.test/> { ?s ?p ?o } }"
+                )
+            },
+            "input_roles": ["asserted_data"],
+        },
+    )
+    assert response.status_code == 400
+    assert "SERVICE" in response.json()["detail"]
+
+
+def test_list_rule_definitions_filters_by_status(in_memory_session) -> None:
+    client = _client(FakeStore(), in_memory_session)
+
+    for status in ("active", "draft"):
+        client.post(
+            "/api/semantic/rule-definitions",
+            json={
+                "rule_iri": f"{PREFIX}rule/{status}",
+                "name": status,
+                "language": "platform_dsl",
+                "body": {
+                    "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
+                    "then": [
+                        {
+                            "s": "?s",
+                            "p": "<http://example.test/derived>",
+                            "o": "?o",
+                        }
+                    ],
+                },
+                "input_roles": ["asserted_data"],
+                "status": status,
+            },
+        )
+    response = client.get(
+        "/api/semantic/rule-definitions", params={"status": "active"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["rules"]) == 1
+    assert body["rules"][0]["status"] == "active"
+
+
+def test_graph_set_validation_endpoint_records_engine_version(in_memory_session) -> None:
+    store = FakeStore()
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/validation-runs",
+        json={
+            "shape_graph_iris": [],
+            "shape_version": "sha256:abc",
+            "persist_report_graph": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["run_id"]
+
+
+def test_graph_set_construct_run_writes_only_to_rule_result(in_memory_session) -> None:
+    store = FakeStore(
+        construct_result="@prefix ex: <http://example.test/> . ex:alice a ex:ExcellentStudent ."
+    )
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/construct-runs",
+        json={
+            "template": (
+                f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{PREFIX}data/demo> "
+                f"{{ ?s ?p ?o }} }}"
+            ),
+            "promote_pointer": True,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["result_graph_iri"].startswith(f"{PREFIX}rule-result/")
+    assert body["derived_pointer"]["status"] == "current"
+    assert not any(
+        f"INSERT DATA {{ GRAPH <{PREFIX}data/demo>" in u for u in store.updates
+    )
+
+
+def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> None:
+    store = FakeStore(
+        select_result={
+            "head": {"vars": ["s"]},
+            "results": {
+                "bindings": [
+                    {"s": {"value": "<http://example.test/alice>"}}
+                ]
+            },
+        }
+    )
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    create_response = client.post(
+        "/api/semantic/rule-definitions",
+        json={
+            "rule_iri": f"{PREFIX}rule/dsl",
+            "name": "dsl",
+            "language": "platform_dsl",
+            "body": {
+                "when": [
+                    {"s": "?s", "p": "<http://example.test/p>", "o": "?o"}
+                ],
+                "then": [
+                    {
+                        "s": "?s",
+                        "p": "<http://example.test/derived>",
+                        "o": "?o",
+                    }
+                ],
+            },
+            "input_roles": ["asserted_data"],
+            "status": "active",
+        },
+    )
+    rule_id = create_response.json()["id"]
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
+        json={"rule_definition_id": rule_id},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["generated_statement_count"] >= 1
+
+
+def test_missing_evidence_endpoint_returns_dependency_summary(
+    in_memory_session,
+) -> None:
+    store = FakeStore()
+    store.set_graph(
+        f"{PREFIX}data/demo",
+        "@prefix ex: <http://example.test/> .\n"
+        "@prefix op: <http://ontology-platform.local/ops#> .\n"
+        "ex:alice a ex:Person ; op:evidenceStatus \"missing_evidence\" .",
+    )
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    response = client.get(
+        f"/api/semantic/graph-sets/{graph_set_id}/missing-evidence"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["count"] >= 1
+    assert body["warning"] is not None
+
+
+def test_get_validation_run_returns_staleness(in_memory_session) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    run_response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/validation-runs",
+        json={"shape_version": "sha256:abc"},
+    )
+    run_id = run_response.json()["run_id"]
+    response = client.get(f"/api/semantic/validation-runs/{run_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["staleness"]["stale"] is False

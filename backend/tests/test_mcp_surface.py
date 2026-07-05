@@ -64,6 +64,16 @@ ALLOWED_TOOLS = {
     "list_semantic_derived_pointers",
     "check_semantic_staleness",
     "get_semantic_governance_status",
+    "run_semantic_validation",
+    "run_semantic_reasoning",
+    "submit_semantic_rule_definition",
+    "run_semantic_rule",
+    "inspect_semantic_missing_evidence",
+    "get_semantic_read_model",
+    "export_semantic_graph_set",
+    "inspect_semantic_projection_status",
+    "start_semantic_projection_job",
+    "inspect_semantic_statement_provenance",
 }
 
 

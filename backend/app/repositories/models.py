@@ -908,15 +908,63 @@ class SemanticProjectionJobModel(Base):
     __tablename__ = "semantic_projection_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    projection_kind: Mapped[str] = mapped_column(
+        String(40), default="neo4j", nullable=False
+    )
+    projection_version: Mapped[str] = mapped_column(
+        String(80), default="neo4j-v1", nullable=False
+    )
+    projection_scope: Mapped[str] = mapped_column(
+        String(40), default="asserted", nullable=False
+    )
     source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     reasoning_result_graph_iri: Mapped[str | None] = mapped_column(Text)
+    rule_result_graph_iri: Mapped[str | None] = mapped_column(Text)
+    source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    input_graph_revisions: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    input_derived_pointers: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    target_store: Mapped[str | None] = mapped_column(String(80))
+    target_partition: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
     node_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     relationship_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     job_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticProjectionManifestModel(Base):
+    __tablename__ = "semantic_projection_manifests"
+    __table_args__ = (
+        UniqueConstraint(
+            "graph_set_id",
+            "projection_kind",
+            "target_partition",
+            name="uq_semantic_projection_manifests_set_kind_partition",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    projection_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    active_job_id: Mapped[str | None] = mapped_column(String(36))
+    source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    projection_version: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    target_partition: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="current", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    manifest_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticGraphRegistryModel(Base):
@@ -1043,3 +1091,54 @@ class SemanticGraphGcRunModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     gc_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticRuleDefinitionModel(Base):
+    __tablename__ = "semantic_rule_definitions"
+    __table_args__ = (
+        UniqueConstraint("rule_iri", "version", name="uq_semantic_rule_definitions_iri_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    language: Mapped[str] = mapped_column(String(40), nullable=False)
+    version: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    input_roles: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    output_kind: Mapped[str] = mapped_column(String(40), default="assertion", nullable=False)
+    uses_inferred_facts: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    requires_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    safety_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    rule_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticRuleRunModel(Base):
+    __tablename__ = "semantic_rule_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    rule_definition_id: Mapped[str | None] = mapped_column(String(36))
+    rule_version: Mapped[str | None] = mapped_column(String(80))
+    result_graph_iri: Mapped[str | None] = mapped_column(Text)
+    rule_run_graph_iri: Mapped[str | None] = mapped_column(Text)
+    engine_name: Mapped[str] = mapped_column(String(40), nullable=False)
+    engine_version: Mapped[str | None] = mapped_column(String(255))
+    source_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    generated_statement_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)

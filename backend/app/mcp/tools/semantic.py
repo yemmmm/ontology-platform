@@ -9,10 +9,46 @@ from mcp.server.fastmcp import FastMCP
 from app.core.config import Settings
 from app.mcp.runtime import _run_tool
 from app.repositories.rdf_store import RdfStoreRepository
+from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
+from app.services.semantic_missing_evidence import (
+    SemanticMissingEvidenceService,
+    derived_warning_message,
+)
+from app.services.semantic_reasoning import SemanticReasoningService
+from app.services.semantic_rule_definition import SemanticRuleDefinitionService
+from app.services.semantic_rule_execution import SemanticRuleExecutionService
+from app.services.semantic_validation import SemanticValidationService
+from app.services.semantic_graph_set_export import SemanticExportService
+from app.services.semantic_neo4j_projection import Neo4jSemanticProjectionService
+from app.services.semantic_projection_job import (
+    ProjectionJobError,
+    SemanticProjectionJobService,
+)
+from app.services.semantic_read_model import (
+    ReadModelError,
+    SemanticReadModelService,
+)
+from app.services.semantic_read_scope import (
+    ReadScopeError,
+    SemanticReadScopeResolver,
+)
+from app.services.semantic_search_projection import (
+    FakeSearchWriter,
+    SemanticSearchProjectionService,
+)
+from app.services.semantic_vector_projection import (
+    FakeVectorWriter,
+    SemanticVectorProjectionService,
+)
+from app.services.semantic_visibility import SemanticVisibilityPolicy
+
+
+def _rdf_store() -> RdfStoreRepository:
+    return RdfStoreRepository(Settings().oxigraph_url)
 
 
 def _semantic_service(session) -> SemanticService:
@@ -37,6 +73,34 @@ def _derived_state_service(session) -> SemanticDerivedStateService:
 def _registry_service(session) -> SemanticGraphRegistryService:
     settings = Settings()
     return SemanticGraphRegistryService(session, settings)
+
+
+def _validation_service(session) -> SemanticValidationService:
+    settings = Settings()
+    return SemanticValidationService(session, _rdf_store(), settings)
+
+
+def _reasoning_service(session) -> SemanticReasoningService:
+    settings = Settings()
+    return SemanticReasoningService(
+        session=session,
+        rdf_store=_rdf_store(),
+        settings=settings,
+        reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
+    )
+
+
+def _rule_definition_service(session) -> SemanticRuleDefinitionService:
+    return SemanticRuleDefinitionService(session, Settings())
+
+
+def _rule_execution_service(session) -> SemanticRuleExecutionService:
+    settings = Settings()
+    return SemanticRuleExecutionService(session, _rdf_store(), settings)
+
+
+def _missing_evidence_service() -> SemanticMissingEvidenceService:
+    return SemanticMissingEvidenceService(_rdf_store())
 
 
 def register_semantic(server: FastMCP) -> None:
@@ -144,3 +208,386 @@ def register_semantic(server: FastMCP) -> None:
                 "derived": _derived_state_service(session).status_summary(),
             }
         )
+
+    @server.tool()
+    def run_semantic_validation(
+        graph_set_id: str,
+        shape_graph_iris: list[str] | None = None,
+        validation_scope: str = "asserted_only",
+        reasoning_result_graph_iri: str | None = None,
+        shape_version: str | None = None,
+        persist_report_graph: bool = True,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Run SHACL validation over a graph set, persisting the report graph and run metadata."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _validation_service(
+                session
+            ).run_validation(
+                data_graph_iris=_resolve_data_graphs(session, graph_set_id),
+                shape_graph_iris=shape_graph_iris
+                or _resolve_role_graphs(session, graph_set_id, "shape"),
+                graph_set_id=graph_set_id,
+                validation_scope=validation_scope,
+                reasoning_result_graph_iri=reasoning_result_graph_iri,
+                shape_version=shape_version,
+                persist_report_graph=persist_report_graph,
+                actor=actor,
+            )
+        )
+
+    @server.tool()
+    def run_semantic_reasoning(
+        graph_set_id: str,
+        tasks: list[str] | None = None,
+        persist_result_graph: bool = True,
+        engine_version: str | None = None,
+        shape_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Run OWL reasoning over a graph set and persist the result graph."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _reasoning_service(session).run_reasoning(
+                source_graph_iris=_resolve_data_graphs(
+                    session, graph_set_id, roles=("asserted_ontology", "asserted_data")
+                ),
+                tasks=tasks or ["consistency"],
+                persist_result_graph=persist_result_graph,
+                graph_set_id=graph_set_id,
+                engine_version=engine_version,
+                shape_version=shape_version,
+            )
+        )
+
+    @server.tool()
+    def submit_semantic_rule_definition(
+        rule_iri: str,
+        name: str,
+        language: str,
+        body: dict[str, Any],
+        input_roles: list[str] | None = None,
+        output_kind: str = "assertion",
+        uses_inferred_facts: bool = False,
+        requires_review: bool = False,
+        priority: int = 0,
+        status: str = "draft",
+        created_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or reuse a versioned platform rule definition."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _rule_definition_service(
+                session
+            )
+            .create_rule(
+                rule_iri=rule_iri,
+                name=name,
+                language=language,
+                body=body,
+                input_roles=input_roles or [],
+                output_kind=output_kind,
+                uses_inferred_facts=uses_inferred_facts,
+                requires_review=requires_review,
+                priority=priority,
+                status=status,
+                created_by=created_by,
+            )
+            .__dict__
+        )
+
+    @server.tool()
+    def run_semantic_rule(
+        graph_set_id: str,
+        rule_definition_id: str | None = None,
+        rule_iri: str | None = None,
+        rule_definition_ids: list[str] | None = None,
+        promote_pointer: bool = True,
+        engine_version: str | None = None,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Run a single rule, a named group, or all active rules for a graph set."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _rule_execution_service(
+                session
+            )._dispatch(
+                graph_set_id=graph_set_id,
+                rule_definition_id=rule_definition_id,
+                rule_iri=rule_iri,
+                rule_definition_ids=rule_definition_ids,
+                promote_pointer=promote_pointer,
+                actor=actor,
+                engine_version=engine_version,
+            )
+        )
+
+    @server.tool()
+    def inspect_semantic_missing_evidence(graph_set_id: str) -> dict[str, Any]:
+        """Return missing-evidence dependencies for asserted inputs in a graph set."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _missing_evidence_summary(
+                session, graph_set_id
+            )
+        )
+
+    @server.tool()
+    def get_semantic_read_model(
+        graph_set_id: str,
+        model_name: str,
+        include: str = "asserted",
+        allow_stale_derived: bool = True,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Read a compact graph-derived business JSON read model for a graph set."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _read_model(
+                session,
+                graph_set_id,
+                model_name,
+                include,
+                allow_stale_derived,
+                limit,
+            )
+        )
+
+    @server.tool()
+    def export_semantic_graph_set(
+        graph_set_id: str,
+        format: str = "trig",
+        include: str = "asserted",
+        allow_stale_derived: bool = False,
+    ) -> dict[str, Any]:
+        """Export a graph set as Turtle, TriG, or JSON-LD."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _export_graph_set(
+                session,
+                graph_set_id,
+                format,
+                include,
+                allow_stale_derived,
+            )
+        )
+
+    @server.tool()
+    def inspect_semantic_projection_status(
+        graph_set_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Inspect projection freshness by graph set and projection kind."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _projection_status(
+                session, graph_set_id
+            )
+        )
+
+    @server.tool()
+    def start_semantic_projection_job(
+        graph_set_id: str,
+        projection_kind: str,
+        projection_version: str,
+        include: str = "asserted",
+        mode: str = "rebuild",
+        allow_stale_derived: bool = False,
+    ) -> dict[str, Any]:
+        """Request a projection rebuild job and (for non-dry-run modes) execute it."""
+        return _run_tool(
+            lambda session, driver, _embedding_client: _start_projection_job(
+                session,
+                driver,
+                graph_set_id,
+                projection_kind,
+                projection_version,
+                include,
+                mode,
+                allow_stale_derived,
+            )
+        )
+
+    @server.tool()
+    def inspect_semantic_statement_provenance(
+        graph_set_id: str,
+        statement_iri: str,
+        include: str = "asserted",
+    ) -> dict[str, Any]:
+        """Inspect provenance, evidence, assertion kind, and staleness for a statement."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _statement_provenance(
+                session, graph_set_id, statement_iri, include
+            )
+        )
+
+
+def _missing_evidence_summary(session, graph_set_id: str) -> dict[str, Any]:
+    settings = Settings()
+    service = SemanticGraphSetService(session, settings)
+    description = service.describe(graph_set_id)
+    graph_iris = [
+        member["graph_iri"]
+        for member in description["members"]
+        if member["role"] in {"asserted_ontology", "asserted_data"}
+    ]
+    missing_evidence_service = SemanticMissingEvidenceService(_rdf_store())
+    dependencies = missing_evidence_service.collect_from_graphs(graph_iris)
+    summary = missing_evidence_service.summarize_dependencies(dependencies)
+    warning = derived_warning_message(dependencies)
+    return {
+        "graph_set_id": graph_set_id,
+        "dependencies": dependencies,
+        "summary": summary,
+        "warning": warning,
+    }
+
+
+def _resolve_data_graphs(
+    session, graph_set_id: str, roles: tuple[str, ...] = ("asserted_data",)
+) -> list[str]:
+    settings = Settings()
+    service = SemanticGraphSetService(session, settings)
+    description = service.describe(graph_set_id)
+    return [
+        member["graph_iri"] for member in description["members"] if member["role"] in roles
+    ]
+
+
+def _resolve_role_graphs(session, graph_set_id: str, role: str) -> list[str]:
+    settings = Settings()
+    service = SemanticGraphSetService(session, settings)
+    description = service.describe(graph_set_id)
+    return [
+        member["graph_iri"] for member in description["members"] if member["role"] == role
+    ]
+
+
+def _read_model_service(session) -> SemanticReadModelService:
+    settings = Settings()
+    return SemanticReadModelService(
+        rdf_store=_rdf_store(),
+        scope_resolver=SemanticReadScopeResolver(session),
+        visibility_policy=SemanticVisibilityPolicy(
+            graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+        ),
+    )
+
+
+def _export_service(session) -> SemanticExportService:
+    settings = Settings()
+    return SemanticExportService(
+        rdf_store=_rdf_store(),
+        scope_resolver=SemanticReadScopeResolver(session),
+        settings=settings,
+        visibility_policy=SemanticVisibilityPolicy(
+            graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+        ),
+    )
+
+
+def _projection_job_service(session, driver) -> SemanticProjectionJobService:
+    writers = {
+        "neo4j": Neo4jSemanticProjectionService(_rdf_store(), driver),
+        "search": SemanticSearchProjectionService(_rdf_store(), FakeSearchWriter()),
+        "vector": SemanticVectorProjectionService(_rdf_store(), FakeVectorWriter()),
+    }
+    return SemanticProjectionJobService(
+        session=session,
+        writers=writers,
+        scope_resolver_builder=SemanticReadScopeResolver,
+    )
+
+
+def _read_model(
+    session,
+    graph_set_id: str,
+    model_name: str,
+    include: str,
+    allow_stale_derived: bool,
+    limit: int | None,
+) -> dict[str, Any]:
+    service = _read_model_service(session)
+    try:
+        return service.read_model(
+            graph_set_id=graph_set_id,
+            model_name=model_name,
+            include=include,
+            allow_stale_derived=allow_stale_derived,
+            limit=limit,
+        )
+    except (ReadModelError, ReadScopeError) as exc:
+        return {"error": str(exc), "status_code": getattr(exc, "status_code", 400)}
+
+
+def _export_graph_set(
+    session,
+    graph_set_id: str,
+    format: str,
+    include: str,
+    allow_stale_derived: bool,
+) -> dict[str, Any]:
+    service = _export_service(session)
+    try:
+        payload, warnings = service.export(
+            graph_set_id=graph_set_id,
+            format=format,
+            include=include,
+            allow_stale_derived=allow_stale_derived,
+        )
+    except (Exception,) as exc:  # noqa: BLE001
+        return {"error": str(exc), "status_code": getattr(exc, "status_code", 400)}
+    return {"format": format, "payload": payload, "warnings": warnings}
+
+
+def _projection_status(session, graph_set_id: str | None) -> dict[str, Any]:
+    service = _projection_job_service(session, None)
+    return service.status(graph_set_id=graph_set_id)
+
+
+def _start_projection_job(
+    session,
+    driver,
+    graph_set_id: str,
+    projection_kind: str,
+    projection_version: str,
+    include: str,
+    mode: str,
+    allow_stale_derived: bool,
+) -> dict[str, Any]:
+    service = _projection_job_service(session, driver)
+    try:
+        job = service.create_job(
+            graph_set_id=graph_set_id,
+            projection_kind=projection_kind,
+            projection_version=projection_version,
+            include=include,
+            mode=mode,
+            allow_stale_derived=allow_stale_derived,
+        )
+        if mode != "dry_run":
+            service.run_job(job.id)
+        refreshed = service.get_job(job.id)
+    except ProjectionJobError as exc:
+        return {"error": str(exc), "status_code": getattr(exc, "status_code", 400)}
+    return {
+        "id": refreshed.id,
+        "status": refreshed.status,
+        "projection_kind": refreshed.projection_kind,
+        "node_count": refreshed.node_count,
+        "relationship_count": refreshed.relationship_count,
+        "document_count": refreshed.document_count,
+    }
+
+
+def _statement_provenance(
+    session,
+    graph_set_id: str,
+    statement_iri: str,
+    include: str,
+) -> dict[str, Any]:
+    service = _read_model_service(session)
+    envelope = service.read_model(
+        graph_set_id=graph_set_id,
+        model_name="statement-list",
+        include=include,
+    )
+    for item in envelope["items"]:
+        if item["iri"] == statement_iri:
+            return item
+    return {
+        "error": "statement not found",
+        "graph_set_id": graph_set_id,
+        "iri": statement_iri,
+    }

@@ -12,6 +12,7 @@ from app.api.schemas import (
     SemanticEditAuditRead,
     SemanticEditRequest,
     SemanticEditResponse,
+    SemanticExportRequest,
     SemanticGraphEditabilityRequest,
     SemanticGraphEditabilityResponse,
     SemanticGraphGcRequest,
@@ -19,18 +20,36 @@ from app.api.schemas import (
     SemanticGraphRegistryCreate,
     SemanticGraphRegistryListResponse,
     SemanticGraphRegistryRead,
+    SemanticGraphSetConstructRunRequest,
     SemanticGraphSetCreate,
     SemanticGraphSetListResponse,
     SemanticGraphSetMembershipUpdate,
     SemanticGraphSetRead,
     SemanticGraphSetReasoningRunRequest,
+    SemanticGraphSetRuleRunRequest,
+    SemanticGraphSetValidationRunRequest,
     SemanticGovernanceStatusResponse,
+    SemanticMissingEvidenceSummary,
+    SemanticProjectionJobCreate,
+    SemanticProjectionJobListResponse,
+    SemanticProjectionJobRead,
+    SemanticProjectionReconcileResponse,
     SemanticProjectionRequest,
     SemanticProjectionResponse,
+    SemanticProjectionStatusResponse,
+    SemanticReadModelEnvelope,
+    SemanticReasoningRunRead,
     SemanticReasoningRunRequest,
     SemanticReasoningRunResponse,
+    SemanticResourceRead,
+    SemanticRuleDefinitionCreate,
+    SemanticRuleDefinitionListResponse,
+    SemanticRuleDefinitionRead,
+    SemanticRuleDefinitionUpdate,
+    SemanticRuleRunRead,
     SemanticSparqlQueryRequest,
     SemanticSparqlQueryResponse,
+    SemanticValidationRunRead,
     SemanticValidationRunRequest,
     SemanticValidationRunResponse,
 )
@@ -38,6 +57,10 @@ from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService, SemanticServiceError
+from app.services.semantic_graph_set_export import (
+    ExportError,
+    SemanticExportService,
+)
 from app.services.semantic_graph_gc import GraphGcError, SemanticGraphGcService
 from app.services.semantic_graph_registry import (
     GraphRegistryError,
@@ -45,7 +68,41 @@ from app.services.semantic_graph_registry import (
 )
 from app.services.semantic_graph_set import GraphSetError, SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
+from app.services.semantic_missing_evidence import SemanticMissingEvidenceService
+from app.services.semantic_neo4j_projection import Neo4jSemanticProjectionService
 from app.services.semantic_projection import SemanticProjectionService
+from app.services.semantic_projection_job import (
+    ProjectionJobError,
+    SemanticProjectionJobService,
+)
+from app.services.semantic_read_model import (
+    ReadModelError,
+    SemanticReadModelService,
+)
+from app.services.semantic_read_scope import (
+    ReadScopeError,
+    SemanticReadScopeResolver,
+)
+from app.services.semantic_search_projection import (
+    FakeSearchWriter,
+    SemanticSearchProjectionService,
+)
+from app.services.semantic_vector_projection import (
+    FakeVectorWriter,
+    SemanticVectorProjectionService,
+)
+from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.services.semantic_reasoning import SemanticReasoningService
+from app.services.semantic_rule_definition import (
+    RuleDefinitionError,
+    RuleDefinitionNotFound,
+    SemanticRuleDefinitionService,
+)
+from app.services.semantic_rule_execution import (
+    RuleExecutionError,
+    SemanticRuleExecutionService,
+)
+from app.services.semantic_validation import SemanticValidationService
 
 router = APIRouter(prefix="/semantic", tags=["semantic"])
 
@@ -89,6 +146,115 @@ def _gc_service(
 
 def _derived_state_service(session: Session, settings: Settings) -> SemanticDerivedStateService:
     return SemanticDerivedStateService(session, settings)
+
+
+def _validation_service(
+    session: Session, rdf_store: RdfStoreRepository, settings: Settings
+) -> SemanticValidationService:
+    return SemanticValidationService(session, rdf_store, settings)
+
+
+def _reasoning_service(
+    session: Session, rdf_store: RdfStoreRepository, settings: Settings
+) -> SemanticReasoningService:
+    return SemanticReasoningService(
+        session=session,
+        rdf_store=rdf_store,
+        settings=settings,
+        reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
+    )
+
+
+def _rule_definition_service(
+    session: Session, settings: Settings
+) -> SemanticRuleDefinitionService:
+    return SemanticRuleDefinitionService(session, settings)
+
+
+def _rule_execution_service(
+    session: Session, rdf_store: RdfStoreRepository, settings: Settings
+) -> SemanticRuleExecutionService:
+    return SemanticRuleExecutionService(session, rdf_store, settings)
+
+
+def _missing_evidence_service(rdf_store: RdfStoreRepository) -> SemanticMissingEvidenceService:
+    return SemanticMissingEvidenceService(rdf_store)
+
+
+def _scope_resolver(session: Session) -> SemanticReadScopeResolver:
+    return SemanticReadScopeResolver(session)
+
+
+def _visibility_policy(settings: Settings) -> SemanticVisibilityPolicy:
+    return SemanticVisibilityPolicy(
+        graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+    )
+
+
+def _read_model_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+) -> SemanticReadModelService:
+    return SemanticReadModelService(
+        rdf_store=rdf_store,
+        scope_resolver=_scope_resolver(session),
+        visibility_policy=_visibility_policy(settings),
+    )
+
+
+def _export_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+) -> SemanticExportService:
+    return SemanticExportService(
+        rdf_store=rdf_store,
+        scope_resolver=_scope_resolver(session),
+        settings=settings,
+        visibility_policy=_visibility_policy(settings),
+    )
+
+
+def _projection_job_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    driver: Driver | None,
+    settings: Settings,
+) -> SemanticProjectionJobService:
+    writers: dict[str, object] = {
+        "neo4j": Neo4jSemanticProjectionService(rdf_store, driver),
+        "search": SemanticSearchProjectionService(rdf_store, FakeSearchWriter()),
+        "vector": SemanticVectorProjectionService(rdf_store, FakeVectorWriter()),
+    }
+    return SemanticProjectionJobService(
+        session=session,
+        writers=writers,
+        scope_resolver_builder=_scope_resolver,
+    )
+
+
+def _projection_job_read(job) -> SemanticProjectionJobRead:
+    return SemanticProjectionJobRead(
+        id=job.id,
+        graph_set_id=job.graph_set_id,
+        projection_kind=job.projection_kind,
+        projection_version=job.projection_version,
+        projection_scope=job.projection_scope,
+        source_signature=job.source_signature,
+        input_graph_revisions=job.input_graph_revisions or {},
+        input_derived_pointers=job.input_derived_pointers or {},
+        target_store=job.target_store,
+        target_partition=job.target_partition,
+        status=job.status,
+        node_count=job.node_count,
+        relationship_count=job.relationship_count,
+        document_count=job.document_count,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error=job.error,
+        metadata=job.job_metadata or {},
+    )
 
 
 @router.post("/datasets:load", response_model=SemanticDatasetLoadResponse)
@@ -392,7 +558,7 @@ def create_graph_set_reasoning_run(
         if member["role"]
         in {"asserted_ontology", "asserted_data"}
     ]
-    result = _service(session, rdf_store, settings).run_reasoning(
+    result = _reasoning_service(session, rdf_store, settings).run_reasoning(
         source_graph_iris,
         request.tasks,
         request.persist_result_graph,
@@ -401,6 +567,285 @@ def create_graph_set_reasoning_run(
         shape_version=request.shape_version,
     )
     return SemanticReasoningRunResponse(**result)
+
+
+@router.post(
+    "/graph-sets/{graph_set_id}/validation-runs",
+    response_model=SemanticValidationRunResponse,
+)
+def create_graph_set_validation_run(
+    graph_set_id: str,
+    request: SemanticGraphSetValidationRunRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticValidationRunResponse:
+    graph_set_service = _graph_set_service(session, settings)
+    try:
+        description = graph_set_service.describe(graph_set_id)
+    except GraphSetError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    data_graph_iris = [
+        member["graph_iri"]
+        for member in description["members"]
+        if member["role"] in {"asserted_data"}
+    ]
+    shape_graph_iris = list(request.shape_graph_iris) or [
+        member["graph_iri"]
+        for member in description["members"]
+        if member["role"] == "shape"
+    ]
+    try:
+        result = _validation_service(session, rdf_store, settings).run_validation(
+            data_graph_iris=data_graph_iris,
+            shape_graph_iris=shape_graph_iris,
+            inference=request.inference,
+            graph_set_id=graph_set_id,
+            validation_scope=request.validation_scope,
+            persist_report_graph=request.persist_report_graph,
+            shape_version=request.shape_version,
+            engine_version=request.engine_version,
+            reasoning_result_graph_iri=request.reasoning_result_graph_iri,
+            actor=request.actor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SemanticValidationRunResponse(
+        run_id=result["run_id"],
+        status=result["status"],
+        conforms=result["conforms"],
+        report_text=result["report_text"],
+        summary=result["summary"],
+        error=result["error"],
+    )
+
+
+@router.get("/validation-runs/{run_id}", response_model=SemanticValidationRunRead)
+def get_validation_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticValidationRunRead:
+    try:
+        result = _validation_service(session, rdf_store, settings).get_validation_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SemanticValidationRunRead(**result)
+
+
+@router.get("/reasoning-runs/{run_id}", response_model=SemanticReasoningRunRead)
+def get_reasoning_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticReasoningRunRead:
+    try:
+        result = _reasoning_service(session, rdf_store, settings).get_reasoning_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return SemanticReasoningRunRead(**result)
+
+
+@router.get("/rule-definitions", response_model=SemanticRuleDefinitionListResponse)
+def list_rule_definitions(
+    status: Annotated[str | None, Query()] = None,
+    language: Annotated[str | None, Query()] = None,
+    rule_iri: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleDefinitionListResponse:
+    service = _rule_definition_service(session, settings)
+    rules = service.list_rules(
+        status=status, language=language, rule_iri=rule_iri, limit=limit
+    )
+    return SemanticRuleDefinitionListResponse(
+        rules=[_rule_definition_read(rule) for rule in rules]
+    )
+
+
+@router.post("/rule-definitions", response_model=SemanticRuleDefinitionRead)
+def create_rule_definition(
+    request: SemanticRuleDefinitionCreate,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleDefinitionRead:
+    service = _rule_definition_service(session, settings)
+    try:
+        rule = service.create_rule(
+            rule_iri=request.rule_iri,
+            name=request.name,
+            language=request.language,
+            body=request.body,
+            input_roles=request.input_roles,
+            output_kind=request.output_kind,
+            uses_inferred_facts=request.uses_inferred_facts,
+            requires_review=request.requires_review,
+            priority=request.priority,
+            safety_profile=request.safety_profile,
+            status=request.status,
+            created_by=request.created_by,
+            metadata=request.metadata,
+        )
+    except RuleDefinitionError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+    return _rule_definition_read(rule)
+
+
+@router.get("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
+def get_rule_definition(
+    rule_id: str,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleDefinitionRead:
+    service = _rule_definition_service(session, settings)
+    try:
+        rule = service.get_rule(rule_id)
+    except RuleDefinitionNotFound as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    return _rule_definition_read(rule)
+
+
+@router.patch("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
+def update_rule_definition(
+    rule_id: str,
+    request: SemanticRuleDefinitionUpdate,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleDefinitionRead:
+    service = _rule_definition_service(session, settings)
+    try:
+        if request.status is not None:
+            rule = service.update_status(rule_id, request.status)
+        else:
+            rule = service.get_rule(rule_id)
+        if request.name is not None or request.priority is not None or request.metadata is not None:
+            if request.name is not None:
+                rule.name = request.name
+            if request.priority is not None:
+                rule.priority = request.priority
+            if request.metadata is not None:
+                rule.rule_metadata = {**(rule.rule_metadata or {}), **request.metadata}
+            session.commit()
+            session.refresh(rule)
+    except RuleDefinitionNotFound as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    except RuleDefinitionError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+    return _rule_definition_read(rule)
+
+
+@router.post(
+    "/graph-sets/{graph_set_id}/construct-runs",
+    response_model=SemanticRuleRunRead,
+)
+def create_graph_set_construct_run(
+    graph_set_id: str,
+    request: SemanticGraphSetConstructRunRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleRunRead:
+    service = _rule_execution_service(session, rdf_store, settings)
+    try:
+        result = service.execute_construct_template(
+            graph_set_id=graph_set_id,
+            template=request.template,
+            rule_definition_id=request.rule_definition_id,
+            rule_version=request.rule_version,
+            promote_pointer=request.promote_pointer,
+            actor=request.actor,
+            engine_version=request.engine_version,
+        )
+    except RuleExecutionError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+    return SemanticRuleRunRead(**_rule_run_response(result))
+
+
+@router.post(
+    "/graph-sets/{graph_set_id}/rule-runs",
+    response_model=SemanticRuleRunRead,
+)
+def create_graph_set_rule_run(
+    graph_set_id: str,
+    request: SemanticGraphSetRuleRunRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleRunRead:
+    service = _rule_execution_service(session, rdf_store, settings)
+    try:
+        if request.rule_definition_ids:
+            result = service.execute_rule_group(
+                graph_set_id=graph_set_id,
+                rule_definition_ids=request.rule_definition_ids,
+                promote_pointer=request.promote_pointer,
+                actor=request.actor,
+                engine_version=request.engine_version,
+            )
+        else:
+            result = service.execute_rule(
+                graph_set_id=graph_set_id,
+                rule_definition_id=request.rule_definition_id,
+                rule_iri=request.rule_iri,
+                promote_pointer=request.promote_pointer,
+                actor=request.actor,
+                engine_version=request.engine_version,
+            )
+    except RuleExecutionError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+    return SemanticRuleRunRead(**_rule_run_response(result))
+
+
+@router.get("/rule-runs/{run_id}", response_model=SemanticRuleRunRead)
+def get_rule_run(
+    run_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticRuleRunRead:
+    service = _rule_execution_service(session, rdf_store, settings)
+    try:
+        result = service.get_rule_run(run_id)
+    except RuleExecutionError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    return SemanticRuleRunRead(**_rule_run_response(result))
+
+
+@router.get(
+    "/graph-sets/{graph_set_id}/missing-evidence",
+    response_model=SemanticMissingEvidenceSummary,
+)
+def get_graph_set_missing_evidence(
+    graph_set_id: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticMissingEvidenceSummary:
+    graph_set_service = _graph_set_service(session, settings)
+    try:
+        description = graph_set_service.describe(graph_set_id)
+    except GraphSetError as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    service = _missing_evidence_service(rdf_store)
+    graph_iris = [
+        member["graph_iri"]
+        for member in description["members"]
+        if member["role"] in {"asserted_ontology", "asserted_data"}
+    ]
+    dependencies = service.collect_from_graphs(graph_iris)
+    summary = service.summarize_dependencies(dependencies)
+    from app.services.semantic_missing_evidence import derived_warning_message
+
+    warning = derived_warning_message(dependencies)
+    return SemanticMissingEvidenceSummary(
+        graph_set_id=graph_set_id,
+        dependencies=dependencies,
+        summary=summary,
+        warning=warning,
+    )
 
 
 @router.post(
@@ -445,6 +890,253 @@ def get_governance_status(
     return SemanticGovernanceStatusResponse(**summary)
 
 
+# ----------------------------------------------------------------------------
+# Phase 6 — graph-derived read models, exports, projection jobs/manifests
+# ----------------------------------------------------------------------------
+
+
+@router.get(
+    "/graph-sets/{graph_set_id}/read-models/{model_name}",
+    response_model=SemanticReadModelEnvelope,
+)
+def read_model(
+    graph_set_id: str,
+    model_name: str,
+    include: Annotated[str, Query()] = "asserted",
+    allow_stale_derived: Annotated[bool, Query()] = True,
+    field_set: Annotated[str, Query()] = "summary",
+    limit: Annotated[int | None, Query(ge=1, le=2000)] = None,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticReadModelEnvelope:
+    service = _read_model_service(session, rdf_store, settings)
+    try:
+        envelope = service.read_model(
+            graph_set_id=graph_set_id,
+            model_name=model_name,
+            include=include,
+            allow_stale_derived=allow_stale_derived,
+            limit=limit,
+            field_set=field_set,
+        )
+    except (ReadModelError, ReadScopeError) as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return SemanticReadModelEnvelope(**envelope)
+
+
+@router.get("/resources/{resource_iri:path}", response_model=SemanticResourceRead)
+def read_resource(
+    resource_iri: str,
+    graph_set_id: Annotated[str, Query()],
+    include: Annotated[str, Query()] = "asserted",
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticResourceRead:
+    service = _read_model_service(session, rdf_store, settings)
+    envelope = service.read_model(
+        graph_set_id=graph_set_id,
+        model_name="entity-detail",
+        include=include,
+    )
+    for item in envelope["items"]:
+        if item["iri"] == resource_iri:
+            return SemanticResourceRead(
+                iri=resource_iri,
+                label=item.get("label"),
+                graph_set_id=graph_set_id,
+                source_signature=envelope["source_signature"],
+                assertion_kind=item["assertion_kind"],
+                evidence_status=item["evidence_status"],
+                source_graph_iri=item["source_graph_iri"],
+                properties={},
+                derived_state=envelope["derived_state"],
+                warnings=envelope["warnings"],
+            )
+    raise HTTPException(status_code=404, detail=f"Resource not found: {resource_iri}")
+
+
+@router.get("/statements", response_model=SemanticReadModelEnvelope)
+def list_statements(
+    graph_set_id: Annotated[str, Query()],
+    include: Annotated[str, Query()] = "asserted",
+    allow_stale_derived: Annotated[bool, Query()] = True,
+    limit: Annotated[int | None, Query(ge=1, le=5000)] = None,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticReadModelEnvelope:
+    service = _read_model_service(session, rdf_store, settings)
+    envelope = service.read_model(
+        graph_set_id=graph_set_id,
+        model_name="statement-list",
+        include=include,
+        allow_stale_derived=allow_stale_derived,
+        limit=limit,
+    )
+    return SemanticReadModelEnvelope(**envelope)
+
+
+@router.get("/graph-sets/{graph_set_id}/export")
+def export_graph_set(
+    graph_set_id: str,
+    format: Annotated[str, Query()] = "trig",
+    include: Annotated[str, Query()] = "asserted",
+    include_evidence: Annotated[bool, Query()] = False,
+    include_shapes: Annotated[bool, Query()] = False,
+    include_policy: Annotated[bool, Query()] = False,
+    include_metadata: Annotated[bool, Query()] = False,
+    allow_stale_derived: Annotated[bool, Query()] = False,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    service = _export_service(session, rdf_store, settings)
+    try:
+        payload, _warnings = service.export(
+            graph_set_id=graph_set_id,
+            format=format,
+            include=include,
+            include_evidence=include_evidence,
+            include_shapes=include_shapes,
+            include_policy=include_policy,
+            include_metadata=include_metadata,
+            allow_stale_derived=allow_stale_derived,
+        )
+    except (ExportError, ReadScopeError) as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    media_type = {
+        "trig": "application/trig",
+        "json-ld": "application/ld+json",
+        "turtle": "text/turtle",
+    }[format]
+    return Response(content=payload, media_type=media_type)
+
+
+@router.post(
+    "/graph-sets/{graph_set_id}/projection-jobs",
+    response_model=SemanticProjectionJobRead,
+    status_code=201,
+)
+def create_projection_job_for_set(
+    graph_set_id: str,
+    request: SemanticProjectionJobCreate,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionJobRead:
+    if request.graph_set_id != graph_set_id:
+        raise HTTPException(
+            status_code=400, detail="graph_set_id in body must match path"
+        )
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    try:
+        job = service.create_job(
+            graph_set_id=request.graph_set_id,
+            projection_kind=request.projection_kind,
+            projection_version=request.projection_version,
+            include=request.include,
+            mode=request.mode,
+            target_partition=request.target_partition,
+            allow_stale_derived=request.allow_stale_derived,
+            metadata=request.metadata,
+        )
+    except ProjectionJobError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return _projection_job_read(job)
+
+
+@router.get("/projection-jobs", response_model=SemanticProjectionJobListResponse)
+def list_projection_jobs(
+    graph_set_id: Annotated[str | None, Query()] = None,
+    projection_kind: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionJobListResponse:
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    jobs = service.list_jobs(
+        graph_set_id=graph_set_id,
+        projection_kind=projection_kind,
+        status=status,
+    )
+    items = [_projection_job_read(j) for j in jobs]
+    return SemanticProjectionJobListResponse(items=items, total=len(items))
+
+
+@router.get("/projection-jobs/{job_id}", response_model=SemanticProjectionJobRead)
+def get_projection_job(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionJobRead:
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    try:
+        job = service.get_job(job_id)
+    except ProjectionJobError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 404), detail=str(exc)
+        ) from exc
+    return _projection_job_read(job)
+
+
+@router.post("/projection-jobs/{job_id}:run", response_model=SemanticProjectionJobRead)
+def run_projection_job(
+    job_id: str,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionJobRead:
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    try:
+        job = service.run_job(job_id)
+    except ProjectionJobError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    return _projection_job_read(job)
+
+
+@router.post(
+    "/projections:reconcile", response_model=SemanticProjectionReconcileResponse
+)
+def reconcile_projections(
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionReconcileResponse:
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    report = service.reconcile()
+    return SemanticProjectionReconcileResponse(**report)
+
+
+@router.get("/projections/status", response_model=SemanticProjectionStatusResponse)
+def projection_status(
+    graph_set_id: Annotated[str | None, Query()] = None,
+    session: Session = Depends(get_db_session),
+    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticProjectionStatusResponse:
+    service = _projection_job_service(session, rdf_store, driver, settings)
+    status = service.status(graph_set_id=graph_set_id)
+    return SemanticProjectionStatusResponse(**status)
+
+
 def _registry_read(
     registry: SemanticGraphRegistryService,
     record,
@@ -475,3 +1167,43 @@ def _registry_read(
         mutable_by_direct_edit=record.mutable_by_direct_edit,
         metadata=record.registry_metadata or {},
     )
+
+
+def _rule_definition_read(rule) -> SemanticRuleDefinitionRead:
+    return SemanticRuleDefinitionRead(
+        id=rule.id,
+        rule_iri=rule.rule_iri,
+        name=rule.name,
+        language=rule.language,
+        version=rule.version,
+        status=rule.status,
+        body=rule.body,
+        input_roles=list(rule.input_roles or []),
+        output_kind=rule.output_kind,
+        uses_inferred_facts=bool(rule.uses_inferred_facts),
+        requires_review=bool(rule.requires_review),
+        priority=int(rule.priority or 0),
+        safety_profile=dict(rule.safety_profile or {}),
+        created_by=rule.created_by,
+        created_at=rule.created_at,
+        updated_at=rule.updated_at,
+        metadata=dict(rule.rule_metadata or {}),
+    )
+
+
+def _rule_run_response(result: dict) -> dict:
+    """Normalise a rule-run service result for the SemanticRuleRunRead schema."""
+    response = dict(result)
+    response.setdefault("statements", [])
+    response.setdefault("bindings", [])
+    response.setdefault("warnings", [])
+    response.setdefault("missing_evidence_dependencies", {})
+    response.setdefault("explanations", [])
+    response.setdefault("audit_status", "system_accepted")
+    response.setdefault("truncated", False)
+    response.setdefault("generated_statement_count", 0)
+    response.setdefault("engine_name", "rule")
+    response["run_id"] = response.get("run_id", "")
+    response["status"] = response.get("status", "pending")
+    response["graph_set_id"] = response.get("graph_set_id", "")
+    return response

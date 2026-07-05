@@ -33,5 +33,6 @@ class Settings(BaseSettings):
     semantic_reasoner_command: str = ""
     semantic_reasoner_timeout_seconds: float = Field(default=60, gt=0, le=600)
     semantic_neo4j_projection_enabled: bool = False
+    semantic_graph_visibility_labels: dict[str, str] = Field(default_factory=dict)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

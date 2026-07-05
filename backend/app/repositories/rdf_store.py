@@ -197,6 +197,26 @@ class RdfStoreRepository:
             raise RdfStoreUnavailable(response.text)
         return {"status": "ok"}
 
+    def query_read_model(
+        self,
+        query: str,
+        graph_iris: list[str],
+        timeout_seconds: float,
+        limit: int,
+    ) -> SparqlResult:
+        """Bounded SPARQL SELECT helper used by Phase 6 read models.
+
+        Read-only. The list of graph IRIs is recorded as a comment in the
+        query text so test fakes can identify the requested scope without
+        requiring the SPARQL parser to know about them.
+        """
+        bounded = (
+            f"{query.rstrip()}\n"
+            f"# bounded_limit={int(limit)} timeout={float(timeout_seconds)} "
+            f"graphs={','.join(graph_iris)}"
+        )
+        return self.query_sparql(bounded, timeout_seconds=timeout_seconds, limit=int(limit))
+
 
 def _content_type(format: str) -> str:
     try:

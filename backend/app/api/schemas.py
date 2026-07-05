@@ -1210,3 +1210,291 @@ class SemanticGraphGcResponse(BaseModel):
 class SemanticGovernanceStatusResponse(BaseModel):
     graphs: dict[str, Any]
     derived: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: rule definitions, rule runs, graph-set validation, missing evidence
+# ---------------------------------------------------------------------------
+
+
+class SemanticRuleDefinitionCreate(BaseModel):
+    rule_iri: str = Field(min_length=1, max_length=1024)
+    name: str = Field(min_length=1, max_length=255)
+    language: Literal["sparql_construct", "platform_dsl", "workflow_state_machine"]
+    body: dict[str, Any]
+    input_roles: list[str] = Field(default_factory=list)
+    output_kind: Literal["assertion", "validation", "workflow", "annotation"] = "assertion"
+    uses_inferred_facts: bool = False
+    requires_review: bool = False
+    priority: int = 0
+    safety_profile: dict[str, Any] = Field(default_factory=dict)
+    status: Literal["draft", "active", "retired", "rejected"] = "draft"
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticRuleDefinitionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    status: Literal["draft", "active", "retired", "rejected"] | None = None
+    priority: int | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class SemanticRuleDefinitionRead(BaseModel):
+    id: str
+    rule_iri: str
+    name: str
+    language: str
+    version: str
+    status: str
+    body: dict[str, Any]
+    input_roles: list[str]
+    output_kind: str
+    uses_inferred_facts: bool
+    requires_review: bool
+    priority: int
+    safety_profile: dict[str, Any]
+    created_by: str | None
+    created_at: datetime
+    updated_at: datetime
+    metadata: dict[str, Any]
+
+
+class SemanticRuleDefinitionListResponse(BaseModel):
+    rules: list[SemanticRuleDefinitionRead]
+
+
+class SemanticGraphSetValidationRunRequest(BaseModel):
+    shape_graph_iris: list[str] = Field(default_factory=list)
+    inference: str | None = None
+    validation_scope: Literal["asserted_only", "asserted_plus_reasoning"] = "asserted_only"
+    reasoning_result_graph_iri: str | None = None
+    shape_version: str | None = None
+    engine_version: str | None = None
+    persist_report_graph: bool = True
+    actor: str | None = None
+
+
+class SemanticValidationRunRead(BaseModel):
+    run_id: str
+    status: str
+    conforms: bool | None = None
+    report_graph_iri: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    guidance: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    graph_set_id: str | None = None
+    source_signature: str = ""
+    input_graph_revisions: dict[str, int] = Field(default_factory=dict)
+    shape_version: str | None = None
+    engine_version: str | None = None
+    validation_scope: str = "asserted_only"
+    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
+    staleness: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+class SemanticGraphSetConstructRunRequest(BaseModel):
+    template: str
+    rule_definition_id: str | None = None
+    rule_version: str | None = None
+    engine_version: str | None = None
+    promote_pointer: bool = True
+    actor: str | None = None
+
+
+class SemanticGraphSetRuleRunRequest(BaseModel):
+    rule_definition_id: str | None = None
+    rule_iri: str | None = None
+    rule_definition_ids: list[str] | None = None
+    engine_version: str | None = None
+    promote_pointer: bool = True
+    actor: str | None = None
+
+
+class SemanticRuleRunRead(BaseModel):
+    run_id: str
+    status: str
+    engine_name: str
+    engine_version: str | None = None
+    graph_set_id: str
+    rule_definition_id: str | None = None
+    rule_version: str | None = None
+    result_graph_iri: str | None = None
+    rule_run_graph_iri: str | None = None
+    generated_statement_count: int = 0
+    statements: list[dict[str, Any]] = Field(default_factory=list)
+    bindings: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
+    audit_status: str = "system_accepted"
+    explanations: list[dict[str, Any]] = Field(default_factory=list)
+    rule_count: int | None = None
+    derived_pointer: dict[str, Any] | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+class SemanticMissingEvidenceSummary(BaseModel):
+    graph_set_id: str
+    dependencies: list[dict[str, Any]]
+    summary: dict[str, Any]
+    warning: str | None = None
+
+
+class SemanticReasoningRunRead(BaseModel):
+    run_id: str
+    status: str
+    consistent: bool | None = None
+    classification: dict[str, Any] = Field(default_factory=dict)
+    entailments: list[dict[str, Any]] = Field(default_factory=list)
+    result_graph_iri: str | None = None
+    graph_set_id: str | None = None
+    source_signature: str = ""
+    input_graph_revisions: dict[str, int] = Field(default_factory=dict)
+    input_derived_pointers: dict[str, Any] = Field(default_factory=dict)
+    engine_version: str | None = None
+    shape_version: str | None = None
+    tasks: list[str] = Field(default_factory=list)
+    profile: str = "owl2_dl"
+    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    derived_pointer: dict[str, Any] | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+
+# ----------------------------------------------------------------------------
+# Phase 6 — graph-derived read models, exports, projection jobs/manifests
+# ----------------------------------------------------------------------------
+
+
+class SemanticReadModelEnvelope(BaseModel):
+    graph_set_id: str
+    source_signature: str
+    projection_version: str
+    include: str
+    derived_state: dict[str, Any]
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SemanticStatementItem(BaseModel):
+    id: str
+    iri: str
+    label: str | None = None
+    source_graph_iri: str
+    assertion_kind: str
+    evidence_status: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any]
+    audit_status: str | None = None
+    staleness: dict[str, Any]
+
+
+class SemanticResourceRead(BaseModel):
+    iri: str
+    label: str | None = None
+    graph_set_id: str | None = None
+    source_signature: str | None = None
+    assertion_kind: str
+    evidence_status: str
+    source_graph_iri: str
+    properties: dict[str, Any] = Field(default_factory=dict)
+    derived_state: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+
+
+class SemanticExportRequest(BaseModel):
+    format: Literal["trig", "turtle", "json-ld"] = "trig"
+    include: Literal[
+        "asserted",
+        "asserted-plus-reasoning",
+        "asserted-plus-rules",
+        "full-working-view",
+    ] = "asserted"
+    include_evidence: bool = False
+    include_shapes: bool = False
+    include_policy: bool = False
+    include_metadata: bool = False
+    allow_stale_derived: bool = False
+    visibility_context: dict[str, Any] | None = None
+
+
+class SemanticProjectionJobCreate(BaseModel):
+    graph_set_id: str
+    projection_kind: Literal[
+        "business_json", "neo4j", "search", "vector", "export_cache"
+    ]
+    projection_version: str
+    include: Literal[
+        "asserted",
+        "asserted-plus-reasoning",
+        "asserted-plus-rules",
+        "full-working-view",
+    ] = "asserted"
+    allow_stale_derived: bool = False
+    mode: Literal["dry_run", "rebuild", "rebuild_side_by_side", "reconcile"] = "rebuild"
+    target_partition: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticProjectionJobRead(BaseModel):
+    id: str
+    graph_set_id: str | None
+    projection_kind: str
+    projection_version: str
+    projection_scope: str
+    source_signature: str
+    input_graph_revisions: dict[str, Any]
+    input_derived_pointers: dict[str, Any]
+    target_store: str | None
+    target_partition: str | None
+    status: str
+    node_count: int
+    relationship_count: int
+    document_count: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    error: str | None
+    metadata: dict[str, Any]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticProjectionJobListResponse(BaseModel):
+    items: list[SemanticProjectionJobRead]
+    total: int
+
+
+class SemanticProjectionManifestRead(BaseModel):
+    id: str
+    graph_set_id: str
+    projection_kind: str
+    active_job_id: str | None
+    source_signature: str
+    projection_version: str
+    target_partition: str
+    status: str
+    updated_at: datetime
+    metadata: dict[str, Any]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SemanticProjectionStatusResponse(BaseModel):
+    manifests: list[SemanticProjectionManifestRead]
+    stale: list[str]
+    missing: list[str]
+
+
+class SemanticProjectionReconcileResponse(BaseModel):
+    reconciled: int
+    marked_stale: list[str]
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+

@@ -16,8 +16,21 @@
 - Implementation: Phase 4 named-graph governance (graph registry, graph sets, derived-result
   pointers, staleness reconciliation, reasoning-result GC) implemented and covered by backend
   tests.
+- Phase 5 design: completed in
+  `docs/semantic/phase5-reasoning-validation-deterministic-derivation.md`.
+- Implementation: Phase 5 reasoning/validation/deterministic-derivation services, models,
+  migrations, API endpoints, and MCP tools implemented and covered by backend tests.
+- Phase 6 design: completed in
+  `docs/semantic/phase6-graph-derived-product-apis-projections.md`.
+- Implementation: Phase 6 graph-derived read models, JSON-LD/Turtle/TriG export,
+  projection jobs and manifests, Neo4j/search/vector projection writers, light
+  visibility policy, and MCP tools implemented and covered by backend tests.
+- Phase 7 design: completed in
+  `docs/semantic/phase7-canonical-rdf-dataset-migration.md`.
+- Phase 8 design: completed in `docs/semantic/phase8-frontend-workflow-reshaping.md`.
 - Current platform state: existing custom ontology/domain model with PostgreSQL and Neo4j-backed
-  behavior remains in place; Phase 4 governance metadata lives alongside it in Postgres.
+  behavior remains in place; Phase 4 governance metadata and Phase 5 rule-definition/run records
+  live alongside it in Postgres.
 - Target platform state: canonical semantic state is an RDF Dataset in an RDF-native store, with
   governed semantic edits, SHACL validation, OWL reasoning, and rebuildable projections.
 
@@ -235,6 +248,9 @@ Acceptance criteria:
 Goal: make semantic consistency, structural validation, and business derivation explicit,
 separate platform services.
 
+Detailed implementation note:
+`docs/semantic/phase5-reasoning-validation-deterministic-derivation.md`.
+
 Implementation focus:
 
 1. Use OWL reasoning for ontology consistency, class/property hierarchy classification,
@@ -266,6 +282,9 @@ Acceptance criteria:
 Goal: make product reads, UI screens, search, and traversal derive from RDF graph state rather than
 custom semantic tables.
 
+Detailed implementation note:
+`docs/semantic/phase6-graph-derived-product-apis-projections.md`.
+
 Implementation focus:
 
 1. Add compact business JSON projections backed by SPARQL over source graphs plus current
@@ -291,6 +310,8 @@ Acceptance criteria:
 ## Phase 7: Canonical RDF Dataset Migration
 
 Goal: switch semantic source-of-truth from the current custom model to Oxigraph RDF Dataset storage.
+
+Detailed implementation note: `docs/semantic/phase7-canonical-rdf-dataset-migration.md`.
 
 Implementation focus:
 
@@ -322,6 +343,8 @@ Acceptance criteria:
 
 Goal: align user-facing workflows with graph-native governance without forcing ordinary users to
 write Turtle, TriG, JSON-LD, SPARQL, or OWL syntax.
+
+Detailed implementation note: `docs/semantic/phase8-frontend-workflow-reshaping.md`.
 
 Implementation focus:
 
