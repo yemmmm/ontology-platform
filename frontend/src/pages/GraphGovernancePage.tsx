@@ -1,0 +1,344 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Database,
+  FileCheck2,
+  Layers,
+  Network,
+  RefreshCw,
+  ShieldCheck,
+  Workflow,
+} from "lucide-react";
+import type {
+  SemanticDerivedResultReconcileResponse,
+  SemanticEditAuditRead,
+  SemanticGovernanceStatusResponse,
+  SemanticGraphRegistryListResponse,
+  SemanticGraphSetListResponse,
+} from "../types";
+import { useT } from "../i18n";
+import { errorNotice } from "../api";
+import type { Notice } from "../types";
+import {
+  getGovernanceStatus,
+  listEditAudits,
+  listGraphRegistry,
+  listGraphSets,
+  reconcileDerivedResults,
+  type SemanticRequester,
+} from "../semanticApi";
+import { GraphIriLabel, StalenessBadge } from "../components/semantic";
+import { RefreshButton, SemanticEmpty, SemanticPanel, SemanticTag, StatTile } from "../components/semantic/primitives";
+import { prettyJson } from "../utils";
+
+export function GraphGovernancePage({
+  request,
+  navigate,
+  notify,
+}: {
+  request: SemanticRequester;
+  navigate: (tab: string, params?: Record<string, string>) => void;
+  notify: (notice: Notice) => void;
+}) {
+  const t = useT();
+  const [status, setStatus] = useState<SemanticGovernanceStatusResponse | null>(null);
+  const [graphSets, setGraphSets] = useState<SemanticGraphSetListResponse | null>(null);
+  const [graphs, setGraphs] = useState<SemanticGraphRegistryListResponse | null>(null);
+  const [audits, setAudits] = useState<SemanticEditAuditRead[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      const [statusData, setsData, graphsData, auditsData] = await Promise.all([
+        getGovernanceStatus(request),
+        listGraphSets(request),
+        listGraphRegistry(request),
+        listEditAudits(request, 8),
+      ]);
+      setStatus(statusData);
+      setGraphSets(setsData);
+      setGraphs(graphsData);
+      setAudits(auditsData);
+    } catch (error) {
+      notify(errorNotice(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const summary = useMemo(() => deriveSummary(status, graphs, graphSets), [status, graphs, graphSets]);
+
+  async function reconcile() {
+    setReconciling(true);
+    try {
+      const result: SemanticDerivedResultReconcileResponse = await reconcileDerivedResults(request);
+      notify({
+        kind: result.pointers_marked_stale > 0 || result.pointers_marked_current > 0 ? "ok" : "info",
+        message: t(
+          "Reconciled {inspected} graph sets · {stale} marked stale · {current} marked current",
+          {
+            inspected: result.graph_sets_inspected,
+            stale: result.pointers_marked_stale,
+            current: result.pointers_marked_current,
+          },
+        ),
+      });
+      await loadAll();
+    } catch (error) {
+      notify(errorNotice(error));
+    } finally {
+      setReconciling(false);
+    }
+  }
+
+  return (
+    <section className="graphGovernancePage" aria-label="graph-governance-page">
+      <header className="pageSubHeader">
+        <div>
+          <span className="eyebrow">{t("Graph Governance")}</span>
+          <h2>{t("Graph Governance Dashboard")}</h2>
+          <p>{t("Semantic health across named graphs, graph sets, derived results, projections, and audit deltas.")}</p>
+        </div>
+        <RefreshButton busy={loading || reconciling} onClick={() => void loadAll()} />
+      </header>
+
+      <section className="statTileRow" aria-label="governance-summary-tiles">
+        <StatTile
+          label={t("Registered graphs")}
+          value={summary.registeredGraphs}
+          hint={t("Across all categories")}
+        />
+        <StatTile
+          label={t("Editable actual graphs")}
+          value={`${summary.editableGraphs} / ${summary.actualGraphs}`}
+          hint={summary.editableGraphs < summary.actualGraphs ? t("Some graphs are locked") : undefined}
+          tone={summary.editableGraphs < summary.actualGraphs ? "warning" : "ok"}
+        />
+        <StatTile
+          label={t("Graph sets")}
+          value={summary.graphSetsCount}
+          hint={summary.graphSetNames.length ? summary.graphSetNames.slice(0, 3).join(", ") : undefined}
+        />
+        <StatTile
+          label={t("Stale derived results")}
+          value={summary.staleDerived}
+          tone={summary.staleDerived > 0 ? "warning" : "ok"}
+        />
+        <StatTile
+          label={t("Missing evidence")}
+          value={summary.missingEvidence}
+          tone={summary.missingEvidence > 0 ? "error" : "ok"}
+        />
+      </section>
+
+      <section className="governanceGrid" aria-label="governance-grid">
+        <SemanticPanel
+          title={t("Graph set health")}
+          icon={<Layers size={15} />}
+          actions={<SemanticTag tone={summary.activeGraphSets > 0 ? "ok" : "warning"}>{summary.activeGraphSets} {t("active")}</SemanticTag>}
+        >
+          {summary.activeGraphSets === 0 ? (
+            <SemanticEmpty icon={<Network size={20} />} title={t("No active graph sets")} hint={t("Create a graph set on the Graph Sets page.")} />
+          ) : (
+            <ul className="graphSetHealthList">
+              {(graphSets?.graph_sets ?? []).slice(0, 5).map((graphSet) => {
+                const currentPointers = graphSet.current_pointers ?? [];
+                const staleCount = currentPointers.filter((pointer) => isStalePointer(pointer)).length;
+                return (
+                  <li key={graphSet.id} className="graphSetHealthRow">
+                    <button
+                      className="graphSetHealthMain"
+                      onClick={() => navigate("graph-sets", { graphSet: graphSet.id })}
+                      type="button"
+                    >
+                      <strong>{graphSet.name}</strong>
+                      <span>{graphSet.scope_type}{graphSet.scope_id ? ` · ${graphSet.scope_id}` : ""}</span>
+                      <code>{graphSet.source_signature.slice(0, 12)}</code>
+                    </button>
+                    <div className="graphSetHealthState">
+                      <StalenessBadge stale={staleCount > 0} detail={t("{count} stale pointer(s)", { count: staleCount })} />
+                      <SemanticTag>{currentPointers.length} {t("pointer(s)")}</SemanticTag>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </SemanticPanel>
+
+        <SemanticPanel title={t("Latest semantic edit audits")} icon={<FileCheck2 size={15} />}>
+          {!audits.length ? (
+            <SemanticEmpty title={t("No audit records yet")} hint={t("Apply a governed semantic edit to populate this list.")} />
+          ) : (
+            <ol className="auditList">
+              {audits.map((audit) => (
+                <li key={audit.id} className="auditRow" aria-label={`audit-${audit.id}`}>
+                  <div className="auditMain">
+                    <strong>{audit.input_format}</strong>
+                    {audit.target_graph_iri && <GraphIriLabel iri={audit.target_graph_iri} />}
+                    {audit.applied ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  </div>
+                  <dl>
+                    <div><dt>{t("Audit ID")}</dt><dd><code>{audit.id}</code></dd></div>
+                    <div><dt>{t("Actor")}</dt><dd>{audit.actor ?? t("unknown")}</dd></div>
+                    <div><dt>{t("Reason")}</dt><dd>{audit.reason ?? t("unset")}</dd></div>
+                    {audit.evidence_status && (
+                      <div><dt>{t("Evidence")}</dt><dd>{audit.evidence_status}</dd></div>
+                    )}
+                  </dl>
+                  <details>
+                    <summary>{t("Graph delta")}</summary>
+                    <pre className="jsonBlock">{prettyJson(audit.graph_delta)}</pre>
+                  </details>
+                </li>
+              ))}
+            </ol>
+          )}
+        </SemanticPanel>
+
+        <SemanticPanel
+          title={t("Derived results")}
+          icon={<Workflow size={15} />}
+          actions={<button className="secondaryButton" disabled={reconciling} onClick={() => void reconcile()} type="button">{t("Reconcile staleness")}</button>}
+        >
+          <DerivedSummary derived={summary.derivedSummary} />
+        </SemanticPanel>
+
+        <SemanticPanel title={t("Validation & reasoning summary")} icon={<ShieldCheck size={15} />}>
+          <ValidationReasoningSummary status={status} />
+        </SemanticPanel>
+      </section>
+
+      <section className="governanceActions" aria-label="governance-actions">
+        <button className="secondaryButton" onClick={() => navigate("named-graphs")} type="button">
+          <Database size={14} /> {t("Open named graph registry")}
+        </button>
+        <button className="secondaryButton" onClick={() => navigate("graph-sets")} type="button">
+          <Layers size={14} /> {t("Open graph sets")}
+        </button>
+        <button className="secondaryButton" onClick={() => navigate("semantic-runs")} type="button">
+          <Workflow size={14} /> {t("Open runs")}
+        </button>
+        <button className="secondaryButton" onClick={() => navigate("semantic-edits")} type="button">
+          <FileCheck2 size={14} /> {t("Open semantic workbench")}
+        </button>
+        <button className="secondaryButton" onClick={() => navigate("semantic-import-export")} type="button">
+          <RefreshCw size={14} /> {t("Open import / export")}
+        </button>
+      </section>
+    </section>
+  );
+}
+
+function DerivedSummary({ derived }: { derived: Record<string, unknown> | null }) {
+  const t = useT();
+  if (!derived) {
+    return <SemanticEmpty title={t("Derived state unavailable")} hint={t("Run reconcile to inspect pointers.")} />;
+  }
+  const entries = Object.entries(derived);
+  if (!entries.length) return <SemanticEmpty title={t("No derived results to display")} />;
+  return (
+    <ul className="derivedSummaryList">
+      {entries.map(([key, value]) => (
+        <li key={key}>
+          <code>{key}</code>
+          <span>{prettyJson(value)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ValidationReasoningSummary({ status }: { status: SemanticGovernanceStatusResponse | null }) {
+  const t = useT();
+  if (!status) return <SemanticEmpty title={t("Status unavailable")} />;
+  const graphs = (status.graphs ?? {}) as Record<string, unknown>;
+  const derived = (status.derived ?? {}) as Record<string, unknown>;
+  return (
+    <dl className="kvList">
+      <div><dt>{t("Graphs by category")}</dt><dd>{prettyJson(graphs.by_category ?? graphs.categories ?? {})}</dd></div>
+      <div><dt>{t("Editable vs locked")}</dt><dd>{prettyJson(graphs.editability ?? graphs.editability_state ?? {})}</dd></div>
+      <div><dt>{t("Reasoning pointers")}</dt><dd>{prettyJson(derived.reasoning ?? derived.reasoning_pointers ?? {})}</dd></div>
+      <div><dt>{t("Rule pointers")}</dt><dd>{prettyJson(derived.rules ?? derived.rule_pointers ?? {})}</dd></div>
+      <div><dt>{t("Missing-evidence warnings")}</dt><dd>{prettyJson(derived.missing_evidence ?? derived.missing_evidence_summary ?? {})}</dd></div>
+    </dl>
+  );
+}
+
+function deriveSummary(
+  status: SemanticGovernanceStatusResponse | null,
+  graphs: SemanticGraphRegistryListResponse | null,
+  graphSets: SemanticGraphSetListResponse | null,
+) {
+  const graphsSummary = (status?.graphs ?? {}) as Record<string, unknown>;
+  const derivedSummary = (status?.derived ?? {}) as Record<string, unknown>;
+  const graphCount = (graphsSummary.total ?? graphsSummary.registered ?? (graphs?.graphs.length ?? 0)) as number;
+  const editableGraphs = pickNumber(graphsSummary, ["editable", "editable_count"]) ?? countEditable(graphs?.graphs, true);
+  const actualGraphs = pickNumber(graphsSummary, ["actual", "actual_count"]) ?? countActual(graphs?.graphs);
+  const staleDerived = pickNumber(derivedSummary, ["stale_count", "stale"]) ?? countStaleDerived(status);
+  const missingEvidence = pickNumber(derivedSummary, ["missing_evidence_count", "missing_evidence"]) ?? 0;
+  const graphSetsList = graphSets?.graph_sets ?? [];
+  const activeGraphSets = graphSetsList.filter((graphSet) => graphSet.status === "active").length;
+  return {
+    registeredGraphs: typeof graphCount === "number" ? graphCount : graphs?.graphs.length ?? 0,
+    editableGraphs,
+    actualGraphs: actualGraphs || (graphs?.graphs.length ?? 0),
+    staleDerived,
+    missingEvidence,
+    graphSetsCount: graphSetsList.length,
+    activeGraphSets,
+    graphSetNames: graphSetsList.map((graphSet) => graphSet.name),
+    derivedSummary,
+  };
+}
+
+function countEditable(graphs: SemanticGraphRegistryListResponse["graphs"] | undefined, editable: boolean): number {
+  if (!graphs) return 0;
+  return graphs.filter((graph) => graph.editable === editable).length;
+}
+
+function countActual(graphs: SemanticGraphRegistryListResponse["graphs"] | undefined): number {
+  if (!graphs) return 0;
+  return graphs.filter((graph) => graph.category === "ontology" || graph.category === "data").length;
+}
+
+function countStaleDerived(status: SemanticGovernanceStatusResponse | null): number {
+  if (!status) return 0;
+  const derived = (status.derived ?? {}) as Record<string, unknown>;
+  const pointers = pickArray(derived, ["pointers", "derived_pointers"]) ?? [];
+  return pointers.filter((pointer) => isStalePointer(pointer as Record<string, unknown>)).length;
+}
+
+function pickNumber(record: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    if (key in record) {
+      const value = Number(record[key]);
+      if (!Number.isNaN(value)) return value;
+    }
+  }
+  return null;
+}
+
+function pickArray(record: Record<string, unknown>, keys: string[]): unknown[] | null {
+  for (const key of keys) {
+    if (key in record) {
+      const value = record[key];
+      if (Array.isArray(value)) return value;
+    }
+  }
+  return null;
+}
+
+function isStalePointer(pointer: unknown): boolean {
+  if (!pointer || typeof pointer !== "object") return false;
+  const record = pointer as Record<string, unknown>;
+  return record.stale === true || record.is_stale === true || record.status === "stale";
+}

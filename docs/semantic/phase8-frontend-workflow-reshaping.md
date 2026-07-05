@@ -649,7 +649,7 @@ Backend/API tests should cover response shape contracts used by the frontend:
 ### 0. Documentation
 
 - [x] Create this Phase 8 detailed design document.
-- [ ] Link this document from `semantic-language-refactor-plan.md` after parallel phase-doc edits
+- [x] Link this document from `semantic-language-refactor-plan.md` after parallel phase-doc edits
       settle.
 - [ ] Keep this document aligned with Phase 6 and Phase 7 detailed designs when those are added.
 

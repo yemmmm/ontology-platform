@@ -519,3 +519,309 @@ export type PublicationReadiness = {
   blocking: PublicationGateType[];
   warnings: PublicationGateType[];
 };
+
+// ---------------------------------------------------------------------------
+// Phase 8 — semantic graph governance DTOs mirroring /api/semantic/*
+// ---------------------------------------------------------------------------
+
+export type SemanticJsonObject = Record<string, unknown>;
+
+export type SemanticGraphCategory =
+  | "ontology"
+  | "data"
+  | "proposal"
+  | "evidence"
+  | "policy"
+  | "import"
+  | "validation_run"
+  | "reasoning_run"
+  | "reasoning_result"
+  | "rule_run"
+  | "rule_result"
+  | "review"
+  | "shape"
+  | "namespace"
+  | "other";
+
+export type SemanticGraphRegistryRead = {
+  graph_iri: string;
+  category: string;
+  registered: boolean;
+  owner_type: string | null;
+  owner_id: string | null;
+  mutable_by_direct_edit: boolean | null;
+  editable: boolean | null;
+  editability_reason: string | null;
+  revision: number | null;
+  content_hash: string | null;
+  derived_pointers: SemanticJsonObject[];
+  metadata: SemanticJsonObject;
+};
+
+export type SemanticGraphRegistryListResponse = {
+  graphs: SemanticGraphRegistryRead[];
+  summary: SemanticJsonObject;
+};
+
+export type SemanticGraphMember = {
+  graph_iri: string;
+  role: string;
+  required: boolean;
+  sort_order: number;
+  metadata: SemanticJsonObject;
+};
+
+export type SemanticGraphSetRead = {
+  id: string;
+  name: string;
+  scope_type: string;
+  scope_id: string | null;
+  status: string;
+  source_signature: string;
+  created_by: string | null;
+  members: SemanticGraphMember[];
+  current_pointers: SemanticJsonObject[];
+  metadata: SemanticJsonObject;
+};
+
+export type SemanticGraphSetListResponse = {
+  graph_sets: SemanticGraphSetRead[];
+};
+
+export type SemanticGovernanceStatusResponse = {
+  graphs: SemanticJsonObject;
+  derived: SemanticJsonObject;
+};
+
+export type SemanticEditAuditRead = {
+  id: string;
+  actor: string | null;
+  reason: string | null;
+  input_format: string;
+  target_graph_iri: string | null;
+  affected_graph_iris: string[];
+  validation_result: SemanticJsonObject | null;
+  graph_delta: SemanticJsonObject;
+  evidence_status: string | null;
+  warning_state: SemanticJsonObject;
+  applied: boolean;
+  created_at: string;
+};
+
+export type SemanticEditResponse = {
+  audit_id: string;
+  applied: boolean;
+  affected_graph_iris: string[];
+  delta: SemanticJsonObject;
+  warnings: string[];
+  validation: SemanticJsonObject | null;
+  graph_revisions: Record<string, number>;
+  stale_derived_pointers: SemanticJsonObject[];
+};
+
+export type SemanticGraphEditabilityResponse = {
+  graph_iri: string;
+  editable: boolean;
+  updated_by: string | null;
+  reason: string | null;
+};
+
+export type SemanticValidationRunRead = {
+  run_id: string;
+  status: string;
+  conforms: boolean | null;
+  report_graph_iri: string | null;
+  summary: SemanticJsonObject;
+  guidance: SemanticJsonObject;
+  warnings: string[];
+  graph_set_id: string | null;
+  source_signature: string;
+  input_graph_revisions: Record<string, number>;
+  shape_version: string | null;
+  engine_version: string | null;
+  validation_scope: string;
+  missing_evidence_dependencies: SemanticJsonObject;
+  staleness: SemanticJsonObject;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type SemanticReasoningRunRead = {
+  run_id: string;
+  status: string;
+  consistent: boolean | null;
+  classification: SemanticJsonObject;
+  entailments: SemanticJsonObject[];
+  result_graph_iri: string | null;
+  graph_set_id: string | null;
+  source_signature: string;
+  input_graph_revisions: Record<string, number>;
+  input_derived_pointers: SemanticJsonObject;
+  engine_version: string | null;
+  shape_version: string | null;
+  tasks: string[];
+  profile: string;
+  missing_evidence_dependencies: SemanticJsonObject;
+  warnings: string[];
+  derived_pointer: SemanticJsonObject | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type SemanticRuleRunRead = {
+  run_id: string;
+  status: string;
+  engine_name: string;
+  engine_version: string | null;
+  graph_set_id: string;
+  rule_definition_id: string | null;
+  rule_version: string | null;
+  result_graph_iri: string | null;
+  rule_run_graph_iri: string | null;
+  generated_statement_count: number;
+  statements: SemanticJsonObject[];
+  bindings: SemanticJsonObject[];
+  warnings: string[];
+  truncated: boolean;
+  missing_evidence_dependencies: SemanticJsonObject;
+  audit_status: string;
+  explanations: SemanticJsonObject[];
+  rule_count: number | null;
+  derived_pointer: SemanticJsonObject | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type SemanticRuleDefinitionRead = {
+  id: string;
+  rule_iri: string;
+  name: string;
+  language: string;
+  version: string;
+  status: string;
+  body: SemanticJsonObject;
+  input_roles: string[];
+  output_kind: string;
+  uses_inferred_facts: boolean;
+  requires_review: boolean;
+  priority: number;
+  safety_profile: SemanticJsonObject;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata: SemanticJsonObject;
+};
+
+export type SemanticRuleDefinitionListResponse = {
+  rules: SemanticRuleDefinitionRead[];
+};
+
+export type SemanticMissingEvidenceSummary = {
+  graph_set_id: string;
+  dependencies: SemanticJsonObject[];
+  summary: SemanticJsonObject;
+  warning: string | null;
+};
+
+export type SemanticStatementItem = {
+  id: string;
+  iri: string;
+  label: string | null;
+  source_graph_iri: string;
+  assertion_kind: string;
+  evidence_status: string;
+  evidence_ids: string[];
+  provenance: SemanticJsonObject;
+  audit_status: string | null;
+  staleness: SemanticJsonObject;
+};
+
+export type SemanticReadModelEnvelope = {
+  graph_set_id: string;
+  source_signature: string;
+  projection_version: string;
+  include: string;
+  derived_state: SemanticJsonObject;
+  warnings: SemanticJsonObject[];
+  items: SemanticStatementItem[];
+};
+
+export type SemanticDerivedResultReconcileResponse = {
+  graph_sets_inspected: number;
+  pointers_marked_current: number;
+  pointers_marked_stale: number;
+};
+
+export type SemanticGraphGcResponse = {
+  gc_run_id: string;
+  target_kind: string;
+  status: string;
+  candidate_count: number;
+  deleted_count: number;
+  dry_run: boolean;
+  deleted_graph_iris: string[];
+  errors: SemanticJsonObject[];
+};
+
+export type SemanticProjectionJobRead = {
+  id: string;
+  graph_set_id: string | null;
+  projection_kind: string;
+  projection_version: string;
+  projection_scope: string;
+  source_signature: string;
+  input_graph_revisions: SemanticJsonObject;
+  input_derived_pointers: SemanticJsonObject;
+  target_store: string | null;
+  target_partition: string | null;
+  status: string;
+  node_count: number;
+  relationship_count: number;
+  document_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  metadata: SemanticJsonObject;
+};
+
+export type SemanticProjectionJobListResponse = {
+  items: SemanticProjectionJobRead[];
+  total: number;
+};
+
+export type SemanticSparqlQueryResponse = {
+  result: unknown;
+  result_format: string;
+  truncated: boolean;
+  warnings: string[];
+};
+
+export type SemanticDatasetLoadResponse = {
+  loaded: boolean;
+  format: string;
+  graph_count: number | null;
+  triple_count: number | null;
+  warnings: string[];
+};
+
+export type SemanticCanonicalModeRead = {
+  canonical_store: string;
+  product_write_mode: string;
+  read_mode: string;
+  legacy_write_blocked: boolean;
+  scope_type: string | null;
+  scope_id: string | null;
+  notes: string[];
+};
+
+export type SemanticEditInputFormat = "trig" | "turtle" | "json-ld" | "sparql-update";
+export type SemanticEditEvidenceStatus = "evidence_bound" | "missing_evidence";
+export type SemanticExportFormat = "trig" | "turtle" | "json-ld";
+export type SemanticExportInclude =
+  | "asserted"
+  | "asserted-plus-reasoning"
+  | "asserted-plus-rules"
+  | "full-working-view";

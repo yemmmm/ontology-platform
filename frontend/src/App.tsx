@@ -101,6 +101,12 @@ import { PublicationPage } from "./pages/PublicationPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { EvidenceExplorer } from "./pages/EvidenceExplorer";
 import { CatalogWizardPage } from "./pages/CatalogWizardPage";
+import { GraphGovernancePage } from "./pages/GraphGovernancePage";
+import { NamedGraphsPage } from "./pages/NamedGraphsPage";
+import { GraphSetPage } from "./pages/GraphSetPage";
+import { SemanticRunsPage } from "./pages/SemanticRunsPage";
+import { SemanticEditWorkbenchPage } from "./pages/SemanticEditWorkbenchPage";
+import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
 import { WorkflowProgress } from "./components/WorkflowProgress";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
@@ -123,8 +129,14 @@ type WorkspaceTab =
   | "evidence"
   | "agent-test"
   | "mcp-tools"
-  | "setting";
-type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools";
+  | "setting"
+  | "graph-governance"
+  | "named-graphs"
+  | "graph-sets"
+  | "semantic-edits"
+  | "semantic-runs"
+  | "semantic-import-export";
+type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools" | "governance";
 type ClassPageMode = "topology" | "create" | "edit";
 type EntityPageMode = "topology" | "create" | "edit";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
@@ -156,6 +168,7 @@ const stageMeta: Array<{
 }> = [
   { id: "intake", label: "Intake", detail: "Brief · questions · evidence", icon: BookOpen, workflowStatuses: ["gathering"] },
   { id: "knowledge", label: "Modeling", detail: "Classes · entities · facts · catalog", icon: GitBranch, workflowStatuses: ["schema_draft", "schema_review", "graph_building", "graph_review", "validated"] },
+  { id: "governance", label: "Governance", detail: "Graphs · graph sets · semantic edit · runs · import/export", icon: ShieldCheck },
   { id: "publish", label: "Publish", detail: "Publication · versions", icon: Flag, workflowStatuses: ["published"] },
   { id: "tools", label: "Tools", detail: "Search · agent · MCP · settings", icon: Wrench },
 ];
@@ -163,6 +176,7 @@ const stageMeta: Array<{
 const stageDefaultTab: Record<WorkspaceStage, WorkspaceTab> = {
   intake: "overview",
   knowledge: "classes",
+  governance: "graph-governance",
   publish: "publication",
   tools: "entities-search",
 };
@@ -199,6 +213,12 @@ const workspaceTabs: Array<{
   { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
   { id: "evidence", stage: "tools", label: "Evidence", detail: "Source traceability", icon: ShieldCheck },
   { id: "setting", stage: "tools", label: "Settings", detail: "Runtime status", icon: Settings },
+  { id: "graph-governance", stage: "governance", label: "Graph Governance", detail: "Status · graph sets · audits", icon: ShieldCheck },
+  { id: "named-graphs", stage: "governance", label: "Named Graphs", detail: "Registry · editability", icon: Database },
+  { id: "graph-sets", stage: "governance", label: "Graph Sets", detail: "Members · runs · exports", icon: Layers },
+  { id: "semantic-edits", stage: "governance", label: "Semantic Edit", detail: "Direct workbench", icon: FileCheck2 },
+  { id: "semantic-runs", stage: "governance", label: "Semantic Runs", detail: "Validation · reasoning · rule", icon: History },
+  { id: "semantic-import-export", stage: "governance", label: "Import / Export", detail: "Standards exchange", icon: Upload },
 ];
 
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
@@ -356,7 +376,7 @@ export function App() {
     setPageDirty(false);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
-    for (const key of ["batch", "proposal", "claim", "item", "evidence", "document"]) {
+    for (const key of ["batch", "proposal", "claim", "item", "evidence", "document", "graph", "graphSet", "run", "category"]) {
       if (!(key in params)) url.searchParams.delete(key);
     }
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -715,6 +735,7 @@ export function App() {
                   entities={entities}
                   health={health}
                   mutate={mutate}
+                  notify={setNotice}
                   ontology={selectedOntology}
                   project={selectedProject}
                   selectedVersion={selectedVersion}
@@ -965,6 +986,7 @@ function WorkspaceContent(props: {
   health: Health | null;
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
+  notify: (notice: Notice) => void;
   reloadSchema: () => Promise<void>;
   reloadGraph: () => Promise<void>;
   reloadVersions: () => Promise<void>;
@@ -1112,6 +1134,71 @@ function WorkspaceContent(props: {
 
   if (props.tab === "mcp-tools") {
     return <McpToolsPage />;
+  }
+
+  if (props.tab === "graph-governance") {
+    return (
+      <GraphGovernancePage
+        navigate={props.navigateWorkspace}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "named-graphs") {
+    return (
+      <NamedGraphsPage
+        initialCategory={queryValue("category") || undefined}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "graph-sets") {
+    return (
+      <GraphSetPage
+        initialGraphSetId={queryValue("graphSet") || undefined}
+        navigate={props.navigateWorkspace}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "semantic-edits") {
+    return (
+      <SemanticEditWorkbenchPage
+        initialGraphSetId={queryValue("graphSet") || undefined}
+        initialTargetGraphIri={queryValue("graph") || undefined}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "semantic-runs") {
+    const runParam = queryValue("run");
+    const [runKind, runId] = runParam.includes(":") ? runParam.split(":") : ["", runParam];
+    return (
+      <SemanticRunsPage
+        initialRunId={runId || undefined}
+        initialRunKind={(runKind as "validation" | "reasoning" | "rule") || undefined}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "semantic-import-export") {
+    return (
+      <SemanticImportExportPage
+        initialGraphSetId={queryValue("graphSet") || undefined}
+        notify={props.notify}
+        request={governedRequest}
+      />
+    );
   }
 
   return (

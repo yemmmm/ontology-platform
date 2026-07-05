@@ -27,7 +27,28 @@
   visibility policy, and MCP tools implemented and covered by backend tests.
 - Phase 7 design: completed in
   `docs/semantic/phase7-canonical-rdf-dataset-migration.md`.
+- Implementation: Phase 7 migration-run/batch/parity-report metadata,
+  RdfStoreRepository migration-safe writes (put/replace-if-hash-matches/
+  apply-dataset-delta/drop), product command compilers, CanonicalSemanticWriteService,
+  SemanticMigrationService with preflight/dry-run/shadow/dual-write/cutover/
+  rollback, parity comparator registry, `/api/semantic/migrations:*` and
+  `/api/semantic/canonical-writes:*` endpoints, and MCP tools implemented and
+  covered by backend tests.
 - Phase 8 design: completed in `docs/semantic/phase8-frontend-workflow-reshaping.md`.
+- Implementation: Phase 8 frontend workspace reshape implemented. New
+  `Governance` stage groups six new workspace tabs (`graph-governance`,
+  `named-graphs`, `graph-sets`, `semantic-edits`, `semantic-runs`,
+  `semantic-import-export`). Pages consume existing `/api/semantic/*` contracts
+  through typed helpers in `frontend/src/semanticApi.ts`. Shared semantic
+  components (`AssertionKindBadge`, `GraphIriLabel`, `GraphEditabilityToggle`,
+  `GraphDeltaViewer`, `GraphSetSelector`, `SemanticWarningList`,
+  `ValidationReportPanel`, `ReasoningResultPanel`, `RuleResultPanel`,
+  `EvidenceBindingPanel`, `ProvenanceTimeline`, `ShaclFormRenderer`) live under
+  `frontend/src/components/semantic/`. Chinese translations cover the new
+  surface. Playwright smoke coverage in
+  `frontend/tests/semantic-governance.spec.ts` exercises graph governance,
+  named graph registry, graph set detail, semantic edit preview, semantic run
+  lookup, and import/export workflows.
 - Current platform state: existing custom ontology/domain model with PostgreSQL and Neo4j-backed
   behavior remains in place; Phase 4 governance metadata and Phase 5 rule-definition/run records
   live alongside it in Postgres.
