@@ -57,6 +57,13 @@ ALLOWED_TOOLS = {
     "execute_rule_definitions",
     "recall_background_knowledge",
     "get_publication_readiness",
+    "semantic_sparql_query",
+    "submit_semantic_edit",
+    "list_semantic_edit_audits",
+    "describe_semantic_graph_set",
+    "list_semantic_derived_pointers",
+    "check_semantic_staleness",
+    "get_semantic_governance_status",
 }
 
 

@@ -283,6 +283,7 @@ class SemanticSparqlQueryResponse(BaseModel):
     result: Any
     result_format: str
     truncated: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SemanticValidationRunRequest(BaseModel):
@@ -304,6 +305,9 @@ class SemanticReasoningRunRequest(BaseModel):
     source_graph_iris: list[str]
     tasks: list[str] = Field(default_factory=lambda: ["consistency"])
     persist_result_graph: bool = False
+    graph_set_id: str | None = None
+    engine_version: str | None = None
+    shape_version: str | None = None
 
 
 class SemanticReasoningRunResponse(BaseModel):
@@ -314,6 +318,7 @@ class SemanticReasoningRunResponse(BaseModel):
     entailments: list[dict[str, Any]] = Field(default_factory=list)
     result_graph_iri: str | None = None
     error: str | None = None
+    derived_pointer: dict[str, Any] | None = None
 
 
 class SemanticEditRequest(BaseModel):
@@ -324,14 +329,34 @@ class SemanticEditRequest(BaseModel):
     shape_graph_iris: list[str] = Field(default_factory=list)
     actor: str | None = None
     reason: str | None = None
+    evidence_status: Literal["evidence_bound", "missing_evidence"] | None = None
+    warning_state: dict[str, Any] = Field(default_factory=dict)
 
 
 class SemanticEditResponse(BaseModel):
+    audit_id: str
     applied: bool
     affected_graph_iris: list[str]
     delta: dict[str, Any]
     warnings: list[str] = Field(default_factory=list)
     validation: dict[str, Any] | None = None
+    graph_revisions: dict[str, int] = Field(default_factory=dict)
+    stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SemanticEditAuditRead(BaseModel):
+    id: str
+    actor: str | None = None
+    reason: str | None = None
+    input_format: str
+    target_graph_iri: str | None = None
+    affected_graph_iris: list[str]
+    validation_result: dict[str, Any] | None = None
+    graph_delta: dict[str, Any]
+    evidence_status: str | None = None
+    warning_state: dict[str, Any]
+    applied: bool
+    created_at: datetime
 
 
 class SemanticGraphEditabilityRequest(BaseModel):
@@ -1081,3 +1106,107 @@ class PublicationReadinessRead(BaseModel):
 
 class PublicationConfirm(BaseModel):
     confirm: bool
+
+
+class SemanticGraphMember(BaseModel):
+    graph_iri: str
+    role: str
+    required: bool = True
+    sort_order: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticGraphRegistryCreate(BaseModel):
+    graph_iri: str
+    category: str
+    owner_type: str | None = None
+    owner_id: str | None = None
+    mutable_by_direct_edit: bool | None = None
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticGraphRegistryRead(BaseModel):
+    graph_iri: str
+    category: str
+    registered: bool
+    owner_type: str | None = None
+    owner_id: str | None = None
+    mutable_by_direct_edit: bool | None = None
+    editable: bool | None = None
+    editability_reason: str | None = None
+    revision: int | None = None
+    content_hash: str | None = None
+    derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticGraphRegistryListResponse(BaseModel):
+    graphs: list[SemanticGraphRegistryRead]
+    summary: dict[str, Any]
+
+
+class SemanticGraphSetCreate(BaseModel):
+    name: str
+    scope_type: str
+    scope_id: str | None = None
+    members: list[SemanticGraphMember]
+    created_by: str | None = None
+    supersedes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticGraphSetMembershipUpdate(BaseModel):
+    members: list[SemanticGraphMember]
+
+
+class SemanticGraphSetRead(BaseModel):
+    id: str
+    name: str
+    scope_type: str
+    scope_id: str | None
+    status: str
+    source_signature: str
+    created_by: str | None = None
+    members: list[dict[str, Any]]
+    current_pointers: list[dict[str, Any]]
+    metadata: dict[str, Any]
+
+
+class SemanticGraphSetListResponse(BaseModel):
+    graph_sets: list[SemanticGraphSetRead]
+
+
+class SemanticGraphSetReasoningRunRequest(BaseModel):
+    tasks: list[str] = Field(default_factory=lambda: ["consistency"])
+    persist_result_graph: bool = True
+    engine_version: str | None = None
+    shape_version: str | None = None
+
+
+class SemanticDerivedResultReconcileResponse(BaseModel):
+    graph_sets_inspected: int
+    pointers_marked_current: int
+    pointers_marked_stale: int
+
+
+class SemanticGraphGcRequest(BaseModel):
+    target_kind: Literal["reasoning_result"] = "reasoning_result"
+    dry_run: bool = False
+    retention_days: int | None = Field(default=None, ge=0)
+
+
+class SemanticGraphGcResponse(BaseModel):
+    gc_run_id: str
+    target_kind: str
+    status: str
+    candidate_count: int
+    deleted_count: int
+    dry_run: bool
+    deleted_graph_iris: list[str]
+    errors: list[dict[str, Any]]
+
+
+class SemanticGovernanceStatusResponse(BaseModel):
+    graphs: dict[str, Any]
+    derived: dict[str, Any]

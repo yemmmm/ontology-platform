@@ -855,6 +855,25 @@ class SemanticGraphStateModel(Base):
     )
 
 
+class SemanticEditAuditModel(Base):
+    __tablename__ = "semantic_edit_audits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str | None] = mapped_column(Text)
+    input_format: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_graph_iri: Mapped[str | None] = mapped_column(Text)
+    affected_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    validation_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    graph_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    evidence_status: Mapped[str | None] = mapped_column(String(64))
+    warning_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    applied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class SemanticValidationRunModel(Base):
     __tablename__ = "semantic_validation_runs"
 
@@ -898,3 +917,129 @@ class SemanticProjectionJobModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     job_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticGraphRegistryModel(Base):
+    __tablename__ = "semantic_graph_registry"
+    __table_args__ = (
+        UniqueConstraint("graph_iri", name="uq_semantic_graph_registry_graph_iri"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    semantic_owner_type: Mapped[str | None] = mapped_column(String(40))
+    semantic_owner_id: Mapped[str | None] = mapped_column(String(255))
+    mutable_by_direct_edit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    managed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    registry_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticGraphRevisionModel(Base):
+    __tablename__ = "semantic_graph_revisions"
+    __table_args__ = (
+        UniqueConstraint("graph_iri", name="uq_semantic_graph_revisions_graph_iri"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    last_edit_audit_id: Mapped[str | None] = mapped_column(String(36))
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    changed_by: Mapped[str | None] = mapped_column(String(255))
+    revision_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+
+class SemanticGraphSetModel(Base):
+    __tablename__ = "semantic_graph_sets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope_id: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    source_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    graph_set_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    members: Mapped[list["SemanticGraphSetMemberModel"]] = relationship(
+        back_populates="graph_set",
+        cascade="all, delete-orphan",
+        order_by="SemanticGraphSetMemberModel.sort_order",
+    )
+
+
+class SemanticGraphSetMemberModel(Base):
+    __tablename__ = "semantic_graph_set_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "graph_set_id", "graph_iri", name="uq_semantic_graph_set_members_set_graph"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_set_id: Mapped[str] = mapped_column(
+        ForeignKey("semantic_graph_sets.id", ondelete="CASCADE"), nullable=False
+    )
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(String(40), nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    member_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+
+    graph_set: Mapped[SemanticGraphSetModel] = relationship(back_populates="members")
+
+
+class SemanticDerivedResultPointerModel(Base):
+    __tablename__ = "semantic_derived_result_pointers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    result_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    result_graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    source_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    engine_name: Mapped[str | None] = mapped_column(String(255))
+    engine_version: Mapped[str | None] = mapped_column(String(255))
+    rule_version: Mapped[str | None] = mapped_column(String(255))
+    shape_version: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="current", nullable=False)
+    became_current_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pointer_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SemanticGraphGcRunModel(Base):
+    __tablename__ = "semantic_graph_gc_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    deleted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    gc_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)

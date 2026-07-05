@@ -12,8 +12,12 @@
 - Phase 0 technical route: decided and documented.
 - Phase 1 design: completed in `docs/semantic/phase1-runtime-spine.md`.
 - Implementation: Phase 1 runtime spine implemented and covered by backend tests.
+- Phase 4 design: completed in `docs/semantic/phase4-named-graph-governance-runtime-state.md`.
+- Implementation: Phase 4 named-graph governance (graph registry, graph sets, derived-result
+  pointers, staleness reconciliation, reasoning-result GC) implemented and covered by backend
+  tests.
 - Current platform state: existing custom ontology/domain model with PostgreSQL and Neo4j-backed
-  behavior remains in place.
+  behavior remains in place; Phase 4 governance metadata lives alongside it in Postgres.
 - Target platform state: canonical semantic state is an RDF Dataset in an RDF-native store, with
   governed semantic edits, SHACL validation, OWL reasoning, and rebuildable projections.
 
@@ -192,6 +196,8 @@ Acceptance criteria:
 
 Goal: make graph-native boundaries the platform governance model and remove draft/published
 assumptions from the semantic refactor path.
+
+Detailed implementation note: `docs/semantic/phase4-named-graph-governance-runtime-state.md`.
 
 Implementation focus:
 

@@ -66,6 +66,7 @@ class SparqlResult:
     result: Any
     result_format: str = "application/sparql-results+json"
     truncated: bool = False
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -161,6 +162,31 @@ class RdfStoreRepository:
         if isinstance(result.result, dict):
             return bool(result.result.get("boolean"))
         return False
+
+    def clear_graph(self, graph_iri: str) -> UpdateResult:
+        """Drop all triples in the named graph but keep the graph context.
+
+        Uses a graph-scoped DELETE WHERE so other graphs are not affected.
+        """
+        update = f"DROP SILENT GRAPH <{graph_iri}>"
+        return self.update_sparql(update)
+
+    def graph_content_hash(self, graph_iri: str) -> str | None:
+        """Return a deterministic content hash for the graph or None when empty."""
+        query = (
+            f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_iri}> {{ ?s ?p ?o }} }}"
+        )
+        result = self.query_sparql(query, timeout_seconds=30, limit=100000)
+        text = result.result
+        if not text:
+            return None
+        if isinstance(text, dict):
+            text = str(text)
+        if not text.strip():
+            return None
+        import hashlib
+
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def health(self) -> dict[str, str]:
         try:

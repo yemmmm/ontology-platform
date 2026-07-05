@@ -1,33 +1,26 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from app.core.config import Settings
-from app.repositories.models import SemanticGraphStateModel
-from app.repositories.rdf_store import DatasetLoadResult, UpdateResult
-from app.services.semantic import LockedSemanticGraph, ReadOnlySparqlViolation, SemanticService
+from app.repositories.models import (
+    SemanticEditAuditModel,
+    SemanticGraphRegistryModel,
+    SemanticGraphRevisionModel,
+    SemanticGraphStateModel,
+)
+from app.repositories.rdf_store import DatasetLoadResult, SparqlResult, UpdateResult
+from app.services.semantic import (
+    LockedSemanticGraph,
+    ReadOnlySparqlViolation,
+    SemanticGraphPolicyViolation,
+    SemanticService,
+    UnsupportedSemanticEdit,
+)
 
 
 GRAPH = "http://ontology-platform.local/semantic/graph/data/demo"
-
-
-class FakeSession:
-    def __init__(self) -> None:
-        self.objects = []
-        self.commits = 0
-
-    def add(self, obj) -> None:
-        self.objects.append(obj)
-
-    def commit(self) -> None:
-        self.commits += 1
-
-    def scalar(self, statement):
-        for obj in self.objects:
-            if isinstance(obj, SemanticGraphStateModel) and obj.graph_iri == GRAPH:
-                return obj
-        return None
+RESULT_GRAPH = "http://ontology-platform.local/semantic/graph/reasoning-result/r1"
 
 
 class FakeRdfStore:
@@ -36,7 +29,7 @@ class FakeRdfStore:
         self.loaded = []
 
     def query_sparql(self, query, timeout_seconds, limit):
-        return SimpleNamespace(result={"ok": True}, result_format="json", truncated=False)
+        return SparqlResult(result={"ok": True}, result_format="json", truncated=False)
 
     def update_sparql(self, update):
         self.updates.append(update)
@@ -49,10 +42,32 @@ class FakeRdfStore:
     def export_dataset(self, format, graph_iris=None):
         return Path("tests/fixtures/semantic/tiny.trig").read_text(encoding="utf-8")
 
+    def graph_exists(self, graph_iri):
+        return False
 
-def test_load_trig_query_and_export_round_trip_boundary() -> None:
+    def get_graph(self, graph_iri, format):
+        return ""
+
+    def clear_graph(self, graph_iri):
+        return UpdateResult()
+
+    def graph_content_hash(self, graph_iri):
+        return None
+
+
+@pytest.fixture()
+def settings():
+    return Settings()
+
+
+@pytest.fixture()
+def service(in_memory_session, settings):
+    return SemanticService(in_memory_session, FakeRdfStore(), settings)
+
+
+def test_load_trig_query_and_export_round_trip_boundary(in_memory_session, settings) -> None:
     store = FakeRdfStore()
-    service = SemanticService(FakeSession(), store, Settings())
+    service = SemanticService(in_memory_session, store, settings)
 
     trig = Path("tests/fixtures/semantic/tiny.trig").read_text(encoding="utf-8")
     load_result = service.load_dataset(trig, "trig")
@@ -69,18 +84,18 @@ def test_load_trig_query_and_export_round_trip_boundary() -> None:
     assert "http://ontology-platform.local/semantic/graph/data/demo" in exported
 
 
-def test_read_sparql_rejects_write_forms() -> None:
-    service = SemanticService(FakeSession(), FakeRdfStore(), Settings())
-
+def test_read_sparql_rejects_write_forms(service) -> None:
     with pytest.raises(ReadOnlySparqlViolation):
         service.query_sparql("INSERT DATA { <s> <p> <o> }")
 
 
-def test_locked_graph_rejects_edit_without_mutation() -> None:
-    session = FakeSession()
-    session.add(SemanticGraphStateModel(id="state", graph_iri=GRAPH, editable=False))
+def test_locked_graph_rejects_edit_without_mutation(in_memory_session, settings) -> None:
+    in_memory_session.add(
+        SemanticGraphStateModel(id="state", graph_iri=GRAPH, editable=False)
+    )
+    in_memory_session.commit()
     store = FakeRdfStore()
-    service = SemanticService(session, store, Settings())
+    service = SemanticService(in_memory_session, store, settings)
 
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
     with pytest.raises(LockedSemanticGraph):
@@ -89,14 +104,158 @@ def test_locked_graph_rejects_edit_without_mutation() -> None:
     assert store.updates == []
 
 
-def test_turtle_edit_builds_insert_data_update() -> None:
-    store = FakeRdfStore()
-    service = SemanticService(FakeSession(), store, Settings())
-
+def test_turtle_edit_builds_insert_data_update(service, in_memory_session) -> None:
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
     result = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
 
     assert result["applied"] is True
+    assert result["audit_id"]
     assert result["affected_graph_iris"] == [GRAPH]
-    assert store.updates
-    assert "INSERT DATA" in store.updates[0]
+    assert service.rdf_store.updates
+    assert "INSERT DATA" in service.rdf_store.updates[0]
+    assert result["graph_revisions"][GRAPH] == 1
+
+
+def test_edit_records_audit_metadata(service, in_memory_session) -> None:
+    turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
+    result = service.apply_edit(
+        "turtle",
+        turtle,
+        target_graph_iri=GRAPH,
+        validate=False,
+        actor="agent:test",
+        reason="phase3 coverage",
+    )
+
+    audit = in_memory_session.get(SemanticEditAuditModel, result["audit_id"])
+    assert audit.actor == "agent:test"
+    assert audit.reason == "phase3 coverage"
+    assert audit.input_format == "turtle"
+    assert audit.target_graph_iri == GRAPH
+    assert audit.affected_graph_iris == [GRAPH]
+    assert audit.graph_delta["inserted_statements"]
+    assert "SHACL validation skipped by request" in audit.warning_state["warnings"]
+
+
+def test_edit_auto_registers_managed_graph_in_registry(service, in_memory_session) -> None:
+    turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
+    service.apply_edit(
+        "turtle",
+        turtle,
+        target_graph_iri=GRAPH,
+        validate=False,
+        actor="agent:test",
+    )
+
+    record = (
+        in_memory_session.query(SemanticGraphRegistryModel)
+        .filter(SemanticGraphRegistryModel.graph_iri == GRAPH)
+        .one()
+    )
+    assert record.category == "data"
+    assert record.mutable_by_direct_edit is True
+
+
+def test_edit_rejects_non_direct_editable_category(service) -> None:
+    turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
+    with pytest.raises(SemanticGraphPolicyViolation):
+        service.apply_edit(
+            "turtle",
+            turtle,
+            target_graph_iri=RESULT_GRAPH,
+            validate=False,
+        )
+    assert service.rdf_store.updates == []
+
+
+def test_edit_increments_revision_per_affected_graph(service, in_memory_session) -> None:
+    turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
+    first = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
+    second = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
+
+    assert first["graph_revisions"][GRAPH] == 1
+    assert second["graph_revisions"][GRAPH] == 2
+
+    revision = (
+        in_memory_session.query(SemanticGraphRevisionModel)
+        .filter(SemanticGraphRevisionModel.graph_iri == GRAPH)
+        .one()
+    )
+    assert revision.revision == 2
+
+
+def test_restricted_delete_insert_where_is_allowed_with_explicit_graphs(service) -> None:
+    update = f"""
+    DELETE {{ GRAPH <{GRAPH}> {{ ?s <http://example.test/old> ?old }} }}
+    INSERT {{ GRAPH <{GRAPH}> {{ ?s <http://example.test/new> ?old }} }}
+    WHERE  {{ GRAPH <{GRAPH}> {{ ?s <http://example.test/old> ?old }} }}
+    """
+
+    result = service.apply_edit("sparql-update", update, validate=False)
+
+    assert result["applied"] is True
+    assert result["delta"]["operation"] == "delete_insert_where"
+    assert result["affected_graph_iris"] == [GRAPH]
+    assert service.rdf_store.updates == [update]
+
+
+def test_restricted_delete_insert_where_rejects_variable_graphs(service) -> None:
+    update = """
+    DELETE { GRAPH ?g { ?s <http://example.test/old> ?old } }
+    INSERT { GRAPH ?g { ?s <http://example.test/new> ?old } }
+    WHERE  { GRAPH ?g { ?s <http://example.test/old> ?old } }
+    """
+
+    with pytest.raises(UnsupportedSemanticEdit):
+        service.apply_edit("sparql-update", update, validate=False)
+
+
+def test_missing_evidence_write_requires_explicit_warning_state(service) -> None:
+    content = """
+    @prefix op: <http://ontology-platform.local/semantic/vocab/> .
+    <http://ontology-platform.local/semantic/fact-claim/c1> op:evidenceStatus "missing_evidence" .
+    """
+
+    with pytest.raises(SemanticGraphPolicyViolation):
+        service.apply_edit("turtle", content, target_graph_iri=GRAPH, validate=False)
+
+
+def test_missing_evidence_write_returns_warning_when_explicit(service) -> None:
+    content = """
+    @prefix op: <http://ontology-platform.local/semantic/vocab/> .
+    <http://ontology-platform.local/semantic/fact-claim/c1> op:evidenceStatus "missing_evidence" .
+    """
+
+    result = service.apply_edit(
+        "turtle",
+        content,
+        target_graph_iri=GRAPH,
+        validate=False,
+        evidence_status="missing_evidence",
+        warning_state={"missing_evidence": True},
+    )
+
+    assert "missing evidence" in result["warnings"][0]
+
+
+def test_missing_evidence_read_returns_warning(in_memory_session, settings) -> None:
+    class MissingEvidenceStore(FakeRdfStore):
+        def query_sparql(self, query, timeout_seconds, limit):
+            return SparqlResult(
+                result={
+                    "results": {
+                        "bindings": [
+                            {
+                                "claim": {"type": "uri", "value": "http://example.test/c1"},
+                                "evidenceStatus": {"type": "literal", "value": "missing_evidence"},
+                            }
+                        ]
+                    }
+                }
+            )
+
+    service = SemanticService(in_memory_session, MissingEvidenceStore(), settings)
+
+    result = service.query_sparql("SELECT ?claim ?evidenceStatus WHERE { ?claim ?p ?evidenceStatus }")
+
+    assert result.warnings == ["SPARQL result includes facts with missing evidence status"]

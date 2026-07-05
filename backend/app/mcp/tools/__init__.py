@@ -16,6 +16,7 @@ from app.mcp.tools.graph import register_graph
 from app.mcp.tools.interview import register_interview
 from app.mcp.tools.proposals import register_proposals
 from app.mcp.tools.publication import register_publication
+from app.mcp.tools.semantic import register_semantic
 from app.mcp.tools.system import register_system
 
 
@@ -29,6 +30,7 @@ def register_all(server: FastMCP) -> None:
     register_documents(server)
     register_facts(server)
     register_publication(server)
+    register_semantic(server)
 
 
 __all__ = ["register_all"]
