@@ -1162,6 +1162,7 @@ function WorkspaceContent(props: {
         readOnly={readOnly}
         relationTypes={props.relationTypes}
         request={governedRequest}
+        graphSetId={queryValue("graphSet") || undefined}
       />
     );
   }

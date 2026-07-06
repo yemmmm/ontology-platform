@@ -34,6 +34,7 @@ import type {
 import { compactId, prettyJson, splitCsv } from "../utils";
 import { useT } from "../i18n";
 import type { WorkbenchRequest } from "./workbenchTypes";
+import { CatalogMappingsStep } from "./CatalogMappingsStep";
 
 type CatalogPageProps = {
   projectId: string;
@@ -44,6 +45,7 @@ type CatalogPageProps = {
   entities: Entity[];
   readOnly?: boolean;
   request: WorkbenchRequest;
+  graphSetId?: string;
 };
 
 type SourceForm = {
@@ -288,6 +290,7 @@ type WizardShared = {
   fields: ExternalField[];
   busy: boolean;
   run: (action: () => Promise<void>) => Promise<void>;
+  graphSetId?: string;
 };
 
 function CatalogWizard(props: WizardShared) {
@@ -588,20 +591,37 @@ function CatalogWizard(props: WizardShared) {
           />
         )}
 
-        {step === 4 && (
-          <MappingStep
-            form={mappingForm}
-            setForm={setMappingForm}
-            existing={props.fields}
-            targetOptions={targetOptions}
-            addedCount={mappingAddedCount}
-            busy={props.busy}
-            readOnly={props.readOnly}
-            onCreate={(advance) => submitMapping(advance)}
-            onUseExistingField={useExistingField}
-            onBack={() => setStep(3)}
-          />
-        )}
+        {step === 4 &&
+          (props.graphSetId ? (
+            <CatalogMappingsStep
+              graphSetId={props.graphSetId}
+              ontologyId={props.ontologyId}
+              projectId={props.projectId}
+              classes={props.classes}
+              propertiesByClass={props.propertiesByClass}
+              relationTypes={props.relationTypes}
+              entities={props.entities}
+              fields={props.fields}
+              request={props.request}
+              readOnly={props.readOnly}
+              busy={props.busy}
+              onBack={() => setStep(3)}
+              onAdvance={() => setStep(5)}
+            />
+          ) : (
+            <MappingStep
+              form={mappingForm}
+              setForm={setMappingForm}
+              existing={props.fields}
+              targetOptions={targetOptions}
+              addedCount={mappingAddedCount}
+              busy={props.busy}
+              readOnly={props.readOnly}
+              onCreate={(advance) => submitMapping(advance)}
+              onUseExistingField={useExistingField}
+              onBack={() => setStep(3)}
+            />
+          ))}
 
         {step === 5 && (
           <TemplateStep
