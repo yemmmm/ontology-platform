@@ -378,6 +378,9 @@ export function readModel<T = SemanticReadModelEnvelope>(
     /** Stage 2 §6.3 fact-audit-queue composer: drives source-graph selection
      * (asserted / inferred / rule_derived / missing_evidence). */
     kind?: string;
+    /** Stage 3 §4.3 graph-set-delta composer: the other graph set id to
+     * diff against (passed as the `target` query param). */
+    target?: string;
   } = {},
 ) {
   const path = withParams(
@@ -387,6 +390,7 @@ export function readModel<T = SemanticReadModelEnvelope>(
       field_set: params.fieldSet ?? "summary",
       limit: params.limit,
       kind: params.kind,
+      target: params.target,
     },
   );
   return request<T>(path);
