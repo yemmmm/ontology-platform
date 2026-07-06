@@ -6,21 +6,38 @@ import type { CompetencyQuestion, WorkbenchRequest } from "./workbenchTypes";
 
 const briefFields = ["domain_name", "business_goal", "scope", "core_concepts", "identity_rules", "expected_granularity", "data_sources", "boundaries", "terminology", "inference_scope"];
 
-function parseObject(text: string): Record<string, unknown> {
-  if (!text.trim()) return {};
-  const value: unknown = JSON.parse(text);
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Query definition 必须是 JSON 对象。");
-  return value as Record<string, unknown>;
-}
+type QueryDefinition =
+  | { kind: "entity_count"; class_id: string; min_count: number }
+  | { kind: "relation_count"; relation_type_id: string; min_count: number }
+  | { kind: "sparql_count"; sparql: string; expected_min?: number; expected_max?: number };
 
 type EditorState = {
   question: string;
   importance: number;
-  queryDefinition: string;
+  queryDefinitionKind: "entity_count" | "relation_count" | "sparql_count";
+  entityClassId: string;
+  entityMinCount: number;
+  relationTypeId: string;
+  relationMinCount: number;
+  sparql: string;
+  sparqlExpectedMin: number | undefined;
+  sparqlExpectedMax: number | undefined;
   sourceBriefFields: string[];
 };
 
-const emptyEditor: EditorState = { question: "", importance: 3, queryDefinition: "{}", sourceBriefFields: [] };
+const emptyEditor: EditorState = {
+  question: "",
+  importance: 3,
+  queryDefinitionKind: "entity_count",
+  entityClassId: "",
+  entityMinCount: 1,
+  relationTypeId: "",
+  relationMinCount: 1,
+  sparql: "SELECT (COUNT(*) AS ?count) WHERE { GRAPH ?g { ?s ?p ?o } }",
+  sparqlExpectedMin: undefined,
+  sparqlExpectedMax: undefined,
+  sourceBriefFields: [],
+};
 
 export type CompetencyQuestionsPageProps = {
   projectId: string;
@@ -80,21 +97,47 @@ export function CompetencyQuestionsPage({ projectId, ontologyId, readOnly = fals
 
   const openEditor = (question: CompetencyQuestion | "new") => {
     setEditing(question);
-    setEditor(question === "new" ? emptyEditor : {
-      question: question.question,
-      importance: question.importance,
-      queryDefinition: JSON.stringify(question.query_definition, null, 2),
-      sourceBriefFields: question.source_brief_fields,
-    });
+    if (question === "new") {
+      setEditor(emptyEditor);
+    } else {
+      const q = (question.query_definition || {}) as QueryDefinition;
+      const kind = (q.kind || "entity_count") as EditorState["queryDefinitionKind"];
+      setEditor({
+        question: question.question,
+        importance: question.importance,
+        queryDefinitionKind: kind,
+        entityClassId: q.kind === "entity_count" ? q.class_id : "",
+        entityMinCount: q.kind === "entity_count" ? q.min_count : 1,
+        relationTypeId: q.kind === "relation_count" ? q.relation_type_id : "",
+        relationMinCount: q.kind === "relation_count" ? q.min_count : 1,
+        sparql: q.kind === "sparql_count" ? q.sparql : emptyEditor.sparql,
+        sparqlExpectedMin: q.kind === "sparql_count" ? q.expected_min : undefined,
+        sparqlExpectedMax: q.kind === "sparql_count" ? q.expected_max : undefined,
+        sourceBriefFields: question.source_brief_fields,
+      });
+    }
   };
 
   const saveEditor = async () => {
     if (!editing || !editor.question.trim()) return;
-    let queryDefinition: Record<string, unknown>;
-    try { queryDefinition = parseObject(editor.queryDefinition); } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-      return;
+    let queryDefinition: QueryDefinition;
+    if (editor.queryDefinitionKind === "entity_count") {
+      queryDefinition = { kind: "entity_count", class_id: editor.entityClassId, min_count: editor.entityMinCount };
+    } else if (editor.queryDefinitionKind === "relation_count") {
+      queryDefinition = { kind: "relation_count", relation_type_id: editor.relationTypeId, min_count: editor.relationMinCount };
+    } else {
+      if (editor.sparqlExpectedMin === undefined && editor.sparqlExpectedMax === undefined) {
+        setError(t("sparql_count 至少需要 expected_min 或 expected_max 之一"));
+        return;
+      }
+      queryDefinition = {
+        kind: "sparql_count",
+        sparql: editor.sparql,
+        expected_min: editor.sparqlExpectedMin,
+        expected_max: editor.sparqlExpectedMax,
+      };
     }
+
     const id = editing === "new" ? "new" : editing.id;
     await run(id, async () => {
       if (editing === "new") {
@@ -170,7 +213,56 @@ export function CompetencyQuestionsPage({ projectId, ontologyId, readOnly = fals
       <div className="stackForm">
         <label><span>{t("自然语言问题")}</span><textarea className="questionBox" value={editor.question} onChange={(event) => setEditor((current) => ({ ...current, question: event.target.value }))} /></label>
         <label><span>{t("重要度（1–5）")}</span><input type="number" min={1} max={5} value={editor.importance} onChange={(event) => setEditor((current) => ({ ...current, importance: Number(event.target.value) }))} /></label>
-        <label><span>{t("Query definition（JSON）")}</span><textarea className="codeArea" value={editor.queryDefinition} onChange={(event) => setEditor((current) => ({ ...current, queryDefinition: event.target.value }))} /></label>
+        <label><span>Query kind</span>
+  <Select value={editor.queryDefinitionKind}
+    onChange={(v) => setEditor((c) => ({ ...c, queryDefinitionKind: v }))}
+    options={[
+      { value: "entity_count", label: "entity_count" },
+      { value: "relation_count", label: "relation_count" },
+      { value: "sparql_count", label: "sparql_count" },
+    ]} />
+</label>
+{editor.queryDefinitionKind === "entity_count" && (
+  <>
+    <label><span>Class ID</span>
+      <input value={editor.entityClassId}
+        onChange={(e) => setEditor((c) => ({ ...c, entityClassId: e.target.value }))} />
+    </label>
+    <label><span>{t("最小数量")}</span>
+      <input type="number" min={0} value={editor.entityMinCount}
+        onChange={(e) => setEditor((c) => ({ ...c, entityMinCount: Number(e.target.value) }))} />
+    </label>
+  </>
+)}
+{editor.queryDefinitionKind === "relation_count" && (
+  <>
+    <label><span>Relation Type ID</span>
+      <input value={editor.relationTypeId}
+        onChange={(e) => setEditor((c) => ({ ...c, relationTypeId: e.target.value }))} />
+    </label>
+    <label><span>{t("最小数量")}</span>
+      <input type="number" min={0} value={editor.relationMinCount}
+        onChange={(e) => setEditor((c) => ({ ...c, relationMinCount: Number(e.target.value) }))} />
+    </label>
+  </>
+)}
+{editor.queryDefinitionKind === "sparql_count" && (
+  <>
+    <label><span>SPARQL SELECT</span>
+      <textarea className="codeArea" rows={6} value={editor.sparql}
+        placeholder="SELECT (COUNT(*) AS ?count) WHERE { GRAPH ?g { ... } }"
+        onChange={(e) => setEditor((c) => ({ ...c, sparql: e.target.value }))} />
+    </label>
+    <label><span>Expected min (可选)</span>
+      <input type="number" value={editor.sparqlExpectedMin ?? ""}
+        onChange={(e) => setEditor((c) => ({ ...c, sparqlExpectedMin: e.target.value === "" ? undefined : Number(e.target.value) }))} />
+    </label>
+    <label><span>Expected max (可选)</span>
+      <input type="number" value={editor.sparqlExpectedMax ?? ""}
+        onChange={(e) => setEditor((c) => ({ ...c, sparqlExpectedMax: e.target.value === "" ? undefined : Number(e.target.value) }))} />
+    </label>
+  </>
+)}
         <label><span>{t("来源 Brief 字段（批准前至少选择一个已确认字段，或由 API 关联访谈答案）")}</span><Select mode="multiple" style={{ width: "100%" }} value={editor.sourceBriefFields} onChange={(value: string[]) => setEditor((current) => ({ ...current, sourceBriefFields: value }))} options={briefFields.map((value) => ({ value, label: value }))} /></label>
       </div>
     </Modal>
