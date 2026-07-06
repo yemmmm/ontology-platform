@@ -141,6 +141,48 @@ def test_semantic_edit_endpoint_rejects_reasoning_result_graph(in_memory_session
     assert store.updates == []
 
 
+def test_semantic_edit_endpoint_returns_400_for_malformed_rdf(in_memory_session) -> None:
+    """Regression: malformed RDF must produce a structured 400, not an HTTP 500."""
+    store = FakeStore()
+    client = _client(store, in_memory_session)
+
+    response = client.post(
+        "/api/semantic/edits",
+        json={
+            "format": "turtle",
+            "content": "GARBAGE not valid turtle",
+            "target_graph_iri": GRAPH,
+            "validate": False,
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "parse" in detail.lower() or "syntax" in detail.lower()
+    assert store.updates == []
+
+
+def test_semantic_dataset_load_endpoint_returns_400_for_malformed_rdf(
+    in_memory_session,
+) -> None:
+    """Regression: malformed RDF at /datasets:load must produce a structured 400."""
+    store = FakeStore()
+    client = _client(store, in_memory_session)
+
+    response = client.post(
+        "/api/semantic/datasets:load",
+        json={
+            "format": "turtle",
+            "content": "GARBAGE not valid turtle",
+            "base_iri": "http://example.test/",
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "parse" in detail.lower() or "syntax" in detail.lower()
+
+
 def test_semantic_edit_audits_endpoint_lists_records(in_memory_session) -> None:
     in_memory_session.add(
         SemanticEditAuditModel(

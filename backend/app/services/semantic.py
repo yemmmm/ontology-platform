@@ -577,14 +577,25 @@ def _parse_rdf(content: str, format: str, base_iri: str) -> None:
 
 def _parse_graph(content: str, format: str, base_iri: str) -> Graph:
     graph = Graph()
-    graph.parse(data=content, format=format, publicID=base_iri)
+    try:
+        graph.parse(data=content, format=format, publicID=base_iri)
+    except Exception as exc:
+        raise SemanticServiceError(_format_parse_error(exc)) from exc
     return graph
 
 
 def _parse_dataset(content: str, format: str, base_iri: str) -> Dataset:
     dataset = Dataset()
-    dataset.parse(data=content, format=format, publicID=base_iri)
+    try:
+        dataset.parse(data=content, format=format, publicID=base_iri)
+    except Exception as exc:
+        raise SemanticServiceError(_format_parse_error(exc)) from exc
     return dataset
+
+
+def _format_parse_error(exc: BaseException) -> str:
+    message = str(exc).strip() or exc.__class__.__name__
+    return f"RDF parse error: {message}"
 
 
 def _combined_graph(rdf_store: RdfStoreRepository, graph_iris: list[str]) -> Graph:

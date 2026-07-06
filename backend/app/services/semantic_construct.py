@@ -61,7 +61,7 @@ def execute_construct_template(
     )
     query = validated
     if " limit " not in f" {query.lower()} ":
-        query = f"{query.rstrip()}\nLIMIT {statement_limit}"
+        query = f"{query.rstrip()} LIMIT {statement_limit}"
     result = rdf_store.query_sparql(query, timeout_seconds=timeout_seconds, limit=statement_limit)
     parsed = _parse_construct_result(result, graph_set_iris=graph_set_iris)
     parsed.truncated = result.truncated or len(parsed.statements) >= statement_limit

@@ -409,4 +409,4 @@ def _raise_for_rdf_response(response: httpx.Response, parse_error: type[RdfStore
 def _query_with_limit(query: str, limit: int) -> str:
     if " limit " in f" {query.lower()} ":
         return query
-    return f"{query.rstrip()}\nLIMIT {limit}"
+    return f"{query.rstrip()} LIMIT {limit}"

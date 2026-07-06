@@ -1,6 +1,6 @@
 """semantic projection manifests and graph-set-aware jobs
 
-Revision ID: 0015_semantic_projection_manifests
+Revision ID: 0015_semantic_proj_manifests
 Revises: 0014_semantic_rule_tables
 Create Date: 2026-07-05
 """
@@ -8,7 +8,7 @@ Create Date: 2026-07-05
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0015_semantic_projection_manifests"
+revision = "0015_semantic_proj_manifests"
 down_revision = "0014_semantic_rule_tables"
 branch_labels = None
 depends_on = None

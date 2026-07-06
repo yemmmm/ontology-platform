@@ -375,6 +375,27 @@ def test_validate_approved_construct_accepts_template_within_graph_set() -> None
     assert "CONSTRUCT" in result
 
 
+def test_execute_construct_template_injects_limit_with_space() -> None:
+    """Regression: Oxigraph rejects ``}\\nLIMIT`` — the helper must use a space."""
+    store = FakeStore(
+        construct_result=(
+            "@prefix ex: <http://example.test/> . ex:alice a ex:Person ."
+        )
+    )
+    execute_construct_template(
+        store,
+        "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
+        graph_set_iris=["http://example.test/"],
+        timeout_seconds=5,
+        statement_limit=42,
+    )
+    assert store.queries, "execute_construct_template should issue a SPARQL query"
+    sent_query = store.queries[0]
+    assert "LIMIT 42" in sent_query
+    assert "\nLIMIT" not in sent_query
+    assert sent_query.endswith(" LIMIT 42")
+
+
 def test_execute_construct_writes_only_to_result_graph(
     in_memory_session, graph_set_service
 ) -> None:

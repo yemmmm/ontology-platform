@@ -1,7 +1,7 @@
 """semantic migration runs, batches, and parity reports
 
 Revision ID: 0016_semantic_migration_tables
-Revises: 0015_semantic_projection_manifests
+Revises: 0015_semantic_proj_manifests
 Create Date: 2026-07-05
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0016_semantic_migration_tables"
-down_revision = "0015_semantic_projection_manifests"
+down_revision = "0015_semantic_proj_manifests"
 branch_labels = None
 depends_on = None
 
