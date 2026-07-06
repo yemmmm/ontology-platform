@@ -25,26 +25,6 @@ class ReadModelError(RuntimeError):
     status_code = 400
 
 
-def _member_editable(session: Any, graph_iri: str) -> bool:
-    """Stage 3 history-list helper: read the graph registry row for
-    ``graph_iri`` and return its ``mutable_by_direct_edit`` flag, defaulting
-    to True when the row is absent (matches the scope resolver's behaviour)."""
-    if session is None:
-        return True
-    from sqlalchemy import select
-
-    from app.repositories.models import SemanticGraphRegistryModel
-
-    row = session.scalar(
-        select(SemanticGraphRegistryModel).where(
-            SemanticGraphRegistryModel.graph_iri == graph_iri
-        )
-    )
-    if row is None:
-        return True
-    return bool(row.mutable_by_direct_edit)
-
-
 class _VisibilityPolicy(Protocol):
     def evaluate(
         self, graph_iri: str, visibility_context: dict[str, Any] | None
@@ -124,7 +104,7 @@ class SemanticReadModelService:
                 warnings=list(scope.warnings),
             )
         if template.name == "graph-set-history-list":
-            item = self._compose_graph_set_history_list(scope, field_set)
+            item = self._compose_graph_set_history_list(scope)
             return self._envelope(
                 template=template,
                 scope=scope,
@@ -133,7 +113,7 @@ class SemanticReadModelService:
             )
         if template.name == "graph-set-delta":
             item = self._compose_graph_set_delta(
-                scope, field_set, target, limit or template.default_limit
+                scope, target, limit or template.default_limit
             )
             return self._envelope(
                 template=template,
@@ -482,7 +462,6 @@ class SemanticReadModelService:
             staleness_row=staleness_row,
             missing_evidence=missing,
             open_edits=open_edits,
-            editable_graph_count=len(editable_graphs),
             projection_freshness=projection_freshness,
         )
         ready = all(g["status"] == "passed" for g in gates)
@@ -600,7 +579,6 @@ class SemanticReadModelService:
         staleness_row: dict[str, Any],
         missing_evidence: int,
         open_edits: int,
-        editable_graph_count: int,
         projection_freshness: dict[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Map staleness/missing-evidence/open-edits/projection signals to
@@ -626,7 +604,7 @@ class SemanticReadModelService:
             if state is None and stale_flag is None:
                 gate_status = "blocked"
                 label_state = "unknown"
-            elif state and state.get("status") == "stale" or stale_flag:
+            elif (isinstance(state, dict) and state.get("status") == "stale") or stale_flag:
                 gate_status = "warning"
                 label_state = "stale"
             else:
@@ -649,6 +627,8 @@ class SemanticReadModelService:
             "details": {"count": missing_evidence},
             "label": f"{missing_evidence} facts missing evidence",
         })
+        # open_edits is intentionally a warning (not a blocker): pending edits
+        # are recoverable — publication can proceed, but the user is alerted.
         gates.append({
             "gate": "open_edits",
             "status": "passed" if open_edits == 0 else "warning",
@@ -670,8 +650,25 @@ class SemanticReadModelService:
     # graph-set-history-list composer (Stage 3 §4.2)
     # ------------------------------------------------------------------
 
+    def _member_editable(self, graph_iri: str) -> bool:
+        """Stage 3 history-list helper: read the graph registry row for
+        ``graph_iri`` and return its ``mutable_by_direct_edit`` flag, defaulting
+        to True when the row is absent (matches the scope resolver's behaviour)."""
+        from sqlalchemy import select
+
+        from app.repositories.models import SemanticGraphRegistryModel
+
+        row = self.session.scalar(
+            select(SemanticGraphRegistryModel).where(
+                SemanticGraphRegistryModel.graph_iri == graph_iri
+            )
+        )
+        if row is None:
+            return True
+        return bool(row.mutable_by_direct_edit)
+
     def _compose_graph_set_history_list(
-        self, scope: ScopeResolution, field_set: str
+        self, scope: ScopeResolution
     ) -> dict[str, Any]:
         """List graph sets in the same scope as ``scope.graph_set_id``."""
         if self.session is None:
@@ -710,7 +707,7 @@ class SemanticReadModelService:
                     )
                 )
             )
-            any_editable = any(_member_editable(self.session, m.graph_iri) for m in members)
+            any_editable = any(self._member_editable(m.graph_iri) for m in members)
             latest_pointer = self.session.scalar(
                 select(
                     func.max(SemanticDerivedResultPointerModel.became_current_at)
@@ -744,7 +741,6 @@ class SemanticReadModelService:
     def _compose_graph_set_delta(
         self,
         scope: ScopeResolution,
-        field_set: str,
         target: str | None,
         limit: int,
     ) -> dict[str, Any]:

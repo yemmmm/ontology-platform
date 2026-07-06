@@ -560,8 +560,9 @@ graph set once.
    `graph/data/{id}`.
 4. **Trigger validation + reasoning.** POST `/graph-sets/{id}/validation-runs` and
    `/reasoning-runs`; wait for completion.
-5. **Read readiness — blocking case.** Assert `ready=false`, `blockers` includes
-   "open_edits" (because we just wrote without locking). Use `field_set=detail`.
+5. **Read readiness — warning case.** Assert `ready=true`, `warnings` includes
+   "open_edits" (because we just wrote without locking; pending edits are
+   recoverable so they warn rather than block). Use `field_set=detail`.
 6. **Lock the ontology graph.** `PATCH /graphs/{iri}/editability {false}`. Read
    readiness again — `editable_graph_count` decreased.
 7. **Lock the data graph.** Same. Read readiness — `ready=true`.
