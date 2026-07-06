@@ -1378,6 +1378,7 @@ class SemanticReadModelEnvelope(BaseModel):
     graph_set_id: str
     source_signature: str
     projection_version: str
+    model_name: str = ""
     include: str
     derived_state: dict[str, Any]
     warnings: list[dict[str, str]] = Field(default_factory=list)

@@ -9,10 +9,12 @@ the caller's visibility context are filtered out.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Protocol
 
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_read_scope import (
+    ScopeMember,
     ScopeResolution,
     SemanticReadScopeResolver,
 )
@@ -64,6 +66,14 @@ class SemanticReadModelService:
             allow_stale_derived=allow_stale_derived,
         )
         graph_iris = self._graph_iris_for_scope(scope, template)
+        if template.name == "graph-set-staleness":
+            items = [self._compose_graph_set_staleness(scope, field_set)]
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         query = template.body.replace("{limit}", str(bounded_limit))
         result = self.rdf_store.query_read_model(
@@ -95,11 +105,27 @@ class SemanticReadModelService:
                     decorated["evidence_ids"] = []
                     decorated["evidence_status"] = "not_applicable"
             items.append(decorated)
+        return self._envelope(
+            template=template,
+            scope=scope,
+            items=items,
+            warnings=warnings,
+        )
+
+    def _envelope(
+        self,
+        *,
+        template: ReadModelTemplate,
+        scope: ScopeResolution,
+        items: list[dict[str, Any]],
+        warnings: list[dict[str, str]],
+    ) -> dict[str, Any]:
         return {
             "graph_set_id": scope.graph_set_id,
             "source_signature": scope.source_signature,
             "projection_version": template.projection_version,
-            "include": include,
+            "model_name": template.name,
+            "include": scope.include,
             "derived_state": scope.derived_state,
             "warnings": warnings,
             "items": items,
@@ -207,3 +233,94 @@ class SemanticReadModelService:
         if self._is_stale(source_graph_iri, scope):
             return "derived_pointer_stale"
         return None
+
+    # ------------------------------------------------------------------
+    # graph-set-staleness composer
+    # ------------------------------------------------------------------
+
+    def _compose_graph_set_staleness(
+        self, scope: ScopeResolution, field_set: str
+    ) -> dict[str, Any]:
+        members: list[dict[str, Any]] = []
+        for member in scope.members:
+            entry: dict[str, Any] = {
+                "iri": member.graph_iri,
+                "role": member.role,
+                "editable": member.editable,
+                "validation_stale": self._member_stale(member, "validation"),
+                "reasoning_stale": self._member_stale(member, "reasoning"),
+                "rule_stale": self._member_stale(member, "rule"),
+                "last_semantic_edit_at": (
+                    member.last_edit_at.isoformat() if member.last_edit_at else None
+                ),
+            }
+            if field_set == "detail":
+                entry["derived_pointers"] = self._derived_pointers_for_member(member)
+            members.append(entry)
+        missing = self._missing_evidence_count(scope)
+        return {
+            "graph_set_id": scope.graph_set_id,
+            "members": members,
+            "missing_evidence_count": missing,
+            "last_semantic_edit_at": self._latest_member_edit_at(scope),
+        }
+
+    @staticmethod
+    def _member_stale(member: ScopeMember, kind: str) -> bool | None:
+        derived = member.derived_state or {}
+        state = derived.get(kind)
+        if not state:
+            return None
+        return state.get("status") == "stale"
+
+    @staticmethod
+    def _derived_pointers_for_member(member: ScopeMember) -> dict[str, Any]:
+        derived = member.derived_state or {}
+        out: dict[str, Any] = {}
+        for kind in ("validation", "reasoning", "rule"):
+            state = derived.get(kind)
+            if state:
+                out[kind] = {
+                    "result_graph_iri": state.get("result_graph_iri"),
+                    "became_current_at": (
+                        state["became_current_at"].isoformat()
+                        if isinstance(state.get("became_current_at"), datetime)
+                        else state.get("became_current_at")
+                    ),
+                    "engine_name": state.get("engine_name"),
+                    "engine_version": state.get("engine_version"),
+                    "rule_version": state.get("rule_version"),
+                    "shape_version": state.get("shape_version"),
+                }
+        return out
+
+    @staticmethod
+    def _latest_member_edit_at(scope: ScopeResolution) -> str | None:
+        timestamps = [
+            m.last_edit_at for m in scope.members if m.last_edit_at is not None
+        ]
+        if not timestamps:
+            return None
+        return max(timestamps).isoformat()
+
+    def _missing_evidence_count(self, scope: ScopeResolution) -> int:
+        template = get_template("graph-set-staleness")
+        iris = [m.graph_iri for m in scope.members]
+        if not iris:
+            return 0
+        query = template.body.replace(
+            "{graph_iris}", " ".join(f"<{i}>" for i in iris)
+        )
+        result = self.rdf_store.query_read_model(
+            query=query,
+            graph_iris=iris,
+            timeout_seconds=self.timeout_seconds,
+            limit=1,
+        )
+        rows = list(self._rows(result))
+        if not rows:
+            return 0
+        cell = rows[0].get("count")
+        if isinstance(cell, dict):
+            return int(cell.get("value", 0))
+        return int(cell)
