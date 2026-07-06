@@ -387,6 +387,20 @@ export const zh: TranslationMap = {
   "验证完成": "验证完成",
   "已发布": "已发布",
 
+  // BuildOverviewPage -- graph-set read model
+  "未知": "未知",
+  "已过期": "已过期",
+  "最新": "最新",
+  "可编辑": "可编辑",
+  "已锁定": "已锁定",
+  "活跃 Graph Set 状态": "活跃 Graph Set 状态",
+  "派生结果新鲜度": "派生结果新鲜度",
+  "当前本体还没有活跃的 graph-set。请先到 Governance 页面创建。": "当前本体还没有活跃的 graph-set。请先到 Governance 页面创建。",
+  "前往 Governance": "前往 Governance",
+  "前往 Governance 重新运行": "前往 Governance 重新运行",
+  "暂无成员图。": "暂无成员图。",
+  "基于活跃 graph-set 的状态、派生结果新鲜度与下一步操作。": "基于活跃 graph-set 的状态、派生结果新鲜度与下一步操作。",
+
   // ProjectBriefPage
   "Project Brief": "Project Brief",
   "维护领域边界和质量约束；确认后的字段可作为能力问题来源。": "维护领域边界和质量约束；确认后的字段可作为能力问题来源。",
