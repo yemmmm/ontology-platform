@@ -68,3 +68,45 @@ export type ProposalSummary = {
   created_at: string;
   updated_at: string;
 };
+
+export type GraphSetMemberStaleness = {
+  iri: string;
+  role: "asserted_ontology" | "asserted_data" | "reasoning_result" | "rule_result" | "validation_result" | string;
+  editable: boolean;
+  validation_stale: boolean | null;
+  reasoning_stale: boolean | null;
+  rule_stale: boolean | null;
+  last_semantic_edit_at: string | null;
+};
+
+export type GraphSetStaleness = {
+  graph_set_id: string;
+  members: GraphSetMemberStaleness[];
+  missing_evidence_count: number;
+  last_semantic_edit_at: string | null;
+};
+
+export type BriefSummary = {
+  completeness: number;
+  missing_fields: string[];
+};
+
+export type CompetencyQuestionSummary = {
+  total: number;
+  by_status: Record<string, number>;
+};
+
+export type NextAction = {
+  key: string;
+  label: string;
+  detail: string;
+  tab: string;
+};
+
+export type BuildOverviewResponse = {
+  ontology_id: string;
+  graph_set: GraphSetStaleness;
+  project_brief: BriefSummary;
+  competency_questions: CompetencyQuestionSummary;
+  next_actions: NextAction[];
+};
