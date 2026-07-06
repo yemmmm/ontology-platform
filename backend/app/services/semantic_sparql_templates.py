@@ -93,6 +93,26 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
+    "graph-set-staleness": ReadModelTemplate(
+        name="graph-set-staleness",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=True,
+        needs_rules=True,
+        default_limit=1,
+        assertion_kind="asserted",
+        evidence_status="mixed",
+        body="""# template: graph-set-staleness
+        # Composer-driven. The SemanticReadModelService branch assembles
+        # member/editable/staleness from Postgres; this SPARQL only fetches
+        # the missing-evidence count across the active graph-set members.
+        PREFIX op: <http://ontology-platform.local/semantic/op/>
+        SELECT (COUNT(*) AS ?count) WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g { ?s op:evidenceStatus "missing_evidence" . }
+        }
+        """,
+    ),
 }
 
 
