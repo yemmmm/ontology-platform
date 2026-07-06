@@ -296,11 +296,65 @@ def compile_update_evidence_status(
     )
 
 
+def compile_update_class(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    if "class_id" not in payload and "class_iri" not in payload:
+        raise InvalidCommandPayload("update_class requires class_id or class_iri")
+    class_id = payload.get("class_id")
+    class_iri = payload.get("class_iri") or (str(ns.resource("class", class_id)) if class_id else None)
+    if class_iri is None:
+        raise InvalidCommandPayload("update_class requires class_id or class_iri")
+    name = payload.get("name")
+    description = payload.get("description")
+    aliases: list[str] | None = payload.get("aliases")
+    parent_class_ids: list[str] | None = payload.get("parent_class_ids")
+
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    class_term = f"<{class_iri}>"
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+
+    if name is not None:
+        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
+        inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(name), graph_iri))
+    if description is not None:
+        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri))
+        if description:
+            inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", _literal_term(description), graph_iri))
+    if aliases is not None:
+        deletes.append((class_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri))
+        for alias in aliases:
+            inserts.append((class_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", _literal_term(alias), graph_iri))
+    if parent_class_ids is not None:
+        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#subClassOf>", "?o", graph_iri))
+        for parent_id in parent_class_ids:
+            inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#subClassOf>", f"<{ns.resource('class', parent_id)}>", graph_iri))
+
+    delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
+    source_ids = [class_id] if class_id else [class_iri]
+    return CompiledCommand(
+        command_kind="update_class",
+        delta=delta,
+        object_kind="class",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "class_id": class_id,
+            "class_iri": class_iri,
+            "fields_updated": [k for k in ("name", "description", "aliases", "parent_class_ids") if payload.get(k) is not None],
+        },
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
     "submit_assertion": compile_submit_assertion,
     "update_evidence_status": compile_update_evidence_status,
+    "update_class": compile_update_class,
 }
 
 
