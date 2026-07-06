@@ -3,13 +3,10 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from neo4j import Driver
 from sqlalchemy.orm import Session
 
 from app.api.schemas import AgentTestRequest
 from app.core.config import Settings
-from app.services import graph as graph_service
-from app.services.embedding import EmbeddingClient
 
 
 def _call_openai_compatible(
@@ -19,7 +16,7 @@ def _call_openai_compatible(
     model = settings.llm_model
     api_key = settings.llm_api_key
     if not api_key or not model:
-        return None, "LLM_API_KEY and LLM_MODEL are not configured; returned graph-context answer."
+        return None, "LLM_API_KEY and LLM_MODEL are not configured; cannot answer without graph context."
 
     base_url = settings.llm_base_url.rstrip("/")
     body = {
@@ -60,80 +57,43 @@ def _call_openai_compatible(
 
 
 def run_agent_test(
-    session: Session,
-    driver: Driver,
+    session: Session,  # noqa: ARG001 - kept for API compatibility
+    driver: Any,  # noqa: ARG001 - kept for API compatibility
     settings: Settings,
     payload: AgentTestRequest,
-    embedding_client: EmbeddingClient,
+    embedding_client: Any,  # noqa: ARG001 - kept for API compatibility
 ) -> dict[str, Any]:
-    warnings: list[str] = []
+    """Run the agent test.
+
+    Stage 3 B2 hard-cut: the legacy graph service (entity search/explain) was
+    deleted along with the legacy metadata stack. Until a semantic-stack
+    replacement ships, this returns a no-graph-context answer so the endpoint
+    stays reachable for the frontend ``AgentTestPage``.
+    """
+    warnings: list[str] = [
+        "Graph context unavailable: legacy entity search was removed in Stage 3 B2."
+    ]
     errors: list[str] = []
     tool_calls: list[dict[str, Any]] = []
 
-    search_result = graph_service.search_entities(
-        session,
-        driver,
-        payload.ontology_id,
-        payload.question,
-        class_id=None,
-        limit=5,
-        mode="hybrid",
-        embedding_client=embedding_client,
+    prompt = (
+        f"Question:\n{payload.question}\n\n"
+        "(No ontology graph context is available in this build.)"
     )
-    tool_calls.append(
-        {
-            "tool": "search_entities",
-            "arguments": {"ontology_id": payload.ontology_id, "query": payload.question, "limit": 5},
-            "result_count": search_result["count"],
-        }
-    )
-
-    explanations = []
-    for entity in search_result["results"][:3]:
-        explained = graph_service.explain_entity(
-            session,
-            driver,
-            payload.ontology_id,
-            entity["id"],
-            depth=1,
-            limit=10,
-        )
-        explanations.append(explained)
-        tool_calls.append(
-            {
-                "tool": "explain_entity",
-                "arguments": {"ontology_id": payload.ontology_id, "entity_id": entity["id"]},
-                "result": explained["explain_text"],
-            }
-        )
-
-    graph_context = {
-        "search_results": search_result["results"],
-        "explanations": explanations,
-    }
-    context_text = json.dumps(graph_context, ensure_ascii=False, default=str, indent=2)
-    prompt = f"Question:\n{payload.question}\n\nOntology graph context:\n{context_text}"
 
     answer, warning = _call_openai_compatible(settings, prompt)
     if warning:
         warnings.append(warning)
     if answer is None:
-        if search_result["results"]:
-            names = ", ".join(entity["name"] for entity in search_result["results"])
-            answer = (
-                f"Found {search_result['count']} matching graph entity/entities for the question: "
-                f"{names}. Configure LLM_API_KEY and LLM_MODEL for generated natural-language answers."
-            )
-        else:
-            answer = (
-                "No matching graph entities were found. Add entities or configure the LLM to reason "
-                "over broader context."
-            )
+        answer = (
+            "Agent test is unavailable in this build: the legacy entity graph "
+            "was removed and no semantic replacement is wired yet."
+        )
 
     return {
         "answer": answer,
         "tool_calls": tool_calls,
-        "graph_context": graph_context,
+        "graph_context": {},
         "prompt_preview": prompt[:4000],
         "warnings": warnings,
         "errors": errors,

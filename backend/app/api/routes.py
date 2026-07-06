@@ -3,31 +3,17 @@ from neo4j import Driver
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store
-from app.api.agent_test import router as agent_test_router
-from app.api.catalog import router as catalog_router
-from app.api.consistency import router as consistency_router
-from app.api.documents import router as documents_router
-from app.api.facts import router as facts_router
-from app.api.graph import router as graph_router
-from app.api.governance import router as governance_router
-from app.api.import_export import router as import_export_router
 from app.api.interview import router as interview_router
-from app.api.metadata import router as metadata_router
+from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
+from app.api.agent_test import router as agent_test_router
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.health import check_neo4j, check_oxigraph, check_postgres
 
 router = APIRouter()
-router.include_router(metadata_router)
-router.include_router(catalog_router)
-router.include_router(graph_router)
-router.include_router(import_export_router)
+router.include_router(ontologies_router)
 router.include_router(agent_test_router)
-router.include_router(consistency_router)
-router.include_router(governance_router)
 router.include_router(interview_router)
-router.include_router(documents_router)
-router.include_router(facts_router)
 router.include_router(semantic_router)
 
 

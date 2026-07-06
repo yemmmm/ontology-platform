@@ -4,40 +4,12 @@ from app.mcp.server import mcp
 from app.mcp.tools import register_all
 
 
+# Stage 3 B2 hard-cut: the only surviving MCP tool families are
+# - system (platform health probe)
+# - interview (brief, competency-questions CRUD — Stage 1 disposition K)
+# - semantic (the new RDF/graph-set stack)
 ALLOWED_TOOLS = {
     "check_platform_health",
-    "search_entities",
-    "get_entity",
-    "find_related_entities",
-    "validate_entity",
-    "explain_entity",
-    "list_data_sources",
-    "create_data_source",
-    "update_data_source",
-    "list_data_resources",
-    "create_data_resource",
-    "update_data_resource",
-    "list_external_fields",
-    "create_external_field",
-    "update_external_field",
-    "list_semantic_mappings",
-    "create_semantic_mapping",
-    "update_semantic_mapping",
-    "list_connector_templates",
-    "create_connector_template",
-    "update_connector_template",
-    "run_connector_query",
-    "analyze_identifier_resolution",
-    "submit_proposal",
-    "submit_proposal_json",
-    "propose_schema_changes",
-    "propose_entities",
-    "propose_relations",
-    "propose_entity_merges",
-    "propose_rules",
-    "validate_proposal",
-    "validate_draft",
-    "get_proposal_status",
     "get_build_context",
     "get_project_brief",
     "save_interview_answer",
@@ -45,18 +17,6 @@ ALLOWED_TOOLS = {
     "list_competency_questions",
     "propose_competency_questions",
     "validate_competency_question",
-    "list_evidence_artifacts",
-    "get_evidence_artifact_status",
-    "get_evidence_artifact_chunks",
-    "list_source_documents",
-    "get_source_document_status",
-    "get_source_document_chunks",
-    "generate_fact_claims",
-    "list_fact_claims",
-    "sample_fact_claims",
-    "execute_rule_definitions",
-    "recall_background_knowledge",
-    "get_publication_readiness",
     "semantic_sparql_query",
     "submit_semantic_edit",
     "list_semantic_edit_audits",
@@ -84,6 +44,8 @@ ALLOWED_TOOLS = {
 }
 
 
+# Tools that must never come back: legacy governance/publication/catalog/
+# graph/documents/facts machinery is gone for good post-B2.
 FORBIDDEN_TOOLS = {
     "approve_proposal",
     "apply_approved_proposal",
@@ -92,6 +54,50 @@ FORBIDDEN_TOOLS = {
     "publish_version",
     "deprecate_version",
     "get_review_workspace_link",
+    "submit_proposal",
+    "submit_proposal_json",
+    "propose_schema_changes",
+    "propose_entities",
+    "propose_relations",
+    "propose_entity_merges",
+    "propose_rules",
+    "validate_proposal",
+    "validate_draft",
+    "get_proposal_status",
+    "search_entities",
+    "get_entity",
+    "find_related_entities",
+    "validate_entity",
+    "explain_entity",
+    "list_data_sources",
+    "create_data_source",
+    "update_data_source",
+    "list_data_resources",
+    "create_data_resource",
+    "update_data_resource",
+    "list_external_fields",
+    "create_external_field",
+    "update_external_field",
+    "list_semantic_mappings",
+    "create_semantic_mapping",
+    "update_semantic_mapping",
+    "list_connector_templates",
+    "create_connector_template",
+    "update_connector_template",
+    "run_connector_query",
+    "analyze_identifier_resolution",
+    "list_evidence_artifacts",
+    "get_evidence_artifact_status",
+    "get_evidence_artifact_chunks",
+    "list_source_documents",
+    "get_source_document_status",
+    "get_source_document_chunks",
+    "generate_fact_claims",
+    "list_fact_claims",
+    "sample_fact_claims",
+    "execute_rule_definitions",
+    "recall_background_knowledge",
+    "get_publication_readiness",
 }
 
 
@@ -111,70 +117,6 @@ def test_register_all_is_idempotent() -> None:
     register_all(mcp)
     after = _tool_names()
     assert before == after == ALLOWED_TOOLS
-
-
-def test_compatibility_tools_use_scalar_arguments() -> None:
-    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
-
-    assert tools["submit_proposal_json"].inputSchema["required"] == ["proposal_json"]
-    assert tools["submit_proposal_json"].inputSchema["properties"]["proposal_json"]["type"] == "string"
-    assert set(tools["get_source_document_chunks"].inputSchema["properties"]) == {
-        "document_id",
-        "offset",
-        "limit",
-    }
-    assert set(tools["get_evidence_artifact_chunks"].inputSchema["properties"]) == {
-        "artifact_id",
-        "offset",
-        "limit",
-    }
-
-
-def test_catalog_crud_tools_take_project_id_and_body() -> None:
-    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
-
-    create_tools = [
-        "create_data_source",
-        "create_data_resource",
-        "create_external_field",
-        "create_semantic_mapping",
-        "create_connector_template",
-    ]
-    update_tools = [
-        "update_data_source",
-        "update_data_resource",
-        "update_external_field",
-        "update_semantic_mapping",
-        "update_connector_template",
-    ]
-    for name in create_tools:
-        schema = tools[name].inputSchema
-        assert schema["required"] == ["project_id", _body_field_for(name)], name
-        assert schema["properties"]["project_id"]["type"] == "string", name
-        assert schema["properties"][_body_field_for(name)]["type"] == "object", name
-    for name in update_tools:
-        schema = tools[name].inputSchema
-        assert schema["required"] == ["project_id", _id_field_for(name), "update"], name
-        assert schema["properties"]["update"]["type"] == "object", name
-
-
-def _body_field_for(name: str) -> str:
-    return name[len("create_") :]
-
-
-def _id_field_for(name: str) -> str:
-    suffix = name[len("update_") :]
-    if suffix == "data_source":
-        return "data_source_id"
-    if suffix == "data_resource":
-        return "resource_id"
-    if suffix == "external_field":
-        return "field_id"
-    if suffix == "semantic_mapping":
-        return "mapping_id"
-    if suffix == "connector_template":
-        return "template_id"
-    raise AssertionError(f"unknown update tool: {name}")
 
 
 def test_check_platform_health_takes_no_arguments() -> None:
