@@ -194,13 +194,6 @@ def test_class_topology_executes_and_decorates_rows(in_memory_session) -> None:
 
 
 def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None:
-    """KNOWN BUG (2026-07-06): the read-model decorator
-    (SemanticReadModelService._decorate_row) only inspects
-    class/entity/subject/iri keys for the row's IRI. The property-list
-    template projects ``?property``, so the decorated item's ``iri`` is
-    empty in production. The test asserts query issuance and label
-    decoration, not the IRI, to document the gap without blocking.
-    """
     _seed_graph_set(in_memory_session, [(ONTOLOGY_GRAPH, "asserted_ontology")])
     store = FakeStore(
         rows_by_marker={
@@ -219,6 +212,7 @@ def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None
     )
     assert body["items"]
     item = body["items"][0]
+    assert item["iri"] == f"{PREFIX}ns/property/email"
     assert item["label"] == "email"
     assert item["source_graph_iri"] == ONTOLOGY_GRAPH
     assert store.last_query is not None
@@ -337,10 +331,6 @@ def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> 
 
 
 def test_mapping_list_executes(in_memory_session) -> None:
-    """KNOWN BUG (2026-07-06): same decorator issue as property-list —
-    mapping-list projects ``?mapping`` but _decorate_row does not consult
-    that key, so the production item's ``iri`` is empty. The test asserts
-    label / source_graph_iri decoration, not the IRI."""
     _seed_graph_set(in_memory_session, [(ONTOLOGY_GRAPH, "asserted_ontology")])
     store = FakeStore(
         rows_by_marker={
@@ -357,6 +347,7 @@ def test_mapping_list_executes(in_memory_session) -> None:
     body = _read_model(client, "mapping-list")
     assert body["items"]
     item = body["items"][0]
+    assert item["iri"] == f"{PREFIX}ns/mapping/map-1"
     assert item["label"] == "student_no -> student"
     assert item["source_graph_iri"] == ONTOLOGY_GRAPH
 

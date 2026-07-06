@@ -195,7 +195,7 @@ class SemanticReadModelService:
         scope: ScopeResolution,
         template: ReadModelTemplate,
     ) -> dict[str, Any]:
-        iri = self._cell(row, "class") or self._cell(row, "entity") or self._cell(row, "subject") or self._cell(row, "iri") or ""
+        iri = self._row_iri(row, template)
         label = self._cell(row, "label")
         source_graph_iri = self._cell(row, "graph")
         if not source_graph_iri:
@@ -231,6 +231,23 @@ class SemanticReadModelService:
         if value is None:
             return None
         return str(value)
+
+    def _row_iri(self, row: dict[str, Any], template: ReadModelTemplate) -> str:
+        """Pick the row's primary IRI using the template's declared variable
+        first, then a small fallback chain so legacy / unknown templates that
+        project one of the common subject variables still resolve."""
+        primary = template.primary_iri_variable
+        if primary:
+            value = self._cell(row, primary)
+            if value:
+                return value
+            # Some templates' SELECT variables rename across versions; fall
+            # through to the legacy chain rather than returning empty.
+        for fallback in ("class", "entity", "subject", "iri"):
+            value = self._cell(row, fallback)
+            if value:
+                return value
+        return ""
 
     def _assertion_kind_for(
         self,

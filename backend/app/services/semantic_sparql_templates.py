@@ -22,6 +22,13 @@ class ReadModelTemplate:
     assertion_kind: str
     evidence_status: str
     body: str
+    # Name of the SELECT variable that holds the primary IRI for each row.
+    # ``SemanticReadModelService._decorate_row`` reads this column first when
+    # populating the item's ``iri`` / ``id`` fields. Composer templates
+    # (graph-set-staleness, entity-shape, fact-audit-queue) leave this empty
+    # because their items are assembled by dedicated composers, not by the
+    # generic decorator.
+    primary_iri_variable: str = ""
 
 
 _TEMPLATES: dict[str, ReadModelTemplate] = {
@@ -34,6 +41,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="class",
         body="""# template: schema-summary
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?class ?label ?graph WHERE {
@@ -52,6 +60,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="class",
         body="""# template: class-detail
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?class ?label ?graph WHERE {
@@ -69,6 +78,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="unknown",
+        primary_iri_variable="entity",
         body="""# template: entity-detail
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?entity ?label ?graph WHERE {
@@ -86,6 +96,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=1000,
         assertion_kind="asserted",
         evidence_status="unknown",
+        primary_iri_variable="subject",
         body="""# template: statement-list
         SELECT DISTINCT ?subject ?predicate ?object ?graph WHERE {
           GRAPH ?graph { ?subject ?predicate ?object . }
@@ -122,6 +133,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="class",
         body="""# template: class-topology
         # Returns one row per class with its label and parent IRI(s).
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
@@ -148,6 +160,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="property",
         body="""# template: property-list
         # Returns one row per property whose rdfs:domain is the given class.
         # Caller post-filters by class IRI; the SPARQL stays generic so the
@@ -176,6 +189,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="relation",
         body="""# template: relation-type-list
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -202,6 +216,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="shape",
         body="""# template: class-shape-generated
         # Reads SHACL NodeShapes from the derived generated sub-graph. Each
         # row is one (shape, targetClass) pair; PropertyShape rows are
@@ -227,6 +242,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="shape",
         body="""# template: class-shape-custom
         # Reads SHACL NodeShapes from the editable custom sub-graph.
         PREFIX sh: <http://www.w3.org/ns/shacl#>
@@ -250,6 +266,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="mixed",
+        primary_iri_variable="entity",
         body="""# template: entity-list
         # Returns one row per NamedIndividual in the asserted data graph.
         # Projects id, label, class_iri, and the op:evidenceStatus marker if
@@ -287,6 +304,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=1000,
         assertion_kind="asserted",
         evidence_status="mixed",
+        primary_iri_variable="source",
         body="""# template: entity-relations
         # Lists triples whose subject and object are both NamedIndividuals
         # and whose predicate is not rdf:type / rdfs:label / skos:altLabel.
@@ -337,6 +355,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="mapping",
         body="""# template: mapping-list
         # Returns op:SemanticMapping instances asserted in the ontology graph.
         PREFIX op: <http://ontology-platform.local/semantic/op/>
@@ -364,6 +383,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="not_applicable",
+        primary_iri_variable="mapping",
         body="""# template: import-graph-mappings
         # Returns op:SemanticMapping instances written into a specific import
         # run sub-graph (graph/import/{source_id}/{run_id}).
@@ -430,6 +450,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=500,
         assertion_kind="asserted",
         evidence_status="missing_evidence",
+        primary_iri_variable="subject",
         body="""# template: missing-evidence-list
         # Lightweight aggregator: returns every triple whose subject carries
         # the ``op:evidenceStatus "missing_evidence"`` marker, projected
