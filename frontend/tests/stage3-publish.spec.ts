@@ -375,8 +375,9 @@ test("graph set history page lists sets with status icons and member counts", as
   await expect(first).toHaveAttribute("data-status", "editable");
   await expect(second).toHaveAttribute("data-status", "locked");
 
-  // Member count is rendered (translate key uses {count}).
-  await expect(page.getByText("2 members").first()).toBeVisible();
+  // Member count is rendered (translate key uses {count}). Assert via row
+  // count (data-graph-set-id) instead of localized text to stay locale-stable.
+  await expect(page.locator('[data-graph-set-id]')).toHaveCount(2);
 });
 
 // ---------------------------------------------------------------------------
