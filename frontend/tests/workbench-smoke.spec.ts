@@ -252,6 +252,44 @@ async function mockApi(page: Page) {
       ontologies: [{ ...ontology, current_version: version }],
       competency_question_counts: {},
     };
+    else if (path === `/ontologies/${ontology.id}/build-overview`) body = {
+      ontology_id: ontology.id,
+      graph_set: {
+        graph_set_id: "gs-1",
+        members: [
+          {
+            iri: "https://x/graph/ontology/1",
+            role: "asserted_ontology",
+            editable: true,
+            validation_stale: false,
+            reasoning_stale: true,
+            rule_stale: false,
+            last_semantic_edit_at: "2026-07-05T00:00:00Z",
+          },
+          {
+            iri: "https://x/graph/data/1",
+            role: "asserted_data",
+            editable: true,
+            validation_stale: false,
+            reasoning_stale: false,
+            rule_stale: false,
+            last_semantic_edit_at: null,
+          },
+        ],
+        missing_evidence_count: 4,
+        last_semantic_edit_at: "2026-07-05T00:00:00Z",
+      },
+      project_brief: { completeness: 0.5, missing_fields: ["scope"] },
+      competency_questions: {
+        total: 3,
+        by_status: { draft: 1, approved: 0, testable: 0, passed: 2, failed: 0 },
+      },
+      next_actions: [
+        { key: "complete_brief", label: "完善 Project Brief", detail: "1 个字段待处理", tab: "brief" },
+        { key: "approve_questions", label: "批准能力问题", detail: "1 个草稿待批准", tab: "questions" },
+        { key: "recompute_derived", label: "重新运行推理 / 规则", detail: "派生结果已过期", tab: "governance" },
+      ],
+    };
     else if (path === `/projects/${project.id}/brief`) body = brief;
     else if (path.startsWith(`/projects/${project.id}/competency-questions`)) body = [];
     else if (path === `/projects/${project.id}/data-sources`) body = [];
@@ -386,4 +424,13 @@ test("catalog wizard renders step indicator and Test toggle", async ({ page }) =
   await page.getByRole("tab", { name: /Test/ }).click();
   await expect(page.getByText("Governed connector query").first()).toBeVisible();
   await expect(page.getByText("Identifier resolution analysis").first()).toBeVisible();
+});
+
+test("BuildOverview shows graph-set panel and next actions", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&tab=overview`);
+  await expect(page.getByRole("heading", { name: "构建概览" })).toBeVisible();
+  await expect(page.getByText("活跃 Graph Set 状态")).toBeVisible();
+  await expect(page.getByText("完善 Project Brief")).toBeVisible();
+  await expect(page.getByText("重新运行推理 / 规则")).toBeVisible();
 });
