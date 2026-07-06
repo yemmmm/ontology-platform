@@ -1198,6 +1198,42 @@ def read_model(
     return SemanticReadModelEnvelope(**envelope)
 
 
+# ----------------------------------------------------------------------------
+# Stage 2 — per-class SHACL form guidance (merged from generated + custom)
+# ----------------------------------------------------------------------------
+
+
+@router.get("/graph-sets/{graph_set_id}/shapes/classes/{class_iri:path}")
+def read_class_shape_guidance(
+    graph_set_id: str,
+    class_iri: str,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    from app.services.semantic_shape_endpoint_service import (
+        GraphSetNotFound,
+        OntologyGraphMissing,
+        SemanticShapeEndpointService,
+        ShapeEndpointError,
+    )
+
+    service = SemanticShapeEndpointService(session, rdf_store, settings)
+    try:
+        return service.read_merged_guidance(
+            graph_set_id=graph_set_id,
+            class_iri=class_iri,
+        )
+    except GraphSetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OntologyGraphMissing as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ShapeEndpointError as exc:
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+
+
 @router.get("/resources/{resource_iri:path}", response_model=SemanticResourceRead)
 def read_resource(
     resource_iri: str,
