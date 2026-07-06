@@ -31,6 +31,12 @@ class _VisibilityPolicy(Protocol):
     ) -> Any: ...
 
 
+class _ShapeEndpointProtocol(Protocol):
+    """Minimal interface SemanticShapeEndpointService satisfies."""
+
+    def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict[str, Any]: ...
+
+
 class SemanticReadModelService:
     def __init__(
         self,
@@ -39,12 +45,17 @@ class SemanticReadModelService:
         timeout_seconds: float = 5.0,
         default_limit: int = 500,
         visibility_policy: _VisibilityPolicy | None = None,
+        shape_endpoint: _ShapeEndpointProtocol | None = None,
     ) -> None:
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
         self.timeout_seconds = timeout_seconds
         self.default_limit = default_limit
         self.visibility_policy = visibility_policy
+        # shape_endpoint is injected by the API layer (which owns the SQLAlchemy
+        # session); unit tests can pass a fake. When None, entity-shape raises
+        # a ReadModelError at call time.
+        self.shape_endpoint = shape_endpoint
 
     def read_model(
         self,
@@ -55,6 +66,8 @@ class SemanticReadModelService:
         limit: int | None = None,
         field_set: str = "summary",
         visibility_context: dict[str, Any] | None = None,
+        entity_iri: str | None = None,
+        class_iri: str | None = None,
     ) -> dict[str, Any]:
         try:
             template = get_template(model_name)
@@ -68,6 +81,14 @@ class SemanticReadModelService:
         graph_iris = self._graph_iris_for_scope(scope, template)
         if template.name == "graph-set-staleness":
             items = [self._compose_graph_set_staleness(scope, field_set)]
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
+        if template.name == "entity-shape":
+            items = [self._compose_entity_shape(graph_set_id, entity_iri, class_iri)]
             return self._envelope(
                 template=template,
                 scope=scope,
@@ -233,6 +254,40 @@ class SemanticReadModelService:
         if self._is_stale(source_graph_iri, scope):
             return "derived_pointer_stale"
         return None
+
+    # ------------------------------------------------------------------
+    # entity-shape composer (Stage 2 §5.3)
+    # ------------------------------------------------------------------
+
+    def _compose_entity_shape(
+        self,
+        graph_set_id: str,
+        entity_iri: str | None,
+        class_iri: str | None,
+    ) -> dict[str, Any]:
+        """Delegate to SemanticShapeEndpointService to fetch merged guidance
+        for the entity's class. Caller must pass either ``class_iri`` directly,
+        or ``entity_iri`` plus a resolver that we can lookup against (deferred
+        to the shape endpoint service via class IRI lookup at present).
+        """
+        if self.shape_endpoint is None:
+            raise ReadModelError(
+                "entity-shape read model requires a shape endpoint service"
+            )
+        target = class_iri
+        if target is None:
+            if entity_iri is None:
+                raise ReadModelError(
+                    "entity-shape read model requires either class_iri or entity_iri"
+                )
+            raise ReadModelError(
+                "entity-shape read model cannot yet resolve class_iri from "
+                "entity_iri; supply class_iri explicitly"
+            )
+        return self.shape_endpoint.read_merged_guidance(
+            graph_set_id=graph_set_id,
+            class_iri=target,
+        )
 
     # ------------------------------------------------------------------
     # graph-set-staleness composer

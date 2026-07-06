@@ -281,3 +281,77 @@ def test_graph_set_staleness_summary_handles_no_derived_pointers():
     assert member.get("validation_stale") is None
     assert member.get("editable") is True
     assert member.get("role") == "asserted_data"
+
+
+# Stage 2 §5.3 — entity-shape composer delegation ---------------------------------------
+
+
+class FakeShapeEndpointService:
+    """Test double for SemanticShapeEndpointService.read_merged_guidance."""
+
+    def __init__(self, response: dict):
+        self._response = response
+        self.calls: list[tuple[str, str]] = []
+
+    def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict:
+        self.calls.append((graph_set_id, class_iri))
+        return self._response
+
+
+def test_entity_shape_composer_delegates_to_shape_endpoint_service():
+    """entity-shape read model short-circuits the SPARQL body and calls
+    SemanticShapeEndpointService.read_merged_guidance with the entity's
+    class IRI. The single item in the envelope is the merged guidance."""
+    resolution = _resolution(graph_iris=["https://example/graph/data/x"])
+    store = FakeStore({})
+    merged = {
+        "target_class": "http://op.local/ns/class/c1",
+        "fields": [{"path": "http://op.local/ns/property/p1", "provenance": "generated"}],
+    }
+    shape_service = FakeShapeEndpointService(merged)
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=1,
+        shape_endpoint=shape_service,
+    )
+
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="entity-shape",
+        entity_iri="http://op.local/ns/entity/e1",
+        class_iri="http://op.local/ns/class/c1",
+    )
+
+    # Composer delegated with the right IRIs.
+    assert shape_service.calls == [("gs-1", "http://op.local/ns/class/c1")]
+    # Envelope carries a single item wrapping the merged guidance.
+    assert len(envelope["items"]) == 1
+    assert envelope["items"][0]["target_class"] == "http://op.local/ns/class/c1"
+    assert envelope["items"][0]["fields"][0]["path"] == "http://op.local/ns/property/p1"
+    # And the store was never queried.
+    assert store.last_query is None
+
+
+def test_entity_shape_composer_requires_class_iri():
+    """Calling entity-shape without a class_iri (and no entity_iri resolver)
+    raises ReadModelError with a clear message."""
+    resolution = _resolution(graph_iris=["https://example/graph/data/x"])
+    store = FakeStore({})
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=1,
+        shape_endpoint=FakeShapeEndpointService({}),
+    )
+
+    import pytest
+
+    with pytest.raises(ReadModelError) as exc_info:
+        service.read_model(
+            graph_set_id="gs-1",
+            model_name="entity-shape",
+        )
+    assert "class_iri" in str(exc_info.value)

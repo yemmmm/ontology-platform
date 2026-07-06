@@ -220,10 +220,15 @@ def _read_model_service(
     rdf_store: RdfStoreRepository,
     settings: Settings,
 ) -> SemanticReadModelService:
+    from app.services.semantic_shape_endpoint_service import (
+        SemanticShapeEndpointService,
+    )
+
     return SemanticReadModelService(
         rdf_store=rdf_store,
         scope_resolver=_scope_resolver(session),
         visibility_policy=_visibility_policy(settings),
+        shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
     )
 
 
@@ -1177,6 +1182,8 @@ def read_model(
     allow_stale_derived: Annotated[bool, Query()] = True,
     field_set: Annotated[str, Query()] = "summary",
     limit: Annotated[int | None, Query(ge=1, le=2000)] = None,
+    entity: Annotated[str | None, Query()] = None,
+    class_iri: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1190,6 +1197,8 @@ def read_model(
             allow_stale_derived=allow_stale_derived,
             limit=limit,
             field_set=field_set,
+            entity_iri=entity,
+            class_iri=class_iri,
         )
     except (ReadModelError, ReadScopeError) as exc:
         raise HTTPException(
