@@ -323,3 +323,54 @@ def test_step8_export_returns_trig_package(
     # with media type application/trig regardless.
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/trig")
+
+
+# ---------------------------------------------------------------------------
+# Step 9 — build second graph set (history list)
+# ---------------------------------------------------------------------------
+
+
+def test_step9_build_second_graph_set(
+    fake_graph_set_with_members, second_graph_set_with_one_fewer_entity
+):
+    """Sanity: the second fixture builds and is queryable."""
+    svc, _ = fake_graph_set_with_members
+    other = second_graph_set_with_one_fewer_entity
+    env = svc.read_model(
+        other, "graph-set-history-list", field_set="summary"
+    )
+    rows = env["items"][0]
+    assert rows["total"] >= 2
+
+
+# ---------------------------------------------------------------------------
+# Step 10 — compute delta
+# ---------------------------------------------------------------------------
+
+
+def test_step10_compute_delta(
+    fake_graph_set_with_members, second_graph_set_with_one_fewer_entity
+):
+    svc, base = fake_graph_set_with_members
+    target = second_graph_set_with_one_fewer_entity
+    env = svc.read_model(
+        base,
+        "graph-set-delta",
+        field_set="detail",
+        target=target,
+    )
+    ad = next(r for r in env["items"][0]["roles"] if r["role"] == "asserted_data")
+    assert ad["counts"]["removed"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Step 11 — history list
+# ---------------------------------------------------------------------------
+
+
+def test_step11_history_list(fake_graph_set_with_members):
+    svc, gs = fake_graph_set_with_members
+    env = svc.read_model(gs, "graph-set-history-list", field_set="summary")
+    assert any(
+        r["graph_set_id"] == gs for r in env["items"][0]["graph_sets"]
+    )
