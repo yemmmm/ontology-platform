@@ -44,8 +44,8 @@ import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
+import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
 import { PublicationPage } from "./pages/PublicationPage";
-import { VersionsPage } from "./pages/VersionsPage";
 import { GraphGovernancePage } from "./pages/GraphGovernancePage";
 import { NamedGraphsPage } from "./pages/NamedGraphsPage";
 import { GraphSetPage } from "./pages/GraphSetPage";
@@ -897,17 +897,26 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "versions") {
-    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
+    const graphSetId = queryValue("graphSet");
+    if (!graphSetId) {
+      return (
+        <EmptyState
+          icon={<History size={22} />}
+          title={t("Select a graph set to view its history")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
+    }
     return (
-      <VersionsPage
-        ontology={props.ontology}
-        project={props.project}
+      <GraphSetHistoryPage
         request={governedRequest}
-        version={props.selectedVersion}
-        onVersionChange={(version) => {
-          props.setSelectedVersionId(version.id);
-          void props.reloadVersions();
-        }}
+        ontologyId={props.ontology.id}
+        graphSetId={graphSetId}
+        readOnly={readOnly}
       />
     );
   }
