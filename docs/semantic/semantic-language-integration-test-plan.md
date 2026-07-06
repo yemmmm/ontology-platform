@@ -409,6 +409,86 @@ Assertions:
 | `GET /rule-runs/{run_id}` polling | eventually status=succeeded | Rule result graph becomes effective pointer |
 | `POST /sparql:query` (Recall) | 200, bindings returned as asserted rows | Frontend renders rows in the fact queue with assertion_kind=asserted |
 
+### ClassesPage — topology / property / shape read models
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `GET /graph-sets/{gs}/read-models/class-topology` | 200 envelope | Returns class nodes + edges sourced from `asserted_ontology` members |
+| `GET /graph-sets/{gs}/read-models/property-list?class_iri=...` | 200 envelope | Returns rows for the selected class |
+| `GET /graph-sets/{gs}/shapes/classes/{class_iri_or_legacy_id}` | 200 envelope | Merged `ShaclFormGuidance`; each field carries `provenance` (`generated` vs `custom`) |
+| Same shape call after `create_shape` (min_count=1 on a property) | 200, custom constraint merged in | Field-level provenance badge switches from `generated` to `custom` for affected field |
+
+### ClassesPage — canonical-write kinds
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /canonical-writes:compile-and-apply` kind=create_class, asserted_ontology role present | 200, `applied=true`, ontology graph revision +1 | Writes `owl:Class` + `rdfs:label` into `graph/ontology/{id}`; mints IRI when no `legacy_id` |
+| Same kind=create_property for an existing class | 200, applied to `graph/ontology/{id}` | OWL property attached to the class |
+| Same kind=create_shape with min_count=1 constraint | 200, applied to `graph/shapes/{id}/custom` | Backend invalidates and recomputes `class-shape-merged` for the class |
+| Same kind=update_class (label change) | 200, ontology graph delta shows label triple update | |
+| Same kind=delete_class | 200, applied=true | Writes `op:deprecated true` (soft delete) on the class IRI; existing references surface structured compiler errors |
+| Same with graph set missing `asserted_ontology` role | 4xx structured error | Covers spec §4.7 edge case "Graph set has no `asserted_ontology` role" |
+
+### ClassesPage — frontend integration smoke
+
+| Step | Expected | Notes |
+| --- | --- | --- |
+| Visit `?tab=classes&graphSet=gs-test` | Page mounts, three mount-time reads fire | Covers spec §11 frontend-integration row for ClassesPage |
+| Class list renders from `class-topology` | Rows show label + parent | Empty state if graph set has no `asserted_ontology` role |
+| Select a class, observe `property-list` and merged shape panel | Both panels populate | |
+| Add custom constraint via shape editor, save | `create_shape` writes; merged guidance refetches with updated provenance | Covers Stage 2 §4.7 exit criteria |
+
+### EntitiesPage — read models
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `GET /graph-sets/{gs}/read-models/entity-list` | 200 envelope | Rows carry `class_iri`, `class_label`, `evidence_status`; sourced from `asserted_data` |
+| `GET /graph-sets/{gs}/read-models/entity-relations` | 200 envelope | Edges carry `provenance` (`asserted` / `inferred` / `rule_derived`); topology canvas colors accordingly |
+| `GET /graph-sets/{gs}/read-models/entity-shape?entity_iri=...&class_iri=...` | 200 envelope | Delegates to `/graph-sets/{gs}/shapes/classes/{class_iri}` and returns merged `ShaclFormGuidance` for the entity's class |
+
+### EntitiesPage — canonical-write kinds
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /canonical-writes:compile-and-apply` kind=create_entity (class_iri + label) | 200, applied to `graph/data/{id}` | Writes `a owl:NamedIndividual`, `rdfs:label`, class membership, and default `op:evidenceStatus "missing_evidence"` per ADR 0004 |
+| `GET .../entity-list` after create | Row shows `evidence_status="missing_evidence"` | Confirms default-evidence semantics propagate to read surface |
+| Same kind=create_relation between two entities | 200, applied to `graph/data/{id}` | Writes object-property triple |
+| `GET .../entity-relations` after create | Edge present with `provenance="asserted"` | |
+| Same kind=update_entity (label change) | 200, data graph label triple updated | |
+| Same kind=delete_entity | 200, applied=true | Entity and all relations it participates in are removed (cascade) |
+
+### EntitiesPage — frontend integration smoke
+
+| Step | Expected | Notes |
+| --- | --- | --- |
+| Visit `?tab=entities&graphSet=gs-test` | Page mounts, entity list renders from `entity-list` | Covers spec §11 frontend-integration row for EntitiesPage |
+| Open an entity | Drawer / form fetches `entity-shape` (delegated class shape) and renders fields | |
+| Create relation between two entities via UI | `create_relation` writes; `entity-relations` refetches | Covers Stage 2 §5.7 exit criteria |
+
+### Catalog mapping — read models
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `GET /graph-sets/{gs}/read-models/mapping-list?ontology_id=...` | 200 envelope | Returns mappings persisted to `graph/ontology/{id}` with `provenance="asserted"` |
+| `GET /graph-sets/{gs}/read-models/import-graph-mappings?source_id=...&run_id=...` | 200 envelope | Returns temporary mappings from `graph/import/{source_id}/{run_id}` with `provenance="imported"` |
+
+### Catalog mapping — canonical-write kinds
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /canonical-writes:compile-and-apply` kind=create_mapping (target_class_id + external_field_id + join_key + confidence) | 200, applied to `graph/ontology/{id}` | Writes `op:SemanticMapping` triple block |
+| Same kind=create_mapping with `source_id` + `run_id` | 200, applied to `graph/import/{source_id}/{run_id}` | Temporary mapping; not visible in `mapping-list` |
+| Same kind=update_mapping | 200, fields updated on the target mapping IRI | |
+| Same kind=delete_mapping | 200, mapping triples removed from target graph | |
+
+### Catalog mapping — regression and frontend smoke
+
+| Step | Expected | Notes |
+| --- | --- | --- |
+| Postgres connector objects (DataSource / DataResource / ExternalField / ConnectorTemplate) CRUD | Unchanged behavior (K) | Covers spec §7.1 split: K-side untouched |
+| `POST /connector-templates/{id}/query` | Writes to `graph/import/{source_id}/{run_id}`, not legacy fact table | Covers spec §7.5 connector execution re-wiring |
+| Visit `?tab=catalog&graphSet=gs-test` | Step 4 (Mappings) renders `mapping-list`; steps 1/2/3/5 keep current behavior | Covers spec §11 frontend-integration row for Catalog-mapping |
+
 ## Acceptance Gates
 
 The refactor is integration-ready when:
