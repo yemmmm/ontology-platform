@@ -123,3 +123,77 @@ def test_graph_set_history_list_returns_sets_in_scope(
         assert "locked_at" in r
         assert "member_count" in r
 
+
+# ---------------------------------------------------------------------------
+# Task A3 — graph-set-delta
+# ---------------------------------------------------------------------------
+
+
+def test_graph_set_delta_template_registered() -> None:
+    t = _TEMPLATES["graph-set-delta"]
+    assert t.projection_version == "1"
+    assert t.default_limit == 200
+
+
+def test_graph_set_delta_requires_target_query_param(fake_graph_set_with_members):
+    """Without ``target`` the composer raises a 400 ReadModelError."""
+    import pytest
+
+    from app.services.semantic_read_model import ReadModelError
+
+    svc, base_id = fake_graph_set_with_members
+    with pytest.raises(ReadModelError, match="target"):
+        svc.read_model(
+            graph_set_id=base_id,
+            model_name="graph-set-delta",
+            field_set="detail",
+        )
+
+
+def test_graph_set_delta_returns_per_role_triple_diff(
+    fake_graph_set_with_members, second_graph_set_with_one_fewer_entity
+):
+    """Given two graph sets differing by one triple in the asserted_data
+    role, the delta composer reports one removed triple group."""
+    svc, base_id = fake_graph_set_with_members
+    target_id = second_graph_set_with_one_fewer_entity
+    envelope = svc.read_model(
+        graph_set_id=base_id,
+        model_name="graph-set-delta",
+        field_set="detail",
+        target=target_id,
+    )
+    rows = envelope["items"][0]
+    assert rows["base_graph_set_id"] == base_id
+    assert rows["target_graph_set_id"] == target_id
+    role_map = {r["role"]: r for r in rows["roles"]}
+    assert "asserted_data" in role_map
+    ad = role_map["asserted_data"]
+    assert ad["counts"]["removed"] >= 1
+    assert len(ad["removed"]) >= 1
+    # Removed triples carry subject/predicate/object keys.
+    assert {"subject", "predicate", "object"} <= set(ad["removed"][0])
+
+
+def test_read_model_route_threads_target_query_param(
+    in_memory_session, fake_store, fake_graph_set_with_members,
+    second_graph_set_with_one_fewer_entity,
+):
+    """End-to-end route test: ``GET /read-models/graph-set-delta?target=...``
+    threads the target through to the composer and returns 200."""
+    from conftest_stage3 import client_for
+
+    base_id = fake_graph_set_with_members[1]
+    target_id = second_graph_set_with_one_fewer_entity
+    client = client_for(fake_store, in_memory_session)
+    response = client.get(
+        f"/api/semantic/graph-sets/{base_id}/read-models/graph-set-delta",
+        params={"include": "asserted", "target": target_id, "field_set": "detail"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    rows = body["items"][0]
+    assert rows["target_graph_set_id"] == target_id
+
+
+

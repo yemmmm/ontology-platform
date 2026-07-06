@@ -508,6 +508,21 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # pointers; see spec §4.2.
         """,
     ),
+    "graph-set-delta": ReadModelTemplate(
+        name="graph-set-delta",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: graph-set-delta
+        # Composer-driven. Reads the ``target`` query param to identify the
+        # second graph set, then for each role present in both sets computes
+        # the CONSTRUCT diff. See spec §4.3.
+        """,
+    ),
 }
 
 
