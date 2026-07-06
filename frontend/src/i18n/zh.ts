@@ -288,7 +288,8 @@ export const zh: TranslationMap = {
   "Dependencies": "依赖",
   "Check": "检查",
   "No health check yet": "尚未执行健康检查",
-  "Locked ontology versions are immutable. Turn mutability back on before making changes.": "已锁定的本体版本不可修改。请先开启可编辑模式再进行变更。",
+  "Locked ontology versions are immutable. Create a new draft to make changes.": "已锁定的本体版本不可修改。请创建新草稿以继续编辑。",
+  "Open Graph Sets": "打开图集",
 
   // Common UI
   "Dismiss": "关闭",

@@ -787,7 +787,7 @@ function WorkspaceContent(props: {
     (path, options) => {
       const method = (options?.method ?? "GET").toUpperCase();
       if (readOnly && method !== "GET" && method !== "HEAD") {
-        return Promise.reject(new Error(t("Locked ontology versions are immutable. Turn mutability back on before making changes.")));
+        return Promise.reject(new Error(t("Locked ontology versions are immutable. Create a new draft to make changes.")));
       }
       return props.request(path, options);
     },
@@ -801,7 +801,17 @@ function WorkspaceContent(props: {
   if (props.tab === "classes") {
     const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return <EmptyState icon={<Database size={22} />} title={t("Select a graph set to view classes")} />;
+      return (
+        <EmptyState
+          icon={<Database size={22} />}
+          title={t("Select a graph set to view classes")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
     }
     return (
       <ClassesPage
@@ -816,7 +826,17 @@ function WorkspaceContent(props: {
   if (props.tab === "entities") {
     const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return <EmptyState icon={<Database size={22} />} title={t("Select a graph set to view entities")} />;
+      return (
+        <EmptyState
+          icon={<Database size={22} />}
+          title={t("Select a graph set to view entities")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
     }
     return (
       <EntitiesPage
@@ -832,7 +852,17 @@ function WorkspaceContent(props: {
     if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
     const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return <EmptyState icon={<Database size={22} />} title={t("Select a graph set to audit facts")} />;
+      return (
+        <EmptyState
+          icon={<Database size={22} />}
+          title={t("Select a graph set to audit facts")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
     }
     return (
       <FactAuditPage
@@ -1126,11 +1156,12 @@ function StatusBanner(props: { notice: NonNullable<Notice>; onDismiss: () => voi
   );
 }
 
-function EmptyState(props: { icon: ReactNode; title: string }) {
+function EmptyState(props: { icon: ReactNode; title: string; action?: ReactNode }) {
   return (
     <div className="emptyState">
       {props.icon}
       <span>{props.title}</span>
+      {props.action}
     </div>
   );
 }
