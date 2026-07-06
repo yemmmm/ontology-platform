@@ -783,6 +783,251 @@ def compile_update_class(
     )
 
 
+def compile_create_entity(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §5.4 — write a NamedIndividual into graph/data/{ontology_id}.
+
+    Writes ``a owl:NamedIndividual``, ``a <class>``, ``rdfs:label``,
+    ``skos:altLabel`` per alias, one triple per property, and an
+    ``op:evidenceStatus "missing_evidence"`` marker per ADR 0004 §301-303.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    entity_id = payload.get("entity_id") or str(uuid.uuid4())
+    class_iri_or_legacy_id = _required(payload, "class_iri_or_legacy_id")
+    label = _required(payload, "label")
+    aliases: list[str] = payload.get("aliases", []) or []
+    properties: dict[str, Any] = payload.get("properties", {}) or {}
+
+    # Resolve class IRI: if the caller passes a bare id, expand via the
+    # namespace. If it already looks like an IRI (contains ":"), use verbatim.
+    if isinstance(class_iri_or_legacy_id, str) and ":" in class_iri_or_legacy_id:
+        class_iri = class_iri_or_legacy_id
+    else:
+        class_iri = str(ns.resource("class", class_iri_or_legacy_id))
+
+    entity_iri = str(ns.resource("entity", entity_id))
+    graph_iri = _data_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+
+    insert_quads: list[tuple[str, str, str, str]] = [
+        (f"<{entity_iri}>",
+         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+         "<http://www.w3.org/2002/07/owl#NamedIndividual>", graph_iri),
+        (f"<{entity_iri}>",
+         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+         f"<{class_iri}>", graph_iri),
+        (f"<{entity_iri}>", f"<{op}id>", _literal_term(entity_id), graph_iri),
+        (f"<{entity_iri}>",
+         "<http://www.w3.org/2000/01/rdf-schema#label>",
+         _literal_term(label), graph_iri),
+    ]
+    for alias in aliases:
+        insert_quads.append(
+            (f"<{entity_iri}>",
+             "<http://www.w3.org/2004/02/skos/core#altLabel>",
+             _literal_term(alias), graph_iri)
+        )
+    for prop_iri, value in properties.items():
+        if value is None:
+            continue
+        insert_quads.append(
+            (f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri)
+        )
+    # Default evidence_status marker.
+    insert_quads.append(
+        (f"<{entity_iri}>", f"<{op}evidenceStatus>",
+         _literal_term("missing_evidence"), graph_iri)
+    )
+
+    delta = RdfGraphDelta(inserts=insert_quads)
+    return CompiledCommand(
+        command_kind="create_entity",
+        delta=delta,
+        object_kind="entity",
+        source_ids=[entity_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "entity_id": entity_id,
+            "entity_iri": entity_iri,
+            "class_iri": class_iri,
+            "label": label,
+        },
+    )
+
+
+def compile_update_entity(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §5.4 — patch label / aliases / properties of an existing entity."""
+    ontology_id = _required(payload, "ontology_id")
+    if "entity_id" not in payload and "entity_iri" not in payload:
+        raise InvalidCommandPayload("update_entity requires entity_id or entity_iri")
+    entity_id = payload.get("entity_id")
+    entity_iri = payload.get("entity_iri") or (
+        str(ns.resource("entity", entity_id)) if entity_id else None
+    )
+    if entity_iri is None:
+        raise InvalidCommandPayload("update_entity requires entity_id or entity_iri")
+
+    label = payload.get("label")
+    aliases: list[str] | None = payload.get("aliases")
+    properties: dict[str, Any] | None = payload.get("properties")
+
+    graph_iri = _data_graph_iri(ns, ontology_id)
+    entity_term = f"<{entity_iri}>"
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+
+    if label is not None:
+        deletes.append((entity_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
+        inserts.append((entity_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(label), graph_iri))
+    if aliases is not None:
+        deletes.append((entity_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri))
+        for alias in aliases:
+            inserts.append((entity_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", _literal_term(alias), graph_iri))
+    if properties is not None:
+        for prop_iri, value in properties.items():
+            deletes.append((entity_term, f"<{prop_iri}>", "?o", graph_iri))
+            if value is None:
+                continue
+            inserts.append((entity_term, f"<{prop_iri}>", _literal_term(value), graph_iri))
+
+    delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
+    source_ids = [entity_id] if entity_id else [entity_iri]
+    return CompiledCommand(
+        command_kind="update_entity",
+        delta=delta,
+        object_kind="entity",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "entity_id": entity_id,
+            "entity_iri": entity_iri,
+            "fields_updated": [
+                k for k in ("label", "aliases", "properties")
+                if payload.get(k) is not None
+            ],
+        },
+    )
+
+
+def compile_delete_entity(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §5.4 — remove every triple whose subject or object is the entity.
+
+    Cascades to relations: any triple where this entity appears as the object
+    (e.g. ``<other> someRelation <entity>``) is also removed.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    if "entity_id" not in payload and "entity_iri" not in payload:
+        raise InvalidCommandPayload("delete_entity requires entity_id or entity_iri")
+    entity_id = payload.get("entity_id")
+    entity_iri = payload.get("entity_iri") or (
+        str(ns.resource("entity", entity_id)) if entity_id else None
+    )
+    if entity_iri is None:
+        raise InvalidCommandPayload("delete_entity requires entity_id or entity_iri")
+
+    graph_iri = _data_graph_iri(ns, ontology_id)
+    entity_term = f"<{entity_iri}>"
+    deletes = [
+        (entity_term, "?p", "?o", graph_iri),
+        ("?s", "?p", entity_term, graph_iri),
+    ]
+    delta = RdfGraphDelta(inserts=[], deletes=deletes)
+    source_ids = [entity_id] if entity_id else [entity_iri]
+    return CompiledCommand(
+        command_kind="delete_entity",
+        delta=delta,
+        object_kind="entity",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "entity_id": entity_id,
+            "entity_iri": entity_iri,
+        },
+    )
+
+
+def compile_create_relation(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §5.4 — write ``<source> <relation_type> <target>`` to the data graph.
+
+    relation_type_iri is taken verbatim so callers can target arbitrary OWL
+    ObjectProperties (defined on the ontology graph). The triple is decorated
+    with ``op:evidenceStatus "missing_evidence"`` on the subject entity to
+    flag the new assertion for review.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    source_iri = _required(payload, "source_entity_iri")
+    relation_type_iri = _required(payload, "relation_type_iri")
+    target_iri = _required(payload, "target_entity_iri")
+
+    graph_iri = _data_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    insert_quads: list[tuple[str, str, str, str]] = [
+        (f"<{source_iri}>", f"<{relation_type_iri}>", f"<{target_iri}>", graph_iri),
+    ]
+    # Track the new relation as missing-evidence on the subject entity so the
+    # FactAuditPage missing-evidence tab surfaces it for review.
+    insert_quads.append(
+        (f"<{source_iri}>", f"<{op}evidenceStatus>",
+         _literal_term("missing_evidence"), graph_iri)
+    )
+
+    delta = RdfGraphDelta(inserts=insert_quads)
+    source_ids = [f"{source_iri}|{relation_type_iri}|{target_iri}"]
+    return CompiledCommand(
+        command_kind="create_relation",
+        delta=delta,
+        object_kind="relation",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "source_entity_iri": source_iri,
+            "relation_type_iri": relation_type_iri,
+            "target_entity_iri": target_iri,
+        },
+    )
+
+
+def compile_delete_relation(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §5.4 — remove the specific ``(source, predicate, target)`` triple."""
+    ontology_id = _required(payload, "ontology_id")
+    source_iri = _required(payload, "source_entity_iri")
+    relation_type_iri = _required(payload, "relation_type_iri")
+    target_iri = _required(payload, "target_entity_iri")
+
+    graph_iri = _data_graph_iri(ns, ontology_id)
+    deletes = [
+        (f"<{source_iri}>", f"<{relation_type_iri}>", f"<{target_iri}>", graph_iri),
+    ]
+    delta = RdfGraphDelta(inserts=[], deletes=deletes)
+    source_ids = [f"{source_iri}|{relation_type_iri}|{target_iri}"]
+    return CompiledCommand(
+        command_kind="delete_relation",
+        delta=delta,
+        object_kind="relation",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "source_entity_iri": source_iri,
+            "relation_type_iri": relation_type_iri,
+            "target_entity_iri": target_iri,
+        },
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
@@ -798,6 +1043,11 @@ _COMPILERS: dict[str, Compiler] = {
     "create_shape": compile_create_shape,
     "update_shape": compile_update_shape,
     "delete_shape": compile_delete_shape,
+    "create_entity": compile_create_entity,
+    "update_entity": compile_update_entity,
+    "delete_entity": compile_delete_entity,
+    "create_relation": compile_create_relation,
+    "delete_relation": compile_delete_relation,
 }
 
 

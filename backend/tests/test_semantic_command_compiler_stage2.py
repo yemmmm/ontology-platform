@@ -260,3 +260,167 @@ def test_update_shape_replaces_constraints_via_delete_then_insert():
     property_links = [q for q in compiled.delta.inserts if q[1] == "<http://www.w3.org/ns/shacl#property>" and q[0] == shape_term]
     assert len(property_links) == 1
 
+
+# Stage 2 §5.4 — EntitiesPage canonical-write kinds -------------------------------------
+
+
+def _data_graph_iri(ontology_id: str) -> str:
+    return f"http://op.local/graph/data/{ontology_id}"
+
+
+def _entity_iri(entity_id: str) -> str:
+    return f"http://op.local/ns/entity/{entity_id}"
+
+
+def test_create_entity_writes_named_individual_label_and_class_membership():
+    """create_entity mints an entity IRI and writes owl:NamedIndividual, rdfs:label,
+    rdf:type owl:NamedIndividual + class membership, skos:altLabel aliases, and
+    property values into the data graph. op:evidenceStatus defaults to
+    missing_evidence per ADR 0004 §301-303."""
+    payload = {
+        "ontology_id": "ont-1",
+        "entity_id": "entity-1",
+        "class_iri_or_legacy_id": "class-1",
+        "label": "Alice",
+        "aliases": ["Al"],
+        "properties": {
+            "http://op.local/ns/property/email": "alice@example.com",
+        },
+    }
+
+    compiled = compile_command("create_entity", payload, _settings())
+
+    assert compiled.command_kind == "create_entity"
+    assert compiled.object_kind == "entity"
+    assert compiled.source_ids == ["entity-1"]
+    graph_iri = _data_graph_iri("ont-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    entity_term = f"<{_entity_iri('entity-1')}>"
+    class_term = f"<{_class_iri('class-1')}>"
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+
+    # rdf:type owl:NamedIndividual
+    assert (entity_term, rdf_type, "<http://www.w3.org/2002/07/owl#NamedIndividual>", graph_iri) in compiled.delta.inserts
+    # rdf:type <class>
+    assert (entity_term, rdf_type, class_term, graph_iri) in compiled.delta.inserts
+    # rdfs:label
+    assert (entity_term, _RDFS_LABEL, '"Alice"', graph_iri) in compiled.delta.inserts
+    # alias
+    skos_alt = "<http://www.w3.org/2004/02/skos/core#altLabel>"
+    assert (entity_term, skos_alt, '"Al"', graph_iri) in compiled.delta.inserts
+    # property triple
+    assert (entity_term, "<http://op.local/ns/property/email>", '"alice@example.com"', graph_iri) in compiled.delta.inserts
+    # evidence_status defaults to missing_evidence
+    op_ev = "<http://op.local/ns/vocab/evidenceStatus>"
+    assert (entity_term, op_ev, '"missing_evidence"', graph_iri) in compiled.delta.inserts
+
+
+def test_update_entity_replaces_label_aliases_and_properties():
+    """update_entity patches label / aliases / properties on an existing entity.
+    Each patch is implemented as delete-then-insert; only fields present in the
+    payload are touched."""
+    payload = {
+        "ontology_id": "ont-1",
+        "entity_id": "entity-1",
+        "label": "Alice v2",
+        "aliases": ["Al2"],
+        "properties": {
+            "http://op.local/ns/property/email": "alice2@example.com",
+        },
+    }
+
+    compiled = compile_command("update_entity", payload, _settings())
+
+    assert compiled.command_kind == "update_entity"
+    assert compiled.object_kind == "entity"
+    graph_iri = _data_graph_iri("ont-1")
+    entity_term = f"<{_entity_iri('entity-1')}>"
+    # Label patch
+    assert (entity_term, _RDFS_LABEL, "?o", graph_iri) in compiled.delta.deletes
+    assert (entity_term, _RDFS_LABEL, '"Alice v2"', graph_iri) in compiled.delta.inserts
+    # Alias patch: wildcard delete + new value
+    skos_alt = "<http://www.w3.org/2004/02/skos/core#altLabel>"
+    assert (entity_term, skos_alt, "?o", graph_iri) in compiled.delta.deletes
+    assert (entity_term, skos_alt, '"Al2"', graph_iri) in compiled.delta.inserts
+    # Property patch: delete-then-insert for the supplied predicate
+    prop_pred = "<http://op.local/ns/property/email>"
+    assert (entity_term, prop_pred, "?o", graph_iri) in compiled.delta.deletes
+    assert (entity_term, prop_pred, '"alice2@example.com"', graph_iri) in compiled.delta.inserts
+
+
+def test_delete_entity_cascades_to_relations():
+    """delete_entity removes all triples with the entity as subject OR object,
+    so any relation that references the entity is also removed."""
+    payload = {
+        "ontology_id": "ont-1",
+        "entity_id": "entity-1",
+    }
+
+    compiled = compile_command("delete_entity", payload, _settings())
+
+    assert compiled.command_kind == "delete_entity"
+    assert compiled.object_kind == "entity"
+    graph_iri = _data_graph_iri("ont-1")
+    entity_term = f"<{_entity_iri('entity-1')}>"
+    # Subject wildcard delete
+    assert (entity_term, "?p", "?o", graph_iri) in compiled.delta.deletes
+    # Object wildcard delete (cascade to relations referencing this entity)
+    assert ("?s", "?p", entity_term, graph_iri) in compiled.delta.deletes
+
+
+def _relation_type_iri(relation_type_id: str) -> str:
+    return f"http://op.local/ns/relation-type/{relation_type_id}"
+
+
+def test_create_relation_writes_asserted_relation_triple():
+    """create_relation writes the (source, relation_type, target) triple to the
+    data graph. relation_type_iri is used verbatim so callers can point at
+    arbitrary OWL ObjectProperties."""
+    payload = {
+        "ontology_id": "ont-1",
+        "source_entity_iri": _entity_iri("entity-1"),
+        "relation_type_iri": _relation_type_iri("rel-1"),
+        "target_entity_iri": _entity_iri("entity-2"),
+    }
+
+    compiled = compile_command("create_relation", payload, _settings())
+
+    assert compiled.command_kind == "create_relation"
+    assert compiled.object_kind == "relation"
+    graph_iri = _data_graph_iri("ont-1")
+    expected = (
+        f"<{_entity_iri('entity-1')}>",
+        f"<{_relation_type_iri('rel-1')}>",
+        f"<{_entity_iri('entity-2')}>",
+        graph_iri,
+    )
+    assert expected in compiled.delta.inserts
+    # op:evidenceStatus marked missing_evidence to match create_entity default.
+    op_ev = "<http://op.local/ns/vocab/evidenceStatus>"
+    assert any(q[1] == op_ev and q[3] == graph_iri for q in compiled.delta.inserts)
+
+
+def test_delete_relation_targets_specific_triple_pattern():
+    """delete_relation removes the (source, predicate, target) triple from the
+    data graph. Object position is pinned to the target entity so other objects
+    under the same predicate remain untouched."""
+    payload = {
+        "ontology_id": "ont-1",
+        "source_entity_iri": _entity_iri("entity-1"),
+        "relation_type_iri": _relation_type_iri("rel-1"),
+        "target_entity_iri": _entity_iri("entity-2"),
+    }
+
+    compiled = compile_command("delete_relation", payload, _settings())
+
+    assert compiled.command_kind == "delete_relation"
+    assert compiled.object_kind == "relation"
+    graph_iri = _data_graph_iri("ont-1")
+    expected = (
+        f"<{_entity_iri('entity-1')}>",
+        f"<{_relation_type_iri('rel-1')}>",
+        f"<{_entity_iri('entity-2')}>",
+        graph_iri,
+    )
+    assert expected in compiled.delta.deletes
+
