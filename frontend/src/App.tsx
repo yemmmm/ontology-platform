@@ -377,6 +377,9 @@ export function App() {
                 const tabsInStage = workspaceTabs.filter((item) => item.stage === stage.id);
                 if (!tabsInStage.length) return null;
                 const StageIcon = stage.icon;
+                // Phase E: workflow_status-driven stage is pending graph-set history
+                // rework. Hardcoded to "intake" (gathering) until Phase G cleanup or
+                // Stage 4 wires a graph-set-derived stage signal.
                 const activeStage = workflowStatusToStage["gathering"] ?? "intake";
                 const tabStage = workspaceTabs.find((item) => item.id === workspaceTab)?.stage;
                 const isActiveStage = tabStage === stage.id;
