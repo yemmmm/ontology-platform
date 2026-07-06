@@ -410,7 +410,7 @@ export function App() {
     const data = await request<Project[]>("/projects");
     setProjects(data);
     setSelectedProjectId((current) =>
-      current || data[0]?.id || "",
+      data.some((project) => project.id === current) ? current : data[0]?.id ?? "",
     );
   }, [request, setSelectedProjectId]);
 
@@ -509,8 +509,15 @@ export function App() {
   }, [refreshAll]);
 
   useEffect(() => {
+    // Gate on the project list: skip if it hasn't loaded yet but we already have
+    // a stored ID (race with loadProjects), or if the stored ID isn't in the list
+    // (stale localStorage after a DB reset) — loadProjects will correct it.
+    if (selectedProjectId) {
+      if (!projects.length) return;
+      if (!projects.some((project) => project.id === selectedProjectId)) return;
+    }
     loadOntologies().catch(showError);
-  }, [selectedProjectId, loadOntologies, showError]);
+  }, [selectedProjectId, projects, loadOntologies, showError]);
 
   useEffect(() => {
     Promise.all([loadSchema(), loadGraph(), loadVersions()]).catch(showError);
