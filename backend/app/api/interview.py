@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from neo4j import Driver
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,11 +25,25 @@ from app.services.interview import brief_summary_for_overview, question_summary_
 from app.services.semantic_build_overview import BuildOverviewService
 from app.services.semantic_read_model import SemanticReadModelService
 
+_LEGACY_SUNSET = "Sat, 1 Nov 2026 00:00:00 GMT"
+
+
+def _mark_deprecated(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = _LEGACY_SUNSET
+
+
 router = APIRouter(tags=["project interview"])
 
 
 @router.get("/projects/{project_id}/build-context")
-def get_build_context(project_id: str, session: Session = Depends(get_db_session)):
+def get_build_context(
+    project_id: str,
+    session: Session = Depends(get_db_session),
+    response: Response = None,
+):
+    if response is not None:
+        _mark_deprecated(response)
     return service.get_build_context(session, project_id)
 
 

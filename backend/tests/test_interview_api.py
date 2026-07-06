@@ -92,3 +92,66 @@ def test_build_overview_returns_200_with_valid_graph_set(
     assert body["graph_set"]["graph_set_id"] == "gs-1"
     assert body["graph_set"]["members"][0]["role"] == "asserted_data"
     assert "next_actions" in body
+
+
+# ---------------------------------------------------------------------------
+# Deprecation header tests for legacy routes
+# ---------------------------------------------------------------------------
+
+
+def test_build_context_legacy_route_returns_deprecation_header(
+    app_with_mocked_services, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.interview.service.get_build_context",
+        lambda session, project_id: {},
+    )
+    client = TestClient(app_with_mocked_services)
+    response = client.get("/projects/p-1/build-context")
+    assert response.headers.get("Deprecation") == "true"
+    assert "Sunset" in response.headers
+
+
+@pytest.fixture
+def app_with_governance_router(in_memory_session, monkeypatch):
+    """Return a FastAPI app with the governance router and mocked dependencies."""
+    from fastapi import FastAPI
+    from app.api import governance as governance_mod
+
+    app = FastAPI()
+    app.include_router(governance_mod.router)
+
+    async def _override_session():
+        return in_memory_session
+
+    app.dependency_overrides[governance_mod.get_db_session] = _override_session
+
+    return app
+
+
+def test_versions_route_returns_deprecation_header(
+    app_with_governance_router, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.governance.service.list_versions",
+        lambda session, ontology_id: [],
+    )
+    client = TestClient(app_with_governance_router)
+    response = client.get("/ontologies/o-1/versions")
+    assert response.status_code == 200
+    assert response.headers.get("Deprecation") == "true"
+    assert "Sunset" in response.headers
+
+
+def test_proposals_route_returns_deprecation_header(
+    app_with_governance_router, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.api.governance.service.list_proposals",
+        lambda session, ontology_id, proposal_type: [],
+    )
+    client = TestClient(app_with_governance_router)
+    response = client.get("/ontologies/o-1/proposals")
+    assert response.status_code == 200
+    assert response.headers.get("Deprecation") == "true"
+    assert "Sunset" in response.headers

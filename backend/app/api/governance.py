@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from neo4j import Driver
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,13 @@ from app.services import publication as publication_service
 
 router = APIRouter(tags=["governance"])
 
+_LEGACY_SUNSET = "Sat, 1 Nov 2026 00:00:00 GMT"
+
+
+def _mark_deprecated(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = _LEGACY_SUNSET
+
 
 @router.post(
     "/ontologies/{ontology_id}/versions",
@@ -35,7 +42,13 @@ def create_version(
 
 
 @router.get("/ontologies/{ontology_id}/versions", response_model=list[OntologyVersionRead])
-def list_versions(ontology_id: str, session: Session = Depends(get_db_session)):
+def list_versions(
+    ontology_id: str,
+    session: Session = Depends(get_db_session),
+    response: Response = None,
+):
+    if response is not None:
+        _mark_deprecated(response)
     return service.list_versions(session, ontology_id)
 
 
@@ -69,7 +82,10 @@ def list_proposals(
     ontology_id: str,
     proposal_type: str | None = None,
     session: Session = Depends(get_db_session),
+    response: Response = None,
 ):
+    if response is not None:
+        _mark_deprecated(response)
     return service.list_proposals(session, ontology_id, proposal_type)
 
 
