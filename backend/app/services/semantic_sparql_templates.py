@@ -113,6 +113,134 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         }
         """,
     ),
+    "class-topology": ReadModelTemplate(
+        name="class-topology",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=500,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: class-topology
+        # Returns one row per class with its label and parent IRI(s).
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?class ?label ?parent ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?class a owl:Class .
+            OPTIONAL { ?class rdfs:label ?label . }
+            OPTIONAL { ?class rdfs:subClassOf ?parent . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label
+        LIMIT {limit}
+        """,
+    ),
+    "property-list": ReadModelTemplate(
+        name="property-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: property-list
+        # Returns one row per property whose rdfs:domain is the given class.
+        # Caller post-filters by class IRI; the SPARQL stays generic so the
+        # template remains graph-set portable.
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?property ?label ?range ?type ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?property rdfs:domain ?class .
+            OPTIONAL { ?property rdfs:label ?label . }
+            OPTIONAL { ?property rdfs:range ?range . }
+            OPTIONAL { ?property a ?type . FILTER(?type IN (owl:DatatypeProperty, owl:ObjectProperty)) }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """,
+    ),
+    "relation-type-list": ReadModelTemplate(
+        name="relation-type-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: relation-type-list
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?relation ?label ?source ?target ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?relation a owl:ObjectProperty .
+            OPTIONAL { ?relation rdfs:label ?label . }
+            OPTIONAL { ?relation rdfs:domain ?source . }
+            OPTIONAL { ?relation rdfs:range ?target . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label
+        LIMIT {limit}
+        """,
+    ),
+    "class-shape-generated": ReadModelTemplate(
+        name="class-shape-generated",
+        projection_version="semantic-read-v1",
+        required_roles=("shape_graph_generated",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: class-shape-generated
+        # Reads SHACL NodeShapes from the derived generated sub-graph. Each
+        # row is one (shape, targetClass) pair; PropertyShape rows are
+        # joined separately by the read-model service.
+        PREFIX sh: <http://www.w3.org/ns/shacl#>
+        SELECT ?shape ?target_class ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?shape a sh:NodeShape ;
+                   sh:targetClass ?target_class .
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """,
+    ),
+    "class-shape-custom": ReadModelTemplate(
+        name="class-shape-custom",
+        projection_version="semantic-read-v1",
+        required_roles=("shape_graph_custom",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: class-shape-custom
+        # Reads SHACL NodeShapes from the editable custom sub-graph.
+        PREFIX sh: <http://www.w3.org/ns/shacl#>
+        SELECT ?shape ?target_class ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?shape a sh:NodeShape ;
+                   sh:targetClass ?target_class .
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """,
+    ),
 }
 
 
