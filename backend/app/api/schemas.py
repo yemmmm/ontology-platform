@@ -46,7 +46,6 @@ class OntologyUpdate(BaseModel):
 class OntologyRead(BaseModel):
     id: str
     project_id: str
-    current_version_id: str | None
     name: str
     description: str | None
     status: str
