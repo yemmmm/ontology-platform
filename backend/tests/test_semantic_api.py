@@ -614,3 +614,79 @@ def test_get_validation_run_returns_staleness(in_memory_session) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["staleness"]["stale"] is False
+
+
+# ---------------------------------------------------------------------------
+# Stage 1 intake refactor smoke tests
+# ---------------------------------------------------------------------------
+
+
+def test_graph_set_staleness_template_registered() -> None:
+    """Verify the graph-set-staleness read-model template is registered and its
+    shape matches the expected read-model contract."""
+    from app.services.semantic_sparql_templates import get_template, ReadModelTemplate
+
+    template = get_template("graph-set-staleness")
+    assert isinstance(template, ReadModelTemplate)
+    assert template.name == "graph-set-staleness"
+    assert template.projection_version == "semantic-read-v1"
+    assert "asserted_ontology" in template.required_roles
+    assert "asserted_data" in template.required_roles
+
+
+def test_build_overview_route_registered() -> None:
+    """Verify the build-overview route is registered on the interview router."""
+    from app.api.interview import router
+
+    routes = [
+        r for r in router.routes
+        if hasattr(r, "path") and "build-overview" in r.path
+    ]
+    assert len(routes) == 1
+    assert "GET" in routes[0].methods
+
+
+def test_competency_question_validate_route_registered() -> None:
+    """Verify the validate route is still registered on the interview router."""
+    from app.api.interview import router
+
+    routes = [
+        r for r in router.routes
+        if hasattr(r, "path") and "validate" in r.path
+    ]
+    assert len(routes) >= 1
+
+
+def test_build_context_legacy_deprecation_header(in_memory_session) -> None:
+    """The legacy build-context route should attach a Deprecation header.
+
+    The route lives on the interview router, so we build a test app that mounts
+    it alongside the semantic router.
+    """
+    from app.api.interview import router as interview_router
+    from app.repositories.models import ProjectModel
+
+    in_memory_session.add(
+        ProjectModel(id="smoke-proj", name="smoke", normalized_label="smoke")
+    )
+    in_memory_session.commit()
+
+    app = FastAPI()
+    app.include_router(interview_router, prefix="/api")
+
+    store = FakeStore()
+    settings = Settings()
+
+    def session_override() -> Generator[Session, None, None]:
+        yield in_memory_session
+
+    app.dependency_overrides[get_db_session] = session_override
+    app.dependency_overrides[get_rdf_store] = lambda: store
+    app.dependency_overrides[get_settings] = lambda: settings
+    client = TestClient(app)
+
+    resp = client.get("/api/projects/smoke-proj/build-context")
+    # The build-context endpoint returns 200 even for a bare project.
+    assert resp.status_code == 200
+    assert resp.headers.get("Deprecation") == "true"
+    assert "Sunset" in resp.headers

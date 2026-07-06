@@ -354,6 +354,27 @@ Assertions:
 | Parity drift | Cutover is blocked and parity report identifies affected scope/items. |
 | Rollback requested after cutover | Mode switches back according to rollback policy and projections are rebuilt from the rollback source. |
 
+## Stage 1: Intake Refactor Smoke Entries
+
+### Build Overview -- graph-set read model
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `GET /ontologies/{id}/build-overview?project_id={pid}` | 200 with expected fields | Returns `ontology`, `brief`, `questions`, `staleness` keys |
+| `GET /ontologies/{id}/build-overview` (no active graph-set) | 404 | Ontology without a graph-set gets a deterministic 404 |
+| `GET /graph-sets/{gs}/read-models/graph-set-staleness` | 200 envelope | `SemanticReadModelEnvelope` shape even when graphs are empty |
+| `GET /projects/{id}/build-context` (legacy) | `Deprecation: true` header present | Sunset header also present |
+
+### Competency Question validate -- SPARQL dispatch
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /competency-questions/{id}/validate` with entity_count question | 200 | Runs SPARQL COUNT query against active graph-set |
+| Same with relation_count question | 200 | Runs SPARQL COUNT query against active graph-set |
+| Same with sparql_count question | 200 | Runs SPARQL SELECT COUNT against active graph-set |
+| Same with CONSTRUCT query body | 422 | CONSTRUCT is rejected as a read-only competency question |
+| Same with INSERT query body | 422 | INSERT is rejected as a read-only competency question |
+
 ## Acceptance Gates
 
 The refactor is integration-ready when:
