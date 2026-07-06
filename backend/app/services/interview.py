@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -23,6 +24,8 @@ from app.repositories.models import (
     OntologyVersionModel,
     ProjectBriefModel,
     ProjectModel,
+    SemanticGraphSetMemberModel,
+    SemanticGraphSetModel,
 )
 from app.services.semantic_build_overview import BriefSummary, CompetencyQuestionSummary
 
@@ -440,6 +443,58 @@ def run_question_validation(
     session.commit()
     session.refresh(question)
     return result
+
+
+def active_data_and_ontology_graphs_for_question(session, question_id: str) -> list[str]:
+    """Return ontology + data member IRIs for the question's active graph-set."""
+    question = _question(session, question_id)
+    rows = session.execute(
+        select(
+            SemanticGraphSetMemberModel.graph_iri,
+            SemanticGraphSetMemberModel.role,
+        )
+        .join(
+            SemanticGraphSetModel,
+            SemanticGraphSetModel.id == SemanticGraphSetMemberModel.graph_set_id,
+        )
+        .where(
+            SemanticGraphSetModel.scope_type == "ontology",
+            SemanticGraphSetModel.scope_id == question.ontology_id,
+            SemanticGraphSetModel.status == "active",
+            SemanticGraphSetMemberModel.role.in_(
+                ("asserted_ontology", "asserted_data")
+            ),
+        )
+    ).all()
+    return [r[0] for r in rows]
+
+
+def resolve_class_iri(session, ontology_id: str, class_id: str) -> str:
+    """Return the RDF IRI for a class_id, using Phase 2 mapping with fallback."""
+    from app.services.semantic_phase2_mapping import lookup_class_iri
+
+    mapped = lookup_class_iri(session, ontology_id, class_id)
+    if mapped:
+        return mapped
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(class_id))
+    return (
+        f"http://ontology-platform.local/semantic/ontology/{ontology_id}"
+        f"/class/{safe}"
+    )
+
+
+def resolve_relation_type_iri(session, ontology_id: str, relation_type_id: str) -> str:
+    """Return the RDF IRI for a relation_type_id, using Phase 2 mapping with fallback."""
+    from app.services.semantic_phase2_mapping import lookup_relation_type_iri
+
+    mapped = lookup_relation_type_iri(session, ontology_id, relation_type_id)
+    if mapped:
+        return mapped
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(relation_type_id))
+    return (
+        f"http://ontology-platform.local/semantic/ontology/{ontology_id}"
+        f"/relation/{safe}"
+    )
 
 
 def brief_summary_for_overview(session, project_id):

@@ -238,3 +238,69 @@ def test_run_question_validation_relation_count_uses_relation_type_filter() -> N
 
     assert result["passed"] is True
     assert result["matches"] == 7
+
+
+def test_active_data_and_ontology_graphs_for_question_returns_member_iris(
+    in_memory_session,
+):
+    from app.repositories.models import (
+        CompetencyQuestionModel,
+        OntologyModel,
+        ProjectModel,
+        SemanticGraphSetMemberModel,
+        SemanticGraphSetModel,
+    )
+    from app.services.interview import active_data_and_ontology_graphs_for_question
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.flush()
+    in_memory_session.add(CompetencyQuestionModel(
+        id="q-1", project_id="p-1", ontology_id="o-1",
+        question="q", position=0, status="testable",
+        query_definition={}, source_brief_fields=[],
+    ))
+    in_memory_session.add(SemanticGraphSetModel(
+        id="gs-1", name="GS", scope_type="ontology", scope_id="o-1",
+        status="active",
+    ))
+    in_memory_session.flush()
+    for role, iri in [
+        ("asserted_ontology", "https://x/graph/ontology/o-1"),
+        ("asserted_data", "https://x/graph/data/o-1"),
+    ]:
+        in_memory_session.add(SemanticGraphSetMemberModel(
+            id=f"m-{role}", graph_set_id="gs-1", graph_iri=iri, role=role,
+        ))
+    in_memory_session.commit()
+
+    iris = active_data_and_ontology_graphs_for_question(in_memory_session, "q-1")
+    assert "https://x/graph/ontology/o-1" in iris
+    assert "https://x/graph/data/o-1" in iris
+    assert len(iris) == 2
+
+
+def test_resolve_class_iri_returns_phase2_mapping_or_fallback(in_memory_session):
+    from app.repositories.models import OntologyModel, ProjectModel
+    from app.services.interview import resolve_class_iri
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.commit()
+
+    iri = resolve_class_iri(in_memory_session, "o-1", "class-1")
+    assert "class-1" in iri or "class_1" in iri
+    assert iri.startswith("http://ontology-platform.local/semantic/")
+
+
+def test_resolve_relation_type_iri_returns_phase2_mapping_or_fallback(in_memory_session):
+    from app.repositories.models import OntologyModel, ProjectModel
+    from app.services.interview import resolve_relation_type_iri
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.commit()
+
+    iri = resolve_relation_type_iri(in_memory_session, "o-1", "rt-1")
+    assert "rt-1" in iri or "rt_1" in iri
+    assert iri.startswith("http://ontology-platform.local/semantic/")
