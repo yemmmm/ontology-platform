@@ -378,29 +378,6 @@ export type WorkflowStatus =
   | "validated"
   | "published";
 
-export type VersionStatus = "draft" | "published";
-
-export type OntologyVersion = {
-  id: string;
-  ontology_id: string;
-  parent_version_id: string | null;
-  version_number: number;
-  status: VersionStatus;
-  workflow_status: WorkflowStatus;
-  schema_snapshot: JsonObject;
-  graph_snapshot: JsonObject;
-  publication_report: JsonObject;
-  created_at: string;
-  published_at: string | null;
-};
-
-export type VersionDiff = {
-  from_version_id: string;
-  to_version_id: string;
-  schema: JsonObject;
-  graph: JsonObject;
-};
-
 export type BriefFieldState = "missing" | "answered" | "confirmed" | "skipped";
 
 export type BriefClarificationItem = {
