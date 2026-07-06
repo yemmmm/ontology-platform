@@ -371,7 +371,14 @@ export function readModel<T = SemanticReadModelEnvelope>(
   request: SemanticRequester,
   graphSetId: string,
   modelName: string,
-  params: { include?: string; fieldSet?: string; limit?: number } = {},
+  params: {
+    include?: string;
+    fieldSet?: string;
+    limit?: number;
+    /** Stage 2 §6.3 fact-audit-queue composer: drives source-graph selection
+     * (asserted / inferred / rule_derived / missing_evidence). */
+    kind?: string;
+  } = {},
 ) {
   const path = withParams(
     `${SEMANTIC_BASE}/graph-sets/${graphSetId}/read-models/${modelName}`,
@@ -379,6 +386,7 @@ export function readModel<T = SemanticReadModelEnvelope>(
       include: params.include ?? "asserted",
       field_set: params.fieldSet ?? "summary",
       limit: params.limit,
+      kind: params.kind,
     },
   );
   return request<T>(path);

@@ -98,7 +98,8 @@ import { CompetencyQuestionsPage } from "./pages/CompetencyQuestionsPage";
 import { ClassesPage as Stage2ClassesPageModule } from "./pages/ClassesPage";
 import { EntitiesPage as Stage2EntitiesPageModule } from "./pages/EntitiesPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
-import { FactAuditPage } from "./pages/FactAuditPage";
+import { FactAuditPage as Stage2FactAuditPageModule } from "./pages/FactAuditPage";
+import { FactAuditPageLegacy } from "./pages/FactAuditPage.legacy";
 import { PublicationPage } from "./pages/PublicationPage";
 import { VersionsPage } from "./pages/VersionsPage";
 import { EvidenceExplorer } from "./pages/EvidenceExplorer";
@@ -149,6 +150,10 @@ function lazyStage2ClassesPage() {
 
 function lazyStage2EntitiesPage() {
   return Stage2EntitiesPageModule;
+}
+
+function lazyStage2FactAuditPage() {
+  return Stage2FactAuditPageModule;
 }
 
 type ParentClassPickerProps = {
@@ -1046,7 +1051,21 @@ function WorkspaceContent(props: {
   if (props.tab === "facts" || props.tab === "publication") {
     if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
     const context = { ontology: props.ontology, project: props.project, readOnly, request: governedRequest, version: props.selectedVersion };
-    if (props.tab === "facts") return <FactAuditPage {...context} initialClaimId={queryValue("claim") || undefined} />;
+    if (props.tab === "facts") {
+      const stage2GraphSet = queryValue("graphSet");
+      if (stage2GraphSet) {
+        const Stage2FactAuditPage = lazyStage2FactAuditPage();
+        return (
+          <Stage2FactAuditPage
+            graphSetId={stage2GraphSet}
+            ontologyId={props.ontology.id}
+            readOnly={readOnly}
+            request={governedRequest}
+          />
+        );
+      }
+      return <FactAuditPageLegacy {...context} initialClaimId={queryValue("claim") || undefined} />;
+    }
     return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onVersionChanged={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
   }
 

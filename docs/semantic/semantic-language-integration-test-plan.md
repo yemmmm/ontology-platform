@@ -375,6 +375,40 @@ Assertions:
 | Same with CONSTRUCT query body | 422 | CONSTRUCT is rejected as a read-only competency question |
 | Same with INSERT query body | 422 | INSERT is rejected as a read-only competency question |
 
+## Stage 2: Modeling / Knowledge Rebuild Smoke Entries
+
+### FactAuditPage — fact-audit-queue read model by kind
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=asserted` | 200 envelope | Items carry `assertion_kind: "asserted"`, sourced from asserted_data members |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=inferred` | 200 envelope | Items sourced from effective reasoning-result graph; rows carry `derived_from.run_id` |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=rule_derived` | 200 envelope | Items sourced from effective rule-result graph |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=missing_evidence` | 200 envelope | Items filtered to subjects with `op:evidenceStatus "missing_evidence"` |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=inferred` (no reasoning pointer) | 200 envelope, empty items, warning `fact_audit_no_inferred_pointer` | Frontend renders "click Generate to run reasoning" empty state |
+| `GET /graph-sets/{gs}/read-models/fact-audit-queue?kind=not_a_kind` | 400 | ReadModelError surfaces invalid kind value |
+| `GET /graph-sets/{gs}/read-models/missing-evidence-list` | 200 envelope | Lightweight aggregator across asserted_data members |
+
+### FactAuditPage — review_assertion canonical-write
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /canonical-writes:compile-and-apply` kind=review_assertion, assertion_kind=asserted | 200, delta applied to `graph/data/{ontology_id}` | Writes RDF-star reification `<<s p o>> op:auditStatus "approved"` etc. |
+| Same with assertion_kind=inferred + result_graph_iri | 200, delta applied to reasoning-result graph | Compiler validates that result_graph_iri is supplied |
+| Same with decision=rejected, missing linked_fix_proposal_id | 400 | Compiler rejects with InvalidCommandPayload |
+| Same with decision=maybe | 400 | decision must be approved / rejected / needs_correction |
+| Returned metadata.fact_id | 64-char hex digest | SHA-256 over canonical N-Triples form of (subject, predicate, object) |
+
+### FactAuditPage — Generate / Run rules / Recall
+
+| Endpoint | Expected | Notes |
+| --- | --- | --- |
+| `POST /graph-sets/{gs}/reasoning-runs` triggered by Generate | 202, run_id returned | Frontend polls until status=succeeded |
+| `POST /graph-sets/{gs}/rule-runs` triggered by Generate / Run rules | 202, run_id returned | Frontend polls until status=succeeded |
+| `GET /reasoning-runs/{run_id}` polling | eventually status=succeeded | Reasoning result graph becomes effective pointer |
+| `GET /rule-runs/{run_id}` polling | eventually status=succeeded | Rule result graph becomes effective pointer |
+| `POST /sparql:query` (Recall) | 200, bindings returned as asserted rows | Frontend renders rows in the fact queue with assertion_kind=asserted |
+
 ## Acceptance Gates
 
 The refactor is integration-ready when:

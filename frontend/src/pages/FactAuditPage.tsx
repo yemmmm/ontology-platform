@@ -1,3 +1,29 @@
+/**
+ * Stage 2 §6 — graph-derived FactAuditPage.
+ *
+ * The fact queue is sourced from the fact-audit-queue read-model composer
+ * (backend/app/services/semantic_read_model.py::_compose_fact_audit_queue).
+ * The composer routes by ``?kind=`` query parameter:
+ *
+ *   - asserted         → graph/data/{ontology_id}
+ *   - inferred         → effective reasoning-result graph
+ *   - rule_derived     → effective rule-result graph
+ *   - missing_evidence → asserted_data rows carrying op:evidenceStatus
+ *
+ * Toolbar actions:
+ *   - Generate  → POST /graph-sets/{gs}/reasoning-runs + /rule-runs (async,
+ *                 polled until both settle, then refetch)
+ *   - Run rules → POST /graph-sets/{gs}/rule-runs only
+ *   - Refresh   → invalidate local cache and refetch
+ *   - Recall    → POST /sparql:query with caller-supplied SPARQL
+ *
+ * Review on a selected fact calls ``compileAndApplyProductCommand`` with
+ * ``command_kind: review_assertion`` (Stage 2 §6.4).
+ *
+ * Legacy inline implementation retained as ``FactAuditPage.legacy.tsx``
+ * and dispatched from App.tsx when no ``?graphSet=`` URL parameter is set.
+ */
+
 import {
   Alert,
   Button,
@@ -5,11 +31,11 @@ import {
   Descriptions,
   Empty,
   Input,
-  InputNumber,
-  Select,
+  Modal,
+  Segmented,
+  Skeleton,
   Space,
   Spin,
-  Statistic,
   Tag,
   Typography,
 } from "antd";
@@ -17,350 +43,600 @@ import { Check, Play, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
-import { EvidenceExplorer } from "./EvidenceExplorer";
-import type { GovernancePageContext } from "./governanceTypes";
-import { jsonText, messageFrom } from "./governanceTypes";
+import {
+  compileAndApplyProductCommand,
+  getReasoningRun,
+  getRuleRun,
+  readModel,
+  runGraphSetReasoning,
+  runGraphSetRules,
+  sparqlQuery,
+} from "../semanticApi";
+import type { WorkbenchRequest } from "./workbenchTypes";
 
-type FactClaim = {
+type AssertionKind = "asserted" | "inferred" | "rule_derived" | "missing_evidence";
+
+/**
+ * Local envelope type for FactAuditPage rendering. The backend
+ * ``fact-audit-queue`` composer decorates each row into the unified
+ * FactRow shape (spec §6.3), which differs from the generic
+ * SemanticStatementItem projected by other read models.
+ */
+type FactEnvelope = {
+  graph_set_id: string;
+  source_signature: string;
+  projection_version: string;
+  model_name: string;
+  include: string;
+  derived_state: Record<string, unknown>;
+  warnings: Array<{ code: string; message: string }>;
+  items: FactRow[];
+};
+
+type FactRow = {
   id: string;
-  claim_key: string;
-  project_id: string;
-  ontology_id: string;
-  ontology_version_id: string;
-  claim_type: string;
-  layer: string;
-  subject: Record<string, unknown>;
-  predicate: string;
-  value: unknown;
-  anchor: Record<string, unknown>;
-  graph_path: Array<Record<string, unknown>>;
-  evidence_ids: string[];
-  generation_reason: string;
-  confidence: number;
-  sensitivity: string;
-  access_policy: Record<string, unknown>;
-  override_of_claim_id: string | null;
-  audit_status: string;
-  review_decision: Record<string, unknown>;
-  linked_fix_proposal_id: string | null;
+  fact_id: string;
+  assertion_kind: AssertionKind;
+  subject_iri: string;
+  subject_label: string | null;
+  predicate_iri: string;
+  predicate_label: string | null;
+  object_value: unknown;
+  object_label: string | null;
+  graph_iri: string;
+  source_graph_iri: string;
+  evidence_status: "with_evidence" | "missing_evidence" | "not_applicable";
+  audit_status: "pending" | "approved" | "rejected" | "needs_correction";
   stale: boolean;
   stale_reason: string | null;
-  created_at: string;
-  updated_at: string;
-  reviewed_at: string | null;
+  derived_from?: { run_id: string; rule_id?: string; rule_version?: string; reason?: string };
 };
 
-type BackgroundRecall = {
-  source_type: "background_recall";
-  knowledge_id: string;
-  text: string;
-  summary: string | null;
-  tags: string[];
-  confidence: number;
-  score: number;
-  core_fact: boolean;
+type FactAuditPageProps = {
+  graphSetId: string;
+  ontologyId: string;
+  readOnly: boolean;
+  request: WorkbenchRequest;
 };
 
-type FactAuditPageProps = GovernancePageContext & {
-  batchItemIds?: string[];
-  initialClaimId?: string;
-};
-
-const layers = [
-  "entity_attribute",
-  "entity_relation",
-  "inferred_inverse",
-  "low_confidence",
-  "value_conflict",
-  "entity_assertion",
-  "relation_assertion",
-  "class_assertion",
-  "rule_assertion",
-  "rule_derived",
-  "rule_validation",
-  "workflow",
+const KIND_OPTIONS: Array<{ label: string; value: AssertionKind }> = [
+  { label: "Asserted", value: "asserted" },
+  { label: "Inferred", value: "inferred" },
+  { label: "Rule-derived", value: "rule_derived" },
+  { label: "Missing evidence", value: "missing_evidence" },
 ];
 
-function subjectLabel(subject: Record<string, unknown>, fallback: string): string {
-  const name = subject.name;
-  if (typeof name === "string" && name) return name;
-  const entityId = subject.entity_id;
-  if (typeof entityId === "string" && entityId) return entityId;
-  return fallback;
-}
+const INCLUDE_FOR_KIND: Record<AssertionKind, string> = {
+  asserted: "asserted",
+  missing_evidence: "asserted",
+  inferred: "asserted-plus-reasoning",
+  rule_derived: "asserted-plus-rules",
+};
 
-export function FactAuditPage({
-  project,
-  ontology,
-  version,
-  request,
-  readOnly = false,
-  batchItemIds,
-  initialClaimId,
-}: FactAuditPageProps) {
+const POLL_INTERVAL_MS = 1500;
+const POLL_TIMEOUT_MS = 60_000;
+
+export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: FactAuditPageProps) {
   const t = useT();
-  const [claims, setClaims] = useState<FactClaim[]>([]);
-  const [selectedId, setSelectedId] = useState(initialClaimId ?? "");
+  const [kind, setKind] = useState<AssertionKind>("asserted");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [layer, setLayer] = useState("all");
-  const [claimType, setClaimType] = useState("all");
-  const [auditStatus, setAuditStatus] = useState("all");
-  const [stale, setStale] = useState("all");
-  const [minimumConfidence, setMinimumConfidence] = useState(0);
-  const [sampleSize, setSampleSize] = useState(5);
-  const [reason, setReason] = useState("");
+  const [items, setItems] = useState<FactRow[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reviewReason, setReviewReason] = useState("");
   const [fixProposalId, setFixProposalId] = useState("");
-  const [backgroundQuery, setBackgroundQuery] = useState("");
-  const [backgroundHits, setBackgroundHits] = useState<BackgroundRecall[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewDecision, setReviewDecision] = useState<"approved" | "rejected" | "needs_correction">("approved");
+  const [sparqlText, setSparqlText] = useState("");
+  const [sparqlResult, setSparqlResult] = useState<FactEnvelope | null>(null);
+  const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await request<FactClaim[]>(`/versions/${version.id}/fact-claims`);
-      setClaims(data);
-      setSelectedId((current) =>
-        data.some((item) => item.id === current) ? current : (initialClaimId ?? data[0]?.id ?? ""),
+      const envelope = await readModel<FactEnvelope>(
+        request,
+        graphSetId,
+        "fact-audit-queue",
+        { kind, include: INCLUDE_FOR_KIND[kind] },
       );
-    } catch (loadError) {
-      setError(messageFrom(loadError));
+      const rows = envelope.items ?? [];
+      setItems(rows);
+      setWarnings(envelope.warnings ?? []);
+      setSelectedId((current) => {
+        if (current && rows.some((row) => row.id === current)) return current;
+        return rows[0]?.id ?? null;
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
     }
-  }, [initialClaimId, request, version.id]);
+  }, [graphSetId, kind, request]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const scopedClaims = useMemo(() => {
-    const batchSet = batchItemIds ? new Set(batchItemIds) : null;
-    return claims.filter((claim) => {
-      if (batchSet && !batchSet.has(claim.id)) return false;
-      if (layer !== "all" && claim.layer !== layer) return false;
-      if (claimType !== "all" && claim.claim_type !== claimType) return false;
-      if (auditStatus !== "all" && claim.audit_status !== auditStatus) return false;
-      if (stale !== "all" && claim.stale !== (stale === "yes")) return false;
-      return claim.confidence >= minimumConfidence;
-    });
-  }, [auditStatus, batchItemIds, claimType, claims, layer, minimumConfidence, stale]);
-  const selected = claims.find((claim) => claim.id === selectedId) ?? scopedClaims[0];
-  const counts = useMemo(
-    () => ({
-      total: claims.length,
-      pending: claims.filter((claim) => claim.audit_status === "pending").length,
-      approved: claims.filter((claim) => claim.audit_status === "approved").length,
-      stale: claims.filter((claim) => claim.stale).length,
-    }),
-    [claims],
+  const selected = useMemo(
+    () => items.find((row) => row.id === selectedId) ?? null,
+    [items, selectedId],
   );
 
-  async function generate() {
-    setBusy(true);
-    setError("");
-    try {
-      const data = await request<FactClaim[]>(`/versions/${version.id}/fact-claims:generate`, {
-        method: "POST",
-      });
-      setClaims(data);
-      setSelectedId(data[0]?.id ?? "");
-      setSuccess(t("Generated {n} deterministic facts.", { n: data.length }));
-    } catch (generateError) {
-      setError(messageFrom(generateError));
-    } finally {
-      setBusy(false);
-    }
+  function openReview(decision: "approved" | "rejected" | "needs_correction") {
+    if (!selected) return;
+    setReviewDecision(decision);
+    setReviewReason("");
+    setFixProposalId("");
+    setReviewOpen(true);
   }
 
-  async function executeRules() {
-    setBusy(true);
-    setError("");
-    try {
-      const data = await request<FactClaim[]>(`/versions/${version.id}/rule-definitions:execute`, {
-        method: "POST",
-      });
-      await load();
-      setSelectedId(data[0]?.id ?? selectedId);
-      setSuccess(t("Executed active rules and created {n} derived assertions.", { n: data.length }));
-    } catch (executeError) {
-      setError(messageFrom(executeError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function recallBackground() {
-    setBusy(true);
-    setError("");
-    try {
-      const data = await request<BackgroundRecall[]>(`/versions/${version.id}/background-knowledge:recall`, {
-        method: "POST",
-        body: JSON.stringify({ query: backgroundQuery.trim() || null, limit: 5 }),
-      });
-      setBackgroundHits(data);
-      setSuccess(
-        data.length === 1
-          ? t("Loaded {n} background recall item.", { n: data.length })
-          : t("Loaded {n} background recall items.", { n: data.length }),
-      );
-    } catch (recallError) {
-      setError(messageFrom(recallError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function sample() {
-    setBusy(true);
-    setError("");
-    try {
-      const config = Object.fromEntries(layers.map((name) => [name, sampleSize]));
-      const data = await request<FactClaim[]>(`/versions/${version.id}/fact-claims:sample`, {
-        method: "POST",
-        body: JSON.stringify({ config }),
-      });
-      setClaims(data);
-      setSelectedId(data[0]?.id ?? "");
-      setSuccess(t("Loaded a stratified sample of {n} facts.", { n: data.length }));
-    } catch (sampleError) {
-      setError(messageFrom(sampleError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function review(decision: "approved" | "rejected" | "needs_correction") {
-    if (!selected || selected.stale) return;
-    if (decision === "rejected" && (!reason.trim() || !fixProposalId.trim())) {
+  async function submitReview() {
+    if (!selected) return;
+    if (reviewDecision === "rejected" && (!reviewReason.trim() || !fixProposalId.trim())) {
       setError(t("Reject requires both a reason and a linked fix proposal ID."));
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const updated = await request<FactClaim>(`/fact-claims/${selected.id}/review`, {
-        method: "POST",
-        body: JSON.stringify({
-          decision,
-          reason: reason.trim() || null,
-          linked_fix_proposal_id: decision === "rejected" ? fixProposalId.trim() : null,
-        }),
+      await compileAndApplyProductCommand(request, {
+        command_kind: "review_assertion",
+        payload: {
+          ontology_id: ontologyId,
+          assertion_kind: selected.assertion_kind,
+          subject_iri: selected.subject_iri,
+          predicate_iri: selected.predicate_iri,
+          object_value: selected.object_value,
+          decision: reviewDecision,
+          reason: reviewReason.trim() || "",
+          linked_fix_proposal_id: reviewDecision === "rejected" ? fixProposalId.trim() : null,
+          result_graph_iri:
+            selected.assertion_kind === "inferred" || selected.assertion_kind === "rule_derived"
+              ? selected.graph_iri
+              : undefined,
+        },
+        graph_set_id: graphSetId,
+        actor: "user:stage2-fact-audit",
+        reason: reviewReason.trim() || `Stage 2 FactAuditPage review: ${reviewDecision}`,
       });
-      setClaims((current) => current.map((claim) => (claim.id === updated.id ? updated : claim)));
-      setSuccess(t("Fact marked {decision}.", { decision: decision.replace("_", " ") }));
-      setReason("");
-      setFixProposalId("");
-    } catch (reviewError) {
-      setError(messageFrom(reviewError));
+      setSuccess(t("Fact marked {decision}.", { decision: reviewDecision.replace("_", " ") }));
+      setReviewOpen(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
     }
   }
 
+  async function pollRun(
+    runId: string,
+    isReasoning: boolean,
+  ): Promise<{ status: string; error: string | null }> {
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      try {
+        const run = isReasoning
+          ? await getReasoningRun(request, runId)
+          : await getRuleRun(request, runId);
+        const status = (run as { status?: string }).status ?? "running";
+        if (status === "succeeded" || status === "completed" || status === "failed" || status === "error") {
+          return { status, error: (run as { error?: string | null }).error ?? null };
+        }
+      } catch {
+        // Swallow transient poll errors — keep polling until deadline.
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+    return { status: "timeout", error: "Polling timed out" };
+  }
+
+  async function generate() {
+    setBusy(true);
+    setError("");
+    try {
+      const reasoningRun = await runGraphSetReasoning(request, graphSetId, {
+        tasks: ["consistency", "classification"],
+        persistResultGraph: true,
+      });
+      const ruleRun = await runGraphSetRules(request, graphSetId, {
+        promotePointer: true,
+      });
+      const reasoningId = (reasoningRun as { run_id?: string }).run_id;
+      const ruleId = (ruleRun as { run_id?: string }).run_id;
+      const polled: Array<{ label: string; status: string; error: string | null }> = [];
+      if (reasoningId) {
+        polled.push({ label: "reasoning", ...(await pollRun(reasoningId, true)) });
+      }
+      if (ruleId) {
+        polled.push({ label: "rule", ...(await pollRun(ruleId, false)) });
+      }
+      const failures = polled.filter((p) => p.status === "failed" || p.status === "error" || p.status === "timeout");
+      if (failures.length > 0) {
+        setError(
+          t("Some runs failed: {summary}", {
+            summary: failures.map((f) => `${f.label}=${f.status}`).join(", "),
+          }),
+        );
+      } else {
+        setSuccess(t("Generate complete. Reasoning and rule runs finished."));
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRules() {
+    setBusy(true);
+    setError("");
+    try {
+      const ruleRun = await runGraphSetRules(request, graphSetId, {
+        promotePointer: true,
+      });
+      const ruleId = (ruleRun as { run_id?: string }).run_id;
+      if (ruleId) {
+        const result = await pollRun(ruleId, false);
+        if (result.status === "failed" || result.status === "error" || result.status === "timeout") {
+          setError(t("Rule run {status}: {error}", { status: result.status, error: result.error ?? "?" }));
+        } else {
+          setSuccess(t("Rule run finished."));
+        }
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runRecall() {
+    const query = sparqlText.trim();
+    if (!query) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await sparqlQuery(request, { query, resultLimit: 100 });
+      // Re-shape the SPARQL JSON result into FactRow-style asserted items so
+      // the existing list UI renders without a parallel component. The
+      // SPARQL result rows are tagged with assertion_kind=asserted +
+      // evidence_status=with_evidence per spec §6.4 (Recall).
+      const rows = sparqlRowsToFactRows(response.result);
+      setSparqlResult({
+        graph_set_id: graphSetId,
+        source_signature: "sparql:query",
+        projection_version: "semantic-read-v1",
+        model_name: "sparql-recall",
+        include: "asserted",
+        derived_state: {},
+        warnings: (response.warnings ?? []).map((message) => ({ code: "sparql_recall", message })),
+        items: rows,
+      });
+      setSuccess(t("Loaded {n} rows from SPARQL recall.", { n: rows.length }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const counts = useMemo(() => {
+    return {
+      total: items.length,
+      pending: items.filter((row) => row.audit_status === "pending").length,
+      approved: items.filter((row) => row.audit_status === "approved").length,
+      stale: items.filter((row) => row.stale).length,
+    };
+  }, [items]);
+
   if (loading) return <Spin tip={t("Loading fact audit…")} />;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <div className="topBar">
+    <section className="factAuditPage stage2">
+      <header className="topBar">
         <div>
-          <span className="eyebrow">{t("Review / deterministic facts")}</span>
+          <span className="eyebrow">{t("Stage 2 · graph-derived")}</span>
           <h1>{t("Fact Audit")}</h1>
-          <div className="crumbTrail">{project.name} / {ontology.name} / v{version.version_number}</div>
+          <div className="crumbTrail">
+            <span>{t("Graph set")}: <code>{graphSetId}</code></span>
+          </div>
         </div>
         <Space wrap>
-          <InputNumber min={1} max={100} value={sampleSize} onChange={(value) => setSampleSize(value ?? 5)} />
-          <Button onClick={() => void sample()} disabled={busy || claims.length === 0}>{t("Sample")}</Button>
-          <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>{t("Refresh")}</Button>
-          <Button icon={<Play size={15} />} onClick={() => void executeRules()} disabled={busy || readOnly}>{t("Run rules")}</Button>
-          <Button type="primary" icon={<Sparkles size={15} />} onClick={() => void generate()} disabled={busy || readOnly}>{t("Generate")}</Button>
+          <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>
+            {t("Refresh")}
+          </Button>
+          <Button icon={<Play size={15} />} onClick={() => void runRules()} disabled={busy || readOnly}>
+            {t("Run rules")}
+          </Button>
+          <Button
+            type="primary"
+            icon={<Sparkles size={15} />}
+            onClick={() => void generate()}
+            disabled={busy || readOnly}
+          >
+            {t("Generate")}
+          </Button>
         </Space>
-      </div>
+      </header>
+
       {error && <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />}
       {success && <Alert type="success" showIcon message={success} closable onClose={() => setSuccess("")} />}
-      {readOnly && <Alert type="info" showIcon message={t("This published version is read-only. Fact generation and review are disabled.")} />}
+      {readOnly && (
+        <Alert
+          type="info"
+          showIcon
+          message={t("This published version is read-only. Generate and review are disabled.")}
+        />
+      )}
+      {warnings.map((w, idx) => (
+        <Alert
+          key={`${w.code}-${idx}`}
+          type="warning"
+          showIcon
+          message={w.message}
+          description={w.code}
+        />
+      ))}
+
       <Space wrap size={24}>
-        <Statistic title={t("All facts")} value={counts.total} />
-        <Statistic title={t("Pending")} value={counts.pending} />
-        <Statistic title={t("Approved")} value={counts.approved} />
-        <Statistic title={t("Stale")} value={counts.stale} />
+        <Statistic label={t("Total in tab")} value={counts.total} />
+        <Statistic label={t("Pending")} value={counts.pending} />
+        <Statistic label={t("Approved")} value={counts.approved} />
+        <Statistic label={t("Stale")} value={counts.stale} />
       </Space>
-      <Card size="small" title={t("Filters")}>
-        <Space wrap style={{ width: "100%" }}>
-          <Select aria-label={t("Layer")} value={layer} onChange={setLayer} style={{ width: 190 }} options={[{ value: "all", label: t("All layers") }, ...layers.map((value) => ({ value, label: value.replace(/_/g, " ") }))]} />
-          <Select aria-label={t("Claim type")} value={claimType} onChange={setClaimType} style={{ width: 170 }} options={["all", "direct", "inferred", "conflict", "low_confidence"].map((value) => ({ value, label: value === "all" ? t("All claim types") : value.replace(/_/g, " ") }))} />
-          <Select aria-label={t("Audit status")} value={auditStatus} onChange={setAuditStatus} style={{ width: 170 }} options={["all", "pending", "approved", "rejected", "needs_correction"].map((value) => ({ value, label: value === "all" ? t("All audit states") : value.replace(/_/g, " ") }))} />
-          <Select aria-label={t("Stale state")} value={stale} onChange={setStale} style={{ width: 150 }} options={[{ value: "all", label: t("Fresh and stale") }, { value: "no", label: t("Fresh only") }, { value: "yes", label: t("Stale only") }]} />
-          <InputNumber aria-label={t("Minimum confidence")} min={0} max={1} step={0.05} value={minimumConfidence} onChange={(value) => setMinimumConfidence(value ?? 0)} addonBefore={t("Confidence ≥")} />
-        </Space>
+
+      <Card size="small" title={t("Fact kind")}>
+        <Segmented
+          value={kind}
+          onChange={(value) => setKind(value as AssertionKind)}
+          options={KIND_OPTIONS}
+        />
       </Card>
-      <Card size="small" title={t("Background recall")}>
+
+      <Card size="small" title={t("Recall (SPARQL)")}>
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
-          <Space.Compact style={{ width: "100%" }}>
-            <Input value={backgroundQuery} onChange={(event) => setBackgroundQuery(event.target.value)} placeholder={t("Search unanchored knowledge without treating it as governed fact")} />
-            <Button icon={<Search size={15} />} onClick={() => void recallBackground()} disabled={busy}>{t("Recall")}</Button>
-          </Space.Compact>
-          {backgroundHits.length > 0 && (
-            <Space direction="vertical" size={8} style={{ width: "100%" }}>
-              {backgroundHits.map((item) => (
-                <Card size="small" key={item.knowledge_id}>
-                  <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                    <Space wrap><Tag color="blue">{t("background_recall")}</Tag><Tag>{t("{pct}% confidence", { pct: Math.round(item.confidence * 100) })}</Tag>{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</Space>
-                    <Typography.Text>{item.summary || item.text}</Typography.Text>
-                    {item.summary && <Typography.Text type="secondary">{item.text}</Typography.Text>}
-                  </Space>
-                </Card>
-              ))}
-            </Space>
-          )}
+          <Input.TextArea
+            value={sparqlText}
+            onChange={(event) => setSparqlText(event.target.value)}
+            placeholder={t("Enter SPARQL query — results appear as asserted rows below")}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+          />
+          <Space>
+            <Button icon={<Search size={15} />} onClick={() => void runRecall()} disabled={busy || !sparqlText.trim()}>
+              {t("Recall")}
+            </Button>
+            {sparqlResult && (
+              <Button onClick={() => setSparqlResult(null)} disabled={busy}>
+                {t("Clear recall")}
+              </Button>
+            )}
+          </Space>
         </Space>
       </Card>
+
       <div className="factAuditLayout">
-        <Card title={t("Fact queue · {n}", { n: scopedClaims.length })} styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}>
-          {scopedClaims.length === 0 ? <Empty description={claims.length ? t("No facts match these filters") : t("Generate facts to start an audit")} /> : (
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              {scopedClaims.map((claim) => (
-                <Button key={claim.id} block type={selected?.id === claim.id ? "primary" : "default"} onClick={() => setSelectedId(claim.id)} style={{ height: "auto", padding: 10, textAlign: "left", whiteSpace: "normal" }}>
-                  <Space direction="vertical" size={3} style={{ width: "100%" }}>
-                    <Space wrap><Tag>{claim.layer.replace(/_/g, " ")}</Tag><Tag>{claim.claim_type}</Tag>{claim.stale && <Tag color="warning">{t("STALE")}</Tag>}</Space>
-                    <strong>{subjectLabel(claim.subject, t("Structured subject"))} · {claim.predicate}</strong>
-                    <Typography.Text type="secondary" ellipsis>{jsonText(claim.value)}</Typography.Text>
-                  </Space>
-                </Button>
-              ))}
-            </Space>
-          )}
+        <Card
+          title={
+            sparqlResult
+              ? t("Recall results · {n}", { n: sparqlResult.items.length })
+              : t("Fact queue · {n}", { n: items.length })
+          }
+          styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}
+        >
+          <FactQueue
+            rows={sparqlResult ? (sparqlResult.items as FactRow[]) : items}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+          />
         </Card>
         <Card title={t("Fact inspector")}>
-          {!selected ? <Empty description={t("Select a fact")} /> : (
+          {!selected ? (
+            <Empty description={t("Select a fact")} />
+          ) : (
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
-              {selected.stale && <Alert type="warning" showIcon message={t("This fact is stale and cannot be reviewed. Regenerate facts from the current graph first.")} description={selected.stale_reason ?? undefined} />}
-              <Space wrap><Tag color={selected.claim_type === "inferred" ? "geekblue" : "green"}>{selected.claim_type.toUpperCase()}</Tag><Tag>{selected.audit_status}</Tag><Tag>{t("{pct}% confidence", { pct: Math.round(selected.confidence * 100) })}</Tag></Space>
-              <Descriptions size="small" bordered column={1} items={[
-                { key: "subject", label: t("Subject"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.subject)}</pre> },
-                { key: "predicate", label: t("Predicate"), children: selected.predicate },
-                { key: "value", label: t("Object / value"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.value)}</pre> },
-                { key: "anchor", label: t("Anchor"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.anchor)}</pre> },
-                { key: "policy", label: t("Sensitivity / access"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText({ sensitivity: selected.sensitivity, access_policy: selected.access_policy })}</pre> },
-                { key: "override", label: t("Override"), children: selected.override_of_claim_id ?? t("None") },
-                { key: "reason", label: t("Generated because"), children: selected.generation_reason },
-                { key: "path", label: t("Graph path"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.graph_path)}</pre> },
-                { key: "history", label: t("Review record"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{jsonText(selected.review_decision)}</pre> },
-              ]} />
-              <EvidenceExplorer request={request} evidenceIds={selected.evidence_ids} compact />
-              <Input.TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("Review reason (required for rejection)")} disabled={busy || readOnly || selected.stale} />
-              <Input value={fixProposalId} onChange={(event) => setFixProposalId(event.target.value)} placeholder={t("Linked fix proposal ID (required for rejection)")} disabled={busy || readOnly || selected.stale} />
+              {selected.stale && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={t("This fact is stale. Run a new Generate to refresh.")}
+                  description={selected.stale_reason ?? undefined}
+                />
+              )}
               <Space wrap>
-                <Button type="primary" icon={<Check size={15} />} onClick={() => void review("approved")} disabled={busy || readOnly || selected.stale}>{t("Approve")}</Button>
-                <Button danger icon={<X size={15} />} onClick={() => void review("rejected")} disabled={busy || readOnly || selected.stale}>{t("Reject")}</Button>
-                <Button onClick={() => void review("needs_correction")} disabled={busy || readOnly || selected.stale}>{t("Needs correction")}</Button>
+                <Tag color={selected.assertion_kind === "inferred" ? "geekblue" : selected.assertion_kind === "rule_derived" ? "purple" : "green"}>
+                  {selected.assertion_kind.toUpperCase()}
+                </Tag>
+                <Tag>{selected.audit_status}</Tag>
+                {selected.evidence_status === "missing_evidence" && (
+                  <Tag color="warning">⚠ {t("missing evidence")}</Tag>
+                )}
+              </Space>
+              <Descriptions
+                size="small"
+                bordered
+                column={1}
+                items={[
+                  { key: "subject", label: t("Subject"), children: <FactTerm iri={selected.subject_iri} label={selected.subject_label} /> },
+                  { key: "predicate", label: t("Predicate"), children: <FactTerm iri={selected.predicate_iri} label={selected.predicate_label} /> },
+                  { key: "object", label: t("Object / value"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(selected.object_value, null, 2)}</pre> },
+                  { key: "graph", label: t("Source graph"), children: <code>{selected.graph_iri}</code> },
+                  ...(selected.derived_from
+                    ? [{ key: "derived", label: t("Derived from"), children: <code>{selected.derived_from.run_id}</code> }]
+                    : []),
+                ]}
+              />
+              <Space wrap>
+                <Button
+                  type="primary"
+                  icon={<Check size={15} />}
+                  onClick={() => openReview("approved")}
+                  disabled={busy || readOnly || selected.stale}
+                >
+                  {t("Approve")}
+                </Button>
+                <Button
+                  danger
+                  icon={<X size={15} />}
+                  onClick={() => openReview("rejected")}
+                  disabled={busy || readOnly || selected.stale}
+                >
+                  {t("Reject")}
+                </Button>
+                <Button
+                  onClick={() => openReview("needs_correction")}
+                  disabled={busy || readOnly || selected.stale}
+                >
+                  {t("Needs correction")}
+                </Button>
               </Space>
             </Space>
           )}
         </Card>
       </div>
+
+      <Modal
+        title={t("Review fact · {decision}", { decision: reviewDecision.replace("_", " ") })}
+        open={reviewOpen}
+        onCancel={() => setReviewOpen(false)}
+        onOk={() => void submitReview()}
+        confirmLoading={busy}
+        okText={t("Submit review")}
+        okButtonProps={{
+          disabled:
+            reviewDecision === "rejected" && (!reviewReason.trim() || !fixProposalId.trim()),
+        }}
+      >
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          <Input.TextArea
+            value={reviewReason}
+            onChange={(event) => setReviewReason(event.target.value)}
+            placeholder={t("Review reason (required for rejection)")}
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+          <Input
+            value={fixProposalId}
+            onChange={(event) => setFixProposalId(event.target.value)}
+            placeholder={t("Linked fix proposal ID (required for rejection)")}
+          />
+        </Space>
+      </Modal>
+    </section>
+  );
+}
+
+function Statistic({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="stage2Statistic">
+      <div className="stage2StatisticLabel">{label}</div>
+      <div className="stage2StatisticValue">{value}</div>
+    </div>
+  );
+}
+
+function FactQueue({
+  rows,
+  selectedId,
+  onSelect,
+}: {
+  rows: FactRow[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const t = useT();
+  if (rows.length === 0) {
+    return <Empty description={t("No facts in this kind. Run Generate or switch tabs.")} />;
+  }
+  return (
+    <Space direction="vertical" size={6} style={{ width: "100%" }}>
+      {rows.map((row) => (
+        <Button
+          key={row.id}
+          block
+          type={selectedId === row.id ? "primary" : "default"}
+          onClick={() => onSelect(row.id)}
+          style={{ height: "auto", padding: 10, textAlign: "left", whiteSpace: "normal" }}
+        >
+          <Space direction="vertical" size={3} style={{ width: "100%" }}>
+            <Space wrap>
+              <Tag>{row.assertion_kind.replace(/_/g, " ")}</Tag>
+              <Tag>{row.audit_status}</Tag>
+              {row.stale && <Tag color="warning">{t("STALE")}</Tag>}
+              {row.evidence_status === "missing_evidence" && (
+                <Tag color="warning">⚠ {t("missing evidence")}</Tag>
+              )}
+            </Space>
+            <strong>
+              {row.subject_label ?? row.subject_iri} · {row.predicate_label ?? row.predicate_iri}
+            </strong>
+            <Typography.Text type="secondary" ellipsis>
+              {typeof row.object_value === "string"
+                ? row.object_value
+                : JSON.stringify(row.object_value)}
+            </Typography.Text>
+          </Space>
+        </Button>
+      ))}
     </Space>
   );
 }
+
+function FactTerm({ iri, label }: { iri: string; label: string | null }) {
+  return (
+    <Space direction="vertical" size={0}>
+      <span>{label ?? iri}</span>
+      {label && <code>{iri}</code>}
+    </Space>
+  );
+}
+
+/**
+ * Reshape a SPARQL SELECT JSON result (the form returned by /sparql:query)
+ * into FactRow-style items so the existing queue UI can render them.
+ *
+ * Each result row becomes one FactRow with:
+ *   - subject_iri / predicate_iri / object_value taken from the row's
+ *     ``subject`` / ``predicate`` / ``object`` bindings when present
+ *     (the FactAuditPage recall convention); other shapes fall back to
+ *     stringifying the row.
+ *   - assertion_kind = "asserted" per spec §6.4 (Recall).
+ *   - evidence_status = "with_evidence".
+ *   - audit_status = "pending".
+ */
+function sparqlRowsToFactRows(result: unknown): FactRow[] {
+  if (!result || typeof result !== "object") return [];
+  const head = (result as { head?: { vars?: string[] } }).head;
+  const bindings = (result as { results?: { bindings?: Array<Record<string, { value: string }>> } }).results?.bindings;
+  if (!head || !bindings || !Array.isArray(bindings)) return [];
+  return bindings.map((binding, idx) => {
+    const subjectIri = binding.subject?.value ?? binding.s?.value ?? "";
+    const predicateIri = binding.predicate?.value ?? binding.p?.value ?? "";
+    const objectValue = binding.object?.value ?? binding.o?.value ?? null;
+    const graphIri = binding.graph?.value ?? binding.g?.value ?? "";
+    return {
+      id: `sparql-${idx}-${subjectIri}-${predicateIri}`,
+      fact_id: `sparql-${idx}`,
+      assertion_kind: "asserted",
+      subject_iri: subjectIri,
+      subject_label: null,
+      predicate_iri: predicateIri,
+      predicate_label: null,
+      object_value: objectValue,
+      object_label: null,
+      graph_iri: graphIri,
+      source_graph_iri: graphIri,
+      evidence_status: "with_evidence",
+      audit_status: "pending",
+      stale: false,
+      stale_reason: null,
+    } satisfies FactRow;
+  });
+}
+
+export type { FactAuditPageProps };
