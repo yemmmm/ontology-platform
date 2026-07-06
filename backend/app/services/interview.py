@@ -20,7 +20,6 @@ from app.repositories.models import (
     CompetencyQuestionModel,
     InterviewAnswerModel,
     OntologyModel,
-    OntologyVersionModel,
     ProjectBriefModel,
     ProjectModel,
     SemanticGraphSetMemberModel,
@@ -141,13 +140,6 @@ def get_build_context(session: Session, project_id: str) -> dict[str, Any]:
         )
     )
     questions = list_questions(session, project_id, include_inactive=True)
-    version_ids = [ontology.current_version_id for ontology in ontologies if ontology.current_version_id]
-    versions = {
-        version.id: version
-        for version in session.scalars(
-            select(OntologyVersionModel).where(OntologyVersionModel.id.in_(version_ids))
-        )
-    }
     question_counts: dict[str, int] = {}
     for question in questions:
         key = "inactive" if not question.active else question.status
@@ -160,16 +152,6 @@ def get_build_context(session: Session, project_id: str) -> dict[str, Any]:
                 "id": ontology.id,
                 "name": ontology.name,
                 "status": ontology.status,
-                "current_version_id": ontology.current_version_id,
-                "current_version": (
-                    {
-                        "status": versions[ontology.current_version_id].status,
-                        "workflow_status": versions[ontology.current_version_id].workflow_status,
-                        "version_number": versions[ontology.current_version_id].version_number,
-                    }
-                    if ontology.current_version_id in versions
-                    else None
-                ),
             }
             for ontology in ontologies
         ],

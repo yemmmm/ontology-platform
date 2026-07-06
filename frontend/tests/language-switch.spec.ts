@@ -4,7 +4,6 @@ const project = { id: "project-1", name: "Supply Chain", description: "Operation
 const ontology = {
   id: "ontology-1",
   project_id: project.id,
-  current_version_id: "version-1",
   name: "Supply Network",
   description: "Supplier and shipment knowledge",
   status: "active",

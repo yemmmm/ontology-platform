@@ -13,7 +13,6 @@ export type Project = {
 export type Ontology = {
   id: string;
   project_id: string;
-  current_version_id: string | null;
   name: string;
   description: string | null;
   status: string;
@@ -421,17 +420,10 @@ export type ProjectBrief = {
   completeness: number;
 };
 
-export type BuildContextVersionSummary = Pick<
-  OntologyVersion,
-  "status" | "workflow_status" | "version_number"
->;
-
 export type BuildContextOntology = {
   id: string;
   name: string;
   status: string;
-  current_version_id: string | null;
-  current_version: BuildContextVersionSummary | null;
 };
 
 export type BuildContext = {

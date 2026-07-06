@@ -12,7 +12,6 @@ const project = { id: "project-stage2", name: "Stage 2 Sandbox", description: "g
 const ontology = {
   id: "ontology-stage2",
   project_id: project.id,
-  current_version_id: "version-stage2",
   name: "Stage 2 Ontology",
   description: "graph-derived",
   status: "active",

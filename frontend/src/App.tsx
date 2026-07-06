@@ -286,10 +286,10 @@ export function App() {
       const data = await request<OntologyVersion[]>(`/ontologies/${ontologyId}/versions`);
       setVersions(data);
       setSelectedVersionId(
-        (current) => current || selectedOntology?.current_version_id || data[data.length - 1]?.id || "",
+        (current) => current || data[data.length - 1]?.id || "",
       );
     },
-    [request, selectedOntology?.current_version_id, selectedOntologyId],
+    [request, selectedOntologyId],
   );
 
   const refreshAll = useCallback(async () => {
@@ -335,7 +335,7 @@ export function App() {
 
   function openOntology(ontology: Ontology) {
     setSelectedOntologyId(ontology.id);
-    setSelectedVersionId(ontology.current_version_id ?? "");
+    setSelectedVersionId("");
     setWorkspaceTab("brief");
     setView("workspace");
   }
@@ -682,8 +682,6 @@ function OntologyHomePage(props: {
                   <dl>
                     <dt>{t("Updated")}</dt>
                     <dd>{formatDate(ontology.updated_at)}</dd>
-                    <dt>{t("Version")}</dt>
-                    <dd>{compactId(ontology.current_version_id)}</dd>
                   </dl>
                 </button>
                 <button
@@ -1091,8 +1089,6 @@ function SystemPage(props: {
           <dd>{props.ontology.name}</dd>
           <dt>{t("Status")}</dt>
           <dd><Badge>{props.ontology.status}</Badge></dd>
-          <dt>{t("Version")}</dt>
-          <dd>{compactId(props.ontology.current_version_id)}</dd>
           <dt>{t("Updated")}</dt>
           <dd>{formatDate(props.ontology.updated_at)}</dd>
         </dl>
