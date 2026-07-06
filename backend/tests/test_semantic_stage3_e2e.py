@@ -78,10 +78,10 @@ def test_step2_seed_ontology(
             (new_class_iri, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://www.w3.org/2000/01/rdf-schema#Class"),
         ],
     )
-    triples, total = svc._role_triples(ONTOLOGY_GRAPH, limit=10)
+    triples = svc._role_triples(ONTOLOGY_GRAPH)
     subjects = {t[0] for t in triples}
     assert new_class_iri in subjects
-    assert total >= 2
+    assert len(triples) >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ def test_step3_seed_data(
             (new_entity, f"{PREFIX}ns/property/name", "Bob"),
         ],
     )
-    triples, _ = svc._role_triples(DATA_GRAPH, limit=10)
+    triples = svc._role_triples(DATA_GRAPH)
     subjects = {t[0] for t in triples}
     assert new_entity in subjects
 

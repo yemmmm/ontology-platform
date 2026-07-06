@@ -777,22 +777,19 @@ class SemanticReadModelService:
         for role in roles:
             b = base_members.get(role)
             t = target_members.get(role)
-            b_triples, b_total = (
-                self._role_triples(b.graph_iri, limit) if b else (set(), 0)
-            )
-            t_triples, t_total = (
-                self._role_triples(t.graph_iri, limit) if t else (set(), 0)
-            )
-            added_full = t_triples - b_triples
-            removed_full = b_triples - t_triples
-            added = list(added_full)[:limit]
-            removed = list(removed_full)[:limit]
+            # Fetch the FULL triple sets per role (uncapped) so set differences
+            # reflect the real diff size. The ``limit`` only slices the
+            # displayed ``added[]``/``removed[]`` arrays in the response.
+            b_triples = self._role_triples(b.graph_iri) if b else set()
+            t_triples = self._role_triples(t.graph_iri) if t else set()
+            added_full = list(t_triples - b_triples)
+            removed_full = list(b_triples - t_triples)
             out.append({
                 "role": role,
                 "base_graph_iri": b.graph_iri if b else None,
                 "target_graph_iri": t.graph_iri if t else None,
-                "added": [self._triple_dict(x) for x in added],
-                "removed": [self._triple_dict(x) for x in removed],
+                "added": [self._triple_dict(x) for x in added_full[:limit]],
+                "removed": [self._triple_dict(x) for x in removed_full[:limit]],
                 "counts": {
                     "added": len(added_full),
                     "removed": len(removed_full),
@@ -809,18 +806,29 @@ class SemanticReadModelService:
             "truncated": truncated,
         }
 
-    def _role_triples(self, graph_iri: str, limit: int) -> tuple[set[tuple[str, str, str]], int]:
-        """Return the set of (s, p, o) tuples in ``graph_iri`` (capped at
-        ``limit`` for the in-memory set) and the total triple count."""
+    def _role_triples(self, graph_iri: str) -> set[tuple[str, str, str]]:
+        """Return the FULL set of (s, p, o) tuples in ``graph_iri``.
+
+        Stage 3 §4.3 requires the diff to be computed over the uncapped
+        triple sets so ``counts.added`` / ``counts.removed`` reflect the
+        real diff size; the ``limit`` only slices the response arrays in
+        the composer. A separate ``SELECT COUNT`` query is unnecessary
+        here because we materialize the full set anyway to compute the
+        set difference.
+        """
+        # Use a large cap to protect against pathological graphs while
+        # remaining effectively unbounded for any realistic ontology. The
+        # composer slices to ``limit`` afterwards.
+        fetch_limit = 100_000
         query = (
             f"# graph-set-delta SELECT\nSELECT ?s ?p ?o WHERE {{ "
-            f"GRAPH <{graph_iri}> {{ ?s ?p ?o }} }} LIMIT {limit}"
+            f"GRAPH <{graph_iri}> {{ ?s ?p ?o }} }} LIMIT {fetch_limit}"
         )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=[graph_iri],
             timeout_seconds=self.timeout_seconds,
-            limit=limit,
+            limit=fetch_limit,
         )
         rows = self._rows(result)
         triples: set[tuple[str, str, str]] = set()
@@ -829,9 +837,7 @@ class SemanticReadModelService:
             p = self._cell(row, "p") or self._cell(row, "predicate") or ""
             o = self._cell(row, "o") or self._cell(row, "object") or ""
             triples.add((s, p, o))
-            if len(triples) >= limit:
-                break
-        return triples, len(triples)
+        return triples
 
     @staticmethod
     def _triple_dict(triple: tuple[str, str, str]) -> dict[str, str]:

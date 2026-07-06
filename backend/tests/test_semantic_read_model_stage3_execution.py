@@ -196,4 +196,80 @@ def test_read_model_route_threads_target_query_param(
     assert rows["target_graph_set_id"] == target_id
 
 
+def test_graph_set_delta_counts_independent_of_display_cap(
+    in_memory_session, fake_store, fake_graph_set_with_members
+):
+    """Stage 3 §4.3: ``counts.added`` / ``counts.removed`` must reflect the
+    true diff size, while the ``added[]`` / ``removed[]`` arrays are capped
+    at ``limit``. The two are independent — a small ``limit`` must NOT
+    underreport counts.
+
+    We seed a base asserted_data graph with 50 triples and a target with 30
+    additional triples (so target − base = 30 added, base − target = 0
+    removed). We then call the delta composer with ``limit=10`` and verify:
+
+    - ``counts.added == 30`` (real diff size)
+    - ``len(added) <= 10`` (display cap respected)
+    - ``truncated`` is True
+    """
+    from conftest_stage3 import (
+        DATA_GRAPH,
+        GRAPH_PREFIX,
+        PREFIX,
+        _seed_graph_set,
+    )
+
+    svc, base_id = fake_graph_set_with_members
+
+    # 50 base triples; 30 additional target-only triples => 30 added.
+    base_triples = [
+        (f"{PREFIX}ns/entity/e{i}", f"{PREFIX}ns/property/label", f"Entity {i}")
+        for i in range(50)
+    ]
+    target_extra = [
+        (f"{PREFIX}ns/entity/x{i}", f"{PREFIX}ns/property/label", f"Extra {i}")
+        for i in range(30)
+    ]
+    target_data_graph = f"{GRAPH_PREFIX}data/ont-stage3-cap"
+    target_ontology_graph = f"{GRAPH_PREFIX}ontology/ont-stage3-cap"
+
+    fake_store.set_triples(DATA_GRAPH, base_triples)
+    fake_store.set_triples(target_data_graph, base_triples + target_extra)
+    # Ontology graph identical on both sides so its role diff is empty.
+    fake_store.set_triples(
+        target_ontology_graph,
+        fake_store._triples.get(
+            f"{GRAPH_PREFIX}ontology/ont-stage3", set()
+        ),
+    )
+
+    target_id = _seed_graph_set(
+        in_memory_session,
+        graph_set_id="gs-stage3-cap-target",
+        name="stage3-cap-target",
+        members=[
+            (target_ontology_graph, "asserted_ontology"),
+            (target_data_graph, "asserted_data"),
+        ],
+    )
+
+    envelope = svc.read_model(
+        graph_set_id=base_id,
+        model_name="graph-set-delta",
+        field_set="detail",
+        target=target_id,
+        limit=10,
+    )
+    rows = envelope["items"][0]
+    role_map = {r["role"]: r for r in rows["roles"]}
+    ad = role_map["asserted_data"]
+    # True diff size reported even though ``limit=10`` was requested.
+    assert ad["counts"]["added"] == 30
+    assert ad["counts"]["removed"] == 0
+    # Display arrays capped.
+    assert len(ad["added"]) <= 10
+    # Truncation flag set.
+    assert rows["truncated"] is True
+
+
 
