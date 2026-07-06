@@ -25,6 +25,26 @@ class ReadModelError(RuntimeError):
     status_code = 400
 
 
+def _member_editable(session: Any, graph_iri: str) -> bool:
+    """Stage 3 history-list helper: read the graph registry row for
+    ``graph_iri`` and return its ``mutable_by_direct_edit`` flag, defaulting
+    to True when the row is absent (matches the scope resolver's behaviour)."""
+    if session is None:
+        return True
+    from sqlalchemy import select
+
+    from app.repositories.models import SemanticGraphRegistryModel
+
+    row = session.scalar(
+        select(SemanticGraphRegistryModel).where(
+            SemanticGraphRegistryModel.graph_iri == graph_iri
+        )
+    )
+    if row is None:
+        return True
+    return bool(row.mutable_by_direct_edit)
+
+
 class _VisibilityPolicy(Protocol):
     def evaluate(
         self, graph_iri: str, visibility_context: dict[str, Any] | None
@@ -46,6 +66,7 @@ class SemanticReadModelService:
         default_limit: int = 500,
         visibility_policy: _VisibilityPolicy | None = None,
         shape_endpoint: _ShapeEndpointProtocol | None = None,
+        session: Any = None,
     ) -> None:
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
@@ -56,6 +77,11 @@ class SemanticReadModelService:
         # session); unit tests can pass a fake. When None, entity-shape raises
         # a ReadModelError at call time.
         self.shape_endpoint = shape_endpoint
+        # Stage 3 composers (publication-readiness, graph-set-history-list,
+        # graph-set-delta) need direct Postgres access. The API layer passes
+        # the request-scoped session here; older composers (graph-set-staleness,
+        # entity-shape, fact-audit-queue) keep using ``scope_resolver`` only.
+        self.session = session
 
     def read_model(
         self,
@@ -69,6 +95,7 @@ class SemanticReadModelService:
         entity_iri: str | None = None,
         class_iri: str | None = None,
         kind: str | None = None,
+        target: str | None = None,
     ) -> dict[str, Any]:
         try:
             template = get_template(model_name)
@@ -86,6 +113,32 @@ class SemanticReadModelService:
                 template=template,
                 scope=scope,
                 items=items,
+                warnings=list(scope.warnings),
+            )
+        if template.name == "publication-readiness":
+            items = [self._compose_publication_readiness(scope, field_set)]
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
+        if template.name == "graph-set-history-list":
+            item = self._compose_graph_set_history_list(scope, field_set)
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=[item],
+                warnings=list(scope.warnings),
+            )
+        if template.name == "graph-set-delta":
+            item = self._compose_graph_set_delta(
+                scope, field_set, target, limit or template.default_limit
+            )
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=[item],
                 warnings=list(scope.warnings),
             )
         if template.name == "entity-shape":
@@ -405,6 +458,385 @@ class SemanticReadModelService:
         if isinstance(cell, dict):
             return int(cell.get("value", 0))
         return int(cell)
+
+    # ------------------------------------------------------------------
+    # publication-readiness composer (Stage 3 §4.1)
+    # ------------------------------------------------------------------
+
+    def _compose_publication_readiness(
+        self, scope: ScopeResolution, field_set: str
+    ) -> dict[str, Any]:
+        """Aggregate staleness, missing-evidence, open edits, projection
+        freshness and editability into a single readiness row. See spec §4.1
+        for the field contract."""
+        staleness_row = self._compose_graph_set_staleness(scope, "detail")
+        missing = self._missing_evidence_count(scope)
+        open_edits = self._open_edits_count(scope.graph_set_id)
+        editable_graphs = [
+            {"graph_iri": m.graph_iri, "role": m.role}
+            for m in scope.members
+            if m.editable
+        ]
+        projection_freshness = self._projection_freshness(scope.graph_set_id)
+        gates = self._evaluate_publication_gates(
+            staleness_row=staleness_row,
+            missing_evidence=missing,
+            open_edits=open_edits,
+            editable_graph_count=len(editable_graphs),
+            projection_freshness=projection_freshness,
+        )
+        ready = all(g["status"] == "passed" for g in gates)
+        row: dict[str, Any] = {
+            "graph_set_id": scope.graph_set_id,
+            "ready": ready,
+            "gates": gates,
+            "blockers": [g["label"] for g in gates if g["status"] == "blocked"],
+            "warnings": [g["label"] for g in gates if g["status"] == "warning"],
+            "editable_graph_count": len(editable_graphs),
+            "editable_graphs": editable_graphs,
+            "last_published_at": self._last_published_at(scope.graph_set_id),
+        }
+        if field_set == "summary":
+            return {
+                "graph_set_id": row["graph_set_id"],
+                "ready": row["ready"],
+                "blockers": row["blockers"],
+                "warnings": row["warnings"],
+            }
+        return row
+
+    def _open_edits_count(self, graph_set_id: str) -> int:
+        """Stage 3 publication blocker: count SemanticEditAuditModel rows
+        whose latest edit per target graph is still unapplied (``applied``
+        flag False). Only the latest edit per target graph is considered so
+        that an applied-then-reopened graph counts once."""
+        if self.session is None:
+            return 0
+        from sqlalchemy import func, select
+
+        from app.repositories.models import (
+            SemanticEditAuditModel,
+            SemanticGraphSetMemberModel,
+        )
+
+        member_iris = list(
+            self.session.scalars(
+                select(SemanticGraphSetMemberModel.graph_iri).where(
+                    SemanticGraphSetMemberModel.graph_set_id == graph_set_id
+                )
+            )
+        )
+        if not member_iris:
+            return 0
+        latest_subq = (
+            select(
+                SemanticEditAuditModel.target_graph_iri,
+                func.max(SemanticEditAuditModel.created_at).label("max_created_at"),
+            )
+            .where(SemanticEditAuditModel.target_graph_iri.in_(member_iris))
+            .group_by(SemanticEditAuditModel.target_graph_iri)
+            .subquery()
+        )
+        rows = list(
+            self.session.scalars(
+                select(SemanticEditAuditModel).join(
+                    latest_subq,
+                    (
+                        SemanticEditAuditModel.target_graph_iri
+                        == latest_subq.c.target_graph_iri
+                    )
+                    & (
+                        SemanticEditAuditModel.created_at
+                        == latest_subq.c.max_created_at
+                    ),
+                )
+            )
+        )
+        return sum(1 for r in rows if not r.applied)
+
+    def _projection_freshness(self, graph_set_id: str) -> dict[str, dict[str, Any]]:
+        """Returns {manifest_projection_kind: {fresh, last_run_at}}."""
+        if self.session is None:
+            return {}
+        from sqlalchemy import select
+
+        from app.repositories.models import SemanticProjectionManifestModel
+
+        rows = list(
+            self.session.scalars(
+                select(SemanticProjectionManifestModel).where(
+                    SemanticProjectionManifestModel.graph_set_id == graph_set_id
+                )
+            )
+        )
+        out: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            out[r.projection_kind] = {
+                "fresh": r.updated_at is not None,
+                "last_run_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+        return out
+
+    def _last_published_at(self, graph_set_id: str) -> str | None:
+        if self.session is None:
+            return None
+        from sqlalchemy import select
+
+        from app.repositories.models import SemanticGraphSetModel
+
+        row = self.session.scalar(
+            select(SemanticGraphSetModel).where(
+                SemanticGraphSetModel.id == graph_set_id
+            )
+        )
+        if row and row.graph_set_metadata:
+            v = row.graph_set_metadata.get("last_published_at")
+            return str(v) if v else None
+        return None
+
+    def _evaluate_publication_gates(
+        self,
+        *,
+        staleness_row: dict[str, Any],
+        missing_evidence: int,
+        open_edits: int,
+        editable_graph_count: int,
+        projection_freshness: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Map staleness/missing-evidence/open-edits/projection signals to
+        the §4.1 ``GateStatus`` shape."""
+        gates: list[dict[str, Any]] = []
+        members = staleness_row.get("members", []) if staleness_row else []
+        for kind in ("validation", "reasoning", "rule"):
+            # Each member of a graph set shares the same derived pointer; we
+            # pick the first member whose derived_state carries this kind.
+            state: Any = None
+            for member in members:
+                derived = member.get("derived_state") or {}
+                if kind in derived:
+                    state = derived[kind]
+                    break
+            # Fall back to the per-member boolean flag (e.g. ``validation_stale``).
+            stale_flag = None
+            for member in members:
+                key = f"{kind}_stale"
+                if key in member and member[key] is not None:
+                    stale_flag = member[key]
+                    break
+            if state is None and stale_flag is None:
+                gate_status = "blocked"
+                label_state = "unknown"
+            elif state and state.get("status") == "stale" or stale_flag:
+                gate_status = "warning"
+                label_state = "stale"
+            else:
+                gate_status = "passed"
+                label_state = "fresh"
+            gates.append({
+                "gate": f"{kind}_stale",
+                "status": gate_status,
+                "details": {
+                    "staleness_state": label_state,
+                    "latest_run_id": (
+                        state.get("run_id") if isinstance(state, dict) else None
+                    ),
+                },
+                "label": f"{kind} is {label_state}",
+            })
+        gates.append({
+            "gate": "missing_evidence",
+            "status": "passed" if missing_evidence == 0 else "blocked",
+            "details": {"count": missing_evidence},
+            "label": f"{missing_evidence} facts missing evidence",
+        })
+        gates.append({
+            "gate": "open_edits",
+            "status": "passed" if open_edits == 0 else "warning",
+            "details": {"count": open_edits},
+            "label": f"{open_edits} pending semantic edits",
+        })
+        fresh_all = bool(projection_freshness) and all(
+            p["fresh"] for p in projection_freshness.values()
+        )
+        gates.append({
+            "gate": "projection_freshness",
+            "status": "passed" if fresh_all else "warning",
+            "details": projection_freshness,
+            "label": "projection manifest freshness",
+        })
+        return gates
+
+    # ------------------------------------------------------------------
+    # graph-set-history-list composer (Stage 3 §4.2)
+    # ------------------------------------------------------------------
+
+    def _compose_graph_set_history_list(
+        self, scope: ScopeResolution, field_set: str
+    ) -> dict[str, Any]:
+        """List graph sets in the same scope as ``scope.graph_set_id``."""
+        if self.session is None:
+            return {"graph_sets": [], "total": 0}
+        from sqlalchemy import func, select
+
+        from app.repositories.models import (
+            SemanticDerivedResultPointerModel,
+            SemanticGraphSetMemberModel,
+            SemanticGraphSetModel,
+        )
+
+        anchor = self.session.scalar(
+            select(SemanticGraphSetModel).where(
+                SemanticGraphSetModel.id == scope.graph_set_id
+            )
+        )
+        if anchor is None:
+            return {"graph_sets": [], "total": 0}
+        sets = list(
+            self.session.scalars(
+                select(SemanticGraphSetModel)
+                .where(
+                    SemanticGraphSetModel.scope_type == anchor.scope_type,
+                    SemanticGraphSetModel.scope_id == anchor.scope_id,
+                )
+                .order_by(SemanticGraphSetModel.created_at.desc())
+            )
+        )
+        out: list[dict[str, Any]] = []
+        for s in sets:
+            members = list(
+                self.session.scalars(
+                    select(SemanticGraphSetMemberModel).where(
+                        SemanticGraphSetMemberModel.graph_set_id == s.id
+                    )
+                )
+            )
+            any_editable = any(_member_editable(self.session, m.graph_iri) for m in members)
+            latest_pointer = self.session.scalar(
+                select(
+                    func.max(SemanticDerivedResultPointerModel.became_current_at)
+                )
+                .join(
+                    SemanticGraphSetMemberModel,
+                    SemanticGraphSetMemberModel.graph_iri
+                    == SemanticDerivedResultPointerModel.result_graph_iri,
+                )
+                .where(SemanticGraphSetMemberModel.graph_set_id == s.id)
+            )
+            metadata = s.graph_set_metadata or {}
+            out.append({
+                "graph_set_id": s.id,
+                "status": "editable" if any_editable else "locked",
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "locked_at": metadata.get("locked_at"),
+                "source_signature": s.source_signature,
+                "member_count": len(members),
+                "latest_derived_pointer_at": (
+                    latest_pointer.isoformat() if latest_pointer else None
+                ),
+                "ready": None,
+            })
+        return {"graph_sets": out, "total": len(out)}
+
+    # ------------------------------------------------------------------
+    # graph-set-delta composer (Stage 3 §4.3)
+    # ------------------------------------------------------------------
+
+    def _compose_graph_set_delta(
+        self,
+        scope: ScopeResolution,
+        field_set: str,
+        target: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        """Diff two graph sets by named graph role."""
+        if not target:
+            raise ReadModelError(
+                "graph-set-delta requires ?target=<other_graph_set_id>"
+            )
+        if self.session is None:
+            raise ReadModelError(
+                "graph-set-delta requires a database session for scope resolution"
+            )
+        from sqlalchemy import select
+
+        from app.repositories.models import SemanticGraphSetMemberModel
+
+        def _members_for(graph_set_id: str) -> list[SemanticGraphSetMemberModel]:
+            return list(
+                self.session.scalars(
+                    select(SemanticGraphSetMemberModel).where(
+                        SemanticGraphSetMemberModel.graph_set_id == graph_set_id
+                    )
+                )
+            )
+
+        base_members = {m.role: m for m in _members_for(scope.graph_set_id)}
+        target_members = {m.role: m for m in _members_for(target)}
+        roles = sorted(set(base_members) | set(target_members))
+        out: list[dict[str, Any]] = []
+        for role in roles:
+            b = base_members.get(role)
+            t = target_members.get(role)
+            b_triples, b_total = (
+                self._role_triples(b.graph_iri, limit) if b else (set(), 0)
+            )
+            t_triples, t_total = (
+                self._role_triples(t.graph_iri, limit) if t else (set(), 0)
+            )
+            added_full = t_triples - b_triples
+            removed_full = b_triples - t_triples
+            added = list(added_full)[:limit]
+            removed = list(removed_full)[:limit]
+            out.append({
+                "role": role,
+                "base_graph_iri": b.graph_iri if b else None,
+                "target_graph_iri": t.graph_iri if t else None,
+                "added": [self._triple_dict(x) for x in added],
+                "removed": [self._triple_dict(x) for x in removed],
+                "counts": {
+                    "added": len(added_full),
+                    "removed": len(removed_full),
+                },
+            })
+        truncated = any(
+            r["counts"]["added"] > limit or r["counts"]["removed"] > limit
+            for r in out
+        )
+        return {
+            "base_graph_set_id": scope.graph_set_id,
+            "target_graph_set_id": target,
+            "roles": out,
+            "truncated": truncated,
+        }
+
+    def _role_triples(self, graph_iri: str, limit: int) -> tuple[set[tuple[str, str, str]], int]:
+        """Return the set of (s, p, o) tuples in ``graph_iri`` (capped at
+        ``limit`` for the in-memory set) and the total triple count."""
+        query = (
+            f"# graph-set-delta SELECT\nSELECT ?s ?p ?o WHERE {{ "
+            f"GRAPH <{graph_iri}> {{ ?s ?p ?o }} }} LIMIT {limit}"
+        )
+        result = self.rdf_store.query_read_model(
+            query=query,
+            graph_iris=[graph_iri],
+            timeout_seconds=self.timeout_seconds,
+            limit=limit,
+        )
+        rows = self._rows(result)
+        triples: set[tuple[str, str, str]] = set()
+        for row in rows:
+            s = self._cell(row, "s") or self._cell(row, "subject") or ""
+            p = self._cell(row, "p") or self._cell(row, "predicate") or ""
+            o = self._cell(row, "o") or self._cell(row, "object") or ""
+            triples.add((s, p, o))
+            if len(triples) >= limit:
+                break
+        return triples, len(triples)
+
+    @staticmethod
+    def _triple_dict(triple: tuple[str, str, str]) -> dict[str, str]:
+        s, p, o = triple
+        return {"subject": s, "predicate": p, "object": o}
 
     # ------------------------------------------------------------------
     # fact-audit-queue composer (Stage 2 §6.3)

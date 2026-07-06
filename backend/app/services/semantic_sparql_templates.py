@@ -478,6 +478,21 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
+    "publication-readiness": ReadModelTemplate(
+        name="publication-readiness",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=True,
+        needs_rules=True,
+        default_limit=1,
+        assertion_kind="asserted",
+        evidence_status="mixed",
+        body="""# template: publication-readiness
+        # Single-row composer. Body is intentionally empty; the service
+        # delegates to ``_compose_publication_readiness`` which reuses the
+        # graph-set-staleness and missing-evidence aggregators.
+        """,
+    ),
 }
 
 
