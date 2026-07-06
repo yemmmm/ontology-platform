@@ -1643,6 +1643,26 @@ class SemanticMigrationRollbackResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def _canonical_command_kinds() -> tuple[str, ...]:
+    """Return the canonical command kinds supported by the compiler.
+
+    Looked up at import time so the API schema stays in sync with the compiler
+    registry (Stage 2 §3.3.1 added 19 new kinds). Falls back to a static list
+    if the compiler module cannot be imported in this context.
+    """
+    try:
+        from app.services.semantic_command_compiler import supported_command_kinds
+
+        return tuple(supported_command_kinds())
+    except Exception:  # pragma: no cover - defensive
+        return (
+            "create_class",
+            "create_relation_type",
+            "submit_assertion",
+            "update_evidence_status",
+        )
+
+
 class SemanticCanonicalProductWriteRequest(BaseModel):
     """Phase 7 product command compiler entry point.
 
@@ -1651,12 +1671,7 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     compiler that produces an :class:`RdfGraphDelta` for the canonical writer.
     """
 
-    command_kind: Literal[
-        "create_class",
-        "create_relation_type",
-        "submit_assertion",
-        "update_evidence_status",
-    ]
+    command_kind: Literal[_canonical_command_kinds()]  # type: ignore[valid-type]
     graph_set_id: str
     target_graph_iri: str | None = None
     payload: dict[str, Any]
