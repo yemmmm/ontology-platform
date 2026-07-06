@@ -192,7 +192,9 @@ async function mockCommon(page: Page) {
       competency_questions: { total: 0, by_status: {} },
       next_actions: [],
     };
-    else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
+    // `ontologies/{id}/versions` endpoint was removed in Phase B (legacy
+    // governance hard-cut). Mock kept as defensive `[]` only.
+    else if (path === `/ontologies/${ontology.id}/versions`) body = [];
     else if (path === `/ontologies/${ontology.id}/classes`) body = [];
     else if (path === `/ontologies/${ontology.id}/relation-types`) body = [];
     else if (path === `/ontologies/${ontology.id}/entities`) body = [];
@@ -250,34 +252,11 @@ test("EntitiesPage graph-derived path renders entity and relations cards", async
   await expect(page.getByRole("button", { name: "New entity" })).toBeEnabled();
 });
 
-test("CatalogMappingsStep graph-derived path renders mapping list on step 4", async ({ page }) => {
-  await mockCommon(page);
-  await page.goto(
-    `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=catalog&graphSet=${GRAPH_SET_ID}`,
-  );
-  await expect(page.getByRole("heading", { name: "Data Catalog" })).toBeVisible();
-
-  // Step 1: pick the existing data source to seed wizardSourceId → step 2.
-  await page.getByRole("button", { name: /Source 1/ }).first().click();
-  // Step 2: pick the existing data resource to seed wizardResourceId → step 3
-  // and unlock step 4 in the indicator.
-  await page.getByRole("button", { name: /Resource 1/ }).first().click();
-  // Step 3: jump directly to step 4 via the indicator (now reachable because
-  // wizardResourceId is set).
-  await page
-    .locator(".wizardStep")
-    .filter({ hasText: "语义映射" })
-    .first()
-    .click();
-
-  // Mapping list rendered with the mocked row.
-  await expect(page.getByText(/已有 mapping/).first()).toBeVisible();
-  await expect(page.getByText("http://x/class/Class1")).toBeVisible();
-  // "Add mapping" button present on the new graph-derived step. It is
-  // disabled until the user fills target + field (smoke scope stops here;
-  // form fill + canonical write is out of scope).
-  await expect(page.getByRole("button", { name: "添加 mapping" })).toBeVisible();
-});
+// CatalogMappingsStep graph-derived smoke — REMOVED in Phase F.
+// The catalog tab was deleted in Phase E (App.tsx rewrite). The Postgres
+// catalog data layer still exists, but the wizard UI that consumed it is
+// gone. This test asserted the now-removed wizard's step-4 mapping list,
+// so it cannot pass without resurrecting removed UI.
 
 test("FactAuditPage graph-derived path renders asserted rows and kind tabs", async ({ page }) => {
   await mockCommon(page);

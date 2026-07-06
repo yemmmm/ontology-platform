@@ -44,7 +44,9 @@ async function mockApi(page: Page) {
       ontologies: [{ ...ontology, current_version: version }],
       competency_question_counts: {},
     };
-    else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
+    // `ontologies/{id}/versions` endpoint was removed in Phase B (legacy
+    // governance hard-cut). Mock kept as defensive `[]` only.
+    else if (path === `/ontologies/${ontology.id}/versions`) body = [];
     else if (path === `/ontologies/${ontology.id}/proposals`) body = [];
     await route.fulfill({ json: body });
   });

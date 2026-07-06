@@ -197,7 +197,10 @@ async function mockApi(page: Page) {
     let body: unknown = [];
     if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
-    else if (path === `/ontologies/${ontology.id}/versions`) body = [version];
+    // `ontologies/{id}/versions` endpoint was removed in Phase B (legacy
+    // governance hard-cut). The mock is kept as a defensive `[]` in case a
+    // future caller fetches it through OntologyHomePage.
+    else if (path === `/ontologies/${ontology.id}/versions`) body = [];
     else if (path === `/ontologies/${ontology.id}/classes`) body = [];
     else if (path === `/ontologies/${ontology.id}/relation-types`) body = [];
     else if (path === `/ontologies/${ontology.id}/entities`) body = [];
