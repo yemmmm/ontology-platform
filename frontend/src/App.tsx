@@ -36,7 +36,6 @@ import type {
   JsonObject,
   Notice,
   Ontology,
-  OntologyVersion,
   Project,
 } from "./types";
 import { classNames, compactId, formatDate, prettyJson } from "./utils";
@@ -52,7 +51,6 @@ import { GraphSetPage } from "./pages/GraphSetPage";
 import { SemanticRunsPage } from "./pages/SemanticRunsPage";
 import { SemanticEditWorkbenchPage } from "./pages/SemanticEditWorkbenchPage";
 import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
-import { WorkflowProgress } from "./components/WorkflowProgress";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { useT } from "./i18n";
@@ -64,7 +62,7 @@ type WorkspaceTab =
   | "publication"
   | "classes"
   | "entities"
-  | "versions"
+  | "graph-set-history"
   | "agent-test"
   | "mcp-tools"
   | "setting"
@@ -93,7 +91,7 @@ const stageMeta: Array<{
   { id: "intake", label: "Intake", detail: "Brief", icon: BookOpen, workflowStatuses: ["gathering"] },
   { id: "knowledge", label: "Modeling", detail: "Classes · entities · facts", icon: GitBranch, workflowStatuses: ["schema_draft", "schema_review", "graph_building", "graph_review", "validated"] },
   { id: "governance", label: "Governance", detail: "Graphs · graph sets · semantic edit · runs · import/export", icon: ShieldCheck },
-  { id: "publish", label: "Publish", detail: "Publication · versions", icon: Flag, workflowStatuses: ["published"] },
+  { id: "publish", label: "Publish", detail: "Publication · graph set history", icon: Flag, workflowStatuses: ["published"] },
   { id: "tools", label: "Tools", detail: "Agent · MCP · settings", icon: Wrench },
 ];
 
@@ -127,7 +125,7 @@ const workspaceTabs: Array<{
   { id: "entities", stage: "knowledge", label: "Entities", detail: "Entity editor", icon: Database },
   { id: "facts", stage: "knowledge", label: "Facts", detail: "Layered fact audit", icon: ShieldCheck },
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
-  { id: "versions", stage: "publish", label: "Versions", detail: "Lineage & diff", icon: History },
+  { id: "graph-set-history", stage: "publish", label: "Graph Set History", detail: "Lineage & diff", icon: History },
   { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
   { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
   { id: "setting", stage: "tools", label: "Settings", detail: "Runtime status", icon: Settings },
@@ -202,8 +200,6 @@ export function App() {
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
-  const [versions, setVersions] = useState<OntologyVersion[]>([]);
-  const [selectedVersionId, setSelectedVersionId] = useState(() => queryValue("version"));
   const [health, setHealth] = useState<Health | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useStoredString(UI_KEYS.project, queryValue("project"));
   const [selectedOntologyId, setSelectedOntologyId] = useStoredString(UI_KEYS.ontology, queryValue("ontology"));
@@ -213,7 +209,6 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedOntology = ontologies.find((ontology) => ontology.id === selectedOntologyId) ?? null;
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
   const activeTab = workspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
 
   const request = useCallback(<T,>(path: string, options?: RequestInit) => apiRequest<T>(path, options), []);
@@ -239,8 +234,6 @@ export function App() {
     if (linkedProject) setSelectedProjectId(linkedProject);
     if (linkedOntology) setSelectedOntologyId(linkedOntology);
     if (isWorkspaceTab(linkedTab)) setWorkspaceTab(linkedTab);
-    const linkedVersion = queryValue("version");
-    if (linkedVersion) setSelectedVersionId(linkedVersion);
   }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
 
   useEffect(() => {
@@ -249,10 +242,8 @@ export function App() {
     params.set("project", selectedProjectId);
     params.set("ontology", selectedOntologyId);
     params.set("tab", workspaceTab);
-    if (selectedVersionId) params.set("version", selectedVersionId);
-    else params.delete("version");
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
-  }, [selectedOntologyId, selectedProjectId, selectedVersionId, view, workspaceTab]);
+  }, [selectedOntologyId, selectedProjectId, view, workspaceTab]);
 
   const loadProjects = useCallback(async () => {
     const data = await request<Project[]>("/projects");
@@ -274,22 +265,6 @@ export function App() {
       setSelectedOntologyId((current) => current || "");
     },
     [request, selectedProjectId, setSelectedOntologyId],
-  );
-
-  const loadVersions = useCallback(
-    async (ontologyId = selectedOntologyId) => {
-      if (!ontologyId) {
-        setVersions([]);
-        setSelectedVersionId("");
-        return;
-      }
-      const data = await request<OntologyVersion[]>(`/ontologies/${ontologyId}/versions`);
-      setVersions(data);
-      setSelectedVersionId(
-        (current) => current || data[data.length - 1]?.id || "",
-      );
-    },
-    [request, selectedOntologyId],
   );
 
   const refreshAll = useCallback(async () => {
@@ -316,10 +291,6 @@ export function App() {
     loadOntologies().catch(showError);
   }, [selectedProjectId, projects, loadOntologies, showError]);
 
-  useEffect(() => {
-    loadVersions().catch(showError);
-  }, [selectedOntologyId, loadVersions, showError]);
-
   async function mutate(action: () => Promise<void>, success: string) {
     setLoading(true);
     setNotice(null);
@@ -335,7 +306,6 @@ export function App() {
 
   function openOntology(ontology: Ontology) {
     setSelectedOntologyId(ontology.id);
-    setSelectedVersionId("");
     setWorkspaceTab("brief");
     setView("workspace");
   }
@@ -407,7 +377,7 @@ export function App() {
                 const tabsInStage = workspaceTabs.filter((item) => item.stage === stage.id);
                 if (!tabsInStage.length) return null;
                 const StageIcon = stage.icon;
-                const activeStage = workflowStatusToStage[selectedVersion?.workflow_status ?? "gathering"] ?? "intake";
+                const activeStage = workflowStatusToStage["gathering"] ?? "intake";
                 const tabStage = workspaceTabs.find((item) => item.id === workspaceTab)?.stage;
                 const isActiveStage = tabStage === stage.id;
                 const isWorkflowStage = stage.id === activeStage;
@@ -473,30 +443,14 @@ export function App() {
                 </div>
               </div>
               <div className="topActions">
-                <label className="versionSelector">
-                  <span>{t("Version")}</span>
-                  <select
-                    aria-label={t("Active ontology version")}
-                    onChange={(event) => setSelectedVersionId(event.target.value)}
-                    value={selectedVersionId}
-                  >
-                    {!versions.length && <option value="">{t("No versions")}</option>}
-                    {versions.map((version) => (
-                      <option key={version.id} value={version.id}>
-                        {t("v{n} · {status}", { n: version.version_number, status: version.status })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {selectedVersion?.status === "published" && <span className="readOnlyPill">{t("Read-only")}</span>}
                 <button className="secondaryButton" onClick={() => setView("home")} type="button">
                   <ArrowLeft size={15} /> {t("Ontologies")}
                 </button>
-                <Tooltip title={t("Refresh ontology data")}>
+                <Tooltip title={t("Refresh workspace data")}>
                   <button
                     className="iconButton"
                     disabled={loading}
-                    onClick={() => loadVersions().catch(showError)}
+                    onClick={refreshAll}
                     type="button"
                   >
                     {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
@@ -504,25 +458,6 @@ export function App() {
                 </Tooltip>
               </div>
             </header>
-
-            {selectedVersion && (
-              <div className="workflowProgressHost">
-                <WorkflowProgress
-                  status={selectedVersion.workflow_status}
-                  variant="compact"
-                  stageDefaultTab={{
-                    gathering: "brief",
-                    schema_draft: "classes",
-                    schema_review: "classes",
-                    graph_building: "entities",
-                    graph_review: "entities",
-                    validated: "facts",
-                    published: "publication",
-                  }}
-                  onStageClick={(_stage, tab) => navigateWorkspace(tab)}
-                />
-              </div>
-            )}
 
             {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
 
@@ -539,13 +474,8 @@ export function App() {
                   notify={setNotice}
                   ontology={selectedOntology}
                   project={selectedProject}
-                  selectedVersion={selectedVersion}
-                  selectedVersionId={selectedVersionId}
-                  versions={versions}
                   request={request}
                   setHealth={setHealth}
-                  setSelectedVersionId={setSelectedVersionId}
-                  reloadVersions={loadVersions}
                   navigateWorkspace={navigateWorkspace}
                   setPageDirty={setPageDirty}
                   showError={showError}
@@ -765,32 +695,18 @@ function WorkspaceContent(props: {
   tab: WorkspaceTab;
   project: Project;
   ontology: Ontology;
-  selectedVersion: OntologyVersion | null;
-  selectedVersionId: string;
-  versions: OntologyVersion[];
   health: Health | null;
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   notify: (notice: Notice) => void;
-  reloadVersions: () => Promise<void>;
-  setSelectedVersionId: (id: string) => void;
   navigateWorkspace: (tab: string, params?: Record<string, string>) => void;
   setPageDirty: (dirty: boolean) => void;
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
 }) {
-  const readOnly = props.selectedVersion?.status === "published";
+  const readOnly = false;
   const t = useT();
-  const governedRequest = useCallback<Requester>(
-    (path, options) => {
-      const method = (options?.method ?? "GET").toUpperCase();
-      if (readOnly && method !== "GET" && method !== "HEAD") {
-        return Promise.reject(new Error(t("Locked ontology versions are immutable. Create a new draft to make changes.")));
-      }
-      return props.request(path, options);
-    },
-    [props.request, readOnly, t],
-  );
+  const governedRequest = props.request;
 
   if (props.tab === "brief") {
     return <ProjectBriefPage onDirtyChange={props.setPageDirty} projectId={props.project.id} readOnly={readOnly} request={governedRequest} />;
@@ -847,7 +763,6 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "facts") {
-    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
     const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
       return (
@@ -896,7 +811,7 @@ function WorkspaceContent(props: {
     );
   }
 
-  if (props.tab === "versions") {
+  if (props.tab === "graph-set-history") {
     const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
       return (
