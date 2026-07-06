@@ -3,7 +3,7 @@
 - **Date:** 2026-07-06
 - **Scope driver:** `docs/semantic/functional-semantic-load-inventory.md` → Stage 3 — Publish
 - **Architecture approach:** Graph-set native, read-model first, hard-cut legacy removal
-- **Status:** Draft
+- **Status:** Implemented
 
 ## 1. Goal and Non-Goals
 
