@@ -424,3 +424,172 @@ def test_delete_relation_targets_specific_triple_pattern():
     )
     assert expected in compiled.delta.deletes
 
+
+# Stage 2 §7.4 — Catalog mapping canonical-write kinds ----------------------------------
+
+
+def _external_field_iri(field_id: str) -> str:
+    return f"http://op.local/ns/external-field/{field_id}"
+
+
+def _mapping_iri(mapping_id: str) -> str:
+    return f"http://op.local/ns/mapping/{mapping_id}"
+
+
+def _import_graph_iri(source_id: str, run_id: str) -> str:
+    return f"http://op.local/graph/import/{source_id}/{run_id}"
+
+
+def test_create_mapping_writes_semantic_mapping_to_ontology_graph():
+    """create_mapping writes an op:SemanticMapping resource with externalField,
+    targetClass, joinKey, confidence, and owner links into graph/ontology/{id}.
+    When source_id/run_id are absent the ontology graph is the default target."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-1",
+        "external_field_iri": _external_field_iri("field-1"),
+        "target_type": "class",
+        "target_iri": _class_iri("class-1"),
+        "join_key": '{"entity_property": "student_number", "external_field": "student_no"}',
+        "confidence": 0.92,
+        "owner": "owner-1",
+    }
+
+    compiled = compile_command("create_mapping", payload, _settings())
+
+    assert compiled.command_kind == "create_mapping"
+    assert compiled.object_kind == "mapping"
+    assert compiled.source_ids == ["map-1"]
+    graph_iri = _ontology_graph_iri("ont-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    mapping_term = f"<{_mapping_iri('map-1')}>"
+    op = "http://op.local/ns/vocab/"
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    # rdf:type op:SemanticMapping
+    assert (mapping_term, rdf_type, f"<{op}SemanticMapping>", graph_iri) in compiled.delta.inserts
+    # op:externalField
+    assert (mapping_term, f"<{op}externalField>", f"<{_external_field_iri('field-1')}>", graph_iri) in compiled.delta.inserts
+    # op:targetClass (target_type=class)
+    assert (mapping_term, f"<{op}targetClass>", f"<{_class_iri('class-1')}>", graph_iri) in compiled.delta.inserts
+    # op:joinKey literal
+    assert (mapping_term, f"<{op}joinKey>", '"{\\"entity_property\\": \\"student_number\\", \\"external_field\\": \\"student_no\\"}"', graph_iri) in compiled.delta.inserts
+    # op:confidence decimal
+    assert (mapping_term, f"<{op}confidence>", '"0.92"^^<http://www.w3.org/2001/XMLSchema#decimal>', graph_iri) in compiled.delta.inserts
+    # op:owner
+    assert (mapping_term, f"<{op}owner>", '"owner-1"', graph_iri) in compiled.delta.inserts
+
+
+def test_create_mapping_with_import_run_targets_import_graph_and_writes_prov_link():
+    """When source_id + run_id are supplied the target graph becomes
+    graph/import/{source_id}/{run_id} and a prov:wasDerivedBy link is written."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-2",
+        "external_field_iri": _external_field_iri("field-1"),
+        "target_type": "property",
+        "target_iri": "http://op.local/ns/property/prop-1",
+        "join_key": "{}",
+        "confidence": 0.5,
+        "owner": "owner-2",
+        "source_id": "src-1",
+        "run_id": "run-1",
+        "import_run_iri": "http://op.local/ns/import-run/run-1",
+    }
+
+    compiled = compile_command("create_mapping", payload, _settings())
+
+    assert compiled.command_kind == "create_mapping"
+    graph_iri = _import_graph_iri("src-1", "run-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    mapping_term = f"<{_mapping_iri('map-2')}>"
+    op = "http://op.local/ns/vocab/"
+    prov = "http://www.w3.org/ns/prov#"
+    assert (mapping_term, f"<{prov}wasDerivedBy>", f"<http://op.local/ns/import-run/run-1>", graph_iri) in compiled.delta.inserts
+    # op:targetProperty (target_type=property)
+    assert (mapping_term, f"<{op}targetProperty>", f"<http://op.local/ns/property/prop-1>", graph_iri) in compiled.delta.inserts
+
+
+def test_create_mapping_target_relation_type_uses_target_relation_type_predicate():
+    """target_type=relation_type writes op:targetRelationType."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-3",
+        "external_field_iri": _external_field_iri("field-1"),
+        "target_type": "relation_type",
+        "target_iri": "http://op.local/ns/relation-type/rel-1",
+        "join_key": "{}",
+        "confidence": 1.0,
+    }
+
+    compiled = compile_command("create_mapping", payload, _settings())
+
+    op = "http://op.local/ns/vocab/"
+    graph_iri = _ontology_graph_iri("ont-1")
+    mapping_term = f"<{_mapping_iri('map-3')}>"
+    assert (mapping_term, f"<{op}targetRelationType>", f"<http://op.local/ns/relation-type/rel-1>", graph_iri) in compiled.delta.inserts
+
+
+def test_update_mapping_patches_join_key_confidence_and_owner():
+    """update_mapping patches join_key / confidence / owner via delete-then-insert.
+    Only fields present in the payload are touched."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-1",
+        "join_key": '{"k": "v2"}',
+        "confidence": 0.8,
+        "owner": "owner-3",
+    }
+
+    compiled = compile_command("update_mapping", payload, _settings())
+
+    assert compiled.command_kind == "update_mapping"
+    assert compiled.object_kind == "mapping"
+    graph_iri = _ontology_graph_iri("ont-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    mapping_term = f"<{_mapping_iri('map-1')}>"
+    op = "http://op.local/ns/vocab/"
+    # join_key patch
+    assert (mapping_term, f"<{op}joinKey>", "?o", graph_iri) in compiled.delta.deletes
+    assert (mapping_term, f"<{op}joinKey>", '"{\\"k\\": \\"v2\\"}"', graph_iri) in compiled.delta.inserts
+    # confidence patch
+    assert (mapping_term, f"<{op}confidence>", "?o", graph_iri) in compiled.delta.deletes
+    assert (mapping_term, f"<{op}confidence>", '"0.8"^^<http://www.w3.org/2001/XMLSchema#decimal>', graph_iri) in compiled.delta.inserts
+    # owner patch
+    assert (mapping_term, f"<{op}owner>", "?o", graph_iri) in compiled.delta.deletes
+    assert (mapping_term, f"<{op}owner>", '"owner-3"', graph_iri) in compiled.delta.inserts
+
+
+def test_delete_mapping_emits_subject_wildcard_deletes():
+    """delete_mapping removes every triple whose subject is the mapping IRI."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-1",
+    }
+
+    compiled = compile_command("delete_mapping", payload, _settings())
+
+    assert compiled.command_kind == "delete_mapping"
+    assert compiled.object_kind == "mapping"
+    graph_iri = _ontology_graph_iri("ont-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    mapping_term = f"<{_mapping_iri('map-1')}>"
+    assert (mapping_term, "?p", "?o", graph_iri) in compiled.delta.deletes
+
+
+def test_delete_mapping_with_import_run_targets_import_graph():
+    """delete_mapping with source_id + run_id removes the mapping from the
+    import graph rather than the ontology graph."""
+    payload = {
+        "ontology_id": "ont-1",
+        "mapping_id": "map-2",
+        "source_id": "src-1",
+        "run_id": "run-1",
+    }
+
+    compiled = compile_command("delete_mapping", payload, _settings())
+
+    graph_iri = _import_graph_iri("src-1", "run-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    mapping_term = f"<{_mapping_iri('map-2')}>"
+    assert (mapping_term, "?p", "?o", graph_iri) in compiled.delta.deletes
+

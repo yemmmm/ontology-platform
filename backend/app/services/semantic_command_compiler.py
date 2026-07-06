@@ -1028,6 +1028,237 @@ def compile_delete_relation(
     )
 
 
+# Stage 2 §7.4 — Catalog mapping canonical-write kinds ----------------------------------
+
+
+_TARGET_PREDICATES = {
+    "class": "targetClass",
+    "property": "targetProperty",
+    "relation_type": "targetRelationType",
+}
+
+
+def _import_graph_for(ns: SemanticNamespace, source_id: str, run_id: str) -> str:
+    """Build the graph/import/{source_id}/{run_id} IRI."""
+    base = str(ns.graph_iri_prefix).rstrip("/")
+    return f"{base}/import/{source_id}/{run_id}"
+
+
+def compile_create_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §7.4 — write an ``op:SemanticMapping`` resource.
+
+    Default target graph is ``graph/ontology/{ontology_id}``. When ``source_id``
+    and ``run_id`` are supplied the mapping is written to
+    ``graph/import/{source_id}/{run_id}`` and a ``prov:wasDerivedBy`` link is
+    attached to record the import-run provenance.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    mapping_id = payload.get("mapping_id") or str(uuid.uuid4())
+    external_field_iri = _required(payload, "external_field_iri")
+    target_type = _required(payload, "target_type")
+    if target_type not in _TARGET_PREDICATES:
+        raise InvalidCommandPayload(
+            "target_type must be one of: " + ", ".join(sorted(_TARGET_PREDICATES))
+        )
+    target_iri = _required(payload, "target_iri")
+    join_key = _required(payload, "join_key")
+    confidence = float(payload.get("confidence", 1.0))
+    owner = payload.get("owner")
+    source_id = payload.get("source_id")
+    run_id = payload.get("run_id")
+    import_run_iri = payload.get("import_run_iri")
+
+    if (source_id is None) != (run_id is None):
+        raise InvalidCommandPayload(
+            "create_mapping requires both source_id and run_id, or neither"
+        )
+
+    mapping_iri = str(ns.resource("mapping", mapping_id))
+    op = str(ns.vocab)
+    if source_id and run_id:
+        graph_iri = _import_graph_for(ns, source_id, run_id)
+    else:
+        graph_iri = _ontology_graph_iri(ns, ontology_id)
+
+    target_predicate = _TARGET_PREDICATES[target_type]
+    insert_quads: list[tuple[str, str, str, str]] = [
+        (f"<{mapping_iri}>",
+         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+         f"<{op}SemanticMapping>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}id>", _literal_term(mapping_id), graph_iri),
+        (f"<{mapping_iri}>", f"<{op}ontology>",
+         f"<{ns.resource('ontology', ontology_id)}>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}externalField>",
+         f"<{external_field_iri}>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}{target_predicate}>",
+         f"<{target_iri}>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}targetType>",
+         _literal_term(target_type), graph_iri),
+        (f"<{mapping_iri}>", f"<{op}joinKey>",
+         _literal_term(join_key), graph_iri),
+        (f"<{mapping_iri}>", f"<{op}confidence>",
+         _literal_term(confidence), graph_iri),
+    ]
+    if owner:
+        insert_quads.append(
+            (f"<{mapping_iri}>", f"<{op}owner>", _literal_term(owner), graph_iri)
+        )
+    if source_id and run_id:
+        if import_run_iri:
+            insert_quads.append(
+                (f"<{mapping_iri}>",
+                 "<http://www.w3.org/ns/prov#wasDerivedBy>",
+                 f"<{import_run_iri}>", graph_iri)
+            )
+        insert_quads.append(
+            (f"<{mapping_iri}>", f"<{op}sourceId>",
+             _literal_term(source_id), graph_iri)
+        )
+        insert_quads.append(
+            (f"<{mapping_iri}>", f"<{op}runId>",
+             _literal_term(run_id), graph_iri)
+        )
+
+    delta = RdfGraphDelta(inserts=insert_quads)
+    return CompiledCommand(
+        command_kind="create_mapping",
+        delta=delta,
+        object_kind="mapping",
+        source_ids=[mapping_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "mapping_id": mapping_id,
+            "mapping_iri": mapping_iri,
+            "target_type": target_type,
+            "target_iri": target_iri,
+            "external_field_iri": external_field_iri,
+            "graph_iri": graph_iri,
+            "import_source": bool(source_id and run_id),
+        },
+    )
+
+
+def compile_update_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §7.4 — patch join_key / confidence / owner on an existing mapping.
+
+    Target graph resolves the same way as ``create_mapping``: ontology graph by
+    default, import graph when ``source_id`` + ``run_id`` are present.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    if "mapping_id" not in payload and "mapping_iri" not in payload:
+        raise InvalidCommandPayload("update_mapping requires mapping_id or mapping_iri")
+    mapping_id = payload.get("mapping_id")
+    mapping_iri = payload.get("mapping_iri") or (
+        str(ns.resource("mapping", mapping_id)) if mapping_id else None
+    )
+    if mapping_iri is None:
+        raise InvalidCommandPayload("update_mapping requires mapping_id or mapping_iri")
+
+    source_id = payload.get("source_id")
+    run_id = payload.get("run_id")
+    if source_id and run_id:
+        graph_iri = _import_graph_for(ns, source_id, run_id)
+    else:
+        graph_iri = _ontology_graph_iri(ns, ontology_id)
+
+    join_key = payload.get("join_key")
+    confidence = payload.get("confidence")
+    owner = payload.get("owner")
+    target_type = payload.get("target_type")
+    target_iri = payload.get("target_iri")
+
+    mapping_term = f"<{mapping_iri}>"
+    op = str(ns.vocab)
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+
+    if join_key is not None:
+        deletes.append((mapping_term, f"<{op}joinKey>", "?o", graph_iri))
+        inserts.append((mapping_term, f"<{op}joinKey>", _literal_term(join_key), graph_iri))
+    if confidence is not None:
+        deletes.append((mapping_term, f"<{op}confidence>", "?o", graph_iri))
+        inserts.append((mapping_term, f"<{op}confidence>", _literal_term(float(confidence)), graph_iri))
+    if owner is not None:
+        deletes.append((mapping_term, f"<{op}owner>", "?o", graph_iri))
+        if owner:
+            inserts.append((mapping_term, f"<{op}owner>", _literal_term(owner), graph_iri))
+    if target_type is not None and target_iri is not None:
+        if target_type not in _TARGET_PREDICATES:
+            raise InvalidCommandPayload(
+                "target_type must be one of: " + ", ".join(sorted(_TARGET_PREDICATES))
+            )
+        target_predicate = _TARGET_PREDICATES[target_type]
+        deletes.append((mapping_term, f"<{op}{target_predicate}>", "?o", graph_iri))
+        inserts.append((mapping_term, f"<{op}{target_predicate}>", f"<{target_iri}>", graph_iri))
+        deletes.append((mapping_term, f"<{op}targetType>", "?o", graph_iri))
+        inserts.append((mapping_term, f"<{op}targetType>", _literal_term(target_type), graph_iri))
+
+    delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
+    source_ids = [mapping_id] if mapping_id else [mapping_iri]
+    return CompiledCommand(
+        command_kind="update_mapping",
+        delta=delta,
+        object_kind="mapping",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "mapping_id": mapping_id,
+            "mapping_iri": mapping_iri,
+            "graph_iri": graph_iri,
+            "fields_updated": [
+                k for k in ("join_key", "confidence", "owner", "target_type", "target_iri")
+                if payload.get(k) is not None
+            ],
+        },
+    )
+
+
+def compile_delete_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §7.4 — remove every triple whose subject is the mapping IRI."""
+    ontology_id = _required(payload, "ontology_id")
+    if "mapping_id" not in payload and "mapping_iri" not in payload:
+        raise InvalidCommandPayload("delete_mapping requires mapping_id or mapping_iri")
+    mapping_id = payload.get("mapping_id")
+    mapping_iri = payload.get("mapping_iri") or (
+        str(ns.resource("mapping", mapping_id)) if mapping_id else None
+    )
+    if mapping_iri is None:
+        raise InvalidCommandPayload("delete_mapping requires mapping_id or mapping_iri")
+
+    source_id = payload.get("source_id")
+    run_id = payload.get("run_id")
+    if source_id and run_id:
+        graph_iri = _import_graph_for(ns, source_id, run_id)
+    else:
+        graph_iri = _ontology_graph_iri(ns, ontology_id)
+
+    mapping_term = f"<{mapping_iri}>"
+    deletes = [(mapping_term, "?p", "?o", graph_iri)]
+    delta = RdfGraphDelta(inserts=[], deletes=deletes)
+    source_ids = [mapping_id] if mapping_id else [mapping_iri]
+    return CompiledCommand(
+        command_kind="delete_mapping",
+        delta=delta,
+        object_kind="mapping",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "mapping_id": mapping_id,
+            "mapping_iri": mapping_iri,
+            "graph_iri": graph_iri,
+        },
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
@@ -1048,6 +1279,9 @@ _COMPILERS: dict[str, Compiler] = {
     "delete_entity": compile_delete_entity,
     "create_relation": compile_create_relation,
     "delete_relation": compile_delete_relation,
+    "create_mapping": compile_create_mapping,
+    "update_mapping": compile_update_mapping,
+    "delete_mapping": compile_delete_mapping,
 }
 
 
