@@ -1,167 +1,612 @@
-import { Alert, Button, Card, Collapse, Descriptions, Empty, Space, Spin, Switch, Tag, Typography } from "antd";
-import { CheckCircle2, LockKeyhole, RefreshCw, ShieldAlert, UnlockKeyhole } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+/**
+ * Stage 3 §7.1 — graph-set Publication Readiness dashboard.
+ *
+ * Replaces the legacy version-mutability switch + JSON gate list. Reads
+ * `/semantic/graph-sets/{id}/read-models/publication-readiness` (polled by
+ * `useGraphSetReadiness` every 30s while the tab is visible) and renders:
+ *
+ *   - Status badge (Ready / Has warnings / Blocked) + editable graph ratio
+ *   - Per-gate list (validation, reasoning, rule, missing evidence, open
+ *     edits, projection freshness)
+ *   - Per-graph editability list
+ *   - "Lock all graphs and export package" flow:
+ *       on confirm → PATCH /semantic/graphs/{iri}/editability for each
+ *       editable graph; on success trigger export download; on partial
+ *       failure show retry / rollback (rollback unlocks the graphs that
+ *       were just locked).
+ *
+ * Phase E rewires App.tsx routing to pass `graphSetId`; until then the page
+ * also tolerates being rendered without one (empty state).
+ */
+
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Modal,
+  Skeleton,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Lock,
+  LockKeyhole,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  UnlockKeyhole,
+  Undo2,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
-import type { GovernancePageContext, OntologyVersion } from "./governanceTypes";
-import { formatTimestamp, jsonText, messageFrom } from "./governanceTypes";
+import { useGraphSetReadiness } from "../hooks/useGraphSetReadiness";
+import type {
+  PublicationGate,
+  PublicationGateStatus,
+  PublicationReadinessRow,
+} from "../hooks/useGraphSetReadiness";
+import {
+  buildGraphSetExportUrl,
+  updateGraphEditability,
+} from "../semanticApi";
+import type { WorkbenchRequest } from "./workbenchTypes";
 
-type PublicationGate = {
-  gate_type: string;
-  status: string;
-  details: Record<string, unknown>;
-  checked_at?: string;
+const { Text, Paragraph } = Typography;
+
+type PublicationPageProps = {
+  request: WorkbenchRequest;
+  graphSetId: string | null;
+  readOnly?: boolean;
 };
 
-type PublicationReadiness = {
-  version_id: string;
-  ready: boolean;
-  gates: PublicationGate[];
-  blocking: string[];
-  warnings: string[];
-};
-
-type PublicationPageProps = GovernancePageContext & {
-  onVersionChanged?: (version: OntologyVersion) => void | Promise<void>;
-};
-
-const gateLabels: Record<string, string> = {
-  schema_validation: "Schema validation",
-  pending_proposals: "Pending proposals",
-  unresolved_conflicts: "Unresolved conflicts",
-  low_confidence_review: "Low-confidence review",
-  evidence_coverage: "Evidence coverage",
-  competency_questions: "Competency questions",
-  fact_audit: "Fact audit",
-};
-
-export function PublicationPage({
-  project,
-  ontology,
-  version,
-  request,
-  onNavigate,
-  onVersionChanged,
-}: PublicationPageProps) {
-  const [readiness, setReadiness] = useState<PublicationReadiness | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const t = useT();
-
-  const check = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await request<PublicationReadiness>(`/versions/${version.id}/publication-readiness`);
-      setReadiness(result);
-      return result;
-    } catch (checkError) {
-      setError(messageFrom(checkError));
-      return null;
-    } finally {
-      setLoading(false);
+type PublishPhase =
+  | { kind: "idle" }
+  | { kind: "confirm" }
+  | { kind: "running"; locked: string[] }
+  | {
+      kind: "partial";
+      locked: string[];
+      remaining: { graph_iri: string; role: string }[];
+      error: string;
     }
-  }, [request, version.id]);
+  | { kind: "done" };
 
-  useEffect(() => {
-    void check();
-  }, [check]);
+function gateStatusColor(status: PublicationGateStatus): string {
+  if (status === "passed") return "success";
+  if (status === "warning") return "warning";
+  return "error";
+}
 
-  const passed = useMemo(
-    () => readiness?.gates.filter((gate) => gate.status === "passed").length ?? 0,
-    [readiness],
-  );
+function gateStatusLabel(
+  status: PublicationGateStatus,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  if (status === "passed") return t("Ready");
+  if (status === "warning") return t("Has warnings");
+  return t("Blocked");
+}
 
-  async function setMutable(mutable: boolean) {
-    setBusy(true);
-    setError("");
-    try {
-      const updated = await request<OntologyVersion>(`/versions/${version.id}/mutability`, {
-        method: "PATCH",
-        body: JSON.stringify({ mutable }),
-      });
-      await onVersionChanged?.(updated);
-      void check();
-    } catch (toggleError) {
-      setError(messageFrom(toggleError));
-    } finally {
-      setBusy(false);
-    }
+function gateIcon(status: PublicationGateStatus) {
+  if (status === "passed") return <CheckCircle2 size={16} color="#168764" />;
+  if (status === "warning") return <AlertTriangle size={16} color="#f5b84b" />;
+  return <ShieldAlert size={16} color="#c33542" />;
+}
+
+function formatDetails(details: Record<string, unknown>): string {
+  // Compact human-readable summary of the gate details. The composer puts
+  // either {count: number}, {staleness_state, latest_run_id}, or a projection
+  // manifest map into `details`. We render keys/values; falls back to JSON.
+  const entries = Object.entries(details);
+  if (entries.length === 0) return "";
+  return entries
+    .map(([key, value]) => {
+      if (value === null || value === undefined) return `${key}: —`;
+      if (typeof value === "object") return `${key}: ${JSON.stringify(value)}`;
+      return `${key}: ${String(value)}`;
+    })
+    .join(" · ");
+}
+
+function overallStatus(row: PublicationReadinessRow): PublicationGateStatus {
+  if (row.blockers.length > 0) return "blocked";
+  if (row.warnings.length > 0 || row.gates.some((g) => g.status === "warning")) {
+    return "warning";
   }
+  return "passed";
+}
 
-  if (loading && !readiness) return <Spin tip={t("Evaluating publication gates…")} />;
-
-  const locked = version.status === "published";
-  const mutable = !locked;
+function StatusBadge({
+  status,
+  t,
+}: {
+  status: PublicationGateStatus;
+  t: (k: string, params?: Record<string, string | number>) => string;
+}) {
+  const color = gateStatusColor(status);
+  const icon =
+    status === "passed" ? (
+      <ShieldCheck size={16} color="#168764" />
+    ) : status === "warning" ? (
+      <AlertTriangle size={16} color="#f5b84b" />
+    ) : (
+      <ShieldAlert size={16} color="#c33542" />
+    );
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
-      <div className="topBar">
-        <div>
-          <span className="eyebrow">{t("Version mutability")}</span>
-          <h1>{t("Publication")}</h1>
-          <div className="crumbTrail">{project.name} / {ontology.name} / {t("v{n}", { n: version.version_number })}</div>
-        </div>
-        <Button icon={<RefreshCw size={15} />} onClick={() => void check()} loading={loading}>{t("Recheck gates")}</Button>
-      </div>
-      {error && <Alert type="error" showIcon message={error} closable onClose={() => setError("")} />}
-      {locked && <Alert type="success" showIcon message={t("Version {n} is locked and immutable.", { n: version.version_number })} description={t("Locked {time}", { time: formatTimestamp(version.published_at) })} />}
-      <Card title={t("Target version")}>
-        <Descriptions column={{ xs: 1, sm: 2, lg: 4 }} items={[
-          { key: "ontology", label: t("Ontology"), children: ontology.name },
-          { key: "version", label: t("Version"), children: t("v{n}", { n: version.version_number }) },
-          { key: "workflow", label: t("Workflow"), children: <Tag>{version.workflow_status}</Tag> },
-          { key: "status", label: t("Mutability"), children: <Tag color={locked ? "green" : "gold"}>{locked ? t("locked") : t("editable")}</Tag> },
-        ]} />
-      </Card>
-      <Card title={t("Version edit switch")}>
-        <Space direction="vertical" size={12}>
-          <Space wrap>
-            {mutable ? <UnlockKeyhole size={18} color="#168764" /> : <LockKeyhole size={18} color="#c33542" />}
-            <Switch
-              checked={mutable}
-              checkedChildren={t("Editable")}
-              unCheckedChildren={t("Locked")}
-              loading={busy}
-              disabled={busy}
-              onChange={(next) => void setMutable(next)}
-            />
-            <Tag color={mutable ? "warning" : "success"}>{mutable ? t("Schema, entity, assertion and rule writes are allowed") : t("Schema, entity, assertion and rule writes are blocked")}</Tag>
-          </Space>
-          <Typography.Paragraph style={{ margin: 0 }}>
-            {t("Turning mutability off captures the current schema and graph snapshot and makes version-scoped write APIs reject changes. Turning it back on reopens the same version for editing.")}
-          </Typography.Paragraph>
-        </Space>
-      </Card>
-      <Card title={t("Publication gates · {passed}/{total} passed", { passed, total: readiness?.gates.length ?? 0 })}>
-        {!readiness?.gates.length ? <Empty description={t("No gate result is available")} /> : (
-          <Space direction="vertical" size={10} style={{ width: "100%" }}>
-            {readiness.gates.map((gate) => (
-              <Card key={gate.gate_type} size="small" style={{ borderLeft: `4px solid ${gate.status === "passed" ? "#2fbf8f" : gate.status === "warning" ? "#f5b84b" : "#e84855"}` }}>
-                <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                  <Space wrap>
-                    {gate.status === "passed" ? <CheckCircle2 size={17} color="#168764" /> : <ShieldAlert size={17} color="#c33542" />}
-                    <strong>{t(gateLabels[gate.gate_type] ?? gate.gate_type)}</strong>
-                    <Tag color={gate.status === "passed" ? "success" : gate.status === "warning" ? "warning" : "error"}>{gate.status.toUpperCase()}</Tag>
-                  </Space>
-                  <Typography.Text type="secondary">{t("The backend currently exposes gate details as unstructured JSON.")}</Typography.Text>
-                  <Collapse ghost size="small" items={[{ key: "details", label: t("Validation details"), children: <pre style={{ overflow: "auto", whiteSpace: "pre-wrap" }}>{jsonText(gate.details)}</pre> }]} />
-                  {gate.status !== "passed" && onNavigate && (
-                    <Button size="small" onClick={() => onNavigate(gate.gate_type === "fact_audit" || gate.gate_type === "low_confidence_review" ? "facts" : gate.gate_type === "competency_questions" ? "questions" : gate.gate_type === "evidence_coverage" ? "sources" : "overview")}>{t("Open remediation area")}</Button>
-                  )}
-                </Space>
-              </Card>
-            ))}
-          </Space>
-        )}
-      </Card>
-      {readiness && !readiness.ready && (
-        <Alert type="warning" showIcon message={t("Readiness has warnings or blockers")} description={t("Blocking gates: {names}", { names: readiness.blocking.map((name) => t(gateLabels[name] ?? name)).join(", ") || t("none") })} />
-      )}
-      {locked && Object.keys(version.publication_report).length > 0 && (
-        <Card title={t("Lock snapshot report")}><pre style={{ overflow: "auto", whiteSpace: "pre-wrap" }}>{jsonText(version.publication_report)}</pre></Card>
-      )}
-    </Space>
+    <Tag color={color} style={{ paddingInline: 8, fontWeight: 600 }}>
+      <Space size={6}>
+        {icon}
+        {gateStatusLabel(status, t)}
+      </Space>
+    </Tag>
   );
 }
+
+function GateRow({
+  gate,
+  t,
+}: {
+  gate: PublicationGate;
+  t: (k: string, params?: Record<string, string | number>) => string;
+}) {
+  const detail = formatDetails(gate.details);
+  return (
+    <div
+      data-gate={gate.gate}
+      data-status={gate.status}
+      style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        paddingBlock: 6,
+        borderBottom: "1px solid #f0f0f0",
+      }}
+    >
+      <span style={{ paddingTop: 2 }}>{gateIcon(gate.status)}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Space size={8} wrap>
+          <strong>{gate.label}</strong>
+          <Tag color={gateStatusColor(gate.status)}>{gateStatusLabel(gate.status, t)}</Tag>
+        </Space>
+        {detail && (
+          <div style={{ marginTop: 4 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {detail}
+            </Text>
+          </div>
+        )}
+      </div>
+      <code style={{ fontSize: 11, color: "#999" }}>{gate.gate}</code>
+    </div>
+  );
+}
+
+function EditableGraphRow({
+  graphIri,
+  role,
+  editable,
+  t,
+}: {
+  graphIri: string;
+  role: string;
+  editable: boolean;
+  t: (k: string, params?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        paddingBlock: 4,
+        borderBottom: "1px solid #f5f5f5",
+      }}
+    >
+      {editable ? (
+        <UnlockKeyhole size={15} color="#168764" />
+      ) : (
+        <LockKeyhole size={15} color="#8c8c8c" />
+      )}
+      <code style={{ flex: 1, overflowWrap: "anywhere" }}>{graphIri}</code>
+      <Tag color={editable ? "warning" : "default"}>
+        {editable ? t("Editable") : t("Locked ({role})", { role })}
+      </Tag>
+    </div>
+  );
+}
+
+export function PublicationPage({
+  request,
+  graphSetId,
+  readOnly = false,
+}: PublicationPageProps) {
+  const t = useT();
+  const { data, loading, refreshing, error, reload } = useGraphSetReadiness(
+    request,
+    graphSetId,
+  );
+  const [phase, setPhase] = useState<PublishPhase>({ kind: "idle" });
+
+  // Reset the publish modal whenever the graph set id changes.
+  useEffect(() => {
+    setPhase({ kind: "idle" });
+  }, [graphSetId]);
+
+  const totalGraphs = data?.editable_graph_count ?? 0;
+
+  // All editable graphs from the read model. For member listing we also want
+  // to show locked ones; the row doesn't expose them, so the per-graph section
+  // is editable-only (matching the spec §7.1 wireframe).
+  const editableGraphs = useMemo(() => data?.editable_graphs ?? [], [data]);
+
+  async function handlePublishConfirm() {
+    if (!data) return;
+    const targets = [...data.editable_graphs];
+    if (targets.length === 0) {
+      setPhase({ kind: "done" });
+      return;
+    }
+    setPhase({ kind: "running", locked: [] });
+    const locked: string[] = [];
+    let lastError: string | null = null;
+    let failedIndex = targets.length;
+    for (let i = 0; i < targets.length; i += 1) {
+      const g = targets[i];
+      try {
+        await updateGraphEditability(request, g.graph_iri, false, "stage3-publish", "publication");
+        locked.push(g.graph_iri);
+      } catch (reason) {
+        lastError = reason instanceof Error ? reason.message : String(reason);
+        failedIndex = i;
+        break;
+      }
+    }
+    if (lastError && locked.length < targets.length) {
+      const remaining = targets.slice(failedIndex);
+      setPhase({
+        kind: "partial",
+        locked,
+        remaining,
+        error: lastError,
+      });
+      await reload();
+      return;
+    }
+    // All locked — trigger the export download.
+    const exportUrl = buildGraphSetExportUrl(data.graph_set_id, {
+      format: "trig",
+      include: "asserted",
+      includeEvidence: true,
+      includeShapes: true,
+      includePolicy: true,
+      includeMetadata: true,
+    });
+    window.location.href = exportUrl;
+    setPhase({ kind: "done" });
+    await reload();
+  }
+
+  async function handleRetry() {
+    if (phase.kind !== "partial") return;
+    const remaining = phase.remaining;
+    const lockedSoFar = phase.locked;
+    setPhase({ kind: "running", locked: lockedSoFar });
+    let lastError: string | null = null;
+    let failedIndex = remaining.length;
+    const locked = [...lockedSoFar];
+    for (let i = 0; i < remaining.length; i += 1) {
+      const g = remaining[i];
+      try {
+        await updateGraphEditability(request, g.graph_iri, false, "stage3-publish", "publication");
+        locked.push(g.graph_iri);
+      } catch (reason) {
+        lastError = reason instanceof Error ? reason.message : String(reason);
+        failedIndex = i;
+        break;
+      }
+    }
+    if (lastError && locked.length < lockedSoFar.length + remaining.length) {
+      setPhase({
+        kind: "partial",
+        locked,
+        remaining: remaining.slice(failedIndex),
+        error: lastError,
+      });
+      await reload();
+      return;
+    }
+    if (data) {
+      const exportUrl = buildGraphSetExportUrl(data.graph_set_id, {
+        format: "trig",
+        include: "asserted",
+        includeEvidence: true,
+        includeShapes: true,
+        includePolicy: true,
+        includeMetadata: true,
+      });
+      window.location.href = exportUrl;
+    }
+    setPhase({ kind: "done" });
+    await reload();
+  }
+
+  async function handleRollback() {
+    if (phase.kind !== "partial") return;
+    const toUnlock = phase.locked;
+    let lastError: string | null = null;
+    for (const iri of toUnlock) {
+      try {
+        await updateGraphEditability(request, iri, true, "stage3-publish", "rollback");
+      } catch (reason) {
+        lastError = reason instanceof Error ? reason.message : String(reason);
+      }
+    }
+    if (lastError) {
+      setPhase({ ...phase, error: lastError });
+    } else {
+      setPhase({ kind: "idle" });
+    }
+    await reload();
+  }
+
+  // ----- Render states -----------------------------------------------------
+
+  if (!graphSetId) {
+    return (
+      <section className="publicationPage stage3" data-testid="publication-readiness">
+        <div className="topBar">
+          <div>
+            <span className="eyebrow">{t("Stage 3 · graph-set readiness")}</span>
+            <h1>{t("Publication readiness")}</h1>
+          </div>
+        </div>
+        <Empty description={t("Select a graph set to view publication readiness.")} />
+      </section>
+    );
+  }
+
+  if (loading && !data) {
+    return (
+      <section className="publicationPage stage3" data-testid="publication-readiness">
+        <Spin tip={t("Loading…")} />
+      </section>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <section className="publicationPage stage3" data-testid="publication-readiness">
+        <div className="topBar">
+          <div>
+            <span className="eyebrow">{t("Stage 3 · graph-set readiness")}</span>
+            <h1>{t("Publication readiness")}</h1>
+          </div>
+        </div>
+        <Alert
+          type="error"
+          showIcon
+          message={t("publication-readiness not available")}
+          description={error}
+          action={
+            <Button size="small" onClick={() => void reload()}>
+              {t("Refresh")}
+            </Button>
+          }
+        />
+      </section>
+    );
+  }
+
+  if (!data) {
+    return (
+      <section className="publicationPage stage3" data-testid="publication-readiness">
+        <Empty description={t("publication-readiness not available")} />
+      </section>
+    );
+  }
+
+  const status = overallStatus(data);
+  const memberRows = data.editable_graphs;
+
+  const isPublishing = phase.kind === "running";
+  const showConfirm = phase.kind === "confirm";
+  const partial = phase.kind === "partial" ? phase : null;
+
+  return (
+    <section className="publicationPage stage3" data-testid="publication-readiness">
+      <div className="topBar">
+        <div>
+          <span className="eyebrow">{t("Stage 3 · graph-set readiness")}</span>
+          <h1>
+            {t("Publication readiness · {graphSet}", {
+              graphSet: data.graph_set_id,
+            })}
+          </h1>
+          <div className="crumbTrail">
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t("Polling every 30s while this tab is visible.")}
+            </Text>
+          </div>
+        </div>
+        <div className="topActions">
+          <Button
+            icon={<RefreshCw size={15} />}
+            onClick={() => void reload()}
+            loading={refreshing}
+            disabled={loading}
+          >
+            {t("Refresh")}
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("publication-readiness not available")}
+          description={error}
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Space size={24} wrap>
+          <Space size={8}>
+            <Text type="secondary">{t("Status")}:</Text>
+            <StatusBadge status={status} t={t} />
+          </Space>
+          <Space size={8}>
+            <Text type="secondary">{t("Editable graphs: {count} / {total}", {
+              count: data.editable_graph_count,
+              total: memberRows.length + (totalGraphs === 0 ? 0 : 0),
+            })}</Text>
+          </Space>
+          <Space size={8}>
+            <Text type="secondary">
+              {data.last_published_at
+                ? t("Last published {time}", { time: data.last_published_at })
+                : t("Never published")}
+            </Text>
+          </Space>
+        </Space>
+      </Card>
+
+      <Card
+        size="small"
+        title={t("Gates")}
+        extra={
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {data.gates.filter((g) => g.status === "passed").length}/{data.gates.length}
+          </Text>
+        }
+        style={{ marginBottom: 12 }}
+      >
+        {data.gates.length === 0 ? (
+          <Empty />
+        ) : (
+          <div>
+            {data.gates.map((gate) => (
+              <GateRow key={gate.gate} gate={gate} t={t} />
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card
+        size="small"
+        title={
+          <Space size={6}>
+            <Lock size={15} />
+            {t("Per-graph state")}
+          </Space>
+        }
+        style={{ marginBottom: 12 }}
+      >
+        {memberRows.length === 0 ? (
+          <Empty description={t("No editable graphs in this graph set.")} />
+        ) : (
+          <div>
+            {memberRows.map((g) => (
+              <EditableGraphRow
+                key={g.graph_iri}
+                graphIri={g.graph_iri}
+                role={g.role}
+                editable
+                t={t}
+              />
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {partial && (
+        <Alert
+          type="error"
+          showIcon
+          message={t("Partial failure: locked {locked}/{total} editable graphs.", {
+            locked: partial.locked.length,
+            total: partial.locked.length + partial.remaining.length,
+          })}
+          description={
+            <Space direction="vertical" size={6}>
+              <Text>{t("Last error: {error}", { error: partial.error })}</Text>
+              <Space>
+                <Button size="small" onClick={() => void handleRetry()}>
+                  {t("Retry remaining")}
+                </Button>
+                <Button
+                  size="small"
+                  icon={<Undo2 size={14} />}
+                  onClick={() => void handleRollback()}
+                >
+                  {t("Rollback (unlock {count})", { count: partial.locked.length })}
+                </Button>
+              </Space>
+            </Space>
+          }
+          style={{ marginBottom: 12 }}
+        />
+      )}
+
+      {phase.kind === "done" && (
+        <Alert
+          type="success"
+          showIcon
+          message={t("Lock all graphs and export package")}
+          description={t("All editable graphs were locked and the export download started.")}
+          style={{ marginBottom: 12 }}
+          closable
+          onClose={() => setPhase({ kind: "idle" })}
+        />
+      )}
+
+      <div style={{ display: "flex", justifyContent: "center", paddingBlock: 12 }}>
+        <Button
+          type="primary"
+          size="large"
+          icon={<Download size={16} />}
+          disabled={readOnly || memberRows.length === 0 || isPublishing || phase.kind === "done"}
+          loading={isPublishing}
+          onClick={() => setPhase({ kind: "confirm" })}
+        >
+          {t("Lock all graphs and export package")}
+        </Button>
+      </div>
+
+      <Modal
+        title={t("Confirm publication")}
+        open={showConfirm}
+        onCancel={() => setPhase({ kind: "idle" })}
+        onOk={() => void handlePublishConfirm()}
+        okText={t("Lock and export")}
+        cancelText={t("Cancel")}
+        okButtonProps={{ loading: isPublishing }}
+        confirmLoading={isPublishing}
+      >
+        <Paragraph>
+          {t("Publication will lock the following editable graphs and then download an export package.")}
+        </Paragraph>
+        {memberRows.length === 0 ? (
+          <Skeleton active />
+        ) : (
+          <ul style={{ marginBlock: 0, paddingLeft: 20 }}>
+            {memberRows.map((g) => (
+              <li key={g.graph_iri}>
+                <code>{g.graph_iri}</code> <Tag>{g.role}</Tag>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Modal>
+    </section>
+  );
+}
+
+export type { PublicationPageProps };

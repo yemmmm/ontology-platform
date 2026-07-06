@@ -873,9 +873,27 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "publication") {
-    if (!props.selectedVersion) return <EmptyState icon={<History size={22} />} title={t("Select a valid ontology version")} />;
-    const context = { ontology: props.ontology, project: props.project, readOnly, request: governedRequest, version: props.selectedVersion };
-    return <PublicationPage {...context} onNavigate={props.navigateWorkspace} onVersionChanged={async (version) => { await props.reloadVersions(); props.setSelectedVersionId(version.id); }} />;
+    const graphSetId = queryValue("graphSet");
+    if (!graphSetId) {
+      return (
+        <EmptyState
+          icon={<History size={22} />}
+          title={t("Select a graph set to view publication readiness")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
+    }
+    return (
+      <PublicationPage
+        request={governedRequest}
+        graphSetId={graphSetId}
+        readOnly={readOnly}
+      />
+    );
   }
 
   if (props.tab === "versions") {
