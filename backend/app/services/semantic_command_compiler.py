@@ -97,6 +97,10 @@ def _shapes_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
     return str(ns.graph("shapes", ontology_id))
 
 
+def _shapes_custom_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
+    return f"{_shapes_graph_iri(ns, ontology_id)}/custom"
+
+
 def compile_create_class(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -438,6 +442,236 @@ def compile_update_property(
     )
 
 
+def compile_update_relation_type(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    if "relation_type_id" not in payload and "relation_type_iri" not in payload:
+        raise InvalidCommandPayload(
+            "update_relation_type requires relation_type_id or relation_type_iri"
+        )
+    relation_type_id = payload.get("relation_type_id")
+    relation_type_iri = payload.get("relation_type_iri") or (
+        str(ns.resource("relation-type", relation_type_id)) if relation_type_id else None
+    )
+    if relation_type_iri is None:
+        raise InvalidCommandPayload(
+            "update_relation_type requires relation_type_id or relation_type_iri"
+        )
+
+    name = payload.get("name")
+    description = payload.get("description")
+    source_class_id = payload.get("source_class_id")
+    target_class_id = payload.get("target_class_id")
+    inverse_name = payload.get("inverse_name")
+
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    rel_term = f"<{relation_type_iri}>"
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+
+    if name is not None:
+        deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
+        inserts.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(name), graph_iri))
+    if description is not None:
+        deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri))
+        if description:
+            inserts.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", _literal_term(description), graph_iri))
+    if source_class_id is not None:
+        deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#domain>", "?o", graph_iri))
+        inserts.append(
+            (rel_term, "<http://www.w3.org/2000/01/rdf-schema#domain>",
+             f"<{ns.resource('class', source_class_id)}>", graph_iri)
+        )
+    if target_class_id is not None:
+        deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#range>", "?o", graph_iri))
+        inserts.append(
+            (rel_term, "<http://www.w3.org/2000/01/rdf-schema#range>",
+             f"<{ns.resource('class', target_class_id)}>", graph_iri)
+        )
+    if inverse_name is not None:
+        # Inverse name uses op:inverseName predicate.
+        op = str(ns.vocab)
+        deletes.append((rel_term, f"<{op}inverseName>", "?o", graph_iri))
+        if inverse_name:
+            inserts.append((rel_term, f"<{op}inverseName>", _literal_term(inverse_name), graph_iri))
+
+    delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
+    source_ids = [relation_type_id] if relation_type_id else [relation_type_iri]
+    return CompiledCommand(
+        command_kind="update_relation_type",
+        delta=delta,
+        object_kind="relation_type",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "relation_type_id": relation_type_id,
+            "relation_type_iri": relation_type_iri,
+            "fields_updated": [
+                k for k in ("name", "description", "source_class_id", "target_class_id", "inverse_name")
+                if payload.get(k) is not None
+            ],
+        },
+    )
+
+
+def _compile_shape_node(
+    payload: dict[str, Any], ns: SemanticNamespace, ontology_id: str, shape_iri: str
+) -> list[tuple[str, str, str, str]]:
+    """Build insert quads for a sh:NodeShape with constraints. Target graph
+    is the custom shapes sub-graph; caller is responsible for any deletes."""
+    target_class_id = _required(payload, "target_class_id")
+    constraints = payload.get("constraints") or []
+    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
+    class_iri = str(ns.resource("class", target_class_id))
+    shape_term = f"<{shape_iri}>"
+    quads: list[tuple[str, str, str, str]] = [
+        (shape_term, "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+         "<http://www.w3.org/ns/shacl#NodeShape>", graph_iri),
+        (shape_term, "<http://www.w3.org/ns/shacl#targetClass>", f"<{class_iri}>", graph_iri),
+    ]
+    for constraint in constraints:
+        path_id = _required(constraint, "path_id")
+        property_term = "?b"  # placeholder, replaced below per constraint
+        # Use a stable BNode-style label by index for readability of inspection;
+        # the canonical-write service persists these as blank nodes.
+        property_term = f"_:{shape_iri.split('/')[-1]}__{path_id}"
+        quads.append((shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri))
+        quads.append((property_term, "<http://www.w3.org/ns/shacl#path>",
+                      f"<{ns.resource('property', path_id)}>", graph_iri))
+        if "min_count" in constraint:
+            quads.append((property_term, "<http://www.w3.org/ns/shacl#minCount>",
+                          _literal_term(int(constraint["min_count"])), graph_iri))
+        if "max_count" in constraint:
+            quads.append((property_term, "<http://www.w3.org/ns/shacl#maxCount>",
+                          _literal_term(int(constraint["max_count"])), graph_iri))
+        if "datatype" in constraint:
+            quads.append((property_term, "<http://www.w3.org/ns/shacl#datatype>",
+                          f"<{_datatype_iri(constraint['datatype'])}>", graph_iri))
+        if "pattern" in constraint:
+            quads.append((property_term, "<http://www.w3.org/ns/shacl#pattern>",
+                          _literal_term(constraint["pattern"]), graph_iri))
+        if "description" in constraint:
+            quads.append((property_term, "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                          _literal_term(constraint["description"]), graph_iri))
+        if "enum_values" in constraint:
+            for value in constraint["enum_values"]:
+                quads.append((property_term, "<http://www.w3.org/ns/shacl#in>",
+                              _literal_term(value), graph_iri))
+    return quads
+
+
+def compile_create_shape(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    shape_id = payload.get("shape_id") or str(uuid.uuid4())
+    shape_iri = str(ns.resource("shape", shape_id))
+    insert_quads = _compile_shape_node(payload, ns, ontology_id, shape_iri)
+    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
+    delta = RdfGraphDelta(inserts=insert_quads)
+    return CompiledCommand(
+        command_kind="create_shape",
+        delta=delta,
+        object_kind="shape",
+        source_ids=[shape_id],
+        target_graph_iris=[graph_iri],
+        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
+    )
+
+
+def compile_update_shape(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    if "shape_id" not in payload and "shape_iri" not in payload:
+        raise InvalidCommandPayload("update_shape requires shape_id or shape_iri")
+    shape_id = payload.get("shape_id")
+    shape_iri = payload.get("shape_iri") or (
+        str(ns.resource("shape", shape_id)) if shape_id else None
+    )
+    if shape_iri is None:
+        raise InvalidCommandPayload("update_shape requires shape_id or shape_iri")
+    insert_quads = _compile_shape_node(payload, ns, ontology_id, shape_iri)
+    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
+    shape_term = f"<{shape_iri}>"
+    deletes = [(shape_term, "?p", "?o", graph_iri)]
+    delta = RdfGraphDelta(inserts=insert_quads, deletes=deletes)
+    source_ids = [shape_id] if shape_id else [shape_iri]
+    return CompiledCommand(
+        command_kind="update_shape",
+        delta=delta,
+        object_kind="shape",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
+    )
+
+
+def compile_delete_shape(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    if "shape_id" not in payload and "shape_iri" not in payload:
+        raise InvalidCommandPayload("delete_shape requires shape_id or shape_iri")
+    shape_id = payload.get("shape_id")
+    shape_iri = payload.get("shape_iri") or (
+        str(ns.resource("shape", shape_id)) if shape_id else None
+    )
+    if shape_iri is None:
+        raise InvalidCommandPayload("delete_shape requires shape_id or shape_iri")
+    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
+    shape_term = f"<{shape_iri}>"
+    deletes = [(shape_term, "?p", "?o", graph_iri)]
+    delta = RdfGraphDelta(inserts=[], deletes=deletes)
+    source_ids = [shape_id] if shape_id else [shape_iri]
+    return CompiledCommand(
+        command_kind="delete_shape",
+        delta=delta,
+        object_kind="shape",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
+    )
+
+
+def compile_delete_relation_type(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    if "relation_type_id" not in payload and "relation_type_iri" not in payload:
+        raise InvalidCommandPayload(
+            "delete_relation_type requires relation_type_id or relation_type_iri"
+        )
+    relation_type_id = payload.get("relation_type_id")
+    relation_type_iri = payload.get("relation_type_iri") or (
+        str(ns.resource("relation-type", relation_type_id)) if relation_type_id else None
+    )
+    if relation_type_iri is None:
+        raise InvalidCommandPayload(
+            "delete_relation_type requires relation_type_id or relation_type_iri"
+        )
+
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    rel_term = f"<{relation_type_iri}>"
+    deletes = [(rel_term, "?p", "?o", graph_iri)]
+    delta = RdfGraphDelta(inserts=[], deletes=deletes)
+    source_ids = [relation_type_id] if relation_type_id else [relation_type_iri]
+    return CompiledCommand(
+        command_kind="delete_relation_type",
+        delta=delta,
+        object_kind="relation_type",
+        source_ids=source_ids,
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "relation_type_id": relation_type_id,
+            "relation_type_iri": relation_type_iri,
+        },
+    )
+
+
 def compile_delete_property(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -559,6 +793,11 @@ _COMPILERS: dict[str, Compiler] = {
     "create_property": compile_create_property,
     "update_property": compile_update_property,
     "delete_property": compile_delete_property,
+    "update_relation_type": compile_update_relation_type,
+    "delete_relation_type": compile_delete_relation_type,
+    "create_shape": compile_create_shape,
+    "update_shape": compile_update_shape,
+    "delete_shape": compile_delete_shape,
 }
 
 
