@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     semantic_base_iri: str = "http://ontology-platform.local/semantic/"
     semantic_graph_iri_prefix: str = "http://ontology-platform.local/semantic/graph/"
     semantic_query_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    competency_question_sparql_timeout_seconds: float = Field(
+        default=5.0, gt=0, le=60
+    )
     semantic_query_result_limit: int = Field(default=1000, ge=1, le=10000)
     semantic_shacl_inference: str = "none"
     semantic_reasoner_command: str = ""
