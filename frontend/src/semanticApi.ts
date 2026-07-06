@@ -365,6 +365,99 @@ export function listStatements(
   return request<SemanticReadModelEnvelope>(path);
 }
 
+// Stage 2 §3.2 — read-model fetchers ----------------------------------------
+
+export function readModel<T = SemanticReadModelEnvelope>(
+  request: SemanticRequester,
+  graphSetId: string,
+  modelName: string,
+  params: { include?: string; fieldSet?: string; limit?: number } = {},
+) {
+  const path = withParams(
+    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/read-models/${modelName}`,
+    {
+      include: params.include ?? "asserted",
+      field_set: params.fieldSet ?? "summary",
+      limit: params.limit,
+    },
+  );
+  return request<T>(path);
+}
+
+// Stage 2 §3.4 — per-class shape guidance -----------------------------------
+
+export type SemanticShaclFieldConstraint = {
+  path?: string;
+  name?: string;
+  label?: string;
+  datatype?: string;
+  class_iri?: string;
+  min_count?: number;
+  max_count?: number;
+  pattern?: string;
+  enumeration?: unknown[];
+  description?: string;
+  required?: boolean;
+  provenance?: "generated" | "custom" | "merged";
+};
+
+export type SemanticShaclFormGuidance = {
+  target_class?: string;
+  target_class_label?: string;
+  shape_iri?: string;
+  fields?: SemanticShaclFieldConstraint[];
+  graph_set_id?: string;
+  generated_graph_iri?: string;
+  custom_graph_iri?: string;
+  shape_split?: { generated_subgraph: string; custom_subgraph: string };
+};
+
+export function getClassShapeGuidance(
+  request: SemanticRequester,
+  graphSetId: string,
+  classIri: string,
+) {
+  return request<SemanticShaclFormGuidance>(
+    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/shapes/classes/${classIri}`,
+  );
+}
+
+// Stage 2 §3.3 — canonical-write dispatcher ---------------------------------
+
+export type SemanticCanonicalWriteResult = {
+  applied: boolean;
+  graph_revisions?: Record<string, number>;
+  validation_report?: unknown;
+  delta?: unknown;
+};
+
+export function compileAndApplyProductCommand(
+  request: SemanticRequester,
+  payload: {
+    command_kind: string;
+    payload: Record<string, unknown>;
+    graph_set_id: string;
+    actor?: string;
+    reason?: string;
+    validate_edit?: boolean;
+  },
+) {
+  return request<SemanticCanonicalWriteResult>(
+    `${SEMANTIC_BASE}/canonical-writes:compile-and-apply`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        command_kind: payload.command_kind,
+        payload: payload.payload,
+        graph_set_id: payload.graph_set_id,
+        actor: payload.actor,
+        reason: payload.reason,
+        validate_edit: payload.validate_edit ?? false,
+      }),
+    },
+  );
+}
+
 export function sparqlQuery(
   request: SemanticRequester,
   payload: { query: string; timeoutSeconds?: number; resultLimit?: number },

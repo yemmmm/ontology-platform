@@ -95,6 +95,7 @@ import {
 import { EntityDetailDrawer } from "./components/EntityDetailDrawer";
 import { BuildOverviewPage } from "./pages/BuildOverviewPage";
 import { CompetencyQuestionsPage } from "./pages/CompetencyQuestionsPage";
+import { ClassesPage as Stage2ClassesPageModule } from "./pages/ClassesPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { PublicationPage } from "./pages/PublicationPage";
@@ -140,6 +141,11 @@ type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools" | "governance
 type ClassPageMode = "topology" | "create" | "edit";
 type EntityPageMode = "topology" | "create" | "edit";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
+
+function lazyStage2ClassesPage() {
+  return Stage2ClassesPageModule;
+}
+
 type ParentClassPickerProps = {
   classes: ClassDef[];
   excludedClassId?: string;
@@ -1079,6 +1085,18 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "classes") {
+    const stage2GraphSet = queryValue("graphSet");
+    if (stage2GraphSet) {
+      const Stage2ClassesPage = lazyStage2ClassesPage();
+      return (
+        <Stage2ClassesPage
+          graphSetId={stage2GraphSet}
+          ontologyId={props.ontology.id}
+          readOnly={readOnly}
+          request={governedRequest}
+        />
+      );
+    }
     return (
       <ClassesPage
         classes={props.classes}
