@@ -407,7 +407,6 @@ def run_question_validation(session, store, question_id, settings):
     Raises HTTPException(422) for guard/timeout errors.
     """
     from app.services.semantic_sparql_runner import (
-        SparqlCountResult,
         SparqlGuardError,
         run_select_count,
     )
