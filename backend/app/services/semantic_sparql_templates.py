@@ -383,6 +383,51 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
+    "fact-audit-queue": ReadModelTemplate(
+        name="fact-audit-queue",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_data",),
+        needs_reasoning=True,
+        needs_rules=True,
+        default_limit=500,
+        assertion_kind="asserted",
+        evidence_status="mixed",
+        body="""# template: fact-audit-queue
+        # COMPOSER. The SemanticReadModelService detects this template name
+        # and delegates to ``_compose_fact_audit_queue``. The composer uses
+        # the ``?kind=`` query parameter (asserted / inferred / rule_derived /
+        # missing_evidence) to select source graphs and decorates each row
+        # into the unified FactRow shape (spec §6.3). This body is a marker
+        # and is never executed directly.
+        """,
+    ),
+    "missing-evidence-list": ReadModelTemplate(
+        name="missing-evidence-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_data",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=500,
+        assertion_kind="asserted",
+        evidence_status="missing_evidence",
+        body="""# template: missing-evidence-list
+        # Lightweight aggregator: returns every entity (subject) carrying the
+        # ``op:evidenceStatus "missing_evidence"`` marker, projected across
+        # every asserted_data graph in the active graph set. The read-model
+        # service decorates each row with the source graph IRI so the
+        # FactAuditPage missing-evidence tab can route the user to the
+        # correct inspector.
+        PREFIX op: <http://ontology-platform.local/semantic/op/>
+        SELECT DISTINCT ?subject ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?subject op:evidenceStatus "missing_evidence" .
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """,
+    ),
 }
 
 

@@ -108,3 +108,39 @@ def test_import_graph_mappings_template_registered():
     assert template.needs_rules is False
     assert "SemanticMapping" in template.body
 
+
+# Stage 2 §6.3 — FactAuditPage read-model templates --------------------------------------
+
+
+def test_fact_audit_queue_template_registered_as_composer():
+    """fact-audit-queue is a composer; the SemanticReadModelService branch
+    selects source graphs by ``?kind=`` query parameter and decorates each
+    row into a unified FactRow."""
+    template = get_template("fact-audit-queue")
+    assert template.projection_version == "semantic-read-v1"
+    # Sources span asserted + reasoning + rule derived.
+    assert "asserted_data" in template.required_roles
+    # Body is a marker — composer does not run it directly.
+    assert "composer" in template.body.lower()
+
+
+def test_fact_audit_queue_template_needs_reasoning_and_rules():
+    """fact-audit-queue needs derived graphs to surface inferred and
+    rule-derived facts."""
+    template = get_template("fact-audit-queue")
+    assert template.needs_reasoning is True
+    assert template.needs_rules is True
+
+
+def test_missing_evidence_list_template_registered():
+    """missing-evidence-list is a lightweight template that aggregates
+    missing-evidence triples across the graph-set members."""
+    template = get_template("missing-evidence-list")
+    assert template.projection_version == "semantic-read-v1"
+    assert "asserted_data" in template.required_roles
+    assert template.needs_reasoning is False
+    assert template.needs_rules is False
+    # Template body must filter on op:evidenceStatus "missing_evidence".
+    assert "missing_evidence" in template.body
+    assert "evidenceStatus" in template.body
+
