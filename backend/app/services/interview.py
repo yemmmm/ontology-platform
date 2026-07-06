@@ -24,6 +24,7 @@ from app.repositories.models import (
     ProjectBriefModel,
     ProjectModel,
 )
+from app.services.semantic_build_overview import BriefSummary, CompetencyQuestionSummary
 
 BRIEF_FIELDS = (
     "domain_name",
@@ -439,3 +440,41 @@ def run_question_validation(
     session.commit()
     session.refresh(question)
     return result
+
+
+def brief_summary_for_overview(session, project_id):
+    """Return BriefSummary for the build-overview composer."""
+    brief = session.scalar(
+        select(ProjectBriefModel).where(ProjectBriefModel.project_id == project_id)
+    )
+    if not brief:
+        return BriefSummary(completeness=0.0, missing_fields=[])
+    content = brief.content or {}
+    states = brief.field_states or {}
+    # All expected brief fields
+    brief_fields = [
+        "domain_name", "business_goal", "scope", "core_concepts",
+        "identity_rules", "expected_granularity", "data_sources",
+        "boundaries", "terminology", "inference_scope",
+    ]
+    missing = [k for k, v in states.items() if v != "confirmed"]
+    missing += [k for k in brief_fields if k not in content and k not in missing]
+    completeness = 1.0 - (len(missing) / len(brief_fields)) if brief_fields else 0.0
+    return BriefSummary(
+        completeness=max(0.0, completeness),
+        missing_fields=missing,
+    )
+
+
+def question_summary_for_overview(session, project_id):
+    """Return CompetencyQuestionSummary for the build-overview composer."""
+    rows = session.scalars(
+        select(CompetencyQuestionModel).where(
+            CompetencyQuestionModel.project_id == project_id,
+            CompetencyQuestionModel.active.is_(True),
+        )
+    ).all()
+    by_status = {"draft": 0, "approved": 0, "testable": 0, "passed": 0, "failed": 0}
+    for q in rows:
+        by_status[q.status] = by_status.get(q.status, 0) + 1
+    return CompetencyQuestionSummary(total=len(rows), by_status=by_status)
