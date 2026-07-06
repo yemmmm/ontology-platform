@@ -24,8 +24,8 @@ each verify one stage succeeds end-to-end through the FastAPI boundary:
   selected and the response envelope is shaped correctly).
 * Step 4 — create_property apply.
 * Step 5 — property-list read model with class_iri filter is routed.
-* Step 6 — create_shape apply (KNOWN BUG: see canonical-write tests;
-  xfailed).
+* Step 6 — create_shape apply writes a SHACL NodeShape + PropertyShape
+  into the custom-shapes sub-graph.
 * Step 7 — shape endpoint returns merged guidance from generated + custom
   sources (covered separately by test_semantic_shape_endpoint.py; here
   we exercise the same flow as a smoke test of the full path).
@@ -170,7 +170,7 @@ def graph_set_id(in_memory_session) -> str:
     for graph_iri, category in [
         (ONTOLOGY_GRAPH, "ontology"),
         (DATA_GRAPH, "data"),
-        (CUSTOM_SHAPES_GRAPH, "data"),  # registered but see KNOWN BUG below
+        (CUSTOM_SHAPES_GRAPH, "shapes"),
     ]:
         _register_graph(in_memory_session, graph_iri, category)
 
@@ -346,17 +346,10 @@ def test_step5_property_list_routes_class_iri_filter(
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — create_shape (KNOWN BUG: xfail)
+# Step 6 — create_shape
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "KNOWN BUG (2026-07-06): see "
-        "test_create_shape_apply_writes_node_shape_into_custom_subgraph."
-    ),
-    strict=True,
-)
 def test_step6_create_shape_apply_writes_custom_constraint(
     in_memory_session,
     graph_set_id,

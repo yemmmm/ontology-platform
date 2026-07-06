@@ -411,14 +411,6 @@ def test_delete_relation_type_apply_emits_subject_wildcard_delete(
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "KNOWN BUG (2026-07-06): canonical-write classifier only admits "
-        "ontology + data graphs; the custom-shapes sub-graph is rejected. "
-        "See app/services/semantic_graph_registry.py DIRECT_EDITABLE_CATEGORIES."
-    ),
-    strict=True,
-)
 def test_create_shape_apply_writes_node_shape_into_custom_subgraph(
     in_memory_session,
 ) -> None:
@@ -443,19 +435,13 @@ def test_create_shape_apply_writes_node_shape_into_custom_subgraph(
         _shapes_custom_graph_iri(),
         [
             "/ns/shape/shape-1>",
-            "sh:NodeShape",
-            "sh:targetClass",
-            "sh:minCount",
+            "#NodeShape",
+            "#targetClass",
+            "#minCount",
         ],
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "KNOWN BUG (2026-07-06): see test_create_shape_apply_writes_node_shape_into_custom_subgraph."
-    ),
-    strict=True,
-)
 def test_update_shape_apply_replaces_constraints(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -476,16 +462,10 @@ def test_update_shape_apply_replaces_constraints(in_memory_session) -> None:
         body,
         store,
         _shapes_custom_graph_iri(),
-        ["/ns/shape/shape-1>", "sh:maxCount"],
+        ["/ns/shape/shape-1>", "#maxCount"],
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "KNOWN BUG (2026-07-06): see test_create_shape_apply_writes_node_shape_into_custom_subgraph."
-    ),
-    strict=True,
-)
 def test_delete_shape_apply_emits_subject_wildcard_delete(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)

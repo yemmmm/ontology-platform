@@ -22,6 +22,7 @@ from app.repositories.models import (
 class GraphCategory(StrEnum):
     ONTOLOGY = "ontology"
     DATA = "data"
+    SHAPES = "shapes"
     PROPOSAL = "proposal"
     EVIDENCE = "evidence"
     POLICY = "policy"
@@ -36,7 +37,7 @@ class GraphCategory(StrEnum):
 
 
 DIRECT_EDITABLE_CATEGORIES: frozenset[GraphCategory] = frozenset(
-    {GraphCategory.ONTOLOGY, GraphCategory.DATA}
+    {GraphCategory.ONTOLOGY, GraphCategory.DATA, GraphCategory.SHAPES}
 )
 
 DERIVED_RESULT_CATEGORIES: frozenset[GraphCategory] = frozenset(
