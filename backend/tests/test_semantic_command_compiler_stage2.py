@@ -593,3 +593,215 @@ def test_delete_mapping_with_import_run_targets_import_graph():
     mapping_term = f"<{_mapping_iri('map-2')}>"
     assert (mapping_term, "?p", "?o", graph_iri) in compiled.delta.deletes
 
+
+# Stage 2 §6.4 — review_assertion canonical-write kind -----------------------------
+
+
+def _data_graph_iri(ontology_id: str) -> str:
+    return f"http://op.local/graph/data/{ontology_id}"
+
+
+def _reasoning_result_graph_iri(run_id: str) -> str:
+    return f"http://op.local/graph/reasoning-result/{run_id}"
+
+
+def _rule_result_graph_iri(run_id: str) -> str:
+    return f"http://op.local/graph/rule-result/{run_id}"
+
+
+def test_review_assertion_writes_rdf_star_reification_to_data_graph_for_asserted():
+    """review_assertion for an asserted fact writes RDF-star reification
+    triples onto the data graph: <<s p o>> op:auditStatus / op:reviewReason /
+    op:reviewedBy / op:reviewedAt."""
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "asserted",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/email",
+        "object_value": "alice@example.com",
+        "decision": "approved",
+        "reason": "looks good",
+        "reviewed_by": "user:alice",
+    }
+
+    compiled = compile_command("review_assertion", payload, _settings())
+
+    assert compiled.command_kind == "review_assertion"
+    assert compiled.object_kind == "fact_review"
+    graph_iri = _data_graph_iri("ont-1")
+    assert compiled.target_graph_iris == [graph_iri]
+    op = "http://op.local/ns/vocab/"
+
+    # The triple-subject is the RDF-star quoted triple term.
+    # Literal object form: <<<s> <p> "literal">>
+    quoted = (
+        f"<<<http://op.local/ns/entity/alice> "
+        f"<http://op.local/ns/property/email> "
+        f'"alice@example.com">>'
+    )
+    # auditStatus approved
+    assert (quoted, f"<{op}auditStatus>", '"approved"', graph_iri) in compiled.delta.inserts
+    # reviewReason text
+    assert (quoted, f"<{op}reviewReason>", '"looks good"', graph_iri) in compiled.delta.inserts
+    # reviewedBy
+    assert (
+        quoted, f"<{op}reviewedBy>", f"<http://op.local/ns/user/alice>", graph_iri
+    ) in compiled.delta.inserts or (
+        quoted, f"<{op}reviewedBy>", '"user:alice"', graph_iri
+    ) in compiled.delta.inserts
+    # reviewedAt is an ISO-8601 literal
+    reviewed_at_inserts = [
+        (s, p, o, g)
+        for (s, p, o, g) in compiled.delta.inserts
+        if s == quoted and p == f"<{op}reviewedAt>"
+    ]
+    assert len(reviewed_at_inserts) == 1
+
+
+def test_review_assertion_iri_object_is_emitted_as_iri_term():
+    """When object_value is a dict with kind=iri (or has an ``iri`` key),
+    the reification object is rendered as an IRI term, not a literal."""
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "asserted",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/knows",
+        "object_value": {"iri": "http://op.local/ns/entity/bob"},
+        "decision": "approved",
+        "reason": "friend",
+        "reviewed_by": "user:alice",
+    }
+
+    compiled = compile_command("review_assertion", payload, _settings())
+    graph_iri = _data_graph_iri("ont-1")
+    quoted = (
+        f"<<<http://op.local/ns/entity/alice> "
+        f"<http://op.local/ns/property/knows> "
+        f"<http://op.local/ns/entity/bob>>>"
+    )
+    op = "http://op.local/ns/vocab/"
+    assert (quoted, f"<{op}auditStatus>", '"approved"', graph_iri) in compiled.delta.inserts
+
+
+def test_review_assertion_inferred_kind_targets_reasoning_result_graph():
+    """For assertion_kind=inferred the reification is written to the
+    reasoning-result graph passed in via ``result_graph_iri``."""
+    reasoning_iri = _reasoning_result_graph_iri("run-7")
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "inferred",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/parent",
+        "object_value": {"iri": "http://op.local/ns/entity/parent-bob"},
+        "decision": "needs_correction",
+        "reason": "verify",
+        "reviewed_by": "user:carol",
+        "result_graph_iri": reasoning_iri,
+    }
+
+    compiled = compile_command("review_assertion", payload, _settings())
+    assert compiled.target_graph_iris == [reasoning_iri]
+
+
+def test_review_assertion_rule_derived_kind_targets_rule_result_graph():
+    """For assertion_kind=rule_derived the reification is written to the
+    rule-result graph passed in via ``result_graph_iri``."""
+    rule_iri = _rule_result_graph_iri("run-9")
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "rule_derived",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/category",
+        "object_value": "vip",
+        "decision": "rejected",
+        "reason": "rule outdated",
+        "linked_fix_proposal_id": "fix-prop-1",
+        "reviewed_by": "user:carol",
+        "result_graph_iri": rule_iri,
+    }
+
+    compiled = compile_command("review_assertion", payload, _settings())
+    assert compiled.target_graph_iris == [rule_iri]
+    op = "http://op.local/ns/vocab/"
+    quoted = (
+        f"<<<http://op.local/ns/entity/alice> "
+        f"<http://op.local/ns/property/category> "
+        f'"vip">>'
+    )
+    # linkedFixProposal is only written when the decision is rejected and
+    # the caller supplied a fix proposal id.
+    assert (
+        quoted, f"<{op}linkedFixProposal>",
+        f"<http://op.local/ns/fix-proposal/fix-prop-1>", rule_iri
+    ) in compiled.delta.inserts
+
+
+def test_review_assertion_fact_id_is_stable_sha256_over_canonical_ntriples():
+    """The compiled command metadata carries a ``fact_id`` that is the
+    SHA-256 hex digest of the canonical N-Triples serialization of
+    (subject, predicate, object). Calling twice with the same triple
+    yields the same fact_id; changing the object changes it."""
+    base_payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "asserted",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/email",
+        "object_value": "alice@example.com",
+        "decision": "approved",
+        "reason": "ok",
+        "reviewed_by": "user:alice",
+    }
+
+    compiled_one = compile_command("review_assertion", dict(base_payload), _settings())
+    compiled_two = compile_command("review_assertion", dict(base_payload), _settings())
+    fact_id_one = compiled_one.metadata["fact_id"]
+    assert fact_id_one == compiled_two.metadata["fact_id"]
+    assert len(fact_id_one) == 64  # SHA-256 hex digest
+
+    # Different object → different digest.
+    different = dict(base_payload)
+    different["object_value"] = "alice@different.example"
+    compiled_diff = compile_command("review_assertion", different, _settings())
+    assert compiled_diff.metadata["fact_id"] != fact_id_one
+
+
+def test_review_assertion_rejects_invalid_decision():
+    """decision must be one of approved / rejected / needs_correction."""
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "asserted",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/email",
+        "object_value": "alice@example.com",
+        "decision": "maybe",
+        "reason": "unsure",
+        "reviewed_by": "user:alice",
+    }
+
+    from app.services.semantic_command_compiler import InvalidCommandPayload
+    import pytest
+
+    with pytest.raises(InvalidCommandPayload):
+        compile_command("review_assertion", payload, _settings())
+
+
+def test_review_assertion_rejected_requires_linked_fix_proposal_id():
+    """A rejected review must carry a linked_fix_proposal_id."""
+    payload = {
+        "ontology_id": "ont-1",
+        "assertion_kind": "asserted",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/email",
+        "object_value": "alice@example.com",
+        "decision": "rejected",
+        "reason": "nope",
+        "reviewed_by": "user:alice",
+        # linked_fix_proposal_id missing
+    }
+
+    from app.services.semantic_command_compiler import InvalidCommandPayload
+    import pytest
+
+    with pytest.raises(InvalidCommandPayload):
+        compile_command("review_assertion", payload, _settings())
+

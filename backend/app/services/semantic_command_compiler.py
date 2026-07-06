@@ -9,6 +9,7 @@ pipeline.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -1259,6 +1260,184 @@ def compile_delete_mapping(
     )
 
 
+# Stage 2 §6.4 — review_assertion canonical-write kind -----------------------------------
+
+
+_VALID_REVIEW_DECISIONS = {"approved", "rejected", "needs_correction"}
+
+
+def _object_term_for_review(value: Any) -> str:
+    """Render an object term for RDF-star reification.
+
+    A dict carrying an ``iri`` key produces an IRI term; everything else is
+    stringified and rendered as a literal. The literal form matches the
+    caller-supplied value verbatim (callers pre-format numbers / booleans
+    as their string forms via the API layer; the canonical-write store
+    interprets a bare quoted string as xsd:string).
+    """
+    if isinstance(value, dict) and "iri" in value and value["iri"]:
+        return f"<{value['iri']}>"
+    return _literal_term(value)
+
+
+def _quoted_triple_term(subject_iri: str, predicate_iri: str, object_term: str) -> str:
+    """Build an RDF-star ``<<s p o>>>`` term.
+
+    The result has the shape ``<<<s> <p> o>>>`` for IRI objects and
+    ``<<<s> <p> "literal">>>`` for literal objects — i.e. 3 leading
+    angle brackets (``<<`` + ``<``) and 3 trailing angle brackets (``>`` +
+    ``>>``). ``object_term`` is expected to already be in turtle object
+    form (IRI angle-bracketed or literal-quoted), produced by
+    ``_object_term_for_review``.
+    """
+    return f"<<<{subject_iri}> <{predicate_iri}> {object_term}>>"
+
+
+def _canonical_ntriples(subject_iri: str, predicate_iri: str, object_term: str) -> str:
+    """Canonical N-Triples-style serialization used to derive ``fact_id``.
+
+    The form is ``<s> <p> o`` (without trailing dot) where ``o`` is the
+    object term in its canonical turtle form. This keeps the digest stable
+    across calls and across backend instances.
+    """
+    return f"<{subject_iri}> <{predicate_iri}> {object_term}"
+
+
+def _fact_id_for(subject_iri: str, predicate_iri: str, object_term: str) -> str:
+    """SHA-256 hex digest over the canonical N-Triples serialization of the
+    reviewed triple. Stable across calls and backend instances."""
+    return hashlib.sha256(
+        _canonical_ntriples(subject_iri, predicate_iri, object_term).encode("utf-8")
+    ).hexdigest()
+
+
+def _reviewer_term(reviewer: str, ns: SemanticNamespace) -> str:
+    """Render a reviewer term. Accepts ``user:<id>`` (preferred) or a bare
+    IRI; ``user:`` form is expanded into the platform namespace."""
+    if reviewer.startswith("http://") or reviewer.startswith("https://"):
+        return f"<{reviewer}>"
+    if ":" in reviewer and not reviewer.startswith("user:"):
+        # Already namespaced (e.g. ``agent:foo``) — render verbatim as IRI
+        # under the platform base IRI to keep it stable.
+        return f"<{str(ns.base_iri).rstrip('/')}/{reviewer}>"
+    # ``user:alice`` form
+    identifier = reviewer.split(":", 1)[1] if ":" in reviewer else reviewer
+    return f"<{ns.resource('user', identifier)}>"
+
+
+def compile_review_assertion(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Stage 2 §6.4 — write an RDF-star reification recording a fact review.
+
+    The compiled delta attaches ``op:auditStatus``, ``op:reviewReason``,
+    ``op:reviewedBy``, ``op:reviewedAt`` to the quoted triple term, with
+    an optional ``op:linkedFixProposal`` for rejections. Target graph is
+    selected by ``assertion_kind``:
+
+    - ``asserted`` / ``missing_evidence`` → ``graph/data/{ontology_id}``
+    - ``inferred`` → ``result_graph_iri`` (caller-supplied reasoning-result)
+    - ``rule_derived`` → ``result_graph_iri`` (caller-supplied rule-result)
+
+    The ``fact_id`` carried in ``metadata`` is the SHA-256 over the
+    canonical N-Triples form of the reviewed triple.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    assertion_kind = payload.get("assertion_kind", "asserted")
+    if assertion_kind not in {"asserted", "inferred", "rule_derived", "missing_evidence"}:
+        raise InvalidCommandPayload(
+            "assertion_kind must be one of: asserted, inferred, rule_derived, "
+            "missing_evidence"
+        )
+    subject_iri = _required(payload, "subject_iri")
+    predicate_iri = _required(payload, "predicate_iri")
+    object_value = _required(payload, "object_value")
+    decision = _required(payload, "decision")
+    if decision not in _VALID_REVIEW_DECISIONS:
+        raise InvalidCommandPayload(
+            "decision must be one of: " + ", ".join(sorted(_VALID_REVIEW_DECISIONS))
+        )
+    reason = payload.get("reason") or ""
+    reviewed_by = _required(payload, "reviewed_by")
+    linked_fix_proposal_id = payload.get("linked_fix_proposal_id")
+    if decision == "rejected" and not linked_fix_proposal_id:
+        raise InvalidCommandPayload(
+            "rejected review requires a linked_fix_proposal_id"
+        )
+    result_graph_iri = payload.get("result_graph_iri")
+
+    # Select target graph by assertion_kind.
+    if assertion_kind in {"asserted", "missing_evidence"}:
+        graph_iri = _data_graph_iri(ns, ontology_id)
+    elif assertion_kind == "inferred":
+        if not result_graph_iri:
+            raise InvalidCommandPayload(
+                "inferred review requires result_graph_iri (reasoning-result graph)"
+            )
+        graph_iri = result_graph_iri
+    else:  # rule_derived
+        if not result_graph_iri:
+            raise InvalidCommandPayload(
+                "rule_derived review requires result_graph_iri (rule-result graph)"
+            )
+        graph_iri = result_graph_iri
+
+    object_term = _object_term_for_review(object_value)
+    quoted = _quoted_triple_term(subject_iri, predicate_iri, object_term)
+    fact_id = _fact_id_for(subject_iri, predicate_iri, object_term)
+    op = str(ns.vocab)
+
+    from datetime import datetime, timezone
+
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+
+    insert_quads: list[tuple[str, str, str, str]] = [
+        (quoted, f"<{op}auditStatus>", _literal_term(decision), graph_iri),
+        (quoted, f"<{op}reviewReason>", _literal_term(reason), graph_iri),
+        (quoted, f"<{op}reviewedBy>", _reviewer_term(reviewed_by, ns), graph_iri),
+        (
+            quoted,
+            f"<{op}reviewedAt>",
+            _literal_term(reviewed_at),
+            graph_iri,
+        ),
+        # fact_id links the reification back to the stable digest the
+        # FactAuditPage uses to dedupe reviews across runs.
+        (quoted, f"<{op}factId>", _literal_term(fact_id), graph_iri),
+    ]
+    if linked_fix_proposal_id:
+        insert_quads.append(
+            (
+                quoted,
+                f"<{op}linkedFixProposal>",
+                f"<{ns.resource('fix-proposal', linked_fix_proposal_id)}>",
+                graph_iri,
+            )
+        )
+
+    delta = RdfGraphDelta(inserts=insert_quads)
+    return CompiledCommand(
+        command_kind="review_assertion",
+        delta=delta,
+        object_kind="fact_review",
+        source_ids=[fact_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "assertion_kind": assertion_kind,
+            "decision": decision,
+            "fact_id": fact_id,
+            "subject_iri": subject_iri,
+            "predicate_iri": predicate_iri,
+            "object_value": object_value,
+            "reviewed_by": reviewed_by,
+            "reason": reason,
+            "linked_fix_proposal_id": linked_fix_proposal_id,
+            "graph_iri": graph_iri,
+        },
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
@@ -1282,6 +1461,7 @@ _COMPILERS: dict[str, Compiler] = {
     "create_mapping": compile_create_mapping,
     "update_mapping": compile_update_mapping,
     "delete_mapping": compile_delete_mapping,
+    "review_assertion": compile_review_assertion,
 }
 
 
