@@ -238,8 +238,6 @@ export function PublicationPage({
     setPhase({ kind: "idle" });
   }, [graphSetId]);
 
-  const totalGraphs = data?.editable_graph_count ?? 0;
-
   // All editable graphs from the read model. For member listing we also want
   // to show locked ones; the row doesn't expose them, so the per-graph section
   // is editable-only (matching the spec §7.1 wireframe).
@@ -463,9 +461,8 @@ export function PublicationPage({
             <StatusBadge status={status} t={t} />
           </Space>
           <Space size={8}>
-            <Text type="secondary">{t("Editable graphs: {count} / {total}", {
+            <Text type="secondary">{t("Editable graphs: {count}", {
               count: data.editable_graph_count,
-              total: memberRows.length + (totalGraphs === 0 ? 0 : 0),
             })}</Text>
           </Space>
           <Space size={8}>
