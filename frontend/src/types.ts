@@ -369,14 +369,7 @@ export type KnowledgeConflict = {
   resolution: JsonObject;
 };
 
-export type WorkflowStatus =
-  | "gathering"
-  | "schema_draft"
-  | "schema_review"
-  | "graph_building"
-  | "graph_review"
-  | "validated"
-  | "published";
+
 
 export type BriefFieldState = "missing" | "answered" | "confirmed" | "skipped";
 

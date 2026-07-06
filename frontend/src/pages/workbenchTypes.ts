@@ -2,23 +2,6 @@ export type WorkbenchRequest = <T>(path: string, options?: globalThis.RequestIni
 
 export type WorkbenchNavigate = (tab: string, params?: Record<string, string>) => void;
 
-export type BuildContext = {
-  project: { id: string; name: string; description: string | null };
-  project_brief: ProjectBrief;
-  ontologies: Array<{
-    id: string;
-    name: string;
-    status: string;
-    current_version_id: string | null;
-    current_version: {
-      status: string;
-      workflow_status: string;
-      version_number: number;
-    } | null;
-  }>;
-  competency_question_counts: Record<string, number>;
-};
-
 export type ProjectBrief = {
   id: string | null;
   project_id: string;
@@ -43,28 +26,6 @@ export type CompetencyQuestion = {
   validation_result: Record<string, unknown>;
   source_answer_ids: string[];
   source_brief_fields: string[];
-  created_at: string;
-  updated_at: string;
-};
-
-export type OntologyVersionSummary = {
-  id: string;
-  ontology_id: string;
-  parent_version_id: string | null;
-  version_number: number;
-  status: string;
-  workflow_status: string;
-  created_at: string;
-  published_at: string | null;
-};
-
-export type ProposalSummary = {
-  id: string;
-  project_id: string;
-  ontology_id: string;
-  target_version_id: string;
-  proposal_type: string;
-  status: string;
   created_at: string;
   updated_at: string;
 };

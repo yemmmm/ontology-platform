@@ -4,4 +4,3 @@ export * from "./InlineError";
 export * from "./LoadingPanel";
 export * from "./StatusSummary";
 export * from "./WorkbenchPageHeader";
-export * from "./WorkflowStepper";

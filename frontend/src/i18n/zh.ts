@@ -18,7 +18,6 @@ export const zh: TranslationMap = {
   "API": "API",
   "Active ontology version": "当前本体版本",
   "Version": "版本",
-  "No versions": "暂无版本",
   "v{n} · {status}": "v{n} · {status}",
   "Read-only": "只读",
   "Ontologies": "本体",
@@ -400,7 +399,6 @@ export const zh: TranslationMap = {
   "Structured subject": "结构化主体",
 
   // PublicationPage
-  "Version mutability": "版本可变性",
   "Evaluating publication gates…": "正在评估发布门槛…",
   "Recheck gates": "重新检查门槛",
   "Version {n} is locked and immutable.": "版本 {n} 已锁定且不可变。",
@@ -489,7 +487,6 @@ export const zh: TranslationMap = {
   "v{n}": "v{n}",
   "none": "无",
   "Schema validation": "Schema 校验",
-  "Pending proposals": "待处理提案",
   "Unresolved conflicts": "未解决的冲突",
   "Low-confidence review": "低置信度审计",
   "Evidence coverage": "证据覆盖",
@@ -607,10 +604,6 @@ export const zh: TranslationMap = {
   "{name} · property": "{name} · 属性",
   "{name} · relation type": "{name} · 关系类型",
   "{name} · entity": "{name} · 实体",
-
-  // WorkflowProgress
-  "Schema 审核": "Schema 审核",
-  "图谱审核": "图谱审核",
 
   // Phase 8 — semantic governance
   "Governance": "语义治理",
@@ -869,15 +862,6 @@ export const zh: TranslationMap = {
   "Import applied via governed edit · audit {id}": "导入已通过受治理编辑应用 · 审计 {id}",
   "Refresh audits": "刷新审计",
 
-  // WorkflowStepper
-  "Gathering": "需求收集",
-  "Schema draft": "Schema 草拟",
-  "Schema review": "Schema 校验",
-  "Graph building": "图谱构建",
-  "Graph review": "图谱校验",
-  "Validated": "验证完成",
-  "Published": "已发布",
-  "Ontology build workflow": "本体构建工作流",
   "Unable to load this section": "无法加载此区域",
   "Retry": "重试",
   "Loading": "加载中",
