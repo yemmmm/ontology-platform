@@ -2,11 +2,10 @@ from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from neo4j import Driver
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.schemas import (
     CompetencyQuestionCreate,
     CompetencyQuestionRead,
@@ -112,9 +111,10 @@ def set_competency_question_status(
 def validate_competency_question(
     question_id: str,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
+    rdf_store=Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
 ):
-    service.run_question_validation(session, driver, question_id)
+    service.run_question_validation(session, rdf_store, question_id, settings)
     return session.get(CompetencyQuestionModel, question_id)
 
 

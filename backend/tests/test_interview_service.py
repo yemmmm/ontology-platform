@@ -167,53 +167,72 @@ def test_graph_change_invalidation_noops_without_changes() -> None:
     assert passed.status == "passed"
 
 
-def _graph_session(count: int) -> MagicMock:
-    driver = MagicMock()
-    graph_session = MagicMock()
-    graph_session.run.return_value.single.return_value = {"count": count}
-    driver.session.return_value.__enter__.return_value = graph_session
-    return driver
+class _FakeSparqlStore:
+    """Minimal fake RDF store that returns a SPARQL JSON result with a count binding."""
+
+    def __init__(self, count: int):
+        self.count = count
+
+    def query_sparql(self, query, timeout_seconds, limit):
+        class _R:
+            result_format = "application/sparql-results+json"
+
+        r = _R()
+        r.result = {"results": {"bindings": [{"count": {"value": str(self.count)}}]}}
+        return r
 
 
-def test_run_question_validation_passes_when_count_meets_threshold() -> None:
+class _FakeSettings:
+    competency_question_sparql_timeout_seconds = 5.0
+
+
+def test_run_question_validation_passes_when_count_meets_threshold(monkeypatch) -> None:
     session = MagicMock()
-    driver = _graph_session(3)
     item = question(
         status="testable",
         query_definition={"kind": "entity_count", "class_id": "c1", "min_count": 1},
     )
     session.get.return_value = item
+    monkeypatch.setattr(interview, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+    monkeypatch.setattr(interview, "resolve_class_iri",
+                        lambda s, oid, cid: f"https://x/ont/{oid}/class/{cid}")
 
-    result = interview.run_question_validation(session, driver, item.id)
+    result = interview.run_question_validation(session, _FakeSparqlStore(3), item.id, _FakeSettings())
 
     assert item.status == "passed"
-    assert result["passed"] is True
-    assert result["matches"] == 3
-    session.commit.assert_called_once()
+    assert result["status"] == "passed"
+    assert result["validation_result"]["matches"] == 3
+    session.commit.assert_called()
 
 
-def test_run_question_validation_fails_below_threshold() -> None:
+def test_run_question_validation_fails_below_threshold(monkeypatch) -> None:
     session = MagicMock()
-    driver = _graph_session(2)
     item = question(
         status="testable",
         query_definition={"kind": "entity_count", "class_id": "c1", "min_count": 5},
     )
     session.get.return_value = item
+    monkeypatch.setattr(interview, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+    monkeypatch.setattr(interview, "resolve_class_iri",
+                        lambda s, oid, cid: f"https://x/ont/{oid}/class/{cid}")
 
-    result = interview.run_question_validation(session, driver, item.id)
+    result = interview.run_question_validation(session, _FakeSparqlStore(2), item.id, _FakeSettings())
 
     assert item.status == "failed"
-    assert result["passed"] is False
+    assert result["status"] == "failed"
 
 
-def test_run_question_validation_rejects_unsupported_definition() -> None:
+def test_run_question_validation_rejects_unsupported_definition(monkeypatch) -> None:
     session = MagicMock()
     item = question(status="testable", query_definition={"kind": "unknown"})
     session.get.return_value = item
+    monkeypatch.setattr(interview, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
 
     with pytest.raises(HTTPException, match="Unsupported query definition"):
-        interview.run_question_validation(session, MagicMock(), item.id)
+        interview.run_question_validation(session, _FakeSparqlStore(0), item.id, _FakeSettings())
 
 
 def test_run_question_validation_rejects_non_testable_status() -> None:
@@ -222,22 +241,25 @@ def test_run_question_validation_rejects_non_testable_status() -> None:
     session.get.return_value = item
 
     with pytest.raises(HTTPException, match="Only testable"):
-        interview.run_question_validation(session, MagicMock(), item.id)
+        interview.run_question_validation(session, _FakeSparqlStore(0), item.id, _FakeSettings())
 
 
-def test_run_question_validation_relation_count_uses_relation_type_filter() -> None:
+def test_run_question_validation_relation_count_uses_relation_type_filter(monkeypatch) -> None:
     session = MagicMock()
-    driver = _graph_session(7)
     item = question(
         status="testable",
         query_definition={"kind": "relation_count", "relation_type_id": "rt1", "min_count": 5},
     )
     session.get.return_value = item
+    monkeypatch.setattr(interview, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+    monkeypatch.setattr(interview, "resolve_relation_type_iri",
+                        lambda s, oid, rid: f"https://x/ont/{oid}/relation/{rid}")
 
-    result = interview.run_question_validation(session, driver, item.id)
+    result = interview.run_question_validation(session, _FakeSparqlStore(7), item.id, _FakeSettings())
 
-    assert result["passed"] is True
-    assert result["matches"] == 7
+    assert result["status"] == "passed"
+    assert result["validation_result"]["matches"] == 7
 
 
 def test_active_data_and_ontology_graphs_for_question_returns_member_iris(
@@ -304,3 +326,141 @@ def test_resolve_relation_type_iri_returns_phase2_mapping_or_fallback(in_memory_
     iri = resolve_relation_type_iri(in_memory_session, "o-1", "rt-1")
     assert "rt-1" in iri or "rt_1" in iri
     assert iri.startswith("http://ontology-platform.local/semantic/")
+
+
+def test_run_question_validation_entity_count_sparql_passes(in_memory_session, monkeypatch):
+    from app.services import interview as svc
+    from app.repositories.models import (
+        CompetencyQuestionModel, OntologyModel, ProjectModel,
+    )
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.flush()
+    in_memory_session.add(CompetencyQuestionModel(
+        id="q-1", project_id="p-1", ontology_id="o-1", question="q", position=0,
+        status="testable",
+        query_definition={"kind": "entity_count", "class_id": "class-1", "min_count": 1},
+        source_brief_fields=[],
+    ))
+    in_memory_session.commit()
+
+    monkeypatch.setattr(svc, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+    monkeypatch.setattr(svc, "resolve_class_iri",
+                        lambda s, oid, cid: f"https://x/ont/{oid}/class/{cid}")
+
+    class _Settings:
+        competency_question_sparql_timeout_seconds = 5.0
+
+    class _Store:
+        def query_sparql(self, query, timeout_seconds, limit):
+            class _R:
+                result = {"results": {"bindings": [{"count": {"value": "5"}}]}}
+                result_format = "application/sparql-results+json"
+            return _R()
+
+    result = svc.run_question_validation(in_memory_session, _Store(), "q-1", _Settings())
+    assert result["status"] == "passed"
+    assert result["validation_result"]["matches"] == 5
+
+
+def test_run_question_validation_sparql_count_rejects_non_select(in_memory_session, monkeypatch):
+    from app.services import interview as svc
+    from app.repositories.models import (
+        CompetencyQuestionModel, OntologyModel, ProjectModel,
+    )
+    from fastapi import HTTPException
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.flush()
+    in_memory_session.add(CompetencyQuestionModel(
+        id="q-2", project_id="p-1", ontology_id="o-1", question="q", position=0,
+        status="testable",
+        query_definition={
+            "kind": "sparql_count",
+            "sparql": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
+            "expected_min": 1,
+        },
+        source_brief_fields=[],
+    ))
+    in_memory_session.commit()
+
+    monkeypatch.setattr(svc, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+
+    class _Settings:
+        competency_question_sparql_timeout_seconds = 5.0
+
+    class _Store:
+        def query_sparql(self, query, timeout_seconds, limit):
+            raise AssertionError("should not reach the store")
+
+    with pytest.raises(HTTPException) as exc:
+        svc.run_question_validation(in_memory_session, _Store(), "q-2", _Settings())
+    assert exc.value.status_code == 422
+    assert "only SELECT allowed" in str(exc.value.detail)
+
+
+def test_run_question_validation_sparql_count_passes(in_memory_session, monkeypatch):
+    from app.services import interview as svc
+    from app.repositories.models import (
+        CompetencyQuestionModel, OntologyModel, ProjectModel,
+    )
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.flush()
+    in_memory_session.add(CompetencyQuestionModel(
+        id="q-3", project_id="p-1", ontology_id="o-1", question="q", position=0,
+        status="testable",
+        query_definition={
+            "kind": "sparql_count",
+            "sparql": "SELECT (COUNT(*) AS ?count) WHERE { GRAPH ?g { ?s ?p ?o } }",
+            "expected_min": 1,
+            "expected_max": 100,
+        },
+        source_brief_fields=[],
+    ))
+    in_memory_session.commit()
+
+    monkeypatch.setattr(svc, "active_data_and_ontology_graphs_for_question",
+                        lambda s, qid: ["https://x/g/data"])
+
+    class _Settings:
+        competency_question_sparql_timeout_seconds = 5.0
+
+    class _Store:
+        def query_sparql(self, query, timeout_seconds, limit):
+            class _R:
+                result = {"results": {"bindings": [{"count": {"value": "42"}}]}}
+                result_format = "application/sparql-results+json"
+            return _R()
+
+    result = svc.run_question_validation(in_memory_session, _Store(), "q-3", _Settings())
+    assert result["status"] == "passed"
+    assert result["validation_result"]["matches"] == 42
+
+
+def test_run_question_validation_409_when_not_testable(in_memory_session):
+    from app.services import interview as svc
+    from app.repositories.models import (
+        CompetencyQuestionModel, OntologyModel, ProjectModel,
+    )
+    from fastapi import HTTPException
+
+    in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.flush()
+    in_memory_session.add(CompetencyQuestionModel(
+        id="q-4", project_id="p-1", ontology_id="o-1", question="q", position=0,
+        status="draft",
+        query_definition={},
+        source_brief_fields=[],
+    ))
+    in_memory_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        svc.run_question_validation(in_memory_session, None, "q-4", None)
+    assert exc.value.status_code == 409

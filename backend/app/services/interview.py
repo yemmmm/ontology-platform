@@ -6,7 +6,6 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException
-from neo4j import Driver
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -396,53 +395,128 @@ def set_question_status(
     return question
 
 
-def run_question_validation(
-    session: Session, driver: Driver, question_id: str
-) -> dict[str, Any]:
-    """Run the question's bound query definition and record pass/fail."""
+def run_question_validation(session, store, question_id, settings):
+    """Run the question's query definition as SPARQL SELECT count over the active graph-set.
+
+    Dispatches on query_definition.kind:
+      - entity_count:   SPARQL count of rdf:type/rdfs:subClassOf* matches
+      - relation_count: SPARQL count of predicate matches
+      - sparql_count:   user-provided SELECT (validated read-only) with expected bounds
+
+    Records pass/fail and validation_result on the CompetencyQuestionModel row.
+    Raises HTTPException(422) for guard/timeout errors.
+    """
+    from app.services.semantic_sparql_runner import (
+        SparqlCountResult,
+        SparqlGuardError,
+        run_select_count,
+    )
+    from app.repositories.rdf_store import SparqlQueryTimeout
+
     question = _question(session, question_id)
     if question.status != "testable":
         raise HTTPException(status_code=409, detail="Only testable questions can be validated")
+
     definition = question.query_definition or {}
     kind = definition.get("kind")
-    if kind == "entity_count":
-        class_id = definition.get("class_id")
-        if not class_id:
-            raise HTTPException(status_code=422, detail="entity_count query requires class_id")
-        query = """
-        MATCH (entity:Entity {ontology_id: $ontology_id, class_id: $class_id})
-        RETURN count(entity) AS count
-        """
-        params = {"ontology_id": question.ontology_id, "class_id": class_id}
-    elif kind == "relation_count":
-        rt_id = definition.get("relation_type_id")
-        if not rt_id:
-            raise HTTPException(status_code=422, detail="relation_count query requires relation_type_id")
-        query = """
-        MATCH ()-[relation {ontology_id: $ontology_id, relation_type_id: $rt_id}]->()
-        RETURN count(relation) AS count
-        """
-        params = {"ontology_id": question.ontology_id, "rt_id": rt_id}
-    else:
-        raise HTTPException(
-            status_code=422, detail=f"Unsupported query definition kind: {kind}"
-        )
-    with driver.session() as graph_session:
-        record = graph_session.run(query, **params).single()
-    matches = int((record or {}).get("count", 0)) if isinstance(record, dict) else int(record["count"])
-    expected_min = int(definition.get("min_count", 0))
-    passed = matches >= expected_min
-    result = {
-        "matches": matches,
+    iris = active_data_and_ontology_graphs_for_question(session, question_id)
+    expected_min = None
+    expected_max = None
+
+    try:
+        if kind == "entity_count":
+            class_id = definition.get("class_id")
+            if not class_id:
+                raise HTTPException(status_code=422, detail="entity_count query requires class_id")
+            class_iri = resolve_class_iri(session, question.ontology_id, class_id)
+            query = (
+                f"SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE {{ "
+                f"GRAPH ?g {{ ?e rdf:type/rdfs:subClassOf* <{class_iri}> }} }}"
+            )
+            count = run_select_count(
+                store=store, query=query, graph_iris=iris,
+                timeout_seconds=settings.competency_question_sparql_timeout_seconds,
+            ).count
+            expected_min = int(definition.get("min_count", 0))
+            passed = count >= expected_min
+
+        elif kind == "relation_count":
+            rt_id = definition.get("relation_type_id")
+            if not rt_id:
+                raise HTTPException(status_code=422, detail="relation_count query requires relation_type_id")
+            predicate = resolve_relation_type_iri(session, question.ontology_id, rt_id)
+            query = (
+                f"SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE {{ "
+                f"GRAPH ?g {{ ?s <{predicate}> ?o }} }}"
+            )
+            count = run_select_count(
+                store=store, query=query, graph_iris=iris,
+                timeout_seconds=settings.competency_question_sparql_timeout_seconds,
+            ).count
+            expected_min = int(definition.get("min_count", 0))
+            passed = count >= expected_min
+
+        elif kind == "sparql_count":
+            if "expected_min" not in definition and "expected_max" not in definition:
+                raise HTTPException(
+                    status_code=422,
+                    detail="sparql_count requires expected_min or expected_max",
+                )
+            user_query = definition.get("sparql", "")
+            if not user_query.strip():
+                raise HTTPException(status_code=422, detail="sparql query is empty")
+            count = run_select_count(
+                store=store, query=user_query, graph_iris=iris,
+                timeout_seconds=settings.competency_question_sparql_timeout_seconds,
+            ).count
+            expected_min = definition.get("expected_min")
+            expected_max = definition.get("expected_max")
+            passed = True
+            if expected_min is not None and count < expected_min:
+                passed = False
+            if expected_max is not None and count > expected_max:
+                passed = False
+
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported query definition kind: {kind}",
+            )
+
+    except SparqlGuardError as exc:
+        question.status = "failed"
+        question.validation_result = {
+            "kind": kind,
+            "error": str(exc),
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        session.commit()
+        session.refresh(question)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    except SparqlQueryTimeout as exc:
+        question.status = "failed"
+        question.validation_result = {
+            "kind": kind,
+            "error": "sparql_timeout",
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        session.commit()
+        session.refresh(question)
+        raise HTTPException(status_code=422, detail="sparql_timeout") from exc
+
+    question.status = "passed" if passed else "failed"
+    question.validation_result = {
+        "kind": kind,
+        "matches": count,
         "expected_min": expected_min,
+        "expected_max": expected_max,
         "passed": passed,
         "validated_at": datetime.now(timezone.utc).isoformat(),
     }
-    question.status = "passed" if passed else "failed"
-    question.validation_result = result
     session.commit()
     session.refresh(question)
-    return result
+    return {"status": question.status, "validation_result": question.validation_result}
 
 
 def active_data_and_ontology_graphs_for_question(session, question_id: str) -> list[str]:
