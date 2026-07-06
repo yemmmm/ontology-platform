@@ -355,3 +355,274 @@ def test_entity_shape_composer_requires_class_iri():
             model_name="entity-shape",
         )
     assert "class_iri" in str(exc_info.value)
+
+
+# Stage 2 §6.3 — fact-audit-queue composer ----------------------------------------------
+
+
+def test_fact_audit_queue_kind_asserted_queries_data_graph_only():
+    """kind=asserted restricts the SPARQL to asserted_data members and
+    decorates each row with assertion_kind=asserted."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    resolution = _resolution(
+        graph_iris=[data_iri],
+        reasoning="http://op.local/graph/reasoning-result/run-1",
+        rule="http://op.local/graph/rule-result/run-2",
+    )
+    store = FakeStore({
+        "fact-audit-queue": [
+            {
+                "subject": "http://op.local/ns/entity/alice",
+                "subject_label": "Alice",
+                "predicate": "http://op.local/ns/property/email",
+                "predicate_label": "email",
+                "object": "alice@example.com",
+                "graph": data_iri,
+            },
+        ],
+    })
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="asserted",
+        include="full-working-view",
+    )
+    # Store received only the data graph.
+    assert store.last_graph_iris == [data_iri]
+    assert len(envelope["items"]) == 1
+    row = envelope["items"][0]
+    assert row["subject_iri"] == "http://op.local/ns/entity/alice"
+    assert row["predicate_iri"] == "http://op.local/ns/property/email"
+    assert row["assertion_kind"] == "asserted"
+    # evidence_status defaults to with_evidence for asserted triples (no
+    # missing-evidence marker on the subject).
+    assert row["evidence_status"] == "with_evidence"
+    assert row["stale"] is False
+
+
+def test_fact_audit_queue_kind_inferred_queries_reasoning_result_graph():
+    """kind=inferred restricts the SPARQL to the effective reasoning-result
+    graph and decorates each row with assertion_kind=inferred + the
+    run_id / staleness state."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    reasoning_iri = "http://op.local/graph/reasoning-result/run-1"
+    resolution = _resolution(
+        graph_iris=[data_iri],
+        reasoning=reasoning_iri,
+        derived_state={
+            "reasoning": {
+                "status": "current",
+                "run_id": "run-1",
+                "result_graph_iri": reasoning_iri,
+            },
+        },
+    )
+    store = FakeStore({
+        "fact-audit-queue": [
+            {
+                "subject": "http://op.local/ns/entity/alice",
+                "subject_label": "Alice",
+                "predicate": "http://op.local/ns/property/parent",
+                "predicate_label": "parent",
+                "object": "http://op.local/ns/entity/parent-bob",
+                "graph": reasoning_iri,
+            },
+        ],
+    })
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="inferred",
+        include="asserted-plus-reasoning",
+    )
+    assert store.last_graph_iris == [reasoning_iri]
+    row = envelope["items"][0]
+    assert row["assertion_kind"] == "inferred"
+    assert row["derived_from"]["run_id"] == "run-1"
+
+
+def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
+    """kind=rule_derived restricts the SPARQL to the effective rule-result
+    graph."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    rule_iri = "http://op.local/graph/rule-result/run-9"
+    resolution = _resolution(
+        graph_iris=[data_iri],
+        rule=rule_iri,
+        derived_state={
+            "rule": {
+                "status": "current",
+                "run_id": "run-9",
+                "result_graph_iri": rule_iri,
+            },
+        },
+    )
+    store = FakeStore({
+        "fact-audit-queue": [
+            {
+                "subject": "http://op.local/ns/entity/alice",
+                "subject_label": "Alice",
+                "predicate": "http://op.local/ns/property/category",
+                "predicate_label": "category",
+                "object": "vip",
+                "graph": rule_iri,
+            },
+        ],
+    })
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="rule_derived",
+        include="asserted-plus-rules",
+    )
+    assert store.last_graph_iris == [rule_iri]
+    row = envelope["items"][0]
+    assert row["assertion_kind"] == "rule_derived"
+    assert row["derived_from"]["run_id"] == "run-9"
+
+
+def test_fact_audit_queue_kind_missing_evidence_filters_data_graph_rows():
+    """kind=missing_evidence queries the asserted data graph but filters rows
+    to those whose subject carries op:evidenceStatus "missing_evidence".
+    assertion_kind on those rows is "missing_evidence" and evidence_status
+    is "missing_evidence"."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    resolution = _resolution(graph_iris=[data_iri])
+    store = FakeStore({
+        "missing-evidence-list": [
+            {
+                "subject": "http://op.local/ns/entity/alice",
+                "subject_label": "Alice",
+                "predicate": "http://op.local/ns/property/email",
+                "predicate_label": "email",
+                "object": "alice@example.com",
+                "graph": data_iri,
+            },
+        ],
+    })
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="missing_evidence",
+    )
+    assert len(envelope["items"]) == 1
+    row = envelope["items"][0]
+    assert row["assertion_kind"] == "missing_evidence"
+    assert row["evidence_status"] == "missing_evidence"
+
+
+def test_fact_audit_queue_inferred_with_stale_pointer_marks_rows_stale():
+    """When the reasoning-result pointer is stale, every inferred row carries
+    stale=True plus a stale_reason."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    reasoning_iri = "http://op.local/graph/reasoning-result/run-1"
+    resolution = _resolution(
+        graph_iris=[data_iri],
+        reasoning=reasoning_iri,
+        derived_state={
+            "reasoning": {
+                "status": "stale",
+                "run_id": "run-1",
+                "result_graph_iri": reasoning_iri,
+            },
+        },
+    )
+    store = FakeStore({
+        "fact-audit-queue": [
+            {
+                "subject": "http://op.local/ns/entity/alice",
+                "subject_label": "Alice",
+                "predicate": "http://op.local/ns/property/parent",
+                "predicate_label": "parent",
+                "object": "http://op.local/ns/entity/parent-bob",
+                "graph": reasoning_iri,
+            },
+        ],
+    })
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="inferred",
+        include="asserted-plus-reasoning",
+    )
+    row = envelope["items"][0]
+    assert row["stale"] is True
+    assert row["stale_reason"] is not None
+
+
+def test_fact_audit_queue_inferred_without_pointer_emits_warning():
+    """When kind=inferred but no reasoning-result pointer exists, the
+    composer returns an empty list with a warning so the frontend can show
+    a 'click Generate to run reasoning' empty state."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    # No reasoning pointer in resolution.
+    resolution = _resolution(graph_iris=[data_iri])
+    store = FakeStore({})
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    envelope = service.read_model(
+        graph_set_id="gs-1",
+        model_name="fact-audit-queue",
+        kind="inferred",
+    )
+    assert envelope["items"] == []
+    assert any(
+        w.get("code") == "fact_audit_no_inferred_pointer"
+        for w in envelope["warnings"]
+    )
+
+
+def test_fact_audit_queue_invalid_kind_raises_read_model_error():
+    """An unknown kind value surfaces as a ReadModelError."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    resolution = _resolution(graph_iris=[data_iri])
+    store = FakeStore({})
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        timeout_seconds=10,
+        default_limit=500,
+    )
+    import pytest
+
+    with pytest.raises(ReadModelError) as exc_info:
+        service.read_model(
+            graph_set_id="gs-1",
+            model_name="fact-audit-queue",
+            kind="not_a_kind",
+        )
+    assert "kind" in str(exc_info.value).lower()

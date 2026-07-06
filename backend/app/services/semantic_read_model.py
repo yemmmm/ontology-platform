@@ -68,6 +68,7 @@ class SemanticReadModelService:
         visibility_context: dict[str, Any] | None = None,
         entity_iri: str | None = None,
         class_iri: str | None = None,
+        kind: str | None = None,
     ) -> dict[str, Any]:
         try:
             template = get_template(model_name)
@@ -94,6 +95,14 @@ class SemanticReadModelService:
                 scope=scope,
                 items=items,
                 warnings=list(scope.warnings),
+            )
+        if template.name == "fact-audit-queue":
+            items, warnings = self._compose_fact_audit_queue(scope, kind, field_set)
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=warnings + list(scope.warnings),
             )
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         query = template.body.replace("{limit}", str(bounded_limit))
@@ -379,3 +388,247 @@ class SemanticReadModelService:
         if isinstance(cell, dict):
             return int(cell.get("value", 0))
         return int(cell)
+
+    # ------------------------------------------------------------------
+    # fact-audit-queue composer (Stage 2 §6.3)
+    # ------------------------------------------------------------------
+
+    _FACT_KINDS = ("asserted", "inferred", "rule_derived", "missing_evidence")
+
+    def _compose_fact_audit_queue(
+        self,
+        scope: ScopeResolution,
+        kind: str | None,
+        field_set: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+        """Compose the FactAuditPage queue by ``?kind=``.
+
+        kind selects the source graph(s):
+
+        - ``asserted`` / ``missing_evidence`` → asserted_data members of the
+          active graph set. ``missing_evidence`` additionally filters rows to
+          those whose subject carries ``op:evidenceStatus "missing_evidence"``.
+        - ``inferred`` → effective reasoning-result graph.
+        - ``rule_derived`` → effective rule-result graph.
+
+        Each row is decorated into the unified FactRow shape (spec §6.3):
+        id, assertion_kind, subject_iri, subject_label, predicate_iri,
+        predicate_label, object_value, object_label, graph_iri,
+        evidence_status, audit_status, derived_from (when applicable),
+        stale, stale_reason.
+        """
+        resolved_kind = (kind or "asserted").strip()
+        if resolved_kind not in self._FACT_KINDS:
+            raise ReadModelError(
+                f"Unsupported fact-audit-queue kind: {resolved_kind}. "
+                f"Must be one of: {', '.join(self._FACT_KINDS)}"
+            )
+
+        warnings: list[dict[str, str]] = list(scope.warnings)
+
+        if resolved_kind in {"asserted", "missing_evidence"}:
+            data_iris = [
+                m.graph_iri for m in scope.members if m.role == "asserted_data"
+            ]
+            if not data_iris:
+                return [], warnings + [
+                    {
+                        "code": "fact_audit_no_asserted_data",
+                        "message": "Graph set is missing an asserted data graph.",
+                    }
+                ]
+            if resolved_kind == "missing_evidence":
+                rows = self._fetch_fact_rows(
+                    data_iris, template_name="missing-evidence-list"
+                )
+            else:
+                rows = self._fetch_fact_rows(
+                    data_iris, template_name="fact-audit-queue"
+                )
+            items = [
+                self._decorate_fact_row(
+                    row,
+                    assertion_kind=resolved_kind,
+                    scope=scope,
+                )
+                for row in rows
+            ]
+            return items, warnings
+
+        if resolved_kind == "inferred":
+            reasoning_iri = scope.reasoning_result_graph_iri
+            if not reasoning_iri:
+                return [], warnings + [
+                    {
+                        "code": "fact_audit_no_inferred_pointer",
+                        "message": (
+                            "No effective reasoning-result pointer. Click "
+                            "Generate to run reasoning."
+                        ),
+                    }
+                ]
+            rows = self._fetch_fact_rows(
+                [reasoning_iri], template_name="fact-audit-queue"
+            )
+            stale = self._is_stale(reasoning_iri, scope)
+            stale_reason = self._staleness_reason(reasoning_iri, scope)
+            run_id = (
+                scope.derived_state.get("reasoning", {}).get("run_id")
+                if scope.derived_state
+                else None
+            )
+            items = [
+                self._decorate_fact_row(
+                    row,
+                    assertion_kind="inferred",
+                    scope=scope,
+                    derived_run_id=run_id,
+                    stale=stale,
+                    stale_reason=stale_reason,
+                )
+                for row in rows
+            ]
+            return items, warnings
+
+        # rule_derived
+        rule_iri = scope.rule_result_graph_iri
+        if not rule_iri:
+            return [], warnings + [
+                {
+                    "code": "fact_audit_no_rule_pointer",
+                    "message": (
+                        "No effective rule-result pointer. Click Run rules "
+                        "to execute rule definitions."
+                    ),
+                }
+            ]
+        rows = self._fetch_fact_rows([rule_iri], template_name="fact-audit-queue")
+        stale = self._is_stale(rule_iri, scope)
+        stale_reason = self._staleness_reason(rule_iri, scope)
+        run_id = (
+            scope.derived_state.get("rule", {}).get("run_id")
+            if scope.derived_state
+            else None
+        )
+        items = [
+            self._decorate_fact_row(
+                row,
+                assertion_kind="rule_derived",
+                scope=scope,
+                derived_run_id=run_id,
+                stale=stale,
+                stale_reason=stale_reason,
+            )
+            for row in rows
+        ]
+        return items, warnings
+
+    def _fetch_fact_rows(
+        self, graph_iris: list[str], template_name: str
+    ) -> list[dict[str, Any]]:
+        """Run the fact-audit-queue / missing-evidence template against the
+        given source graphs and return raw SPARQL rows."""
+        if not graph_iris:
+            return []
+        template = get_template(template_name)
+        bounded_limit = template.default_limit
+        values = " ".join(f"<{i}>" for i in graph_iris)
+        query = (
+            template.body.replace("{graph_iris}", values)
+            .replace("{limit}", str(bounded_limit))
+        )
+        result = self.rdf_store.query_read_model(
+            query=query,
+            graph_iris=graph_iris,
+            timeout_seconds=self.timeout_seconds,
+            limit=bounded_limit,
+        )
+        return list(self._rows(result))
+
+    def _decorate_fact_row(
+        self,
+        row: dict[str, Any],
+        *,
+        assertion_kind: str,
+        scope: ScopeResolution,
+        derived_run_id: str | None = None,
+        stale: bool | None = None,
+        stale_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Decorate a raw SPARQL row into the unified FactRow shape."""
+        subject_iri = self._cell(row, "subject") or ""
+        subject_label = self._cell(row, "subject_label")
+        predicate_iri = self._cell(row, "predicate") or ""
+        predicate_label = self._cell(row, "predicate_label")
+        object_value: Any = self._cell(row, "object")
+        object_label = self._cell(row, "object_label")
+        source_graph_iri = self._cell(row, "graph") or (
+            scope.source_graph_iris[0] if scope.source_graph_iris else ""
+        )
+        # Audit status defaults to "pending" — the FactAuditPage surfaces
+        # the audit_status that may be set on the row by an RDF-star
+        # reification in a later iteration; absent that, everything is
+        # pending review.
+        audit_status = self._cell(row, "audit_status") or "pending"
+        # Evidence status: missing_evidence for the dedicated tab, otherwise
+        # look for an op:evidenceStatus marker on the subject (carried by the
+        # template); default to with_evidence.
+        evidence_status: str
+        if assertion_kind == "missing_evidence":
+            evidence_status = "missing_evidence"
+        else:
+            marker = self._cell(row, "evidence_status")
+            if marker == "missing_evidence":
+                evidence_status = "missing_evidence"
+            else:
+                evidence_status = "with_evidence"
+        # Staleness for derived graphs.
+        if stale is None:
+            stale_bool = self._is_stale(source_graph_iri, scope)
+        else:
+            stale_bool = bool(stale)
+        if stale_reason is None:
+            stale_reason_val = self._staleness_reason(source_graph_iri, scope)
+        else:
+            stale_reason_val = stale_reason
+        # Stable id: hash of (subject, predicate, object, graph) — the same
+        # function used by review_assertion so the frontend can cross-link a
+        # FactRow to its review record.
+        fact_id = self._fact_id(subject_iri, predicate_iri, object_value or "", source_graph_iri)
+        item: dict[str, Any] = {
+            "id": fact_id,
+            "fact_id": fact_id,
+            "assertion_kind": assertion_kind,
+            "subject_iri": subject_iri,
+            "subject_label": subject_label,
+            "predicate_iri": predicate_iri,
+            "predicate_label": predicate_label,
+            "object_value": object_value,
+            "object_label": object_label,
+            "graph_iri": source_graph_iri,
+            "source_graph_iri": source_graph_iri,
+            "evidence_status": evidence_status,
+            "audit_status": audit_status,
+            "stale": stale_bool,
+            "stale_reason": stale_reason_val,
+        }
+        if derived_run_id is not None:
+            item["derived_from"] = {"run_id": derived_run_id}
+        return item
+
+    @staticmethod
+    def _fact_id(
+        subject_iri: str, predicate_iri: str, object_value: str, graph_iri: str
+    ) -> str:
+        """SHA-256 over the canonical N-Triples-style (s, p, o, g) tuple.
+
+        The object term in this hash is the bare literal/IRI string as
+        projected by the SPARQL template; this is intentionally simpler
+        than the review_assertion digest (which sees the turtle object
+        form) because the FactRow only needs a stable cross-link key, not
+        a perfect mirror of the canonical-write digest.
+        """
+        import hashlib
+
+        canonical = f"<{subject_iri}> <{predicate_iri}> {object_value} <{graph_iri}>"
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

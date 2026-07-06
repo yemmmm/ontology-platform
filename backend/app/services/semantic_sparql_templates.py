@@ -397,8 +397,28 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # and delegates to ``_compose_fact_audit_queue``. The composer uses
         # the ``?kind=`` query parameter (asserted / inferred / rule_derived /
         # missing_evidence) to select source graphs and decorates each row
-        # into the unified FactRow shape (spec §6.3). This body is a marker
-        # and is never executed directly.
+        # into the unified FactRow shape (spec §6.3). The body below is the
+        # actual SPARQL the composer runs against the asserted_data /
+        # reasoning-result / rule-result graphs selected by ``kind``.
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX op: <http://ontology-platform.local/semantic/op/>
+        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
+                        ?object ?object_label ?graph ?evidence_status WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?subject ?predicate ?object .
+            FILTER(?predicate != rdf:type)
+            FILTER(?predicate != rdfs:label)
+            OPTIONAL { ?subject rdfs:label ?subject_label . }
+            OPTIONAL { ?predicate rdfs:label ?predicate_label . }
+            OPTIONAL { ?object rdfs:label ?object_label . }
+            OPTIONAL { ?subject op:evidenceStatus ?evidence_status . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
         """,
     ),
     "missing-evidence-list": ReadModelTemplate(
@@ -411,17 +431,26 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         evidence_status="missing_evidence",
         body="""# template: missing-evidence-list
-        # Lightweight aggregator: returns every entity (subject) carrying the
-        # ``op:evidenceStatus "missing_evidence"`` marker, projected across
-        # every asserted_data graph in the active graph set. The read-model
-        # service decorates each row with the source graph IRI so the
-        # FactAuditPage missing-evidence tab can route the user to the
-        # correct inspector.
+        # Lightweight aggregator: returns every triple whose subject carries
+        # the ``op:evidenceStatus "missing_evidence"`` marker, projected
+        # across every asserted_data graph in the active graph set. The
+        # read-model service decorates each row with the source graph IRI
+        # so the FactAuditPage missing-evidence tab can route the user to
+        # the correct inspector.
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX op: <http://ontology-platform.local/semantic/op/>
-        SELECT DISTINCT ?subject ?graph WHERE {
+        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
+                        ?object ?object_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?subject op:evidenceStatus "missing_evidence" .
+            ?subject ?predicate ?object .
+            FILTER(?predicate != rdf:type)
+            FILTER(?predicate != op:evidenceStatus)
+            OPTIONAL { ?subject rdfs:label ?subject_label . }
+            OPTIONAL { ?predicate rdfs:label ?predicate_label . }
+            OPTIONAL { ?object rdfs:label ?object_label . }
           }
           BIND(?g AS ?graph)
         }

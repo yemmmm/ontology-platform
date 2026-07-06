@@ -143,4 +143,8 @@ def test_missing_evidence_list_template_registered():
     # Template body must filter on op:evidenceStatus "missing_evidence".
     assert "missing_evidence" in template.body
     assert "evidenceStatus" in template.body
+    # Must project the triple so the composer can decorate rows.
+    assert "?subject" in template.body
+    assert "?predicate" in template.body
+    assert "?object" in template.body
 
