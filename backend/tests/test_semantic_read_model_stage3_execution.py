@@ -87,3 +87,39 @@ def test_publication_readiness_returns_gate_set(fake_graph_set_with_members):
     missing = next(g for g in item["gates"] if g["gate"] == "missing_evidence")
     assert missing["status"] == "passed"
     assert "0 facts missing evidence" == missing["label"]
+
+
+# ---------------------------------------------------------------------------
+# Task A2 — graph-set-history-list
+# ---------------------------------------------------------------------------
+
+
+def test_graph_set_history_list_template_registered() -> None:
+    t = _TEMPLATES["graph-set-history-list"]
+    assert t.projection_version == "1"
+    assert t.default_limit == 50
+
+
+def test_graph_set_history_list_returns_sets_in_scope(
+    fake_graph_set_with_members, second_graph_set_same_scope
+):
+    """Composer returns both graph sets in scope with status derived from
+    member editability and derived pointer timestamps."""
+    svc, _ = fake_graph_set_with_members
+    other_id = second_graph_set_same_scope
+    envelope = svc.read_model(
+        graph_set_id=other_id,  # any set in scope works; composer queries by scope
+        model_name="graph-set-history-list",
+        field_set="summary",
+    )
+    assert envelope["model_name"] == "graph-set-history-list"
+    rows = envelope["items"][0]
+    assert rows["total"] >= 2
+    ids = {r["graph_set_id"] for r in rows["graph_sets"]}
+    assert other_id in ids
+    for r in rows["graph_sets"]:
+        assert r["status"] in ("editable", "locked", "superseded")
+        assert "created_at" in r
+        assert "locked_at" in r
+        assert "member_count" in r
+

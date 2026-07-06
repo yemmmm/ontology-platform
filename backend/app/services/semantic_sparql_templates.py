@@ -493,6 +493,21 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # graph-set-staleness and missing-evidence aggregators.
         """,
     ),
+    "graph-set-history-list": ReadModelTemplate(
+        name="graph-set-history-list",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=50,
+        assertion_kind="asserted",
+        evidence_status="not_applicable",
+        body="""# template: graph-set-history-list
+        # Single-row composer that returns the list of graph sets in scope.
+        # Reads from SemanticGraphSetModel joined with members and derived
+        # pointers; see spec §4.2.
+        """,
+    ),
 }
 
 
