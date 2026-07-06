@@ -89,3 +89,17 @@ def update_ontology(
 def delete_ontology(ontology_id: str, session: Session = Depends(get_db_session)):
     service.delete_ontology(session, ontology_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/ontologies/{ontology_id}/versions",
+    response_model=list[dict],
+)
+def list_ontology_versions_placeholder(ontology_id: str) -> list[dict]:
+    """Stage 3 B2 hard-cut placeholder.
+
+    The draft→published version lifecycle was removed in Stage 3.
+    Returns an empty list until the graph-set history view replaces
+    this endpoint in Stage 4.
+    """
+    return []
