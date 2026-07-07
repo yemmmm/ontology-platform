@@ -113,7 +113,6 @@ class SemanticService:
         timeout = timeout_seconds or self.settings.semantic_query_timeout_seconds
         limit = result_limit or self.settings.semantic_query_result_limit
         result = self.rdf_store.query_sparql(query, timeout, limit)
-        result.warnings.extend(_missing_evidence_read_warnings(result.result))
         return result
 
     def set_graph_editability(
@@ -160,8 +159,6 @@ class SemanticService:
 
         warnings: list[str] = []
         warning_state = warning_state or {}
-        evidence_warnings = _missing_evidence_write_warnings(content, delta, evidence_status, warning_state)
-        warnings.extend(evidence_warnings)
         validation_result: dict[str, Any] | None = None
         if validate and shape_graph_iris:
             validation_result = self._validate_candidate_graphs(
@@ -747,56 +744,6 @@ def _is_restricted_delete_insert_where(update: str) -> bool:
 
 def _strip_sparql_comments(query: str) -> str:
     return re.sub(r"(?m)^\s*#.*$", "", query).strip()
-
-
-def _missing_evidence_write_warnings(
-    content: str,
-    delta: dict[str, Any],
-    evidence_status: str | None,
-    warning_state: dict[str, Any],
-) -> list[str]:
-    has_missing_evidence = (
-        evidence_status == "missing_evidence"
-        or "missing_evidence" in content
-        or re.search(r"\bmissingEvidence\b[^\n.]*\btrue\b", content, re.IGNORECASE) is not None
-        or any("missing_evidence" in statement for statement in delta.get("inserted_statements", []))
-    )
-    if not has_missing_evidence:
-        return []
-    if evidence_status != "missing_evidence":
-        raise SemanticGraphPolicyViolation(
-            "Missing-evidence semantic writes must declare evidence_status='missing_evidence'"
-        )
-    if warning_state.get("missing_evidence") is not True:
-        raise SemanticGraphPolicyViolation(
-            "Missing-evidence semantic writes must include warning_state.missing_evidence=true"
-        )
-    return ["Semantic edit wrote facts with missing evidence status"]
-
-
-def _missing_evidence_read_warnings(result: Any) -> list[str]:
-    if _contains_missing_evidence(result):
-        return ["SPARQL result includes facts with missing evidence status"]
-    return []
-
-
-def _contains_missing_evidence(value: Any) -> bool:
-    if isinstance(value, dict):
-        if value.get("value") == "missing_evidence":
-            return True
-        for key, item in value.items():
-            if key.lower() == "missingevidence" and _binding_is_true(item):
-                return True
-        return any(_contains_missing_evidence(item) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains_missing_evidence(item) for item in value)
-    return value == "missing_evidence"
-
-
-def _binding_is_true(value: Any) -> bool:
-    if isinstance(value, dict):
-        return value.get("value") in {True, "true", "1"}
-    return value is True
 
 
 def _shacl_summary(report_graph: Graph) -> dict[str, int]:
