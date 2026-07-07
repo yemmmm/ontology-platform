@@ -285,6 +285,16 @@ export type AgentTestGraphContextEntry = {
   is_stale: boolean;
 };
 
+export type EvidenceBinding = {
+  chunk_iri: string;
+  document_iri: string;
+  document_filename: string;
+  sequence: number;
+  char_start: number;
+  char_end: number;
+  text_preview: string;
+};
+
 export type AgentTestResponse = {
   answer: string;
   tool_calls: JsonObject[];

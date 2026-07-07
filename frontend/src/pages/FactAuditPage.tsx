@@ -52,7 +52,9 @@ import {
   runGraphSetRules,
   sparqlQuery,
 } from "../semanticApi";
+import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
+import { EvidenceExplorerPanel } from "../components/semantic/EvidenceExplorerPanel";
 
 type AssertionKind = "asserted" | "inferred" | "rule_derived" | "missing_evidence";
 
@@ -90,6 +92,10 @@ type FactRow = {
   stale: boolean;
   stale_reason: string | null;
   derived_from?: { run_id: string; rule_id?: string; rule_version?: string; reason?: string };
+  /** Stage 4 §4.4 — populated when ``field_set=evidence`` is passed.
+   * Empty array means no ``prov:wasDerivedFrom`` triple exists for this
+   * fact; the drawer falls back to the "missing evidence" empty state. */
+  evidence_bindings?: EvidenceBinding[];
 };
 
 type FactAuditPageProps = {
@@ -141,7 +147,10 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         request,
         graphSetId,
         "fact-audit-queue",
-        { kind, include: INCLUDE_FOR_KIND[kind] },
+        // Stage 4 §4.4 — pass field_set=evidence so every row carries
+        // an ``evidence_bindings`` array (possibly empty) for the
+        // inspector drawer to render via EvidenceExplorerPanel.
+        { kind, include: INCLUDE_FOR_KIND[kind], fieldSet: "evidence" },
       );
       const rows = envelope.items ?? [];
       setItems(rows);
@@ -472,6 +481,18 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                     : []),
                 ]}
               />
+              <Card
+                size="small"
+                title={t("Evidence explorer · {n} binding(s)", {
+                  n: (selected.evidence_bindings ?? []).length,
+                })}
+                aria-label="fact-evidence-explorer"
+              >
+                <EvidenceExplorerPanel
+                  bindings={selected.evidence_bindings ?? []}
+                  hideMissingTag={selected.assertion_kind !== "asserted"}
+                />
+              </Card>
               <Space wrap>
                 <Button
                   type="primary"
