@@ -8,7 +8,7 @@
  *   - asserted         → graph/data/{ontology_id}
  *   - inferred         → effective reasoning-result graph
  *   - rule_derived     → effective rule-result graph
- *   - missing_evidence → asserted_data rows carrying op:evidenceStatus
+ *   - missing_evidence → facts whose evidence_bindings list is empty
  *
  * Toolbar actions:
  *   - Generate  → POST /graph-sets/{gs}/reasoning-runs + /rule-runs (async,
@@ -17,7 +17,8 @@
  *   - Refresh   → invalidate local cache and refetch
  *
  * Selected facts can be edited/deleted through the canonical-write command
- * path. Evidence bindings are managed as lightweight text chunks for now.
+ * path. Phase 8 routes evidence bind/unbind through the dedicated
+ * ``/graph-sets/{gs}/fact-evidence`` REST endpoints (see semanticApi.ts).
  *
  * Legacy inline implementation retained as ``FactAuditPage.legacy.tsx``
  * and dispatched from App.tsx when no ``?graphSet=`` URL parameter is set.
@@ -41,12 +42,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
 import {
+  bindFactEvidence,
   compileAndApplyProductCommand,
   getReasoningRun,
   getRuleRun,
   readModel,
   runGraphSetReasoning,
   runGraphSetRules,
+  unbindFactEvidence,
 } from "../semanticApi";
 import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
@@ -243,15 +246,19 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     setBusy(true);
     setError("");
     try {
-      await compileAndApplyProductCommand(request, {
-        command_kind: "bind_fact_evidence_text",
-        payload: {
-          ontology_id: ontologyId,
-          subject_iri: selected.subject_iri,
-          graph_iri: selected.graph_iri,
-          text: evidenceText.trim(),
-        },
-        graph_set_id: graphSetId,
+      // Phase 8 §3 — bind text evidence via the dedicated fact-evidence
+      // endpoint (replaces the legacy bind_fact_evidence_text canonical
+      // write command, which has been removed). The backend resolves the
+      // subject/predicate/object triple plus ontology id to a fact_id.
+      await bindFactEvidence(request, graphSetId, {
+        ontology_id: ontologyId,
+        subject_iri: selected.subject_iri,
+        predicate_iri: selected.predicate_iri,
+        object_value: stringifyFactObjectValue(selected.object_value, selected.object_is_iri),
+        object_is_iri: selected.object_is_iri,
+        graph_iri: selected.graph_iri,
+        fact_id: selected.fact_id,
+        text: evidenceText.trim(),
         actor: "user:facts-page",
         reason: "Bind text evidence from Facts page",
       });
@@ -267,21 +274,20 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
 
   async function removeEvidence(binding: EvidenceBinding) {
     if (!selected) return;
+    const bindingId = binding.id;
+    if (!bindingId) {
+      // Legacy read-model rows (no Phase 8 id) cannot be removed via the
+      // new endpoint — surface a clear error rather than silently failing.
+      setError(t("This evidence binding cannot be removed (missing id)."));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await compileAndApplyProductCommand(request, {
-        command_kind: "unbind_fact_evidence",
-        payload: {
-          ontology_id: ontologyId,
-          subject_iri: selected.subject_iri,
-          graph_iri: selected.graph_iri,
-          chunk_iri: binding.chunk_iri,
-        },
-        graph_set_id: graphSetId,
-        actor: "user:facts-page",
-        reason: "Unbind fact evidence from Facts page",
-      });
+      // Phase 8 §3 — DELETE /fact-evidence/{binding_id} replaces the old
+      // unbind_fact_evidence canonical write command (which keyed off
+      // chunk_iri). Idempotent on the backend.
+      await unbindFactEvidence(request, graphSetId, bindingId);
       setSuccess(t("Evidence unbound."));
       await load();
     } catch (cause) {
@@ -478,7 +484,9 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
               )}
               <Space wrap>
                 {selected.stale && <Tag color="warning">{t("STALE")}</Tag>}
-                {selected.evidence_status === "missing_evidence" && <Tag color="warning">{t("missing evidence")}</Tag>}
+                {(selected.evidence_bindings ?? []).length === 0 && (
+                  <Tag color="warning">{t("missing evidence")}</Tag>
+                )}
               </Space>
               <Descriptions
                 size="small"
@@ -623,29 +631,35 @@ function EvidenceBindingEditor({
         <Empty image={<FileText size={28} />} description={t("No evidence binding for this fact.")} />
       ) : (
         <Space direction="vertical" size={8} style={{ width: "100%" }}>
-          {bindings.map((binding) => (
-            <div
-              key={binding.chunk_iri}
-              className="evidenceBindingRow"
-              aria-label={`evidence-binding-${binding.chunk_iri}`}
-            >
-              <div className="evidenceBindingHeader">
-                <FileText size={14} />
-                <strong>{binding.document_filename ?? t("Text evidence")}</strong>
-                <Tag>#{binding.sequence}</Tag>
-                <Button
-                  danger
-                  size="small"
-                  icon={<Trash2 size={13} />}
-                  onClick={() => onRemove(binding)}
-                  disabled={disabled}
-                >
-                  {t("Delete")}
-                </Button>
+          {bindings.map((binding) => {
+            // Phase 8 — bindings now carry a stable ``id``; fall back to the
+            // legacy chunk_iri for unmigrated read-model rows.
+            const rowKey = binding.id ?? binding.chunk_iri ?? binding.fact_id ?? "";
+            const preview = binding.text_preview ?? binding.text ?? "";
+            return (
+              <div
+                key={rowKey}
+                className="evidenceBindingRow"
+                aria-label={`evidence-binding-${rowKey}`}
+              >
+                <div className="evidenceBindingHeader">
+                  <FileText size={14} />
+                  <strong>{binding.document_filename ?? t("Text evidence")}</strong>
+                  {typeof binding.sequence === "number" && <Tag>#{binding.sequence}</Tag>}
+                  <Button
+                    danger
+                    size="small"
+                    icon={<Trash2 size={13} />}
+                    onClick={() => onRemove(binding)}
+                    disabled={disabled}
+                  >
+                    {t("Delete")}
+                  </Button>
+                </div>
+                <p className="factEvidenceText">{preview}</p>
               </div>
-              <p className="factEvidenceText">{binding.text_preview}</p>
-            </div>
-          ))}
+            );
+          })}
         </Space>
       )}
       <Input.TextArea
@@ -673,6 +687,24 @@ function factLine(row: FactRow) {
 function factObjectText(row: FactRow) {
   if (typeof row.object_value === "string") return row.object_label ?? row.object_value;
   return JSON.stringify(row.object_value);
+}
+
+/**
+ * Phase 8 §3 — coerce a FactRow's typed ``object_value`` (rendered by the
+ * read model as either a string or a JSON literal) into the canonical
+ * string form expected by ``bindFactEvidence``. For IRI-typed objects we
+ * prefer the raw IRI (``object_value`` already carries it when
+ * ``object_is_iri`` is true); for literals we fall back to the existing
+ * display rendering to preserve the user-visible form.
+ */
+function stringifyFactObjectValue(value: unknown, isIri: boolean): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  if (isIri && typeof value === "object" && value !== null && "value" in value) {
+    const inner = (value as { value?: unknown }).value;
+    if (typeof inner === "string") return inner;
+  }
+  return JSON.stringify(value);
 }
 
 function ModalFactLine({ children }: { children: string }) {
