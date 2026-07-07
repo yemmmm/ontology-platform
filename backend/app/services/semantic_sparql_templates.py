@@ -20,7 +20,6 @@ class ReadModelTemplate:
     needs_rules: bool
     default_limit: int
     assertion_kind: str
-    evidence_status: str
     body: str
     # Name of the SELECT variable that holds the primary IRI for each row.
     # ``SemanticReadModelService._decorate_row`` reads this column first when
@@ -29,6 +28,10 @@ class ReadModelTemplate:
     # because their items are assembled by dedicated composers, not by the
     # generic decorator.
     primary_iri_variable: str = ""
+    # Default evidence_status surfaced via _decorate_row when no row-level
+    # binding has been resolved. The PG-derived read path overrides this with
+    # "with_evidence" / "missing_evidence" at apply time.
+    evidence_status: str = "not_applicable"
 
 
 _TEMPLATES: dict[str, ReadModelTemplate] = {
@@ -40,7 +43,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="class",
         body="""# template: schema-summary
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -59,7 +61,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="class",
         body="""# template: class-detail
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -77,7 +78,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="unknown",
         primary_iri_variable="entity",
         body="""# template: entity-detail
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -95,7 +95,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=1000,
         assertion_kind="asserted",
-        evidence_status="unknown",
         primary_iri_variable="subject",
         body="""# template: statement-list
         SELECT DISTINCT ?subject ?predicate ?object ?graph WHERE {
@@ -112,16 +111,11 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=True,
         default_limit=1,
         assertion_kind="asserted",
-        evidence_status="mixed",
         body="""# template: graph-set-staleness
-        # Composer-driven. The SemanticReadModelService branch assembles
-        # member/editable/staleness from Postgres; this SPARQL only fetches
-        # the missing-evidence count across the active graph-set members.
-        PREFIX op: <http://ontology-platform.local/semantic/op/>
-        SELECT (COUNT(*) AS ?count) WHERE {
-          VALUES ?g { {graph_iris} }
-          GRAPH ?g { ?s op:evidenceStatus "missing_evidence" . }
-        }
+        # COMPOSER. The SemanticReadModelService delegates to
+        # ``_compose_graph_set_staleness``; missing-evidence counts are
+        # derived from fact_evidence_bindings in Postgres (Phase 3). The
+        # body is intentionally empty.
         """,
     ),
     "class-topology": ReadModelTemplate(
@@ -132,7 +126,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="class",
         body="""# template: class-topology
         # Returns one row per class with its label and parent IRI(s).
@@ -159,7 +152,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="property",
         body="""# template: property-list
         # Returns one row per property whose rdfs:domain is the given class.
@@ -188,7 +180,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="relation",
         body="""# template: relation-type-list
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
@@ -215,7 +206,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="shape",
         body="""# template: class-shape-generated
         # Reads SHACL NodeShapes from the derived generated sub-graph. Each
@@ -241,7 +231,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="shape",
         body="""# template: class-shape-custom
         # Reads SHACL NodeShapes from the editable custom sub-graph.
@@ -265,17 +254,16 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="mixed",
         primary_iri_variable="entity",
         body="""# template: entity-list
         # Returns one row per NamedIndividual in the asserted data graph.
-        # Projects id, label, class_iri, and the op:evidenceStatus marker if
-        # present. class_label is joined optionally from the asserted ontology
-        # graph when the read-model service hands both graph IRIs in.
+        # Projects id, label, class_iri. class_label is joined optionally from
+        # the asserted ontology graph when the read-model service hands both
+        # graph IRIs in. evidence_status is derived per-row from PG bindings
+        # by _apply_evidence_bindings (Phase 3).
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        PREFIX op: <http://ontology-platform.local/semantic/op/>
-        SELECT ?entity ?label ?class ?class_label ?evidence_status ?graph WHERE {
+        SELECT ?entity ?label ?class ?class_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?entity a owl:NamedIndividual .
@@ -283,7 +271,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             FILTER(!STRSTARTS(STR(?class), STR(owl:)))
             FILTER(?class != owl:NamedIndividual)
             OPTIONAL { ?entity rdfs:label ?label . }
-            OPTIONAL { ?entity op:evidenceStatus ?evidence_status . }
           }
           OPTIONAL {
             VALUES ?og { {graph_iris} }
@@ -303,7 +290,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=True,
         default_limit=1000,
         assertion_kind="asserted",
-        evidence_status="mixed",
         primary_iri_variable="source",
         body="""# template: entity-relations
         # Lists triples whose subject and object are both NamedIndividuals
@@ -338,7 +324,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         body="""# template: entity-shape
         # COMPOSER. The SemanticReadModelService recognizes this template name
         # and delegates to SemanticShapeEndpointService.read_merged_guidance
@@ -354,7 +339,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="mapping",
         body="""# template: mapping-list
         # Returns op:SemanticMapping instances asserted in the ontology graph.
@@ -382,7 +366,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         primary_iri_variable="mapping",
         body="""# template: import-graph-mappings
         # Returns op:SemanticMapping instances written into a specific import
@@ -411,64 +394,23 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=True,
         default_limit=500,
         assertion_kind="asserted",
-        evidence_status="mixed",
         body="""# template: fact-audit-queue
         # COMPOSER. The SemanticReadModelService detects this template name
         # and delegates to ``_compose_fact_audit_queue``. The composer uses
         # the ``?kind=`` query parameter (asserted / inferred / rule_derived /
         # missing_evidence) to select source graphs and decorates each row
-        # into the unified FactRow shape (spec §6.3). The body below is the
-        # actual SPARQL the composer runs against the asserted_data /
-        # reasoning-result / rule-result graphs selected by ``kind``.
+        # into the unified FactRow shape (spec §6.3). evidence_status is
+        # derived per-row from PG fact_evidence_bindings (Phase 3).
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
-        PREFIX op: <http://ontology-platform.local/semantic/op/>
         SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
-                        ?object ?object_label ?graph ?evidence_status WHERE {
+                        ?object ?object_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?subject ?predicate ?object .
             FILTER(?predicate != rdf:type)
             FILTER(?predicate != rdfs:label)
-            OPTIONAL { ?subject rdfs:label ?subject_label . }
-            OPTIONAL { ?predicate rdfs:label ?predicate_label . }
-            OPTIONAL { ?object rdfs:label ?object_label . }
-            OPTIONAL { ?subject op:evidenceStatus ?evidence_status . }
-          }
-          BIND(?g AS ?graph)
-        }
-        LIMIT {limit}
-        """,
-    ),
-    "missing-evidence-list": ReadModelTemplate(
-        name="missing-evidence-list",
-        projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
-        needs_reasoning=False,
-        needs_rules=False,
-        default_limit=500,
-        assertion_kind="asserted",
-        evidence_status="missing_evidence",
-        primary_iri_variable="subject",
-        body="""# template: missing-evidence-list
-        # Lightweight aggregator: returns every triple whose subject carries
-        # the ``op:evidenceStatus "missing_evidence"`` marker, projected
-        # across every asserted_data graph in the active graph set. The
-        # read-model service decorates each row with the source graph IRI
-        # so the FactAuditPage missing-evidence tab can route the user to
-        # the correct inspector.
-        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-        PREFIX op: <http://ontology-platform.local/semantic/op/>
-        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
-                        ?object ?object_label ?graph WHERE {
-          VALUES ?g { {graph_iris} }
-          GRAPH ?g {
-            ?subject op:evidenceStatus "missing_evidence" .
-            ?subject ?predicate ?object .
-            FILTER(?predicate != rdf:type)
-            FILTER(?predicate != op:evidenceStatus)
             OPTIONAL { ?subject rdfs:label ?subject_label . }
             OPTIONAL { ?predicate rdfs:label ?predicate_label . }
             OPTIONAL { ?object rdfs:label ?object_label . }
@@ -486,7 +428,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=True,
         default_limit=1,
         assertion_kind="asserted",
-        evidence_status="mixed",
         body="""# template: publication-readiness
         # Single-row composer. Body is intentionally empty; the service
         # delegates to ``_compose_publication_readiness`` which reuses the
@@ -501,7 +442,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=50,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         body="""# template: graph-set-history-list
         # Single-row composer that returns the list of graph sets in scope.
         # Reads from SemanticGraphSetModel joined with members and derived
@@ -516,7 +456,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
-        evidence_status="not_applicable",
         body="""# template: graph-set-delta
         # Composer-driven. Reads the ``target`` query param to identify the
         # second graph set, then for each role present in both sets computes
@@ -531,7 +470,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=50,
         assertion_kind="any",
-        evidence_status="any",
         primary_iri_variable="entity",
         body="""# template: entity-search
         # Stage 4 §4.1. The composer binds ?q (search substring) and ?class_iri
@@ -568,7 +506,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=15,
         assertion_kind="any",
-        evidence_status="any",
         primary_iri_variable="entity",
         body="""# template: agent-test-context
         # Stage 4 §4.2. Same skeleton as entity-search minus the comment
@@ -602,7 +539,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         needs_rules=False,
         default_limit=1,
         assertion_kind="owl_inferred",
-        evidence_status="any",
         primary_iri_variable="run",
         body="""# template: owl-consistency-summary
         # Composer-driven. The SemanticReadModelService reads the latest

@@ -1132,10 +1132,8 @@ class SemanticReadModelService:
                 ]
             # Phase 3: enumerate every asserted fact via the unified
             # ``fact-audit-queue`` template, then derive missing_evidence
-            # status from PG. The legacy ``missing-evidence-list`` template
-            # (which filtered via ``op:evidenceStatus`` markers) is no
-            # longer used by this composer; the SPARQL is preserved until
-            # Phase 5 cleanup.
+            # status from PG (the legacy ``missing-evidence-list`` SPARQL
+            # template was removed in Phase 4 cleanup).
             rows = self._fetch_fact_rows(
                 data_iris, template_name="fact-audit-queue"
             )
