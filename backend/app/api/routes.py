@@ -7,6 +7,7 @@ from app.api.interview import router as interview_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
 from app.api.agent_test import router as agent_test_router
+from app.api.evidence import router as evidence_router
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.health import check_neo4j, check_oxigraph, check_postgres
 
@@ -15,6 +16,7 @@ router.include_router(ontologies_router)
 router.include_router(agent_test_router)
 router.include_router(interview_router)
 router.include_router(semantic_router)
+router.include_router(evidence_router)
 
 
 @router.get("/health")

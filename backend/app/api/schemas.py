@@ -65,13 +65,38 @@ class AgentTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ontology_id: str
+    graph_set_id: str = Field(..., min_length=1)
     question: str = Field(min_length=1, max_length=4000)
+
+
+class AgentTestGraphContextEntry(BaseModel):
+    """Stage 4 §7.2 entry shape inside ``AgentTestResponse.graph_context``."""
+
+    iri: str
+    label: str | None = None
+    class_label: str | None = None
+    assertion_kind: Literal["asserted", "owl_inferred", "rule_derived"]
+    source_graph_iri: str
+    source_signature: str | None = None
+    is_stale: bool = False
+
+
+class AgentTestGraphContext(BaseModel):
+    """Stage 4 §7.2 structured graph context wrapper.
+
+    Replaces the previous opaque ``dict[str, Any]`` ``graph_context`` field so
+    the frontend ``AgentTestPage`` can render each entry with an
+    AssertionKind chip and a staleness warning."""
+
+    entries: list[AgentTestGraphContextEntry] = Field(default_factory=list)
+    generated_at: str
+    scope: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentTestResponse(BaseModel):
     answer: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
-    graph_context: dict[str, Any] = Field(default_factory=dict)
+    graph_context: AgentTestGraphContext
     prompt_preview: str
     warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
