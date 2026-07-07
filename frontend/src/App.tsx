@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 // Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Braces/Box.
-import { Card, ConfigProvider, Tag, Tooltip } from "antd";
+import { Card, ConfigProvider, Progress, Tag, Tooltip } from "antd";
 import "antd/dist/reset.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -41,7 +41,7 @@ import { classNames, compactId, formatDate, prettyJson } from "./utils";
 import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
-import { ProjectBriefPage } from "./pages/ProjectBriefPage";
+import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
 import { AgentTestPage } from "./pages/AgentTestPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
@@ -75,6 +75,7 @@ import type {
 type AppView = "home" | "workspace";
 type WorkspaceTab =
   | "brief"
+  | "questions"
   | "facts"
   | "publication"
   | "classes"
@@ -106,9 +107,9 @@ const stageMeta: Array<{
   detail: string;
   icon: typeof Network;
 }> = [
-  { id: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
+  { id: "overview", label: "Overview", detail: "Brief · questions", icon: BookOpen },
   { id: "modeling", label: "Modeling", detail: "Classes · entities · facts", icon: GitBranch },
-  { id: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: ShieldCheck },
+  { id: "debug", label: "Debug", detail: "Agent · recall · runtime", icon: ShieldCheck },
   { id: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
 ];
 
@@ -127,10 +128,15 @@ const workspaceTabs: Array<{
   icon: typeof Network;
 }> = [
   { id: "brief", stage: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
+  { id: "questions", stage: "overview", label: "Structured Requirements", detail: "Requirement clarification", icon: Check },
   { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
   { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
   { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
   { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
+  { id: "agent-test", stage: "debug", label: "Agent Test", detail: "Question runs", icon: Send },
+  { id: "search", stage: "debug", label: "Recall", detail: "Entity search", icon: Search },
+  { id: "mcp-tools", stage: "debug", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
+  { id: "graph-sets", stage: "debug", label: "Graph Sets", detail: "Members · runs", icon: Layers },
   { id: "setting", stage: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
 ];
 
@@ -143,11 +149,7 @@ const legacyWorkspaceTabs: Array<{
 }> = [
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
   { id: "graph-set-history", stage: "publish", label: "Graph Set History", detail: "Lineage & diff", icon: History },
-  { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
-  { id: "search", stage: "tools", label: "Search", detail: "Entity search", icon: Search },
-  { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
   { id: "named-graphs", stage: "governance", label: "Named Graphs", detail: "Registry · editability", icon: Database },
-  { id: "graph-sets", stage: "governance", label: "Graph Sets", detail: "Members · runs · exports", icon: Layers },
   { id: "semantic-edits", stage: "governance", label: "Semantic Edit", detail: "Direct workbench", icon: ShieldCheck },
   { id: "semantic-runs", stage: "governance", label: "Semantic Runs", detail: "Validation · reasoning · rule", icon: History },
   { id: "semantic-import-export", stage: "governance", label: "Import / Export", detail: "Standards exchange", icon: Upload },
@@ -157,11 +159,7 @@ const allWorkspaceTabs = [...workspaceTabs, ...legacyWorkspaceTabs];
 const legacyTabRedirects: Partial<Record<WorkspaceTab, WorkspaceTab>> = {
   publication: "brief",
   "graph-set-history": "graph-governance",
-  "agent-test": "graph-governance",
-  search: "entities",
-  "mcp-tools": "graph-governance",
   "named-graphs": "graph-governance",
-  "graph-sets": "graph-governance",
   "semantic-edits": "graph-governance",
   "semantic-runs": "graph-governance",
   "semantic-import-export": "graph-governance",
@@ -799,7 +797,25 @@ function WorkspaceContent(props: {
   );
 
   if (props.tab === "brief") {
-    return <ProjectBriefPage onDirtyChange={props.setPageDirty} projectId={props.project.id} readOnly={readOnly} request={governedRequest} />;
+    return (
+      <OverviewPage
+        navigateWorkspace={props.navigateWorkspace}
+        notify={props.notify}
+        projectId={props.project.id}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "questions") {
+    return (
+      <RequirementQuestionsPage
+        onDirtyChange={props.setPageDirty}
+        projectId={props.project.id}
+        readOnly={readOnly}
+        request={governedRequest}
+      />
+    );
   }
 
   if (props.tab === "classes") {
@@ -929,8 +945,7 @@ function WorkspaceContent(props: {
   if (props.tab === "graph-governance") {
     return (
       <DebugPage
-        notify={props.notify}
-        request={governedRequest}
+        navigateWorkspace={props.navigateWorkspace}
       />
     );
   }
@@ -1073,7 +1088,94 @@ function SettingsPage(props: {
   );
 }
 
-function DebugPage(props: {
+function OverviewPage(props: {
+  projectId: string;
+  navigateWorkspace: (tab: string, params?: Record<string, string>) => void;
+  request: Requester;
+  notify: (notice: Notice) => void;
+}) {
+  return (
+    <div className="overviewWorkspace">
+      <BriefCompletionPanel
+        navigateWorkspace={props.navigateWorkspace}
+        projectId={props.projectId}
+        request={props.request}
+      />
+      <OverviewDiagnostics notify={props.notify} request={props.request} />
+    </div>
+  );
+}
+
+function BriefCompletionPanel(props: {
+  projectId: string;
+  navigateWorkspace: (tab: string, params?: Record<string, string>) => void;
+  request: Requester;
+}) {
+  const t = useT();
+  type BriefCompletionState = {
+    completeness: number;
+    missing_fields: string[];
+    clarification_items: Array<{ field: string; question: string; reason: string }>;
+  };
+  const [brief, setBrief] = useState<BriefCompletionState | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    props.request<BriefCompletionState>(`/projects/${props.projectId}/brief`)
+      .then((data) => {
+        if (!cancelled) setBrief(data);
+      })
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectId, props.request]);
+
+  const completeness = Math.round((brief?.completeness ?? 0) * 100);
+  const missingCount = brief?.missing_fields.length ?? 0;
+  const openQuestions = brief?.clarification_items.length ?? 0;
+  const unconfirmedCount =
+    brief?.clarification_items.filter((item) => item.reason === "unconfirmed").length ?? 0;
+
+  return (
+    <Panel title={t("Structured Requirements")} icon={<Check size={17} />} wide>
+      {error ? (
+        <p className="inlineError">{error}</p>
+      ) : (
+        <div className="overviewRequirementSummary">
+          <div className="overviewRequirementProgress">
+            <Progress percent={completeness} status={completeness === 100 ? "success" : "active"} />
+            <p className="inlineHint">
+              {t("Overview only tracks completion. Fill requirement questions on the Structured Requirements page.")}
+            </p>
+          </div>
+          <div className="debugRunGrid">
+            <div className="debugRunTile">
+              <span>{t("Open questions")}</span>
+              <strong>{openQuestions}</strong>
+            </div>
+            <div className="debugRunTile">
+              <span>{t("Missing")}</span>
+              <strong>{missingCount}</strong>
+            </div>
+            <div className="debugRunTile">
+              <span>{t("Unconfirmed")}</span>
+              <strong>{unconfirmedCount}</strong>
+            </div>
+          </div>
+          <button className="primaryButton" onClick={() => props.navigateWorkspace("questions")} type="button">
+            <Check size={15} /> {t("Open Structured Requirements")}
+          </button>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function OverviewDiagnostics(props: {
   request: Requester;
   notify: (notice: Notice) => void;
 }) {
@@ -1126,7 +1228,7 @@ function DebugPage(props: {
     numericJsonValue(status?.derived, "stale_derived_count") ?? numericJsonValue(status?.derived, "stale_count");
 
   return (
-    <section className="pageGrid systemGrid" aria-label="debug-page">
+    <section className="pageGrid systemGrid" aria-label="overview-diagnostics">
       <Panel title={t("Runtime status")} icon={<Activity size={17} />}>
         <button className="primaryButton" onClick={() => void loadDebugState()} disabled={loading} type="button">
           {loading ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
@@ -1161,10 +1263,58 @@ function DebugPage(props: {
           ))}
         </div>
         <p className="inlineHint">
-          {t("This page shows diagnostics only. Modeling data is edited from the Modeling area.")}
+          {t("Overview shows workspace diagnostics. Modeling data is edited from the Modeling area.")}
         </p>
       </Panel>
     </section>
+  );
+}
+
+function DebugPage(props: {
+  navigateWorkspace: (tab: string, params?: Record<string, string>) => void;
+}) {
+  const t = useT();
+  return (
+    <section className="pageGrid systemGrid" aria-label="debug-page">
+      <Panel title={t("Debug tools")} icon={<Wrench size={17} />} wide>
+        <div className="debugToolGrid">
+          <DebugToolCard
+            icon={<Send size={17} />}
+            title={t("Agent Test")}
+            detail={t("Run ontology-grounded questions against the active graph set.")}
+            onClick={() => props.navigateWorkspace("agent-test")}
+          />
+          <DebugToolCard
+            icon={<Search size={17} />}
+            title={t("Recall")}
+            detail={t("Search graph context and inspect recall candidates before agent runs.")}
+            onClick={() => props.navigateWorkspace("search")}
+          />
+          <DebugToolCard
+            icon={<Wrench size={17} />}
+            title={t("MCP Tools")}
+            detail={t("Inspect tool surfaces available to external agents.")}
+            onClick={() => props.navigateWorkspace("mcp-tools")}
+          />
+          <DebugToolCard
+            icon={<Layers size={17} />}
+            title={t("Graph Sets")}
+            detail={t("Inspect active graph-set membership and generated run history.")}
+            onClick={() => props.navigateWorkspace("graph-sets")}
+          />
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+function DebugToolCard(props: { icon: ReactNode; title: string; detail: string; onClick: () => void }) {
+  return (
+    <button className="debugToolCard" onClick={props.onClick} type="button">
+      <div className="debugToolIcon">{props.icon}</div>
+      <strong>{props.title}</strong>
+      <span>{props.detail}</span>
+    </button>
   );
 }
 

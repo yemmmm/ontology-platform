@@ -155,9 +155,6 @@ export function ProjectBriefPage({ projectId, readOnly = false, request, onRefre
             <Progress percent={Math.round(brief.completeness * 100)} status={brief.completeness === 1 ? "success" : "active"} />
             <p className="muted">{t("缺失 {n} 个字段，未保存修改{state}。", { n: brief.missing_fields.length, state: dirty ? t("存在") : t("不存在") })}</p>
           </Card>
-          <Card className="panel" title={t("待澄清")}>
-            {brief.clarification_items.length ? <div className="dataList">{brief.clarification_items.map((item) => <div className="callout quiet" key={`${item.field}-${item.reason}`}><strong>{item.field}</strong><span>{item.question}</span><span>{item.reason}</span></div>)}</div> : <div className="emptyState">{t("没有待澄清项。")}</div>}
-          </Card>
           {extensions.length > 0 && <Card className="panel" title={t("扩展字段（只读）")}><div className="dataList">{extensions.map(([key, value]) => <div className="callout quiet" key={key}><strong>{key}</strong><pre className="jsonBlock">{textValue(value)}</pre></div>)}</div></Card>}
         </div>
       </div>

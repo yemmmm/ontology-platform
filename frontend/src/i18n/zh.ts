@@ -50,6 +50,8 @@ export const zh: TranslationMap = {
   "Scope & intent": "范围与目标",
   "Questions": "能力问题",
   "Competency validation": "能力问题验证",
+  "Structured Requirements": "结构化需求",
+  "Open Structured Requirements": "打开结构化需求",
   "Files": "文件",
   "Evidence originals": "证据原件",
   "Classes": "类",
@@ -70,6 +72,19 @@ export const zh: TranslationMap = {
   "Source traceability": "证据溯源",
   "Settings": "设置",
   "Runtime status": "运行时状态",
+  "Brief · questions": "需求简报 · 问题",
+  "Requirement clarification": "需求澄清",
+  "Agent · recall · runtime": "Agent · 召回 · 运行时",
+  "Entity search": "实体检索",
+  "Members · runs": "成员 · 运行",
+  "Debug tools": "调试工具",
+  "Run ontology-grounded questions against the active graph set.": "针对当前图集运行本体约束的 Agent 问答。",
+  "Search graph context and inspect recall candidates before agent runs.": "检索图谱上下文，并在 Agent 运行前检查召回候选。",
+  "Inspect tool surfaces available to external agents.": "查看外部 Agent 可用的工具接口。",
+  "Inspect active graph-set membership and generated run history.": "检查当前图集成员和生成运行历史。",
+  "Overview shows workspace diagnostics. Modeling data is edited from the Modeling area.": "概览显示工作区诊断信息。建模数据请在建模区域编辑。",
+  "Overview only tracks completion. Fill requirement questions on the Structured Requirements page.": "概览只统计完成度。需求问题请在结构化需求页面填写。",
+  "Answer the structured requirement fields below. Open questions are generated from missing or unconfirmed fields.": "在下方填写结构化需求字段。待处理问题由缺失或未确认字段生成。",
 
   // OntologyHomePage
   "Project": "项目",
@@ -101,6 +116,20 @@ export const zh: TranslationMap = {
 
   // Workspace error
   "Select a valid ontology version": "请选择有效的本体版本",
+
+  // RequirementQuestionsPage
+  "Open questions": "待处理问题",
+  "Missing": "缺失",
+  "Unconfirmed": "未确认",
+  "Completeness": "完整度",
+  "Requirement clarification questions": "需求澄清问题",
+  "No requirement questions yet": "暂无需求问题",
+  "Answer this requirement question": "回答这个需求问题",
+  "Save answer": "保存回答",
+  "Confirm answer": "确认回答",
+  "Skip": "跳过",
+  "missing": "缺失",
+  "unconfirmed": "未确认",
 
   // Topology reserved
   "Topology": "拓扑图",

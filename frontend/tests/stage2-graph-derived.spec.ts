@@ -50,6 +50,27 @@ const classTopologyEnvelope = {
       label: "Class 1",
       source_graph_iri: "http://x/g",
       assertion_kind: "asserted",
+      parent: "http://x/Class0",
+    },
+    {
+      iri: "http://x/Class0",
+      label: "Class 0",
+      source_graph_iri: "http://x/g",
+      assertion_kind: "asserted",
+    },
+  ],
+};
+
+const relationTypeEnvelope = {
+  graph_set_id: GRAPH_SET_ID,
+  items: [
+    {
+      iri: "http://x/relation/owns",
+      label: "owns",
+      source_graph_iri: "http://x/g",
+      assertion_kind: "asserted",
+      source: "http://x/Class1",
+      target: "http://x/Class0",
     },
   ],
 };
@@ -65,9 +86,30 @@ const entityListEnvelope = {
       class_iri: "http://x/Class1",
       class_label: "Class 1",
     },
+    {
+      iri: "http://x/Entity2",
+      label: "Entity Two",
+      source_graph_iri: "http://x/g",
+      assertion_kind: "asserted",
+      class_iri: "http://x/Class1",
+      class_label: "Class 1",
+    },
   ],
 };
-const entityRelationsEnvelope = { graph_set_id: GRAPH_SET_ID, items: [] };
+const entityRelationsEnvelope = {
+  graph_set_id: GRAPH_SET_ID,
+  items: [
+    {
+      iri: "http://x/rel/1",
+      label: "knows",
+      source_graph_iri: "http://x/g",
+      assertion_kind: "asserted",
+      source: "http://x/Entity1",
+      target: "http://x/Entity2",
+      relation: "http://x/relation/knows",
+    },
+  ],
+};
 
 const mappingListEnvelope = {
   graph_set_id: GRAPH_SET_ID,
@@ -211,6 +253,8 @@ async function mockCommon(page: Page) {
     // Semantic (graph-derived) read models.
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/class-topology`) {
       body = classTopologyEnvelope;
+    } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) {
+      body = relationTypeEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) {
       body = entityListEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) {
@@ -238,6 +282,7 @@ test("ClassesPage graph-derived path renders class topology", async ({ page }) =
   // Stage 2 page h1 — disambiguate from the sidebar nav heading.
   await expect(page.locator("section.classesPage.stage2").getByRole("heading", { name: "Classes" })).toBeVisible();
   await expect(page.getByText("Class 1")).toBeVisible();
+  await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
   await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
 });
 
@@ -248,7 +293,9 @@ test("EntitiesPage graph-derived path renders entity and relations cards", async
   );
   await expect(page.getByText("Business modeling").first()).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByRole("heading", { name: "Entities" })).toBeVisible();
-  await expect(page.getByText("Entity One")).toBeVisible();
+  await expect(page.locator("section.entitiesPage.stage2 .entityList").getByText("Entity One")).toBeVisible();
+  await expect(page.getByText("knows")).toBeVisible();
+  await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
   await expect(page.getByRole("button", { name: "New entity" })).toBeEnabled();
 });
 

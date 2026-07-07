@@ -37,6 +37,13 @@ class _ShapeEndpointProtocol(Protocol):
     def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict[str, Any]: ...
 
 
+_READ_MODEL_FIELD_ALIASES = {
+    "class": "class_iri",
+    "range": "range_iri",
+    "type": "type_iri",
+}
+
+
 class SemanticReadModelService:
     def __init__(
         self,
@@ -318,7 +325,26 @@ class SemanticReadModelService:
                 "is_stale": self._is_stale(source_graph_iri, scope),
                 "reason": self._staleness_reason(source_graph_iri, scope),
             },
+            **self._graph_display_fields(row),
         }
+
+    def _graph_display_fields(self, row: dict[str, Any]) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
+        for key in (
+            "parent",
+            "class",
+            "class_label",
+            "source",
+            "target",
+            "relation",
+            "range",
+            "type",
+            "evidence_status",
+        ):
+            value = self._cell(row, key)
+            if value is not None:
+                fields[_READ_MODEL_FIELD_ALIASES.get(key, key)] = value
+        return fields
 
     @staticmethod
     def _cell(row: dict[str, Any], key: str) -> str | None:

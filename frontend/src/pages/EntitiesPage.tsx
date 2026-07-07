@@ -16,9 +16,23 @@
  */
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
-import { ChevronRight, Database, Edit3, Link2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  Database,
+  Edit3,
+  Link2,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  ForceGraphCanvas,
+  type ForceGraphEdge,
+  type ForceGraphNode,
+} from "../components/ForceGraphCanvas";
 import { useT } from "../i18n";
 import {
   compileAndApplyProductCommand,
@@ -77,7 +91,9 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const [entities, setEntities] = useState<EntityListEnvelope | null>(null);
   const [relations, setRelations] = useState<EntityRelationsEnvelope | null>(null);
   const [selectedIri, setSelectedIri] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [newClassIri, setNewClassIri] = useState("");
   const [newLabel, setNewLabel] = useState("");
 
@@ -110,9 +126,29 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     return labels;
   }, [entities]);
 
+  const { graphNodes, graphEdges, classLabels } = useMemo(() => {
+    const nodes: ForceGraphNode[] = (entities?.items ?? []).map((row) => ({
+      id: row.iri,
+      label: row.label ?? compactIri(row.iri),
+      group: row.class_label ?? (row.class_iri ? compactIri(row.class_iri) : t("Unclassified")),
+    }));
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges: ForceGraphEdge[] = (relations?.items ?? [])
+      .filter((row) => row.source && row.target)
+      .map((row, index) => ({
+        id: `entity-relation:${row.iri}:${row.source}:${row.target}:${index}`,
+        source: row.source ?? "",
+        target: row.target ?? "",
+        label: row.label ?? (row.relation ? compactIri(row.relation) : t("relationship")),
+      }))
+      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+    const groups = Array.from(new Set(nodes.map((node) => node.group || t("Unclassified")))).sort();
+    return { graphNodes: nodes, graphEdges: edges, classLabels: groups };
+  }, [entities, relations, t]);
+
   async function submitNewEntity() {
     if (!newLabel.trim() || !newClassIri.trim()) return;
-    setCreating(true);
+    setSubmitting(true);
     setError("");
     try {
       await compileAndApplyProductCommand(request, {
@@ -130,11 +166,12 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
       });
       setNewLabel("");
       setNewClassIri("");
+      setCreating(false);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   }
 
@@ -180,7 +217,55 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         />
       )}
 
-      <Card title={t("Entities · {n}", { n: entities?.items.length ?? 0 })} size="small">
+      <Card
+        title={t("Entity force graph · {nodes} nodes · {edges} edges", {
+          nodes: graphNodes.length,
+          edges: graphEdges.length,
+        })}
+        size="small"
+      >
+        <div className="semanticGraphToolbar">
+          <Input
+            prefix={<Search size={14} />}
+            placeholder={t("Search entities by name or class")}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            allowClear
+          />
+          <div className="semanticGraphLegend">
+            {classLabels.slice(0, 8).map((label) => (
+              <Tag key={label}>{label}</Tag>
+            ))}
+          </div>
+          {selectedIri && (
+            <Tag closable onClose={() => setSelectedIri(null)}>
+              {entityLabelByIri.get(selectedIri) ?? compactIri(selectedIri)}
+            </Tag>
+          )}
+        </div>
+        <div className="semanticGraphSurface">
+          {loading ? (
+            <Skeleton active paragraph={{ rows: 7 }} />
+          ) : (
+            <ForceGraphCanvas
+              nodes={graphNodes}
+              edges={graphEdges}
+              selectedNodeId={selectedIri}
+              onSelectNode={setSelectedIri}
+              searchQuery={searchQuery}
+              groupLabels={classLabels}
+              emptyTitle={t("No entities in this workspace yet.")}
+              emptyHint={t("Create an entity to populate the force graph.")}
+            />
+          )}
+        </div>
+      </Card>
+
+      <Card
+        title={t("Entities · {n}", { n: entities?.items.length ?? 0 })}
+        size="small"
+        style={{ marginTop: 12 }}
+      >
         {loading ? (
           <Skeleton active />
         ) : entities && entities.items.length > 0 ? (
@@ -256,7 +341,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
           setNewLabel("");
         }}
         onOk={() => void submitNewEntity()}
-        confirmLoading={creating}
+        confirmLoading={submitting}
         okText={t("Create entity")}
         okButtonProps={{ disabled: !newLabel.trim() || !newClassIri.trim() }}
       >
@@ -309,7 +394,7 @@ function EntityListEntry({ row, selected, onSelect, request, graphSetId, readOnl
   }, [selected, guidance, loadingGuidance, row.class_iri, request, graphSetId, t]);
 
   return (
-    <li className="entityListItem">
+    <li className={`entityListItem${selected ? " selected" : ""}`}>
       <div className="entityListItemHeader" onClick={onSelect} role="button" tabIndex={0}>
         <Database size={16} />
         <div>
@@ -384,3 +469,10 @@ function EntityShapeReadOnly({ guidance }: { guidance: SemanticShaclFormGuidance
 }
 
 export type { EntitiesPageProps };
+
+function compactIri(value: string) {
+  const hash = value.lastIndexOf("#");
+  const slash = value.lastIndexOf("/");
+  const idx = Math.max(hash, slash);
+  return idx >= 0 ? value.slice(idx + 1) : value;
+}

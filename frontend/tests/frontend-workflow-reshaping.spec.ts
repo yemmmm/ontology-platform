@@ -10,6 +10,18 @@ const ontology = {
 };
 
 const GRAPH_SET_ID = "gs-phase8";
+const graphSet = {
+  id: GRAPH_SET_ID,
+  name: "Internal workspace",
+  scope_type: "ontology",
+  scope_id: ontology.id,
+  status: "active",
+  source_signature: "sig-phase8",
+  created_by: "test",
+  members: [],
+  current_pointers: [],
+  metadata: {},
+};
 
 const classTopologyEnvelope = {
   graph_set_id: GRAPH_SET_ID,
@@ -21,6 +33,11 @@ const classTopologyEnvelope = {
       assertion_kind: "asserted",
     },
   ],
+};
+
+const relationTypeEnvelope = {
+  graph_set_id: GRAPH_SET_ID,
+  items: [],
 };
 
 const entityListEnvelope = {
@@ -66,17 +83,30 @@ async function mockApi(page: Page) {
     else if (path === `/projects/${project.id}/brief`) body = {
       id: "brief-1",
       project_id: project.id,
-      fields: {},
-      field_states: {},
+      fields: { domain_name: "" },
+      field_states: { domain_name: "missing" },
       field_sources: {},
-      missing_fields: [],
-      clarification_items: [],
-      completeness: 1,
+      missing_fields: ["domain_name"],
+      clarification_items: [
+        {
+          field: "domain_name",
+          question: "What is the domain name?",
+          reason: "missing",
+        },
+      ],
+      completeness: 0.9,
     };
-    else if (path === "/semantic/graph-sets") body = {
-      graph_sets: [{ id: GRAPH_SET_ID, name: "Internal workspace", status: "active", members: [] }],
+    else if (path === "/semantic/graph-sets") body = { graph_sets: [graphSet] };
+    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}`) body = graphSet;
+    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/missing-evidence`) body = {
+      graph_set_id: GRAPH_SET_ID,
+      dependencies: [],
+      summary: {},
+      warning: null,
     };
+    else if (path === "/semantic/rule-definitions") body = { rules: [] };
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/class-topology`) body = classTopologyEnvelope;
+    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) body = relationTypeEnvelope;
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) body = entityListEnvelope;
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) body = entityRelationsEnvelope;
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`) body = {
@@ -143,23 +173,54 @@ test("settings lock disables modeling mutation controls", async ({ page }) => {
   await expect(page.getByText("Workspace is locked. Unlock in Settings to edit modeling data.")).toBeVisible();
 });
 
-test("main navigation hides graph set, named graph, and RDF entry points", async ({ page }) => {
+test("main navigation separates overview questions and debug tools", async ({ page }) => {
   await mockApi(page);
   await page.goto(workspaceUrl("classes"));
 
   const nav = page.locator(".mainNav");
   await expect(nav.getByRole("button", { name: /^Overview/ }).first()).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Structured Requirements", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Modeling/ }).first()).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Debug/ }).first()).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Agent Test", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Recall", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "MCP Tools", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Graph Sets", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Settings/ }).first()).toBeVisible();
-  await expect(nav).not.toContainText(/Graph Set|Graph Sets|Named Graph|Named Graphs|RDF/i);
+  await expect(nav).not.toContainText(/Named Graph|Named Graphs|RDF/i);
 });
 
-test("legacy graph-set deep link is normalized to diagnostics", async ({ page }) => {
+test("overview only summarizes structured requirement completion", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(workspaceUrl("brief"));
+
+  await expect(page.locator("section[aria-label='overview-diagnostics']")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Structured Requirements" })).toBeVisible();
+  await expect(page.getByText("Open questions")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Structured Requirements" })).toBeVisible();
+  await expect(page.getByText("What is the domain name?")).toHaveCount(0);
+});
+
+test("questions deep link opens standalone requirement questions tab", async ({ page }) => {
+  await mockApi(page);
+  await page.goto(workspaceUrl("questions"));
+
+  await expect(page).toHaveURL(/tab=questions/);
+  const questionsPage = page.locator("section[aria-label='requirement-questions-page']");
+  await expect(questionsPage).toBeVisible();
+  await expect(questionsPage.getByRole("heading", { name: "Structured Requirements" })).toBeVisible();
+  await expect(questionsPage.getByText("Open questions", { exact: true })).toBeVisible();
+  await expect(questionsPage.getByText("Requirement clarification", { exact: true })).toBeVisible();
+  await expect(questionsPage.getByRole("heading", { name: "Project Brief" })).toBeVisible();
+  await expect(questionsPage.getByText("结构化需求")).toBeVisible();
+  await expect(questionsPage.locator("textarea").first()).toBeEnabled();
+});
+
+test("graph-set deep link opens the debug graph sets tool", async ({ page }) => {
   await mockApi(page);
   await page.goto(workspaceUrl("graph-sets"));
 
-  await expect(page).toHaveURL(/tab=graph-governance/);
-  await expect(page.locator("section[aria-label='debug-page']")).toBeVisible();
-  await expect(page.locator(".mainNav")).not.toContainText(/Graph Set|Graph Sets|Named Graph|Named Graphs|RDF/i);
+  await expect(page).toHaveURL(/tab=graph-sets/);
+  await expect(page.locator("section[aria-label='graph-set-page']")).toBeVisible();
+  await expect(page.locator(".mainNav")).toContainText("Graph Sets");
 });

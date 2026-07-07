@@ -9,9 +9,14 @@
  */
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
-import { Box, Edit3, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Box, Edit3, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  ForceGraphCanvas,
+  type ForceGraphEdge,
+  type ForceGraphNode,
+} from "../components/ForceGraphCanvas";
 import { useT } from "../i18n";
 import {
   compileAndApplyProductCommand,
@@ -25,11 +30,26 @@ type ClassTopologyRow = {
   label: string | null;
   source_graph_iri: string;
   assertion_kind: string;
+  parent?: string | null;
 };
 
 type ClassTopologyEnvelope = {
   graph_set_id: string;
   items: ClassTopologyRow[];
+};
+
+type RelationTypeRow = {
+  iri: string;
+  label: string | null;
+  source_graph_iri: string;
+  assertion_kind: string;
+  source?: string | null;
+  target?: string | null;
+};
+
+type RelationTypeEnvelope = {
+  graph_set_id: string;
+  items: RelationTypeRow[];
 };
 
 type ClassesPageProps = {
@@ -44,7 +64,11 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [envelope, setEnvelope] = useState<ClassTopologyEnvelope | null>(null);
+  const [relations, setRelations] = useState<RelationTypeEnvelope | null>(null);
+  const [selectedIri, setSelectedIri] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
@@ -52,8 +76,12 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
     setLoading(true);
     setError("");
     try {
-      const data = await readModel<ClassTopologyEnvelope>(request, graphSetId, "class-topology");
-      setEnvelope(data);
+      const [classData, relationData] = await Promise.all([
+        readModel<ClassTopologyEnvelope>(request, graphSetId, "class-topology"),
+        readModel<RelationTypeEnvelope>(request, graphSetId, "relation-type-list"),
+      ]);
+      setEnvelope(classData);
+      setRelations(relationData);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -65,9 +93,45 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
     void load();
   }, [load]);
 
+  const { graphNodes, graphEdges } = useMemo(() => {
+    const byIri = new Map<string, ClassTopologyRow>();
+    for (const row of envelope?.items ?? []) {
+      if (!byIri.has(row.iri)) byIri.set(row.iri, row);
+    }
+    const nodes: ForceGraphNode[] = Array.from(byIri.values()).map((row) => ({
+      id: row.iri,
+      label: row.label ?? compactIri(row.iri),
+      group: row.assertion_kind,
+    }));
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges: ForceGraphEdge[] = [];
+
+    for (const row of envelope?.items ?? []) {
+      if (row.parent && nodeIds.has(row.parent) && nodeIds.has(row.iri)) {
+        edges.push({
+          id: `subclass:${row.iri}:${row.parent}`,
+          source: row.iri,
+          target: row.parent,
+          label: t("subClassOf"),
+        });
+      }
+    }
+    for (const row of relations?.items ?? []) {
+      if (row.source && row.target && nodeIds.has(row.source) && nodeIds.has(row.target)) {
+        edges.push({
+          id: `relation:${row.iri}:${row.source}:${row.target}`,
+          source: row.source,
+          target: row.target,
+          label: row.label ?? compactIri(row.iri),
+        });
+      }
+    }
+    return { graphNodes: nodes, graphEdges: edges };
+  }, [envelope, relations, t]);
+
   async function submitNewClass() {
     if (!newName.trim()) return;
-    setCreating(true);
+    setSubmitting(true);
     setError("");
     try {
       await compileAndApplyProductCommand(request, {
@@ -85,11 +149,12 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
       });
       setNewName("");
       setNewDescription("");
+      setCreating(false);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   }
 
@@ -134,17 +199,61 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
 
       <Card
         size="small"
+        title={t("Class force graph · {nodes} nodes · {edges} edges", {
+          nodes: graphNodes.length,
+          edges: graphEdges.length,
+        })}
+      >
+        <div className="semanticGraphToolbar">
+          <Input
+            prefix={<Search size={14} />}
+            placeholder={t("Search classes")}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            allowClear
+          />
+          {selectedIri && (
+            <Tag closable onClose={() => setSelectedIri(null)}>
+              {graphNodes.find((node) => node.id === selectedIri)?.label ?? compactIri(selectedIri)}
+            </Tag>
+          )}
+        </div>
+        <div className="semanticGraphSurface">
+          {loading ? (
+            <Skeleton active paragraph={{ rows: 7 }} />
+          ) : (
+            <ForceGraphCanvas
+              nodes={graphNodes}
+              edges={graphEdges}
+              selectedNodeId={selectedIri}
+              onSelectNode={setSelectedIri}
+              searchQuery={searchQuery}
+              emptyTitle={t("No classes in this workspace yet.")}
+              emptyHint={t("Create a class to populate the force graph.")}
+            />
+          )}
+        </div>
+      </Card>
+
+      <Card
+        size="small"
         title={t("Class diagram · {n}", { n: envelope?.items.length ?? 0 })}
+        style={{ marginTop: 12 }}
       >
         {loading ? (
           <Skeleton active />
         ) : envelope && envelope.items.length > 0 ? (
           <ul className="classList">
             {envelope.items.map((row) => (
-              <li key={row.iri} className="classListItem">
+              <li
+                key={`${row.iri}:${row.parent ?? ""}`}
+                className={`classListItem${selectedIri === row.iri ? " selected" : ""}`}
+                onClick={() => setSelectedIri(selectedIri === row.iri ? null : row.iri)}
+              >
                 <Box size={16} />
                 <div>
                   <strong>{row.label ?? row.iri}</strong>
+                  {row.parent && <Tag>{t("parent")}: {compactIri(row.parent)}</Tag>}
                 </div>
                 <Tag>{t(row.assertion_kind)}</Tag>
                 <div className="rowActions">
@@ -183,7 +292,7 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
           setNewDescription("");
         }}
         onOk={() => void submitNewClass()}
-        confirmLoading={creating}
+        confirmLoading={submitting}
         okText={t("Create class")}
       >
         <Input
@@ -205,3 +314,10 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
 }
 
 export type { ClassesPageProps, SemanticShaclFormGuidance };
+
+function compactIri(value: string) {
+  const hash = value.lastIndexOf("#");
+  const slash = value.lastIndexOf("/");
+  const idx = Math.max(hash, slash);
+  return idx >= 0 ? value.slice(idx + 1) : value;
+}

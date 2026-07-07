@@ -177,6 +177,7 @@ def test_class_topology_executes_and_decorates_rows(in_memory_session) -> None:
                 {
                     "class": f"{PREFIX}ns/class/Student",
                     "label": "Student",
+                    "parent": f"{PREFIX}ns/class/Person",
                     "graph": ONTOLOGY_GRAPH,
                 }
             ]
@@ -189,6 +190,7 @@ def test_class_topology_executes_and_decorates_rows(in_memory_session) -> None:
     item = body["items"][0]
     assert item["iri"] == f"{PREFIX}ns/class/Student"
     assert item["label"] == "Student"
+    assert item["parent"] == f"{PREFIX}ns/class/Person"
     assert item["source_graph_iri"] == ONTOLOGY_GRAPH
     assert item["assertion_kind"] == "asserted"
     assert store.last_query is not None
@@ -242,8 +244,10 @@ def test_relation_type_list_executes(in_memory_session) -> None:
         rows_by_marker={
             "relation-type-list": [
                 {
-                    "relation_type": f"{PREFIX}ns/relation-type/enrolledIn",
+                    "relation": f"{PREFIX}ns/relation-type/enrolledIn",
                     "label": "enrolledIn",
+                    "source": f"{PREFIX}ns/class/Student",
+                    "target": f"{PREFIX}ns/class/Course",
                     "graph": ONTOLOGY_GRAPH,
                 }
             ]
@@ -252,7 +256,10 @@ def test_relation_type_list_executes(in_memory_session) -> None:
     client = _client(store, in_memory_session)
     body = _read_model(client, "relation-type-list")
     assert body["items"]
-    assert body["items"][0]["label"] == "enrolledIn"
+    item = body["items"][0]
+    assert item["label"] == "enrolledIn"
+    assert item["source"] == f"{PREFIX}ns/class/Student"
+    assert item["target"] == f"{PREFIX}ns/class/Course"
 
 
 def test_class_shape_generated_executes(in_memory_session) -> None:
@@ -306,6 +313,8 @@ def test_entity_list_executes_and_decorates_class_membership(in_memory_session) 
                 {
                     "entity": f"{PREFIX}ns/entity/alice",
                     "label": "Alice",
+                    "class": f"{PREFIX}ns/class/Student",
+                    "class_label": "Student",
                     "graph": DATA_GRAPH,
                 }
             ]
@@ -317,6 +326,8 @@ def test_entity_list_executes_and_decorates_class_membership(in_memory_session) 
     item = body["items"][0]
     assert item["iri"] == f"{PREFIX}ns/entity/alice"
     assert item["label"] == "Alice"
+    assert item["class_iri"] == f"{PREFIX}ns/class/Student"
+    assert item["class_label"] == "Student"
     assert item["source_graph_iri"] == DATA_GRAPH
 
 
@@ -345,6 +356,10 @@ def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> 
     body = response.json()
     # Without a rule pointer the resolver warns but still runs the template.
     assert body["model_name"] == "entity-relations"
+    item = body["items"][0]
+    assert item["source"] == f"{PREFIX}ns/entity/alice"
+    assert item["target"] == f"{PREFIX}ns/entity/bob"
+    assert item["relation"] == f"{PREFIX}ns/relation-type/knows"
 
 
 def test_mapping_list_executes(in_memory_session) -> None:
