@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Play, Sparkles, Upload } from "lucide-react";
 import type {
   SemanticDatasetLoadResponse,
-  SemanticEditEvidenceStatus,
   SemanticEditInputFormat,
   SemanticEditResponse,
   SemanticExportFormat,
@@ -48,7 +47,6 @@ export function SemanticImportExportPage({
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<SemanticDatasetLoadResponse | null>(null);
   const [editPreview, setEditPreview] = useState<SemanticEditResponse | null>(null);
-  const [evidenceStatus, setEvidenceStatus] = useState<SemanticEditEvidenceStatus | null>(null);
   const [reason, setReason] = useState("");
 
   const [exportFormat, setExportFormat] = useState<SemanticExportFormat>("trig");
@@ -109,7 +107,6 @@ export function SemanticImportExportPage({
         format: importFormat as SemanticEditInputFormat,
         content: importContent,
         reason: reason || t("Import via Semantic Import/Export workspace"),
-        evidenceStatus,
       });
       setEditPreview(result);
       notify({
@@ -220,21 +217,6 @@ export function SemanticImportExportPage({
                 placeholder={t("Why is this import being staged?")}
                 value={reason}
               />
-            </label>
-            <label>
-              <span>{t("Evidence status")}</span>
-              <select
-                onChange={(event) => {
-                  const value = event.target.value || null;
-                  if (value === "evidence_bound" || value === "missing_evidence") setEvidenceStatus(value);
-                  else setEvidenceStatus(null);
-                }}
-                value={evidenceStatus ?? ""}
-              >
-                <option value="">{t("Unset")}</option>
-                <option value="evidence_bound">{t("Evidence bound")}</option>
-                <option value="missing_evidence">{t("Missing evidence")}</option>
-              </select>
             </label>
             <textarea
               className="semanticImportContent"

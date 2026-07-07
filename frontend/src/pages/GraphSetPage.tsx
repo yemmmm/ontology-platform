@@ -11,9 +11,9 @@ import {
   Workflow,
 } from "lucide-react";
 import type {
+  MissingEvidenceFactsResponse,
   SemanticGraphSetRead,
   SemanticJsonObject,
-  SemanticMissingEvidenceSummary,
   SemanticRuleDefinitionListResponse,
 } from "../types";
 import { useT } from "../i18n";
@@ -23,7 +23,7 @@ import {
   buildGraphSetExportUrl,
   createGraphSet,
   getGraphSet,
-  getMissingEvidenceSummary,
+  getMissingEvidenceFacts,
   listGraphSets,
   listRuleDefinitions,
   runGraphSetReasoning,
@@ -60,7 +60,7 @@ export function GraphSetPage({
   const [selectedId, setSelectedId] = useState(initialGraphSetId ?? "");
   const [graphSet, setGraphSet] = useState<SemanticGraphSetRead | null>(null);
   const [rules, setRules] = useState<SemanticRuleDefinitionListResponse | null>(null);
-  const [missingEvidence, setMissingEvidence] = useState<SemanticMissingEvidenceSummary | null>(null);
+  const [missingEvidence, setMissingEvidence] = useState<MissingEvidenceFactsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -92,7 +92,7 @@ export function GraphSetPage({
     try {
       const [detail, evidence, ruleList] = await Promise.all([
         getGraphSet(request, id),
-        getMissingEvidenceSummary(request, id).catch(() => null),
+        getMissingEvidenceFacts(request, id).catch(() => null),
         listRuleDefinitions(request, { status: "active", limit: 50 }).catch(() => ({ rules: [] })),
       ]);
       setGraphSet(detail);
@@ -338,24 +338,17 @@ export function GraphSetPage({
             <RuleResultPanel run={ruleRun} />
           </section>
 
-          <SemanticPanel title={t("Missing-evidence dependencies")} icon={<Workflow size={15} />}>
+          <SemanticPanel title={t("Missing-evidence facts")} icon={<Workflow size={15} />}>
             {!missingEvidence ? (
               <SemanticEmpty title={t("No missing-evidence summary available")} />
             ) : (
-              <>
-                {missingEvidence.warning && <div className="callout warning"><strong>{t("Warning")}</strong><span>{missingEvidence.warning}</span></div>}
-                <dl className="kvList">
-                  <div><dt>{t("Dependency count")}</dt><dd>{missingEvidence.dependencies.length}</dd></div>
-                  <div>
-                    <dt>{t("Summary")}</dt>
-                    <dd><pre className="jsonBlock">{JSON.stringify(missingEvidence.summary, null, 2)}</pre></dd>
-                  </div>
-                  <div>
-                    <dt>{t("Dependencies")}</dt>
-                    <dd><pre className="jsonBlock">{JSON.stringify(missingEvidence.dependencies, null, 2)}</pre></dd>
-                  </div>
-                </dl>
-              </>
+              <dl className="kvList">
+                <div><dt>{t("Missing-evidence count")}</dt><dd>{missingEvidence.count}</dd></div>
+                <div>
+                  <dt>{t("Fact IDs")}</dt>
+                  <dd><pre className="jsonBlock">{JSON.stringify(missingEvidence.fact_ids, null, 2)}</pre></dd>
+                </div>
+              </dl>
             )}
           </SemanticPanel>
 

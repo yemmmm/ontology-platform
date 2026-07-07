@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import type {
   SemanticEditAuditRead,
-  SemanticEditEvidenceStatus,
   SemanticEditInputFormat,
   SemanticEditResponse,
   SemanticGraphSetListResponse,
@@ -28,12 +27,9 @@ import {
   type SemanticRequester,
 } from "../semanticApi";
 import {
-  EvidenceBindingPanel,
   GraphDeltaViewer,
   GraphSetSelector,
-  parseWarningState,
   SemanticWarningList,
-  splitEvidenceIds,
 } from "../components/semantic";
 import { RefreshButton, SemanticEmpty, SemanticPanel, SemanticTag } from "../components/semantic/primitives";
 import { prettyJson } from "../utils";
@@ -86,8 +82,6 @@ export function SemanticEditWorkbenchPage({
   const [shapeGraphIris, setShapeGraphIris] = useState("");
   const [actor, setActor] = useState("");
   const [reason, setReason] = useState("");
-  const [evidenceStatus, setEvidenceStatus] = useState<SemanticEditEvidenceStatus | null>(null);
-  const [evidenceIds, setEvidenceIds] = useState("");
   const [warningState, setWarningState] = useState("");
   const [preview, setPreview] = useState<SemanticEditResponse | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -124,14 +118,12 @@ export function SemanticEditWorkbenchPage({
       format,
       content,
       targetGraphIri: targetGraphIri || undefined,
-      shapeGraphIris: splitEvidenceIds(shapeGraphIris),
+      shapeGraphIris: splitCommaList(shapeGraphIris),
       actor: actor || undefined,
       reason: reason || undefined,
-      evidenceStatus,
       warningState: parseWarningState(warningState),
-      evidenceIds,
     }),
-    [format, content, targetGraphIri, shapeGraphIris, actor, reason, evidenceStatus, warningState, evidenceIds],
+    [format, content, targetGraphIri, shapeGraphIris, actor, reason, warningState],
   );
 
   async function previewEdit() {
@@ -236,14 +228,14 @@ export function SemanticEditWorkbenchPage({
               spellCheck={false}
               value={content}
             />
-            <EvidenceBindingPanel
-              evidenceIds={evidenceIds}
-              evidenceStatus={evidenceStatus}
-              warningState={warningState}
-              onEvidenceIdsChange={setEvidenceIds}
-              onStatusChange={setEvidenceStatus}
-              onWarningStateChange={setWarningState}
-            />
+            <label>
+              <span>{t("Warning state (JSON)")}</span>
+              <textarea
+                onChange={(event) => setWarningState(event.target.value)}
+                placeholder='{"note":"low confidence"}'
+                value={warningState}
+              />
+            </label>
             <div className="buttonRow">
               <button
                 className="secondaryButton"
@@ -351,4 +343,27 @@ function defaultContentFor(format: SemanticEditInputFormat): string {
     default:
       return SAMPLE_TURTLE;
   }
+}
+
+/** Split a comma-separated string into a trimmed, de-duplicated list. */
+function splitCommaList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/** Best-effort parse of a free-text JSON object. Returns ``{}`` on invalid
+ * input so the user can keep editing without blocking the edit submit. */
+function parseWarningState(value: string): SemanticJsonObject {
+  if (!value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as SemanticJsonObject;
+    }
+  } catch {
+    // ignore parse errors so the user can keep editing
+  }
+  return {};
 }

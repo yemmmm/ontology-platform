@@ -6,7 +6,6 @@ export * from "./GraphEditabilityToggle";
 export * from "./ValidationReportPanel";
 export * from "./ReasoningResultPanel";
 export * from "./RuleResultPanel";
-export * from "./EvidenceBindingPanel";
 export * from "./EvidenceChunkPicker";
 export * from "./ProvenanceTimeline";
 export * from "./ShaclFormRenderer";
