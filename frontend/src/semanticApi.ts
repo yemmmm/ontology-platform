@@ -1,9 +1,10 @@
 import { API_BASE_URL, apiRequest } from "./api";
 import type {
+  FactEvidenceBinding,
+  MissingEvidenceFactsResponse,
   SemanticDatasetLoadResponse,
   SemanticDerivedResultReconcileResponse,
   SemanticEditAuditRead,
-  SemanticEditEvidenceStatus,
   SemanticEditInputFormat,
   SemanticEditResponse,
   SemanticExportFormat,
@@ -16,7 +17,6 @@ import type {
   SemanticGraphSetRead,
   SemanticGovernanceStatusResponse,
   SemanticJsonObject,
-  SemanticMissingEvidenceSummary,
   SemanticProjectionJobListResponse,
   SemanticProjectionJobRead,
   SemanticProjectionStatusResponse,
@@ -165,7 +165,6 @@ export function previewSemanticEdit(
     shapeGraphIris?: string[];
     actor?: string;
     reason?: string;
-    evidenceStatus?: SemanticEditEvidenceStatus | null;
     warningState?: SemanticJsonObject;
   },
 ) {
@@ -179,7 +178,6 @@ export function previewSemanticEdit(
       shape_graph_iris: payload.shapeGraphIris ?? [],
       actor: payload.actor,
       reason: payload.reason,
-      evidence_status: payload.evidenceStatus ?? undefined,
       warning_state: payload.warningState ?? {},
     }),
   });
@@ -194,7 +192,6 @@ export function applySemanticEdit(
     shapeGraphIris?: string[];
     actor?: string;
     reason?: string;
-    evidenceStatus?: SemanticEditEvidenceStatus | null;
     warningState?: SemanticJsonObject;
   },
 ) {
@@ -208,7 +205,6 @@ export function applySemanticEdit(
       shape_graph_iris: payload.shapeGraphIris ?? [],
       actor: payload.actor,
       reason: payload.reason,
-      evidence_status: payload.evidenceStatus ?? undefined,
       warning_state: payload.warningState ?? {},
     }),
   });
@@ -380,10 +376,98 @@ export function createRuleDefinition(
   });
 }
 
-export function getMissingEvidenceSummary(request: SemanticRequester, graphSetId: string) {
-  return request<SemanticMissingEvidenceSummary>(
-    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/missing-evidence`,
+/**
+ * Phase 8 §3 — bind a free-text evidence chunk to a fact via the new
+ * ``POST /api/semantic/graph-sets/{gs}/fact-evidence`` endpoint. The
+ * returned ``FactEvidenceBinding`` is the persisted binding record.
+ *
+ * The ``ontology_id`` plus subject/predicate/object triple uniquely
+ * identify the target fact; ``text`` carries the human-readable evidence
+ * snippet. ``actor`` defaults to a sentinel value when the caller does
+ * not supply one (matching the legacy command-path behavior).
+ */
+export function bindFactEvidence(
+  request: SemanticRequester,
+  graphSetId: string,
+  payload: {
+    ontology_id: string;
+    subject_iri: string;
+    predicate_iri: string;
+    object_value: string;
+    object_is_iri?: boolean;
+    object_datatype?: string;
+    object_lang?: string;
+    graph_iri?: string;
+    fact_id?: string;
+    chunk_id?: string;
+    evidence_artifact_id?: string;
+    document_filename?: string;
+    sequence?: number;
+    char_start?: number;
+    char_end?: number;
+    text: string;
+    actor?: string;
+    reason?: string;
+  },
+) {
+  return request<FactEvidenceBinding>(
+    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/fact-evidence`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ontology_id: payload.ontology_id,
+        subject_iri: payload.subject_iri,
+        predicate_iri: payload.predicate_iri,
+        object_value: payload.object_value,
+        object_is_iri: payload.object_is_iri,
+        object_datatype: payload.object_datatype,
+        object_lang: payload.object_lang,
+        graph_iri: payload.graph_iri,
+        fact_id: payload.fact_id,
+        chunk_id: payload.chunk_id,
+        evidence_artifact_id: payload.evidence_artifact_id,
+        document_filename: payload.document_filename,
+        sequence: payload.sequence,
+        char_start: payload.char_start,
+        char_end: payload.char_end,
+        text: payload.text,
+        actor: payload.actor,
+        reason: payload.reason,
+      }),
+    },
   );
+}
+
+/**
+ * Phase 8 §3 — remove a fact↔evidence binding by its ``binding.id``.
+ * The DELETE endpoint is idempotent and returns 204 on success.
+ */
+export function unbindFactEvidence(
+  request: SemanticRequester,
+  graphSetId: string,
+  bindingId: string,
+) {
+  return request<void>(
+    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/fact-evidence/${encodeURIComponent(bindingId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Phase 8 §3 — list the fact IDs that currently lack any evidence binding,
+ * backed by the Postgres-backed count on the backend. Optional ``limit``
+ * caps the returned ID list (the ``count`` field reflects the unbounded
+ * total).
+ */
+export function getMissingEvidenceFacts(
+  request: SemanticRequester,
+  graphSetId: string,
+  limit?: number,
+) {
+  const path = withParams(`${SEMANTIC_BASE}/graph-sets/${graphSetId}/missing-evidence-facts`, {
+    limit,
+  });
+  return request<MissingEvidenceFactsResponse>(path);
 }
 
 export function reconcileDerivedResults(request: SemanticRequester) {

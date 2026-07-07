@@ -278,13 +278,54 @@ export type AgentTestGraphContextEntry = {
 };
 
 export type EvidenceBinding = {
-  chunk_iri: string;
-  document_iri: string;
-  document_filename: string;
-  sequence: number;
-  char_start: number;
-  char_end: number;
-  text_preview: string;
+  id?: string;
+  fact_id?: string;
+  chunk_id?: string | null;
+  evidence_artifact_id?: string | null;
+  document_filename?: string | null;
+  sequence?: number | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  text_preview?: string;
+  text?: string;
+  actor?: string | null;
+  reason?: string | null;
+  created_at?: string | null;
+  // Legacy fields retained for read-model consumers not yet migrated to the
+  // Phase 8 schema (EvidenceExplorerPanel, EvidenceBindingPanel, etc.).
+  chunk_iri?: string | null;
+  document_iri?: string | null;
+};
+
+/**
+ * Phase 8 — fact-evidence binding record returned by
+ * ``POST /api/semantic/graph-sets/{gs}/fact-evidence``. This shape mirrors
+ * the backend ``FactEvidenceBinding`` Pydantic schema (backend/app/api/schemas.py)
+ * and is distinct from the loose ``EvidenceBinding`` read-model projection
+ * used by the composer outputs.
+ */
+export type FactEvidenceBinding = {
+  id: string;
+  fact_id: string;
+  subject_iri: string;
+  predicate_iri: string;
+  object_value: string;
+  graph_iri: string;
+  chunk_id?: string | null;
+  evidence_artifact_id?: string | null;
+  document_filename?: string | null;
+  sequence?: number | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  text: string;
+  actor?: string | null;
+  reason?: string | null;
+  created_at?: string | null;
+};
+
+export type MissingEvidenceFactsResponse = {
+  count: number;
+  fact_ids: string[];
 };
 
 export type AgentTestResponse = {
@@ -728,20 +769,12 @@ export type SemanticRuleDefinitionListResponse = {
   rules: SemanticRuleDefinitionRead[];
 };
 
-export type SemanticMissingEvidenceSummary = {
-  graph_set_id: string;
-  dependencies: SemanticJsonObject[];
-  summary: SemanticJsonObject;
-  warning: string | null;
-};
-
 export type SemanticStatementItem = {
   id: string;
   iri: string;
   label: string | null;
   source_graph_iri: string;
   assertion_kind: string;
-  evidence_status: string;
   evidence_ids: string[];
   provenance: SemanticJsonObject;
   audit_status: string | null;
@@ -834,7 +867,6 @@ export type SemanticCanonicalModeRead = {
 };
 
 export type SemanticEditInputFormat = "trig" | "turtle" | "json-ld" | "sparql-update";
-export type SemanticEditEvidenceStatus = "evidence_bound" | "missing_evidence";
 export type SemanticExportFormat = "trig" | "turtle" | "json-ld";
 export type SemanticExportInclude =
   | "asserted"
