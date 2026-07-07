@@ -148,7 +148,8 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       warning_state: {},
     });
     expect(bad.status).toBe(400);
-    expect(String(bad.json.detail)).toContain("RDF parse error");
+    const detail = typeof bad.json.detail === "string" ? bad.json.detail : bad.json.detail?.message;
+    expect(detail).toContain("RDF parse error");
   });
 
   test("graph-set validation + CONSTRUCT rule (no LIMIT) succeed against Oxigraph", async ({ page }) => {

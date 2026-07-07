@@ -195,6 +195,9 @@ const auditRecord = {
 };
 
 async function mockApi(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("ontology-platform-ui-lang", "en");
+  });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
     const method = route.request().method();
@@ -231,7 +234,7 @@ async function mockApi(page: Page) {
       items: [{
         run_id: reasoningRun.run_id,
         consistent: true,
-        classification: "classified",
+        classification: { profile: "owl2_dl", classified_classes: 12 },
         entailment_count: 1,
         unsatisfiable_classes: [],
         result_graph_iri: reasoningRun.result_graph_iri,
@@ -307,6 +310,7 @@ test("graph governance dashboard renders semantic health summary", async ({ page
   await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-governance`);
   await expect(page.getByRole("heading", { name: "Graph Governance Dashboard" })).toBeVisible();
   await expect(page.getByText("Registered graphs").first()).toBeVisible();
+  await expect(page.getByLabel("owl-consistency-summary")).toContainText("owl2_dl");
   await expect(page.locator(".statTile", { hasText: "Stale derived results" })).toContainText("1");
   await expect(page.locator(".statTile", { hasText: "Missing evidence" })).toContainText("1");
   await expect(page.getByText("Working view").first()).toBeVisible();

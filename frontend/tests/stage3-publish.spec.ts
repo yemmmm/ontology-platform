@@ -311,11 +311,10 @@ test("publish flow locks all editable graphs and triggers the export download", 
   await exportRequest;
 
   // One PATCH per editable graph, both targeting the right IRIs. The frontend
-  // sends graph_iri un-encoded inside the path (semanticApi.ts builds
-  // `/semantic/graphs/${graphIri}/editability`), so we match the raw IRI.
+  // encodes graph_iri before placing it in the path.
   expect(patchUrls.length).toBeGreaterThanOrEqual(2);
-  expect(patchUrls.some((u) => u.includes(ONTOLOGY_GRAPH))).toBeTruthy();
-  expect(patchUrls.some((u) => u.includes(DATA_GRAPH))).toBeTruthy();
+  expect(patchUrls.some((u) => u.includes(encodeURIComponent(ONTOLOGY_GRAPH)))).toBeTruthy();
+  expect(patchUrls.some((u) => u.includes(encodeURIComponent(DATA_GRAPH)))).toBeTruthy();
 });
 
 // ---------------------------------------------------------------------------

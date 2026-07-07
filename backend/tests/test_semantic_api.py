@@ -587,6 +587,102 @@ def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> 
     assert body["generated_statement_count"] >= 1
 
 
+def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_selected(
+    in_memory_session,
+) -> None:
+    store = FakeStore(
+        select_result={
+            "head": {"vars": ["s"]},
+            "results": {
+                "bindings": [
+                    {"s": {"value": "<http://example.test/alice>"}}
+                ]
+            },
+        }
+    )
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    create_response = client.post(
+        "/api/semantic/rule-definitions",
+        json={
+            "rule_iri": f"{PREFIX}rule/dsl-all-active",
+            "name": "dsl all active",
+            "language": "platform_dsl",
+            "body": {
+                "when": [
+                    {"s": "?s", "p": "<http://example.test/p>", "o": "?o"}
+                ],
+                "then": [
+                    {
+                        "s": "?s",
+                        "p": "<http://example.test/derived>",
+                        "o": "?o",
+                    }
+                ],
+            },
+            "input_roles": ["asserted_data"],
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 200
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["engine_name"] == "rule_group"
+    assert body["rule_definition_id"] is None
+    assert body["generated_statement_count"] >= 1
+
+
+def test_graph_set_rule_run_endpoint_skips_active_construct_rules_for_other_graph_sets(
+    in_memory_session,
+) -> None:
+    store = FakeStore(
+        construct_result="@prefix ex: <http://example.test/> . ex:alice ex:employmentLabel \"active\" ."
+    )
+    client = _client(store, in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    for suffix in ("demo", "other"):
+        response = client.post(
+            "/api/semantic/rule-definitions",
+            json={
+                "rule_iri": f"{PREFIX}rule/construct-{suffix}",
+                "name": f"construct {suffix}",
+                "language": "sparql_construct",
+                "body": {
+                    "template": (
+                        "PREFIX ex: <http://example.test/> "
+                        "CONSTRUCT { ?person ex:employmentLabel \"active\" } "
+                        f"WHERE {{ GRAPH <{PREFIX}data/{suffix}> "
+                        "{ ?person ex:worksFor ?org } }}"
+                    )
+                },
+                "input_roles": ["asserted_data"],
+                "status": "active",
+            },
+        )
+        assert response.status_code == 200
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["rule_count"] == 1
+    assert body["explanations"][0]["rule_iri"] == f"{PREFIX}rule/construct-demo"
+    assert all(f"{PREFIX}data/other" not in query for query in store.queries)
+
+
 def test_missing_evidence_endpoint_returns_dependency_summary(
     in_memory_session,
 ) -> None:

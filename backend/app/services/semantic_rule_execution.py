@@ -28,6 +28,7 @@ from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_construct import (
     ConstructExecution,
     execute_construct_template,
+    referenced_graph_iris,
 )
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_dsl import (
@@ -328,6 +329,7 @@ class SemanticRuleExecutionService:
             rule
             for rule in rules
             if rule.language in {"sparql_construct", "platform_dsl"}
+            and self._rule_is_compatible_with_graph_set(rule, graph_set_iris)
         ]
         if not rules:
             raise RuleExecutionError("No executable rules matched the request")
@@ -497,7 +499,7 @@ class SemanticRuleExecutionService:
         This helper is intentionally thin: it only chooses between the group
         and single-rule paths so MCP tools don't need to encode routing logic.
         """
-        if rule_definition_ids:
+        if rule_definition_ids or (not rule_definition_id and not rule_iri):
             return self.execute_rule_group(
                 graph_set_id=graph_set_id,
                 rule_definition_ids=rule_definition_ids,
@@ -729,6 +731,17 @@ class SemanticRuleExecutionService:
         if rule_definition_id is None:
             return None
         return self._require_rule(rule_definition_id)
+
+    @staticmethod
+    def _rule_is_compatible_with_graph_set(
+        rule: SemanticRuleDefinitionModel,
+        graph_set_iris: list[str],
+    ) -> bool:
+        if rule.language != "sparql_construct":
+            return True
+        template = rule.body.get("template") or rule.body.get("query", "")
+        graph_refs = referenced_graph_iris(template)
+        return not graph_refs or graph_refs.issubset(set(graph_set_iris))
 
     def _resolve_rule(
         self,

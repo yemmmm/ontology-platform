@@ -878,7 +878,9 @@ def create_graph_set_rule_run(
 ) -> SemanticRuleRunRead:
     service = _rule_execution_service(session, rdf_store, settings)
     try:
-        if request.rule_definition_ids:
+        if request.rule_definition_ids or (
+            not request.rule_definition_id and not request.rule_iri
+        ):
             result = service.execute_rule_group(
                 graph_set_id=graph_set_id,
                 rule_definition_ids=request.rule_definition_ids,

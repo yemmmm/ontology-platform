@@ -101,7 +101,7 @@ def validate_approved_construct(
         raise ConstructTemplateError(
             "CONSTRUCT templates may not use property path cardinality operators"
         )
-    graph_iris_in_template = set(re.findall(r"\bgraph\s*<([^>]+)>", lowered))
+    graph_iris_in_template = referenced_graph_iris(template)
     if graph_set_iris is not None:
         allowed = set(graph_set_iris)
         unknown = graph_iris_in_template - allowed
@@ -113,6 +113,13 @@ def validate_approved_construct(
     if statement_limit <= 0:
         raise ConstructTemplateError("statement_limit must be positive")
     return template.strip()
+
+
+def referenced_graph_iris(template: str) -> set[str]:
+    """Return graph IRIs explicitly referenced by GRAPH clauses."""
+    if not isinstance(template, str):
+        return set()
+    return set(re.findall(r"\bgraph\s*<([^>]+)>", template, flags=re.IGNORECASE))
 
 
 def _parse_construct_result(

@@ -356,8 +356,15 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
       body = graphSet;
     } else if (path === "/semantic/graphs") {
       body = { graphs: [], total: 0 };
-    } else if (path === "/semantic/governance/status") {
+    } else if (path === "/semantic/status") {
       body = governanceStatusEnvelope;
+    } else if (path === "/semantic/projections/status") {
+      body = {
+        manifests: [],
+        stale: [],
+        missing: [],
+        stale_projection_count: 0,
+      };
     } else if (path === "/semantic/edits/audits") {
       body = [];
     }

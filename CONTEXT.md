@@ -101,6 +101,43 @@ A Neo4j-backed graph view rebuilt from canonical RDF data for visualization and 
 It is not allowed to own semantic truth or accept independent semantic writes.
 _Avoid_: canonical graph, ontology store, truth store
 
+**Business Overview**:
+The user-facing summary of the current ontology workspace, including the requirement brief, modeling
+scope, progress, quality signals, projection freshness, and recent changes.
+_Avoid_: graph set dashboard, RDF graph overview
+
+**Business Modeling Workspace**:
+The user-facing modeling area for class diagrams, entity diagrams, and fact lists. It exposes
+business concepts and CRUD actions, while the platform translates accepted changes into governed
+semantic storage updates.
+_Avoid_: RDF editor, graph set editor, named graph workspace
+
+**Class Diagram**:
+A product graph view focused on classes, attributes, class hierarchy, and class-level relationship
+types.
+_Avoid_: ontology graph, RDF schema graph
+
+**Entity Diagram**:
+A product graph view focused on entities, entity-to-entity relationships, class membership, and
+important attached facts.
+_Avoid_: data graph, Neo4j source graph
+
+**Fact List**:
+A product list view of business assertions with evidence status, source context, validation state,
+and edit history where available.
+_Avoid_: triple table, statement registry
+
+**Workspace Edit Lock**:
+The single user-facing switch that controls whether ordinary modeling changes can be applied in the
+current workspace. It is a product safety control, not a user permission system.
+_Avoid_: per-action permission, graph editability UI
+
+**Debug and Settings Workspace**:
+The user-facing operations area for edit lock control, projection rebuild/status, validation or
+reasoning job controls, import/export settings, and runtime diagnostics. It does not expose raw RDF
+graphs as editable objects.
+_Avoid_: named graph registry, RDF admin console
+
 **Technical Route**:
 The Phase 0 decision stage that establishes the intended RDF-native foundation for the current
 standardized semantic-language refactor version while keeping user-facing functionality small.

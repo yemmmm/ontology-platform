@@ -42,7 +42,7 @@ type OwlConsistencyEnvelope = {
   items: Array<{
     run_id: string;
     consistent: boolean | null;
-    classification: string | null;
+    classification: unknown;
     entailment_count: number;
     unsatisfiable_classes: string[];
     result_graph_iri: string;
@@ -89,9 +89,10 @@ export function GraphGovernancePage({
       // Stage 4 §4.3 — fetch the OWL consistency summary for the
       // first active graph set. Falls back silently if there is no
       // active graph set; the panel renders an empty state in that case.
+      const loadedGraphSets = safeArray(setsData?.graph_sets);
       const targetGraphSetId =
-        setsData.graph_sets.find((gs) => gs.status === "active")?.id ??
-        setsData.graph_sets[0]?.id ??
+        loadedGraphSets.find((gs) => gs.status === "active")?.id ??
+        loadedGraphSets[0]?.id ??
         null;
       if (targetGraphSetId) {
         try {
@@ -121,6 +122,11 @@ export function GraphGovernancePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const graphSetList = safeArray(graphSets?.graph_sets);
+  const activeGraphSetId =
+    graphSetList.find((gs) => gs.status === "active")?.id ??
+    graphSetList[0]?.id ??
+    null;
   const summary = useMemo(
     () => deriveSummary(status, graphs, graphSets, projectionStatus),
     [status, graphs, graphSets, projectionStatus],
@@ -197,11 +203,7 @@ export function GraphGovernancePage({
 
       <OwlConsistencySection
         envelope={owlConsistency}
-        activeGraphSetId={
-          graphSets?.graph_sets.find((gs) => gs.status === "active")?.id ??
-          graphSets?.graph_sets[0]?.id ??
-          null
-        }
+        activeGraphSetId={activeGraphSetId}
       />
 
       <section className="governanceGrid" aria-label="governance-grid">
@@ -214,8 +216,8 @@ export function GraphGovernancePage({
             <SemanticEmpty icon={<Network size={20} />} title={t("No active graph sets")} hint={t("Create a graph set on the Graph Sets page.")} />
           ) : (
             <ul className="graphSetHealthList">
-              {(graphSets?.graph_sets ?? []).slice(0, 5).map((graphSet) => {
-                const currentPointers = graphSet.current_pointers ?? [];
+              {graphSetList.slice(0, 5).map((graphSet) => {
+                const currentPointers = safeArray(graphSet.current_pointers);
                 const staleCount = currentPointers.filter((pointer) => isStalePointer(pointer)).length;
                 return (
                   <li key={graphSet.id} className="graphSetHealthRow">
@@ -226,7 +228,7 @@ export function GraphGovernancePage({
                     >
                       <strong>{graphSet.name}</strong>
                       <span>{graphSet.scope_type}{graphSet.scope_id ? ` · ${graphSet.scope_id}` : ""}</span>
-                      <code>{graphSet.source_signature.slice(0, 12)}</code>
+                      <code>{String(graphSet.source_signature ?? "").slice(0, 12) || t("unset")}</code>
                     </button>
                     <div className="graphSetHealthState">
                       <StalenessBadge stale={staleCount > 0} detail={t("{count} stale pointer(s)", { count: staleCount })} />
@@ -350,35 +352,35 @@ function deriveSummary(
 ) {
   const graphsSummary = (status?.graphs ?? {}) as Record<string, unknown>;
   const derivedSummary = (status?.derived ?? {}) as Record<string, unknown>;
-  const graphCount = (graphsSummary.total ?? graphsSummary.registered ?? (graphs?.graphs.length ?? 0)) as number;
-  const editableGraphs = pickNumber(graphsSummary, ["editable", "editable_count"]) ?? countEditable(graphs?.graphs, true);
-  const actualGraphs = pickNumber(graphsSummary, ["actual", "actual_count"]) ?? countActual(graphs?.graphs);
+  const graphList = safeArray(graphs?.graphs);
+  const graphSetList = safeArray(graphSets?.graph_sets);
+  const graphCount = (graphsSummary.total ?? graphsSummary.registered ?? graphList.length) as number;
+  const editableGraphs = pickNumber(graphsSummary, ["editable", "editable_count"]) ?? countEditable(graphList, true);
+  const actualGraphs = pickNumber(graphsSummary, ["actual", "actual_count"]) ?? countActual(graphList);
   const staleDerived = pickNumber(derivedSummary, ["stale_count", "stale"]) ?? countStaleDerived(status);
-  const staleProjections = projectionStatus?.stale_projection_count ?? projectionStatus?.stale.length ?? 0;
+  const staleProjections =
+    projectionStatus?.stale_projection_count ?? safeArray(projectionStatus?.stale).length;
   const missingEvidence = pickNumber(derivedSummary, ["missing_evidence_count", "missing_evidence"]) ?? 0;
-  const graphSetsList = graphSets?.graph_sets ?? [];
-  const activeGraphSets = graphSetsList.filter((graphSet) => graphSet.status === "active").length;
+  const activeGraphSets = graphSetList.filter((graphSet) => graphSet.status === "active").length;
   return {
-    registeredGraphs: typeof graphCount === "number" ? graphCount : graphs?.graphs.length ?? 0,
+    registeredGraphs: typeof graphCount === "number" ? graphCount : graphList.length,
     editableGraphs,
-    actualGraphs: actualGraphs || (graphs?.graphs.length ?? 0),
+    actualGraphs: actualGraphs || graphList.length,
     staleDerived,
     staleProjections,
     missingEvidence,
-    graphSetsCount: graphSetsList.length,
+    graphSetsCount: graphSetList.length,
     activeGraphSets,
-    graphSetNames: graphSetsList.map((graphSet) => graphSet.name),
+    graphSetNames: graphSetList.map((graphSet) => graphSet.name),
     derivedSummary,
   };
 }
 
-function countEditable(graphs: SemanticGraphRegistryListResponse["graphs"] | undefined, editable: boolean): number {
-  if (!graphs) return 0;
+function countEditable(graphs: SemanticGraphRegistryListResponse["graphs"], editable: boolean): number {
   return graphs.filter((graph) => graph.editable === editable).length;
 }
 
-function countActual(graphs: SemanticGraphRegistryListResponse["graphs"] | undefined): number {
-  if (!graphs) return 0;
+function countActual(graphs: SemanticGraphRegistryListResponse["graphs"]): number {
   return graphs.filter((graph) => graph.category === "ontology" || graph.category === "data").length;
 }
 
@@ -407,6 +409,15 @@ function pickArray(record: Record<string, unknown>, keys: string[]): unknown[] |
     }
   }
   return null;
+}
+
+function safeArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatOptionalValue(value: unknown, fallback: string): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  return typeof value === "string" ? value : prettyJson(value);
 }
 
 function isStalePointer(pointer: unknown): boolean {
@@ -467,6 +478,7 @@ function OwlConsistencySection({
       : item.consistent
         ? t("Consistent")
         : t("Inconsistent");
+  const unsatisfiableClasses = safeArray(item.unsatisfiable_classes);
   return (
     <SemanticPanel
       title={t("OWL Consistency · {id}", { id: activeGraphSetId })}
@@ -490,7 +502,7 @@ function OwlConsistencySection({
         </div>
         <div>
           <dt>{t("Classification")}</dt>
-          <dd>{item.classification ?? t("unset")}</dd>
+          <dd>{formatOptionalValue(item.classification, t("unset"))}</dd>
         </div>
         <div>
           <dt>{t("Entailments")}</dt>
@@ -499,11 +511,11 @@ function OwlConsistencySection({
         <div>
           <dt>{t("Unsatisfiable classes")}</dt>
           <dd>
-            {item.unsatisfiable_classes.length === 0 ? (
+            {unsatisfiableClasses.length === 0 ? (
               <span>{t("None")}</span>
             ) : (
               <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {item.unsatisfiable_classes.map((cls) => (
+                {unsatisfiableClasses.map((cls) => (
                   <li key={cls}>
                     <code>{cls}</code>
                   </li>
