@@ -2142,6 +2142,64 @@ textarea:focus {
   grid-template-columns: repeat(3, minmax(240px, 1fr));
 }
 
+.homeLayoutFull {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.createOntologyCard {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 164px;
+  padding: 18px;
+  border: 1.5px dashed #c9bfff;
+  border-radius: 8px;
+  background: rgba(108, 77, 246, 0.04);
+  color: #4b3aa8;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color 130ms ease,
+    background 130ms ease,
+    transform 130ms ease,
+    box-shadow 130ms ease;
+}
+
+.createOntologyCard:hover:not(:disabled) {
+  border-color: #6c4df6;
+  background: rgba(108, 77, 246, 0.08);
+  box-shadow: 0 14px 28px rgba(36, 41, 67, 0.08);
+  transform: translateY(-1px);
+}
+
+.createOntologyCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.createOntologyCard strong {
+  font-size: 15px;
+  color: #171821;
+}
+
+.createOntologyCard span:not(.createOntologyCardIcon) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  max-width: 220px;
+}
+
+.createOntologyCardIcon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #6c4df6;
+  color: #ffffff;
+}
+
 .ontologyCard {
   position: relative;
 }

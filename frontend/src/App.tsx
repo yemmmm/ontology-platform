@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 // Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Braces/Box.
-import { Card, ConfigProvider, Progress, Tag, Tooltip } from "antd";
+import { Card, ConfigProvider, Modal, Progress, Tag, Tooltip } from "antd";
 import "antd/dist/reset.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -379,6 +379,7 @@ export function App() {
           </header>
           {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
           <OntologyHomePage
+            loading={loading}
             mutate={mutate}
             onOpenOntology={openOntology}
             ontologies={ontologies}
@@ -531,12 +532,15 @@ function OntologyHomePage(props: {
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadProjects: () => Promise<void>;
   reloadOntologies: (projectId?: string) => Promise<void>;
+  loading: boolean;
 }) {
   const t = useT();
   const [projectForm, setProjectForm] = useState({ name: "", description: "" });
   const [ontologyForm, setOntologyForm] = useState({ name: "", description: "" });
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [createOntologyOpen, setCreateOntologyOpen] = useState(false);
   const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
+  const hasHomeSide = props.projects.length === 0;
 
   function createProject(event: React.FormEvent) {
     event.preventDefault();
@@ -551,9 +555,8 @@ function OntologyHomePage(props: {
     }, t("Project created"));
   }
 
-  function createOntology(event: React.FormEvent) {
-    event.preventDefault();
-    if (!props.selectedProjectId) return;
+  function createOntology() {
+    if (!props.selectedProjectId || !ontologyForm.name.trim()) return;
     props.mutate(async () => {
       const created = await props.request<Ontology>(`/projects/${props.selectedProjectId}/ontologies`, {
         method: "POST",
@@ -564,6 +567,7 @@ function OntologyHomePage(props: {
         }),
       });
       setOntologyForm({ name: "", description: "" });
+      setCreateOntologyOpen(false);
       props.setSelectedOntologyId(created.id);
       await props.reloadOntologies(props.selectedProjectId);
     }, t("Ontology created"));
@@ -593,7 +597,7 @@ function OntologyHomePage(props: {
   }
 
   return (
-    <section className="homeLayout">
+    <section className={classNames("homeLayout", !hasHomeSide && "homeLayoutFull")}>
       <div className="homePrimary">
         <div className="homeFilterBar">
           <label>
@@ -625,65 +629,50 @@ function OntologyHomePage(props: {
           )}
         </div>
 
-        {props.ontologies.length ? (
-          <div className="ontologyCardGrid homeOntologyGrid">
-            {props.ontologies.map((ontology) => (
-              <article
-                className={classNames("ontologyCard", ontology.id === props.selectedOntologyId && "selected")}
-                key={ontology.id}
+        <div className="ontologyCardGrid homeOntologyGrid">
+          {props.ontologies.map((ontology) => (
+            <article
+              className={classNames("ontologyCard", ontology.id === props.selectedOntologyId && "selected")}
+              key={ontology.id}
+            >
+              <button className="ontologyCardMain" onClick={() => props.onOpenOntology(ontology)} type="button">
+                <span className="ontologyCardTop">
+                  <strong>{ontology.name}</strong>
+                  <Badge>{ontology.status}</Badge>
+                </span>
+                <span>{ontology.description || t("No description provided.")}</span>
+                <dl>
+                  <dt>{t("Updated")}</dt>
+                  <dd>{formatDate(ontology.updated_at)}</dd>
+                </dl>
+              </button>
+              <button
+                className="iconButton danger ontologyCardDelete"
+                onClick={() => deleteOntology(ontology)}
+                title={t("Delete ontology")}
+                type="button"
               >
-                <button className="ontologyCardMain" onClick={() => props.onOpenOntology(ontology)} type="button">
-                  <span className="ontologyCardTop">
-                    <strong>{ontology.name}</strong>
-                    <Badge>{ontology.status}</Badge>
-                  </span>
-                  <span>{ontology.description || t("No description provided.")}</span>
-                  <dl>
-                    <dt>{t("Updated")}</dt>
-                    <dd>{formatDate(ontology.updated_at)}</dd>
-                  </dl>
-                </button>
-                <button
-                  className="iconButton danger ontologyCardDelete"
-                  onClick={() => deleteOntology(ontology)}
-                  title={t("Delete ontology")}
-                  type="button"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={<Waypoints size={22} />} title={t("No ontologies in this project")} />
-        )}
+                <Trash2 size={15} />
+              </button>
+            </article>
+          ))}
+          <button
+            className="createOntologyCard"
+            disabled={!props.selectedProjectId}
+            onClick={() => setCreateOntologyOpen(true)}
+            type="button"
+          >
+            <span className="createOntologyCardIcon">
+              <Plus size={20} />
+            </span>
+            <strong>{t("Add ontology")}</strong>
+            <span>{t("Create a new ontology in this project")}</span>
+          </button>
+        </div>
       </div>
 
-      <aside className="homeSide">
-        <Panel title={t("Add ontology")} icon={<Plus size={17} />}>
-          <form className="stackForm" onSubmit={createOntology}>
-            <input
-              required
-              placeholder={t("Ontology name")}
-              value={ontologyForm.name}
-              onChange={(event) => setOntologyForm({ ...ontologyForm, name: event.target.value })}
-            />
-            <textarea
-              placeholder={t("Description")}
-              value={ontologyForm.description}
-              onChange={(event) => setOntologyForm({ ...ontologyForm, description: event.target.value })}
-            />
-            <button className="primaryButton" disabled={!props.selectedProjectId} type="submit">
-              <Plus size={15} /> {t("Create ontology")}
-            </button>
-          </form>
-          <div className="callout quiet">
-            <strong>{selectedProject?.name ?? t("No project selected")}</strong>
-            <span>{t("New ontologies are created inside the selected project.")}</span>
-          </div>
-        </Panel>
-
-        {!props.projects.length && (
+      {hasHomeSide && (
+        <aside className="homeSide">
           <Panel title={t("Create project")} icon={<Layers size={17} />}>
             <form className="stackForm" onSubmit={createProject}>
               <input
@@ -702,8 +691,47 @@ function OntologyHomePage(props: {
               </button>
             </form>
           </Panel>
-        )}
-      </aside>
+        </aside>
+      )}
+
+      <Modal
+        open={createOntologyOpen}
+        title={t("Add ontology")}
+        okText={t("Create ontology")}
+        cancelText={t("Cancel")}
+        okButtonProps={{ disabled: !ontologyForm.name.trim() || !props.selectedProjectId }}
+        confirmLoading={props.loading}
+        closable={!props.loading}
+        maskClosable={!props.loading}
+        keyboard={!props.loading}
+        destroyOnHidden
+        onOk={createOntology}
+        onCancel={() => setCreateOntologyOpen(false)}
+      >
+        <form
+          className="stackForm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createOntology();
+          }}
+        >
+          <input
+            required
+            placeholder={t("Ontology name")}
+            value={ontologyForm.name}
+            onChange={(event) => setOntologyForm({ ...ontologyForm, name: event.target.value })}
+          />
+          <textarea
+            placeholder={t("Description")}
+            value={ontologyForm.description}
+            onChange={(event) => setOntologyForm({ ...ontologyForm, description: event.target.value })}
+          />
+          <div className="callout quiet">
+            <strong>{selectedProject?.name ?? t("No project selected")}</strong>
+            <span>{t("New ontologies are created inside the selected project.")}</span>
+          </div>
+        </form>
+      </Modal>
 
       <ConfirmActionDialog
         open={deleteTarget !== null}

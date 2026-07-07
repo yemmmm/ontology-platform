@@ -95,6 +95,7 @@ export const zh: TranslationMap = {
   "Delete ontology": "删除本体",
   "No ontologies in this project": "此项目中暂无本体",
   "Add ontology": "新增本体",
+  "Create a new ontology in this project": "在此项目中创建新的本体",
   "Ontology name": "本体名称",
   "Description": "描述",
   "Create ontology": "创建本体",
