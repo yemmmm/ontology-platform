@@ -148,7 +148,6 @@ class SemanticService:
         shape_graph_iris: list[str] | None = None,
         actor: str | None = None,
         reason: str | None = None,
-        evidence_status: str | None = None,
         warning_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         affected_graphs, update, delta = self._prepare_edit(format, content, target_graph_iri)
@@ -183,7 +182,7 @@ class SemanticService:
             affected_graph_iris=affected_graphs,
             validation_result=validation_result,
             graph_delta=delta,
-            evidence_status=evidence_status,
+            evidence_status=None,
             warning_state={**warning_state, "warnings": all_warnings},
             applied=update_result.applied,
         )
