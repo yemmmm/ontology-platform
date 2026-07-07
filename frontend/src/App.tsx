@@ -41,6 +41,7 @@ import { EntitiesPage } from "./pages/EntitiesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
 import { AgentTestPage } from "./pages/AgentTestPage";
+import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
 import { PublicationPage } from "./pages/PublicationPage";
@@ -892,7 +893,7 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "mcp-tools") {
-    return <McpToolsPage />;
+    return <McpToolsPage request={governedRequest} />;
   }
 
   if (props.tab === "graph-governance") {
@@ -968,35 +969,6 @@ function WorkspaceContent(props: {
       setHealth={props.setHealth}
       showError={props.showError}
     />
-  );
-}
-
-function McpToolsPage() {
-  const t = useT();
-  const tools = [
-    ["search_entities", "Recall entities globally with text, vector, or hybrid search."],
-    ["get_entity", "Fetch one entity and direct relations by entity id."],
-    ["find_related_entities", "Find related entities by depth and direction."],
-    ["validate_entity", "Validate entity data against class schema."],
-    ["explain_entity", "Generate entity context and explanation."],
-  ];
-
-  return (
-    <section className="mcpToolsPage">
-      <Panel title={t("MCP tools")} icon={<Wrench size={17} />} wide>
-        <div className="toolList">
-          {tools.map(([tool, description]) => (
-            <div className="toolRow" key={tool}>
-              <div>
-                <strong>{tool}</strong>
-                <span>{t(description)}</span>
-              </div>
-              <Badge>{t("server")}</Badge>
-            </div>
-          ))}
-        </div>
-      </Panel>
-    </section>
   );
 }
 
