@@ -51,6 +51,7 @@ import {
   runGraphSetRules,
   unbindFactEvidence,
 } from "../semanticApi";
+import { EvidenceChunkPicker } from "../components/semantic";
 import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
@@ -132,7 +133,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editObjectValue, setEditObjectValue] = useState("");
-  const [evidenceText, setEvidenceText] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const load = useCallback(async () => {
@@ -241,8 +242,11 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     }
   }
 
-  async function addEvidence() {
-    if (!selected || !evidenceText.trim()) return;
+  async function addEvidence(
+    text: string,
+    meta?: { document_filename?: string; sequence?: number },
+  ) {
+    if (!selected || !text.trim()) return;
     setBusy(true);
     setError("");
     try {
@@ -258,11 +262,12 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         object_is_iri: selected.object_is_iri,
         graph_iri: selected.graph_iri,
         fact_id: selected.fact_id,
-        text: evidenceText.trim(),
+        text,
+        document_filename: meta?.document_filename,
+        sequence: meta?.sequence,
         actor: "user:facts-page",
         reason: "Bind text evidence from Facts page",
       });
-      setEvidenceText("");
       setSuccess(t("Evidence bound."));
       await load();
     } catch (cause) {
@@ -510,9 +515,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
               >
                 <EvidenceBindingEditor
                   bindings={selected.evidence_bindings ?? []}
-                  evidenceText={evidenceText}
-                  onEvidenceTextChange={setEvidenceText}
-                  onAdd={() => void addEvidence()}
+                  onAdd={() => setPickerOpen(true)}
                   onRemove={(binding) => void removeEvidence(binding)}
                   disabled={busy || readOnly}
                 />
@@ -566,6 +569,17 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
           />
         </Space>
       </Modal>
+
+      {selected && (
+        <EvidenceChunkPicker
+          open={pickerOpen}
+          factId={selected.fact_id}
+          onClose={() => setPickerOpen(false)}
+          onSubmit={async (text, meta) => {
+            await addEvidence(text, meta);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -611,15 +625,11 @@ function FactQueue({
 
 function EvidenceBindingEditor({
   bindings,
-  evidenceText,
-  onEvidenceTextChange,
   onAdd,
   onRemove,
   disabled,
 }: {
   bindings: EvidenceBinding[];
-  evidenceText: string;
-  onEvidenceTextChange: (value: string) => void;
   onAdd: () => void;
   onRemove: (binding: EvidenceBinding) => void;
   disabled: boolean;
@@ -662,17 +672,10 @@ function EvidenceBindingEditor({
           })}
         </Space>
       )}
-      <Input.TextArea
-        value={evidenceText}
-        onChange={(event) => onEvidenceTextChange(event.target.value)}
-        placeholder={t("Evidence text")}
-        autoSize={{ minRows: 2, maxRows: 5 }}
-        disabled={disabled}
-      />
       <Button
         icon={<Plus size={15} />}
         onClick={onAdd}
-        disabled={disabled || !evidenceText.trim()}
+        disabled={disabled}
       >
         {t("Add evidence")}
       </Button>

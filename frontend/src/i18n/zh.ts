@@ -1006,6 +1006,10 @@ export const zh: TranslationMap = {
   "Clear recall": "清除召回",
 
   // FactAuditPage · Stage 4 additions
+  "Add evidence": "添加证据",
+  "Paste or type evidence text": "粘贴或输入证据文本",
+  "Document filename (optional)": "文档文件名（可选）",
+  "Sequence (optional)": "序号（可选）",
   "Fact kind": "事实类型",
   "Total in tab": "本标签页总数",
   "Derived from": "派生自",
