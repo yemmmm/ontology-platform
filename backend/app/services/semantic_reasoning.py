@@ -3,8 +3,7 @@
 Extracts Phase 1 reasoning orchestration into its own service so the
 SemanticService catch-all can stay focused on edits, exports, and projections.
 The reasoning service snapshots input graph revisions, runs the configured OWL
-reasoner, persists ``graph/reasoning-result/{run_id}`` when requested,
-records missing-evidence warning summaries for data-realization tasks, and
+reasoner, persists ``graph/reasoning-result/{run_id}`` when requested, and
 promotes a Phase 4 reasoning pointer only on success.
 """
 
@@ -31,13 +30,6 @@ from app.services.owl_reasoner import (
 )
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_graph_set import SemanticGraphSetService
-from app.services.semantic_missing_evidence import (
-    SemanticMissingEvidenceService,
-    derived_warning_message,
-)
-
-
-REASONING_TASKS_WITH_DATA: frozenset[str] = frozenset({"realization", "entailment"})
 
 
 class SemanticReasoningService:
@@ -49,7 +41,6 @@ class SemanticReasoningService:
         reasoner: OwlReasonerRunner | None = None,
         graph_set_service: SemanticGraphSetService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
-        missing_evidence_service: SemanticMissingEvidenceService | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -58,9 +49,6 @@ class SemanticReasoningService:
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
-        )
-        self.missing_evidence_service = missing_evidence_service or (
-            SemanticMissingEvidenceService(rdf_store)
         )
 
     def run_reasoning(
@@ -127,19 +115,7 @@ class SemanticReasoningService:
                 self.rdf_store.update_sparql(
                     _insert_data_update(result_graph_iri, result.inferred_rdf)
                 )
-            missing_evidence_summary: dict[str, Any] = {}
             warnings: list[str] = []
-            data_aware = bool(REASONING_TASKS_WITH_DATA & set(tasks))
-            if data_aware:
-                dependencies = self.missing_evidence_service.collect_from_graphs(
-                    source_graph_iris
-                )
-                missing_evidence_summary = (
-                    self.missing_evidence_service.summarize_dependencies(dependencies)
-                )
-                warning = derived_warning_message(dependencies)
-                if warning:
-                    warnings.append(warning)
             run.status = "succeeded"
             run.consistent = result.consistent
             run.finished_at = datetime.now(UTC)
@@ -147,7 +123,6 @@ class SemanticReasoningService:
                 **run.run_metadata,
                 "classification": result.classification,
                 "entailments": result.entailments,
-                "missing_evidence_dependencies": missing_evidence_summary,
                 "warnings": warnings,
                 **(result.metadata or {}),
             }
@@ -176,7 +151,7 @@ class SemanticReasoningService:
                 }
                 self._mark_rule_pointers_stale_after_reasoning(graph_set_id)
             self.session.commit()
-            response = _reasoning_response(run, result, result_graph_iri, missing_evidence_summary, warnings)
+            response = _reasoning_response(run, result, result_graph_iri, warnings)
             if promoted_pointer:
                 response["derived_pointer"] = promoted_pointer
             return response
@@ -193,7 +168,6 @@ class SemanticReasoningService:
                 "entailments": [],
                 "result_graph_iri": result_graph_iri,
                 "error": run.error,
-                "missing_evidence_dependencies": {},
                 "warnings": [],
                 "input_graph_revisions": input_graph_revisions,
                 "source_signature": source_signature,
@@ -263,9 +237,6 @@ class SemanticReasoningService:
             "shape_version": metadata.get("shape_version"),
             "tasks": metadata.get("tasks", []),
             "profile": metadata.get("profile", "owl2_dl"),
-            "missing_evidence_dependencies": metadata.get(
-                "missing_evidence_dependencies", {}
-            ),
             "warnings": metadata.get("warnings", []),
             "started_at": run.started_at,
             "finished_at": run.finished_at,
@@ -330,7 +301,6 @@ def _reasoning_response(
     run: SemanticReasoningRunModel,
     result: OwlReasonerResult,
     result_graph_iri: str | None,
-    missing_evidence_dependencies: dict[str, Any],
     warnings: list[str],
 ) -> dict[str, Any]:
     metadata = run.run_metadata or {}
@@ -342,7 +312,6 @@ def _reasoning_response(
         "entailments": result.entailments,
         "result_graph_iri": result_graph_iri,
         "error": None,
-        "missing_evidence_dependencies": missing_evidence_dependencies,
         "warnings": warnings,
         "graph_set_id": metadata.get("graph_set_id"),
         "source_signature": metadata.get("source_signature", ""),
