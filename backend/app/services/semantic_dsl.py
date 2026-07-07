@@ -15,8 +15,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from rdflib import Graph
-
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_construct import ConstructTemplateError
 
@@ -30,7 +28,6 @@ class DslExecution:
     bindings: list[dict[str, str]] = field(default_factory=list)
     truncated: bool = False
     warnings: list[str] = field(default_factory=list)
-    missing_evidence_inputs: list[dict[str, str]] = field(default_factory=list)
 
 
 def compile_dsl_to_select(
@@ -81,7 +78,6 @@ def execute_dsl(
     graph_set_iris: list[str],
     timeout_seconds: float,
     statement_limit: int,
-    missing_evidence_inputs: list[dict[str, str]] | None = None,
 ) -> DslExecution:
     if statement_limit <= 0:
         raise ConstructTemplateError("statement_limit must be positive")
@@ -95,11 +91,7 @@ def execute_dsl(
     )
     payload = result.result if isinstance(result.result, dict) else {}
     bindings = payload.get("results", {}).get("bindings", [])
-    execution = materialise_dsl_bindings(
-        body,
-        bindings,
-        missing_evidence_inputs=missing_evidence_inputs or [],
-    )
+    execution = materialise_dsl_bindings(body, bindings)
     execution.truncated = result.truncated or len(bindings) >= statement_limit
     if execution.truncated:
         execution.warnings.append("DSL execution hit the statement limit")
@@ -109,12 +101,10 @@ def execute_dsl(
 def materialise_dsl_bindings(
     body: dict[str, Any],
     bindings: list[dict[str, Any]],
-    *,
-    missing_evidence_inputs: list[dict[str, str]] | None = None,
 ) -> DslExecution:
     then = body["then"]
     explain = body.get("explain")
-    execution = DslExecution(missing_evidence_inputs=missing_evidence_inputs or [])
+    execution = DslExecution()
     seen: set[tuple[str, str, str]] = set()
     for index, binding in enumerate(bindings):
         resolved = {key: _binding_value(value) for key, value in binding.items()}
@@ -128,8 +118,6 @@ def materialise_dsl_bindings(
             record["binding_index"] = str(index)
             if explain:
                 record["explanation"] = str(explain)
-            if missing_evidence_inputs:
-                record["derived_from_missing_evidence"] = "true"
             execution.statements.append(record)
         execution.bindings.append({key: str(value) for key, value in resolved.items()})
     return execution
@@ -202,22 +190,3 @@ def _render_filter_value(value: Any) -> str:
             return value
         return f'"{value}"'
     raise ConstructTemplateError(f"Unsupported DSL filter operand: {value!r}")
-
-
-def parse_graph_for_missing_evidence(content: str) -> list[dict[str, str]]:
-    """Return RDF-star-like annotations of missing-evidence input statements."""
-    graph = Graph()
-    if not content.strip():
-        return []
-    graph.parse(data=content, format="turtle")
-    statements: list[dict[str, str]] = []
-    for subject, predicate, obj in graph:
-        if "missingEvidence" in str(obj) or "missing_evidence" in str(obj):
-            statements.append(
-                {
-                    "s": subject.n3(),
-                    "p": predicate.n3(),
-                    "o": obj.n3(),
-                }
-            )
-    return statements
