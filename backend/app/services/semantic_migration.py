@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Callable, Protocol
@@ -35,6 +36,8 @@ from app.services.semantic_command_compiler import (
     compile_command,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
+
+logger = logging.getLogger(__name__)
 
 
 class MigrationError(RuntimeError):
@@ -690,9 +693,25 @@ class SemanticMigrationService:
                 elif object_kind == "relation_type":
                     command_kind = "create_relation_type"
                 elif object_kind == "fact_claim":
-                    command_kind = "submit_assertion"
+                    logger.warning(
+                        "Skipping legacy fact_claim migration row (id=%s): the "
+                        "submit_assertion command and op:FactClaim model have been "
+                        "removed. Re-bind evidence via the new fact_evidence_bindings "
+                        "API after migration.",
+                        payload.get("id") or payload.get("fact_claim_id"),
+                    )
+                    continue
                 else:
                     continue
+            if command_kind in {"submit_assertion", "update_evidence_status",
+                                "bind_fact_evidence_text"}:
+                logger.warning(
+                    "Skipping legacy migration row (command_kind=%s, id=%s): "
+                    "command removed in Phase 4 cleanup.",
+                    command_kind,
+                    payload.get("id") or payload.get("fact_claim_id"),
+                )
+                continue
             compiled: CompiledCommand = compile_command(command_kind, payload, self.settings)
             result = self.canonical_write_service.apply_compiled_command(
                 compiled,
