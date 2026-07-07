@@ -191,6 +191,23 @@ def test_class_topology_executes_and_decorates_rows(in_memory_session) -> None:
     assert item["label"] == "Student"
     assert item["source_graph_iri"] == ONTOLOGY_GRAPH
     assert item["assertion_kind"] == "asserted"
+    assert store.last_query is not None
+    assert "{graph_iris}" not in store.last_query
+    assert f"VALUES ?g {{ <{ONTOLOGY_GRAPH}> }}" in store.last_query
+
+
+def test_class_topology_without_source_graphs_returns_empty_without_invalid_sparql(
+    in_memory_session,
+) -> None:
+    _seed_graph_set(in_memory_session, [])
+    store = FakeStore(rows_by_marker={"class-topology": []})
+    client = _client(store, in_memory_session)
+
+    body = _read_model(client, "class-topology")
+
+    assert body["items"] == []
+    assert body["warnings"][0]["code"] == "read_model_no_source_graphs"
+    assert store.last_query is None
 
 
 def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None:

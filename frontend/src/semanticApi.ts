@@ -87,7 +87,11 @@ export function listGraphSets(
   request: SemanticRequester,
   filters: { scopeType?: string; scopeId?: string; status?: string } = {},
 ) {
-  const path = withParams(`${SEMANTIC_BASE}/graph-sets`, filters);
+  const path = withParams(`${SEMANTIC_BASE}/graph-sets`, {
+    scope_type: filters.scopeType,
+    scope_id: filters.scopeId,
+    status: filters.status,
+  });
   return request<SemanticGraphSetListResponse>(path);
 }
 

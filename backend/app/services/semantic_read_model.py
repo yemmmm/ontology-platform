@@ -176,7 +176,23 @@ class SemanticReadModelService:
                 warnings=list(scope.warnings),
             )
         bounded_limit = min(limit or template.default_limit, template.default_limit)
-        query = template.body.replace("{limit}", str(bounded_limit))
+        if not graph_iris and "{graph_iris}" in template.body:
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=[],
+                warnings=list(scope.warnings)
+                + [
+                    {
+                        "code": "read_model_no_source_graphs",
+                        "message": (
+                            f"No source graphs are available for read model "
+                            f"{template.name}."
+                        ),
+                    }
+                ],
+            )
+        query = self._compile_template_query(template, graph_iris, bounded_limit)
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
@@ -231,6 +247,18 @@ class SemanticReadModelService:
             "warnings": warnings,
             "items": items,
         }
+
+    @staticmethod
+    def _compile_template_query(
+        template: ReadModelTemplate,
+        graph_iris: list[str],
+        limit: int,
+    ) -> str:
+        values = " ".join(f"<{iri}>" for iri in graph_iris)
+        return (
+            template.body.replace("{graph_iris}", values)
+            .replace("{limit}", str(int(limit)))
+        )
 
     def _graph_iris_for_scope(
         self, scope: ScopeResolution, template: ReadModelTemplate
