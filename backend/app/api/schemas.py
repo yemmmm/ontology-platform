@@ -258,7 +258,6 @@ class SemanticEditRequest(BaseModel):
     shape_graph_iris: list[str] = Field(default_factory=list)
     actor: str | None = None
     reason: str | None = None
-    evidence_status: Literal["evidence_bound", "missing_evidence"] | None = None
     warning_state: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -544,7 +543,6 @@ class SemanticValidationRunRead(BaseModel):
     shape_version: str | None = None
     engine_version: str | None = None
     validation_scope: str = "asserted_only"
-    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
     staleness: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -584,7 +582,6 @@ class SemanticRuleRunRead(BaseModel):
     bindings: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     truncated: bool = False
-    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
     audit_status: str = "system_accepted"
     explanations: list[dict[str, Any]] = Field(default_factory=list)
     rule_count: int | None = None
@@ -592,13 +589,6 @@ class SemanticRuleRunRead(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
-
-
-class SemanticMissingEvidenceSummary(BaseModel):
-    graph_set_id: str
-    dependencies: list[dict[str, Any]]
-    summary: dict[str, Any]
-    warning: str | None = None
 
 
 class SemanticReasoningRunRead(BaseModel):
@@ -616,7 +606,6 @@ class SemanticReasoningRunRead(BaseModel):
     shape_version: str | None = None
     tasks: list[str] = Field(default_factory=list)
     profile: str = "owl2_dl"
-    missing_evidence_dependencies: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     derived_pointer: dict[str, Any] | None = None
     started_at: datetime | None = None

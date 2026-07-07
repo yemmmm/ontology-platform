@@ -14,10 +14,6 @@ from app.services.semantic import SemanticService
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_missing_evidence import (
-    SemanticMissingEvidenceService,
-    derived_warning_message,
-)
 from app.services.semantic_reasoning import SemanticReasoningService
 from app.services.semantic_rule_definition import SemanticRuleDefinitionService
 from app.services.semantic_rule_execution import SemanticRuleExecutionService
@@ -99,10 +95,6 @@ def _rule_execution_service(session) -> SemanticRuleExecutionService:
     return SemanticRuleExecutionService(session, _rdf_store(), settings)
 
 
-def _missing_evidence_service() -> SemanticMissingEvidenceService:
-    return SemanticMissingEvidenceService(_rdf_store())
-
-
 def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def semantic_sparql_query(
@@ -126,7 +118,6 @@ def register_semantic(server: FastMCP) -> None:
         shape_graph_iris: list[str] | None = None,
         actor: str | None = None,
         reason: str | None = None,
-        evidence_status: str | None = None,
         warning_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Submit a governed RDF/SPARQL Update semantic edit with audit metadata."""
@@ -139,7 +130,6 @@ def register_semantic(server: FastMCP) -> None:
                 shape_graph_iris=shape_graph_iris or [],
                 actor=actor,
                 reason=reason,
-                evidence_status=evidence_status,
                 warning_state=warning_state or {},
             )
         )
@@ -315,15 +305,6 @@ def register_semantic(server: FastMCP) -> None:
                 promote_pointer=promote_pointer,
                 actor=actor,
                 engine_version=engine_version,
-            )
-        )
-
-    @server.tool()
-    def inspect_semantic_missing_evidence(graph_set_id: str) -> dict[str, Any]:
-        """Return missing-evidence dependencies for asserted inputs in a graph set."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _missing_evidence_summary(
-                session, graph_set_id
             )
         )
 
@@ -507,26 +488,6 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
-
-def _missing_evidence_summary(session, graph_set_id: str) -> dict[str, Any]:
-    settings = Settings()
-    service = SemanticGraphSetService(session, settings)
-    description = service.describe(graph_set_id)
-    graph_iris = [
-        member["graph_iri"]
-        for member in description["members"]
-        if member["role"] in {"asserted_ontology", "asserted_data"}
-    ]
-    missing_evidence_service = SemanticMissingEvidenceService(_rdf_store())
-    dependencies = missing_evidence_service.collect_from_graphs(graph_iris)
-    summary = missing_evidence_service.summarize_dependencies(dependencies)
-    warning = derived_warning_message(dependencies)
-    return {
-        "graph_set_id": graph_set_id,
-        "dependencies": dependencies,
-        "summary": summary,
-        "warning": warning,
-    }
 
 
 def _resolve_data_graphs(

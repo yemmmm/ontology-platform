@@ -43,7 +43,6 @@ from app.api.schemas import (
     SemanticMigrationRollbackResponse,
     SemanticMigrationRunListResponse,
     SemanticMigrationRunRead,
-    SemanticMissingEvidenceSummary,
     SemanticProjectionJobCreate,
     SemanticProjectionJobListResponse,
     SemanticProjectionJobRead,
@@ -83,7 +82,6 @@ from app.services.semantic_graph_registry import (
 )
 from app.services.semantic_graph_set import GraphSetError, SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_missing_evidence import SemanticMissingEvidenceService
 from app.services.semantic_neo4j_projection import Neo4jSemanticProjectionService
 from app.services.semantic_projection import SemanticProjectionService
 from app.services.semantic_projection_job import (
@@ -202,10 +200,6 @@ def _rule_execution_service(
     session: Session, rdf_store: RdfStoreRepository, settings: Settings
 ) -> SemanticRuleExecutionService:
     return SemanticRuleExecutionService(session, rdf_store, settings)
-
-
-def _missing_evidence_service(rdf_store: RdfStoreRepository) -> SemanticMissingEvidenceService:
-    return SemanticMissingEvidenceService(rdf_store)
 
 
 def _scope_resolver(session: Session) -> SemanticReadScopeResolver:
@@ -401,7 +395,6 @@ def create_semantic_edit(
             request.shape_graph_iris,
             request.actor,
             request.reason,
-            request.evidence_status,
             request.warning_state,
         )
         return SemanticEditResponse(**result)
@@ -934,40 +927,6 @@ def get_rule_run(
     except RuleExecutionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
     return SemanticRuleRunRead(**_rule_run_response(result))
-
-
-@router.get(
-    "/graph-sets/{graph_set_id}/missing-evidence",
-    response_model=SemanticMissingEvidenceSummary,
-)
-def get_graph_set_missing_evidence(
-    graph_set_id: str,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticMissingEvidenceSummary:
-    graph_set_service = _graph_set_service(session, settings)
-    try:
-        description = graph_set_service.describe(graph_set_id)
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    service = _missing_evidence_service(rdf_store)
-    graph_iris = [
-        member["graph_iri"]
-        for member in description["members"]
-        if member["role"] in {"asserted_ontology", "asserted_data"}
-    ]
-    dependencies = service.collect_from_graphs(graph_iris)
-    summary = service.summarize_dependencies(dependencies)
-    from app.services.semantic_missing_evidence import derived_warning_message
-
-    warning = derived_warning_message(dependencies)
-    return SemanticMissingEvidenceSummary(
-        graph_set_id=graph_set_id,
-        dependencies=dependencies,
-        summary=summary,
-        warning=warning,
-    )
 
 
 @router.post(
@@ -1639,7 +1598,6 @@ def _rule_run_response(result: dict) -> dict:
     response.setdefault("statements", [])
     response.setdefault("bindings", [])
     response.setdefault("warnings", [])
-    response.setdefault("missing_evidence_dependencies", {})
     response.setdefault("explanations", [])
     response.setdefault("audit_status", "system_accepted")
     response.setdefault("truncated", False)
