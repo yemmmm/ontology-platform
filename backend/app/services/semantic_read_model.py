@@ -76,6 +76,7 @@ class SemanticReadModelService:
         class_iri: str | None = None,
         kind: str | None = None,
         target: str | None = None,
+        q: str | None = None,
     ) -> dict[str, Any]:
         try:
             template = get_template(model_name)
@@ -136,6 +137,43 @@ class SemanticReadModelService:
                 scope=scope,
                 items=items,
                 warnings=warnings + list(scope.warnings),
+            )
+        if template.name == "owl-consistency-summary":
+            items = [self._compose_owl_consistency_summary(scope, field_set)]
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
+        if template.name == "entity-search":
+            items = self._compose_entity_search(
+                template,
+                scope,
+                q=q,
+                class_iri=class_iri,
+                limit=limit or template.default_limit,
+                field_set=field_set,
+            )
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
+        if template.name == "agent-test-context":
+            items = self._compose_agent_test_context(
+                template,
+                scope,
+                q=q,
+                limit=limit or template.default_limit,
+                field_set=field_set,
+            )
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
             )
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         query = template.body.replace("{limit}", str(bounded_limit))
@@ -298,6 +336,14 @@ class SemanticReadModelService:
             and source_graph_iri == scope.rule_result_graph_iri
         ):
             return "rule_derived"
+        # Stage 4 templates (entity-search, agent-test-context) declare
+        # assertion_kind="any" because the SPARQL may match rows from the
+        # asserted, reasoning, or rule graph depending on the include scope.
+        # When the row actually came from an asserted source graph, "any"
+        # resolves to "asserted" so the AssertionKind chip on the UI carries
+        # the meaningful value (matches spec §4.1 decorator contract).
+        if template.assertion_kind == "any":
+            return "asserted"
         return template.assertion_kind
 
     def _is_stale(self, source_graph_iri: str, scope: ScopeResolution) -> bool:
@@ -876,6 +922,7 @@ class SemanticReadModelService:
             )
 
         warnings: list[dict[str, str]] = list(scope.warnings)
+        attach_evidence = field_set == "evidence"
 
         if resolved_kind in {"asserted", "missing_evidence"}:
             data_iris = [
@@ -904,6 +951,8 @@ class SemanticReadModelService:
                 )
                 for row in rows
             ]
+            if attach_evidence:
+                self._attach_evidence_bindings(items, data_iris)
             return items, warnings
 
         if resolved_kind == "inferred":
@@ -939,6 +988,8 @@ class SemanticReadModelService:
                 )
                 for row in rows
             ]
+            if attach_evidence:
+                self._attach_evidence_bindings(items, [reasoning_iri])
             return items, warnings
 
         # rule_derived
@@ -972,6 +1023,8 @@ class SemanticReadModelService:
             )
             for row in rows
         ]
+        if attach_evidence:
+            self._attach_evidence_bindings(items, [rule_iri])
         return items, warnings
 
     def _fetch_fact_rows(
@@ -1083,3 +1136,312 @@ class SemanticReadModelService:
 
         canonical = f"<{subject_iri}> <{predicate_iri}> {object_value} <{graph_iri}>"
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    # ------------------------------------------------------------------
+    # entity-search composer (Stage 4 §4.1)
+    # ------------------------------------------------------------------
+
+    def _compose_entity_search(
+        self,
+        template: ReadModelTemplate,
+        scope: ScopeResolution,
+        *,
+        q: str | None,
+        class_iri: str | None,
+        limit: int,
+        field_set: str,
+    ) -> list[dict[str, Any]]:
+        """Run the entity-search SPARQL against the active scope's data graphs,
+        decorating each row with the standard decorator plus the
+        ``comment`` / ``class_iri`` / ``class_label`` / ``graph_set_id``
+        extensions declared in spec §4.1."""
+        graph_iris = list(scope.source_graph_iris) or []
+        bounded_limit = min(limit or template.default_limit, template.default_limit)
+        body = template.body
+        body = body.replace("{graph_iris}", " ".join(f"<{i}>" for i in graph_iris))
+        body = body.replace("{limit}", str(bounded_limit))
+        # Bind the search substring ?q as a literal. Defaulting to the empty
+        # string makes the FILTER a no-op so the same template can serve an
+        # unfiltered listing call. A comment marker is appended so test fakes
+        # can extract the value without parsing SPARQL.
+        bound_q = q if q is not None else ""
+        body = body.replace("?q", f'"{bound_q}"')
+        body = body + f"\n# q_filter: \"{bound_q}\""
+        # Bind ?class_iri via a VALUES preamble so the existing
+        # ``FILTER(!BOUND(?class_iri) || ?class = ?class_iri)`` works against
+        # real SPARQL engines. When None, the variable stays unbound and the
+        # FILTER short-circuits to true. We also append a comment marker for
+        # test fakes that do not parse SPARQL.
+        if class_iri is not None:
+            body = (
+                f"VALUES ?class_iri {{ <{class_iri}> }}\n" + body
+                + f"\n# class_iri_filter: <{class_iri}>"
+            )
+        result = self.rdf_store.query_read_model(
+            query=body,
+            graph_iris=graph_iris,
+            timeout_seconds=self.timeout_seconds,
+            limit=bounded_limit,
+        )
+        items: list[dict[str, Any]] = []
+        for row in self._rows(result):
+            decorated = self._decorate_row(row, scope, template)
+            # Stage 4 §4.1 additional fields not provided by the base decorator.
+            decorated["comment"] = self._cell(row, "comment")
+            decorated["class_iri"] = self._cell(row, "class")
+            decorated["class_label"] = self._cell(row, "class_label")
+            decorated["graph_set_id"] = scope.graph_set_id
+            items.append(decorated)
+        return items
+
+    # ------------------------------------------------------------------
+    # agent-test-context composer (Stage 4 §4.2)
+    # ------------------------------------------------------------------
+
+    def _compose_agent_test_context(
+        self,
+        template: ReadModelTemplate,
+        scope: ScopeResolution,
+        *,
+        q: str | None,
+        limit: int,
+        field_set: str,
+    ) -> list[dict[str, Any]]:
+        """Thin wrapper over ``_compose_entity_search`` that projects a
+        smaller field set for the AgentTestService pre-LLM retrieval.
+
+        The underlying SPARQL is the agent-test-context template body
+        (no ``comment`` projection). The composed rows still carry the
+        decorator's full envelope fields; downstream consumers simply
+        read a subset."""
+        items = self._compose_entity_search(
+            template,
+            scope,
+            q=q,
+            class_iri=None,
+            limit=limit,
+            field_set="agent",
+        )
+        # Strip the comment field for the agent projection.
+        for item in items:
+            item.pop("comment", None)
+        return items
+
+    # ------------------------------------------------------------------
+    # owl-consistency-summary composer (Stage 4 §4.3)
+    # ------------------------------------------------------------------
+
+    def _compose_owl_consistency_summary(
+        self, scope: ScopeResolution, field_set: str
+    ) -> dict[str, Any]:
+        """Project the latest consistency-classified reasoning run for the
+        graph set into the spec §4.3 summary row."""
+        if self.session is None:
+            return {
+                "graph_set_id": scope.graph_set_id,
+                "run_id": None,
+                "consistent": None,
+                "classification": {},
+                "entailment_count": 0,
+                "unsatisfiable_classes": [],
+                "result_graph_iri": None,
+                "started_at": None,
+                "finished_at": None,
+                "is_stale": False,
+            }
+        from sqlalchemy import select
+
+        from app.repositories.models import SemanticReasoningRunModel
+
+        # Find the latest reasoning run whose run_metadata['tasks'] contains
+        # "consistency" and whose result graph (or source graphs) overlaps
+        # the active graph set members. We filter in Python because the JSONB
+        # containment operator is dialect-specific; the run table is small
+        # per graph set.
+        member_iris = {m.graph_iri for m in scope.members}
+        rows = list(
+            self.session.scalars(
+                select(SemanticReasoningRunModel)
+                .order_by(SemanticReasoningRunModel.started_at.desc())
+            )
+        )
+        run: SemanticReasoningRunModel | None = None
+        for r in rows:
+            metadata = r.run_metadata or {}
+            tasks = metadata.get("tasks") or []
+            if "consistency" not in tasks:
+                continue
+            source_set = set(r.source_graph_iris or [])
+            if r.result_graph_iri:
+                source_set.add(r.result_graph_iri)
+            if not member_iris or (source_set & member_iris):
+                run = r
+                break
+        if run is None:
+            return {
+                "graph_set_id": scope.graph_set_id,
+                "run_id": None,
+                "consistent": None,
+                "classification": {},
+                "entailment_count": 0,
+                "unsatisfiable_classes": [],
+                "result_graph_iri": None,
+                "started_at": None,
+                "finished_at": None,
+                "is_stale": False,
+            }
+        metadata = run.run_metadata or {}
+        entailments = metadata.get("entailments") or []
+        unsatisfiable = [
+            e.get("subject") or e.get("iri") or ""
+            for e in entailments
+            if isinstance(e, dict)
+            and (
+                "unsatisfiable" in str(e.get("predicate", "")).lower()
+                or "unsatisfiable" in str(e.get("classification", "")).lower()
+            )
+        ]
+        # Staleness: reuse the graph-set staleness helper. A run is stale if
+        # any member graph has been edited since the run finished.
+        staleness_row = self._compose_graph_set_staleness(scope, "summary")
+        latest_edit_raw = staleness_row.get("last_semantic_edit_at")
+        is_stale = False
+        if run.finished_at is not None and latest_edit_raw is not None:
+            try:
+                from datetime import datetime
+
+                edited_at = datetime.fromisoformat(latest_edit_raw)
+                if edited_at.tzinfo is None:
+                    from datetime import timezone
+
+                    edited_at = edited_at.replace(tzinfo=timezone.utc)
+                run_finished = run.finished_at
+                if run_finished.tzinfo is None:
+                    from datetime import timezone
+
+                    run_finished = run_finished.replace(tzinfo=timezone.utc)
+                is_stale = edited_at > run_finished
+            except (ValueError, TypeError):
+                is_stale = False
+        return {
+            "graph_set_id": scope.graph_set_id,
+            "run_id": run.id,
+            "consistent": run.consistent,
+            "classification": metadata.get("classification") or {},
+            "entailment_count": len(entailments),
+            "unsatisfiable_classes": unsatisfiable,
+            "result_graph_iri": run.result_graph_iri,
+            "started_at": (
+                run.started_at.isoformat() if run.started_at else None
+            ),
+            "finished_at": (
+                run.finished_at.isoformat() if run.finished_at else None
+            ),
+            "is_stale": is_stale,
+        }
+
+    # ------------------------------------------------------------------
+    # fact-audit-queue evidence bindings extension (Stage 4 §4.4)
+    # ------------------------------------------------------------------
+
+    def _attach_evidence_bindings(
+        self,
+        items: list[dict[str, Any]],
+        data_iris: list[str],
+    ) -> None:
+        """For each item, run the prov:wasDerivedFrom SPARQL (spec §4.4)
+        against the asserted data graphs and attach the matching bindings
+        to the row under ``evidence_bindings``.
+
+        Mutates ``items`` in place. If no binding exists for a fact's
+        subject, the row gets an empty list — matching the spec §8 fallback
+        contract."""
+        if not data_iris:
+            for item in items:
+                item["evidence_bindings"] = []
+            return
+        # Pre-fetch all bindings once (joining across facts is cheaper than
+        # one SPARQL per fact in the test fixture). Each row carries the
+        # fact IRI it was derived from so we can bucket by subject.
+        all_bindings = self._fetch_evidence_bindings(data_iris)
+        by_fact: dict[str, list[dict[str, Any]]] = {}
+        for b in all_bindings:
+            by_fact.setdefault(b["fact_iri"], []).append({
+                "chunk_iri": b["chunk_iri"],
+                "document_iri": b["document_iri"],
+                "document_filename": b.get("document_filename"),
+                "sequence": b["sequence"],
+                "char_start": b["char_start"],
+                "char_end": b["char_end"],
+                "text_preview": b["text_preview"],
+            })
+        for item in items:
+            subject_iri = item.get("subject_iri") or item.get("iri") or ""
+            item["evidence_bindings"] = by_fact.get(subject_iri, [])
+
+    _EVIDENCE_BINDING_SPARQL = """# Stage 4 §4.4 evidence bindings lookup
+PREFIX prov: <http://www.w3.org/ns/prov#>
+SELECT ?fact ?chunk ?doc ?sequence ?char_start ?char_end ?text WHERE {
+  VALUES ?g { {graph_iris} }
+  GRAPH ?g {
+    ?fact prov:wasDerivedFrom ?chunk .
+    ?chunk <tag:ontology-platform.internal,2026:sourceDocument> ?doc ;
+           <tag:ontology-platform.internal,2026:sequence> ?sequence ;
+           <tag:ontology-platform.internal,2026:charStart> ?char_start ;
+           <tag:ontology-platform.internal,2026:charEnd> ?char_end ;
+           <tag:ontology-platform.internal,2026:text> ?text .
+  }
+}
+LIMIT {limit}
+"""
+
+    def _fetch_evidence_bindings(
+        self, data_iris: list[str]
+    ) -> list[dict[str, Any]]:
+        """Execute the prov:wasDerivedFrom evidence bindings SPARQL and
+        return raw rows bucketed by fact IRI."""
+        if not data_iris:
+            return []
+        values = " ".join(f"<{i}>" for i in data_iris)
+        query = self._EVIDENCE_BINDING_SPARQL.replace(
+            "{graph_iris}", values
+        ).replace("{limit}", "500")
+        result = self.rdf_store.query_read_model(
+            query=query,
+            graph_iris=data_iris,
+            timeout_seconds=self.timeout_seconds,
+            limit=500,
+        )
+        rows = self._rows(result)
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            fact_iri = self._cell(row, "fact") or ""
+            chunk_iri = self._cell(row, "chunk") or ""
+            document_iri = self._cell(row, "doc") or ""
+            sequence_raw = self._cell(row, "sequence")
+            try:
+                sequence = int(sequence_raw) if sequence_raw is not None else 0
+            except ValueError:
+                sequence = 0
+            char_start_raw = self._cell(row, "char_start")
+            try:
+                char_start = int(char_start_raw) if char_start_raw is not None else 0
+            except ValueError:
+                char_start = 0
+            char_end_raw = self._cell(row, "char_end")
+            try:
+                char_end = int(char_end_raw) if char_end_raw is not None else 0
+            except ValueError:
+                char_end = 0
+            text = self._cell(row, "text") or ""
+            out.append({
+                "fact_iri": fact_iri,
+                "chunk_iri": chunk_iri,
+                "document_iri": document_iri,
+                "document_filename": None,
+                "sequence": sequence,
+                "char_start": char_start,
+                "char_end": char_end,
+                "text_preview": text[:500],
+            })
+        return out

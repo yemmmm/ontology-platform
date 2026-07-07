@@ -1187,6 +1187,7 @@ def read_model(
     class_iri: Annotated[str | None, Query()] = None,
     kind: Annotated[str | None, Query()] = None,
     target: Annotated[str | None, Query()] = None,
+    q: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1204,6 +1205,7 @@ def read_model(
             class_iri=class_iri,
             kind=kind,
             target=target,
+            q=q,
         )
     except (ReadModelError, ReadScopeError) as exc:
         raise HTTPException(

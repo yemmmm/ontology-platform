@@ -523,6 +523,94 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # the CONSTRUCT diff. See spec §4.3.
         """,
     ),
+    "entity-search": ReadModelTemplate(
+        name="entity-search",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=50,
+        assertion_kind="any",
+        evidence_status="any",
+        primary_iri_variable="entity",
+        body="""# template: entity-search
+        # Stage 4 §4.1. The composer binds ?q (search substring) and ?class_iri
+        # (optional class equality filter) into the FILTER before handing the
+        # query to the store.
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        SELECT DISTINCT ?entity ?label ?comment ?class ?class_label WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?entity a ?class .
+            ?class a rdfs:Class .
+            OPTIONAL { ?entity rdfs:label ?label . }
+            OPTIONAL { ?entity rdfs:comment ?comment . }
+            OPTIONAL { ?class rdfs:label ?class_label . }
+            FILTER(
+              CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
+              CONTAINS(LCASE(COALESCE(STR(?comment), "")), LCASE(?q)) ||
+              CONTAINS(LCASE(STR(?entity)), LCASE(?q))
+            )
+            FILTER(!BOUND(?class_iri) || ?class = ?class_iri)
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY LCASE(?label)
+        LIMIT {limit}
+        """,
+    ),
+    "agent-test-context": ReadModelTemplate(
+        name="agent-test-context",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=True,
+        needs_rules=False,
+        default_limit=15,
+        assertion_kind="any",
+        evidence_status="any",
+        primary_iri_variable="entity",
+        body="""# template: agent-test-context
+        # Stage 4 §4.2. Same skeleton as entity-search minus the comment
+        # projection; the composer selects ``field_set="agent"`` to project a
+        # smaller row shape for the AgentTestService pre-LLM retrieval.
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        SELECT DISTINCT ?entity ?label ?class ?class_label WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?entity a ?class .
+            ?class a rdfs:Class .
+            OPTIONAL { ?entity rdfs:label ?label . }
+            OPTIONAL { ?class rdfs:label ?class_label . }
+            FILTER(
+              CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
+              CONTAINS(LCASE(STR(?entity)), LCASE(?q))
+            )
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY LCASE(?label)
+        LIMIT {limit}
+        """,
+    ),
+    "owl-consistency-summary": ReadModelTemplate(
+        name="owl-consistency-summary",
+        projection_version="1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=True,
+        needs_rules=False,
+        default_limit=1,
+        assertion_kind="owl_inferred",
+        evidence_status="any",
+        primary_iri_variable="run",
+        body="""# template: owl-consistency-summary
+        # Composer-driven. The SemanticReadModelService reads the latest
+        # SemanticReasoningRunModel row whose run_metadata.tasks contains
+        # ``consistency`` and projects spec §4.3 fields. The body is a
+        # placeholder; the composer never executes it directly.
+        """,
+    ),
 }
 
 
