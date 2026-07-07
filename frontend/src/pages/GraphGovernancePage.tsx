@@ -16,12 +16,14 @@ import type {
   SemanticGovernanceStatusResponse,
   SemanticGraphRegistryListResponse,
   SemanticGraphSetListResponse,
+  SemanticProjectionStatusResponse,
 } from "../types";
 import { useT } from "../i18n";
 import { errorNotice } from "../api";
 import type { Notice } from "../types";
 import {
   getGovernanceStatus,
+  getProjectionStatus,
   listEditAudits,
   listGraphRegistry,
   listGraphSets,
@@ -64,6 +66,7 @@ export function GraphGovernancePage({
   const [graphSets, setGraphSets] = useState<SemanticGraphSetListResponse | null>(null);
   const [graphs, setGraphs] = useState<SemanticGraphRegistryListResponse | null>(null);
   const [audits, setAudits] = useState<SemanticEditAuditRead[]>([]);
+  const [projectionStatus, setProjectionStatus] = useState<SemanticProjectionStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [owlConsistency, setOwlConsistency] = useState<OwlConsistencyEnvelope | null>(null);
@@ -71,16 +74,18 @@ export function GraphGovernancePage({
   async function loadAll() {
     setLoading(true);
     try {
-      const [statusData, setsData, graphsData, auditsData] = await Promise.all([
+      const [statusData, setsData, graphsData, auditsData, projectionData] = await Promise.all([
         getGovernanceStatus(request),
         listGraphSets(request),
         listGraphRegistry(request),
         listEditAudits(request, 8),
+        getProjectionStatus(request).catch(() => null),
       ]);
       setStatus(statusData);
       setGraphSets(setsData);
       setGraphs(graphsData);
       setAudits(auditsData);
+      setProjectionStatus(projectionData);
       // Stage 4 §4.3 — fetch the OWL consistency summary for the
       // first active graph set. Falls back silently if there is no
       // active graph set; the panel renders an empty state in that case.
@@ -116,7 +121,10 @@ export function GraphGovernancePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const summary = useMemo(() => deriveSummary(status, graphs, graphSets), [status, graphs, graphSets]);
+  const summary = useMemo(
+    () => deriveSummary(status, graphs, graphSets, projectionStatus),
+    [status, graphs, graphSets, projectionStatus],
+  );
 
   async function reconcile() {
     setReconciling(true);
@@ -175,6 +183,12 @@ export function GraphGovernancePage({
           tone={summary.staleDerived > 0 ? "warning" : "ok"}
         />
         <StatTile
+          label={t("Stale projections")}
+          value={summary.staleProjections}
+          hint={summary.staleProjections > 0 ? t("Projection manifests need rebuild") : t("Projection manifests are current")}
+          tone={summary.staleProjections > 0 ? "warning" : "ok"}
+        />
+        <StatTile
           label={t("Missing evidence")}
           value={summary.missingEvidence}
           tone={summary.missingEvidence > 0 ? "error" : "ok"}
@@ -225,7 +239,11 @@ export function GraphGovernancePage({
           )}
         </SemanticPanel>
 
-        <SemanticPanel title={t("Latest semantic edit audits")} icon={<FileCheck2 size={15} />}>
+        <SemanticPanel
+          title={t("Latest graph deltas")}
+          icon={<FileCheck2 size={15} />}
+          actions={<SemanticTag>{audits.length} {t("audit(s)")}</SemanticTag>}
+        >
           {!audits.length ? (
             <SemanticEmpty title={t("No audit records yet")} hint={t("Apply a governed semantic edit to populate this list.")} />
           ) : (
@@ -328,6 +346,7 @@ function deriveSummary(
   status: SemanticGovernanceStatusResponse | null,
   graphs: SemanticGraphRegistryListResponse | null,
   graphSets: SemanticGraphSetListResponse | null,
+  projectionStatus: SemanticProjectionStatusResponse | null,
 ) {
   const graphsSummary = (status?.graphs ?? {}) as Record<string, unknown>;
   const derivedSummary = (status?.derived ?? {}) as Record<string, unknown>;
@@ -335,6 +354,7 @@ function deriveSummary(
   const editableGraphs = pickNumber(graphsSummary, ["editable", "editable_count"]) ?? countEditable(graphs?.graphs, true);
   const actualGraphs = pickNumber(graphsSummary, ["actual", "actual_count"]) ?? countActual(graphs?.graphs);
   const staleDerived = pickNumber(derivedSummary, ["stale_count", "stale"]) ?? countStaleDerived(status);
+  const staleProjections = projectionStatus?.stale_projection_count ?? projectionStatus?.stale.length ?? 0;
   const missingEvidence = pickNumber(derivedSummary, ["missing_evidence_count", "missing_evidence"]) ?? 0;
   const graphSetsList = graphSets?.graph_sets ?? [];
   const activeGraphSets = graphSetsList.filter((graphSet) => graphSet.status === "active").length;
@@ -343,6 +363,7 @@ function deriveSummary(
     editableGraphs,
     actualGraphs: actualGraphs || (graphs?.graphs.length ?? 0),
     staleDerived,
+    staleProjections,
     missingEvidence,
     graphSetsCount: graphSetsList.length,
     activeGraphSets,

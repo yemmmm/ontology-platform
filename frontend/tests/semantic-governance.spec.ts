@@ -35,6 +35,8 @@ const namedGraph = {
   content_hash: "abc123",
   derived_pointers: [],
   metadata: {},
+  statement_count: 42,
+  latest_audit_at: "2026-07-05T00:00:00Z",
 };
 const dataGraph = {
   ...namedGraph,
@@ -42,6 +44,8 @@ const dataGraph = {
   category: "data",
   editable: false,
   editability_reason: "Locked for review",
+  statement_count: 18,
+  latest_audit_at: "2026-07-05T00:05:00Z",
 };
 const graphSet = {
   id: "graph-set-1",
@@ -194,6 +198,7 @@ async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, "");
     const method = route.request().method();
+    const decodedPath = decodeURIComponent(path);
     let body: unknown = [];
     if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
@@ -207,18 +212,55 @@ async function mockApi(page: Page) {
     else if (path === `/ontologies/${ontology.id}/relations`) body = [];
     else if (path === "/semantic/status") body = {
       graphs: { total: 2, by_category: { ontology: 1, data: 1 }, editability: { editable: 1, locked: 1 } },
-      derived: { missing_evidence_count: 1, stale_count: 1 },
+      derived: { missing_evidence_count: 1, stale_count: 1, stale_derived_count: 1 },
+    };
+    else if (path === "/semantic/projections/status") body = {
+      manifests: [{ id: "manifest-1", graph_set_id: graphSet.id, projection_kind: "neo4j", status: "stale" }],
+      stale: ["manifest-1"],
+      missing: [],
+      stale_projection_count: 1,
     };
     else if (path === "/semantic/graphs") body = { graphs: [namedGraph, dataGraph], summary: {} };
-    else if (path === `/semantic/graphs/${namedGraph.graph_iri}`) body = namedGraph;
+    else if (decodedPath === `/semantic/graphs/${namedGraph.graph_iri}`) body = namedGraph;
     else if (path === "/semantic/graph-sets") body = { graph_sets: [graphSet] };
     else if (path === `/semantic/graph-sets/${graphSet.id}`) body = graphSet;
+    else if (path === `/semantic/graph-sets/${graphSet.id}/read-models/owl-consistency-summary`) body = {
+      graph_set_id: graphSet.id,
+      model_name: "owl-consistency-summary",
+      projection_version: "semantic-read-v1",
+      items: [{
+        run_id: reasoningRun.run_id,
+        consistent: true,
+        classification: "classified",
+        entailment_count: 1,
+        unsatisfiable_classes: [],
+        result_graph_iri: reasoningRun.result_graph_iri,
+        started_at: reasoningRun.started_at,
+        finished_at: reasoningRun.finished_at,
+        is_stale: false,
+      }],
+    };
     else if (path === `/semantic/graph-sets/${graphSet.id}/missing-evidence`) body = missingEvidenceSummary;
     else if (path === "/semantic/rule-definitions") body = { rules: [ruleDefinition] };
     else if (path === "/semantic/edits/audits") body = [auditRecord];
+    else if (path === "/semantic/validation-runs") body = {
+      items: [validationRun],
+      summary: { total: 1, stale_count: 0, superseded_count: 0 },
+    };
+    else if (path === "/semantic/reasoning-runs") body = {
+      items: [reasoningRun],
+      summary: { total: 1, stale_count: 0, superseded_count: 0 },
+    };
+    else if (path === "/semantic/rule-runs") body = {
+      items: [ruleRun],
+      summary: { total: 1, stale_count: 0, superseded_count: 0 },
+    };
     else if (path === "/semantic/validation-runs/validation-1") body = validationRun;
     else if (path === "/semantic/reasoning-runs/reasoning-1") body = reasoningRun;
     else if (path === "/semantic/rule-runs/rule-1") body = ruleRun;
+    else if (method === "POST" && path === `/semantic/graph-sets/${graphSet.id}/validation-runs`) body = validationRun;
+    else if (method === "POST" && path === `/semantic/graph-sets/${graphSet.id}/reasoning-runs`) body = reasoningRun;
+    else if (method === "POST" && path === `/semantic/graph-sets/${graphSet.id}/rule-runs`) body = ruleRun;
     else if (method === "POST" && path === "/semantic/datasets:load") body = {
       loaded: true,
       format: "turtle",
@@ -241,6 +283,8 @@ async function mockApi(page: Page) {
       validation: { conforms: true },
       graph_revisions: { [namedGraph.graph_iri]: 4 },
       stale_derived_pointers: [],
+      parse_error: null,
+      error: null,
     };
     else if (method === "PATCH" && path.startsWith("/semantic/graphs/") && path.endsWith("/editability")) body = {
       graph_iri: namedGraph.graph_iri,
@@ -326,7 +370,7 @@ test("semantic runs page looks up reasoning run by ID and shows consistency", as
   await expect(page.getByLabel("semantic-runs-page").getByRole("heading", { name: "Semantic Runs" })).toBeVisible();
   await page.getByLabel("Run kind").selectOption("reasoning");
   await page.getByPlaceholder("run-...").fill("reasoning-1");
-  await page.getByRole("button", { name: "Load" }).click();
+  await page.getByRole("button", { name: "Load", exact: true }).click();
   await expect(page.locator("[aria-label='reasoning-result-panel']")).toBeVisible();
   await expect(page.getByText("Consistent").first()).toBeVisible();
 });

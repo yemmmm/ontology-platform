@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_rdf_store, get_settings
+from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
@@ -14,7 +14,10 @@ from app.repositories.models import (
     SemanticGraphRegistryModel,
     SemanticGraphSetMemberModel,
     SemanticGraphSetModel,
+    SemanticProjectionManifestModel,
     SemanticReasoningRunModel,
+    SemanticRuleRunModel,
+    SemanticValidationRunModel,
 )
 from app.repositories.rdf_store import SparqlResult, UpdateResult
 
@@ -89,6 +92,7 @@ def _client(
         app.dependency_overrides[get_db_session] = session_override
     app.dependency_overrides[get_rdf_store] = lambda: store
     app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_neo4j_driver] = lambda: None
     return TestClient(app)
 
 
@@ -158,7 +162,9 @@ def test_semantic_edit_endpoint_returns_400_for_malformed_rdf(in_memory_session)
 
     assert response.status_code == 400
     detail = response.json()["detail"]
-    assert "parse" in detail.lower() or "syntax" in detail.lower()
+    assert "parse" in detail["message"].lower() or "syntax" in detail["message"].lower()
+    assert "line" in detail
+    assert "column" in detail
     assert store.updates == []
 
 
@@ -180,7 +186,9 @@ def test_semantic_dataset_load_endpoint_returns_400_for_malformed_rdf(
 
     assert response.status_code == 400
     detail = response.json()["detail"]
-    assert "parse" in detail.lower() or "syntax" in detail.lower()
+    assert "parse" in detail["message"].lower() or "syntax" in detail["message"].lower()
+    assert "line" in detail
+    assert "column" in detail
 
 
 def test_semantic_edit_audits_endpoint_lists_records(in_memory_session) -> None:
@@ -614,6 +622,188 @@ def test_get_validation_run_returns_staleness(in_memory_session) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["staleness"]["stale"] is False
+
+
+def test_stage5_validation_runs_list_endpoint_filters_and_summarizes(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    older = datetime(2026, 7, 6, 10, tzinfo=UTC)
+    newer = datetime(2026, 7, 6, 11, tzinfo=UTC)
+    in_memory_session.add_all(
+        [
+            SemanticValidationRunModel(
+                id="validation-old",
+                data_graph_iris=[GRAPH],
+                shape_graph_iris=[],
+                status="succeeded",
+                conforms=True,
+                started_at=older,
+                finished_at=older,
+                run_metadata={
+                    "graph_set_id": "gs-stage5",
+                    "validation_scope": "asserted_only",
+                    "source_signature": "old",
+                    "input_graph_revisions": {},
+                },
+            ),
+            SemanticValidationRunModel(
+                id="validation-new",
+                data_graph_iris=[GRAPH],
+                shape_graph_iris=[],
+                status="succeeded",
+                conforms=True,
+                started_at=newer,
+                finished_at=newer,
+                run_metadata={
+                    "graph_set_id": "gs-stage5",
+                    "validation_scope": "asserted_only",
+                    "source_signature": "new",
+                    "input_graph_revisions": {},
+                },
+            ),
+        ]
+    )
+    in_memory_session.commit()
+
+    response = client.get(
+        "/api/semantic/validation-runs",
+        params={"graph_set_id": "gs-stage5", "kind": "asserted_only", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["run_id"] == "validation-new"
+    assert body["summary"]["total"] == 2
+    assert set(body["summary"]) == {"total", "stale_count", "superseded_count"}
+
+
+def test_stage5_reasoning_and_rule_run_list_endpoints_filter(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    in_memory_session.add_all(
+        [
+            SemanticReasoningRunModel(
+                id="reasoning-1",
+                source_graph_iris=[GRAPH],
+                result_graph_iri=RESULT_GRAPH,
+                reasoner="command",
+                status="succeeded",
+                consistent=True,
+                started_at=datetime(2026, 7, 6, 11, tzinfo=UTC),
+                run_metadata={"graph_set_id": "gs-stage5", "tasks": ["consistency"]},
+            ),
+            SemanticRuleRunModel(
+                id="rule-1",
+                graph_set_id="gs-stage5",
+                engine_name="platform_dsl",
+                source_signature="sig",
+                status="succeeded",
+                generated_statement_count=2,
+                started_at=datetime(2026, 7, 6, 12, tzinfo=UTC),
+                run_metadata={},
+            ),
+        ]
+    )
+    in_memory_session.commit()
+
+    reasoning_response = client.get(
+        "/api/semantic/reasoning-runs",
+        params={"graph_set_id": "gs-stage5", "kind": "consistency"},
+    )
+    rule_response = client.get(
+        "/api/semantic/rule-runs",
+        params={"graph_set_id": "gs-stage5", "kind": "platform_dsl"},
+    )
+
+    assert reasoning_response.status_code == 200
+    assert reasoning_response.json()["items"][0]["run_id"] == "reasoning-1"
+    assert reasoning_response.json()["summary"]["total"] == 1
+    assert rule_response.status_code == 200
+    assert rule_response.json()["items"][0]["run_id"] == "rule-1"
+    assert rule_response.json()["summary"]["total"] == 1
+
+
+def test_stage5_projection_status_exposes_stale_projection_count(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    in_memory_session.add(
+        SemanticGraphSetModel(
+            id="gs-stage5",
+            name="stage5",
+            scope_type="version",
+            scope_id="v1",
+            source_signature="current",
+        )
+    )
+    in_memory_session.add(
+        SemanticProjectionManifestModel(
+            id="manifest-stage5",
+            graph_set_id="gs-stage5",
+            projection_kind="neo4j",
+            active_job_id="job-old",
+            source_signature="old",
+            projection_version="neo4j-v1",
+            target_partition="gs-stage5/neo4j/neo4j-v1",
+            status="current",
+        )
+    )
+    in_memory_session.commit()
+
+    response = client.get("/api/semantic/projections/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["stale"] == ["manifest-stage5"]
+    assert body["stale_projection_count"] == 1
+
+
+def test_stage5_graph_registry_exposes_statement_count_and_latest_audit(
+    in_memory_session,
+) -> None:
+    store = FakeStore(
+        select_result={
+            "head": {"vars": ["c"]},
+            "results": {"bindings": [{"c": {"value": "7"}}]},
+        }
+    )
+    client = _client(store, in_memory_session)
+    audit_time = datetime(2026, 7, 7, 9, tzinfo=UTC)
+    in_memory_session.add(
+        SemanticGraphRegistryModel(
+            id="graph-stage5",
+            graph_iri=GRAPH,
+            category="data",
+            semantic_owner_type="ontology",
+            semantic_owner_id="ont-1",
+            mutable_by_direct_edit=True,
+        )
+    )
+    in_memory_session.add(
+        SemanticEditAuditModel(
+            id="audit-stage5",
+            actor="agent:test",
+            reason="stage5",
+            input_format="turtle",
+            target_graph_iri=GRAPH,
+            affected_graph_iris=[GRAPH],
+            validation_result=None,
+            graph_delta={"operation": "insert"},
+            applied=True,
+            created_at=audit_time,
+        )
+    )
+    in_memory_session.commit()
+
+    response = client.get(f"/api/semantic/graphs/{GRAPH}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["statement_count"] == 7
+    assert body["latest_audit_at"].startswith("2026-07-07T09:00:00")
+    assert "COUNT(*)" in store.queries[-1]
 
 
 # ---------------------------------------------------------------------------

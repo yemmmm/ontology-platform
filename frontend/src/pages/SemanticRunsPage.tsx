@@ -12,6 +12,9 @@ import {
   getReasoningRun,
   getRuleRun,
   getValidationRun,
+  listReasoningRuns,
+  listRuleRuns,
+  listValidationRuns,
   type SemanticRequester,
 } from "../semanticApi";
 import { RefreshButton, SemanticEmpty, SemanticPanel, SemanticTag } from "../components/semantic/primitives";
@@ -38,6 +41,9 @@ export function SemanticRunsPage({
   const [validation, setValidation] = useState<SemanticValidationRunRead | null>(null);
   const [reasoning, setReasoning] = useState<SemanticReasoningRunRead | null>(null);
   const [ruleRun, setRuleRun] = useState<SemanticRuleRunRead | null>(null);
+  const [history, setHistory] = useState<Array<SemanticValidationRunRead | SemanticReasoningRunRead | SemanticRuleRunRead>>([]);
+  const [summary, setSummary] = useState<{ total: number; stale_count: number; superseded_count: number } | null>(null);
+  const [graphSetId, setGraphSetId] = useState("");
 
   async function loadRun(targetId: string, targetKind: RunKind) {
     if (!targetId) return;
@@ -66,12 +72,37 @@ export function SemanticRunsPage({
     }
   }
 
+  async function loadHistory(targetKind: RunKind = kind) {
+    setLoading(true);
+    try {
+      const filters = { graphSetId: graphSetId || undefined, limit: 50 };
+      if (targetKind === "validation") {
+        const result = await listValidationRuns(request, filters);
+        setHistory(result.items);
+        setSummary(result.summary);
+      } else if (targetKind === "reasoning") {
+        const result = await listReasoningRuns(request, filters);
+        setHistory(result.items);
+        setSummary(result.summary);
+      } else {
+        const result = await listRuleRuns(request, filters);
+        setHistory(result.items);
+        setSummary(result.summary);
+      }
+    } catch (error) {
+      notify(errorNotice(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (initialRunId && initialRunKind) {
       setKind(initialRunKind);
       setRunId(initialRunId);
       void loadRun(initialRunId, initialRunKind);
     }
+    void loadHistory(initialRunKind ?? "validation");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,10 +114,14 @@ export function SemanticRunsPage({
           <h2>{t("Semantic Runs")}</h2>
           <p>{t("Inspect validation, reasoning, and rule run records by ID. Run jobs from the Graph Set page.")}</p>
         </div>
-        <RefreshButton busy={loading} onClick={() => runId && void loadRun(runId, kind)} />
+        <RefreshButton busy={loading} onClick={() => void loadHistory(kind)} />
       </header>
 
-      <SemanticPanel title={t("Run lookup")} icon={<History size={15} />}>
+      <SemanticPanel
+        title={t("Run history")}
+        icon={<History size={15} />}
+        actions={summary ? <SemanticTag>{summary.total} {t("run(s)")}</SemanticTag> : undefined}
+      >
         <div className="filterRow">
           <label>
             <span>{t("Run kind")}</span>
@@ -97,6 +132,7 @@ export function SemanticRunsPage({
                 setValidation(null);
                 setReasoning(null);
                 setRuleRun(null);
+                void loadHistory(next);
               }}
               value={kind}
             >
@@ -105,6 +141,17 @@ export function SemanticRunsPage({
               <option value="rule">{t("Rule")}</option>
             </select>
           </label>
+          <label>
+            <span>{t("Graph set")}</span>
+            <input
+              onChange={(event) => setGraphSetId(event.target.value)}
+              placeholder="graph-set-..."
+              value={graphSetId}
+            />
+          </label>
+          <button className="secondaryButton" disabled={loading} onClick={() => void loadHistory(kind)} type="button">
+            {loading ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} {t("Load history")}
+          </button>
           <label>
             <span>{t("Run ID")}</span>
             <input
@@ -117,6 +164,52 @@ export function SemanticRunsPage({
             {loading ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} {t("Load")}
           </button>
         </div>
+        {summary && (
+          <div className="runHistorySummary" aria-label="run-history-summary">
+            <SemanticTag>{t("Total")}: {summary.total}</SemanticTag>
+            <SemanticTag tone={summary.stale_count > 0 ? "warning" : "ok"}>{t("Stale")}: {summary.stale_count}</SemanticTag>
+            <SemanticTag tone={summary.superseded_count > 0 ? "warning" : undefined}>{t("Superseded")}: {summary.superseded_count}</SemanticTag>
+          </div>
+        )}
+        {!history.length ? (
+          <SemanticEmpty title={t("No run history")} hint={t("Run validation, reasoning, or rules from the Graph Set page.")} />
+        ) : (
+          <table className="namedGraphTable" aria-label="run-history-table">
+            <thead>
+              <tr>
+                <th>{t("Run")}</th>
+                <th>{t("Scope")}</th>
+                <th>{t("Status")}</th>
+                <th>{t("Result")}</th>
+                <th>{t("Started")}</th>
+                <th>{t("Staleness")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((run) => (
+                <tr key={run.run_id}>
+                  <td>
+                    <button
+                      className="ghostButton"
+                      type="button"
+                      onClick={() => {
+                        setRunId(run.run_id);
+                        void loadRun(run.run_id, kind);
+                      }}
+                    >
+                      <code>{run.run_id}</code>
+                    </button>
+                  </td>
+                  <td>{run.graph_set_id ?? "—"}</td>
+                  <td><SemanticTag tone={run.status === "succeeded" ? "ok" : run.status === "failed" ? "error" : "warning"}>{run.status}</SemanticTag></td>
+                  <td>{runResultLabel(run)}</td>
+                  <td>{run.started_at ? new Date(run.started_at).toLocaleString() : "—"}</td>
+                  <td><StalenessBadge stale={runIsStale(run)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </SemanticPanel>
 
       <SemanticPanel title={t("Selected run")} icon={<ShieldCheck size={15} />}
@@ -146,6 +239,18 @@ export function SemanticRunsPage({
       </SemanticPanel>
     </section>
   );
+}
+
+function runResultLabel(run: SemanticValidationRunRead | SemanticReasoningRunRead | SemanticRuleRunRead): string {
+  if ("conforms" in run) return run.conforms === null ? "pending" : run.conforms ? "conforms" : "violations";
+  if ("consistent" in run) return run.consistent === null ? "pending" : run.consistent ? "consistent" : "inconsistent";
+  return `${run.generated_statement_count} statement(s)`;
+}
+
+function runIsStale(run: SemanticValidationRunRead | SemanticReasoningRunRead | SemanticRuleRunRead): boolean {
+  if ("staleness" in run) return isStale(run.staleness);
+  if ("derived_pointer" in run && run.derived_pointer) return isStale(run.derived_pointer);
+  return false;
 }
 
 function isStale(state: unknown): boolean {

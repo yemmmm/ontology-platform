@@ -262,8 +262,22 @@ class SemanticEditRequest(BaseModel):
     warning_state: dict[str, Any] = Field(default_factory=dict)
 
 
+class SemanticEditParseError(BaseModel):
+    """Structured RDF parse error surfaced to the edit workbench.
+
+    ``line`` and ``column`` are extracted from rdflib exception text when the
+    parser emits the standard ``at line N, column M`` or ``at offset N`` form.
+    Both fields are ``None`` when extraction fails, in which case the flat
+    ``message`` remains the source of truth.
+    """
+
+    message: str
+    line: int | None = None
+    column: int | None = None
+
+
 class SemanticEditResponse(BaseModel):
-    audit_id: str
+    audit_id: str | None = None
     applied: bool
     affected_graph_iris: list[str]
     delta: dict[str, Any]
@@ -271,6 +285,25 @@ class SemanticEditResponse(BaseModel):
     validation: dict[str, Any] | None = None
     graph_revisions: dict[str, int] = Field(default_factory=dict)
     stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+    # Stage 5 §4.5 — structured parse error. Only populated when parsing the
+    # edit content failed; absent on successful preview/apply. Backwards-
+    # compatible: existing consumers can ignore this field.
+    parse_error: SemanticEditParseError | None = None
+    # Stage 5 §4.5 — convenience flat error string preserved for backwards
+    # compatibility with consumers that do not understand ``parse_error``.
+    error: str | None = None
+
+
+class SemanticEditPreviewResponse(SemanticEditResponse):
+    """Dedicated preview envelope.
+
+    Stage 5 §4.5 documents this as the would-be preview response shape. The
+    edit workbench today reuses ``POST /edits`` with ``validate=false`` as its
+    preview path, so this schema is provided as the canonical contract for
+    future callers and for the typed frontend client.
+    """
+
+    pass
 
 
 class SemanticEditAuditRead(BaseModel):
@@ -355,6 +388,12 @@ class SemanticGraphRegistryRead(BaseModel):
     content_hash: str | None = None
     derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Stage 5 §4.3 — request-time derived fields. Both are nullable: the
+    # statement count is ``None`` when the graph is not materialised in the
+    # Oxigraph store (e.g. policy-only graphs); the audit timestamp is
+    # ``None`` when no edit audit has touched the graph yet.
+    statement_count: int | None = None
+    latest_audit_at: datetime | None = None
 
 
 class SemanticGraphRegistryListResponse(BaseModel):
@@ -585,6 +624,29 @@ class SemanticReasoningRunRead(BaseModel):
     error: str | None = None
 
 
+class RunListSummary(BaseModel):
+    """Stage 5 §4.1 — common summary block for ``*-runs`` list endpoints."""
+
+    total: int = 0
+    stale_count: int = 0
+    superseded_count: int = 0
+
+
+class ValidationRunListResponse(BaseModel):
+    items: list[SemanticValidationRunRead]
+    summary: RunListSummary
+
+
+class ReasoningRunListResponse(BaseModel):
+    items: list[SemanticReasoningRunRead]
+    summary: RunListSummary
+
+
+class RuleRunListResponse(BaseModel):
+    items: list[SemanticRuleRunRead]
+    summary: RunListSummary
+
+
 # ----------------------------------------------------------------------------
 # Phase 6 — graph-derived read models, exports, projection jobs/manifests
 # ----------------------------------------------------------------------------
@@ -680,6 +742,10 @@ class SemanticProjectionStatusResponse(BaseModel):
     manifests: list[dict[str, Any]]
     stale: list[str]
     missing: list[str]
+    # Stage 5 §4.2 — scalar form of ``len(stale)`` so the governance tile can
+    # render the count without re-walking the list client-side. Always equals
+    # ``len(stale)``; non-breaking.
+    stale_projection_count: int = 0
 
 
 class SemanticProjectionReconcileResponse(BaseModel):

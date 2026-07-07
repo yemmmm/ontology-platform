@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
 from app.api.schemas import (
+    ReasoningRunListResponse,
+    RuleRunListResponse,
     SemanticCanonicalModeRead,
     SemanticCanonicalProductWriteRequest,
     SemanticCanonicalProductWriteResponse,
@@ -64,6 +66,7 @@ from app.api.schemas import (
     SemanticValidationRunRead,
     SemanticValidationRunRequest,
     SemanticValidationRunResponse,
+    ValidationRunListResponse,
 )
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
@@ -287,6 +290,32 @@ def _projection_job_read(job) -> SemanticProjectionJobRead:
     )
 
 
+def _run_list_summary(items: list[dict], total: int) -> dict[str, int]:
+    stale_count = sum(1 for item in items if (item.get("staleness") or {}).get("stale"))
+    superseded_count = sum(
+        1
+        for item in items
+        if item.get("status") == "superseded"
+        or (item.get("derived_pointer") or {}).get("status") == "superseded"
+    )
+    return {
+        "total": total,
+        "stale_count": stale_count,
+        "superseded_count": superseded_count,
+    }
+
+
+def _semantic_http_exception(exc: Exception) -> HTTPException:
+    detail: object = str(exc)
+    if hasattr(exc, "parse_message"):
+        detail = {
+            "message": f"RDF parse error: {getattr(exc, 'parse_message')}",
+            "line": getattr(exc, "parse_line", None),
+            "column": getattr(exc, "parse_column", None),
+        }
+    return HTTPException(status_code=getattr(exc, "status_code", 400), detail=detail)
+
+
 @router.post("/datasets:load", response_model=SemanticDatasetLoadResponse)
 def load_dataset(
     request: SemanticDatasetLoadRequest,
@@ -302,7 +331,7 @@ def load_dataset(
         )
         return SemanticDatasetLoadResponse(**result.__dict__)
     except (SemanticServiceError, RdfStoreError) as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+        raise _semantic_http_exception(exc) from exc
 
 
 @router.post("/sparql:query", response_model=SemanticSparqlQueryResponse)
@@ -320,7 +349,7 @@ def query_sparql(
         )
         return SemanticSparqlQueryResponse(**result.__dict__)
     except (SemanticServiceError, RdfStoreError) as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+        raise _semantic_http_exception(exc) from exc
 
 
 @router.post("/validation-runs", response_model=SemanticValidationRunResponse)
@@ -377,7 +406,45 @@ def create_semantic_edit(
         )
         return SemanticEditResponse(**result)
     except (SemanticServiceError, RdfStoreError) as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+        raise _semantic_http_exception(exc) from exc
+
+
+@router.get("/validation-runs", response_model=ValidationRunListResponse)
+def list_validation_runs(
+    graph_set_id: Annotated[str | None, Query()] = None,
+    kind: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> ValidationRunListResponse:
+    items, total = _validation_service(session, rdf_store, settings).list_validation_runs(
+        limit=limit,
+        offset=offset,
+        graph_set_id=graph_set_id,
+        kind=kind,
+    )
+    return ValidationRunListResponse(items=items, summary=_run_list_summary(items, total))
+
+
+@router.get("/reasoning-runs", response_model=ReasoningRunListResponse)
+def list_reasoning_runs(
+    graph_set_id: Annotated[str | None, Query()] = None,
+    kind: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> ReasoningRunListResponse:
+    items, total = _reasoning_service(session, rdf_store, settings).list_reasoning_runs(
+        limit=limit,
+        offset=offset,
+        graph_set_id=graph_set_id,
+        kind=kind,
+    )
+    return ReasoningRunListResponse(items=items, summary=_run_list_summary(items, total))
 
 
 @router.get("/edits/audits", response_model=list[SemanticEditAuditRead])
@@ -453,13 +520,14 @@ def list_graph_registry(
     owner_id: Annotated[str | None, Query()] = None,
     include_revisions: Annotated[bool, Query()] = True,
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphRegistryListResponse:
     registry = _registry_service(session, settings)
     records = registry.list_graphs(category=category, owner_type=owner_type, owner_id=owner_id)
     graphs: list[SemanticGraphRegistryRead] = []
     for record in records:
-        graphs.append(_registry_read(registry, record, include_revisions))
+        graphs.append(_registry_read(registry, record, include_revisions, rdf_store))
     summary = registry.status_summary()
     return SemanticGraphRegistryListResponse(graphs=graphs, summary=summary)
 
@@ -468,6 +536,7 @@ def list_graph_registry(
 def register_graph(
     request: SemanticGraphRegistryCreate,
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphRegistryRead:
     registry = _registry_service(session, settings)
@@ -483,17 +552,19 @@ def register_graph(
         )
     except GraphRegistryError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _registry_read(registry, record, include_revisions=True)
+    return _registry_read(registry, record, include_revisions=True, rdf_store=rdf_store)
 
 
 @router.get("/graphs/{graph_iri:path}", response_model=SemanticGraphRegistryRead)
 def get_graph_registry(
     graph_iri: str,
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphRegistryRead:
     registry = _registry_service(session, settings)
     status = registry.graph_status(graph_iri)
+    status["statement_count"] = _statement_count(rdf_store, graph_iri)
     return SemanticGraphRegistryRead(**status)
 
 
@@ -827,6 +898,25 @@ def create_graph_set_rule_run(
     except RuleExecutionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticRuleRunRead(**_rule_run_response(result))
+
+
+@router.get("/rule-runs", response_model=RuleRunListResponse)
+def list_rule_runs(
+    graph_set_id: Annotated[str | None, Query()] = None,
+    kind: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> RuleRunListResponse:
+    items, total = _rule_execution_service(session, rdf_store, settings).list_rule_runs(
+        limit=limit,
+        offset=offset,
+        graph_set_id=graph_set_id,
+        kind=kind,
+    )
+    return RuleRunListResponse(items=items, summary=_run_list_summary(items, total))
 
 
 @router.get("/rule-runs/{run_id}", response_model=SemanticRuleRunRead)
@@ -1464,6 +1554,7 @@ def _registry_read(
     registry: SemanticGraphRegistryService,
     record,
     include_revisions: bool,
+    rdf_store: RdfStoreRepository,
 ) -> SemanticGraphRegistryRead:
     if include_revisions:
         status = registry.graph_status(record.graph_iri)
@@ -1480,6 +1571,8 @@ def _registry_read(
             content_hash=status.get("content_hash"),
             derived_pointers=status.get("derived_pointers") or [],
             metadata=record.registry_metadata or {},
+            statement_count=_statement_count(rdf_store, record.graph_iri),
+            latest_audit_at=status.get("latest_audit_at"),
         )
     return SemanticGraphRegistryRead(
         graph_iri=record.graph_iri,
@@ -1489,7 +1582,31 @@ def _registry_read(
         owner_id=record.semantic_owner_id,
         mutable_by_direct_edit=record.mutable_by_direct_edit,
         metadata=record.registry_metadata or {},
+        statement_count=_statement_count(rdf_store, record.graph_iri),
+        latest_audit_at=registry.latest_audit_at(record.graph_iri),
     )
+
+
+def _statement_count(rdf_store: RdfStoreRepository, graph_iri: str) -> int | None:
+    try:
+        result = rdf_store.query_sparql(
+            f"SELECT (COUNT(*) AS ?c) WHERE {{ GRAPH <{graph_iri}> {{ ?s ?p ?o }} }}",
+            timeout_seconds=10,
+            limit=1,
+        )
+    except Exception:
+        return None
+    payload = result.result
+    if not isinstance(payload, dict):
+        return None
+    bindings = payload.get("results", {}).get("bindings", [])
+    if not bindings:
+        return 0
+    value = bindings[0].get("c", {}).get("value")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _rule_definition_read(rule) -> SemanticRuleDefinitionRead:

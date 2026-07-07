@@ -201,6 +201,7 @@ class SemanticProjectionJobService:
         return {
             "manifests": [self._manifest_dict(m) for m in manifests],
             "stale": stale,
+            "stale_projection_count": len(stale),
             "missing": missing,
         }
 

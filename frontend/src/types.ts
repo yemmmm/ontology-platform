@@ -534,6 +534,8 @@ export type SemanticGraphRegistryRead = {
   content_hash: string | null;
   derived_pointers: SemanticJsonObject[];
   metadata: SemanticJsonObject;
+  statement_count: number | null;
+  latest_audit_at: string | null;
 };
 
 export type SemanticGraphRegistryListResponse = {
@@ -587,7 +589,7 @@ export type SemanticEditAuditRead = {
 };
 
 export type SemanticEditResponse = {
-  audit_id: string;
+  audit_id: string | null;
   applied: boolean;
   affected_graph_iris: string[];
   delta: SemanticJsonObject;
@@ -595,6 +597,14 @@ export type SemanticEditResponse = {
   validation: SemanticJsonObject | null;
   graph_revisions: Record<string, number>;
   stale_derived_pointers: SemanticJsonObject[];
+  parse_error: SemanticEditParseError | null;
+  error: string | null;
+};
+
+export type SemanticEditParseError = {
+  message: string;
+  line: number | null;
+  column: number | null;
 };
 
 export type SemanticGraphEditabilityResponse = {
@@ -671,6 +681,27 @@ export type SemanticRuleRunRead = {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
+};
+
+export type SemanticRunListSummary = {
+  total: number;
+  stale_count: number;
+  superseded_count: number;
+};
+
+export type SemanticValidationRunListResponse = {
+  items: SemanticValidationRunRead[];
+  summary: SemanticRunListSummary;
+};
+
+export type SemanticReasoningRunListResponse = {
+  items: SemanticReasoningRunRead[];
+  summary: SemanticRunListSummary;
+};
+
+export type SemanticRuleRunListResponse = {
+  items: SemanticRuleRunRead[];
+  summary: SemanticRunListSummary;
 };
 
 export type SemanticRuleDefinitionRead = {
@@ -768,6 +799,13 @@ export type SemanticProjectionJobRead = {
 export type SemanticProjectionJobListResponse = {
   items: SemanticProjectionJobRead[];
   total: number;
+};
+
+export type SemanticProjectionStatusResponse = {
+  manifests: SemanticJsonObject[];
+  stale: string[];
+  missing: string[];
+  stale_projection_count: number;
 };
 
 export type SemanticSparqlQueryResponse = {

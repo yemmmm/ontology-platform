@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -522,14 +522,38 @@ class SemanticRuleExecutionService:
             raise RuleExecutionNotFound(f"Rule run not found: {run_id}")
         return self._serialize_run(run)
 
-    def list_rule_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded = max(1, min(limit, 200))
+    def list_rule_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        graph_set_id: str | None = None,
+        kind: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Stage 5 §4.1 — list rule runs with optional filters.
+
+        ``graph_set_id`` filters on the dedicated column (rule runs always
+        carry it). ``kind`` filters on ``engine_name`` (e.g.
+        ``sparql_construct``, ``platform_dsl``) since rule runs do not have a
+        separate "task" notion.
+        """
+        bounded_limit = max(1, min(limit, 200))
+        bounded_offset = max(0, offset)
+        statement = select(SemanticRuleRunModel)
+        if graph_set_id:
+            statement = statement.where(
+                SemanticRuleRunModel.graph_set_id == graph_set_id
+            )
+        if kind:
+            statement = statement.where(SemanticRuleRunModel.engine_name == kind)
+        total = self.session.scalar(
+            select(func.count()).select_from(statement.subquery())
+        ) or 0
         rows = self.session.scalars(
-            select(SemanticRuleRunModel)
-            .order_by(SemanticRuleRunModel.started_at.desc())
-            .limit(bounded)
+            statement.order_by(SemanticRuleRunModel.started_at.desc())
+            .offset(bounded_offset)
+            .limit(bounded_limit)
         )
-        return [self._serialize_run(run) for run in rows]
+        return [self._serialize_run(run) for run in rows], int(total)
 
     # ------------------------------------------------------------------
     # Internal helpers

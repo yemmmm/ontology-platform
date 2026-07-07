@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -209,14 +209,42 @@ class SemanticReasoningService:
             raise ValueError(f"Reasoning run not found: {run_id}")
         return self._serialize_run(run)
 
-    def list_reasoning_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded = max(1, min(limit, 200))
+    def list_reasoning_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        graph_set_id: str | None = None,
+        kind: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Stage 5 §4.1 — list reasoning runs with optional filters.
+
+        ``graph_set_id`` is read from run metadata (the column itself only
+        carries source/result IRIs). ``kind`` matches the reasoning task
+        (``consistency``, ``classification``, ``entailment``) which is stored
+        as a JSONB list in metadata; we use a containment check so any run
+        whose task list includes the requested kind surfaces.
+        """
+        bounded_limit = max(1, min(limit, 200))
+        bounded_offset = max(0, offset)
+        statement = select(SemanticReasoningRunModel)
+        if graph_set_id:
+            statement = statement.where(
+                SemanticReasoningRunModel.run_metadata["graph_set_id"].astext
+                == graph_set_id
+            )
+        if kind:
+            statement = statement.where(
+                SemanticReasoningRunModel.run_metadata["tasks"].astext.contains(kind)
+            )
+        total = self.session.scalar(
+            select(func.count()).select_from(statement.subquery())
+        ) or 0
         rows = self.session.scalars(
-            select(SemanticReasoningRunModel)
-            .order_by(SemanticReasoningRunModel.started_at.desc())
-            .limit(bounded)
+            statement.order_by(SemanticReasoningRunModel.started_at.desc())
+            .offset(bounded_offset)
+            .limit(bounded_limit)
         )
-        return [self._serialize_run(run) for run in rows]
+        return [self._serialize_run(run) for run in rows], int(total)
 
     def _serialize_run(self, run: SemanticReasoningRunModel) -> dict[str, Any]:
         metadata = run.run_metadata or {}

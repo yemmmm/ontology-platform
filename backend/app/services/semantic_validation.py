@@ -17,7 +17,7 @@ from uuid import uuid4
 from pyshacl import validate as pyshacl_validate
 from rdflib import Graph
 from rdflib.namespace import RDF
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -211,14 +211,42 @@ class SemanticValidationService:
             raise ValueError(f"Validation run not found: {run_id}")
         return self._serialize_run(run)
 
-    def list_validation_runs(self, limit: int = 50) -> list[dict[str, Any]]:
-        bounded = max(1, min(limit, 200))
+    def list_validation_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        graph_set_id: str | None = None,
+        kind: str | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List validation runs in ``started_at DESC`` order.
+
+        Stage 5 §4.1 — filters by ``graph_set_id`` (read from run metadata)
+        and optional ``kind`` (the validation scope). Returns ``(items, total)``
+        so the caller can populate a summary envelope. ``offset`` is non-
+        negative; ``limit`` is clamped to ``[1, 200]``.
+        """
+        bounded_limit = max(1, min(limit, 200))
+        bounded_offset = max(0, offset)
+        statement = select(SemanticValidationRunModel)
+        if graph_set_id:
+            statement = statement.where(
+                SemanticValidationRunModel.run_metadata["graph_set_id"].astext
+                == graph_set_id
+            )
+        if kind:
+            statement = statement.where(
+                SemanticValidationRunModel.run_metadata["validation_scope"].astext
+                == kind
+            )
+        total = self.session.scalar(
+            select(func.count()).select_from(statement.subquery())
+        ) or 0
         rows = self.session.scalars(
-            select(SemanticValidationRunModel)
-            .order_by(SemanticValidationRunModel.started_at.desc())
-            .limit(bounded)
+            statement.order_by(SemanticValidationRunModel.started_at.desc())
+            .offset(bounded_offset)
+            .limit(bounded_limit)
         )
-        return [self._serialize_run(run) for run in rows]
+        return [self._serialize_run(run) for run in rows], int(total)
 
     def detect_staleness(self, run: SemanticValidationRunModel) -> dict[str, Any]:
         metadata = run.run_metadata or {}

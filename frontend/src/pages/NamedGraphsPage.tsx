@@ -55,6 +55,7 @@ export function NamedGraphsPage({
   const [category, setCategory] = useState(initialCategory ?? "");
   const [ownerType, setOwnerType] = useState("");
   const [editability, setEditability] = useState<"" | "editable" | "locked">("");
+  const [freshness, setFreshness] = useState<"" | "current" | "stale">("");
   const [selectedGraphIri, setSelectedGraphIri] = useState<string>("");
 
   async function load() {
@@ -83,9 +84,12 @@ export function NamedGraphsPage({
     return graphs.filter((graph) => {
       if (editability === "editable" && graph.editable !== true) return false;
       if (editability === "locked" && graph.editable !== false) return false;
+      const stale = isGraphStale(graph);
+      if (freshness === "current" && stale) return false;
+      if (freshness === "stale" && !stale) return false;
       return true;
     });
-  }, [data, editability]);
+  }, [data, editability, freshness]);
 
   const summary = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -147,6 +151,7 @@ export function NamedGraphsPage({
               setCategory("");
               setOwnerType("");
               setEditability("");
+              setFreshness("");
             }}
             type="button"
           >
@@ -184,6 +189,17 @@ export function NamedGraphsPage({
               <option value="locked">{t("Locked only")}</option>
             </select>
           </label>
+          <label>
+            <span>{t("Freshness")}</span>
+            <select
+              onChange={(event) => setFreshness(event.target.value as "" | "current" | "stale")}
+              value={freshness}
+            >
+              <option value="">{t("Current and stale")}</option>
+              <option value="current">{t("Current only")}</option>
+              <option value="stale">{t("Stale only")}</option>
+            </select>
+          </label>
         </div>
       </SemanticPanel>
 
@@ -198,17 +214,16 @@ export function NamedGraphsPage({
                 <th>{t("Category")}</th>
                 <th>{t("Owner type")}</th>
                 <th>{t("Revision")}</th>
+                <th>{t("Statements")}</th>
+                <th>{t("Latest audit")}</th>
                 <th>{t("Editability")}</th>
-                <th>{t("Derived pointers")}</th>
+                <th>{t("Freshness")}</th>
                 <th aria-label="actions">{t("Actions")}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((graph) => {
-                const derivedStale = (graph.derived_pointers ?? []).some((pointer) => {
-                  const record = pointer as Record<string, unknown>;
-                  return record.stale === true || record.is_stale === true;
-                });
+                const derivedStale = isGraphStale(graph);
                 return (
                   <tr key={graph.graph_iri} aria-label={`graph-row-${graph.graph_iri}`}>
                     <td>
@@ -222,6 +237,8 @@ export function NamedGraphsPage({
                       {graph.owner_id ? <small> · {graph.owner_id}</small> : null}
                     </td>
                     <td>{graph.revision ?? "—"}</td>
+                    <td>{graph.statement_count ?? "—"}</td>
+                    <td>{graph.latest_audit_at ? new Date(graph.latest_audit_at).toLocaleString() : "—"}</td>
                     <td>
                       <EditabilityBadge editable={graph.editable} reason={graph.editability_reason} />
                     </td>
@@ -254,6 +271,8 @@ export function NamedGraphsPage({
             <div><dt>{t("Owner")}</dt><dd>{selected.owner_type ?? "—"}{selected.owner_id ? ` · ${selected.owner_id}` : ""}</dd></div>
             <div><dt>{t("Revision")}</dt><dd>{selected.revision ?? "—"}</dd></div>
             <div><dt>{t("Content hash")}</dt><dd><code>{selected.content_hash ?? "—"}</code></dd></div>
+            <div><dt>{t("Statement count")}</dt><dd>{selected.statement_count ?? "—"}</dd></div>
+            <div><dt>{t("Latest audit")}</dt><dd>{selected.latest_audit_at ? new Date(selected.latest_audit_at).toLocaleString() : "—"}</dd></div>
             <div><dt>{t("Mutable by direct edit")}</dt><dd>{selected.mutable_by_direct_edit ? t("yes") : t("no")}</dd></div>
             <div><dt>{t("Editability reason")}</dt><dd>{selected.editability_reason ?? "—"}</dd></div>
             <div>
@@ -269,4 +288,11 @@ export function NamedGraphsPage({
       )}
     </section>
   );
+}
+
+function isGraphStale(graph: SemanticGraphRegistryRead): boolean {
+  return (graph.derived_pointers ?? []).some((pointer) => {
+    const record = pointer as Record<string, unknown>;
+    return record.stale === true || record.is_stale === true || record.status === "stale";
+  });
 }

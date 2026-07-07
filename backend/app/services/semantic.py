@@ -63,6 +63,13 @@ class SemanticGraphPolicyViolation(SemanticServiceError):
     status_code = 400
 
 
+# Stage 5 §4.5 — patterns for extracting line/column from rdflib parser
+# exceptions. ``at line N, column M`` is the canonical rdflib form; ``at
+# offset N`` appears for some JSON-LD / TriG failures.
+_PARSE_LINE_COLUMN_RE = re.compile(r"at line\s+(\d+)\s*,\s*column\s+(\d+)")
+_PARSE_OFFSET_RE = re.compile(r"at offset\s+(\d+)")
+
+
 WRITE_SPARQL_OPERATIONS = {"insert", "delete", "load", "clear", "create", "drop", "copy", "move", "add"}
 
 
@@ -580,7 +587,7 @@ def _parse_graph(content: str, format: str, base_iri: str) -> Graph:
     try:
         graph.parse(data=content, format=format, publicID=base_iri)
     except Exception as exc:
-        raise SemanticServiceError(_format_parse_error(exc)) from exc
+        raise _parse_error_exception(exc) from exc
     return graph
 
 
@@ -589,13 +596,57 @@ def _parse_dataset(content: str, format: str, base_iri: str) -> Dataset:
     try:
         dataset.parse(data=content, format=format, publicID=base_iri)
     except Exception as exc:
-        raise SemanticServiceError(_format_parse_error(exc)) from exc
+        raise _parse_error_exception(exc) from exc
     return dataset
 
 
+def _parse_error_exception(exc: BaseException) -> SemanticServiceError:
+    """Stage 5 §4.5 — wrap a parser exception with structured line/column.
+
+    The returned ``SemanticServiceError`` carries ``parse_message``,
+    ``parse_line`` and ``parse_column`` attributes so callers (notably
+    ``/edits``) can populate ``SemanticEditParseError`` on the response without
+    re-parsing the exception text.
+    """
+    message, line, column = _extract_parse_error_details(exc)
+    error = SemanticServiceError(f"RDF parse error: {message}")
+    error.parse_message = message  # type: ignore[attr-defined]
+    error.parse_line = line  # type: ignore[attr-defined]
+    error.parse_column = column  # type: ignore[attr-defined]
+    return error
+
+
 def _format_parse_error(exc: BaseException) -> str:
-    message = str(exc).strip() or exc.__class__.__name__
+    message, _line, _column = _extract_parse_error_details(exc)
     return f"RDF parse error: {message}"
+
+
+def _extract_parse_error_details(exc: BaseException) -> tuple[str, int | None, int | None]:
+    """Stage 5 §4.5 — extract ``line`` / ``column`` from an rdflib exception.
+
+    rdflib emits two common error formats:
+
+    * ``"... at line N, column M"`` — full position.
+    * ``"... at offset N"`` — only an offset; we expose it as ``column`` when
+      no line is present (treats single-line input as the common case) and
+      leave ``line`` as ``None``.
+
+    Returns ``(message, line, column)`` where ``message`` is the cleaned
+    exception text without the leading ``RDF parse error:`` prefix. ``line``
+    and ``column`` stay ``None`` when no positional information is present.
+    """
+    raw = str(exc).strip() or exc.__class__.__name__
+    line: int | None = None
+    column: int | None = None
+    line_column_match = _PARSE_LINE_COLUMN_RE.search(raw)
+    if line_column_match:
+        line = int(line_column_match.group(1))
+        column = int(line_column_match.group(2))
+    else:
+        offset_match = _PARSE_OFFSET_RE.search(raw)
+        if offset_match:
+            column = int(offset_match.group(1))
+    return raw, line, column
 
 
 def _combined_graph(rdf_store: RdfStoreRepository, graph_iris: list[str]) -> Graph:

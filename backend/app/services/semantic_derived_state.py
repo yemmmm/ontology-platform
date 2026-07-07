@@ -235,10 +235,14 @@ class SemanticDerivedStateService:
         for row in rows:
             kind_bucket = by_kind_status.setdefault(row.result_kind, {})
             kind_bucket[row.status] = kind_bucket.get(row.status, 0) + 1
+        stale_derived_count = sum(
+            status_counts.get("stale", 0) for status_counts in by_kind_status.values()
+        )
         return {
             "derived_pointer_counts": by_kind_status,
             "stale_reasoning_results": by_kind_status.get("reasoning", {}).get("stale", 0),
             "stale_rule_results": by_kind_status.get("rule", {}).get("stale", 0),
+            "stale_derived_count": stale_derived_count,
             "current_reasoning_results": by_kind_status.get("reasoning", {}).get("current", 0),
             "current_rule_results": by_kind_status.get("rule", {}).get("current", 0),
         }

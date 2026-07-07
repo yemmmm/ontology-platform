@@ -114,7 +114,7 @@ export function SemanticImportExportPage({
       setEditPreview(result);
       notify({
         kind: result.applied ? "ok" : "info",
-        message: t("Import applied via governed edit · audit {id}", { id: result.audit_id }),
+        message: t("Import applied via governed edit · audit {id}", { id: result.audit_id ?? "preview" }),
       });
     } catch (error) {
       notify(errorNotice(error));

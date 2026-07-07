@@ -154,7 +154,7 @@ export function SemanticEditWorkbenchPage({
     setApplying(true);
     try {
       const result = await applySemanticEdit(request, payload);
-      notify({ kind: "ok", message: t("Semantic edit applied · audit {id}", { id: result.audit_id }) });
+      notify({ kind: "ok", message: t("Semantic edit applied · audit {id}", { id: result.audit_id ?? "preview" }) });
       setPreview(result);
       await loadAudits();
     } catch (error) {

@@ -189,8 +189,9 @@ def test_validation_record_marks_stale_when_signature_changes(
             {"graph_iri": f"{PREFIX}data/extra", "role": "asserted_data"},
         ],
     )
-    runs = validation_service.list_validation_runs()
+    runs, total = validation_service.list_validation_runs()
     assert runs
+    assert total == 1
     latest = runs[0]
     assert latest["staleness"]["stale"] is True
     assert latest["staleness"]["reason"] in {

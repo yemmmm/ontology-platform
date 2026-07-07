@@ -19,12 +19,16 @@ import type {
   SemanticMissingEvidenceSummary,
   SemanticProjectionJobListResponse,
   SemanticProjectionJobRead,
+  SemanticProjectionStatusResponse,
   SemanticReadModelEnvelope,
+  SemanticReasoningRunListResponse,
   SemanticRuleDefinitionListResponse,
   SemanticRuleDefinitionRead,
+  SemanticRuleRunListResponse,
   SemanticRuleRunRead,
   SemanticSparqlQueryResponse,
   SemanticValidationRunRead,
+  SemanticValidationRunListResponse,
   SemanticReasoningRunRead,
 } from "./types";
 
@@ -60,7 +64,7 @@ export function listGraphRegistry(
 }
 
 export function getGraphRegistry(request: SemanticRequester, graphIri: string) {
-  return request<SemanticGraphRegistryRead>(`${SEMANTIC_BASE}/graphs/${graphIri}`);
+  return request<SemanticGraphRegistryRead>(`${SEMANTIC_BASE}/graphs/${encodeURIComponent(graphIri)}`);
 }
 
 export function updateGraphEditability(
@@ -71,7 +75,7 @@ export function updateGraphEditability(
   reason?: string,
 ) {
   return request<SemanticGraphEditabilityResponse>(
-    `${SEMANTIC_BASE}/graphs/${graphIri}/editability`,
+    `${SEMANTIC_BASE}/graphs/${encodeURIComponent(graphIri)}/editability`,
     {
       method: "PATCH",
       body: JSON.stringify({ editable, actor, reason }),
@@ -279,12 +283,51 @@ export function getValidationRun(request: SemanticRequester, runId: string) {
   return request<SemanticValidationRunRead>(`${SEMANTIC_BASE}/validation-runs/${runId}`);
 }
 
+export function listValidationRuns(
+  request: SemanticRequester,
+  filters: { graphSetId?: string; kind?: string; limit?: number; offset?: number } = {},
+) {
+  const path = withParams(`${SEMANTIC_BASE}/validation-runs`, {
+    graph_set_id: filters.graphSetId,
+    kind: filters.kind,
+    limit: filters.limit,
+    offset: filters.offset,
+  });
+  return request<SemanticValidationRunListResponse>(path);
+}
+
 export function getReasoningRun(request: SemanticRequester, runId: string) {
   return request<SemanticReasoningRunRead>(`${SEMANTIC_BASE}/reasoning-runs/${runId}`);
 }
 
+export function listReasoningRuns(
+  request: SemanticRequester,
+  filters: { graphSetId?: string; kind?: string; limit?: number; offset?: number } = {},
+) {
+  const path = withParams(`${SEMANTIC_BASE}/reasoning-runs`, {
+    graph_set_id: filters.graphSetId,
+    kind: filters.kind,
+    limit: filters.limit,
+    offset: filters.offset,
+  });
+  return request<SemanticReasoningRunListResponse>(path);
+}
+
 export function getRuleRun(request: SemanticRequester, runId: string) {
   return request<SemanticRuleRunRead>(`${SEMANTIC_BASE}/rule-runs/${runId}`);
+}
+
+export function listRuleRuns(
+  request: SemanticRequester,
+  filters: { graphSetId?: string; kind?: string; limit?: number; offset?: number } = {},
+) {
+  const path = withParams(`${SEMANTIC_BASE}/rule-runs`, {
+    graph_set_id: filters.graphSetId,
+    kind: filters.kind,
+    limit: filters.limit,
+    offset: filters.offset,
+  });
+  return request<SemanticRuleRunListResponse>(path);
 }
 
 export function listRuleDefinitions(
@@ -532,8 +575,22 @@ export function listProjectionJobs(
   request: SemanticRequester,
   filters: { graphSetId?: string; projectionKind?: string; status?: string } = {},
 ) {
-  const path = withParams(`${SEMANTIC_BASE}/projection-jobs`, filters);
+  const path = withParams(`${SEMANTIC_BASE}/projection-jobs`, {
+    graph_set_id: filters.graphSetId,
+    projection_kind: filters.projectionKind,
+    status: filters.status,
+  });
   return request<SemanticProjectionJobListResponse>(path);
+}
+
+export function getProjectionStatus(
+  request: SemanticRequester,
+  filters: { graphSetId?: string } = {},
+) {
+  const path = withParams(`${SEMANTIC_BASE}/projections/status`, {
+    graph_set_id: filters.graphSetId,
+  });
+  return request<SemanticProjectionStatusResponse>(path);
 }
 
 export function getProjectionJob(request: SemanticRequester, jobId: string) {

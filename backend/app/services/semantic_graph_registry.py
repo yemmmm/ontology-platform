@@ -7,12 +7,13 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticDerivedResultPointerModel,
+    SemanticEditAuditModel,
     SemanticGraphRegistryModel,
     SemanticGraphRevisionModel,
     SemanticGraphStateModel,
@@ -252,7 +253,15 @@ class SemanticGraphRegistryService:
             "content_hash": revision.content_hash if revision else None,
             "derived_pointers": derived_pointers,
             "metadata": record.registry_metadata or {},
+            "latest_audit_at": self.latest_audit_at(graph_iri),
         }
+
+    def latest_audit_at(self, graph_iri: str) -> datetime | None:
+        return self.session.scalar(
+            select(func.max(SemanticEditAuditModel.created_at)).where(
+                SemanticEditAuditModel.target_graph_iri == graph_iri
+            )
+        )
 
     def _state(self, graph_iri: str) -> SemanticGraphStateModel | None:
         return self.session.scalar(
