@@ -4,8 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
 //
 // Each test mounts a Stage 2 page via the `?graphSet=` URL parameter and
 // mocks the corresponding read-model endpoint to assert the page renders
-// its key UI affordances (eyebrow text, list rows, action buttons, kind
-// tabs). These are intentionally minimal: canonical-write flows live
+// its key UI affordances (eyebrow text, topology canvas, action buttons,
+// kind tabs). These are intentionally minimal: canonical-write flows live
 // behind Modal interactions and are out of scope for this smoke slice.
 
 const project = { id: "project-stage2", name: "Stage 2 Sandbox", description: "graph-derived smoke" };
@@ -281,21 +281,59 @@ test("ClassesPage graph-derived path renders class topology", async ({ page }) =
   await expect(page.getByText("Business modeling").first()).toBeVisible();
   // Stage 2 page h1 — disambiguate from the sidebar nav heading.
   await expect(page.locator("section.classesPage.stage2").getByRole("heading", { name: "Classes" })).toBeVisible();
-  await expect(page.getByText("Class 1")).toBeVisible();
+  await expect(page.getByText(/Class force graph · 2 nodes · 2 edges/)).toBeVisible();
   await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
+  await expect(page.getByLabel("Graph item details")).toHaveCount(0);
+  await expect(page.locator("section.classesPage.stage2 .classList")).toHaveCount(0);
+  await page.locator('button[aria-label="Select node Class 1"]').dispatchEvent("click");
+  const details = page.getByLabel("Graph item details");
+  await expect(details.getByRole("heading", { name: "Class 1" })).toBeVisible();
+  await details.getByRole("button", { name: "Edit" }).click();
+  await details.getByLabel("Name").fill("Class 1 renamed");
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().includes("/semantic/canonical-writes:compile-and-apply") &&
+      request.method() === "POST" &&
+      request.postDataJSON().command_kind === "update_class",
+  );
+  await details.getByRole("button", { name: "Save" }).click();
+  await updateRequest;
+  await page.locator('button[aria-label="Select edge owns"]').dispatchEvent("click");
+  await expect(details.getByText("Relation type")).toBeVisible();
+  await details.getByRole("button", { name: "Close details" }).click();
+  await expect(page.getByLabel("Graph item details")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
 });
 
-test("EntitiesPage graph-derived path renders entity and relations cards", async ({ page }) => {
+test("EntitiesPage graph-derived path renders entity topology only", async ({ page }) => {
   await mockCommon(page);
   await page.goto(
     `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=entities&graphSet=${GRAPH_SET_ID}`,
   );
   await expect(page.getByText("Business modeling").first()).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByRole("heading", { name: "Entities" })).toBeVisible();
-  await expect(page.locator("section.entitiesPage.stage2 .entityList").getByText("Entity One")).toBeVisible();
-  await expect(page.getByText("knows")).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 2 nodes · 1 edges/)).toBeVisible();
   await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
+  await expect(page.getByLabel("Graph item details")).toHaveCount(0);
+  await expect(page.locator("section.entitiesPage.stage2 .entityList")).toHaveCount(0);
+  await expect(page.locator("section.entitiesPage.stage2 .relationList")).toHaveCount(0);
+  await page.locator('button[aria-label="Select node Entity One"]').dispatchEvent("click");
+  const details = page.getByLabel("Graph item details");
+  await expect(details.getByRole("heading", { name: "Entity One" })).toBeVisible();
+  await details.getByRole("button", { name: "Edit" }).click();
+  await details.getByLabel("Label").fill("Entity One renamed");
+  const updateRequest = page.waitForRequest(
+    (request) =>
+      request.url().includes("/semantic/canonical-writes:compile-and-apply") &&
+      request.method() === "POST" &&
+      request.postDataJSON().command_kind === "update_entity",
+  );
+  await details.getByRole("button", { name: "Save" }).click();
+  await updateRequest;
+  await page.locator('button[aria-label="Select edge knows"]').dispatchEvent("click");
+  await expect(details.getByText("Relation", { exact: true })).toBeVisible();
+  await details.getByRole("button", { name: "Close details" }).click();
+  await expect(page.getByLabel("Graph item details")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New entity" })).toBeEnabled();
 });
 

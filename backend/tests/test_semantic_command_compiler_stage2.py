@@ -805,3 +805,87 @@ def test_review_assertion_rejected_requires_linked_fix_proposal_id():
     with pytest.raises(InvalidCommandPayload):
         compile_command("review_assertion", payload, _settings())
 
+
+def test_update_fact_replaces_literal_object_in_data_graph():
+    payload = {
+        "ontology_id": "ont-1",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/email",
+        "old_object_value": "alice@example.com",
+        "new_object_value": "alice@school.example",
+    }
+
+    compiled = compile_command("update_fact", payload, _settings())
+
+    graph_iri = "http://op.local/graph/data/ont-1"
+    assert compiled.command_kind == "update_fact"
+    assert compiled.object_kind == "fact"
+    assert compiled.target_graph_iris == [graph_iri]
+    subject = "<http://op.local/ns/entity/alice>"
+    predicate = "<http://op.local/ns/property/email>"
+    assert (subject, predicate, '"alice@example.com"', graph_iri) in compiled.delta.deletes
+    assert (subject, predicate, '"alice@school.example"', graph_iri) in compiled.delta.inserts
+
+
+def test_delete_fact_uses_iri_object_when_requested():
+    payload = {
+        "ontology_id": "ont-1",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/advisor",
+        "object_value": "http://op.local/ns/entity/bob",
+        "object_is_iri": True,
+    }
+
+    compiled = compile_command("delete_fact", payload, _settings())
+
+    graph_iri = "http://op.local/graph/data/ont-1"
+    assert compiled.command_kind == "delete_fact"
+    assert (
+        "<http://op.local/ns/entity/alice>",
+        "<http://op.local/ns/property/advisor>",
+        "<http://op.local/ns/entity/bob>",
+        graph_iri,
+    ) in compiled.delta.deletes
+
+
+def test_bind_and_unbind_fact_evidence_text():
+    bind_payload = {
+        "ontology_id": "ont-1",
+        "subject_iri": "http://op.local/ns/entity/alice",
+        "text": "Alice is enrolled in Class 1.",
+    }
+
+    bound = compile_command("bind_fact_evidence_text", bind_payload, _settings())
+
+    graph_iri = "http://op.local/graph/data/ont-1"
+    assert bound.command_kind == "bind_fact_evidence_text"
+    chunk_iri = bound.metadata["chunk_iri"]
+    assert (
+        "<http://op.local/ns/entity/alice>",
+        "<http://www.w3.org/ns/prov#wasDerivedFrom>",
+        f"<{chunk_iri}>",
+        graph_iri,
+    ) in bound.delta.inserts
+    assert any(
+        item[0] == f"<{chunk_iri}>" and item[2] == '"Alice is enrolled in Class 1."'
+        for item in bound.delta.inserts
+    )
+
+    unbound = compile_command(
+        "unbind_fact_evidence",
+        {
+            "ontology_id": "ont-1",
+            "subject_iri": "http://op.local/ns/entity/alice",
+            "chunk_iri": chunk_iri,
+        },
+        _settings(),
+    )
+
+    assert unbound.command_kind == "unbind_fact_evidence"
+    assert (
+        "<http://op.local/ns/entity/alice>",
+        "<http://www.w3.org/ns/prov#wasDerivedFrom>",
+        f"<{chunk_iri}>",
+        graph_iri,
+    ) in unbound.delta.deletes
+    assert (f"<{chunk_iri}>", "?p", "?o", graph_iri) in unbound.delta.deletes

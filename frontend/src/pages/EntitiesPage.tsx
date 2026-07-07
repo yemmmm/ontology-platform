@@ -1,31 +1,17 @@
 /**
  * Stage 2 §5 — graph-derived EntitiesPage.
  *
- * MVP slice: lists entities from the entity-list read model and the edges
- * from entity-relations. Exposes a "New entity" button that creates an
- * entity via canonical-write (create_entity). Clicking an entity expands
- * the class-shape guidance from the entity-shape composer (read-only
- * display; inline editing lands in a later iteration).
- *
- * React Flow topology canvas (spec §5.2 mode=topology) is deferred per
- * task brief; the data layer is fully wired so the canvas is a pure
- * rendering concern when it lands.
+ * MVP slice: renders entities from the entity-list read model and edges
+ * from entity-relations as a topology graph. Exposes a "New entity" button
+ * that creates an entity via canonical-write (create_entity). Inline
+ * editing lands in a later iteration.
  *
  * The legacy inline EntitiesPage remains in App.tsx as the fallback when
  * no ?graphSet= URL parameter is set.
  */
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
-import {
-  ChevronRight,
-  Database,
-  Edit3,
-  Link2,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Edit3, Link2, Plus, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -36,9 +22,7 @@ import {
 import { useT } from "../i18n";
 import {
   compileAndApplyProductCommand,
-  getClassShapeGuidance,
   readModel,
-  type SemanticShaclFormGuidance,
 } from "../semanticApi";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
@@ -77,6 +61,8 @@ type EntityRelationsEnvelope = {
   items: EntityRelationRow[];
 };
 
+type EntityGraphRelationPayload = EntityRelationRow & { id: string };
+
 type EntitiesPageProps = {
   graphSetId: string;
   ontologyId: string;
@@ -91,9 +77,15 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const [entities, setEntities] = useState<EntityListEnvelope | null>(null);
   const [relations, setRelations] = useState<EntityRelationsEnvelope | null>(null);
   const [selectedIri, setSelectedIri] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [detailLabel, setDetailLabel] = useState("");
+  const [relationSourceIri, setRelationSourceIri] = useState("");
+  const [relationTypeIri, setRelationTypeIri] = useState("");
+  const [relationTargetIri, setRelationTargetIri] = useState("");
   const [newClassIri, setNewClassIri] = useState("");
   const [newLabel, setNewLabel] = useState("");
 
@@ -126,13 +118,16 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     return labels;
   }, [entities]);
 
-  const { graphNodes, graphEdges, classLabels } = useMemo(() => {
+  const { graphNodes, graphEdges, classLabels, entityByIri, relationByEdgeId } = useMemo(() => {
+    const entityMap = new Map<string, EntityListRow>();
     const nodes: ForceGraphNode[] = (entities?.items ?? []).map((row) => ({
       id: row.iri,
       label: row.label ?? compactIri(row.iri),
       group: row.class_label ?? (row.class_iri ? compactIri(row.class_iri) : t("Unclassified")),
     }));
+    for (const row of entities?.items ?? []) entityMap.set(row.iri, row);
     const nodeIds = new Set(nodes.map((node) => node.id));
+    const relationMap = new Map<string, EntityGraphRelationPayload>();
     const edges: ForceGraphEdge[] = (relations?.items ?? [])
       .filter((row) => row.source && row.target)
       .map((row, index) => ({
@@ -141,10 +136,36 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         target: row.target ?? "",
         label: row.label ?? (row.relation ? compactIri(row.relation) : t("relationship")),
       }))
-      .filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+      .filter((edge) => {
+        const visible = nodeIds.has(edge.source) && nodeIds.has(edge.target);
+        if (!visible) return false;
+        const row = (relations?.items ?? []).find((item, index) => (
+          edge.id === `entity-relation:${item.iri}:${item.source}:${item.target}:${index}`
+        ));
+        if (row) relationMap.set(edge.id, { ...row, id: edge.id });
+        return true;
+      });
     const groups = Array.from(new Set(nodes.map((node) => node.group || t("Unclassified")))).sort();
-    return { graphNodes: nodes, graphEdges: edges, classLabels: groups };
+    return {
+      graphNodes: nodes,
+      graphEdges: edges,
+      classLabels: groups,
+      entityByIri: entityMap,
+      relationByEdgeId: relationMap,
+    };
   }, [entities, relations, t]);
+
+  const selectedEntity = selectedIri ? entityByIri.get(selectedIri) ?? null : null;
+  const selectedRelation = selectedEdgeId ? relationByEdgeId.get(selectedEdgeId) ?? null : null;
+  const hasGraphSelection = Boolean(selectedEntity || selectedRelation);
+
+  useEffect(() => {
+    setDetailLabel(selectedEntity?.label ?? "");
+    setRelationSourceIri(selectedRelation?.source ?? "");
+    setRelationTypeIri(selectedRelation?.relation ?? selectedRelation?.iri ?? "");
+    setRelationTargetIri(selectedRelation?.target ?? "");
+    setEditing(false);
+  }, [selectedEntity, selectedRelation]);
 
   async function submitNewEntity() {
     if (!newLabel.trim() || !newClassIri.trim()) return;
@@ -173,6 +194,102 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function applyDetailUpdate() {
+    if (!selectedEntity && !selectedRelation) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      if (selectedEntity) {
+        await compileAndApplyProductCommand(request, {
+          command_kind: "update_entity",
+          payload: {
+            ontology_id: ontologyId,
+            entity_iri: selectedEntity.iri,
+            label: detailLabel.trim() || selectedEntity.label || compactIri(selectedEntity.iri),
+          },
+          graph_set_id: graphSetId,
+          actor: "user:stage2-entities-page",
+          reason: "update entity from graph detail panel",
+        });
+      } else if (selectedRelation?.source && selectedRelation.target) {
+        await compileAndApplyProductCommand(request, {
+          command_kind: "delete_relation",
+          payload: {
+            ontology_id: ontologyId,
+            source_entity_iri: selectedRelation.source,
+            relation_type_iri: selectedRelation.relation ?? selectedRelation.iri,
+            target_entity_iri: selectedRelation.target,
+          },
+          graph_set_id: graphSetId,
+          actor: "user:stage2-entities-page",
+          reason: "replace relation from graph detail panel",
+        });
+        await compileAndApplyProductCommand(request, {
+          command_kind: "create_relation",
+          payload: {
+            ontology_id: ontologyId,
+            source_entity_iri: relationSourceIri.trim(),
+            relation_type_iri: relationTypeIri.trim(),
+            target_entity_iri: relationTargetIri.trim(),
+          },
+          graph_set_id: graphSetId,
+          actor: "user:stage2-entities-page",
+          reason: "replace relation from graph detail panel",
+        });
+      }
+      setEditing(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deleteSelectedDetail() {
+    if (!selectedEntity && !selectedRelation) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      if (selectedEntity) {
+        await compileAndApplyProductCommand(request, {
+          command_kind: "delete_entity",
+          payload: { ontology_id: ontologyId, entity_iri: selectedEntity.iri },
+          graph_set_id: graphSetId,
+          actor: "user:stage2-entities-page",
+          reason: "delete entity from graph detail panel",
+        });
+        setSelectedIri(null);
+      } else if (selectedRelation?.source && selectedRelation.target) {
+        await compileAndApplyProductCommand(request, {
+          command_kind: "delete_relation",
+          payload: {
+            ontology_id: ontologyId,
+            source_entity_iri: selectedRelation.source,
+            relation_type_iri: selectedRelation.relation ?? selectedRelation.iri,
+            target_entity_iri: selectedRelation.target,
+          },
+          graph_set_id: graphSetId,
+          actor: "user:stage2-entities-page",
+          reason: "delete relation from graph detail panel",
+        });
+        setSelectedEdgeId(null);
+      }
+      setEditing(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function clearSelection() {
+    setSelectedIri(null);
+    setSelectedEdgeId(null);
+    setEditing(false);
   }
 
   return (
@@ -242,94 +359,59 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
               {entityLabelByIri.get(selectedIri) ?? compactIri(selectedIri)}
             </Tag>
           )}
-        </div>
-        <div className="semanticGraphSurface">
-          {loading ? (
-            <Skeleton active paragraph={{ rows: 7 }} />
-          ) : (
-            <ForceGraphCanvas
-              nodes={graphNodes}
-              edges={graphEdges}
-              selectedNodeId={selectedIri}
-              onSelectNode={setSelectedIri}
-              searchQuery={searchQuery}
-              groupLabels={classLabels}
-              emptyTitle={t("No entities in this workspace yet.")}
-              emptyHint={t("Create an entity to populate the force graph.")}
-            />
+          {selectedRelation && (
+            <Tag closable onClose={() => setSelectedEdgeId(null)}>
+              {selectedRelation.label ?? compactIri(selectedRelation.relation ?? selectedRelation.iri)}
+            </Tag>
           )}
         </div>
-      </Card>
-
-      <Card
-        title={t("Entities · {n}", { n: entities?.items.length ?? 0 })}
-        size="small"
-        style={{ marginTop: 12 }}
-      >
-        {loading ? (
-          <Skeleton active />
-        ) : entities && entities.items.length > 0 ? (
-          <ul className="entityList">
-            {entities.items.map((row) => (
-              <EntityListEntry
-                key={row.iri}
-                row={row}
-                selected={selectedIri === row.iri}
-                onSelect={() => setSelectedIri(selectedIri === row.iri ? null : row.iri)}
-                request={request}
-                graphSetId={graphSetId}
-                readOnly={readOnly}
+        <div className={`semanticGraphLayout${hasGraphSelection ? " hasDetails" : ""}`}>
+          <div className="semanticGraphSurface">
+            {loading ? (
+              <Skeleton active paragraph={{ rows: 7 }} />
+            ) : (
+              <ForceGraphCanvas
+                nodes={graphNodes}
+                edges={graphEdges}
+                selectedNodeId={selectedIri}
+                selectedEdgeId={selectedEdgeId}
+                onSelectNode={(id) => {
+                  setSelectedIri(id);
+                  if (id) setSelectedEdgeId(null);
+                }}
+                onSelectEdge={(id) => {
+                  setSelectedEdgeId(id);
+                  if (id) setSelectedIri(null);
+                }}
+                searchQuery={searchQuery}
+                groupLabels={classLabels}
+                emptyTitle={t("No entities in this workspace yet.")}
+                emptyHint={t("Create an entity to populate the force graph.")}
               />
-            ))}
-          </ul>
-        ) : (
-          <div>{t("No entities in this workspace yet.")}</div>
-        )}
-      </Card>
-
-      <Card
-        title={t("Relations · {n}", { n: relations?.items.length ?? 0 })}
-        size="small"
-        style={{ marginTop: 12 }}
-      >
-        {loading ? (
-          <Skeleton active />
-        ) : relations && relations.items.length > 0 ? (
-          <ul className="relationList">
-            {relations.items.map((row, idx) => (
-              <li key={`${row.source ?? row.iri}-${idx}`} className="relationListItem">
-                <ChevronRight size={16} />
-                <div>
-                  <span>{entityLabelByIri.get(row.source ?? "") ?? t("Unknown source")}</span>
-                  <span style={{ margin: "0 6px" }}>-{row.label ?? t("relationship")}-</span>
-                  <span>{entityLabelByIri.get(row.target ?? "") ?? t("Unknown target")}</span>
-                </div>
-                <Tag>{t(row.assertion_kind)}</Tag>
-                <div className="rowActions">
-                  <Button
-                    size="small"
-                    icon={<Edit3 size={13} />}
-                    disabled
-                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Relationship editing is not available from the current API yet.")}
-                  >
-                    {t("Edit")}
-                  </Button>
-                  <Button
-                    size="small"
-                    danger
-                    icon={<Trash2 size={13} />}
-                    disabled
-                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Relationship deletion is not available from the current API yet.")}
-                  >
-                    {t("Delete")}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div>{t("No relationships in this workspace yet.")}</div>
-        )}
+            )}
+          </div>
+          <EntityGraphDetailPanel
+            selectedEntity={selectedEntity}
+            selectedRelation={selectedRelation}
+            entityLabelByIri={entityLabelByIri}
+            readOnly={readOnly}
+            busy={submitting}
+            editing={editing}
+            detailLabel={detailLabel}
+            relationSourceIri={relationSourceIri}
+            relationTypeIri={relationTypeIri}
+            relationTargetIri={relationTargetIri}
+            onChangeLabel={setDetailLabel}
+            onChangeRelationSource={setRelationSourceIri}
+            onChangeRelationType={setRelationTypeIri}
+            onChangeRelationTarget={setRelationTargetIri}
+            onEdit={() => setEditing(true)}
+            onCancelEdit={() => setEditing(false)}
+            onSave={() => void applyDetailUpdate()}
+            onDelete={() => void deleteSelectedDetail()}
+            onClose={clearSelection}
+          />
+        </div>
       </Card>
 
       <Modal
@@ -362,113 +444,144 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   );
 }
 
-type EntityListEntryProps = {
-  row: EntityListRow;
-  selected: boolean;
-  onSelect: () => void;
-  request: WorkbenchRequest;
-  graphSetId: string;
+export type { EntitiesPageProps };
+
+type EntityGraphDetailPanelProps = {
+  selectedEntity: EntityListRow | null;
+  selectedRelation: EntityGraphRelationPayload | null;
+  entityLabelByIri: Map<string, string>;
   readOnly: boolean;
+  busy: boolean;
+  editing: boolean;
+  detailLabel: string;
+  relationSourceIri: string;
+  relationTypeIri: string;
+  relationTargetIri: string;
+  onChangeLabel: (value: string) => void;
+  onChangeRelationSource: (value: string) => void;
+  onChangeRelationType: (value: string) => void;
+  onChangeRelationTarget: (value: string) => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onClose: () => void;
 };
 
-function EntityListEntry({ row, selected, onSelect, request, graphSetId, readOnly }: EntityListEntryProps) {
+function EntityGraphDetailPanel({
+  selectedEntity,
+  selectedRelation,
+  entityLabelByIri,
+  readOnly,
+  busy,
+  editing,
+  detailLabel,
+  relationSourceIri,
+  relationTypeIri,
+  relationTargetIri,
+  onChangeLabel,
+  onChangeRelationSource,
+  onChangeRelationType,
+  onChangeRelationTarget,
+  onEdit,
+  onCancelEdit,
+  onSave,
+  onDelete,
+  onClose,
+}: EntityGraphDetailPanelProps) {
   const t = useT();
-  const [guidance, setGuidance] = useState<SemanticShaclFormGuidance | null>(null);
-  const [guidanceError, setGuidanceError] = useState("");
-  const [loadingGuidance, setLoadingGuidance] = useState(false);
+  const selected = selectedEntity || selectedRelation;
+  const title = selectedEntity
+    ? selectedEntity.label ?? compactIri(selectedEntity.iri)
+    : selectedRelation
+      ? selectedRelation.label ?? compactIri(selectedRelation.relation ?? selectedRelation.iri)
+      : t("Select an item");
+  const relationComplete = Boolean(
+    relationSourceIri.trim() && relationTypeIri.trim() && relationTargetIri.trim(),
+  );
 
-  // Lazily fetch shape guidance when the row is expanded. The composer
-  // (entity-shape) delegates to the existing class-shape merge endpoint.
-  useEffect(() => {
-    if (!selected || guidance || loadingGuidance) return;
-    const classIri = row.class_iri;
-    if (!classIri) {
-      setGuidanceError(t("Entity is missing its class IRI in the read model."));
-      return;
-    }
-    setLoadingGuidance(true);
-    getClassShapeGuidance(request, graphSetId, classIri)
-      .then((data) => setGuidance(data))
-      .catch((cause) => setGuidanceError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setLoadingGuidance(false));
-  }, [selected, guidance, loadingGuidance, row.class_iri, request, graphSetId, t]);
+  if (!selected) return null;
 
   return (
-    <li className={`entityListItem${selected ? " selected" : ""}`}>
-      <div className="entityListItemHeader" onClick={onSelect} role="button" tabIndex={0}>
-        <Database size={16} />
+    <aside className="semanticGraphDetail" aria-label={t("Graph item details")}>
+      <header className="semanticGraphDetailHeader">
         <div>
-          <strong>{row.label ?? row.iri}</strong>
-          {row.class_label && <Tag color="blue">{row.class_label}</Tag>}
-          {row.evidence_status === "missing_evidence" && (
-            <Tag color="warning">⚠ {t("missing evidence")}</Tag>
+          <Tag>{selectedEntity ? t("Entity") : t("Relation")}</Tag>
+          <h2>{title}</h2>
+        </div>
+        <Button size="small" icon={<X size={14} />} onClick={onClose} aria-label={t("Close details")} />
+      </header>
+
+      {editing ? (
+        <div className="semanticGraphDetailForm">
+          {selectedEntity ? (
+            <label>
+              <span>{t("Label")}</span>
+              <Input value={detailLabel} onChange={(event) => onChangeLabel(event.target.value)} />
+            </label>
+          ) : (
+            <>
+              <label>
+                <span>{t("Source entity IRI")}</span>
+                <Input value={relationSourceIri} onChange={(event) => onChangeRelationSource(event.target.value)} />
+              </label>
+              <label>
+                <span>{t("Relation type IRI")}</span>
+                <Input value={relationTypeIri} onChange={(event) => onChangeRelationType(event.target.value)} />
+              </label>
+              <label>
+                <span>{t("Target entity IRI")}</span>
+                <Input value={relationTargetIri} onChange={(event) => onChangeRelationTarget(event.target.value)} />
+              </label>
+            </>
           )}
+          <div className="semanticGraphDetailActions">
+            <Button onClick={onCancelEdit} disabled={busy}>{t("Cancel")}</Button>
+            <Button
+              type="primary"
+              icon={<Save size={14} />}
+              onClick={onSave}
+              loading={busy}
+              disabled={!selectedEntity && !relationComplete}
+            >
+              {t("Save")}
+            </Button>
+          </div>
         </div>
-        <Tag>{t(row.assertion_kind)}</Tag>
-        <div className="rowActions">
-          <Button
-            size="small"
-            icon={<Edit3 size={13} />}
-            disabled
-            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Entity editing is not available from the current API yet.")}
-          >
-            {t("Edit")}
-          </Button>
-          <Button
-            size="small"
-            danger
-            icon={<Trash2 size={13} />}
-            disabled
-            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Entity deletion is not available from the current API yet.")}
-          >
-            {t("Delete")}
-          </Button>
-        </div>
-      </div>
-      {selected && (
-        <div className="entityShapePanel">
-          {loadingGuidance ? (
-            <Skeleton active paragraph={{ rows: 2 }} />
-          ) : guidanceError ? (
-            <Alert type="warning" showIcon message={guidanceError} />
-          ) : guidance ? (
-            <EntityShapeReadOnly guidance={guidance} />
-          ) : null}
-        </div>
-      )}
-    </li>
-  );
-}
-
-function EntityShapeReadOnly({ guidance }: { guidance: SemanticShaclFormGuidance }) {
-  const t = useT();
-  const fields = useMemo(() => guidance.fields ?? [], [guidance]);
-  return (
-    <div>
-      <div style={{ marginBottom: 6, fontWeight: 600 }}>
-        {t("Class shape · {n} fields", { n: fields.length })}
-      </div>
-      {fields.length === 0 ? (
-        <div>{t("No shape fields derived for this entity's class yet.")}</div>
       ) : (
-        <ul className="shapeFieldList">
-          {fields.map((field, idx) => (
-            <li key={field.path ?? idx} className="shapeFieldItem">
-              <code>{field.path ?? "(unknown path)"}</code>
-              {field.label && <span style={{ marginLeft: 8 }}>{field.label}</span>}
-              {field.provenance && (
-                <Tag style={{ marginLeft: 8 }}>{field.provenance}</Tag>
-              )}
-              {field.required && <Tag color="red">{t("required")}</Tag>}
-            </li>
-          ))}
-        </ul>
+        <>
+          <dl className="semanticGraphDetailList">
+            {selectedEntity && (
+              <>
+                <div><dt>{t("IRI")}</dt><dd><code>{selectedEntity.iri}</code></dd></div>
+                <div><dt>{t("Class")}</dt><dd>{selectedEntity.class_label ?? compactIri(selectedEntity.class_iri ?? "")}</dd></div>
+                <div><dt>{t("Source graph")}</dt><dd><code>{selectedEntity.source_graph_iri}</code></dd></div>
+                <div><dt>{t("Evidence")}</dt><dd>{selectedEntity.evidence_status ?? t("Not available")}</dd></div>
+              </>
+            )}
+            {selectedRelation && (
+              <>
+                <div><dt>{t("Source")}</dt><dd>{entityLabelByIri.get(selectedRelation.source ?? "") ?? compactIri(selectedRelation.source ?? "")}</dd></div>
+                <div><dt>{t("Relation type")}</dt><dd><code>{selectedRelation.relation ?? selectedRelation.iri}</code></dd></div>
+                <div><dt>{t("Target")}</dt><dd>{entityLabelByIri.get(selectedRelation.target ?? "") ?? compactIri(selectedRelation.target ?? "")}</dd></div>
+                <div><dt>{t("Source graph")}</dt><dd><code>{selectedRelation.source_graph_iri}</code></dd></div>
+                <div><dt>{t("Assertion")}</dt><dd>{selectedRelation.assertion_kind}</dd></div>
+              </>
+            )}
+          </dl>
+          <div className="semanticGraphDetailActions">
+            <Button icon={<Edit3 size={14} />} onClick={onEdit} disabled={readOnly || busy}>
+              {t("Edit")}
+            </Button>
+            <Button danger icon={<Trash2 size={14} />} onClick={onDelete} disabled={readOnly || busy} loading={busy}>
+              {t("Delete")}
+            </Button>
+          </div>
+        </>
       )}
-    </div>
+    </aside>
   );
 }
-
-export type { EntitiesPageProps };
 
 function compactIri(value: string) {
   const hash = value.lastIndexOf("#");

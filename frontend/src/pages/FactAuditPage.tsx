@@ -16,8 +16,8 @@
  *   - Run rules → POST /graph-sets/{gs}/rule-runs only
  *   - Refresh   → invalidate local cache and refetch
  *
- * Review on a selected fact calls ``compileAndApplyProductCommand`` with
- * ``command_kind: review_assertion`` (Stage 2 §6.4).
+ * Selected facts can be edited/deleted through the canonical-write command
+ * path. Evidence bindings are managed as lightweight text chunks for now.
  *
  * Legacy inline implementation retained as ``FactAuditPage.legacy.tsx``
  * and dispatched from App.tsx when no ``?graphSet=`` URL parameter is set.
@@ -32,13 +32,11 @@ import {
   Input,
   Modal,
   Segmented,
-  Skeleton,
   Space,
   Spin,
   Tag,
-  Typography,
 } from "antd";
-import { Check, Edit3, Play, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import { Edit3, FileText, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
@@ -52,7 +50,6 @@ import {
 } from "../semanticApi";
 import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
-import { EvidenceExplorerPanel } from "../components/semantic/EvidenceExplorerPanel";
 
 type AssertionKind = "asserted" | "inferred" | "rule_derived" | "missing_evidence";
 
@@ -82,6 +79,7 @@ type FactRow = {
   predicate_iri: string;
   predicate_label: string | null;
   object_value: unknown;
+  object_is_iri: boolean;
   object_label: string | null;
   graph_iri: string;
   source_graph_iri: string;
@@ -129,10 +127,9 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
   const [success, setSuccess] = useState("");
   const [items, setItems] = useState<FactRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [reviewReason, setReviewReason] = useState("");
-  const [fixProposalId, setFixProposalId] = useState("");
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewDecision, setReviewDecision] = useState<"approved" | "rejected" | "needs_correction">("approved");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editObjectValue, setEditObjectValue] = useState("");
+  const [evidenceText, setEvidenceText] = useState("");
   const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const load = useCallback(async () => {
@@ -171,45 +168,121 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     [items, selectedId],
   );
 
-  function openReview(decision: "approved" | "rejected" | "needs_correction") {
+  function openEdit() {
     if (!selected) return;
-    setReviewDecision(decision);
-    setReviewReason("");
-    setFixProposalId("");
-    setReviewOpen(true);
+    setEditObjectValue(factObjectText(selected));
+    setEditOpen(true);
   }
 
-  async function submitReview() {
+  async function submitEdit() {
     if (!selected) return;
-    if (reviewDecision === "rejected" && (!reviewReason.trim() || !fixProposalId.trim())) {
-      setError(t("Reject requires both a reason and a linked fix proposal ID."));
+    if (!editObjectValue.trim()) {
+      setError(t("Object / value is required."));
       return;
     }
     setBusy(true);
     setError("");
     try {
       await compileAndApplyProductCommand(request, {
-        command_kind: "review_assertion",
+        command_kind: "update_fact",
         payload: {
           ontology_id: ontologyId,
-          assertion_kind: selected.assertion_kind,
+          subject_iri: selected.subject_iri,
+          predicate_iri: selected.predicate_iri,
+          old_object_value: selected.object_value,
+          old_object_is_iri: selected.object_is_iri,
+          new_object_value: editObjectValue.trim(),
+          new_object_is_iri: selected.object_is_iri,
+          graph_iri: selected.graph_iri,
+        },
+        graph_set_id: graphSetId,
+        actor: "user:facts-page",
+        reason: "Update fact from Facts page",
+      });
+      setSuccess(t("Fact updated."));
+      setEditOpen(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSelected() {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    try {
+      await compileAndApplyProductCommand(request, {
+        command_kind: "delete_fact",
+        payload: {
+          ontology_id: ontologyId,
           subject_iri: selected.subject_iri,
           predicate_iri: selected.predicate_iri,
           object_value: selected.object_value,
-          decision: reviewDecision,
-          reason: reviewReason.trim() || "",
-          linked_fix_proposal_id: reviewDecision === "rejected" ? fixProposalId.trim() : null,
-          result_graph_iri:
-            selected.assertion_kind === "inferred" || selected.assertion_kind === "rule_derived"
-              ? selected.graph_iri
-              : undefined,
+          object_is_iri: selected.object_is_iri,
+          graph_iri: selected.graph_iri,
         },
         graph_set_id: graphSetId,
-        actor: "user:stage2-fact-audit",
-        reason: reviewReason.trim() || `Stage 2 FactAuditPage review: ${reviewDecision}`,
+        actor: "user:facts-page",
+        reason: "Delete fact from Facts page",
       });
-      setSuccess(t("Fact marked {decision}.", { decision: reviewDecision.replace("_", " ") }));
-      setReviewOpen(false);
+      setSuccess(t("Fact deleted."));
+      setSelectedId(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addEvidence() {
+    if (!selected || !evidenceText.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await compileAndApplyProductCommand(request, {
+        command_kind: "bind_fact_evidence_text",
+        payload: {
+          ontology_id: ontologyId,
+          subject_iri: selected.subject_iri,
+          graph_iri: selected.graph_iri,
+          text: evidenceText.trim(),
+        },
+        graph_set_id: graphSetId,
+        actor: "user:facts-page",
+        reason: "Bind text evidence from Facts page",
+      });
+      setEvidenceText("");
+      setSuccess(t("Evidence bound."));
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeEvidence(binding: EvidenceBinding) {
+    if (!selected) return;
+    setBusy(true);
+    setError("");
+    try {
+      await compileAndApplyProductCommand(request, {
+        command_kind: "unbind_fact_evidence",
+        payload: {
+          ontology_id: ontologyId,
+          subject_iri: selected.subject_iri,
+          graph_iri: selected.graph_iri,
+          chunk_iri: binding.chunk_iri,
+        },
+        graph_set_id: graphSetId,
+        actor: "user:facts-page",
+        reason: "Unbind fact evidence from Facts page",
+      });
+      setSuccess(t("Evidence unbound."));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -305,8 +378,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
   const counts = useMemo(() => {
     return {
       total: items.length,
-      pending: items.filter((row) => row.audit_status === "pending").length,
-      approved: items.filter((row) => row.audit_status === "approved").length,
       stale: items.filter((row) => row.stale).length,
     };
   }, [items]);
@@ -370,8 +441,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
 
       <Space wrap size={24}>
         <Statistic label={t("Total in tab")} value={counts.total} />
-        <Statistic label={t("Pending")} value={counts.pending} />
-        <Statistic label={t("Approved")} value={counts.approved} />
         <Statistic label={t("Stale")} value={counts.stale} />
       </Space>
 
@@ -408,13 +477,8 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                 />
               )}
               <Space wrap>
-                <Tag color={selected.assertion_kind === "inferred" ? "geekblue" : selected.assertion_kind === "rule_derived" ? "purple" : "green"}>
-                  {selected.assertion_kind.toUpperCase()}
-                </Tag>
-                <Tag>{selected.audit_status}</Tag>
-                {selected.evidence_status === "missing_evidence" && (
-                  <Tag color="warning">⚠ {t("missing evidence")}</Tag>
-                )}
+                {selected.stale && <Tag color="warning">{t("STALE")}</Tag>}
+                {selected.evidence_status === "missing_evidence" && <Tag color="warning">{t("missing evidence")}</Tag>}
               </Space>
               <Descriptions
                 size="small"
@@ -431,53 +495,43 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
               />
               <Card
                 size="small"
-                title={t("Evidence explorer · {n} binding(s)", {
+                title={t("Evidence · {n} binding(s)", {
                   n: (selected.evidence_bindings ?? []).length,
                 })}
                 aria-label="fact-evidence-explorer"
               >
-                <EvidenceExplorerPanel
+                <EvidenceBindingEditor
                   bindings={selected.evidence_bindings ?? []}
-                  hideMissingTag={selected.assertion_kind !== "asserted"}
+                  evidenceText={evidenceText}
+                  onEvidenceTextChange={setEvidenceText}
+                  onAdd={() => void addEvidence()}
+                  onRemove={(binding) => void removeEvidence(binding)}
+                  disabled={busy || readOnly}
                 />
               </Card>
               <Space wrap>
                 <Button
                   icon={<Edit3 size={15} />}
-                  disabled
-                  title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Fact editing is not available from the current API yet.")}
+                  onClick={openEdit}
+                  disabled={busy || readOnly || selected.stale}
                 >
                   {t("Edit")}
                 </Button>
                 <Button
                   danger
                   icon={<Trash2 size={15} />}
-                  disabled
-                  title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Fact deletion is not available from the current API yet.")}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: t("Delete fact?"),
+                      content: factLine(selected),
+                      okText: t("Delete"),
+                      okButtonProps: { danger: true },
+                      onOk: () => deleteSelected(),
+                    });
+                  }}
+                  disabled={busy || readOnly || selected.stale}
                 >
                   {t("Delete")}
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<Check size={15} />}
-                  onClick={() => openReview("approved")}
-                  disabled={busy || readOnly || selected.stale}
-                >
-                  {t("Approve")}
-                </Button>
-                <Button
-                  danger
-                  icon={<X size={15} />}
-                  onClick={() => openReview("rejected")}
-                  disabled={busy || readOnly || selected.stale}
-                >
-                  {t("Reject")}
-                </Button>
-                <Button
-                  onClick={() => openReview("needs_correction")}
-                  disabled={busy || readOnly || selected.stale}
-                >
-                  {t("Needs correction")}
                 </Button>
               </Space>
             </Space>
@@ -486,28 +540,21 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
       </div>
 
       <Modal
-        title={t("Review fact · {decision}", { decision: reviewDecision.replace("_", " ") })}
-        open={reviewOpen}
-        onCancel={() => setReviewOpen(false)}
-        onOk={() => void submitReview()}
+        title={t("Edit fact")}
+        open={editOpen}
+        onCancel={() => setEditOpen(false)}
+        onOk={() => void submitEdit()}
         confirmLoading={busy}
-        okText={t("Submit review")}
-        okButtonProps={{
-          disabled:
-            reviewDecision === "rejected" && (!reviewReason.trim() || !fixProposalId.trim()),
-        }}
+        okText={t("Save")}
+        okButtonProps={{ disabled: !editObjectValue.trim() }}
       >
         <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          {selected && <ModalFactLine>{factLine(selected)}</ModalFactLine>}
           <Input.TextArea
-            value={reviewReason}
-            onChange={(event) => setReviewReason(event.target.value)}
-            placeholder={t("Review reason (required for rejection)")}
-            autoSize={{ minRows: 2, maxRows: 4 }}
-          />
-          <Input
-            value={fixProposalId}
-            onChange={(event) => setFixProposalId(event.target.value)}
-            placeholder={t("Linked fix proposal ID (required for rejection)")}
+            value={editObjectValue}
+            onChange={(event) => setEditObjectValue(event.target.value)}
+            placeholder={t("Object / value")}
+            autoSize={{ minRows: 2, maxRows: 6 }}
           />
         </Space>
       </Modal>
@@ -547,28 +594,89 @@ function FactQueue({
           onClick={() => onSelect(row.id)}
           style={{ height: "auto", padding: 10, textAlign: "left", whiteSpace: "normal" }}
         >
-          <Space direction="vertical" size={3} style={{ width: "100%" }}>
-            <Space wrap>
-              <Tag>{row.assertion_kind.replace(/_/g, " ")}</Tag>
-              <Tag>{row.audit_status}</Tag>
-              {row.stale && <Tag color="warning">{t("STALE")}</Tag>}
-              {row.evidence_status === "missing_evidence" && (
-                <Tag color="warning">⚠ {t("missing evidence")}</Tag>
-              )}
-            </Space>
-            <strong>
-              {row.subject_label ?? row.subject_iri} · {row.predicate_label ?? row.predicate_iri}
-            </strong>
-            <Typography.Text type="secondary" ellipsis>
-              {typeof row.object_value === "string"
-                ? row.object_value
-                : JSON.stringify(row.object_value)}
-            </Typography.Text>
-          </Space>
+          <span className="factListLine">{factLine(row)}</span>
         </Button>
       ))}
     </Space>
   );
+}
+
+function EvidenceBindingEditor({
+  bindings,
+  evidenceText,
+  onEvidenceTextChange,
+  onAdd,
+  onRemove,
+  disabled,
+}: {
+  bindings: EvidenceBinding[];
+  evidenceText: string;
+  onEvidenceTextChange: (value: string) => void;
+  onAdd: () => void;
+  onRemove: (binding: EvidenceBinding) => void;
+  disabled: boolean;
+}) {
+  const t = useT();
+  return (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      {bindings.length === 0 ? (
+        <Empty image={<FileText size={28} />} description={t("No evidence binding for this fact.")} />
+      ) : (
+        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          {bindings.map((binding) => (
+            <div
+              key={binding.chunk_iri}
+              className="evidenceBindingRow"
+              aria-label={`evidence-binding-${binding.chunk_iri}`}
+            >
+              <div className="evidenceBindingHeader">
+                <FileText size={14} />
+                <strong>{binding.document_filename ?? t("Text evidence")}</strong>
+                <Tag>#{binding.sequence}</Tag>
+                <Button
+                  danger
+                  size="small"
+                  icon={<Trash2 size={13} />}
+                  onClick={() => onRemove(binding)}
+                  disabled={disabled}
+                >
+                  {t("Delete")}
+                </Button>
+              </div>
+              <p className="factEvidenceText">{binding.text_preview}</p>
+            </div>
+          ))}
+        </Space>
+      )}
+      <Input.TextArea
+        value={evidenceText}
+        onChange={(event) => onEvidenceTextChange(event.target.value)}
+        placeholder={t("Evidence text")}
+        autoSize={{ minRows: 2, maxRows: 5 }}
+        disabled={disabled}
+      />
+      <Button
+        icon={<Plus size={15} />}
+        onClick={onAdd}
+        disabled={disabled || !evidenceText.trim()}
+      >
+        {t("Add evidence")}
+      </Button>
+    </Space>
+  );
+}
+
+function factLine(row: FactRow) {
+  return `${row.subject_label ?? row.subject_iri} | ${row.predicate_label ?? row.predicate_iri} | ${factObjectText(row)}`;
+}
+
+function factObjectText(row: FactRow) {
+  if (typeof row.object_value === "string") return row.object_label ?? row.object_value;
+  return JSON.stringify(row.object_value);
+}
+
+function ModalFactLine({ children }: { children: string }) {
+  return <div className="factModalLine">{children}</div>;
 }
 
 function FactTerm({ iri, label }: { iri: string; label: string | null }) {

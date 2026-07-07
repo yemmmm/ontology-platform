@@ -2138,6 +2138,12 @@ textarea:focus {
   width: min(360px, 100%);
 }
 
+.homeFilterActions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .homeOntologyGrid {
   grid-template-columns: repeat(3, minmax(240px, 1fr));
 }
@@ -2792,6 +2798,124 @@ textarea:focus {
   overflow: hidden;
 }
 
+.semanticGraphLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.semanticGraphLayout.hasDetails {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+}
+
+.semanticGraphLayout .semanticGraphSurface {
+  height: clamp(420px, 56vh, 640px);
+}
+
+.semanticGraphDetail {
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.semanticGraphDetailEmpty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.semanticGraphDetailEmpty strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.semanticGraphDetailEmpty span {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.semanticGraphDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px;
+}
+
+.semanticGraphDetailHeader h2 {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.semanticGraphDetailList {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+}
+
+.semanticGraphDetailList div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.semanticGraphDetailList dt,
+.semanticGraphDetailForm label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.semanticGraphDetailList dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.semanticGraphDetailList code {
+  white-space: pre-wrap;
+}
+
+.semanticGraphDetailForm {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.semanticGraphDetailForm label {
+  display: grid;
+  gap: 6px;
+}
+
+.semanticGraphDetailActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
 .classListItem.selected,
 .entityListItem.selected {
   border-color: var(--accent);
@@ -2814,6 +2938,16 @@ textarea:focus {
 .entityGraphCanvas {
   width: 100%;
   height: 100%;
+}
+
+.srOnlyGraphControls {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .entityGraphCanvas canvas {
@@ -2846,8 +2980,20 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .semanticGraphLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .semanticGraphLayout.hasDetails {
+    grid-template-columns: 1fr;
+  }
+
   .semanticGraphSurface {
     height: 360px;
+  }
+
+  .semanticGraphLayout .semanticGraphSurface {
+    height: 380px;
   }
 }
 
@@ -3663,6 +3809,24 @@ textarea:focus {
   grid-template-columns: minmax(300px, 0.8fr) minmax(420px, 1.2fr);
   gap: 16px;
   min-width: 0;
+}
+
+.factListLine {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.factEvidenceText,
+.factModalLine {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.factModalLine {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .reviewSummary {

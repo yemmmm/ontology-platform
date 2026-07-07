@@ -539,17 +539,18 @@ function OntologyHomePage(props: {
   const [ontologyForm, setOntologyForm] = useState({ name: "", description: "" });
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [createOntologyOpen, setCreateOntologyOpen] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const selectedProject = props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
-  const hasHomeSide = props.projects.length === 0;
 
-  function createProject(event: React.FormEvent) {
-    event.preventDefault();
+  function createProject() {
+    if (!projectForm.name.trim()) return;
     props.mutate(async () => {
       const created = await props.request<Project>("/projects", {
         method: "POST",
         body: JSON.stringify({ name: projectForm.name, description: projectForm.description || null }),
       });
       setProjectForm({ name: "", description: "" });
+      setCreateProjectOpen(false);
       props.setSelectedProjectId(created.id);
       await props.reloadProjects();
     }, t("Project created"));
@@ -597,7 +598,7 @@ function OntologyHomePage(props: {
   }
 
   return (
-    <section className={classNames("homeLayout", !hasHomeSide && "homeLayoutFull")}>
+    <section className="homeLayout homeLayoutFull">
       <div className="homePrimary">
         <div className="homeFilterBar">
           <label>
@@ -617,16 +618,25 @@ function OntologyHomePage(props: {
               )}
             </select>
           </label>
-          {selectedProject && (
+          <div className="homeFilterActions">
             <button
-              className="iconButton danger"
-              onClick={() => setDeleteTarget(selectedProject)}
-              title={t("Delete project")}
+              className="primaryButton"
+              onClick={() => setCreateProjectOpen(true)}
               type="button"
             >
-              <Trash2 size={15} />
+              <Plus size={15} /> {t("Create project")}
             </button>
-          )}
+            {selectedProject && (
+              <button
+                className="iconButton danger"
+                onClick={() => setDeleteTarget(selectedProject)}
+                title={t("Delete project")}
+                type="button"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="ontologyCardGrid homeOntologyGrid">
@@ -638,7 +648,6 @@ function OntologyHomePage(props: {
               <button className="ontologyCardMain" onClick={() => props.onOpenOntology(ontology)} type="button">
                 <span className="ontologyCardTop">
                   <strong>{ontology.name}</strong>
-                  <Badge>{ontology.status}</Badge>
                 </span>
                 <span>{ontology.description || t("No description provided.")}</span>
                 <dl>
@@ -671,28 +680,40 @@ function OntologyHomePage(props: {
         </div>
       </div>
 
-      {hasHomeSide && (
-        <aside className="homeSide">
-          <Panel title={t("Create project")} icon={<Layers size={17} />}>
-            <form className="stackForm" onSubmit={createProject}>
-              <input
-                required
-                placeholder={t("Project name")}
-                value={projectForm.name}
-                onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
-              />
-              <textarea
-                placeholder={t("Description")}
-                value={projectForm.description}
-                onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
-              />
-              <button className="primaryButton" type="submit">
-                <Plus size={15} /> {t("Create project")}
-              </button>
-            </form>
-          </Panel>
-        </aside>
-      )}
+      <Modal
+        open={createProjectOpen}
+        title={t("Create project")}
+        okText={t("Create project")}
+        cancelText={t("Cancel")}
+        okButtonProps={{ disabled: !projectForm.name.trim() }}
+        confirmLoading={props.loading}
+        closable={!props.loading}
+        maskClosable={!props.loading}
+        keyboard={!props.loading}
+        destroyOnHidden
+        onOk={createProject}
+        onCancel={() => setCreateProjectOpen(false)}
+      >
+        <form
+          className="stackForm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createProject();
+          }}
+        >
+          <input
+            required
+            placeholder={t("Project name")}
+            value={projectForm.name}
+            onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })}
+          />
+          <textarea
+            placeholder={t("Description")}
+            value={projectForm.description}
+            onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })}
+          />
+        </form>
+      </Modal>
 
       <Modal
         open={createOntologyOpen}

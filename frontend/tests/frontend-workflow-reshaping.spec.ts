@@ -157,7 +157,9 @@ test("modeling classes opens without a graphSet URL parameter", async ({ page })
 
   await expect(page).not.toHaveURL(/graphSet=/);
   await expect(page.locator("section.classesPage.stage2").getByRole("heading", { name: "Classes" })).toBeVisible();
-  await expect(page.getByText("Supplier")).toBeVisible();
+  await expect(page.getByText(/Class force graph · 1 nodes · 0 edges/)).toBeVisible();
+  await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
+  await expect(page.locator("section.classesPage.stage2 .classList")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New class" })).toBeEnabled();
 });
 

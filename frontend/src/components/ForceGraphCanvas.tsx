@@ -25,7 +25,9 @@ type ForceGraphCanvasProps = {
   nodes: ForceGraphNode[];
   edges: ForceGraphEdge[];
   selectedNodeId: string | null;
+  selectedEdgeId?: string | null;
   onSelectNode: (id: string | null) => void;
+  onSelectEdge?: (id: string | null) => void;
   searchQuery?: string;
   groupLabels?: string[];
   emptyTitle: string;
@@ -114,10 +116,11 @@ function applyVisualState(
   cy: Core,
   nodes: ForceGraphNode[],
   selectedNodeId: string | null,
+  selectedEdgeId: string | null,
   searchQuery: string,
 ) {
   cy.nodes().removeClass("dimmed highlighted").unselect();
-  cy.edges().removeClass("dimmed highlighted");
+  cy.edges().removeClass("dimmed highlighted").unselect();
 
   if (selectedNodeId) {
     const selectedNode = cy.getElementById(selectedNodeId);
@@ -137,6 +140,27 @@ function applyVisualState(
       });
       cy.edges().forEach((edge) => {
         if (!edge.hasClass("highlighted")) edge.addClass("dimmed");
+      });
+      return;
+    }
+  }
+
+  if (selectedEdgeId) {
+    const selectedEdge = cy.getElementById(selectedEdgeId);
+    if (selectedEdge.nonempty()) {
+      selectedEdge.select();
+      const sourceId = selectedEdge.source().id();
+      const targetId = selectedEdge.target().id();
+      selectedEdge.addClass("highlighted");
+      cy.nodes().forEach((node) => {
+        if (node.id() === sourceId || node.id() === targetId) {
+          node.addClass("highlighted");
+        } else {
+          node.addClass("dimmed");
+        }
+      });
+      cy.edges().forEach((edge) => {
+        if (edge.id() !== selectedEdgeId) edge.addClass("dimmed");
       });
       return;
     }
@@ -239,6 +263,15 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
+    selector: "edge:selected",
+    style: {
+      width: 3.2,
+      "line-color": "#151720",
+      "target-arrow-color": "#151720",
+      "line-opacity": 1,
+    },
+  },
+  {
     selector: "edge.dimmed",
     style: {
       "line-opacity": 0.08,
@@ -264,7 +297,9 @@ export function ForceGraphCanvas({
   nodes,
   edges,
   selectedNodeId,
+  selectedEdgeId = null,
   onSelectNode,
+  onSelectEdge,
   searchQuery = "",
   groupLabels,
   emptyTitle,
@@ -273,7 +308,9 @@ export function ForceGraphCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const onSelectRef = useRef(onSelectNode);
+  const onSelectEdgeRef = useRef(onSelectEdge);
   onSelectRef.current = onSelectNode;
+  onSelectEdgeRef.current = onSelectEdge;
 
   const allGroups = useMemo(() => {
     if (groupLabels && groupLabels.length > 0) return groupLabels;
@@ -331,9 +368,19 @@ export function ForceGraphCanvas({
       maxZoom: 3,
       wheelSensitivity: 2,
     });
-    cy.on("tap", "node", (event) => onSelectRef.current(String(event.target.id())));
+    cy.on("tap", "node", (event) => {
+      onSelectEdgeRef.current?.(null);
+      onSelectRef.current(String(event.target.id()));
+    });
+    cy.on("tap", "edge", (event) => {
+      onSelectRef.current(null);
+      onSelectEdgeRef.current?.(String(event.target.id()));
+    });
     cy.on("tap", (event) => {
-      if (event.target === cy) onSelectRef.current(null);
+      if (event.target === cy) {
+        onSelectRef.current(null);
+        onSelectEdgeRef.current?.(null);
+      }
     });
     const onViewportChange = () => applyLabelVisibility(cy);
     const onNodePositionSettled = () => applyEdgeLabelOffsets(cy);
@@ -375,11 +422,39 @@ export function ForceGraphCanvas({
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    applyVisualState(cy, nodes, selectedNodeId, searchQuery);
-  }, [selectedNodeId, searchQuery, nodes, elements]);
+    applyVisualState(cy, nodes, selectedNodeId, selectedEdgeId, searchQuery);
+  }, [selectedNodeId, selectedEdgeId, searchQuery, nodes, elements]);
 
   return (
     <div className="entityGraphCanvasWrap">
+      <div className="srOnlyGraphControls" aria-label="force graph selectable items">
+        {nodes.map((node) => (
+          <button
+            key={node.id}
+            type="button"
+            onClick={() => {
+              onSelectEdgeRef.current?.(null);
+              onSelectRef.current(node.id);
+            }}
+            aria-label={`Select node ${node.label}`}
+          >
+            {node.label}
+          </button>
+        ))}
+        {edges.map((edge) => (
+          <button
+            key={edge.id}
+            type="button"
+            onClick={() => {
+              onSelectRef.current(null);
+              onSelectEdgeRef.current?.(edge.id);
+            }}
+            aria-label={`Select edge ${edge.label || edge.id}`}
+          >
+            {edge.label || edge.id}
+          </button>
+        ))}
+      </div>
       {nodes.length === 0 ? (
         <div className="entityGraphEmpty">
           <div>

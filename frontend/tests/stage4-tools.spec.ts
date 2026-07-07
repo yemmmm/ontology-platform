@@ -554,14 +554,14 @@ test("fact audit drawer shows bound chunk for the Acme fact", async ({
   await page.goto(workspaceUrl("facts"));
 
   // The fact queue renders the Acme fact row.
-  const factRow = page.getByText("Acme Corp · industry").first();
+  const factRow = page.getByText("Acme Corp | industry |").first();
   await expect(factRow).toBeVisible();
   await factRow.click();
 
   // The fact inspector mounts the evidence explorer card.
   await expect(page.locator('[aria-label="fact-evidence-explorer"]')).toBeVisible();
 
-  // The EvidenceExplorerPanel renders the binding row carrying the
+  // The evidence editor renders the binding row carrying the
   // document_filename + sequence + text_preview.
   const bindingRow = page.locator('[aria-label^="evidence-binding-"]').first();
   await expect(bindingRow).toBeVisible();

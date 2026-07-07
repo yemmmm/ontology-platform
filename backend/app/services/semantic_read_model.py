@@ -357,6 +357,15 @@ class SemanticReadModelService:
             return None
         return str(value)
 
+    @staticmethod
+    def _cell_is_uri(row: dict[str, Any], key: str) -> bool:
+        if key not in row:
+            return False
+        value = row[key]
+        if isinstance(value, dict):
+            return value.get("type") == "uri"
+        return False
+
     def _row_iri(self, row: dict[str, Any], template: ReadModelTemplate) -> str:
         """Pick the row's primary IRI using the template's declared variable
         first, then a small fallback chain so legacy / unknown templates that
@@ -1119,6 +1128,7 @@ class SemanticReadModelService:
         predicate_iri = self._cell(row, "predicate") or ""
         predicate_label = self._cell(row, "predicate_label")
         object_value: Any = self._cell(row, "object")
+        object_is_iri = self._cell_is_uri(row, "object")
         object_label = self._cell(row, "object_label")
         source_graph_iri = self._cell(row, "graph") or (
             scope.source_graph_iris[0] if scope.source_graph_iris else ""
@@ -1162,6 +1172,7 @@ class SemanticReadModelService:
             "predicate_iri": predicate_iri,
             "predicate_label": predicate_label,
             "object_value": object_value,
+            "object_is_iri": object_is_iri,
             "object_label": object_label,
             "graph_iri": source_graph_iri,
             "source_graph_iri": source_graph_iri,

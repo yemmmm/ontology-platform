@@ -73,6 +73,12 @@ def _literal_term(value: Any) -> str:
     return f'"{text}"'
 
 
+def _object_term(value: Any, *, is_iri: bool = False) -> str:
+    if is_iri:
+        return _iri_term(str(value))
+    return _literal_term(value)
+
+
 _XSD_PREFIX = "http://www.w3.org/2001/XMLSchema#"
 
 
@@ -310,6 +316,162 @@ def compile_update_evidence_status(
             "fact_claim_id": fact_claim_id,
             "ontology_id": ontology_id,
             "new_status": new_status,
+        },
+    )
+
+
+def compile_update_fact(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    subject_iri = _required(payload, "subject_iri")
+    predicate_iri = _required(payload, "predicate_iri")
+    old_object_value = _required(payload, "old_object_value")
+    new_object_value = _required(payload, "new_object_value")
+    old_object_is_iri = bool(payload.get("old_object_is_iri", False))
+    new_object_is_iri = bool(payload.get("new_object_is_iri", False))
+    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+
+    subject = _iri_term(subject_iri)
+    predicate = _iri_term(predicate_iri)
+    old_object = _object_term(old_object_value, is_iri=old_object_is_iri)
+    new_object = _object_term(new_object_value, is_iri=new_object_is_iri)
+    delta = RdfGraphDelta(
+        deletes=[(subject, predicate, old_object, graph_iri)],
+        inserts=[(subject, predicate, new_object, graph_iri)],
+    )
+    fact_id = _fact_id_for(subject_iri, predicate_iri, old_object)
+    return CompiledCommand(
+        command_kind="update_fact",
+        delta=delta,
+        object_kind="fact",
+        source_ids=[fact_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "fact_id": fact_id,
+            "subject_iri": subject_iri,
+            "predicate_iri": predicate_iri,
+            "old_object_value": old_object_value,
+            "new_object_value": new_object_value,
+            "graph_iri": graph_iri,
+        },
+    )
+
+
+def compile_delete_fact(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    subject_iri = _required(payload, "subject_iri")
+    predicate_iri = _required(payload, "predicate_iri")
+    object_value = _required(payload, "object_value")
+    object_is_iri = bool(payload.get("object_is_iri", False))
+    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+
+    subject = _iri_term(subject_iri)
+    predicate = _iri_term(predicate_iri)
+    obj = _object_term(object_value, is_iri=object_is_iri)
+    delta = RdfGraphDelta(deletes=[(subject, predicate, obj, graph_iri)])
+    fact_id = _fact_id_for(subject_iri, predicate_iri, obj)
+    return CompiledCommand(
+        command_kind="delete_fact",
+        delta=delta,
+        object_kind="fact",
+        source_ids=[fact_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "fact_id": fact_id,
+            "subject_iri": subject_iri,
+            "predicate_iri": predicate_iri,
+            "object_value": object_value,
+            "graph_iri": graph_iri,
+        },
+    )
+
+
+def _evidence_chunk_iri(ns: SemanticNamespace, subject_iri: str, text: str) -> str:
+    digest = hashlib.sha256(f"{subject_iri}\n{text}".encode("utf-8")).hexdigest()[:16]
+    return str(ns.resource("evidence-text", digest))
+
+
+def compile_bind_fact_evidence_text(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    subject_iri = _required(payload, "subject_iri")
+    text = str(_required(payload, "text")).strip()
+    if not text:
+        raise InvalidCommandPayload("text must not be empty")
+    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+    chunk_iri = payload.get("chunk_iri") or _evidence_chunk_iri(ns, subject_iri, text)
+    doc_iri = payload.get("document_iri") or f"{chunk_iri}/document"
+    sequence = int(payload.get("sequence", 0))
+    char_start = int(payload.get("char_start", 0))
+    char_end = int(payload.get("char_end", len(text)))
+    source_document = "tag:ontology-platform.internal,2026:sourceDocument"
+    sequence_predicate = "tag:ontology-platform.internal,2026:sequence"
+    char_start_predicate = "tag:ontology-platform.internal,2026:charStart"
+    char_end_predicate = "tag:ontology-platform.internal,2026:charEnd"
+    text_predicate = "tag:ontology-platform.internal,2026:text"
+    prov_was_derived_from = "http://www.w3.org/ns/prov#wasDerivedFrom"
+    delta = RdfGraphDelta(
+        inserts=[
+            (_iri_term(subject_iri), _iri_term(prov_was_derived_from), _iri_term(chunk_iri), graph_iri),
+            (_iri_term(chunk_iri), _iri_term(source_document), _iri_term(doc_iri), graph_iri),
+            (_iri_term(chunk_iri), _iri_term(sequence_predicate), _literal_term(sequence), graph_iri),
+            (_iri_term(chunk_iri), _iri_term(char_start_predicate), _literal_term(char_start), graph_iri),
+            (_iri_term(chunk_iri), _iri_term(char_end_predicate), _literal_term(char_end), graph_iri),
+            (_iri_term(chunk_iri), _iri_term(text_predicate), _literal_term(text), graph_iri),
+        ]
+    )
+    return CompiledCommand(
+        command_kind="bind_fact_evidence_text",
+        delta=delta,
+        object_kind="fact_evidence",
+        source_ids=[subject_iri, chunk_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "subject_iri": subject_iri,
+            "chunk_iri": chunk_iri,
+            "document_iri": doc_iri,
+            "text": text,
+            "graph_iri": graph_iri,
+        },
+    )
+
+
+def compile_unbind_fact_evidence(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    subject_iri = _required(payload, "subject_iri")
+    chunk_iri = _required(payload, "chunk_iri")
+    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+    delta = RdfGraphDelta(
+        deletes=[
+            (
+                _iri_term(subject_iri),
+                _iri_term("http://www.w3.org/ns/prov#wasDerivedFrom"),
+                _iri_term(chunk_iri),
+                graph_iri,
+            ),
+            (_iri_term(chunk_iri), "?p", "?o", graph_iri),
+        ]
+    )
+    return CompiledCommand(
+        command_kind="unbind_fact_evidence",
+        delta=delta,
+        object_kind="fact_evidence",
+        source_ids=[subject_iri, chunk_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "subject_iri": subject_iri,
+            "chunk_iri": chunk_iri,
+            "graph_iri": graph_iri,
         },
     )
 
@@ -1443,6 +1605,10 @@ _COMPILERS: dict[str, Compiler] = {
     "create_relation_type": compile_create_relation_type,
     "submit_assertion": compile_submit_assertion,
     "update_evidence_status": compile_update_evidence_status,
+    "update_fact": compile_update_fact,
+    "delete_fact": compile_delete_fact,
+    "bind_fact_evidence_text": compile_bind_fact_evidence_text,
+    "unbind_fact_evidence": compile_unbind_fact_evidence,
     "update_class": compile_update_class,
     "delete_class": compile_delete_class,
     "create_property": compile_create_property,
