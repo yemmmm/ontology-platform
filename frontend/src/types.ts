@@ -275,10 +275,24 @@ export type OntologyExport = {
   relations: Relation[];
 };
 
+export type AgentTestGraphContextEntry = {
+  iri: string;
+  label: string | null;
+  class_label: string | null;
+  assertion_kind: "asserted" | "owl_inferred" | "rule_derived";
+  source_graph_iri: string;
+  source_signature: string | null;
+  is_stale: boolean;
+};
+
 export type AgentTestResponse = {
   answer: string;
   tool_calls: JsonObject[];
-  graph_context: JsonObject;
+  graph_context: {
+    entries: AgentTestGraphContextEntry[];
+    generated_at: string;
+    scope: { graph_set_id: string; ontology_id: string } & Record<string, unknown>;
+  };
   prompt_preview: string;
   warnings: string[];
   errors: string[];

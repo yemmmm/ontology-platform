@@ -4,7 +4,6 @@ import {
   BookOpen,
   Check,
   ChevronRight,
-  Clipboard,
   Database,
   Flag,
   GitBranch,
@@ -12,7 +11,6 @@ import {
   Layers,
   Loader2,
   Network,
-  Play,
   Plus,
   RefreshCw,
   Search,
@@ -32,9 +30,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { API_BASE_URL, apiRequest, errorNotice } from "./api";
 import type {
-  AgentTestResponse,
   Health,
-  JsonObject,
   Notice,
   Ontology,
   Project,
@@ -44,6 +40,7 @@ import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
+import { AgentTestPage } from "./pages/AgentTestPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
 import { PublicationPage } from "./pages/PublicationPage";
@@ -844,7 +841,28 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "agent-test") {
-    return <AgentTestPage ontology={props.ontology} request={governedRequest} mutate={props.mutate} />;
+    const graphSetId = queryValue("graphSet");
+    if (!graphSetId) {
+      return (
+        <EmptyState
+          icon={<Database size={22} />}
+          title={t("Select a graph set to run an agent test")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
+    }
+    return (
+      <AgentTestPage
+        ontology={props.ontology}
+        graphSetId={graphSetId}
+        request={governedRequest}
+        mutate={props.mutate}
+      />
+    );
   }
 
   if (props.tab === "search") {
@@ -950,64 +968,6 @@ function WorkspaceContent(props: {
       setHealth={props.setHealth}
       showError={props.showError}
     />
-  );
-}
-
-function AgentTestPage(props: {
-  ontology: Ontology;
-  request: Requester;
-  mutate: (action: () => Promise<void>, success: string) => Promise<void>;
-}) {
-  const t = useT();
-  const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<AgentTestResponse | null>(null);
-
-  function run(event: React.FormEvent) {
-    event.preventDefault();
-    props.mutate(async () => {
-      const response = await props.request<AgentTestResponse>("/agent-test/run", {
-        method: "POST",
-        body: JSON.stringify({
-          ontology_id: props.ontology.id,
-          question,
-        }),
-      });
-      setResult(response);
-    }, t("Agent test completed"));
-  }
-
-  return (
-    <section className="agentLayout">
-      <Panel title={t("Agent test")} icon={<Play size={17} />}>
-        <form className="stackForm" onSubmit={run}>
-          <textarea
-            className="questionBox"
-            required
-            placeholder={t("Ask a question against the selected ontology")}
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-          />
-          <button className="primaryButton" type="submit">
-            <Play size={15} /> {t("Run")}
-          </button>
-        </form>
-      </Panel>
-
-      <Panel title={t("Run output")} icon={<Clipboard size={17} />} className="agentOutput">
-        {result ? (
-          <div className="resultGrid">
-            <ResultBlock title={t("Answer")} value={result.answer} />
-            <Timeline title={t("Tool calls")} items={result.tool_calls} />
-            <ResultBlock title={t("Graph context")} value={result.graph_context} copyable />
-            <ResultBlock title={t("Prompt preview")} value={result.prompt_preview} />
-            <ResultBlock title={t("Warnings")} value={result.warnings} />
-            <ResultBlock title={t("Errors")} value={result.errors} />
-          </div>
-        ) : (
-          <EmptyState icon={<Send size={22} />} title={t("No run output yet")} />
-        )}
-      </Panel>
-    </section>
   );
 }
 
@@ -1137,39 +1097,3 @@ function EmptyState(props: { icon: ReactNode; title: string; action?: ReactNode 
   );
 }
 
-function ResultBlock(props: { title: string; value: unknown; copyable?: boolean }) {
-  const rendered = typeof props.value === "string" ? props.value : prettyJson(props.value);
-  return (
-    <section className="resultBlock">
-      <header>
-        <h3>{props.title}</h3>
-        {props.copyable && (
-          <button className="iconButton" onClick={() => navigator.clipboard.writeText(rendered)} title="Copy" type="button">
-            <Clipboard size={14} />
-          </button>
-        )}
-      </header>
-      <pre className="jsonBlock">{rendered}</pre>
-    </section>
-  );
-}
-
-function Timeline(props: { title: string; items: JsonObject[] }) {
-  return (
-    <section className="resultBlock">
-      <h3>{props.title}</h3>
-      <div className="timeline">
-        {props.items.length ? (
-          props.items.map((item, index) => (
-            <div className="timelineItem" key={`${index}-${JSON.stringify(item).slice(0, 24)}`}>
-              <span>{index + 1}</span>
-              <pre>{prettyJson(item)}</pre>
-            </div>
-          ))
-        ) : (
-          <span className="muted">No tool calls</span>
-        )}
-      </div>
-    </section>
-  );
-}
