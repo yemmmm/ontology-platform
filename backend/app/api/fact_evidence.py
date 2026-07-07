@@ -16,15 +16,22 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.core.config import Settings
 from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
+from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_command_compiler import (
     CommandCompilerError,
     compile_bind_fact_evidence,
     compile_unbind_fact_evidence,
 )
 from app.services.semantic_export import namespace_from_settings
+from app.services.semantic_read_model import SemanticReadModelService
+from app.services.semantic_read_scope import SemanticReadScopeResolver
+from app.services.semantic_shape_endpoint_service import (
+    SemanticShapeEndpointService,
+)
+from app.services.semantic_visibility import SemanticVisibilityPolicy
 
 router = APIRouter(tags=["semantic"])
 
@@ -131,3 +138,66 @@ def delete_fact_evidence(
         raise HTTPException(status_code=404, detail="binding not found")
     session.commit()
     return None
+
+
+def _build_read_model_service(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+) -> SemanticReadModelService:
+    """Construct a SemanticReadModelService wired to the same dependencies
+    used by the read-model endpoint in ``app.api.semantic``."""
+    visibility = SemanticVisibilityPolicy(
+        graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+    )
+    return SemanticReadModelService(
+        rdf_store=rdf_store,
+        scope_resolver=SemanticReadScopeResolver(session),
+        visibility_policy=visibility,
+        shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
+        session=session,
+    )
+
+
+class MissingEvidenceFactsResponse(BaseModel):
+    graph_set_id: str
+    count: int
+    fact_ids: list[str]
+
+
+@router.get(
+    "/semantic/graph-sets/{graph_set_id}/missing-evidence-facts",
+    response_model=MissingEvidenceFactsResponse,
+)
+def list_missing_evidence_facts(
+    graph_set_id: str,
+    limit: int = 5000,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> MissingEvidenceFactsResponse:
+    """Return fact_ids in this graph_set that have zero evidence bindings.
+
+    Enumerates all asserted ``(s, p, o, g)`` tuples from the asserted_data
+    member graph(s), computes the canonical ``fact_id`` for each, then
+    subtracts the subset that appears in ``fact_evidence_bindings``.
+    """
+    service = _build_read_model_service(session, rdf_store, settings)
+    scope = service.scope_resolver.resolve(
+        graph_set_id=graph_set_id,
+        include="asserted",
+        allow_stale_derived=True,
+    )
+    fact_ids = service._list_asserted_fact_ids(scope, limit=limit)
+    if not fact_ids:
+        return MissingEvidenceFactsResponse(
+            graph_set_id=graph_set_id, count=0, fact_ids=[]
+        )
+    repo = FactEvidenceBindingRepository(session)
+    with_bindings = repo.count_facts_with_bindings(fact_ids)
+    missing = [fid for fid in fact_ids if fid not in with_bindings]
+    return MissingEvidenceFactsResponse(
+        graph_set_id=graph_set_id,
+        count=len(missing),
+        fact_ids=missing,
+    )

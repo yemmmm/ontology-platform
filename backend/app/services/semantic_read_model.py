@@ -12,7 +12,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Protocol
 
+from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
 from app.repositories.rdf_store import RdfStoreRepository
+from app.services.fact_id import canonical_object_term, compute_fact_id
 from app.services.semantic_read_scope import (
     ScopeMember,
     ScopeResolution,
@@ -527,26 +529,116 @@ class SemanticReadModelService:
         return max(timestamps).isoformat()
 
     def _missing_evidence_count(self, scope: ScopeResolution) -> int:
-        template = get_template("graph-set-staleness")
-        iris = [m.graph_iri for m in scope.members]
-        if not iris:
+        """Count asserted facts in scope that have zero evidence bindings.
+
+        Phase 3 refactor: this used to issue a SPARQL COUNT over
+        ``op:evidenceStatus "missing_evidence"`` markers. It now enumerates
+        all asserted fact_ids in scope via a SELECT DISTINCT and subtracts
+        the subset that have at least one row in ``fact_evidence_bindings``.
+        """
+        if self.session is None:
             return 0
-        query = template.body.replace(
-            "{graph_iris}", " ".join(f"<{i}>" for i in iris)
+        fact_ids = self._list_asserted_fact_ids(scope)
+        if not fact_ids:
+            return 0
+        repo = FactEvidenceBindingRepository(self.session)
+        with_bindings = repo.count_facts_with_bindings(fact_ids)
+        return len(fact_ids) - len(with_bindings)
+
+    # ------------------------------------------------------------------
+    # Phase 3 — Postgres-backed evidence decoration
+    # ------------------------------------------------------------------
+
+    def _fetch_evidence_bindings_from_pg(
+        self, fact_ids: list[str], session: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Batch-fetch evidence bindings from Postgres, bucketed by fact_id.
+
+        Replaces the legacy ``_fetch_evidence_bindings`` (SPARQL over
+        ``prov:wasDerivedFrom`` + chunk literals). Each binding is rendered
+        as a dict suitable for direct inclusion in ``FactRow.evidence_bindings``.
+        """
+        if not fact_ids:
+            return {}
+        repo = FactEvidenceBindingRepository(session)
+        raw = repo.list_by_fact_ids(fact_ids)
+        return {
+            fid: [self._format_evidence_binding(b) for b in bindings]
+            for fid, bindings in raw.items()
+        }
+
+    @staticmethod
+    def _format_evidence_binding(b: Any) -> dict[str, Any]:
+        """Render a ``FactEvidenceBindingModel`` row as a FactRow dict."""
+        text = b.text or ""
+        return {
+            "id": b.id,
+            "fact_id": b.fact_id,
+            "chunk_id": b.chunk_id,
+            "evidence_artifact_id": b.evidence_artifact_id,
+            "document_filename": b.document_filename,
+            "sequence": b.sequence,
+            "char_start": b.char_start,
+            "char_end": b.char_end,
+            "text_preview": (text[:200] + "..." if len(text) > 200 else text),
+            "text": text,
+            "actor": b.actor,
+            "reason": b.reason,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        }
+
+    def _list_asserted_fact_ids(
+        self, scope: ScopeResolution, limit: int = 5000
+    ) -> list[str]:
+        """List all asserted fact_ids in the current scope, derived from RDF.
+
+        Runs a lightweight SPARQL SELECT DISTINCT over ``asserted_data``
+        member graphs to enumerate ``(subject, predicate, object, graph)``
+        tuples, then computes ``fact_id`` (4-tuple sha256) for each using
+        the canonical ``compute_fact_id`` algorithm so the result matches
+        the write side (``FactEvidenceBindingModel.fact_id``).
+        """
+        asserted_iris = [
+            m.graph_iri for m in scope.members if m.role == "asserted_data"
+        ]
+        if not asserted_iris:
+            return []
+        sparql = (
+            "# phase3 asserted fact_id enumeration\n"
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+            "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+            "SELECT DISTINCT ?s ?p ?o ?g WHERE {\n"
+            "  VALUES ?g { {graph_iris} }\n"
+            "  GRAPH ?g {\n"
+            "    ?s ?p ?o .\n"
+            "    FILTER(?p != rdf:type)\n"
+            "    FILTER(?p != rdfs:label)\n"
+            "  }\n"
+            "}\n"
+            "LIMIT {limit}"
+        )
+        values = " ".join(f"<{i}>" for i in asserted_iris)
+        query = (
+            sparql.replace("{graph_iris}", values).replace("{limit}", str(limit))
         )
         result = self.rdf_store.query_read_model(
             query=query,
-            graph_iris=iris,
+            graph_iris=asserted_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=1,
+            limit=limit,
         )
-        rows = list(self._rows(result))
-        if not rows:
-            return 0
-        cell = rows[0].get("count")
-        if isinstance(cell, dict):
-            return int(cell.get("value", 0))
-        return int(cell)
+        fact_ids: list[str] = []
+        for row in self._rows(result):
+            s = self._cell(row, "s") or ""
+            p = self._cell(row, "p") or ""
+            o_value = self._cell(row, "o") or ""
+            g = self._cell(row, "g") or ""
+            if not (s and p and o_value and g):
+                continue
+            is_iri = self._cell_is_uri(row, "o")
+            o_term = canonical_object_term(o_value, is_iri=is_iri)
+            fact_ids.append(compute_fact_id(s, p, o_term, g))
+        return fact_ids
 
     # ------------------------------------------------------------------
     # publication-readiness composer (Stage 3 §4.1)
@@ -998,14 +1090,15 @@ class SemanticReadModelService:
                         "message": "Graph set is missing an asserted data graph.",
                     }
                 ]
-            if resolved_kind == "missing_evidence":
-                rows = self._fetch_fact_rows(
-                    data_iris, template_name="missing-evidence-list"
-                )
-            else:
-                rows = self._fetch_fact_rows(
-                    data_iris, template_name="fact-audit-queue"
-                )
+            # Phase 3: enumerate every asserted fact via the unified
+            # ``fact-audit-queue`` template, then derive missing_evidence
+            # status from PG. The legacy ``missing-evidence-list`` template
+            # (which filtered via ``op:evidenceStatus`` markers) is no
+            # longer used by this composer; the SPARQL is preserved until
+            # Phase 5 cleanup.
+            rows = self._fetch_fact_rows(
+                data_iris, template_name="fact-audit-queue"
+            )
             items = [
                 self._decorate_fact_row(
                     row,
@@ -1014,8 +1107,15 @@ class SemanticReadModelService:
                 )
                 for row in rows
             ]
-            if attach_evidence:
-                self._attach_evidence_bindings(items, data_iris)
+            items = self._apply_evidence_bindings(items)
+            if resolved_kind == "missing_evidence":
+                items = [
+                    it for it in items
+                    if it["evidence_status"] == "missing_evidence"
+                ]
+            if not attach_evidence:
+                for it in items:
+                    it["evidence_bindings"] = []
             return items, warnings
 
         if resolved_kind == "inferred":
@@ -1051,8 +1151,10 @@ class SemanticReadModelService:
                 )
                 for row in rows
             ]
-            if attach_evidence:
-                self._attach_evidence_bindings(items, [reasoning_iri])
+            items = self._apply_evidence_bindings(items)
+            if not attach_evidence:
+                for it in items:
+                    it["evidence_bindings"] = []
             return items, warnings
 
         # rule_derived
@@ -1086,9 +1188,37 @@ class SemanticReadModelService:
             )
             for row in rows
         ]
-        if attach_evidence:
-            self._attach_evidence_bindings(items, [rule_iri])
+        items = self._apply_evidence_bindings(items)
+        if not attach_evidence:
+            for it in items:
+                it["evidence_bindings"] = []
         return items, warnings
+
+    def _apply_evidence_bindings(
+        self, items: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Batch-fetch evidence bindings from PG and populate each item.
+
+        Phase 3 replaces the per-row SPARQL ``_attach_evidence_bindings``
+        with a single batched PG lookup. ``evidence_status`` is derived
+        from whether any binding exists for the row's ``fact_id``. When the
+        service has no SQLAlchemy session (legacy test wiring), each row
+        falls back to ``missing_evidence`` with empty bindings.
+        """
+        if self.session is None:
+            for it in items:
+                it.setdefault("evidence_bindings", [])
+            return items
+        fact_ids = [it["fact_id"] for it in items if it.get("fact_id")]
+        bindings_by_fact = self._fetch_evidence_bindings_from_pg(
+            fact_ids, self.session
+        )
+        for it in items:
+            fid = it.get("fact_id") or ""
+            bindings = bindings_by_fact.get(fid, [])
+            it["evidence_bindings"] = bindings
+            it["evidence_status"] = "with_evidence" if bindings else "missing_evidence"
+        return items
 
     def _fetch_fact_rows(
         self, graph_iris: list[str], template_name: str
@@ -1118,6 +1248,7 @@ class SemanticReadModelService:
         *,
         assertion_kind: str,
         scope: ScopeResolution,
+        bindings_by_fact: dict[str, list[dict[str, Any]]] | None = None,
         derived_run_id: str | None = None,
         stale: bool | None = None,
         stale_reason: str | None = None,
@@ -1138,18 +1269,29 @@ class SemanticReadModelService:
         # reification in a later iteration; absent that, everything is
         # pending review.
         audit_status = self._cell(row, "audit_status") or "pending"
-        # Evidence status: missing_evidence for the dedicated tab, otherwise
-        # look for an op:evidenceStatus marker on the subject (carried by the
-        # template); default to with_evidence.
-        evidence_status: str
-        if assertion_kind == "missing_evidence":
-            evidence_status = "missing_evidence"
+        # Stable id: 4-tuple sha256 from ``compute_fact_id`` (matches the
+        # write side and the fact_evidence_bindings table).
+        object_term = canonical_object_term(
+            str(object_value) if object_value is not None else "",
+            is_iri=object_is_iri,
+        )
+        fact_id = compute_fact_id(
+            subject_iri, predicate_iri, object_term, source_graph_iri
+        )
+        # Phase 3: evidence_status is now derived from PG bindings rather
+        # than from an op:evidenceStatus SPARQL marker. When the decorator
+        # is called before bindings are fetched (e.g. inside
+        # _compose_fact_audit_queue's first pass), ``bindings_by_fact`` is
+        # None and the field is left to be filled in by the caller.
+        if bindings_by_fact is not None:
+            bindings = bindings_by_fact.get(fact_id, [])
+            evidence_status = "with_evidence" if bindings else "missing_evidence"
         else:
-            marker = self._cell(row, "evidence_status")
-            if marker == "missing_evidence":
-                evidence_status = "missing_evidence"
-            else:
-                evidence_status = "with_evidence"
+            bindings = []
+            # Preserve the legacy missing_evidence kind hint so the
+            # composer's second pass can still classify rows before the PG
+            # lookup. After the lookup the value will be overridden.
+            evidence_status = "missing_evidence" if assertion_kind == "missing_evidence" else "with_evidence"
         # Staleness for derived graphs.
         if stale is None:
             stale_bool = self._is_stale(source_graph_iri, scope)
@@ -1159,10 +1301,6 @@ class SemanticReadModelService:
             stale_reason_val = self._staleness_reason(source_graph_iri, scope)
         else:
             stale_reason_val = stale_reason
-        # Stable id: hash of (subject, predicate, object, graph) — the same
-        # function used by review_assertion so the frontend can cross-link a
-        # FactRow to its review record.
-        fact_id = self._fact_id(subject_iri, predicate_iri, object_value or "", source_graph_iri)
         item: dict[str, Any] = {
             "id": fact_id,
             "fact_id": fact_id,
@@ -1177,6 +1315,7 @@ class SemanticReadModelService:
             "graph_iri": source_graph_iri,
             "source_graph_iri": source_graph_iri,
             "evidence_status": evidence_status,
+            "evidence_bindings": bindings,
             "audit_status": audit_status,
             "stale": stale_bool,
             "stale_reason": stale_reason_val,
