@@ -368,6 +368,43 @@ class SemanticReadModelService:
             return value.get("type") == "uri"
         return False
 
+    @staticmethod
+    def _cell_datatype(row: dict[str, Any], key: str) -> str | None:
+        """Extract the XSD datatype IRI for a typed literal cell, if any.
+
+        Standard SPARQL JSON results encode typed literals as
+        ``{"value": ..., "type": "literal", "datatype": "<iri>"}`` (or
+        ``type: "typed-literal"`` in older serializers). Returns ``None``
+        for plain literals, IRIs, or missing cells.
+        """
+        if key not in row:
+            return None
+        value = row[key]
+        if isinstance(value, dict):
+            if value.get("type") not in ("literal", "typed-literal"):
+                return None
+            datatype = value.get("datatype")
+            return str(datatype) if datatype else None
+        return None
+
+    @staticmethod
+    def _cell_lang(row: dict[str, Any], key: str) -> str | None:
+        """Extract the language tag (``xml:lang``) for a lang-tagged literal cell.
+
+        SPARQL JSON results encode lang-tagged literals as
+        ``{"value": ..., "type": "literal", "xml:lang": "en"}``. Returns
+        ``None`` for plain/typed literals, IRIs, or missing cells.
+        """
+        if key not in row:
+            return None
+        value = row[key]
+        if isinstance(value, dict):
+            if value.get("type") not in ("literal", "typed-literal"):
+                return None
+            lang = value.get("xml:lang")
+            return str(lang) if lang else None
+        return None
+
     def _row_iri(self, row: dict[str, Any], template: ReadModelTemplate) -> str:
         """Pick the row's primary IRI using the template's declared variable
         first, then a small fallback chain so legacy / unknown templates that
@@ -636,7 +673,11 @@ class SemanticReadModelService:
             if not (s and p and o_value and g):
                 continue
             is_iri = self._cell_is_uri(row, "o")
-            o_term = canonical_object_term(o_value, is_iri=is_iri)
+            o_datatype = self._cell_datatype(row, "o") if not is_iri else None
+            o_lang = self._cell_lang(row, "o") if not is_iri else None
+            o_term = canonical_object_term(
+                o_value, is_iri=is_iri, datatype=o_datatype, lang=o_lang
+            )
             fact_ids.append(compute_fact_id(s, p, o_term, g))
         return fact_ids
 
@@ -1270,10 +1311,18 @@ class SemanticReadModelService:
         # pending review.
         audit_status = self._cell(row, "audit_status") or "pending"
         # Stable id: 4-tuple sha256 from ``compute_fact_id`` (matches the
-        # write side and the fact_evidence_bindings table).
+        # write side and the fact_evidence_bindings table). Must preserve
+        # datatype/lang so typed and lang-tagged literals hash the same as
+        # the write path (compile_bind_fact_evidence).
+        object_datatype = (
+            self._cell_datatype(row, "object") if not object_is_iri else None
+        )
+        object_lang = self._cell_lang(row, "object") if not object_is_iri else None
         object_term = canonical_object_term(
             str(object_value) if object_value is not None else "",
             is_iri=object_is_iri,
+            datatype=object_datatype,
+            lang=object_lang,
         )
         fact_id = compute_fact_id(
             subject_iri, predicate_iri, object_term, source_graph_iri

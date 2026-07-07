@@ -551,10 +551,167 @@ def test_compose_fact_audit_queue_summary_field_set_drops_bindings(in_memory_ses
 
 
 # ---------------------------------------------------------------------------
-# GET /missing-evidence-facts endpoint
+# Regression: typed / lang-tagged literal fact_id must match write side
 # ---------------------------------------------------------------------------
 
 
+def test_decorate_fact_row_with_typed_literal_matches_pg_fact_id(in_memory_session):
+    """Regression for the silent datatype-drop bug: read-side _decorate_fact_row
+    must include the XSD datatype in canonical_object_term, otherwise its
+    fact_id diverges from the one written by compile_bind_fact_evidence and
+    PG bindings never attach."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    datatype = "http://www.w3.org/2001/XMLSchema#integer"
+    fid = compute_fact_id(
+        "http://s",
+        "http://p",
+        canonical_object_term("42", is_iri=False, datatype=datatype),
+        data_iri,
+    )
+    FactEvidenceBindingRepository(in_memory_session).create(
+        fact_id=fid,
+        subject_iri="http://s",
+        predicate_iri="http://p",
+        object_value='"42"^^<%s>' % datatype,
+        graph_iri=data_iri,
+        text="e",
+    )
+    row = {
+        "subject": {"value": "http://s", "type": "uri"},
+        "subject_label": {"value": "S", "type": "literal"},
+        "predicate": {"value": "http://p", "type": "uri"},
+        "predicate_label": {"value": "P", "type": "literal"},
+        "object": {"value": "42", "type": "literal", "datatype": datatype},
+        "object_label": {"value": "42", "type": "literal", "datatype": datatype},
+        "graph": {"value": data_iri, "type": "uri"},
+    }
+    service = SemanticReadModelService(
+        rdf_store=FakeStore({}),
+        scope_resolver=FakeScopeResolver(_resolution([data_iri])),
+        session=in_memory_session,
+    )
+    decorated = service._decorate_fact_row(
+        row,
+        assertion_kind="asserted",
+        scope=_resolution([data_iri]),
+        bindings_by_fact={fid: [{"id": "b1", "fact_id": fid, "text": "e"}]},
+    )
+    assert decorated["fact_id"] == fid
+    assert decorated["evidence_status"] == "with_evidence"
+    assert decorated["evidence_bindings"][0]["fact_id"] == fid
+
+
+def test_decorate_fact_row_with_lang_literal_matches_pg_fact_id(in_memory_session):
+    """Same regression guard for lang-tagged literals (``"hi"@en``)."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    lang = "en"
+    fid = compute_fact_id(
+        "http://s",
+        "http://p",
+        canonical_object_term("hello", is_iri=False, lang=lang),
+        data_iri,
+    )
+    FactEvidenceBindingRepository(in_memory_session).create(
+        fact_id=fid,
+        subject_iri="http://s",
+        predicate_iri="http://p",
+        object_value='"hello"@%s' % lang,
+        graph_iri=data_iri,
+        text="e",
+    )
+    row = {
+        "subject": {"value": "http://s", "type": "uri"},
+        "subject_label": {"value": "S", "type": "literal"},
+        "predicate": {"value": "http://p", "type": "uri"},
+        "predicate_label": {"value": "P", "type": "literal"},
+        "object": {"value": "hello", "type": "literal", "xml:lang": lang},
+        "object_label": {"value": "hello", "type": "literal", "xml:lang": lang},
+        "graph": {"value": data_iri, "type": "uri"},
+    }
+    service = SemanticReadModelService(
+        rdf_store=FakeStore({}),
+        scope_resolver=FakeScopeResolver(_resolution([data_iri])),
+        session=in_memory_session,
+    )
+    decorated = service._decorate_fact_row(
+        row,
+        assertion_kind="asserted",
+        scope=_resolution([data_iri]),
+        bindings_by_fact={fid: [{"id": "b1", "fact_id": fid, "text": "e"}]},
+    )
+    assert decorated["fact_id"] == fid
+    assert decorated["evidence_bindings"][0]["fact_id"] == fid
+
+
+def test_list_asserted_fact_ids_includes_datatype_and_lang():
+    """Regression: _list_asserted_fact_ids must hash typed and lang-tagged
+    literals with their datatype/lang so the asserted set matches PG."""
+    data_iri = "http://op.local/graph/data/ont-1"
+    datatype = "http://www.w3.org/2001/XMLSchema#integer"
+    rows = [
+        {
+            "s": {"value": "http://s", "type": "uri"},
+            "p": {"value": "http://p-int", "type": "uri"},
+            "o": {"value": "42", "type": "literal", "datatype": datatype},
+            "g": {"value": data_iri, "type": "uri"},
+        },
+        {
+            "s": {"value": "http://s", "type": "uri"},
+            "p": {"value": "http://p-lang", "type": "uri"},
+            "o": {"value": "hello", "type": "literal", "xml:lang": "en"},
+            "g": {"value": data_iri, "type": "uri"},
+        },
+    ]
+    store = FakeStore({"phase3 asserted fact_id enumeration": rows})
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(_resolution([data_iri])),
+    )
+    fact_ids = set(service._list_asserted_fact_ids(_resolution([data_iri])))
+    expected_typed = compute_fact_id(
+        "http://s",
+        "http://p-int",
+        canonical_object_term("42", is_iri=False, datatype=datatype),
+        data_iri,
+    )
+    expected_lang = compute_fact_id(
+        "http://s",
+        "http://p-lang",
+        canonical_object_term("hello", is_iri=False, lang="en"),
+        data_iri,
+    )
+    assert fact_ids == {expected_typed, expected_lang}
+    # Negative guard: a plain-literal hash would NOT be in the set.
+    plain = compute_fact_id(
+        "http://s",
+        "http://p-int",
+        canonical_object_term("42", is_iri=False),
+        data_iri,
+    )
+    assert plain not in fact_ids
+
+
+def test_compute_fact_id_with_datatype_matches_compiler_path():
+    """Lock the algorithm: read path and write path must produce the same
+    fact_id when given identical datatype/lang inputs. This pins the
+    invariant even if either side is later refactored."""
+    datatype = "http://www.w3.org/2001/XMLSchema#integer"
+    # Write side (semantic_command_compiler.compile_bind_fact_evidence)
+    write_term = canonical_object_term(
+        "42", is_iri=False, datatype=datatype
+    )
+    write_fid = compute_fact_id("http://s", "http://p", write_term, "http://g")
+    # Read side (semantic_read_model._decorate_fact_row after fix)
+    read_term = canonical_object_term(
+        "42", is_iri=False, datatype=datatype
+    )
+    read_fid = compute_fact_id("http://s", "http://p", read_term, "http://g")
+    assert write_fid == read_fid
+
+
+# ---------------------------------------------------------------------------
+# GET /missing-evidence-facts endpoint
+# ---------------------------------------------------------------------------
 class _FakeRdfStore:
     """Minimal RdfStoreRepository stub returning rows by query marker."""
 
