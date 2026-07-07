@@ -27,10 +27,6 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
 from app.services.semantic_graph_set import SemanticGraphSetService
-from app.services.semantic_missing_evidence import (
-    SemanticMissingEvidenceService,
-    derived_warning_message,
-)
 
 
 VALIDATION_SCOPES: frozenset[str] = frozenset(
@@ -50,7 +46,6 @@ class SemanticValidationService:
         self.rdf_store = rdf_store
         self.settings = settings
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
-        self.missing_evidence_service = SemanticMissingEvidenceService(rdf_store)
 
     def run_validation(
         self,
@@ -123,13 +118,7 @@ class SemanticValidationService:
             )
             summary = _shacl_summary(report_graph)
             guidance = _shape_guidance(shape_graph)
-            missing_evidence_inputs = (
-                self.missing_evidence_service.collect_from_graphs(data_graph_iris)
-            )
             warnings: list[str] = []
-            missing_warning = derived_warning_message(missing_evidence_inputs)
-            if missing_warning:
-                warnings.append(missing_warning)
             if persist_report_graph and report_graph:
                 self._persist_report_graph(report_graph_iri, report_graph)
             run.status = "succeeded"
@@ -139,11 +128,6 @@ class SemanticValidationService:
                 **run.run_metadata,
                 "summary": summary,
                 "guidance": guidance,
-                "missing_evidence_dependencies": (
-                    self.missing_evidence_service.summarize_dependencies(
-                        missing_evidence_inputs
-                    )
-                ),
                 "warnings": warnings,
                 "report_graph_iri": report_graph_iri,
             }
@@ -161,9 +145,6 @@ class SemanticValidationService:
                 "guidance": guidance,
                 "report_graph_iri": report_graph_iri,
                 "warnings": warnings,
-                "missing_evidence_dependencies": (
-                    run.run_metadata["missing_evidence_dependencies"]
-                ),
                 "graph_set_id": graph_set_id,
                 "source_signature": source_signature,
                 "input_graph_revisions": input_graph_revisions,
@@ -186,12 +167,6 @@ class SemanticValidationService:
                 "guidance": {},
                 "report_graph_iri": report_graph_iri,
                 "warnings": [],
-                "missing_evidence_dependencies": {
-                    "count": 0,
-                    "by_graph": {},
-                    "status": "missing_evidence",
-                    "derived_status": "derived_from_missing_evidence",
-                },
                 "graph_set_id": graph_set_id,
                 "source_signature": source_signature,
                 "input_graph_revisions": input_graph_revisions,
@@ -291,9 +266,6 @@ class SemanticValidationService:
             "shape_version": metadata.get("shape_version"),
             "engine_version": metadata.get("engine_version"),
             "validation_scope": metadata.get("validation_scope", "asserted_only"),
-            "missing_evidence_dependencies": metadata.get(
-                "missing_evidence_dependencies", {}
-            ),
             "staleness": staleness,
             "started_at": run.started_at,
             "finished_at": run.finished_at,
