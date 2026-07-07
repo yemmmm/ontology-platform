@@ -1,5 +1,11 @@
 # Ontology Platform v0.5 需求文档
 
+> **注（2026-07-08）：** 本文档提到的 `FactClaim` 指 Postgres 侧的结构化事实模型
+> （`FactClaimModel`），与 RDF 三元组库中已被移除的 `op:FactClaim` 具化断言实例无关。
+> 证据存储已从 RDF（`prov:wasDerivedFrom` + chunk 文本属性 + `op:evidenceStatus` 字面量）
+> 迁移到 Postgres `fact_evidence_bindings` 表。详见
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`。
+
 ## 版本定位
 
 `v0.5` 的目标是把平台从“可表达结构化图谱事实”推进为“可按知识锚点治理业务知识、

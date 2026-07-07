@@ -1,5 +1,12 @@
 # Phase 2 Semantic Namespace, Mapping, and Export Baseline
 
+> **Note (2026-07-08):** The `op:FactClaim` reified-assertion projection and
+> the `op:evidenceStatus "missing_evidence"` export marker described below
+> have been removed. Evidence bindings now live in the Postgres
+> `fact_evidence_bindings` table at `fact_id` granularity. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+> Other Phase 2 namespace and export conventions remain in force.
+
 ## Status
 
 Implemented as a read-only export baseline. Existing product writes still use the current

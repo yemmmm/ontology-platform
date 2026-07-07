@@ -1,5 +1,12 @@
 # Functional Semantic-Load Inventory
 
+> **Note (2026-07-08):** The `EvidenceExplorer` evidence-browser row below
+> originally planned to rebuild evidence→fact bindings by reading
+> `prov:wasDerivedFrom` triples. That approach has been replaced: evidence
+> bindings now live in the Postgres `fact_evidence_bindings` table. The
+> file/chunk rendering half ("**K**") is unchanged. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 ## Purpose
 
 This inventory classifies every current frontend page, backend endpoint group, and

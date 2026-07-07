@@ -1,5 +1,11 @@
 # Phase 6 Graph-Derived Product APIs and Projections
 
+> **Note (2026-07-08):** The `derived_from_missing_evidence` flag
+> referenced below was an RDF-side `op:evidenceStatus` value that no
+> longer exists. Missing-evidence state is now derived from the Postgres
+> `fact_evidence_bindings` table (count = 0 ⇒ missing). See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 ## Status
 
 Detailed design. Phase 6 builds on the Phase 1 semantic runtime spine, the Phase 2 namespace and

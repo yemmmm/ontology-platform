@@ -1,5 +1,15 @@
 # Standard Semantic-Language Refactor Integration Test Plan
 
+> **Note (2026-07-08):** Several rows below assert the legacy RDF-side
+> evidence behavior (`op:evidenceStatus "missing_evidence"` markers, the
+> `GET .../missing-evidence` endpoint, the `kind=missing_evidence`
+> read-model filter, and the default `op:evidenceStatus` written by
+> canonical-writes). All of those have been removed. The current
+> missing-evidence surface is
+> `GET /api/semantic/graph-sets/{gs}/missing-evidence-facts` and reads
+> from the Postgres `fact_evidence_bindings` table. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 ## Purpose
 
 This plan verifies the integrated behavior of the standard semantic-language refactor after the

@@ -1,5 +1,12 @@
 # Ontology Platform
 
+> **Note (2026-07-08):** As of the evidence-storage refactor, "evidence
+> status" / "missing-evidence fact" / "derived_from_missing_evidence" are
+> derived states computed from the Postgres `fact_evidence_bindings`
+> table, not RDF markers. The legacy `op:evidenceStatus` literal and
+> `prov:wasDerivedFrom` evidence edges have been removed. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 This context defines the language for governed ontology and knowledge graph modeling in the
 platform. It keeps semantic-web refactor terms distinct from current storage and UI terms.
 

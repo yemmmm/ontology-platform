@@ -1,5 +1,15 @@
 # Phase 7 Canonical RDF Dataset Migration
 
+> **Note (2026-07-08):** The migration mapping below still references the
+> legacy RDF evidence triples (`op:FactClaim`, `prov:wasDerivedFrom`,
+> `op:evidenceStatus`). Those have been removed from the RDF store;
+> evidence now lives in the Postgres `fact_evidence_bindings` table.
+> Update the "Fact claims" and "Evidence links" rows in your migration
+> plan accordingly, and run
+> `backend/scripts/cleanup_legacy_evidence_rdf.py --dry-run` before the
+> next dataset migration to confirm the cleanup is complete. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 ## Status
 
 Detailed design. Phase 7 builds on the Phase 1 semantic runtime spine, the Phase 2 namespace and

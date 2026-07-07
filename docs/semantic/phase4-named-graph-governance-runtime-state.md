@@ -1,5 +1,14 @@
 # Phase 4 Named-Graph Governance and Runtime State
 
+> **Note (2026-07-08):** The evidence-storage portions of this design have
+> been refactored. The `op:evidenceStatus` literal (including the
+> `"missing_evidence"` marker shown below) and `prov:wasDerivedFrom`
+> evidence edges have been removed; evidence now lives in the Postgres
+> `fact_evidence_bindings` table. See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+> The rest of this document remains accurate as Phase 4 architectural
+> history.
+
 ## Status
 
 Detailed design. Phase 4 builds on the Phase 1 runtime spine, Phase 2 semantic export baseline, and

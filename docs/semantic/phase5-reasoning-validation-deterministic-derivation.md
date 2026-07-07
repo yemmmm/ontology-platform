@@ -1,5 +1,14 @@
 # Phase 5 Reasoning, Validation, and Deterministic Derivation
 
+> **Note (2026-07-08):** The missing-evidence propagation described in this
+> document previously relied on the RDF-side `op:evidenceStatus` literal
+> (`"missing_evidence"` / `"derived_from_missing_evidence"`) and the
+> `missing_evidence_dependencies` derivation metadata. Those RDF markers
+> have been removed; "missing evidence" is now a derived state computed
+> from the Postgres `fact_evidence_bindings` table (a fact with zero
+> bindings is missing). See
+> `docs/superpowers/specs/2026-07-08-evidence-postgres-refactor-design.md`.
+
 ## Status
 
 Detailed design. Phase 5 builds on the Phase 1 semantic runtime spine, the Phase 2 namespace and
