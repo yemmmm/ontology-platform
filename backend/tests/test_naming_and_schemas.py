@@ -38,10 +38,17 @@ def test_schema_rejects_empty_project_name() -> None:
 
 
 def test_agent_request_contains_only_test_input() -> None:
-    request = AgentTestRequest(ontology_id="ontology", question="Who is Alice?")
+    # Stage 4 §7.2 added ``graph_set_id`` as a required input so agent-test
+    # can fetch the agent-test-context read model before the LLM call.
+    request = AgentTestRequest(
+        ontology_id="ontology",
+        graph_set_id="gs-1",
+        question="Who is Alice?",
+    )
 
     assert request.model_dump() == {
         "ontology_id": "ontology",
+        "graph_set_id": "gs-1",
         "question": "Who is Alice?",
     }
     assert {"model", "base_url", "temperature"}.isdisjoint(AgentTestRequest.model_fields)
@@ -51,6 +58,7 @@ def test_agent_request_rejects_model_overrides() -> None:
     with pytest.raises(ValidationError):
         AgentTestRequest(
             ontology_id="ontology",
+            graph_set_id="gs-1",
             question="Who is Alice?",
             model="request-level-model",
         )
