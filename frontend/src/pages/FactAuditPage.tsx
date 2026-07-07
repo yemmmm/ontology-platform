@@ -15,7 +15,6 @@
  *                 polled until both settle, then refetch)
  *   - Run rules → POST /graph-sets/{gs}/rule-runs only
  *   - Refresh   → invalidate local cache and refetch
- *   - Recall    → POST /sparql:query with caller-supplied SPARQL
  *
  * Review on a selected fact calls ``compileAndApplyProductCommand`` with
  * ``command_kind: review_assertion`` (Stage 2 §6.4).
@@ -39,7 +38,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { Check, Play, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import { Check, Edit3, Play, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
@@ -50,7 +49,6 @@ import {
   readModel,
   runGraphSetReasoning,
   runGraphSetRules,
-  sparqlQuery,
 } from "../semanticApi";
 import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
@@ -135,8 +133,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
   const [fixProposalId, setFixProposalId] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewDecision, setReviewDecision] = useState<"approved" | "rejected" | "needs_correction">("approved");
-  const [sparqlText, setSparqlText] = useState("");
-  const [sparqlResult, setSparqlResult] = useState<FactEnvelope | null>(null);
   const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const load = useCallback(async () => {
@@ -306,36 +302,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     }
   }
 
-  async function runRecall() {
-    const query = sparqlText.trim();
-    if (!query) return;
-    setBusy(true);
-    setError("");
-    try {
-      const response = await sparqlQuery(request, { query, resultLimit: 100 });
-      // Re-shape the SPARQL JSON result into FactRow-style asserted items so
-      // the existing list UI renders without a parallel component. The
-      // SPARQL result rows are tagged with assertion_kind=asserted +
-      // evidence_status=with_evidence per spec §6.4 (Recall).
-      const rows = sparqlRowsToFactRows(response.result);
-      setSparqlResult({
-        graph_set_id: graphSetId,
-        source_signature: "sparql:query",
-        projection_version: "semantic-read-v1",
-        model_name: "sparql-recall",
-        include: "asserted",
-        derived_state: {},
-        warnings: (response.warnings ?? []).map((message) => ({ code: "sparql_recall", message })),
-        items: rows,
-      });
-      setSuccess(t("Loaded {n} rows from SPARQL recall.", { n: rows.length }));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const counts = useMemo(() => {
     return {
       total: items.length,
@@ -351,10 +317,10 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     <section className="factAuditPage stage2">
       <header className="topBar">
         <div>
-          <span className="eyebrow">{t("Stage 2 · graph-derived")}</span>
-          <h1>{t("Fact Audit")}</h1>
+          <span className="eyebrow">{t("Business modeling")}</span>
+          <h1>{t("Facts")}</h1>
           <div className="crumbTrail">
-            <span>{t("Graph set")}: <code>{graphSetId}</code></span>
+            <span>{t("Fact list")}</span>
           </div>
         </div>
         <Space wrap>
@@ -369,8 +335,16 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
             icon={<Sparkles size={15} />}
             onClick={() => void generate()}
             disabled={busy || readOnly}
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : undefined}
           >
             {t("Generate")}
+          </Button>
+          <Button
+            icon={<Plus size={15} />}
+            disabled
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Fact creation is not available from the current API yet.")}
+          >
+            {t("New fact")}
           </Button>
         </Space>
       </header>
@@ -381,7 +355,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         <Alert
           type="info"
           showIcon
-          message={t("This published version is read-only. Generate and review are disabled.")}
+          message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
       {warnings.map((w, idx) => (
@@ -409,38 +383,13 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         />
       </Card>
 
-      <Card size="small" title={t("Recall (SPARQL)")}>
-        <Space direction="vertical" size={10} style={{ width: "100%" }}>
-          <Input.TextArea
-            value={sparqlText}
-            onChange={(event) => setSparqlText(event.target.value)}
-            placeholder={t("Enter SPARQL query — results appear as asserted rows below")}
-            autoSize={{ minRows: 2, maxRows: 6 }}
-          />
-          <Space>
-            <Button icon={<Search size={15} />} onClick={() => void runRecall()} disabled={busy || !sparqlText.trim()}>
-              {t("Recall")}
-            </Button>
-            {sparqlResult && (
-              <Button onClick={() => setSparqlResult(null)} disabled={busy}>
-                {t("Clear recall")}
-              </Button>
-            )}
-          </Space>
-        </Space>
-      </Card>
-
       <div className="factAuditLayout">
         <Card
-          title={
-            sparqlResult
-              ? t("Recall results · {n}", { n: sparqlResult.items.length })
-              : t("Fact queue · {n}", { n: items.length })
-          }
+          title={t("Fact queue · {n}", { n: items.length })}
           styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}
         >
           <FactQueue
-            rows={sparqlResult ? (sparqlResult.items as FactRow[]) : items}
+            rows={items}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
@@ -475,9 +424,8 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                   { key: "subject", label: t("Subject"), children: <FactTerm iri={selected.subject_iri} label={selected.subject_label} /> },
                   { key: "predicate", label: t("Predicate"), children: <FactTerm iri={selected.predicate_iri} label={selected.predicate_label} /> },
                   { key: "object", label: t("Object / value"), children: <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(selected.object_value, null, 2)}</pre> },
-                  { key: "graph", label: t("Source graph"), children: <code>{selected.graph_iri}</code> },
                   ...(selected.derived_from
-                    ? [{ key: "derived", label: t("Derived from"), children: <code>{selected.derived_from.run_id}</code> }]
+                    ? [{ key: "derived", label: t("Derived from"), children: <span>{selected.derived_from.run_id}</span> }]
                     : []),
                 ]}
               />
@@ -494,6 +442,21 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                 />
               </Card>
               <Space wrap>
+                <Button
+                  icon={<Edit3 size={15} />}
+                  disabled
+                  title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Fact editing is not available from the current API yet.")}
+                >
+                  {t("Edit")}
+                </Button>
+                <Button
+                  danger
+                  icon={<Trash2 size={15} />}
+                  disabled
+                  title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Fact deletion is not available from the current API yet.")}
+                >
+                  {t("Delete")}
+                </Button>
                 <Button
                   type="primary"
                   icon={<Check size={15} />}
@@ -609,55 +572,7 @@ function FactQueue({
 }
 
 function FactTerm({ iri, label }: { iri: string; label: string | null }) {
-  return (
-    <Space direction="vertical" size={0}>
-      <span>{label ?? iri}</span>
-      {label && <code>{iri}</code>}
-    </Space>
-  );
-}
-
-/**
- * Reshape a SPARQL SELECT JSON result (the form returned by /sparql:query)
- * into FactRow-style items so the existing queue UI can render them.
- *
- * Each result row becomes one FactRow with:
- *   - subject_iri / predicate_iri / object_value taken from the row's
- *     ``subject`` / ``predicate`` / ``object`` bindings when present
- *     (the FactAuditPage recall convention); other shapes fall back to
- *     stringifying the row.
- *   - assertion_kind = "asserted" per spec §6.4 (Recall).
- *   - evidence_status = "with_evidence".
- *   - audit_status = "pending".
- */
-function sparqlRowsToFactRows(result: unknown): FactRow[] {
-  if (!result || typeof result !== "object") return [];
-  const head = (result as { head?: { vars?: string[] } }).head;
-  const bindings = (result as { results?: { bindings?: Array<Record<string, { value: string }>> } }).results?.bindings;
-  if (!head || !bindings || !Array.isArray(bindings)) return [];
-  return bindings.map((binding, idx) => {
-    const subjectIri = binding.subject?.value ?? binding.s?.value ?? "";
-    const predicateIri = binding.predicate?.value ?? binding.p?.value ?? "";
-    const objectValue = binding.object?.value ?? binding.o?.value ?? null;
-    const graphIri = binding.graph?.value ?? binding.g?.value ?? "";
-    return {
-      id: `sparql-${idx}-${subjectIri}-${predicateIri}`,
-      fact_id: `sparql-${idx}`,
-      assertion_kind: "asserted",
-      subject_iri: subjectIri,
-      subject_label: null,
-      predicate_iri: predicateIri,
-      predicate_label: null,
-      object_value: objectValue,
-      object_label: null,
-      graph_iri: graphIri,
-      source_graph_iri: graphIri,
-      evidence_status: "with_evidence",
-      audit_status: "pending",
-      stale: false,
-      stale_reason: null,
-    } satisfies FactRow;
-  });
+  return <span>{label ?? iri}</span>;
 }
 
 export type { FactAuditPageProps };

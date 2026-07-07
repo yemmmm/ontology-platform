@@ -10,6 +10,7 @@ import {
   History,
   Layers,
   Loader2,
+  Lock,
   Network,
   Plus,
   RefreshCw,
@@ -18,6 +19,7 @@ import {
   Settings,
   ShieldCheck,
   Trash2,
+  Unlock,
   Upload,
   Waypoints,
   Wrench,
@@ -26,7 +28,7 @@ import {
 // Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Braces/Box.
 import { Card, ConfigProvider, Tag, Tooltip } from "antd";
 import "antd/dist/reset.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { API_BASE_URL, apiRequest, errorNotice } from "./api";
 import type {
@@ -45,7 +47,6 @@ import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
 import { PublicationPage } from "./pages/PublicationPage";
-import { GraphGovernancePage } from "./pages/GraphGovernancePage";
 import { NamedGraphsPage } from "./pages/NamedGraphsPage";
 import { GraphSetPage } from "./pages/GraphSetPage";
 import { SemanticRunsPage } from "./pages/SemanticRunsPage";
@@ -54,6 +55,22 @@ import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { useT } from "./i18n";
+import {
+  getGovernanceStatus,
+  getProjectionStatus,
+  listGraphSets,
+  listReasoningRuns,
+  listRuleRuns,
+  listValidationRuns,
+} from "./semanticApi";
+import type {
+  SemanticGovernanceStatusResponse,
+  SemanticGraphSetListResponse,
+  SemanticProjectionStatusResponse,
+  SemanticReasoningRunListResponse,
+  SemanticRuleRunListResponse,
+  SemanticValidationRunListResponse,
+} from "./types";
 
 type AppView = "home" | "workspace";
 type WorkspaceTab =
@@ -74,64 +91,61 @@ type WorkspaceTab =
   | "semantic-runs"
   | "semantic-import-export";
 type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools" | "governance";
+type VisibleWorkspaceStage = "overview" | "modeling" | "debug" | "settings";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 
 const UI_KEYS = {
   project: "ontology-platform-ui-selected-project",
   ontology: "ontology-platform-ui-selected-ontology",
-  workspaceTab: "ontology-platform-ui-workspace-tab-v3",
+  workspaceTab: "ontology-platform-ui-workspace-tab-v4",
 } as const;
 
 const stageMeta: Array<{
-  id: WorkspaceStage;
+  id: VisibleWorkspaceStage;
   label: string;
   detail: string;
   icon: typeof Network;
-  workflowStatuses?: string[];
 }> = [
-  { id: "intake", label: "Intake", detail: "Brief", icon: BookOpen, workflowStatuses: ["gathering"] },
-  { id: "knowledge", label: "Modeling", detail: "Classes · entities · facts", icon: GitBranch, workflowStatuses: ["schema_draft", "schema_review", "graph_building", "graph_review", "validated"] },
-  { id: "governance", label: "Governance", detail: "Graphs · graph sets · semantic edit · runs · import/export", icon: ShieldCheck },
-  { id: "publish", label: "Publish", detail: "Publication · graph set history", icon: Flag, workflowStatuses: ["published"] },
-  { id: "tools", label: "Tools", detail: "Agent · MCP · settings", icon: Wrench },
+  { id: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
+  { id: "modeling", label: "Modeling", detail: "Classes · entities · facts", icon: GitBranch },
+  { id: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: ShieldCheck },
+  { id: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
 ];
 
-const stageDefaultTab: Record<WorkspaceStage, WorkspaceTab> = {
-  intake: "brief",
-  knowledge: "classes",
-  governance: "graph-governance",
-  publish: "publication",
-  tools: "agent-test",
-};
-
-const workflowStatusToStage: Record<string, WorkspaceStage> = {
-  gathering: "intake",
-  schema_draft: "knowledge",
-  schema_review: "knowledge",
-  graph_building: "knowledge",
-  graph_review: "knowledge",
-  validated: "knowledge",
-  published: "publish",
+const stageDefaultTab: Record<VisibleWorkspaceStage, WorkspaceTab> = {
+  overview: "brief",
+  modeling: "classes",
+  debug: "graph-governance",
+  settings: "setting",
 };
 
 const workspaceTabs: Array<{
+  id: WorkspaceTab;
+  stage: VisibleWorkspaceStage;
+  label: string;
+  detail: string;
+  icon: typeof Network;
+}> = [
+  { id: "brief", stage: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
+  { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
+  { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
+  { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
+  { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
+  { id: "setting", stage: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
+];
+
+const legacyWorkspaceTabs: Array<{
   id: WorkspaceTab;
   stage: WorkspaceStage;
   label: string;
   detail: string;
   icon: typeof Network;
 }> = [
-  { id: "brief", stage: "intake", label: "Brief", detail: "Scope & intent", icon: BookOpen },
-  { id: "classes", stage: "knowledge", label: "Classes", detail: "Class topology", icon: Layers },
-  { id: "entities", stage: "knowledge", label: "Entities", detail: "Entity editor", icon: Database },
-  { id: "facts", stage: "knowledge", label: "Facts", detail: "Layered fact audit", icon: ShieldCheck },
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
   { id: "graph-set-history", stage: "publish", label: "Graph Set History", detail: "Lineage & diff", icon: History },
   { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
-  { id: "search", stage: "tools", label: "Search", detail: "Graph entity search", icon: Search },
+  { id: "search", stage: "tools", label: "Search", detail: "Entity search", icon: Search },
   { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
-  { id: "setting", stage: "tools", label: "Settings", detail: "Runtime status", icon: Settings },
-  { id: "graph-governance", stage: "governance", label: "Graph Governance", detail: "Status · graph sets · audits", icon: ShieldCheck },
   { id: "named-graphs", stage: "governance", label: "Named Graphs", detail: "Registry · editability", icon: Database },
   { id: "graph-sets", stage: "governance", label: "Graph Sets", detail: "Members · runs · exports", icon: Layers },
   { id: "semantic-edits", stage: "governance", label: "Semantic Edit", detail: "Direct workbench", icon: ShieldCheck },
@@ -139,8 +153,26 @@ const workspaceTabs: Array<{
   { id: "semantic-import-export", stage: "governance", label: "Import / Export", detail: "Standards exchange", icon: Upload },
 ];
 
+const allWorkspaceTabs = [...workspaceTabs, ...legacyWorkspaceTabs];
+const legacyTabRedirects: Partial<Record<WorkspaceTab, WorkspaceTab>> = {
+  publication: "brief",
+  "graph-set-history": "graph-governance",
+  "agent-test": "graph-governance",
+  search: "entities",
+  "mcp-tools": "graph-governance",
+  "named-graphs": "graph-governance",
+  "graph-sets": "graph-governance",
+  "semantic-edits": "graph-governance",
+  "semantic-runs": "graph-governance",
+  "semantic-import-export": "graph-governance",
+};
+
+function normalizeWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
+  return legacyTabRedirects[tab] ?? tab;
+}
+
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
-  return workspaceTabs.some((tab) => tab.id === value);
+  return allWorkspaceTabs.some((tab) => tab.id === value);
 }
 
 function queryValue(name: string) {
@@ -175,7 +207,7 @@ function useStoredWorkspaceTab(key: string, fallback: WorkspaceTab) {
   const [value, setValue] = useState<WorkspaceTab>(() => {
     try {
       const stored = localStorage.getItem(key);
-      return isWorkspaceTab(stored) ? stored : fallback;
+      return isWorkspaceTab(stored) ? normalizeWorkspaceTab(stored) : fallback;
     } catch {
       return fallback;
     }
@@ -198,7 +230,7 @@ export function App() {
   const requestedTab = queryValue("tab");
   const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(
     UI_KEYS.workspaceTab,
-    isWorkspaceTab(requestedTab) ? requestedTab : "brief",
+    isWorkspaceTab(requestedTab) ? normalizeWorkspaceTab(requestedTab) : "brief",
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [ontologies, setOntologies] = useState<Ontology[]>([]);
@@ -211,22 +243,23 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedOntology = ontologies.find((ontology) => ontology.id === selectedOntologyId) ?? null;
-  const activeTab = workspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
+  const activeTab = allWorkspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
 
   const request = useCallback(<T,>(path: string, options?: RequestInit) => apiRequest<T>(path, options), []);
   const showError = useCallback((error: unknown) => setNotice(errorNotice(error)), []);
   const navigateWorkspace = useCallback((tab: string, params: Record<string, string> = {}) => {
     if (!isWorkspaceTab(tab)) return;
+    const normalizedTab = normalizeWorkspaceTab(tab);
     if (pageDirty && !window.confirm(t("Discard unsaved changes and leave this page?"))) return;
     setPageDirty(false);
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab);
+    url.searchParams.set("tab", normalizedTab);
     for (const key of ["proposal", "claim", "item", "graph", "graphSet", "run", "category"]) {
       if (!(key in params)) url.searchParams.delete(key);
     }
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     window.history.pushState(null, "", url);
-    setWorkspaceTab(tab);
+    setWorkspaceTab(normalizedTab);
   }, [pageDirty, setWorkspaceTab, t]);
 
   useEffect(() => {
@@ -235,7 +268,7 @@ export function App() {
     const linkedTab = queryValue("tab");
     if (linkedProject) setSelectedProjectId(linkedProject);
     if (linkedOntology) setSelectedOntologyId(linkedOntology);
-    if (isWorkspaceTab(linkedTab)) setWorkspaceTab(linkedTab);
+    if (isWorkspaceTab(linkedTab)) setWorkspaceTab(normalizeWorkspaceTab(linkedTab));
   }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
 
   useEffect(() => {
@@ -379,20 +412,14 @@ export function App() {
                 const tabsInStage = workspaceTabs.filter((item) => item.stage === stage.id);
                 if (!tabsInStage.length) return null;
                 const StageIcon = stage.icon;
-                // Phase E: workflow_status-driven stage is pending graph-set history
-                // rework. Hardcoded to "intake" (gathering) until Phase G cleanup or
-                // Stage 4 wires a graph-set-derived stage signal.
-                const activeStage = workflowStatusToStage["gathering"] ?? "intake";
                 const tabStage = workspaceTabs.find((item) => item.id === workspaceTab)?.stage;
                 const isActiveStage = tabStage === stage.id;
-                const isWorkflowStage = stage.id === activeStage;
                 return (
                   <section
                     className={classNames(
                       "navGroup",
                       "navStage",
                       isActiveStage && "stageActive",
-                      isWorkflowStage && "stageCurrent",
                     )}
                     key={stage.id}
                   >
@@ -403,7 +430,6 @@ export function App() {
                     >
                       <StageIcon size={15} />
                       <span><strong>{t(stage.label)}</strong><small>{t(stage.detail)}</small></span>
-                      {isWorkflowStage && <span className="navStageDot" aria-label={t("Current workflow stage")} />}
                     </button>
                     <div className="navStageTabs">
                       {tabsInStage.map((item) => {
@@ -709,28 +735,76 @@ function WorkspaceContent(props: {
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
 }) {
-  const readOnly = false;
   const t = useT();
   const governedRequest = props.request;
+  const lockStorageKey = `ontology-platform-ui-workspace-lock:${props.ontology.id}`;
+  const [locked, setLocked] = useState(() => {
+    try {
+      return localStorage.getItem(lockStorageKey) === "locked";
+    } catch {
+      return false;
+    }
+  });
+  const [graphSetId, setGraphSetId] = useState(() => queryValue("graphSet"));
+  const [graphSetLoading, setGraphSetLoading] = useState(false);
+  const [graphSetError, setGraphSetError] = useState("");
+  const readOnly = locked;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(lockStorageKey, locked ? "locked" : "unlocked");
+    } catch {
+      // Local storage is optional in embedded previews.
+    }
+  }, [lockStorageKey, locked]);
+
+  useEffect(() => {
+    const explicitGraphSetId = queryValue("graphSet");
+    if (explicitGraphSetId) {
+      setGraphSetId(explicitGraphSetId);
+      return;
+    }
+    if (!["classes", "entities", "facts", "agent-test", "search", "publication", "graph-set-history"].includes(props.tab)) {
+      return;
+    }
+    let cancelled = false;
+    setGraphSetLoading(true);
+    setGraphSetError("");
+    listGraphSets(governedRequest, { scopeType: "ontology", scopeId: props.ontology.id })
+      .then((data: SemanticGraphSetListResponse) => {
+        if (cancelled) return;
+        const activeId =
+          data.graph_sets?.find((graphSet) => graphSet.status === "active")?.id ??
+          data.graph_sets?.[0]?.id ??
+          "";
+        setGraphSetId(activeId);
+      })
+      .catch((error) => {
+        if (!cancelled) setGraphSetError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) setGraphSetLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [governedRequest, props.ontology.id, props.tab]);
+
+  const graphSetGate = (title: string) => (
+    <EmptyState
+      icon={graphSetLoading ? <Loader2 className="spin" size={22} /> : <Database size={22} />}
+      title={graphSetLoading ? t("Preparing workspace data") : title}
+      action={graphSetError ? <span className="inlineHint">{graphSetError}</span> : undefined}
+    />
+  );
 
   if (props.tab === "brief") {
     return <ProjectBriefPage onDirtyChange={props.setPageDirty} projectId={props.project.id} readOnly={readOnly} request={governedRequest} />;
   }
 
   if (props.tab === "classes") {
-    const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<Database size={22} />}
-          title={t("Select a graph set to view classes")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
+      return graphSetGate(t("Workspace data is not ready yet"));
     }
     return (
       <ClassesPage
@@ -743,19 +817,8 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "entities") {
-    const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<Database size={22} />}
-          title={t("Select a graph set to view entities")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
+      return graphSetGate(t("Workspace data is not ready yet"));
     }
     return (
       <EntitiesPage
@@ -768,19 +831,8 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "facts") {
-    const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<Database size={22} />}
-          title={t("Select a graph set to audit facts")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
+      return graphSetGate(t("Workspace data is not ready yet"));
     }
     return (
       <FactAuditPage
@@ -842,19 +894,8 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "agent-test") {
-    const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<Database size={22} />}
-          title={t("Select a graph set to run an agent test")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
+      return graphSetGate(t("Workspace data is not ready yet"));
     }
     return (
       <AgentTestPage
@@ -867,19 +908,8 @@ function WorkspaceContent(props: {
   }
 
   if (props.tab === "search") {
-    const graphSetId = queryValue("graphSet");
     if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<Database size={22} />}
-          title={t("Select a graph set to search entities")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
+      return graphSetGate(t("Workspace data is not ready yet"));
     }
     return (
       <EntitiesSearchPage
@@ -898,8 +928,7 @@ function WorkspaceContent(props: {
 
   if (props.tab === "graph-governance") {
     return (
-      <GraphGovernancePage
-        navigate={props.navigateWorkspace}
+      <DebugPage
         notify={props.notify}
         request={governedRequest}
       />
@@ -962,8 +991,10 @@ function WorkspaceContent(props: {
   }
 
   return (
-    <SystemPage
+    <SettingsPage
       health={props.health}
+      locked={locked}
+      onLockedChange={setLocked}
       ontology={props.ontology}
       request={props.request}
       setHealth={props.setHealth}
@@ -972,9 +1003,11 @@ function WorkspaceContent(props: {
   );
 }
 
-function SystemPage(props: {
+function SettingsPage(props: {
   ontology: Ontology;
   health: Health | null;
+  locked: boolean;
+  onLockedChange: (locked: boolean) => void;
   request: Requester;
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
@@ -990,6 +1023,26 @@ function SystemPage(props: {
 
   return (
     <section className="pageGrid systemGrid">
+      <Panel title={t("Workspace edit lock")} icon={props.locked ? <Lock size={17} /> : <Unlock size={17} />} wide>
+        <div className={classNames("lockStatePanel", props.locked ? "locked" : "unlocked")}>
+          <div>
+            <strong>{props.locked ? t("Workspace locked") : t("Workspace unlocked")}</strong>
+            <p>
+              {props.locked
+                ? t("Modeling changes are paused. Unlock the workspace to create, edit, or delete classes, entities, relationships, and facts.")
+                : t("Modeling changes take effect after backend validation. Lock the workspace to prevent accidental edits.")}
+            </p>
+          </div>
+          <button
+            className={props.locked ? "primaryButton" : "secondaryButton"}
+            onClick={() => props.onLockedChange(!props.locked)}
+            type="button"
+          >
+            {props.locked ? <Unlock size={15} /> : <Lock size={15} />}
+            {props.locked ? t("Unlock workspace") : t("Lock workspace")}
+          </button>
+        </div>
+      </Panel>
       <Panel title={t("Ontology")} icon={<Waypoints size={17} />}>
         <dl className="detailList">
           <dt>{t("Name")}</dt>
@@ -1018,6 +1071,107 @@ function SystemPage(props: {
       </Panel>
     </section>
   );
+}
+
+function DebugPage(props: {
+  request: Requester;
+  notify: (notice: Notice) => void;
+}) {
+  const t = useT();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<SemanticGovernanceStatusResponse | null>(null);
+  const [projection, setProjection] = useState<SemanticProjectionStatusResponse | null>(null);
+  const [validationRuns, setValidationRuns] = useState<SemanticValidationRunListResponse | null>(null);
+  const [reasoningRuns, setReasoningRuns] = useState<SemanticReasoningRunListResponse | null>(null);
+  const [ruleRuns, setRuleRuns] = useState<SemanticRuleRunListResponse | null>(null);
+
+  async function loadDebugState() {
+    setLoading(true);
+    try {
+      const [statusData, projectionData, validationData, reasoningData, ruleData] = await Promise.all([
+        getGovernanceStatus(props.request).catch(() => null),
+        getProjectionStatus(props.request).catch(() => null),
+        listValidationRuns(props.request, { limit: 5 }).catch(() => null),
+        listReasoningRuns(props.request, { limit: 5 }).catch(() => null),
+        listRuleRuns(props.request, { limit: 5 }).catch(() => null),
+      ]);
+      setStatus(statusData);
+      setProjection(projectionData);
+      setValidationRuns(validationData);
+      setReasoningRuns(reasoningData);
+      setRuleRuns(ruleData);
+    } catch (error) {
+      props.notify(errorNotice(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDebugState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const runItems = useMemo(
+    () => [
+      { label: t("Validation"), count: validationRuns?.summary?.total ?? validationRuns?.items?.length ?? 0 },
+      { label: t("Reasoning"), count: reasoningRuns?.summary?.total ?? reasoningRuns?.items?.length ?? 0 },
+      { label: t("Rule"), count: ruleRuns?.summary?.total ?? ruleRuns?.items?.length ?? 0 },
+    ],
+    [reasoningRuns, ruleRuns, t, validationRuns],
+  );
+  const graphCount = numericJsonValue(status?.graphs, "total");
+  const missingEvidenceCount = numericJsonValue(status?.derived, "missing_evidence_count");
+  const staleDerivedCount =
+    numericJsonValue(status?.derived, "stale_derived_count") ?? numericJsonValue(status?.derived, "stale_count");
+
+  return (
+    <section className="pageGrid systemGrid" aria-label="debug-page">
+      <Panel title={t("Runtime status")} icon={<Activity size={17} />}>
+        <button className="primaryButton" onClick={() => void loadDebugState()} disabled={loading} type="button">
+          {loading ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+          {t("Refresh")}
+        </button>
+        <dl className="detailList">
+          <dt>{t("Registered workspace areas")}</dt>
+          <dd>{graphCount ?? t("unknown")}</dd>
+          <dt>{t("Missing evidence")}</dt>
+          <dd>{missingEvidenceCount ?? 0}</dd>
+          <dt>{t("Stale derived results")}</dt>
+          <dd>{staleDerivedCount ?? 0}</dd>
+        </dl>
+      </Panel>
+      <Panel title={t("Projection status")} icon={<Network size={17} />}>
+        <dl className="detailList">
+          <dt>{t("Stale projections")}</dt>
+          <dd>{projection?.stale_projection_count ?? projection?.stale?.length ?? 0}</dd>
+          <dt>{t("Missing projections")}</dt>
+          <dd>{projection?.missing?.length ?? 0}</dd>
+          <dt>{t("Projection manifests")}</dt>
+          <dd>{projection?.manifests?.length ?? 0}</dd>
+        </dl>
+      </Panel>
+      <Panel title={t("Validation and runtime jobs")} icon={<History size={17} />} wide>
+        <div className="debugRunGrid">
+          {runItems.map((item) => (
+            <div className="debugRunTile" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.count}</strong>
+            </div>
+          ))}
+        </div>
+        <p className="inlineHint">
+          {t("This page shows diagnostics only. Modeling data is edited from the Modeling area.")}
+        </p>
+      </Panel>
+    </section>
+  );
+}
+
+function numericJsonValue(source: unknown, key: string): number | null {
+  if (!source || typeof source !== "object" || !(key in source)) return null;
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : null;
 }
 
 function Panel(props: { title: string; icon: ReactNode; children: ReactNode; wide?: boolean; className?: string }) {
@@ -1068,4 +1222,3 @@ function EmptyState(props: { icon: ReactNode; title: string; action?: ReactNode 
     </div>
   );
 }
-

@@ -16,7 +16,7 @@
  */
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
-import { ChevronRight, Database, Plus, RefreshCw } from "lucide-react";
+import { ChevronRight, Database, Edit3, Link2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
@@ -102,6 +102,14 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     void load();
   }, [load]);
 
+  const entityLabelByIri = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const row of entities?.items ?? []) {
+      labels.set(row.iri, row.label ?? row.iri);
+    }
+    return labels;
+  }, [entities]);
+
   async function submitNewEntity() {
     if (!newLabel.trim() || !newClassIri.trim()) return;
     setCreating(true);
@@ -134,10 +142,10 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     <section className="entitiesPage stage2">
       <header className="topBar">
         <div>
-          <span className="eyebrow">{t("Stage 2 · graph-derived")}</span>
+          <span className="eyebrow">{t("Business modeling")}</span>
           <h1>{t("Entities")}</h1>
           <div className="crumbTrail">
-            <span>{t("Graph set")}: <code>{graphSetId}</code></span>
+            <span>{t("Entity diagram")}</span>
           </div>
         </div>
         <div className="topActions">
@@ -148,9 +156,17 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
             type="primary"
             icon={<Plus size={15} />}
             disabled={readOnly || creating}
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : undefined}
             onClick={() => setCreating(true)}
           >
             {t("New entity")}
+          </Button>
+          <Button
+            icon={<Link2 size={15} />}
+            disabled
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Relationship creation is not available from the current API yet.")}
+          >
+            {t("New relationship")}
           </Button>
         </div>
       </header>
@@ -160,7 +176,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         <Alert
           type="info"
           showIcon
-          message={t("Data graph is locked. Unlock on the Named Graphs page to edit entities.")}
+          message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
 
@@ -177,11 +193,12 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
                 onSelect={() => setSelectedIri(selectedIri === row.iri ? null : row.iri)}
                 request={request}
                 graphSetId={graphSetId}
+                readOnly={readOnly}
               />
             ))}
           </ul>
         ) : (
-          <div>{t("No entities in this graph set yet.")}</div>
+          <div>{t("No entities in this workspace yet.")}</div>
         )}
       </Card>
 
@@ -198,16 +215,35 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
               <li key={`${row.source ?? row.iri}-${idx}`} className="relationListItem">
                 <ChevronRight size={16} />
                 <div>
-                  <code>{row.source ?? "?"}</code>
-                  <span style={{ margin: "0 6px" }}>—{row.label ?? row.relation ?? "?"}&gt;</span>
-                  <code>{row.target ?? "?"}</code>
+                  <span>{entityLabelByIri.get(row.source ?? "") ?? t("Unknown source")}</span>
+                  <span style={{ margin: "0 6px" }}>-{row.label ?? t("relationship")}-</span>
+                  <span>{entityLabelByIri.get(row.target ?? "") ?? t("Unknown target")}</span>
                 </div>
-                <Tag>{row.assertion_kind}</Tag>
+                <Tag>{t(row.assertion_kind)}</Tag>
+                <div className="rowActions">
+                  <Button
+                    size="small"
+                    icon={<Edit3 size={13} />}
+                    disabled
+                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Relationship editing is not available from the current API yet.")}
+                  >
+                    {t("Edit")}
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<Trash2 size={13} />}
+                    disabled
+                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Relationship deletion is not available from the current API yet.")}
+                  >
+                    {t("Delete")}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         ) : (
-          <div>{t("No relations in this graph set yet.")}</div>
+          <div>{t("No relationships in this workspace yet.")}</div>
         )}
       </Card>
 
@@ -225,7 +261,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         okButtonProps={{ disabled: !newLabel.trim() || !newClassIri.trim() }}
       >
         <Input
-          placeholder={t("Class IRI (e.g. http://op.local/ns/class/student)")}
+          placeholder={t("Class identifier from class diagram")}
           value={newClassIri}
           onChange={(event) => setNewClassIri(event.target.value)}
           autoFocus
@@ -247,9 +283,10 @@ type EntityListEntryProps = {
   onSelect: () => void;
   request: WorkbenchRequest;
   graphSetId: string;
+  readOnly: boolean;
 };
 
-function EntityListEntry({ row, selected, onSelect, request, graphSetId }: EntityListEntryProps) {
+function EntityListEntry({ row, selected, onSelect, request, graphSetId, readOnly }: EntityListEntryProps) {
   const t = useT();
   const [guidance, setGuidance] = useState<SemanticShaclFormGuidance | null>(null);
   const [guidanceError, setGuidanceError] = useState("");
@@ -277,13 +314,31 @@ function EntityListEntry({ row, selected, onSelect, request, graphSetId }: Entit
         <Database size={16} />
         <div>
           <strong>{row.label ?? row.iri}</strong>
-          <code>{row.iri}</code>
           {row.class_label && <Tag color="blue">{row.class_label}</Tag>}
           {row.evidence_status === "missing_evidence" && (
             <Tag color="warning">⚠ {t("missing evidence")}</Tag>
           )}
         </div>
-        <Tag>{row.assertion_kind}</Tag>
+        <Tag>{t(row.assertion_kind)}</Tag>
+        <div className="rowActions">
+          <Button
+            size="small"
+            icon={<Edit3 size={13} />}
+            disabled
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Entity editing is not available from the current API yet.")}
+          >
+            {t("Edit")}
+          </Button>
+          <Button
+            size="small"
+            danger
+            icon={<Trash2 size={13} />}
+            disabled
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Entity deletion is not available from the current API yet.")}
+          >
+            {t("Delete")}
+          </Button>
+        </div>
       </div>
       {selected && (
         <div className="entityShapePanel">

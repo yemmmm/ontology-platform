@@ -9,7 +9,7 @@
  */
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
-import { Box, Plus, RefreshCw } from "lucide-react";
+import { Box, Edit3, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useT } from "../i18n";
@@ -97,10 +97,10 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
     <section className="classesPage stage2">
       <header className="topBar">
         <div>
-          <span className="eyebrow">{t("Stage 2 · graph-derived")}</span>
+          <span className="eyebrow">{t("Business modeling")}</span>
           <h1>{t("Classes")}</h1>
           <div className="crumbTrail">
-            <span>{t("Graph set")}: <code>{graphSetId}</code></span>
+            <span>{t("Class diagram")}</span>
           </div>
         </div>
         <div className="topActions">
@@ -115,7 +115,8 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
             type="primary"
             icon={<Plus size={15} />}
             disabled={readOnly || creating}
-            onClick={() => setNewName(prompt(t("Class name")) ?? "")}
+            title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : undefined}
+            onClick={() => setCreating(true)}
           >
             {t("New class")}
           </Button>
@@ -127,13 +128,13 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
         <Alert
           type="info"
           showIcon
-          message={t("Ontology graph is locked. Unlock on the Named Graphs page to edit classes.")}
+          message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
 
       <Card
         size="small"
-        title={t("Class topology · {n}", { n: envelope?.items.length ?? 0 })}
+        title={t("Class diagram · {n}", { n: envelope?.items.length ?? 0 })}
       >
         {loading ? (
           <Skeleton active />
@@ -144,20 +145,38 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
                 <Box size={16} />
                 <div>
                   <strong>{row.label ?? row.iri}</strong>
-                  <code>{row.iri}</code>
                 </div>
-                <Tag>{row.assertion_kind}</Tag>
+                <Tag>{t(row.assertion_kind)}</Tag>
+                <div className="rowActions">
+                  <Button
+                    size="small"
+                    icon={<Edit3 size={13} />}
+                    disabled
+                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Class editing is not available from the current API yet.")}
+                  >
+                    {t("Edit")}
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<Trash2 size={13} />}
+                    disabled
+                    title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : t("Class deletion is not available from the current API yet.")}
+                  >
+                    {t("Delete")}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         ) : (
-          <div>{t("No classes in this graph set yet.")}</div>
+          <div>{t("No classes in this workspace yet.")}</div>
         )}
       </Card>
 
       <Modal
         title={t("Create class")}
-        open={creating || newName.length > 0}
+        open={creating}
         onCancel={() => {
           setCreating(false);
           setNewName("");

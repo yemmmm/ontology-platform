@@ -234,7 +234,7 @@ test("ClassesPage graph-derived path renders class topology", async ({ page }) =
   await page.goto(
     `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=classes&graphSet=${GRAPH_SET_ID}`,
   );
-  await expect(page.getByText("Stage 2 · graph-derived").first()).toBeVisible();
+  await expect(page.getByText("Business modeling").first()).toBeVisible();
   // Stage 2 page h1 — disambiguate from the sidebar nav heading.
   await expect(page.locator("section.classesPage.stage2").getByRole("heading", { name: "Classes" })).toBeVisible();
   await expect(page.getByText("Class 1")).toBeVisible();
@@ -246,7 +246,7 @@ test("EntitiesPage graph-derived path renders entity and relations cards", async
   await page.goto(
     `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=entities&graphSet=${GRAPH_SET_ID}`,
   );
-  await expect(page.getByText("Stage 2 · graph-derived").first()).toBeVisible();
+  await expect(page.getByText("Business modeling").first()).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByRole("heading", { name: "Entities" })).toBeVisible();
   await expect(page.getByText("Entity One")).toBeVisible();
   await expect(page.getByRole("button", { name: "New entity" })).toBeEnabled();
@@ -263,8 +263,8 @@ test("FactAuditPage graph-derived path renders asserted rows and kind tabs", asy
   await page.goto(
     `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=facts&graphSet=${GRAPH_SET_ID}`,
   );
-  await expect(page.getByText("Stage 2 · graph-derived").first()).toBeVisible();
-  await expect(page.locator("section.factAuditPage.stage2").getByRole("heading", { name: "Fact Audit" })).toBeVisible();
+  await expect(page.getByText("Business modeling").first()).toBeVisible();
+  await expect(page.locator("section.factAuditPage.stage2").getByRole("heading", { name: "Facts" })).toBeVisible();
   // Asserted tab default-selected with one row.
   await expect(page.getByText("Entity One").first()).toBeVisible();
   // All 4 kind tabs present (Antd Segmented renders the radio input as

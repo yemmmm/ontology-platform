@@ -543,6 +543,67 @@ h3 {
   flex-wrap: wrap;
 }
 
+.lockStatePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 14px;
+}
+
+.lockStatePanel.locked {
+  border-color: #f1d4a4;
+  background: var(--warn-bg);
+}
+
+.lockStatePanel strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.lockStatePanel p,
+.inlineHint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.debugRunGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.debugRunTile {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.debugRunTile span,
+.debugRunTile strong {
+  display: block;
+}
+
+.debugRunTile span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.debugRunTile strong {
+  color: var(--ink);
+  font-size: 24px;
+  margin-top: 4px;
+}
+
 label {
   color: #61667b;
   font-size: 12px;
