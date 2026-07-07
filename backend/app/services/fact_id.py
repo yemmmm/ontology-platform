@@ -8,6 +8,17 @@ boundaries.
 import hashlib
 
 
+def _escape_ntriples_literal(value: str) -> str:
+    """Escape characters per N-Triples grammar."""
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+
+
 def canonical_object_term(
     value: str,
     *,
@@ -24,11 +35,12 @@ def canonical_object_term(
     """
     if is_iri:
         return f"<{value}>"
+    escaped = _escape_ntriples_literal(value)
     if lang:
-        return f'"{value}"@{lang}'
+        return f'"{escaped}"@{lang}'
     if datatype:
-        return f'"{value}"^^<{datatype}>'
-    return f'"{value}"'
+        return f'"{escaped}"^^<{datatype}>'
+    return f'"{escaped}"'
 
 
 def compute_fact_id(
