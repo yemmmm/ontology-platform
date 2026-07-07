@@ -1,17 +1,16 @@
 /**
  * Stage 4 §4.4 — EvidenceExplorerPanel.
  *
- * Reads-only view over the ``evidence_bindings`` field set returned by
+ * Read-only view over the ``evidence_bindings`` field set returned by
  * the ``fact-audit-queue`` read model. Each row shows the bound chunk's
  * document filename, sequence number, char range, and a short text
  * preview.
  *
- * If the binding list is empty (i.e. no ``prov:wasDerivedFrom`` triple
- * exists for the fact), the panel falls back to a compact "No evidence
- * binding for this fact" empty state. The Stage 1 controlled-editor
- * ``EvidenceBindingPanel`` is intentionally not mounted here — that panel
- * writes through the canonical-write flow, which Stage 4 does not
- * invoke from the read-only explorer.
+ * Phase 8.2 — the "missing evidence" tag is now derived purely from
+ * the binding list length (empty list ⇒ missing). The previous
+ * ``hideMissingTag`` opt-out has been removed; call sites that want to
+ * suppress the tag can simply not render this panel for non-asserted
+ * fact kinds.
  */
 
 import { Empty, Tag, Typography } from "antd";
@@ -22,16 +21,9 @@ import type { EvidenceBinding } from "../../types";
 
 type EvidenceExplorerPanelProps = {
   bindings: EvidenceBinding[];
-  /** When ``true``, render the empty state without a "missing evidence"
-   * tag (useful for non-asserted fact kinds where bindings never
-   * apply). */
-  hideMissingTag?: boolean;
 };
 
-export function EvidenceExplorerPanel({
-  bindings,
-  hideMissingTag = false,
-}: EvidenceExplorerPanelProps) {
+export function EvidenceExplorerPanel({ bindings }: EvidenceExplorerPanelProps) {
   const t = useT();
   if (!bindings || bindings.length === 0) {
     return (
@@ -43,13 +35,8 @@ export function EvidenceExplorerPanel({
           image={<FileText size={28} />}
           description={
             <span>
-              {t("No evidence binding for this fact.")}
-              {!hideMissingTag && (
-                <>
-                  {" "}
-                  <Tag color="warning">{t("missing evidence")}</Tag>
-                </>
-              )}
+              {t("No evidence binding for this fact.")}{" "}
+              <Tag color="warning">{t("missing evidence")}</Tag>
             </span>
           }
         />

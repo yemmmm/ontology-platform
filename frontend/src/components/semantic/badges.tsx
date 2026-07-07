@@ -10,8 +10,7 @@ export type AssertionKind =
   | "rule_derived"
   | "imported"
   | "review_metadata"
-  | "policy_metadata"
-  | "missing_evidence";
+  | "policy_metadata";
 
 const ASSERTION_KIND_META: Record<AssertionKind, { color: string; label: string; zh: string }> = {
   asserted: { color: "blue", label: "Asserted", zh: "已断言" },
@@ -20,7 +19,6 @@ const ASSERTION_KIND_META: Record<AssertionKind, { color: string; label: string;
   imported: { color: "cyan", label: "Imported", zh: "外部导入" },
   review_metadata: { color: "gold", label: "Review metadata", zh: "评审元数据" },
   policy_metadata: { color: "volcano", label: "Policy metadata", zh: "策略元数据" },
-  missing_evidence: { color: "red", label: "Missing evidence", zh: "证据缺失" },
 };
 
 export function normalizeAssertionKind(kind: string): AssertionKind {
@@ -32,7 +30,9 @@ export function normalizeAssertionKind(kind: string): AssertionKind {
   if (lower.includes("import")) return "imported";
   if (lower.includes("review")) return "review_metadata";
   if (lower.includes("policy")) return "policy_metadata";
-  if (lower.includes("missing") || lower.includes("evidence")) return "missing_evidence";
+  // Phase 8.2 — "missing_evidence" is no longer an assertion kind. It is a
+  // derived state surfaced through evidence binding count; legacy rows that
+  // still carry the old kind fall back to the default asserted tag.
   return "asserted";
 }
 
@@ -51,23 +51,24 @@ export function AssertionKindBadge({ kind, stale }: { kind: string; stale?: bool
   );
 }
 
-export function EvidenceStatusBadge({ status }: { status: string }) {
+/**
+ * Phase 8.2 — EvidenceStatusBadge now derives its state from the
+ * binding count rather than a free-text status string. Zero bindings
+ * renders the red "missing evidence" tag; otherwise a green tag reports
+ * the binding count.
+ */
+export function EvidenceStatusBadge({ bindingCount }: { bindingCount: number }) {
   const t = useT();
-  const normalized = (status || "unknown").toLowerCase();
-  const color =
-    normalized.includes("missing") || normalized.includes("absent")
-      ? "red"
-      : normalized.includes("bound") || normalized.includes("verified")
-        ? "green"
-        : "default";
-  const label = normalized.includes("missing")
-    ? t("Missing evidence")
-    : normalized.includes("bound")
-      ? t("Evidence bound")
-      : t("Evidence: {status}", { status });
+  if (bindingCount === 0) {
+    return (
+      <Tag color="red" aria-label="evidence-status-missing">
+        {t("missing evidence")}
+      </Tag>
+    );
+  }
   return (
-    <Tag color={color} aria-label={`evidence-status-${normalized}`}>
-      {label}
+    <Tag color="green" aria-label={`evidence-status-bound-${bindingCount}`}>
+      {bindingCount} {t("evidence")}
     </Tag>
   );
 }
