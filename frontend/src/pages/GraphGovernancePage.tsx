@@ -25,12 +25,30 @@ import {
   listEditAudits,
   listGraphRegistry,
   listGraphSets,
+  readModel,
   reconcileDerivedResults,
   type SemanticRequester,
 } from "../semanticApi";
 import { GraphIriLabel, StalenessBadge } from "../components/semantic";
 import { RefreshButton, SemanticEmpty, SemanticPanel, SemanticTag, StatTile } from "../components/semantic/primitives";
 import { prettyJson } from "../utils";
+
+type OwlConsistencyEnvelope = {
+  graph_set_id: string;
+  model_name: string;
+  projection_version: string;
+  items: Array<{
+    run_id: string;
+    consistent: boolean | null;
+    classification: string | null;
+    entailment_count: number;
+    unsatisfiable_classes: string[];
+    result_graph_iri: string;
+    started_at: string;
+    finished_at: string | null;
+    is_stale: boolean;
+  }>;
+};
 
 export function GraphGovernancePage({
   request,
@@ -48,6 +66,7 @@ export function GraphGovernancePage({
   const [audits, setAudits] = useState<SemanticEditAuditRead[]>([]);
   const [loading, setLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [owlConsistency, setOwlConsistency] = useState<OwlConsistencyEnvelope | null>(null);
 
   async function loadAll() {
     setLoading(true);
@@ -62,6 +81,29 @@ export function GraphGovernancePage({
       setGraphSets(setsData);
       setGraphs(graphsData);
       setAudits(auditsData);
+      // Stage 4 §4.3 — fetch the OWL consistency summary for the
+      // first active graph set. Falls back silently if there is no
+      // active graph set; the panel renders an empty state in that case.
+      const targetGraphSetId =
+        setsData.graph_sets.find((gs) => gs.status === "active")?.id ??
+        setsData.graph_sets[0]?.id ??
+        null;
+      if (targetGraphSetId) {
+        try {
+          const envelope = await readModel<OwlConsistencyEnvelope>(
+            request,
+            targetGraphSetId,
+            "owl-consistency-summary",
+          );
+          setOwlConsistency(envelope);
+        } catch {
+          // The composer fails open when no reasoning run exists for
+          // the graph set yet; surface an empty state instead of an error.
+          setOwlConsistency(null);
+        }
+      } else {
+        setOwlConsistency(null);
+      }
     } catch (error) {
       notify(errorNotice(error));
     } finally {
@@ -138,6 +180,15 @@ export function GraphGovernancePage({
           tone={summary.missingEvidence > 0 ? "error" : "ok"}
         />
       </section>
+
+      <OwlConsistencySection
+        envelope={owlConsistency}
+        activeGraphSetId={
+          graphSets?.graph_sets.find((gs) => gs.status === "active")?.id ??
+          graphSets?.graph_sets[0]?.id ??
+          null
+        }
+      />
 
       <section className="governanceGrid" aria-label="governance-grid">
         <SemanticPanel
@@ -341,4 +392,122 @@ function isStalePointer(pointer: unknown): boolean {
   if (!pointer || typeof pointer !== "object") return false;
   const record = pointer as Record<string, unknown>;
   return record.stale === true || record.is_stale === true || record.status === "stale";
+}
+
+/**
+ * Stage 4 §4.3 — OWL Consistency section.
+ *
+ * Renders the latest ``reasoning-runs`` consistency result for the
+ * dashboard's first active graph set, surfaced via the
+ * ``owl-consistency-summary`` read model. The section sits between the
+ * summary stat tiles and the existing governance grid.
+ */
+function OwlConsistencySection({
+  envelope,
+  activeGraphSetId,
+}: {
+  envelope: OwlConsistencyEnvelope | null;
+  activeGraphSetId: string | null;
+}) {
+  const t = useT();
+  if (!activeGraphSetId) {
+    return (
+      <SemanticPanel
+        title={t("OWL Consistency")}
+        icon={<ShieldCheck size={15} />}
+      >
+        <SemanticEmpty
+          icon={<Network size={20} />}
+          title={t("No active graph set")}
+          hint={t("Create a graph set on the Graph Sets page to inspect OWL consistency.")}
+        />
+      </SemanticPanel>
+    );
+  }
+  const item = envelope?.items?.[0] ?? null;
+  if (!item) {
+    return (
+      <SemanticPanel
+        title={t("OWL Consistency · {id}", { id: activeGraphSetId })}
+        icon={<ShieldCheck size={15} />}
+      >
+        <SemanticEmpty
+          title={t("No OWL consistency run yet")}
+          hint={t("Run reasoning on the graph set to populate this section.")}
+        />
+      </SemanticPanel>
+    );
+  }
+  const consistentTone: "ok" | "error" | "warning" =
+    item.consistent === null ? "warning" : item.consistent ? "ok" : "error";
+  const consistentLabel =
+    item.consistent === null
+      ? t("Pending")
+      : item.consistent
+        ? t("Consistent")
+        : t("Inconsistent");
+  return (
+    <SemanticPanel
+      title={t("OWL Consistency · {id}", { id: activeGraphSetId })}
+      icon={<ShieldCheck size={15} />}
+      actions={<SemanticTag tone={consistentTone}>{consistentLabel}</SemanticTag>}
+    >
+      {item.is_stale && (
+        <div className="callout warning" aria-label="owl-consistency-stale-banner">
+          <AlertTriangle size={14} />
+          <span>
+            {t("Consistency result is stale — run reasoning to refresh.")}
+          </span>
+        </div>
+      )}
+      <dl className="kvList" aria-label="owl-consistency-summary">
+        <div>
+          <dt>{t("Consistent")}</dt>
+          <dd>
+            <SemanticTag tone={consistentTone}>{consistentLabel}</SemanticTag>
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Classification")}</dt>
+          <dd>{item.classification ?? t("unset")}</dd>
+        </div>
+        <div>
+          <dt>{t("Entailments")}</dt>
+          <dd>{item.entailment_count}</dd>
+        </div>
+        <div>
+          <dt>{t("Unsatisfiable classes")}</dt>
+          <dd>
+            {item.unsatisfiable_classes.length === 0 ? (
+              <span>{t("None")}</span>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {item.unsatisfiable_classes.map((cls) => (
+                  <li key={cls}>
+                    <code>{cls}</code>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Result graph")}</dt>
+          <dd>{item.result_graph_iri ? <code>{item.result_graph_iri}</code> : t("unset")}</dd>
+        </div>
+        <div>
+          <dt>{t("Started")}</dt>
+          <dd>{item.started_at}</dd>
+        </div>
+        <div>
+          <dt>{t("Finished")}</dt>
+          <dd>{item.finished_at ?? t("unset")}</dd>
+        </div>
+        <div>
+          <dt>{t("Run ID")}</dt>
+          <dd><code>{item.run_id}</code></dd>
+        </div>
+      </dl>
+    </SemanticPanel>
+  );
 }
