@@ -683,28 +683,6 @@ def test_graph_set_rule_run_endpoint_skips_active_construct_rules_for_other_grap
     assert all(f"{PREFIX}data/other" not in query for query in store.queries)
 
 
-def test_missing_evidence_endpoint_returns_dependency_summary(
-    in_memory_session,
-) -> None:
-    store = FakeStore()
-    store.set_graph(
-        f"{PREFIX}data/demo",
-        "@prefix ex: <http://example.test/> .\n"
-        "@prefix op: <http://ontology-platform.local/ops#> .\n"
-        "ex:alice a ex:Person ; op:evidenceStatus \"missing_evidence\" .",
-    )
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    response = client.get(
-        f"/api/semantic/graph-sets/{graph_set_id}/missing-evidence"
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["summary"]["count"] >= 1
-    assert body["warning"] is not None
-
-
 def test_get_validation_run_returns_staleness(in_memory_session) -> None:
     client = _client(FakeStore(), in_memory_session)
     graph_set_id = _create_graph_set(client)

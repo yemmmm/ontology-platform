@@ -8,6 +8,8 @@ test_semantic_canonical_write.py.
 
 from __future__ import annotations
 
+import pytest
+
 from app.core.config import Settings
 from app.services.semantic_command_compiler import compile_command
 from app.services.semantic_export import namespace_from_settings
@@ -276,8 +278,7 @@ def _entity_iri(entity_id: str) -> str:
 def test_create_entity_writes_named_individual_label_and_class_membership():
     """create_entity mints an entity IRI and writes owl:NamedIndividual, rdfs:label,
     rdf:type owl:NamedIndividual + class membership, skos:altLabel aliases, and
-    property values into the data graph. op:evidenceStatus defaults to
-    missing_evidence per ADR 0004 §301-303."""
+    property values into the data graph."""
     payload = {
         "ontology_id": "ont-1",
         "entity_id": "entity-1",
@@ -311,9 +312,6 @@ def test_create_entity_writes_named_individual_label_and_class_membership():
     assert (entity_term, skos_alt, '"Al"', graph_iri) in compiled.delta.inserts
     # property triple
     assert (entity_term, "<http://op.local/ns/property/email>", '"alice@example.com"', graph_iri) in compiled.delta.inserts
-    # evidence_status defaults to missing_evidence
-    op_ev = "<http://op.local/ns/vocab/evidenceStatus>"
-    assert (entity_term, op_ev, '"missing_evidence"', graph_iri) in compiled.delta.inserts
 
 
 def test_update_entity_replaces_label_aliases_and_properties():
@@ -396,9 +394,6 @@ def test_create_relation_writes_asserted_relation_triple():
         graph_iri,
     )
     assert expected in compiled.delta.inserts
-    # op:evidenceStatus marked missing_evidence to match create_entity default.
-    op_ev = "<http://op.local/ns/vocab/evidenceStatus>"
-    assert any(q[1] == op_ev and q[3] == graph_iri for q in compiled.delta.inserts)
 
 
 def test_delete_relation_targets_specific_triple_pattern():
@@ -849,51 +844,64 @@ def test_delete_fact_uses_iri_object_when_requested():
     ) in compiled.delta.deletes
 
 
-def test_bind_and_unbind_fact_evidence_text():
+def test_bind_and_unbind_fact_evidence():
+    """bind_fact_evidence / unbind_fact_evidence compile to Postgres-only commands.
+
+    The compiler emits an empty RdfGraphDelta (writes go through the dedicated
+    fact-evidence REST endpoint at apply time) and surfaces the computed
+    fact_id / binding_id in metadata.
+    """
     bind_payload = {
         "ontology_id": "ont-1",
         "subject_iri": "http://op.local/ns/entity/alice",
+        "predicate_iri": "http://op.local/ns/property/enrolledIn",
+        "object_value": "http://op.local/ns/class/Class1",
+        "object_is_iri": True,
         "text": "Alice is enrolled in Class 1.",
     }
 
-    bound = compile_command("bind_fact_evidence_text", bind_payload, _settings())
+    bound = compile_command("bind_fact_evidence", bind_payload, _settings())
 
     graph_iri = "http://op.local/graph/data/ont-1"
-    assert bound.command_kind == "bind_fact_evidence_text"
-    chunk_iri = bound.metadata["chunk_iri"]
-    assert (
-        "<http://op.local/ns/entity/alice>",
-        "<http://www.w3.org/ns/prov#wasDerivedFrom>",
-        f"<{chunk_iri}>",
-        graph_iri,
-    ) in bound.delta.inserts
-    assert any(
-        item[0] == f"<{chunk_iri}>" and item[2] == '"Alice is enrolled in Class 1."'
-        for item in bound.delta.inserts
-    )
+    assert bound.command_kind == "bind_fact_evidence"
+    assert bound.object_kind == "fact_evidence"
+    assert bound.delta.inserts == []
+    assert bound.delta.deletes == []
+    assert bound.target_graph_iris == []
+    # fact_id is deterministically computed from (s, p, o, g)
+    assert bound.metadata["fact_id"]
+    assert bound.metadata["subject_iri"] == "http://op.local/ns/entity/alice"
+    assert bound.metadata["predicate_iri"] == "http://op.local/ns/property/enrolledIn"
+    assert bound.metadata["object_value"] == "<http://op.local/ns/class/Class1>"
+    assert bound.metadata["graph_iri"] == graph_iri
+    assert bound.metadata["text"] == "Alice is enrolled in Class 1."
 
-    # The unbind_fact_evidence command now resolves by binding_id (PG path);
-    # the legacy RDF-based unbind is preserved as
-    # compile_unbind_fact_evidence_text_legacy for Phase 4-7 cleanup.
-    from app.services.semantic_command_compiler import (
-        compile_unbind_fact_evidence_text_legacy,
-    )
+    # Providing a mismatched fact_id must be rejected.
+    from app.services.semantic_command_compiler import InvalidCommandPayload
 
-    unbound = compile_unbind_fact_evidence_text_legacy(
+    bad_payload = dict(bind_payload)
+    bad_payload["fact_id"] = "sha256:deadbeef"
+    with pytest.raises(InvalidCommandPayload):
+        compile_command("bind_fact_evidence", bad_payload, _settings())
+
+    # Providing the matching fact_id is accepted.
+    good_payload = dict(bind_payload)
+    good_payload["fact_id"] = bound.metadata["fact_id"]
+    recompiled = compile_command("bind_fact_evidence", good_payload, _settings())
+    assert recompiled.metadata["fact_id"] == bound.metadata["fact_id"]
+
+    # unbind_fact_evidence resolves purely by binding_id; the compiler records
+    # it in metadata and emits no RDF writes either.
+    unbound = compile_command(
+        "unbind_fact_evidence",
         {
             "ontology_id": "ont-1",
-            "subject_iri": "http://op.local/ns/entity/alice",
-            "chunk_iri": chunk_iri,
+            "binding_id": "00000000-0000-0000-0000-000000000001",
         },
-        namespace_from_settings(_settings()),
         _settings(),
     )
-
     assert unbound.command_kind == "unbind_fact_evidence"
-    assert (
-        "<http://op.local/ns/entity/alice>",
-        "<http://www.w3.org/ns/prov#wasDerivedFrom>",
-        f"<{chunk_iri}>",
-        graph_iri,
-    ) in unbound.delta.deletes
-    assert (f"<{chunk_iri}>", "?p", "?o", graph_iri) in unbound.delta.deletes
+    assert unbound.object_kind == "fact_evidence"
+    assert unbound.delta.inserts == []
+    assert unbound.delta.deletes == []
+    assert unbound.metadata["binding_id"] == "00000000-0000-0000-0000-000000000001"

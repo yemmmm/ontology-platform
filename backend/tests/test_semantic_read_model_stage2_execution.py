@@ -404,27 +404,6 @@ def test_import_graph_mappings_executes(in_memory_session) -> None:
     assert body["items"][0]["source_graph_iri"] == import_graph
 
 
-def test_missing_evidence_list_executes(in_memory_session) -> None:
-    _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
-    store = FakeStore(
-        rows_by_marker={
-            "missing-evidence-list": [
-                {
-                    "subject": f"{PREFIX}ns/entity/alice",
-                    "predicate": f"{PREFIX}ns/property/email",
-                    "object": "alice@example.com",
-                    "graph": DATA_GRAPH,
-                }
-            ]
-        }
-    )
-    client = _client(store, in_memory_session)
-    body = _read_model(client, "missing-evidence-list")
-    # missing-evidence-list is a plain SPARQL template (not a composer);
-    # rows are decorated via _decorate_row.
-    assert body["model_name"] == "missing-evidence-list"
-
-
 # ---------------------------------------------------------------------------
 # fact-audit-queue composer
 # ---------------------------------------------------------------------------
@@ -454,13 +433,18 @@ def test_fact_audit_queue_kind_asserted_routes_to_data_graph(in_memory_session) 
     assert DATA_GRAPH in (store.last_graph_iris or [])
 
 
-def test_fact_audit_queue_kind_missing_evidence_uses_missing_evidence_template(
+def test_fact_audit_queue_kind_missing_evidence_uses_unified_fact_template(
     in_memory_session,
 ) -> None:
+    """Phase 3 refactor: kind=missing_evidence now reuses the unified
+    ``fact-audit-queue`` SPARQL template and derives ``evidence_status`` from
+    the Postgres ``fact_evidence_bindings`` table. Without any seeded
+    bindings every asserted row classifies as missing_evidence.
+    """
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore(
         rows_by_marker={
-            "missing-evidence-list": [
+            "fact-audit-queue": [
                 {
                     "subject": f"{PREFIX}ns/entity/alice",
                     "predicate": f"{PREFIX}ns/property/email",
@@ -474,7 +458,11 @@ def test_fact_audit_queue_kind_missing_evidence_uses_missing_evidence_template(
     body = _read_model(client, "fact-audit-queue", kind="missing_evidence")
     assert body["items"]
     assert body["items"][0]["assertion_kind"] == "missing_evidence"
-    assert "missing-evidence-list" in (store.last_query or "")
+    assert body["items"][0]["evidence_status"] == "missing_evidence"
+    # The legacy missing-evidence-list SPARQL template is gone; the unified
+    # fact-audit-queue template is what gets executed now.
+    assert "fact-audit-queue" in (store.last_query or "")
+    assert "missing-evidence-list" not in (store.last_query or "")
 
 
 def test_fact_audit_queue_kind_inferred_without_pointer_returns_empty_with_warning(

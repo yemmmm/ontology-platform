@@ -132,19 +132,3 @@ def test_fact_audit_queue_template_needs_reasoning_and_rules():
     assert template.needs_rules is True
 
 
-def test_missing_evidence_list_template_registered():
-    """missing-evidence-list is a lightweight template that aggregates
-    missing-evidence triples across the graph-set members."""
-    template = get_template("missing-evidence-list")
-    assert template.projection_version == "semantic-read-v1"
-    assert "asserted_data" in template.required_roles
-    assert template.needs_reasoning is False
-    assert template.needs_rules is False
-    # Template body must filter on op:evidenceStatus "missing_evidence".
-    assert "missing_evidence" in template.body
-    assert "evidenceStatus" in template.body
-    # Must project the triple so the composer can decorate rows.
-    assert "?subject" in template.body
-    assert "?predicate" in template.body
-    assert "?object" in template.body
-

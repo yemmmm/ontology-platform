@@ -373,29 +373,6 @@ def test_canonical_write_rejects_locked_graph(in_memory_session) -> None:
         )
 
 
-def test_canonical_write_records_missing_evidence_warning(in_memory_session) -> None:
-    from app.services.semantic_canonical_write import CanonicalSemanticWriteService
-
-    settings = _settings()
-    store = FakeStore()
-    service = CanonicalSemanticWriteService(in_memory_session, store, settings)
-    result = service.apply_command(
-        "submit_assertion",
-        {
-            "ontology_id": "ont-1",
-            "fact_claim_id": "fc-1",
-            "subject_iri": "http://ontology-platform.local/semantic/entity/e1",
-            "predicate_iri": "http://ontology-platform.local/semantic/property/p1",
-            "value": "some value",
-            "evidence_status": "missing_evidence",
-        },
-        validate=False,
-    )
-    assert result["applied"] is True
-    assert any("missing evidence" in warning.lower() for warning in result["warnings"])
-    assert result["delta"]["inserted_quad_count"] > 0
-
-
 def test_parity_reports_detect_missing_extra_and_changed(in_memory_session) -> None:
     legacy_rows = [
         {"id": "a", "label": "Alpha"},

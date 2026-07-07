@@ -28,7 +28,6 @@ ALLOWED_TOOLS = {
     "run_semantic_reasoning",
     "submit_semantic_rule_definition",
     "run_semantic_rule",
-    "inspect_semantic_missing_evidence",
     "get_semantic_read_model",
     "export_semantic_graph_set",
     "inspect_semantic_projection_status",

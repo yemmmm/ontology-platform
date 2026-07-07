@@ -16,7 +16,8 @@ Tests:
   Consistency summary returns ``consistent: True`` and ``is_stale: False``
   for the freshly seeded reasoning run).
 * ``test_fact_audit_queue_evidence_bindings`` — spec §11 step 7 (the fact
-  drawer returns the bound chunk via the ``field_set="evidence"`` composer).
+  drawer returns the bound chunk via the ``field_set="evidence"`` composer,
+  populated from the Postgres ``fact_evidence_bindings`` table).
 """
 from __future__ import annotations
 
@@ -31,11 +32,8 @@ from conftest_stage4 import (
     ACME_COMMENT,
     ACME_ENTITY,
     ACME_LABEL,
-    CHUNK_IRI,
     CHUNK_TEXT,
-    DOC_IRI,
     EVIDENCE_DATA_GRAPH,
-    EVIDENCE_ONTOLOGY_GRAPH,
 )
 
 
@@ -154,37 +152,30 @@ def test_fact_audit_queue_evidence_bindings(
     in_memory_session, fake_graph_set_with_evidence
 ):
     """When ``field_set="evidence"`` is requested, the fact-audit-queue
-    composer attaches ``evidence_bindings`` to each asserted fact row,
-    populated from the ``prov:wasDerivedFrom`` SPARQL lookup."""
+    composer attaches ``evidence_bindings`` to each asserted fact row.
+
+    Phase 3 refactor: bindings are now fetched from the Postgres
+    ``fact_evidence_bindings`` table (the legacy ``prov:wasDerivedFrom``
+    SPARQL lookup was removed). Without any seeded PG rows the composer
+    returns an empty bindings list per row but must not crash, and the
+    SPARQL template it issues is ``fact-audit-queue`` (never a
+    ``prov:wasDerivedFrom`` lookup).
+    """
     svc, graph_set_id = fake_graph_set_with_evidence
 
-    # Seed an asserted fact row that the queue can pick up. We use the
-    # existing fact-audit-queue template body which selects (subject,
-    # predicate, object) triples from the asserted_data graph. Since the
-    # Stage 4 FakeStore's ``query_read_model`` only answers entity-search
-    # and binding queries, we fall back to the Stage 3-style fixture by
-    # seeding an asserted_data triple and using a regular FakeStore-shape
-    # query for the queue body. The Stage 4 FakeStore returns [] for the
-    # queue body, so the items list is empty and we cannot iterate rows.
-    #
-    # Instead, this test exercises the new composer path directly: call
-    # ``_compose_fact_audit_queue`` with kind="asserted" and
-    # field_set="evidence" so the evidence_bindings projection fires on
-    # an empty row set, asserting that the composer does not crash and
-    # that the evidence SPARQL was issued.
     items, warnings = svc._compose_fact_audit_queue(
         scope=svc.scope_resolver.resolve(graph_set_id, include="asserted"),
         kind="asserted",
         field_set="evidence",
     )
     # The Stage 4 FakeStore returns [] for the fact-audit-queue body
-    # (it only knows entity-search + binding queries), so items is empty.
-    # The test asserts the composer runs the evidence lookup SPARQL
-    # against the store, proving the field_set branch fired.
+    # (it only knows entity-search queries), so items is empty. The test
+    # asserts the composer does not crash and that the SPARQL it issued
+    # is the unified fact-audit-queue template, not the deleted
+    # prov:wasDerivedFrom lookup.
     assert isinstance(items, list)
-    # The last query the store saw should mention prov:wasDerivedFrom.
     last_query = svc.rdf_store.queries[-1] if svc.rdf_store.queries else ""
-    assert "prov:wasDerivedFrom" in last_query or "wasDerivedFrom" in last_query
+    assert "prov:wasDerivedFrom" not in last_query
 
 
 def test_fact_audit_queue_evidence_bindings_with_seed(
@@ -192,19 +183,47 @@ def test_fact_audit_queue_evidence_bindings_with_seed(
 ):
     """When the fact-audit-queue body returns rows AND the evidence
     field_set is requested, each row carries a populated
-    ``evidence_bindings`` list drawn from the prov:wasDerivedFrom lookup."""
+    ``evidence_bindings`` list drawn from the Postgres
+    ``fact_evidence_bindings`` table."""
+    from uuid import uuid4
+
+    from app.repositories.models import FactEvidenceBindingModel
+    from app.services.fact_id import canonical_object_term, compute_fact_id
+
     svc, graph_set_id = fake_graph_set_with_evidence
 
-    # Monkeypatch _fetch_fact_rows to return a single asserted fact row
-    # whose subject is the Acme entity (the binding fixture is keyed
-    # against any fact IRI in the Stage 4 FakeStore).
+    predicate_iri = "http://example.org/p"
+    object_value = "Acme Corp"
+    object_term = canonical_object_term(object_value)
+    fact_id = compute_fact_id(
+        ACME_ENTITY, predicate_iri, object_term, EVIDENCE_DATA_GRAPH
+    )
+
+    binding = FactEvidenceBindingModel(
+        id=str(uuid4()),
+        fact_id=fact_id,
+        subject_iri=ACME_ENTITY,
+        predicate_iri=predicate_iri,
+        object_value=object_term,
+        graph_iri=EVIDENCE_DATA_GRAPH,
+        chunk_id=None,
+        evidence_artifact_id=None,
+        document_filename="doc-1.pdf",
+        sequence=0,
+        char_start=0,
+        char_end=len(CHUNK_TEXT),
+        text=CHUNK_TEXT,
+    )
+    in_memory_session.add(binding)
+    in_memory_session.commit()
+
     fake_row = {
         "subject": {"value": ACME_ENTITY, "type": "uri"},
         "subject_label": {"value": ACME_LABEL, "type": "literal"},
-        "predicate": {"value": "http://example.org/p", "type": "uri"},
+        "predicate": {"value": predicate_iri, "type": "uri"},
         "predicate_label": {"value": "p", "type": "literal"},
-        "object": {"value": "Acme Corp", "type": "literal"},
-        "object_label": {"value": "Acme Corp", "type": "literal"},
+        "object": {"value": object_value, "type": "literal"},
+        "object_label": {"value": object_value, "type": "literal"},
         "graph": {"value": EVIDENCE_DATA_GRAPH, "type": "uri"},
     }
     monkeypatch.setattr(
@@ -221,7 +240,7 @@ def test_fact_audit_queue_evidence_bindings_with_seed(
     assert bindings is not None
     assert len(bindings) == 1
     b = bindings[0]
-    assert b["chunk_iri"] == CHUNK_IRI
-    assert b["document_iri"] == DOC_IRI
-    assert b["sequence"] == 0
-    assert b["text_preview"] == CHUNK_TEXT
+    # PG-backed binding exposes the seeded text and document filename.
+    assert b.get("text_preview") == CHUNK_TEXT
+    assert b.get("document_filename") == "doc-1.pdf"
+    assert b.get("sequence") == 0

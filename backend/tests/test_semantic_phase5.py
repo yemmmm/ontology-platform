@@ -1,4 +1,4 @@
-"""Phase 5 service tests: validation, reasoning, CONSTRUCT, DSL, rules, missing evidence."""
+"""Phase 5 service tests: validation, reasoning, CONSTRUCT, DSL, rules."""
 
 from __future__ import annotations
 
@@ -27,10 +27,6 @@ from app.services.semantic_dsl import (
     execute_dsl,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
-from app.services.semantic_missing_evidence import (
-    SemanticMissingEvidenceService,
-    derived_warning_message,
-)
 from app.services.semantic_reasoning import SemanticReasoningService
 from app.services.semantic_rule_definition import (
     RuleDefinitionError,
@@ -288,45 +284,6 @@ def test_reasoning_records_input_revisions_and_marks_rule_pointers_stale(
     pointers = derived_service.list_pointers(graph_set_id=graph_set.id, result_kind="rule")
     assert pointers
     assert pointers[0].status == "stale"
-
-
-def test_reasoning_records_missing_evidence_warning_for_data_realization(
-    in_memory_session, graph_set_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session,
-        graph_set_service,
-        [(f"{PREFIX}data/demo", "asserted_data")],
-    )
-    settings = Settings()
-    store = FakeStore()
-    store.set_graph(
-        f"{PREFIX}data/demo",
-        "@prefix ex: <http://example.test/> .\n"
-        "@prefix op: <http://ontology-platform.local/ops#> .\n"
-        "ex:alice a ex:Person ; op:evidenceStatus \"missing_evidence\" .",
-    )
-
-    class _MissingService(SemanticMissingEvidenceService):
-        pass
-
-    reasoning = SemanticReasoningService(
-        in_memory_session,
-        store,
-        settings,
-        reasoner=StubReasoner(),
-        graph_set_service=graph_set_service,
-        missing_evidence_service=_MissingService(store),
-    )
-    result = reasoning.run_reasoning(
-        [f"{PREFIX}data/demo"],
-        ["entailment"],
-        persist_result_graph=True,
-        graph_set_id=graph_set.id,
-    )
-    assert result["status"] == "succeeded"
-    assert result["missing_evidence_dependencies"]["count"] >= 1
-    assert any("missing-evidence" in w.lower() for w in result["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -698,76 +655,6 @@ def test_rule_pointer_becomes_stale_when_reasoning_pointer_promoted(
     assert rule_pointer
     assert rule_pointer[0].status == "stale"
     assert rule_pointer[0].pointer_metadata["stale_reason"] == "upstream_reasoning_pointer_changed"
-
-
-# ---------------------------------------------------------------------------
-# Missing evidence propagation
-# ---------------------------------------------------------------------------
-
-
-def test_missing_evidence_dependencies_propagate_to_run_metadata(
-    in_memory_session, graph_set_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session,
-        graph_set_service,
-        [(f"{PREFIX}data/demo", "asserted_data")],
-    )
-    settings = Settings()
-    store = FakeStore(
-        select_result={
-            "head": {"vars": ["s", "o"]},
-            "results": {
-                "bindings": [
-                    {
-                        "s": {"value": "<http://example.test/alice>"},
-                        "o": {"value": "<http://example.test/Person>"},
-                    }
-                ]
-            },
-        }
-    )
-    store.set_graph(
-        f"{PREFIX}data/demo",
-        "@prefix ex: <http://example.test/> .\n"
-        "@prefix op: <http://ontology-platform.local/ops#> .\n"
-        "ex:alice a ex:Person ; op:evidenceStatus \"missing_evidence\" .",
-    )
-    rule_service = SemanticRuleDefinitionService(in_memory_session, settings)
-    rule = rule_service.create_rule(
-        rule_iri=f"{PREFIX}rule/dsl",
-        name="dsl",
-        language="platform_dsl",
-        body={
-            "when": [
-                {"s": "?s", "p": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", "o": "?o"},
-            ],
-            "then": [
-                {
-                    "s": "?s",
-                    "p": "<http://example.test/derived>",
-                    "o": "?o",
-                }
-            ],
-        },
-        input_roles=["asserted_data"],
-        status="active",
-    )
-    service = SemanticRuleExecutionService(
-        in_memory_session,
-        store,
-        settings,
-        graph_set_service=graph_set_service,
-        missing_evidence_service=SemanticMissingEvidenceService(store),
-    )
-    result = service.execute_rule(graph_set_id=graph_set.id, rule_definition_id=rule.id)
-    assert result["status"] == "succeeded"
-    assert result["missing_evidence_dependencies"]["count"] >= 1
-    assert any("missing-evidence" in w.lower() for w in result["warnings"])
-
-
-def test_missing_evidence_warning_returns_null_when_no_dependencies() -> None:
-    assert derived_warning_message([]) is None
 
 
 # ---------------------------------------------------------------------------

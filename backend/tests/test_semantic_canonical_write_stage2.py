@@ -520,7 +520,6 @@ def test_create_entity_apply_writes_named_individual_into_data_graph(
             "/ns/entity/entity-1>",
             "NamedIndividual",
             '"Alice"',
-            "missing_evidence",
         ],
     )
 

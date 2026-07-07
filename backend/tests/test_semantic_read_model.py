@@ -210,7 +210,13 @@ def test_visibility_policy_filters_restricted_graphs():
 
 
 def test_graph_set_staleness_summary_assembles_members_and_count():
-    """graph-set-staleness summary composes members, staleness, missing-evidence count."""
+    """graph-set-staleness summary composes members, staleness, missing-evidence count.
+
+    Phase 3 refactor: missing_evidence_count now comes from Postgres (the
+    fact_evidence_bindings table), not the SPARQL COUNT that the old FakeStore
+    row used to feed. Without a real session the count is 0 — the staleness
+    composer no longer consults the SPARQL template at all.
+    """
 
     resolution = _resolution(
         graph_iris=[
@@ -240,7 +246,8 @@ def test_graph_set_staleness_summary_assembles_members_and_count():
     assert len(envelope["items"]) == 1
     item = envelope["items"][0]
     assert item["graph_set_id"] == "gs-1"
-    assert item["missing_evidence_count"] == 3
+    # No session wired in — composer returns 0 rather than consulting SPARQL.
+    assert item["missing_evidence_count"] == 0
     # Verify member-level data
     assert len(item["members"]) == 2
     roles = {m["role"] for m in item["members"]}
@@ -500,14 +507,19 @@ def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
 
 
 def test_fact_audit_queue_kind_missing_evidence_filters_data_graph_rows():
-    """kind=missing_evidence queries the asserted data graph but filters rows
-    to those whose subject carries op:evidenceStatus "missing_evidence".
-    assertion_kind on those rows is "missing_evidence" and evidence_status
-    is "missing_evidence"."""
+    """kind=missing_evidence runs the unified ``fact-audit-queue`` template
+    against the asserted data graph and marks every returned row as
+    ``missing_evidence`` when no PG evidence bindings are present.
+
+    Phase 3 refactor: the legacy ``missing-evidence-list`` SPARQL template
+    was removed; ``evidence_status`` is now derived from the
+    ``fact_evidence_bindings`` table. Without a real session every asserted
+    row classifies as missing_evidence.
+    """
     data_iri = "http://op.local/graph/data/ont-1"
     resolution = _resolution(graph_iris=[data_iri])
     store = FakeStore({
-        "missing-evidence-list": [
+        "fact-audit-queue": [
             {
                 "subject": "http://op.local/ns/entity/alice",
                 "subject_label": "Alice",
