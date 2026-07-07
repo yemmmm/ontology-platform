@@ -208,6 +208,46 @@ class EvidenceChunkModel(Base):
     )
 
 
+class FactEvidenceBindingModel(Base):
+    """Fact-level evidence binding stored in Postgres.
+
+    Each row binds one piece of evidence (chunk reference or raw text) to a
+    specific fact identified by fact_id (sha256(s,p,o,g)). Replaces the
+    legacy RDF prov:wasDerivedFrom + chunk literal pattern.
+    """
+
+    __tablename__ = "fact_evidence_bindings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    fact_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    subject_iri: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    predicate_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    object_value: Mapped[str] = mapped_column(Text, nullable=False)
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+
+    chunk_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_chunks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    evidence_artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_artifacts.id", ondelete="SET NULL"), nullable=True
+    )
+
+    document_filename: Mapped[str | None] = mapped_column(String(255))
+    sequence: Mapped[int | None] = mapped_column(Integer)
+    char_start: Mapped[int | None] = mapped_column(Integer)
+    char_end: Mapped[int | None] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    actor: Mapped[str | None] = mapped_column(String(255))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 # Compatibility aliases for callers that still use the v0.3 source-document naming.
 SourceDocumentModel = EvidenceArtifactModel
 SourceChunkModel = EvidenceChunkModel
