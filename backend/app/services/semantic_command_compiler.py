@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfGraphDelta
+from app.services.fact_id import canonical_object_term, compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
 
 
@@ -443,9 +444,13 @@ def compile_bind_fact_evidence_text(
     )
 
 
-def compile_unbind_fact_evidence(
+def compile_unbind_fact_evidence_text_legacy(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
+    """Legacy RDF-based unbind. Superseded by compile_unbind_fact_evidence.
+
+    Retained for Phase 4-7 cleanup; not registered in ``_COMPILERS`` anymore.
+    """
     ontology_id = _required(payload, "ontology_id")
     subject_iri = _required(payload, "subject_iri")
     chunk_iri = _required(payload, "chunk_iri")
@@ -1600,6 +1605,84 @@ def compile_review_assertion(
     )
 
 
+def compile_bind_fact_evidence(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Bind evidence text or chunk to a specific fact (identified by fact_id).
+
+    Stores in Postgres only — does not write RDF. The fact_id is computed
+    from (s, p, o, g) using canonical N-Triples; if the caller provides a
+    fact_id it must match or the command is rejected.
+    """
+    ontology_id = _required(payload, "ontology_id")
+    subject_iri = _required(payload, "subject_iri")
+    predicate_iri = _required(payload, "predicate_iri")
+    object_value = _required(payload, "object_value")
+    object_is_iri = bool(payload.get("object_is_iri", False))
+    object_datatype = payload.get("object_datatype")
+    object_lang = payload.get("object_lang")
+    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+    text = str(_required(payload, "text")).strip()
+    if not text:
+        raise InvalidCommandPayload("text must not be empty")
+
+    object_term = canonical_object_term(
+        object_value, is_iri=object_is_iri, datatype=object_datatype, lang=object_lang
+    )
+    fid = compute_fact_id(subject_iri, predicate_iri, object_term, graph_iri)
+
+    provided_fid = payload.get("fact_id")
+    if provided_fid is not None and provided_fid != fid:
+        raise InvalidCommandPayload(
+            f"fact_id mismatch: caller provided {provided_fid}, computed {fid}"
+        )
+
+    # No RDF writes — repository call is performed by the command executor
+    # at apply time, not here. The delta is empty.
+    delta = RdfGraphDelta(inserts=[], deletes=[])
+    return CompiledCommand(
+        command_kind="bind_fact_evidence",
+        delta=delta,
+        object_kind="fact_evidence",
+        source_ids=[subject_iri, fid],
+        target_graph_iris=[],  # no graph writes
+        metadata={
+            "ontology_id": ontology_id,
+            "fact_id": fid,
+            "subject_iri": subject_iri,
+            "predicate_iri": predicate_iri,
+            "object_value": object_term,
+            "graph_iri": graph_iri,
+            "chunk_id": payload.get("chunk_id"),
+            "evidence_artifact_id": payload.get("evidence_artifact_id"),
+            "document_filename": payload.get("document_filename"),
+            "sequence": payload.get("sequence"),
+            "char_start": payload.get("char_start"),
+            "char_end": payload.get("char_end"),
+            "text": text,
+            "actor": payload.get("actor"),
+            "reason": payload.get("reason"),
+        },
+    )
+
+
+def compile_unbind_fact_evidence(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    """Delete a fact evidence binding from Postgres by binding_id."""
+    _required(payload, "ontology_id")
+    binding_id = _required(payload, "binding_id")
+    delta = RdfGraphDelta(inserts=[], deletes=[])
+    return CompiledCommand(
+        command_kind="unbind_fact_evidence",
+        delta=delta,
+        object_kind="fact_evidence",
+        source_ids=[binding_id],
+        target_graph_iris=[],
+        metadata={"ontology_id": payload["ontology_id"], "binding_id": binding_id},
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
@@ -1608,6 +1691,7 @@ _COMPILERS: dict[str, Compiler] = {
     "update_fact": compile_update_fact,
     "delete_fact": compile_delete_fact,
     "bind_fact_evidence_text": compile_bind_fact_evidence_text,
+    "bind_fact_evidence": compile_bind_fact_evidence,
     "unbind_fact_evidence": compile_unbind_fact_evidence,
     "update_class": compile_update_class,
     "delete_class": compile_delete_class,

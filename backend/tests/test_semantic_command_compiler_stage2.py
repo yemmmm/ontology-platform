@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.core.config import Settings
 from app.services.semantic_command_compiler import compile_command
+from app.services.semantic_export import namespace_from_settings
 
 
 _RDFS_LABEL = "<http://www.w3.org/2000/01/rdf-schema#label>"
@@ -871,13 +872,20 @@ def test_bind_and_unbind_fact_evidence_text():
         for item in bound.delta.inserts
     )
 
-    unbound = compile_command(
-        "unbind_fact_evidence",
+    # The unbind_fact_evidence command now resolves by binding_id (PG path);
+    # the legacy RDF-based unbind is preserved as
+    # compile_unbind_fact_evidence_text_legacy for Phase 4-7 cleanup.
+    from app.services.semantic_command_compiler import (
+        compile_unbind_fact_evidence_text_legacy,
+    )
+
+    unbound = compile_unbind_fact_evidence_text_legacy(
         {
             "ontology_id": "ont-1",
             "subject_iri": "http://op.local/ns/entity/alice",
             "chunk_iri": chunk_iri,
         },
+        namespace_from_settings(_settings()),
         _settings(),
     )
 
