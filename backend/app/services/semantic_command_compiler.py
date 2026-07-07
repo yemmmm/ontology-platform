@@ -444,6 +444,10 @@ def compile_bind_fact_evidence_text(
     )
 
 
+# TODO(Phase 4-7 cleanup): delete compile_unbind_fact_evidence_text_legacy
+# once the RDF evidence path is fully removed. Currently kept only so the
+# legacy stage2 test (test_bind_and_unbind_fact_evidence_text) can verify
+# the old RDF write logic while unblocked.
 def compile_unbind_fact_evidence_text_legacy(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -1613,6 +1617,12 @@ def compile_bind_fact_evidence(
     Stores in Postgres only — does not write RDF. The fact_id is computed
     from (s, p, o, g) using canonical N-Triples; if the caller provides a
     fact_id it must match or the command is rejected.
+
+    .. note::
+        Must be applied via the POST /api/semantic/graph-sets/{gs}/fact-evidence
+        REST endpoint, NOT via ``apply_compiled_command``. The compiler emits
+        an empty RdfGraphDelta on purpose; applying it through the standard
+        RDF-only executor will silently no-op the Postgres write.
     """
     ontology_id = _required(payload, "ontology_id")
     subject_iri = _required(payload, "subject_iri")
@@ -1669,7 +1679,15 @@ def compile_bind_fact_evidence(
 def compile_unbind_fact_evidence(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
-    """Delete a fact evidence binding from Postgres by binding_id."""
+    """Delete a fact evidence binding from Postgres by binding_id.
+
+    .. note::
+        Must be applied via the DELETE
+        /api/semantic/graph-sets/{gs}/fact-evidence/{binding_id} REST
+        endpoint, NOT via ``apply_compiled_command``. The compiler emits an
+        empty RdfGraphDelta on purpose; applying it through the standard
+        RDF-only executor will silently no-op the Postgres write.
+    """
     _required(payload, "ontology_id")
     binding_id = _required(payload, "binding_id")
     delta = RdfGraphDelta(inserts=[], deletes=[])
