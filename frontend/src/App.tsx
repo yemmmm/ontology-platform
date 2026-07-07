@@ -15,6 +15,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Settings,
   ShieldCheck,
@@ -24,7 +25,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-// Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Search/Braces/Box.
+// Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Braces/Box.
 import { Card, ConfigProvider, Tag, Tooltip } from "antd";
 import "antd/dist/reset.css";
 import { useCallback, useEffect, useState } from "react";
@@ -41,6 +42,7 @@ import type {
 import { classNames, compactId, formatDate, prettyJson } from "./utils";
 import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
+import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { ProjectBriefPage } from "./pages/ProjectBriefPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
@@ -64,6 +66,7 @@ type WorkspaceTab =
   | "entities"
   | "graph-set-history"
   | "agent-test"
+  | "search"
   | "mcp-tools"
   | "setting"
   | "graph-governance"
@@ -127,6 +130,7 @@ const workspaceTabs: Array<{
   { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
   { id: "graph-set-history", stage: "publish", label: "Graph Set History", detail: "Lineage & diff", icon: History },
   { id: "agent-test", stage: "tools", label: "Agent Test", detail: "Question runs", icon: Send },
+  { id: "search", stage: "tools", label: "Search", detail: "Graph entity search", icon: Search },
   { id: "mcp-tools", stage: "tools", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
   { id: "setting", stage: "tools", label: "Settings", detail: "Runtime status", icon: Settings },
   { id: "graph-governance", stage: "governance", label: "Graph Governance", detail: "Status · graph sets · audits", icon: ShieldCheck },
@@ -841,6 +845,32 @@ function WorkspaceContent(props: {
 
   if (props.tab === "agent-test") {
     return <AgentTestPage ontology={props.ontology} request={governedRequest} mutate={props.mutate} />;
+  }
+
+  if (props.tab === "search") {
+    const graphSetId = queryValue("graphSet");
+    if (!graphSetId) {
+      return (
+        <EmptyState
+          icon={<Database size={22} />}
+          title={t("Select a graph set to search entities")}
+          action={
+            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
+              <Layers size={15} /> {t("Open Graph Sets")}
+            </button>
+          }
+        />
+      );
+    }
+    return (
+      <EntitiesSearchPage
+        graphSetId={graphSetId}
+        ontologyId={props.ontology.id}
+        readOnly={readOnly}
+        request={governedRequest}
+        navigate={props.navigateWorkspace}
+      />
+    );
   }
 
   if (props.tab === "mcp-tools") {

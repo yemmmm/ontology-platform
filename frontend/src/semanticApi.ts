@@ -381,6 +381,10 @@ export function readModel<T = SemanticReadModelEnvelope>(
     /** Stage 3 §4.3 graph-set-delta composer: the other graph set id to
      * diff against (passed as the `target` query param). */
     target?: string;
+    /** Stage 4 §4.1 entity-search composer: free-text search query string. */
+    q?: string;
+    /** Stage 4 §4.1 entity-search composer: restrict to a specific class IRI. */
+    classIri?: string;
   } = {},
 ) {
   const path = withParams(
@@ -391,6 +395,8 @@ export function readModel<T = SemanticReadModelEnvelope>(
       limit: params.limit,
       kind: params.kind,
       target: params.target,
+      q: params.q,
+      class_iri: params.classIri,
     },
   );
   return request<T>(path);
