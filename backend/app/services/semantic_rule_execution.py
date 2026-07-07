@@ -2,11 +2,11 @@
 
 A rule run resolves the graph set, picks active rule definitions, executes
 them in deterministic order (priority, then rule_iri, then version), attaches
-provenance, missing-evidence dependencies, and assertion-kind annotations to
-the generated statements, writes the result graph to
-``graph/rule-result/{run_id}``, optionally writes run metadata to
-``graph/rule-run/{run_id}``, persists ``semantic_rule_runs`` metadata, and
-promotes a Phase 4 rule pointer when the run is requested to become current.
+provenance and assertion-kind annotations to the generated statements, writes
+the result graph to ``graph/rule-result/{run_id}``, optionally writes run
+metadata to ``graph/rule-run/{run_id}``, persists ``semantic_rule_runs``
+metadata, and promotes a Phase 4 rule pointer when the run is requested to
+become current.
 """
 
 from __future__ import annotations
@@ -36,10 +36,6 @@ from app.services.semantic_dsl import (
     execute_dsl,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
-from app.services.semantic_missing_evidence import (
-    SemanticMissingEvidenceService,
-    derived_warning_message,
-)
 
 
 RULE_RESULT_PREFIX_SEGMENT = "rule-result"
@@ -67,7 +63,6 @@ class SemanticRuleExecutionService:
         settings: Settings,
         graph_set_service: SemanticGraphSetService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
-        missing_evidence_service: SemanticMissingEvidenceService | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -75,9 +70,6 @@ class SemanticRuleExecutionService:
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
-        )
-        self.missing_evidence_service = missing_evidence_service or (
-            SemanticMissingEvidenceService(rdf_store)
         )
 
     def execute_construct_template(
@@ -150,13 +142,9 @@ class SemanticRuleExecutionService:
                 rule_version=rule_definition.version if rule_definition else None,
             )
             self._write_run_metadata_graph(rule_run_graph_iri, run, execution)
-            missing_evidence_inputs = self.missing_evidence_service.collect_from_graphs(
-                graph_set_iris
-            )
             self._finalise_run(
                 run=run,
                 execution=execution,
-                missing_evidence_inputs=missing_evidence_inputs,
             )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
@@ -168,7 +156,6 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=execution,
                 promoted_pointer=promoted_pointer,
-                missing_evidence_inputs=missing_evidence_inputs,
             )
         except Exception as exc:
             run.status = "failed"
@@ -187,7 +174,6 @@ class SemanticRuleExecutionService:
                 "generated_statement_count": 0,
                 "error": run.error,
                 "warnings": [],
-                "missing_evidence_dependencies": {},
             }
 
     def execute_rule(
@@ -241,16 +227,12 @@ class SemanticRuleExecutionService:
                 )
                 result_kind = _result_kind_for(rule_definition, "construct_derived")
             else:
-                missing_evidence_inputs = (
-                    self.missing_evidence_service.collect_from_graphs(graph_set_iris)
-                )
                 execution = execute_dsl(
                     self.rdf_store,
                     rule_definition.body,
                     graph_set_iris=graph_set_iris,
                     timeout_seconds=safety_profile["timeout_seconds"],
                     statement_limit=safety_profile["max_generated_statements"],
-                    missing_evidence_inputs=missing_evidence_inputs,
                 )
                 result_kind = _result_kind_for(rule_definition, "rule_derived")
             self._write_result_graph(
@@ -261,13 +243,9 @@ class SemanticRuleExecutionService:
                 rule_version=rule_definition.version,
             )
             self._write_run_metadata_graph(rule_run_graph_iri, run, execution)
-            missing_evidence_inputs = self.missing_evidence_service.collect_from_graphs(
-                graph_set_iris
-            )
             self._finalise_run(
                 run=run,
                 execution=execution,
-                missing_evidence_inputs=missing_evidence_inputs,
             )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
@@ -279,7 +257,6 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=execution,
                 promoted_pointer=promoted_pointer,
-                missing_evidence_inputs=missing_evidence_inputs,
             )
         except Exception as exc:
             run.status = "failed"
@@ -298,7 +275,6 @@ class SemanticRuleExecutionService:
                 "generated_statement_count": 0,
                 "error": run.error,
                 "warnings": [],
-                "missing_evidence_dependencies": {},
             }
 
     def execute_rule_group(
@@ -376,16 +352,12 @@ class SemanticRuleExecutionService:
                     )
                     result_kind = _result_kind_for(rule, "construct_derived")
                 else:
-                    missing_evidence_inputs = (
-                        self.missing_evidence_service.collect_from_graphs(graph_set_iris)
-                    )
                     execution = execute_dsl(
                         self.rdf_store,
                         rule.body,
                         graph_set_iris=graph_set_iris,
                         timeout_seconds=safety_profile["timeout_seconds"],
                         statement_limit=safety_profile["max_generated_statements"],
-                        missing_evidence_inputs=missing_evidence_inputs,
                     )
                     result_kind = _result_kind_for(rule, "rule_derived")
                 for statement in execution.statements:
@@ -413,13 +385,9 @@ class SemanticRuleExecutionService:
                 rule_id=None,
                 rule_version=None,
             )
-            missing_evidence_inputs = self.missing_evidence_service.collect_from_graphs(
-                graph_set_iris
-            )
             self._finalise_run(
                 run=run,
                 execution=_GroupExecution(statements=aggregated, warnings=[]),
-                missing_evidence_inputs=missing_evidence_inputs,
                 extra_metadata={"explanations": explanations},
             )
             promoted_pointer = None
@@ -459,9 +427,6 @@ class SemanticRuleExecutionService:
                 "explanations": explanations,
                 "generated_statement_count": run.generated_statement_count,
                 "warnings": run.run_metadata.get("warnings", []),
-                "missing_evidence_dependencies": run.run_metadata.get(
-                    "missing_evidence_dependencies", {}
-                ),
                 "derived_pointer": promoted_pointer,
                 "error": None,
             }
@@ -480,7 +445,6 @@ class SemanticRuleExecutionService:
                 "generated_statement_count": 0,
                 "error": run.error,
                 "warnings": [],
-                "missing_evidence_dependencies": {},
             }
 
     def _dispatch(
@@ -598,16 +562,9 @@ class SemanticRuleExecutionService:
         *,
         run: SemanticRuleRunModel,
         execution: ConstructExecution | DslExecution | "_GroupExecution",
-        missing_evidence_inputs: list[dict[str, str]],
         extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         warnings: list[str] = list(execution.warnings)
-        summary = self.missing_evidence_service.summarize_dependencies(
-            missing_evidence_inputs
-        )
-        warning = derived_warning_message(missing_evidence_inputs)
-        if warning:
-            warnings.append(warning)
         run.status = "succeeded"
         run.generated_statement_count = len(execution.statements)
         run.finished_at = datetime.now(UTC)
@@ -617,7 +574,6 @@ class SemanticRuleExecutionService:
             "bindings": getattr(execution, "bindings", []),
             "truncated": execution.truncated,
             "warnings": warnings,
-            "missing_evidence_dependencies": summary,
             "audit_status": "system_accepted",
             **(extra_metadata or {}),
         }
@@ -657,14 +613,6 @@ class SemanticRuleExecutionService:
                 graph.add((provenance_subject, op.ruleId, Literal(rule_id)))
             if rule_version:
                 graph.add((provenance_subject, op.ruleVersion, Literal(rule_version)))
-            if statement.get("derived_from_missing_evidence") == "true":
-                graph.add(
-                    (
-                        provenance_subject,
-                        URIRef(f"{op}evidenceStatus"),
-                        Literal("derived_from_missing_evidence"),
-                    )
-                )
         from app.services.semantic import _triples_to_insert_data
 
         self.rdf_store.update_sparql(_triples_to_insert_data(graph_iri, graph))
@@ -796,7 +744,6 @@ class SemanticRuleExecutionService:
         run: SemanticRuleRunModel,
         execution: ConstructExecution | DslExecution,
         promoted_pointer: dict[str, Any] | None,
-        missing_evidence_inputs: list[dict[str, str]],
     ) -> dict[str, Any]:
         response = {
             "run_id": run.id,
@@ -810,9 +757,6 @@ class SemanticRuleExecutionService:
             "rule_run_graph_iri": run.rule_run_graph_iri,
             "generated_statement_count": run.generated_statement_count,
             "warnings": run.run_metadata.get("warnings", []),
-            "missing_evidence_dependencies": run.run_metadata.get(
-                "missing_evidence_dependencies", {}
-            ),
             "bindings": getattr(execution, "bindings", []),
             "statements": run.run_metadata.get("statements", []),
             "truncated": execution.truncated,
@@ -839,9 +783,6 @@ class SemanticRuleExecutionService:
             "bindings": metadata.get("bindings", []),
             "warnings": metadata.get("warnings", []),
             "truncated": metadata.get("truncated", False),
-            "missing_evidence_dependencies": metadata.get(
-                "missing_evidence_dependencies", {}
-            ),
             "audit_status": metadata.get("audit_status", "system_accepted"),
             "explanations": metadata.get("explanations", []),
             "started_at": run.started_at,
