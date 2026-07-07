@@ -9,7 +9,6 @@ pipeline.
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -238,89 +237,6 @@ def compile_create_relation_type(
     )
 
 
-def compile_submit_assertion(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    fact_claim_id = payload.get("fact_claim_id") or str(uuid.uuid4())
-    subject_iri = _required(payload, "subject_iri")
-    predicate_iri = _required(payload, "predicate_iri")
-    value = _required(payload, "value")
-    confidence = float(payload.get("confidence", 1.0))
-    audit_status = payload.get("audit_status", "system_accepted")
-    evidence_status = payload.get("evidence_status", "evidence_bound")
-    evidence_ids: list[str] = payload.get("evidence_ids", []) or []
-
-    fact_iri = str(ns.resource("fact-claim", fact_claim_id))
-    graph_iri = _data_graph_iri(ns, ontology_id)
-    op = str(ns.vocab)
-    insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{fact_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         f"<{op}FactClaim>", graph_iri),
-        (f"<{fact_iri}>", f"<{op}id>", _literal_term(fact_claim_id), graph_iri),
-        (f"<{fact_iri}>", f"<{op}subject>", f"<{subject_iri}>", graph_iri),
-        (f"<{fact_iri}>", f"<{op}predicate>", f"<{predicate_iri}>", graph_iri),
-        (f"<{fact_iri}>", f"<{op}value>", _literal_term(value), graph_iri),
-        (f"<{fact_iri}>", f"<{op}confidence>", _literal_term(confidence), graph_iri),
-        (f"<{fact_iri}>", f"<{op}auditStatus>", _literal_term(audit_status), graph_iri),
-        (f"<{fact_iri}>", f"<{op}evidenceStatus>", _literal_term(evidence_status), graph_iri),
-    ]
-    for evidence_id in evidence_ids:
-        insert_quads.append(
-            (f"<{fact_iri}>", f"<{op}evidence>",
-             f"<{ns.resource('evidence', evidence_id)}>", graph_iri)
-        )
-    delta = RdfGraphDelta(inserts=insert_quads)
-    return CompiledCommand(
-        command_kind="submit_assertion",
-        delta=delta,
-        object_kind="fact_claim",
-        source_ids=[fact_claim_id],
-        target_graph_iris=[graph_iri],
-        metadata={
-            "fact_claim_id": fact_claim_id,
-            "ontology_id": ontology_id,
-            "evidence_status": evidence_status,
-            "missing_evidence": evidence_status == "missing_evidence",
-        },
-    )
-
-
-def compile_update_evidence_status(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    fact_claim_id = _required(payload, "fact_claim_id")
-    new_status = _required(payload, "evidence_status")
-    if new_status not in {"evidence_bound", "missing_evidence"}:
-        raise InvalidCommandPayload(
-            "evidence_status must be 'evidence_bound' or 'missing_evidence'"
-        )
-    fact_iri = str(ns.resource("fact-claim", fact_claim_id))
-    graph_iri = _data_graph_iri(ns, ontology_id)
-    op = str(ns.vocab)
-    deletes = [
-        (f"<{fact_iri}>", f"<{op}evidenceStatus>", "?o", graph_iri),
-    ]
-    inserts = [
-        (f"<{fact_iri}>", f"<{op}evidenceStatus>", _literal_term(new_status), graph_iri),
-    ]
-    delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
-    return CompiledCommand(
-        command_kind="update_evidence_status",
-        delta=delta,
-        object_kind="fact_claim",
-        source_ids=[fact_claim_id],
-        target_graph_iris=[graph_iri],
-        metadata={
-            "fact_claim_id": fact_claim_id,
-            "ontology_id": ontology_id,
-            "new_status": new_status,
-        },
-    )
-
-
 def compile_update_fact(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -341,7 +257,7 @@ def compile_update_fact(
         deletes=[(subject, predicate, old_object, graph_iri)],
         inserts=[(subject, predicate, new_object, graph_iri)],
     )
-    fact_id = _fact_id_for(subject_iri, predicate_iri, old_object)
+    fact_id = compute_fact_id(subject_iri, predicate_iri, old_object, graph_iri)
     return CompiledCommand(
         command_kind="update_fact",
         delta=delta,
@@ -374,7 +290,7 @@ def compile_delete_fact(
     predicate = _iri_term(predicate_iri)
     obj = _object_term(object_value, is_iri=object_is_iri)
     delta = RdfGraphDelta(deletes=[(subject, predicate, obj, graph_iri)])
-    fact_id = _fact_id_for(subject_iri, predicate_iri, obj)
+    fact_id = compute_fact_id(subject_iri, predicate_iri, obj, graph_iri)
     return CompiledCommand(
         command_kind="delete_fact",
         delta=delta,
@@ -387,99 +303,6 @@ def compile_delete_fact(
             "subject_iri": subject_iri,
             "predicate_iri": predicate_iri,
             "object_value": object_value,
-            "graph_iri": graph_iri,
-        },
-    )
-
-
-def _evidence_chunk_iri(ns: SemanticNamespace, subject_iri: str, text: str) -> str:
-    digest = hashlib.sha256(f"{subject_iri}\n{text}".encode("utf-8")).hexdigest()[:16]
-    return str(ns.resource("evidence-text", digest))
-
-
-def compile_bind_fact_evidence_text(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    subject_iri = _required(payload, "subject_iri")
-    text = str(_required(payload, "text")).strip()
-    if not text:
-        raise InvalidCommandPayload("text must not be empty")
-    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
-    chunk_iri = payload.get("chunk_iri") or _evidence_chunk_iri(ns, subject_iri, text)
-    doc_iri = payload.get("document_iri") or f"{chunk_iri}/document"
-    sequence = int(payload.get("sequence", 0))
-    char_start = int(payload.get("char_start", 0))
-    char_end = int(payload.get("char_end", len(text)))
-    source_document = "tag:ontology-platform.internal,2026:sourceDocument"
-    sequence_predicate = "tag:ontology-platform.internal,2026:sequence"
-    char_start_predicate = "tag:ontology-platform.internal,2026:charStart"
-    char_end_predicate = "tag:ontology-platform.internal,2026:charEnd"
-    text_predicate = "tag:ontology-platform.internal,2026:text"
-    prov_was_derived_from = "http://www.w3.org/ns/prov#wasDerivedFrom"
-    delta = RdfGraphDelta(
-        inserts=[
-            (_iri_term(subject_iri), _iri_term(prov_was_derived_from), _iri_term(chunk_iri), graph_iri),
-            (_iri_term(chunk_iri), _iri_term(source_document), _iri_term(doc_iri), graph_iri),
-            (_iri_term(chunk_iri), _iri_term(sequence_predicate), _literal_term(sequence), graph_iri),
-            (_iri_term(chunk_iri), _iri_term(char_start_predicate), _literal_term(char_start), graph_iri),
-            (_iri_term(chunk_iri), _iri_term(char_end_predicate), _literal_term(char_end), graph_iri),
-            (_iri_term(chunk_iri), _iri_term(text_predicate), _literal_term(text), graph_iri),
-        ]
-    )
-    return CompiledCommand(
-        command_kind="bind_fact_evidence_text",
-        delta=delta,
-        object_kind="fact_evidence",
-        source_ids=[subject_iri, chunk_iri],
-        target_graph_iris=[graph_iri],
-        metadata={
-            "ontology_id": ontology_id,
-            "subject_iri": subject_iri,
-            "chunk_iri": chunk_iri,
-            "document_iri": doc_iri,
-            "text": text,
-            "graph_iri": graph_iri,
-        },
-    )
-
-
-# TODO(Phase 4-7 cleanup): delete compile_unbind_fact_evidence_text_legacy
-# once the RDF evidence path is fully removed. Currently kept only so the
-# legacy stage2 test (test_bind_and_unbind_fact_evidence_text) can verify
-# the old RDF write logic while unblocked.
-def compile_unbind_fact_evidence_text_legacy(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    """Legacy RDF-based unbind. Superseded by compile_unbind_fact_evidence.
-
-    Retained for Phase 4-7 cleanup; not registered in ``_COMPILERS`` anymore.
-    """
-    ontology_id = _required(payload, "ontology_id")
-    subject_iri = _required(payload, "subject_iri")
-    chunk_iri = _required(payload, "chunk_iri")
-    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
-    delta = RdfGraphDelta(
-        deletes=[
-            (
-                _iri_term(subject_iri),
-                _iri_term("http://www.w3.org/ns/prov#wasDerivedFrom"),
-                _iri_term(chunk_iri),
-                graph_iri,
-            ),
-            (_iri_term(chunk_iri), "?p", "?o", graph_iri),
-        ]
-    )
-    return CompiledCommand(
-        command_kind="unbind_fact_evidence",
-        delta=delta,
-        object_kind="fact_evidence",
-        source_ids=[subject_iri, chunk_iri],
-        target_graph_iris=[graph_iri],
-        metadata={
-            "ontology_id": ontology_id,
-            "subject_iri": subject_iri,
-            "chunk_iri": chunk_iri,
             "graph_iri": graph_iri,
         },
     )
@@ -961,8 +784,7 @@ def compile_create_entity(
     """Stage 2 §5.4 — write a NamedIndividual into graph/data/{ontology_id}.
 
     Writes ``a owl:NamedIndividual``, ``a <class>``, ``rdfs:label``,
-    ``skos:altLabel`` per alias, one triple per property, and an
-    ``op:evidenceStatus "missing_evidence"`` marker per ADR 0004 §301-303.
+    ``skos:altLabel`` per alias, one triple per property.
     """
     ontology_id = _required(payload, "ontology_id")
     entity_id = payload.get("entity_id") or str(uuid.uuid4())
@@ -1006,11 +828,6 @@ def compile_create_entity(
         insert_quads.append(
             (f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri)
         )
-    # Default evidence_status marker.
-    insert_quads.append(
-        (f"<{entity_iri}>", f"<{op}evidenceStatus>",
-         _literal_term("missing_evidence"), graph_iri)
-    )
 
     delta = RdfGraphDelta(inserts=insert_quads)
     return CompiledCommand(
@@ -1132,9 +949,7 @@ def compile_create_relation(
     """Stage 2 §5.4 — write ``<source> <relation_type> <target>`` to the data graph.
 
     relation_type_iri is taken verbatim so callers can target arbitrary OWL
-    ObjectProperties (defined on the ontology graph). The triple is decorated
-    with ``op:evidenceStatus "missing_evidence"`` on the subject entity to
-    flag the new assertion for review.
+    ObjectProperties (defined on the ontology graph).
     """
     ontology_id = _required(payload, "ontology_id")
     source_iri = _required(payload, "source_entity_iri")
@@ -1142,16 +957,9 @@ def compile_create_relation(
     target_iri = _required(payload, "target_entity_iri")
 
     graph_iri = _data_graph_iri(ns, ontology_id)
-    op = str(ns.vocab)
     insert_quads: list[tuple[str, str, str, str]] = [
         (f"<{source_iri}>", f"<{relation_type_iri}>", f"<{target_iri}>", graph_iri),
     ]
-    # Track the new relation as missing-evidence on the subject entity so the
-    # FactAuditPage missing-evidence tab surfaces it for review.
-    insert_quads.append(
-        (f"<{source_iri}>", f"<{op}evidenceStatus>",
-         _literal_term("missing_evidence"), graph_iri)
-    )
 
     delta = RdfGraphDelta(inserts=insert_quads)
     source_ids = [f"{source_iri}|{relation_type_iri}|{target_iri}"]
@@ -1464,24 +1272,6 @@ def _quoted_triple_term(subject_iri: str, predicate_iri: str, object_term: str) 
     return f"<<<{subject_iri}> <{predicate_iri}> {object_term}>>"
 
 
-def _canonical_ntriples(subject_iri: str, predicate_iri: str, object_term: str) -> str:
-    """Canonical N-Triples-style serialization used to derive ``fact_id``.
-
-    The form is ``<s> <p> o`` (without trailing dot) where ``o`` is the
-    object term in its canonical turtle form. This keeps the digest stable
-    across calls and across backend instances.
-    """
-    return f"<{subject_iri}> <{predicate_iri}> {object_term}"
-
-
-def _fact_id_for(subject_iri: str, predicate_iri: str, object_term: str) -> str:
-    """SHA-256 hex digest over the canonical N-Triples serialization of the
-    reviewed triple. Stable across calls and backend instances."""
-    return hashlib.sha256(
-        _canonical_ntriples(subject_iri, predicate_iri, object_term).encode("utf-8")
-    ).hexdigest()
-
-
 def _reviewer_term(reviewer: str, ns: SemanticNamespace) -> str:
     """Render a reviewer term. Accepts ``user:<id>`` (preferred) or a bare
     IRI; ``user:`` form is expanded into the platform namespace."""
@@ -1555,7 +1345,7 @@ def compile_review_assertion(
 
     object_term = _object_term_for_review(object_value)
     quoted = _quoted_triple_term(subject_iri, predicate_iri, object_term)
-    fact_id = _fact_id_for(subject_iri, predicate_iri, object_term)
+    fact_id = compute_fact_id(subject_iri, predicate_iri, object_term, graph_iri)
     op = str(ns.vocab)
 
     from datetime import datetime, timezone
@@ -1704,11 +1494,8 @@ def compile_unbind_fact_evidence(
 _COMPILERS: dict[str, Compiler] = {
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
-    "submit_assertion": compile_submit_assertion,
-    "update_evidence_status": compile_update_evidence_status,
     "update_fact": compile_update_fact,
     "delete_fact": compile_delete_fact,
-    "bind_fact_evidence_text": compile_bind_fact_evidence_text,
     "bind_fact_evidence": compile_bind_fact_evidence,
     "unbind_fact_evidence": compile_unbind_fact_evidence,
     "update_class": compile_update_class,

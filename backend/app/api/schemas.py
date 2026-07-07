@@ -912,8 +912,8 @@ def _canonical_command_kinds() -> tuple[str, ...]:
         return (
             "create_class",
             "create_relation_type",
-            "submit_assertion",
-            "update_evidence_status",
+            "update_fact",
+            "delete_fact",
         )
 
 
