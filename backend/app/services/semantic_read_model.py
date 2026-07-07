@@ -591,9 +591,8 @@ class SemanticReadModelService:
     ) -> dict[str, list[dict[str, Any]]]:
         """Batch-fetch evidence bindings from Postgres, bucketed by fact_id.
 
-        Replaces the legacy ``_fetch_evidence_bindings`` (SPARQL over
-        ``prov:wasDerivedFrom`` + chunk literals). Each binding is rendered
-        as a dict suitable for direct inclusion in ``FactRow.evidence_bindings``.
+        Each binding is rendered as a dict suitable for direct inclusion in
+        ``FactRow.evidence_bindings``.
         """
         if not fact_ids:
             return {}
@@ -1240,11 +1239,10 @@ class SemanticReadModelService:
     ) -> list[dict[str, Any]]:
         """Batch-fetch evidence bindings from PG and populate each item.
 
-        Phase 3 replaces the per-row SPARQL ``_attach_evidence_bindings``
-        with a single batched PG lookup. ``evidence_status`` is derived
-        from whether any binding exists for the row's ``fact_id``. When the
-        service has no SQLAlchemy session (legacy test wiring), each row
-        falls back to ``missing_evidence`` with empty bindings.
+        ``evidence_status`` is derived from whether any binding exists for
+        the row's ``fact_id``. When the service has no SQLAlchemy session
+        (legacy test wiring), each row falls back to ``missing_evidence``
+        with empty bindings.
         """
         if self.session is None:
             for it in items:
@@ -1372,23 +1370,6 @@ class SemanticReadModelService:
         if derived_run_id is not None:
             item["derived_from"] = {"run_id": derived_run_id}
         return item
-
-    @staticmethod
-    def _fact_id(
-        subject_iri: str, predicate_iri: str, object_value: str, graph_iri: str
-    ) -> str:
-        """SHA-256 over the canonical N-Triples-style (s, p, o, g) tuple.
-
-        The object term in this hash is the bare literal/IRI string as
-        projected by the SPARQL template; this is intentionally simpler
-        than the review_assertion digest (which sees the turtle object
-        form) because the FactRow only needs a stable cross-link key, not
-        a perfect mirror of the canonical-write digest.
-        """
-        import hashlib
-
-        canonical = f"<{subject_iri}> <{predicate_iri}> {object_value} <{graph_iri}>"
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     # ------------------------------------------------------------------
     # entity-search composer (Stage 4 §4.1)
@@ -1592,109 +1573,3 @@ class SemanticReadModelService:
             ),
             "is_stale": is_stale,
         }
-
-    # ------------------------------------------------------------------
-    # fact-audit-queue evidence bindings extension (Stage 4 §4.4)
-    # ------------------------------------------------------------------
-
-    def _attach_evidence_bindings(
-        self,
-        items: list[dict[str, Any]],
-        data_iris: list[str],
-    ) -> None:
-        """For each item, run the prov:wasDerivedFrom SPARQL (spec §4.4)
-        against the asserted data graphs and attach the matching bindings
-        to the row under ``evidence_bindings``.
-
-        Mutates ``items`` in place. If no binding exists for a fact's
-        subject, the row gets an empty list — matching the spec §8 fallback
-        contract."""
-        if not data_iris:
-            for item in items:
-                item["evidence_bindings"] = []
-            return
-        # Pre-fetch all bindings once (joining across facts is cheaper than
-        # one SPARQL per fact in the test fixture). Each row carries the
-        # fact IRI it was derived from so we can bucket by subject.
-        all_bindings = self._fetch_evidence_bindings(data_iris)
-        by_fact: dict[str, list[dict[str, Any]]] = {}
-        for b in all_bindings:
-            by_fact.setdefault(b["fact_iri"], []).append({
-                "chunk_iri": b["chunk_iri"],
-                "document_iri": b["document_iri"],
-                "document_filename": b.get("document_filename"),
-                "sequence": b["sequence"],
-                "char_start": b["char_start"],
-                "char_end": b["char_end"],
-                "text_preview": b["text_preview"],
-            })
-        for item in items:
-            subject_iri = item.get("subject_iri") or item.get("iri") or ""
-            item["evidence_bindings"] = by_fact.get(subject_iri, [])
-
-    _EVIDENCE_BINDING_SPARQL = """# Stage 4 §4.4 evidence bindings lookup
-PREFIX prov: <http://www.w3.org/ns/prov#>
-SELECT ?fact ?chunk ?doc ?sequence ?char_start ?char_end ?text WHERE {
-  VALUES ?g { {graph_iris} }
-  GRAPH ?g {
-    ?fact prov:wasDerivedFrom ?chunk .
-    ?chunk <tag:ontology-platform.internal,2026:sourceDocument> ?doc ;
-           <tag:ontology-platform.internal,2026:sequence> ?sequence ;
-           <tag:ontology-platform.internal,2026:charStart> ?char_start ;
-           <tag:ontology-platform.internal,2026:charEnd> ?char_end ;
-           <tag:ontology-platform.internal,2026:text> ?text .
-  }
-}
-LIMIT {limit}
-"""
-
-    def _fetch_evidence_bindings(
-        self, data_iris: list[str]
-    ) -> list[dict[str, Any]]:
-        """Execute the prov:wasDerivedFrom evidence bindings SPARQL and
-        return raw rows bucketed by fact IRI."""
-        if not data_iris:
-            return []
-        values = " ".join(f"<{i}>" for i in data_iris)
-        query = self._EVIDENCE_BINDING_SPARQL.replace(
-            "{graph_iris}", values
-        ).replace("{limit}", "500")
-        result = self.rdf_store.query_read_model(
-            query=query,
-            graph_iris=data_iris,
-            timeout_seconds=self.timeout_seconds,
-            limit=500,
-        )
-        rows = self._rows(result)
-        out: list[dict[str, Any]] = []
-        for row in rows:
-            fact_iri = self._cell(row, "fact") or ""
-            chunk_iri = self._cell(row, "chunk") or ""
-            document_iri = self._cell(row, "doc") or ""
-            sequence_raw = self._cell(row, "sequence")
-            try:
-                sequence = int(sequence_raw) if sequence_raw is not None else 0
-            except ValueError:
-                sequence = 0
-            char_start_raw = self._cell(row, "char_start")
-            try:
-                char_start = int(char_start_raw) if char_start_raw is not None else 0
-            except ValueError:
-                char_start = 0
-            char_end_raw = self._cell(row, "char_end")
-            try:
-                char_end = int(char_end_raw) if char_end_raw is not None else 0
-            except ValueError:
-                char_end = 0
-            text = self._cell(row, "text") or ""
-            out.append({
-                "fact_iri": fact_iri,
-                "chunk_iri": chunk_iri,
-                "document_iri": document_iri,
-                "document_filename": None,
-                "sequence": sequence,
-                "char_start": char_start,
-                "char_end": char_end,
-                "text_preview": text[:500],
-            })
-        return out
