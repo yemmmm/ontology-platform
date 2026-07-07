@@ -195,14 +195,6 @@ export type IdentifierResolutionStats = {
   unmapped_right: string[];
 };
 
-export type EntitySearchResult = {
-  results: Array<Entity & {
-    score: number;
-    match_source: "text" | "vector" | "hybrid";
-  }>;
-  count: number;
-};
-
 export type EntityWithRelations = Entity & {
   outgoing: Relation[];
   incoming: Relation[];
