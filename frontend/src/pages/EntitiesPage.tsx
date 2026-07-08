@@ -373,6 +373,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
               <ForceGraphCanvas
                 nodes={graphNodes}
                 edges={graphEdges}
+                cacheKey={graphSetId}
                 selectedNodeId={selectedIri}
                 selectedEdgeId={selectedEdgeId}
                 onSelectNode={(id) => {

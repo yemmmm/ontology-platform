@@ -34,6 +34,7 @@ type ForceGraphCanvasProps = {
   groupLabels?: string[];
   emptyTitle: string;
   emptyHint?: string;
+  cacheKey?: string;
 };
 
 const GROUP_PALETTE = [
@@ -57,6 +58,48 @@ const LABEL_VISIBILITY_THRESHOLD = 24;
 const EDGE_LABEL_GAP = 4;
 const HIERARCHY_MIN_NODE_WIDTH = 120;
 const HIERARCHY_NODE_HEIGHT = 58;
+const LAYOUT_CACHE_PREFIX = "topology:layout:";
+
+function hashFingerprint(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function loadCachedLayout(
+  cacheKey: string,
+  layoutMode: string,
+): { fingerprint: string; positions: Record<string, { x: number; y: number }> } | null {
+  try {
+    const raw = localStorage.getItem(`${LAYOUT_CACHE_PREFIX}${cacheKey}:${layoutMode}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.fingerprint === "string" && parsed.positions) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedLayout(
+  cacheKey: string,
+  layoutMode: string,
+  fingerprint: string,
+  positions: Record<string, { x: number; y: number }>,
+) {
+  try {
+    localStorage.setItem(
+      `${LAYOUT_CACHE_PREFIX}${cacheKey}:${layoutMode}`,
+      JSON.stringify({ fingerprint, positions }),
+    );
+  } catch {
+    // localStorage full or unavailable — silently ignore
+  }
+}
 
 function pickColor(group: string, allGroups: string[]) {
   const idx = allGroups.indexOf(group);
@@ -354,6 +397,7 @@ export function ForceGraphCanvas({
   groupLabels,
   emptyTitle,
   emptyHint,
+  cacheKey,
 }: ForceGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
@@ -407,6 +451,12 @@ export function ForceGraphCanvas({
     return [...cyNodes, ...cyEdges];
   }, [nodes, edges, allGroups]);
 
+  const fingerprint = useMemo(() => {
+    const nodeIds = nodes.map((n) => n.id).sort().join(",");
+    const edgeIds = edges.map((e) => e.id).sort().join(",");
+    return hashFingerprint(`${nodeIds}|${edgeIds}|${layoutMode}`);
+  }, [nodes, edges, layoutMode]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const cy = cytoscape({
@@ -451,6 +501,33 @@ export function ForceGraphCanvas({
     cy.elements().remove();
     if (elements.length === 0) return;
     cy.add(elements);
+
+    let cachedPositions: Record<string, { x: number; y: number }> | null = null;
+    if (cacheKey) {
+      const cached = loadCachedLayout(cacheKey, layoutMode);
+      if (cached && cached.fingerprint === fingerprint) {
+        cachedPositions = cached.positions;
+      }
+    }
+    if (cachedPositions) {
+      const layout = cy.layout({
+        name: "preset",
+        animate: true,
+        animationDuration: 80,
+        positions: (node) => {
+          const pos = cachedPositions![getPresetNodeId(node)];
+          return pos ?? cy.getElementById(getPresetNodeId(node)).position();
+        },
+      });
+      layout.one("layoutstop", () => {
+        applyEdgeLabelOffsets(cy);
+        cy.fit(undefined, 52);
+        applyLabelVisibility(cy);
+      });
+      layout.run();
+      return;
+    }
+
     const hierarchyPositions =
       layoutMode === "hierarchy" ? computeHierarchyPositions(cy) : null;
     const layout = cy.layout(
@@ -480,9 +557,17 @@ export function ForceGraphCanvas({
       applyEdgeLabelOffsets(cy);
       cy.fit(undefined, 52);
       applyLabelVisibility(cy);
+      if (cacheKey) {
+        const positions: Record<string, { x: number; y: number }> = {};
+        cy.nodes().forEach((node) => {
+          const pos = node.position();
+          positions[node.id()] = { x: pos.x, y: pos.y };
+        });
+        saveCachedLayout(cacheKey, layoutMode, fingerprint, positions);
+      }
     });
     layout.run();
-  }, [elements, layoutMode]);
+  }, [elements, layoutMode, fingerprint, cacheKey]);
 
   useEffect(() => {
     const cy = cyRef.current;
