@@ -30,6 +30,7 @@ from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
+    SemanticDerivedResultPointerModel,
     SemanticGraphSetMemberModel,
     SemanticGraphSetModel,
 )
@@ -122,6 +123,8 @@ def _seed_graph_set(
     members: list[tuple[str, str]],
     *,
     graph_set_id: str = "gs-1",
+    reasoning_graph: str | None = None,
+    rule_graph: str | None = None,
 ) -> None:
     gs = SemanticGraphSetModel(
         id=graph_set_id,
@@ -140,6 +143,30 @@ def _seed_graph_set(
                 role=role,
                 required=True,
                 sort_order=idx,
+            )
+        )
+    if reasoning_graph:
+        session.add(
+            SemanticDerivedResultPointerModel(
+                id=f"ptr-{graph_set_id}-reasoning",
+                graph_set_id=graph_set_id,
+                result_kind="reasoning",
+                run_id="reasoning-run-1",
+                result_graph_iri=reasoning_graph,
+                source_signature="sig-1",
+                status="current",
+            )
+        )
+    if rule_graph:
+        session.add(
+            SemanticDerivedResultPointerModel(
+                id=f"ptr-{graph_set_id}-rule",
+                graph_set_id=graph_set_id,
+                result_kind="rule",
+                run_id="rule-run-1",
+                result_graph_iri=rule_graph,
+                source_signature="sig-1",
+                status="current",
             )
         )
     session.commit()
@@ -327,6 +354,38 @@ def test_entity_list_executes_and_decorates_class_membership(in_memory_session) 
     assert item["source_graph_iri"] == DATA_GRAPH
 
 
+def test_entity_list_surfaces_inferred_class_memberships(in_memory_session) -> None:
+    _seed_graph_set(
+        in_memory_session,
+        [(DATA_GRAPH, "asserted_data")],
+        reasoning_graph=REASONING_RESULT_GRAPH,
+    )
+    store = FakeStore(
+        rows_by_marker={
+            "entity-list": [
+                {
+                    "entity": f"{PREFIX}ns/entity/alice",
+                    "label": "Alice",
+                    "class": f"{PREFIX}ns/class/GraduateStudent",
+                    "class_label": "Graduate student",
+                    "graph": REASONING_RESULT_GRAPH,
+                }
+            ]
+        }
+    )
+    client = _client(store, in_memory_session)
+    response = client.get(
+        "/api/semantic/graph-sets/gs-1/read-models/entity-list",
+        params={"include": "asserted-plus-reasoning"},
+    )
+    assert response.status_code == 200, response.text
+    assert store.last_graph_iris == [DATA_GRAPH, REASONING_RESULT_GRAPH]
+    item = response.json()["items"][0]
+    assert item["iri"] == f"{PREFIX}ns/entity/alice"
+    assert item["class_iri"] == f"{PREFIX}ns/class/GraduateStudent"
+    assert item["assertion_kind"] == "owl_inferred"
+
+
 def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> None:
     # entity-relations needs_reasoning or needs_rules. We include
     # asserted-plus-rules so the rule-result graph is appended.
@@ -356,6 +415,90 @@ def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> 
     assert item["source"] == f"{PREFIX}ns/entity/alice"
     assert item["target"] == f"{PREFIX}ns/entity/bob"
     assert item["relation"] == f"{PREFIX}ns/relation-type/knows"
+
+
+def test_entity_relations_decorates_rule_result_edges(in_memory_session) -> None:
+    _seed_graph_set(
+        in_memory_session,
+        [(DATA_GRAPH, "asserted_data")],
+        rule_graph=RULE_RESULT_GRAPH,
+    )
+    store = FakeStore(
+        rows_by_marker={
+            "entity-relations": [
+                {
+                    "source": f"{PREFIX}ns/entity/alice",
+                    "target": f"{PREFIX}ns/entity/bob",
+                    "relation": f"{PREFIX}ns/relation-type/eligibleFor",
+                    "label": "eligible for",
+                    "graph": RULE_RESULT_GRAPH,
+                }
+            ]
+        }
+    )
+    client = _client(store, in_memory_session)
+    response = client.get(
+        "/api/semantic/graph-sets/gs-1/read-models/entity-relations",
+        params={"include": "asserted-plus-rules"},
+    )
+    assert response.status_code == 200, response.text
+    assert store.last_graph_iris == [DATA_GRAPH, RULE_RESULT_GRAPH]
+    assert store.last_query is not None
+    assert "SELECT DISTINCT ?source ?relation ?target ?label ?graph" in store.last_query
+    assert "BIND(?g AS ?graph)" in store.last_query
+    item = response.json()["items"][0]
+    assert item["source"] == f"{PREFIX}ns/entity/alice"
+    assert item["target"] == f"{PREFIX}ns/entity/bob"
+    assert item["assertion_kind"] == "rule_derived"
+
+
+def test_entity_literal_facts_filters_by_entity_and_decorates_rule_rows(in_memory_session) -> None:
+    _seed_graph_set(
+        in_memory_session,
+        [(DATA_GRAPH, "asserted_data")],
+        rule_graph=RULE_RESULT_GRAPH,
+    )
+    store = FakeStore(
+        rows_by_marker={
+            "entity-literal-facts": [
+                {
+                    "subject": f"{PREFIX}ns/entity/alice",
+                    "subject_label": "Alice",
+                    "predicate": f"{PREFIX}ns/property/status",
+                    "predicate_label": "status",
+                    "object": "active",
+                    "object_label": "active",
+                    "graph": RULE_RESULT_GRAPH,
+                }
+            ]
+        }
+    )
+    client = _client(store, in_memory_session)
+    response = client.get(
+        "/api/semantic/graph-sets/gs-1/read-models/entity-literal-facts",
+        params={
+            "include": "asserted-plus-rules",
+            "entity": f"{PREFIX}ns/entity/alice",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert f"VALUES ?subject {{ <{PREFIX}ns/entity/alice> }}" in (store.last_query or "")
+    item = response.json()["items"][0]
+    assert item["subject_iri"] == f"{PREFIX}ns/entity/alice"
+    assert item["predicate_label"] == "status"
+    assert item["object_value"] == "active"
+    assert item["object_is_iri"] is False
+    assert item["assertion_kind"] == "rule_derived"
+
+
+def test_entity_literal_facts_requires_entity_param(in_memory_session) -> None:
+    _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
+    client = _client(FakeStore(), in_memory_session)
+    response = client.get(
+        "/api/semantic/graph-sets/gs-1/read-models/entity-literal-facts"
+    )
+    assert response.status_code == 400
+    assert "requires the entity query parameter" in response.json()["detail"]
 
 
 def test_mapping_list_executes(in_memory_session) -> None:

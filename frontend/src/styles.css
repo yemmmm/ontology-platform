@@ -2776,10 +2776,33 @@ textarea:focus {
 
 .semanticGraphToolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(220px, 340px) minmax(360px, 1fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.semanticGraphLayerControl {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.semanticGraphLayerControl > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.semanticGraphLayerControl small {
+  flex: 1 1 180px;
+  min-width: 160px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .semanticGraphLegend {
@@ -2894,6 +2917,72 @@ textarea:focus {
 
 .semanticGraphDetailList code {
   white-space: pre-wrap;
+}
+
+.entityLiteralFacts {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 14px;
+}
+
+.entityLiteralFacts header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.entityLiteralFacts header strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.entityLiteralFactsEmpty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.entityLiteralFactList {
+  display: grid;
+  gap: 8px;
+}
+
+.entityLiteralFact {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--panel-soft);
+}
+
+.entityLiteralFact > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.entityLiteralFact > div > span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entityLiteralFact p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .semanticGraphDetailForm {

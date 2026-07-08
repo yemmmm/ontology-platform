@@ -76,6 +76,8 @@ async function mockApi(page: Page) {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, "");
+    const readModelPath = (modelName: string) =>
+      `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/${modelName}`;
     let body: unknown = [];
 
     if (path === "/projects") body = [project];
@@ -105,11 +107,13 @@ async function mockApi(page: Page) {
       warning: null,
     };
     else if (path === "/semantic/rule-definitions") body = { rules: [] };
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/class-topology`) body = classTopologyEnvelope;
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) body = relationTypeEnvelope;
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) body = entityListEnvelope;
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) body = entityRelationsEnvelope;
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`) body = {
+    // Match by pathname so read-model query strings such as ?include=asserted
+    // do not bypass the route mock.
+    else if (path === readModelPath("class-topology")) body = classTopologyEnvelope;
+    else if (path === readModelPath("relation-type-list")) body = relationTypeEnvelope;
+    else if (path === readModelPath("entity-list")) body = entityListEnvelope;
+    else if (path === readModelPath("entity-relations")) body = entityRelationsEnvelope;
+    else if (path === readModelPath("fact-audit-queue")) body = {
       graph_set_id: GRAPH_SET_ID,
       source_signature: "sig",
       projection_version: "1",

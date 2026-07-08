@@ -10,7 +10,7 @@
  * no ?graphSet= URL parameter is set.
  */
 
-import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
+import { Alert, Button, Card, Input, Modal, Segmented, Skeleton, Tag } from "antd";
 import { Edit3, Link2, Plus, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -41,6 +41,7 @@ type EntityListRow = {
 
 type EntityListEnvelope = {
   graph_set_id: string;
+  warnings?: Array<{ code: string; message?: string }>;
   items: EntityListRow[];
 };
 
@@ -49,6 +50,7 @@ type EntityRelationRow = {
   label: string | null;
   source_graph_iri: string;
   assertion_kind: string;
+  stale?: boolean;
   /** Source/target/relation IRIs come from the read-model envelope. They
    * are projected onto the same shape as entity-list items for symmetry. */
   source?: string;
@@ -58,10 +60,90 @@ type EntityRelationRow = {
 
 type EntityRelationsEnvelope = {
   graph_set_id: string;
+  warnings?: Array<{ code: string; message?: string }>;
   items: EntityRelationRow[];
 };
 
 type EntityGraphRelationPayload = EntityRelationRow & { id: string };
+
+type EntityLiteralFactRow = {
+  id: string;
+  subject_iri: string;
+  predicate_iri: string;
+  predicate_label: string | null;
+  object_value: unknown;
+  object_label?: string | null;
+  assertion_kind: string;
+  stale?: boolean;
+};
+
+type EntityLiteralFactsEnvelope = {
+  graph_set_id: string;
+  warnings?: Array<{ code: string; message?: string }>;
+  items: EntityLiteralFactRow[];
+};
+
+type EntityGraphLayer = "facts" | "reasoning" | "rules" | "full";
+type EntityGraphFocus = "context" | "reasoning" | "rules";
+type SemanticReadModelInclude =
+  | "asserted"
+  | "asserted-plus-reasoning"
+  | "asserted-plus-rules"
+  | "full-working-view";
+
+const GRAPH_LAYER_OPTIONS: Array<{
+  value: EntityGraphLayer;
+  label: string;
+  include: SemanticReadModelInclude;
+  description: string;
+}> = [
+  {
+    value: "facts",
+    label: "Fact graph",
+    include: "asserted",
+    description: "Only manually asserted entities and relations.",
+  },
+  {
+    value: "reasoning",
+    label: "Reasoning graph",
+    include: "asserted-plus-reasoning",
+    description: "Facts plus currently available reasoning results.",
+  },
+  {
+    value: "rules",
+    label: "Rule graph",
+    include: "asserted-plus-rules",
+    description: "Facts plus currently available rule results.",
+  },
+  {
+    value: "full",
+    label: "Complete view",
+    include: "full-working-view",
+    description: "Facts, reasoning results, and rule results together.",
+  },
+];
+
+const GRAPH_FOCUS_OPTIONS: Array<{
+  value: EntityGraphFocus;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "context",
+    label: "Context",
+    description: "Show all edge kinds with their normal styling.",
+  },
+  {
+    value: "reasoning",
+    label: "Reasoning",
+    description: "Highlight reasoning edges and fade the surrounding context.",
+  },
+  {
+    value: "rules",
+    label: "Rules",
+    description: "Highlight rule-derived edges and fade the surrounding context.",
+  },
+];
 
 type EntitiesPageProps = {
   graphSetId: string;
@@ -76,6 +158,11 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const [error, setError] = useState("");
   const [entities, setEntities] = useState<EntityListEnvelope | null>(null);
   const [relations, setRelations] = useState<EntityRelationsEnvelope | null>(null);
+  const [selectedLayer, setSelectedLayer] = useState<EntityGraphLayer>("facts");
+  const [selectedFocus, setSelectedFocus] = useState<EntityGraphFocus>("context");
+  const [literalFacts, setLiteralFacts] = useState<EntityLiteralFactRow[]>([]);
+  const [literalFactsLoading, setLiteralFactsLoading] = useState(false);
+  const [literalFactsError, setLiteralFactsError] = useState("");
   const [selectedIri, setSelectedIri] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -89,13 +176,32 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const [newClassIri, setNewClassIri] = useState("");
   const [newLabel, setNewLabel] = useState("");
 
+  const selectedLayerConfig = useMemo(
+    () => GRAPH_LAYER_OPTIONS.find((option) => option.value === selectedLayer) ?? GRAPH_LAYER_OPTIONS[0],
+    [selectedLayer],
+  );
+  const selectedFocusConfig = useMemo(
+    () => GRAPH_FOCUS_OPTIONS.find((option) => option.value === selectedFocus) ?? GRAPH_FOCUS_OPTIONS[0],
+    [selectedFocus],
+  );
+  const derivedFocus = useMemo(() => {
+    if (selectedLayer === "reasoning") return "reasoning";
+    if (selectedLayer === "rules") return "rules";
+    if (selectedLayer === "full" && selectedFocus !== "context") return selectedFocus;
+    return null;
+  }, [selectedFocus, selectedLayer]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [entityList, relationList] = await Promise.all([
-        readModel<EntityListEnvelope>(request, graphSetId, "entity-list"),
-        readModel<EntityRelationsEnvelope>(request, graphSetId, "entity-relations"),
+        readModel<EntityListEnvelope>(request, graphSetId, "entity-list", {
+          include: selectedLayerConfig.include,
+        }),
+        readModel<EntityRelationsEnvelope>(request, graphSetId, "entity-relations", {
+          include: selectedLayerConfig.include,
+        }),
       ]);
       setEntities(entityList);
       setRelations(relationList);
@@ -104,7 +210,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     } finally {
       setLoading(false);
     }
-  }, [graphSetId, request]);
+  }, [graphSetId, request, selectedLayerConfig.include]);
 
   useEffect(() => {
     void load();
@@ -135,6 +241,8 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         source: row.source ?? "",
         target: row.target ?? "",
         label: row.label ?? (row.relation ? compactIri(row.relation) : t("relationship")),
+        kind: normalizeAssertionKind(row.assertion_kind),
+        stale: Boolean(row.stale),
       }))
       .filter((edge) => {
         const visible = nodeIds.has(edge.source) && nodeIds.has(edge.target);
@@ -158,6 +266,15 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const selectedEntity = selectedIri ? entityByIri.get(selectedIri) ?? null : null;
   const selectedRelation = selectedEdgeId ? relationByEdgeId.get(selectedEdgeId) ?? null : null;
   const hasGraphSelection = Boolean(selectedEntity || selectedRelation);
+  const visibleWarnings = useMemo(() => {
+    const warnings = [...(entities?.warnings ?? []), ...(relations?.warnings ?? [])];
+    const messages = new Map<string, string>();
+    for (const warning of warnings) {
+      const message = friendlyGraphLayerWarning(warning.code, t);
+      if (message) messages.set(warning.code, message);
+    }
+    return Array.from(messages, ([code, message]) => ({ code, message }));
+  }, [entities, relations, t]);
 
   useEffect(() => {
     setDetailLabel(selectedEntity?.label ?? "");
@@ -166,6 +283,40 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     setRelationTargetIri(selectedRelation?.target ?? "");
     setEditing(false);
   }, [selectedEntity, selectedRelation]);
+
+  useEffect(() => {
+    if (!selectedEntity) {
+      setLiteralFacts([]);
+      setLiteralFactsError("");
+      setLiteralFactsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLiteralFactsLoading(true);
+    setLiteralFactsError("");
+    void readModel<EntityLiteralFactsEnvelope>(request, graphSetId, "entity-literal-facts", {
+      include: selectedLayerConfig.include,
+      entity: selectedEntity.iri,
+      limit: 50,
+    })
+      .then((envelope) => {
+        if (!cancelled) setLiteralFacts(envelope.items ?? []);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setLiteralFacts([]);
+          setLiteralFactsError(cause instanceof Error ? cause.message : String(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLiteralFactsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [graphSetId, request, selectedEntity, selectedLayerConfig.include]);
 
   async function submitNewEntity() {
     if (!newLabel.trim() || !newClassIri.trim()) return;
@@ -292,6 +443,12 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     setEditing(false);
   }
 
+  function changeLayer(value: EntityGraphLayer) {
+    setSelectedLayer(value);
+    if (value !== "full") setSelectedFocus("context");
+    clearSelection();
+  }
+
   return (
     <section className="entitiesPage stage2">
       <header className="topBar">
@@ -333,6 +490,14 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
           message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
+      {visibleWarnings.map((warning) => (
+        <Alert
+          key={warning.code}
+          type="warning"
+          showIcon
+          message={warning.message}
+        />
+      ))}
 
       <Card
         title={t("Entity force graph · {nodes} nodes · {edges} edges", {
@@ -349,7 +514,38 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
             onChange={(event) => setSearchQuery(event.target.value)}
             allowClear
           />
+          <div className="semanticGraphLayerControl" aria-label={t("Graph layer")}>
+            <span>{t("Graph layer")}</span>
+            <Segmented
+              value={selectedLayer}
+              onChange={(value) => changeLayer(value as EntityGraphLayer)}
+              options={GRAPH_LAYER_OPTIONS.map((option) => ({
+                label: t(option.label),
+                value: option.value,
+              }))}
+            />
+            <small>{t(selectedLayerConfig.description)}</small>
+          </div>
+          {selectedLayer === "full" && (
+            <div className="semanticGraphLayerControl" aria-label={t("Graph focus")}>
+              <span>{t("Focus")}</span>
+              <Segmented
+                value={selectedFocus}
+                onChange={(value) => {
+                  setSelectedFocus(value as EntityGraphFocus);
+                  clearSelection();
+                }}
+                options={GRAPH_FOCUS_OPTIONS.map((option) => ({
+                  label: t(option.label),
+                  value: option.value,
+                }))}
+              />
+              <small>{t(selectedFocusConfig.description)}</small>
+            </div>
+          )}
           <div className="semanticGraphLegend">
+            {derivedFocus === "reasoning" && <Tag color="blue">{t("Reasoning highlighted")}</Tag>}
+            {derivedFocus === "rules" && <Tag color="green">{t("Rules highlighted")}</Tag>}
             {classLabels.slice(0, 8).map((label) => (
               <Tag key={label}>{label}</Tag>
             ))}
@@ -373,7 +569,8 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
               <ForceGraphCanvas
                 nodes={graphNodes}
                 edges={graphEdges}
-                cacheKey={graphSetId}
+                cacheKey={`${graphSetId}:${selectedLayer}`}
+                derivedFocus={derivedFocus}
                 selectedNodeId={selectedIri}
                 selectedEdgeId={selectedEdgeId}
                 onSelectNode={(id) => {
@@ -398,6 +595,9 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
             readOnly={readOnly}
             busy={submitting}
             editing={editing}
+            literalFacts={literalFacts}
+            literalFactsLoading={literalFactsLoading}
+            literalFactsError={literalFactsError}
             detailLabel={detailLabel}
             relationSourceIri={relationSourceIri}
             relationTypeIri={relationTypeIri}
@@ -454,6 +654,9 @@ type EntityGraphDetailPanelProps = {
   readOnly: boolean;
   busy: boolean;
   editing: boolean;
+  literalFacts: EntityLiteralFactRow[];
+  literalFactsLoading: boolean;
+  literalFactsError: string;
   detailLabel: string;
   relationSourceIri: string;
   relationTypeIri: string;
@@ -476,6 +679,9 @@ function EntityGraphDetailPanel({
   readOnly,
   busy,
   editing,
+  literalFacts,
+  literalFactsLoading,
+  literalFactsError,
   detailLabel,
   relationSourceIri,
   relationTypeIri,
@@ -556,7 +762,7 @@ function EntityGraphDetailPanel({
               <>
                 <div><dt>{t("IRI")}</dt><dd><code>{selectedEntity.iri}</code></dd></div>
                 <div><dt>{t("Class")}</dt><dd>{selectedEntity.class_label ?? compactIri(selectedEntity.class_iri ?? "")}</dd></div>
-                <div><dt>{t("Source graph")}</dt><dd><code>{selectedEntity.source_graph_iri}</code></dd></div>
+                <div><dt>{t("Assertion")}</dt><dd>{assertionKindLabel(selectedEntity.assertion_kind, t)}</dd></div>
                 <div><dt>{t("Evidence")}</dt><dd>{selectedEntity.evidence_status ?? t("Not available")}</dd></div>
               </>
             )}
@@ -565,11 +771,36 @@ function EntityGraphDetailPanel({
                 <div><dt>{t("Source")}</dt><dd>{entityLabelByIri.get(selectedRelation.source ?? "") ?? compactIri(selectedRelation.source ?? "")}</dd></div>
                 <div><dt>{t("Relation type")}</dt><dd><code>{selectedRelation.relation ?? selectedRelation.iri}</code></dd></div>
                 <div><dt>{t("Target")}</dt><dd>{entityLabelByIri.get(selectedRelation.target ?? "") ?? compactIri(selectedRelation.target ?? "")}</dd></div>
-                <div><dt>{t("Source graph")}</dt><dd><code>{selectedRelation.source_graph_iri}</code></dd></div>
-                <div><dt>{t("Assertion")}</dt><dd>{selectedRelation.assertion_kind}</dd></div>
+                <div><dt>{t("Assertion")}</dt><dd>{assertionKindLabel(selectedRelation.assertion_kind, t)}</dd></div>
               </>
             )}
           </dl>
+          {selectedEntity && (
+            <section className="entityLiteralFacts" aria-label={t("Literal facts")}>
+              <header>
+                <strong>{t("Literal facts")}</strong>
+              </header>
+              {literalFactsLoading ? (
+                <Skeleton active paragraph={{ rows: 3 }} title={false} />
+              ) : literalFactsError ? (
+                <Alert type="warning" showIcon message={literalFactsError} />
+              ) : literalFacts.length === 0 ? (
+                <p className="entityLiteralFactsEmpty">{t("No literal facts for this entity in the current layer.")}</p>
+              ) : (
+                <div className="entityLiteralFactList">
+                  {literalFacts.map((fact) => (
+                    <article key={fact.id} className="entityLiteralFact">
+                      <div>
+                        <span>{fact.predicate_label ?? compactIri(fact.predicate_iri)}</span>
+                        <Tag>{assertionKindLabel(fact.assertion_kind, t)}{fact.stale ? ` · ${t("Stale")}` : ""}</Tag>
+                      </div>
+                      <p>{literalFactValue(fact)}</p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
           <div className="semanticGraphDetailActions">
             <Button icon={<Edit3 size={14} />} onClick={onEdit} disabled={readOnly || busy}>
               {t("Edit")}
@@ -589,4 +820,38 @@ function compactIri(value: string) {
   const slash = value.lastIndexOf("/");
   const idx = Math.max(hash, slash);
   return idx >= 0 ? value.slice(idx + 1) : value;
+}
+
+function assertionKindLabel(kind: string, t: ReturnType<typeof useT>) {
+  const normalized = normalizeAssertionKind(kind);
+  if (normalized === "asserted") return t("Fact");
+  if (normalized === "owl_inferred" || normalized === "inferred") return t("Reasoning");
+  if (normalized === "rule_derived") return t("Rule");
+  return t("Fact");
+}
+
+function normalizeAssertionKind(kind: string | null | undefined) {
+  return (kind || "asserted").toLowerCase().replace(/[-\s]/g, "_");
+}
+
+function friendlyGraphLayerWarning(code: string, t: ReturnType<typeof useT>) {
+  switch (code) {
+    case "missing_reasoning_result":
+      return t("No reasoning result is available yet.");
+    case "missing_rule_result":
+      return t("No rule result is available yet.");
+    case "stale_reasoning_result":
+      return t("Reasoning results may be out of date.");
+    case "stale_rule_result":
+      return t("Rule results may be out of date.");
+    default:
+      return "";
+  }
+}
+
+function literalFactValue(fact: EntityLiteralFactRow) {
+  if (fact.object_label != null && fact.object_label !== "") return String(fact.object_label);
+  if (fact.object_value == null) return "";
+  if (typeof fact.object_value === "string") return fact.object_value;
+  return JSON.stringify(fact.object_value);
 }

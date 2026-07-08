@@ -20,7 +20,11 @@ export type ForceGraphEdge = {
   target: string;
   label?: string | null;
   tone?: string | null;
+  kind?: string | null;
+  stale?: boolean | null;
 };
+
+type DerivedFocus = "reasoning" | "rules" | null;
 
 type ForceGraphCanvasProps = {
   nodes: ForceGraphNode[];
@@ -32,6 +36,7 @@ type ForceGraphCanvasProps = {
   onSelectEdge?: (id: string | null) => void;
   searchQuery?: string;
   groupLabels?: string[];
+  derivedFocus?: DerivedFocus;
   emptyTitle: string;
   emptyHint?: string;
   cacheKey?: string;
@@ -210,9 +215,10 @@ function applyVisualState(
   selectedNodeId: string | null,
   selectedEdgeId: string | null,
   searchQuery: string,
+  derivedFocus: DerivedFocus,
 ) {
-  cy.nodes().removeClass("dimmed highlighted").unselect();
-  cy.edges().removeClass("dimmed highlighted").unselect();
+  cy.nodes().removeClass("dimmed highlighted focus-dimmed focus-highlighted").unselect();
+  cy.edges().removeClass("dimmed highlighted focus-dimmed focus-highlighted").unselect();
 
   if (selectedNodeId) {
     const selectedNode = cy.getElementById(selectedNodeId);
@@ -259,6 +265,30 @@ function applyVisualState(
   }
 
   const query = searchQuery.trim().toLowerCase();
+  if (!query && derivedFocus) {
+    const targetKinds =
+      derivedFocus === "reasoning"
+        ? new Set(["owl_inferred", "inferred"])
+        : new Set(["rule_derived"]);
+    const highlightedNodes = new Set<string>();
+    cy.edges().forEach((edge) => {
+      const kind = String(edge.data("kind") || "").toLowerCase();
+      if (targetKinds.has(kind)) {
+        edge.addClass("focus-highlighted");
+        highlightedNodes.add(edge.source().id());
+        highlightedNodes.add(edge.target().id());
+      } else {
+        edge.addClass("focus-dimmed");
+      }
+    });
+    if (highlightedNodes.size > 0) {
+      cy.nodes().forEach((node) => {
+        node.addClass(highlightedNodes.has(node.id()) ? "focus-highlighted" : "focus-dimmed");
+      });
+    }
+    return;
+  }
+
   if (!query) return;
   const matched = new Set<string>();
   cy.nodes().forEach((node) => {
@@ -340,6 +370,69 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
+    selector: 'edge[kind = "owl_inferred"], edge[kind = "inferred"]',
+    style: {
+      width: 2.2,
+      "line-color": "#5668d9",
+      "target-arrow-color": "#5668d9",
+      "line-opacity": 0.86,
+      color: "#4856b8",
+      "font-weight": 600,
+    },
+  },
+  {
+    selector: 'edge[kind = "rule_derived"]',
+    style: {
+      width: 2.2,
+      "line-color": "#2f8f75",
+      "target-arrow-color": "#2f8f75",
+      "line-opacity": 0.86,
+      color: "#257561",
+      "font-weight": 600,
+    },
+  },
+  {
+    selector: 'edge[stale = "true"]',
+    style: {
+      "line-style": "dashed",
+      "line-opacity": 0.58,
+      "target-arrow-shape": "triangle",
+    },
+  },
+  {
+    selector: "edge.focus-highlighted",
+    style: {
+      width: 3.4,
+      "line-opacity": 1,
+      "arrow-scale": 1.05,
+      "font-size": 6,
+      "text-opacity": 1,
+      "z-index": 9,
+    },
+  },
+  {
+    selector: "edge.focus-dimmed",
+    style: {
+      "line-opacity": 0.16,
+      "target-arrow-color": "#d7dbe8",
+      "text-opacity": 0,
+    },
+  },
+  {
+    selector: "node.focus-highlighted",
+    style: {
+      "border-width": 2,
+      "border-color": "#5668d9",
+      "border-opacity": 0.72,
+    },
+  },
+  {
+    selector: "node.focus-dimmed",
+    style: {
+      opacity: 0.42,
+    },
+  },
+  {
     selector: "edge.highlighted",
     style: {
       width: 3,
@@ -395,6 +488,7 @@ export function ForceGraphCanvas({
   onSelectEdge,
   searchQuery = "",
   groupLabels,
+  derivedFocus = null,
   emptyTitle,
   emptyHint,
   cacheKey,
@@ -444,6 +538,8 @@ export function ForceGraphCanvas({
         source: edge.source,
         target: edge.target,
         label: edge.label || "",
+        kind: normalizeEdgeKind(edge.kind),
+        stale: edge.stale ? "true" : "false",
         labelMarginX: 0,
         labelMarginY: 0,
       },
@@ -572,8 +668,8 @@ export function ForceGraphCanvas({
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    applyVisualState(cy, nodes, selectedNodeId, selectedEdgeId, searchQuery);
-  }, [selectedNodeId, selectedEdgeId, searchQuery, nodes, elements]);
+    applyVisualState(cy, nodes, selectedNodeId, selectedEdgeId, searchQuery, derivedFocus);
+  }, [selectedNodeId, selectedEdgeId, searchQuery, derivedFocus, nodes, elements]);
 
   return (
     <div className="entityGraphCanvasWrap">
@@ -595,6 +691,8 @@ export function ForceGraphCanvas({
           <button
             key={edge.id}
             type="button"
+            data-edge-kind={normalizeEdgeKind(edge.kind)}
+            data-edge-stale={edge.stale ? "true" : "false"}
             onClick={() => {
               onSelectRef.current(null);
               onSelectEdgeRef.current?.(edge.id);
@@ -617,4 +715,8 @@ export function ForceGraphCanvas({
       <div className="entityGraphCanvas" data-testid="force-graph-canvas" ref={containerRef} />
     </div>
   );
+}
+
+function normalizeEdgeKind(kind: string | null | undefined) {
+  return (kind || "asserted").toLowerCase().replace(/[-\s]/g, "_");
 }

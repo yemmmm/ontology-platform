@@ -61,9 +61,14 @@ def test_entity_list_template_registered():
     assert template.projection_version == "semantic-read-v1"
     # entity-list reads from asserted_data and optionally decorates with derived.
     assert "asserted_data" in template.required_roles
+    assert template.needs_reasoning is True
+    assert template.needs_rules is True
     assert "owl:NamedIndividual" in template.body or "NamedIndividual" in template.body
     # Should project the class IRI so the frontend can group by class.
     assert "?class" in template.body
+    # Derived result graphs do not need to repeat the entity identity triple;
+    # the query anchors identity in any scoped graph.
+    assert "VALUES ?ig" in template.body
 
 
 def test_entity_relations_template_registered():
@@ -74,6 +79,8 @@ def test_entity_relations_template_registered():
     assert "?source" in template.body
     assert "?target" in template.body
     assert "?relation" in template.body or "?predicate" in template.body
+    assert "VALUES ?sg" in template.body
+    assert "VALUES ?tg" in template.body
 
 
 def test_entity_shape_template_registered_as_composer():
@@ -83,8 +90,16 @@ def test_entity_shape_template_registered_as_composer():
     # SemanticReadModelService detects this name and short-circuits to the
     # shape endpoint service. Required roles mirror class-shape-merged.
     assert "asserted_ontology" in template.required_roles
-    # Body is a marker — the composer does not run this SPARQL directly.
-    assert "composer" in template.body.lower() or "delegates" in template.body.lower()
+
+
+def test_entity_literal_facts_template_registered():
+    template = get_template("entity-literal-facts")
+    assert template.projection_version == "semantic-read-v1"
+    assert template.needs_reasoning is True
+    assert template.needs_rules is True
+    assert "VALUES ?subject" in template.body
+    assert "isLiteral(?object)" in template.body
+    assert "{entity_iri}" in template.body
 
 
 # Stage 2 §7.3 — Catalog mapping templates -----------------------------------------------
@@ -130,5 +145,3 @@ def test_fact_audit_queue_template_needs_reasoning_and_rules():
     template = get_template("fact-audit-queue")
     assert template.needs_reasoning is True
     assert template.needs_rules is True
-
-

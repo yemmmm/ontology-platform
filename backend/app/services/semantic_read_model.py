@@ -147,6 +147,19 @@ class SemanticReadModelService:
                 items=items,
                 warnings=warnings,
             )
+        if template.name == "entity-literal-facts":
+            items = self._compose_entity_literal_facts(
+                template,
+                scope,
+                entity_iri,
+                limit or template.default_limit,
+            )
+            return self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=list(scope.warnings),
+            )
         if template.name == "owl-consistency-summary":
             items = [self._compose_owl_consistency_summary(scope, field_set)]
             return self._envelope(
@@ -201,7 +214,12 @@ class SemanticReadModelService:
                     }
                 ],
             )
-        query = self._compile_template_query(template, graph_iris, bounded_limit)
+        query = self._compile_template_query(
+            template,
+            graph_iris,
+            bounded_limit,
+            entity_iri=entity_iri,
+        )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
@@ -262,12 +280,19 @@ class SemanticReadModelService:
         template: ReadModelTemplate,
         graph_iris: list[str],
         limit: int,
+        *,
+        entity_iri: str | None = None,
     ) -> str:
         values = " ".join(f"<{iri}>" for iri in graph_iris)
-        return (
+        query = (
             template.body.replace("{graph_iris}", values)
             .replace("{limit}", str(int(limit)))
         )
+        if "{entity_iri}" in query:
+            if not entity_iri:
+                raise ReadModelError(f"{template.name} requires an entity IRI")
+            query = query.replace("{entity_iri}", _sparql_iri_value(entity_iri))
+        return query
 
     def _graph_iris_for_scope(
         self, scope: ScopeResolution, template: ReadModelTemplate
@@ -1261,19 +1286,56 @@ class SemanticReadModelService:
             it["evidence_status"] = "with_evidence" if bindings else "missing_evidence"
         return items
 
+    def _compose_entity_literal_facts(
+        self,
+        template: ReadModelTemplate,
+        scope: ScopeResolution,
+        entity_iri: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if not entity_iri:
+            raise ReadModelError("entity-literal-facts requires the entity query parameter")
+        graph_iris = self._graph_iris_for_scope(scope, template)
+        rows = self._fetch_fact_rows(
+            graph_iris,
+            "entity-literal-facts",
+            entity_iri=entity_iri,
+            limit=limit,
+        )
+        items = [
+            self._decorate_fact_row(
+                row,
+                assertion_kind=self._assertion_kind_for(
+                    self._cell(row, "graph") or "",
+                    scope,
+                    template,
+                ),
+                scope=scope,
+            )
+            for row in rows
+            if not self._cell_is_uri(row, "object")
+        ]
+        return self._apply_evidence_bindings(items)
+
     def _fetch_fact_rows(
-        self, graph_iris: list[str], template_name: str
+        self,
+        graph_iris: list[str],
+        template_name: str,
+        *,
+        entity_iri: str | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Run the fact-audit-queue / missing-evidence template against the
         given source graphs and return raw SPARQL rows."""
         if not graph_iris:
             return []
         template = get_template(template_name)
-        bounded_limit = template.default_limit
-        values = " ".join(f"<{i}>" for i in graph_iris)
-        query = (
-            template.body.replace("{graph_iris}", values)
-            .replace("{limit}", str(bounded_limit))
+        bounded_limit = min(limit or template.default_limit, template.default_limit)
+        query = self._compile_template_query(
+            template,
+            graph_iris,
+            bounded_limit,
+            entity_iri=entity_iri,
         )
         result = self.rdf_store.query_read_model(
             query=query,
@@ -1575,3 +1637,11 @@ class SemanticReadModelService:
             ),
             "is_stale": is_stale,
         }
+
+
+def _sparql_iri_value(value: str) -> str:
+    """Validate an IRI string before embedding it between SPARQL angle brackets."""
+    stripped = value.strip()
+    if not stripped or any(ch in stripped for ch in "<> \t\r\n"):
+        raise ReadModelError("Invalid entity IRI")
+    return stripped

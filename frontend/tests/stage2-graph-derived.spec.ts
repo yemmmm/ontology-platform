@@ -41,6 +41,7 @@ const brief = {
 };
 
 const GRAPH_SET_ID = "gs-test";
+type ReadModelRequest = { model: string; include: string | null };
 
 const classTopologyEnvelope = {
   graph_set_id: GRAPH_SET_ID,
@@ -107,6 +108,40 @@ const entityRelationsEnvelope = {
       source: "http://x/Entity1",
       target: "http://x/Entity2",
       relation: "http://x/relation/knows",
+    },
+    {
+      iri: "http://x/rel/2",
+      label: "infers",
+      source_graph_iri: "http://x/reasoning",
+      assertion_kind: "owl_inferred",
+      source: "http://x/Entity1",
+      target: "http://x/Entity2",
+      relation: "http://x/relation/infers",
+    },
+    {
+      iri: "http://x/rel/3",
+      label: "qualifies",
+      source_graph_iri: "http://x/rule",
+      assertion_kind: "rule_derived",
+      stale: true,
+      source: "http://x/Entity2",
+      target: "http://x/Entity1",
+      relation: "http://x/relation/qualifies",
+    },
+  ],
+};
+const entityLiteralFactsEnvelope = {
+  graph_set_id: GRAPH_SET_ID,
+  items: [
+    {
+      id: "literal-fact-1",
+      subject_iri: "http://x/Entity1",
+      predicate_iri: "http://x/property/status",
+      predicate_label: "status",
+      object_value: "active",
+      object_label: "active",
+      assertion_kind: "asserted",
+      stale: false,
     },
   ],
 };
@@ -205,6 +240,7 @@ const externalField = {
 };
 
 async function mockCommon(page: Page) {
+  const readModelRequests: ReadModelRequest[] = [];
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, "");
@@ -256,9 +292,19 @@ async function mockCommon(page: Page) {
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) {
       body = relationTypeEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) {
+      readModelRequests.push({ model: "entity-list", include: url.searchParams.get("include") });
       body = entityListEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) {
-      body = entityRelationsEnvelope;
+      const include = url.searchParams.get("include");
+      readModelRequests.push({ model: "entity-relations", include });
+      body = {
+        ...entityRelationsEnvelope,
+        items: entityRelationsEnvelope.items.filter((row) => relationVisibleInInclude(row.assertion_kind, include)),
+      };
+    } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-literal-facts`) {
+      readModelRequests.push({ model: "entity-literal-facts", include: url.searchParams.get("include") });
+      expect(url.searchParams.get("entity")).toBe("http://x/Entity1");
+      body = entityLiteralFactsEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/mapping-list`) {
       body = mappingListEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`) {
@@ -271,6 +317,18 @@ async function mockCommon(page: Page) {
     else if (method !== "GET") body = {};
     await route.fulfill({ json: body });
   });
+  return readModelRequests;
+}
+
+function relationVisibleInInclude(assertionKind: string, include: string | null) {
+  if (assertionKind === "asserted") return true;
+  if (assertionKind === "owl_inferred") {
+    return include === "asserted-plus-reasoning" || include === "full-working-view";
+  }
+  if (assertionKind === "rule_derived") {
+    return include === "asserted-plus-rules" || include === "full-working-view";
+  }
+  return false;
 }
 
 test("ClassesPage graph-derived path renders class topology", async ({ page }) => {
@@ -306,7 +364,7 @@ test("ClassesPage graph-derived path renders class topology", async ({ page }) =
 });
 
 test("EntitiesPage graph-derived path renders entity topology only", async ({ page }) => {
-  await mockCommon(page);
+  const readModelRequests = await mockCommon(page);
   await page.goto(
     `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=entities&graphSet=${GRAPH_SET_ID}`,
   );
@@ -314,12 +372,91 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(page.locator("section.entitiesPage.stage2").getByRole("heading", { name: "Entities" })).toBeVisible();
   await expect(page.getByText(/Entity force graph · 2 nodes · 1 edges/)).toBeVisible();
   await expect(page.getByTestId("force-graph-canvas")).toBeVisible();
+  expect(readModelRequests).toEqual(
+    expect.arrayContaining([
+      { model: "entity-list", include: "asserted" },
+      { model: "entity-relations", include: "asserted" },
+    ]),
+  );
   await expect(page.getByLabel("Graph item details")).toHaveCount(0);
   await expect(page.locator("section.entitiesPage.stage2 .entityList")).toHaveCount(0);
   await expect(page.locator("section.entitiesPage.stage2 .relationList")).toHaveCount(0);
+  await expect(page.locator("section.entitiesPage.stage2")).not.toContainText("http://x/g");
+  await expect(page.locator("section.entitiesPage.stage2")).not.toContainText("source_graph_iri");
+
+  await Promise.all([
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) &&
+      new URL(request.url()).searchParams.get("include") === "asserted-plus-reasoning"
+    )),
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) &&
+      new URL(request.url()).searchParams.get("include") === "asserted-plus-reasoning"
+    )),
+    page.locator("section.entitiesPage.stage2").getByText("Reasoning graph", { exact: true }).click(),
+  ]);
+  await expect(page.getByText("Facts plus currently available reasoning results.")).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
+  await expect(page.locator('button[aria-label="Select edge infers"]')).toHaveAttribute("data-edge-kind", "owl_inferred");
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Reasoning highlighted")).toBeVisible();
+  await page.locator('button[aria-label="Select edge infers"]').dispatchEvent("click");
+  let details = page.getByLabel("Graph item details");
+  await expect(details.getByText("Relation", { exact: true })).toBeVisible();
+  await expect(details.getByText("Reasoning", { exact: true })).toBeVisible();
+  await details.getByRole("button", { name: "Close details" }).click();
+
+  await Promise.all([
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) &&
+      new URL(request.url()).searchParams.get("include") === "asserted-plus-rules"
+    )),
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) &&
+      new URL(request.url()).searchParams.get("include") === "asserted-plus-rules"
+    )),
+    page.locator("section.entitiesPage.stage2").getByText("Rule graph", { exact: true }).click(),
+  ]);
+  await expect(page.getByText("Facts plus currently available rule results.")).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
+  await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-kind", "rule_derived");
+  await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-stale", "true");
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Rules highlighted")).toBeVisible();
+  await page.locator('button[aria-label="Select edge qualifies"]').dispatchEvent("click");
+  details = page.getByLabel("Graph item details");
+  await expect(details.getByText("Relation", { exact: true })).toBeVisible();
+  await expect(details.getByText("Rule", { exact: true })).toBeVisible();
+  await details.getByRole("button", { name: "Close details" }).click();
+
+  await Promise.all([
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) &&
+      new URL(request.url()).searchParams.get("include") === "full-working-view"
+    )),
+    page.waitForRequest((request) => (
+      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) &&
+      new URL(request.url()).searchParams.get("include") === "full-working-view"
+    )),
+    page.locator("section.entitiesPage.stage2").getByText("Complete view", { exact: true }).click(),
+  ]);
+  await expect(page.getByText(/Entity force graph · 2 nodes · 3 edges/)).toBeVisible();
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Focus", { exact: true })).toBeVisible();
+  await page.locator("section.entitiesPage.stage2").getByText("Reasoning", { exact: true }).click();
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Reasoning highlighted")).toBeVisible();
+
   await page.locator('button[aria-label="Select node Entity One"]').dispatchEvent("click");
-  const details = page.getByLabel("Graph item details");
+  details = page.getByLabel("Graph item details");
   await expect(details.getByRole("heading", { name: "Entity One" })).toBeVisible();
+  await expect(details).not.toContainText("http://x/g");
+  await expect(details).not.toContainText("Source graph");
+  await expect(details.getByText("Fact", { exact: true }).first()).toBeVisible();
+  await expect(details.getByText("Literal facts")).toBeVisible();
+  await expect(details.getByText("status")).toBeVisible();
+  await expect(details.getByText("active")).toBeVisible();
+  expect(readModelRequests).toEqual(
+    expect.arrayContaining([
+      { model: "entity-literal-facts", include: "full-working-view" },
+    ]),
+  );
   await details.getByRole("button", { name: "Edit" }).click();
   await details.getByLabel("Label").fill("Entity One renamed");
   const updateRequest = page.waitForRequest(

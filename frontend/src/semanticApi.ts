@@ -545,6 +545,8 @@ export function readModel<T = SemanticReadModelEnvelope>(
     q?: string;
     /** Stage 4 §4.1 entity-search composer: restrict to a specific class IRI. */
     classIri?: string;
+    /** Entity-scoped read models such as entity-literal-facts. */
+    entity?: string;
   } = {},
 ) {
   const path = withParams(
@@ -557,6 +559,7 @@ export function readModel<T = SemanticReadModelEnvelope>(
       target: params.target,
       q: params.q,
       class_iri: params.classIri,
+      entity: params.entity,
     },
   );
   return request<T>(path);

@@ -250,27 +250,30 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         name="entity-list",
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
-        needs_reasoning=False,
-        needs_rules=False,
+        needs_reasoning=True,
+        needs_rules=True,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="entity",
         body="""# template: entity-list
-        # Returns one row per NamedIndividual in the asserted data graph.
-        # Projects id, label, class_iri. class_label is joined optionally from
-        # the asserted ontology graph when the read-model service hands both
-        # graph IRIs in. evidence_status is derived per-row from PG bindings
-        # by _apply_evidence_bindings (Phase 3).
+        # Returns entities known in the asserted data graph, with class
+        # assertions optionally sourced from reasoning/rule result graphs.
+        # The asserted NamedIndividual triple is the stable identity anchor so
+        # derived graphs do not need to repeat labels or owl:NamedIndividual.
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?entity ?label ?class ?class_label ?graph WHERE {
+        SELECT DISTINCT ?entity ?label ?class ?class_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
+          VALUES ?ig { {graph_iris} }
           GRAPH ?g {
-            ?entity a owl:NamedIndividual .
             ?entity a ?class .
             FILTER(!STRSTARTS(STR(?class), STR(owl:)))
             FILTER(?class != owl:NamedIndividual)
-            OPTIONAL { ?entity rdfs:label ?label . }
+          }
+          GRAPH ?ig { ?entity a owl:NamedIndividual . }
+          OPTIONAL {
+            VALUES ?lg { {graph_iris} }
+            GRAPH ?lg { ?entity rdfs:label ?label . }
           }
           OPTIONAL {
             VALUES ?og { {graph_iris} }
@@ -292,27 +295,76 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         primary_iri_variable="source",
         body="""# template: entity-relations
-        # Lists triples whose subject and object are both NamedIndividuals
-        # and whose predicate is not rdf:type / rdfs:label / skos:altLabel.
+        # Lists triples whose subject and object are both known
+        # NamedIndividuals, with the identity check anchored in any graph in
+        # scope so derived graphs only need to carry the relation triple.
         # The read-model service decorates each row's provenance from the
         # source graph (asserted vs reasoning-result vs rule-result).
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-        SELECT ?source ?relation ?target ?label ?graph WHERE {
+        SELECT DISTINCT ?source ?relation ?target ?label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?source ?relation ?target .
-            ?source a owl:NamedIndividual .
-            ?target a owl:NamedIndividual .
+            FILTER(isIRI(?target))
             FILTER(?relation != rdf:type)
             FILTER(?relation != rdfs:label)
             FILTER(?relation != skos:altLabel)
-            OPTIONAL { ?relation rdfs:label ?label . }
+          }
+          VALUES ?sg { {graph_iris} }
+          VALUES ?tg { {graph_iris} }
+          GRAPH ?sg { ?source a owl:NamedIndividual . }
+          GRAPH ?tg { ?target a owl:NamedIndividual . }
+          OPTIONAL {
+            VALUES ?lg { {graph_iris} }
+            GRAPH ?lg { ?relation rdfs:label ?label . }
           }
           BIND(?g AS ?graph)
         }
+        LIMIT {limit}
+        """,
+    ),
+    "entity-literal-facts": ReadModelTemplate(
+        name="entity-literal-facts",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_data",),
+        needs_reasoning=True,
+        needs_rules=True,
+        default_limit=200,
+        assertion_kind="any",
+        primary_iri_variable="subject",
+        body="""# template: entity-literal-facts
+        # Lists literal-valued facts for one entity. The entity IRI is bound
+        # by the read-model service via {entity_iri}; include controls whether
+        # asserted, reasoning-result, rule-result, or full working graphs are
+        # in scope.
+        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
+        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
+                        ?object ?object_label ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          VALUES ?subject { <{entity_iri}> }
+          GRAPH ?g {
+            ?subject ?predicate ?object .
+            FILTER(isLiteral(?object))
+            FILTER(?predicate != rdf:type)
+            FILTER(?predicate != rdfs:label)
+            FILTER(?predicate != skos:altLabel)
+            FILTER(?predicate != owl:sameAs)
+            OPTIONAL { ?subject rdfs:label ?subject_label . }
+          }
+          OPTIONAL {
+            VALUES ?pg { {graph_iris} }
+            GRAPH ?pg { ?predicate rdfs:label ?predicate_label . }
+          }
+          BIND(?object AS ?object_label)
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?predicate_label ?predicate ?object
         LIMIT {limit}
         """,
     ),
