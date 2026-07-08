@@ -57,6 +57,8 @@ import type { WorkbenchRequest } from "./workbenchTypes";
 
 type AssertionKind = "asserted" | "inferred" | "rule_derived" | "missing_evidence";
 
+const REASONED_KINDS: ReadonlySet<AssertionKind> = new Set(["inferred", "rule_derived"]);
+
 /**
  * Local envelope type for FactAuditPage rendering. The backend
  * ``fact-audit-queue`` composer decorates each row into the unified
@@ -271,6 +273,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         object_is_iri: selected.object_is_iri,
         graph_iri: selected.graph_iri,
         fact_id: selected.fact_id,
+        assertion_kind: selected.assertion_kind,
         text,
         document_filename: meta?.document_filename,
         sequence: meta?.sequence,
@@ -498,7 +501,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
               )}
               <Space wrap>
                 {selected.stale && <Tag color="warning">{t("STALE")}</Tag>}
-                {(selected.evidence_bindings ?? []).length === 0 && (
+                {(selected.evidence_bindings ?? []).length === 0 && !REASONED_KINDS.has(selected.assertion_kind) && (
                   <Tag color="warning">{t("missing evidence")}</Tag>
                 )}
               </Space>
@@ -515,25 +518,27 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                     : []),
                 ]}
               />
-              <Card
-                size="small"
-                title={t("Evidence · {n} binding(s)", {
-                  n: (selected.evidence_bindings ?? []).length,
-                })}
-                aria-label="fact-evidence-explorer"
-              >
-                <EvidenceBindingEditor
-                  bindings={selected.evidence_bindings ?? []}
-                  onAdd={() => setPickerOpen(true)}
-                  onRemove={(binding) => void removeEvidence(binding)}
-                  disabled={busy || readOnly}
-                />
-              </Card>
+              {!REASONED_KINDS.has(selected.assertion_kind) && (
+                <Card
+                  size="small"
+                  title={t("Evidence · {n} binding(s)", {
+                    n: (selected.evidence_bindings ?? []).length,
+                  })}
+                  aria-label="fact-evidence-explorer"
+                >
+                  <EvidenceBindingEditor
+                    bindings={selected.evidence_bindings ?? []}
+                    onAdd={() => setPickerOpen(true)}
+                    onRemove={(binding) => void removeEvidence(binding)}
+                    disabled={busy || readOnly}
+                  />
+                </Card>
+              )}
               <Space wrap>
                 <Button
                   icon={<Edit3 size={15} />}
                   onClick={openEdit}
-                  disabled={busy || readOnly || selected.stale}
+                  disabled={busy || readOnly || selected.stale || REASONED_KINDS.has(selected.assertion_kind)}
                 >
                   {t("Edit")}
                 </Button>
@@ -549,7 +554,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                       onOk: () => deleteSelected(),
                     });
                   }}
-                  disabled={busy || readOnly || selected.stale}
+                  disabled={busy || readOnly || selected.stale || REASONED_KINDS.has(selected.assertion_kind)}
                 >
                   {t("Delete")}
                 </Button>

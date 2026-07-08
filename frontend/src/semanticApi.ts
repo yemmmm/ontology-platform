@@ -426,6 +426,7 @@ export function bindFactEvidence(
     object_lang?: string;
     graph_iri?: string;
     fact_id?: string;
+    assertion_kind?: string;
     chunk_id?: string;
     evidence_artifact_id?: string;
     document_filename?: string;
@@ -451,6 +452,7 @@ export function bindFactEvidence(
         object_lang: payload.object_lang,
         graph_iri: payload.graph_iri,
         fact_id: payload.fact_id,
+        assertion_kind: payload.assertion_kind,
         chunk_id: payload.chunk_id,
         evidence_artifact_id: payload.evidence_artifact_id,
         document_filename: payload.document_filename,

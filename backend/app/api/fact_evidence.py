@@ -46,6 +46,7 @@ class BindFactEvidenceRequest(BaseModel):
     object_lang: str | None = None
     graph_iri: str | None = None
     fact_id: str | None = None
+    assertion_kind: str | None = None
     chunk_id: str | None = None
     evidence_artifact_id: str | None = None
     document_filename: str | None = None
@@ -92,6 +93,11 @@ def create_fact_evidence(
     s/p/o/g). Callers that want the binding scoped to a particular graph_set
     must include the data graph IRI in ``graph_iri``.
     """
+    if payload.assertion_kind in ("inferred", "rule_derived"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot bind evidence to inferred or rule-derived facts",
+        )
     ns = namespace_from_settings(settings)
     try:
         cmd = compile_bind_fact_evidence(
