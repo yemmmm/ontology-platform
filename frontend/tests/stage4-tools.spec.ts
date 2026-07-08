@@ -554,7 +554,7 @@ test("fact audit drawer shows bound chunk for the Acme fact", async ({
   await page.goto(workspaceUrl("facts"));
 
   // The fact queue renders the Acme fact row.
-  const factRow = page.getByText("Acme Corp | industry |").first();
+  const factRow = page.getByText("Acme Corp → industry →").first();
   await expect(factRow).toBeVisible();
   await factRow.click();
 

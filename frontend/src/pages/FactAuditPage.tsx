@@ -614,6 +614,7 @@ function FactQueue({
           block
           type={selectedId === row.id ? "primary" : "default"}
           onClick={() => onSelect(row.id)}
+          title={factLineFull(row)}
           style={{ height: "auto", padding: 10, textAlign: "left", whiteSpace: "normal" }}
         >
           <span className="factListLine">{factLine(row)}</span>
@@ -683,13 +684,44 @@ function EvidenceBindingEditor({
   );
 }
 
-function factLine(row: FactRow) {
-  return `${row.subject_label ?? row.subject_iri} | ${row.predicate_label ?? row.predicate_iri} | ${factObjectText(row)}`;
+function shortenIri(iri: string): string {
+  if (!iri) return "";
+  const idx = Math.max(iri.lastIndexOf("#"), iri.lastIndexOf("/"));
+  return idx >= 0 ? iri.slice(idx + 1) : iri;
+}
+
+/** Display form for an RDF term: prefer the human-readable label; when it
+ *  is missing, fall back to the IRI's local name (fragment or last path
+ *  segment) so long property IRIs do not blow up the one-line queue
+ *  entries. Literals without a label pass through unchanged. */
+function termDisplay(label: string | null, iri: string): string {
+  if (label) return label;
+  return iri ? shortenIri(iri) : "";
 }
 
 function factObjectText(row: FactRow) {
-  if (typeof row.object_value === "string") return row.object_label ?? row.object_value;
+  if (typeof row.object_value === "string") {
+    if (row.object_label) return row.object_label;
+    if (row.object_is_iri) return shortenIri(row.object_value);
+    return row.object_value;
+  }
   return JSON.stringify(row.object_value);
+}
+
+/** Compact one-liner used as the queue button label. Falls back to the
+ *  local name of any term whose ``rdfs:label`` is missing. */
+function factLine(row: FactRow) {
+  return `${termDisplay(row.subject_label, row.subject_iri)} → ${termDisplay(row.predicate_label, row.predicate_iri)} → ${factObjectText(row)}`;
+}
+
+/** Full-form one-liner (no shortening) used as the button hover tooltip so
+ *  users can still recover complete IRIs on demand. */
+function factLineFull(row: FactRow) {
+  const objectText =
+    typeof row.object_value === "string"
+      ? (row.object_label ?? row.object_value)
+      : JSON.stringify(row.object_value);
+  return `${row.subject_label ?? row.subject_iri} → ${row.predicate_label ?? row.predicate_iri} → ${objectText}`;
 }
 
 /**
