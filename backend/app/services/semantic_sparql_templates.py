@@ -529,21 +529,23 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # query to the store.
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX owl:  <http://www.w3.org/2002/07/owl#>
         SELECT DISTINCT ?entity ?label ?comment ?class ?class_label WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?entity a ?class .
-            ?class a rdfs:Class .
-            OPTIONAL { ?entity rdfs:label ?label . }
-            OPTIONAL { ?entity rdfs:comment ?comment . }
-            OPTIONAL { ?class rdfs:label ?class_label . }
-            FILTER(
-              CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
-              CONTAINS(LCASE(COALESCE(STR(?comment), "")), LCASE(?q)) ||
-              CONTAINS(LCASE(STR(?entity)), LCASE(?q))
-            )
+            FILTER(!STRSTARTS(STR(?class), STR(owl:)))
+            FILTER(?class != owl:NamedIndividual)
             FILTER(!BOUND(?class_iri) || ?class = ?class_iri)
           }
+          OPTIONAL { VALUES ?lg { {graph_iris} } GRAPH ?lg { ?entity rdfs:label ?label . } }
+          OPTIONAL { VALUES ?mg { {graph_iris} } GRAPH ?mg { ?entity rdfs:comment ?comment . } }
+          OPTIONAL { VALUES ?og { {graph_iris} } GRAPH ?og { ?class rdfs:label ?class_label . } }
+          FILTER(
+            CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
+            CONTAINS(LCASE(COALESCE(STR(?comment), "")), LCASE(?q)) ||
+            CONTAINS(LCASE(STR(?entity)), LCASE(?q))
+          )
           BIND(?g AS ?graph)
         }
         ORDER BY LCASE(?label)
@@ -565,18 +567,20 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # smaller row shape for the AgentTestService pre-LLM retrieval.
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX owl:  <http://www.w3.org/2002/07/owl#>
         SELECT DISTINCT ?entity ?label ?class ?class_label WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?entity a ?class .
-            ?class a rdfs:Class .
-            OPTIONAL { ?entity rdfs:label ?label . }
-            OPTIONAL { ?class rdfs:label ?class_label . }
-            FILTER(
-              CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
-              CONTAINS(LCASE(STR(?entity)), LCASE(?q))
-            )
+            FILTER(!STRSTARTS(STR(?class), STR(owl:)))
+            FILTER(?class != owl:NamedIndividual)
           }
+          OPTIONAL { VALUES ?lg { {graph_iris} } GRAPH ?lg { ?entity rdfs:label ?label . } }
+          OPTIONAL { VALUES ?og { {graph_iris} } GRAPH ?og { ?class rdfs:label ?class_label . } }
+          FILTER(
+            CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
+            CONTAINS(LCASE(STR(?entity)), LCASE(?q))
+          )
           BIND(?g AS ?graph)
         }
         ORDER BY LCASE(?label)
