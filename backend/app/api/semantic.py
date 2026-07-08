@@ -1,10 +1,9 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from neo4j import Driver
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.schemas import (
     ReasoningRunListResponse,
     RuleRunListResponse,
@@ -47,8 +46,6 @@ from app.api.schemas import (
     SemanticProjectionJobListResponse,
     SemanticProjectionJobRead,
     SemanticProjectionReconcileResponse,
-    SemanticProjectionRequest,
-    SemanticProjectionResponse,
     SemanticProjectionStatusResponse,
     SemanticReadModelEnvelope,
     SemanticReasoningRunRead,
@@ -82,8 +79,6 @@ from app.services.semantic_graph_registry import (
 )
 from app.services.semantic_graph_set import GraphSetError, SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_neo4j_projection import Neo4jSemanticProjectionService
-from app.services.semantic_projection import SemanticProjectionService
 from app.services.semantic_projection_job import (
     ProjectionJobError,
     SemanticProjectionJobService,
@@ -136,14 +131,12 @@ def _service(
     session: Session,
     rdf_store: RdfStoreRepository,
     settings: Settings,
-    driver: Driver | None = None,
 ) -> SemanticService:
     return SemanticService(
         session=session,
         rdf_store=rdf_store,
         settings=settings,
         reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
-        projection=SemanticProjectionService(rdf_store, driver),
     )
 
 
@@ -246,11 +239,9 @@ def _export_service(
 def _projection_job_service(
     session: Session,
     rdf_store: RdfStoreRepository,
-    driver: Driver | None,
     settings: Settings,
 ) -> SemanticProjectionJobService:
     writers: dict[str, object] = {
-        "neo4j": Neo4jSemanticProjectionService(rdf_store, driver),
         "search": SemanticSearchProjectionService(rdf_store, FakeSearchWriter()),
         "vector": SemanticVectorProjectionService(rdf_store, FakeVectorWriter()),
     }
@@ -489,21 +480,6 @@ def export_dataset(
         "turtle": "text/turtle",
     }[format]
     return Response(content=content, media_type=media_type)
-
-
-@router.post("/projection-jobs", response_model=SemanticProjectionResponse)
-def create_projection_job(
-    request: SemanticProjectionRequest,
-    session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticProjectionResponse:
-    result = _service(session, rdf_store, settings, driver).rebuild_projection(
-        request.source_graph_iris,
-        request.reasoning_result_graph_iri,
-    )
-    return SemanticProjectionResponse(**result)
 
 
 @router.get("/graphs", response_model=SemanticGraphRegistryListResponse)
@@ -1415,7 +1391,6 @@ def create_projection_job_for_set(
     graph_set_id: str,
     request: SemanticProjectionJobCreate,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobRead:
@@ -1423,7 +1398,7 @@ def create_projection_job_for_set(
         raise HTTPException(
             status_code=400, detail="graph_set_id in body must match path"
         )
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     try:
         job = service.create_job(
             graph_set_id=request.graph_set_id,
@@ -1448,11 +1423,10 @@ def list_projection_jobs(
     projection_kind: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobListResponse:
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     jobs = service.list_jobs(
         graph_set_id=graph_set_id,
         projection_kind=projection_kind,
@@ -1466,11 +1440,10 @@ def list_projection_jobs(
 def get_projection_job(
     job_id: str,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobRead:
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     try:
         job = service.get_job(job_id)
     except ProjectionJobError as exc:
@@ -1484,11 +1457,10 @@ def get_projection_job(
 def run_projection_job(
     job_id: str,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobRead:
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     try:
         job = service.run_job(job_id)
     except ProjectionJobError as exc:
@@ -1503,11 +1475,10 @@ def run_projection_job(
 )
 def reconcile_projections(
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionReconcileResponse:
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     report = service.reconcile()
     return SemanticProjectionReconcileResponse(**report)
 
@@ -1516,11 +1487,10 @@ def reconcile_projections(
 def projection_status(
     graph_set_id: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionStatusResponse:
-    service = _projection_job_service(session, rdf_store, driver, settings)
+    service = _projection_job_service(session, rdf_store, settings)
     status = service.status(graph_set_id=graph_set_id)
     return SemanticProjectionStatusResponse(**status)
 

@@ -19,7 +19,6 @@ from app.api.schemas import (
     ProjectCreate,
     ProjectUpdate,
 )
-from app.domain.naming import normalize_neo4j_label
 from app.repositories.models import OntologyModel, ProjectModel
 
 
@@ -58,7 +57,7 @@ def create_project(session: Session, payload: ProjectCreate) -> ProjectModel:
     project = ProjectModel(
         id=new_id(),
         name=payload.name,
-        normalized_label=normalize_neo4j_label(payload.name),
+        normalized_label=payload.name,
         description=payload.description,
     )
     session.add(project)
@@ -71,7 +70,7 @@ def update_project(session: Session, project_id: str, payload: ProjectUpdate) ->
     project = get_project(session, project_id)
     data = payload.model_dump(exclude_unset=True)
     if "name" in data:
-        project.normalized_label = normalize_neo4j_label(data["name"])
+        project.normalized_label = data["name"]
     for field, value in data.items():
         setattr(project, field, value)
     commit_or_409(session, "Project could not be updated")

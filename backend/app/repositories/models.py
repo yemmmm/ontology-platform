@@ -485,10 +485,10 @@ class SemanticProjectionJobModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     graph_set_id: Mapped[str | None] = mapped_column(String(36))
     projection_kind: Mapped[str] = mapped_column(
-        String(40), default="neo4j", nullable=False
+        String(40), default="search", nullable=False
     )
     projection_version: Mapped[str] = mapped_column(
-        String(80), default="neo4j-v1", nullable=False
+        String(80), default="v1", nullable=False
     )
     projection_scope: Mapped[str] = mapped_column(
         String(40), default="asserted", nullable=False

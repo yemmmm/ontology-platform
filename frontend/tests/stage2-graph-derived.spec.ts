@@ -266,7 +266,7 @@ async function mockCommon(page: Page) {
       body = kind === "asserted" ? factEnvelopeAsserted : factEnvelopeEmpty;
     }
 
-    else if (path === "/health/dependencies") body = { postgres: { status: "ok" }, neo4j: { status: "ok" } };
+    else if (path === "/health/dependencies") body = { postgres: { status: "ok" } };
     // Ignore canonical-write and side-effect endpoints in the smoke slice.
     else if (method !== "GET") body = {};
     await route.fulfill({ json: body });

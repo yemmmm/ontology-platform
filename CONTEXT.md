@@ -21,7 +21,7 @@ _Avoid_: row, record, node
 A semantic or governance boundary inside an RDF Dataset that contains statements for the actual
 ontology model, actual business data, evidence item, reasoning result, rule result, review/audit
 metadata, policy, or import.
-_Avoid_: table, project graph, Neo4j graph
+_Avoid_: table, project graph, property graph
 
 **Graph Set**:
 The group of named graphs that together define the current semantic state, such as an ontology
@@ -104,7 +104,7 @@ UI screens, search, vector retrieval, or property-graph traversal.
 _Avoid_: source of truth, cache when it implies semantic ownership
 
 **Property-Graph Projection**:
-A Neo4j-backed graph view rebuilt from canonical RDF data for visualization and high-speed traversal.
+A graph view rebuilt from canonical RDF data for visualization and high-speed traversal.
 It is not allowed to own semantic truth or accept independent semantic writes.
 _Avoid_: canonical graph, ontology store, truth store
 
@@ -127,7 +127,7 @@ _Avoid_: ontology graph, RDF schema graph
 **Entity Diagram**:
 A product graph view focused on entities, entity-to-entity relationships, class membership, and
 important attached facts.
-_Avoid_: data graph, Neo4j source graph
+_Avoid_: data graph, property graph source
 
 **Fact List**:
 A product list view of business assertions with evidence status, source context, validation state,

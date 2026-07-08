@@ -47,7 +47,7 @@ rows document why a feature stays out of the semantic cutover scope.
 | `ProjectBriefPage` brief | `/projects/{id}/brief` (GET/PATCH) | non-semantic | **K** | Plain-text project metadata. Stays in Postgres. |
 | `CompetencyQuestionsPage` competency questions | `/projects/{id}/competency-questions`, `/competency-questions/{id}/validate` | partial semantic | **P** | CRUD stays in Postgres. `validate` currently runs SPARQL-style checks; rebuild to call SHACL or SPARQL CONSTRUCT over the active graph set. |
 | Sources (file list) | `/projects/{id}/evidence-artifacts`, `/source-documents` | file artifacts | **K** | Binary artifacts and parsed chunks are operational data. The binding from a chunk to a fact (evidence semantics) moves to RDF — see Stage 2 `FactAuditPage`. |
-| Topology (placeholder) | — | — | **R** (new design) | Currently an empty reserved panel. Rebuild on top of the Neo4j projection + graph-set membership. |
+| Topology (placeholder) | — | — | **R** (new design) | Currently an empty reserved panel. Rebuild on top of graph projection + graph-set membership. |
 
 ## Stage 2 — Modeling / Knowledge
 
@@ -73,7 +73,7 @@ rows document why a feature stays out of the semantic cutover scope.
 | `AgentTestPage` agent test | `/agent-test/run` | semantic consumer | **P** | Question → SPARQL or graph-derived read-model query. Responses distinguish asserted vs inferred vs rule-derived. |
 | `EvidenceExplorer` evidence browser | `/evidence-artifacts/{id}`, `/chunks`, `/proposals/{id}/items/{key}/sources` | files + evidence bindings | **split** | File and chunk rendering stays in Postgres (**K**). The "evidence→fact" binding rebuild (**R**) by reading `prov:wasDerivedFrom` triples. |
 | `McpToolsPage` MCP tools | static frontend list | metadata | **P** | Replace hardcoded tool list with a dynamic enumeration from `/mcp/tools`. Content points at the semantic MCP set in `backend/app/mcp/tools/semantic.py`. |
-| Settings (runtime status) | `/health/dependencies`, `/health/neo4j`, `/health/postgres` | operational | **K** | Pure runtime telemetry. Stays unchanged. |
+| Settings (runtime status) | `/health/dependencies`, `/health/postgres` | operational | **K** | Pure runtime telemetry. Stays unchanged. |
 | Knowledge conflicts (no UI) | `/ontologies/{id}/knowledge-conflicts`, `/conflicts/{id}/resolve` | reasoning output | **R** | Currently surfaced in no page. After rebuild, becomes a section of the OWL consistency report inside the governance dashboard. |
 
 ## Stage 5 — Governance (already built)

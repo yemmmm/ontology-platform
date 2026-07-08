@@ -218,7 +218,7 @@ async function mockApi(page: Page) {
       derived: { missing_evidence_count: 1, stale_count: 1, stale_derived_count: 1 },
     };
     else if (path === "/semantic/projections/status") body = {
-      manifests: [{ id: "manifest-1", graph_set_id: graphSet.id, projection_kind: "neo4j", status: "stale" }],
+      manifests: [{ id: "manifest-1", graph_set_id: graphSet.id, projection_kind: "search", status: "stale" }],
       stale: ["manifest-1"],
       missing: [],
       stale_projection_count: 1,
@@ -300,7 +300,7 @@ async function mockApi(page: Page) {
       pointers_marked_current: 1,
       pointers_marked_stale: 1,
     };
-    else if (path === "/health/dependencies") body = { postgres: { status: "ok" }, neo4j: { status: "ok" } };
+    else if (path === "/health/dependencies") body = { postgres: { status: "ok" } };
     await route.fulfill({ json: body });
   });
 }

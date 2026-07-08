@@ -14,7 +14,6 @@ from app.core.config import Settings
 from app.repositories.models import (
     SemanticEditAuditModel,
     SemanticGraphStateModel,
-    SemanticProjectionJobModel,
     SemanticReasoningRunModel,
     SemanticValidationRunModel,
 )
@@ -29,7 +28,6 @@ from app.services.owl_reasoner import (
     OwlReasonerRunner,
     ReasonerInputDocument,
 )
-from app.services.semantic_projection import SemanticProjectionService
 from app.services.semantic_graph_registry import (
     DirectEditCategoryDenied,
     GraphCategory,
@@ -80,7 +78,6 @@ class SemanticService:
         rdf_store: RdfStoreRepository,
         settings: Settings,
         reasoner: OwlReasonerRunner | None = None,
-        projection: SemanticProjectionService | None = None,
         graph_registry: SemanticGraphRegistryService | None = None,
         graph_set_service: SemanticGraphSetService | None = None,
         revision_service: SemanticRevisionService | None = None,
@@ -90,7 +87,6 @@ class SemanticService:
         self.rdf_store = rdf_store
         self.settings = settings
         self.reasoner = reasoner
-        self.projection = projection
         self.graph_registry = graph_registry or SemanticGraphRegistryService(session, settings)
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.revision_service = revision_service or SemanticRevisionService(session)
@@ -414,56 +410,6 @@ class SemanticService:
             "graphs": registry_summary,
             "derived": derived_summary,
         }
-
-    def rebuild_projection(
-        self,
-        source_graph_iris: list[str],
-        reasoning_result_graph_iri: str | None = None,
-    ) -> dict[str, Any]:
-        job = SemanticProjectionJobModel(
-            id=str(uuid4()),
-            source_graph_iris=source_graph_iris,
-            reasoning_result_graph_iri=reasoning_result_graph_iri,
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        self.session.add(job)
-        self.session.commit()
-        try:
-            if not self.settings.semantic_neo4j_projection_enabled:
-                raise RuntimeError("Semantic Neo4j projection is disabled")
-            if self.projection is None:
-                raise RuntimeError("Semantic projection service is not configured")
-            result = self.projection.rebuild(
-                source_graph_iris,
-                reasoning_result_graph_iri=reasoning_result_graph_iri,
-                job_id=job.id,
-            )
-            job.status = "succeeded"
-            job.node_count = result.node_count
-            job.relationship_count = result.relationship_count
-            job.job_metadata = result.metadata
-            job.finished_at = datetime.now(UTC)
-            self.session.commit()
-            return {
-                "job_id": job.id,
-                "status": job.status,
-                "node_count": job.node_count,
-                "relationship_count": job.relationship_count,
-                "error": None,
-            }
-        except Exception as exc:
-            job.status = "failed"
-            job.error = str(exc)
-            job.finished_at = datetime.now(UTC)
-            self.session.commit()
-            return {
-                "job_id": job.id,
-                "status": job.status,
-                "node_count": 0,
-                "relationship_count": 0,
-                "error": job.error,
-            }
 
     def _prepare_edit(
         self,

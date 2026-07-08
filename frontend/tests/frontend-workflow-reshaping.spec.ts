@@ -141,7 +141,7 @@ async function mockApi(page: Page) {
       items: [],
       summary: { total: 0, stale_count: 0, superseded_count: 0 },
     };
-    else if (path === "/health/dependencies") body = { postgres: { status: "ok" }, neo4j: { status: "ok" } };
+    else if (path === "/health/dependencies") body = { postgres: { status: "ok" } };
 
     await route.fulfill({ json: body });
   });

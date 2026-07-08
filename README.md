@@ -1,6 +1,6 @@
 # Ontology Platform
 
-Ontology Platform is an MVP for managing lightweight ontology schemas and Neo4j-backed knowledge graph instances. It exposes an HTTP API for the web UI and semantic MCP tools for external agents.
+Ontology Platform is an MVP for managing lightweight ontology schemas and knowledge graph instances. It exposes an HTTP API for the web UI and semantic MCP tools for external agents.
 
 The MVP uses a custom schema model: projects contain ontologies; ontologies define classes, properties, and relation types; graph entities and relations are validated against that schema before being stored.
 
@@ -11,7 +11,7 @@ backend/
   app/
     api/              # FastAPI HTTP routes
     mcp/              # MCP server entrypoint
-    repositories/     # PostgreSQL and Neo4j access
+    repositories/     # PostgreSQL and graph store access
     services/         # Validation and application services
 frontend/
   src/                # React/Vite operational UI
@@ -32,7 +32,7 @@ Start the local development stack:
 ./scripts/start-local.sh
 ```
 
-The script checks PostgreSQL, Neo4j, and Oxigraph first, syncs backend dependencies with `uv`, runs migrations,
+The script checks PostgreSQL and Oxigraph first, syncs backend dependencies with `uv`, runs migrations,
 builds the frontend production assets, and starts the backend API plus a frontend preview server.
 The preview server proxies `/api` to the backend without enabling Vite hot reload.
 
@@ -96,9 +96,6 @@ The backend reads `.env` from the process working directory. The commands above 
 | --- | --- | --- |
 | `APP_ENV` | Runtime environment label. | `development` |
 | `DATABASE_URL` | SQLAlchemy PostgreSQL URL. | `postgresql+psycopg://ontology:ontology@localhost:5432/ontology_platform?client_encoding=utf8` |
-| `NEO4J_URI` | Neo4j Bolt URI. | `bolt://localhost:7687` |
-| `NEO4J_USER` | Neo4j username. | `neo4j` |
-| `NEO4J_PASSWORD` | Neo4j password. | `ontology-platform` |
 | `ADMIN_TOKEN` | Intended shared secret for administrative HTTP calls. | `change-me-admin-token` |
 | `MCP_API_KEY` | Intended shared secret for MCP clients. | `change-me-mcp-key` |
 | `LLM_BASE_URL` | OpenAI-compatible API base URL for demo agent answers. | `https://api.openai.com/v1` |
@@ -113,7 +110,7 @@ The backend reads `.env` from the process working directory. The commands above 
 | `SEMANTIC_SHACL_INFERENCE` | Default pySHACL inference mode. | `none` |
 | `SEMANTIC_REASONER_COMMAND` | Optional command for the OWL reasoner boundary. | empty |
 | `SEMANTIC_REASONER_TIMEOUT_SECONDS` | OWL reasoner command timeout. | `60` |
-| `SEMANTIC_NEO4J_PROJECTION_ENABLED` | Enables the Phase 1 RDF-to-Neo4j projection POC. | `false` |
+
 
 ## Auth Tokens
 

@@ -294,8 +294,8 @@ Request:
 ```json
 {
   "graph_set_id": "working-version-123",
-  "projection_kind": "neo4j",
-  "projection_version": "neo4j-v1",
+  "projection_kind": "search",
+  "projection_version": "search-v1",
   "include": "full-working-view",
   "allow_stale_derived": false,
   "mode": "rebuild"
@@ -386,7 +386,7 @@ SemanticProjectionJobService
   -> dispatch or run projection rebuilds
   -> update manifests and staleness status
 
-Neo4jSemanticProjectionService
+SemanticProjectionService
   -> build node and relationship rows from RDF graph sets
   -> clear target partition
   -> write visualization/traversal projection

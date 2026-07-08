@@ -2,7 +2,7 @@
 
 Base URL: `http://localhost:8000/api`
 
-The API manages ontology metadata in PostgreSQL and graph instances in Neo4j. Current routes are intended for local MVP use.
+The API manages ontology metadata in PostgreSQL and graph instances. Current routes are intended for local MVP use.
 
 ## v0.3 Governance Foundation
 
@@ -107,10 +107,9 @@ Common status codes: `400` invalid ontology/graph data, `404` missing resource, 
 | --- | --- | --- |
 | `GET` | `/health` | API liveness. |
 | `GET` | `/health/postgres` | PostgreSQL check. |
-| `GET` | `/health/neo4j` | Neo4j check. |
-| `GET` | `/health/dependencies` | PostgreSQL and Neo4j checks. |
-| `GET` | `/ontologies/{ontology_id}/graph-consistency` | Audit copied metadata in Neo4j against PostgreSQL. |
-| `POST` | `/ontologies/{ontology_id}/graph-consistency/repair` | Repair stale class and relation metadata in Neo4j. |
+| `GET` | `/health/dependencies` | PostgreSQL and graph checks. |
+| `GET` | `/ontologies/{ontology_id}/graph-consistency` | Audit copied metadata against PostgreSQL. |
+| `POST` | `/ontologies/{ontology_id}/graph-consistency/repair` | Repair stale class and relation metadata. |
 
 Example:
 
@@ -355,7 +354,7 @@ Entity and relation proposal items support canonical `name`, `aliases`, `propert
 properties, and `confidence`. Every item must bind at least one saved artifact or user-statement
 Evidence record. Artifact Evidence is rejected unless its artifact, chunk, page, character range,
 quote, and chunk hash agree. Repeated extraction runs should reuse the same project-scoped proposal
-`idempotency_key`; retries return the existing proposal and Neo4j application uses stable item keys.
+`idempotency_key`; retries return the existing proposal and application uses stable item keys.
 
 Artifact bytes and extracted text are inert evidence data. The ingestion service does not interpret
 commands in an artifact or invoke models/tools while parsing. External Agents read chunks, extract

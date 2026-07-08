@@ -321,7 +321,6 @@ class SemanticProjectionJobService:
 
     def _target_store_for(self, kind: str) -> str | None:
         return {
-            "neo4j": "neo4j",
             "search": "search",
             "vector": "vector",
             "business_json": "postgres_cache",

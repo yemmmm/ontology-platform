@@ -27,7 +27,7 @@ The `ontology-builder` Skill uses these additional semantic tools:
 - `list_review_items`: list review batches, counts, states, and deep links for an ontology.
 - `get_review_batch`: retrieve one stable batch after an interruption or while waiting; the response includes the workbench `deep_link`.
 - `get_publication_readiness`: evaluate publication gates without publishing.
-- `check_platform_health`: confirm PostgreSQL and Neo4j are reachable without direct DB credentials.
+- `check_platform_health`: confirm PostgreSQL and platform services are reachable without direct DB credentials.
 - `list_data_sources` / `create_data_source` / `update_data_source`: register and maintain external systems.
 - `list_data_resources` / `create_data_resource` / `update_data_resource`: register tables, endpoints, or files; renames propagate to mapping metadata.
 - `list_external_fields` / `create_external_field` / `update_external_field`: manage field sensitivity, masking, approval, and audit metadata.
@@ -164,7 +164,7 @@ Return entity, class schema, direct relations, related entities, and a short exp
 
 ### `check_platform_health`
 
-Verify PostgreSQL and Neo4j are reachable. Returns `{"postgres": {"status": "ok"}, "neo4j": {"status": "ok"}}`
+Verify connectivity to platform services. Returns `{"postgres": {"status": "ok"}}`
 on success. Use this instead of probing `/api/health/dependencies` over HTTP.
 
 ```json

@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends
-from neo4j import Driver
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
     get_db_session,
     get_embedding_client,
-    get_neo4j_driver,
     get_rdf_store,
     get_settings,
 )
@@ -40,7 +38,6 @@ def _read_model_service(
 def run_agent_test(
     payload: AgentTestRequest,
     session: Session = Depends(get_db_session),
-    driver: Driver = Depends(get_neo4j_driver),
     settings: Settings = Depends(get_settings),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
@@ -48,7 +45,7 @@ def run_agent_test(
     read_model_service = _read_model_service(session, rdf_store, settings)
     return service.run_agent_test(
         session=session,
-        driver=driver,
+        driver=None,
         settings=settings,
         payload=payload,
         embedding_client=embedding_client,

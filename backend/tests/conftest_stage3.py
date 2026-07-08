@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
@@ -290,13 +290,9 @@ def client_for(store: FakeStore, session: Session) -> TestClient:
     def session_override() -> Generator[Session, None, None]:
         yield session
 
-    def driver_override() -> None:
-        yield None
-
     app.dependency_overrides[get_db_session] = session_override
     app.dependency_overrides[get_rdf_store] = lambda: store
     app.dependency_overrides[get_settings] = lambda: _settings()
-    app.dependency_overrides[get_neo4j_driver] = driver_override
     return TestClient(app)
 
 

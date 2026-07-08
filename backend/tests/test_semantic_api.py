@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_neo4j_driver, get_rdf_store, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
@@ -92,7 +92,6 @@ def _client(
         app.dependency_overrides[get_db_session] = session_override
     app.dependency_overrides[get_rdf_store] = lambda: store
     app.dependency_overrides[get_settings] = lambda: settings
-    app.dependency_overrides[get_neo4j_driver] = lambda: None
     return TestClient(app)
 
 
@@ -881,11 +880,11 @@ def test_stage5_projection_status_exposes_stale_projection_count(
         SemanticProjectionManifestModel(
             id="manifest-stage5",
             graph_set_id="gs-stage5",
-            projection_kind="neo4j",
+            projection_kind="search",
             active_job_id="job-old",
             source_signature="old",
-            projection_version="neo4j-v1",
-            target_partition="gs-stage5/neo4j/neo4j-v1",
+            projection_version="search-v1",
+            target_partition="gs-stage5/search/search-v1",
             status="current",
         )
     )

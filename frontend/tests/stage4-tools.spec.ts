@@ -371,7 +371,7 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
 
     // --- Health + default fall-through ---
     else if (path === "/health/dependencies") {
-      body = { postgres: { status: "ok" }, neo4j: { status: "ok" } };
+      body = { postgres: { status: "ok" } };
     } else if (method !== "GET") {
       body = {};
     }

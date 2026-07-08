@@ -9,10 +9,6 @@ class Settings(BaseSettings):
         "postgresql+psycopg://ontology:ontology@localhost:5434/"
         "ontology_platform?client_encoding=utf8"
     )
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "ontology-platform"
-
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_model: str = ""
@@ -35,7 +31,6 @@ class Settings(BaseSettings):
     semantic_shacl_inference: str = "none"
     semantic_reasoner_command: str = ""
     semantic_reasoner_timeout_seconds: float = Field(default=60, gt=0, le=600)
-    semantic_neo4j_projection_enabled: bool = False
     semantic_graph_visibility_labels: dict[str, str] = Field(default_factory=dict)
 
     # Phase 7 canonical RDF dataset migration controls. These settings govern the

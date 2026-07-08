@@ -19,7 +19,6 @@ from app.services.semantic_rule_definition import SemanticRuleDefinitionService
 from app.services.semantic_rule_execution import SemanticRuleExecutionService
 from app.services.semantic_validation import SemanticValidationService
 from app.services.semantic_graph_set_export import SemanticExportService
-from app.services.semantic_neo4j_projection import Neo4jSemanticProjectionService
 from app.services.semantic_projection_job import (
     ProjectionJobError,
     SemanticProjectionJobService,
@@ -535,7 +534,6 @@ def _export_service(session) -> SemanticExportService:
 
 def _projection_job_service(session, driver) -> SemanticProjectionJobService:
     writers = {
-        "neo4j": Neo4jSemanticProjectionService(_rdf_store(), driver),
         "search": SemanticSearchProjectionService(_rdf_store(), FakeSearchWriter()),
         "vector": SemanticVectorProjectionService(_rdf_store(), FakeVectorWriter()),
     }

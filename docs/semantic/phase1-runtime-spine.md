@@ -12,7 +12,7 @@ Install the selected semantic stack as a real backend boundary while keeping exi
 behavior unchanged.
 
 Phase 1 is a sidecar semantic runtime POC. Existing product APIs continue to use the current
-Postgres and Neo4j-backed implementation. The Phase 1 semantic runtime proves the new boundaries
+Postgres-backed implementation. The Phase 1 semantic runtime proves the new boundaries
 before later phases map or migrate current product behavior into RDF.
 
 ## Confirmed Decisions
@@ -95,7 +95,6 @@ SEMANTIC_QUERY_RESULT_LIMIT=1000
 SEMANTIC_SHACL_INFERENCE=none
 SEMANTIC_REASONER_COMMAND=
 SEMANTIC_REASONER_TIMEOUT_SECONDS=60
-SEMANTIC_NEO4J_PROJECTION_ENABLED=false
 ```
 
 `semantic_graph_iri_prefix` is the Phase 1 guardrail for platform-managed named graphs. The POC may
@@ -481,7 +480,6 @@ test failures.
   - `semantic_shacl_inference`
   - `semantic_reasoner_command`
   - `semantic_reasoner_timeout_seconds`
-  - `semantic_neo4j_projection_enabled`
 - [x] Update `.env.example` and the README configuration table.
 
 ### 2. Local Services
@@ -596,6 +594,6 @@ test failures.
 - [x] `cd backend && uv sync --extra dev`
 - [x] `cd backend && uv run alembic upgrade head`
 - [x] `cd backend && uv run pytest`
-- [x] `./scripts/start-local.sh` starts Postgres, Neo4j, Oxigraph, backend, and frontend.
+- [x] `./scripts/start-local.sh` starts Postgres, Oxigraph, backend, and frontend.
 - [x] Documentation still states that Phase 1 is a runtime spine POC, not the canonical semantic
   migration phase.

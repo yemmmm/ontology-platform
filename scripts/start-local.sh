@@ -11,11 +11,6 @@ POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
 POSTGRES_PORT="${POSTGRES_PORT:-5434}"
 POSTGRES_DB="${POSTGRES_DB:-ontology_platform}"
 POSTGRES_USER="${POSTGRES_USER:-ontology}"
-NEO4J_HOST="${NEO4J_HOST:-localhost}"
-NEO4J_BOLT_PORT="${NEO4J_BOLT_PORT:-7687}"
-NEO4J_HTTP_PORT="${NEO4J_HTTP_PORT:-7474}"
-NEO4J_USER="${NEO4J_USER:-neo4j}"
-NEO4J_PASSWORD="${NEO4J_PASSWORD:-ontology-platform}"
 OXIGRAPH_HOST="${OXIGRAPH_HOST:-localhost}"
 OXIGRAPH_PORT="${OXIGRAPH_PORT:-7878}"
 BACKEND_HOST="${BACKEND_HOST:-0.0.0.0}"
@@ -66,32 +61,12 @@ wait_for_postgres() {
   fail "PostgreSQL did not become ready within 60s"
 }
 
-wait_for_neo4j() {
-  local container="ontology-platform-neo4j"
-  local timeout_seconds="${1:-120}"
-
-  for ((i = 1; i <= timeout_seconds; i++)); do
-    if docker exec "$container" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" \
-      "RETURN 1" >/dev/null 2>&1; then
-      log "Neo4j is ready at $NEO4J_HOST:$NEO4J_BOLT_PORT"
-      return 0
-    fi
-    sleep 1
-  done
-
-  docker logs --tail 80 "$container" >&2 || true
-  fail "Neo4j did not become ready for Bolt queries within ${timeout_seconds}s"
-}
-
 start_docker_services() {
-  log "Starting PostgreSQL, Neo4j, and Oxigraph via Docker Compose"
+  log "Starting PostgreSQL and Oxigraph via Docker Compose"
   docker compose -f "$COMPOSE_FILE" up -d
 
   log "Waiting for PostgreSQL..."
   wait_for_postgres
-  log "Waiting for Neo4j..."
-  wait_for_tcp "Neo4j HTTP" "$NEO4J_HOST" "$NEO4J_HTTP_PORT" 30
-  wait_for_neo4j 120
   log "Waiting for Oxigraph..."
   wait_for_tcp "Oxigraph HTTP" "$OXIGRAPH_HOST" "$OXIGRAPH_PORT" 60
 }

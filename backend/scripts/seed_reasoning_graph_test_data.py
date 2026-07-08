@@ -8,7 +8,6 @@ from sqlalchemy import select
 
 from app.core.config import Settings
 from app.domain.naming import normalize_neo4j_label, normalize_neo4j_relationship_type
-from app.repositories import graph as graph_repository
 from app.repositories.models import (
     OntologyModel,
     ProjectModel,
@@ -16,7 +15,6 @@ from app.repositories.models import (
     SemanticGraphSetModel,
     SemanticRuleDefinitionModel,
 )
-from app.repositories.neo4j import create_neo4j_driver, ensure_graph_constraints
 from app.repositories.postgres import create_session_factory
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
@@ -684,7 +682,7 @@ def seeded_rule_iris(settings: Settings) -> list[str]:
 
 
 def cleanup_existing(
-    session: Any, driver: Any, rdf_store: RdfStoreRepository, settings: Settings
+    session: Any, rdf_store: RdfStoreRepository, settings: Settings
 ) -> None:
     for rule in session.scalars(
         select(SemanticRuleDefinitionModel).where(
@@ -711,22 +709,6 @@ def cleanup_existing(
             select(SemanticGraphSetModel).where(SemanticGraphSetModel.scope_id == ontology.id)
         ):
             session.delete(graph_set)
-
-    with driver.session() as neo4j_session:
-        neo4j_session.run(
-            """
-            MATCH (entity:Entity {project_id: $project_id})-[relation]-()
-            DELETE relation
-            """,
-            project_id=existing.id,
-        ).consume()
-        neo4j_session.run(
-            """
-            MATCH (entity:Entity {project_id: $project_id})
-            DELETE entity
-            """,
-            project_id=existing.id,
-        ).consume()
 
     session.delete(existing)
     session.commit()
@@ -764,65 +746,6 @@ def create_project_and_ontology(session: Any) -> tuple[ProjectModel, OntologyMod
     session.refresh(project)
     session.refresh(ontology)
     return project, ontology
-
-
-def create_entities(driver: Any, project: ProjectModel, ontology: OntologyModel) -> dict[str, str]:
-    entity_ids: dict[str, str] = {}
-    for spec in ENTITIES:
-        entity_id = str(uuid4())
-        graph_repository.create_entity_node(
-            driver,
-            normalize_neo4j_label(spec.class_name),
-            {
-                "id": entity_id,
-                "project_id": project.id,
-                "ontology_id": ontology.id,
-                "ontology_version_id": None,
-                "class_id": CLASS_IDS[spec.class_name],
-                "class_label": spec.class_name,
-                "name": spec.name,
-                "aliases": spec.aliases or [],
-                "properties": {
-                    **spec.properties,
-                    "seed_key": spec.key,
-                    "rule_test_fixture": True,
-                },
-            },
-        )
-        entity_ids[spec.key] = entity_id
-    return entity_ids
-
-
-def create_relations(
-    driver: Any,
-    project: ProjectModel,
-    ontology: OntologyModel,
-    entity_ids: dict[str, str],
-) -> None:
-    for spec in RELATIONS:
-        graph_repository.create_relation_edge(
-            driver,
-            normalize_neo4j_relationship_type(spec.relation_type),
-            {
-                "id": str(uuid4()),
-                "project_id": project.id,
-                "ontology_id": ontology.id,
-                "ontology_version_id": None,
-                "relation_type_id": RELATION_TYPE_IDS[spec.relation_type],
-                "relation_type": spec.relation_type,
-                "source_entity_id": entity_ids[spec.source],
-                "target_entity_id": entity_ids[spec.target],
-                "properties": {
-                    **spec.properties,
-                    "rule_test_fixture": True,
-                    "derived": spec.relation_type.startswith("DERIVED_"),
-                },
-                "scope": "derived" if spec.relation_type.startswith("DERIVED_") else "instance",
-                "status": "active",
-                "valid_from": None,
-                "valid_to": None,
-            },
-        )
 
 
 def iri_for_class(settings: Settings, class_name: str) -> str:
@@ -1185,58 +1108,31 @@ def create_rule_definitions(session: Any, settings: Settings, graph_set_id: str)
     return rule_ids
 
 
-def verify_counts(driver: Any, project: ProjectModel, ontology: OntologyModel) -> dict[str, Any]:
-    with driver.session() as neo4j_session:
-        record = neo4j_session.run(
-            """
-            MATCH (entity:Entity {project_id: $project_id, ontology_id: $ontology_id})
-            OPTIONAL MATCH (entity)-[relation]->(:Entity {project_id: $project_id, ontology_id: $ontology_id})
-            RETURN count(DISTINCT entity) AS entity_count,
-                   count(DISTINCT relation) AS relation_count,
-                   count(DISTINCT CASE WHEN relation.scope = 'derived' THEN relation END) AS derived_count
-            """,
-            project_id=project.id,
-            ontology_id=ontology.id,
-        ).single(strict=True)
-        return dict(record)
-
-
 def main() -> None:
     if len(ENTITIES) != 50:
         raise RuntimeError(f"Expected 50 entities, found {len(ENTITIES)}")
 
     settings = Settings()
     session_factory = create_session_factory(settings)
-    driver = create_neo4j_driver(settings)
     rdf_store = RdfStoreRepository(settings.oxigraph_url)
-    ensure_graph_constraints(driver, settings.embedding_dimensions)
 
-    try:
-        with session_factory() as session:
-            cleanup_existing(session, driver, rdf_store, settings)
-            project, ontology = create_project_and_ontology(session)
-            entity_ids = create_entities(driver, project, ontology)
-            create_relations(driver, project, ontology, entity_ids)
-            graph_set_id, graph_iris = create_semantic_workspace(
-                session, rdf_store, settings, ontology
-            )
-            rule_definition_ids = create_rule_definitions(session, settings, graph_set_id)
-            counts = verify_counts(driver, project, ontology)
+    with session_factory() as session:
+        cleanup_existing(session, rdf_store, settings)
+        project, ontology = create_project_and_ontology(session)
+        graph_set_id, graph_iris = create_semantic_workspace(
+            session, rdf_store, settings, ontology
+        )
+        rule_definition_ids = create_rule_definitions(session, settings, graph_set_id)
 
-            print(f"Seeded project: {project.name} ({project.id})")
-            print(f"Seeded ontology: {ontology.name} ({ontology.id})")
-            print(f"Seeded graph set: {graph_set_id}")
-            print(f"Active semantic rules: {len(rule_definition_ids)}")
-            print(f"Ontology graph: {graph_iris['ontology']}")
-            print(f"Data graph: {graph_iris['data']}")
-            print(f"Entities: {counts['entity_count']}")
-            print(f"Relations: {counts['relation_count']}")
-            print(f"Derived rule relations: {counts['derived_count']}")
-            print("Rule hints:")
-            for rule in RULE_DESCRIPTIONS:
-                print(f"- {rule['id']} {rule['name']}: {rule['logic']}")
-    finally:
-        driver.close()
+        print(f"Seeded project: {project.name} ({project.id})")
+        print(f"Seeded ontology: {ontology.name} ({ontology.id})")
+        print(f"Seeded graph set: {graph_set_id}")
+        print(f"Active semantic rules: {len(rule_definition_ids)}")
+        print(f"Ontology graph: {graph_iris['ontology']}")
+        print(f"Data graph: {graph_iris['data']}")
+        print("Rule hints:")
+        for rule in RULE_DESCRIPTIONS:
+            print(f"- {rule['id']} {rule['name']}: {rule['logic']}")
 
 
 if __name__ == "__main__":

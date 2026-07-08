@@ -187,7 +187,7 @@ def _render_prompt_block(entries: list[dict[str, Any]]) -> str:
 
 def run_agent_test(
     session: Session,  # noqa: ARG001 - kept for API signature compatibility
-    driver: Any,  # noqa: ARG001 - kept for API signature compatibility
+    driver: Any,  # noqa: ARG001 - deprecated, kept for API signature compatibility
     settings: Settings,
     payload: AgentTestRequest,
     embedding_client: Any,  # noqa: ARG001 - kept for API signature compatibility

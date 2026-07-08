@@ -333,19 +333,6 @@ class SemanticGraphEditabilityResponse(BaseModel):
     reason: str | None = None
 
 
-class SemanticProjectionRequest(BaseModel):
-    source_graph_iris: list[str]
-    reasoning_result_graph_iri: str | None = None
-
-
-class SemanticProjectionResponse(BaseModel):
-    job_id: str
-    status: str
-    node_count: int
-    relationship_count: int
-    error: str | None = None
-
-
 class ValidationResult(BaseModel):
     valid: bool
     errors: list[str] = Field(default_factory=list)
@@ -684,7 +671,7 @@ class SemanticExportRequest(BaseModel):
 class SemanticProjectionJobCreate(BaseModel):
     graph_set_id: str
     projection_kind: Literal[
-        "business_json", "neo4j", "search", "vector", "export_cache"
+        "business_json", "search", "vector", "export_cache"
     ]
     projection_version: str
     include: Literal[
