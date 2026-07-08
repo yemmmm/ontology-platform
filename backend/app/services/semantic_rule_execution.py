@@ -20,7 +20,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import (
-    SemanticDerivedResultPointerModel,
     SemanticRuleDefinitionModel,
     SemanticRuleRunModel,
 )
@@ -307,8 +306,6 @@ class SemanticRuleExecutionService:
             if rule.language in {"sparql_construct", "platform_dsl"}
             and self._rule_is_compatible_with_graph_set(rule, graph_set_iris)
         ]
-        if not rules:
-            raise RuleExecutionError("No executable rules matched the request")
         run_id = str(uuid4())
         result_graph_iri = (
             f"{self.settings.semantic_graph_iri_prefix}{RULE_RESULT_PREFIX_SEGMENT}/{run_id}"
@@ -328,6 +325,58 @@ class SemanticRuleExecutionService:
             source_signature=graph_set.source_signature,
             actor=actor,
         )
+        if not rules:
+            warning = "No executable rules matched the request"
+            self._finalise_run(
+                run=run,
+                execution=_GroupExecution(statements=[], warnings=[warning]),
+                extra_metadata={
+                    "rule_ids": [],
+                    "rule_versions": {},
+                    "explanations": [],
+                },
+            )
+            promoted_pointer = None
+            if promote_pointer:
+                pointer = self.derived_state_service.promote_rule_pointer(
+                    graph_set_id=graph_set_id,
+                    run_id=run_id,
+                    result_graph_iri=result_graph_iri,
+                    source_signature=graph_set.source_signature,
+                    engine_name="rule_group",
+                    engine_version=engine_version,
+                    metadata={
+                        "rule_ids": [],
+                        "rule_versions": {},
+                        "actor": actor,
+                        "warnings": [warning],
+                    },
+                )
+                promoted_pointer = {
+                    "graph_set_id": pointer.graph_set_id,
+                    "result_kind": pointer.result_kind,
+                    "result_graph_iri": pointer.result_graph_iri,
+                    "status": pointer.status,
+                    "became_current_at": pointer.became_current_at,
+                }
+            self.session.commit()
+            return {
+                "run_id": run.id,
+                "status": run.status,
+                "engine_name": run.engine_name,
+                "engine_version": run.engine_version,
+                "graph_set_id": graph_set_id,
+                "result_graph_iri": result_graph_iri,
+                "rule_run_graph_iri": rule_run_graph_iri,
+                "rule_definition_id": None,
+                "rule_version": None,
+                "rule_count": 0,
+                "explanations": [],
+                "generated_statement_count": 0,
+                "warnings": [warning],
+                "derived_pointer": promoted_pointer,
+                "error": None,
+            }
         run.run_metadata = {
             **(run.run_metadata or {}),
             "rule_ids": [rule.id for rule in rules],
@@ -589,30 +638,14 @@ class SemanticRuleExecutionService:
     ) -> None:
         if not statements:
             return
-        from rdflib import BNode, Graph, Literal, Namespace, URIRef
-        from rdflib.namespace import RDF
+        from rdflib import Graph
 
-        op = Namespace("http://ontology-platform.local/ops#")
         graph = Graph()
-        graph.bind("op", op)
         for statement in statements:
             subject = _coerce_term(statement["s"])
             predicate = _coerce_term(statement["p"])
             obj = _coerce_term(statement["o"])
             graph.add((subject, predicate, obj))
-            provenance_subject = BNode()
-            graph.add(
-                (
-                    provenance_subject,
-                    RDF.type,
-                    URIRef(f"{op}Provenance"),
-                )
-            )
-            graph.add((provenance_subject, op.assertionKind, Literal(assertion_kind)))
-            if rule_id:
-                graph.add((provenance_subject, op.ruleId, Literal(rule_id)))
-            if rule_version:
-                graph.add((provenance_subject, op.ruleVersion, Literal(rule_version)))
         from app.services.semantic import _triples_to_insert_data
 
         self.rdf_store.update_sparql(_triples_to_insert_data(graph_iri, graph))
@@ -816,13 +849,8 @@ def _coerce_term(term: str):
         from rdflib import BNode
 
         return BNode(term[2:])
-    if ":" in term and not term.startswith('"'):
-        from rdflib.namespace import NamespaceManager
-        from rdflib import Graph
-
-        graph = Graph()
-        namespace_manager = NamespaceManager(graph)
-        return namespace_manager.n3(term)[1]
+    if term.startswith(("http://", "https://", "urn:")):
+        return URIRef(term)
     return Literal(term)
 
 

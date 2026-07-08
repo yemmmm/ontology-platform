@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
+import re
 from typing import Any
 
 import httpx
@@ -407,6 +408,6 @@ def _raise_for_rdf_response(response: httpx.Response, parse_error: type[RdfStore
 
 
 def _query_with_limit(query: str, limit: int) -> str:
-    if " limit " in f" {query.lower()} ":
+    if re.search(r"\blimit\s+\d+\b", query, flags=re.IGNORECASE):
         return query
     return f"{query.rstrip()} LIMIT {limit}"

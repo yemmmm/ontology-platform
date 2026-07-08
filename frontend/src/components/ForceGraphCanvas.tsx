@@ -1,8 +1,9 @@
+import { graphlib, layout as dagreLayout } from "@dagrejs/dagre";
 import cytoscape from "cytoscape";
 import fcose from "cytoscape-fcose";
 import { GitBranch } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
-import type { Core, EdgeSingular, ElementDefinition } from "cytoscape";
+import type { Core, EdgeSingular, ElementDefinition, NodeSingular } from "cytoscape";
 
 cytoscape.use(fcose);
 
@@ -24,6 +25,7 @@ export type ForceGraphEdge = {
 type ForceGraphCanvasProps = {
   nodes: ForceGraphNode[];
   edges: ForceGraphEdge[];
+  layoutMode?: "force" | "hierarchy";
   selectedNodeId: string | null;
   selectedEdgeId?: string | null;
   onSelectNode: (id: string | null) => void;
@@ -53,6 +55,8 @@ const NODE_MIN_SIZE = 25;
 const NODE_MAX_SIZE = 58;
 const LABEL_VISIBILITY_THRESHOLD = 24;
 const EDGE_LABEL_GAP = 4;
+const HIERARCHY_MIN_NODE_WIDTH = 120;
+const HIERARCHY_NODE_HEIGHT = 58;
 
 function pickColor(group: string, allGroups: string[]) {
   const idx = allGroups.indexOf(group);
@@ -110,6 +114,51 @@ function applyEdgeLabelOffsets(cy: Core) {
     edge.data("labelMarginX", normalX * EDGE_LABEL_GAP);
     edge.data("labelMarginY", normalY * EDGE_LABEL_GAP);
   });
+}
+
+function computeHierarchyPositions(cy: Core) {
+  const graph = new graphlib.Graph({ multigraph: true });
+  graph.setGraph({
+    rankdir: "TB",
+    nodesep: 72,
+    ranksep: 112,
+    edgesep: 28,
+    marginx: 24,
+    marginy: 24,
+  });
+  graph.setDefaultEdgeLabel(() => ({}));
+
+  cy.nodes().forEach((node) => {
+    const label = String(node.data("label") || node.id());
+    graph.setNode(node.id(), {
+      width: Math.max(HIERARCHY_MIN_NODE_WIDTH, label.length * 7 + 34),
+      height: HIERARCHY_NODE_HEIGHT,
+    });
+  });
+
+  const subclassEdges = cy.edges().filter((edge) => edge.id().startsWith("subclass:"));
+  const layoutEdges = subclassEdges.length > 0 ? subclassEdges : cy.edges();
+  layoutEdges.forEach((edge) => {
+    const sourceId = edge.source().id();
+    const targetId = edge.target().id();
+    if (edge.id().startsWith("subclass:")) {
+      graph.setEdge(targetId, sourceId, { weight: 2 }, edge.id());
+    } else {
+      graph.setEdge(sourceId, targetId, { weight: 1 }, edge.id());
+    }
+  });
+
+  dagreLayout(graph);
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const nodeId of graph.nodes()) {
+    const position = graph.node(nodeId);
+    if (position) positions.set(nodeId, { x: position.x, y: position.y });
+  }
+  return positions;
+}
+
+function getPresetNodeId(node: string | NodeSingular) {
+  return typeof node === "string" ? node : node.id();
 }
 
 function applyVisualState(
@@ -296,6 +345,7 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
 export function ForceGraphCanvas({
   nodes,
   edges,
+  layoutMode = "force",
   selectedNodeId,
   selectedEdgeId = null,
   onSelectNode,
@@ -401,23 +451,38 @@ export function ForceGraphCanvas({
     cy.elements().remove();
     if (elements.length === 0) return;
     cy.add(elements);
-    const layout = cy.layout({
-      name: "fcose",
-      animate: true,
-      animationDuration: 320,
-      animationEasing: "ease-out",
-      randomize: cy.nodes().length > 12,
-      nodeSep: 64,
-      idealEdgeLength: 132,
-      uniformNodeDimensions: true,
-    } as unknown as cytoscape.LayoutOptions);
+    const hierarchyPositions =
+      layoutMode === "hierarchy" ? computeHierarchyPositions(cy) : null;
+    const layout = cy.layout(
+      layoutMode === "hierarchy"
+        ? ({
+            name: "preset",
+            animate: true,
+            animationDuration: 320,
+            animationEasing: "ease-out",
+            positions: (node) => {
+              const nodeId = getPresetNodeId(node);
+              return hierarchyPositions?.get(nodeId) ?? cy.getElementById(nodeId).position();
+            },
+          } as cytoscape.LayoutOptions)
+        : ({
+            name: "fcose",
+            animate: true,
+            animationDuration: 320,
+            animationEasing: "ease-out",
+            randomize: cy.nodes().length > 12,
+            nodeSep: 64,
+            idealEdgeLength: 132,
+            uniformNodeDimensions: true,
+          } as unknown as cytoscape.LayoutOptions),
+    );
     layout.one("layoutstop", () => {
       applyEdgeLabelOffsets(cy);
       cy.fit(undefined, 52);
       applyLabelVisibility(cy);
     });
     layout.run();
-  }, [elements]);
+  }, [elements, layoutMode]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -427,7 +492,7 @@ export function ForceGraphCanvas({
 
   return (
     <div className="entityGraphCanvasWrap">
-      <div className="srOnlyGraphControls" aria-label="force graph selectable items">
+      <div className="srOnlyGraphControls" aria-label="graph selectable items">
         {nodes.map((node) => (
           <button
             key={node.id}

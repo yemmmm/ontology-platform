@@ -341,6 +341,7 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
               <ForceGraphCanvas
                 nodes={graphNodes}
                 edges={graphEdges}
+                layoutMode="hierarchy"
                 selectedNodeId={selectedIri}
                 selectedEdgeId={selectedEdgeId}
                 onSelectNode={(id) => {

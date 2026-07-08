@@ -168,6 +168,11 @@ class SemanticRuleDefinitionService:
             raise RuleDefinitionNotFound(f"Rule definition not found: {rule_id}")
         return record
 
+    def delete_rule(self, rule_id: str) -> None:
+        record = self.get_rule(rule_id)
+        self.session.delete(record)
+        self.session.commit()
+
     def get_rule_by_iri(
         self,
         rule_iri: str,

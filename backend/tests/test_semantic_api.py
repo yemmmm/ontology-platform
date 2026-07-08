@@ -493,6 +493,49 @@ def test_list_rule_definitions_filters_by_status(in_memory_session) -> None:
     assert body["rules"][0]["status"] == "active"
 
 
+def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) -> None:
+    client = _client(FakeStore(), in_memory_session)
+
+    create_response = client.post(
+        "/api/semantic/rule-definitions",
+        json={
+            "rule_iri": f"{PREFIX}rule/editable",
+            "name": "editable",
+            "language": "platform_dsl",
+            "body": {
+                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
+                "then": [
+                    {
+                        "s": "?s",
+                        "p": "<http://example.test/derived>",
+                        "o": "?o",
+                    }
+                ],
+            },
+            "input_roles": ["asserted_data"],
+            "status": "draft",
+        },
+    )
+    assert create_response.status_code == 200
+    rule_id = create_response.json()["id"]
+
+    update_response = client.patch(
+        f"/api/semantic/rule-definitions/{rule_id}",
+        json={"name": "renamed", "priority": 5, "status": "active"},
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["name"] == "renamed"
+    assert updated["priority"] == 5
+    assert updated["status"] == "active"
+
+    delete_response = client.delete(f"/api/semantic/rule-definitions/{rule_id}")
+    assert delete_response.status_code == 204
+
+    get_response = client.get(f"/api/semantic/rule-definitions/{rule_id}")
+    assert get_response.status_code == 404
+
+
 def test_graph_set_validation_endpoint_records_engine_version(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -638,6 +681,28 @@ def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_sele
     assert body["engine_name"] == "rule_group"
     assert body["rule_definition_id"] is None
     assert body["generated_statement_count"] >= 1
+
+
+def test_graph_set_rule_run_endpoint_noops_when_no_active_rules(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    graph_set_id = _create_graph_set(client)
+
+    response = client.post(
+        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
+        json={},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "succeeded"
+    assert body["engine_name"] == "rule_group"
+    assert body["rule_definition_id"] is None
+    assert body["rule_count"] == 0
+    assert body["generated_statement_count"] == 0
+    assert "No executable rules matched the request" in body["warnings"]
+    assert body["derived_pointer"]["status"] == "current"
 
 
 def test_graph_set_rule_run_endpoint_skips_active_construct_rules_for_other_graph_sets(

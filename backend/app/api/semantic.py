@@ -831,6 +831,20 @@ def update_rule_definition(
     return _rule_definition_read(rule)
 
 
+@router.delete("/rule-definitions/{rule_id}", status_code=204)
+def delete_rule_definition(
+    rule_id: str,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    service = _rule_definition_service(session, settings)
+    try:
+        service.delete_rule(rule_id)
+    except RuleDefinitionNotFound as exc:
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
+    return Response(status_code=204)
+
+
 @router.post(
     "/graph-sets/{graph_set_id}/construct-runs",
     response_model=SemanticRuleRunRead,

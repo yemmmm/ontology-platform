@@ -2916,6 +2916,59 @@ textarea:focus {
   padding: 12px 14px;
 }
 
+.rulesPageGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.selectedTableRow {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.mutedCode {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.tableActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ruleDetailList {
+  padding: 0;
+}
+
+.ruleModalForm {
+  display: grid;
+  gap: 12px;
+}
+
+.ruleModalForm label {
+  display: grid;
+  gap: 6px;
+}
+
+.ruleModalForm label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ruleModalRow {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 100px;
+  gap: 10px;
+}
+
 .classListItem.selected,
 .entityListItem.selected {
   border-color: var(--accent);

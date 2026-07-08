@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
@@ -148,11 +148,27 @@ class SemanticReadScopeResolver:
         self, graph_set_id: str
     ) -> dict[str, SemanticDerivedResultPointerModel]:
         rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel).where(
-                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id
+            select(SemanticDerivedResultPointerModel)
+            .where(
+                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                SemanticDerivedResultPointerModel.status.in_(("current", "stale")),
+            )
+            .order_by(
+                SemanticDerivedResultPointerModel.result_kind,
+                case(
+                    (SemanticDerivedResultPointerModel.status == "current", 0),
+                    (SemanticDerivedResultPointerModel.status == "stale", 1),
+                    else_=2,
+                ),
+                SemanticDerivedResultPointerModel.became_current_at.desc(),
+                SemanticDerivedResultPointerModel.created_at.desc(),
+                SemanticDerivedResultPointerModel.id.desc(),
             )
         )
-        return {row.result_kind: row for row in rows}
+        pointers: dict[str, SemanticDerivedResultPointerModel] = {}
+        for row in rows:
+            pointers.setdefault(row.result_kind, row)
+        return pointers
 
     def _resolve_pointer(
         self,

@@ -42,6 +42,11 @@ def test_query_with_limit_preserves_existing_limit() -> None:
     assert _query_with_limit(query, limit=10) == query
 
 
+def test_query_with_limit_preserves_existing_newline_limit() -> None:
+    query = "SELECT ?s WHERE { ?s ?p ?o }\nLIMIT 5"
+    assert _query_with_limit(query, limit=10) == query
+
+
 def test_query_with_limit_handles_trailing_whitespace() -> None:
     query = "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }   \n  "
     effective = _query_with_limit(query, limit=3)

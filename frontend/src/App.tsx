@@ -22,6 +22,7 @@ import {
   Unlock,
   Upload,
   Waypoints,
+  Workflow,
   Wrench,
   X,
 } from "lucide-react";
@@ -40,6 +41,7 @@ import type {
 import { classNames, compactId, formatDate, prettyJson } from "./utils";
 import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
+import { RulesPage } from "./pages/RulesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
 import { AgentTestPage } from "./pages/AgentTestPage";
@@ -80,6 +82,7 @@ type WorkspaceTab =
   | "publication"
   | "classes"
   | "entities"
+  | "rules"
   | "graph-set-history"
   | "agent-test"
   | "search"
@@ -131,6 +134,7 @@ const workspaceTabs: Array<{
   { id: "questions", stage: "overview", label: "Structured Requirements", detail: "Requirement clarification", icon: Check },
   { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
   { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
+  { id: "rules", stage: "modeling", label: "Rules", detail: "Rule definitions", icon: Workflow },
   { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
   { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
   { id: "agent-test", stage: "debug", label: "Agent Test", detail: "Question runs", icon: Send },
@@ -903,6 +907,15 @@ function WorkspaceContent(props: {
       <FactAuditPage
         graphSetId={graphSetId}
         ontologyId={props.ontology.id}
+        readOnly={readOnly}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "rules") {
+    return (
+      <RulesPage
         readOnly={readOnly}
         request={governedRequest}
       />

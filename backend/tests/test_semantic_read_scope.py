@@ -36,17 +36,25 @@ def _make_graph_set(session, members):
     return gs
 
 
-def _add_pointer(session, kind, status="current", iri=None):
+def _add_pointer(
+    session,
+    kind,
+    status="current",
+    iri=None,
+    pointer_id=None,
+    run_id=None,
+    became_current_at=None,
+):
     session.add(
         SemanticDerivedResultPointerModel(
-            id=f"ptr-{kind}",
+            id=pointer_id or f"ptr-{kind}",
             graph_set_id="gs-1",
             result_kind=kind,
-            run_id=f"run-{kind}",
+            run_id=run_id or f"run-{kind}",
             result_graph_iri=iri or f"http://op/s/graph/{kind}-result/run-1",
             source_signature="sig-1",
             status=status,
-            became_current_at=datetime.now(UTC),
+            became_current_at=became_current_at or datetime.now(UTC),
         )
     )
     session.commit()
@@ -96,6 +104,108 @@ def test_full_working_view_includes_all_current_pointers(in_memory_session):
     result = resolver.resolve("gs-1", include="full-working-view")
     assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/run-1"
     assert result.rule_result_graph_iri == "http://op/s/graph/rule-result/run-1"
+
+
+def test_scope_prefers_current_pointers_over_superseded_rows(in_memory_session):
+    _make_graph_set(
+        in_memory_session,
+        [("http://op/s/graph/data/ov-1", "asserted_data")],
+    )
+    _add_pointer(
+        in_memory_session,
+        "reasoning",
+        pointer_id="ptr-reasoning-current",
+        run_id="run-reasoning-current",
+        iri="http://op/s/graph/reasoning-result/current",
+        status="current",
+        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    _add_pointer(
+        in_memory_session,
+        "reasoning",
+        pointer_id="ptr-reasoning-superseded",
+        run_id="run-reasoning-superseded",
+        iri="http://op/s/graph/reasoning-result/superseded",
+        status="superseded",
+        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    _add_pointer(
+        in_memory_session,
+        "rule",
+        pointer_id="ptr-rule-current",
+        run_id="run-rule-current",
+        iri="http://op/s/graph/rule-result/current",
+        status="current",
+        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    _add_pointer(
+        in_memory_session,
+        "rule",
+        pointer_id="ptr-rule-superseded",
+        run_id="run-rule-superseded",
+        iri="http://op/s/graph/rule-result/superseded",
+        status="superseded",
+        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    resolver = SemanticReadScopeResolver(in_memory_session)
+    result = resolver.resolve("gs-1", include="full-working-view")
+
+    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/current"
+    assert result.rule_result_graph_iri == "http://op/s/graph/rule-result/current"
+    assert result.derived_state["reasoning"] == {
+        "status": "current",
+        "run_id": "run-reasoning-current",
+        "result_graph_iri": "http://op/s/graph/reasoning-result/current",
+    }
+    assert result.derived_state["rule"] == {
+        "status": "current",
+        "run_id": "run-rule-current",
+        "result_graph_iri": "http://op/s/graph/rule-result/current",
+    }
+    assert result.members[0].derived_state["reasoning"]["result_graph_iri"] == (
+        "http://op/s/graph/reasoning-result/current"
+    )
+    assert result.members[0].derived_state["rule"]["result_graph_iri"] == (
+        "http://op/s/graph/rule-result/current"
+    )
+
+
+def test_scope_uses_latest_current_pointer_when_duplicate_current_rows_exist(
+    in_memory_session,
+):
+    _make_graph_set(
+        in_memory_session,
+        [("http://op/s/graph/data/ov-1", "asserted_data")],
+    )
+    _add_pointer(
+        in_memory_session,
+        "rule",
+        pointer_id="ptr-rule-new",
+        run_id="run-rule-new",
+        iri="http://op/s/graph/rule-result/new",
+        status="current",
+        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    _add_pointer(
+        in_memory_session,
+        "rule",
+        pointer_id="ptr-rule-old",
+        run_id="run-rule-old",
+        iri="http://op/s/graph/rule-result/old",
+        status="current",
+        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    resolver = SemanticReadScopeResolver(in_memory_session)
+    result = resolver.resolve("gs-1", include="asserted-plus-rules")
+
+    assert result.rule_result_graph_iri == "http://op/s/graph/rule-result/new"
+    assert result.derived_state["rule"] == {
+        "status": "current",
+        "run_id": "run-rule-new",
+        "result_graph_iri": "http://op/s/graph/rule-result/new",
+    }
 
 
 def test_stale_pointer_with_allow_stale_false_raises(in_memory_session):

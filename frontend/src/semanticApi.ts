@@ -376,6 +376,33 @@ export function createRuleDefinition(
   });
 }
 
+export function updateRuleDefinition(
+  request: SemanticRequester,
+  ruleId: string,
+  payload: {
+    name?: string;
+    status?: "draft" | "active" | "retired" | "rejected";
+    priority?: number;
+    metadata?: SemanticJsonObject;
+  },
+) {
+  return request<SemanticRuleDefinitionRead>(`${SEMANTIC_BASE}/rule-definitions/${ruleId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: payload.name,
+      status: payload.status,
+      priority: payload.priority,
+      metadata: payload.metadata,
+    }),
+  });
+}
+
+export function deleteRuleDefinition(request: SemanticRequester, ruleId: string) {
+  return request<void>(`${SEMANTIC_BASE}/rule-definitions/${ruleId}`, {
+    method: "DELETE",
+  });
+}
+
 /**
  * Phase 8 §3 — bind a free-text evidence chunk to a fact via the new
  * ``POST /api/semantic/graph-sets/{gs}/fact-evidence`` endpoint. The
