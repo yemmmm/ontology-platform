@@ -171,6 +171,15 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     () => items.find((row) => row.id === selectedId) ?? null,
     [items, selectedId],
   );
+  const visibleWarnings = useMemo(() => {
+    const seen = new Set<string>();
+    return warnings.filter((warning) => {
+      const key = `${warning.code}:${warning.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [warnings]);
 
   function openEdit() {
     if (!selected) return;
@@ -440,7 +449,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
           message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
-      {warnings.map((w, idx) => (
+      {visibleWarnings.map((w, idx) => (
         <Alert
           key={`${w.code}-${idx}`}
           type="warning"

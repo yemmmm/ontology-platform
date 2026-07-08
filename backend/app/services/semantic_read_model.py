@@ -145,7 +145,7 @@ class SemanticReadModelService:
                 template=template,
                 scope=scope,
                 items=items,
-                warnings=warnings + list(scope.warnings),
+                warnings=warnings,
             )
         if template.name == "owl-consistency-summary":
             items = [self._compose_owl_consistency_summary(scope, field_set)]
@@ -1159,6 +1159,8 @@ class SemanticReadModelService:
         if resolved_kind == "inferred":
             reasoning_iri = scope.reasoning_result_graph_iri
             if not reasoning_iri:
+                if any(w.get("code") == "missing_reasoning_result" for w in warnings):
+                    return [], warnings
                 return [], warnings + [
                     {
                         "code": "fact_audit_no_inferred_pointer",
@@ -1198,6 +1200,8 @@ class SemanticReadModelService:
         # rule_derived
         rule_iri = scope.rule_result_graph_iri
         if not rule_iri:
+            if any(w.get("code") == "missing_rule_result" for w in warnings):
+                return [], warnings
             return [], warnings + [
                 {
                     "code": "fact_audit_no_rule_pointer",

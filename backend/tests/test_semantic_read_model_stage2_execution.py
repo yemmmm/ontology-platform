@@ -489,6 +489,25 @@ def test_fact_audit_queue_kind_rule_derived_without_pointer_returns_empty_with_w
     assert "fact_audit_no_rule_pointer" in codes
 
 
+def test_fact_audit_queue_rule_derived_dedupes_missing_pointer_warning(
+    in_memory_session,
+) -> None:
+    """When include=asserted-plus-rules already reports the missing pointer,
+    the fact-audit composer should not append a second equivalent warning."""
+    _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
+    store = FakeStore()
+    client = _client(store, in_memory_session)
+    body = _read_model(
+        client,
+        "fact-audit-queue",
+        include="asserted-plus-rules",
+        kind="rule_derived",
+    )
+    assert body["items"] == []
+    codes = [w.get("code") for w in body["warnings"]]
+    assert codes == ["missing_rule_result"]
+
+
 def test_fact_audit_queue_invalid_kind_returns_400(in_memory_session) -> None:
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore()
