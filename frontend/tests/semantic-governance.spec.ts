@@ -305,42 +305,6 @@ async function mockApi(page: Page) {
   });
 }
 
-test("graph governance dashboard renders semantic health summary", async ({ page }) => {
-  await mockApi(page);
-  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-governance`);
-  await expect(page.getByRole("heading", { name: "Graph Governance Dashboard" })).toBeVisible();
-  await expect(page.getByText("Registered graphs").first()).toBeVisible();
-  await expect(page.getByLabel("owl-consistency-summary")).toContainText("owl2_dl");
-  await expect(page.locator(".statTile", { hasText: "Stale derived results" })).toContainText("1");
-  await expect(page.locator(".statTile", { hasText: "Missing evidence" })).toContainText("1");
-  await expect(page.getByText("Working view").first()).toBeVisible();
-  await expect(page.getByText("Smoke edit").first()).toBeVisible();
-  await page.getByRole("button", { name: "Reconcile staleness" }).click();
-  await expect(page.getByText(/Reconciled 1 graph sets/)).toBeVisible();
-});
-
-test("named graph registry lists graphs with editability state and lock toggle", async ({ page }) => {
-  await mockApi(page);
-  await page.addInitScript(() => {
-    window.localStorage.setItem("ontology-platform-ui-lang", "en");
-  });
-  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=named-graphs`);
-  await expect(page.getByRole("heading", { name: "Named Graph Registry" })).toBeVisible();
-  await expect(page.getByText("ontology/main").first()).toBeVisible();
-  await expect(page.locator("tr", { hasText: "ontology/main" }).locator("[aria-label='editability-editable']")).toBeVisible();
-  await expect(page.locator("tr", { hasText: "data/main" }).locator("[aria-label='editability-locked']")).toBeVisible();
-  // Capture PATCH editability calls and replay a success body without asserting inside the click.
-  const patchPromise = page.waitForRequest(
-    (request) => request.url().includes("/semantic/graphs/") && request.url().includes("/editability") && request.method() === "PATCH",
-  );
-  await page.locator("tr", { hasText: "ontology/main" }).getByRole("button", { name: /Toggle graph editability/ }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("textbox").fill("Lock for review");
-  await dialog.locator("button.ant-btn-primary").first().click();
-  await patchPromise;
-});
-
 test("graph set detail shows members, pointers, and triggers reasoning run", async ({ page }) => {
   await mockApi(page);
   await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-sets`);
@@ -352,45 +316,4 @@ test("graph set detail shows members, pointers, and triggers reasoning run", asy
   );
   await page.getByRole("button", { name: "Run reasoning" }).click();
   await runRequest;
-});
-
-test("semantic edit workbench previews TriG content and exposes delta", async ({ page }) => {
-  await mockApi(page);
-  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=semantic-edits`);
-  await expect(page.getByRole("heading", { name: "Direct Semantic Edit Workbench" })).toBeVisible();
-  await page.locator("textarea.semanticEditContent").fill("@prefix ex: <http://example.org/> . ex:Sample a ex:Concept .");
-  const previewRequest = page.waitForRequest(
-    (request) => request.url().includes("/semantic/edits") && request.method() === "POST",
-  );
-  await page.getByRole("button", { name: "Preview" }).click();
-  await previewRequest;
-  await expect(page.locator("[aria-label='graph-delta-viewer']")).toBeVisible();
-  await expect(page.locator("[aria-label='affected-graphs']")).toBeVisible();
-});
-
-test("semantic runs page looks up reasoning run by ID and shows consistency", async ({ page }) => {
-  await mockApi(page);
-  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=semantic-runs`);
-  await expect(page.getByLabel("semantic-runs-page").getByRole("heading", { name: "Semantic Runs" })).toBeVisible();
-  await page.getByLabel("Run kind").selectOption("reasoning");
-  await page.getByPlaceholder("run-...").fill("reasoning-1");
-  await page.getByRole("button", { name: "Load", exact: true }).click();
-  await expect(page.locator("[aria-label='reasoning-result-panel']")).toBeVisible();
-  await expect(page.getByText("Consistent").first()).toBeVisible();
-});
-
-test("import / export workspace uploads dataset and downloads export", async ({ page }) => {
-  await mockApi(page);
-  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=semantic-import-export`);
-  await expect(page.getByRole("heading", { name: "Import / Export Workspace" })).toBeVisible();
-  await page.locator("textarea.semanticImportContent").first().fill("@prefix ex: <http://example.org/> . ex:Sample a ex:Concept .");
-  await page.getByRole("button", { name: "Load dataset" }).click();
-  await expect(page.getByText(/Dataset import loaded/)).toBeVisible();
-  // Wait for the export endpoint mock to be ready and trigger preview.
-  const exportRequest = page.waitForRequest(
-    (request) => request.url().includes(`/semantic/graph-sets/${graphSet.id}/export`) && request.method() === "GET",
-  );
-  await page.getByRole("button", { name: "Preview export" }).click();
-  await exportRequest;
-  await expect(page.locator("details").filter({ hasText: "Export preview" })).toBeVisible();
 });

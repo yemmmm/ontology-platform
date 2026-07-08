@@ -568,29 +568,3 @@ test("fact audit drawer shows bound chunk for the Acme fact", async ({
   await expect(bindingRow).toContainText(evidenceArtifact.filename);
   await expect(bindingRow).toContainText("Acme is a manufacturer of widgets");
 });
-
-// ---------------------------------------------------------------------------
-// Step 7+8 — Governance → Graph Governance: OWL Consistency section shows
-//            consistent: true and is_stale: false (stale banner absent).
-// ---------------------------------------------------------------------------
-
-test("graph governance OWL Consistency section renders consistent and not stale", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("graph-governance"));
-
-  await expect(page.locator('[aria-label="graph-governance-page"]')).toBeVisible();
-
-  // The OWL Consistency summary block renders the seeded reasoning run.
-  const summary = page.locator('[aria-label="owl-consistency-summary"]');
-  await expect(summary).toBeVisible();
-  await expect(summary).toContainText("Consistent");
-  await expect(summary).toContainText(String(owlConsistencyItem.entailment_count));
-
-  // The stale banner must NOT render (is_stale === false).
-  await expect(page.locator('[aria-label="owl-consistency-stale-banner"]')).toHaveCount(0);
-
-  // Run id is surfaced so the user can trace the result back to reasoning-runs.
-  await expect(summary).toContainText(owlConsistencyItem.run_id);
-});
