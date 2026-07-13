@@ -720,7 +720,6 @@ def get_reasoning_run(
 
 @router.get("/rule-definitions", response_model=SemanticRuleDefinitionListResponse)
 def list_rule_definitions(
-    status: Annotated[str | None, Query()] = None,
     language: Annotated[str | None, Query()] = None,
     rule_iri: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
@@ -728,9 +727,7 @@ def list_rule_definitions(
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleDefinitionListResponse:
     service = _rule_definition_service(session, settings)
-    rules = service.list_rules(
-        status=status, language=language, rule_iri=rule_iri, limit=limit
-    )
+    rules = service.list_rules(language=language, rule_iri=rule_iri, limit=limit)
     return SemanticRuleDefinitionListResponse(
         rules=[_rule_definition_read(rule) for rule in rules]
     )
@@ -755,7 +752,6 @@ def create_rule_definition(
             requires_review=request.requires_review,
             priority=request.priority,
             safety_profile=request.safety_profile,
-            status=request.status,
             created_by=request.created_by,
             metadata=request.metadata,
         )
@@ -787,10 +783,7 @@ def update_rule_definition(
 ) -> SemanticRuleDefinitionRead:
     service = _rule_definition_service(session, settings)
     try:
-        if request.status is not None:
-            rule = service.update_status(rule_id, request.status)
-        else:
-            rule = service.get_rule(rule_id)
+        rule = service.get_rule(rule_id)
         if request.name is not None or request.priority is not None or request.metadata is not None:
             if request.name is not None:
                 rule.name = request.name

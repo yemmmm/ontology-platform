@@ -469,14 +469,12 @@ class SemanticRuleDefinitionCreate(BaseModel):
     requires_review: bool = False
     priority: int = 0
     safety_profile: dict[str, Any] = Field(default_factory=dict)
-    status: Literal["draft", "active", "retired", "rejected"] = "draft"
     created_by: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SemanticRuleDefinitionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    status: Literal["draft", "active", "retired", "rejected"] | None = None
     priority: int | None = None
     metadata: dict[str, Any] | None = None
 

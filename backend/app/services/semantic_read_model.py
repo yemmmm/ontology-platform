@@ -1465,16 +1465,13 @@ class SemanticReadModelService:
         bound_q = q if q is not None else ""
         body = body.replace("?q", f'"{bound_q}"')
         body = body + f"\n# q_filter: \"{bound_q}\""
-        # Bind ?class_iri via a VALUES preamble so the existing
-        # ``FILTER(!BOUND(?class_iri) || ?class = ?class_iri)`` works against
-        # real SPARQL engines. When None, the variable stays unbound and the
-        # FILTER short-circuits to true. We also append a comment marker for
-        # test fakes that do not parse SPARQL.
+        # Bind the class filter in place. A VALUES preamble before PREFIX
+        # declarations makes Oxigraph parse the query as malformed, so keep
+        # the query prologue intact and rewrite only the filter expression.
+        class_filter_expr = "FILTER(!BOUND(?class_iri) || ?class = ?class_iri)"
         if class_iri is not None:
-            body = (
-                f"VALUES ?class_iri {{ <{class_iri}> }}\n" + body
-                + f"\n# class_iri_filter: <{class_iri}>"
-            )
+            body = body.replace(class_filter_expr, f"FILTER(?class = <{class_iri}>)")
+            body = body + f"\n# class_iri_filter: <{class_iri}>"
         result = self.rdf_store.query_read_model(
             query=body,
             graph_iris=graph_iris,

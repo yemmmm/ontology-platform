@@ -28,7 +28,7 @@
 - **Assertion 统一：** 进入核心平台的业务事实、规则结论和流程判断都应表达为可审核 Assertion。
 - **弱知识隔离：** 无法锚定的零散知识可以进入向量召回层，但默认不参与发布、推理或业务判断。
 - **Class 知识可继承：** Class-level 知识默认适用于实例，但 Entity-level 知识可以显式覆盖。
-- **规则先治理后执行：** 自然语言规则必须先形成 Rule Proposal，经校验和审核后才能成为 RuleDefinition。
+- **规则即入库即执行：** 自然语言规则由外部 Agent/Skill 解析后，平台只做确定性校验；校验通过的 RuleDefinition 立即可用。
 - **执行结果可追溯：** 规则执行只生成派生 Assertion，必须记录输入、规则版本、证据和推理路径。
 - **确定性边界：** 平台内置规则能力只支持可解释、可回放、可测试的有限 DSL 和状态机逻辑。
 
@@ -59,14 +59,13 @@ Assertion 是平台核心知识断言层。当前实现可复用并扩展 `FactC
 
 ### RuleDefinition
 
-RuleDefinition 是审核通过后的结构化业务规则。至少包含：
+RuleDefinition 是校验通过后的结构化业务规则。规则添加进来就是可用的，不再区分草稿、拒绝或激活状态。至少包含：
 
 - rule_type：`classification`、`derived_relation`、`validation`、`workflow`。
 - scope：适用 Class、RelationType、Entity 集合或流程模板。
 - condition：受限 DSL 表达的条件。
 - conclusion：规则满足时生成的 Assertion 模板。
 - priority：冲突处理优先级。
-- status：`draft`、`active`、`deprecated`。
 - evidence_ids、created_from_proposal_id、version。
 
 ### Class Knowledge
@@ -173,14 +172,13 @@ Class-level 知识应作为默认政策、默认事实或默认约束作用于�
 
 ### 6. 规则从自然语言到 RuleDefinition
 
-业务规则必须通过外部 Agent/Skill 解析为结构化 Rule Proposal，再由平台校验和审核。
+业务规则必须通过外部 Agent/Skill 解析为结构化 RuleDefinition 候选，再由平台做确定性校验。
 
 最低能力：
 
 - Agent 从自然语言提取作用对象、条件、结论、证据和适用范围。
-- 平台支持 `rule` proposal type 或扩展现有 `constraint` proposal。
 - 平台校验规则引用的 Class、Property、RelationType、枚举值和目标 Assertion 模板。
-- 审核通过后存储为 RuleDefinition。
+- 校验通过后立即存储为可执行 RuleDefinition。
 
 示例：
 
@@ -200,7 +198,7 @@ Class-level 知识应作为默认政策、默认事实或默认约束作用于�
 
 验收标准：
 
-- “平均成绩大于 90 分的同学认定为优秀学生”可转为 Rule Proposal。
+- “平均成绩大于 90 分的同学认定为优秀学生”可转为 RuleDefinition 候选。
 - 若 `average_score` 不是 number，平台拒绝规则。
 - 若 `student_status` 不允许 `excellent`，平台拒绝规则或要求补充 schema 变更。
 
@@ -284,7 +282,7 @@ Class-level 知识应作为默认政策、默认事实或默认约束作用于�
 
 1. 用户输入“平均成绩大于 90 分的同学认定为优秀学生”。
 2. Agent/Skill 生成 Rule Proposal，平台校验 `Student.average_score` 和结论字段。
-3. 审核通过后，平台保存 RuleDefinition。
+3. 校验通过后，平台保存可执行 RuleDefinition。
 4. 平台执行规则，为平均分 93 的学生生成 `derived` Assertion。
 5. 用户审核该 Assertion 后，发布 readiness 通过相关规则门槛。
 6. 用户输入“教学楼统一 23:00 关门”，平台保存 Class Assertion。

@@ -70,7 +70,7 @@ Phase 5 keeps each semantic execution path independent:
 | OWL reasoning | asserted ontology/data/import graphs, selected tasks | consistency, classification, realization, entailments | `graph/reasoning-result/{run_id}` | `reasoning` |
 | SHACL validation | data graphs plus shape graphs | conforms flag, SHACL report, UI guidance | `graph/validation-run/{run_id}` | none in Phase 4, optional `validation` later |
 | SPARQL CONSTRUCT derivation | graph set plus one approved CONSTRUCT template | generated triples/quads and explanation bindings | `graph/rule-result/{run_id}` | `rule` |
-| Platform DSL rules | graph set plus active rule definitions | generated statements, warnings, explanation records | `graph/rule-result/{run_id}` | `rule` |
+| Platform DSL rules | graph set plus compatible rule definitions | generated statements, warnings, explanation records | `graph/rule-result/{run_id}` | `rule` |
 | Workflow state machine | graph set plus workflow definition/version | state-transition events or validation outputs | `graph/rule-result/{run_id}` or workflow operational tables | `rule` when graph-derived |
 
 The shared contract is:
@@ -200,7 +200,7 @@ Successful persisted reasoning runs continue to promote `semantic_derived_result
 | `name` | string | Human-readable name. |
 | `language` | string | `sparql_construct`, `platform_dsl`, or `workflow_state_machine`. |
 | `version` | string | Immutable version identifier for the rule body. |
-| `status` | string | `draft`, `active`, `retired`, or `rejected`. |
+| `status` | string | Compatibility field; stored rules are normalized to `active` and are immediately executable. |
 | `body` | JSONB/text | Rule body or CONSTRUCT template. |
 | `input_roles` | JSONB | Allowed graph-set roles the rule may read. |
 | `output_kind` | string | `assertion`, `validation`, `workflow`, or `annotation`. |
@@ -211,7 +211,7 @@ Successful persisted reasoning runs continue to promote `semantic_derived_result
 | `created_at` / `updated_at` | timestamptz | Runtime bookkeeping. |
 | `metadata` | JSONB | Labels, owners, explanation template, or migration notes. |
 
-Rule definitions are operational control records. A semantic representation of each active rule may
+Rule definitions are operational control records. A semantic representation of each stored rule may
 also be exported to a policy or rule metadata graph, but the executable source in Phase 5 is this
 versioned operational record.
 
@@ -362,13 +362,13 @@ failed run must not become current.
 
 ## Rule Execution Flow
 
-Rule execution can run a single rule definition, a named rule group, or all active rules for a graph
+Rule execution can run a single rule definition, a named rule group, or all compatible rules for a graph
 set.
 
 ```text
 receive rule execution request
   -> resolve graph set
-  -> select active rule definitions and versions
+  -> select compatible rule definitions and versions
   -> validate language and safety profile
   -> snapshot source revisions and consumed derived pointers
   -> execute rules in deterministic order
@@ -431,7 +431,7 @@ implemented as a specialized rule run with `language="sparql_construct"`.
 
 `POST /api/semantic/graph-sets/{graph_set_id}/rule-runs`
 
-Runs one rule, a rule group, or all active rules for the graph set.
+Runs one rule, a rule group, or all compatible rules for the graph set.
 
 `GET /api/semantic/rule-runs/{run_id}`
 
@@ -619,7 +619,6 @@ graphs, CONSTRUCT execution against real RDF data, and result-graph export.
 
 ### 0. Documentation
 
-- [x] Keep this document linked from `semantic-language-refactor-plan.md`.
 - [x] State that Phase 5 separates reasoning, validation, derivation, rules, and workflow state.
 - [x] State that Phase 5 does not migrate product APIs to canonical RDF writes.
 

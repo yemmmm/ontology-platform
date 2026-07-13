@@ -500,7 +500,7 @@ def test_rule_definition_validates_platform_dsl_filter(in_memory_session) -> Non
         )
 
 
-def test_rule_definition_version_is_immutable_after_activation(
+def test_rule_definition_creates_new_version_for_new_body(
     in_memory_session, graph_set_service
 ) -> None:
     settings = Settings()
@@ -522,7 +522,6 @@ def test_rule_definition_version_is_immutable_after_activation(
             ],
         },
         input_roles=["asserted_data"],
-        status="active",
     )
     second = service.create_rule(
         rule_iri=f"{PREFIX}rule/dsl",
@@ -542,7 +541,6 @@ def test_rule_definition_version_is_immutable_after_activation(
             "explain": "updated",
         },
         input_roles=["asserted_data"],
-        status="active",
     )
     assert second.version != rule.version
     assert second.id != rule.id
@@ -580,7 +578,6 @@ def test_rule_execution_promotes_pointer_and_supersedes_previous(
             ],
         },
         input_roles=["asserted_data"],
-        status="active",
     )
     derived_service.promote_rule_pointer(
         graph_set_id=graph_set.id,

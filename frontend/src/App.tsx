@@ -995,7 +995,6 @@ function WorkspaceContent(props: {
         ontologyId={props.ontology.id}
         readOnly={readOnly}
         request={governedRequest}
-        navigate={props.navigateWorkspace}
       />
     );
   }

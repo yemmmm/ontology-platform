@@ -1,5 +1,5 @@
-import { Alert, Button, Card, Input, Modal, Select, Skeleton, Tag } from "antd";
-import { Edit3, Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
+import { Alert, Button, Card, Input, Modal, Pagination, Select, Skeleton, Tag } from "antd";
+import { Edit3, Plus, RefreshCw, Search, Trash2, Workflow } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
@@ -24,7 +24,6 @@ type RuleFormState = {
   language: "platform_dsl" | "sparql_construct" | "workflow_state_machine";
   bodyText: string;
   inputRolesText: string;
-  status: "draft" | "active" | "retired" | "rejected";
   priority: string;
 };
 
@@ -39,9 +38,10 @@ const EMPTY_FORM: RuleFormState = {
   language: "platform_dsl",
   bodyText: JSON.stringify(DEFAULT_DSL_BODY, null, 2),
   inputRolesText: "asserted_data",
-  status: "draft",
   priority: "0",
 };
+
+const PAGE_SIZE = 10;
 
 export function RulesPage({ readOnly, request }: RulesPageProps) {
   const t = useT();
@@ -53,6 +53,8 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<RuleFormState>(EMPTY_FORM);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,15 +73,38 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
     void load();
   }, [load]);
 
+  const filteredRules = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return rules;
+    return rules.filter((rule) =>
+      [rule.name, rule.rule_iri, rule.language, rule.version]
+        .some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [rules, searchQuery]);
+
+  const visibleRules = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredRules.slice(start, start + PAGE_SIZE);
+  }, [filteredRules, page]);
+
   useEffect(() => {
-    if (!selectedId && rules.length) {
-      setSelectedId(rules[0]!.id);
+    if (!selectedId && filteredRules.length) {
+      setSelectedId(filteredRules[0]!.id);
       return;
     }
-    if (selectedId && !rules.some((rule) => rule.id === selectedId)) {
-      setSelectedId(rules[0]?.id ?? null);
+    if (selectedId && !filteredRules.some((rule) => rule.id === selectedId)) {
+      setSelectedId(filteredRules[0]?.id ?? null);
     }
-  }, [rules, selectedId]);
+  }, [filteredRules, selectedId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredRules.length / PAGE_SIZE));
+    if (page > maxPage) setPage(maxPage);
+  }, [filteredRules.length, page]);
 
   const selectedRule = useMemo(
     () => rules.find((rule) => rule.id === selectedId) ?? null,
@@ -101,7 +126,6 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
       language: rule.language as RuleFormState["language"],
       bodyText: JSON.stringify(rule.body, null, 2),
       inputRolesText: rule.input_roles.join(", "),
-      status: rule.status as RuleFormState["status"],
       priority: String(rule.priority),
     });
     setEditing(true);
@@ -143,7 +167,6 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
     try {
       const updated = await updateRuleDefinition(request, selectedRule.id, {
         name: form.name.trim(),
-        status: form.status,
         priority,
       });
       setEditing(false);
@@ -197,7 +220,7 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
             <div className="reportPanelHeader">
               <Workflow size={15} />
               <span>{t("Rule definitions")}</span>
-              <Tag>{rules.length}</Tag>
+              <Tag>{filteredRules.length}</Tag>
             </div>
           }
         >
@@ -206,42 +229,82 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
           ) : rules.length === 0 ? (
             <div className="emptyState">{t("No rules yet")}</div>
           ) : (
-            <table className="namedGraphTable" aria-label="rule-definition-table">
-              <thead>
-                <tr>
-                  <th>{t("Name")}</th>
-                  <th>{t("Language")}</th>
-                  <th>{t("Status")}</th>
-                  <th>{t("Priority")}</th>
-                  <th>{t("Actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.map((rule) => (
-                  <tr key={rule.id} className={rule.id === selectedId ? "selectedTableRow" : undefined}>
-                    <td>
-                      <button className="ghostButton" type="button" onClick={() => setSelectedId(rule.id)}>
-                        {rule.name}
-                      </button>
-                      <div className="mutedCode">{rule.rule_iri}</div>
-                    </td>
-                    <td><code>{rule.language}</code></td>
-                    <td><RuleStatusTag status={rule.status} /></td>
-                    <td>{rule.priority}</td>
-                    <td>
-                      <div className="tableActions">
-                        <Button size="small" icon={<Edit3 size={13} />} onClick={() => openEdit(rule)} disabled={readOnly}>
-                          {t("Edit")}
-                        </Button>
-                        <Button size="small" danger icon={<Trash2 size={13} />} onClick={() => void removeRule(rule)} disabled={readOnly || submitting}>
-                          {t("Delete")}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="ruleListStack">
+              <Input
+                allowClear
+                className="ruleSearchInput"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t("Search rules")}
+                prefix={<Search size={14} />}
+                value={searchQuery}
+              />
+              {filteredRules.length === 0 ? (
+                <div className="emptyState">{t("No rules match this search")}</div>
+              ) : (
+                <>
+                  <table className="namedGraphTable" aria-label="rule-definition-table">
+                    <thead>
+                      <tr>
+                        <th>{t("Name")}</th>
+                        <th>{t("Language")}</th>
+                        <th>{t("Priority")}</th>
+                        <th>{t("Actions")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRules.map((rule) => (
+                        <tr
+                          key={rule.id}
+                          aria-label={`rule-row-${rule.id}`}
+                          className={
+                            rule.id === selectedId
+                              ? "selectedTableRow selectableTableRow"
+                              : "selectableTableRow"
+                          }
+                          onClick={() => setSelectedId(rule.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedId(rule.id);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <td>{rule.name}</td>
+                          <td><code>{rule.language}</code></td>
+                          <td>{rule.priority}</td>
+                          <td>
+                            <div
+                              className="tableActions"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              <Button size="small" icon={<Edit3 size={13} />} onClick={() => openEdit(rule)} disabled={readOnly}>
+                                {t("Edit")}
+                              </Button>
+                              <Button size="small" danger icon={<Trash2 size={13} />} onClick={() => void removeRule(rule)} disabled={readOnly || submitting}>
+                                {t("Delete")}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="rulePagination">
+                    <Pagination
+                      current={page}
+                      onChange={setPage}
+                      pageSize={PAGE_SIZE}
+                      showSizeChanger={false}
+                      size="small"
+                      total={filteredRules.length}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </Card>
 
@@ -283,11 +346,6 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
       />
     </section>
   );
-}
-
-function RuleStatusTag({ status }: { status: string }) {
-  const color = status === "active" ? "green" : status === "rejected" ? "red" : status === "retired" ? "orange" : "default";
-  return <Tag color={color}>{status}</Tag>;
 }
 
 function RuleModal({
@@ -344,19 +402,6 @@ function RuleModal({
                 { value: "platform_dsl", label: "platform_dsl" },
                 { value: "sparql_construct", label: "sparql_construct" },
                 { value: "workflow_state_machine", label: "workflow_state_machine" },
-              ]}
-            />
-          </label>
-          <label>
-            <span>{t("Status")}</span>
-            <Select
-              value={form.status}
-              onChange={(value) => onChange({ ...form, status: value })}
-              options={[
-                { value: "draft", label: "draft" },
-                { value: "active", label: "active" },
-                { value: "retired", label: "retired" },
-                { value: "rejected", label: "rejected" },
               ]}
             />
           </label>
@@ -425,7 +470,6 @@ function parseCreateForm(form: RuleFormState):
       language: form.language,
       body,
       inputRoles,
-      status: form.status,
       priority,
     },
   };

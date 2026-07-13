@@ -666,7 +666,6 @@ Optional integration or smoke checks:
 
 ### 0. Documentation
 
-- [ ] Keep this document linked from `semantic-language-refactor-plan.md` when Phase 6 is scheduled.
 - [ ] State that Phase 6 migrates reads and projections, not canonical writes.
 - [ ] Preserve the Oxigraph source boundary and rebuildable projection stance.
 

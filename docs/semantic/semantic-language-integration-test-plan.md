@@ -12,8 +12,8 @@
 
 ## Purpose
 
-This plan verifies the integrated behavior of the standard semantic-language refactor after the
-phase implementation work described in `semantic-language-refactor-plan.md`.
+This plan verifies the integrated behavior described by the implementation notes under
+`docs/semantic/`.
 
 The emphasis is cross-phase behavior, not isolated service unit coverage. Tests should prove that
 RDF Dataset storage, named-graph governance, direct semantic editing, SHACL validation, OWL

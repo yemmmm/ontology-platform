@@ -398,7 +398,7 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(page.getByText("Facts plus currently available reasoning results.")).toBeVisible();
   await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
   await expect(page.locator('button[aria-label="Select edge infers"]')).toHaveAttribute("data-edge-kind", "owl_inferred");
-  await expect(page.locator("section.entitiesPage.stage2").getByText("Reasoning highlighted")).toBeVisible();
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Focus")).not.toBeVisible();
   await page.locator('button[aria-label="Select edge infers"]').dispatchEvent("click");
   let details = page.getByLabel("Graph item details");
   await expect(details.getByText("Relation", { exact: true })).toBeVisible();
@@ -420,7 +420,7 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
   await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-kind", "rule_derived");
   await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-stale", "true");
-  await expect(page.locator("section.entitiesPage.stage2").getByText("Rules highlighted")).toBeVisible();
+  await expect(page.locator("section.entitiesPage.stage2").getByText("Focus")).not.toBeVisible();
   await page.locator('button[aria-label="Select edge qualifies"]').dispatchEvent("click");
   details = page.getByLabel("Graph item details");
   await expect(details.getByText("Relation", { exact: true })).toBeVisible();
@@ -441,7 +441,7 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(page.getByText(/Entity force graph · 2 nodes · 3 edges/)).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByText("Focus", { exact: true })).toBeVisible();
   await page.locator("section.entitiesPage.stage2").getByText("Reasoning", { exact: true }).click();
-  await expect(page.locator("section.entitiesPage.stage2").getByText("Reasoning highlighted")).toBeVisible();
+  await expect(page.locator("section.entitiesPage.stage2").getByRole("radio", { name: "Reasoning", exact: true })).toBeChecked();
 
   await page.locator('button[aria-label="Select node Entity One"]').dispatchEvent("click");
   details = page.getByLabel("Graph item details");
@@ -494,5 +494,4 @@ test("FactAuditPage graph-derived path renders asserted rows and kind tabs", asy
   await expect(page.locator("section.factAuditPage.stage2").getByText("Asserted", { exact: true })).toBeVisible();
   await expect(page.locator("section.factAuditPage.stage2").getByText("Inferred", { exact: true })).toBeVisible();
   await expect(page.locator("section.factAuditPage.stage2").getByText("Rule-derived", { exact: true })).toBeVisible();
-  await expect(page.locator("section.factAuditPage.stage2").getByText("Missing evidence", { exact: true })).toBeVisible();
 });

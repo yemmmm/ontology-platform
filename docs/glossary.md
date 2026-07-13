@@ -1,4 +1,4 @@
-# Ontology Platform
+# Ontology Platform Glossary
 
 > **Note (2026-07-08):** As of the evidence-storage refactor, "evidence
 > status" / "missing-evidence fact" / "derived_from_missing_evidence" are

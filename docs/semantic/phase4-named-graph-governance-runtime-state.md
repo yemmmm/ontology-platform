@@ -531,7 +531,6 @@ default `cd backend && uv run pytest` suite should not require a live RDF servic
 
 ### 0. Documentation
 
-- [x] Keep this document linked from `semantic-language-refactor-plan.md`.
 - [x] State that Phase 4 is graph governance/runtime state, not full canonical product migration.
 - [x] Separate Phase 4 graph-set/staleness design from Phase 5 rule and derivation execution.
 

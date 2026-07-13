@@ -63,6 +63,24 @@ const entitySearchEnvelope = {
   items: entitySearchItems,
 };
 
+// Fixture — entity-literal-facts for the Acme Corp row, used by the
+// recall page's inline detail panel.
+const entityLiteralFactsEnvelope = {
+  graph_set_id: GRAPH_SET_ID,
+  items: [
+    {
+      id: "fact-acme-founded",
+      subject_iri: "http://op.local/entity/acme-corp",
+      predicate_iri: "http://op.local/predicate/founded",
+      predicate_label: "Founded",
+      object_value: "1985",
+      object_label: "1985",
+      assertion_kind: "asserted",
+      stale: false,
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Fixtures — agent-test/run + graph_context (spec §7.2)
 // ---------------------------------------------------------------------------
@@ -316,6 +334,10 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
     ) {
       body = mode === "empty" ? { ...entitySearchEnvelope, items: [] } : entitySearchEnvelope;
     } else if (
+      path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-literal-facts`
+    ) {
+      body = entityLiteralFactsEnvelope;
+    } else if (
       path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`
     ) {
       body = mode === "empty" ? { ...factAuditEvidenceEnvelope, items: [] } : factAuditEvidenceEnvelope;
@@ -477,6 +499,76 @@ test("entity search owl_inferred scope filter drops results to zero", async ({
   // The empty-state block renders (no <li> rows).
   await expect(page.locator('[aria-label="entities-search-empty"]')).toBeVisible();
   await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// Step 3b — Empty input never fires entity-search (no recall without a query).
+// ---------------------------------------------------------------------------
+
+test("entity search does not recall entities before the user types", async ({
+  page,
+}) => {
+  await mockStage4(page);
+  const searchRequests: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().includes("/read-models/entity-search")) {
+      searchRequests.push(req.url());
+    }
+  });
+
+  await page.goto(workspaceUrl("search"));
+
+  // Empty-state prompt is visible and no search request was fired.
+  await expect(page.locator('[aria-label="entities-search-empty"]')).toBeVisible();
+  await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(0);
+  expect(searchRequests).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------------
+// Step 3c — Clicking a row expands an inline detail panel (no navigation),
+//           surfacing IRI, class, source graph, and literal facts.
+// ---------------------------------------------------------------------------
+
+test("entity search row click expands inline detail panel with facts", async ({
+  page,
+}) => {
+  await mockStage4(page);
+  await page.goto(workspaceUrl("search"));
+
+  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
+  const row = page.locator(
+    '[aria-label="entity-search-row-http://op.local/entity/acme-corp"]',
+  );
+  await expect(row).toBeVisible();
+
+  // Detail panel is absent before expand.
+  await expect(
+    page.locator('[aria-label="entity-search-detail-http://op.local/entity/acme-corp"]'),
+  ).toHaveCount(0);
+
+  // Click the row — expect a literal-facts fetch, not a navigation.
+  const factsRequest = page.waitForRequest(
+    (req) =>
+      req.method() === "GET" &&
+      req.url().includes(`/read-models/entity-literal-facts`) &&
+      req.url().includes("entity=http%3A%2F%2Fop.local%2Fentity%2Facme-corp"),
+  );
+  await row.click();
+  await factsRequest;
+
+  // Detail panel renders with business info + the literal fact.
+  const detail = page.locator(
+    '[aria-label="entity-search-detail-http://op.local/entity/acme-corp"]',
+  );
+  await expect(detail).toBeVisible();
+  await expect(detail).toContainText("http://op.local/entity/acme-corp");
+  await expect(detail).toContainText("Organization");
+  await expect(detail).toContainText(DATA_GRAPH);
+  await expect(detail).toContainText("Founded");
+  await expect(detail).toContainText("1985");
+
+  // URL still on the search tab — no navigation away.
+  await expect(page).toHaveURL(/tab=search/);
 });
 
 // ---------------------------------------------------------------------------

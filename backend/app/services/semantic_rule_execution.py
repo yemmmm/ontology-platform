@@ -1,6 +1,6 @@
 """Phase 5 rule execution: SPARQL CONSTRUCT, platform DSL, and workflow rules.
 
-A rule run resolves the graph set, picks active rule definitions, executes
+A rule run resolves the graph set, picks compatible rule definitions, executes
 them in deterministic order (priority, then rule_iri, then version), attaches
 provenance and assertion-kind annotations to the generated statements, writes
 the result graph to ``graph/rule-result/{run_id}``, optionally writes run
@@ -292,7 +292,6 @@ class SemanticRuleExecutionService:
             rules = list(
                 self.session.scalars(
                     select(SemanticRuleDefinitionModel)
-                    .where(SemanticRuleDefinitionModel.status == "active")
                     .order_by(
                         SemanticRuleDefinitionModel.priority.asc(),
                         SemanticRuleDefinitionModel.rule_iri.asc(),
@@ -735,11 +734,10 @@ class SemanticRuleExecutionService:
             rule = self.session.scalar(
                 select(SemanticRuleDefinitionModel)
                 .where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
-                .where(SemanticRuleDefinitionModel.status == "active")
                 .order_by(SemanticRuleDefinitionModel.updated_at.desc())
             )
             if rule is None:
-                raise RuleExecutionError(f"Active rule not found for IRI: {rule_iri}")
+                raise RuleExecutionError(f"Rule not found for IRI: {rule_iri}")
             return rule
         raise RuleExecutionError("rule_definition_id or rule_iri is required")
 

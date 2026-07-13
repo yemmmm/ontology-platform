@@ -258,10 +258,9 @@ def register_semantic(server: FastMCP) -> None:
         uses_inferred_facts: bool = False,
         requires_review: bool = False,
         priority: int = 0,
-        status: str = "draft",
         created_by: str | None = None,
     ) -> dict[str, Any]:
-        """Create or reuse a versioned platform rule definition."""
+        """Create or reuse an immediately executable platform rule definition."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _rule_definition_service(
                 session
@@ -276,7 +275,6 @@ def register_semantic(server: FastMCP) -> None:
                 uses_inferred_facts=uses_inferred_facts,
                 requires_review=requires_review,
                 priority=priority,
-                status=status,
                 created_by=created_by,
             )
             .__dict__
@@ -292,7 +290,7 @@ def register_semantic(server: FastMCP) -> None:
         engine_version: str | None = None,
         actor: str | None = None,
     ) -> dict[str, Any]:
-        """Run a single rule, a named group, or all active rules for a graph set."""
+        """Run a single rule, a named group, or all rules for a graph set."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _rule_execution_service(
                 session

@@ -2,14 +2,14 @@
 
 Rule definitions are operational control records that hold the executable source
 for SPARQL CONSTRUCT templates, platform DSL programs, or workflow state
-machines. Activated versions become immutable; later edits create a new version.
+machines. Saved rule definitions are immediately executable; later edits create
+a new version when executable content changes.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -46,8 +46,6 @@ ALLOWED_INPUT_ROLES: frozenset[str] = frozenset(
         "rule_result",
     }
 )
-ALLOWED_STATUSES: frozenset[str] = frozenset({"draft", "active", "retired", "rejected"})
-
 
 def compute_rule_version(body: dict[str, Any], language: str) -> str:
     """Deterministic version hash for a rule body and language."""
@@ -73,7 +71,6 @@ class SemanticRuleDefinitionService:
         requires_review: bool = False,
         priority: int = 0,
         safety_profile: dict[str, Any] | None = None,
-        status: str = "draft",
         created_by: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SemanticRuleDefinitionModel:
@@ -81,8 +78,6 @@ class SemanticRuleDefinitionService:
             raise RuleDefinitionError(f"Unsupported rule language: {language}")
         if output_kind not in ALLOWED_OUTPUT_KINDS:
             raise RuleDefinitionError(f"Unsupported output kind: {output_kind}")
-        if status not in ALLOWED_STATUSES:
-            raise RuleDefinitionError(f"Unsupported rule status: {status}")
         if not name:
             raise RuleDefinitionError("Rule name is required")
         if not rule_iri:
@@ -116,7 +111,7 @@ class SemanticRuleDefinitionService:
             name=name,
             language=language,
             version=version,
-            status=status,
+            status="active",
             body=body,
             input_roles=list(dict.fromkeys(input_roles)),
             output_kind=output_kind,
@@ -128,33 +123,6 @@ class SemanticRuleDefinitionService:
             rule_metadata=metadata or {},
         )
         self.session.add(record)
-        self.session.commit()
-        return record
-
-    def update_status(
-        self,
-        rule_id: str,
-        status: str,
-        actor: str | None = None,
-    ) -> SemanticRuleDefinitionModel:
-        record = self.get_rule(rule_id)
-        if status not in ALLOWED_STATUSES:
-            raise RuleDefinitionError(f"Unsupported rule status: {status}")
-        if record.status == "active" and status != "active":
-            record.status = status
-            record.rule_metadata = {
-                **(record.rule_metadata or {}),
-                "status_changed_at": datetime.now(UTC).isoformat(),
-                "status_changed_by": actor,
-            }
-            self.session.commit()
-            return record
-        record.status = status
-        record.rule_metadata = {
-            **(record.rule_metadata or {}),
-            "status_changed_at": datetime.now(UTC).isoformat(),
-            "status_changed_by": actor,
-        }
         self.session.commit()
         return record
 
@@ -176,20 +144,16 @@ class SemanticRuleDefinitionService:
     def get_rule_by_iri(
         self,
         rule_iri: str,
-        status: str | None = "active",
     ) -> SemanticRuleDefinitionModel | None:
         statement = (
             select(SemanticRuleDefinitionModel)
             .where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
         )
-        if status:
-            statement = statement.where(SemanticRuleDefinitionModel.status == status)
         statement = statement.order_by(SemanticRuleDefinitionModel.updated_at.desc())
         return self.session.scalar(statement)
 
     def list_rules(
         self,
-        status: str | None = None,
         language: str | None = None,
         rule_iri: str | None = None,
         limit: int = 100,
@@ -200,8 +164,6 @@ class SemanticRuleDefinitionService:
             SemanticRuleDefinitionModel.rule_iri.asc(),
             SemanticRuleDefinitionModel.version.asc(),
         )
-        if status:
-            statement = statement.where(SemanticRuleDefinitionModel.status == status)
         if language:
             statement = statement.where(SemanticRuleDefinitionModel.language == language)
         if rule_iri:

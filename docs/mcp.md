@@ -355,7 +355,7 @@ authenticated HTTP endpoint so binary content is not embedded in MCP arguments.
 - `generate_fact_claims(version_id)`: deterministically regenerate structured Fact Claims from the draft graph.
 - `list_fact_claims(version_id, layer?, claim_type?)`: list Fact Claims stratified by audit layer.
 - `sample_fact_claims(version_id, config?)`: return a stratified fact sample for human audit.
-- `execute_rule_definitions(version_id)`: run active deterministic rules and write derived Assertions for review.
+- `execute_rule_definitions(version_id)`: run deterministic rules and write derived Assertions for review.
 - `recall_background_knowledge(version_id, query?, query_embedding?, limit?)`: recall unanchored background knowledge separately from governed facts.
 
 Fact-generating tools emit the full `FactClaimRead` shape (id, claim_key, layer, claim_type,

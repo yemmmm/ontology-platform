@@ -543,13 +543,6 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
               <small>{t(selectedFocusConfig.description)}</small>
             </div>
           )}
-          <div className="semanticGraphLegend">
-            {derivedFocus === "reasoning" && <Tag color="blue">{t("Reasoning highlighted")}</Tag>}
-            {derivedFocus === "rules" && <Tag color="green">{t("Rules highlighted")}</Tag>}
-            {classLabels.slice(0, 8).map((label) => (
-              <Tag key={label}>{label}</Tag>
-            ))}
-          </div>
           {selectedIri && (
             <Tag closable onClose={() => setSelectedIri(null)}>
               {entityLabelByIri.get(selectedIri) ?? compactIri(selectedIri)}

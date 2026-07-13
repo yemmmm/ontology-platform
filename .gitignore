@@ -15,6 +15,7 @@ build/
 
 # Agent tooling (external skills, caches, critique output)
 .agents/
+.playwright-mcp/
 workspaces/
 skills-lock.json
 frontend/.od-skills/

@@ -3,8 +3,7 @@
 Date: 2026-07-04
 
 This document turns Phase 1 of the standard semantic-language refactor into an implementation
-checklist. It follows `semantic-language-refactor-plan.md` and
-`docs/semantic/phase0-technical-foundation.md`.
+checklist. It follows `docs/semantic/phase0-technical-foundation.md`.
 
 ## Goal
 
@@ -461,7 +460,6 @@ test failures.
 
 ### 0. Documentation
 
-- [x] Keep this document linked from `semantic-language-refactor-plan.md`.
 - [x] Record Phase 1 as a sidecar semantic runtime POC, not a canonical migration phase.
 - [x] Complete Phase 1 design before code implementation.
 

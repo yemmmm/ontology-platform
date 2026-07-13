@@ -8,7 +8,8 @@
  *   - asserted         → graph/data/{ontology_id}
  *   - inferred         → effective reasoning-result graph
  *   - rule_derived     → effective rule-result graph
- *   - missing_evidence → facts whose evidence_bindings list is empty
+ *
+ * The "missing evidence" view is a client-side filter toggle on the Asserted tab.
  *
  * Toolbar actions:
  *   - Generate  → POST /graph-sets/{gs}/reasoning-runs + /rule-runs (async,
@@ -35,6 +36,7 @@ import {
   Segmented,
   Space,
   Spin,
+  Switch,
   Tag,
 } from "antd";
 import { Edit3, FileText, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
@@ -55,7 +57,7 @@ import { EvidenceChunkPicker } from "../components/semantic";
 import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
-type AssertionKind = "asserted" | "inferred" | "rule_derived" | "missing_evidence";
+type AssertionKind = "asserted" | "inferred" | "rule_derived";
 
 const REASONED_KINDS: ReadonlySet<AssertionKind> = new Set(["inferred", "rule_derived"]);
 
@@ -111,12 +113,10 @@ const KIND_OPTIONS: Array<{ label: string; value: AssertionKind }> = [
   { label: "Asserted", value: "asserted" },
   { label: "Inferred", value: "inferred" },
   { label: "Rule-derived", value: "rule_derived" },
-  { label: "Missing evidence", value: "missing_evidence" },
 ];
 
 const INCLUDE_FOR_KIND: Record<AssertionKind, string> = {
   asserted: "asserted",
-  missing_evidence: "asserted",
   inferred: "asserted-plus-reasoning",
   rule_derived: "asserted-plus-rules",
 };
@@ -127,6 +127,7 @@ const POLL_TIMEOUT_MS = 60_000;
 export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: FactAuditPageProps) {
   const t = useT();
   const [kind, setKind] = useState<AssertionKind>("asserted");
+  const [missingEvidenceOnly, setMissingEvidenceOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -173,6 +174,12 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     () => items.find((row) => row.id === selectedId) ?? null,
     [items, selectedId],
   );
+  const displayedItems = useMemo(() => {
+    if (kind === "asserted" && missingEvidenceOnly) {
+      return items.filter((row) => (row.evidence_bindings ?? []).length === 0);
+    }
+    return items;
+  }, [items, kind, missingEvidenceOnly]);
   const visibleWarnings = useMemo(() => {
     const seen = new Set<string>();
     return warnings.filter((warning) => {
@@ -400,10 +407,10 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
 
   const counts = useMemo(() => {
     return {
-      total: items.length,
-      stale: items.filter((row) => row.stale).length,
+      total: displayedItems.length,
+      stale: displayedItems.filter((row) => row.stale).length,
     };
-  }, [items]);
+  }, [displayedItems]);
 
   if (loading) return <Spin tip={t("Loading fact audit…")} />;
 
@@ -468,20 +475,36 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
       </Space>
 
       <Card size="small" title={t("Fact kind")}>
-        <Segmented
-          value={kind}
-          onChange={(value) => setKind(value as AssertionKind)}
-          options={KIND_OPTIONS}
-        />
+        <Space wrap>
+          <Segmented
+            value={kind}
+            onChange={(value) => {
+              const next = value as AssertionKind;
+              setKind(next);
+              if (next !== "asserted") setMissingEvidenceOnly(false);
+            }}
+            options={KIND_OPTIONS}
+          />
+          {kind === "asserted" && (
+            <Space size={6}>
+              <Switch
+                size="small"
+                checked={missingEvidenceOnly}
+                onChange={setMissingEvidenceOnly}
+              />
+              <span>{t("Missing evidence only")}</span>
+            </Space>
+          )}
+        </Space>
       </Card>
 
       <div className="factAuditLayout">
         <Card
-          title={t("Fact queue · {n}", { n: items.length })}
+          title={t("Fact queue · {n}", { n: displayedItems.length })}
           styles={{ body: { padding: 8, maxHeight: 680, overflow: "auto" } }}
         >
           <FactQueue
-            rows={items}
+            rows={displayedItems}
             selectedId={selectedId}
             onSelect={setSelectedId}
           />

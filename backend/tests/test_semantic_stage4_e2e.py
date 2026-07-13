@@ -76,6 +76,10 @@ def test_read_model_entity_search_class_filter(fake_graph_set_with_evidence):
         limit=50,
     )
     assert len(envelope["items"]) == 1
+    class_filter_query = svc.rdf_store.queries[-1]
+    assert class_filter_query.lstrip().startswith("# template: entity-search")
+    assert f"FILTER(?class = <{ACME_CLASS}>)" in class_filter_query
+    assert not class_filter_query.lstrip().startswith("VALUES ?class_iri")
     # Filter by a non-existent class → 0 rows.
     envelope_empty = svc.read_model(
         graph_set_id=graph_set_id,

@@ -372,23 +372,17 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: 'edge[kind = "owl_inferred"], edge[kind = "inferred"]',
     style: {
-      width: 2.2,
       "line-color": "#5668d9",
       "target-arrow-color": "#5668d9",
-      "line-opacity": 0.86,
       color: "#4856b8",
-      "font-weight": 600,
     },
   },
   {
     selector: 'edge[kind = "rule_derived"]',
     style: {
-      width: 2.2,
       "line-color": "#2f8f75",
       "target-arrow-color": "#2f8f75",
-      "line-opacity": 0.86,
       color: "#257561",
-      "font-weight": 600,
     },
   },
   {

@@ -20,7 +20,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("language", sa.String(length=40), nullable=False),
         sa.Column("version", sa.String(length=80), nullable=False),
-        sa.Column("status", sa.String(length=32), server_default="draft", nullable=False),
+        sa.Column("status", sa.String(length=32), server_default="active", nullable=False),
         sa.Column("body", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column(
             "input_roles",

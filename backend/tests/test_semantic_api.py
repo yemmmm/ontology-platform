@@ -424,7 +424,6 @@ def test_rule_definition_endpoint_creates_active_dsl_rule(in_memory_session) -> 
                 ],
             },
             "input_roles": ["asserted_data"],
-            "status": "active",
             "priority": 10,
         },
     )
@@ -459,15 +458,15 @@ def test_rule_definition_endpoint_rejects_unsafe_construct_template(
     assert "SERVICE" in response.json()["detail"]
 
 
-def test_list_rule_definitions_filters_by_status(in_memory_session) -> None:
+def test_list_rule_definitions_returns_immediately_active_rules(in_memory_session) -> None:
     client = _client(FakeStore(), in_memory_session)
 
-    for status in ("active", "draft"):
+    for suffix in ("one", "two"):
         client.post(
             "/api/semantic/rule-definitions",
             json={
-                "rule_iri": f"{PREFIX}rule/{status}",
-                "name": status,
+                "rule_iri": f"{PREFIX}rule/{suffix}",
+                "name": suffix,
                 "language": "platform_dsl",
                 "body": {
                     "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
@@ -480,16 +479,13 @@ def test_list_rule_definitions_filters_by_status(in_memory_session) -> None:
                     ],
                 },
                 "input_roles": ["asserted_data"],
-                "status": status,
             },
         )
-    response = client.get(
-        "/api/semantic/rule-definitions", params={"status": "active"}
-    )
+    response = client.get("/api/semantic/rule-definitions")
     assert response.status_code == 200
     body = response.json()
-    assert len(body["rules"]) == 1
-    assert body["rules"][0]["status"] == "active"
+    assert len(body["rules"]) == 2
+    assert {rule["status"] for rule in body["rules"]} == {"active"}
 
 
 def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) -> None:
@@ -512,7 +508,6 @@ def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) ->
                 ],
             },
             "input_roles": ["asserted_data"],
-            "status": "draft",
         },
     )
     assert create_response.status_code == 200
@@ -520,7 +515,7 @@ def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) ->
 
     update_response = client.patch(
         f"/api/semantic/rule-definitions/{rule_id}",
-        json={"name": "renamed", "priority": 5, "status": "active"},
+        json={"name": "renamed", "priority": 5},
     )
     assert update_response.status_code == 200
     updated = update_response.json()
@@ -614,7 +609,6 @@ def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> 
                 ],
             },
             "input_roles": ["asserted_data"],
-            "status": "active",
         },
     )
     rule_id = create_response.json()["id"]
@@ -629,7 +623,7 @@ def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> 
     assert body["generated_statement_count"] >= 1
 
 
-def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_selected(
+def test_graph_set_rule_run_endpoint_executes_all_rules_when_no_rule_selected(
     in_memory_session,
 ) -> None:
     store = FakeStore(
@@ -648,8 +642,8 @@ def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_sele
     create_response = client.post(
         "/api/semantic/rule-definitions",
         json={
-            "rule_iri": f"{PREFIX}rule/dsl-all-active",
-            "name": "dsl all active",
+            "rule_iri": f"{PREFIX}rule/dsl-all",
+            "name": "dsl all",
             "language": "platform_dsl",
             "body": {
                 "when": [
@@ -664,7 +658,6 @@ def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_sele
                 ],
             },
             "input_roles": ["asserted_data"],
-            "status": "active",
         },
     )
     assert create_response.status_code == 200
@@ -682,7 +675,7 @@ def test_graph_set_rule_run_endpoint_executes_all_active_rules_when_no_rule_sele
     assert body["generated_statement_count"] >= 1
 
 
-def test_graph_set_rule_run_endpoint_noops_when_no_active_rules(
+def test_graph_set_rule_run_endpoint_noops_when_no_rules(
     in_memory_session,
 ) -> None:
     client = _client(FakeStore(), in_memory_session)
@@ -704,7 +697,7 @@ def test_graph_set_rule_run_endpoint_noops_when_no_active_rules(
     assert body["derived_pointer"]["status"] == "current"
 
 
-def test_graph_set_rule_run_endpoint_skips_active_construct_rules_for_other_graph_sets(
+def test_graph_set_rule_run_endpoint_skips_construct_rules_for_other_graph_sets(
     in_memory_session,
 ) -> None:
     store = FakeStore(
@@ -729,7 +722,6 @@ def test_graph_set_rule_run_endpoint_skips_active_construct_rules_for_other_grap
                     )
                 },
                 "input_roles": ["asserted_data"],
-                "status": "active",
             },
         )
         assert response.status_code == 200

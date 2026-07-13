@@ -373,13 +373,13 @@ candidate knowledge, and submit evidence-bound proposals.
 - `POST /api/versions/{version_id}/background-knowledge/{knowledge_id}:promote` creates a normal
   governed Proposal from background knowledge and records `promoted_proposal_id`; the promoted
   content must still pass Proposal, Evidence, Review, and Assertion/RuleDefinition application.
-- `POST /api/versions/{version_id}/rule-definitions` stores a validated `RuleDefinition`.
+- `POST /api/versions/{version_id}/rule-definitions` stores a validated, immediately usable
+  `RuleDefinition`.
   Supported `rule_type` values are `classification`, `derived_relation`, `validation`, and
   `workflow`.
-- Rule candidates should normally enter through `POST /api/proposals` with `proposal_type=rule`
-  and `items[].kind=rule`; validation checks referenced Class, Property, RelationType, enum values,
-  conditions, and Assertion templates before review and application create the `RuleDefinition`.
-- `POST /api/versions/{version_id}/rule-definitions:execute` runs active deterministic rules
+- Rule candidates are checked against referenced Class, Property, RelationType, enum values,
+  conditions, and Assertion templates before storage.
+- `POST /api/versions/{version_id}/rule-definitions:execute` runs deterministic rules
   against the current graph snapshot and writes only derived or validation Assertions for review.
 - `POST /api/versions/{version_id}/knowledge:recall` merges entity properties, entity Assertions,
   Class defaults and inherited Class Assertions, overrides, rule-derived Assertions, and optional

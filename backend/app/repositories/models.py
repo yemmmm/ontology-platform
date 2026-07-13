@@ -679,7 +679,7 @@ class SemanticRuleDefinitionModel(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     language: Mapped[str] = mapped_column(String(40), nullable=False)
     version: Mapped[str] = mapped_column(String(80), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="draft", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     input_roles: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     output_kind: Mapped[str] = mapped_column(String(40), default="assertion", nullable=False)
@@ -821,4 +821,3 @@ class SemanticMigrationParityReportModel(Base):
     parity_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
 
     migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="parity_reports")
-

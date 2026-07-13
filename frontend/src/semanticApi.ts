@@ -332,7 +332,7 @@ export function listRuleRuns(
 
 export function listRuleDefinitions(
   request: SemanticRequester,
-  filters: { status?: string; language?: string; ruleIri?: string; limit?: number } = {},
+  filters: { language?: string; ruleIri?: string; limit?: number } = {},
 ) {
   const path = withParams(`${SEMANTIC_BASE}/rule-definitions`, filters);
   return request<SemanticRuleDefinitionListResponse>(path);
@@ -351,7 +351,6 @@ export function createRuleDefinition(
     requiresReview?: boolean;
     priority?: number;
     safetyProfile?: SemanticJsonObject;
-    status?: "draft" | "active" | "retired" | "rejected";
     createdBy?: string;
     metadata?: SemanticJsonObject;
   },
@@ -369,7 +368,6 @@ export function createRuleDefinition(
       requires_review: payload.requiresReview ?? false,
       priority: payload.priority ?? 0,
       safety_profile: payload.safetyProfile ?? {},
-      status: payload.status ?? "draft",
       created_by: payload.createdBy,
       metadata: payload.metadata ?? {},
     }),
@@ -381,7 +379,6 @@ export function updateRuleDefinition(
   ruleId: string,
   payload: {
     name?: string;
-    status?: "draft" | "active" | "retired" | "rejected";
     priority?: number;
     metadata?: SemanticJsonObject;
   },
@@ -390,7 +387,6 @@ export function updateRuleDefinition(
     method: "PATCH",
     body: JSON.stringify({
       name: payload.name,
-      status: payload.status,
       priority: payload.priority,
       metadata: payload.metadata,
     }),
@@ -536,7 +532,7 @@ export function readModel<T = SemanticReadModelEnvelope>(
     fieldSet?: string;
     limit?: number;
     /** Stage 2 §6.3 fact-audit-queue composer: drives source-graph selection
-     * (asserted / inferred / rule_derived / missing_evidence). */
+     * (asserted / inferred / rule_derived). */
     kind?: string;
     /** Stage 3 §4.3 graph-set-delta composer: the other graph set id to
      * diff against (passed as the `target` query param). */

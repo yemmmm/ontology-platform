@@ -93,7 +93,7 @@ export function GraphSetPage({
       const [detail, evidence, ruleList] = await Promise.all([
         getGraphSet(request, id),
         getMissingEvidenceFacts(request, id).catch(() => null),
-        listRuleDefinitions(request, { status: "active", limit: 50 }).catch(() => ({ rules: [] })),
+        listRuleDefinitions(request, { limit: 50 }).catch(() => ({ rules: [] })),
       ]);
       setGraphSet(detail);
       setMissingEvidence(evidence);
@@ -382,7 +382,7 @@ export function GraphSetPage({
       )}
 
       {rules && rules.rules.length > 0 && (
-        <SemanticPanel title={t("Active rule definitions")} icon={<Workflow size={15} />}>
+        <SemanticPanel title={t("Rule definitions")} icon={<Workflow size={15} />}>
           <ul className="ruleDefinitionList">
             {rules.rules.map((rule) => (
               <li key={rule.id}>
