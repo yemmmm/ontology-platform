@@ -133,3 +133,4 @@ MCP tools accept an `api_key` argument and compare it with `MCP_API_KEY`.
 - [Glossary](docs/glossary.md)
 - [Platform Guide](docs/platform-guide.md)
 - [v0.5 Requirements](docs/requirements-v0.5.md)
+- [v1.0 Agent Semantic Layer Requirements](docs/requirements-v1.0.md)
