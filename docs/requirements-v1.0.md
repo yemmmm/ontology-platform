@@ -77,7 +77,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | 自然语言语义查询 | 部分实现 | 当前只是 label/comment/IRI 子串查询；没有通用结构化上下文接口。 |
 | Search / Vector 投影 | 部分实现 | 文档构建器和任务模型已存在，但运行时使用 `FakeSearchWriter` / `FakeVectorWriter`，结果不会持久化。 |
 | Agent 查询测试 | 部分实现 | 当前 `agent-test` 在平台内调用 LLM 生成答案，与目标边界不一致，且中文分词能力不足。 |
-| Agent 构建接口 | 部分实现 | MCP 可读 Brief、提交 RDF 编辑和业务命令，但不能管理构建会话、带证据批次和幂等重试。 |
+| Agent 构建接口 | 部分实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、恢复、幂等终态和 Ontology Lease；R-004 带证据建模批次尚未接入。 |
 | 本体组合 | 部分实现 | Graph Set 可组合多个图，Mapping 命令存在；缺少本体依赖、导入版本和桥接关系契约。 |
 | 身份认证和项目隔离 | 未实现 | `ApiKeyModel` 是未使用的骨架；HTTP/MCP 路由没有认证依赖，SPARQL 可查询整个 Dataset。 |
 | 操作语义模型 | 未实现 | 尚无通用 Operation、参数、前置条件、效果、风险和外部工具绑定查询契约。 |
@@ -262,13 +262,28 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 
 ### R-003 外部 Agent 构建会话与 MCP 协议
 
-当前状态：`部分实现`
+当前状态：`部分实现`（R-003 会话协议已落地，R-004 apply 接线未完成）
+
+最后更新：2026-07-14
+
+实现证据：`2cfbfc1`；迁移 `0022_build_sessions`；Project Build Context、Build Session、
+Checkpoint、Ontology Lease 共十个 REST 能力和十个 MCP 工具；旧 `get_build_context` MCP 工具
+保留为 deprecated 委托别名；`BuildSessionService.authorize_apply(...)` 已提供工作区版本 guard。
+
+验证证据：`cd backend && uv run pytest`（495 passed，1 skipped）；
+`RUN_POSTGRES_CONCURRENCY_TESTS=1 uv run pytest tests/test_build_session_postgres.py`（1 passed，
+两条真实 PostgreSQL 连接竞争同一 Ontology 时恰好一个成功）；`uv run alembic upgrade head` 后
+当前版本为 `0022_build_sessions (head)`。
+
+剩余问题：R-004 的实际 apply 路径尚未调用 `authorize_apply(...)`，也尚未把建模批次、验证结果
+和 Evidence Association 聚合进 Build Context。因此本项仍保持“部分实现”，不能标记为
+“已实现”。R-008 认证授权仍是外部接入前的独立安全依赖。
 
 技术设计：`docs/superpowers/specs/2026-07-14-r003-build-session-design.md`
 
 #### 要解决的问题
 
-当前 `GET /projects/{project_id}/build-context` 只是 Project、Brief、Ontology 列表和能力问题的
+实施前，`GET /projects/{project_id}/build-context` 只是 Project、Brief、Ontology 列表和能力问题的
 聚合快照，不能区分一次具体的外部 Agent 工作过程，也没有检查点、恢复、并发保护和建模批次
 关联。Agent 中断后仍依赖自己的聊天记录或本地文件判断做到哪里；两个 Agent 同时修改同一
 Ontology 时，平台也不能在写入前明确发现冲突。

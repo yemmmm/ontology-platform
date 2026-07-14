@@ -1,7 +1,7 @@
 # R-003 外部 Agent 构建会话与恢复协议设计
 
 **Date:** 2026-07-14  
-**Status:** Draft  
+**Status:** Implemented for R-003 service layer; R-004 apply integration pending
 **Owner:** Agent  
 **Requirement:** `docs/requirements-v1.0.md` R-003
 
