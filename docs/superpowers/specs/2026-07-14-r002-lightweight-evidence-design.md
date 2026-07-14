@@ -49,6 +49,10 @@ Evidence Reference 与具体建模结果之间的多对多关联：
 关联唯一键防止网络重试生成重复记录。引用、本体和 Graph Set 必须属于同一 Project；跨项目
 资源统一表现为不可用。
 
+`POST /projects/{project_id}/evidence-associations:batch` 提供后续建模批次可直接复用的逐项协议：
+dry-run 返回规范化候选且不落库；默认模式先校验全部项目并原子应用；只有显式
+`allow_partial=true` 时才使用逐项 savepoint，失败项不会遗留孤立引用。
+
 canonical write 接口额外接受 `evidence_reference_ids`、`evidence`、`client_item_id` 和可选
 `evidence_target_id`。证据先完成只读校验，语义写入成功后与同一编辑审计关联并提交数据库事务。
 当前 RDF 与 Postgres 仍是两个存储系统；R-004 的批量协议需要在此服务原语之上补充跨存储恢复

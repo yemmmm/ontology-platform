@@ -410,8 +410,10 @@ the exact source excerpt they used:
 | `GET` | `/api/projects/{project_id}/evidence-references` | Search and page through project references. |
 | `GET` | `/api/evidence-references/{id}` | Read one immutable reference. |
 | `GET` | `/api/evidence-references/{id}/associations` | List concrete modeling results supported by the reference. |
+| `GET` | `/api/projects/{project_id}/evidence-associations` | Resolve one modeling target back to its full evidence references. |
 | `POST` | `/api/projects/{project_id}/evidence-references:resolve` | Dry-run or persist existing IDs and inline excerpts. |
 | `POST` | `/api/projects/{project_id}/evidence-associations` | Resolve excerpts and associate one modeling target. |
+| `POST` | `/api/projects/{project_id}/evidence-associations:batch` | Dry-run or apply atomic/explicit-partial association items. |
 
 Canonical product writes accept optional `evidence_reference_ids`, inline `evidence`,
 `client_item_id`, and `evidence_target_id`. The older Artifact/Chunk endpoints above remain a

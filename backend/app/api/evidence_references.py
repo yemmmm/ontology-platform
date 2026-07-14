@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.models import EvidenceAssociationModel
+from app.repositories.models import EvidenceAssociationModel, SemanticEditAuditModel
 from app.services.evidence_reference import (
     EvidenceReferenceError,
     EvidenceReferenceService,
@@ -47,6 +47,24 @@ class EvidenceAssociationCreate(BaseModel):
     edit_audit_id: str | None = None
     evidence_reference_ids: list[str] = Field(default_factory=list)
     evidence: list[EvidenceReferenceInput] = Field(default_factory=list)
+    actor: str | None = None
+
+
+class EvidenceAssociationBatchItem(BaseModel):
+    client_item_id: str = Field(min_length=1, max_length=255)
+    ontology_id: str
+    graph_set_id: str | None = None
+    target_type: str = Field(min_length=1, max_length=64)
+    target_id: str = Field(min_length=1, max_length=512)
+    edit_audit_id: str | None = None
+    evidence_reference_ids: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceReferenceInput] = Field(default_factory=list)
+
+
+class EvidenceAssociationBatchRequest(BaseModel):
+    items: list[EvidenceAssociationBatchItem] = Field(min_length=1)
+    dry_run: bool = False
+    allow_partial: bool = False
     actor: str | None = None
 
 
@@ -146,6 +164,38 @@ def list_evidence_associations(
     return {"items": [association_to_dict(row) for row in rows], "total": len(rows)}
 
 
+@router.get("/projects/{project_id}/evidence-associations")
+def list_target_evidence_associations(
+    project_id: str,
+    ontology_id: Annotated[str, Query()],
+    target_type: Annotated[str, Query(min_length=1)],
+    target_id: Annotated[str, Query(min_length=1)],
+    session: Session = Depends(get_db_session),
+) -> dict:
+    service = EvidenceReferenceService(session)
+    try:
+        service.require_project(project_id)
+        service.require_ontology_scope(project_id, ontology_id, None)
+        rows = service.list_associations(
+            ontology_id=ontology_id,
+            target_type=target_type,
+            target_id=target_id,
+        )
+        items = [
+            {
+                **association_to_dict(row),
+                "evidence_reference": reference_to_dict(
+                    service.get(row.evidence_reference_id, project_id=project_id)
+                ),
+            }
+            for row in rows
+            if row.project_id == project_id
+        ]
+    except EvidenceReferenceError as exc:
+        _raise(exc)
+    return {"items": items, "total": len(items)}
+
+
 @router.post("/projects/{project_id}/evidence-references:resolve")
 def resolve_evidence_references(
     project_id: str,
@@ -219,3 +269,138 @@ def create_evidence_associations(
         session.rollback()
         _raise(exc)
     return {"items": [association_to_dict(row) for row in rows], "total": len(rows)}
+
+
+def _preview_batch_item(
+    service: EvidenceReferenceService,
+    project_id: str,
+    item: EvidenceAssociationBatchItem,
+    actor: str | None,
+) -> dict:
+    service.require_ontology_scope(project_id, item.ontology_id, item.graph_set_id)
+    if item.edit_audit_id and service.session.get(
+        SemanticEditAuditModel, item.edit_audit_id
+    ) is None:
+        raise EvidenceReferenceError("Semantic edit audit not found")
+    resolved = service.resolve_candidates(
+        project_id,
+        reference_ids=item.evidence_reference_ids,
+        inline_evidence=[entry.model_dump() for entry in item.evidence],
+        actor=actor,
+        persist=False,
+    )
+    candidates = []
+    for row, candidate, created in resolved:
+        candidates.append(
+            {
+                "id": row.id if row else None,
+                "document_name": row.document_name if row else candidate.document_name,
+                "excerpt_hash": row.excerpt_hash if row else candidate.excerpt_hash,
+                "would_create": bool(created and row is None),
+            }
+        )
+    return {
+        "client_item_id": item.client_item_id,
+        "status": "valid",
+        "evidence": candidates,
+        "associations": [],
+    }
+
+
+def _apply_batch_item(
+    service: EvidenceReferenceService,
+    project_id: str,
+    item: EvidenceAssociationBatchItem,
+    actor: str | None,
+) -> dict:
+    resolved = service.resolve_candidates(
+        project_id,
+        reference_ids=item.evidence_reference_ids,
+        inline_evidence=[entry.model_dump() for entry in item.evidence],
+        actor=actor,
+        persist=True,
+    )
+    rows = service.associate(
+        project_id=project_id,
+        ontology_id=item.ontology_id,
+        graph_set_id=item.graph_set_id,
+        target_type=item.target_type,
+        target_id=item.target_id,
+        client_item_id=item.client_item_id,
+        edit_audit_id=item.edit_audit_id,
+        references=[row for row, _candidate, _created in resolved if row is not None],
+        actor=actor,
+    )
+    return {
+        "client_item_id": item.client_item_id,
+        "status": "applied",
+        "evidence": [reference_to_dict(row) for row, _candidate, _created in resolved if row],
+        "associations": [association_to_dict(row) for row in rows],
+    }
+
+
+@router.post("/projects/{project_id}/evidence-associations:batch")
+def apply_evidence_association_batch(
+    project_id: str,
+    payload: EvidenceAssociationBatchRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    service = EvidenceReferenceService(session)
+    if payload.dry_run:
+        results = []
+        for item in payload.items:
+            try:
+                results.append(_preview_batch_item(service, project_id, item, payload.actor))
+            except EvidenceReferenceError as exc:
+                results.append(
+                    {
+                        "client_item_id": item.client_item_id,
+                        "status": "invalid",
+                        "error": str(exc),
+                        "evidence": [],
+                        "associations": [],
+                    }
+                )
+        session.rollback()
+        return {"dry_run": True, "partial": payload.allow_partial, "items": results}
+
+    if not payload.allow_partial:
+        errors = []
+        for item in payload.items:
+            try:
+                _preview_batch_item(service, project_id, item, payload.actor)
+            except EvidenceReferenceError as exc:
+                errors.append({"client_item_id": item.client_item_id, "error": str(exc)})
+        if errors:
+            session.rollback()
+            raise HTTPException(status_code=422, detail={"items": errors})
+        try:
+            results = [
+                _apply_batch_item(service, project_id, item, payload.actor)
+                for item in payload.items
+            ]
+            session.commit()
+        except EvidenceReferenceError as exc:
+            session.rollback()
+            _raise(exc)
+        return {"dry_run": False, "partial": False, "items": results}
+
+    results = []
+    for item in payload.items:
+        try:
+            with session.begin_nested():
+                _preview_batch_item(service, project_id, item, payload.actor)
+                result = _apply_batch_item(service, project_id, item, payload.actor)
+            results.append(result)
+        except EvidenceReferenceError as exc:
+            results.append(
+                {
+                    "client_item_id": item.client_item_id,
+                    "status": "failed",
+                    "error": str(exc),
+                    "evidence": [],
+                    "associations": [],
+                }
+            )
+    session.commit()
+    return {"dry_run": False, "partial": True, "items": results}

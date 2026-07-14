@@ -172,6 +172,17 @@ def test_association_reuses_reference_and_is_idempotent(in_memory_session: Sessi
     assert first.json()["items"][0]["id"] == second.json()["items"][0]["id"]
     assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
     assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
+    target_query = client.get(
+        f"/api/projects/{PROJECT_ID}/evidence-associations",
+        params={
+            "ontology_id": ONTOLOGY_ID,
+            "target_type": "create_class",
+            "target_id": "https://example.test/Workflow",
+        },
+    )
+    assert target_query.status_code == 200
+    assert target_query.json()["total"] == 1
+    assert target_query.json()["items"][0]["evidence_reference"]["document_name"] == "API Guide"
 
 
 def test_cross_project_reference_is_hidden_and_atomic(in_memory_session: Session) -> None:
@@ -198,6 +209,54 @@ def test_cross_project_reference_is_hidden_and_atomic(in_memory_session: Session
         )
     ) == 0
     assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 0
+
+
+def test_association_batch_dry_run_atomic_failure_and_partial_apply(
+    in_memory_session: Session,
+) -> None:
+    _seed_scope(in_memory_session)
+    client = _client(in_memory_session)
+    valid_item = {
+        "client_item_id": "valid-item",
+        "ontology_id": ONTOLOGY_ID,
+        "graph_set_id": GRAPH_SET_ID,
+        "target_type": "create_entity",
+        "target_id": "https://example.test/entity/1",
+        "evidence": [{"document_name": "Guide", "excerpt": "An entity exists."}],
+    }
+    invalid_item = {
+        "client_item_id": "invalid-item",
+        "ontology_id": ONTOLOGY_ID,
+        "graph_set_id": GRAPH_SET_ID,
+        "target_type": "create_entity",
+        "target_id": "https://example.test/entity/2",
+        "evidence": [{"document_name": "  ", "excerpt": "invalid source"}],
+    }
+
+    dry_run = client.post(
+        f"/api/projects/{PROJECT_ID}/evidence-associations:batch",
+        json={"dry_run": True, "items": [valid_item]},
+    )
+    assert dry_run.status_code == 200
+    assert dry_run.json()["items"][0]["evidence"][0]["would_create"] is True
+    assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
+
+    atomic = client.post(
+        f"/api/projects/{PROJECT_ID}/evidence-associations:batch",
+        json={"items": [valid_item, invalid_item]},
+    )
+    assert atomic.status_code == 422
+    assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
+    assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 0
+
+    partial = client.post(
+        f"/api/projects/{PROJECT_ID}/evidence-associations:batch",
+        json={"allow_partial": True, "items": [valid_item, invalid_item]},
+    )
+    assert partial.status_code == 200
+    assert [item["status"] for item in partial.json()["items"]] == ["applied", "failed"]
+    assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
+    assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
 
 
 def test_canonical_write_atomically_persists_inline_evidence(
