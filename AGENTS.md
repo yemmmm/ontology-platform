@@ -17,6 +17,18 @@ This repository contains a FastAPI backend and a Vite/React frontend for an onto
 - `frontend/src/pages/CatalogPage.tsx`: catalog and connector workspace UI.
 - `docs/`: architecture, API, MCP, UI docs, and ADRs.
 
+## Project Target Guidance
+
+`docs/glossary.md` is the authoritative source for the project's target conceptual model and
+ubiquitous language. Read it before architecture, API, storage, semantic modeling, MCP, or UI work,
+and use its canonical terms consistently in designs, code, tests, and documentation.
+
+Treat differences between the current implementation and the glossary as implementation gaps, not
+as reasons to silently redefine the target model. Surface conflicts explicitly and update the
+glossary only when the target domain decision itself changes. Requirements documents define delivery
+scope, priority, and status, while ADRs record architectural decisions; neither the current code nor
+older planning documents override the glossary's conceptual boundaries.
+
 ## Build, Test, and Development Commands
 
 - `./scripts/start-local.sh`: checks PostgreSQL and Neo4j, syncs dependencies, runs migrations, and starts backend plus frontend.
