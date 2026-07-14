@@ -627,6 +627,401 @@ h3 {
   height: 32px;
 }
 
+/* Build Context is intentionally dense and operational: platform facts and Agent reports
+   read as two parallel ledgers instead of a blended dashboard. */
+.buildContextPage {
+  display: grid;
+  gap: 14px;
+}
+
+.buildContextHero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid #dfe3ef;
+  border-left: 4px solid #5142c8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+
+.buildContextHero h2 {
+  margin: 5px 0 4px;
+  color: var(--ink);
+  font-size: 24px;
+  letter-spacing: -0.025em;
+}
+
+.buildContextHero p,
+.buildContextHeroActions span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.buildContextKicker,
+.buildContextHeroActions span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.buildContextKicker {
+  color: #5142c8;
+  font-size: 11px;
+  font-weight: 780;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.buildContextHeroActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.buildContextDiagnostics,
+.buildContextRaw {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 13px;
+}
+
+.buildContextSectionHeading,
+.buildContextSectionHeading > div,
+.buildContextLaneTitle,
+.contextBlock > header {
+  display: flex;
+  align-items: center;
+}
+
+.buildContextSectionHeading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.buildContextSectionHeading > div,
+.contextBlock > header {
+  gap: 7px;
+}
+
+.buildContextSectionHeading h3,
+.contextBlock h4 {
+  margin: 0;
+}
+
+.buildContextSectionHeading h3 {
+  font-size: 14px;
+}
+
+.buildContextSectionHeading > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.diagnosticList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.diagnosticItem,
+.diagnosticClear {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 7px;
+  padding: 9px 10px;
+}
+
+.diagnosticItem {
+  border: 1px solid #ecd59e;
+  background: #fffaf0;
+  color: #7d5a12;
+}
+
+.diagnosticItem.error {
+  border-color: #f2c5ca;
+  background: var(--error-bg);
+  color: #a52937;
+}
+
+.diagnosticItem svg { flex: 0 0 auto; margin-top: 1px; }
+.diagnosticItem div { display: grid; gap: 2px; }
+.diagnosticItem strong { font-size: 12px; }
+.diagnosticItem span { font-size: 11px; line-height: 1.45; }
+
+.diagnosticClear {
+  align-items: center;
+  margin-top: 9px;
+  background: var(--ok-bg);
+  color: #157556;
+  font-size: 12px;
+}
+
+.buildContextColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.buildContextLane {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-top: 3px solid #1d8170;
+  border-radius: 8px;
+  background: #f9fbfb;
+  padding: 14px;
+}
+
+.buildContextLane.agent {
+  border-top-color: #5142c8;
+  background: #faf9fd;
+}
+
+.buildContextLaneTitle { gap: 9px; }
+.buildContextLaneTitle span { color: var(--muted); font-size: 10px; font-weight: 760; text-transform: uppercase; letter-spacing: .08em; }
+.buildContextLaneTitle h3 { margin: 1px 0 0; font-size: 17px; }
+
+.buildContextLaneIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #e8f5f1;
+  color: #1d8170;
+}
+
+.agent .buildContextLaneIcon { background: #efedff; color: #5142c8; }
+
+.contextMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.contextMetricGrid.agentMetrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.contextMetric {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #dde7e4;
+  border-radius: 7px;
+  background: #fff;
+  padding: 9px;
+}
+
+.agent .contextMetric { border-color: #e3e0f2; }
+.contextMetric span { color: var(--muted); font-size: 10px; }
+.contextMetric strong { color: var(--ink); font-size: 18px; }
+
+.contextBlock {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.contextBlock > header {
+  color: #474b5e;
+  border-bottom: 1px solid #eef0f5;
+  margin: -2px -1px 10px;
+  padding: 0 1px 9px;
+}
+
+.contextBlock h4 { color: var(--ink); font-size: 12px; }
+.contextEmptyLine { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; margin: 0; }
+
+.countList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.countList div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e6e8ef;
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.countList span { color: var(--muted); }
+
+.workspaceStateList,
+.sessionList,
+.checkpointTimeline {
+  display: grid;
+  gap: 8px;
+}
+
+.workspaceStateItem,
+.sessionItem {
+  border: 1px solid #e5e7ef;
+  border-radius: 7px;
+  background: #fff;
+  padding: 10px;
+}
+
+.workspaceStateHeader,
+.sessionItemTop,
+.sessionItemFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workspaceStateHeader > div,
+.sessionItemTop > div { display: grid; gap: 2px; }
+.workspaceStateHeader strong,
+.sessionItemTop strong { color: var(--ink); font-size: 12px; }
+.workspaceStateHeader code,
+.sessionItemTop span { color: var(--muted); font-size: 10px; }
+
+.workspaceStateItem dl,
+.sessionDetail dl {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 5px 8px;
+  margin: 9px 0 0;
+  font-size: 10px;
+}
+
+.workspaceStateItem dt,
+.sessionDetail dt { color: var(--muted); }
+.workspaceStateItem dd,
+.sessionDetail dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+.contextStatus {
+  border-radius: 999px;
+  background: #eef0f5;
+  color: #5f6477;
+  padding: 3px 7px;
+  font-size: 9px;
+  font-weight: 770;
+  text-transform: uppercase;
+}
+
+.contextStatus.ready,
+.contextStatus.active { background: var(--ok-bg); color: #157556; }
+.contextStatus.blocked,
+.contextStatus.cancelled { background: var(--error-bg); color: #a52937; }
+.contextStatus.completed { background: #efedff; color: #5142c8; }
+
+.contextTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.contextTags span {
+  border-radius: 4px;
+  background: #f0f1f6;
+  color: #5e6273;
+  padding: 3px 5px;
+  font-size: 9px;
+}
+
+.sessionItem {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.sessionItem:hover,
+.sessionItem.selected { border-color: #bcb5f7; background: #fbfaff; }
+.sessionMuted,
+.sessionItem > span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+
+.sessionItemFooter {
+  justify-content: flex-start;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.sessionItemFooter svg:last-child { margin-left: auto; }
+
+.checkpointSummary { display: grid; gap: 4px; }
+.checkpointSummary strong { color: #272a38; font-size: 11px; }
+.checkpointSummary > span:not(.checkpointPhase):not(.checkpointFailure) { color: var(--muted); font-size: 10px; }
+.checkpointPhase { width: fit-content; border-radius: 4px; background: #efedff; color: #5142c8; padding: 2px 5px; font-size: 9px; font-weight: 760; text-transform: uppercase; }
+.checkpointOntology code { color: #5142c8; font-size: 9px; }
+.checkpointFailure { color: #a52937; font-size: 10px; }
+.contextLoadMore { width: 100%; justify-content: center; margin-top: 8px; }
+
+.sessionDetail h5 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 7px; font-size: 11px; }
+.sessionDetail h5 span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: #f0eff8; color: #5142c8; font-size: 9px; }
+.sessionDetailSection { border-bottom: 1px solid #eef0f5; padding-bottom: 11px; }
+.sessionDetailSection:first-child h5 { margin-top: 0; }
+.detailIdentifierList { display: grid; gap: 5px; }
+.detailIdentifierList code { overflow-wrap: anywhere; border-radius: 5px; background: #f5f6fa; color: #464b5e; padding: 6px 7px; font-size: 9px; }
+.leaseSummaryList,
+.safeSummaryList,
+.activitySummaryList { display: grid; gap: 7px; }
+.leaseSummaryList article { border: 1px solid #e5e7ef; border-radius: 7px; padding: 8px; }
+.leaseSummaryList article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.leaseSummaryList code { overflow-wrap: anywhere; color: #3f4352; font-size: 9px; }
+.leaseSummaryList dl { margin-top: 8px; }
+.safeSummaryList pre { overflow: auto; max-height: 160px; margin: 0; border-radius: 6px; background: #f7f8fb; padding: 8px; color: #3f4352; font-size: 9px; line-height: 1.45; white-space: pre-wrap; }
+.detailReadOnlyHint { display: grid; gap: 4px; margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.activitySummaryList article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; border-left: 2px solid #d7d2fa; background: #fafaff; padding: 7px 8px; }
+.activitySummaryList span { color: #35394a; font-size: 10px; font-weight: 720; text-transform: capitalize; }
+.activitySummaryList time,
+.activitySummaryList small { color: var(--muted); font-size: 9px; }
+.activitySummaryList code { grid-column: 1 / -1; overflow-wrap: anywhere; color: #5142c8; font-size: 9px; }
+.activitySummaryList small { grid-column: 1 / -1; }
+.checkpointTimeline article { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; border-left: 2px solid #d7d2fa; padding: 8px 8px 8px 10px; background: #fafaff; }
+.checkpointTimeline article > span { color: #5142c8; font-size: 9px; font-weight: 780; }
+.checkpointTimeline time { grid-column: 2; color: var(--muted); font-size: 9px; }
+.sessionRaw { margin-top: 10px; font-size: 11px; }
+
+.buildContextRaw summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.buildContextRaw summary span { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 500; }
+.buildContextRaw[open] summary { margin-bottom: 10px; }
+
+.buildContextCentered {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 320px;
+  align-content: center;
+  border: 1px dashed #d2d6e5;
+  border-radius: 8px;
+  background: #fbfcff;
+  color: var(--muted);
+  text-align: center;
+}
+
+.buildContextCentered strong { color: var(--ink); }
+.buildContextCentered span { max-width: 540px; font-size: 11px; }
+
 .debugRunTile {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2533,6 +2928,19 @@ textarea:focus {
   .homeLayout,
   .homeOntologyGrid {
     grid-template-columns: 1fr;
+  }
+
+  .buildContextColumns,
+  .diagnosticList,
+  .contextMetricGrid,
+  .contextMetricGrid.agentMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .buildContextHero,
+  .buildContextHeroActions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .span2,

@@ -264,16 +264,24 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 
 当前状态：`部分实现`（R-003 会话协议已落地，R-004 apply 接线未完成）
 
-最后更新：2026-07-14
+最后更新：2026-07-15
 
 实现证据：`2cfbfc1`；迁移 `0022_build_sessions`；Project Build Context、Build Session、
 Checkpoint、Ontology Lease 共十个 REST 能力和十个 MCP 工具；旧 `get_build_context` MCP 工具
 保留为 deprecated 委托别名；`BuildSessionService.authorize_apply(...)` 已提供工作区版本 guard。
+Debug 区域已增加只读 Project 级 Build Context 诊断页，直接展示 `platform_state` 与
+`agent_state`，支持最近会话游标分页、按需读取 Session 详情、确定性诊断提示及原始 JSON；
+页面不提供任何 Session、Checkpoint 或 Lease 修改操作。前端实现见
+`frontend/src/pages/BuildContextDebugPage.tsx`，设计见
+`docs/superpowers/specs/2026-07-15-r003-build-context-debug-design.md`。
 
 验证证据：`cd backend && uv run pytest`（495 passed，1 skipped）；
 `RUN_POSTGRES_CONCURRENCY_TESTS=1 uv run pytest tests/test_build_session_postgres.py`（1 passed，
 两条真实 PostgreSQL 连接竞争同一 Ontology 时恰好一个成功）；`uv run alembic upgrade head` 后
 当前版本为 `0022_build_sessions (head)`。
+前端诊断页验证：`cd frontend && npm run build`；
+`cd frontend && npx playwright test tests/build-context-debug.spec.ts`（4 passed）；
+`cd frontend && npx playwright test`（30 passed）。
 
 剩余问题：R-004 的实际 apply 路径尚未调用 `authorize_apply(...)`，也尚未把建模批次、验证结果
 和 Evidence Association 聚合进 Build Context。因此本项仍保持“部分实现”，不能标记为

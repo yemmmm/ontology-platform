@@ -448,17 +448,102 @@ export type ProjectBrief = {
   completeness: number;
 };
 
+export type BuildContextWorkspace = {
+  state: string;
+  workspace_version: string | null;
+  editable: boolean;
+  issues: string[];
+};
+
 export type BuildContextOntology = {
   id: string;
   name: string;
   status: string;
+  workspace: BuildContextWorkspace;
+};
+
+export type BuildFailure = {
+  code: string;
+  message: string;
+};
+
+export type BuildCheckpoint = {
+  id: string;
+  build_session_id: string;
+  client_checkpoint_id: string;
+  sequence: number;
+  ontology_id: string | null;
+  phase: string;
+  current_step: string;
+  next_step: string | null;
+  summary: string | null;
+  blockers: string[];
+  failure: BuildFailure | null;
+  related_batch_id: string | null;
+  reported_by: string | null;
+  created_at: string;
+};
+
+export type BuildSessionStatus = "active" | "completed" | "cancelled";
+
+export type BuildSessionSummary = {
+  id: string;
+  project_id: string;
+  client_session_id: string;
+  previous_session_id: string | null;
+  status: BuildSessionStatus;
+  revision: number;
+  created_by: string | null;
+  completion_summary: string | null;
+  unresolved_items: string[];
+  cancel_reason: string | null;
+  last_activity_at: string;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  latest_checkpoint: BuildCheckpoint | null;
+};
+
+export type OntologyLeaseSummary = {
+  ontology_id: string;
+  build_session_id: string;
+  lease_revision: number;
+  state: "active" | "expired" | "released";
+  acquired_at: string;
+  renewed_at: string | null;
+  expires_at: string;
+  released_at: string | null;
+};
+
+export type BuildSessionDetail = {
+  session: BuildSessionSummary;
+  latest_checkpoint: BuildCheckpoint | null;
+  checkpoints: BuildCheckpoint[];
+  checkpoints_next_cursor: number | null;
+  involved_ontology_ids: string[];
+  leases: OntologyLeaseSummary[];
+  modeling_batches: JsonObject[];
+  evidence: JsonObject;
+  recent_activity: JsonObject[];
 };
 
 export type BuildContext = {
   project: Pick<Project, "id" | "name" | "description">;
-  project_brief: ProjectBrief;
-  ontologies: BuildContextOntology[];
-  competency_question_counts: Record<string, number>;
+  generated_at: string;
+  platform_state: {
+    project_brief: ProjectBrief;
+    competency_question_counts: Record<string, number>;
+    ontologies: BuildContextOntology[];
+    evidence_reference_count: number;
+    modeling_batches: JsonObject[];
+  };
+  agent_state: {
+    active_sessions: BuildSessionSummary[];
+    recent_sessions: BuildSessionSummary[];
+    recent_sessions_next_cursor: number | null;
+    unresolved_items: string[];
+  };
 };
 
 export type CompetencyQuestionStatus = "draft" | "approved" | "testable" | "passed" | "failed";

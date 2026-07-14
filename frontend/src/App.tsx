@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  ServerCog,
   Settings,
   ShieldCheck,
   Trash2,
@@ -56,6 +57,7 @@ import { GraphSetPage } from "./pages/GraphSetPage";
 import { SemanticRunsPage } from "./pages/SemanticRunsPage";
 import { SemanticEditWorkbenchPage } from "./pages/SemanticEditWorkbenchPage";
 import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
+import { BuildContextDebugPage } from "./pages/BuildContextDebugPage";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { useT } from "./i18n";
@@ -92,6 +94,7 @@ type WorkspaceTab =
   | "mcp-tools"
   | "setting"
   | "graph-governance"
+  | "build-context"
   | "named-graphs"
   | "graph-sets"
   | "semantic-edits"
@@ -141,6 +144,7 @@ const workspaceTabs: Array<{
   { id: "rules", stage: "modeling", label: "Rules", detail: "Rule definitions", icon: Workflow },
   { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
   { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
+  { id: "build-context", stage: "debug", label: "Build Context", detail: "Platform facts · Agent reports", icon: ServerCog },
   { id: "agent-test", stage: "debug", label: "Agent Test", detail: "Question runs", icon: Send },
   { id: "search", stage: "debug", label: "Recall", detail: "Entity search", icon: Search },
   { id: "mcp-tools", stage: "debug", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
@@ -232,7 +236,11 @@ function useStoredWorkspaceTab(key: string, fallback: WorkspaceTab) {
 
 export function App() {
   const t = useT();
-  const [view, setView] = useState<AppView>(() => queryValue("ontology") ? "workspace" : "home");
+  const [view, setView] = useState<AppView>(() =>
+    queryValue("ontology") || (queryValue("project") && queryValue("tab") === "build-context")
+      ? "workspace"
+      : "home",
+  );
   const requestedTab = queryValue("tab");
   const [workspaceTab, setWorkspaceTab] = useStoredWorkspaceTab(
     UI_KEYS.workspaceTab,
@@ -278,10 +286,11 @@ export function App() {
   }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
 
   useEffect(() => {
-    if (view !== "workspace" || !selectedProjectId || !selectedOntologyId) return;
+    if (view !== "workspace" || !selectedProjectId || (workspaceTab !== "build-context" && !selectedOntologyId)) return;
     const params = new URLSearchParams(window.location.search);
     params.set("project", selectedProjectId);
-    params.set("ontology", selectedOntologyId);
+    if (selectedOntologyId) params.set("ontology", selectedOntologyId);
+    else params.delete("ontology");
     params.set("tab", workspaceTab);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }, [selectedOntologyId, selectedProjectId, view, workspaceTab]);
@@ -500,7 +509,14 @@ export function App() {
             {notice && <StatusBanner notice={notice} onDismiss={() => setNotice(null)} />}
 
             <div className="contentFrame">
-              {!selectedOntology || !selectedProject ? (
+              {!selectedProject ? (
+                <EmptyState
+                  icon={<Waypoints size={22} />}
+                  title={t("The linked project and ontology context is not available")}
+                />
+              ) : workspaceTab === "build-context" ? (
+                <BuildContextDebugPage projectId={selectedProject.id} request={request} />
+              ) : !selectedOntology ? (
                 <EmptyState
                   icon={<Waypoints size={22} />}
                   title={t("The linked project and ontology context is not available")}
@@ -1354,6 +1370,12 @@ function DebugPage(props: {
     <section className="pageGrid systemGrid" aria-label="debug-page">
       <Panel title={t("Debug tools")} icon={<Wrench size={17} />} wide>
         <div className="debugToolGrid">
+          <DebugToolCard
+            icon={<ServerCog size={17} />}
+            title={t("Build Context")}
+            detail={t("Compare server-observed facts with external Agent session reports.")}
+            onClick={() => props.navigateWorkspace("build-context")}
+          />
           <DebugToolCard
             icon={<Send size={17} />}
             title={t("Agent Test")}
