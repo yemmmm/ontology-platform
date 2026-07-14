@@ -89,7 +89,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | ID | 需求 | 优先级 | 当前状态 | 投入 | 投入产出比 | 主要依赖 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R-001 | 新建本体时自动创建默认语义工作区 | P0 | 已实现 | M | 极高 | 无 |
-| R-002 | 轻量证据引用与建模结果关联 | P0 | 部分实现 | S | 极高 | R-001 |
+| R-002 | 轻量证据引用与建模结果关联 | P0 | 已实现 | S | 极高 | R-001 |
 | R-003 | 外部 Agent 构建会话与 MCP 协议 | P0 | 部分实现 | M | 极高 | R-001、R-002 |
 | R-004 | 幂等批量建模提交与确定性校验 | P0 | 部分实现 | M | 极高 | R-001、R-003 |
 | R-005 | 统一知识来源与推导链 | P0 | 部分实现 | L | 高 | R-002、R-004 |
@@ -175,7 +175,7 @@ Agent 临时指定。例如，对同一个 Ontology 重复执行初始化时，�
 
 ### R-002 轻量证据引用与建模结果关联
 
-当前状态：`部分实现`
+当前状态：`已实现`
 
 外部建模 Agent 自行访问并读取知识文档，从中提取本体结构、关系、实体和事实。平台不要求
 Agent 先上传完整文档，也不负责下载、解析、分块或版本化外部文档。Agent 提交建模结果时，
@@ -246,6 +246,14 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 - 已被建模结果或审计引用的 Evidence Reference 不得物理删除；首版可以不提供删除接口。
 - 独立创建、批次内联、dry-run、原子失败、显式部分应用和相同请求重试均有服务级测试，证明
   不会产生重复引用、重复关联或失败项遗留数据。
+
+实现证据：`2dbe342`、`61f56f6`；迁移 `0021_lightweight_evidence`；REST
+`evidence-references` / `evidence-associations`、四个 MCP 工具、canonical write 与事实证据兼容
+接入，以及 Overview 下的项目共享 Evidence 页面。
+
+验证证据：`cd backend && uv run pytest`（474 passed）；`cd frontend && npm run build`；
+`cd frontend && npx playwright test`；真实 PostgreSQL/Oxigraph 环境完成迁移、引用幂等、项目级
+查询、默认 Ontology 工作区关联和临时数据清理验证。
 
 ### R-003 外部 Agent 构建会话与 MCP 协议
 
