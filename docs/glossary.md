@@ -42,6 +42,34 @@ graph plus its data graph, governing policy graph, and current effective reasoni
 graphs where inferred or derived statements are needed.
 _Avoid_: snapshot, bundle
 
+**Build Context**:
+A project-level, server-derived recovery view for external modeling Agents. It summarizes the
+Project Brief, all Ontologies in the Project, unresolved work, active or recent Build Sessions,
+accepted modeling batches, failures, and recent activity. It is not an Agent conversation or a
+single Ontology's graph view.
+_Avoid_: Graph Set context, chat history, Agent local workspace
+
+**Build Session**:
+A project-owned durable record of one externally coordinated continuous work process. One session
+may be resumed by a different authorized Agent instance and may inspect or update multiple
+Ontologies in the Project. The platform records progress, checkpoints, accepted batches, and
+activity, but does not run or host the Agent.
+_Avoid_: model runtime, chat session, Graph Set session
+
+**Build Checkpoint**:
+An append-only progress statement reported by an external modeling Agent within a Build Session.
+It records the current phase and step, intended next step, current Ontology focus, blockers, or a
+failure explanation. It complements, but never replaces, progress derived from accepted platform
+records.
+_Avoid_: platform-inferred Agent plan, mutable progress note
+
+**Ontology Lease**:
+A time-limited exclusive right held by a Build Session to apply modeling changes to one Ontology.
+It prevents concurrent Agents from silently overwriting the same Ontology, while reads and work on
+other Ontologies remain available. Lease expiry removes edit authority but does not cancel the
+Build Session or delete its progress.
+_Avoid_: Graph Set lock, project-wide lock, user permission
+
 **Actual Graph**:
 The named graph that semantic edits affect when graph editing is enabled.
 _Avoid_: draft graph, published graph

@@ -143,8 +143,10 @@ Agent 提议、平台校验和保存。
   已授权的建模流程写入，治理类图遵守其专用策略。
 - 一个 `scope_type=ontology`、`scope_id=<ontology_id>` 的默认活动 Graph Set，并以明确角色
   组合这些图，例如 `asserted_ontology`、`asserted_data`、`shapes`、`policy`。
-- Agent 可直接使用的工作区描述：默认 Graph Set ID、各角色对应的 graph IRI、各图当前修订、
-  可编辑状态和当前来源签名（source signature）。
+- 平台可由 Ontology ID 直接解析的工作区描述：默认 Graph Set、各角色对应的 graph IRI、各图
+  当前修订、可编辑状态和当前来源签名（source signature）。普通 Agent 上下文以 Ontology
+  工作区状态为主，不要求调用方读取或回传 Graph Set ID 和 graph IRI；受控 Debug/高级接口
+  可以返回这些内部细节。
 
 初始化资源的 IRI 与标识必须由 Ontology ID 按稳定规则推导，而不是由前端、Debug 页面或
 Agent 临时指定。例如，对同一个 Ontology 重复执行初始化时，始终定位到同一组默认资源。
@@ -157,9 +159,11 @@ Agent 临时指定。例如，对同一个 Ontology 重复执行初始化时，�
   缺失资源。repair 只能创建缺失项或修复不一致项，不能悄然覆盖已有图内容和修订。
 - 初始化过程应以原子事务完成；若涉及无法与数据库同事务提交的资源，则必须记录可恢复的
   初始化状态，并让 repair 可安全地收敛到完整工作区。
-- 后续 R-003 至 R-006 均以该默认 Graph Set 为默认作用域；R-002 的 Evidence Reference
-  归属 Project，其建模结果关联仍须校验目标 Ontology 和 Graph Set。调用方可在高级场景显式
-  选择其他 Graph Set，但不能因缺省作用域缺失而无法工作。
+- 后续 R-003 至 R-006 在平台内部均以该默认 Graph Set 为默认语义范围；其中 R-003/R-004
+  的普通 Agent 构建协议以 Ontology 为外部工作目标，由平台解析默认 Graph Set，不要求调用方
+  填写 Graph Set ID 或图 IRI。R-002 的 Evidence Reference 归属 Project，其建模结果关联仍须
+  在平台内部校验目标 Ontology 和 Graph Set。高级语义查询是否允许显式选择其他 Graph Set，
+  由相应需求单独定义，但不能因缺省作用域缺失而无法工作。
 
 验收标准：
 
@@ -168,8 +172,9 @@ Agent 临时指定。例如，对同一个 Ontology 重复执行初始化时，�
 - 每个新本体恰有一个默认活动 Graph Set；其中图成员角色完整、唯一，并且都归属该 Ontology。
 - 对同一 Ontology 重试初始化或调用 repair，不会创建重复图、注册记录、修订记录或 Graph Set，
   也不会改写已有图内容。
-- 面向 Agent 的 `build-context`（或替代的稳定工作区上下文接口）同时返回默认 Graph Set、图
-  角色、graph IRI、修订、可编辑状态和来源签名。
+- 面向 Agent 的 `build-context` 返回 Ontology 工作区是否就绪、工作区修订、可编辑状态、来源
+  签名和问题摘要，不要求 Agent 读取或回传 Graph Set ID 和 graph IRI；受控工作区详情接口
+  仍可返回默认 Graph Set、图角色和 graph IRI，用于平台诊断与高级语义操作。
 - 初始化失败必须整体回滚，或留下可识别的待修复状态；repair 后可安全恢复为完整工作区。
 - 已存在的历史 Ontology 可批量或按需执行 repair，并获得与新建本体一致的默认工作区结构。
 
@@ -259,17 +264,150 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 
 当前状态：`部分实现`
 
-平台提供 Build Session，记录一次外部 Agent 构建或更新本体的服务器端进度。Agent 运行时
-仍在平台外部，平台不调度或托管模型。
+#### 要解决的问题
+
+当前 `GET /projects/{project_id}/build-context` 只是 Project、Brief、Ontology 列表和能力问题的
+聚合快照，不能区分一次具体的外部 Agent 工作过程，也没有检查点、恢复、并发保护和建模批次
+关联。Agent 中断后仍依赖自己的聊天记录或本地文件判断做到哪里；两个 Agent 同时修改同一
+Ontology 时，平台也不能在写入前明确发现冲突。
+
+平台需要保存一次外部 Agent 构建或更新工作的服务器端进度，但 Agent 运行时仍在平台外部，
+平台不调度或托管模型，不保存完整对话，也不替 Agent 决定下一步建模计划。
+
+#### 作用域与核心概念
+
+- `Build Context` 是 Project 级、由服务器生成的恢复视图。它让 Agent 看到整个 Project 的
+  Brief、全部 Ontology、未解决事项、活动或最近 Build Session、已接受建模批次、失败和最近
+  活动，而不是只返回某个 Ontology 的局部状态。
+- `Build Session` 归属一个 Project，记录一段外部协调的连续工作过程。不同的已授权 Agent
+  实例可以恢复同一 active Session；一个 Session 可以依次查看或更新 Project 内多个
+  Ontology，创建 Session 不会自动锁定整个 Project。
+- `Build Checkpoint` 是 Agent 上报的追加式进度记录，至少包含阶段、当前步骤、下一步、当前
+  关注的 Ontology、阻塞项或失败原因。Checkpoint 表达 Agent 的工作意图，不能覆盖平台已经
+  观察到的批次、验证、Evidence Association、修订和错误事实。
+- `Ontology Lease` 是 Build Session 对某个 Ontology 的限时独占编辑权。读取 Build Context、
+  查询 Ontology 和执行不落库的分析不需要租约；真正应用建模变更时必须持有有效租约。
+- Graph Set 是平台内部的语义数据范围和审计信息。R-003 的外部 REST/MCP 协议以
+  `project_id`、`build_session_id` 和 `ontology_id` 为主要标识，不要求 Agent 选择、创建或管理
+  Graph Set。平台在内部解析默认工作空间，并把实际 Graph Set、图修订和来源签名记录到批次
+  与审计中，以支持重放和问题诊断。
+
+本项只调整构建协议的外部边界。R-006 是否继续要求调用方显式指定 Graph Set，应在细化
+R-006 时单独决定，不能由 R-003 默默改变。
+
+#### 平台事实与 Agent 检查点
+
+Build Context 必须明确区分两类进度：
+
+1. **平台观察状态**：由已持久化的 Project Brief、能力问题、Ontology、Evidence Reference、
+   建模批次、验证结果、修订和审计确定性生成，Agent 不能通过 Checkpoint 改写。
+2. **Agent 报告状态**：由最新 Build Checkpoint 表达，包括当前阶段、当前步骤、下一步、工作
+   摘要、关注的 Ontology、阻塞项和失败说明。平台保存这些内容，但不把它们伪装成已经完成的
+   平台事实。
+
+因此，即使 Agent 上报“模型已完成”，只要平台没有对应成功批次和验证记录，Build Context
+仍必须分别展示“Agent 报告已完成”和“平台尚未观察到完成证据”。
+
+#### 生命周期
+
+Build Session 首版只使用三个持久状态：
+
+- `active`：工作尚未显式结束，可以继续追加 Checkpoint、获取 Ontology Lease 和关联建模批次。
+- `completed`：调用方显式完成，记录完成摘要并释放全部租约；这是终态，不代表 Ontology 已
+  发布或通过全部质量门槛。
+- `cancelled`：调用方显式取消，必须记录原因并释放全部租约；这是终态。
+
+`resume` 是恢复一个 `active` Session 的动作，不是单独状态。Agent 进程退出、网络断开或租约
+过期都不会自动把 Session 改成 `failed`、`cancelled` 或 `completed`。失败属于 Checkpoint 或
+具体建模批次的结果；外部 Agent 可以读取失败原因后在同一 active Session 中修正并继续。
+已完成或已取消的 Session 不可重新打开，需要继续工作时创建新的 Session，并可记录前序
+Session ID。
+
+完成 Session 前不得存在仍在执行的建模批次。完成不要求所有 Ontology 都达到发布就绪，因为
+一次 Session 可以只是局部更新；完成摘要必须说明本次实际完成的范围和未解决事项。
+
+#### 检查点、恢复与乐观并发
+
+- 每个 Checkpoint 有稳定的客户端 Checkpoint ID 和服务器序号；相同客户端 ID 重试时幂等
+  返回原记录，不重复追加。
+- Session 保存单调递增的 `revision`。追加 Checkpoint、完成或取消时，调用方提交
+  `expected_revision`；版本不匹配返回冲突以及当前 revision，避免两个 Agent 静默覆盖进度。
+- Checkpoint 采用追加式历史，不能修改或删除旧记录。Build Session 可缓存最新 Checkpoint
+  以便读取，但历史仍是恢复和审计依据。
+- 恢复响应至少返回 Session 状态与 revision、最新 Checkpoint、涉及的 Ontology、已接受及失败
+  批次、相关 Evidence Reference、当前租约、最近活动时间和可继续读取的历史游标。
+- Build Context 可以使用摘要和分页，不能因为响应大小而无提示地截断恢复所需记录；若详细
+  Evidence 或批次内容通过独立 REST/MCP 读取，必须返回稳定 ID 和明确的继续读取入口。
+- 平台不保存 Agent 在外部文档中的阅读光标、浏览器状态或本地文件路径。Agent 需要恢复资料
+  阅读时，依赖自身能力重新定位；平台只保存已经提交的 Evidence Reference 文档名和原文片段。
+
+#### Ontology Lease 与冲突语义
+
+- 同一 Ontology 同一时刻最多有一个有效写租约；不同 Ontology 可以由不同 Build Session
+  并行处理。一个 Session 可以持有多个 Ontology Lease，但单个建模批次只能作用于一个
+  Ontology，不提供跨 Ontology 原子写入。
+- 获取租约返回不透明 lease token、到期时间和租约 revision。租约只能由持有它的 Session
+  续期或主动释放；token 只在请求和响应中使用，平台不得明文持久化。
+- 对同一 Session 和 Ontology 重试获取租约必须幂等。若租约已被其他 Session 持有，返回冲突、
+  到期时间和可安全公开的持有会话信息，不等待、不抢占。
+- 租约到期后其他 Session 可以获取新租约；旧 token 随即失效。旧 Agent 后续提交写批次时
+  必须被拒绝，不能因为它曾经持有租约而继续写入。
+- 租约只解决编辑并发，不是身份权限。调用方还必须通过 R-008 的 Project/Ontology 授权校验。
+- 除租约外，R-004 的 apply 还应校验 Agent 开始编辑时看到的 Ontology 工作空间修订或等价
+  来源签名，防止租约释放后基于过期上下文提交变更。
+
+#### REST 与 MCP 协议
+
+首版 REST 至少提供以下稳定能力；路径名称可在实现设计中调整，但语义不能合并丢失：
+
+- `GET /projects/{project_id}/build-context`：读取 Project 级完整恢复上下文。
+- `POST /projects/{project_id}/build-sessions`：幂等创建 Build Session。
+- `GET /build-sessions/{session_id}`：读取一个 Session 的恢复详情。
+- `POST /build-sessions/{session_id}:resume`：校验 Session 可恢复并记录最近活动。
+- `POST /build-sessions/{session_id}/checkpoints`：幂等追加 Checkpoint。
+- `POST /build-sessions/{session_id}:complete`：显式完成并释放租约。
+- `POST /build-sessions/{session_id}:cancel`：显式取消并释放租约。
+- 获取、续期和释放 Ontology Lease 的受控入口。
+
+MCP 至少提供对应的 `get_project_build_context`、`create_build_session`、`get_build_session`、
+`resume_build_session`、`save_build_checkpoint`、`complete_build_session`、
+`cancel_build_session`、`acquire_ontology_lease`、`renew_ontology_lease` 和
+`release_ontology_lease` 工具。MCP 响应与 REST 使用同一服务层和状态语义，不能维护一套不同的
+会话逻辑。
+
+所有修改型 REST/MCP 调用都必须支持稳定客户端请求 ID，使超时重试不会重复创建 Session、
+Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操作都要更新服务器端
+`last_activity_at`；普通读取是否计入最近活动必须固定为“不计入”，避免监控轮询伪造活跃状态。
+
+#### 与 R-002、R-004 的衔接
+
+- R-003 只管理会话、进度和编辑租约，不直接定义 schema、entity、relation、fact、mapping、
+  rule 或 operation 的批量写入格式；该格式由 R-004 定义。
+- R-004 的每个 apply 批次必须关联一个 active Build Session、一个 Ontology 和有效 Ontology
+  Lease，并记录平台内部解析出的 Graph Set、目标图修订和来源签名。dry-run 可以关联 Session，
+  但不要求写租约。
+- 建模批次中的 Evidence Reference 创建、复用和 Evidence Association 仍遵守 R-002；Build
+  Session 只通过批次和具体建模项关联证据，不创建“整个 Session 使用某文档”的替代关系。
+- 成功批次、失败批次和确定性校验结果必须进入平台观察状态并更新 `last_activity_at`。平台不得
+  自动编造 Agent 的下一步；Agent 可在读取批次结果后追加新的 Checkpoint。
 
 验收标准：
 
-- 可创建、恢复、完成和取消构建会话。
-- 状态至少包含：阶段、当前步骤、下一步、失败原因、相关图/Graph Set、已提交批次和最近活动时间。
-- REST 与 MCP 都能读取完整构建上下文，不依赖 Agent 本地文件才能恢复。
-- Agent 可以在建模批次中创建或复用项目级 Evidence Reference；平台不负责恢复 Agent 外部
-  文档的读取位置。
-- 并发会话有租约或乐观锁，避免两个 Agent 无提示地覆盖同一工作空间。
+- 可通过 REST 与 MCP 幂等创建、恢复、完成和取消 Project 级 Build Session；一个 Session
+  可以记录多个 Ontology 的工作，但每个建模批次只作用于一个 Ontology。
+- Project 级 Build Context 同时返回平台观察状态与 Agent 最新 Checkpoint，能够覆盖全部
+  Ontology、活动或最近 Session、批次、失败、证据引用入口和最近活动，不依赖 Agent 本地文件
+  才能恢复服务器端工作。
+- Session 只使用 `active`、`completed`、`cancelled` 三种持久状态；断线和租约过期不会破坏
+  active Session 的可恢复性，失败批次可在同一 Session 内修正后继续。
+- 外部 Agent 只需使用 Project、Build Session 和 Ontology 标识完成普通构建流程，不需要填写
+  Graph Set ID 或 graph IRI；平台内部审计仍可追溯到实际 Graph Set、图修订和来源签名。
+- 同一 Ontology 的并发写入受租约保护；不同 Ontology 可并行。租约到期后旧 token 无法写入，
+  乐观 revision 冲突不会覆盖较新的 Checkpoint 或终态。
+- Agent 可以在 R-004 建模批次中创建或复用项目级 Evidence Reference；平台不负责恢复 Agent
+  外部文档的读取位置，也不创建 Session 级伪证据关系。
+- 创建重试、Checkpoint 重试、租约重试、断线恢复、过期租约、旧 token、revision 冲突、失败
+  批次后继续、完成释放租约和取消释放租约均有服务级测试。
 
 ### R-004 幂等批量建模提交与确定性校验
 
