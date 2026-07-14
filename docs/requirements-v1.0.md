@@ -264,6 +264,8 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 
 当前状态：`部分实现`
 
+技术设计：`docs/superpowers/specs/2026-07-14-r003-build-session-design.md`
+
 #### 要解决的问题
 
 当前 `GET /projects/{project_id}/build-context` 只是 Project、Brief、Ontology 列表和能力问题的
