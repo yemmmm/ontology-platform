@@ -17,6 +17,13 @@ A thing identified by a stable IRI in the platform's semantic model, such as a c
 entity, proposal, evidence item, review decision, rule, or policy.
 _Avoid_: row, record, node
 
+**Evidence Reference**:
+A project-owned evidence item consisting of a document name and the exact document excerpt supplied
+by an external modeling Agent. Any ontology in the project may associate a model structure or fact
+with the same reference. The reference preserves what the Agent cited; it does not mean the platform
+stores, parses, versions, or independently verifies the complete source document.
+_Avoid_: uploaded document, evidence artifact, parsed chunk, platform-verified quotation
+
 **Named Graph**:
 A semantic or governance boundary inside an RDF Dataset that contains statements for the actual
 ontology model, actual business data, evidence item, reasoning result, rule result, review/audit
