@@ -61,6 +61,21 @@ blocker and the narrower checks that were run.
 For UI changes, run `cd frontend && npm run build` and `cd frontend && npx playwright test`, then
 document any manual browser checks that were necessary.
 
+## Runtime Restart Rules
+
+The local application is managed by the `ontology-platform.service` user systemd unit. After
+changing code under `backend/` or `frontend/`, complete the required tests above and then restart
+the service with `systemctl --user restart ontology-platform.service`. Changes that affect both
+sides, shared runtime configuration, dependencies, migrations, or `scripts/start-local.sh` also
+require the same restart.
+
+After every restart, wait for the unit to become active and verify the affected runtime endpoints.
+Use `systemctl --user --no-pager --full status ontology-platform.service`, check the backend with
+`curl --fail http://127.0.0.1:8001/api/health`, and check the frontend with
+`curl --fail http://127.0.0.1:5173/`. Do not report a frontend or backend change as complete until
+the restarted service and the affected endpoint are healthy. If restart or verification fails,
+inspect `journalctl --user -u ontology-platform.service` and report the exact blocker.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use short imperative summaries, for example `Add local startup workflow`. Keep commit subjects concise and action-oriented.

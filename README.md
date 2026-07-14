@@ -36,6 +36,24 @@ The script checks PostgreSQL and Oxigraph first, syncs backend dependencies with
 builds the frontend production assets, and starts the backend API plus a frontend preview server.
 The preview server proxies `/api` to the backend without enabling Vite hot reload.
 
+To run the same stack automatically at system startup, install and enable the repository-owned
+user systemd service:
+
+```bash
+./scripts/install-user-service.sh
+```
+
+Manage and inspect it with:
+
+```bash
+systemctl --user restart ontology-platform.service
+systemctl --user status ontology-platform.service
+journalctl --user -u ontology-platform.service
+```
+
+Boot startup before interactive login requires user lingering. The installer reports a warning and
+the required `loginctl` command when lingering is not enabled.
+
 If you prefer to run the services manually, create local backend configuration first:
 
 ```bash

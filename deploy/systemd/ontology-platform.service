@@ -1,0 +1,18 @@
+[Unit]
+Description=Ontology Platform backend and frontend
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/yangxiang/projects/ontology-platform
+ExecStart=/usr/bin/bash -lc 'exec ./scripts/start-local.sh'
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=5min
+TimeoutStopSec=30
+KillMode=control-group
+SuccessExitStatus=SIGTERM SIGINT
+
+[Install]
+WantedBy=default.target
