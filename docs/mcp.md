@@ -301,6 +301,10 @@ create identity mappings, `SAME_AS`, or merge proposals.
 The following tools use the same interview service as the HTTP API:
 
 - `get_build_context`: read durable project, ontology, brief, and question state before continuing.
+- `get_ontology_workspace_context`: read the ready default Graph Set, canonical graph roles,
+  revisions, editability, and source signature for one Ontology.
+- `repair_ontology_workspace`: dry-run or idempotently repair missing default workspace resources;
+  ownership and membership conflicts are reported rather than overwritten.
 - `get_project_brief`: return completeness, missing fields, and no more than three clarification items.
 - `save_interview_answer`: persist user wording for source traceability.
 - `update_project_brief`: update/confirm fields or skip optional fields with explicit impact.

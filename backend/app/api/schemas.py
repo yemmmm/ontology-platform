@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.ontology import PropertyType  # noqa: F401 - kept for downstream imports
 
@@ -54,6 +54,37 @@ class OntologyRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OntologyWorkspaceMemberRead(BaseModel):
+    role: str
+    graph_iri: str
+    category: str
+    required: bool
+    revision: int | None
+    content_hash: str | None
+    editable: bool
+    editability_reason: str | None = None
+    owner_type: str | None = None
+    owner_id: str | None = None
+
+
+class OntologyWorkspaceContextRead(BaseModel):
+    ontology_id: str
+    state: Literal["ready", "incomplete"]
+    default_graph_set_id: str | None
+    graph_set_status: str | None
+    source_signature: str | None
+    members: list[OntologyWorkspaceMemberRead]
+    issues: list[str]
+
+
+class OntologyCreateResponse(OntologyRead):
+    workspace: OntologyWorkspaceContextRead
+
+
+class OntologyWorkspaceRepairRequest(BaseModel):
+    dry_run: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +438,7 @@ class SemanticGraphSetRead(BaseModel):
     scope_type: str
     scope_id: str | None
     status: str
+    is_default: bool = False
     source_signature: str
     created_by: str | None = None
     members: list[dict[str, Any]]

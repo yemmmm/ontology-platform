@@ -24,7 +24,6 @@ from app.repositories.models import (
 )
 from app.services.semantic_graph_registry import (
     GraphClassification,
-    GraphRegistryError,
     graph_set_signature,
 )
 
@@ -91,6 +90,8 @@ class SemanticGraphSetService:
         members: list[dict[str, Any]],
     ) -> SemanticGraphSetModel:
         graph_set = self.get_graph_set(graph_set_id)
+        if graph_set.is_default:
+            self._validate_default_membership(graph_set, members)
         for member in graph_set.members:
             self.session.delete(member)
         self.session.flush()
@@ -146,6 +147,7 @@ class SemanticGraphSetService:
             "scope_type": graph_set.scope_type,
             "scope_id": graph_set.scope_id,
             "status": graph_set.status,
+            "is_default": graph_set.is_default,
             "source_signature": graph_set.source_signature,
             "created_by": graph_set.created_by,
             "members": [
@@ -231,7 +233,34 @@ class SemanticGraphSetService:
         )
         if prior is None:
             return
+        if prior.is_default:
+            raise GraphSetError("The default ontology graph set cannot be superseded")
         prior.status = "superseded"
+
+    def _validate_default_membership(
+        self,
+        graph_set: SemanticGraphSetModel,
+        members: list[dict[str, Any]],
+    ) -> None:
+        if graph_set.scope_type != "ontology" or not graph_set.scope_id:
+            raise GraphSetError("Default graph set must have an ontology scope")
+        prefix = self.settings.semantic_graph_iri_prefix.rstrip("/")
+        expected = {
+            "asserted_ontology": f"{prefix}/ontology/{graph_set.scope_id}",
+            "asserted_data": f"{prefix}/data/{graph_set.scope_id}",
+            "shapes": f"{prefix}/shapes/{graph_set.scope_id}",
+            "policy": f"{prefix}/policy/{graph_set.scope_id}",
+        }
+        actual: dict[str, str] = {}
+        for member in members:
+            role = member.get("role")
+            if role in actual:
+                raise GraphSetError(f"Default graph set role must be unique: {role}")
+            actual[role] = member.get("graph_iri", "")
+        if actual != expected:
+            raise GraphSetError(
+                "Default graph set membership is fixed; all four canonical roles are required"
+            )
 
     def _validate_member(self, member: dict[str, Any]) -> None:
         if "graph_iri" not in member:

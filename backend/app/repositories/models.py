@@ -6,12 +6,14 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -585,12 +587,23 @@ class SemanticGraphRevisionModel(Base):
 
 class SemanticGraphSetModel(Base):
     __tablename__ = "semantic_graph_sets"
+    __table_args__ = (
+        Index(
+            "uq_semantic_graph_sets_default_ontology",
+            "scope_type",
+            "scope_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
     scope_id: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     created_by: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(

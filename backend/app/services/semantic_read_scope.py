@@ -80,7 +80,9 @@ class SemanticReadScopeResolver:
         graph_set = self._get_graph_set(graph_set_id)
         members = self._members(graph_set_id)
         source_iris = [m.graph_iri for m in members if m.role in _SOURCE_ROLES]
-        shape_iris = [m.graph_iri for m in members if m.role == "shape"]
+        # ``shapes`` is the R-001 canonical role. ``shape`` remains readable
+        # for graph sets created before the default-workspace contract.
+        shape_iris = [m.graph_iri for m in members if m.role in {"shapes", "shape"}]
         governance_iris = [
             m.graph_iri for m in members if m.role in _GOVERNANCE_ROLES
         ]

@@ -127,7 +127,10 @@ curl http://localhost:8000/api/health/dependencies
 | `PATCH` | `/projects/{project_id}` | Update project. |
 | `DELETE` | `/projects/{project_id}` | Delete project. |
 | `GET` | `/projects/{project_id}/ontologies` | List ontologies in project. |
-| `POST` | `/projects/{project_id}/ontologies` | Create ontology. |
+| `POST` | `/projects/{project_id}/ontologies` | Create ontology and its ready default semantic workspace atomically. |
+| `GET` | `/ontologies/{ontology_id}/workspace-context` | Read the default Graph Set, graph roles, revisions, editability, and source signature. |
+| `POST` | `/ontologies/{ontology_id}/workspace/repair` | Idempotently repair one ontology workspace; accepts `{ "dry_run": true|false }`. |
+| `POST` | `/projects/{project_id}/ontology-workspaces/repair` | Inspect or repair all historical ontology workspaces in a project. |
 | `GET` | `/ontologies/{ontology_id}` | Get ontology. |
 | `GET` | `/ontologies/{ontology_id}/schema` | Get ontology with classes, properties, and relation types. |
 | `PATCH` | `/ontologies/{ontology_id}` | Update ontology. |

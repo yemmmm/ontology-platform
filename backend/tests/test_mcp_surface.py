@@ -11,6 +11,8 @@ from app.mcp.tools import register_all
 ALLOWED_TOOLS = {
     "check_platform_health",
     "get_build_context",
+    "get_ontology_workspace_context",
+    "repair_ontology_workspace",
     "get_project_brief",
     "save_interview_answer",
     "update_project_brief",

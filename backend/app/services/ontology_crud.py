@@ -19,7 +19,9 @@ from app.api.schemas import (
     ProjectCreate,
     ProjectUpdate,
 )
+from app.core.config import Settings
 from app.repositories.models import OntologyModel, ProjectModel
+from app.services.ontology_workspace import OntologyWorkspaceService
 
 
 def new_id() -> str:
@@ -101,7 +103,12 @@ def get_ontology(session: Session, ontology_id: str) -> OntologyModel:
     return ontology
 
 
-def create_ontology(session: Session, project_id: str, payload: OntologyCreate) -> OntologyModel:
+def create_ontology(
+    session: Session,
+    project_id: str,
+    payload: OntologyCreate,
+    settings: Settings | None = None,
+) -> OntologyModel:
     get_project(session, project_id)
     ontology = OntologyModel(
         id=new_id(),
@@ -111,7 +118,16 @@ def create_ontology(session: Session, project_id: str, payload: OntologyCreate) 
         external_mappings=payload.external_mappings,
     )
     session.add(ontology)
-    commit_or_409(session, "Ontology name must be unique within the project")
+    try:
+        session.flush()
+        OntologyWorkspaceService(session, settings or Settings()).ensure(ontology)
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise conflict("Ontology name must be unique within the project") from exc
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(ontology)
     return ontology
 

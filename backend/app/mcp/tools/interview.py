@@ -13,8 +13,10 @@ from app.api.schemas import (
     InterviewAnswerRead,
     ProjectBriefUpdate,
 )
+from app.core.config import Settings
 from app.mcp.runtime import _run_tool
 from app.services import interview as interview_service
+from app.services.ontology_workspace import OntologyWorkspaceService
 
 
 def register_interview(server: FastMCP) -> None:
@@ -25,6 +27,26 @@ def register_interview(server: FastMCP) -> None:
             lambda session, _driver, _embedding_client: interview_service.get_build_context(
                 session, project_id
             )
+        )
+
+    @server.tool()
+    def get_ontology_workspace_context(ontology_id: str) -> dict[str, Any]:
+        """Read the default Graph Set, graph roles, revisions, and editability."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: OntologyWorkspaceService(
+                session, Settings()
+            ).context(ontology_id)
+        )
+
+    @server.tool()
+    def repair_ontology_workspace(
+        ontology_id: str, dry_run: bool = False
+    ) -> dict[str, Any]:
+        """Idempotently inspect or repair an Ontology's default semantic workspace."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: OntologyWorkspaceService(
+                session, Settings()
+            ).repair(ontology_id, dry_run=dry_run)
         )
 
     @server.tool()
