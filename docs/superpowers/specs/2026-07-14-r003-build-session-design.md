@@ -152,6 +152,7 @@ CREATE TABLE build_sessions (
     id                  VARCHAR(36)  PRIMARY KEY,
     project_id          VARCHAR(36)  NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     client_session_id   VARCHAR(255) NOT NULL,
+    create_request_hash VARCHAR(64)  NOT NULL,
     previous_session_id VARCHAR(36)  REFERENCES build_sessions(id) ON DELETE SET NULL,
     status              VARCHAR(32)  NOT NULL DEFAULT 'active',
     revision            INTEGER      NOT NULL DEFAULT 1,
@@ -180,7 +181,8 @@ CREATE INDEX ix_build_sessions_project_status_activity
 
 `client_session_id` 由调用方稳定生成，用于创建请求重试。重复请求如果 payload 一致，返回已有
 Session；如果同一 ID 对应不同 `previous_session_id` 或初始 Checkpoint，返回
-`idempotency_conflict`。
+`idempotency_conflict`。`create_request_hash` 保存规范化创建请求的 SHA-256，只用于比较重试
+内容，不保存完整请求副本。
 
 `terminal_request_id` 和 `terminal_request_hash` 只记录第一次成功的 complete/cancel 请求。
 同一请求重试返回现有终态；同一请求 ID 配不同 payload 返回 `idempotency_conflict`。resume

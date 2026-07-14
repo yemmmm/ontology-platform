@@ -36,6 +36,10 @@ def map_exception(exc: Exception) -> tuple[str, str]:
     """
     from fastapi import HTTPException
 
+    service_code = getattr(exc, "code", None)
+    if isinstance(service_code, str):
+        return service_code, str(exc)
+
     if isinstance(exc, HTTPException):
         code = _STATUS_TO_CODE.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)

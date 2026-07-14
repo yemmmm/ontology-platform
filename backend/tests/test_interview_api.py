@@ -92,21 +92,3 @@ def test_build_overview_returns_200_with_valid_graph_set(
     assert body["graph_set"]["graph_set_id"] == "gs-1"
     assert body["graph_set"]["members"][0]["role"] == "asserted_data"
     assert "next_actions" in body
-
-
-# ---------------------------------------------------------------------------
-# Deprecation header tests for legacy routes
-# ---------------------------------------------------------------------------
-
-
-def test_build_context_legacy_route_returns_deprecation_header(
-    app_with_mocked_services, monkeypatch
-):
-    monkeypatch.setattr(
-        "app.api.interview.service.get_build_context",
-        lambda session, project_id: {},
-    )
-    client = TestClient(app_with_mocked_services)
-    response = client.get("/projects/p-1/build-context")
-    assert response.headers.get("Deprecation") == "true"
-    assert "Sunset" in response.headers

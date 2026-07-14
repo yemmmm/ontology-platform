@@ -14,6 +14,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from app.mcp.tools.interview import register_interview
+from app.mcp.tools.build_sessions import register_build_sessions
 from app.mcp.tools.evidence import register_evidence
 from app.mcp.tools.semantic import register_semantic
 from app.mcp.tools.system import register_system
@@ -23,6 +24,7 @@ def register_all(server: FastMCP) -> None:
     """Register every MCP tool on ``server`` in stable, domain-grouped order."""
     register_system(server)
     register_interview(server)
+    register_build_sessions(server)
     register_evidence(server)
     register_semantic(server)
 

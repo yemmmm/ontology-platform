@@ -71,8 +71,10 @@ On failure they return:
 }
 ```
 
-`error_code` is one of: `not_found`, `validation_error`, `conflict`,
-`governance_rejection`, `dependency_error`, `internal_error`.
+Most tools use `not_found`, `validation_error`, `conflict`, `governance_rejection`,
+`dependency_error`, or `internal_error`. Build-session tools preserve their more specific service
+codes, such as `build_session_not_found`, `session_revision_conflict`, and
+`ontology_lease_conflict`.
 
 ## Tools
 
@@ -300,7 +302,7 @@ create identity mappings, `SAME_AS`, or merge proposals.
 
 The following tools use the same interview service as the HTTP API:
 
-- `get_build_context`: read durable project, ontology, brief, and question state before continuing.
+- `get_build_context`: deprecated compatibility alias for `get_project_build_context`.
 - `get_ontology_workspace_context`: read the ready default Graph Set, canonical graph roles,
   revisions, editability, and source signature for one Ontology.
 - `repair_ontology_workspace`: dry-run or idempotently repair missing default workspace resources;
@@ -313,6 +315,31 @@ The following tools use the same interview service as the HTTP API:
 
 Agent tools do not expose question approval. Approval and later validation-state changes remain
 governance actions on the authenticated HTTP surface.
+
+## External Agent Build Sessions
+
+These tools share the same service, idempotency rules, revisions, and lease state as the REST API:
+
+- `get_project_build_context`
+- `create_build_session`
+- `get_build_session`
+- `resume_build_session`
+- `save_build_checkpoint`
+- `complete_build_session`
+- `cancel_build_session`
+- `acquire_ontology_lease`
+- `renew_ontology_lease`
+- `release_ontology_lease`
+
+Build Context is Project-wide and separates `platform_state` from Agent-reported `agent_state`.
+A Build Session may move between Ontologies in the same Project. Checkpoints are append-only and
+completion/cancellation are terminal. Acquire and renew are the only ordinary recovery responses
+that return a plaintext lease token; list, detail, context, and error responses never do.
+
+The external protocol intentionally accepts `project_id`, `session_id`, and `ontology_id` rather
+than Graph Set IDs or graph IRIs. The platform resolves the default semantic workspace internally.
+`get_build_context` remains as a deprecated alias for one release and returns the same response as
+`get_project_build_context`.
 
 ## Agent Integration Example
 

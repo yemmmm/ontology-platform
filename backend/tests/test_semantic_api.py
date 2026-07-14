@@ -977,13 +977,11 @@ def test_competency_question_validate_route_registered() -> None:
     assert len(routes) >= 1
 
 
-def test_build_context_legacy_deprecation_header(in_memory_session) -> None:
-    """The legacy build-context route should attach a Deprecation header.
-
-    The route lives on the interview router, so we build a test app that mounts
-    it alongside the semantic router.
-    """
-    from app.api.interview import router as interview_router
+def test_project_build_context_replaces_legacy_route_without_deprecation(
+    in_memory_session,
+) -> None:
+    """The R-003 recovery view replaces the deprecated interview aggregate."""
+    from app.api.build_sessions import router as build_sessions_router
     from app.repositories.models import ProjectModel
 
     in_memory_session.add(
@@ -992,7 +990,7 @@ def test_build_context_legacy_deprecation_header(in_memory_session) -> None:
     in_memory_session.commit()
 
     app = FastAPI()
-    app.include_router(interview_router, prefix="/api")
+    app.include_router(build_sessions_router, prefix="/api")
 
     store = FakeStore()
     settings = Settings()
@@ -1006,7 +1004,12 @@ def test_build_context_legacy_deprecation_header(in_memory_session) -> None:
     client = TestClient(app)
 
     resp = client.get("/api/projects/smoke-proj/build-context")
-    # The build-context endpoint returns 200 even for a bare project.
     assert resp.status_code == 200
-    assert resp.headers.get("Deprecation") == "true"
-    assert "Sunset" in resp.headers
+    assert resp.headers.get("Deprecation") is None
+    assert "Sunset" not in resp.headers
+    assert set(resp.json()) == {
+        "project",
+        "generated_at",
+        "platform_state",
+        "agent_state",
+    }

@@ -29,6 +29,7 @@ _TOOLS_DIR = Path(__file__).resolve().parent.parent / "mcp" / "tools"
 _TOOL_FILES: tuple[tuple[str, Path], ...] = (
     ("system", _TOOLS_DIR / "system.py"),
     ("interview", _TOOLS_DIR / "interview.py"),
+    ("build_sessions", _TOOLS_DIR / "build_sessions.py"),
     ("semantic", _TOOLS_DIR / "evidence.py"),
     ("semantic", _TOOLS_DIR / "semantic.py"),
 )
@@ -108,7 +109,13 @@ def _enumerate_tools() -> list[dict[str, Any]]:
         )
     # Stable ordering: category, then tool name. Mirrors the registration
     # order in ``register_all``.
-    category_order = {"system": 0, "interview": 1, "semantic": 2, "uncategorized": 3}
+    category_order = {
+        "system": 0,
+        "interview": 1,
+        "build_sessions": 2,
+        "semantic": 3,
+        "uncategorized": 4,
+    }
     out.sort(key=lambda t: (category_order.get(t["category"], 99), t["name"]))
     return out
 

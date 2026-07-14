@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store
 from app.api.interview import router as interview_router
+from app.api.build_sessions import router as build_sessions_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
 from app.api.agent_test import router as agent_test_router
@@ -17,6 +18,7 @@ router = APIRouter()
 router.include_router(ontologies_router)
 router.include_router(agent_test_router)
 router.include_router(interview_router)
+router.include_router(build_sessions_router)
 router.include_router(semantic_router)
 router.include_router(evidence_router)
 router.include_router(evidence_references_router)

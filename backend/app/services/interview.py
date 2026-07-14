@@ -130,35 +130,6 @@ def get_project_brief(session: Session, project_id: str) -> dict[str, Any]:
     return {"id": brief.id if brief else None, "project_id": project_id, **result}
 
 
-def get_build_context(session: Session, project_id: str) -> dict[str, Any]:
-    project = _project(session, project_id)
-    ontologies = list(
-        session.scalars(
-            select(OntologyModel)
-            .where(OntologyModel.project_id == project_id)
-            .order_by(OntologyModel.created_at)
-        )
-    )
-    questions = list_questions(session, project_id, include_inactive=True)
-    question_counts: dict[str, int] = {}
-    for question in questions:
-        key = "inactive" if not question.active else question.status
-        question_counts[key] = question_counts.get(key, 0) + 1
-    return {
-        "project": {"id": project.id, "name": project.name, "description": project.description},
-        "project_brief": get_project_brief(session, project_id),
-        "ontologies": [
-            {
-                "id": ontology.id,
-                "name": ontology.name,
-                "status": ontology.status,
-            }
-            for ontology in ontologies
-        ],
-        "competency_question_counts": question_counts,
-    }
-
-
 def create_answer(
     session: Session, project_id: str, payload: InterviewAnswerCreate
 ) -> InterviewAnswerModel:

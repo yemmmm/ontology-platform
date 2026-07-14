@@ -215,6 +215,155 @@ class CompetencyQuestionRead(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# R-003 external Agent build sessions
+# ---------------------------------------------------------------------------
+
+
+class BuildSessionSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class BuildFailure(BuildSessionSchema):
+    code: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=10000)
+
+
+class BuildCheckpointInput(BuildSessionSchema):
+    phase: Literal["intake", "modeling", "verification", "handoff"]
+    current_step: str = Field(min_length=1, max_length=4000)
+    next_step: str | None = Field(default=None, max_length=4000)
+    ontology_id: str | None = Field(default=None, min_length=1, max_length=36)
+    summary: str | None = Field(default=None, max_length=20000)
+    blockers: list[str] = Field(default_factory=list, max_length=100)
+    failure: BuildFailure | None = None
+    related_batch_id: str | None = Field(default=None, min_length=1, max_length=36)
+
+
+class InitialBuildCheckpoint(BuildCheckpointInput):
+    client_checkpoint_id: str = Field(min_length=1, max_length=255)
+
+
+class BuildSessionCreate(BuildSessionSchema):
+    client_session_id: str = Field(min_length=1, max_length=255)
+    previous_session_id: str | None = Field(default=None, min_length=1, max_length=36)
+    initial_checkpoint: InitialBuildCheckpoint | None = None
+
+
+class BuildSessionResume(BuildSessionSchema):
+    client_request_id: str = Field(min_length=1, max_length=255)
+    expected_revision: int = Field(ge=1)
+
+
+class BuildCheckpointCreate(BuildCheckpointInput):
+    client_checkpoint_id: str = Field(min_length=1, max_length=255)
+    expected_revision: int = Field(ge=1)
+
+
+class BuildSessionComplete(BuildSessionSchema):
+    client_request_id: str = Field(min_length=1, max_length=255)
+    expected_revision: int = Field(ge=1)
+    summary: str = Field(min_length=1, max_length=20000)
+    unresolved_items: list[str] = Field(default_factory=list, max_length=100)
+
+
+class BuildSessionCancel(BuildSessionSchema):
+    client_request_id: str = Field(min_length=1, max_length=255)
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=10000)
+
+
+class OntologyLeaseAcquire(BuildSessionSchema):
+    client_request_id: str = Field(min_length=1, max_length=255)
+    expected_session_revision: int = Field(ge=1)
+    rotate_token: bool = False
+
+
+class OntologyLeaseRenew(BuildSessionSchema):
+    client_request_id: str = Field(min_length=1, max_length=255)
+    lease_token: str = Field(min_length=1, max_length=1024)
+    expected_lease_revision: int = Field(ge=1)
+
+
+class OntologyLeaseRelease(OntologyLeaseRenew):
+    pass
+
+
+class BuildCheckpointRead(BaseModel):
+    id: str
+    build_session_id: str
+    client_checkpoint_id: str
+    sequence: int
+    ontology_id: str | None
+    phase: str
+    current_step: str
+    next_step: str | None
+    summary: str | None
+    blockers: list[str]
+    failure: BuildFailure | None
+    related_batch_id: str | None
+    reported_by: str | None
+    created_at: datetime
+
+
+class OntologyLeaseSummaryRead(BaseModel):
+    ontology_id: str
+    build_session_id: str
+    lease_revision: int
+    state: Literal["active", "expired", "released"]
+    acquired_at: datetime
+    renewed_at: datetime | None
+    expires_at: datetime
+    released_at: datetime | None
+
+
+class OntologyLeaseTokenRead(BaseModel):
+    ontology_id: str
+    build_session_id: str
+    lease_token: str | None = None
+    lease_revision: int
+    expires_at: datetime
+    state: Literal["active", "expired", "released"] = "active"
+
+
+class BuildSessionSummaryRead(BaseModel):
+    id: str
+    project_id: str
+    client_session_id: str
+    previous_session_id: str | None
+    status: Literal["active", "completed", "cancelled"]
+    revision: int
+    created_by: str | None
+    completion_summary: str | None
+    unresolved_items: list[str]
+    cancel_reason: str | None
+    last_activity_at: datetime
+    completed_at: datetime | None
+    cancelled_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    latest_checkpoint: BuildCheckpointRead | None = None
+
+
+class BuildSessionDetailRead(BaseModel):
+    session: BuildSessionSummaryRead
+    latest_checkpoint: BuildCheckpointRead | None
+    checkpoints: list[BuildCheckpointRead]
+    checkpoints_next_cursor: int | None
+    involved_ontology_ids: list[str]
+    leases: list[OntologyLeaseSummaryRead]
+    modeling_batches: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    recent_activity: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProjectBuildContextRead(BaseModel):
+    project: dict[str, Any]
+    generated_at: datetime
+    platform_state: dict[str, Any]
+    agent_state: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
 # Semantic stack: legacy direct-call endpoints still mounted under /semantic/*
 # ---------------------------------------------------------------------------
 

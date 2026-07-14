@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -36,6 +37,19 @@ class RelationTypeScope(StrEnum):
     SCHEMA_ALLOWED = "schema_allowed"
     ENTITY_ONLY = "entity_only"
     BOTH = "both"
+
+
+class BuildSessionStatus(StrEnum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class BuildCheckpointPhase(StrEnum):
+    INTAKE = "intake"
+    MODELING = "modeling"
+    VERIFICATION = "verification"
+    HANDOFF = "handoff"
 
 
 class ProjectModel(Base):
@@ -86,6 +100,145 @@ class OntologyModel(Base):
     )
 
     project: Mapped[ProjectModel] = relationship(back_populates="ontologies")
+
+
+class BuildSessionModel(Base):
+    __tablename__ = "build_sessions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "client_session_id", name="uq_build_sessions_project_client"
+        ),
+        CheckConstraint(
+            "status IN ('active', 'completed', 'cancelled')",
+            name="ck_build_sessions_status",
+        ),
+        Index(
+            "ix_build_sessions_project_status_activity",
+            "project_id",
+            "status",
+            "last_activity_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    client_session_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    create_request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), default=BuildSessionStatus.ACTIVE.value, nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    last_resume_request_id: Mapped[str | None] = mapped_column(String(255))
+    terminal_request_id: Mapped[str | None] = mapped_column(String(255))
+    terminal_request_hash: Mapped[str | None] = mapped_column(String(64))
+    completion_summary: Mapped[str | None] = mapped_column(Text)
+    unresolved_items: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    checkpoints: Mapped[list["BuildCheckpointModel"]] = relationship(
+        back_populates="build_session",
+        cascade="all, delete-orphan",
+        order_by="BuildCheckpointModel.sequence",
+    )
+    leases: Mapped[list["OntologyLeaseModel"]] = relationship(
+        back_populates="build_session"
+    )
+
+
+class BuildCheckpointModel(Base):
+    __tablename__ = "build_checkpoints"
+    __table_args__ = (
+        UniqueConstraint(
+            "build_session_id",
+            "client_checkpoint_id",
+            name="uq_build_checkpoints_session_client",
+        ),
+        UniqueConstraint(
+            "build_session_id", "sequence", name="uq_build_checkpoints_session_sequence"
+        ),
+        CheckConstraint(
+            "phase IN ('intake', 'modeling', 'verification', 'handoff')",
+            name="ck_build_checkpoints_phase",
+        ),
+        Index("ix_build_checkpoints_session_created", "build_session_id", "sequence"),
+        Index("ix_build_checkpoints_ontology", "ontology_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    client_checkpoint_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    ontology_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="SET NULL")
+    )
+    phase: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_step: Mapped[str] = mapped_column(Text, nullable=False)
+    next_step: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    blockers: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    failure_code: Mapped[str | None] = mapped_column(String(100))
+    failure_message: Mapped[str | None] = mapped_column(Text)
+    related_batch_id: Mapped[str | None] = mapped_column(String(36))
+    reported_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    build_session: Mapped[BuildSessionModel] = relationship(back_populates="checkpoints")
+
+
+class OntologyLeaseModel(Base):
+    __tablename__ = "ontology_leases"
+    __table_args__ = (
+        Index("ix_ontology_leases_session", "build_session_id"),
+        Index("ix_ontology_leases_expiry", "expires_at"),
+    )
+
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), primary_key=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    acquired_by: Mapped[str | None] = mapped_column(String(255))
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    renewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_request_id: Mapped[str | None] = mapped_column(String(255))
+    last_request_operation: Mapped[str | None] = mapped_column(String(32))
+    last_request_hash: Mapped[str | None] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    build_session: Mapped[BuildSessionModel] = relationship(back_populates="leases")
 
 
 class ApiKeyModel(Base):

@@ -296,11 +296,50 @@ curl -X POST http://localhost:8000/api/ontologies/{ontology_id}/relations \
 
 Export includes `ontology`, `classes`, `relation_types`, `entities`, and `relations`.
 
+## External Agent Build Sessions
+
+Build Context and Build Sessions are Project-scoped. A session can report work on several Ontologies,
+while an Ontology Lease protects writes to one Ontology at a time. Ordinary Agent requests use
+Project, Build Session, and Ontology IDs; they do not carry Graph Set IDs or graph IRIs.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/projects/{project_id}/build-context?recent_session_limit=10&recent_session_cursor=0` | Read platform facts plus paged active/recent Agent session state for the whole Project. |
+| `POST` | `/projects/{project_id}/build-sessions` | Idempotently create a Build Session and optional initial Checkpoint. |
+| `GET` | `/build-sessions/{session_id}` | Read paged Checkpoints, involved Ontologies, lease summaries, and recent activity. |
+| `POST` | `/build-sessions/{session_id}:resume` | Resume an active session without incrementing its revision. |
+| `POST` | `/build-sessions/{session_id}/checkpoints` | Idempotently append a progress Checkpoint. |
+| `POST` | `/build-sessions/{session_id}:complete` | Complete a session and release all its Ontology leases. |
+| `POST` | `/build-sessions/{session_id}:cancel` | Cancel a session and release all its Ontology leases. |
+| `POST` | `/build-sessions/{session_id}/ontology-leases/{ontology_id}:acquire` | Acquire or rotate an Ontology write lease. |
+| `POST` | `/build-sessions/{session_id}/ontology-leases/{ontology_id}:renew` | Renew a valid lease. |
+| `POST` | `/build-sessions/{session_id}/ontology-leases/{ontology_id}:release` | Idempotently release a valid lease. |
+
+Every mutation uses a stable client ID. Checkpoint, complete, and cancel calls also carry the latest
+session revision. Lease tokens are returned only by acquire/renew and are stored only as SHA-256
+hashes. Build Context, session detail, logs, and ordinary error responses never contain a token.
+The server controls lease lifetime through `BUILD_SESSION_LEASE_TTL_SECONDS` (default `300`).
+
+Build-session errors use a structured detail object, for example:
+
+```json
+{
+  "detail": {
+    "code": "session_revision_conflict",
+    "message": "Build Session changed after the caller last read it",
+    "current_revision": 4
+  }
+}
+```
+
+Stable conflict codes include `idempotency_conflict`, `session_revision_conflict`,
+`session_terminal`, `ontology_lease_conflict`, `lease_revision_conflict`, `lease_expired`, and
+`workspace_revision_conflict`.
+
 ## Project Interview and Competency Questions
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/projects/{project_id}/build-context` | Resume from durable interview and ontology state. |
 | `GET` | `/projects/{project_id}/brief` | Read fields, completeness, missing fields, and up to three clarification items. |
 | `PATCH` | `/projects/{project_id}/brief` | Update, confirm, or skip fields and attach saved answer IDs. |
 | `POST` | `/projects/{project_id}/interview-answers` | Save a traceable conversation answer. |

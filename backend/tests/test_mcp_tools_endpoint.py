@@ -45,7 +45,7 @@ def test_mcp_tools_includes_canonical_write_command():
     assert "compile_and_apply_canonical_command" in names, sorted(names)[:10]
 
 
-def test_mcp_tools_covers_all_three_categories():
+def test_mcp_tools_covers_all_registered_categories():
     client = _client()
     response = client.get("/api/mcp/tools")
     payload = response.json()
@@ -53,6 +53,7 @@ def test_mcp_tools_covers_all_three_categories():
     # Each category has at least one tool registered.
     assert by_category.get("system", 0) >= 1, by_category
     assert by_category.get("interview", 0) >= 1, by_category
+    assert by_category.get("build_sessions", 0) >= 1, by_category
     assert by_category.get("semantic", 0) >= 1, by_category
     # No tool leaks the ``uncategorized`` fallback — every registered tool
     # is mapped back to its source file via AST scanning.
@@ -69,7 +70,12 @@ def test_mcp_tools_entry_shape_is_complete():
         # the McpToolsPage renders it next to the tool name.
         assert isinstance(tool["description"], str)
         assert tool["source_file"], tool
-        assert tool["category"] in {"system", "interview", "semantic"}, tool
+        assert tool["category"] in {
+            "system",
+            "interview",
+            "build_sessions",
+            "semantic",
+        }, tool
         summary = tool["input_schema_summary"]
         assert isinstance(summary, dict)
         assert "properties" in summary
