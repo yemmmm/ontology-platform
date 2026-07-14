@@ -116,6 +116,7 @@ class CanonicalSemanticWriteService:
         reason: str | None = None,
         validate: bool = True,
         shape_graph_iris: list[str] | None = None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         """Apply a compiled product command through the canonical pipeline."""
         self._require_writer_enabled()
@@ -170,7 +171,8 @@ class CanonicalSemanticWriteService:
             for row in stale_rows
         ]
         audit.warning_state = {**audit.warning_state, "stale_pointers": stale_pointers}
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return {
             "audit_id": audit.id,
             "applied": write_result.applied,
@@ -193,6 +195,7 @@ class CanonicalSemanticWriteService:
         reason: str | None = None,
         validate: bool = True,
         shape_graph_iris: list[str] | None = None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         """Compile a product command and apply it through the canonical pipeline."""
         compiled = compile_command(command_kind, payload, self.settings)
@@ -203,6 +206,7 @@ class CanonicalSemanticWriteService:
             reason=reason,
             validate=validate,
             shape_graph_iris=shape_graph_iris,
+            commit=commit,
         )
 
     def compile_only(

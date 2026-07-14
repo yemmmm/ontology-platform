@@ -425,6 +425,7 @@ export function bindFactEvidence(
     assertion_kind?: string;
     chunk_id?: string;
     evidence_artifact_id?: string;
+    evidence_reference_id?: string;
     document_filename?: string;
     sequence?: number;
     char_start?: number;
@@ -451,6 +452,7 @@ export function bindFactEvidence(
         assertion_kind: payload.assertion_kind,
         chunk_id: payload.chunk_id,
         evidence_artifact_id: payload.evidence_artifact_id,
+        evidence_reference_id: payload.evidence_reference_id,
         document_filename: payload.document_filename,
         sequence: payload.sequence,
         char_start: payload.char_start,

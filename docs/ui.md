@@ -29,6 +29,14 @@ Set `VITE_API_BASE_URL` to override the default `http://localhost:8000/api`.
 - MCP/Agent Test: send a question to `POST /api/agent-test/run`, inspect answer, tool calls, graph context, and prompt preview.
 - Health: call `/api/health/dependencies` and show PostgreSQL/Neo4j status.
 
+### v1.0 Evidence References
+
+The Overview navigation includes an Evidence page for the R-002 lightweight workflow. It is a
+project-shared ledger even though it is opened from an ontology workspace. Users can create a
+reference from only a document name and exact excerpt, search the ledger, inspect hashes and creator
+metadata, and see which concrete modeling results cite it. The page explicitly states that the full
+document is not uploaded. Workspace lock keeps the ledger readable and disables creation.
+
 ## Navigation and Deep Links
 
 Workspace navigation is grouped into Build, Review, Model, and Tools. The selected version is part of

@@ -368,3 +368,14 @@ sensitivity, access_policy, override_of_claim_id, audit_status, stale, stale_rea
 review_decision, linked_fix_proposal_id, project_id, ontology_id, ontology_version_id, created_at,
 updated_at). Fact review decisions
 (approve/reject/needs_correction) are HTTP-only.
+
+## v1.0 Lightweight Evidence (R-002)
+
+- `create_evidence_reference(project_id, document_name, excerpt, actor?)`
+- `list_evidence_references(project_id, search?, limit?, offset?)`
+- `get_evidence_reference(reference_id)`
+- `associate_evidence_reference(project_id, ontology_id, target_type, target_id, ...)`
+
+These tools store only the document name and exact excerpt supplied by the external Agent. They do
+not upload or parse complete source files. References belong to a Project and may support concrete
+modeling results in any Ontology in that Project; cross-project IDs are returned as unavailable.

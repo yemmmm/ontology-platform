@@ -25,11 +25,13 @@ router = APIRouter(tags=["mcp-catalog"])
 
 #: Per-category source files. Order mirrors ``register_all`` in
 #: ``app/mcp/tools/__init__.py``.
-_TOOL_FILES: dict[str, Path] = {
-    "system": Path(__file__).resolve().parent.parent / "mcp" / "tools" / "system.py",
-    "interview": Path(__file__).resolve().parent.parent / "mcp" / "tools" / "interview.py",
-    "semantic": Path(__file__).resolve().parent.parent / "mcp" / "tools" / "semantic.py",
-}
+_TOOLS_DIR = Path(__file__).resolve().parent.parent / "mcp" / "tools"
+_TOOL_FILES: tuple[tuple[str, Path], ...] = (
+    ("system", _TOOLS_DIR / "system.py"),
+    ("interview", _TOOLS_DIR / "interview.py"),
+    ("semantic", _TOOLS_DIR / "evidence.py"),
+    ("semantic", _TOOLS_DIR / "semantic.py"),
+)
 
 
 def _extract_tool_names(path: Path) -> list[str]:
@@ -55,7 +57,7 @@ def _extract_tool_names(path: Path) -> list[str]:
 def _build_name_to_source() -> dict[str, tuple[str, str]]:
     """Build a ``{tool_name: (category, source_filename)}`` lookup."""
     out: dict[str, tuple[str, str]] = {}
-    for category, path in _TOOL_FILES.items():
+    for category, path in _TOOL_FILES:
         for name in _extract_tool_names(path):
             out[name] = (category, path.name)
     return out

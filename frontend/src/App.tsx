@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   Database,
+  FileText,
   Flag,
   GitBranch,
   History,
@@ -44,6 +45,7 @@ import { EntitiesPage } from "./pages/EntitiesPage";
 import { RulesPage } from "./pages/RulesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
+import { EvidenceReferencesPage } from "./pages/EvidenceReferencesPage";
 import { AgentTestPage } from "./pages/AgentTestPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
@@ -78,6 +80,7 @@ type AppView = "home" | "workspace";
 type WorkspaceTab =
   | "brief"
   | "questions"
+  | "evidence"
   | "facts"
   | "publication"
   | "classes"
@@ -132,6 +135,7 @@ const workspaceTabs: Array<{
 }> = [
   { id: "brief", stage: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
   { id: "questions", stage: "overview", label: "Structured Requirements", detail: "Requirement clarification", icon: Check },
+  { id: "evidence", stage: "overview", label: "Evidence", detail: "Shared source excerpts", icon: FileText },
   { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
   { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
   { id: "rules", stage: "modeling", label: "Rules", detail: "Rule definitions", icon: Workflow },
@@ -864,6 +868,17 @@ function WorkspaceContent(props: {
     return (
       <RequirementQuestionsPage
         onDirtyChange={props.setPageDirty}
+        projectId={props.project.id}
+        readOnly={readOnly}
+        request={governedRequest}
+      />
+    );
+  }
+
+  if (props.tab === "evidence") {
+    return (
+      <EvidenceReferencesPage
+        ontologyId={props.ontology.id}
         projectId={props.project.id}
         readOnly={readOnly}
         request={governedRequest}

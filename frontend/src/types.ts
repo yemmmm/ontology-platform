@@ -313,6 +313,7 @@ export type FactEvidenceBinding = {
   graph_iri: string;
   chunk_id?: string | null;
   evidence_artifact_id?: string | null;
+  evidence_reference_id?: string | null;
   document_filename?: string | null;
   sequence?: number | null;
   char_start?: number | null;

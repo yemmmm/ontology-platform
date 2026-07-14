@@ -398,3 +398,21 @@ regeneration.
 Publication readiness now treats pending, stale, rejected-unfixed, and conflicting core Assertions
 as blockers. Entity-level overrides are represented with `override_of_claim_id` and are not treated
 as conflicts with the Class default they override.
+
+## v1.0 Lightweight Evidence References (R-002)
+
+The v1.0 target does not require complete document upload or parsing. External modeling Agents submit
+the exact source excerpt they used:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/{project_id}/evidence-references` | Create or idempotently reuse `{document_name, excerpt}`. |
+| `GET` | `/api/projects/{project_id}/evidence-references` | Search and page through project references. |
+| `GET` | `/api/evidence-references/{id}` | Read one immutable reference. |
+| `GET` | `/api/evidence-references/{id}/associations` | List concrete modeling results supported by the reference. |
+| `POST` | `/api/projects/{project_id}/evidence-references:resolve` | Dry-run or persist existing IDs and inline excerpts. |
+| `POST` | `/api/projects/{project_id}/evidence-associations` | Resolve excerpts and associate one modeling target. |
+
+Canonical product writes accept optional `evidence_reference_ids`, inline `evidence`,
+`client_item_id`, and `evidence_target_id`. The older Artifact/Chunk endpoints above remain a
+compatibility surface and are not the v1.0 R-002 workflow.

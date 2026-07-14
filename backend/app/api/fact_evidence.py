@@ -12,19 +12,20 @@ and write to Postgres instead.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.core.config import Settings
 from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
+from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_command_compiler import (
     CommandCompilerError,
     compile_bind_fact_evidence,
-    compile_unbind_fact_evidence,
 )
+from app.services.evidence_reference import EvidenceReferenceError, EvidenceReferenceService
 from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_read_model import SemanticReadModelService
 from app.services.semantic_read_scope import SemanticReadScopeResolver
@@ -49,6 +50,7 @@ class BindFactEvidenceRequest(BaseModel):
     assertion_kind: str | None = None
     chunk_id: str | None = None
     evidence_artifact_id: str | None = None
+    evidence_reference_id: str | None = None
     document_filename: str | None = None
     sequence: int | None = None
     char_start: int | None = None
@@ -68,6 +70,7 @@ def _binding_to_dict(binding) -> dict:
         "graph_iri": binding.graph_iri,
         "chunk_id": binding.chunk_id,
         "evidence_artifact_id": binding.evidence_artifact_id,
+        "evidence_reference_id": binding.evidence_reference_id,
         "document_filename": binding.document_filename,
         "sequence": binding.sequence,
         "char_start": binding.char_start,
@@ -108,6 +111,32 @@ def create_fact_evidence(
             status_code=getattr(exc, "status_code", 400), detail=str(exc)
         ) from exc
 
+    evidence_service = EvidenceReferenceService(session)
+    evidence_reference = None
+    ontology = None
+    if payload.evidence_reference_id or payload.document_filename:
+        ontology = session.get(OntologyModel, payload.ontology_id)
+        if ontology is None:
+            raise HTTPException(status_code=404, detail="Ontology not found")
+        try:
+            evidence_service.require_ontology_scope(
+                ontology.project_id, ontology.id, graph_set_id
+            )
+            if payload.evidence_reference_id:
+                evidence_reference = evidence_service.get(
+                    payload.evidence_reference_id, project_id=ontology.project_id
+                )
+            else:
+                evidence_reference, _created = evidence_service.get_or_create(
+                    ontology.project_id,
+                    payload.document_filename or "",
+                    payload.text,
+                    actor=payload.actor,
+                )
+        except EvidenceReferenceError as exc:
+            session.rollback()
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
     repo = FactEvidenceBindingRepository(session)
     binding = repo.create(
         fact_id=cmd.metadata["fact_id"],
@@ -118,6 +147,7 @@ def create_fact_evidence(
         text=cmd.metadata["text"],
         chunk_id=cmd.metadata.get("chunk_id"),
         evidence_artifact_id=cmd.metadata.get("evidence_artifact_id"),
+        evidence_reference_id=evidence_reference.id if evidence_reference else None,
         document_filename=cmd.metadata.get("document_filename"),
         sequence=cmd.metadata.get("sequence"),
         char_start=cmd.metadata.get("char_start"),
@@ -125,6 +155,16 @@ def create_fact_evidence(
         actor=cmd.metadata.get("actor"),
         reason=cmd.metadata.get("reason"),
     )
+    if evidence_reference is not None and ontology is not None:
+        evidence_service.associate(
+            project_id=ontology.project_id,
+            ontology_id=ontology.id,
+            graph_set_id=graph_set_id,
+            target_type="fact",
+            target_id=cmd.metadata["fact_id"],
+            references=[evidence_reference],
+            actor=payload.actor,
+        )
     session.commit()
     return _binding_to_dict(binding)
 

@@ -16,7 +16,6 @@ from app.api.schemas import (
     SemanticEditAuditRead,
     SemanticEditRequest,
     SemanticEditResponse,
-    SemanticExportRequest,
     SemanticGraphEditabilityRequest,
     SemanticGraphEditabilityResponse,
     SemanticGraphGcRequest,
@@ -66,6 +65,12 @@ from app.api.schemas import (
 )
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
+from app.repositories.models import OntologyModel, SemanticGraphSetModel
+from app.services.evidence_reference import (
+    EvidenceReferenceError,
+    EvidenceReferenceService,
+    association_to_dict,
+)
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService, SemanticServiceError
 from app.services.semantic_graph_set_export import (
@@ -117,7 +122,6 @@ from app.services.semantic_canonical_write import (
 )
 from app.services.semantic_command_compiler import (
     CommandCompilerError,
-    compile_command,
 )
 from app.services.semantic_migration import (
     MigrationError,
@@ -1163,6 +1167,26 @@ def compile_and_apply_product_command(
 ) -> SemanticCanonicalProductWriteResponse:
     service = _canonical_write_service(session, rdf_store, settings)
     try:
+        evidence_service = EvidenceReferenceService(session)
+        graph_set = session.get(SemanticGraphSetModel, request.graph_set_id)
+        ontology = (
+            session.get(OntologyModel, graph_set.scope_id)
+            if graph_set is not None and graph_set.scope_type == "ontology" and graph_set.scope_id
+            else None
+        )
+        has_evidence = bool(request.evidence_reference_ids or request.evidence)
+        if has_evidence and ontology is None:
+            raise EvidenceReferenceError(
+                "Evidence-aware canonical writes require an ontology-scoped graph set"
+            )
+        if has_evidence:
+            evidence_service.resolve_candidates(
+                ontology.project_id,
+                reference_ids=request.evidence_reference_ids,
+                inline_evidence=request.evidence,
+                actor=request.actor,
+                persist=False,
+            )
         result = service.apply_command(
             request.command_kind,
             request.payload,
@@ -1171,16 +1195,70 @@ def compile_and_apply_product_command(
             reason=request.reason,
             validate=request.validate_edit,
             shape_graph_iris=request.shape_graph_iris,
+            commit=not has_evidence,
         )
+        if has_evidence:
+            resolved = evidence_service.resolve_candidates(
+                ontology.project_id,
+                reference_ids=request.evidence_reference_ids,
+                inline_evidence=request.evidence,
+                actor=request.actor,
+                persist=True,
+            )
+            references = [row for row, _candidate, _created in resolved if row is not None]
+            associations = evidence_service.associate(
+                project_id=ontology.project_id,
+                ontology_id=ontology.id,
+                graph_set_id=request.graph_set_id,
+                target_type=request.command_kind,
+                target_id=request.evidence_target_id
+                or _canonical_evidence_target_id(request.payload, result["audit_id"]),
+                client_item_id=request.client_item_id,
+                edit_audit_id=result["audit_id"],
+                references=references,
+                actor=request.actor,
+            )
+            session.commit()
+            result["evidence_associations"] = [
+                association_to_dict(row) for row in associations
+            ]
+        else:
+            result["evidence_associations"] = []
     except CanonicalSemanticWriteError as exc:
+        session.rollback()
         raise HTTPException(
             status_code=getattr(exc, "status_code", 400), detail=str(exc)
         ) from exc
     except CommandCompilerError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=getattr(exc, "status_code", 400), detail=str(exc)
+        ) from exc
+    except EvidenceReferenceError as exc:
+        session.rollback()
         raise HTTPException(
             status_code=getattr(exc, "status_code", 400), detail=str(exc)
         ) from exc
     return SemanticCanonicalProductWriteResponse(**result)
+
+
+def _canonical_evidence_target_id(payload: dict, audit_id: str) -> str:
+    for key in (
+        "fact_id",
+        "class_iri",
+        "property_iri",
+        "relation_type_iri",
+        "entity_iri",
+        "relation_iri",
+        "mapping_iri",
+        "rule_iri",
+        "subject_iri",
+        "id",
+    ):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    return audit_id
 
 
 @router.get("/canonical-mode", response_model=SemanticCanonicalModeRead)

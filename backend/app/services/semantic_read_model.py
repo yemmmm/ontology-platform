@@ -637,6 +637,7 @@ class SemanticReadModelService:
             "fact_id": b.fact_id,
             "chunk_id": b.chunk_id,
             "evidence_artifact_id": b.evidence_artifact_id,
+            "evidence_reference_id": getattr(b, "evidence_reference_id", None),
             "document_filename": b.document_filename,
             "sequence": b.sequence,
             "char_start": b.char_start,

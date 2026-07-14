@@ -210,6 +210,66 @@ class EvidenceChunkModel(Base):
     )
 
 
+class EvidenceReferenceModel(Base):
+    __tablename__ = "evidence_references"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "normalized_document_name",
+            "excerpt_hash",
+            name="uq_evidence_references_project_document_excerpt",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    normalized_document_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    excerpt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvidenceAssociationModel(Base):
+    __tablename__ = "evidence_associations"
+    __table_args__ = (
+        UniqueConstraint(
+            "ontology_id",
+            "target_type",
+            "target_id",
+            "evidence_reference_id",
+            name="uq_evidence_associations_target_reference",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    graph_set_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    evidence_reference_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_references.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    client_item_id: Mapped[str | None] = mapped_column(String(255))
+    edit_audit_id: Mapped[str | None] = mapped_column(
+        ForeignKey("semantic_edit_audits.id", ondelete="SET NULL"), index=True
+    )
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class FactEvidenceBindingModel(Base):
     """Fact-level evidence binding stored in Postgres.
 
@@ -232,6 +292,9 @@ class FactEvidenceBindingModel(Base):
     )
     evidence_artifact_id: Mapped[str | None] = mapped_column(
         ForeignKey("evidence_artifacts.id", ondelete="SET NULL"), nullable=True
+    )
+    evidence_reference_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_references.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
     document_filename: Mapped[str | None] = mapped_column(String(255))

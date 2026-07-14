@@ -939,6 +939,10 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     reason: str | None = None
     validate_edit: bool = True
     shape_graph_iris: list[str] = Field(default_factory=list)
+    client_item_id: str | None = None
+    evidence_target_id: str | None = None
+    evidence_reference_ids: list[str] = Field(default_factory=list)
+    evidence: list[dict[str, str]] = Field(default_factory=list)
 
 
 class SemanticCanonicalProductWriteResponse(BaseModel):
@@ -951,6 +955,7 @@ class SemanticCanonicalProductWriteResponse(BaseModel):
     validation: dict[str, Any] | None = None
     graph_revisions: dict[str, int] = Field(default_factory=dict)
     stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_associations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SemanticCanonicalModeRead(BaseModel):
