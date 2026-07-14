@@ -19,15 +19,15 @@ This repository contains a FastAPI backend and a Vite/React frontend for an onto
 
 ## Project Target Guidance
 
-`docs/glossary.md` is the authoritative source for the project's target conceptual model and
-ubiquitous language. Read it before architecture, API, storage, semantic modeling, MCP, or UI work,
-and use its canonical terms consistently in designs, code, tests, and documentation.
+`docs/requirements-v1.0.md` is the authoritative global reference for the project's target state.
+Read it before architecture, API, storage, semantic modeling, MCP, or UI work, and use its delivery
+scope, priority, status, and acceptance criteria to guide designs, code, tests, and documentation.
 
-Treat differences between the current implementation and the glossary as implementation gaps, not
-as reasons to silently redefine the target model. Surface conflicts explicitly and update the
-glossary only when the target domain decision itself changes. Requirements documents define delivery
-scope, priority, and status, while ADRs record architectural decisions; neither the current code nor
-older planning documents override the glossary's conceptual boundaries.
+Treat differences between the current implementation and this requirements list as implementation
+gaps, not as reasons to silently redefine the target. Surface conflicts explicitly, and update the
+requirements list when the target or delivery decision changes. `docs/glossary.md` remains the
+reference for canonical terminology only; ADRs record architectural decisions. Neither the current
+code nor older planning documents override the requirements list.
 
 ## Build, Test, and Development Commands
 
