@@ -192,6 +192,45 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 实体、关系或事实关联到已有引用；产生关联不复制证据内容。平台保存引用不代表已经持有完整
 文档，也不对片段是否真实存在于外部文档作独立背书。
 
+#### 创建与关联协议
+
+- Evidence Reference 可以通过独立 REST/MCP 调用预先创建，也可以在建模批次的具体建模项中
+  以内联方式提交。批次内联是外部建模 Agent 的主要路径。
+- 每个建模项可以通过 `evidence_reference_ids` 复用已有引用，也可以通过 `evidence` 内联提交
+  一个或多个 `{document_name, excerpt}`。同一项可以混合使用两种方式。
+- Evidence Association 必须关联到批次中的具体建模项及其最终写入结果，而不是只挂在整个
+  批次上。一个建模项可关联多个 Evidence Reference，一个 Evidence Reference 也可支持项目内
+  不同本体的多个建模项。
+- 建模项必须有稳定的客户端项标识，平台据此返回逐项证据解析结果、校验错误和最终关联结果。
+  Evidence Association 应进入相应资源的 lineage、编辑审计和版本上下文。
+- 不单独创建“Ontology 使用某文档”的关系；Ontology 与证据之间的关系由具体建模项上的
+  Evidence Association 得出。
+
+#### 规范化与幂等
+
+- `document_name` 和 `excerpt` 去除首尾空白；`excerpt` 的 CRLF/CR 换行统一为 LF。内部空白、
+  大小写、标点和正文内容保持不变，平台不得做摘要、纠错或语义改写。
+- 规范化后 `document_name` 和 `excerpt` 都必须非空。
+- `excerpt_hash` 使用规范化片段的 UTF-8 字节计算 SHA-256。
+- Evidence Reference 的幂等键为
+  `(project_id, normalized_document_name, excerpt_hash)`。命中时返回已有 ID；同名但片段不同，
+  或片段相同但文档名不同，均创建不同引用。
+- 独立创建和批次内联创建必须使用同一套规范化与去重规则；建模批次的 idempotency key 还要
+  保证网络重试不会重复创建 Evidence Association。
+
+#### 事务与错误语义
+
+- 默认原子批次中，Evidence Reference 创建、建模结果写入和 Evidence Association 创建属于
+  同一应用事务。任一建模项或证据校验失败时全部不落库，不留下孤立引用或部分关联。
+- dry-run 不创建 Evidence Reference 或 Evidence Association，但必须返回每个内联证据将复用
+  的已有引用，或规范化后的待创建候选及其幂等键，以及全部证据校验结果。
+- R-004 显式启用部分应用时，只为成功建模项创建或关联其 Evidence Reference；仅被失败项
+  使用的内联证据不得单独落库。
+- 空文档名、空片段和格式不合法返回逐项校验错误；引用不存在、跨项目引用或目标建模项不存在
+  时拒绝建立关联。跨项目引用对调用方表现为资源不可用，不泄露其他 Project 的证据信息。
+- 首版 Evidence Reference 不可修改。文档名或片段需要更正时创建新引用，并通过新的建模变更
+  更新关联；已经进入历史审计的旧引用继续保留。
+
 验收标准：
 
 - REST 与 MCP 均支持创建、读取和列出项目级 Evidence Reference。
@@ -205,6 +244,8 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
   Evidence Reference；没有证据时必须保留“无证据”状态，不能伪造引用。
 - 查询建模结果时能够返回关联的文档名和完整片段；证据关联进入编辑审计和版本上下文。
 - 已被建模结果或审计引用的 Evidence Reference 不得物理删除；首版可以不提供删除接口。
+- 独立创建、批次内联、dry-run、原子失败、显式部分应用和相同请求重试均有服务级测试，证明
+  不会产生重复引用、重复关联或失败项遗留数据。
 
 ### R-003 外部 Agent 构建会话与 MCP 协议
 

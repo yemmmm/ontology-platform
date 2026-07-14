@@ -24,6 +24,12 @@ with the same reference. The reference preserves what the Agent cited; it does n
 stores, parses, versions, or independently verifies the complete source document.
 _Avoid_: uploaded document, evidence artifact, parsed chunk, platform-verified quotation
 
+**Evidence Association**:
+The project-validated relationship from one concrete modeling item or fact to an Evidence Reference.
+One item may cite multiple references, and one reference may support items in multiple ontologies
+within the same project. It is not a general assignment of a document to an ontology.
+_Avoid_: ontology document ownership, batch-level evidence, copied evidence
+
 **Named Graph**:
 A semantic or governance boundary inside an RDF Dataset that contains statements for the actual
 ontology model, actual business data, evidence item, reasoning result, rule result, review/audit
