@@ -70,6 +70,17 @@ other Ontologies remain available. Lease expiry removes edit authority but does 
 Build Session or delete its progress.
 _Avoid_: Graph Set lock, project-wide lock, user permission
 
+**Modeling Batch**:
+A submission unit that groups one or more modeling changes for exactly one Ontology under one
+application mode. It has an overall outcome while retaining each Modeling Item's status, and may be
+previewed without mutation or applied by an authorized external modeling Agent.
+_Avoid_: proposal, Agent message, cross-Ontology transaction
+
+**Modeling Item**:
+One client-identified modeling change inside a Modeling Batch. It is the smallest unit for command
+compilation, validation status, modeling rationale, competency-question links, and evidence links.
+_Avoid_: RDF statement, batch-level evidence, chat step
+
 **Actual Graph**:
 The named graph that semantic edits affect when graph editing is enabled.
 _Avoid_: draft graph, published graph

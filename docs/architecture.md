@@ -10,20 +10,23 @@ The platform operates with three distinct parties:
 
 | Party | Role | Surface |
 |-------|------|---------|
-| **User** | Domain expert, governance decision-maker. Approves/rejects proposals, audits facts, resolves conflicts, publishes versions. | Review Workbench (UI) |
-| **Agent** | Conversation driver, workflow orchestrator. Understands user intent, drives the ontology-builder Skill, submits proposals, reads platform state. Interacts with the platform exclusively through MCP tools and HTTP API. Cannot approve, reject, apply, or publish. | MCP / HTTP API |
-| **Platform** | Durable state authority, governance enforcer. Stores schema, graph instances, evidence, proposals, and review state. Runs deterministic validation, manages version immutability, enforces the draft→published lifecycle. | FastAPI + PostgreSQL + Neo4j |
+| **User** | Domain expert and governance decision-maker. Clarifies intent, audits facts, resolves conflicts, publishes versions, and performs approve/reject decisions when a workflow explicitly requires human review. | Review Workbench (UI) |
+| **Agent** | Conversation driver and workflow orchestrator. Understands user intent, drives the ontology-builder Skill, reads platform state, and submits dry-run or apply modeling batches through MCP or HTTP. An Agent may apply a batch when its Build Session, Ontology Lease, workspace version, and deterministic validation are valid; it cannot approve/reject a governed review decision or publish a version. | MCP / HTTP API |
+| **Platform** | Durable state authority and governance enforcer. Stores semantic state, evidence, modeling batches, proposals, and review state. Resolves the target workspace, runs deterministic validation, enforces idempotency and edit concurrency, records audit/version state, and manages the draft→published lifecycle. | FastAPI + PostgreSQL + RDF Dataset / Neo4j |
 
 **Information production (build/modify ontology):**
 
 ```
-User ──(natural language)──▶ Agent ──(MCP: propose/validate)──▶ Platform
-                                                                  │
-User ◀──(review link)──────── Agent ◀──(batch status)─────────────┘
-  │
-  └──(workbench: approve/reject)──▶ Platform (state updated)
-                                       │
-User ◀──(status update)── Agent ◀──(MCP: read state)──────────────┘
+User ──(natural language)──▶ Agent ──(MCP/HTTP: dry-run batch)──▶ Platform
+                                      ◀──(normalized delta + validation)──┘
+                                      │
+                                      └──(MCP/HTTP: apply batch)─────▶ Platform
+                                           (session + lease + version guards)  │
+User ◀──(status/evidence/audit)── Agent ◀────(batch result)─────────────────────┘
+
+Optional governed review path:
+Agent ──(submit proposal)──▶ Platform ──(review task)──▶ User
+Agent ◀───────(read decision)───── Platform ◀──(approve/reject)─┘
 ```
 
 **Information consumption (query data):**
@@ -142,7 +145,16 @@ Not implemented:
 
 ## Boundaries
 
-The HTTP API is the authoritative write boundary for governance decisions (approve, reject, publish, resolve conflicts). Raw Cypher is not exposed. MCP exposes semantic tools for both read operations (search, get entity, related entities, graph query, fact claims) and Agent-initiated write operations (submit proposals, validate proposals, propose entities/relations, save interview answers). Governance decisions that require explicit human authorization remain HTTP-only and are enforced through the Review Workbench.
+HTTP and MCP may both expose Agent-initiated semantic writes, including R-004 modeling-batch dry-run
+and apply. Batch application is a technical write action, not a human governance approval: the
+platform authorizes it through the active Build Session, valid Ontology Lease, expected workspace
+version, deterministic validation, idempotency, and the caller authorization introduced by R-008.
+It does not require a separate human apply step.
+
+Approve/reject decisions for workflows that explicitly require human review, publication, and
+conflict resolution remain governance decisions and are not granted to the Agent by the modeling
+batch protocol. Those decisions remain on controlled HTTP/UI surfaces. Raw Cypher and unrestricted
+SPARQL Update are not exposed to the Agent.
 
 ## Implemented in v0.3
 
