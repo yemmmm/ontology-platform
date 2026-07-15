@@ -14,12 +14,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.core.config import Settings
 from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
-from app.repositories.models import OntologyModel
+from app.repositories.models import (
+    OntologyModel,
+    SemanticGraphSetMemberModel,
+    SemanticGraphSetModel,
+)
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_command_compiler import (
     CommandCompilerError,
@@ -89,39 +94,32 @@ def create_fact_evidence(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """Create a fact evidence binding in Postgres.
-
-    ``graph_set_id`` is part of the URL for resource identification but is not
-    used directly — the fact is identified by ``fact_id`` (computed from
-    s/p/o/g). Callers that want the binding scoped to a particular graph_set
-    must include the data graph IRI in ``graph_iri``.
-    """
-    if payload.assertion_kind in ("inferred", "rule_derived"):
+    """Create evidence for an asserted fact in an Ontology-owned data graph."""
+    if payload.assertion_kind not in (None, "asserted", "missing_evidence"):
         raise HTTPException(
             status_code=409,
-            detail="Cannot bind evidence to inferred or rule-derived facts",
+            detail="Cannot bind evidence to a derived fact",
         )
+    ontology, asserted_graph_iri = _require_asserted_fact_target(
+        session=session,
+        ontology_id=payload.ontology_id,
+        graph_set_id=graph_set_id,
+        graph_iri=payload.graph_iri,
+    )
+    compile_payload = payload.model_dump()
+    compile_payload["graph_iri"] = asserted_graph_iri
+    compile_payload["assertion_kind"] = "asserted"
     ns = namespace_from_settings(settings)
     try:
-        cmd = compile_bind_fact_evidence(
-            payload.model_dump(), ns=ns, settings=settings
-        )
+        cmd = compile_bind_fact_evidence(compile_payload, ns=ns, settings=settings)
     except CommandCompilerError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
 
     evidence_service = EvidenceReferenceService(session)
     evidence_reference = None
-    ontology = None
     if payload.evidence_reference_id or payload.document_filename:
-        ontology = session.get(OntologyModel, payload.ontology_id)
-        if ontology is None:
-            raise HTTPException(status_code=404, detail="Ontology not found")
         try:
-            evidence_service.require_ontology_scope(
-                ontology.project_id, ontology.id, graph_set_id
-            )
+            evidence_service.require_ontology_scope(ontology.project_id, ontology.id, graph_set_id)
             if payload.evidence_reference_id:
                 evidence_reference = evidence_service.get(
                     payload.evidence_reference_id, project_id=ontology.project_id
@@ -167,6 +165,49 @@ def create_fact_evidence(
         )
     session.commit()
     return _binding_to_dict(binding)
+
+
+def _require_asserted_fact_target(
+    *,
+    session: Session,
+    ontology_id: str,
+    graph_set_id: str,
+    graph_iri: str | None,
+) -> tuple[OntologyModel, str]:
+    ontology = session.get(OntologyModel, ontology_id)
+    if ontology is None:
+        raise HTTPException(status_code=404, detail="Ontology not found")
+    graph_set = session.get(SemanticGraphSetModel, graph_set_id)
+    if (
+        graph_set is None
+        or graph_set.scope_type != "ontology"
+        or graph_set.scope_id != ontology.id
+        or graph_set.status != "active"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Graph Set does not belong to the target Ontology",
+        )
+    asserted_graphs = list(
+        session.scalars(
+            select(SemanticGraphSetMemberModel.graph_iri).where(
+                SemanticGraphSetMemberModel.graph_set_id == graph_set.id,
+                SemanticGraphSetMemberModel.role == "asserted_data",
+            )
+        )
+    )
+    if not asserted_graphs:
+        raise HTTPException(
+            status_code=409,
+            detail="Graph Set has no asserted_data member",
+        )
+    selected_graph = graph_iri or asserted_graphs[0]
+    if selected_graph not in asserted_graphs:
+        raise HTTPException(
+            status_code=409,
+            detail="Fact evidence target must be an asserted_data member of the Graph Set",
+        )
+    return ontology, selected_graph
 
 
 @router.delete(
@@ -236,9 +277,7 @@ def list_missing_evidence_facts(
     )
     fact_ids = service._list_asserted_fact_ids(scope, limit=limit)
     if not fact_ids:
-        return MissingEvidenceFactsResponse(
-            graph_set_id=graph_set_id, count=0, fact_ids=[]
-        )
+        return MissingEvidenceFactsResponse(graph_set_id=graph_set_id, count=0, fact_ids=[])
     repo = FactEvidenceBindingRepository(session)
     with_bindings = repo.count_facts_with_bindings(fact_ids)
     missing = [fid for fid in fact_ids if fid not in with_bindings]

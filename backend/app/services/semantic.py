@@ -13,13 +13,16 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticEditAuditModel,
+    SemanticGraphRevisionModel,
     SemanticGraphStateModel,
     SemanticReasoningRunModel,
+    SemanticStatementOccurrenceModel,
     SemanticValidationRunModel,
 )
 from app.repositories.rdf_store import (
     DatasetLoadResult,
     RdfFormat,
+    RdfGraphDelta,
     RdfStoreRepository,
     SparqlResult,
 )
@@ -30,7 +33,6 @@ from app.services.owl_reasoner import (
 )
 from app.services.semantic_graph_registry import (
     DirectEditCategoryDenied,
-    GraphCategory,
     GraphRegistryError,
     SemanticGraphRegistryService,
 )
@@ -39,6 +41,7 @@ from app.services.semantic_derived_state import (
     SemanticRevisionService,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
+from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 
 
 class SemanticServiceError(RuntimeError):
@@ -68,7 +71,17 @@ _PARSE_LINE_COLUMN_RE = re.compile(r"at line\s+(\d+)\s*,\s*column\s+(\d+)")
 _PARSE_OFFSET_RE = re.compile(r"at offset\s+(\d+)")
 
 
-WRITE_SPARQL_OPERATIONS = {"insert", "delete", "load", "clear", "create", "drop", "copy", "move", "add"}
+WRITE_SPARQL_OPERATIONS = {
+    "insert",
+    "delete",
+    "load",
+    "clear",
+    "create",
+    "drop",
+    "copy",
+    "move",
+    "add",
+}
 
 
 class SemanticService:
@@ -82,6 +95,7 @@ class SemanticService:
         graph_set_service: SemanticGraphSetService | None = None,
         revision_service: SemanticRevisionService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
+        lineage_recorder: SemanticLineageRecorder | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -93,8 +107,11 @@ class SemanticService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
+        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
 
-    def load_dataset(self, content: str, format: str, base_iri: str | None = None) -> DatasetLoadResult:
+    def load_dataset(
+        self, content: str, format: str, base_iri: str | None = None
+    ) -> DatasetLoadResult:
         _parse_rdf(content, format, base_iri=base_iri or self.settings.semantic_base_iri)
         return self.rdf_store.load_dataset(content, format)
 
@@ -163,11 +180,20 @@ class SemanticService:
                 inference=self.settings.semantic_shacl_inference,
             )
             if validation_result["conforms"] is False:
-                raise SemanticServiceError("Semantic edit candidate does not conform to SHACL shapes")
+                raise SemanticServiceError(
+                    "Semantic edit candidate does not conform to SHACL shapes"
+                )
         elif not validate:
             warnings.append("SHACL validation skipped by request")
 
+        restricted_where = format == "sparql-update" and _is_restricted_delete_insert_where(content)
+        before_snapshot = (
+            _snapshot_graph_quads(self.rdf_store, affected_graphs) if restricted_where else None
+        )
         update_result = self.rdf_store.update_sparql(update)
+        after_snapshot = (
+            _snapshot_graph_quads(self.rdf_store, affected_graphs) if restricted_where else None
+        )
         all_warnings = [*warnings, *update_result.warnings]
         audit = SemanticEditAuditModel(
             id=str(uuid4()),
@@ -193,6 +219,22 @@ class SemanticService:
                 affected_graphs,
                 audit_id=audit.id,
                 actor=actor,
+            )
+            if before_snapshot is not None and after_snapshot is not None:
+                lineage_delta = _lineage_delta_from_snapshots(before_snapshot, after_snapshot)
+                self._reconcile_missing_active_occurrences(
+                    lineage_delta, after_snapshot, affected_graphs
+                )
+            else:
+                lineage_delta = _lineage_delta_from_edit(
+                    format=format,
+                    content=content,
+                    target_graph_iri=target_graph_iri,
+                )
+            self.lineage_recorder.record_asserted_delta(
+                delta=lineage_delta,
+                graph_revisions=revision_bumps,
+                audit_id=audit.id,
             )
             stale_rows = self.derived_state_service.mark_stale_after_edit(
                 affected_graphs, audit_id=audit.id
@@ -221,6 +263,31 @@ class SemanticService:
             "graph_revisions": revision_bumps,
             "stale_derived_pointers": stale_pointers,
         }
+
+    def _reconcile_missing_active_occurrences(
+        self,
+        delta: RdfGraphDelta,
+        after_snapshot: dict[str, set[tuple[str, str, str, str]]],
+        affected_graphs: list[str],
+    ) -> None:
+        active_rows = self.session.scalars(
+            select(SemanticStatementOccurrenceModel).where(
+                SemanticStatementOccurrenceModel.graph_iri.in_(affected_graphs),
+                SemanticStatementOccurrenceModel.status == "active",
+                SemanticStatementOccurrenceModel.assertion_kind == "asserted",
+            )
+        )
+        deletes = set(delta.deletes)
+        for row in active_rows:
+            quad = (
+                row.subject_iri,
+                row.predicate_iri,
+                row.object_ntriples,
+                row.graph_iri,
+            )
+            if quad not in after_snapshot.get(row.graph_iri, set()):
+                deletes.add(quad)
+        delta.deletes = sorted(deletes)
 
     def list_edit_audits(self, limit: int = 50) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(limit, 200))
@@ -284,7 +351,9 @@ class SemanticService:
                 "run_id": run.id,
                 "status": run.status,
                 "conforms": run.conforms,
-                "report_text": report_text.decode("utf-8") if isinstance(report_text, bytes) else report_text,
+                "report_text": report_text.decode("utf-8")
+                if isinstance(report_text, bytes)
+                else report_text,
                 "summary": summary,
                 "error": None,
             }
@@ -343,7 +412,9 @@ class SemanticService:
                 timeout_seconds=self.settings.semantic_reasoner_timeout_seconds,
             )
             if persist_result_graph and result.inferred_rdf:
-                self.rdf_store.update_sparql(_insert_data_update(result_graph_iri, result.inferred_rdf))
+                self.rdf_store.update_sparql(
+                    _insert_data_update(result_graph_iri, result.inferred_rdf)
+                )
             run.status = "succeeded"
             run.consistent = result.consistent
             run.run_metadata = {
@@ -355,6 +426,14 @@ class SemanticService:
             promoted_pointer: dict[str, Any] | None = None
             if persist_result_graph and graph_set_id:
                 source_signature = self._graph_set_source_signature(graph_set_id)
+                input_graph_revisions = {
+                    row.graph_iri: int(row.revision or 0)
+                    for row in self.session.scalars(
+                        select(SemanticGraphRevisionModel).where(
+                            SemanticGraphRevisionModel.graph_iri.in_(source_graph_iris)
+                        )
+                    )
+                }
                 pointer = self.derived_state_service.promote_reasoning_pointer(
                     graph_set_id=graph_set_id,
                     run_id=run_id,
@@ -377,12 +456,39 @@ class SemanticService:
                 }
                 run.run_metadata["graph_set_id"] = graph_set_id
                 run.run_metadata["source_signature"] = source_signature
+                run.run_metadata["input_graph_revisions"] = input_graph_revisions
+                run.run_metadata["engine_version"] = engine_version
+                ontology_id = self.lineage_recorder.ontology_id_for_graph_set(graph_set_id)
+                if ontology_id and result.inferred_rdf:
+                    inferred = Graph()
+                    inferred.parse(data=result.inferred_rdf, format=RdfFormat.TURTLE.value)
+                    self.lineage_recorder.record_derived_statements(
+                        ontology_id=ontology_id,
+                        graph_set_id=graph_set_id,
+                        result_graph_iri=result_graph_iri or "",
+                        statements=[
+                            {"s": s.n3(), "p": p.n3(), "o": o.n3()} for s, p, o in inferred
+                        ],
+                        assertion_kind="owl_inferred",
+                        origin_kind="reasoning_run",
+                        run_id=run_id,
+                        proof_level="coarse",
+                        input_graph_revisions=input_graph_revisions,
+                        origin_metadata={
+                            "coarse_reason": "reasoner_proof_unavailable",
+                            "source_signature": source_signature,
+                        },
+                    )
             self.session.commit()
             response = _reasoning_response(run, result, result_graph_iri)
             if promoted_pointer:
                 response["derived_pointer"] = promoted_pointer
             return response
         except Exception as exc:
+            self.session.rollback()
+            run = self.session.get(SemanticReasoningRunModel, run_id)
+            if run is None:
+                raise
             run.status = "failed"
             run.error = str(exc)
             run.finished_at = datetime.now(UTC)
@@ -421,7 +527,9 @@ class SemanticService:
             return self._prepare_sparql_update(content)
         if format in {RdfFormat.TURTLE.value, RdfFormat.JSON_LD.value}:
             if not target_graph_iri:
-                raise UnsupportedSemanticEdit("target_graph_iri is required for Turtle and JSON-LD edits")
+                raise UnsupportedSemanticEdit(
+                    "target_graph_iri is required for Turtle and JSON-LD edits"
+                )
             graph = _parse_graph(content, format, base_iri=self.settings.semantic_base_iri)
             update = _triples_to_insert_data(target_graph_iri, graph)
             return [target_graph_iri], update, _graph_delta([target_graph_iri], graph, "insert")
@@ -441,14 +549,22 @@ class SemanticService:
     def _prepare_sparql_update(self, update: str) -> tuple[list[str], str, dict[str, Any]]:
         operation = _leading_sparql_operation(update)
         if _is_restricted_delete_insert_where(update):
-            graph_iris = sorted(set(re.findall(r"\bGRAPH\s*<([^>]+)>", update, flags=re.IGNORECASE)))
-            return graph_iris, update, {
-                "operation": "delete_insert_where",
-                "graph_iris": graph_iris,
-                "removed_statements": "where-bound",
-                "inserted_statements": "where-bound",
-            }
-        if operation not in {"insert", "delete"} or not re.search(r"\bDATA\b", update, re.IGNORECASE):
+            graph_iris = sorted(
+                set(re.findall(r"\bGRAPH\s*<([^>]+)>", update, flags=re.IGNORECASE))
+            )
+            return (
+                graph_iris,
+                update,
+                {
+                    "operation": "delete_insert_where",
+                    "graph_iris": graph_iris,
+                    "removed_statements": "where-bound",
+                    "inserted_statements": "where-bound",
+                },
+            )
+        if operation not in {"insert", "delete"} or not re.search(
+            r"\bDATA\b", update, re.IGNORECASE
+        ):
             raise UnsupportedSemanticEdit(
                 "Semantic edits support INSERT DATA, DELETE DATA, and restricted DELETE/INSERT WHERE"
             )
@@ -468,7 +584,9 @@ class SemanticService:
             return self.run_validation(affected_graphs, shape_graph_iris, inference)
         data_graph = Graph()
         for graph_iri in affected_graphs:
-            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(graph_iri):
+            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(
+                graph_iri
+            ):
                 continue
             data_graph.parse(
                 data=self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value),
@@ -486,7 +604,9 @@ class SemanticService:
             "run_id": None,
             "status": "succeeded",
             "conforms": bool(conforms),
-            "report_text": report_text.decode("utf-8") if isinstance(report_text, bytes) else report_text,
+            "report_text": report_text.decode("utf-8")
+            if isinstance(report_text, bytes)
+            else report_text,
             "summary": _shacl_summary(report_graph),
             "error": None,
             "candidate": True,
@@ -630,8 +750,13 @@ def _dataset_to_insert_data(dataset: Dataset) -> str:
         graph_iri = str(graph.identifier)
         if graph_iri.startswith("urn:x-rdflib:default"):
             continue
-        by_graph.setdefault(graph_iri, []).append(f"{_term(subject)} {_term(predicate)} {_term(obj)} .")
-    blocks = [f"GRAPH <{graph_iri}> {{\n" + "\n".join(triples) + "\n}" for graph_iri, triples in by_graph.items()]
+        by_graph.setdefault(graph_iri, []).append(
+            f"{_term(subject)} {_term(predicate)} {_term(obj)} ."
+        )
+    blocks = [
+        f"GRAPH <{graph_iri}> {{\n" + "\n".join(triples) + "\n}"
+        for graph_iri, triples in by_graph.items()
+    ]
     return "INSERT DATA {\n" + "\n".join(blocks) + "\n}"
 
 
@@ -652,6 +777,121 @@ def _graph_delta(graph_iris: list[str], graph: Graph, operation: str) -> dict[st
         "inserted_statements": inserted,
         "removed_statements": removed,
     }
+
+
+def _lineage_delta_from_edit(
+    *,
+    format: str,
+    content: str,
+    target_graph_iri: str | None,
+) -> RdfGraphDelta:
+    """Best-effort explicit quad delta for direct-edit lineage."""
+    delta = RdfGraphDelta()
+    if format in {RdfFormat.TURTLE.value, RdfFormat.JSON_LD.value} and target_graph_iri:
+        graph = _parse_graph(content, format, base_iri=target_graph_iri)
+        delta.inserts.extend(
+            (subject.n3(), predicate.n3(), obj.n3(), target_graph_iri)
+            for subject, predicate, obj in graph
+        )
+        return delta
+    if format == RdfFormat.TRIG.value:
+        dataset = _parse_dataset(content, format, base_iri=target_graph_iri or "")
+        for subject, predicate, obj, context in dataset.quads((None, None, None, None)):
+            graph_iri = str(context)
+            if graph_iri.startswith("urn:x-rdflib:default") and target_graph_iri:
+                graph_iri = target_graph_iri
+            delta.inserts.append((subject.n3(), predicate.n3(), obj.n3(), graph_iri))
+        return delta
+    if format != "sparql-update":
+        return delta
+    if _is_restricted_delete_insert_where(content):
+        return _restricted_where_pattern_delta(content)
+    blocks = re.findall(
+        r"\b(INSERT|DELETE)\s+DATA\s*\{\s*GRAPH\s*<([^>]+)>\s*\{(.*?)\}\s*\}",
+        content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for operation, graph_iri, body in blocks:
+        graph = Graph()
+        try:
+            graph.parse(data=body, format=RdfFormat.TURTLE.value)
+        except Exception:
+            continue
+        target = delta.inserts if operation.lower() == "insert" else delta.deletes
+        target.extend(
+            (subject.n3(), predicate.n3(), obj.n3(), graph_iri) for subject, predicate, obj in graph
+        )
+    return delta
+
+
+def _snapshot_graph_quads(
+    rdf_store: RdfStoreRepository,
+    graph_iris: list[str],
+) -> dict[str, set[tuple[str, str, str, str]]] | None:
+    if not hasattr(rdf_store, "get_graph"):
+        return None
+    snapshots: dict[str, set[tuple[str, str, str, str]]] = {}
+    try:
+        for graph_iri in graph_iris:
+            graph = Graph()
+            payload = rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value)
+            if payload and payload.strip():
+                graph.parse(data=payload, format=RdfFormat.TURTLE.value)
+            snapshots[graph_iri] = {
+                (subject.n3(), predicate.n3(), obj.n3(), graph_iri)
+                for subject, predicate, obj in graph
+            }
+    except Exception:
+        return None
+    return snapshots
+
+
+def _lineage_delta_from_snapshots(
+    before: dict[str, set[tuple[str, str, str, str]]],
+    after: dict[str, set[tuple[str, str, str, str]]],
+) -> RdfGraphDelta:
+    before_quads = set().union(*before.values()) if before else set()
+    after_quads = set().union(*after.values()) if after else set()
+    return RdfGraphDelta(
+        inserts=sorted(after_quads - before_quads),
+        deletes=sorted(before_quads - after_quads),
+    )
+
+
+_RESTRICTED_TRIPLE_PATTERN = re.compile(
+    r"(<[^>]+>|\?[A-Za-z_][\w-]*|_:[\w-]+)\s+"
+    r"(<[^>]+>|\?[A-Za-z_][\w-]*)\s+"
+    r"(<[^>]+>|\?[A-Za-z_][\w-]*|_:[\w-]+|"
+    r'"(?:\\.|[^"\\])*"(?:@[A-Za-z0-9-]+|\^\^<[^>]+>)?)',
+    flags=re.DOTALL,
+)
+
+
+def _restricted_where_pattern_delta(update: str) -> RdfGraphDelta:
+    normalized = _strip_sparql_comments(update)
+    delete_at = re.search(r"\bDELETE\b", normalized, re.IGNORECASE)
+    insert_at = re.search(r"\bINSERT\b", normalized, re.IGNORECASE)
+    where_at = re.search(r"\bWHERE\b", normalized, re.IGNORECASE)
+    graph_iris = sorted(set(re.findall(r"\bGRAPH\s*<([^>]+)>", normalized, flags=re.IGNORECASE)))
+    if not delete_at or not insert_at or not where_at:
+        return RdfGraphDelta(clear_graphs=graph_iris)
+    delta = RdfGraphDelta()
+    for segment, target in (
+        (normalized[delete_at.end() : insert_at.start()], delta.deletes),
+        (normalized[insert_at.end() : where_at.start()], delta.inserts),
+    ):
+        for graph_iri, body in re.findall(
+            r"\bGRAPH\s*<([^>]+)>\s*\{([^{}]*)\}",
+            segment,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            target.extend(
+                (match.group(1), match.group(2), match.group(3), graph_iri)
+                for match in _RESTRICTED_TRIPLE_PATTERN.finditer(body)
+            )
+    if not delta.deletes:
+        delta.clear_graphs.extend(graph_iris)
+    return delta
 
 
 def _statement_to_n3(subject: Any, predicate: Any, obj: Any) -> str:
@@ -675,10 +915,16 @@ def _is_restricted_delete_insert_where(update: str) -> bool:
         return False
     if not re.search(r"\bWHERE\b", normalized, re.IGNORECASE):
         return False
-    if re.search(r"\b(LOAD|CLEAR|CREATE|DROP|COPY|MOVE|ADD|WITH|USING)\b", normalized, re.IGNORECASE):
-        raise UnsupportedSemanticEdit("Restricted DELETE/INSERT WHERE cannot include other update operations")
+    if re.search(
+        r"\b(LOAD|CLEAR|CREATE|DROP|COPY|MOVE|ADD|WITH|USING)\b", normalized, re.IGNORECASE
+    ):
+        raise UnsupportedSemanticEdit(
+            "Restricted DELETE/INSERT WHERE cannot include other update operations"
+        )
     if re.search(r"\bGRAPH\s+\?", normalized, re.IGNORECASE):
-        raise UnsupportedSemanticEdit("Restricted DELETE/INSERT WHERE must use explicit GRAPH <iri> blocks")
+        raise UnsupportedSemanticEdit(
+            "Restricted DELETE/INSERT WHERE must use explicit GRAPH <iri> blocks"
+        )
     graph_iris = re.findall(r"\bGRAPH\s*<([^>]+)>", normalized, flags=re.IGNORECASE)
     if len(graph_iris) < 3:
         raise UnsupportedSemanticEdit(

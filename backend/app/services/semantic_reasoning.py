@@ -30,6 +30,7 @@ from app.services.owl_reasoner import (
 )
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_graph_set import SemanticGraphSetService
+from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 
 
 class SemanticReasoningService:
@@ -41,6 +42,7 @@ class SemanticReasoningService:
         reasoner: OwlReasonerRunner | None = None,
         graph_set_service: SemanticGraphSetService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
+        lineage_recorder: SemanticLineageRecorder | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -50,6 +52,7 @@ class SemanticReasoningService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
+        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
 
     def run_reasoning(
         self,
@@ -150,12 +153,39 @@ class SemanticReasoningService:
                     "became_current_at": pointer.became_current_at,
                 }
                 self._mark_rule_pointers_stale_after_reasoning(graph_set_id)
+                ontology_id = self.lineage_recorder.ontology_id_for_graph_set(graph_set_id)
+                if ontology_id and result.inferred_rdf:
+                    from rdflib import Graph
+
+                    inferred = Graph()
+                    inferred.parse(data=result.inferred_rdf, format=RdfFormat.TURTLE.value)
+                    self.lineage_recorder.record_derived_statements(
+                        ontology_id=ontology_id,
+                        graph_set_id=graph_set_id,
+                        result_graph_iri=result_graph_iri or "",
+                        statements=[
+                            {"s": s.n3(), "p": p.n3(), "o": o.n3()} for s, p, o in inferred
+                        ],
+                        assertion_kind="owl_inferred",
+                        origin_kind="reasoning_run",
+                        run_id=run_id,
+                        proof_level="coarse",
+                        input_graph_revisions=input_graph_revisions,
+                        origin_metadata={
+                            "coarse_reason": "reasoner_proof_unavailable",
+                            "source_signature": source_signature,
+                        },
+                    )
             self.session.commit()
             response = _reasoning_response(run, result, result_graph_iri, warnings)
             if promoted_pointer:
                 response["derived_pointer"] = promoted_pointer
             return response
         except Exception as exc:
+            self.session.rollback()
+            run = self.session.get(SemanticReasoningRunModel, run_id)
+            if run is None:
+                raise
             run.status = "failed"
             run.error = str(exc)
             run.finished_at = datetime.now(UTC)
@@ -175,9 +205,7 @@ class SemanticReasoningService:
 
     def get_reasoning_run(self, run_id: str) -> dict[str, Any]:
         run = self.session.scalar(
-            select(SemanticReasoningRunModel).where(
-                SemanticReasoningRunModel.id == run_id
-            )
+            select(SemanticReasoningRunModel).where(SemanticReasoningRunModel.id == run_id)
         )
         if run is None:
             raise ValueError(f"Reasoning run not found: {run_id}")
@@ -203,16 +231,13 @@ class SemanticReasoningService:
         statement = select(SemanticReasoningRunModel)
         if graph_set_id:
             statement = statement.where(
-                SemanticReasoningRunModel.run_metadata["graph_set_id"].astext
-                == graph_set_id
+                SemanticReasoningRunModel.run_metadata["graph_set_id"].astext == graph_set_id
             )
         if kind:
             statement = statement.where(
                 SemanticReasoningRunModel.run_metadata["tasks"].astext.contains(kind)
             )
-        total = self.session.scalar(
-            select(func.count()).select_from(statement.subquery())
-        ) or 0
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
         rows = self.session.scalars(
             statement.order_by(SemanticReasoningRunModel.started_at.desc())
             .offset(bounded_offset)

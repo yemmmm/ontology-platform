@@ -6,10 +6,12 @@ property, and relation-type endpoints lived in the old router but have no live
 callers post-B1, so they are intentionally not re-added here.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_settings
+from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.schemas import (
     OntologyCreateResponse,
     OntologyCreate,
@@ -22,7 +24,9 @@ from app.api.schemas import (
     ProjectUpdate,
 )
 from app.core.config import Settings
+from app.repositories.rdf_store import RdfStoreRepository
 from app.services import ontology_crud as service
+from app.services.ontology_lineage import OntologyLineageError, OntologyLineageService
 from app.services.ontology_workspace import OntologyWorkspaceError, OntologyWorkspaceService
 
 router = APIRouter(tags=["ontologies"])
@@ -132,6 +136,30 @@ def repair_project_ontology_workspaces(
 @router.get("/ontologies/{ontology_id}", response_model=OntologyRead)
 def get_ontology(ontology_id: str, session: Session = Depends(get_db_session)):
     return service.get_ontology(session, ontology_id)
+
+
+@router.get("/ontologies/{ontology_id}/lineage")
+def get_ontology_lineage(
+    ontology_id: str,
+    target_type: Annotated[Literal["statement", "resource", "rule"], Query()],
+    target_id: Annotated[str, Query(min_length=1)],
+    include_history: Annotated[bool, Query()] = False,
+    max_depth: Annotated[int, Query(ge=0, le=5)] = 3,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+):
+    try:
+        return OntologyLineageService(session, rdf_store).get_lineage(
+            ontology_id=ontology_id,
+            target_type=target_type,
+            target_id=target_id,
+            include_history=include_history,
+            max_depth=max_depth,
+            limit=limit,
+        )
+    except OntologyLineageError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.patch("/ontologies/{ontology_id}", response_model=OntologyRead)

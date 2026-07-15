@@ -26,6 +26,8 @@ from app.repositories.models import (
     SemanticProjectionManifestModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
+    SemanticStatementOccurrenceModel,
+    SemanticStatementOriginModel,
 )
 from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
@@ -33,6 +35,7 @@ from app.services.modeling_batches import ModelingBatchError, ModelingBatchServi
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.ontology_workspace import OntologyWorkspaceService
+from app.services.ontology_lineage import OntologyLineageService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteService,
     CanonicalShaclViolation,
@@ -217,6 +220,31 @@ def test_partial_applies_stable_subset_and_only_its_evidence(modeling):
     assert len(rdf.deltas) == 1
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
     assert db.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
+    assert db.scalar(select(func.count(SemanticStatementOccurrenceModel.id))) > 0
+    good_item_id = next(
+        item["item_id"] for item in result["items"] if item["client_item_id"] == "good"
+    )
+    modeling_origins = list(
+        db.scalars(
+            select(SemanticStatementOriginModel).where(
+                SemanticStatementOriginModel.origin_kind == "modeling_item"
+            )
+        )
+    )
+    assert modeling_origins
+    assert {origin.origin_id for origin in modeling_origins} == {good_item_id}
+    resource_iri = next(
+        item["resource_outputs"]["resource_iri"]
+        for item in result["items"]
+        if item["client_item_id"] == "good"
+    )
+    lineage = OntologyLineageService(db).get_lineage(
+        ontology_id=ONTOLOGY_ID,
+        target_type="resource",
+        target_id=resource_iri,
+    )
+    assert lineage["evidence_status"] == "supported"
+    assert lineage["items"][0]["supporting_context"]["rationales"]
 
 
 def test_item_ref_cycle_forms_atomic_group_without_becoming_an_error(modeling):
@@ -280,6 +308,20 @@ def test_rule_only_apply_versions_logical_rule_and_changes_workspace_version(mod
     )
     assert db.scalar(select(SemanticRuleModel.rule_iri)) == "https://rules.test/customer-rule"
     assert result["workspace"]["after_version"] != version
+    lineage = OntologyLineageService(db).get_lineage(
+        ontology_id=ONTOLOGY_ID,
+        target_type="rule",
+        target_id="https://rules.test/customer-rule",
+    )
+    assert lineage["items"][0]["definition"]["version"].startswith("sha256:")
+    assert lineage["items"][0]["supporting_context"]["rationales"] == [
+        {
+            "modeling_item_id": result["items"][0]["item_id"],
+            "text": "Derive customer state",
+        }
+    ]
+    assert lineage["items"][0]["supporting_context"]["edit_audits"]
+    assert lineage["evidence_status"] == "missing"
 
     duplicate = service.submit(
         session_id,
@@ -291,9 +333,7 @@ def test_rule_only_apply_versions_logical_rule_and_changes_workspace_version(mod
         ),
     )
     assert duplicate["attempt_status"] == "validation_failed"
-    assert "resource_already_exists" in {
-        finding["code"] for finding in duplicate["findings"]
-    }
+    assert "resource_already_exists" in {finding["code"] for finding in duplicate["findings"]}
 
 
 def test_modeling_context_and_cross_session_history_hide_internal_targets(modeling):
@@ -379,9 +419,7 @@ def test_malformed_nested_shape_payload_becomes_a_finding(modeling):
     result = service.submit(session_id, _request(version, [shape]))
 
     assert result["attempt_status"] == "validation_failed"
-    assert "invalid_command_payload" in {
-        finding["code"] for finding in result["findings"]
-    }
+    assert "invalid_command_payload" in {finding["code"] for finding in result["findings"]}
 
 
 def test_missing_rule_update_fails_validation_without_leaving_a_fence(modeling):
@@ -398,9 +436,7 @@ def test_missing_rule_update_fails_validation_without_leaving_a_fence(modeling):
     )
 
     assert result["attempt_status"] == "validation_failed"
-    assert "invalid_resource_reference" in {
-        finding["code"] for finding in result["findings"]
-    }
+    assert "invalid_resource_reference" in {finding["code"] for finding in result["findings"]}
     assert rdf.deltas == []
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
 
@@ -453,9 +489,7 @@ def test_apply_marks_projection_manifest_stale_immediately(modeling):
 
     assert result["attempt_status"] == "applied"
     assert db.get(SemanticProjectionManifestModel, manifest.id).status == "stale"
-    assert service.get_modeling_context(ONTOLOGY_ID)["derived_state"][
-        "stale_projection_count"
-    ] == 1
+    assert service.get_modeling_context(ONTOLOGY_ID)["derived_state"]["stale_projection_count"] == 1
 
 
 def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
@@ -479,9 +513,7 @@ def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
     result = service.submit(session_id, _request(version, [delete, relation]))
 
     assert result["attempt_status"] == "validation_failed"
-    assert "conflicting_item_effects" in {
-        finding["code"] for finding in result["findings"]
-    }
+    assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
 
 
 def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling):
@@ -502,6 +534,12 @@ def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling)
     assert retry["attempt_status"] == "applied"
     assert uncertain.failures == 1
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+    occurrence_count = db.scalar(select(func.count(SemanticStatementOccurrenceModel.id)))
+    origin_count = db.scalar(select(func.count(SemanticStatementOriginModel.id)))
+    terminal_retry = service.submit(session_id, payload)
+    assert terminal_retry["attempt_status"] == "applied"
+    assert db.scalar(select(func.count(SemanticStatementOccurrenceModel.id))) == occurrence_count
+    assert db.scalar(select(func.count(SemanticStatementOriginModel.id))) == origin_count
 
 
 def test_bounded_recovery_can_fail_when_no_side_effects_are_proven(modeling):
@@ -544,7 +582,7 @@ def test_recovery_stops_for_rdf_state_outside_the_persisted_plan(modeling):
     first = service.submit(session_id, payload)
     graph_iri = next(iter(uncertain.graphs))
     uncertain.graphs[graph_iri] += (
-        "<https://external.test/s> <https://external.test/p> \"unexpected\" .\n"
+        '<https://external.test/s> <https://external.test/p> "unexpected" .\n'
     )
     retry = service.submit(session_id, payload)
 

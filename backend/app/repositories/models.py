@@ -872,6 +872,115 @@ class SemanticEditAuditModel(Base):
     )
 
 
+class SemanticStatementOccurrenceModel(Base):
+    """Immutable occurrence of one RDF statement at a named-graph revision."""
+
+    __tablename__ = "semantic_statement_occurrences"
+    __table_args__ = (
+        UniqueConstraint(
+            "statement_id",
+            "graph_revision",
+            name="uq_semantic_statement_occurrence_revision",
+        ),
+        CheckConstraint(
+            "assertion_kind IN ('asserted', 'owl_inferred', 'construct_derived', "
+            "'rule_derived', 'workflow_derived')",
+            name="ck_semantic_statement_occurrence_kind",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'invalidated')",
+            name="ck_semantic_statement_occurrence_status",
+        ),
+        Index("ix_semantic_statement_occurrence_ontology", "ontology_id"),
+        Index("ix_semantic_statement_occurrence_statement", "statement_id"),
+        Index("ix_semantic_statement_occurrence_subject", "subject_iri"),
+        Index("ix_semantic_statement_occurrence_graph", "graph_iri"),
+        Index("ix_semantic_statement_occurrence_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    graph_set_id: Mapped[str | None] = mapped_column(
+        ForeignKey("semantic_graph_sets.id", ondelete="SET NULL")
+    )
+    statement_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    predicate_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    object_ntriples: Mapped[str] = mapped_column(Text, nullable=False)
+    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    graph_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    assertion_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    invalidated_revision: Mapped[int | None] = mapped_column(Integer)
+    invalidated_by_audit_id: Mapped[str | None] = mapped_column(
+        ForeignKey("semantic_edit_audits.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SemanticStatementOriginModel(Base):
+    """Typed producer link for a statement occurrence."""
+
+    __tablename__ = "semantic_statement_origins"
+    __table_args__ = (
+        UniqueConstraint(
+            "statement_occurrence_id",
+            "origin_kind",
+            "origin_id",
+            name="uq_semantic_statement_origin",
+        ),
+        CheckConstraint(
+            "origin_kind IN ('modeling_item', 'edit_audit', 'reasoning_run', "
+            "'rule_run', 'legacy_unknown')",
+            name="ck_semantic_statement_origin_kind",
+        ),
+        Index("ix_semantic_statement_origin_occurrence", "statement_occurrence_id"),
+        Index("ix_semantic_statement_origin_target", "origin_kind", "origin_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    statement_occurrence_id: Mapped[str] = mapped_column(
+        ForeignKey("semantic_statement_occurrences.id", ondelete="CASCADE"), nullable=False
+    )
+    origin_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    origin_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    origin_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class SemanticStatementPremiseModel(Base):
+    """Exact premise edge between two immutable statement occurrences."""
+
+    __tablename__ = "semantic_statement_premises"
+    __table_args__ = (
+        CheckConstraint("proof_kind = 'exact'", name="ck_semantic_statement_premise_proof"),
+        Index("ix_semantic_statement_premise_derived", "derived_occurrence_id"),
+        Index("ix_semantic_statement_premise_premise", "premise_occurrence_id"),
+    )
+
+    derived_occurrence_id: Mapped[str] = mapped_column(
+        ForeignKey("semantic_statement_occurrences.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    premise_occurrence_id: Mapped[str] = mapped_column(
+        ForeignKey("semantic_statement_occurrences.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    proof_kind: Mapped[str] = mapped_column(String(16), default="exact", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class SemanticValidationRunModel(Base):
     __tablename__ = "semantic_validation_runs"
 

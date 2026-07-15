@@ -51,6 +51,7 @@ from app.services.semantic_graph_registry import (
     SemanticGraphRegistryService,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
+from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 
 
 class CanonicalSemanticWriteError(RuntimeError):
@@ -104,6 +105,7 @@ class CanonicalSemanticWriteService:
         revision_service: SemanticRevisionService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
         graph_set_service: SemanticGraphSetService | None = None,
+        lineage_recorder: SemanticLineageRecorder | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -114,6 +116,7 @@ class CanonicalSemanticWriteService:
             session, settings
         )
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
+        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
 
     def apply_compiled_command(
         self,
@@ -128,6 +131,7 @@ class CanonicalSemanticWriteService:
         audit_id: str | None = None,
         fence_attempt_id: str | None = None,
         write_rdf: bool = True,
+        modeling_item_effects: dict[tuple[str, str, str, str], list[str]] | None = None,
     ) -> dict[str, Any]:
         """Apply a compiled product command through the canonical pipeline."""
         warnings: list[str] = []
@@ -171,6 +175,18 @@ class CanonicalSemanticWriteService:
             affected,
             audit_id=audit.id,
             actor=actor,
+        )
+        self.lineage_recorder.record_asserted_delta(
+            delta=compiled.delta,
+            graph_revisions=revision_bumps,
+            audit_id=audit.id,
+            ontology_id=(
+                str(compiled.metadata.get("ontology_id"))
+                if compiled.metadata.get("ontology_id")
+                else None
+            ),
+            graph_set_id=graph_set_id,
+            modeling_item_effects=modeling_item_effects,
         )
         stale_rows = self.derived_state_service.mark_stale_after_edit(
             affected, audit_id=audit.id, commit=False
@@ -346,9 +362,7 @@ class CanonicalSemanticWriteService:
                 shape_graph.remove((subject_term, predicate_term, object_term))
         inserts_by_graph: dict[str, list[str]] = {}
         for subject, predicate, obj, graph_iri in delta.inserts:
-            inserts_by_graph.setdefault(graph_iri, []).append(
-                f"{subject} {predicate} {obj} ."
-            )
+            inserts_by_graph.setdefault(graph_iri, []).append(f"{subject} {predicate} {obj} .")
         for graph_iri, statements in inserts_by_graph.items():
             inserted = Graph()
             inserted.parse(data="\n".join(statements), format=RdfFormat.TURTLE.value)

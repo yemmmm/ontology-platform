@@ -498,3 +498,40 @@ Capacity and recovery defaults are configured with `MODELING_BATCH_MAX_ITEMS` (1
 `MODELING_BATCH_MAX_EVIDENCE_EXCERPT_CHARS` (20000),
 `MODELING_BATCH_RECOVERY_MAX_STEPS` (3), and
 `MODELING_BATCH_EXECUTION_CLAIM_TTL_SECONDS` (300).
+
+## v1.0 Unified Knowledge Lineage (R-005)
+
+`GET /api/ontologies/{ontology_id}/lineage` returns one bounded, Ontology-scoped lineage response
+for a `statement`, `resource`, or `rule` target. Callers provide only the business target; the
+platform resolves the default Graph Set, current derived pointers, and internal graph IRIs.
+
+| Query parameter | Values | Default |
+| --- | --- | --- |
+| `target_type` | `statement`, `resource`, or `rule` | required |
+| `target_id` | statement hash, resource IRI, or Rule IRI | required |
+| `include_history` | include invalidated/superseded occurrences and definitions | `false` |
+| `max_depth` | exact-premise recursion depth, `0..5` | `3` |
+| `limit` | total bounded lineage nodes, `1..200` | `100` |
+
+The response separates `evidence_status`, `dependency_evidence_status`, and `lineage_status`.
+Evidence References contain only the document name and exact excerpt submitted by an Agent;
+rationale, Competency Questions, Edit Audit reasons, and derivation Runs remain separate fields.
+Derived statements never copy Evidence from their premises. Platform DSL uses `proof_level=exact`
+only when every premise can be resolved from a matched binding; SPARQL CONSTRUCT and the current
+OWL runner return `proof_level=coarse` with their input snapshot.
+
+By default only current asserted occurrences and current derived-result pointers are returned.
+Deleting and reinserting the same quad preserves the stable `statement_id` but creates a new
+`occurrence_id`; `include_history=true` exposes the earlier invalidated occurrence. Content that
+predates R-005 remains queryable when it is present in RDF and is marked `partial` with
+`legacy_lineage_unavailable`. Missing or cross-Ontology targets return `404`. Reaching a depth or
+node bound sets `truncated=true` and adds `lineage_truncated`.
+
+Example:
+
+```bash
+curl --get http://localhost:8000/api/ontologies/{ontology_id}/lineage \
+  --data-urlencode 'target_type=resource' \
+  --data-urlencode 'target_id=https://example.test/ontology/Person' \
+  --data-urlencode 'max_depth=3'
+```

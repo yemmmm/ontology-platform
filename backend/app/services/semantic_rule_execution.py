@@ -20,6 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import (
+    SemanticDerivedResultPointerModel,
+    SemanticGraphRevisionModel,
+    SemanticGraphSetMemberModel,
     SemanticRuleDefinitionModel,
     SemanticRuleRunModel,
 )
@@ -35,6 +38,7 @@ from app.services.semantic_dsl import (
     execute_dsl,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
+from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 
 
 RULE_RESULT_PREFIX_SEGMENT = "rule-result"
@@ -62,6 +66,7 @@ class SemanticRuleExecutionService:
         settings: Settings,
         graph_set_service: SemanticGraphSetService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
+        lineage_recorder: SemanticLineageRecorder | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -70,6 +75,7 @@ class SemanticRuleExecutionService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
+        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
 
     def execute_construct_template(
         self,
@@ -86,9 +92,7 @@ class SemanticRuleExecutionService:
         rule_definition = self._maybe_resolve_rule(rule_definition_id)
         if rule_definition is not None:
             if rule_definition.language != "sparql_construct":
-                raise RuleExecutionError(
-                    "Rule definition is not a sparql_construct rule"
-                )
+                raise RuleExecutionError("Rule definition is not a sparql_construct rule")
             rule_version = rule_definition.version
             rule_definition_id = rule_definition.id
         source_signature = graph_set.source_signature
@@ -145,6 +149,12 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=execution,
             )
+            self._record_lineage(
+                run=run,
+                execution=execution,
+                assertion_kind="construct_derived",
+                rule_definition=rule_definition,
+            )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
                 promote_pointer=promote_pointer,
@@ -157,6 +167,10 @@ class SemanticRuleExecutionService:
                 promoted_pointer=promoted_pointer,
             )
         except Exception as exc:
+            self.session.rollback()
+            run = self.session.get(SemanticRuleRunModel, run_id)
+            if run is None:
+                raise
             run.status = "failed"
             run.error = str(exc)
             run.finished_at = datetime.now(UTC)
@@ -246,6 +260,12 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=execution,
             )
+            self._record_lineage(
+                run=run,
+                execution=execution,
+                assertion_kind=result_kind,
+                rule_definition=rule_definition,
+            )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
                 promote_pointer=promote_pointer,
@@ -258,6 +278,10 @@ class SemanticRuleExecutionService:
                 promoted_pointer=promoted_pointer,
             )
         except Exception as exc:
+            self.session.rollback()
+            run = self.session.get(SemanticRuleRunModel, run_id)
+            if run is None:
+                raise
             run.status = "failed"
             run.error = str(exc)
             run.finished_at = datetime.now(UTC)
@@ -291,8 +315,7 @@ class SemanticRuleExecutionService:
         else:
             rules = list(
                 self.session.scalars(
-                    select(SemanticRuleDefinitionModel)
-                    .order_by(
+                    select(SemanticRuleDefinitionModel).order_by(
                         SemanticRuleDefinitionModel.priority.asc(),
                         SemanticRuleDefinitionModel.rule_iri.asc(),
                         SemanticRuleDefinitionModel.version.asc(),
@@ -383,13 +406,15 @@ class SemanticRuleExecutionService:
         }
         self.session.commit()
         try:
-            aggregated: list[dict[str, str]] = []
+            aggregated: list[dict[str, Any]] = []
             explanations: list[dict[str, Any]] = []
             for rule in rules:
                 safety_profile = self._safety_profile(rule)
                 if rule.language == "sparql_construct":
-                    template = rule.definition if hasattr(rule, "definition") else (
-                        rule.body.get("template") or rule.body.get("query", "")
+                    template = (
+                        rule.definition
+                        if hasattr(rule, "definition")
+                        else (rule.body.get("template") or rule.body.get("query", ""))
                     )
                     execution = execute_construct_template(
                         self.rdf_store,
@@ -408,13 +433,46 @@ class SemanticRuleExecutionService:
                         statement_limit=safety_profile["max_generated_statements"],
                     )
                     result_kind = _result_kind_for(rule, "rule_derived")
-                for statement in execution.statements:
+                exact_premises = (
+                    _dsl_premises(rule.body, execution) if rule.language == "platform_dsl" else None
+                )
+                for statement_index, statement in enumerate(execution.statements):
+                    proof_level = (
+                        "exact"
+                        if exact_premises is not None and statement_index in exact_premises
+                        else "coarse"
+                    )
+                    coarse_reason = None
+                    if proof_level == "coarse":
+                        coarse_reason = (
+                            "dsl_binding_incomplete"
+                            if rule.language == "platform_dsl"
+                            else "construct_binding_to_premise_unavailable"
+                        )
                     aggregated.append(
                         {
                             **statement,
                             "rule_id": rule.id,
                             "rule_version": rule.version,
                             "assertion_kind": result_kind,
+                            "lineage_proof_level": proof_level,
+                            "lineage_premises": (
+                                exact_premises.get(statement_index, [])
+                                if exact_premises is not None
+                                else []
+                            ),
+                            "lineage_origin_metadata": {
+                                "rule_sources": [
+                                    {
+                                        "rule_definition_id": rule.id,
+                                        "rule_version": rule.version,
+                                        "rule_iri": rule.rule_iri,
+                                        "language": rule.language,
+                                        "proof_level": proof_level,
+                                        "coarse_reason": coarse_reason,
+                                    }
+                                ]
+                            },
                         }
                     )
                 explanations.append(
@@ -437,6 +495,12 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=_GroupExecution(statements=aggregated, warnings=[]),
                 extra_metadata={"explanations": explanations},
+            )
+            self._record_lineage(
+                run=run,
+                execution=_GroupExecution(statements=aggregated, warnings=[]),
+                assertion_kind="rule_derived",
+                rule_definition=None,
             )
             promoted_pointer = None
             if promote_pointer:
@@ -479,6 +543,10 @@ class SemanticRuleExecutionService:
                 "error": None,
             }
         except Exception as exc:
+            self.session.rollback()
+            run = self.session.get(SemanticRuleRunModel, run_id)
+            if run is None:
+                raise
             run.status = "failed"
             run.error = str(exc)
             run.finished_at = datetime.now(UTC)
@@ -554,14 +622,10 @@ class SemanticRuleExecutionService:
         bounded_offset = max(0, offset)
         statement = select(SemanticRuleRunModel)
         if graph_set_id:
-            statement = statement.where(
-                SemanticRuleRunModel.graph_set_id == graph_set_id
-            )
+            statement = statement.where(SemanticRuleRunModel.graph_set_id == graph_set_id)
         if kind:
             statement = statement.where(SemanticRuleRunModel.engine_name == kind)
-        total = self.session.scalar(
-            select(func.count()).select_from(statement.subquery())
-        ) or 0
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
         rows = self.session.scalars(
             statement.order_by(SemanticRuleRunModel.started_at.desc())
             .offset(bounded_offset)
@@ -599,11 +663,97 @@ class SemanticRuleExecutionService:
             source_signature=source_signature,
             status="running",
             started_at=datetime.now(UTC),
-            run_metadata={"actor": actor},
+            run_metadata={
+                "actor": actor,
+                "input_graph_revisions": self._input_graph_revisions(graph_set_id),
+                "input_derived_pointers": self._input_derived_pointers(graph_set_id),
+            },
         )
         self.session.add(run)
         self.session.commit()
         return run
+
+    def _record_lineage(
+        self,
+        *,
+        run: SemanticRuleRunModel,
+        execution: ConstructExecution | DslExecution | "_GroupExecution",
+        assertion_kind: str,
+        rule_definition: SemanticRuleDefinitionModel | None,
+    ) -> None:
+        if not run.result_graph_iri or not execution.statements:
+            return
+        ontology_id = self.lineage_recorder.ontology_id_for_graph_set(run.graph_set_id)
+        if ontology_id is None:
+            return
+        proof_level = "coarse"
+        premises_by_output: dict[int, list[tuple[str, str, str, str]]] = {}
+        coarse_reason = "construct_binding_to_premise_unavailable"
+        if rule_definition is not None and rule_definition.language == "platform_dsl":
+            exact = _dsl_premises(rule_definition.body, execution)
+            if exact is not None:
+                proof_level = "exact"
+                premises_by_output = exact
+                coarse_reason = ""
+            else:
+                coarse_reason = "dsl_binding_incomplete"
+        elif run.engine_name == "rule_group":
+            if any(
+                statement.get("lineage_proof_level") == "exact"
+                for statement in execution.statements
+            ):
+                proof_level = "exact"
+                coarse_reason = ""
+        self.lineage_recorder.record_derived_statements(
+            ontology_id=ontology_id,
+            graph_set_id=run.graph_set_id,
+            result_graph_iri=run.result_graph_iri,
+            statements=execution.statements,
+            assertion_kind=assertion_kind,
+            origin_kind="rule_run",
+            run_id=run.id,
+            proof_level=proof_level,
+            input_graph_revisions=(run.run_metadata or {}).get("input_graph_revisions", {}),
+            premises_by_output=premises_by_output,
+            origin_metadata={
+                "coarse_reason": coarse_reason or None,
+                "rule_definition_id": (rule_definition.id if rule_definition is not None else None),
+                "rule_version": (rule_definition.version if rule_definition is not None else None),
+                "source_signature": run.source_signature,
+            },
+        )
+
+    def _input_graph_revisions(self, graph_set_id: str) -> dict[str, int]:
+        graph_iris = list(
+            self.session.scalars(
+                select(SemanticGraphSetMemberModel.graph_iri).where(
+                    SemanticGraphSetMemberModel.graph_set_id == graph_set_id
+                )
+            )
+        )
+        if not graph_iris:
+            return {}
+        rows = self.session.scalars(
+            select(SemanticGraphRevisionModel).where(
+                SemanticGraphRevisionModel.graph_iri.in_(graph_iris)
+            )
+        )
+        return {row.graph_iri: int(row.revision or 0) for row in rows}
+
+    def _input_derived_pointers(self, graph_set_id: str) -> dict[str, Any]:
+        rows = self.session.scalars(
+            select(SemanticDerivedResultPointerModel).where(
+                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                SemanticDerivedResultPointerModel.status == "current",
+            )
+        )
+        return {
+            row.result_kind: {
+                "run_id": row.run_id,
+                "result_graph_iri": row.result_graph_iri,
+            }
+            for row in rows
+        }
 
     def _finalise_run(
         self,
@@ -743,9 +893,7 @@ class SemanticRuleExecutionService:
 
     def _require_rule(self, rule_id: str) -> SemanticRuleDefinitionModel:
         rule = self.session.scalar(
-            select(SemanticRuleDefinitionModel).where(
-                SemanticRuleDefinitionModel.id == rule_id
-            )
+            select(SemanticRuleDefinitionModel).where(SemanticRuleDefinitionModel.id == rule_id)
         )
         if rule is None:
             raise RuleExecutionNotFound(f"Rule definition not found: {rule_id}")
@@ -762,9 +910,7 @@ class SemanticRuleExecutionService:
             }
         profile = rule_definition.safety_profile or {}
         return {
-            "max_generated_statements": int(
-                profile.get("max_generated_statements", 10000)
-            ),
+            "max_generated_statements": int(profile.get("max_generated_statements", 10000)),
             "timeout_seconds": float(profile.get("timeout_seconds", 30.0)),
             "allowed_predicates": list(profile.get("allowed_predicates", [])),
         }
@@ -834,6 +980,48 @@ def _result_kind_for(
     return default
 
 
+def _dsl_premises(
+    body: dict[str, Any],
+    execution: DslExecution | "_GroupExecution" | ConstructExecution,
+) -> dict[int, list[tuple[str, str, str, str]]] | None:
+    """Resolve exact DSL premise quads from projected bindings.
+
+    Returning ``None`` is an explicit downgrade to coarse proof; callers never
+    create guessed premise edges.
+    """
+    bindings = getattr(execution, "bindings", [])
+    when = [clause for clause in body.get("when", []) if "filter" not in clause]
+    if not when or not bindings:
+        return None
+    resolved: dict[int, list[tuple[str, str, str, str]]] = {}
+    for output_index, statement in enumerate(execution.statements):
+        try:
+            binding = bindings[int(statement["binding_index"])]
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None
+        graph_iri = str(binding.get("g", ""))
+        if graph_iri.startswith("<") and graph_iri.endswith(">"):
+            graph_iri = graph_iri[1:-1]
+        if not graph_iri:
+            return None
+        n3_values = binding.get("__n3__", {})
+        premises: list[tuple[str, str, str, str]] = []
+        for clause in when:
+            terms: list[str] = []
+            for field in ("s", "p", "o"):
+                term = str(clause[field])
+                if term.startswith("?"):
+                    name = term[1:]
+                    value = n3_values.get(name) or binding.get(name)
+                    if value is None:
+                        return None
+                    term = str(value)
+                terms.append(term)
+            premises.append((terms[0], terms[1], terms[2], graph_iri))
+        resolved[output_index] = premises
+    return resolved
+
+
 def _coerce_term(term: str):
     from rdflib import Literal, URIRef
 
@@ -853,7 +1041,7 @@ def _coerce_term(term: str):
 
 
 class _GroupExecution:
-    def __init__(self, statements: list[dict[str, str]], warnings: list[str]) -> None:
+    def __init__(self, statements: list[dict[str, Any]], warnings: list[str]) -> None:
         self.statements = statements
         self.warnings = warnings
         self.bindings: list[dict[str, str]] = []

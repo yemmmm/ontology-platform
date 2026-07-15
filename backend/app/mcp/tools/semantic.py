@@ -40,6 +40,7 @@ from app.services.semantic_vector_projection import (
     SemanticVectorProjectionService,
 )
 from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 
 
 def _rdf_store() -> RdfStoreRepository:
@@ -94,6 +95,10 @@ def _rule_execution_service(session) -> SemanticRuleExecutionService:
     return SemanticRuleExecutionService(session, _rdf_store(), settings)
 
 
+def _lineage_service(session) -> OntologyLineageService:
+    return OntologyLineageService(session, _rdf_store())
+
+
 def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def semantic_sparql_query(
@@ -103,9 +108,11 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Run read-only SPARQL against the governed semantic RDF dataset."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _semantic_service(session)
-            .query_sparql(query, timeout_seconds, result_limit)
-            .__dict__
+            lambda session, _driver, _embedding_client: (
+                _semantic_service(session)
+                .query_sparql(query, timeout_seconds, result_limit)
+                .__dict__
+            )
         )
 
     @server.tool()
@@ -210,9 +217,7 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Run SHACL validation over a graph set, persisting the report graph and run metadata."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _validation_service(
-                session
-            ).run_validation(
+            lambda session, _driver, _embedding_client: _validation_service(session).run_validation(
                 data_graph_iris=_resolve_data_graphs(session, graph_set_id),
                 shape_graph_iris=shape_graph_iris
                 or _resolve_role_graphs(session, graph_set_id, "shape"),
@@ -262,22 +267,22 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Create or reuse an immediately executable platform rule definition."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _rule_definition_service(
-                session
+            lambda session, _driver, _embedding_client: (
+                _rule_definition_service(session)
+                .create_rule(
+                    rule_iri=rule_iri,
+                    name=name,
+                    language=language,
+                    body=body,
+                    input_roles=input_roles or [],
+                    output_kind=output_kind,
+                    uses_inferred_facts=uses_inferred_facts,
+                    requires_review=requires_review,
+                    priority=priority,
+                    created_by=created_by,
+                )
+                .__dict__
             )
-            .create_rule(
-                rule_iri=rule_iri,
-                name=name,
-                language=language,
-                body=body,
-                input_roles=input_roles or [],
-                output_kind=output_kind,
-                uses_inferred_facts=uses_inferred_facts,
-                requires_review=requires_review,
-                priority=priority,
-                created_by=created_by,
-            )
-            .__dict__
         )
 
     @server.tool()
@@ -292,9 +297,7 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Run a single rule, a named group, or all rules for a graph set."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _rule_execution_service(
-                session
-            )._dispatch(
+            lambda session, _driver, _embedding_client: _rule_execution_service(session)._dispatch(
                 graph_set_id=graph_set_id,
                 rule_definition_id=rule_definition_id,
                 rule_iri=rule_iri,
@@ -349,9 +352,7 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Inspect projection freshness by graph set and projection kind."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _projection_status(
-                session, graph_set_id
-            )
+            lambda session, _driver, _embedding_client: _projection_status(session, graph_set_id)
         )
 
     @server.tool()
@@ -378,12 +379,33 @@ def register_semantic(server: FastMCP) -> None:
         )
 
     @server.tool()
+    def get_ontology_lineage(
+        ontology_id: str,
+        target_type: str,
+        target_id: str,
+        include_history: bool = False,
+        max_depth: int = 3,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Read bounded statement, resource, or Rule Definition lineage for an Ontology."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _lineage_service(session).get_lineage(
+                ontology_id=ontology_id,
+                target_type=target_type,
+                target_id=target_id,
+                include_history=include_history,
+                max_depth=max_depth,
+                limit=limit,
+            )
+        )
+
+    @server.tool()
     def inspect_semantic_statement_provenance(
         graph_set_id: str,
         statement_iri: str,
         include: str = "asserted",
     ) -> dict[str, Any]:
-        """Inspect provenance, evidence, assertion kind, and staleness for a statement."""
+        """Deprecated compatibility wrapper; use get_ontology_lineage."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _statement_provenance(
                 session, graph_set_id, statement_iri, include
@@ -486,25 +508,20 @@ def register_semantic(server: FastMCP) -> None:
         )
 
 
-
 def _resolve_data_graphs(
     session, graph_set_id: str, roles: tuple[str, ...] = ("asserted_data",)
 ) -> list[str]:
     settings = Settings()
     service = SemanticGraphSetService(session, settings)
     description = service.describe(graph_set_id)
-    return [
-        member["graph_iri"] for member in description["members"] if member["role"] in roles
-    ]
+    return [member["graph_iri"] for member in description["members"] if member["role"] in roles]
 
 
 def _resolve_role_graphs(session, graph_set_id: str, role: str) -> list[str]:
     settings = Settings()
     service = SemanticGraphSetService(session, settings)
     description = service.describe(graph_set_id)
-    return [
-        member["graph_iri"] for member in description["members"] if member["role"] == role
-    ]
+    return [member["graph_iri"] for member in description["members"] if member["role"] == role]
 
 
 def _read_model_service(session) -> SemanticReadModelService:
@@ -643,17 +660,13 @@ def _statement_provenance(
     statement_iri: str,
     include: str,
 ) -> dict[str, Any]:
-    service = _read_model_service(session)
-    envelope = service.read_model(
-        graph_set_id=graph_set_id,
-        model_name="statement-list",
-        include=include,
+    graph_set = _graph_set_service(session).get_graph_set(graph_set_id)
+    if graph_set.scope_type != "ontology" or not graph_set.scope_id:
+        raise LineageTargetNotFound("Graph Set is not scoped to an Ontology")
+    result = _lineage_service(session).get_lineage(
+        ontology_id=graph_set.scope_id,
+        target_type="resource",
+        target_id=statement_iri,
+        include_history=include in {"history", "all"},
     )
-    for item in envelope["items"]:
-        if item["iri"] == statement_iri:
-            return item
-    return {
-        "error": "statement not found",
-        "graph_set_id": graph_set_id,
-        "iri": statement_iri,
-    }
+    return {**result, "deprecated": True, "replacement_tool": "get_ontology_lineage"}

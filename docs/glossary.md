@@ -30,6 +30,33 @@ One item may cite multiple references, and one reference may support items in mu
 within the same project. It is not a general assignment of a document to an ontology.
 _Avoid_: ontology document ownership, batch-level evidence, copied evidence
 
+**Statement Occurrence**:
+One immutable occurrence of a normalized RDF statement in a named graph at a specific graph
+revision. Re-inserting the same statement after deletion creates a new occurrence. It is the
+technical lineage unit beneath facts and RDF-backed model structures, not a business-facing
+Semantic Resource.
+_Avoid_: resource version, database row, current triple only
+
+**Lineage**:
+The trace that explains a knowledge item's origin, supporting context, derivation dependencies, and
+edit audit. Evidence, Agent rationale, competency questions, edit audits, and derivation premises
+remain distinct parts of the trace and never substitute for one another.
+_Avoid_: evidence only, source graph label, generated-by string
+
+**Lineage Completeness**:
+Whether the platform can return the complete recorded origin and, for a derived statement, the
+available premise chain. `complete` means the required trace is recorded, `partial` means only a
+coarse run/input snapshot or legacy origin is known, and `missing` means no trustworthy origin is
+available.
+_Avoid_: evidence status, validation status, truth score
+
+**Derivation Proof Level**:
+The precision of a derived statement's dependency trace. `exact` identifies concrete premise
+Statement Occurrences, `coarse` identifies only the producing run and its versioned input snapshot,
+and `unavailable` means the engine supplied neither. A coarse or unavailable proof must never be
+expanded into invented premises or copied document evidence.
+_Avoid_: confidence, evidence status, inferred proof
+
 **Named Graph**:
 A semantic or governance boundary inside an RDF Dataset that contains statements for the actual
 ontology model, actual business data, evidence item, reasoning result, rule result, review/audit

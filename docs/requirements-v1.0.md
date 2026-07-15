@@ -92,7 +92,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | R-002 | 轻量证据引用与建模结果关联 | P0 | 已实现 | S | 极高 | R-001 |
 | R-003 | 外部 Agent 构建会话与 MCP 协议 | P0 | 已实现 | M | 极高 | R-001、R-002 |
 | R-004 | 外部 Agent 建模批次的预检、幂等应用与失败恢复 | P0 | 已实现 | M | 极高 | R-001、R-003 |
-| R-005 | 统一知识来源与推导链 | P0 | 部分实现 | L | 高 | R-002、R-004 |
+| R-005 | 统一知识来源与推导链 | P0 | 已实现 | L | 高 | R-002、R-004 |
 | R-006 | 面向 Agent 的结构化语义上下文查询 | P0 | 部分实现 | L | 极高 | R-001、R-005 |
 | R-007 | 通用操作语义与外部工具绑定 | P0 | 未实现 | M | 极高 | R-004、R-006 |
 | R-008 | API/MCP 认证、授权与项目隔离 | P0 | 未实现 | L | 高 | R-001 |
@@ -765,20 +765,79 @@ PostgreSQL 并发 Batch/Attempt、Lease 和 Evidence upsert 定向测试（3 pas
 
 ### R-005 统一知识来源与推导链
 
-当前状态：`部分实现`
+当前状态：`已实现`
 
-统一不同知识类型的来源表示：
+最后更新：2026-07-15
 
-- 提取事实：文档名和原文片段组成的 Evidence Reference。
-- 模型结构：Evidence Reference 或 Agent 建模理由/能力问题。
-- 推理结果：Reasoning/Rule Run、规则版本和前提事实。
-- 人工编辑：认证主体、时间和修改原因。
+详细设计：`docs/superpowers/specs/2026-07-15-r005-unified-lineage-design.md`；独立验证使用
+`docs/superpowers/plans/2026-07-15-r005-lineage-test-plan.md`。
 
-验收标准：
+#### 要解决的问题
 
-- 查询任一结构、事实或派生结果时，都可获取其 lineage。
-- 缺少证据的内容允许存在，但必须明确标记，不能伪装为有证据事实。
-- 派生结果不得绑定伪造的原始文档证据，应返回规则和前提链。
+现有平台已经分别保存 Evidence Reference、Fact Evidence Binding、Modeling Item、Edit Audit、
+Reasoning/Rule Run 和 derived result graph，但这些记录没有形成统一的知识项级查询链。当前
+`inspect_semantic_statement_provenance` 只按 subject IRI 查读模型，Evidence 为空、Run 和 Audit
+多数为 `null`，不能回答一条具体事实或模型语句由什么产生、引用了什么、依赖哪些前提以及是否
+已经被替换。
+
+本需求以带 named graph 和 graph revision 的 Statement Occurrence（语句实例）作为 RDF 知识的
+底层 lineage 单元，以 statement ID、资源 IRI 或 Rule IRI 作为业务查询入口。平台统一组合已有
+Evidence、Modeling Item、Audit、Run 和 Rule Definition 记录，但保持以下概念独立：
+
+- Evidence Reference：外部 Agent 实际提交的文档名与原文片段，不代表平台验证过完整文档。
+- Agent rationale / Competency Question：建模上下文，不是 Evidence。
+- Edit Audit：谁或什么在何时、因为什么原因执行了编辑，不是 Evidence。
+- Derivation：产生派生语句的 Run、定义版本、输入快照和可用的前提链。
+
+#### 首版交付范围
+
+- 持久化 asserted、OWL inferred、CONSTRUCT、Rule 和 workflow 结果的 Statement Occurrence。
+- 将 R-004 applied Modeling Item 和 canonical/direct edit Audit 绑定到其实际产生的语句。
+- Platform DSL 在可解析 matched binding 时保存 exact premise chain；SPARQL CONSTRUCT 和当前
+  OWL runner 至少返回 coarse Run/input snapshot，不能伪造证明。
+- Rule Definition 虽存于 PostgreSQL，也可按 Rule IRI 查询 Modeling Item、Evidence、rationale、
+  Competency Question、版本和 Audit。
+- 新增 Ontology 级统一 REST/MCP 查询；普通调用方不填写 Graph Set ID 或 graph IRI。
+- 默认查询当前结果；可选查询被删除、替换或非当前派生结果的历史 lineage。
+- 迁移前无法还原来源的内容仍可查询，但必须返回 `partial` 和稳定 warning。
+- 首版不新增 UI；R-006 消费结构化结果，R-107 再提供工作台展示。
+
+#### 验收标准
+
+- 查询任一当前 RDF 模型结构、事实、Rule Definition 或派生结果时，可获取结构化 lineage；
+  REST 与 MCP 的状态和作用域一致。
+- 带 Evidence 的 R-004 结果可追溯到具体 Modeling Item、Evidence Reference 和 Edit Audit；无
+  Evidence 内容允许存在，但明确返回 `evidence_status=missing`。
+- rationale、Competency Question、人工 reason 和 Evidence 分字段返回，任何一项都不能伪装成
+  另一项。
+- Platform DSL 派生结果返回 Rule Definition version、Rule Run 和 exact premise chain；前提缺少
+  Evidence 时返回 `dependency_evidence_status=contains_missing`。
+- SPARQL CONSTRUCT 和当前 OWL runner 至少返回 Run、引擎/定义版本和输入 revisions，并明确
+  `proof_level=coarse`；派生结果不直接绑定伪造的原始文档 Evidence。
+- 删除并重新插入相同 quad 产生不同 Statement Occurrence；默认只返回当前结果，历史查询返回
+  旧 occurrence、失效 Audit 和生命周期。
+- R-004 幂等重试与向前恢复不会重复创建 Statement Occurrence、Origin 或 premise link。
+- 跨 Ontology/Project 查询不能泄漏 Evidence excerpt；深度和节点上限可确定性截断递归链。
+- Alembic、全量 backend pytest、MCP registry、真实 PostgreSQL/Oxigraph 定向验收以及服务重启
+  health 检查全部通过。
+
+#### 实现与验证结果
+
+- 已新增 Statement Occurrence、Origin 和 exact Premise 的 PostgreSQL 持久化及 Alembic `0026`；
+  asserted 删除后重插会保留不同 occurrence，R-004 重试和恢复使用确定性标识去重。
+- canonical/direct edit、R-004 Modeling Item、OWL reasoning、SPARQL CONSTRUCT、Platform DSL 和
+  workflow rule 写入路径均接入统一 recorder；Rule group 会保留每个输出对应的全部 Rule Definition
+  版本和 exact premise，不以后一条来源覆盖前一条。
+- 已提供 Ontology 作用域 REST `GET /api/ontologies/{ontology_id}/lineage` 和 MCP
+  `get_ontology_lineage`；旧 MCP provenance 工具保留兼容并明确标记 deprecated。
+- 查询端严格区分 Evidence、rationale、Competency Question、Audit 和 Derivation；派生语句不直接
+  绑定 Evidence，并对 asserted Fact Evidence 进行 Graph Set、graph role 和 Ontology 双重校验。
+- 独立测试覆盖历史失效 Audit、restricted WHERE、Evidence 隔离、跨 Ontology 防泄漏、Rule group
+  多来源和 exact premise；最终结果为专项 `6 passed`、定向 `111 passed, 2 skipped`、backend 全量
+  `568 passed, 3 skipped`。
+- Alembic current/head 均为 `0026_semantic_statement_lineage`。真实 PostgreSQL/Oxigraph 验收已验证
+  R-004 幂等写入、REST/MCP 一致性、Platform DSL exact 推导链及重启后持久化；服务、backend、
+  frontend、PostgreSQL 和 Oxigraph 均健康。
 
 ### R-006 面向 Agent 的结构化语义上下文查询
 

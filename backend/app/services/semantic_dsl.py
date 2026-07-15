@@ -25,7 +25,7 @@ DSL_VARIABLE_PATTERN = re.compile(r"^\?([A-Za-z_][A-Za-z0-9_]*)$")
 @dataclass
 class DslExecution:
     statements: list[dict[str, str]] = field(default_factory=list)
-    bindings: list[dict[str, str]] = field(default_factory=list)
+    bindings: list[dict[str, Any]] = field(default_factory=list)
     truncated: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -59,13 +59,12 @@ def compile_dsl_to_select(
     select_vars = sorted(project_vars)
     if not select_vars:
         raise ConstructTemplateError("DSL program must project at least one variable")
-    select_clause = "SELECT DISTINCT " + " ".join(f"?{name}" for name in select_vars)
+    select_clause = "SELECT DISTINCT ?g " + " ".join(
+        f"?{name}" for name in select_vars if name != "g"
+    )
     values_clause = f"VALUES ?g {{ {graph_values} }}"
     where_block = "GRAPH ?g {\n" + "\n".join(where_parts) + "\n}"
-    query = (
-        f"{select_clause}\n"
-        f"WHERE {{\n  {values_clause}\n  {where_block}\n}}"
-    )
+    query = f"{select_clause}\nWHERE {{\n  {values_clause}\n  {where_block}\n}}"
     if statement_limit > 0:
         query += f"\nLIMIT {statement_limit}"
     return query
@@ -108,6 +107,7 @@ def materialise_dsl_bindings(
     seen: set[tuple[str, str, str]] = set()
     for index, binding in enumerate(bindings):
         resolved = {key: _binding_value(value) for key, value in binding.items()}
+        resolved_n3 = {key: _binding_n3(value) for key, value in binding.items()}
         for template in then:
             statement = _materialise_statement(template, resolved)
             key = (statement["s"], statement["p"], statement["o"])
@@ -119,7 +119,12 @@ def materialise_dsl_bindings(
             if explain:
                 record["explanation"] = str(explain)
             execution.statements.append(record)
-        execution.bindings.append({key: str(value) for key, value in resolved.items()})
+        execution.bindings.append(
+            {
+                **{key: str(value) for key, value in resolved.items()},
+                "__n3__": resolved_n3,
+            }
+        )
     return execution
 
 
@@ -142,6 +147,23 @@ def _binding_value(value: Any) -> str:
     if isinstance(value, dict):
         return str(value.get("value", ""))
     return str(value)
+
+
+def _binding_n3(value: Any) -> str:
+    if not isinstance(value, dict):
+        return str(value)
+    raw = str(value.get("value", ""))
+    if value.get("type") == "uri":
+        return f"<{raw}>"
+    if value.get("type") == "bnode":
+        return f"_:{raw}"
+    escaped = raw.replace("\\", "\\\\").replace('"', '\\"')
+    literal = f'"{escaped}"'
+    if value.get("xml:lang") or value.get("lang"):
+        return f"{literal}@{value.get('xml:lang') or value.get('lang')}"
+    if value.get("datatype"):
+        return f"{literal}^^<{value['datatype']}>"
+    return literal
 
 
 def _term_or_literal(term: str, project_vars: set[str]) -> str:

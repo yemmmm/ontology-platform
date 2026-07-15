@@ -173,9 +173,7 @@ class ModelingBatchService:
         if build_session.status != "active":
             raise ModelingBatchError("build_session_not_active", "Build Session is not active")
         ontology = self.session.scalar(
-            select(OntologyModel)
-            .where(OntologyModel.id == payload.ontology_id)
-            .with_for_update()
+            select(OntologyModel).where(OntologyModel.id == payload.ontology_id).with_for_update()
         )
         if ontology is None or ontology.project_id != build_session.project_id:
             raise ModelingBatchError(
@@ -312,9 +310,7 @@ class ModelingBatchService:
                 findings = self._dedupe_findings([*findings, *validation_findings])
                 if not any(finding["blocking"] for finding in validation_findings):
                     break
-                attributable = any(
-                    finding["client_item_ids"] for finding in validation_findings
-                )
+                attributable = any(finding["client_item_ids"] for finding in validation_findings)
                 if payload.mode != "apply_partial" or not attributable:
                     if payload.mode != "dry_run":
                         for item_id in selected:
@@ -729,14 +725,11 @@ class ModelingBatchService:
                             item_ids=sorted({left.item_id, right.item_id}),
                         )
                     )
-                elif (
-                    self._effects_overlap(left, right)
-                    and (
-                        left.cardinality == "single"
-                        or right.cardinality == "single"
-                        or left.operation == "delete"
-                        or right.operation == "delete"
-                    )
+                elif self._effects_overlap(left, right) and (
+                    left.cardinality == "single"
+                    or right.cardinality == "single"
+                    or left.operation == "delete"
+                    or right.operation == "delete"
                 ):
                     findings.append(
                         _finding(
@@ -907,9 +900,7 @@ class ModelingBatchService:
     @staticmethod
     def _effects_overlap(left, right) -> bool:
         if left.resource_key == right.resource_key and (
-            left.slot_key == right.slot_key
-            or left.slot_key == "*"
-            or right.slot_key == "*"
+            left.slot_key == right.slot_key or left.slot_key == "*" or right.slot_key == "*"
         ):
             return True
         left_prefixes = set(left.cascade_footprint)
@@ -1181,6 +1172,14 @@ class ModelingBatchService:
                     target_graph_iris=delta.affected_graph_iris(),
                     metadata={"ontology_id": batch.ontology_id},
                 )
+                item_by_client = {item.client_item_id: item for item in batch.items}
+                modeling_item_effects: dict[tuple[str, str, str, str], list[str]] = {}
+                for client_item_id, command in commands.items():
+                    if command.compiled is None:
+                        continue
+                    item = item_by_client[client_item_id]
+                    for quad in command.compiled.delta.inserts:
+                        modeling_item_effects.setdefault(quad, []).append(item.id)
                 existing_audit = self.session.get(SemanticEditAuditModel, attempt.audit_id)
                 if not (rdf_already_applied and existing_audit is not None):
                     result = CanonicalSemanticWriteService(
@@ -1196,13 +1195,20 @@ class ModelingBatchService:
                         audit_id=attempt.audit_id,
                         fence_attempt_id=attempt.id,
                         write_rdf=not rdf_already_applied,
+                        modeling_item_effects=modeling_item_effects,
                     )
                     attempt.audit_id = result["audit_id"]
             else:
                 self._ensure_rule_only_audit(attempt, auth.actor)
             for item_id, command in commands.items():
                 if command.storage == "postgres":
-                    self._apply_rule(batch, item_id, command, auth.actor)
+                    self._apply_rule(
+                        batch,
+                        item_id,
+                        command,
+                        auth.actor,
+                        attempt.audit_id,
+                    )
             self._persist_evidence(attempt, auth.actor)
             self._mark_rule_derived_stale(attempt.graph_set_id)
             self.session.flush()
@@ -1346,8 +1352,11 @@ class ModelingBatchService:
         delta = (attempt.operation_plan or {}).get("delta", {})
         inserts = [tuple(quad) for quad in delta.get("inserts", [])]
         deletes = [tuple(quad) for quad in delta.get("deletes", [])]
-        if not inserts and not deletes and not delta.get("clear_graphs") and not delta.get(
-            "drop_graphs"
+        if (
+            not inserts
+            and not deletes
+            and not delta.get("clear_graphs")
+            and not delta.get("drop_graphs")
         ):
             return {"state": "applied", "reason": "no_rdf_effects"}
         if self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
@@ -1394,9 +1403,7 @@ class ModelingBatchService:
             for s, p, o, graph_iri in inserts
         }
         present_inserts = {
-            quad
-            for quad in insert_terms
-            if quad[:3] in graphs.get(quad[3], Graph())
+            quad for quad in insert_terms if quad[:3] in graphs.get(quad[3], Graph())
         }
         unexpected_matches = 0
         for subject, predicate, obj, graph_iri in deletes:
@@ -1421,7 +1428,9 @@ class ModelingBatchService:
                 "unexpected_delete_matches": unexpected_matches,
             }
         return {
-            "state": "unexpected" if expected_hashes or unexpected_matches else "partially_observed",
+            "state": "unexpected"
+            if expected_hashes or unexpected_matches
+            else "partially_observed",
             "present_inserts": len(present_inserts),
             "expected_inserts": len(insert_terms),
             "unexpected_delete_matches": unexpected_matches,
@@ -1453,15 +1462,12 @@ class ModelingBatchService:
             graphs[graph_iri].add(
                 (self._rdf_term(subject), self._rdf_term(predicate), self._rdf_term(obj))
             )
-        return {
-            graph_iri: self._hash_rdf_graph(graph) for graph_iri, graph in graphs.items()
-        }
+        return {graph_iri: self._hash_rdf_graph(graph) for graph_iri, graph in graphs.items()}
 
     @staticmethod
     def _hash_rdf_graph(graph: Graph) -> str:
         rows = sorted(
-            f"{subject.n3()} {predicate.n3()} {obj.n3()} ."
-            for subject, predicate, obj in graph
+            f"{subject.n3()} {predicate.n3()} {obj.n3()} ." for subject, predicate, obj in graph
         )
         return hashlib.sha256("\n".join(rows).encode("utf-8")).hexdigest()
 
@@ -1494,7 +1500,7 @@ class ModelingBatchService:
             )
         return commands
 
-    def _apply_rule(self, batch, item_id, command, actor):
+    def _apply_rule(self, batch, item_id, command, actor, audit_id):
         payload = command.payload
         rule_id = payload.get("rule_id")
         rule_iri = payload.get("rule_iri") or command.outputs.get("resource_iri")
@@ -1589,6 +1595,13 @@ class ModelingBatchService:
             self.session.flush()
         if current and current.id != existing.id:
             current.status = "superseded"
+        modeling_item = next(item for item in batch.items if item.client_item_id == item_id)
+        existing.rule_metadata = {
+            **(existing.rule_metadata or {}),
+            "modeling_item_id": modeling_item.id,
+            "edit_audit_id": audit_id,
+            "modeling_batch_id": batch.id,
+        }
         existing.status = "active"
         rule.status = "active"
         rule.current_definition_id = existing.id

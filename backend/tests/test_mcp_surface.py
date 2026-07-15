@@ -27,6 +27,7 @@ ALLOWED_TOOLS = {
     "list_ontology_modeling_batches",
     "get_modeling_context",
     "get_ontology_read_model",
+    "get_ontology_lineage",
     "get_ontology_workspace_context",
     "repair_ontology_workspace",
     "get_project_brief",

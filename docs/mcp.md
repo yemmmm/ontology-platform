@@ -425,3 +425,39 @@ The tools call the same `ModelingBatchService` as REST and return the same statu
 codes. A retry uses the same idempotency key; switching from dry-run to apply uses a new key. Lease
 tokens are accepted only by apply submissions and are excluded from hashes, audit, ordinary reads,
 and errors. R-008 remains required before exposing these tools to untrusted callers.
+
+## Unified lineage tools (R-005)
+
+### `get_ontology_lineage`
+
+Read the same bounded lineage contract as
+`GET /api/ontologies/{ontology_id}/lineage` without exposing Graph Set IDs or graph IRIs as input:
+
+```json
+{
+  "ontology_id": "ontology-id",
+  "target_type": "statement",
+  "target_id": "sha256-statement-id",
+  "include_history": false,
+  "max_depth": 3,
+  "limit": 100
+}
+```
+
+`target_type` accepts `statement`, `resource`, or `rule`. The tool returns the platform-recorded
+Evidence References, Modeling Items, Edit Audits, Runs, immutable Rule Definition versions, and
+exact premises when available. It does not invoke an LLM to explain or supplement the result.
+Evidence, Agent rationale, Competency Questions, audit reasons, and derivation are always separate;
+derived results have `evidence_status=not_applicable` and report dependency evidence through their
+premises instead of copying excerpts.
+
+`max_depth` is bounded to `0..5`, `limit` to `1..200`, and both MCP and REST return the same
+`complete | partial | missing`, Evidence, proof, history, and truncation semantics. A target outside
+the requested Ontology is returned as `not_found`.
+
+### `inspect_semantic_statement_provenance` compatibility
+
+This legacy tool remains registered for one compatibility period. Its old `statement_iri` argument
+is treated as a resource IRI in the supplied Ontology-scoped Graph Set, it delegates to
+`get_ontology_lineage`, and its response includes `deprecated=true` plus
+`replacement_tool=get_ontology_lineage`. New callers should not use it as a statement-ID API.

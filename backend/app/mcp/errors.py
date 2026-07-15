@@ -44,6 +44,10 @@ def map_exception(exc: Exception) -> tuple[str, str]:
         code = _STATUS_TO_CODE.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
         detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
         return code.value, detail
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        code = _STATUS_TO_CODE.get(status_code, ErrorCode.INTERNAL_ERROR)
+        return code.value, str(exc)
     if isinstance(exc, (ValueError, TypeError)):
         return ErrorCode.VALIDATION_ERROR.value, str(exc)
     return ErrorCode.INTERNAL_ERROR.value, str(exc)
