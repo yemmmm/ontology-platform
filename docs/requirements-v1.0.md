@@ -522,6 +522,19 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - Build Context 和 Batch 读接口必须显示 `recovering` Attempt、最近恢复结果与是否可安全重试，
   不能让 Agent 通过 Checkpoint 把不确定写入标记为已完成。
 
+#### 同步执行与容量边界
+
+- R-004 首版同步执行命令编译、确定性校验和正式应用；在正常容量范围内，提交接口直接返回
+  `validated`、`validation_failed`、`applied` 或 `partially_applied` 等本次 Attempt 最终结果。
+- 平台必须提供可配置且有文档说明的单批 Modeling Item 数量、请求体字节数、内联 Evidence
+  数量与片段长度上限。超限请求在开始编译和写入前以稳定请求级错误拒绝，并返回实际值与上限，
+  不允许静默截断 Item、payload 或 Evidence。
+- HTTP 连接中断或写入结果不确定时，已持久化 Attempt 不因客户端离线而创建重复操作；Agent 使用
+  相同 idempotency key 重试或读取 Batch 状态。进入 `recovering` 后由恢复流程收敛并通过读接口
+  暴露结果，不要求同步请求一直保持连接。
+- R-004 不建设通用持久任务队列、调度器或 Worker 框架。投影、推理和规则等通用异步执行能力
+  仍由 R-106 负责；后续若将大批次迁移到异步执行，必须复用相同 Batch、Attempt、幂等和状态语义。
+
 #### 命令承载范围
 
 - R-004 建立可扩展的 Modeling Command Handler 注册机制。现有 canonical compiler 作为
@@ -646,6 +659,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   范围内唯一；平台 Batch、Attempt 与最终语义资源标识全局唯一，所有响应可双向关联。
 - RDF 或 PostgreSQL 写入中断后，相同 Attempt 可根据事前持久化的 delta 和来源状态
   收敛到确定终态，不重复写入、不新建 Attempt，也不伪装成普通校验失败。
+- 首版在明确容量上限内同步返回批次结果；超限输入在写入前确定性拒绝，恢复中的 Attempt 可通过
+  同一幂等请求或读接口继续观察，且不依赖 R-106 的通用异步任务框架。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
   和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
 - 每个 Modeling Item 只承载一个严格类型命令，并可以结构化引用已有资源或同批次
