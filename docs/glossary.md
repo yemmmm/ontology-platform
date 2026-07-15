@@ -81,6 +81,12 @@ One client-identified modeling change inside a Modeling Batch. It is the smalles
 compilation, validation status, modeling rationale, competency-question links, and evidence links.
 _Avoid_: RDF statement, batch-level evidence, chat step
 
+**Atomic Dependency Group**:
+A maximal cyclic group of Modeling Items whose successful application depends on one another and
+which must therefore be applied or withheld together during partial application. The cycle itself
+does not imply invalid domain semantics.
+_Avoid_: invalid cycle, sequential execution order, partial cyclic write
+
 **Actual Graph**:
 The named graph that semantic edits affect when graph editing is enabled.
 _Avoid_: draft graph, published graph

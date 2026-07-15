@@ -499,6 +499,41 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 显式图选择仍可以存在于高级直接 RDF 编辑、Graph Set 管理或管理员 Debug 能力中，
   但不属于 R-004 的普通 Agent 批次协议。
 
+#### Modeling Item 契约与批次内引用
+
+- 每个 Modeling Batch 必须有一个由调用方提供的稳定 `client_batch_id`，用于标识
+  同一组建模内容；它可在 `dry_run` 和后续 apply 之间保持不变，但不代替每次
+  请求的 idempotency key。修改批次命令、payload 或关联资料后必须使用新的
+  `client_batch_id`。
+- 每个 Modeling Item 只包含一个 `command_kind` 及其严格类型的 `payload`，并提供
+  在当前批次内唯一的 `client_item_id`。未知字段、未注册命令和与命令 schema
+  不匹配的 payload 必须作为逐项校验错误返回。
+- Modeling Item 可使用结构化 `resource_id` 引用已有资源，或使用结构化
+  `item_ref` 引用同批次其他建立项的输出。不使用 `@item:...` 等嵌入普通字符串的
+  隐式引用语法。
+- 平台在编译前为建立项预分配资源标识。未显式给出受允许资源标识时，标识必须
+  由 Ontology、`client_batch_id`、`client_item_id` 和 `command_kind` 确定性生成，使同一
+  建模内容的 dry-run、apply 和网络重试得到同一资源标识和规范化 delta。
+- Modeling Item 还可通过 `depends_on` 声明“当前项只能在指定项成功时应用”。
+  `depends_on` 表达成功依赖，不表达严格的逐项执行顺序；平台还要从 `item_ref`
+  和命令资源引用中推导隐式成功依赖。
+- 平台必须先解析全部资源标识和引用，再针对整个候选状态编译与校验。
+  资源之间的循环引用、自引用或领域关系成环不自动构成批次错误；是否违反继承、
+  状态流转或其他语义规则，由对应命令和领域校验器判定。
+
+#### 原子依赖组与部分应用
+
+- 平台将通过显式或隐式成功依赖互相成环的 Modeling Item 识别为一个
+  `Atomic Dependency Group（原子依赖组）`。循环本身是合法的，组内项不按先后顺序单独写入。
+- `apply_partial` 中，一个原子依赖组只能全部应用或全部不应用。组内任一项发生
+  阻断错误时，该项返回 `failed`，同组其他本身可通过的项返回 `blocked`，依赖该组的
+  后续项或组也返回 `blocked`。
+- 循环组全部校验通过时应作为一个整体应用；与该组无依赖的其他组仍可在
+  `apply_partial` 中独立应用。平台可以将强连通分量折叠为无环组图，以稳定地计算
+  失败传播与返回顺序。
+- `apply_atomic` 仍以整个 Modeling Batch 为唯一原子单元；原子依赖组只用于诊断和
+  逐项状态归因，不改变“任一项失败则整批不写入”的语义。
+
 验收标准：
 
 - 一次批次可包含 schema、entity、relation、fact、mapping 和 rule 变更；Operation 在
@@ -507,6 +542,10 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
   和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
+- 每个 Modeling Item 只承载一个严格类型命令，并可以结构化引用已有资源或同批次
+  建立项；循环引用可以通过预分配标识和候选状态整体校验安全处理。
+- `apply_partial` 将循环成功依赖折叠为原子依赖组，不会因为存在环而直接拒绝，也不会
+  部分写入一个未完整的循环组。
 - apply 使用 idempotency key；网络重试不得重复写入。
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
 - 每项可关联 Evidence Reference、建模理由或能力问题。
