@@ -72,12 +72,12 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | Graph Registry / Graph Set | 已实现 | 成员角色、来源签名、图修订、派生结果指针、过期检测、历史和差异。 |
 | SHACL、推理和确定性规则 | 部分实现 | 服务和测试齐全；真实 OWL runner 依赖外部命令，执行仍是同步路径。 |
 | 事实证据绑定 | 部分实现 | Postgres `fact_evidence_bindings` 已支持文档名和原文片段；尚未形成项目级复用引用，也未覆盖模型结构。 |
-| 轻量证据引用 | 部分实现 | 事实绑定已有可复用字段；缺少项目级 Evidence Reference 写入、查询以及建模批次关联。现有 Artifact/Chunk 读接口不再代表 v1 目标。 |
+| 轻量证据引用 | 已实现 | 项目级 Evidence Reference、查询、规范化复用以及 Modeling Item 级 Association 已接入 REST/MCP 与 R-004 apply。 |
 | 固定语义读模型 | 已实现 | Classes、Entities、Facts、Readiness、History、Delta、Entity Search 等读模型。 |
 | 自然语言语义查询 | 部分实现 | 当前只是 label/comment/IRI 子串查询；没有通用结构化上下文接口。 |
 | Search / Vector 投影 | 部分实现 | 文档构建器和任务模型已存在，但运行时使用 `FakeSearchWriter` / `FakeVectorWriter`，结果不会持久化。 |
 | Agent 查询测试 | 部分实现 | 当前 `agent-test` 在平台内调用 LLM 生成答案，与目标边界不一致，且中文分词能力不足。 |
-| Agent 构建接口 | 部分实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、恢复、幂等终态和 Ontology Lease；R-004 带证据建模批次尚未接入。 |
+| Agent 构建接口 | 已实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、Ontology Lease，以及 R-004 带证据 Modeling Batch 的 dry-run、原子/部分 apply、查询和恢复。 |
 | 本体组合 | 部分实现 | Graph Set 可组合多个图，Mapping 命令存在；缺少本体依赖、导入版本和桥接关系契约。 |
 | 身份认证和项目隔离 | 未实现 | `ApiKeyModel` 是未使用的骨架；HTTP/MCP 路由没有认证依赖，SPARQL 可查询整个 Dataset。 |
 | 操作语义模型 | 未实现 | 尚无通用 Operation、参数、前置条件、效果、风险和外部工具绑定查询契约。 |
@@ -90,8 +90,8 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | --- | --- | --- | --- | --- | --- | --- |
 | R-001 | 新建本体时自动创建默认语义工作区 | P0 | 已实现 | M | 极高 | 无 |
 | R-002 | 轻量证据引用与建模结果关联 | P0 | 已实现 | S | 极高 | R-001 |
-| R-003 | 外部 Agent 构建会话与 MCP 协议 | P0 | 部分实现 | M | 极高 | R-001、R-002 |
-| R-004 | 外部 Agent 建模批次的预检、幂等应用与失败恢复 | P0 | 部分实现 | M | 极高 | R-001、R-003 |
+| R-003 | 外部 Agent 构建会话与 MCP 协议 | P0 | 已实现 | M | 极高 | R-001、R-002 |
+| R-004 | 外部 Agent 建模批次的预检、幂等应用与失败恢复 | P0 | 已实现 | M | 极高 | R-001、R-003 |
 | R-005 | 统一知识来源与推导链 | P0 | 部分实现 | L | 高 | R-002、R-004 |
 | R-006 | 面向 Agent 的结构化语义上下文查询 | P0 | 部分实现 | L | 极高 | R-001、R-005 |
 | R-007 | 通用操作语义与外部工具绑定 | P0 | 未实现 | M | 极高 | R-004、R-006 |
@@ -262,7 +262,7 @@ Evidence Reference 归属 Project，不归属某个 Ontology。项目内任一�
 
 ### R-003 外部 Agent 构建会话与 MCP 协议
 
-当前状态：`部分实现`（R-003 会话协议已落地，R-004 apply 接线未完成）
+当前状态：`已实现`
 
 最后更新：2026-07-15
 
@@ -283,9 +283,9 @@ Debug 区域已增加只读 Project 级 Build Context 诊断页，直接展示 `
 `cd frontend && npx playwright test tests/build-context-debug.spec.ts`（4 passed）；
 `cd frontend && npx playwright test`（30 passed）。
 
-剩余问题：R-004 的实际 apply 路径尚未调用 `authorize_apply(...)`，也尚未把建模批次、验证结果
-和 Evidence Association 聚合进 Build Context。因此本项仍保持“部分实现”，不能标记为
-“已实现”。R-008 认证授权仍是外部接入前的独立安全依赖。
+R-004 apply 已调用 `authorize_apply(...)`，Modeling Batch、Attempt、Finding、Evidence
+Association、fence/recovering 摘要已进入 Build Context 和 Session detail。R-008 认证授权仍是
+外部接入前的独立安全依赖，但不改变 R-003 会话协议本身已完成。
 
 技术设计：`docs/superpowers/specs/2026-07-14-r003-build-session-design.md`
 
@@ -439,7 +439,7 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 
 ### R-004 外部 Agent 建模批次的预检、幂等应用与失败恢复
 
-当前状态：`部分实现`
+当前状态：`已实现`
 
 最后更新：2026-07-15
 
@@ -447,6 +447,17 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 `docs/superpowers/plans/2026-07-15-r004-modeling-batch-test-plan.md`。跨 RDF/PostgreSQL 的不确定
 写入采用事前持久化计划、Ontology Write Fence 和向前恢复，决策见
 `docs/adr/0005-forward-recovery-for-modeling-batches.md`。
+
+实现证据：迁移 `0023_modeling_batches`、`0024_modeling_result_cascade` 和
+`0025_backfill_workspaces`；`ModelingBatchService`、
+`ModelingCommandHandlerRegistry`、组合 workspace-version 服务；六个 REST 与六个 MCP 能力；
+canonical writer fence/claim/向前恢复接线；Ontology 级 Rule/Definition 版本模型；Modeling Item
+级 Evidence Association；Build Context 和只读 Debug 诊断。
+
+验证证据：`uv run alembic upgrade head` 已升级真实 PostgreSQL 到
+`0025_backfill_workspaces (head)`；`cd backend && uv run pytest`（542 passed，3 skipped）；
+PostgreSQL 并发 Batch/Attempt、Lease 和 Evidence upsert 定向测试（3 passed）；前端
+`npm run build`、R-004 定向 Playwright（8 passed）及全量 Playwright（34 passed）通过。
 
 在现有直接 RDF 编辑和 canonical command 之上，增加适合外部建模 Agent 的
 批量预检与应用协议。`Modeling Batch（建模批次）` 是一次只针对一个 Ontology 的

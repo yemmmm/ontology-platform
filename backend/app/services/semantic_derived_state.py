@@ -15,6 +15,7 @@ from app.repositories.models import (
     SemanticGraphRevisionModel,
     SemanticGraphSetMemberModel,
     SemanticGraphSetModel,
+    SemanticProjectionManifestModel,
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
 
@@ -131,6 +132,8 @@ class SemanticDerivedStateService:
         self,
         affected_graph_iris: list[str],
         audit_id: str | None = None,
+        *,
+        commit: bool = True,
     ) -> list[SemanticDerivedResultPointerModel]:
         if not affected_graph_iris:
             return []
@@ -138,8 +141,7 @@ class SemanticDerivedStateService:
         if not graph_set_ids:
             return []
         rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel)
-            .where(
+            select(SemanticDerivedResultPointerModel).where(
                 SemanticDerivedResultPointerModel.graph_set_id.in_(graph_set_ids),
                 SemanticDerivedResultPointerModel.status == "current",
             )
@@ -155,14 +157,77 @@ class SemanticDerivedStateService:
                 "stale_audit_id": audit_id,
             }
             stale.append(row)
-        if stale:
+        self._mark_projection_manifests_stale(
+            graph_set_ids,
+            audit_id=audit_id,
+            reason="source_graph_revision_changed",
+            stale_at=now,
+        )
+        if commit:
             self.session.commit()
         return stale
+
+    def mark_graph_set_stale(
+        self,
+        graph_set_id: str,
+        *,
+        audit_id: str | None = None,
+        reason: str = "workspace_rule_changed",
+        commit: bool = True,
+    ) -> list[SemanticDerivedResultPointerModel]:
+        rows = list(
+            self.session.scalars(
+                select(SemanticDerivedResultPointerModel).where(
+                    SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                    SemanticDerivedResultPointerModel.status == "current",
+                )
+            )
+        )
+        now = datetime.now(UTC).isoformat()
+        for row in rows:
+            row.status = "stale"
+            row.pointer_metadata = {
+                **(row.pointer_metadata or {}),
+                "stale_reason": reason,
+                "stale_at": now,
+                "stale_audit_id": audit_id,
+            }
+        self._mark_projection_manifests_stale(
+            [graph_set_id], audit_id=audit_id, reason=reason, stale_at=now
+        )
+        if commit:
+            self.session.commit()
+        return rows
+
+    def _mark_projection_manifests_stale(
+        self,
+        graph_set_ids: list[str],
+        *,
+        audit_id: str | None,
+        reason: str,
+        stale_at: str,
+    ) -> None:
+        manifests = self.session.scalars(
+            select(SemanticProjectionManifestModel).where(
+                SemanticProjectionManifestModel.graph_set_id.in_(graph_set_ids),
+                SemanticProjectionManifestModel.status == "current",
+            )
+        )
+        for manifest in manifests:
+            manifest.status = "stale"
+            manifest.manifest_metadata = {
+                **(manifest.manifest_metadata or {}),
+                "stale_reason": reason,
+                "stale_at": stale_at,
+                "stale_audit_id": audit_id,
+            }
 
     def reconcile(self) -> dict[str, Any]:
         """Recompute stale/current/superseded state from signatures and revisions."""
         graph_sets = list(
-            self.session.scalars(select(SemanticGraphSetModel).where(SemanticGraphSetModel.status == "active"))
+            self.session.scalars(
+                select(SemanticGraphSetModel).where(SemanticGraphSetModel.status == "active")
+            )
         )
         reconciled_current = 0
         reconciled_stale = 0

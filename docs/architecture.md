@@ -60,6 +60,12 @@ and converges uncertain outcomes forward under the original Attempt. Reasoning, 
 search/vector projection, and other derived rebuilds are marked stale and remain outside the
 synchronous R-004 request.
 
+The implementation is anchored by migrations `0023_modeling_batches`,
+`0024_modeling_result_cascade`, and `0025_backfill_workspaces`,
+`ModelingBatchService`, the `ModelingCommandHandlerRegistry`, and one composite workspace-version
+service shared by Build Context, Modeling Context, and the apply guard. The Build Context Debug UI
+is a read-only observer of these records; it is never an execution or recovery trigger.
+
 **Information consumption (query data):**
 
 ```

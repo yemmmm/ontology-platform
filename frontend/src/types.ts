@@ -455,6 +455,163 @@ export type BuildContextWorkspace = {
   issues: string[];
 };
 
+export type ModelingBatchStatus =
+  | "open"
+  | "applying"
+  | "recovering"
+  | "applied"
+  | "partially_applied"
+  | "failed";
+
+export type ModelingAttemptMode = "dry_run" | "apply_atomic" | "apply_partial";
+
+export type ModelingAttemptStatus =
+  | "validating"
+  | "validated"
+  | "validation_failed"
+  | "applying"
+  | "recovering"
+  | "applied"
+  | "partially_applied"
+  | "failed";
+
+export type ModelingFinding = {
+  code: string;
+  severity: "info" | "warning" | "error" | string;
+  message: string;
+  scope?: "batch" | "group" | "item" | string;
+  client_item_id?: string | null;
+  client_item_ids?: string[];
+  atomic_group_id?: string | null;
+  path?: string | Array<string | number> | null;
+  details?: JsonObject;
+  blocking?: boolean;
+  retryable?: boolean;
+};
+
+export type ModelingBatchSummary = {
+  id?: string;
+  batch_id: string;
+  client_batch_id?: string;
+  build_session_id?: string;
+  ontology_id: string;
+  status?: ModelingBatchStatus | string;
+  batch_status?: ModelingBatchStatus | string;
+  latest_mode?: ModelingAttemptMode | string | null;
+  latest_attempt_status?: ModelingAttemptStatus | string | null;
+  item_count?: number;
+  finding_count?: number;
+  recovery_state?: string | null;
+  latest_attempt?: {
+    attempt_id: string;
+    mode: ModelingAttemptMode | string;
+    attempt_status: ModelingAttemptStatus | string;
+    finding_count: number;
+    recovery_state: string | null;
+  } | null;
+  created_at?: string;
+  updated_at?: string;
+  terminal_at?: string | null;
+};
+
+export type ModelingContext = {
+  project: { id: string; name?: string; description?: string | null };
+  ontology: { id: string; name: string; status: string };
+  generated_at?: string;
+  workspace: {
+    workspace_version: string | null;
+    state: string;
+    editable: boolean;
+    issues?: string[];
+  };
+  resource_counts: Record<string, number | null>;
+  derived_state: {
+    stale_count?: number;
+    current_pointer_count?: number;
+    stale_pointer_count?: number;
+    current?: number;
+    stale?: number;
+    warning?: string | null;
+    warnings?: string[];
+  };
+  lease: {
+    active: boolean;
+    fenced: boolean;
+    state?: string | null;
+  };
+  recovering?: {
+    active: boolean;
+    attempt_id: string | null;
+  };
+  recent_batches: ModelingBatchSummary[];
+  recent_batches_next_cursor?: string | null;
+  batch_history: string;
+  query_entries: JsonObject | JsonObject[];
+};
+
+export type ModelingBatchItemResult = {
+  item_id?: string;
+  modeling_item_id?: string;
+  client_item_id: string;
+  command_kind?: string;
+  status?: string;
+  atomic_group_id?: string | null;
+  resource_outputs?: JsonObject;
+  finding_codes?: string[];
+};
+
+export type ModelingBatchImmutableItem = ModelingBatchItemResult & {
+  ordinal?: number;
+  payload?: JsonObject;
+  depends_on?: string[];
+  evidence_reference_ids?: string[];
+  rationale?: string | null;
+  competency_question_ids?: string[];
+};
+
+export type ModelingBatchAttempt = {
+  id?: string;
+  attempt_id?: string;
+  mode: ModelingAttemptMode | string;
+  status?: ModelingAttemptStatus | string;
+  attempt_status?: ModelingAttemptStatus | string;
+  findings?: ModelingFinding[];
+  items?: ModelingBatchItemResult[];
+  recovery?: JsonObject;
+  recovery_state?: string | null;
+  created_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type ModelingBatchDetail = {
+  id?: string;
+  batch_id: string;
+  client_batch_id: string;
+  build_session_id?: string;
+  ontology_id?: string;
+  status?: ModelingBatchStatus | string;
+  batch_status: ModelingBatchStatus | string;
+  attempt_id?: string;
+  mode?: ModelingAttemptMode | string;
+  attempt_status?: ModelingAttemptStatus | string;
+  workspace?: JsonObject;
+  items: ModelingBatchImmutableItem[];
+  groups?: JsonObject[];
+  findings?: ModelingFinding[];
+  attempts: ModelingBatchAttempt[];
+  recovery?: JsonObject;
+  recovery_history?: JsonObject[];
+  created_at?: string;
+  completed_at?: string | null;
+};
+
+export type ModelingBatchPage = {
+  items?: ModelingBatchSummary[];
+  batches?: ModelingBatchSummary[];
+  next_cursor: string | null;
+};
+
 export type BuildContextOntology = {
   id: string;
   name: string;

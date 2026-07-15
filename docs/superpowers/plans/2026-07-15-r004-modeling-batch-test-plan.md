@@ -18,7 +18,7 @@
 
 ## 2. 持久化与幂等
 
-- `0023` 从当前 Alembic head 升级成功，约束和索引存在；
+- `0023`/`0024`/`0025` 从此前 Alembic head 升级成功，约束、索引和已有 Ontology 工作区回填存在；
 - 相同 Session + `client_batch_id` + 相同内容返回原 Batch；内容变化返回
   `batch_content_conflict`；
 - 相同 Session + idempotency key + 相同 Attempt 请求返回原 Attempt，不增加 audit、revision、

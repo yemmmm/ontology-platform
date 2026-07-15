@@ -22,6 +22,13 @@ import type {
   BuildContextOntology,
   BuildSessionDetail,
   BuildSessionSummary,
+  ModelingBatchAttempt,
+  ModelingBatchDetail,
+  ModelingBatchItemResult,
+  ModelingBatchPage,
+  ModelingBatchSummary,
+  ModelingContext,
+  ModelingFinding,
 } from "../types";
 import { classNames, compactId, formatDate, prettyJson } from "../utils";
 
@@ -218,7 +225,9 @@ export function BuildContextDebugPage(props: { projectId: string; request: Reque
           <ContextBlock title={t("Ontology Workspaces")} icon={<Layers3 size={15} />}>
             {platform.ontologies.length ? (
               <div className="workspaceStateList">
-                {platform.ontologies.map((ontology) => <WorkspaceState key={ontology.id} ontology={ontology} />)}
+                {platform.ontologies.map((ontology) => (
+                  <WorkspaceState key={ontology.id} ontology={ontology} request={props.request} />
+                ))}
               </div>
             ) : <p className="contextEmptyLine">{t("No ontologies in this project")}</p>}
           </ContextBlock>
@@ -297,24 +306,458 @@ function ContextBlock(props: { title: string; icon: ReactNode; children: ReactNo
   );
 }
 
-function WorkspaceState({ ontology }: { ontology: BuildContextOntology }) {
+function WorkspaceState({ ontology, request }: { ontology: BuildContextOntology; request: Requester }) {
   const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const [modelingContext, setModelingContext] = useState<ModelingContext | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextError, setContextError] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [paginationError, setPaginationError] = useState("");
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [batchDetail, setBatchDetail] = useState<ModelingBatchDetail | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState("");
+
+  async function loadModelingContext() {
+    setContextLoading(true);
+    setContextError("");
+    try {
+      const data = await request<ModelingContext>(`/ontologies/${ontology.id}/modeling-context`);
+      setModelingContext(data);
+    } catch (requestError) {
+      setModelingContext(null);
+      setContextError(errorMessage(requestError));
+    } finally {
+      setContextLoading(false);
+    }
+  }
+
+  async function toggleModelingContext() {
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+    if (nextExpanded && !modelingContext && !contextLoading) await loadModelingContext();
+  }
+
+  async function loadMoreBatches() {
+    const cursor = modelingContext?.recent_batches_next_cursor;
+    if (!modelingContext || cursor === null || cursor === undefined || loadingMore) return;
+    setLoadingMore(true);
+    setPaginationError("");
+    try {
+      const page = await request<ModelingBatchPage>(
+        `/ontologies/${ontology.id}/modeling-batches?limit=10&cursor=${encodeURIComponent(cursor)}`,
+      );
+      const additions = page.items ?? page.batches ?? [];
+      setModelingContext((current) => {
+        if (!current) return current;
+        const known = new Set(current.recent_batches.map(modelingBatchId));
+        return {
+          ...current,
+          recent_batches: [
+            ...current.recent_batches,
+            ...additions.filter((batch) => !known.has(modelingBatchId(batch))),
+          ],
+          recent_batches_next_cursor: page.next_cursor,
+        };
+      });
+    } catch (requestError) {
+      setPaginationError(errorMessage(requestError));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function inspectBatch(batch: ModelingBatchSummary) {
+    const id = modelingBatchId(batch);
+    if (selectedBatchId === id && batchDetail) {
+      setSelectedBatchId("");
+      setBatchDetail(null);
+      return;
+    }
+    setSelectedBatchId(id);
+    setBatchDetail(null);
+    setBatchError("");
+    setBatchLoading(true);
+    try {
+      setBatchDetail(await request<ModelingBatchDetail>(`/modeling-batches/${id}`));
+    } catch (requestError) {
+      setBatchError(errorMessage(requestError));
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
   return (
     <article className="workspaceStateItem">
-      <div className="workspaceStateHeader">
-        <div><strong>{ontology.name}</strong><code>{compactId(ontology.id)}</code></div>
-        <span className={classNames("contextStatus", ontology.workspace.editable ? "ready" : "blocked")}>
-          {ontology.workspace.editable ? t("Editable") : t("Not editable")}
+      <button
+        aria-expanded={expanded}
+        className="workspaceStateToggle"
+        onClick={() => void toggleModelingContext()}
+        type="button"
+      >
+        <span className="workspaceStateHeader">
+          <span><strong>{ontology.name}</strong><code>{compactId(ontology.id)}</code></span>
+          <span className={classNames("contextStatus", ontology.workspace.editable ? "ready" : "blocked")}>
+            {ontology.workspace.editable ? t("Editable") : t("Not editable")}
+          </span>
         </span>
-      </div>
-      <dl>
-        <dt>{t("Ontology status")}</dt><dd>{ontology.status}</dd>
-        <dt>{t("Workspace state")}</dt><dd>{ontology.workspace.state}</dd>
-        <dt>{t("Workspace version")}</dt><dd><code>{ontology.workspace.workspace_version ?? t("Not available")}</code></dd>
-      </dl>
+        <span className="workspaceStateOverview">
+          <span><small>{t("Ontology status")}</small>{ontology.status}</span>
+          <span><small>{t("Workspace state")}</small>{ontology.workspace.state}</span>
+          <span><small>{t("Workspace version")}</small><code>{ontology.workspace.workspace_version ?? t("Not available")}</code></span>
+        </span>
+        <span className="workspaceExpandHint">
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {expanded ? t("Hide Modeling Context") : t("Inspect Modeling Context")}
+        </span>
+      </button>
       {ontology.workspace.issues.length > 0 && <TagList items={ontology.workspace.issues} emptyLabel="" />}
+
+      {expanded && (
+        <section className="modelingContextRegion" aria-label={`${ontology.name} Modeling Context`}>
+          {contextLoading && !modelingContext && (
+            <p className="contextEmptyLine"><Loader2 className="spin" size={14} /> {t("Loading Modeling Context")}</p>
+          )}
+          {contextError && !modelingContext && (
+            <div className="modelingContextError">
+              <div className="inlineError">{contextError}</div>
+              <button className="secondaryButton" onClick={() => void loadModelingContext()} type="button">
+                <RefreshCw size={14} /> {t("Retry Modeling Context")}
+              </button>
+            </div>
+          )}
+          {modelingContext && (
+            <ModelingContextPanel
+              batchDetail={batchDetail}
+              batchError={batchError}
+              batchLoading={batchLoading}
+              context={modelingContext}
+              inspectBatch={inspectBatch}
+              loadingMore={loadingMore}
+              loadMoreBatches={loadMoreBatches}
+              paginationError={paginationError}
+              selectedBatchId={selectedBatchId}
+            />
+          )}
+        </section>
+      )}
     </article>
   );
+}
+
+function ModelingContextPanel(props: {
+  context: ModelingContext;
+  selectedBatchId: string;
+  batchDetail: ModelingBatchDetail | null;
+  batchLoading: boolean;
+  batchError: string;
+  loadingMore: boolean;
+  paginationError: string;
+  inspectBatch: (batch: ModelingBatchSummary) => void;
+  loadMoreBatches: () => void;
+}) {
+  const t = useT();
+  const stalePointers = props.context.derived_state.stale_count
+    ?? props.context.derived_state.stale_pointer_count
+    ?? props.context.derived_state.stale
+    ?? 0;
+  const staleWarnings = [
+    ...(props.context.derived_state.warnings ?? []),
+    ...(props.context.derived_state.warning ? [props.context.derived_state.warning] : []),
+  ];
+
+  return (
+    <div className="modelingContextPanel">
+      <div className="modelingContextHeading">
+        <div><Activity size={15} /><strong>{t("Authoritative Modeling Context")}</strong></div>
+        <div className="modelingContextBadges">
+          <span className={classNames("contextStatus", props.context.lease.active ? "active" : "completed")}>
+            {props.context.lease.active ? t("Lease active") : t("No active lease")}
+          </span>
+          <span className={classNames("contextStatus", props.context.lease.fenced ? "recovering" : "ready")}>
+            {props.context.lease.fenced ? t("Write fenced") : t("Not fenced")}
+          </span>
+          {props.context.recovering?.active && (
+            <span className="contextStatus recovering">{t("Recovering Attempt")}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="modelingContextMetrics">
+        <ContextMetric label={t("Workspace version")} value={props.context.workspace.workspace_version ?? t("Not available")} />
+        <ContextMetric label={t("Workspace state")} value={props.context.workspace.state} />
+        <ContextMetric label={t("Stale derived pointers")} value={stalePointers} />
+      </div>
+
+      {props.context.recovering?.active && (
+        <div className="recoveringHint" role="status">
+          <RefreshCw className="spin" size={13} />
+          {t("Recovery is in progress")}
+          {props.context.recovering.attempt_id && <code>{compactId(props.context.recovering.attempt_id)}</code>}
+        </div>
+      )}
+
+      {(stalePointers > 0 || staleWarnings.length > 0) && (
+        <div className="staleStateNotice" role="status">
+          <AlertTriangle size={15} />
+          <div>
+            <strong>{t("Derived models are stale")}</strong>
+            <span>{staleWarnings.join(" · ") || t("Use current canonical models while derived views are rebuilt.")}</span>
+          </div>
+        </div>
+      )}
+
+      <section className="modelingContextSection">
+        <h5>{t("Canonical resource counts")}<span>{Object.keys(props.context.resource_counts).length}</span></h5>
+        {Object.keys(props.context.resource_counts).length ? (
+          <div className="resourceCountGrid">
+            {Object.entries(props.context.resource_counts).map(([resource, count]) => (
+              <div key={resource}><span>{humanizeActivityType(resource)}</span><strong>{count ?? t("Not available")}</strong></div>
+            ))}
+          </div>
+        ) : <p className="contextEmptyLine">{t("No canonical resources observed")}</p>}
+      </section>
+
+      <section className="modelingContextSection">
+        <h5>{t("Recent Modeling Batches")}<span>{props.context.recent_batches.length}</span></h5>
+        {props.context.recent_batches.length ? (
+          <div className="modelingBatchList">
+            {props.context.recent_batches.map((batch) => (
+              <ModelingBatchSummaryCard
+                batch={batch}
+                key={modelingBatchId(batch)}
+                onClick={() => void props.inspectBatch(batch)}
+                selected={props.selectedBatchId === modelingBatchId(batch)}
+              />
+            ))}
+          </div>
+        ) : <p className="contextEmptyLine">{t("No recent Modeling Batches")}</p>}
+
+        {props.paginationError && <div className="inlineError">{props.paginationError}</div>}
+        {props.context.recent_batches_next_cursor !== null && (
+          <button
+            className="secondaryButton modelingBatchLoadMore"
+            disabled={props.loadingMore}
+            onClick={() => void props.loadMoreBatches()}
+            type="button"
+          >
+            {props.loadingMore ? <Loader2 className="spin" size={14} /> : <ChevronDown size={14} />}
+            {t("Load more Modeling Batches")}
+          </button>
+        )}
+      </section>
+
+      {props.selectedBatchId && (
+        <section className="modelingContextSection batchDetailRegion" aria-label={t("Modeling Batch Detail")}>
+          {props.batchLoading && <p className="contextEmptyLine"><Loader2 className="spin" size={14} /> {t("Loading Modeling Batch")}</p>}
+          {props.batchError && <div className="inlineError">{props.batchError}</div>}
+          {props.batchDetail && <ModelingBatchDetailView detail={props.batchDetail} />}
+        </section>
+      )}
+
+      <details className="modelingContextRaw">
+        <summary><Braces size={14} /> {t("Raw Modeling Context")}</summary>
+        <pre className="jsonBlock">{prettyJson(safeDebugPayload(props.context))}</pre>
+      </details>
+    </div>
+  );
+}
+
+function ModelingBatchSummaryCard(props: { batch: ModelingBatchSummary; selected: boolean; onClick: () => void }) {
+  const t = useT();
+  const status = modelingBatchAttemptStatus(props.batch);
+  const batchStatus = modelingBatchStatus(props.batch);
+  const mode = props.batch.latest_attempt?.mode ?? props.batch.latest_mode;
+  const findingCount = props.batch.latest_attempt?.finding_count ?? props.batch.finding_count ?? 0;
+  const recoveryState = props.batch.latest_attempt?.recovery_state ?? props.batch.recovery_state;
+  return (
+    <button
+      aria-expanded={props.selected}
+      className={classNames("modelingBatchSummary", props.selected && "selected")}
+      onClick={props.onClick}
+      type="button"
+    >
+      <span className="modelingBatchSummaryTop">
+        <span><strong>{props.batch.client_batch_id || compactId(modelingBatchId(props.batch))}</strong><code>{compactId(modelingBatchId(props.batch))}</code></span>
+        <span className={classNames("contextStatus", status)}>{status}</span>
+      </span>
+      <span className="modelingBatchSummaryMeta">
+        <span>{t("Mode")}: {mode ?? t("Not available")}</span>
+        <span>{t("Items")}: {props.batch.item_count ?? 0}</span>
+        <span>{t("Findings")}: {findingCount}</span>
+      </span>
+      {(batchStatus === "recovering" || recoveryState === "recovering") && (
+        <span className="recoveringHint"><RefreshCw className="spin" size={12} /> {t("Recovery is in progress")}</span>
+      )}
+      <span className="modelingBatchSummaryFooter">
+        {props.batch.created_at ? formatDate(props.batch.created_at) : t("Time not recorded")}
+        <ChevronRight size={14} />
+      </span>
+    </button>
+  );
+}
+
+function ModelingBatchDetailView({ detail }: { detail: ModelingBatchDetail }) {
+  const t = useT();
+  const attempts = detail.attempts ?? [];
+  const findings = detail.findings ?? [];
+  const items = detail.items ?? [];
+  return (
+    <div className="modelingBatchDetail">
+      <div className="modelingBatchDetailHeader">
+        <div>
+          <span>{t("Immutable batch audit")}</span>
+          <strong>{detail.client_batch_id || compactId(detail.batch_id)}</strong>
+          <code>{detail.batch_id}</code>
+        </div>
+        <span className={classNames("contextStatus", detail.batch_status ?? detail.status)}>
+          {detail.batch_status ?? detail.status}
+        </span>
+      </div>
+
+      <section className="immutableModelingItems">
+        <h6>{t("Immutable Items")}<span>{items.length}</span></h6>
+        {items.length ? (
+          <div className="modelingItemResults">
+            {items.map((item, index) => (
+              <article key={item.item_id ?? item.modeling_item_id ?? `${item.client_item_id}-${index}`}>
+                <div>
+                  <strong>{item.client_item_id}</strong>
+                  <span>{item.command_kind ?? t("Not available")}</span>
+                </div>
+                {item.depends_on && item.depends_on.length > 0 && (
+                  <TagList items={item.depends_on.map((dependency) => `${t("Depends on")}: ${dependency}`)} emptyLabel="" />
+                )}
+              </article>
+            ))}
+          </div>
+        ) : <p className="contextEmptyLine">{t("No immutable Items recorded")}</p>}
+      </section>
+
+      {attempts.length ? (
+        <div className="modelingAttemptList">
+          {attempts.map((attempt, index) => (
+            <ModelingAttemptView attempt={attempt} key={attempt.attempt_id ?? attempt.id ?? `attempt-${index}`} />
+          ))}
+        </div>
+      ) : (
+        <div className="modelingAttemptList">
+          <ModelingAttemptView
+            attempt={{
+              attempt_id: detail.attempt_id,
+              mode: detail.mode ?? "dry_run",
+              attempt_status: detail.attempt_status,
+              findings,
+              items,
+              recovery: detail.recovery,
+              completed_at: detail.completed_at,
+            }}
+          />
+        </div>
+      )}
+
+      {findings.length > 0 && <FindingList findings={findings} title={t("Batch Findings")} />}
+      <details className="modelingContextRaw">
+        <summary><Braces size={14} /> {t("Raw Modeling Batch")}</summary>
+        <pre className="jsonBlock">{prettyJson(safeDebugPayload(detail))}</pre>
+      </details>
+    </div>
+  );
+}
+
+function ModelingAttemptView({ attempt }: { attempt: ModelingBatchAttempt }) {
+  const t = useT();
+  const status = attempt.attempt_status ?? attempt.status ?? t("Not available");
+  const items = attempt.items ?? [];
+  const findings = attempt.findings ?? [];
+  const recovery = attempt.recovery ?? (attempt.recovery_state ? { state: attempt.recovery_state } : null);
+  return (
+    <article className="modelingAttemptItem">
+      <header>
+        <div>
+          <span>{attempt.mode}</span>
+          <code>{compactId(attempt.attempt_id ?? attempt.id ?? "")}</code>
+        </div>
+        <span className={classNames("contextStatus", status)}>{status}</span>
+      </header>
+      {recovery && (
+        <div className={classNames("attemptRecovery", recovery.state === "recovering" && "recovering")}>
+          <RefreshCw size={13} />
+          <span>{t("Recovery")}: {String(recovery.state ?? attempt.recovery_state ?? t("Not available"))}</span>
+        </div>
+      )}
+      <ModelingItemResults items={items} />
+      {findings.length ? <FindingList findings={findings} title={t("Attempt Findings")} /> : (
+        <p className="contextEmptyLine">{t("No Findings in this Attempt")}</p>
+      )}
+      {(attempt.completed_at || attempt.created_at || attempt.started_at) && (
+        <time>{formatDate(attempt.completed_at ?? attempt.created_at ?? attempt.started_at ?? "")}</time>
+      )}
+    </article>
+  );
+}
+
+function ModelingItemResults({ items }: { items: ModelingBatchItemResult[] }) {
+  const t = useT();
+  if (!items.length) return <p className="contextEmptyLine">{t("No Item results in this Attempt")}</p>;
+  return (
+    <div className="modelingItemResults">
+      {items.map((item, index) => (
+        <article key={item.item_id ?? item.modeling_item_id ?? `${item.client_item_id}-${index}`}>
+          <div>
+            <strong>{item.client_item_id}</strong>
+            {item.command_kind && <span>{item.command_kind}</span>}
+          </div>
+          <span className={classNames("contextStatus", item.status ?? "completed")}>
+            {item.status ?? t("Not available")}
+          </span>
+          {item.finding_codes && item.finding_codes.length > 0 && (
+            <TagList items={item.finding_codes} emptyLabel="" />
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function FindingList({ findings, title }: { findings: ModelingFinding[]; title: string }) {
+  return (
+    <section className="modelingFindingSection">
+      <h6>{title}<span>{findings.length}</span></h6>
+      <div className="modelingFindingList">
+        {findings.map((finding, index) => (
+          <article className={classNames("modelingFinding", finding.severity)} key={`${finding.code}-${finding.client_item_id ?? finding.client_item_ids?.join("-") ?? "batch"}-${index}`}>
+            <AlertTriangle size={13} />
+            <div>
+              <span><strong>{finding.code}</strong><small>{finding.severity}</small></span>
+              <p>{finding.message}</p>
+              {(finding.client_item_id || finding.client_item_ids?.length || finding.atomic_group_id || finding.path) && (
+                <code>{[
+                  finding.client_item_id,
+                  ...(finding.client_item_ids ?? []),
+                  finding.atomic_group_id,
+                  Array.isArray(finding.path) ? finding.path.join(".") : finding.path,
+                ].filter(Boolean).join(" · ")}</code>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function modelingBatchId(batch: ModelingBatchSummary) {
+  return batch.batch_id ?? batch.id;
+}
+
+function modelingBatchStatus(batch: ModelingBatchSummary) {
+  return batch.batch_status ?? batch.status ?? "open";
+}
+
+function modelingBatchAttemptStatus(batch: ModelingBatchSummary) {
+  return batch.latest_attempt?.attempt_status ?? batch.latest_attempt_status ?? modelingBatchStatus(batch);
 }
 
 function SessionList(props: {
@@ -519,7 +962,12 @@ function safeDebugPayload(value: unknown): unknown {
 
 function isInternalDebugKey(key: string) {
   const normalized = key.toLowerCase().replace(/[-\s]/g, "_");
-  return /lease_?token/.test(normalized)
+  return normalized.includes("token")
+    || normalized.includes("credential")
+    || normalized.includes("password")
+    || normalized.includes("secret")
+    || normalized.includes("authorization")
+    || /api_?key/.test(normalized)
     || /graph.*iri/.test(normalized)
     || normalized.includes("graph_set")
     || normalized.includes("graphset");

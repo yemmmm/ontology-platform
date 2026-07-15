@@ -76,3 +76,13 @@ The Playwright mock-API smoke suite covers workspace loading and navigation thro
 Questions, Facts, Publication, Versions, and Evidence at 1280 px and 768 px, including a horizontal
 overflow assertion, blocked publication state, and a fresh-session Schema Review Batch deep link. Run
 it with `cd frontend && npm run test:ui`.
+
+### R-004 read-only modeling diagnostics
+
+The Build Context Debug page can expand each Ontology's Modeling Context. It shows the composite
+workspace version, resource counts, derived stale state, Lease/fence/recovery state, recent Batch
+history, and immutable Attempt, Item, and Finding detail. Batch history supports GET-only pagination
+and loading, empty, error, recovering, and stale states.
+
+This is deliberately not a modeling workbench: there are no apply, retry, edit, or delete controls.
+Raw diagnostic JSON recursively removes tokens, credentials, API keys, Graph Set IDs, and graph IRIs.

@@ -115,12 +115,7 @@ class RdfGraphDelta:
 
     @property
     def is_empty(self) -> bool:
-        return not (
-            self.inserts
-            or self.deletes
-            or self.clear_graphs
-            or self.drop_graphs
-        )
+        return not (self.inserts or self.deletes or self.clear_graphs or self.drop_graphs)
 
     def affected_graph_iris(self) -> list[str]:
         iris: list[str] = []
@@ -135,8 +130,6 @@ class RdfGraphDelta:
                 seen.add(graph_iri)
                 iris.append(graph_iri)
         return iris
-
-
 
 
 class RdfStoreRepository:
@@ -163,7 +156,9 @@ class RdfStoreRepository:
             response = httpx.post(
                 f"{self.base_url}/query",
                 data={"query": effective_query},
-                headers={"accept": "application/sparql-results+json, text/turtle, application/trig"},
+                headers={
+                    "accept": "application/sparql-results+json, text/turtle, application/trig"
+                },
                 timeout=timeout_seconds,
             )
         except httpx.TimeoutException as exc:
@@ -319,10 +314,26 @@ class RdfStoreRepository:
             for subject, predicate, obj, graph_iri in delta.deletes:
                 grouped.setdefault(graph_iri, []).append((subject, predicate, obj))
             for graph_iri, triples in grouped.items():
-                block = " . ".join(
-                    f"{subject} {predicate} {obj}" for subject, predicate, obj in triples
-                )
-                parts.append(f"DELETE DATA {{ GRAPH <{graph_iri}> {{ {block} }} }}")
+                fixed = [triple for triple in triples if not any("?" in term for term in triple)]
+                patterns = [triple for triple in triples if any("?" in term for term in triple)]
+                if fixed:
+                    block = " . ".join(
+                        f"{subject} {predicate} {obj}" for subject, predicate, obj in fixed
+                    )
+                    parts.append(f"DELETE DATA {{ GRAPH <{graph_iri}> {{ {block} }} }}")
+                for pattern_index, (subject, predicate, obj) in enumerate(patterns):
+                    # Variable names are localized per pattern so independent wildcard
+                    # deletes do not accidentally join each other's bindings.
+                    suffix = f"_{pattern_index}"
+                    terms = [
+                        f"{term}{suffix}" if term.startswith("?") else term
+                        for term in (subject, predicate, obj)
+                    ]
+                    pattern = " ".join(terms)
+                    parts.append(
+                        f"DELETE {{ GRAPH <{graph_iri}> {{ {pattern} }} }} "
+                        f"WHERE {{ GRAPH <{graph_iri}> {{ {pattern} }} }}"
+                    )
         if delta.inserts:
             grouped_inserts: dict[str, list[tuple[str, str, str]]] = {}
             for subject, predicate, obj, graph_iri in delta.inserts:
@@ -340,14 +351,14 @@ class RdfStoreRepository:
             graph_iri=primary,
             applied=True,
             inserted_quad_count=len(delta.inserts),
-            deleted_quad_count=len(delta.deletes) + len(delta.clear_graphs) + len(delta.drop_graphs),
+            deleted_quad_count=len(delta.deletes)
+            + len(delta.clear_graphs)
+            + len(delta.drop_graphs),
         )
 
     def graph_content_hash(self, graph_iri: str) -> str | None:
         """Return a deterministic content hash for the graph or None when empty."""
-        query = (
-            f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_iri}> {{ ?s ?p ?o }} }}"
-        )
+        query = f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_iri}> {{ ?s ?p ?o }} }}"
         result = self.query_sparql(query, timeout_seconds=30, limit=100000)
         text = result.result
         if not text:

@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     semantic_graph_visibility_labels: dict[str, str] = Field(default_factory=dict)
 
     build_session_lease_ttl_seconds: int = Field(default=300, ge=30, le=3600)
+    modeling_batch_max_items: int = Field(default=100, ge=1, le=10_000)
+    modeling_batch_max_request_bytes: int = Field(default=1_048_576, ge=1024)
+    modeling_batch_max_inline_evidence: int = Field(default=100, ge=0, le=10_000)
+    modeling_batch_max_evidence_excerpt_chars: int = Field(default=20_000, ge=1)
+    modeling_batch_recovery_max_steps: int = Field(default=3, ge=1, le=100)
+    modeling_batch_execution_claim_ttl_seconds: int = Field(default=300, ge=30, le=3600)
 
     # Phase 7 canonical RDF dataset migration controls. These settings govern the
     # source-of-truth transition from legacy product behavior to the governed RDF

@@ -876,6 +876,26 @@ h3 {
   padding: 10px;
 }
 
+.workspaceStateItem {
+  overflow: hidden;
+}
+
+.workspaceStateToggle {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.workspaceStateToggle:focus-visible {
+  outline: 2px solid #5142c8;
+  outline-offset: 4px;
+}
+
 .workspaceStateHeader,
 .sessionItemTop,
 .sessionItemFooter {
@@ -886,11 +906,52 @@ h3 {
 }
 
 .workspaceStateHeader > div,
+.workspaceStateHeader > span:first-child,
 .sessionItemTop > div { display: grid; gap: 2px; }
 .workspaceStateHeader strong,
 .sessionItemTop strong { color: var(--ink); font-size: 12px; }
 .workspaceStateHeader code,
 .sessionItemTop span { color: var(--muted); font-size: 10px; }
+
+.workspaceStateOverview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workspaceStateOverview > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border-left: 2px solid #e4eee9;
+  padding-left: 7px;
+  color: #35394a;
+  font-size: 10px;
+}
+
+.workspaceStateOverview small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+}
+
+.workspaceStateOverview code {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceExpandHint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #1d8170;
+  font-size: 9px;
+  font-weight: 760;
+}
 
 .workspaceStateItem dl,
 .sessionDetail dl {
@@ -919,8 +980,16 @@ h3 {
 .contextStatus.ready,
 .contextStatus.active { background: var(--ok-bg); color: #157556; }
 .contextStatus.blocked,
-.contextStatus.cancelled { background: var(--error-bg); color: #a52937; }
+.contextStatus.cancelled,
+.contextStatus.failed,
+.contextStatus.validation_failed { background: var(--error-bg); color: #a52937; }
 .contextStatus.completed { background: #efedff; color: #5142c8; }
+.contextStatus.recovering,
+.contextStatus.applying,
+.contextStatus.validating { background: #fff4d7; color: #8a6415; }
+.contextStatus.applied,
+.contextStatus.validated { background: var(--ok-bg); color: #157556; }
+.contextStatus.partially_applied { background: #fff1e5; color: #9b541f; }
 
 .contextTags {
   display: flex;
@@ -966,6 +1035,256 @@ h3 {
 .checkpointOntology code { color: #5142c8; font-size: 9px; }
 .checkpointFailure { color: #a52937; font-size: 10px; }
 .contextLoadMore { width: 100%; justify-content: center; margin-top: 8px; }
+
+.modelingContextRegion {
+  margin: 10px -10px -10px;
+  border-top: 1px solid #dce9e4;
+  background: #f6faf8;
+  padding: 11px 10px 10px;
+}
+
+.modelingContextError {
+  display: grid;
+  gap: 7px;
+}
+
+.modelingContextError .secondaryButton {
+  width: fit-content;
+}
+
+.modelingContextPanel,
+.modelingContextSection,
+.modelingBatchDetail,
+.modelingAttemptList,
+.immutableModelingItems {
+  display: grid;
+  gap: 9px;
+}
+
+.modelingContextHeading,
+.modelingContextHeading > div,
+.modelingContextBadges,
+.modelingBatchSummaryTop,
+.modelingBatchSummaryFooter,
+.modelingBatchDetailHeader,
+.modelingAttemptItem > header,
+.modelingFinding h6,
+.modelingFinding > div > span {
+  display: flex;
+  align-items: center;
+}
+
+.modelingContextHeading,
+.modelingBatchSummaryTop,
+.modelingBatchSummaryFooter,
+.modelingBatchDetailHeader,
+.modelingAttemptItem > header {
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.modelingContextHeading > div,
+.modelingContextBadges { gap: 6px; }
+.modelingContextHeading strong { color: #164f45; font-size: 11px; }
+
+.modelingContextMetrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, .8fr));
+  gap: 6px;
+}
+
+.modelingContextMetrics .contextMetric {
+  min-width: 0;
+  border-color: #dce9e4;
+  padding: 7px;
+}
+
+.modelingContextMetrics .contextMetric strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.staleStateNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  border: 1px solid #e8ca83;
+  border-radius: 7px;
+  background: #fff9eb;
+  padding: 8px;
+  color: #805d12;
+}
+
+.staleStateNotice svg { flex: 0 0 auto; margin-top: 1px; }
+.staleStateNotice div { display: grid; gap: 2px; }
+.staleStateNotice strong { font-size: 10px; }
+.staleStateNotice span { font-size: 9px; line-height: 1.4; }
+
+.modelingContextSection {
+  border-top: 1px solid #dce9e4;
+  padding-top: 9px;
+}
+
+.modelingContextSection > h5,
+.modelingFindingSection h6,
+.immutableModelingItems h6 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  color: #35394a;
+  font-size: 10px;
+}
+
+.modelingContextSection > h5 > span,
+.modelingFindingSection h6 > span,
+.immutableModelingItems h6 > span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  background: #e4f1ed;
+  color: #1d8170;
+  font-size: 8px;
+}
+
+.resourceCountGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.resourceCountGrid > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  border: 1px solid #e1e9e6;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px 7px;
+}
+
+.resourceCountGrid span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; text-transform: capitalize; }
+.resourceCountGrid strong { color: #1d8170; font-size: 12px; }
+
+.modelingBatchList { display: grid; gap: 6px; }
+
+.modelingBatchSummary {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid #dfe7e4;
+  border-radius: 7px;
+  background: #fff;
+  padding: 8px;
+  color: inherit;
+  text-align: left;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.modelingBatchSummary:hover,
+.modelingBatchSummary.selected {
+  border-color: #76b4a5;
+  box-shadow: 0 0 0 2px rgba(29, 129, 112, .08);
+}
+
+.modelingBatchSummaryTop > span:first-child { display: grid; gap: 1px; }
+.modelingBatchSummaryTop strong { color: var(--ink); font-size: 10px; }
+.modelingBatchSummaryTop code { color: var(--muted); font-size: 8px; }
+.modelingBatchSummaryMeta { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--muted); font-size: 9px; }
+.modelingBatchSummaryFooter { color: var(--muted); font-size: 8px; }
+
+.recoveringHint,
+.attemptRecovery {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 5px;
+  background: #fff4d7;
+  padding: 5px 6px;
+  color: #8a6415;
+  font-size: 9px;
+  font-weight: 720;
+}
+
+.modelingBatchLoadMore { justify-content: center; width: 100%; }
+.batchDetailRegion { border: 1px solid #cbded8; border-radius: 7px; background: #fff; padding: 9px; }
+
+.modelingBatchDetailHeader {
+  border-bottom: 1px solid #e5ebe9;
+  padding-bottom: 8px;
+}
+
+.modelingBatchDetailHeader > div { display: grid; gap: 2px; min-width: 0; }
+.modelingBatchDetailHeader > div > span { color: #1d8170; font-size: 8px; font-weight: 760; letter-spacing: .05em; text-transform: uppercase; }
+.modelingBatchDetailHeader strong { color: var(--ink); font-size: 11px; }
+.modelingBatchDetailHeader code { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+.modelingAttemptItem {
+  display: grid;
+  gap: 8px;
+  border-left: 3px solid #c9c4f2;
+  border-radius: 5px;
+  background: #fafaff;
+  padding: 8px;
+}
+
+.modelingAttemptItem > header > div { display: grid; gap: 2px; }
+.modelingAttemptItem > header > div > span { color: #5142c8; font-size: 9px; font-weight: 760; text-transform: uppercase; }
+.modelingAttemptItem > header code,
+.modelingAttemptItem > time { color: var(--muted); font-size: 8px; }
+
+.modelingItemResults,
+.modelingFindingList { display: grid; gap: 5px; }
+
+.modelingItemResults > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 8px;
+  align-items: start;
+  border: 1px solid #e5e5ef;
+  border-radius: 6px;
+  background: #fff;
+  padding: 7px;
+}
+
+.modelingItemResults > article > div { display: grid; gap: 2px; }
+.modelingItemResults strong { color: var(--ink); font-size: 10px; }
+.modelingItemResults > article > div > span { color: var(--muted); font-size: 8px; }
+.modelingItemResults .contextTags { grid-column: 1 / -1; margin-top: 0; }
+
+.modelingFindingSection { display: grid; gap: 6px; }
+.modelingFindingSection h6 { font-size: 9px; }
+
+.modelingFinding {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid #e8d8af;
+  border-radius: 6px;
+  background: #fffbf2;
+  padding: 7px;
+  color: #795a1b;
+}
+
+.modelingFinding.error { border-color: #efc6cb; background: var(--error-bg); color: #9f2b38; }
+.modelingFinding.info { border-color: #d9dcea; background: #f6f7fb; color: #596074; }
+.modelingFinding > div { display: grid; gap: 2px; min-width: 0; }
+.modelingFinding > div > span { gap: 5px; }
+.modelingFinding strong { font-size: 9px; }
+.modelingFinding small { font-size: 8px; text-transform: uppercase; }
+.modelingFinding p { margin: 0; font-size: 9px; line-height: 1.4; }
+.modelingFinding code { overflow-wrap: anywhere; font-size: 8px; }
+
+.modelingContextRaw { border-top: 1px solid #dce9e4; padding-top: 8px; }
+.modelingContextRaw summary { display: flex; align-items: center; gap: 5px; color: #4c5263; cursor: pointer; font-size: 9px; font-weight: 720; }
+.modelingContextRaw[open] summary { margin-bottom: 7px; }
+.modelingContextRaw .jsonBlock { max-height: 220px; font-size: 9px; }
 
 .sessionDetail h5 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 7px; font-size: 11px; }
 .sessionDetail h5 span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 999px; background: #f0eff8; color: #5142c8; font-size: 9px; }
@@ -2933,7 +3252,10 @@ textarea:focus {
   .buildContextColumns,
   .diagnosticList,
   .contextMetricGrid,
-  .contextMetricGrid.agentMetrics {
+  .contextMetricGrid.agentMetrics,
+  .workspaceStateOverview,
+  .modelingContextMetrics,
+  .resourceCountGrid {
     grid-template-columns: 1fr;
   }
 

@@ -8,6 +8,8 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
@@ -87,24 +89,45 @@ class EvidenceReferenceService:
         excerpt: str,
         *,
         actor: str | None = None,
+        reference_id: str | None = None,
     ) -> tuple[EvidenceReferenceModel, bool]:
         self.require_project(project_id)
         normalized = self.prepare(document_name, excerpt)
         existing = self.find_existing(project_id, normalized)
         if existing is not None:
             return existing, False
-        row = EvidenceReferenceModel(
-            id=str(uuid4()),
-            project_id=project_id,
-            document_name=normalized.document_name,
-            normalized_document_name=normalized.document_name,
-            excerpt=normalized.excerpt,
-            excerpt_hash=normalized.excerpt_hash,
-            created_by=actor,
-        )
-        self.session.add(row)
-        self.session.flush()
-        return row, True
+        candidate_id = reference_id or str(uuid4())
+        values = {
+            "id": candidate_id,
+            "project_id": project_id,
+            "document_name": normalized.document_name,
+            "normalized_document_name": normalized.document_name,
+            "excerpt": normalized.excerpt,
+            "excerpt_hash": normalized.excerpt_hash,
+            "created_by": actor,
+        }
+        dialect = self.session.get_bind().dialect.name
+        if dialect == "postgresql":
+            statement = postgresql_insert(EvidenceReferenceModel).values(**values)
+            statement = statement.on_conflict_do_nothing(
+                constraint="uq_evidence_references_project_document_excerpt"
+            )
+            created = self.session.execute(statement).rowcount == 1
+        elif dialect == "sqlite":
+            statement = sqlite_insert(EvidenceReferenceModel).values(**values)
+            statement = statement.on_conflict_do_nothing(
+                index_elements=["project_id", "normalized_document_name", "excerpt_hash"]
+            )
+            created = self.session.execute(statement).rowcount == 1
+        else:
+            row = EvidenceReferenceModel(**values)
+            self.session.add(row)
+            self.session.flush()
+            return row, True
+        row = self.find_existing(project_id, normalized)
+        if row is None:
+            raise EvidenceReferenceError("Evidence upsert did not return a persisted row")
+        return row, created
 
     def get(self, reference_id: str, *, project_id: str | None = None) -> EvidenceReferenceModel:
         row = self.session.get(EvidenceReferenceModel, reference_id)
@@ -212,6 +235,7 @@ class EvidenceReferenceService:
         client_item_id: str | None = None,
         edit_audit_id: str | None = None,
         actor: str | None = None,
+        association_ids: dict[str, str] | None = None,
     ) -> list[EvidenceAssociationModel]:
         self.require_ontology_scope(project_id, ontology_id, graph_set_id)
         clean_type = target_type.strip()
@@ -235,19 +259,49 @@ class EvidenceReferenceService:
             if existing is not None:
                 rows.append(existing)
                 continue
-            association = EvidenceAssociationModel(
-                id=str(uuid4()),
-                project_id=project_id,
-                ontology_id=ontology_id,
-                graph_set_id=graph_set_id,
-                evidence_reference_id=reference.id,
-                target_type=clean_type,
-                target_id=clean_target,
-                client_item_id=client_item_id,
-                edit_audit_id=edit_audit_id,
-                created_by=actor,
+            values = {
+                "id": (association_ids or {}).get(reference.id, str(uuid4())),
+                "project_id": project_id,
+                "ontology_id": ontology_id,
+                "graph_set_id": graph_set_id,
+                "evidence_reference_id": reference.id,
+                "target_type": clean_type,
+                "target_id": clean_target,
+                "client_item_id": client_item_id,
+                "edit_audit_id": edit_audit_id,
+                "created_by": actor,
+            }
+            dialect = self.session.get_bind().dialect.name
+            if dialect == "postgresql":
+                statement = postgresql_insert(EvidenceAssociationModel).values(**values)
+                statement = statement.on_conflict_do_nothing(
+                    constraint="uq_evidence_associations_target_reference"
+                )
+                self.session.execute(statement)
+            elif dialect == "sqlite":
+                statement = sqlite_insert(EvidenceAssociationModel).values(**values)
+                statement = statement.on_conflict_do_nothing(
+                    index_elements=[
+                        "ontology_id",
+                        "target_type",
+                        "target_id",
+                        "evidence_reference_id",
+                    ]
+                )
+                self.session.execute(statement)
+            else:
+                self.session.add(EvidenceAssociationModel(**values))
+                self.session.flush()
+            association = self.session.scalar(
+                select(EvidenceAssociationModel).where(
+                    EvidenceAssociationModel.ontology_id == ontology_id,
+                    EvidenceAssociationModel.target_type == clean_type,
+                    EvidenceAssociationModel.target_id == clean_target,
+                    EvidenceAssociationModel.evidence_reference_id == reference.id,
+                )
             )
-            self.session.add(association)
+            if association is None:
+                raise EvidenceReferenceError("Evidence association upsert failed")
             rows.append(association)
         self.session.flush()
         return rows

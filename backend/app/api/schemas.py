@@ -364,6 +364,53 @@ class ProjectBuildContextRead(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# R-004 immutable Modeling Batch protocol
+# ---------------------------------------------------------------------------
+
+
+class ModelingBatchSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class InlineModelingEvidence(ModelingBatchSchema):
+    document_name: str = Field(min_length=1, max_length=255)
+    excerpt: str = Field(min_length=1)
+
+
+class ModelingItemInput(ModelingBatchSchema):
+    client_item_id: str = Field(min_length=1, max_length=255)
+    command_kind: str = Field(min_length=1, max_length=80)
+    payload: dict[str, Any]
+    depends_on: list[str] = Field(default_factory=list)
+    evidence_reference_ids: list[str] = Field(default_factory=list)
+    evidence: list[InlineModelingEvidence] = Field(default_factory=list)
+    rationale: str | None = Field(default=None, max_length=20_000)
+    competency_question_ids: list[str] = Field(default_factory=list)
+
+
+class ModelingBatchSubmit(ModelingBatchSchema):
+    client_batch_id: str = Field(min_length=1, max_length=255)
+    ontology_id: str = Field(min_length=1, max_length=36)
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    mode: Literal["dry_run", "apply_atomic", "apply_partial"] = "apply_atomic"
+    expected_workspace_version: str = Field(min_length=1, max_length=128)
+    lease_token: str | None = Field(default=None, min_length=1, max_length=1024)
+    items: list[ModelingItemInput] = Field(min_length=1)
+
+
+class ValidationFindingRead(BaseModel):
+    code: str
+    severity: Literal["error", "warning", "info"]
+    scope: Literal["batch", "group", "item"]
+    client_item_ids: list[str] = Field(default_factory=list)
+    path: list[str | int] = Field(default_factory=list)
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+    blocking: bool
+    retryable: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Semantic stack: legacy direct-call endpoints still mounted under /semantic/*
 # ---------------------------------------------------------------------------
 

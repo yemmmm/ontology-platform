@@ -82,10 +82,14 @@ class OntologyModel(Base):
     __table_args__ = (UniqueConstraint("project_id", "name", name="uq_ontologies_project_name"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(32), default=OntologyStatus.DRAFT.value, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default=OntologyStatus.DRAFT.value, nullable=False
+    )
     external_mappings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -157,9 +161,7 @@ class BuildSessionModel(Base):
         cascade="all, delete-orphan",
         order_by="BuildCheckpointModel.sequence",
     )
-    leases: Mapped[list["OntologyLeaseModel"]] = relationship(
-        back_populates="build_session"
-    )
+    leases: Mapped[list["OntologyLeaseModel"]] = relationship(back_populates="build_session")
 
 
 class BuildCheckpointModel(Base):
@@ -197,7 +199,9 @@ class BuildCheckpointModel(Base):
     blockers: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(100))
     failure_message: Mapped[str | None] = mapped_column(Text)
-    related_batch_id: Mapped[str | None] = mapped_column(String(36))
+    related_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("modeling_batches.id", ondelete="SET NULL")
+    )
     reported_by: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -239,6 +243,202 @@ class OntologyLeaseModel(Base):
     )
 
     build_session: Mapped[BuildSessionModel] = relationship(back_populates="leases")
+
+
+class ModelingBatchModel(Base):
+    __tablename__ = "modeling_batches"
+    __table_args__ = (
+        UniqueConstraint(
+            "build_session_id", "client_batch_id", name="uq_modeling_batches_session_client"
+        ),
+        CheckConstraint(
+            "status IN ('open', 'applying', 'recovering', 'applied', "
+            "'partially_applied', 'failed')",
+            name="ck_modeling_batches_status",
+        ),
+        Index("ix_modeling_batches_session_created", "build_session_id", "created_at", "id"),
+        Index("ix_modeling_batches_ontology_created", "ontology_id", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    client_batch_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="open", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    items: Mapped[list["ModelingItemModel"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan", order_by="ModelingItemModel.ordinal"
+    )
+    attempts: Mapped[list["ModelingBatchAttemptModel"]] = relationship(
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        order_by="ModelingBatchAttemptModel.created_at",
+    )
+
+
+class ModelingItemModel(Base):
+    __tablename__ = "modeling_items"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "client_item_id", name="uq_modeling_items_batch_client"),
+        UniqueConstraint("batch_id", "ordinal", name="uq_modeling_items_batch_ordinal"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("modeling_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    client_item_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    command_kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    depends_on: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    resource_outputs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    evidence_reference_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    competency_question_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    batch: Mapped[ModelingBatchModel] = relationship(back_populates="items")
+
+
+class ModelingBatchAttemptModel(Base):
+    __tablename__ = "modeling_batch_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "build_session_id", "idempotency_key", name="uq_modeling_attempts_session_key"
+        ),
+        CheckConstraint(
+            "mode IN ('dry_run', 'apply_atomic', 'apply_partial')",
+            name="ck_modeling_attempts_mode",
+        ),
+        CheckConstraint(
+            "status IN ('validating', 'validated', 'validation_failed', 'applying', "
+            "'recovering', 'applied', 'partially_applied', 'failed')",
+            name="ck_modeling_attempts_status",
+        ),
+        Index("ix_modeling_attempts_batch_created", "batch_id", "created_at"),
+        Index(
+            "uq_modeling_attempts_batch_inflight_apply",
+            "batch_id",
+            unique=True,
+            postgresql_where=text(
+                "mode <> 'dry_run' AND status IN ('validating', 'applying', 'recovering')"
+            ),
+            sqlite_where=text(
+                "mode <> 'dry_run' AND status IN ('validating', 'applying', 'recovering')"
+            ),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("modeling_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="validating", nullable=False)
+    expected_workspace_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    lease_revision: Mapped[int | None] = mapped_column(Integer)
+    workspace_version_before: Mapped[str | None] = mapped_column(String(128))
+    workspace_version_after: Mapped[str | None] = mapped_column(String(128))
+    target_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    normalized_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    delta_hash: Mapped[str | None] = mapped_column(String(64))
+    operation_plan: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    operation_plan_hash: Mapped[str | None] = mapped_column(String(64))
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    groups: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    recovery_state: Mapped[str] = mapped_column(String(40), default="not_required", nullable=False)
+    recovery_detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    audit_id: Mapped[str | None] = mapped_column(String(36))
+    execution_claim_id: Mapped[str | None] = mapped_column(String(36))
+    execution_claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_claim_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    batch: Mapped[ModelingBatchModel] = relationship(back_populates="attempts")
+    item_results: Mapped[list["ModelingAttemptItemResultModel"]] = relationship(
+        back_populates="attempt",
+        cascade="all, delete-orphan",
+        order_by="ModelingAttemptItemResultModel.client_item_id",
+    )
+
+
+class ModelingAttemptItemResultModel(Base):
+    __tablename__ = "modeling_attempt_item_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "attempt_id", "modeling_item_id", name="uq_modeling_item_results_attempt_item"
+        ),
+        CheckConstraint(
+            "status IN ('validated', 'failed', 'not_applied', 'blocked', 'applied')",
+            name="ck_modeling_item_results_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("modeling_batch_attempts.id", ondelete="CASCADE"), nullable=False
+    )
+    modeling_item_id: Mapped[str] = mapped_column(
+        ForeignKey("modeling_items.id", ondelete="CASCADE"), nullable=False
+    )
+    client_item_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    atomic_group_id: Mapped[str | None] = mapped_column(String(36))
+    resource_outputs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    finding_codes: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    evidence_reference_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    evidence_association_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+
+    attempt: Mapped[ModelingBatchAttemptModel] = relationship(back_populates="item_results")
+
+
+class OntologyWriteFenceModel(Base):
+    __tablename__ = "ontology_write_fences"
+
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), primary_key=True
+    )
+    attempt_id: Mapped[str] = mapped_column(
+        ForeignKey("modeling_batch_attempts.id", ondelete="RESTRICT"), nullable=False, unique=True
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    lease_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class ApiKeyModel(Base):
@@ -471,7 +671,6 @@ SourceDocumentModel = EvidenceArtifactModel
 SourceChunkModel = EvidenceChunkModel
 
 
-
 class DataSourceModel(Base):
     __tablename__ = "data_sources"
     __table_args__ = (UniqueConstraint("project_id", "name", name="uq_data_sources_project_name"),)
@@ -551,7 +750,13 @@ class ExternalFieldModel(Base):
 class SemanticMappingModel(Base):
     __tablename__ = "semantic_mappings"
     __table_args__ = (
-        UniqueConstraint("ontology_id", "target_type", "target_id", "field_id", name="uq_semantic_mapping_target_field"),
+        UniqueConstraint(
+            "ontology_id",
+            "target_type",
+            "target_id",
+            "field_id",
+            name="uq_semantic_mapping_target_field",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -679,7 +884,9 @@ class SemanticValidationRunModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticReasoningRunModel(Base):
@@ -694,7 +901,9 @@ class SemanticReasoningRunModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticProjectionJobModel(Base):
@@ -702,15 +911,9 @@ class SemanticProjectionJobModel(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     graph_set_id: Mapped[str | None] = mapped_column(String(36))
-    projection_kind: Mapped[str] = mapped_column(
-        String(40), default="search", nullable=False
-    )
-    projection_version: Mapped[str] = mapped_column(
-        String(80), default="v1", nullable=False
-    )
-    projection_scope: Mapped[str] = mapped_column(
-        String(40), default="asserted", nullable=False
-    )
+    projection_kind: Mapped[str] = mapped_column(String(40), default="search", nullable=False)
+    projection_version: Mapped[str] = mapped_column(String(80), default="v1", nullable=False)
+    projection_scope: Mapped[str] = mapped_column(String(40), default="asserted", nullable=False)
     source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     reasoning_result_graph_iri: Mapped[str | None] = mapped_column(Text)
     rule_result_graph_iri: Mapped[str | None] = mapped_column(Text)
@@ -730,7 +933,9 @@ class SemanticProjectionJobModel(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    job_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    job_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticProjectionManifestModel(Base):
@@ -762,9 +967,7 @@ class SemanticProjectionManifestModel(Base):
 
 class SemanticGraphRegistryModel(Base):
     __tablename__ = "semantic_graph_registry"
-    __table_args__ = (
-        UniqueConstraint("graph_iri", name="uq_semantic_graph_registry_graph_iri"),
-    )
+    __table_args__ = (UniqueConstraint("graph_iri", name="uq_semantic_graph_registry_graph_iri"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -780,14 +983,14 @@ class SemanticGraphRegistryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    registry_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    registry_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticGraphRevisionModel(Base):
     __tablename__ = "semantic_graph_revisions"
-    __table_args__ = (
-        UniqueConstraint("graph_iri", name="uq_semantic_graph_revisions_graph_iri"),
-    )
+    __table_args__ = (UniqueConstraint("graph_iri", name="uq_semantic_graph_revisions_graph_iri"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -798,7 +1001,9 @@ class SemanticGraphRevisionModel(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     changed_by: Mapped[str | None] = mapped_column(String(255))
-    revision_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    revision_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticGraphSetModel(Base):
@@ -828,7 +1033,9 @@ class SemanticGraphSetModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    graph_set_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    graph_set_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
     members: Mapped[list["SemanticGraphSetMemberModel"]] = relationship(
         back_populates="graph_set",
         cascade="all, delete-orphan",
@@ -852,7 +1059,9 @@ class SemanticGraphSetMemberModel(Base):
     role: Mapped[str] = mapped_column(String(40), nullable=False)
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    member_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    member_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
     graph_set: Mapped[SemanticGraphSetModel] = relationship(back_populates="members")
 
@@ -872,7 +1081,9 @@ class SemanticDerivedResultPointerModel(Base):
     shape_version: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="current", nullable=False)
     became_current_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    pointer_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    pointer_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -894,16 +1105,60 @@ class SemanticGraphGcRunModel(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    gc_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    gc_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+
+
+class SemanticRuleModel(Base):
+    __tablename__ = "semantic_rules"
+    __table_args__ = (
+        UniqueConstraint("ontology_id", "rule_iri", name="uq_semantic_rules_ontology_iri"),
+        CheckConstraint("status IN ('active', 'inactive')", name="ck_semantic_rules_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rule_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    current_definition_id: Mapped[str | None] = mapped_column(
+        ForeignKey("semantic_rule_definitions.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class SemanticRuleDefinitionModel(Base):
     __tablename__ = "semantic_rule_definitions"
     __table_args__ = (
-        UniqueConstraint("rule_iri", "version", name="uq_semantic_rule_definitions_iri_version"),
+        Index(
+            "uq_semantic_rule_definitions_legacy_iri_version",
+            "rule_iri",
+            "version",
+            unique=True,
+            postgresql_where=text("semantic_rule_id IS NULL"),
+            sqlite_where=text("semantic_rule_id IS NULL"),
+        ),
+        Index(
+            "uq_semantic_rule_definitions_rule_version",
+            "semantic_rule_id",
+            "version",
+            unique=True,
+            postgresql_where=text("semantic_rule_id IS NOT NULL"),
+            sqlite_where=text("semantic_rule_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    semantic_rule_id: Mapped[str | None] = mapped_column(
+        ForeignKey("semantic_rules.id", ondelete="RESTRICT"), index=True
+    )
     rule_iri: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     language: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -923,7 +1178,10 @@ class SemanticRuleDefinitionModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    rule_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    rule_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
+    definition_hash: Mapped[str | None] = mapped_column(String(64))
 
 
 class SemanticRuleRunModel(Base):
@@ -945,7 +1203,9 @@ class SemanticRuleRunModel(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
 
 class SemanticMigrationRunModel(Base):
@@ -966,9 +1226,7 @@ class SemanticMigrationRunModel(Base):
     phase2_mapping_version: Mapped[str] = mapped_column(
         String(80), nullable=False, default="phase2-v1"
     )
-    source_snapshot_signature: Mapped[str] = mapped_column(
-        String(128), nullable=False, default=""
-    )
+    source_snapshot_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     target_graph_set_id: Mapped[str | None] = mapped_column(String(36))
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -976,7 +1234,9 @@ class SemanticMigrationRunModel(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(String(255))
     error: Mapped[str | None] = mapped_column(Text)
-    run_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    run_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
     batches: Mapped[list["SemanticMigrationBatchModel"]] = relationship(
         back_populates="migration_run",
@@ -1020,7 +1280,9 @@ class SemanticMigrationBatchModel(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    batch_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    batch_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
     migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="batches")
 
@@ -1047,6 +1309,8 @@ class SemanticMigrationParityReportModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    parity_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    parity_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, default=dict, nullable=False
+    )
 
     migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="parity_reports")

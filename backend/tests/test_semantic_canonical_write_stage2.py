@@ -23,7 +23,6 @@ from __future__ import annotations
 from collections.abc import Generator
 from typing import Any
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -261,7 +260,8 @@ def test_update_class_apply_writes_label_replace_to_ontology_graph(
         store,
         _ontology_graph_iri(),
         [
-            "DELETE DATA",
+            "DELETE { GRAPH",
+            "WHERE { GRAPH",
             "INSERT DATA",
             "/ns/class/class-1>",
             '"Student v2"',

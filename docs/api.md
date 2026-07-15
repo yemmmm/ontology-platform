@@ -457,3 +457,44 @@ the exact source excerpt they used:
 Canonical product writes accept optional `evidence_reference_ids`, inline `evidence`,
 `client_item_id`, and `evidence_target_id`. The older Artifact/Chunk endpoints above remain a
 compatibility surface and are not the v1.0 R-002 workflow.
+
+## v1.0 Modeling Batches (R-004)
+
+R-004 exposes one immutable Batch protocol; `mode` selects `dry_run`, `apply_atomic`, or
+`apply_partial`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Validate or idempotently apply one Ontology Batch. |
+| `GET` | `/api/modeling-batches/{batch_id}` | Read immutable Items, Attempts, Findings, target diagnostics, and recovery history. |
+| `GET` | `/api/build-sessions/{session_id}/modeling-batches` | Page through one Session's Batches. |
+| `GET` | `/api/ontologies/{ontology_id}/modeling-batches` | Page/filter cross-Session history for one Ontology. |
+| `GET` | `/api/ontologies/{ontology_id}/modeling-context` | Read the current authoritative modeling baseline. |
+| `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Resolve the default Graph Set and read `classes`, `entities`, `facts`, `history`, `delta`, or `rules`. |
+
+For `delta`, the server compares the most recent prior Graph Set in the same Ontology scope with
+the current default workspace. If no prior baseline exists, it returns an empty current-to-current
+diff with a `no_prior_graph_set` warning; callers never provide an internal Graph Set ID.
+
+Apply requires an active Build Session, a valid Ontology Lease, and the exact composite
+`workspace_version` returned by Modeling Context. The request cannot supply an actor, Graph Set,
+graph IRI, or shape graph. Item validation problems return a normal Attempt with structured
+Findings; Session, Lease, version, capacity, and idempotency failures use a request-level
+`detail.code`.
+
+Modeling Context returns the latest Batch summaries across all statuses and an optional
+`recent_batches_next_cursor`; pass that cursor to the Ontology Batch list endpoint to continue the
+same newest-first history without replaying or inferring state from Batch contents.
+
+The first version executes synchronously within documented capacity limits, persists the plan
+before side effects, and retains an Ontology Write Fence while an Attempt is applying or recovering.
+It marks derived outputs stale but does not run inference, rules, or projection rebuilds.
+
+Until R-008 is implemented, the adapter records `system:unattributed` and is a trusted local/internal
+development surface, not a production authorization boundary for an untrusted network.
+
+Capacity and recovery defaults are configured with `MODELING_BATCH_MAX_ITEMS` (100),
+`MODELING_BATCH_MAX_REQUEST_BYTES` (1048576), `MODELING_BATCH_MAX_INLINE_EVIDENCE` (100),
+`MODELING_BATCH_MAX_EVIDENCE_EXCERPT_CHARS` (20000),
+`MODELING_BATCH_RECOVERY_MAX_STEPS` (3), and
+`MODELING_BATCH_EXECUTION_CLAIM_TTL_SECONDS` (300).

@@ -279,6 +279,20 @@ Ontology 关联。
 后续可以增强 `ontology-builder` Skill 的访谈、候选生成、证据引用、建模解释和失败恢复能力。
 平台仍应保持治理边界：Agent 负责提出候选和解释理由，用户负责最终决策。
 
+### 外部 Agent 建模批次
+
+外部建模 Agent 应先创建或恢复 Build Session，再读取目标 Ontology 的 Modeling Context。以其中的
+`workspace_version` 和当前固定语义读模型为基础构造 Modeling Batch：
+
+1. 使用 `dry_run` 查看规范化 delta、资源标识和全部 Finding，不需要 Ontology Lease。
+2. 获取目标 Ontology Lease 后，使用新的 idempotency key 调用 `apply_atomic`；只有明确接受部分
+   成功时才使用 `apply_partial`。
+3. 网络中断时使用原 idempotency key 重试或读取 Batch；不要创建新 Batch 猜测原写入结果。
+4. 下一次建模重新读取 Modeling Context。历史 Batch 解释变化，但不替代当前语义状态。
+
+Agent 只填写 Ontology 和命令内容，不填写 Graph Set 或 graph IRI。Evidence、rationale 和能力问题
+均属于具体 Modeling Item。当前接口在 R-008 完成前仅适合受信本地环境。
+
 ### 更丰富的前端工作台
 
 可能新增的 UI 能力包括图谱可视化增强、批量编辑、审计仪表盘、Catalog 血缘视图、发布报告、
@@ -299,4 +313,3 @@ embedding 回填状态、后台任务队列和系统运行指标。
 - 敏感字段应通过 Catalog 策略管理，不应直接写入图谱属性。
 - 图谱事实需要考虑查询价值、维护能力和证据来源。
 - 当前 MVP 仍以本地开发和验证为主，生产级认证、授权和运维能力需要后续补齐。
-

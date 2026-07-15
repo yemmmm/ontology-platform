@@ -406,3 +406,22 @@ updated_at). Fact review decisions
 These tools store only the document name and exact excerpt supplied by the external Agent. They do
 not upload or parse complete source files. References belong to a Project and may support concrete
 modeling results in any Ontology in that Project; cross-project IDs are returned as unavailable.
+
+## Modeling Batch tools (R-004)
+
+- `submit_modeling_batch`: the only R-004 write tool; selects `dry_run`, `apply_atomic`, or
+  `apply_partial` with `mode`.
+- `get_modeling_batch`: read immutable Batch content, all Attempts, Item results, Findings, and
+  recovery history.
+- `list_session_modeling_batches`: page one Build Session's history.
+- `list_ontology_modeling_batches`: page/filter cross-Session Ontology history.
+- `get_modeling_context`: read the current authoritative workspace version, counts, stale/fence
+  state, recent Batches, and detailed-query entry points.
+- `get_ontology_read_model`: resolve the default workspace and read a fixed semantic model without
+  supplying a Graph Set ID. For `delta`, the platform automatically chooses the latest prior
+  Ontology Graph Set and returns `no_prior_graph_set` when none exists.
+
+The tools call the same `ModelingBatchService` as REST and return the same status names and Finding
+codes. A retry uses the same idempotency key; switching from dry-run to apply uses a new key. Lease
+tokens are accepted only by apply submissions and are excluded from hashes, audit, ordinary reads,
+and errors. R-008 remains required before exposing these tools to untrusted callers.

@@ -30,13 +30,16 @@ from app.repositories.models import (
     BuildSessionModel,
     CompetencyQuestionModel,
     EvidenceReferenceModel,
+    ModelingBatchAttemptModel,
+    ModelingBatchModel,
     OntologyLeaseModel,
     OntologyModel,
+    OntologyWriteFenceModel,
     ProjectModel,
 )
 from app.services import interview
 from app.services.ontology_workspace import OntologyWorkspaceService
-from app.services.semantic_graph_set import SemanticGraphSetService
+from app.services.modeling_workspace import ModelingWorkspaceVersionService
 
 
 class BuildSessionError(RuntimeError):
@@ -192,15 +195,20 @@ class BuildSessionService:
             question_counts[key] = question_counts.get(key, 0) + int(count)
 
         workspace_service = OntologyWorkspaceService(self.session, self.settings)
-        graph_set_service = SemanticGraphSetService(self.session, self.settings)
+        version_service = ModelingWorkspaceVersionService(self.session, self.settings)
         ontology_state: list[dict[str, Any]] = []
         for ontology in ontologies:
             workspace = workspace_service.context(ontology.id)
+            fence = self.session.get(OntologyWriteFenceModel, ontology.id)
+            recent_batch = self.session.scalar(
+                select(ModelingBatchModel)
+                .where(ModelingBatchModel.ontology_id == ontology.id)
+                .order_by(ModelingBatchModel.created_at.desc(), ModelingBatchModel.id.desc())
+                .limit(1)
+            )
             workspace_version = None
             if workspace["default_graph_set_id"] is not None:
-                workspace_version = graph_set_service.source_signature_for(
-                    workspace["default_graph_set_id"]
-                )
+                workspace_version = version_service.version_for(ontology.id)
             ontology_state.append(
                 {
                     "id": ontology.id,
@@ -214,6 +222,15 @@ class BuildSessionService:
                         "issues": []
                         if workspace["state"] == "ready"
                         else ["semantic_workspace_incomplete"],
+                    },
+                    "modeling": {
+                        "fenced": fence is not None,
+                        "recovering_attempt_id": fence.attempt_id if fence else None,
+                        "recent_batch": (
+                            self._modeling_batch_summary(recent_batch)
+                            if recent_batch is not None
+                            else None
+                        ),
                     },
                 }
             )
@@ -247,6 +264,14 @@ class BuildSessionService:
             for build_session in terminal_page
             for item in (build_session.unresolved_items or [])
         ]
+        recent_batches = list(
+            self.session.scalars(
+                select(ModelingBatchModel)
+                .where(ModelingBatchModel.project_id == project_id)
+                .order_by(ModelingBatchModel.created_at.desc(), ModelingBatchModel.id.desc())
+                .limit(20)
+            )
+        )
         return {
             "project": {
                 "id": project.id,
@@ -266,13 +291,11 @@ class BuildSessionService:
                     )
                     or 0
                 ),
-                "modeling_batches": [],
+                "modeling_batches": [self._modeling_batch_summary(item) for item in recent_batches],
             },
             "agent_state": {
                 "active_sessions": [self._session_summary(item) for item in active],
-                "recent_sessions": [
-                    self._session_summary(item) for item in terminal_page
-                ],
+                "recent_sessions": [self._session_summary(item) for item in terminal_page],
                 "recent_sessions_next_cursor": (
                     recent_session_cursor + recent_session_limit if has_more else None
                 ),
@@ -329,6 +352,14 @@ class BuildSessionService:
             ),
             leases,
         )
+        session_batches = list(
+            self.session.scalars(
+                select(ModelingBatchModel)
+                .where(ModelingBatchModel.build_session_id == session_id)
+                .order_by(ModelingBatchModel.created_at.desc(), ModelingBatchModel.id.desc())
+                .limit(50)
+            )
+        )
         return {
             "session": self._session_summary(build_session, latest),
             "latest_checkpoint": self._checkpoint_read(latest) if latest else None,
@@ -338,14 +369,12 @@ class BuildSessionService:
             ),
             "involved_ontology_ids": sorted(item for item in ontology_ids if item),
             "leases": [self._lease_summary(item) for item in leases],
-            "modeling_batches": [],
+            "modeling_batches": [self._modeling_batch_summary(item) for item in session_batches],
             "evidence": {"references": [], "next_cursor": None},
             "recent_activity": recent_activity,
         }
 
-    def resume_session(
-        self, session_id: str, payload: BuildSessionResume
-    ) -> dict[str, Any]:
+    def resume_session(self, session_id: str, payload: BuildSessionResume) -> dict[str, Any]:
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
         self._assert_session_revision(build_session, payload.expected_revision)
@@ -354,9 +383,7 @@ class BuildSessionService:
         self.session.commit()
         return self.get_session_detail(session_id)
 
-    def save_checkpoint(
-        self, session_id: str, payload: BuildCheckpointCreate
-    ) -> dict[str, Any]:
+    def save_checkpoint(self, session_id: str, payload: BuildCheckpointCreate) -> dict[str, Any]:
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
         existing = self.session.scalar(
@@ -378,14 +405,17 @@ class BuildSessionService:
         self._assert_session_revision(build_session, payload.expected_revision)
         if payload.ontology_id is not None:
             self._ontology(build_session.project_id, payload.ontology_id)
-        sequence = int(
-            self.session.scalar(
-                select(func.max(BuildCheckpointModel.sequence)).where(
-                    BuildCheckpointModel.build_session_id == session_id
+        sequence = (
+            int(
+                self.session.scalar(
+                    select(func.max(BuildCheckpointModel.sequence)).where(
+                        BuildCheckpointModel.build_session_id == session_id
+                    )
                 )
+                or 0
             )
-            or 0
-        ) + 1
+            + 1
+        )
         checkpoint = self._new_checkpoint(build_session, payload, sequence=sequence)
         self.session.add(checkpoint)
         build_session.revision += 1
@@ -398,9 +428,7 @@ class BuildSessionService:
             "checkpoint": self._checkpoint_read(checkpoint),
         }
 
-    def complete_session(
-        self, session_id: str, payload: BuildSessionComplete
-    ) -> dict[str, Any]:
+    def complete_session(self, session_id: str, payload: BuildSessionComplete) -> dict[str, Any]:
         request_hash = _canonical_hash({"operation": "complete", **payload.model_dump(mode="json")})
         build_session = self._build_session(session_id, lock=True)
         terminal = self._terminal_retry(build_session, payload.client_request_id, request_hash)
@@ -408,6 +436,7 @@ class BuildSessionService:
             return terminal
         self._assert_active(build_session)
         self._assert_session_revision(build_session, payload.expected_revision)
+        self._assert_no_in_flight_batch(build_session.id)
         now = self._database_now()
         build_session.status = "completed"
         build_session.revision += 1
@@ -422,9 +451,7 @@ class BuildSessionService:
         self.session.refresh(build_session)
         return self._session_summary(build_session)
 
-    def cancel_session(
-        self, session_id: str, payload: BuildSessionCancel
-    ) -> dict[str, Any]:
+    def cancel_session(self, session_id: str, payload: BuildSessionCancel) -> dict[str, Any]:
         request_hash = _canonical_hash({"operation": "cancel", **payload.model_dump(mode="json")})
         build_session = self._build_session(session_id, lock=True)
         terminal = self._terminal_retry(build_session, payload.client_request_id, request_hash)
@@ -432,6 +459,7 @@ class BuildSessionService:
             return terminal
         self._assert_active(build_session)
         self._assert_session_revision(build_session, payload.expected_revision)
+        self._assert_no_in_flight_batch(build_session.id)
         now = self._database_now()
         build_session.status = "cancelled"
         build_session.revision += 1
@@ -458,7 +486,8 @@ class BuildSessionService:
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
         self._assert_session_revision(build_session, payload.expected_session_revision)
-        self._ontology(build_session.project_id, ontology_id)
+        self._ontology(build_session.project_id, ontology_id, lock=True)
+        self._assert_not_fenced(ontology_id)
         now = self._database_now()
         lease = self._lease(ontology_id, lock=True)
         request_hash = _canonical_hash(payload)
@@ -533,6 +562,8 @@ class BuildSessionService:
     ) -> dict[str, Any]:
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
+        self._ontology(build_session.project_id, ontology_id, lock=True)
+        self._assert_not_fenced(ontology_id)
         lease = self._lease(ontology_id, lock=True)
         if lease is None or lease.build_session_id != session_id:
             raise BuildSessionError(
@@ -552,9 +583,7 @@ class BuildSessionService:
             raise BuildSessionError("lease_expired", "Ontology lease has expired")
         lease.revision += 1
         lease.renewed_at = now
-        lease.expires_at = now + timedelta(
-            seconds=self.settings.build_session_lease_ttl_seconds
-        )
+        lease.expires_at = now + timedelta(seconds=self.settings.build_session_lease_ttl_seconds)
         lease.last_request_id = payload.client_request_id
         lease.last_request_operation = "renew"
         lease.last_request_hash = request_hash
@@ -571,6 +600,8 @@ class BuildSessionService:
     ) -> dict[str, Any]:
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
+        self._ontology(build_session.project_id, ontology_id, lock=True)
+        self._assert_not_fenced(ontology_id)
         lease = self._lease(ontology_id, lock=True)
         if lease is None or lease.build_session_id != session_id:
             raise BuildSessionError(
@@ -607,7 +638,8 @@ class BuildSessionService:
         """Narrow R-004 guard: validate session, lease, and workspace version."""
         build_session = self._build_session(session_id, lock=True)
         self._assert_active(build_session)
-        self._ontology(build_session.project_id, ontology_id)
+        self._ontology(build_session.project_id, ontology_id, lock=True)
+        self._assert_not_fenced(ontology_id)
         lease = self._lease(ontology_id, lock=True)
         if lease is None or lease.build_session_id != session_id:
             raise BuildSessionError(
@@ -622,9 +654,9 @@ class BuildSessionService:
             raise BuildSessionError(
                 "workspace_revision_conflict", "Ontology workspace is incomplete"
             )
-        current_version = SemanticGraphSetService(
-            self.session, self.settings
-        ).source_signature_for(graph_set_id)
+        current_version = ModelingWorkspaceVersionService(self.session, self.settings).version_for(
+            ontology_id
+        )
         if current_version != expected_workspace_version:
             raise BuildSessionError(
                 "workspace_revision_conflict",
@@ -636,6 +668,7 @@ class BuildSessionService:
             "ontology_id": ontology_id,
             "graph_set_id": graph_set_id,
             "workspace_version": current_version,
+            "lease_revision": lease.revision,
         }
 
     # ------------------------------------------------------------------
@@ -651,17 +684,18 @@ class BuildSessionService:
     def _project(self, project_id: str) -> ProjectModel:
         project = self.session.get(ProjectModel, project_id)
         if project is None:
-            raise BuildSessionError(
-                "project_not_found", "Project was not found", status_code=404
-            )
+            raise BuildSessionError("project_not_found", "Project was not found", status_code=404)
         return project
 
-    def _ontology(self, project_id: str, ontology_id: str) -> OntologyModel:
-        ontology = self.session.get(OntologyModel, ontology_id)
+    def _ontology(
+        self, project_id: str, ontology_id: str, *, lock: bool = False
+    ) -> OntologyModel:
+        statement = select(OntologyModel).where(OntologyModel.id == ontology_id)
+        if lock:
+            statement = statement.with_for_update()
+        ontology = self.session.scalar(statement)
         if ontology is None or ontology.project_id != project_id:
-            raise BuildSessionError(
-                "ontology_not_found", "Ontology was not found", status_code=404
-            )
+            raise BuildSessionError("ontology_not_found", "Ontology was not found", status_code=404)
         return ontology
 
     def _build_session(self, session_id: str, *, lock: bool = False) -> BuildSessionModel:
@@ -678,12 +712,36 @@ class BuildSessionService:
         return build_session
 
     def _lease(self, ontology_id: str, *, lock: bool = False) -> OntologyLeaseModel | None:
-        statement = select(OntologyLeaseModel).where(
-            OntologyLeaseModel.ontology_id == ontology_id
-        )
+        statement = select(OntologyLeaseModel).where(OntologyLeaseModel.ontology_id == ontology_id)
         if lock:
             statement = statement.with_for_update()
         return self.session.scalar(statement)
+
+    def _assert_not_fenced(self, ontology_id: str) -> None:
+        fence = self.session.get(OntologyWriteFenceModel, ontology_id)
+        if fence is not None:
+            raise BuildSessionError(
+                "ontology_write_fenced",
+                "Ontology has an in-flight Modeling Batch write",
+                attempt_id=fence.attempt_id,
+            )
+
+    def _assert_no_in_flight_batch(self, build_session_id: str) -> None:
+        in_flight = self.session.scalar(
+            select(ModelingBatchAttemptModel.id)
+            .where(
+                ModelingBatchAttemptModel.build_session_id == build_session_id,
+                ModelingBatchAttemptModel.status.in_(("validating", "applying", "recovering")),
+                ModelingBatchAttemptModel.mode != "dry_run",
+            )
+            .limit(1)
+        )
+        if in_flight is not None:
+            raise BuildSessionError(
+                "in_flight_batch",
+                "Build Session has an in-flight Modeling Batch",
+                attempt_id=in_flight,
+            )
 
     def _latest_checkpoint(self, session_id: str) -> BuildCheckpointModel | None:
         return self.session.scalar(
@@ -768,10 +826,37 @@ class BuildSessionService:
             "created_at": checkpoint.created_at,
         }
 
+    @staticmethod
+    def _modeling_batch_summary(batch: ModelingBatchModel) -> dict[str, Any]:
+        latest = batch.attempts[-1] if batch.attempts else None
+        return {
+            "batch_id": batch.id,
+            "client_batch_id": batch.client_batch_id,
+            "ontology_id": batch.ontology_id,
+            "build_session_id": batch.build_session_id,
+            "batch_status": batch.status,
+            "item_count": len(batch.items),
+            "latest_attempt": (
+                {
+                    "attempt_id": latest.id,
+                    "mode": latest.mode,
+                    "attempt_status": latest.status,
+                    "finding_count": len(latest.findings or []),
+                    "recovery_state": latest.recovery_state,
+                }
+                if latest
+                else None
+            ),
+            "created_at": batch.created_at,
+            "terminal_at": batch.terminal_at,
+        }
+
     def _lease_summary(self, lease: OntologyLeaseModel) -> dict[str, Any]:
         now = self._database_now()
-        state = "released" if lease.released_at is not None else (
-            "active" if self._lease_is_active(lease, now) else "expired"
+        state = (
+            "released"
+            if lease.released_at is not None
+            else ("active" if self._lease_is_active(lease, now) else "expired")
         )
         return {
             "ontology_id": lease.ontology_id,
@@ -819,9 +904,7 @@ class BuildSessionService:
         lease.token_hash = _token_hash(token)
         lease.revision += 1
         lease.renewed_at = now
-        lease.expires_at = now + timedelta(
-            seconds=self.settings.build_session_lease_ttl_seconds
-        )
+        lease.expires_at = now + timedelta(seconds=self.settings.build_session_lease_ttl_seconds)
         lease.last_request_id = request_id
         lease.last_request_operation = "acquire"
         lease.last_request_hash = request_hash
@@ -837,14 +920,10 @@ class BuildSessionService:
     @staticmethod
     def _assert_active(build_session: BuildSessionModel) -> None:
         if build_session.status != "active":
-            raise BuildSessionError(
-                "session_terminal", "Build Session is already terminal"
-            )
+            raise BuildSessionError("session_terminal", "Build Session is already terminal")
 
     @staticmethod
-    def _assert_session_revision(
-        build_session: BuildSessionModel, expected_revision: int
-    ) -> None:
+    def _assert_session_revision(build_session: BuildSessionModel, expected_revision: int) -> None:
         if build_session.revision != expected_revision:
             raise BuildSessionError(
                 "session_revision_conflict",
@@ -853,9 +932,7 @@ class BuildSessionService:
             )
 
     @staticmethod
-    def _assert_lease_revision(
-        lease: OntologyLeaseModel, expected_revision: int
-    ) -> None:
+    def _assert_lease_revision(lease: OntologyLeaseModel, expected_revision: int) -> None:
         if lease.revision != expected_revision:
             raise BuildSessionError(
                 "lease_revision_conflict",
@@ -887,10 +964,7 @@ class BuildSessionService:
     ) -> None:
         if lease.last_request_id != request_id:
             return
-        if (
-            lease.last_request_operation != operation
-            or lease.last_request_hash != request_hash
-        ):
+        if lease.last_request_operation != operation or lease.last_request_hash != request_hash:
             raise BuildSessionError(
                 "idempotency_conflict",
                 "Client request ID was already used with different content",

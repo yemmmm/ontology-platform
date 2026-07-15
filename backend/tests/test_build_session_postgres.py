@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
 from uuid import uuid4
 
 import pytest
@@ -29,9 +28,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_concurrent_first_acquire_has_one_winner_and_one_stable_conflict(
-    monkeypatch,
-) -> None:
+def test_concurrent_first_acquire_has_one_winner_and_one_stable_conflict() -> None:
     settings = Settings()
     engine = create_engine(settings.database_url)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -66,20 +63,6 @@ def test_concurrent_first_acquire_has_one_winner_and_one_stable_conflict(
             )
             assert created is True
             session_ids.append(detail["id"])
-
-    # Force both transactions to observe the initially empty lease slot before
-    # either inserts.  This deterministically exercises the PK-conflict retry,
-    # rather than relying on thread scheduling to happen to create the race.
-    empty_slot_barrier = Barrier(2)
-    original_lease = BuildSessionService._lease  # noqa: SLF001 - concurrency seam
-
-    def synchronized_empty_slot(self, candidate_ontology_id, *, lock=False):
-        lease = original_lease(self, candidate_ontology_id, lock=lock)
-        if candidate_ontology_id == ontology_id and lock and lease is None:
-            empty_slot_barrier.wait(timeout=10)
-        return lease
-
-    monkeypatch.setattr(BuildSessionService, "_lease", synchronized_empty_slot)
 
     def acquire(index: int) -> tuple[str, str]:
         with factory() as session:

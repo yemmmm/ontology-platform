@@ -451,7 +451,7 @@ SCC 被折叠为 group DAG。含直接 error 的 group 失败；所有依赖它�
   mappings、rule_definitions；
 - `derived_state`：current/stale pointer 数量和 stale warning；
 - active Lease 是否存在、是否被 fence（不返回 token、Graph Set ID 或 graph IRI）；
-- 最近成功/部分成功/recovering Batch 摘要和下一页入口；
+- 最近全部状态的 Batch 摘要和 `recent_batches_next_cursor`，可继续分页读取完整历史；
 - 固定详情入口：Classes、Entities、Facts、Rules、History、Delta 和 Batch history。
 
 为避免普通 Agent 被迫读取内部 Graph Set ID，R-004 同时提供只读
@@ -459,6 +459,9 @@ SCC 被折叠为 group DAG。含直接 error 的 group 失败；所有依赖它�
 `get_ontology_read_model`；服务端解析 default Graph Set 后委托现有 read-model service。
 `model_name` 首版允许 `classes|entities|facts|history|delta|rules`，分页参数与现有模型一致。
 Modeling Context 的 `query_entries` 返回这些可直接调用的具体 URL 和 MCP 工具参数模板。
+其中 `delta` 由服务端自动选择同一 Ontology scope 中最近的非默认 Graph Set 作为历史基线，
+与当前 default workspace 比较；没有历史基线时返回空差异和 `no_prior_graph_set` warning，调用方
+不提供 Graph Set ID。
 
 计数通过当前 RDF/Rule 读模型计算，不通过回放 Batch 推导。Build Context 的
 `platform_state.modeling_batches` 和 Session detail 改为真实批次摘要。

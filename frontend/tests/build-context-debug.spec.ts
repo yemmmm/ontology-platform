@@ -102,7 +102,197 @@ function contextResponse(
   };
 }
 
-async function setup(page: Page, options: { empty?: boolean; contextError?: boolean; sensitiveBatches?: boolean } = {}) {
+const recoveringBatch = {
+  id: "batch-recovering-001",
+  batch_id: "batch-recovering-001",
+  client_batch_id: "supplier-model-v1",
+  build_session_id: activeSession.id,
+  ontology_id: ontology.id,
+  batch_status: "recovering",
+  item_count: 2,
+  latest_attempt: {
+    attempt_id: "attempt-apply-001",
+    mode: "apply_partial",
+    attempt_status: "recovering",
+    finding_count: 2,
+    recovery_state: "recovering",
+  },
+  created_at: "2026-07-15T05:12:00Z",
+};
+
+const appliedBatch = {
+  ...recoveringBatch,
+  id: "batch-applied-001",
+  batch_id: "batch-applied-001",
+  client_batch_id: "warehouse-model-v1",
+  batch_status: "applied",
+  latest_attempt: {
+    attempt_id: "attempt-applied-002",
+    mode: "apply_atomic",
+    attempt_status: "applied",
+    finding_count: 0,
+    recovery_state: "not_required",
+  },
+  created_at: "2026-07-15T05:11:00Z",
+};
+
+function modelingContextResponse(options: { empty?: boolean } = {}) {
+  return {
+    project,
+    ontology,
+    generated_at: "2026-07-15T05:31:00Z",
+    workspace: {
+      workspace_version: "opaque-modeling-version-43",
+      state: "ready",
+      editable: true,
+      issues: [],
+    },
+    resource_counts: options.empty ? {} : {
+      classes: 7,
+      entities: 18,
+      facts: 29,
+      rule_definitions: 2,
+    },
+    derived_state: {
+      stale_count: options.empty ? 0 : 2,
+      warning: options.empty ? null : "Rule and projection results await rebuild",
+    },
+    lease: {
+      active: !options.empty,
+      fenced: !options.empty,
+      state: options.empty ? null : "recovering",
+      lease_token: "modeling-context-lease-token",
+    },
+    recovering: {
+      active: !options.empty,
+      attempt_id: options.empty ? null : "attempt-apply-001",
+    },
+    recent_batches: options.empty ? [] : [recoveringBatch],
+    recent_batches_next_cursor: options.empty ? null : "batch-cursor-2",
+    batch_history: `/api/ontologies/${ontology.id}/modeling-batches`,
+    query_entries: {
+      classes: { url: `/ontologies/${ontology.id}/semantic-read-models/classes` },
+      private: {
+        api_key: "query-entry-api-key",
+        apiKey: "query-entry-camel-api-key",
+        target_graph_iri: "http://internal.example/modeling-context/query-target",
+        graphSetId: "query-entry-graph-set",
+      },
+    },
+  };
+}
+
+const modelingBatchDetail = {
+  id: recoveringBatch.id,
+  batch_id: recoveringBatch.id,
+  client_batch_id: recoveringBatch.client_batch_id,
+  build_session_id: activeSession.id,
+  ontology_id: ontology.id,
+  status: "recovering",
+  batch_status: "recovering",
+  items: [{
+    item_id: "item-customer-class",
+    client_item_id: "customer-class",
+    ordinal: 0,
+    command_kind: "create_class",
+    payload: { name: "Customer" },
+    depends_on: [],
+    resource_outputs: { resource_id: "customer-class-resource" },
+  }, {
+    item_id: "item-invalid-shape",
+    client_item_id: "invalid-shape",
+    ordinal: 1,
+    command_kind: "create_shape",
+    payload: { name: "Invalid Shape" },
+    depends_on: ["customer-class"],
+    resource_outputs: { resource_id: "invalid-shape-resource" },
+  }],
+  findings: [{
+    code: "recovery_requires_intervention",
+    severity: "warning",
+    message: "Recovery has not converged yet",
+    scope: "batch",
+  }],
+  attempts: [{
+    attempt_id: "attempt-dry-run-001",
+    mode: "dry_run",
+    attempt_status: "validated",
+    items: [{
+      item_id: "item-customer-class",
+      client_item_id: "customer-class",
+      command_kind: "create_class",
+      status: "validated",
+      finding_codes: ["missing_evidence"],
+    }],
+    findings: [{
+      code: "missing_evidence",
+      severity: "warning",
+      message: "No evidence was associated",
+      scope: "item",
+      client_item_id: "customer-class",
+    }],
+    recovery: { state: "not_required", safe_to_retry: true },
+    completed_at: "2026-07-15T05:12:30Z",
+  }, {
+    attempt_id: "attempt-apply-001",
+    mode: "apply_partial",
+    attempt_status: "recovering",
+    items: [{
+      item_id: "item-customer-class",
+      client_item_id: "customer-class",
+      command_kind: "create_class",
+      status: "applied",
+      finding_codes: [],
+    }, {
+      item_id: "item-invalid-shape",
+      client_item_id: "invalid-shape",
+      command_kind: "create_shape",
+      status: "blocked",
+      finding_codes: ["shacl_violation"],
+    }],
+    findings: [{
+      code: "shacl_violation",
+      severity: "error",
+      message: "Shape constraint could not be satisfied",
+      scope: "item",
+      client_item_id: "invalid-shape",
+      details: {
+        credential: "finding-private-credential",
+        graph_iri: "http://internal.example/finding/graph",
+      },
+    }],
+    recovery: {
+      state: "recovering",
+      safe_to_retry: true,
+      history: [{
+        message: "Awaiting deterministic convergence",
+        access_token: "recovery-access-token",
+        affected_graph_iris: ["http://internal.example/recovery/affected"],
+      }],
+    },
+    created_at: "2026-07-15T05:13:00Z",
+  }],
+  recovery: {
+    state: "recovering",
+    private_secret: "batch-recovery-secret",
+  },
+  target: {
+    graph_set_id: "batch-detail-graph-set",
+    graphs: [{ role: "asserted_ontology", graph_iri: "http://internal.example/detail/graph" }],
+  },
+  created_at: "2026-07-15T05:12:00Z",
+  completed_at: null,
+};
+
+async function setup(page: Page, options: {
+  empty?: boolean;
+  contextError?: boolean;
+  sensitiveBatches?: boolean;
+  modelingContext?: "success" | "empty" | "error";
+  slowModelingContext?: boolean;
+  batchPageError?: boolean;
+  batchDetailError?: boolean;
+} = {}) {
   const requests: string[] = [];
   await page.addInitScript(() => window.localStorage.setItem("ontology-platform-ui-lang", "en"));
   await page.route("**/api/**", async (route: Route) => {
@@ -111,6 +301,25 @@ async function setup(page: Page, options: { empty?: boolean; contextError?: bool
     requests.push(`${route.request().method()} ${path}${url.search}`);
     if (path === "/projects") return route.fulfill({ json: [project] });
     if (path === `/projects/${project.id}/ontologies`) return route.fulfill({ json: options.empty ? [] : [ontology] });
+    if (path === `/ontologies/${ontology.id}/modeling-context`) {
+      if (options.slowModelingContext) await new Promise((resolve) => setTimeout(resolve, 120));
+      if (options.modelingContext === "error") {
+        return route.fulfill({ status: 503, json: { detail: "modeling context offline" } });
+      }
+      return route.fulfill({ json: modelingContextResponse({ empty: options.modelingContext === "empty" }) });
+    }
+    if (path === `/ontologies/${ontology.id}/modeling-batches`) {
+      if (options.batchPageError) {
+        return route.fulfill({ status: 503, json: { detail: "batch history offline" } });
+      }
+      return route.fulfill({ json: { items: [appliedBatch], next_cursor: null } });
+    }
+    if (path === `/modeling-batches/${recoveringBatch.id}`) {
+      if (options.batchDetailError) {
+        return route.fulfill({ status: 503, json: { detail: "batch detail offline" } });
+      }
+      return route.fulfill({ json: modelingBatchDetail });
+    }
     if (path === `/projects/${project.id}/build-context`) {
       if (options.contextError) return route.fulfill({ status: 503, json: { detail: "build context offline" } });
       if (options.empty) {
@@ -301,4 +510,97 @@ test("Build Context exposes a retryable request error", async ({ page }) => {
   await expect(page.getByText("Build Context could not be loaded")).toBeVisible();
   await expect(page.getByText(/503/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+});
+
+test("Workspace expands an authoritative Modeling Context and inspects immutable Batch diagnostics", async ({ page }) => {
+  const requests = await setup(page, { modelingContext: "success", slowModelingContext: true });
+  await page.goto(workspaceUrl("build-context"));
+
+  const workspace = page.locator(".workspaceStateItem").filter({ hasText: ontology.name });
+  await workspace.getByRole("button", { name: /Inspect Modeling Context/ }).click();
+  await expect(workspace.getByText("Loading Modeling Context")).toBeVisible();
+  await expect(workspace.getByText("Authoritative Modeling Context")).toBeVisible();
+  await expect(workspace).toContainText("opaque-modeling-version-43");
+  await expect(workspace).toContainText("classes");
+  await expect(workspace).toContainText("7");
+  await expect(workspace.getByText("Derived models are stale")).toBeVisible();
+  await expect(workspace.getByText("Write fenced")).toBeVisible();
+  await expect(workspace.getByText("Recovery is in progress").first()).toBeVisible();
+
+  await workspace.getByRole("button", { name: /supplier-model-v1/ }).click();
+  const detail = workspace.locator('[aria-label="Modeling Batch Detail"]');
+  await expect(detail.getByText("Immutable batch audit")).toBeVisible();
+  await expect(detail).toContainText("dry_run");
+  await expect(detail).toContainText("apply_partial");
+  await expect(detail).toContainText("customer-class");
+  await expect(detail).toContainText("invalid-shape");
+  await expect(detail).toContainText("missing_evidence");
+  await expect(detail).toContainText("shacl_violation");
+  await expect(detail).toContainText("recovery_requires_intervention");
+
+  for (const sensitiveValue of [
+    "modeling-context-lease-token",
+    "query-entry-api-key",
+    "query-entry-camel-api-key",
+    "http://internal.example/modeling-context/query-target",
+    "query-entry-graph-set",
+    "finding-private-credential",
+    "http://internal.example/finding/graph",
+    "recovery-access-token",
+    "http://internal.example/recovery/affected",
+    "batch-recovery-secret",
+    "batch-detail-graph-set",
+    "http://internal.example/detail/graph",
+  ]) {
+    await expect(page.locator("body")).not.toContainText(sensitiveValue);
+  }
+
+  await expect(page.getByRole("button", { name: /^(Apply|Delete|Edit Batch|Retry Batch)$/i })).toHaveCount(0);
+  expect(requests).toContain(`GET /ontologies/${ontology.id}/modeling-context`);
+  expect(requests).toContain(`GET /modeling-batches/${recoveringBatch.id}`);
+  expect(requests.every((item) => item.startsWith("GET "))).toBe(true);
+});
+
+test("Modeling Context paginates Batch history without duplicates", async ({ page }) => {
+  const requests = await setup(page, { modelingContext: "success" });
+  await page.goto(workspaceUrl("build-context"));
+  const workspace = page.locator(".workspaceStateItem").filter({ hasText: ontology.name });
+  await workspace.getByRole("button", { name: /Inspect Modeling Context/ }).click();
+
+  await workspace.getByRole("button", { name: "Load more Modeling Batches" }).click();
+  await expect(workspace.getByRole("button", { name: /supplier-model-v1/ })).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: /warehouse-model-v1/ })).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: "Load more Modeling Batches" })).toHaveCount(0);
+  expect(requests.some((item) => item.includes("cursor=batch-cursor-2"))).toBe(true);
+  expect(requests.every((item) => item.startsWith("GET "))).toBe(true);
+});
+
+test("Modeling Context has explicit empty and retryable error states", async ({ page }) => {
+  await setup(page, { modelingContext: "empty" });
+  await page.goto(workspaceUrl("build-context"));
+  const workspace = page.locator(".workspaceStateItem").filter({ hasText: ontology.name });
+  await workspace.getByRole("button", { name: /Inspect Modeling Context/ }).click();
+  await expect(workspace.getByText("No canonical resources observed")).toBeVisible();
+  await expect(workspace.getByText("No recent Modeling Batches")).toBeVisible();
+
+  const errorPage = await page.context().newPage();
+  await setup(errorPage, { modelingContext: "error" });
+  await errorPage.goto(workspaceUrl("build-context"));
+  const errorWorkspace = errorPage.locator(".workspaceStateItem").filter({ hasText: ontology.name });
+  await errorWorkspace.getByRole("button", { name: /Inspect Modeling Context/ }).click();
+  await expect(errorWorkspace.getByText(/503/)).toBeVisible();
+  await expect(errorWorkspace.getByRole("button", { name: "Retry Modeling Context" })).toBeVisible();
+});
+
+test("Modeling Batch pagination and detail failures stay local to the expanded Workspace", async ({ page }) => {
+  await setup(page, { modelingContext: "success", batchPageError: true, batchDetailError: true });
+  await page.goto(workspaceUrl("build-context"));
+  const workspace = page.locator(".workspaceStateItem").filter({ hasText: ontology.name });
+  await workspace.getByRole("button", { name: /Inspect Modeling Context/ }).click();
+
+  await workspace.getByRole("button", { name: "Load more Modeling Batches" }).click();
+  await expect(workspace.getByText(/batch history offline|503/)).toBeVisible();
+  await workspace.getByRole("button", { name: /supplier-model-v1/ }).click();
+  await expect(workspace.getByText(/batch detail offline/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
 });
