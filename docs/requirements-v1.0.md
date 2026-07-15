@@ -472,6 +472,27 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   相同键与相同请求返回原结果，相同键与不同内容返回 `idempotency_conflict`。
   从 `dry_run` 切换到 apply 必须使用新的幂等键。
 
+#### Modeling Batch 与 Batch Attempt
+
+- Modeling Batch 表示一组不可变的建模内容，平台保存其规范化内容哈希。同一
+  Build Session 中重用 `client_batch_id` 但改变命令、payload、依赖、证据、理由或能力问题时，
+  返回 `batch_content_conflict`；修正后的建模内容必须使用新 `client_batch_id`。
+- 每次 `dry_run`、`apply_atomic` 或 `apply_partial` 调用都建立或幂等复用一个
+  `Batch Attempt（批次尝试）`。Attempt 记录自己的 mode、idempotency key、预期工作区版本、
+  校验结果、规范化 delta、状态、时间和应用前后签名，但不复制或修改 Batch 内容。
+- 同一 Batch 可以有多个 dry-run Attempt，以记录它在不同 `workspace_version` 上的校验结果；
+  旧结果必须保留所依据的版本，不得伪装成对当前工作区仍然有效。
+- Attempt 状态使用 `validating`、`validated`、`validation_failed`、`applying`、
+  `recovering`、`applied`、`partially_applied` 和 `failed`。`failed` 只表示无法恢复的执行故障，
+  普通建模校验失败必须使用 `validation_failed`。
+- Batch 在只有 dry-run 或校验失败时保持 `open`；存在正在执行或恢复的 apply Attempt 时
+  聚合为 `applying` 或 `recovering`；成功后终止为 `applied` 或 `partially_applied`。
+- 同一 Batch 同一时刻最多只能有一个非终态 apply Attempt。Batch 终止后，任何新幂等键的
+  重复 apply 也只返回已有应用结果，不再写入；`partially_applied` 中失败或被阻断的内容
+  需要修正时，必须提交新 Modeling Batch。
+- 存在 `validating`、`applying` 或 `recovering` Attempt 时，同一 Batch 不得启动另一个 apply，
+  所属 Build Session 也不得完成。相同幂等请求必须返回或推动原 Attempt 收敛。
+
 #### 命令承载范围
 
 - R-004 建立可扩展的 Modeling Command Handler 注册机制。现有 canonical compiler 作为
@@ -572,6 +593,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   R-007 定义后通过相同 handler 机制接入。
 - 单一 REST/MCP 提交能力支持 `dry_run`、`apply_atomic` 和 `apply_partial`，返回
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
+- 同一不可变 Modeling Batch 可保留多次 dry-run 和 apply Attempt 的完整历史；成功应用后
+  任何重试都不会重复写入，内容修正使用新 Batch 而不改写已有审计。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
   和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
 - 每个 Modeling Item 只承载一个严格类型命令，并可以结构化引用已有资源或同批次

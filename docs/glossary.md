@@ -71,10 +71,16 @@ Build Session or delete its progress.
 _Avoid_: Graph Set lock, project-wide lock, user permission
 
 **Modeling Batch**:
-A submission unit that groups one or more modeling changes for exactly one Ontology under one
-application mode. It has an overall outcome while retaining each Modeling Item's status, and may be
-previewed without mutation or applied by an authorized external modeling Agent.
+A client-identified immutable unit of modeling content that groups one or more changes for exactly
+one Ontology. The same Batch may be previewed or applied through multiple Batch Attempts, while its
+Modeling Items and supporting context remain unchanged.
 _Avoid_: proposal, Agent message, cross-Ontology transaction
+
+**Batch Attempt**:
+One idempotent dry-run, application, or recovery execution of an immutable Modeling Batch against a
+specific workspace version. Multiple attempts preserve processing history without duplicating the
+modeled content.
+_Avoid_: new Modeling Batch, content revision, duplicate application
 
 **Modeling Item**:
 One client-identified modeling change inside a Modeling Batch. It is the smallest unit for command
