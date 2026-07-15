@@ -29,6 +29,37 @@ Agent ──(submit proposal)──▶ Platform ──(review task)──▶ Use
 Agent ◀───────(read decision)───── Platform ◀──(approve/reject)─┘
 ```
 
+### R-004 Modeling Batch execution target
+
+R-004 uses one Ontology-scoped submission protocol for `dry_run`, `apply_atomic`, and
+`apply_partial`. The API and MCP adapters call the same application service:
+
+```text
+REST / MCP
+    │
+    ▼
+Modeling Batch Service
+    ├── Session + Lease + workspace-version guards
+    ├── Modeling Command Handler registry
+    ├── item_ref resolution + SCC dependency groups
+    ├── deterministic Findings + partial fixed-point validation
+    └── persisted operation plan + Ontology Write Fence
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+      Canonical RDF writer   Rule / Evidence / Audit
+         RDF Dataset              PostgreSQL
+              └──────────┬──────────┘
+                         ▼
+             terminal Attempt or recovery
+```
+
+The platform does not claim an atomic transaction across RDF and PostgreSQL. It persists a
+deterministic plan before side effects, prevents concurrent writes with an Ontology Write Fence,
+and converges uncertain outcomes forward under the original Attempt. Reasoning, rule execution,
+search/vector projection, and other derived rebuilds are marked stale and remain outside the
+synchronous R-004 request.
+
 **Information consumption (query data):**
 
 ```

@@ -104,6 +104,26 @@ A structured deterministic result that identifies a modeling error, warning, or 
 observation at Batch, Atomic Dependency Group, or Modeling Item scope.
 _Avoid_: exception text, Agent opinion, unstructured validation message
 
+**Modeling Command Handler**:
+A registered adapter that validates and normalizes one Modeling Item command and produces its
+deterministic write effects and operation plan without controlling Batch transactions or mode.
+_Avoid_: endpoint-specific compiler, Agent tool implementation, unrestricted command executor
+
+**Ontology Write Fence**:
+A durable guard owned by an applying or recovering Batch Attempt that prevents another write from
+crossing an expired or rotating Ontology Lease until the original Attempt reaches a safe terminal state.
+_Avoid_: Project lock, user permission, permanent graph lock
+
+**Rule**:
+An Ontology-scoped logical resource with a stable identity, lifecycle status, and one current Rule
+Definition Version.
+_Avoid_: rule execution, mutable rule body, Rule Result
+
+**Rule Definition Version**:
+An immutable version of a Rule's executable definition, inputs, outputs, safety policy, and metadata.
+Updating a Rule creates a new version and preserves the superseded version.
+_Avoid_: logical Rule, Rule Run, in-place rule edit
+
 **Actual Graph**:
 The named graph that semantic edits affect when graph editing is enabled.
 _Avoid_: draft graph, published graph

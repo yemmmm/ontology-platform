@@ -441,6 +441,13 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 
 当前状态：`部分实现`
 
+最后更新：2026-07-15
+
+详细设计：`docs/superpowers/specs/2026-07-15-r004-modeling-batch-design.md`；独立验证使用
+`docs/superpowers/plans/2026-07-15-r004-modeling-batch-test-plan.md`。跨 RDF/PostgreSQL 的不确定
+写入采用事前持久化计划、Ontology Write Fence 和向前恢复，决策见
+`docs/adr/0005-forward-recovery-for-modeling-batches.md`。
+
 在现有直接 RDF 编辑和 canonical command 之上，增加适合外部建模 Agent 的
 批量预检与应用协议。`Modeling Batch（建模批次）` 是一次只针对一个 Ontology 的
 提交单元；`Modeling Item（建模项）` 是其中具有稳定客户端标识的最小建模变更。
@@ -489,9 +496,12 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   `recovering`、`applied`、`partially_applied` 和 `failed`。`failed` 只表示无法恢复的执行故障，
   普通建模校验失败必须使用 `validation_failed`。
 - Batch 在只有 dry-run 或校验失败时保持 `open`；存在正在执行或恢复的 apply Attempt 时
-  聚合为 `applying` 或 `recovering`；成功后终止为 `applied` 或 `partially_applied`。
-- 同一 Batch 同一时刻最多只能有一个非终态 apply Attempt。Batch 终止后，任何新幂等键的
-  重复 apply 也只返回已有应用结果，不再写入；`partially_applied` 中失败或被阻断的内容
+  聚合为 `applying` 或 `recovering`；成功后终止为 `applied` 或 `partially_applied`。只有当平台
+  能证明原 apply 无法安全恢复时才终止为 `failed`；该 Batch 不得再次普通 apply，修正或人工
+  处置后的内容必须使用新 Batch。
+- 同一 Batch 同一时刻最多只能有一个非终态 apply Attempt。Batch 进入 `applied` 或
+  `partially_applied` 后，任何新幂等键的重复 apply 也只返回已有应用结果，不再写入；Batch
+  进入 `failed` 后新 apply 返回稳定冲突。部分成功中的失败或被阻断内容以及 failed Batch
   需要修正时，必须提交新 Modeling Batch。
 - 存在 `validating`、`applying` 或 `recovering` Attempt 时，同一 Batch 不得启动另一个 apply，
   所属 Build Session 也不得完成。相同幂等请求必须返回或推动原 Attempt 收敛。
@@ -525,6 +535,9 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   安全重试未发生的写入或补齐已发生写入的剩余记录。
 - Agent 使用相同 idempotency key 重试时，必须返回或推动原 Attempt 恢复，不创建
   新 Attempt，也不通过重新编译而生成不同资源标识、delta 或证据计划。
+- Attempt 必须使用数据库中的短期执行 claim 串行化 apply 与恢复执行。进程崩溃或 claim 超时后，
+  相同幂等请求可以在锁定原 Attempt 后接管并进入恢复；未超时 claim、并发重试或普通读请求
+  不得并行重放副作用。执行 claim 超时不释放 Ontology 写入栅栏。
 - 恢复过程不得通过无条件删除图内容猜测回滚。收敛完成后 Attempt 进入 `applied` 或
   `partially_applied`；只有当平台能证明无法恢复时才进入 `failed`，并保留稳定错误码、
   已观察状态和需要的人工处置提示。
@@ -605,8 +618,9 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   `item_ref` 引用同批次其他建立项的输出。不使用 `@item:...` 等嵌入普通字符串的
   隐式引用语法。
 - 平台在编译前为建立项预分配资源标识。未显式给出受允许资源标识时，标识必须
-  由 Ontology、`client_batch_id`、`client_item_id` 和 `command_kind` 确定性生成，使同一
-  建模内容的 dry-run、apply 和网络重试得到同一资源标识和规范化 delta。
+  由平台 `batch_id`、Ontology、`client_item_id` 和 `command_kind` 确定性生成，使同一
+  Modeling Batch 的 dry-run、apply 和网络重试得到同一资源标识和规范化 delta，同时避免
+  不同 Session 复用 `client_batch_id` 时生成相同的全局资源标识。
 - Modeling Item 还可通过 `depends_on` 声明“当前项只能在指定项成功时应用”。
   `depends_on` 表达成功依赖，不表达严格的逐项执行顺序；平台还要从 `item_ref`
   和命令资源引用中推导隐式成功依赖。
@@ -707,6 +721,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
 - 同一不可变 Modeling Batch 可保留多次 dry-run 和 apply Attempt 的完整历史；成功应用后
   任何重试都不会重复写入，内容修正使用新 Batch 而不改写已有审计。
+- 不可恢复的执行故障将 Attempt 与 Batch 收敛为 `failed`，不会把可能已有副作用的 Batch
+  重新开放给普通 apply；`applying` 进程崩溃后可由相同幂等请求通过执行 claim 串行接管。
 - 客户端 Batch、Attempt 和 Item 标识分别只要求在 Build Session、Build Session 和 Batch
   范围内唯一；平台 Batch、Attempt 与最终语义资源标识全局唯一，所有响应可双向关联。
 - RDF 或 PostgreSQL 写入中断后，相同 Attempt 可根据事前持久化的 delta 和来源状态
