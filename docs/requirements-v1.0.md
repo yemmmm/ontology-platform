@@ -493,6 +493,21 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 存在 `validating`、`applying` 或 `recovering` Attempt 时，同一 Batch 不得启动另一个 apply，
   所属 Build Session 也不得完成。相同幂等请求必须返回或推动原 Attempt 收敛。
 
+#### 跨存储写入与恢复
+
+- apply 在开始任何语义或证据副作用前，必须先持久化 Attempt 的规范化请求哈希、
+  目标 Graph Set 和图修订、来源签名、delta 及其哈希、最终成功项或组以及预期证据变更。
+- RDF 与 PostgreSQL 写入结果无法立即确定时，Attempt 进入 `recovering` 而不是直接
+  `failed`。平台根据已持久化的写入计划与实际图、审计、证据、修订和来源签名对比，
+  安全重试未发生的写入或补齐已发生写入的剩余记录。
+- Agent 使用相同 idempotency key 重试时，必须返回或推动原 Attempt 恢复，不创建
+  新 Attempt，也不通过重新编译而生成不同资源标识、delta 或证据计划。
+- 恢复过程不得通过无条件删除图内容猜测回滚。收敛完成后 Attempt 进入 `applied` 或
+  `partially_applied`；只有当平台能证明无法恢复时才进入 `failed`，并保留稳定错误码、
+  已观察状态和需要的人工处置提示。
+- Build Context 和 Batch 读接口必须显示 `recovering` Attempt、最近恢复结果与是否可安全重试，
+  不能让 Agent 通过 Checkpoint 把不确定写入标记为已完成。
+
 #### 命令承载范围
 
 - R-004 建立可扩展的 Modeling Command Handler 注册机制。现有 canonical compiler 作为
@@ -595,6 +610,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
 - 同一不可变 Modeling Batch 可保留多次 dry-run 和 apply Attempt 的完整历史；成功应用后
   任何重试都不会重复写入，内容修正使用新 Batch 而不改写已有审计。
+- RDF 或 PostgreSQL 写入中断后，相同 Attempt 可根据事前持久化的 delta 和来源状态
+  收敛到确定终态，不重复写入、不新建 Attempt，也不伪装成普通校验失败。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
   和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
 - 每个 Modeling Item 只承载一个严格类型命令，并可以结构化引用已有资源或同批次
