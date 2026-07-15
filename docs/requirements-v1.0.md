@@ -534,6 +534,38 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - `apply_atomic` 仍以整个 Modeling Batch 为唯一原子单元；原子依赖组只用于诊断和
   逐项状态归因，不改变“任一项失败则整批不写入”的语义。
 
+#### 校验层级与 Validation Finding
+
+- 无法进入批次处理的请求级问题使用 HTTP 错误表达，包括认证或授权失败、
+  Session/Ontology 不可用、Lease 无效、workspace version 或幂等冲突以及顶层请求
+  schema 错误。这类问题不得伪装成某个 Modeling Item 失败。
+- 顶层请求合法后，命令 payload、资源引用、证据、领域约束和候选图校验问题必须
+  通过正常 Modeling Batch 响应一次性返回，不能在第一个错误处中止而强迫 Agent
+  反复提交才发现其他问题。
+- 每个确定性校验结果统一表达为 `Validation Finding`，至少包含稳定 `code`、
+  `severity`、`scope`、受影响的 `client_item_ids`、请求字段 `path`、可读 `message`、
+  结构化 `details`、`blocking` 和 `retryable`。`scope` 只使用 `batch`、`group`
+  或 `item`，Agent 不需要解析服务器异常文本。
+- `severity=error` 是阻断问题，`severity=warning` 允许应用但必须进入响应和审计，
+  `severity=info` 只提供规范化或诊断信息。首版中 `blocking` 必须与 severity 固定映射，
+  不允许 handler 返回非阻断 error 或阻断 warning。
+- 没有证据或建模理由可以返回 warning/info 并保留对应无证据状态；证据格式错误、
+  引用不存在或跨 Project 则是 error。R-004 不提供通用 `force`、`validate=false` 或
+  `ignore_warnings` 参数绕过确定性校验；未来需要风险确认时必须使用具体政策的
+  专用 acknowledgement。
+- 单项都可编译但合并候选状态冲突、违反 SHACL 或其他跨项约束时，Finding
+  必须尽可能归因到具体 Item 或原子依赖组。无法安全归因的阻断 Finding 必须使用
+  `scope=batch`，两种 apply 模式都不得在无法确定安全子集时猜测应用。
+
+#### `apply_partial` 候选子集收敛
+
+- 平台必须先编译和校验完整候选状态，移除包含阻断 Finding 的原子依赖组后，
+  重新构造剩余候选状态并重跑跨项与 SHACL 校验。
+- 如果移除失败组后产生新的阻断问题，平台继续移除新失败组并重跑校验，直到
+  成功子集稳定或不再存在可应用项。每轮移除顺序和最终子集必须确定性可重放。
+- 只有最终稳定子集才能一次性应用，其 Evidence Reference、Evidence Association、审计、
+  图修订和过期状态与实际成功项保持一致。
+
 验收标准：
 
 - 一次批次可包含 schema、entity、relation、fact、mapping 和 rule 变更；Operation 在
@@ -546,6 +578,10 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   建立项；循环引用可以通过预分配标识和候选状态整体校验安全处理。
 - `apply_partial` 将循环成功依赖折叠为原子依赖组，不会因为存在环而直接拒绝，也不会
   部分写入一个未完整的循环组。
+- 请求级错误、逐项或组错误、批次级候选状态错误使用稳定且可区分的协议；
+  警告不阻断应用，Agent 无法通过通用开关跳过确定性校验。
+- `apply_partial` 的最终成功子集在实际写入前再次通过全部跨项与 SHACL 校验，
+  无法归因的批次级阻断问题不会产生猜测性部分写入。
 - apply 使用 idempotency key；网络重试不得重复写入。
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
 - 每项可关联 Evidence Reference、建模理由或能力问题。

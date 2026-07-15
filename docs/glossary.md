@@ -87,6 +87,11 @@ which must therefore be applied or withheld together during partial application.
 does not imply invalid domain semantics.
 _Avoid_: invalid cycle, sequential execution order, partial cyclic write
 
+**Validation Finding**:
+A structured deterministic result that identifies a modeling error, warning, or informational
+observation at Batch, Atomic Dependency Group, or Modeling Item scope.
+_Avoid_: exception text, Agent opinion, unstructured validation message
+
 **Actual Graph**:
 The named graph that semantic edits affect when graph editing is enabled.
 _Avoid_: draft graph, published graph
