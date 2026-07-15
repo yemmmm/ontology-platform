@@ -453,10 +453,40 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   代替用户 approve、reject、解决冲突或发布版本。R-004 的默认建模闭环不以该人工
   评审流程为前置条件。
 
+#### 统一批次提交与执行模式
+
+- REST 只提供一个“提交 Modeling Batch”能力，MCP 只提供一个对应工具；请求使用
+  `mode` 选择 `dry_run`、`apply_atomic` 或 `apply_partial`，不为三种模式维护
+  三套接口。
+- `dry_run` 执行完整命令编译、证据预解析和确定性校验，返回规范化 delta、
+  逐项结果与当前 `workspace_version`；它不要求 Ontology Lease，也不写入语义数据、
+  Evidence Reference 或 Evidence Association。
+- `apply_atomic` 是默认应用模式。任一 Modeling Item 校验失败时整批不写入；
+  错误项返回 `failed`，其他未应用项返回 `not_applied`。
+- `apply_partial` 只在调用方显式选择时启用。平台先预检全部项，再一次性写入与
+  失败项无依赖的成功子集；校验失败项返回 `failed`，依赖失败项的项返回
+  `blocked`，独立成功项返回 `applied`。
+- 未单独调用 `dry_run` 不代表跳过预检；两种 apply 模式都必须在正式写入前重新
+  执行同等强度的全部校验。
+- 三种模式使用同一请求与响应结构。幂等键绑定包含 `mode` 的规范化请求；
+  相同键与相同请求返回原结果，相同键与不同内容返回 `idempotency_conflict`。
+  从 `dry_run` 切换到 apply 必须使用新的幂等键。
+
+#### 命令承载范围
+
+- R-004 建立可扩展的 Modeling Command Handler 注册机制。现有 canonical compiler 作为
+  RDF delta 类命令的 handler；批次协议不假设每种建模命令都只修改 RDF。
+- R-004 首版接入已定义的 schema、entity、relation、fact、mapping 命令，并为已存在的
+  Rule 定义提供建立、更新和删除 handler。
+- R-007 先定义 Operation 的领域模型、存储和查询契约，再将 Operation handler 注册到
+  同一批次协议；接入时不得新增一套 Operation 专用批次接口。
+
 验收标准：
 
-- 一次批次可包含 schema、entity、relation、fact、mapping、rule 和 operation 变更。
-- 支持 dry-run，返回规范化 delta、SHACL/平台校验结果和逐项错误。
+- 一次批次可包含 schema、entity、relation、fact、mapping 和 rule 变更；Operation 在
+  R-007 定义后通过相同 handler 机制接入。
+- 单一 REST/MCP 提交能力支持 `dry_run`、`apply_atomic` 和 `apply_partial`，返回
+  规范化 delta、SHACL/平台校验结果和逐项错误或状态。
 - apply 使用 idempotency key；网络重试不得重复写入。
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
 - 每项可关联 Evidence Reference、建模理由或能力问题。
