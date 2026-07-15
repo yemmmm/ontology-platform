@@ -348,8 +348,10 @@ Build Session 首版只使用三个持久状态：
 已完成或已取消的 Session 不可重新打开，需要继续工作时创建新的 Session，并可记录前序
 Session ID。
 
-完成 Session 前不得存在仍在执行的建模批次。完成不要求所有 Ontology 都达到发布就绪，因为
-一次 Session 可以只是局部更新；完成摘要必须说明本次实际完成的范围和未解决事项。
+完成或取消 Session 前不得存在仍在 `applying` 或 `recovering` 的建模批次；此时终态请求返回
+`in_flight_batch` 冲突，并保留 Session 与 Lease 供原 Attempt 收敛。完成不要求所有 Ontology
+都达到发布就绪，因为一次 Session 可以只是局部更新；完成摘要必须说明本次实际完成的范围和
+未解决事项。
 
 #### 检查点、恢复与乐观并发
 
@@ -428,11 +430,12 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 外部 Agent 只需使用 Project、Build Session 和 Ontology 标识完成普通构建流程，不需要填写
   Graph Set ID 或 graph IRI；平台内部审计仍可追溯到实际 Graph Set、图修订和来源签名。
 - 同一 Ontology 的并发写入受租约保护；不同 Ontology 可并行。租约到期后旧 token 无法写入，
-  乐观 revision 冲突不会覆盖较新的 Checkpoint 或终态。
+  已进入 apply 的 Attempt 由写入栅栏保护到终态；乐观 revision 冲突不会覆盖较新的 Checkpoint
+  或终态。
 - Agent 可以在 R-004 建模批次中创建或复用项目级 Evidence Reference；平台不负责恢复 Agent
   外部文档的读取位置，也不创建 Session 级伪证据关系。
 - 创建重试、Checkpoint 重试、租约重试、断线恢复、过期租约、旧 token、revision 冲突、失败
-  批次后继续、完成释放租约和取消释放租约均有服务级测试。
+  批次后继续、执行中批次阻止 Session 完成或取消、完成释放租约和取消释放租约均有服务级测试。
 
 ### R-004 外部 Agent 建模批次的预检、幂等应用与失败恢复
 
@@ -511,6 +514,12 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 
 - apply 在开始任何语义或证据副作用前，必须先持久化 Attempt 的规范化请求哈希、
   目标 Graph Set 和图修订、来源签名、delta 及其哈希、最终成功项或组以及预期证据变更。
+- Attempt 从 `validating` 进入 `applying` 时必须建立 Ontology 写入栅栏并记录已校验的 Lease
+  revision。此后即使 Lease 自然到期，其他 Session 也不能在该 Attempt 终态前获取可应用的新
+  写权限；原 Lease token 不能用于启动新 Attempt，但已开始的 Attempt 可以完成或进入恢复。
+- `applying` 或 `recovering` 写入栅栏存在时，不允许释放或轮换对应 Lease，也不允许完成或取消
+  所属 Build Session。Attempt 收敛到终态后平台释放栅栏；无法自动收敛时必须通过受控恢复或
+  管理处置解除，不能仅等待 Lease TTL 后让并发写入穿透。
 - RDF 与 PostgreSQL 写入结果无法立即确定时，Attempt 进入 `recovering` 而不是直接
   `failed`。平台根据已持久化的写入计划与实际图、审计、证据、修订和来源签名对比，
   安全重试未发生的写入或补齐已发生写入的剩余记录。
@@ -605,6 +614,17 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   资源之间的循环引用、自引用或领域关系成环不自动构成批次错误；是否违反继承、
   状态流转或其他语义规则，由对应命令和领域校验器判定。
 
+#### 同一语义目标的合并与冲突
+
+- 每个 Modeling Command Handler 必须声明规范化写入集合，使平台可以在正式写入前识别多个
+  Item 是否修改同一资源、属性、关系、事实槽位或受控记录。合并和冲突判断不依赖 Items 的数组顺序。
+- 修改同一资源的不同且兼容槽位可以合并；完全相同的规范化写入效果只执行一次，并为相关 Item
+  返回 `duplicate_effect` warning，但仍分别保留其 Item 状态、理由、证据与审计关联。
+- 对同一单值槽位写入不同值、同时更新与删除同一资源、或产生其他不可同时成立的效果时，相关
+  Item 返回阻断 `conflicting_item_effects` Finding。R-004 不提供 last-write-wins 或数组末项覆盖规则。
+- `apply_atomic` 中任何效果冲突都阻止整批写入；`apply_partial` 中冲突项及其原子依赖组失败或
+  blocked，平台对剩余候选子集重新收敛校验后才允许写入。
+
 #### Evidence、建模理由与能力问题
 
 - 每个 Modeling Item 可以分别提供已有 `evidence_reference_ids`、内联 `evidence`、Agent
@@ -668,6 +688,17 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 只有最终稳定子集才能一次性应用，其 Evidence Reference、Evidence Association、审计、
   图修订和过期状态与实际成功项保持一致。
 
+#### 派生状态与不可变审计
+
+- 成功 apply 必须更新实际图修订和 Graph Set 来源签名，并把受影响的推理结果、Rule Result、
+  Search/Vector 投影和其他派生指针标记为 stale；R-004 不在写入请求中同步执行推理、规则或投影重建。
+- 推理、规则和投影重建继续使用各自受控执行能力，并在 R-106 接入通用异步任务框架。重建完成前，
+  Modeling Context 和查询响应必须暴露 stale 警告，不能把旧派生结果伪装成当前结果。
+- 终态 Batch、Attempt、Item 结果、Finding、规范化 delta、证据关联和恢复诊断均为不可变审计事实。
+  R-004 不提供 Agent 删除或改写历史记录的接口；修正建模内容通过新 Batch 完成。
+- actor 在 R-008 完成后必须来自认证主体，不能信任请求 payload 中自报身份。Lease token、凭证、
+  密钥和其他秘密不得进入 Batch 内容哈希、delta、Finding、审计或 Build/Modeling Context。
+
 验收标准：
 
 - 一次批次可包含 schema、entity、relation、fact、mapping 和 rule 变更；Operation 在
@@ -680,6 +711,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   范围内唯一；平台 Batch、Attempt 与最终语义资源标识全局唯一，所有响应可双向关联。
 - RDF 或 PostgreSQL 写入中断后，相同 Attempt 可根据事前持久化的 delta 和来源状态
   收敛到确定终态，不重复写入、不新建 Attempt，也不伪装成普通校验失败。
+- apply 开始后的 Ontology 写入栅栏覆盖 Lease 到期窗口，直到 Attempt 收敛才允许其他 Session
+  获得新写权限；并发写入不能利用 TTL 穿透正在执行或恢复的批次。
 - 首版在明确容量上限内同步返回批次结果；超限输入在写入前确定性拒绝，恢复中的 Attempt 可通过
   同一幂等请求或读接口继续观察，且不依赖 R-106 的通用异步任务框架。
 - Agent 可先读取 Project Build Context，再读取目标 Ontology 的 Modeling Context 和按需语义
@@ -690,6 +723,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   建立项；循环引用可以通过预分配标识和候选状态整体校验安全处理。
 - `apply_partial` 将循环成功依赖折叠为原子依赖组，不会因为存在环而直接拒绝，也不会
   部分写入一个未完整的循环组。
+- 多个 Item 的兼容写入可确定性合并，重复效果只写一次，矛盾效果不会按数组顺序覆盖；partial
+  模式只在移除冲突组并重新校验成功后应用剩余内容。
 - 请求级错误、逐项或组错误、批次级候选状态错误使用稳定且可区分的协议；
   警告不阻断应用，Agent 无法通过通用开关跳过确定性校验。
 - `apply_partial` 的最终成功子集在实际写入前再次通过全部跨项与 SHACL 校验，
@@ -698,7 +733,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
 - 每项可独立关联 Evidence Reference、Agent 建模理由或能力问题；三者不相互替代，失败或
   未应用项不会遗留内联 Evidence，且不存在 Batch 级证据自动继承。
-- 成功后更新图修订、来源签名、过期状态、编辑审计和 Build Session 进度。
+- 成功后更新图修订、来源签名、过期状态、不可变编辑审计和 Build Session 进度；推理、规则与
+  投影只标记 stale，不在 R-004 apply 中同步重跑。
 
 ### R-005 统一知识来源与推导链
 
