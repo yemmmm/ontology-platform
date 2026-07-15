@@ -481,12 +481,32 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - R-007 先定义 Operation 的领域模型、存储和查询契约，再将 Operation handler 注册到
   同一批次协议；接入时不得新增一套 Operation 专用批次接口。
 
+#### Ontology 作用域与目标图解析
+
+- 普通 R-004 批次只在顶层指定一个 `ontology_id`。调用方不得传入或覆盖
+  `graph_set_id`、`target_graph_iri` 或 `shape_graph_iris`，Modeling Item payload 也不再
+  重复接受 `ontology_id`。
+- 平台必须根据 `ontology_id` 解析该 Ontology 的默认活动 Graph Set，再根据
+  `command_kind` 将 Class、Property、RelationType 和 Mapping 定位到
+  `asserted_ontology`，将 Entity、Relation 和 Fact 定位到 `asserted_data`，将
+  Shape/Constraint 定位到 `shapes`。Rule Definition 按其 handler 的受控存储契约处理，
+  不由 Agent 为它指定 asserted RDF 目标图。
+- 命令编译和应用前必须验证默认 Graph Set 完整且归属目标 Ontology，解析出的
+  Named Graph 由平台管理、允许直接编辑且未锁定。任一检查失败都不得改写到
+  其他图作为降级路径。
+- 响应和审计必须返回平台内部解析的 Graph Set、目标图角色、图 IRI、应用前后修订
+  与来源签名；这些是只读的诊断和追溯信息，不是请求输入。
+- 显式图选择仍可以存在于高级直接 RDF 编辑、Graph Set 管理或管理员 Debug 能力中，
+  但不属于 R-004 的普通 Agent 批次协议。
+
 验收标准：
 
 - 一次批次可包含 schema、entity、relation、fact、mapping 和 rule 变更；Operation 在
   R-007 定义后通过相同 handler 机制接入。
 - 单一 REST/MCP 提交能力支持 `dry_run`、`apply_atomic` 和 `apply_partial`，返回
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
+- Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
+  和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
 - apply 使用 idempotency key；网络重试不得重复写入。
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
 - 每项可关联 Evidence Reference、建模理由或能力问题。
