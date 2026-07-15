@@ -571,6 +571,24 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   资源之间的循环引用、自引用或领域关系成环不自动构成批次错误；是否违反继承、
   状态流转或其他语义规则，由对应命令和领域校验器判定。
 
+#### Evidence、建模理由与能力问题
+
+- 每个 Modeling Item 可以分别提供已有 `evidence_reference_ids`、内联 `evidence`、Agent
+  `rationale` 和 `competency_question_ids`。三者都关联具体 Item，不提供 Batch 级默认值，
+  也不自动从其他 Item 继承。
+- Evidence 是外部资料中的文档名和原文片段，继续完整遵守 R-002 的规范化、Project 归属、
+  幂等复用和 Evidence Association 规则。`rationale` 是 Agent 的建模解释，不是原文证据，
+  不得被平台伪装为 Evidence Reference。
+- 能力问题表示一个 Item 服务于哪些业务问题。平台必须验证引用存在、属于当前 Project，且
+  没有与目标 Ontology 的显式适用范围冲突；它不替代命令本身的语义校验。
+- Evidence、理由和能力问题均可为空。没有 Evidence 时保留无证据状态并返回 warning，允许
+  应用；证据格式错误、不存在或跨 Project 时返回阻断 error。
+- `dry_run` 只返回将复用或待创建的 Evidence 候选。apply 只为最终 `applied` Item 创建或关联
+  Evidence Reference；`failed`、`blocked` 和 `not_applied` Item 的内联 Evidence 不得单独落库。
+- 同一 Evidence Reference 支持多个 Modeling Item 时，每个 Item 分别建立 Evidence Association，
+  不创建 Batch 级证据关系。查询、审计和 lineage 必须能区分 Evidence、Agent rationale 与
+  competency question 三种来源上下文。
+
 #### 原子依赖组与部分应用
 
 - 平台将通过显式或隐式成功依赖互相成环的 Modeling Item 识别为一个
@@ -640,7 +658,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   无法归因的批次级阻断问题不会产生猜测性部分写入。
 - apply 使用 idempotency key；网络重试不得重复写入。
 - 批次默认原子应用；需要部分应用时必须显式声明并返回逐项状态。
-- 每项可关联 Evidence Reference、建模理由或能力问题。
+- 每项可独立关联 Evidence Reference、Agent 建模理由或能力问题；三者不相互替代，失败或
+  未应用项不会遗留内联 Evidence，且不存在 Batch 级证据自动继承。
 - 成功后更新图修订、来源签名、过期状态、编辑审计和 Build Session 进度。
 
 ### R-005 统一知识来源与推导链
