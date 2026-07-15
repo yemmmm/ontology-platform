@@ -493,6 +493,20 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - 存在 `validating`、`applying` 或 `recovering` Attempt 时，同一 Batch 不得启动另一个 apply，
   所属 Build Session 也不得完成。相同幂等请求必须返回或推动原 Attempt 收敛。
 
+#### 客户端标识与平台标识
+
+- `client_batch_id` 由 Agent 生成，在一个 Build Session 内唯一，用于标识一份不可变
+  Modeling Batch 内容；不同 Session 可以安全复用相同值，不要求 Agent 维护全局编号。
+- idempotency key 由 Agent 为每次提交生成，在一个 Build Session 内唯一，用于幂等定位
+  一次 Batch Attempt；dry-run 切换到 apply 或主动发起新的校验尝试时使用新键。
+- `client_item_id` 由 Agent 生成，只需在所属 Modeling Batch 内唯一，用于逐项结果、Finding、
+  `item_ref`、成功依赖、证据和审计关联。
+- `batch_id` 与 `attempt_id` 由平台生成且全局唯一，分别标识持久化 Batch 和 Attempt；它们是
+  平台资源标识，不代替客户端幂等键。Class、Entity、Relation 等最终语义资源使用平台分配的
+  全局稳定资源 ID 和 IRI。
+- REST/MCP 响应必须同时回显相关客户端标识和平台标识，使 Agent 可以使用自己的上下文定位
+  结果，也可以在恢复、审计和查询时使用平台资源 ID。
+
 #### 跨存储写入与恢复
 
 - apply 在开始任何语义或证据副作用前，必须先持久化 Attempt 的规范化请求哈希、
@@ -610,6 +624,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   规范化 delta、SHACL/平台校验结果和逐项错误或状态。
 - 同一不可变 Modeling Batch 可保留多次 dry-run 和 apply Attempt 的完整历史；成功应用后
   任何重试都不会重复写入，内容修正使用新 Batch 而不改写已有审计。
+- 客户端 Batch、Attempt 和 Item 标识分别只要求在 Build Session、Build Session 和 Batch
+  范围内唯一；平台 Batch、Attempt 与最终语义资源标识全局唯一，所有响应可双向关联。
 - RDF 或 PostgreSQL 写入中断后，相同 Attempt 可根据事前持久化的 delta 和来源状态
   收敛到确定终态，不重复写入、不新建 Attempt，也不伪装成普通校验失败。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
