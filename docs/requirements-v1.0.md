@@ -535,6 +535,27 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
 - R-004 不建设通用持久任务队列、调度器或 Worker 框架。投影、推理和规则等通用异步执行能力
   仍由 R-106 负责；后续若将大批次迁移到异步执行，必须复用相同 Batch、Attempt、幂等和状态语义。
 
+#### 查询、恢复与后续建模基础
+
+- R-004 首版提供单一 Batch 提交能力、按 `batch_id` 读取完整 Batch/Item/Attempt、按 Build Session
+  分页列出 Batch，以及按 Ontology 跨 Session 分页列出 Batch。Ontology 查询必须支持状态和时间
+  过滤，使后续 Agent 能读取其他 Session 的成功、失败与 recovering 历史。
+- Project `Build Context` 返回全部 Ontology 的当前工作区摘要、未解决问题以及最近 Batch 和 Session
+  摘要；它用于选择工作目标和恢复过程，不返回整个大型语义模型。
+- 新增 Ontology 级 `Modeling Context` 读能力，至少返回当前 `workspace_version`、默认工作区状态、
+  资源类型计数和分页或语义查询入口、最近已应用 Batch 与 delta 摘要、当前校验/锁定/过期状态。
+  REST 与 MCP 使用同一服务和响应语义。
+- Agent 开始或继续建模时，必须以 Modeling Context 和当前固定语义读模型为权威基础；历史 Batch
+  用于解释“为什么变成现在这样”，Build Checkpoint 只表达旧 Agent 报告的进度，二者都不能通过
+  回放或摘要替代当前语义状态。
+- Agent 从 Modeling Context 获取 `workspace_version` 并在 apply 中作为预期版本提交。其他 Session
+  在此后改写工作区时，apply 返回版本冲突；Agent 必须刷新 Modeling Context 并基于新状态调整，
+  不得仅依赖旧 Batch 或 Checkpoint 覆盖当前内容。
+- 首版复用现有 Classes、Entities、Facts、History、Delta、Rules 等固定读模型提供详细分页读取；
+  R-006 后续可以为同一当前状态补充结构化自然语言语义查询，但不得建立另一套建模基础事实。
+- 前端只把 Batch、Attempt、Finding 和 Modeling Context 摘要接入现有只读 Debug 诊断页；R-004
+  不新增人工创建或修改批次的业务页面，面向用户的完整构建工作台仍属于 R-107。
+
 #### 命令承载范围
 
 - R-004 建立可扩展的 Modeling Command Handler 注册机制。现有 canonical compiler 作为
@@ -661,6 +682,8 @@ Checkpoint 或终态操作。创建、恢复、Checkpoint、租约和终态操�
   收敛到确定终态，不重复写入、不新建 Attempt，也不伪装成普通校验失败。
 - 首版在明确容量上限内同步返回批次结果；超限输入在写入前确定性拒绝，恢复中的 Attempt 可通过
   同一幂等请求或读接口继续观察，且不依赖 R-106 的通用异步任务框架。
+- Agent 可先读取 Project Build Context，再读取目标 Ontology 的 Modeling Context 和按需语义
+  详情，以当前 `workspace_version` 为后续建模基础；Batch 可按 Session 或 Ontology 跨 Session 查询。
 - Agent 只提供 Ontology 标识即可混合提交多种建模命令；平台确定性解析默认 Graph Set
   和目标图，请求不接受 Graph Set ID 或 graph IRI 覆盖。
 - 每个 Modeling Item 只承载一个严格类型命令，并可以结构化引用已有资源或同批次

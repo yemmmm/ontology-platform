@@ -49,6 +49,12 @@ accepted modeling batches, failures, and recent activity. It is not an Agent con
 single Ontology's graph view.
 _Avoid_: Graph Set context, chat history, Agent local workspace
 
+**Modeling Context**:
+An Ontology-scoped, server-derived view of the current authoritative semantic baseline, its
+workspace version, validation state, and detailed query entry points. Batch history explains how
+the baseline changed but does not replace it.
+_Avoid_: previous Session state, Checkpoint summary, replayed batch history
+
 **Build Session**:
 A project-owned durable record of one externally coordinated continuous work process. One session
 may be resumed by a different authorized Agent instance and may inspect or update multiple
