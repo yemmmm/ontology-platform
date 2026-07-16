@@ -214,3 +214,30 @@ SPARQL Update are not exposed to the Agent.
 - cross-system proxy query: platform routes Agent queries to external data sources
 - graph inference, rule engines, or reasoning services
 - multi-agent orchestration or agent lifecycle management
+
+## R-006 Semantic Query Boundary
+
+Agent-facing semantic reads use Project and one-or-more Ontology IDs, never Graph Set IDs or graph
+IRIs. `SemanticQueryScopeResolver` resolves each ready Ontology's default workspace, current source
+and shape graphs, and current reasoning/rule pointers. Project-wide resolution may exclude an
+incomplete workspace with a partial-scope warning; an explicit Ontology list is all-or-nothing.
+
+`SemanticContextQueryService` owns one bounded pipeline: normalize lexical terms, run an RDF-level
+filtered candidate query, add current PostgreSQL Rule definitions, rank deterministically, expand a
+bounded relation neighborhood, project current SHACL constraints, and reduce R-005 lineage to status
+and Evidence Reference IDs. REST and MCP are adapters over this service. The pipeline has no intent
+router, LLM, translation, answer planner, persistent search index, or Evidence full-text corpus.
+Predicate labels may be read from another persisted graph of the same Ontology; internal graph-pair
+bindings prevent an equal IRI or label in another Ontology from being joined to the wrong fact.
+
+`ScopedSparqlQueryService` validates read-only query forms with RDFLib and rejects caller dataset or
+federation clauses. It then scans only validated syntax boundaries, injects server-owned `FROM` and
+`FROM NAMED` clauses at the query-form-specific top-level dataset position, and parses the scoped
+query again before execution. The original query never executes when the insertion point is
+ambiguous. This fail-closed path is required because Oxigraph 0.5.9 collapses repeated SPARQL
+Protocol dataset parameters. Scope therefore remains effective for default patterns, `GRAPH ?g`,
+and explicit graph clauses across one or multiple Ontologies. The same top-level scanner clamps the
+executed solution LIMIT before a second parse; a type-aware response limiter then caps SELECT
+bindings and CONSTRUCT/DESCRIBE triples, so caller LIMIT clauses cannot weaken either resource or
+response bounds. The dataset intentionally excludes non-member custom and virtual generated SHACL
+views; Context Query projects their merged guidance through the Shape Endpoint.

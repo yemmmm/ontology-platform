@@ -11,6 +11,7 @@ from app.mcp.runtime import _run_tool
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService
+from app.services.semantic_context_query import SemanticContextQueryService
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
@@ -31,6 +32,8 @@ from app.services.semantic_read_scope import (
     ReadScopeError,
     SemanticReadScopeResolver,
 )
+from app.services.semantic_query_scope import SemanticQueryScopeResolver
+from app.services.scoped_sparql_query import ScopedSparqlQueryService
 from app.services.semantic_search_projection import (
     FakeSearchWriter,
     SemanticSearchProjectionService,
@@ -54,6 +57,19 @@ def _semantic_service(session) -> SemanticService:
         rdf_store=RdfStoreRepository(settings.oxigraph_url),
         settings=settings,
     )
+
+
+def _scope_resolver(session) -> SemanticQueryScopeResolver:
+    return SemanticQueryScopeResolver(session, Settings())
+
+
+def _context_query_service(session) -> SemanticContextQueryService:
+    return SemanticContextQueryService(session, _rdf_store(), _scope_resolver(session))
+
+
+def _scoped_sparql_service(session) -> ScopedSparqlQueryService:
+    settings = Settings()
+    return ScopedSparqlQueryService(_scope_resolver(session), _rdf_store(), settings)
 
 
 def _graph_set_service(session) -> SemanticGraphSetService:
@@ -102,16 +118,47 @@ def _lineage_service(session) -> OntologyLineageService:
 def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def semantic_sparql_query(
+        project_id: str,
+        scope_mode: str,
         query: str,
+        ontology_ids: list[str] | None = None,
         timeout_seconds: float | None = None,
         result_limit: int | None = None,
     ) -> dict[str, Any]:
-        """Run read-only SPARQL against the governed semantic RDF dataset."""
+        """Run scoped read-only SPARQL against current Ontology semantic state."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: (
-                _semantic_service(session)
-                .query_sparql(query, timeout_seconds, result_limit)
-                .__dict__
+            lambda session, _driver, _embedding_client: _scoped_sparql_service(session).query(
+                project_id=project_id,
+                scope_mode=scope_mode,
+                ontology_ids=ontology_ids or [],
+                query=query,
+                timeout_seconds=timeout_seconds,
+                result_limit=result_limit,
+            )
+        )
+
+    @server.tool()
+    def query_semantic_context(
+        project_id: str,
+        scope_mode: str,
+        query: str,
+        ontology_ids: list[str] | None = None,
+        resource_types: list[str] | None = None,
+        assertion_types: list[str] | None = None,
+        depth: int = 1,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Recall structured semantic context from one Project's current Ontologies."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _context_query_service(session).query(
+                project_id=project_id,
+                scope_mode=scope_mode,
+                ontology_ids=ontology_ids or [],
+                query=query,
+                resource_types=resource_types,
+                assertion_types=assertion_types,
+                depth=depth,
+                limit=limit,
             )
         )
 

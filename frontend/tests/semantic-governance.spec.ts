@@ -274,6 +274,14 @@ async function mockApi(page: Page) {
     else if (method === "POST" && path === "/semantic/sparql:query") body = {
       result: { head: { vars: ["s"] }, results: { bindings: [] } },
       result_format: "json",
+      query_type: "select",
+      scope: {
+        project_id: project.id,
+        mode: "ontologies",
+        status: "complete",
+        ontologies: [{ ontology_id: ontology.id }],
+        excluded_ontologies: [],
+      },
       truncated: false,
       warnings: [],
     };

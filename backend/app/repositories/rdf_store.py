@@ -26,7 +26,7 @@ class RdfStoreError(RuntimeError):
 
 
 class RdfStoreUnavailable(RdfStoreError):
-    pass
+    code = "query_unavailable"
 
 
 class UnsupportedRdfFormat(RdfStoreError):
@@ -39,14 +39,17 @@ class RdfParseFailure(RdfStoreError):
 
 class SparqlSyntaxFailure(RdfStoreError):
     status_code = 400
+    code = "invalid_query"
 
 
 class SparqlQueryTimeout(RdfStoreError):
     status_code = 504
+    code = "query_timeout"
 
 
 class SparqlResultTooLarge(RdfStoreError):
     status_code = 413
+    code = "query_result_too_large"
 
 
 class SparqlUpdateRejected(RdfStoreError):

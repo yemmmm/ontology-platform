@@ -82,6 +82,13 @@ workspace version, validation state, and detailed query entry points. Batch hist
 the baseline changed but does not replace it.
 _Avoid_: previous Session state, Checkpoint summary, replayed batch history
 
+**Structured Semantic Context**:
+A question-centered, machine-readable collection of relevant semantic resources, supporting facts,
+relationships, rules, operations, constraints, lineage states, and objectively recorded
+incompleteness warnings selected from one Project. It gives an external Agent grounded material for
+answering or continuing a query, but is not a platform-generated final answer.
+_Avoid_: search result list, generated answer, Agent conversation context
+
 **Build Session**:
 A project-owned durable record of one externally coordinated continuous work process. One session
 may be resumed by a different authorized Agent instance and may inspect or update multiple
@@ -279,7 +286,9 @@ _Avoid_: CRUD API, raw write endpoint
 
 **Agent SPARQL Query Interface**:
 The agent-facing read surface that accepts SPARQL queries for flexible exploration of canonical
-semantic data. It is separate from semantic write/edit interfaces.
+semantic data within an explicitly selected Project/Ontology scope. The platform resolves internal
+Graph Sets and named graphs; ordinary Agents do not supply them. It is separate from semantic
+write/edit interfaces.
 _Avoid_: fixed CRUD API, semantic edit endpoint
 
 **Constrained SPARQL Update**:

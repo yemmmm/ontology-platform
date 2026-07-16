@@ -535,3 +535,80 @@ curl --get http://localhost:8000/api/ontologies/{ontology_id}/lineage \
   --data-urlencode 'target_id=https://example.test/ontology/Person' \
   --data-urlencode 'max_depth=3'
 ```
+
+## v1.0 Structured Semantic Context Query (R-006)
+
+`POST /api/semantic/context:query` runs one deterministic lexical recall pipeline over current
+semantic state. It does not classify questions, call an LLM, generate an answer, or suggest a next
+action. The caller must select exactly one public scope:
+
+```json
+{
+  "project_id": "project-id",
+  "scope_mode": "ontologies",
+  "ontology_ids": ["ontology-a", "ontology-b"],
+  "query": "发布工作流需要哪些参数",
+  "resource_types": ["concept", "instance", "relation", "fact", "rule"],
+  "assertion_types": ["asserted", "derived"],
+  "depth": 1,
+  "limit": 20
+}
+```
+
+`scope_mode=project` requires an empty `ontology_ids` list and includes every ready Ontology in the
+Project. It may return `scope.status=partial` with an explicit exclusion list.
+`scope_mode=ontologies` requires one to 50 unique IDs and is all-or-nothing. Project, Ontology, and
+current workspace versions are public; Graph Set IDs and graph IRIs are internal and are rejected as
+request fields.
+
+The response separates `primary_matches` from flat `related_context`. Each item carries a stable ID,
+kind, Ontology, distance, assertion state, deterministic match reasons, compact lineage status, and
+only `evidence_reference_ids` plus Evidence status. Evidence excerpts, document names, Agent
+rationale, Competency Questions, and Edit Audit text are never included. Concept and instance
+matches can include current SHACL field constraints as related context. Default depth is one,
+maximum depth is three. `limit` is the combined response budget: direct matches take priority and
+related context uses only the remainder. `truncated=true` with `context_truncated` is returned only
+when an additional eligible result was actually omitted.
+
+`result_status` is only `matched` or `no_match`; arbitrary non-empty text always uses the same
+pipeline. Objective conditions such as partial scope, ambiguous labels, stale derivation, missing
+Evidence, and partial lineage use stable warning codes.
+
+### Scoped read-only SPARQL
+
+`POST /api/semantic/sparql:query` uses the same required `project_id`, `scope_mode`, and
+`ontology_ids` fields:
+
+```json
+{
+  "project_id": "project-id",
+  "scope_mode": "ontologies",
+  "ontology_ids": ["ontology-a"],
+  "query": "SELECT ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } }",
+  "timeout_seconds": 10,
+  "result_limit": 100
+}
+```
+
+`SELECT`, `ASK`, `CONSTRUCT`, and `DESCRIBE` are allowed. SPARQL Update, `SERVICE`, `FROM`, and
+`FROM NAMED` are rejected. After parser validation, the server injects only its resolved default and
+named graph dataset at a query-form-specific top-level position and parses the result again before
+execution. Any ambiguous or invalid transformation fails closed, so basic graph patterns,
+`GRAPH ?g`, and explicit `GRAPH <iri>` cannot read outside current resolved scope. The response keeps
+the standard SPARQL result and format and adds `query_type`, public scope versions, truncation, and
+objective warnings.
+
+`timeout_seconds` must be greater than zero and at most 120. `result_limit` must be between 1 and
+10,000 and is a hard response limit even when the caller query contains a larger `LIMIT`: bindings
+are counted for `SELECT`, RDF triples for `CONSTRUCT`/`DESCRIBE`, and `ASK` remains boolean. Runtime
+failures use `query_timeout` or `query_unavailable`, rather than reporting a syntax error.
+Before execution, a parser-aware top-level scan adds or clamps the query solution `LIMIT` to
+`result_limit + 1`; comments, strings, and nested subquery limits are not modified. Graph results are
+also bounded after execution because one solution can construct multiple triples.
+
+The raw SPARQL dataset contains persisted default Graph Set members and current derived-result
+pointers. Runtime-generated SHACL guidance and the non-member `/custom` shape subgraph are exposed as
+merged constraints by Context Query, not as implicit graphs in this raw SPARQL endpoint.
+
+R-008 remains responsible for production service identity and authorization. R-006 already enforces
+Project/Ontology ownership and server-side dataset scope.

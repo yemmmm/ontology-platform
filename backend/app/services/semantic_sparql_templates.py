@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rdflib import Literal, URIRef
+
 
 @dataclass(frozen=True)
 class ReadModelTemplate:
@@ -614,3 +616,148 @@ def get_template(name: str) -> ReadModelTemplate:
 
 def list_templates() -> list[ReadModelTemplate]:
     return list(_TEMPLATES.values())
+
+
+SEMANTIC_CONTEXT_TEMPLATE_VERSION = "semantic-context-v1"
+
+
+def semantic_context_candidates_query(
+    graph_to_ontology: dict[str, str], terms: list[str], limit: int
+) -> str:
+    """Return the fixed lexical corpus query for a resolved current scope."""
+    graph_scope_values = _graph_scope_values(graph_to_ontology)
+    predicate_label_pairs = _same_ontology_graph_pairs(graph_to_ontology)
+    subject_match = _contains_any("LCASE(STR(?subject))", terms)
+    predicate_match = _contains_any("LCASE(STR(?predicate))", terms)
+    object_match = _contains_any("LCASE(STR(?object))", terms)
+    label_match = _contains_any("LCASE(STR(?lexicalLabel))", terms)
+    alias_match = _contains_any("LCASE(STR(?lexicalAlias))", terms)
+    description_match = _contains_any("LCASE(STR(?lexicalDescription))", terms)
+    predicate_label_match = _contains_any("LCASE(STR(?lexicalPredicateLabel))", terms)
+    return f"""# template: semantic-context-candidates
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+SELECT ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
+       (SAMPLE(?subjectLabelValue) AS ?subjectLabel)
+       (GROUP_CONCAT(DISTINCT STR(?aliasValue); separator="|") AS ?aliases)
+       (SAMPLE(?descriptionValue) AS ?description)
+       (GROUP_CONCAT(DISTINCT STR(?subjectTypeValue); separator="|") AS ?subjectTypes)
+WHERE {{
+  {{
+    SELECT DISTINCT ?graph ?ontologyScope ?candidateType ?subject ?predicate ?object
+                    ?matchedField ?matchedValue WHERE {{
+      VALUES (?graph ?ontologyScope) {{ {graph_scope_values} }}
+      {{ GRAPH ?graph {{ ?subject ?resourcePredicate ?resourceObject . }}
+           FILTER({subject_match})
+           BIND("resource" AS ?candidateType)
+           BIND("identifier" AS ?matchedField)
+           BIND(STR(?subject) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject rdfs:label ?lexicalLabel . }}
+                 FILTER({label_match})
+                 BIND("resource" AS ?candidateType)
+                 BIND("label" AS ?matchedField)
+                 BIND(STR(?lexicalLabel) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject skos:altLabel ?lexicalAlias . }}
+                 FILTER({alias_match})
+                 BIND("resource" AS ?candidateType)
+                 BIND("alias" AS ?matchedField)
+                 BIND(STR(?lexicalAlias) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject rdfs:comment ?lexicalDescription . }}
+                 FILTER({description_match})
+                 BIND("resource" AS ?candidateType)
+                 BIND("description" AS ?matchedField)
+                 BIND(STR(?lexicalDescription) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject dcterms:description ?lexicalDescription . }}
+                 FILTER({description_match})
+                 BIND("resource" AS ?candidateType)
+                 BIND("description" AS ?matchedField)
+                 BIND(STR(?lexicalDescription) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject ?predicate ?object . }}
+                 FILTER({predicate_match})
+                 BIND("statement" AS ?candidateType)
+                 BIND("identifier" AS ?matchedField)
+                 BIND(STR(?predicate) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject ?predicate ?object . }}
+                 FILTER(ISLITERAL(?object) && ({object_match}))
+                 BIND("statement" AS ?candidateType)
+                 BIND("value" AS ?matchedField)
+                 BIND(STR(?object) AS ?matchedValue) }}
+      UNION {{ GRAPH ?graph {{ ?subject ?predicate ?object . }}
+                 VALUES (?graph ?predicateLabelGraph) {{
+                   {predicate_label_pairs}
+                 }}
+                 GRAPH ?predicateLabelGraph {{
+                   ?predicate rdfs:label ?lexicalPredicateLabel .
+                 }}
+                 FILTER({predicate_label_match})
+                 BIND("statement" AS ?candidateType)
+                 BIND("predicate" AS ?matchedField)
+                 BIND(STR(?lexicalPredicateLabel) AS ?matchedValue) }}
+    }}
+  }}
+  OPTIONAL {{ GRAPH ?graph {{ ?subject rdfs:label ?subjectLabelValue . }} }}
+  OPTIONAL {{ GRAPH ?graph {{ ?subject skos:altLabel ?aliasValue . }} }}
+  OPTIONAL {{ GRAPH ?graph {{
+    {{ ?subject rdfs:comment ?descriptionValue . }}
+    UNION {{ ?subject dcterms:description ?descriptionValue . }}
+  }} }}
+  OPTIONAL {{ GRAPH ?graph {{ ?subject rdf:type ?subjectTypeValue . }} }}
+}}
+GROUP BY ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
+ORDER BY ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
+LIMIT {int(limit)}
+"""
+
+
+def semantic_context_neighborhood_query(
+    graph_iris: list[str], anchor_iris: list[str], limit: int
+) -> str:
+    values = _iri_values(graph_iris)
+    anchors = _iri_values(anchor_iris)
+    return f"""# template: semantic-context-neighborhood
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?graph ?subject ?predicate ?object ?subjectLabel ?objectLabel
+       ?predicateLabel ?subjectType WHERE {{
+  VALUES ?graph {{ {values} }}
+  VALUES ?anchor {{ {anchors} }}
+  GRAPH ?graph {{
+    ?subject ?predicate ?object .
+    FILTER(?subject = ?anchor || ?object = ?anchor)
+    OPTIONAL {{ ?subject rdfs:label ?subjectLabel . }}
+    OPTIONAL {{ ?object rdfs:label ?objectLabel . }}
+    OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
+    OPTIONAL {{ ?subject rdf:type ?subjectType . }}
+  }}
+}}
+ORDER BY ?graph ?subject ?predicate ?object
+LIMIT {int(limit)}
+"""
+
+
+def _iri_values(iris: list[str]) -> str:
+    return " ".join(URIRef(iri).n3() for iri in iris)
+
+
+def _graph_scope_values(graph_to_ontology: dict[str, str]) -> str:
+    return " ".join(
+        f"({URIRef(graph_iri).n3()} {Literal(ontology_id).n3()})"
+        for graph_iri, ontology_id in graph_to_ontology.items()
+    )
+
+
+def _same_ontology_graph_pairs(graph_to_ontology: dict[str, str]) -> str:
+    return " ".join(
+        f"({URIRef(fact_graph).n3()} {URIRef(label_graph).n3()})"
+        for fact_graph, fact_ontology in graph_to_ontology.items()
+        for label_graph, label_ontology in graph_to_ontology.items()
+        if fact_ontology == label_ontology
+    )
+
+
+def _contains_any(expression: str, terms: list[str]) -> str:
+    return " || ".join(
+        f"CONTAINS({expression}, LCASE({Literal(term).n3()}))" for term in terms
+    ) or "false"

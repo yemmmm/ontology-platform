@@ -10,6 +10,8 @@ from app.api.schemas import (
     SemanticCanonicalModeRead,
     SemanticCanonicalProductWriteRequest,
     SemanticCanonicalProductWriteResponse,
+    SemanticContextQueryRequest,
+    SemanticContextQueryResponse,
     SemanticDatasetLoadRequest,
     SemanticDatasetLoadResponse,
     SemanticDerivedResultReconcileResponse,
@@ -73,6 +75,15 @@ from app.services.evidence_reference import (
 )
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService, SemanticServiceError
+from app.services.semantic_context_query import (
+    SemanticContextQueryError,
+    SemanticContextQueryService,
+)
+from app.services.semantic_query_scope import (
+    SemanticQueryScopeError,
+    SemanticQueryScopeResolver,
+)
+from app.services.scoped_sparql_query import ScopedSparqlQueryError, ScopedSparqlQueryService
 from app.services.semantic_graph_set_export import (
     ExportError,
     SemanticExportService,
@@ -323,6 +334,40 @@ def load_dataset(
         raise _semantic_http_exception(exc) from exc
 
 
+def _semantic_query_http_exception(exc: RuntimeError) -> HTTPException:
+    return HTTPException(
+        status_code=getattr(exc, "status_code", 400),
+        detail={
+            "code": getattr(exc, "code", "invalid_query"),
+            "message": str(exc),
+        },
+    )
+
+
+@router.post("/context:query", response_model=SemanticContextQueryResponse)
+def query_semantic_context(
+    request: SemanticContextQueryRequest,
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> SemanticContextQueryResponse:
+    try:
+        resolver = SemanticQueryScopeResolver(session, settings)
+        result = SemanticContextQueryService(session, rdf_store, resolver).query(
+            project_id=request.project_id,
+            scope_mode=request.scope_mode,
+            ontology_ids=request.ontology_ids,
+            query=request.query,
+            resource_types=request.resource_types,
+            assertion_types=request.assertion_types,
+            depth=request.depth,
+            limit=request.limit,
+        )
+        return SemanticContextQueryResponse(**result)
+    except (SemanticContextQueryError, SemanticQueryScopeError, RdfStoreError) as exc:
+        raise _semantic_query_http_exception(exc) from exc
+
+
 @router.post("/sparql:query", response_model=SemanticSparqlQueryResponse)
 def query_sparql(
     request: SemanticSparqlQueryRequest,
@@ -331,14 +376,19 @@ def query_sparql(
     settings: Settings = Depends(get_settings),
 ) -> SemanticSparqlQueryResponse:
     try:
-        result = _service(session, rdf_store, settings).query_sparql(
-            request.query,
-            request.timeout_seconds,
-            request.result_limit,
+        result = ScopedSparqlQueryService(
+            SemanticQueryScopeResolver(session, settings), rdf_store, settings
+        ).query(
+            project_id=request.project_id,
+            scope_mode=request.scope_mode,
+            ontology_ids=request.ontology_ids,
+            query=request.query,
+            timeout_seconds=request.timeout_seconds,
+            result_limit=request.result_limit,
         )
-        return SemanticSparqlQueryResponse(**result.__dict__)
-    except (SemanticServiceError, RdfStoreError) as exc:
-        raise _semantic_http_exception(exc) from exc
+        return SemanticSparqlQueryResponse(**result)
+    except (ScopedSparqlQueryError, SemanticQueryScopeError, RdfStoreError) as exc:
+        raise _semantic_query_http_exception(exc) from exc
 
 
 @router.post("/validation-runs", response_model=SemanticValidationRunResponse)

@@ -1092,6 +1092,8 @@ function WorkspaceContent(props: {
       <SemanticImportExportPage
         initialGraphSetId={queryValue("graphSet") || undefined}
         notify={props.notify}
+        ontologyId={props.ontology.id}
+        projectId={props.project.id}
         request={governedRequest}
       />
     );

@@ -1087,8 +1087,16 @@ export type SemanticProjectionStatusResponse = {
 export type SemanticSparqlQueryResponse = {
   result: unknown;
   result_format: string;
+  query_type: "select" | "ask" | "construct" | "describe";
+  scope: {
+    project_id: string;
+    mode: "project" | "ontologies";
+    status: "complete" | "partial";
+    ontologies: Array<Record<string, unknown>>;
+    excluded_ontologies: Array<Record<string, unknown>>;
+  };
   truncated: boolean;
-  warnings: string[];
+  warnings: Array<{ code: string; message: string }>;
 };
 
 export type SemanticDatasetLoadResponse = {

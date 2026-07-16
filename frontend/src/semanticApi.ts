@@ -639,11 +639,20 @@ export function compileAndApplyProductCommand(
 
 export function sparqlQuery(
   request: SemanticRequester,
-  payload: { query: string; timeoutSeconds?: number; resultLimit?: number },
+  payload: {
+    projectId: string;
+    ontologyIds: string[];
+    query: string;
+    timeoutSeconds?: number;
+    resultLimit?: number;
+  },
 ) {
   return request<SemanticSparqlQueryResponse>(`${SEMANTIC_BASE}/sparql:query`, {
     method: "POST",
     body: JSON.stringify({
+      project_id: payload.projectId,
+      scope_mode: "ontologies",
+      ontology_ids: payload.ontologyIds,
       query: payload.query,
       timeout_seconds: payload.timeoutSeconds,
       result_limit: payload.resultLimit,

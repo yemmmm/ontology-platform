@@ -794,6 +794,10 @@ class OntologyLineageService:
         for row in bindings:
             if not all(name in row for name in ("p", "o", "g")):
                 continue
+            if row["p"].get("type") != "uri" or row["g"].get("type") != "uri":
+                continue
+            if subject_iri is None and row.get("s", {}).get("type") != "uri":
+                continue
             subject_value = subject_iri or row.get("s", {}).get("value")
             if not subject_value:
                 continue

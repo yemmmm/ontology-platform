@@ -91,9 +91,40 @@ async function apiPost(page: Page, path: string, body: unknown) {
   );
 }
 
+async function apiGet(page: Page, path: string) {
+  if (!page.url().startsWith("http://127.0.0.1:5173")) {
+    await page.goto("/").catch(() => undefined);
+  }
+  return page.evaluate(async (path) => {
+    const res = await fetch(`/api${path}`);
+    return { status: res.status, json: await res.json().catch(() => null) };
+  }, path);
+}
+
 test.describe("semantic live-contract (real backend + Oxigraph)", () => {
   test("runtime spine: load → query → write-SPARQL rejected", async ({ page }) => {
-    const s = uniqueScope();
+    const suffix = `${Date.now()}-${counter += 1}`;
+    const project = await apiPost(page, "/projects", { name: `R006 Live ${suffix}` });
+    expect(project.status).toBe(201);
+    const ontology = await apiPost(page, `/projects/${project.json.id}/ontologies`, {
+      name: `R006 Ontology ${suffix}`,
+    });
+    expect(ontology.status).toBe(201);
+    const workspace = await apiGet(page, `/ontologies/${ontology.json.id}/workspace-context`);
+    expect(workspace.status).toBe(200);
+    const members = Object.fromEntries(
+      (workspace.json.members as Array<{ role: string; graph_iri: string }>).map((member) => [
+        member.role,
+        member.graph_iri,
+      ]),
+    );
+    const s: GraphScope = {
+      ontology: members.asserted_ontology,
+      data: members.asserted_data,
+      shapes: members.shapes,
+      evidence: `${members.policy}/evidence-not-in-query-scope`,
+      policy: members.policy,
+    };
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
       base_iri: "http://ontology-platform.local/semantic/",
@@ -101,19 +132,39 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     });
 
     const q = await apiPost(page, "/semantic/sparql:query", {
+      project_id: project.json.id,
+      scope_mode: "ontologies",
+      ontology_ids: [ontology.json.id],
       query: `PREFIX ex: <http://example.test/> SELECT ?s ?n WHERE { GRAPH <${s.data}> { ?s ex:name ?n } }`,
     });
-    expect(q.status).toBe(200);
+    expect(q.status, JSON.stringify(q.json)).toBe(200);
     const names = (q.json.result.results.bindings as Array<{ n?: { value: string } }>)
       .map((b) => b.n?.value)
       .sort();
     expect(names).toEqual(["Acme", "Alice"]);
 
+    const context = await apiPost(page, "/semantic/context:query", {
+      project_id: project.json.id,
+      scope_mode: "ontologies",
+      ontology_ids: [ontology.json.id],
+      query: "Alice worksFor Acme",
+      depth: 1,
+    });
+    expect(context.status, JSON.stringify(context.json)).toBe(200);
+    expect(context.json.result_status).toBe("matched");
+    expect(context.json.primary_matches.length).toBeGreaterThan(0);
+    expect(JSON.stringify(context.json)).not.toContain("graph_iri");
+    expect(JSON.stringify(context.json)).not.toContain("graph_set");
+    expect(JSON.stringify(context.json)).not.toContain("excerpt");
+
     const write = await apiPost(page, "/semantic/sparql:query", {
+      project_id: project.json.id,
+      scope_mode: "ontologies",
+      ontology_ids: [ontology.json.id],
       query: `DELETE DATA { <http://example.test/x> <http://example.test/y> "z" }`,
     });
     expect(write.status).toBe(400);
-    expect(write.json.detail).toContain("Write SPARQL");
+    expect(write.json.detail.code).toBe("invalid_query");
   });
 
   test("governed edits accept valid Turtle and reject malformed RDF with 400", async ({ page }) => {

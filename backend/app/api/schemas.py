@@ -429,17 +429,47 @@ class SemanticDatasetLoadResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class SemanticSparqlQueryRequest(BaseModel):
-    query: str
-    timeout_seconds: float | None = Field(default=None, gt=0)
-    result_limit: int | None = Field(default=None, gt=0)
+class SemanticQueryScopeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str = Field(min_length=1, max_length=36)
+    scope_mode: Literal["project", "ontologies"]
+    ontology_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+class SemanticContextQueryRequest(SemanticQueryScopeRequest):
+    query: str = Field(min_length=1, max_length=2000)
+    resource_types: list[
+        Literal["concept", "instance", "relation", "fact", "rule", "operation"]
+    ] | None = None
+    assertion_types: list[Literal["asserted", "derived"]] | None = None
+    depth: int = Field(default=1, ge=0, le=3)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class SemanticContextQueryResponse(BaseModel):
+    query: dict[str, Any]
+    result_status: Literal["matched", "no_match"]
+    scope: dict[str, Any]
+    primary_matches: list[dict[str, Any]] = Field(default_factory=list)
+    related_context: list[dict[str, Any]] = Field(default_factory=list)
+    truncated: bool = False
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+
+
+class SemanticSparqlQueryRequest(SemanticQueryScopeRequest):
+    query: str = Field(min_length=1, max_length=100000)
+    timeout_seconds: float | None = Field(default=None, gt=0, le=120)
+    result_limit: int | None = Field(default=None, gt=0, le=10000)
 
 
 class SemanticSparqlQueryResponse(BaseModel):
     result: Any
     result_format: str
+    query_type: Literal["select", "ask", "construct", "describe"]
+    scope: dict[str, Any]
     truncated: bool = False
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[dict[str, str]] = Field(default_factory=list)
 
 
 class SemanticValidationRunRequest(BaseModel):

@@ -12,7 +12,6 @@ from app.core.config import Settings
 from app.repositories.models import (
     SemanticEditAuditModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetMemberModel,
     SemanticGraphSetModel,
     SemanticProjectionManifestModel,
     SemanticReasoningRunModel,
@@ -98,10 +97,18 @@ def _client(
 def test_semantic_sparql_endpoint_rejects_write_query(in_memory_session) -> None:
     client = _client(FakeStore(), in_memory_session)
 
-    response = client.post("/api/semantic/sparql:query", json={"query": "DELETE DATA {}"})
+    response = client.post(
+        "/api/semantic/sparql:query",
+        json={
+            "project_id": "project",
+            "scope_mode": "project",
+            "ontology_ids": [],
+            "query": "DELETE DATA {}",
+        },
+    )
 
     assert response.status_code == 400
-    assert "Write SPARQL" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "invalid_query"
 
 
 def test_semantic_edit_endpoint_applies_turtle_insert(in_memory_session) -> None:
@@ -258,8 +265,6 @@ def test_graph_set_endpoints_and_reasoning_pointer_promotion(in_memory_session) 
         },
     )
     assert create_response.status_code == 200
-    graph_set = create_response.json()
-    graph_set_id = graph_set["id"]
 
     # Seed a reasoning run record so the service-layer promotion has a target row.
     in_memory_session.add(

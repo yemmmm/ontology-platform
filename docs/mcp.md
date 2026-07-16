@@ -461,3 +461,54 @@ This legacy tool remains registered for one compatibility period. Its old `state
 is treated as a resource IRI in the supplied Ontology-scoped Graph Set, it delegates to
 `get_ontology_lineage`, and its response includes `deprecated=true` plus
 `replacement_tool=get_ontology_lineage`. New callers should not use it as a statement-ID API.
+
+## Structured context query tools (R-006)
+
+### `query_semantic_context`
+
+Calls the same `SemanticContextQueryService` as REST and accepts public business scope only:
+
+```json
+{
+  "project_id": "project-id",
+  "scope_mode": "ontologies",
+  "ontology_ids": ["ontology-a", "ontology-b"],
+  "query": "发布工作流需要哪些参数",
+  "resource_types": ["concept", "instance", "relation", "fact", "rule"],
+  "assertion_types": ["asserted", "derived"],
+  "depth": 1,
+  "limit": 20
+}
+```
+
+Use `scope_mode=project` with an empty Ontology list for Project-wide recall. Explicit Ontology lists
+are all-or-nothing; Project mode can return partial scope and exclusions. The tool returns primary
+matches, flat related context, stable match reasons, current workspace versions, truncation, and
+objective warnings. It returns Evidence Reference IDs and status only, never Evidence text, Agent
+rationale, audit notes, a generated answer, or follow-up suggestions.
+
+### `semantic_sparql_query`
+
+This existing tool now requires the same public scope:
+
+```json
+{
+  "project_id": "project-id",
+  "scope_mode": "ontologies",
+  "ontology_ids": ["ontology-a"],
+  "query": "ASK { ?resource a <https://example.test/Workflow> }",
+  "timeout_seconds": 10,
+  "result_limit": 100
+}
+```
+
+It accepts read-only `SELECT`, `ASK`, `CONSTRUCT`, and `DESCRIBE`. Update, `SERVICE`, `FROM`, and
+`FROM NAMED` are rejected. Results retain the standard SPARQL shape plus public scope, current
+versions, truncation, and warnings. Neither R-006 MCP tool accepts Graph Set IDs or graph IRIs as
+scope inputs.
+
+`timeout_seconds` is `(0, 120]` and `result_limit` is `[1, 10000]`; the shared service applies the
+same validation as REST. The result limit is hard even when caller SPARQL contains a larger `LIMIT`.
+MCP errors preserve `query_timeout`, `query_unavailable`, and `invalid_query` as distinct codes.
+Raw SPARQL includes persisted default-workspace members and current derived pointers, while merged
+runtime/custom SHACL guidance remains a Context Query projection.

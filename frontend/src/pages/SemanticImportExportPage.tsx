@@ -32,10 +32,14 @@ ex:SampleConcept a owl:Class .`;
 export function SemanticImportExportPage({
   request,
   notify,
+  projectId,
+  ontologyId,
   initialGraphSetId,
 }: {
   request: SemanticRequester;
   notify: (notice: Notice) => void;
+  projectId: string;
+  ontologyId: string;
   initialGraphSetId?: string;
 }) {
   const t = useT();
@@ -158,7 +162,12 @@ export function SemanticImportExportPage({
     setQuerying(true);
     setSparqlResult(null);
     try {
-      const result = await sparqlQuery(request, { query: sparqlQueryText, resultLimit: 50 });
+      const result = await sparqlQuery(request, {
+        projectId,
+        ontologyIds: [ontologyId],
+        query: sparqlQueryText,
+        resultLimit: 50,
+      });
       setSparqlResult(result);
     } catch (error) {
       notify(errorNotice(error));

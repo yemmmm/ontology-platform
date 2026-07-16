@@ -587,6 +587,63 @@ class _LegacyStore:
         )
 
 
+class _LegacyStatementStore:
+    def __init__(self, graph_iri: str) -> None:
+        self.graph_iri = graph_iri
+
+    def query_sparql(self, _query, timeout_seconds, limit):
+        return SparqlResult(
+            result={
+                "results": {
+                    "bindings": [
+                        {
+                            "s": {"type": "bnode", "value": "shape-property"},
+                            "p": {"type": "uri", "value": "https://lineage.test/path"},
+                            "o": {"type": "literal", "value": "ignored"},
+                            "g": {"type": "uri", "value": self.graph_iri},
+                        },
+                        {
+                            "s": {
+                                "type": "uri",
+                                "value": "https://lineage.test/entity/legacy",
+                            },
+                            "p": {
+                                "type": "uri",
+                                "value": "https://lineage.test/property/name",
+                            },
+                            "o": {"type": "literal", "value": "Legacy"},
+                            "g": {"type": "uri", "value": self.graph_iri},
+                        },
+                    ]
+                }
+            }
+        )
+
+
+def test_legacy_statement_scan_skips_blank_node_subjects(in_memory_session) -> None:
+    _settings, ontology, _graph_set_id, roles = _workspace(in_memory_session)
+    graph = roles["asserted_data"]
+    target_id = statement_id_for_quad(
+        "https://lineage.test/entity/legacy",
+        "https://lineage.test/property/name",
+        '"Legacy"',
+        graph,
+    )
+
+    result = OntologyLineageService(
+        in_memory_session, _LegacyStatementStore(graph)
+    ).get_lineage(
+        ontology_id=ontology.id,
+        target_type="statement",
+        target_id=target_id,
+    )
+
+    assert result["items"][0]["statement_id"] == target_id
+    assert result["items"][0]["statement"]["subject"] == (
+        "https://lineage.test/entity/legacy"
+    )
+
+
 def test_legacy_current_rdf_is_partial_and_node_limit_is_deterministic(
     in_memory_session,
 ) -> None:
