@@ -203,8 +203,19 @@ def test_history_resolves_the_invalidation_audit_not_only_its_id(in_memory_sessi
 
 
 class _UpdateStore:
+    def __init__(self) -> None:
+        self.updated = False
+
     def update_sparql(self, _update: str) -> UpdateResult:
+        self.updated = True
         return UpdateResult()
+
+    def get_graph(self, _graph_iri: str, _format: str) -> str:
+        predicate = "new" if self.updated else "old"
+        return (
+            "<https://r005-update.test/entity/alice> "
+            f'<https://r005-update.test/property/{predicate}> "value" .'
+        )
 
 
 class _SnapshotUpdateStore:

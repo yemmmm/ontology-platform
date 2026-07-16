@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 import hashlib
+import json
 import re
 import unicodedata
 from typing import Any, Iterable
 
 from rdflib import Literal, URIRef
+from rdflib.namespace import RDF
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,13 @@ from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointSe
 from app.services.semantic_sparql_templates import (
     semantic_context_candidates_query,
     semantic_context_neighborhood_query,
+)
+from app.services.operation_semantics import (
+    OPERATION_SCHEMA_VERSION,
+    OperationValidationError,
+    operation_predicates,
+    operation_vocabulary,
+    validate_operation_payload,
 )
 
 
@@ -68,6 +77,10 @@ class SemanticContextQueryService:
         self.shape_endpoint = shape_endpoint or SemanticShapeEndpointService(
             session, rdf_store, scope_resolver.settings
         )
+        self.operation_vocab = operation_vocabulary(scope_resolver.settings)
+        self.operation_predicates = operation_predicates(scope_resolver.settings)
+        self.operation_type = self.operation_vocab["type"]
+        self.settings = scope_resolver.settings
 
     def query(
         self,
@@ -98,7 +111,11 @@ class SemanticContextQueryService:
         candidate_fetch_limit = candidate_limit + 1
         raw_result = self.rdf_store.query_sparql(
             semantic_context_candidates_query(
-                scope.graph_to_ontology, terms, candidate_fetch_limit
+                scope.graph_to_ontology,
+                terms,
+                candidate_fetch_limit,
+                self.operation_type,
+                self.operation_predicates,
             ),
             timeout_seconds=10,
             limit=candidate_fetch_limit,
@@ -108,6 +125,8 @@ class SemanticContextQueryService:
         rows = rows[:candidate_limit]
         candidates = self._rdf_candidates(rows, scope, text, terms)
         candidates.extend(self._rule_candidates(scope, text, terms))
+        if "operation" in selected_resource_types:
+            candidates.extend(self._operation_candidates(scope, text, terms))
         candidates = [
             item
             for item in candidates
@@ -132,6 +151,16 @@ class SemanticContextQueryService:
             related = shape_items[:remaining]
             remaining -= len(related)
         if depth and primary and not related_truncated:
+            operation_context = self._operation_target_context(
+                primary,
+                scope,
+                limit=remaining + 1,
+                enabled="concept" in selected_resource_types,
+            )
+            related_truncated = len(operation_context) > remaining
+            related.extend(operation_context[:remaining])
+            remaining -= min(len(operation_context), remaining)
+        if depth and primary and not related_truncated:
             neighborhood = self._expand_neighborhood(
                 primary,
                 scope,
@@ -144,9 +173,7 @@ class SemanticContextQueryService:
             related.extend(neighborhood[:remaining])
 
         truncated = bool(
-            candidate_scan_truncated
-            or len(candidates) > len(primary)
-            or related_truncated
+            candidate_scan_truncated or len(candidates) > len(primary) or related_truncated
         )
         if truncated:
             warnings.append(
@@ -193,6 +220,8 @@ class SemanticContextQueryService:
                 continue
             ontology_id = scope.graph_to_ontology[graph]
             assertion_kind = scope.graph_assertion_kinds.get(graph, "asserted")
+            subject_types = set(_split_aggregate(_value(row, "subjectTypes")))
+            is_operation = self.operation_type in subject_types
             if _binding_type(row, "subject") == "uri":
                 key = (ontology_id, subject)
                 resource = resources.setdefault(
@@ -216,7 +245,7 @@ class SemanticContextQueryService:
                     if alias not in resource["aliases"]:
                         resource["aliases"].append(alias)
                 resource["description"] = resource["description"] or _value(row, "description")
-                resource["types"].update(_split_aggregate(_value(row, "subjectTypes")))
+                resource["types"].update(subject_types)
 
                 matched_field = _value(row, "matchedField")
                 matched_value = _value(row, "matchedValue")
@@ -228,15 +257,18 @@ class SemanticContextQueryService:
                 elif matched_field == "description" and matched_value:
                     resource["description"] = resource["description"] or matched_value
 
-            if not predicate or predicate in _METADATA_PREDICATES:
+            if (
+                not predicate
+                or predicate in _METADATA_PREDICATES
+                or predicate in self.operation_predicates
+                or is_operation
+            ):
                 continue
             statement = self._statement_item(row, scope, distance=0)
             if statement is None:
                 continue
             predicate_label = (
-                _value(row, "matchedValue")
-                if _value(row, "matchedField") == "predicate"
-                else None
+                _value(row, "matchedValue") if _value(row, "matchedField") == "predicate" else None
             ) or _local_name(predicate)
             object_value = _value(row, "object")
             score = _best_match(
@@ -255,6 +287,8 @@ class SemanticContextQueryService:
         candidates: list[dict[str, Any]] = []
         for resource in resources.values():
             types = resource.pop("types")
+            if self.operation_type in types:
+                continue
             if types & _CLASS_TYPES:
                 resource["kind"] = "concept"
             elif types & _RELATION_TYPES:
@@ -266,10 +300,7 @@ class SemanticContextQueryService:
                 terms,
                 [
                     ("label", resource["label"], 1000, "exact_label"),
-                    *(
-                        ("alias", alias, 900, "exact_alias")
-                        for alias in resource["aliases"]
-                    ),
+                    *(("alias", alias, 900, "exact_alias") for alias in resource["aliases"]),
                     ("identifier", resource["iri"], 600, "identifier"),
                     ("description", resource["description"], 450, "description"),
                 ],
@@ -279,6 +310,153 @@ class SemanticContextQueryService:
                 candidates.append(resource)
         candidates.extend(statements)
         return candidates
+
+    def _operation_candidates(
+        self, scope: SemanticQueryScope, text: str, terms: list[str]
+    ) -> list[dict[str, Any]]:
+        graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
+        v = self.operation_vocab
+        query = f"""# template: semantic-context-operations
+PREFIX rdf: <{RDF}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?graph ?operation ?operationId ?name ?description ?target ?targetLabel
+       ?parameters ?preconditions ?effects ?failures ?idempotency ?risk ?bindings
+       ?credentials ?status ?schemaVersion
+       (GROUP_CONCAT(DISTINCT STR(?alias); separator="|") AS ?aliases)
+WHERE {{
+  VALUES ?graph {{ {graph_values} }}
+  GRAPH ?graph {{
+    ?operation a <{v["type"]}> ;
+      <{v["id"]}> ?operationId ;
+      rdfs:label ?name ;
+      <{v["target_resource_type_iri"]}> ?target ;
+      <{v["parameters"]}> ?parameters ;
+      <{v["preconditions"]}> ?preconditions ;
+      <{v["effects"]}> ?effects ;
+      <{v["possible_failures"]}> ?failures ;
+      <{v["idempotency"]}> ?idempotency ;
+      <{v["risk_level"]}> ?risk ;
+      <{v["tool_bindings"]}> ?bindings ;
+      <{v["credential_requirements"]}> ?credentials ;
+      <{v["status"]}> ?status ;
+      <{v["schema_version"]}> ?schemaVersion .
+    OPTIONAL {{ ?operation rdfs:comment ?description . }}
+    OPTIONAL {{ ?operation skos:altLabel ?alias . }}
+    OPTIONAL {{ ?target rdfs:label ?targetLabel . }}
+    FILTER(?status = "active" && ?schemaVersion = "{OPERATION_SCHEMA_VERSION}")
+  }}
+}}
+GROUP BY ?graph ?operation ?operationId ?name ?description ?target ?targetLabel
+         ?parameters ?preconditions ?effects ?failures ?idempotency ?risk ?bindings
+         ?credentials ?status ?schemaVersion
+ORDER BY ?graph ?operation
+LIMIT 5000
+"""
+        try:
+            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
+        except Exception:
+            return []
+        candidates = []
+        for row in _bindings(result.result):
+            graph = _value(row, "graph")
+            iri = _value(row, "operation")
+            if not graph or graph not in scope.graph_to_ontology or not iri:
+                continue
+            try:
+                operation = {
+                    "operation_id": _value(row, "operationId"),
+                    "operation_iri": iri,
+                    "name": _value(row, "name"),
+                    "aliases": _split_aggregate(_value(row, "aliases")),
+                    "description": _value(row, "description"),
+                    "target_resource_type_iri": _value(row, "target"),
+                    "parameters": json.loads(_value(row, "parameters") or "null"),
+                    "preconditions": json.loads(_value(row, "preconditions") or "null"),
+                    "effects": json.loads(_value(row, "effects") or "null"),
+                    "possible_failures": json.loads(_value(row, "failures") or "null"),
+                    "idempotency": json.loads(_value(row, "idempotency") or "null"),
+                    "risk_level": _value(row, "risk"),
+                    "tool_bindings": json.loads(_value(row, "bindings") or "null"),
+                    "credential_requirements": json.loads(_value(row, "credentials") or "null"),
+                    "status": _value(row, "status"),
+                    "schema_version": _value(row, "schemaVersion"),
+                }
+                operation = validate_operation_payload(operation, settings=self.settings)
+            except (OperationValidationError, TypeError, json.JSONDecodeError):
+                continue
+            match_fields: list[tuple[str, Any, int, str]] = [
+                ("label", operation["name"], 1000, "exact_label"),
+                *(("alias", alias, 900, "exact_alias") for alias in operation["aliases"]),
+                ("identifier", iri, 600, "identifier"),
+                ("description", operation.get("description"), 450, "description"),
+                ("target", _value(row, "targetLabel"), 425, "target_resource_type"),
+                ("target", operation["target_resource_type_iri"], 425, "target_resource_type"),
+            ]
+            match_fields.extend(_operation_lexical_fields(operation))
+            match = _best_match(text, terms, match_fields)
+            if match:
+                candidates.append(
+                    {
+                        "id": iri,
+                        "kind": "operation",
+                        "ontology_id": scope.graph_to_ontology[graph],
+                        "iri": iri,
+                        "label": operation["name"],
+                        "aliases": operation["aliases"],
+                        "description": operation.get("description"),
+                        "data": operation,
+                        "distance": 0,
+                        "assertion_kind": "asserted",
+                        "match": match,
+                        "_target_label": _value(row, "targetLabel"),
+                    }
+                )
+        return candidates
+
+    def _operation_target_context(
+        self,
+        primary: list[dict[str, Any]],
+        scope: SemanticQueryScope,
+        *,
+        limit: int,
+        enabled: bool,
+    ) -> list[dict[str, Any]]:
+        if not enabled or limit <= 0:
+            return []
+        result = []
+        seen = set()
+        for item in primary:
+            if item["kind"] != "operation":
+                continue
+            target = item["data"]["target_resource_type_iri"]
+            key = (item["ontology_id"], target)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(
+                {
+                    "id": target,
+                    "kind": "concept",
+                    "ontology_id": item["ontology_id"],
+                    "iri": target,
+                    "label": item.pop("_target_label", None) or _local_name(target),
+                    "aliases": [],
+                    "description": None,
+                    "data": {"rdf_types": sorted(_CLASS_TYPES)},
+                    "distance": 1,
+                    "assertion_kind": "asserted",
+                    "match": {
+                        "score": 250,
+                        "matched_terms": [],
+                        "matched_fields": ["target_resource_type"],
+                        "reasons": ["operation_target_context"],
+                    },
+                }
+            )
+            if len(result) >= limit:
+                break
+        return result
 
     def _shape_constraint_items(
         self,
@@ -340,8 +518,12 @@ class SemanticContextQueryService:
                             "id": item_id,
                             "kind": "fact",
                             "ontology_id": match["ontology_id"],
-                            "iri": path if path.startswith(("http://", "https://", "urn:")) else None,
-                            "label": str(field.get("label") or field.get("name") or _local_name(path)),
+                            "iri": path
+                            if path.startswith(("http://", "https://", "urn:"))
+                            else None,
+                            "label": str(
+                                field.get("label") or field.get("name") or _local_name(path)
+                            ),
                             "aliases": [],
                             "description": field.get("description"),
                             "data": {
@@ -443,7 +625,13 @@ class SemanticContextQueryService:
                 break
             query_limit = min(5000, max(100, (limit - len(related)) * 20))
             result = self.rdf_store.query_sparql(
-                semantic_context_neighborhood_query(scope.graph_iris, frontier, query_limit),
+                semantic_context_neighborhood_query(
+                    scope.graph_iris,
+                    frontier,
+                    query_limit,
+                    self.operation_type,
+                    self.operation_predicates,
+                ),
                 timeout_seconds=10,
                 limit=query_limit,
             )
@@ -486,6 +674,10 @@ class SemanticContextQueryService:
             return None
         if graph not in scope.graph_to_ontology or predicate in _METADATA_PREDICATES:
             return None
+        if predicate in self.operation_predicates:
+            return None
+        if _value(row, "subjectType") == self.operation_type:
+            return None
         object_ntriples = _binding_n3(row.get("object"))
         try:
             statement_id = statement_id_for_quad(subject, predicate, object_ntriples, graph)
@@ -515,6 +707,8 @@ class SemanticContextQueryService:
         }
 
     def _decorate(self, item: dict[str, Any], scope: SemanticQueryScope) -> dict[str, Any]:
+        item = dict(item)
+        item.pop("_target_label", None)
         target_type = "statement" if item["kind"] in {"fact", "relation"} else item["kind"]
         if target_type not in {"statement", "rule"}:
             target_type = "resource"
@@ -682,7 +876,9 @@ def _best_match(
     score = max(item[0] for item in matches)
     return {
         "score": score,
-        "matched_terms": sorted({item[1] for item in matches}, key=lambda value: (-len(value), value)),
+        "matched_terms": sorted(
+            {item[1] for item in matches}, key=lambda value: (-len(value), value)
+        ),
         "matched_fields": sorted({item[2] for item in matches}),
         "reasons": sorted({item[3] for item in matches if item[0] == score}),
     }
@@ -692,6 +888,47 @@ def _normalize_value(value: Any) -> str:
     if not isinstance(value, str):
         return ""
     return unicodedata.normalize("NFKC", value).casefold().strip()
+
+
+def _operation_lexical_fields(
+    operation: dict[str, Any],
+) -> list[tuple[str, Any, int, str]]:
+    fields: list[tuple[str, Any, int, str]] = []
+    for parameter in operation["parameters"]:
+        fields.extend(
+            [
+                ("parameter", parameter["name"], 425, "operation_parameter"),
+                ("parameter", parameter.get("description"), 400, "operation_parameter"),
+            ]
+        )
+    for field in ("preconditions", "effects"):
+        for declaration in operation[field]:
+            fields.extend(
+                [
+                    (field, declaration["name"], 425, f"operation_{field}"),
+                    (field, declaration["description"], 400, f"operation_{field}"),
+                ]
+            )
+    for failure in operation["possible_failures"]:
+        fields.extend(
+            [
+                ("failure", failure["code"], 425, "operation_failure"),
+                ("failure", failure["description"], 400, "operation_failure"),
+            ]
+        )
+    for binding in operation["tool_bindings"]:
+        for key in ("binding_id", "system", "operation_identifier", "version"):
+            fields.append(("binding", binding.get(key), 425, "operation_binding"))
+    for credential in operation["credential_requirements"]:
+        fields.append(
+            (
+                "credential_type",
+                credential["reference_type"],
+                425,
+                "operation_credential_type",
+            )
+        )
+    return fields
 
 
 def _bindings(payload: Any) -> list[dict[str, Any]]:

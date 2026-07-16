@@ -241,3 +241,22 @@ executed solution LIMIT before a second parse; a type-aware response limiter the
 bindings and CONSTRUCT/DESCRIBE triples, so caller LIMIT clauses cannot weaken either resource or
 response bounds. The dataset intentionally excludes non-member custom and virtual generated SHACL
 views; Context Query projects their merged guidance through the Shape Endpoint.
+
+## R-007 Operation Semantic Boundary
+
+Operation current state is canonical RDF in the default `asserted_ontology` graph. A stable
+Ontology-local `operation_id` deterministically yields the Operation IRI. Bounded collections are
+stored as canonical `rdf:JSON` literals with `schema_version=operation-v1`; they are an internal
+encoding, not a second authority or a public fact projection.
+
+R-004 compilers translate create/update/delete Operation commands into the same `RdfGraphDelta`
+pipeline used by other semantic writes. A shared codec validates both Modeling Batch candidate
+graphs and governed direct RDF candidate graphs before mutation, independently of SHACL. R-005 then
+records the ordinary statement, Modeling Item, Evidence, Audit, revision, and stale-state lineage;
+there is no Operation table or history store.
+
+R-006 reads Operations through a dedicated controlled candidate/serializer inside its existing
+scope/ranking pipeline. Generic RDF resource, statement, and neighborhood projection excludes
+Operation subjects and internal JSON predicates, preventing raw JSON or secret-shaped data from
+appearing as ordinary facts. The platform describes external capabilities only: execution,
+credentials, authorization, connectivity, retries, and compensation remain outside R-007.

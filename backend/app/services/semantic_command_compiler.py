@@ -9,14 +9,26 @@ pipeline.
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
+
+from rdflib import Literal, URIRef
+from rdflib.namespace import RDFS, SKOS
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfGraphDelta
 from app.services.fact_id import canonical_object_term, compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
+from app.services.operation_semantics import (
+    OperationValidationError,
+    canonical_operation_iri,
+    operation_graph_iri,
+    operation_quads,
+    operation_vocabulary,
+    validate_operation_payload,
+)
 
 
 class CommandCompilerError(RuntimeError):
@@ -108,6 +120,147 @@ def _shapes_custom_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
     return f"{_shapes_graph_iri(ns, ontology_id)}/custom"
 
 
+def _operation_error(exc: OperationValidationError) -> InvalidCommandPayload:
+    error = InvalidCommandPayload(f"{exc.code}: {exc}")
+    error.code = exc.code
+    return error
+
+
+def compile_create_operation(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    try:
+        operation = validate_operation_payload(payload, settings=settings, create=True)
+    except OperationValidationError as exc:
+        raise _operation_error(exc) from exc
+    delta = RdfGraphDelta(inserts=operation_quads(operation, settings, ontology_id))
+    return CompiledCommand(
+        command_kind="create_operation",
+        delta=delta,
+        object_kind="operation",
+        source_ids=[operation["operation_id"]],
+        target_graph_iris=[operation_graph_iri(settings, ontology_id)],
+        metadata={
+            "ontology_id": ontology_id,
+            "operation_id": operation["operation_id"],
+            "operation_iri": operation["operation_iri"],
+        },
+    )
+
+
+def compile_update_operation(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    try:
+        patch = validate_operation_payload(payload, settings=settings, partial=True)
+    except OperationValidationError as exc:
+        raise _operation_error(exc) from exc
+    operation_id = patch.get("operation_id")
+    operation_iri = patch.get("operation_iri")
+    if operation_iri is None and operation_id:
+        operation_iri = canonical_operation_iri(settings, operation_id)
+    if operation_iri is None:
+        raise InvalidCommandPayload("invalid_operation_payload: update_operation requires an ID")
+    graph_iri = operation_graph_iri(settings, ontology_id)
+    subject = f"<{operation_iri}>"
+    vocab = operation_vocabulary(settings)
+    scalar_predicates = {
+        "name": str(RDFS.label),
+        "description": str(RDFS.comment),
+        "target_resource_type_iri": vocab["target_resource_type_iri"],
+        "risk_level": vocab["risk_level"],
+        "status": vocab["status"],
+        "schema_version": vocab["schema_version"],
+    }
+    json_fields = {
+        "parameters",
+        "preconditions",
+        "effects",
+        "possible_failures",
+        "idempotency",
+        "tool_bindings",
+        "credential_requirements",
+    }
+    aliases_predicate = str(SKOS.altLabel)
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+    for field, predicate in scalar_predicates.items():
+        if field not in patch:
+            continue
+        deletes.append((subject, f"<{predicate}>", "?o", graph_iri))
+        value = patch[field]
+        if value is None or value == "":
+            continue
+        obj = URIRef(value).n3() if field == "target_resource_type_iri" else Literal(value).n3()
+        inserts.append((subject, f"<{predicate}>", obj, graph_iri))
+    if "aliases" in patch:
+        deletes.append((subject, f"<{aliases_predicate}>", "?o", graph_iri))
+        inserts.extend(
+            (subject, f"<{aliases_predicate}>", Literal(alias).n3(), graph_iri)
+            for alias in patch["aliases"]
+        )
+    for field in json_fields:
+        if field not in patch:
+            continue
+        deletes.append((subject, f"<{vocab[field]}>", "?o", graph_iri))
+        encoded = json.dumps(
+            patch[field], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        inserts.append(
+            (
+                subject,
+                f"<{vocab[field]}>",
+                Literal(
+                    encoded, datatype=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON")
+                ).n3(),
+                graph_iri,
+            )
+        )
+    return CompiledCommand(
+        command_kind="update_operation",
+        delta=RdfGraphDelta(inserts=sorted(inserts), deletes=sorted(deletes)),
+        object_kind="operation",
+        source_ids=[operation_id or operation_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "operation_id": operation_id,
+            "operation_iri": operation_iri,
+        },
+    )
+
+
+def compile_delete_operation(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    try:
+        identity = validate_operation_payload(payload, settings=settings, partial=True)
+    except OperationValidationError as exc:
+        raise _operation_error(exc) from exc
+    operation_id = identity.get("operation_id")
+    operation_iri = identity.get("operation_iri")
+    if operation_iri is None and operation_id:
+        operation_iri = canonical_operation_iri(settings, operation_id)
+    if operation_iri is None:
+        raise InvalidCommandPayload("invalid_operation_payload: delete_operation requires an ID")
+    graph_iri = operation_graph_iri(settings, ontology_id)
+    return CompiledCommand(
+        command_kind="delete_operation",
+        delta=RdfGraphDelta(deletes=[(f"<{operation_iri}>", "?p", "?o", graph_iri)]),
+        object_kind="operation",
+        source_ids=[operation_id or operation_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "operation_id": operation_id,
+            "operation_iri": operation_iri,
+        },
+    )
+
+
 def compile_create_class(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -124,34 +277,58 @@ def compile_create_class(
     graph_iri = _ontology_graph_iri(ns, ontology_id)
     op = str(ns.vocab)
     insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{class_iri}>", "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         "<http://www.w3.org/2002/07/owl#Class>", graph_iri),
+        (
+            f"<{class_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            "<http://www.w3.org/2002/07/owl#Class>",
+            graph_iri,
+        ),
         (f"<{class_iri}>", f"<{op}id>", _literal_term(class_id), graph_iri),
         (f"<{class_iri}>", f"<{op}ontology>", f"<{ontology_iri}>", graph_iri),
-        (f"<{class_iri}>", "<http://www.w3.org/2000/01/rdf-schema#label>",
-         _literal_term(name), graph_iri),
+        (
+            f"<{class_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#label>",
+            _literal_term(name),
+            graph_iri,
+        ),
     ]
     if description:
         insert_quads.append(
-            (f"<{class_iri}>", "<http://www.w3.org/2000/01/rdf-schema#comment>",
-             _literal_term(description), graph_iri)
+            (
+                f"<{class_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                _literal_term(description),
+                graph_iri,
+            )
         )
     for alias in aliases:
         insert_quads.append(
-            (f"<{class_iri}>", "<http://www.w3.org/2004/02/skos/core#altLabel>",
-             _literal_term(alias), graph_iri)
+            (
+                f"<{class_iri}>",
+                "<http://www.w3.org/2004/02/skos/core#altLabel>",
+                _literal_term(alias),
+                graph_iri,
+            )
         )
     for parent_id in parent_class_ids:
         insert_quads.append(
-            (f"<{class_iri}>", "<http://www.w3.org/2000/01/rdf-schema#subClassOf>",
-             f"<{ns.resource('class', parent_id)}>", graph_iri)
+            (
+                f"<{class_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#subClassOf>",
+                f"<{ns.resource('class', parent_id)}>",
+                graph_iri,
+            )
         )
     for external_id, mapping in external_mappings.items():
         if not mapping:
             continue
         insert_quads.append(
-            (f"<{class_iri}>", f"<{op}externalMapping>",
-             _literal_term({"system": external_id, "mapping": mapping}), graph_iri)
+            (
+                f"<{class_iri}>",
+                f"<{op}externalMapping>",
+                _literal_term({"system": external_id, "mapping": mapping}),
+                graph_iri,
+            )
         )
     delta = RdfGraphDelta(inserts=insert_quads)
     return CompiledCommand(
@@ -183,44 +360,63 @@ def compile_create_relation_type(
     graph_iri = _ontology_graph_iri(ns, ontology_id)
     op = str(ns.vocab)
     insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{relation_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         "<http://www.w3.org/2002/07/owl#ObjectProperty>", graph_iri),
+        (
+            f"<{relation_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            "<http://www.w3.org/2002/07/owl#ObjectProperty>",
+            graph_iri,
+        ),
         (f"<{relation_iri}>", f"<{op}id>", _literal_term(relation_type_id), graph_iri),
         (f"<{relation_iri}>", f"<{op}ontology>", f"<{ontology_iri}>", graph_iri),
-        (f"<{relation_iri}>",
-         "<http://www.w3.org/2000/01/rdf-schema#label>",
-         _literal_term(name), graph_iri),
-        (f"<{relation_iri}>",
-         "<http://www.w3.org/2000/01/rdf-schema#domain>",
-         f"<{ns.resource('class', source_class_id)}>", graph_iri),
-        (f"<{relation_iri}>",
-         "<http://www.w3.org/2000/01/rdf-schema#range>",
-         f"<{ns.resource('class', target_class_id)}>", graph_iri),
-        (f"<{relation_iri}>", f"<{op}sourceClassId>",
-         _literal_term(source_class_id), graph_iri),
-        (f"<{relation_iri}>", f"<{op}targetClassId>",
-         _literal_term(target_class_id), graph_iri),
+        (
+            f"<{relation_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#label>",
+            _literal_term(name),
+            graph_iri,
+        ),
+        (
+            f"<{relation_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#domain>",
+            f"<{ns.resource('class', source_class_id)}>",
+            graph_iri,
+        ),
+        (
+            f"<{relation_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#range>",
+            f"<{ns.resource('class', target_class_id)}>",
+            graph_iri,
+        ),
+        (f"<{relation_iri}>", f"<{op}sourceClassId>", _literal_term(source_class_id), graph_iri),
+        (f"<{relation_iri}>", f"<{op}targetClassId>", _literal_term(target_class_id), graph_iri),
         (f"<{relation_iri}>", f"<{op}scopePolicy>", _literal_term(scope_policy), graph_iri),
         (f"<{relation_iri}>", f"<{op}status>", _literal_term(status), graph_iri),
     ]
     if description:
         insert_quads.append(
-            (f"<{relation_iri}>",
-             "<http://www.w3.org/2000/01/rdf-schema#comment>",
-             _literal_term(description), graph_iri)
+            (
+                f"<{relation_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                _literal_term(description),
+                graph_iri,
+            )
         )
     if symmetric:
         insert_quads.append(
-            (f"<{relation_iri}>",
-             "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-             "<http://www.w3.org/2002/07/owl#SymmetricProperty>", graph_iri)
+            (
+                f"<{relation_iri}>",
+                "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+                "<http://www.w3.org/2002/07/owl#SymmetricProperty>",
+                graph_iri,
+            )
         )
     if transitive:
         insert_quads.append(
-            (f"<{relation_iri}>",
-             "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-             "<http://www.w3.org/2002/07/owl#TransitiveProperty>", graph_iri)
+            (
+                f"<{relation_iri}>",
+                "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+                "<http://www.w3.org/2002/07/owl#TransitiveProperty>",
+                graph_iri,
+            )
         )
     delta = RdfGraphDelta(inserts=insert_quads)
     return CompiledCommand(
@@ -332,32 +528,56 @@ def compile_create_property(
     is_object_property = object_class_id is not None
 
     insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{property_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         "<http://www.w3.org/2002/07/owl#ObjectProperty>" if is_object_property
-         else "<http://www.w3.org/2002/07/owl#DatatypeProperty>", graph_iri),
+        (
+            f"<{property_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            "<http://www.w3.org/2002/07/owl#ObjectProperty>"
+            if is_object_property
+            else "<http://www.w3.org/2002/07/owl#DatatypeProperty>",
+            graph_iri,
+        ),
         (f"<{property_iri}>", f"<{op}id>", _literal_term(property_id), graph_iri),
         (f"<{property_iri}>", f"<{op}ontology>", f"<{ontology_iri}>", graph_iri),
-        (f"<{property_iri}>", "<http://www.w3.org/2000/01/rdf-schema#label>",
-         _literal_term(name), graph_iri),
-        (f"<{property_iri}>", "<http://www.w3.org/2000/01/rdf-schema#domain>",
-         f"<{class_iri}>", graph_iri),
+        (
+            f"<{property_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#label>",
+            _literal_term(name),
+            graph_iri,
+        ),
+        (
+            f"<{property_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#domain>",
+            f"<{class_iri}>",
+            graph_iri,
+        ),
     ]
     if description:
         insert_quads.append(
-            (f"<{property_iri}>", "<http://www.w3.org/2000/01/rdf-schema#comment>",
-             _literal_term(description), graph_iri)
+            (
+                f"<{property_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                _literal_term(description),
+                graph_iri,
+            )
         )
     if is_object_property:
         target_iri = str(ns.resource("class", object_class_id))
         insert_quads.append(
-            (f"<{property_iri}>", "<http://www.w3.org/2000/01/rdf-schema#range>",
-             f"<{target_iri}>", graph_iri)
+            (
+                f"<{property_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#range>",
+                f"<{target_iri}>",
+                graph_iri,
+            )
         )
     else:
         insert_quads.append(
-            (f"<{property_iri}>", "<http://www.w3.org/2000/01/rdf-schema#range>",
-             f"<{_datatype_iri(datatype)}>", graph_iri)
+            (
+                f"<{property_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#range>",
+                f"<{_datatype_iri(datatype)}>",
+                graph_iri,
+            )
         )
 
     delta = RdfGraphDelta(inserts=insert_quads)
@@ -402,19 +622,46 @@ def compile_update_property(
 
     if name is not None:
         deletes.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
-        inserts.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(name), graph_iri))
+        inserts.append(
+            (
+                prop_term,
+                "<http://www.w3.org/2000/01/rdf-schema#label>",
+                _literal_term(name),
+                graph_iri,
+            )
+        )
     if description is not None:
-        deletes.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri))
+        deletes.append(
+            (prop_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri)
+        )
         if description:
-            inserts.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", _literal_term(description), graph_iri))
+            inserts.append(
+                (
+                    prop_term,
+                    "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                    _literal_term(description),
+                    graph_iri,
+                )
+            )
     if datatype is not None:
         deletes.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#range>", "?o", graph_iri))
-        inserts.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#range>", f"<{_datatype_iri(datatype)}>", graph_iri))
+        inserts.append(
+            (
+                prop_term,
+                "<http://www.w3.org/2000/01/rdf-schema#range>",
+                f"<{_datatype_iri(datatype)}>",
+                graph_iri,
+            )
+        )
     if object_class_id is not None:
         deletes.append((prop_term, "<http://www.w3.org/2000/01/rdf-schema#range>", "?o", graph_iri))
         inserts.append(
-            (prop_term, "<http://www.w3.org/2000/01/rdf-schema#range>",
-             f"<{ns.resource('class', object_class_id)}>", graph_iri)
+            (
+                prop_term,
+                "<http://www.w3.org/2000/01/rdf-schema#range>",
+                f"<{ns.resource('class', object_class_id)}>",
+                graph_iri,
+            )
         )
 
     delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
@@ -430,7 +677,8 @@ def compile_update_property(
             "property_id": property_id,
             "property_iri": property_iri,
             "fields_updated": [
-                k for k in ("name", "description", "datatype", "object_class_id")
+                k
+                for k in ("name", "description", "datatype", "object_class_id")
                 if payload.get(k) is not None
             ],
         },
@@ -467,22 +715,46 @@ def compile_update_relation_type(
 
     if name is not None:
         deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
-        inserts.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(name), graph_iri))
+        inserts.append(
+            (
+                rel_term,
+                "<http://www.w3.org/2000/01/rdf-schema#label>",
+                _literal_term(name),
+                graph_iri,
+            )
+        )
     if description is not None:
-        deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri))
+        deletes.append(
+            (rel_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri)
+        )
         if description:
-            inserts.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", _literal_term(description), graph_iri))
+            inserts.append(
+                (
+                    rel_term,
+                    "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                    _literal_term(description),
+                    graph_iri,
+                )
+            )
     if source_class_id is not None:
         deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#domain>", "?o", graph_iri))
         inserts.append(
-            (rel_term, "<http://www.w3.org/2000/01/rdf-schema#domain>",
-             f"<{ns.resource('class', source_class_id)}>", graph_iri)
+            (
+                rel_term,
+                "<http://www.w3.org/2000/01/rdf-schema#domain>",
+                f"<{ns.resource('class', source_class_id)}>",
+                graph_iri,
+            )
         )
     if target_class_id is not None:
         deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#range>", "?o", graph_iri))
         inserts.append(
-            (rel_term, "<http://www.w3.org/2000/01/rdf-schema#range>",
-             f"<{ns.resource('class', target_class_id)}>", graph_iri)
+            (
+                rel_term,
+                "<http://www.w3.org/2000/01/rdf-schema#range>",
+                f"<{ns.resource('class', target_class_id)}>",
+                graph_iri,
+            )
         )
     if inverse_name is not None:
         # Inverse name uses op:inverseName predicate.
@@ -504,7 +776,14 @@ def compile_update_relation_type(
             "relation_type_id": relation_type_id,
             "relation_type_iri": relation_type_iri,
             "fields_updated": [
-                k for k in ("name", "description", "source_class_id", "target_class_id", "inverse_name")
+                k
+                for k in (
+                    "name",
+                    "description",
+                    "source_class_id",
+                    "target_class_id",
+                    "inverse_name",
+                )
                 if payload.get(k) is not None
             ],
         },
@@ -522,8 +801,12 @@ def _compile_shape_node(
     class_iri = str(ns.resource("class", target_class_id))
     shape_term = f"<{shape_iri}>"
     quads: list[tuple[str, str, str, str]] = [
-        (shape_term, "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         "<http://www.w3.org/ns/shacl#NodeShape>", graph_iri),
+        (
+            shape_term,
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            "<http://www.w3.org/ns/shacl#NodeShape>",
+            graph_iri,
+        ),
         (shape_term, "<http://www.w3.org/ns/shacl#targetClass>", f"<{class_iri}>", graph_iri),
     ]
     for constraint in constraints:
@@ -532,28 +815,72 @@ def _compile_shape_node(
         # Use a stable BNode-style label by index for readability of inspection;
         # the canonical-write service persists these as blank nodes.
         property_term = f"_:{shape_iri.split('/')[-1]}__{path_id}"
-        quads.append((shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri))
-        quads.append((property_term, "<http://www.w3.org/ns/shacl#path>",
-                      f"<{ns.resource('property', path_id)}>", graph_iri))
+        quads.append(
+            (shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri)
+        )
+        quads.append(
+            (
+                property_term,
+                "<http://www.w3.org/ns/shacl#path>",
+                f"<{ns.resource('property', path_id)}>",
+                graph_iri,
+            )
+        )
         if "min_count" in constraint:
-            quads.append((property_term, "<http://www.w3.org/ns/shacl#minCount>",
-                          _literal_term(int(constraint["min_count"])), graph_iri))
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/ns/shacl#minCount>",
+                    _literal_term(int(constraint["min_count"])),
+                    graph_iri,
+                )
+            )
         if "max_count" in constraint:
-            quads.append((property_term, "<http://www.w3.org/ns/shacl#maxCount>",
-                          _literal_term(int(constraint["max_count"])), graph_iri))
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/ns/shacl#maxCount>",
+                    _literal_term(int(constraint["max_count"])),
+                    graph_iri,
+                )
+            )
         if "datatype" in constraint:
-            quads.append((property_term, "<http://www.w3.org/ns/shacl#datatype>",
-                          f"<{_datatype_iri(constraint['datatype'])}>", graph_iri))
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/ns/shacl#datatype>",
+                    f"<{_datatype_iri(constraint['datatype'])}>",
+                    graph_iri,
+                )
+            )
         if "pattern" in constraint:
-            quads.append((property_term, "<http://www.w3.org/ns/shacl#pattern>",
-                          _literal_term(constraint["pattern"]), graph_iri))
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/ns/shacl#pattern>",
+                    _literal_term(constraint["pattern"]),
+                    graph_iri,
+                )
+            )
         if "description" in constraint:
-            quads.append((property_term, "<http://www.w3.org/2000/01/rdf-schema#comment>",
-                          _literal_term(constraint["description"]), graph_iri))
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                    _literal_term(constraint["description"]),
+                    graph_iri,
+                )
+            )
         if "enum_values" in constraint:
             for value in constraint["enum_values"]:
-                quads.append((property_term, "<http://www.w3.org/ns/shacl#in>",
-                              _literal_term(value), graph_iri))
+                quads.append(
+                    (
+                        property_term,
+                        "<http://www.w3.org/ns/shacl#in>",
+                        _literal_term(value),
+                        graph_iri,
+                    )
+                )
     return quads
 
 
@@ -691,7 +1018,11 @@ def compile_delete_property(
         object_kind="property",
         source_ids=source_ids,
         target_graph_iris=[graph_iri],
-        metadata={"ontology_id": ontology_id, "property_id": property_id, "property_iri": property_iri},
+        metadata={
+            "ontology_id": ontology_id,
+            "property_id": property_id,
+            "property_iri": property_iri,
+        },
     )
 
 
@@ -702,7 +1033,9 @@ def compile_delete_class(
     if "class_id" not in payload and "class_iri" not in payload:
         raise InvalidCommandPayload("delete_class requires class_id or class_iri")
     class_id = payload.get("class_id")
-    class_iri = payload.get("class_iri") or (str(ns.resource("class", class_id)) if class_id else None)
+    class_iri = payload.get("class_iri") or (
+        str(ns.resource("class", class_id)) if class_id else None
+    )
     if class_iri is None:
         raise InvalidCommandPayload("delete_class requires class_id or class_iri")
 
@@ -711,7 +1044,12 @@ def compile_delete_class(
     op = str(ns.vocab)
     deletes = [(class_term, "?p", "?o", graph_iri)]
     inserts = [
-        (class_term, f"<{op}deprecated>", '"true"^^<http://www.w3.org/2001/XMLSchema#boolean>', graph_iri)
+        (
+            class_term,
+            f"<{op}deprecated>",
+            '"true"^^<http://www.w3.org/2001/XMLSchema#boolean>',
+            graph_iri,
+        )
     ]
     delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
     source_ids = [class_id] if class_id else [class_iri]
@@ -732,7 +1070,9 @@ def compile_update_class(
     if "class_id" not in payload and "class_iri" not in payload:
         raise InvalidCommandPayload("update_class requires class_id or class_iri")
     class_id = payload.get("class_id")
-    class_iri = payload.get("class_iri") or (str(ns.resource("class", class_id)) if class_id else None)
+    class_iri = payload.get("class_iri") or (
+        str(ns.resource("class", class_id)) if class_id else None
+    )
     if class_iri is None:
         raise InvalidCommandPayload("update_class requires class_id or class_iri")
     name = payload.get("name")
@@ -746,20 +1086,56 @@ def compile_update_class(
     inserts: list[tuple[str, str, str, str]] = []
 
     if name is not None:
-        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
-        inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(name), graph_iri))
+        deletes.append(
+            (class_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri)
+        )
+        inserts.append(
+            (
+                class_term,
+                "<http://www.w3.org/2000/01/rdf-schema#label>",
+                _literal_term(name),
+                graph_iri,
+            )
+        )
     if description is not None:
-        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri))
+        deletes.append(
+            (class_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", "?o", graph_iri)
+        )
         if description:
-            inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#comment>", _literal_term(description), graph_iri))
+            inserts.append(
+                (
+                    class_term,
+                    "<http://www.w3.org/2000/01/rdf-schema#comment>",
+                    _literal_term(description),
+                    graph_iri,
+                )
+            )
     if aliases is not None:
-        deletes.append((class_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri))
+        deletes.append(
+            (class_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri)
+        )
         for alias in aliases:
-            inserts.append((class_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", _literal_term(alias), graph_iri))
+            inserts.append(
+                (
+                    class_term,
+                    "<http://www.w3.org/2004/02/skos/core#altLabel>",
+                    _literal_term(alias),
+                    graph_iri,
+                )
+            )
     if parent_class_ids is not None:
-        deletes.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#subClassOf>", "?o", graph_iri))
+        deletes.append(
+            (class_term, "<http://www.w3.org/2000/01/rdf-schema#subClassOf>", "?o", graph_iri)
+        )
         for parent_id in parent_class_ids:
-            inserts.append((class_term, "<http://www.w3.org/2000/01/rdf-schema#subClassOf>", f"<{ns.resource('class', parent_id)}>", graph_iri))
+            inserts.append(
+                (
+                    class_term,
+                    "<http://www.w3.org/2000/01/rdf-schema#subClassOf>",
+                    f"<{ns.resource('class', parent_id)}>",
+                    graph_iri,
+                )
+            )
 
     delta = RdfGraphDelta(inserts=inserts, deletes=deletes)
     source_ids = [class_id] if class_id else [class_iri]
@@ -773,7 +1149,11 @@ def compile_update_class(
             "ontology_id": ontology_id,
             "class_id": class_id,
             "class_iri": class_iri,
-            "fields_updated": [k for k in ("name", "description", "aliases", "parent_class_ids") if payload.get(k) is not None],
+            "fields_updated": [
+                k
+                for k in ("name", "description", "aliases", "parent_class_ids")
+                if payload.get(k) is not None
+            ],
         },
     )
 
@@ -805,29 +1185,39 @@ def compile_create_entity(
     op = str(ns.vocab)
 
     insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{entity_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         "<http://www.w3.org/2002/07/owl#NamedIndividual>", graph_iri),
-        (f"<{entity_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         f"<{class_iri}>", graph_iri),
+        (
+            f"<{entity_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            "<http://www.w3.org/2002/07/owl#NamedIndividual>",
+            graph_iri,
+        ),
+        (
+            f"<{entity_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            f"<{class_iri}>",
+            graph_iri,
+        ),
         (f"<{entity_iri}>", f"<{op}id>", _literal_term(entity_id), graph_iri),
-        (f"<{entity_iri}>",
-         "<http://www.w3.org/2000/01/rdf-schema#label>",
-         _literal_term(label), graph_iri),
+        (
+            f"<{entity_iri}>",
+            "<http://www.w3.org/2000/01/rdf-schema#label>",
+            _literal_term(label),
+            graph_iri,
+        ),
     ]
     for alias in aliases:
         insert_quads.append(
-            (f"<{entity_iri}>",
-             "<http://www.w3.org/2004/02/skos/core#altLabel>",
-             _literal_term(alias), graph_iri)
+            (
+                f"<{entity_iri}>",
+                "<http://www.w3.org/2004/02/skos/core#altLabel>",
+                _literal_term(alias),
+                graph_iri,
+            )
         )
     for prop_iri, value in properties.items():
         if value is None:
             continue
-        insert_quads.append(
-            (f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri)
-        )
+        insert_quads.append((f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri))
 
     delta = RdfGraphDelta(inserts=insert_quads)
     return CompiledCommand(
@@ -870,12 +1260,30 @@ def compile_update_entity(
     inserts: list[tuple[str, str, str, str]] = []
 
     if label is not None:
-        deletes.append((entity_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri))
-        inserts.append((entity_term, "<http://www.w3.org/2000/01/rdf-schema#label>", _literal_term(label), graph_iri))
+        deletes.append(
+            (entity_term, "<http://www.w3.org/2000/01/rdf-schema#label>", "?o", graph_iri)
+        )
+        inserts.append(
+            (
+                entity_term,
+                "<http://www.w3.org/2000/01/rdf-schema#label>",
+                _literal_term(label),
+                graph_iri,
+            )
+        )
     if aliases is not None:
-        deletes.append((entity_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri))
+        deletes.append(
+            (entity_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", "?o", graph_iri)
+        )
         for alias in aliases:
-            inserts.append((entity_term, "<http://www.w3.org/2004/02/skos/core#altLabel>", _literal_term(alias), graph_iri))
+            inserts.append(
+                (
+                    entity_term,
+                    "<http://www.w3.org/2004/02/skos/core#altLabel>",
+                    _literal_term(alias),
+                    graph_iri,
+                )
+            )
     if properties is not None:
         for prop_iri, value in properties.items():
             deletes.append((entity_term, f"<{prop_iri}>", "?o", graph_iri))
@@ -896,8 +1304,7 @@ def compile_update_entity(
             "entity_id": entity_id,
             "entity_iri": entity_iri,
             "fields_updated": [
-                k for k in ("label", "aliases", "properties")
-                if payload.get(k) is not None
+                k for k in ("label", "aliases", "properties") if payload.get(k) is not None
             ],
         },
     )
@@ -1051,9 +1458,7 @@ def compile_create_mapping(
     import_run_iri = payload.get("import_run_iri")
 
     if (source_id is None) != (run_id is None):
-        raise InvalidCommandPayload(
-            "create_mapping requires both source_id and run_id, or neither"
-        )
+        raise InvalidCommandPayload("create_mapping requires both source_id and run_id, or neither")
 
     mapping_iri = str(ns.resource("mapping", mapping_id))
     op = str(ns.vocab)
@@ -1064,42 +1469,41 @@ def compile_create_mapping(
 
     target_predicate = _TARGET_PREDICATES[target_type]
     insert_quads: list[tuple[str, str, str, str]] = [
-        (f"<{mapping_iri}>",
-         "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-         f"<{op}SemanticMapping>", graph_iri),
+        (
+            f"<{mapping_iri}>",
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            f"<{op}SemanticMapping>",
+            graph_iri,
+        ),
         (f"<{mapping_iri}>", f"<{op}id>", _literal_term(mapping_id), graph_iri),
-        (f"<{mapping_iri}>", f"<{op}ontology>",
-         f"<{ns.resource('ontology', ontology_id)}>", graph_iri),
-        (f"<{mapping_iri}>", f"<{op}externalField>",
-         f"<{external_field_iri}>", graph_iri),
-        (f"<{mapping_iri}>", f"<{op}{target_predicate}>",
-         f"<{target_iri}>", graph_iri),
-        (f"<{mapping_iri}>", f"<{op}targetType>",
-         _literal_term(target_type), graph_iri),
-        (f"<{mapping_iri}>", f"<{op}joinKey>",
-         _literal_term(join_key), graph_iri),
-        (f"<{mapping_iri}>", f"<{op}confidence>",
-         _literal_term(confidence), graph_iri),
+        (
+            f"<{mapping_iri}>",
+            f"<{op}ontology>",
+            f"<{ns.resource('ontology', ontology_id)}>",
+            graph_iri,
+        ),
+        (f"<{mapping_iri}>", f"<{op}externalField>", f"<{external_field_iri}>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}{target_predicate}>", f"<{target_iri}>", graph_iri),
+        (f"<{mapping_iri}>", f"<{op}targetType>", _literal_term(target_type), graph_iri),
+        (f"<{mapping_iri}>", f"<{op}joinKey>", _literal_term(join_key), graph_iri),
+        (f"<{mapping_iri}>", f"<{op}confidence>", _literal_term(confidence), graph_iri),
     ]
     if owner:
-        insert_quads.append(
-            (f"<{mapping_iri}>", f"<{op}owner>", _literal_term(owner), graph_iri)
-        )
+        insert_quads.append((f"<{mapping_iri}>", f"<{op}owner>", _literal_term(owner), graph_iri))
     if source_id and run_id:
         if import_run_iri:
             insert_quads.append(
-                (f"<{mapping_iri}>",
-                 "<http://www.w3.org/ns/prov#wasDerivedBy>",
-                 f"<{import_run_iri}>", graph_iri)
+                (
+                    f"<{mapping_iri}>",
+                    "<http://www.w3.org/ns/prov#wasDerivedBy>",
+                    f"<{import_run_iri}>",
+                    graph_iri,
+                )
             )
         insert_quads.append(
-            (f"<{mapping_iri}>", f"<{op}sourceId>",
-             _literal_term(source_id), graph_iri)
+            (f"<{mapping_iri}>", f"<{op}sourceId>", _literal_term(source_id), graph_iri)
         )
-        insert_quads.append(
-            (f"<{mapping_iri}>", f"<{op}runId>",
-             _literal_term(run_id), graph_iri)
-        )
+        insert_quads.append((f"<{mapping_iri}>", f"<{op}runId>", _literal_term(run_id), graph_iri))
 
     delta = RdfGraphDelta(inserts=insert_quads)
     return CompiledCommand(
@@ -1162,7 +1566,9 @@ def compile_update_mapping(
         inserts.append((mapping_term, f"<{op}joinKey>", _literal_term(join_key), graph_iri))
     if confidence is not None:
         deletes.append((mapping_term, f"<{op}confidence>", "?o", graph_iri))
-        inserts.append((mapping_term, f"<{op}confidence>", _literal_term(float(confidence)), graph_iri))
+        inserts.append(
+            (mapping_term, f"<{op}confidence>", _literal_term(float(confidence)), graph_iri)
+        )
     if owner is not None:
         deletes.append((mapping_term, f"<{op}owner>", "?o", graph_iri))
         if owner:
@@ -1192,7 +1598,8 @@ def compile_update_mapping(
             "mapping_iri": mapping_iri,
             "graph_iri": graph_iri,
             "fields_updated": [
-                k for k in ("join_key", "confidence", "owner", "target_type", "target_iri")
+                k
+                for k in ("join_key", "confidence", "owner", "target_type", "target_iri")
                 if payload.get(k) is not None
             ],
         },
@@ -1307,8 +1714,7 @@ def compile_review_assertion(
     assertion_kind = payload.get("assertion_kind", "asserted")
     if assertion_kind not in {"asserted", "inferred", "rule_derived", "missing_evidence"}:
         raise InvalidCommandPayload(
-            "assertion_kind must be one of: asserted, inferred, rule_derived, "
-            "missing_evidence"
+            "assertion_kind must be one of: asserted, inferred, rule_derived, missing_evidence"
         )
     subject_iri = _required(payload, "subject_iri")
     predicate_iri = _required(payload, "predicate_iri")
@@ -1322,9 +1728,7 @@ def compile_review_assertion(
     reviewed_by = _required(payload, "reviewed_by")
     linked_fix_proposal_id = payload.get("linked_fix_proposal_id")
     if decision == "rejected" and not linked_fix_proposal_id:
-        raise InvalidCommandPayload(
-            "rejected review requires a linked_fix_proposal_id"
-        )
+        raise InvalidCommandPayload("rejected review requires a linked_fix_proposal_id")
     result_graph_iri = payload.get("result_graph_iri")
 
     # Select target graph by assertion_kind.
@@ -1492,6 +1896,9 @@ def compile_unbind_fact_evidence(
 
 
 _COMPILERS: dict[str, Compiler] = {
+    "create_operation": compile_create_operation,
+    "update_operation": compile_update_operation,
+    "delete_operation": compile_delete_operation,
     "create_class": compile_create_class,
     "create_relation_type": compile_create_relation_type,
     "update_fact": compile_update_fact,

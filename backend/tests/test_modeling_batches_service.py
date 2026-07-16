@@ -66,6 +66,11 @@ class FakeRdfStore:
         )
 
 
+class MissingNamedGraphRdfStore(FakeRdfStore):
+    def get_graph(self, graph_iri, _format):
+        raise AssertionError(f"get_graph must not be called for missing graph: {graph_iri}")
+
+
 class UncertainRdfStore(FakeRdfStore):
     def __init__(self, *, persist_before_failure: bool) -> None:
         super().__init__()
@@ -162,6 +167,121 @@ def test_dry_run_is_persistent_deterministic_and_has_zero_side_effects(modeling)
     assert db.scalar(select(func.count(ModelingBatchModel.id))) == 1
     assert db.scalar(select(func.count(ModelingBatchAttemptModel.id))) == 1
     assert "lease" not in json.dumps(first, default=str).lower()
+
+
+def test_operation_secret_is_rejected_before_batch_persistence(modeling):
+    service, db, _rdf, session_id, _lease, version = modeling
+    operation = _item(
+        "publish",
+        command_kind="create_operation",
+        payload={
+            "name": "Publish",
+            "target_resource_type_iri": "https://example.test/Workflow",
+            "idempotency": {"kind": "unknown"},
+            "risk_level": "low",
+            "tool_bindings": [
+                {
+                    "binding_id": "publish",
+                    "kind": "http_api",
+                    "system": "generic",
+                    "operation_identifier": "POST /publish",
+                    "authorization": "must-not-be-persisted",
+                }
+            ],
+        },
+    )
+
+    with pytest.raises(ModelingBatchError) as rejected:
+        service.submit(session_id, _request(version, [operation], batch="secret-batch"))
+
+    assert rejected.value.code == "operation_secret_forbidden"
+    assert "must-not-be-persisted" not in rejected.value.message
+    assert db.scalar(select(func.count(ModelingBatchModel.id))) == 0
+    assert db.scalar(select(func.count(ModelingBatchAttemptModel.id))) == 0
+
+
+def test_operation_can_target_class_created_by_item_ref(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    operation = _item(
+        "publish",
+        command_kind="create_operation",
+        depends_on=["workflow"],
+        payload={
+            "operation_id": "publish-workflow",
+            "name": "Publish workflow",
+            "target_resource_type_iri": {
+                "item_ref": {"client_item_id": "workflow", "output": "resource_iri"}
+            },
+            "parameters": [],
+            "preconditions": [],
+            "effects": [],
+            "possible_failures": [],
+            "idempotency": {"kind": "idempotent"},
+            "risk_level": "low",
+            "tool_bindings": [
+                {
+                    "binding_id": "publish",
+                    "kind": "mcp_tool",
+                    "system": "generic",
+                    "operation_identifier": "publish_workflow",
+                }
+            ],
+            "credential_requirements": [],
+        },
+    )
+
+    result = service.submit(
+        session_id,
+        _request(version, [_item("workflow", name="Workflow"), operation], batch="operation"),
+    )
+
+    assert result["attempt_status"] == "validated"
+    outputs = {item["client_item_id"]: item["resource_outputs"] for item in result["items"]}
+    assert outputs["publish"]["resource_iri"].endswith("/operation/publish-workflow")
+
+
+def test_operation_dry_run_treats_not_yet_physical_ontology_graph_as_empty(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    service.rdf_store = MissingNamedGraphRdfStore()  # type: ignore[assignment]
+    operation = _item(
+        "publish",
+        command_kind="create_operation",
+        depends_on=["workflow"],
+        payload={
+            "operation_id": "publish-missing-graph",
+            "name": "Publish workflow",
+            "target_resource_type_iri": {
+                "item_ref": {"client_item_id": "workflow", "output": "resource_iri"}
+            },
+            "parameters": [],
+            "preconditions": [],
+            "effects": [],
+            "possible_failures": [],
+            "idempotency": {"kind": "idempotent"},
+            "risk_level": "low",
+            "tool_bindings": [
+                {
+                    "binding_id": "publish",
+                    "kind": "mcp_tool",
+                    "system": "generic",
+                    "operation_identifier": "publish_workflow",
+                }
+            ],
+            "credential_requirements": [],
+        },
+    )
+
+    result = service.submit(
+        session_id,
+        _request(
+            version,
+            [_item("workflow", name="Workflow"), operation],
+            batch="missing-physical-graph",
+        ),
+    )
+
+    assert result["attempt_status"] == "validated"
+    assert not any(finding["blocking"] for finding in result["findings"])
 
 
 def test_batch_and_attempt_idempotency_conflicts_are_request_level(modeling):

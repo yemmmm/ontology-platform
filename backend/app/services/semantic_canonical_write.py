@@ -52,6 +52,7 @@ from app.services.semantic_graph_registry import (
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
+from app.services.operation_semantics import OperationValidationError, validate_operation_delta
 
 
 class CanonicalSemanticWriteError(RuntimeError):
@@ -271,6 +272,12 @@ class CanonicalSemanticWriteService:
             self._require_managed_graph(graph_iri)
             self._require_editable_graph(graph_iri)
             self._require_direct_editable_category(graph_iri)
+        try:
+            validate_operation_delta(self.rdf_store, compiled.delta, self.settings)
+        except OperationValidationError as exc:
+            error = CanonicalSemanticWriteError(f"{exc.code}: {exc}")
+            error.code = exc.code
+            raise error from exc
         if validate_shacl and shape_graph_iris:
             result = self._validate_candidate(compiled.delta, shape_graph_iris)
             if result["conforms"] is False:
@@ -343,6 +350,10 @@ class CanonicalSemanticWriteService:
         shape_graph = Graph()
         shape_targets = set(shape_graph_iris)
         for graph_iri in shape_graph_iris:
+            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(
+                graph_iri
+            ):
+                continue
             shape_graph.parse(
                 data=self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value),
                 format=RdfFormat.TURTLE.value,

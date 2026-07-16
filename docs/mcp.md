@@ -474,7 +474,7 @@ Calls the same `SemanticContextQueryService` as REST and accepts public business
   "scope_mode": "ontologies",
   "ontology_ids": ["ontology-a", "ontology-b"],
   "query": "发布工作流需要哪些参数",
-  "resource_types": ["concept", "instance", "relation", "fact", "rule"],
+  "resource_types": ["concept", "instance", "relation", "fact", "rule", "operation"],
   "assertion_types": ["asserted", "derived"],
   "depth": 1,
   "limit": 20
@@ -512,3 +512,15 @@ same validation as REST. The result limit is hard even when caller SPARQL contai
 MCP errors preserve `query_timeout`, `query_unavailable`, and `invalid_query` as distinct codes.
 Raw SPARQL includes persisted default-workspace members and current derived pointers, while merged
 runtime/custom SHACL guidance remains a Context Query projection.
+
+## Operation semantics through existing tools (R-007)
+
+No Operation-specific MCP tool is registered. Agents submit `create_operation`, `update_operation`,
+or `delete_operation` items through `submit_modeling_batch`, then retrieve current Operations through
+`query_semantic_context` with optional `resource_types=["operation"]`. These tools share the REST
+services, ordering, scope, warnings, Evidence/lineage decoration, and error codes.
+
+The Operation response is structured `operation-v1` data. It describes generic HTTP API or MCP tool
+bindings but never executes them. Only credential requirement classifications such as `api_key`,
+`oauth2`, or `mcp_server_auth` are accepted and returned; credential reference instances and secret
+values are forbidden on both surfaces.

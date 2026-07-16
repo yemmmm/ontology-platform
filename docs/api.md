@@ -548,7 +548,7 @@ action. The caller must select exactly one public scope:
   "scope_mode": "ontologies",
   "ontology_ids": ["ontology-a", "ontology-b"],
   "query": "发布工作流需要哪些参数",
-  "resource_types": ["concept", "instance", "relation", "fact", "rule"],
+  "resource_types": ["concept", "instance", "relation", "fact", "rule", "operation"],
   "assertion_types": ["asserted", "derived"],
   "depth": 1,
   "limit": 20
@@ -612,3 +612,23 @@ merged constraints by Context Query, not as implicit graphs in this raw SPARQL e
 
 R-008 remains responsible for production service identity and authorization. R-006 already enforces
 Project/Ontology ownership and server-side dataset scope.
+
+## v1.0 Operation semantics (R-007)
+
+R-007 adds `create_operation`, `update_operation`, and `delete_operation` to the existing Modeling
+Batch `items[].command_kind` contract. It does not add an Operation-specific REST route. An
+Operation is stored in the Ontology's current asserted graph, uses a platform-generated IRI derived
+from its stable `operation_id`, and follows the same dry-run, atomic/partial apply, idempotency,
+Evidence, recovery, Audit, and lineage behavior as other R-004 RDF commands.
+
+The payload describes the target Class IRI, parameters, declarative preconditions/effects/failures,
+idempotency, risk, generic `http_api | mcp_tool` bindings, and credential requirement *types*.
+Credential IDs, references, tokens, secrets, passwords, authorization/header values, and equivalent
+secret-bearing keys are rejected before Batch or Item persistence. Direct governed RDF edits use
+the same invariant even with `validate=false`; indeterminate Operation `DELETE/INSERT WHERE` edits
+fail closed.
+
+`POST /api/semantic/context:query` returns Operations as `kind=operation` through the existing
+pipeline. `data` contains the complete controlled `operation-v1` structure, while the target Class
+may appear in one-level related context. Internal RDF JSON literals never appear as ordinary facts,
+relations, or neighborhood entries, including when the request uses `resource_types=["fact"]`.

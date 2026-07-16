@@ -3,7 +3,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from rdflib import Dataset, Graph
+from rdflib import Dataset, Graph, URIRef
 from rdflib.compare import to_isomorphic
 from rdflib.namespace import RDF
 from pyshacl import validate as pyshacl_validate
@@ -42,6 +42,11 @@ from app.services.semantic_derived_state import (
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
+from app.services.operation_semantics import (
+    OperationValidationError,
+    operation_vocabulary,
+    validate_operation_delta,
+)
 
 
 class SemanticServiceError(RuntimeError):
@@ -169,6 +174,37 @@ class SemanticService:
             self._require_editable_graph(graph_iri)
             self._require_direct_editable_category(graph_iri)
 
+        restricted_where = format == "sparql-update" and _is_restricted_delete_insert_where(content)
+        operation_vocab = operation_vocabulary(self.settings)
+        operation_resource_prefix = f"{self.settings.semantic_base_iri.rstrip('/')}/operation/"
+        operation_vocab_prefix = operation_vocab["type"].removesuffix("Operation")
+        touches_operation_text = (
+            any(value in content for value in operation_vocab.values())
+            or operation_resource_prefix in content
+            or operation_vocab_prefix in content
+        )
+        current_graph_has_operation = restricted_where and any(
+            self._graph_contains_operation(graph_iri, operation_vocab["type"])
+            for graph_iri in affected_graphs
+        )
+        if restricted_where and (touches_operation_text or current_graph_has_operation):
+            error = SemanticServiceError(
+                "operation_edit_not_deterministic: Operation DELETE/INSERT WHERE must use a deterministic RDF delta"
+            )
+            error.code = "operation_edit_not_deterministic"
+            raise error
+        explicit_delta = _lineage_delta_from_edit(
+            format=format,
+            content=content,
+            target_graph_iri=target_graph_iri,
+        )
+        try:
+            validate_operation_delta(self.rdf_store, explicit_delta, self.settings)
+        except OperationValidationError as exc:
+            error = SemanticServiceError(f"{exc.code}: {exc}")
+            error.code = exc.code
+            raise error from exc
+
         warnings: list[str] = []
         warning_state = warning_state or {}
         validation_result: dict[str, Any] | None = None
@@ -186,7 +222,6 @@ class SemanticService:
         elif not validate:
             warnings.append("SHACL validation skipped by request")
 
-        restricted_where = format == "sparql-update" and _is_restricted_delete_insert_where(content)
         before_snapshot = (
             _snapshot_graph_quads(self.rdf_store, affected_graphs) if restricted_where else None
         )
@@ -263,6 +298,20 @@ class SemanticService:
             "graph_revisions": revision_bumps,
             "stale_derived_pointers": stale_pointers,
         }
+
+    def _graph_contains_operation(self, graph_iri: str, operation_type: str) -> bool:
+        graph = Graph()
+        try:
+            content = self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value)
+            if content and content.strip():
+                graph.parse(data=content, format=RdfFormat.TURTLE.value)
+        except Exception as exc:
+            error = SemanticServiceError(
+                "operation_edit_not_deterministic: Current graph could not be inspected before DELETE/INSERT WHERE"
+            )
+            error.code = "operation_edit_not_deterministic"
+            raise error from exc
+        return any(graph.triples((None, RDF.type, URIRef(operation_type))))
 
     def _reconcile_missing_active_occurrences(
         self,

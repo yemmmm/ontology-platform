@@ -622,7 +622,11 @@ SEMANTIC_CONTEXT_TEMPLATE_VERSION = "semantic-context-v1"
 
 
 def semantic_context_candidates_query(
-    graph_to_ontology: dict[str, str], terms: list[str], limit: int
+    graph_to_ontology: dict[str, str],
+    terms: list[str],
+    limit: int,
+    operation_type: str | None = None,
+    operation_predicates: set[str] | None = None,
 ) -> str:
     """Return the fixed lexical corpus query for a resolved current scope."""
     graph_scope_values = _graph_scope_values(graph_to_ontology)
@@ -634,6 +638,7 @@ def semantic_context_candidates_query(
     alias_match = _contains_any("LCASE(STR(?lexicalAlias))", terms)
     description_match = _contains_any("LCASE(STR(?lexicalDescription))", terms)
     predicate_label_match = _contains_any("LCASE(STR(?lexicalPredicateLabel))", terms)
+    operation_filters = _operation_projection_filters(operation_type, operation_predicates)
     return f"""# template: semantic-context-candidates
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -695,6 +700,7 @@ WHERE {{
                  BIND("statement" AS ?candidateType)
                  BIND("predicate" AS ?matchedField)
                  BIND(STR(?lexicalPredicateLabel) AS ?matchedValue) }}
+      {operation_filters}
     }}
   }}
   OPTIONAL {{ GRAPH ?graph {{ ?subject rdfs:label ?subjectLabelValue . }} }}
@@ -712,10 +718,15 @@ LIMIT {int(limit)}
 
 
 def semantic_context_neighborhood_query(
-    graph_iris: list[str], anchor_iris: list[str], limit: int
+    graph_iris: list[str],
+    anchor_iris: list[str],
+    limit: int,
+    operation_type: str | None = None,
+    operation_predicates: set[str] | None = None,
 ) -> str:
     values = _iri_values(graph_iris)
     anchors = _iri_values(anchor_iris)
+    operation_filters = _operation_projection_filters(operation_type, operation_predicates)
     return f"""# template: semantic-context-neighborhood
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -726,6 +737,7 @@ SELECT ?graph ?subject ?predicate ?object ?subjectLabel ?objectLabel
   GRAPH ?graph {{
     ?subject ?predicate ?object .
     FILTER(?subject = ?anchor || ?object = ?anchor)
+    {operation_filters}
     OPTIONAL {{ ?subject rdfs:label ?subjectLabel . }}
     OPTIONAL {{ ?object rdfs:label ?objectLabel . }}
     OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
@@ -758,6 +770,22 @@ def _same_ontology_graph_pairs(graph_to_ontology: dict[str, str]) -> str:
 
 
 def _contains_any(expression: str, terms: list[str]) -> str:
-    return " || ".join(
-        f"CONTAINS({expression}, LCASE({Literal(term).n3()}))" for term in terms
-    ) or "false"
+    return (
+        " || ".join(f"CONTAINS({expression}, LCASE({Literal(term).n3()}))" for term in terms)
+        or "false"
+    )
+
+
+def _operation_projection_filters(
+    operation_type: str | None, operation_predicates: set[str] | None
+) -> str:
+    if not operation_type:
+        return ""
+    predicates = ", ".join(URIRef(value).n3() for value in sorted(operation_predicates or set()))
+    predicate_filter = (
+        f"FILTER(!BOUND(?predicate) || ?predicate NOT IN ({predicates}))" if predicates else ""
+    )
+    return (
+        f"FILTER NOT EXISTS {{ GRAPH ?graph {{ ?subject a {URIRef(operation_type).n3()} . }} }}\n"
+        f"      {predicate_filter}"
+    )

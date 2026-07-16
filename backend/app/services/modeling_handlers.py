@@ -41,6 +41,7 @@ CREATE_RESOURCES: dict[str, tuple[str, str]] = {
     "create_entity": ("entity_id", "entity"),
     "create_mapping": ("mapping_id", "mapping"),
     "create_rule_definition": ("rule_id", "rule"),
+    "create_operation": ("operation_id", "operation"),
 }
 
 RDF_COMMANDS = {
@@ -66,6 +67,9 @@ RDF_COMMANDS = {
     "create_mapping",
     "update_mapping",
     "delete_mapping",
+    "create_operation",
+    "update_operation",
+    "delete_operation",
 }
 RULE_COMMANDS = {"create_rule_definition", "update_rule_definition", "delete_rule_definition"}
 
@@ -190,6 +194,42 @@ ALLOWED_FIELDS: dict[str, set[str]] = {
         "metadata",
     },
     "delete_rule_definition": {"rule_id", "rule_iri"},
+    "create_operation": {
+        "operation_id",
+        "name",
+        "aliases",
+        "description",
+        "target_resource_type_iri",
+        "parameters",
+        "preconditions",
+        "effects",
+        "possible_failures",
+        "idempotency",
+        "risk_level",
+        "tool_bindings",
+        "credential_requirements",
+        "status",
+        "schema_version",
+    },
+    "update_operation": {
+        "operation_id",
+        "operation_iri",
+        "name",
+        "aliases",
+        "description",
+        "target_resource_type_iri",
+        "parameters",
+        "preconditions",
+        "effects",
+        "possible_failures",
+        "idempotency",
+        "risk_level",
+        "tool_bindings",
+        "credential_requirements",
+        "status",
+        "schema_version",
+    },
+    "delete_operation": {"operation_id", "operation_iri"},
 }
 
 

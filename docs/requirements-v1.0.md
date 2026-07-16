@@ -7,7 +7,7 @@
 - 实现分支：`agent-semantic-layer-platform`
 - 目标用户：单组织、小团队、自托管
 - 参考验收场景：Dify 使用指南和 API 文档本体
-- 更新日期：2026-07-15
+- 更新日期：2026-07-16
 
 本文件是下一阶段的需求与状态账本。实现任何需求后，必须同步更新其“当前状态”、
 验收证据和相关提交，避免需求文档再次变成与代码脱节的历史计划。
@@ -80,7 +80,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | Agent 构建接口 | 已实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、Ontology Lease，以及 R-004 带证据 Modeling Batch 的 dry-run、原子/部分 apply、查询和恢复。 |
 | 本体组合 | 部分实现 | Graph Set 可组合多个图，Mapping 命令存在；缺少本体依赖、导入版本和桥接关系契约。 |
 | 身份认证和项目隔离 | 未实现 | `ApiKeyModel` 是未使用的骨架，HTTP/MCP 路由没有认证依赖；R-006 Agent 查询入口已有 Project/Ontology 范围隔离，其他受控或 legacy 图级接口的授权仍待 R-008。 |
-| 操作语义模型 | 未实现 | 尚无通用 Operation、参数、前置条件、效果、风险和外部工具绑定查询契约。 |
+| 操作语义模型 | 已实现 | Ontology 级 Operation 已接入 R-004 建模批次、受治理 RDF 编辑、R-005 lineage 与 R-006 Context Query；平台只返回通用工具绑定和凭证需求类型，不执行工具或保存凭证实例。 |
 | 异步任务执行 | 未实现 | 投影、推理和规则没有持久任务队列、重试与恢复机制。 |
 | Dify 端到端验收 | 未实现 | 当前没有固定资料集、问题集、外部 Agent 执行器和指标报告。 |
 
@@ -94,7 +94,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | R-004 | 外部 Agent 建模批次的预检、幂等应用与失败恢复 | P0 | 已实现 | M | 极高 | R-001、R-003 |
 | R-005 | 统一知识来源与推导链 | P0 | 已实现 | L | 高 | R-002、R-004 |
 | R-006 | 面向 Agent 的结构化语义上下文查询 | P0 | 已实现 | L | 极高 | R-001、R-005 |
-| R-007 | 通用操作语义与外部工具绑定 | P0 | 未实现 | M | 极高 | R-004、R-006 |
+| R-007 | 通用操作语义与外部工具绑定 | P0 | 已实现 | M | 极高 | R-004、R-005、R-006 |
 | R-008 | API/MCP 认证、授权与项目隔离 | P0 | 未实现 | L | 高 | R-001 |
 | R-009 | Agent Test 外部化与查询诊断重构 | P0 | 部分实现 | S | 极高 | R-006 |
 | R-010 | Dify 通用能力端到端验收套件 | P0 | 未实现 | M | 极高 | R-002 至 R-009 |
@@ -1025,21 +1025,112 @@ R-006 首版不新增面向普通用户的业务查询页面。R-009 将现有 A
 
 ### R-007 通用操作语义与外部工具绑定
 
-当前状态：`未实现`
+当前状态：`已实现`
 
-平台需要通用表达“某个外部系统能做什么”，但不执行该操作。至少覆盖：
+最后更新：2026-07-16
 
-- Operation 名称、语义描述和目标资源类型。
-- 输入参数、必填性、类型、枚举、默认值和校验约束。
-- 前置条件、执行效果、可能失败、幂等性和风险等级。
-- 外部 API/MCP operation 标识、文档来源和版本。
-- 凭证引用类型；不得在 RDF 或查询结果中保存/返回明文凭证。
+详细设计：`docs/superpowers/specs/2026-07-16-r007-operation-semantics-design.md`；独立验证使用
+`docs/superpowers/plans/2026-07-16-r007-operation-semantics-test-plan.md`，Round 2 `PASS`。
+
+#### 要解决的问题
+
+R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批次、统一 lineage 和结构化上下文
+查询链，但当前模型只能描述资源、事实、关系和规则，不能稳定表达外部系统提供的可调用能力。
+消费 Agent 因而无法从同一语义上下文中获得“发布工作流是什么操作、作用于哪类资源、需要哪些
+参数、有什么前置条件和风险、应映射到哪个 API/MCP tool”等结构化事实。
+
+本需求只让平台表达和检索外部能力，不让平台代理执行操作。外部消费 Agent 继续负责规划、取得
+目标系统凭证并调用目标 API/MCP；平台不得保存凭证实例或明文秘密。
+
+#### 作用域与权威状态
+
+- Operation 归属一个 Ontology，当前权威状态存于其默认工作区的 `asserted_ontology` 图；目标资源
+  类型使用稳定 Class IRI。Project 全局或多 Ontology 组合继续由 R-006 的范围模型处理。
+- Operation 至少包含稳定 ID/IRI、名称、别名、语义描述、目标资源类型、参数、前置条件、效果、
+  可能失败、幂等性、风险等级、外部工具绑定、凭证需求类型和状态。
+- Operation IRI 由平台按 Ontology 内稳定 `operation_id` 确定性生成；创建时不接受自定义 IRI。
+  update/delete 可用 ID 或其规范 IRI 定位，两者同时出现时必须指向同一资源。
+- 参数包含名称、描述、必填性、值类型、枚举、默认值和有界校验约束。前置条件与效果首版是供
+  Agent 消费的结构化声明，不建设表达式执行器，也不在平台内判断某次操作是否可执行。
+- 外部工具绑定支持通用 `http_api` 与 `mcp_tool`，记录外部系统标识、operation/tool 标识、接口版本、
+  文档来源和文档版本；不得出现 Dify 专用字段、表、路由或服务分支。
+- 凭证需求只记录 `reference_type`、名称、描述和是否必需，例如 `api_key`、`oauth2` 或
+  `mcp_server_auth`。Operation payload、RDF、Context Query、Batch/Audit/lineage 均不得接收或返回
+  credential reference ID、token、secret、password、header value 等凭证实例或明文值。
+
+#### 写入、校验与历史
+
+- R-004 的同一 Modeling Batch 增加 `create_operation`、`update_operation` 和
+  `delete_operation` handler；不新增 Operation 专用批次、事务或恢复接口。
+- `create_operation` 可与同批次创建的目标 Class 通过结构化 `item_ref` 关联；Operation 继续遵守
+  R-004 的 dry-run、确定性 ID、幂等、冲突、partial apply、Evidence 和恢复语义。
+- `update_operation` 为 patch：省略字段保持原值，显式提供的参数、条件、效果、失败、绑定或凭证
+  需求集合整体替换；空集合表示清空。删除后不参与当前查询，历史由 R-005 lineage/Audit 查询。
+- 受治理 RDF 编辑也可创建或更新 Operation，但必须使用同一受控词汇、完整性和秘密字段校验；
+  `validate=false` 只能跳过 SHACL，不能跳过 Operation 平台不变量。无法在写入前确定候选结果的
+  Operation `DELETE/INSERT WHERE` 必须 fail closed，调用方可改用确定性 RDF delta 或 Modeling Batch。
+- 名称、目标资源类型、至少一个工具绑定、幂等性和风险等级为活动 Operation 的必填字段；参数名和
+  binding ID 在 Operation 内唯一，枚举/默认值/约束必须与参数值类型一致。
+- R-004 Modeling Item、Evidence Reference、rationale、Competency Question、Edit Audit 和每条 RDF
+  语句继续通过 R-005 的既有模型追溯，不建立 Operation 专用证据或历史表。
+- R-004 在创建 Batch/Item 记录前递归扫描 Operation payload 的 secret-bearing key；命中时以稳定的
+  请求级错误拒绝整个提交，不创建 Batch、Attempt、Item、Finding 或 Audit，也不回显字段值。
+
+#### 查询契约
+
+- R-006 的 `POST /api/semantic/context:query` 与 `query_semantic_context` 在同一候选、排序、范围、
+  Evidence/lineage 装饰和截断流程中返回 `kind=operation`，不新增 Operation 专用查询入口。
+- Operation 的名称、别名、描述、目标资源类型、参数名称/描述、前置条件、效果、失败和工具绑定
+  标识均可参与普通 lexical 召回；结果 `data` 返回完整结构化 Operation 当前态。
+- Operation 内部 JSON predicate 和 raw literal 不得进入 R-006 的普通 fact/relation 候选或邻域；
+  它们只由 `kind=operation` 的受控 serializer 返回。即使显式只查询 `resource_types=["fact"]`，也
+  不能借普通事实响应读取 Operation raw JSON。
+- Operation 与目标 Class 的语义关系可进入同一一层关联上下文。查询只返回凭证需求类型，永不
+  返回凭证实例、秘密或供 Agent 直接使用的认证 header/value。
+- 相同范围、查询和语义版本产生稳定结果；未命中返回 R-006 的 `no_match`，不建立操作意图路由。
+
+#### 明确不在首版范围
+
+- 代理执行外部 API/MCP、网络连通性检查、重试、补偿、审批或操作日志采集。
+- 凭证保管、凭证引用实例、服务身份和授权；API/MCP 接入安全仍属于 R-008。
+- 外部系统真实资源实例同步；该能力属于 R-202。
+- 可执行前置条件/效果 DSL、自动工作流规划、UI 编辑器或普通用户操作目录页面。
+- Dify 专用模型、代码分支或内置操作包；Dify 只作为 R-010 的测试夹具。
 
 验收标准：
 
-- 通过通用命令或 RDF 编辑可创建和更新 Operation。
-- 上下文查询可把“发布工作流”解析到操作、目标资源、参数和前置条件。
-- Dify 操作只是测试数据，不产生任何 Dify 专用后端分支。
+- Modeling Batch 的 create/update/delete Operation 在 `dry_run`、`apply_atomic`、`apply_partial`、
+  幂等重试和恢复路径中与现有命令一致，并能关联 Item 级 Evidence 和 lineage。
+- 受治理 RDF 编辑可用同一词汇创建/更新合法 Operation；缺少必填字段、目标 Class 不存在、集合键
+  冲突、类型/默认值/约束不一致或包含秘密字段时，在改写 RDF 前返回稳定错误。
+- 上下文查询可把“发布工作流需要哪些参数和前置条件”解析到 Operation、目标资源 Class、参数、
+  前置条件、效果、可能失败、幂等性、风险、通用 API/MCP 绑定及凭证需求类型。
+- REST 与 MCP 对同一请求返回相同的 Operation 核心字段、顺序、范围、Evidence/lineage 状态和警告；
+  Operation 仍遵守 R-006 的 Project/Ontology 隔离、当前态和有界响应。
+- payload、RDF 当前态、Context Query、Batch、Finding、Audit 和 lineage 中不出现测试凭证明文、
+  credential reference ID 或 secret-bearing 字段；`validate=false` 不能绕过该不变量。
+- 删除或替换的 Operation 当前态不再召回，R-005 仍可查询其历史语句和来源。
+- Dify 操作只作为通用模型测试数据，不产生任何 Dify 专用后端分支、API、表或查询流程。
+
+#### 实现与验证结果
+
+- 已新增共享 Operation vocabulary/codec/invariant，使用 `operation-v1` 受控 RDF 当前态、规范 JSON
+  literal 和由 `operation_id` 确定性生成的 IRI；没有新增 Postgres Operation 双存储或 migration。
+- R-004 已注册 `create_operation`、`update_operation`、`delete_operation`，复用 dry-run、原子/部分
+  apply、幂等、Evidence、recovery、revision、stale 与 R-005 Statement Occurrence/Origin 记录。
+- Operation secret-bearing key 在 Batch/Item 持久化前拒绝；canonical/direct RDF 即使
+  `validate=false` 也执行同一 invariant，无法安全预判的 Operation WHERE 写入 fail closed。
+- R-006 在同一 Context Query pipeline 返回结构化 `kind=operation` 和目标 Class context；内部
+  Operation JSON predicate 已从普通 resource/fact/relation/neighborhood 投影排除，REST/MCP 一致。
+- plan review Round 1 的三项 High 均修订后在 Round 2 `PASS`；独立测试 Round 1 发现的新 Ontology
+  缺少物理 named graph 时 HTTP 500，修复后 Round 2 在真实 PostgreSQL/Oxigraph 完成
+  create/update/query/lineage/direct edit/restart/delete/include-history、安全、scope 与清理闭环。
+- 独立最终验证为 R-007 定向 `115 passed`、全量 backend `646 passed, 3 skipped`，changed-file
+  Ruff/format 和 `git diff --check` 通过；临时运行模式已撤销，服务恢复原 `legacy_only` 配置后
+  backend/frontend 均为 200。首版未修改 frontend，按共享测试计划不执行 UI suite。
+
+剩余问题：R-008 身份认证/授权和 R-010 外部 Agent 端到端验收仍是独立 P0 需求，不影响 R-007
+作为通用 Operation 表达与查询能力完成。
 
 ### R-008 API/MCP 认证、授权与项目隔离
 

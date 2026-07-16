@@ -301,3 +301,20 @@ _Avoid_: raw database write, query endpoint
 The business-friendly input surface for ordinary workflows, such as creating classes, submitting
 assertions, validating graph edits, and controlling graph editability.
 _Avoid_: semantic core, canonical store
+
+**Operation**:
+An Ontology-scoped semantic description of an externally callable capability, including its target
+resource type, inputs, declarative conditions and outcomes, risk, idempotency, and generic tool
+bindings. The platform stores and retrieves the description but does not execute it.
+_Avoid_: workflow run, tool invocation, API credential
+
+**Tool Binding**:
+A non-secret mapping from an Operation to a generic external `http_api` or `mcp_tool` identifier,
+including system, interface version, and documentation metadata.
+_Avoid_: connector credential, executable request, Dify-specific binding
+
+**Credential Requirement**:
+A classification of authentication material that an Operation caller must supply at runtime, such
+as `api_key`, `oauth2`, or `mcp_server_auth`. It never contains a credential instance, reference ID,
+token, password, authorization header, or secret value.
+_Avoid_: credential reference, stored secret, authentication header

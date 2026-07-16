@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from rdflib import Graph
+from rdflib import Graph, URIRef
 from rdflib.util import from_n3
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -49,6 +49,10 @@ from app.services.modeling_handlers import (
     union_delta,
 )
 from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.operation_semantics import (
+    OperationValidationError,
+    reject_operation_secrets,
+)
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
@@ -160,6 +164,20 @@ class ModelingBatchService:
             raise ModelingBatchError(
                 "forbidden", "Project write permission is required", status_code=403
             )
+        for item in payload.items:
+            if item.command_kind in {
+                "create_operation",
+                "update_operation",
+                "delete_operation",
+            }:
+                try:
+                    reject_operation_secrets(item.payload)
+                except OperationValidationError as exc:
+                    raise ModelingBatchError(
+                        exc.code,
+                        str(exc),
+                        status_code=422,
+                    ) from exc
         self._check_capacity(payload, request_bytes)
         build_session = self.session.scalar(
             select(BuildSessionModel)
@@ -672,9 +690,20 @@ class ModelingBatchService:
                 prepared[item.client_item_id] = command
                 item.resource_outputs = command.outputs
             except (InvalidCommandPayload, KeyError, TypeError, ValueError) as exc:
+                code = getattr(exc, "code", None) or (
+                    str(exc).split(":", 1)[0]
+                    if str(exc).startswith(
+                        (
+                            "invalid_operation_payload:",
+                            "operation_secret_forbidden:",
+                            "unsupported_operation_schema_version:",
+                        )
+                    )
+                    else "invalid_command_payload"
+                )
                 findings.append(
                     _finding(
-                        "invalid_command_payload",
+                        code,
                         "error",
                         str(exc),
                         item_ids=[item.client_item_id],
@@ -759,6 +788,45 @@ class ModelingBatchService:
                     scope="batch",
                 )
             ]
+        operation_commands = {
+            item_id: prepared[item_id]
+            for item_id in selected
+            if item_id in prepared and prepared[item_id].command_kind.endswith("_operation")
+        }
+        current_by_graph: dict[str, Graph] = {}
+        for item_id, command in operation_commands.items():
+            graph_iri = command.compiled.target_graph_iris[0]
+            if graph_iri not in current_by_graph:
+                current = Graph()
+                graph_exists = not hasattr(self.rdf_store, "graph_exists") or (
+                    self.rdf_store.graph_exists(graph_iri)
+                )
+                content = self.rdf_store.get_graph(graph_iri, "turtle") if graph_exists else ""
+                if content and content.strip():
+                    current.parse(data=content, format="turtle")
+                current_by_graph[graph_iri] = current
+            operation_iri = command.compiled.metadata.get("operation_iri")
+            exists = operation_iri is not None and any(
+                current_by_graph[graph_iri].triples((URIRef(operation_iri), None, None))
+            )
+            if command.command_kind == "create_operation" and exists:
+                return [
+                    _finding(
+                        "resource_already_exists",
+                        "error",
+                        "Operation already exists; use update_operation",
+                        item_ids=[item_id],
+                    )
+                ]
+            if command.command_kind != "create_operation" and not exists:
+                return [
+                    _finding(
+                        "operation_not_found",
+                        "error",
+                        "Operation was not found in the target Ontology",
+                        item_ids=[item_id],
+                    )
+                ]
         compiled = CompiledCommand(
             command_kind="modeling_batch",
             delta=delta,
@@ -802,12 +870,25 @@ class ModelingBatchService:
                 )
             ]
         except CanonicalSemanticWriteError as exc:
+            code = getattr(exc, "code", "candidate_validation_failed")
+            item_ids = []
+            if str(code).startswith("operation_") or code in {
+                "invalid_operation_payload",
+                "unsupported_operation_schema_version",
+            }:
+                item_ids = sorted(
+                    item_id
+                    for item_id in selected
+                    if prepared.get(item_id)
+                    and prepared[item_id].command_kind.endswith("_operation")
+                )
             return [
                 _finding(
-                    "candidate_validation_failed",
+                    code,
                     "error",
                     str(exc),
-                    scope="batch",
+                    item_ids=item_ids,
+                    scope="item" if item_ids else "batch",
                 )
             ]
         return []
@@ -1446,7 +1527,10 @@ class ModelingBatchService:
         graphs: dict[str, Graph] = {}
         for graph_iri in delta.affected_graph_iris():
             graph = Graph()
-            content = self.rdf_store.get_graph(graph_iri, "turtle")
+            graph_exists = not hasattr(self.rdf_store, "graph_exists") or (
+                self.rdf_store.graph_exists(graph_iri)
+            )
+            content = self.rdf_store.get_graph(graph_iri, "turtle") if graph_exists else ""
             if content:
                 graph.parse(data=content, format="turtle")
             graphs[graph_iri] = graph
