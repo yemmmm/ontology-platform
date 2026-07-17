@@ -91,8 +91,8 @@ R-005 把 statement occurrence、Evidence Reference、Modeling Item、Audit、re
 
 Operation 是默认 `asserted_ontology` 图中的 RDF 资源，通过普通 Modeling Batch 命令创建/更新/
 删除，并复用 R-005 lineage 与 R-006 查询。平台只描述外部能力的 tool binding、输入输出、约束和
-凭证需求类型；执行、凭证实例、重试和补偿留给外部 Agent/系统。secret-shaped 内容由当前
-Operation codec 拒绝，但这不等于 R-008 的完整密钥扫描与认证授权。
+凭证需求类型；执行、凭证实例、重试和补偿留给外部 Agent/系统。Operation 与其他领域写路径均受
+R-008 高可信秘密扫描保护。
 
 ## 派生状态与迁移
 
@@ -102,10 +102,12 @@ Set source signature。Search/Vector writer 目前仍是假实现，真实持久
 
 ## 安全与未完成边界
 
-- R-008 未实现：HTTP/MCP 没有认证、授权、可信主体与项目访问控制，只能本地受信运行。
+- R-008 已实现：HTTP/UI/MCP 使用统一认证主体、scope 授权与 Project 访问控制。
 - R-009 部分实现：Agent Test 仍在平台内调用 LLM，中文分词不足。
 - R-010 未实现：没有 Dify 固定资料集、任务集、执行器和验收指标。
-- `ApiKeyModel` 等遗留骨架不代表安全能力已经生效。
+- `ApiKeyModel` 只保存 SHA-256 key hash；`UserModel` 保存 Argon2id password hash，
+  `SecurityAuditEventModel` 保存最小只追加安全事件。HTTP/MCP adapter 将 credential 解析为统一
+  `AuthPrincipal`，服务写入使用 principal actor，并在访问 RDF/Postgres 资源前校验 Project 归属。
 - raw Cypher 不属于当前接口；SPARQL Update 只允许受治理编辑路径中的受限形式。
 
 ## 接口文档同步边界（R-011）

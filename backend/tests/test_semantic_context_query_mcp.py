@@ -36,7 +36,7 @@ def _tool(name: str):
 
 
 @pytest.fixture()
-def scoped_mcp(in_memory_session, monkeypatch):
+def scoped_mcp(in_memory_session, monkeypatch, mcp_principal_factory):
     settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
     in_memory_session.add(ProjectModel(id="p", name="P", normalized_label="p"))
     ontology = OntologyModel(id="o", project_id="p", name="O")
@@ -44,12 +44,9 @@ def scoped_mcp(in_memory_session, monkeypatch):
     in_memory_session.flush()
     OntologyWorkspaceService(in_memory_session, settings).ensure(ontology)
     in_memory_session.commit()
-    factory = sessionmaker(
-        bind=in_memory_session.get_bind(), autoflush=False, autocommit=False
-    )
-    monkeypatch.setattr(
-        "app.mcp.runtime.get_resources", lambda: (factory, None, object())
-    )
+    mcp_principal_factory(in_memory_session)
+    factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)
+    monkeypatch.setattr("app.mcp.runtime.get_resources", lambda: (factory, None, object()))
 
     def install(store):
         monkeypatch.setattr(

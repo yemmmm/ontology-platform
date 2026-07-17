@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
+backend/.local/
 
 node_modules/
 dist/

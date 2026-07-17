@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
@@ -67,7 +68,14 @@ from app.api.schemas import (
 )
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
-from app.repositories.models import OntologyModel, SemanticGraphSetModel
+from app.repositories.models import (
+    OntologyModel,
+    SemanticGraphSetModel,
+    SemanticRuleDefinitionModel,
+    SemanticRuleModel,
+)
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 from app.services.evidence_reference import (
     EvidenceReferenceError,
     EvidenceReferenceService,
@@ -198,9 +206,7 @@ def _reasoning_service(
     )
 
 
-def _rule_definition_service(
-    session: Session, settings: Settings
-) -> SemanticRuleDefinitionService:
+def _rule_definition_service(session: Session, settings: Settings) -> SemanticRuleDefinitionService:
     return SemanticRuleDefinitionService(session, settings)
 
 
@@ -427,6 +433,7 @@ def create_reasoning_run(
 @router.post("/edits", response_model=SemanticEditResponse)
 def create_semantic_edit(
     request: SemanticEditRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -438,7 +445,7 @@ def create_semantic_edit(
             request.target_graph_iri,
             request.validate_edit,
             request.shape_graph_iris,
-            request.actor,
+            principal.actor,
             request.reason,
             request.warning_state,
         )
@@ -496,10 +503,13 @@ def list_semantic_edit_audits(
     return [SemanticEditAuditRead(**item) for item in result]
 
 
-@router.patch("/graphs/{graph_iri:path}/editability", response_model=SemanticGraphEditabilityResponse)
+@router.patch(
+    "/graphs/{graph_iri:path}/editability", response_model=SemanticGraphEditabilityResponse
+)
 def update_graph_editability(
     graph_iri: str,
     request: SemanticGraphEditabilityRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -508,7 +518,7 @@ def update_graph_editability(
         result = _service(session, rdf_store, settings).set_graph_editability(
             graph_iri,
             request.editable,
-            request.actor,
+            principal.actor,
             request.reason,
         )
         return SemanticGraphEditabilityResponse(**result)
@@ -545,19 +555,32 @@ def list_graph_registry(
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
+    principal: AuthPrincipal = Depends(principal_dependency),
 ) -> SemanticGraphRegistryListResponse:
     registry = _registry_service(session, settings)
     records = registry.list_graphs(category=category, owner_type=owner_type, owner_id=owner_id)
+    if principal.project_id is not None:
+        ontology_ids = set(
+            session.scalars(
+                select(OntologyModel.id).where(OntologyModel.project_id == principal.project_id)
+            )
+        )
+        records = [
+            record
+            for record in records
+            if record.semantic_owner_type == "ontology" and record.semantic_owner_id in ontology_ids
+        ]
     graphs: list[SemanticGraphRegistryRead] = []
     for record in records:
         graphs.append(_registry_read(registry, record, include_revisions, rdf_store))
-    summary = registry.status_summary()
+    summary = registry.status_summary(records if principal.project_id is not None else None)
     return SemanticGraphRegistryListResponse(graphs=graphs, summary=summary)
 
 
 @router.post("/graphs", response_model=SemanticGraphRegistryRead)
 def register_graph(
     request: SemanticGraphRegistryCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -569,7 +592,7 @@ def register_graph(
             category=request.category,
             owner_type=request.owner_type,
             owner_id=request.owner_id,
-            created_by=request.created_by,
+            created_by=principal.actor,
             mutable_by_direct_edit=request.mutable_by_direct_edit,
             metadata=request.metadata,
         )
@@ -598,9 +621,21 @@ def list_graph_sets(
     status: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
+    principal: AuthPrincipal = Depends(principal_dependency),
 ) -> SemanticGraphSetListResponse:
     service = _graph_set_service(session, settings)
     sets = service.list_graph_sets(scope_type=scope_type, scope_id=scope_id, status=status)
+    if principal.project_id is not None:
+        ontology_ids = set(
+            session.scalars(
+                select(OntologyModel.id).where(OntologyModel.project_id == principal.project_id)
+            )
+        )
+        sets = [
+            graph_set
+            for graph_set in sets
+            if graph_set.scope_type == "ontology" and graph_set.scope_id in ontology_ids
+        ]
     return SemanticGraphSetListResponse(
         graph_sets=[SemanticGraphSetRead(**service.describe(graph_set.id)) for graph_set in sets]
     )
@@ -609,6 +644,7 @@ def list_graph_sets(
 @router.post("/graph-sets", response_model=SemanticGraphSetRead)
 def create_graph_set(
     request: SemanticGraphSetCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphSetRead:
@@ -619,7 +655,7 @@ def create_graph_set(
             scope_type=request.scope_type,
             scope_id=request.scope_id,
             members=[member.model_dump() for member in request.members],
-            created_by=request.created_by,
+            created_by=principal.actor,
             metadata=request.metadata,
             supersedes=request.supersedes,
         )
@@ -679,8 +715,7 @@ def create_graph_set_reasoning_run(
     source_graph_iris = [
         member["graph_iri"]
         for member in description["members"]
-        if member["role"]
-        in {"asserted_ontology", "asserted_data"}
+        if member["role"] in {"asserted_ontology", "asserted_data"}
     ]
     result = _reasoning_service(session, rdf_store, settings).run_reasoning(
         source_graph_iris,
@@ -700,6 +735,7 @@ def create_graph_set_reasoning_run(
 def create_graph_set_validation_run(
     graph_set_id: str,
     request: SemanticGraphSetValidationRunRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -715,9 +751,7 @@ def create_graph_set_validation_run(
         if member["role"] in {"asserted_data"}
     ]
     shape_graph_iris = list(request.shape_graph_iris) or [
-        member["graph_iri"]
-        for member in description["members"]
-        if member["role"] == "shape"
+        member["graph_iri"] for member in description["members"] if member["role"] == "shape"
     ]
     try:
         result = _validation_service(session, rdf_store, settings).run_validation(
@@ -730,7 +764,7 @@ def create_graph_set_validation_run(
             shape_version=request.shape_version,
             engine_version=request.engine_version,
             reasoning_result_graph_iri=request.reasoning_result_graph_iri,
-            actor=request.actor,
+            actor=principal.actor,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -777,19 +811,26 @@ def list_rule_definitions(
     language: Annotated[str | None, Query()] = None,
     rule_iri: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleDefinitionListResponse:
     service = _rule_definition_service(session, settings)
-    rules = service.list_rules(language=language, rule_iri=rule_iri, limit=limit)
+    rules = service.list_rules(
+        language=language,
+        rule_iri=rule_iri,
+        limit=limit,
+        project_id=principal.project_id,
+    )
     return SemanticRuleDefinitionListResponse(
-        rules=[_rule_definition_read(rule) for rule in rules]
+        rules=[_rule_definition_read(rule, session) for rule in rules]
     )
 
 
 @router.post("/rule-definitions", response_model=SemanticRuleDefinitionRead)
 def create_rule_definition(
     request: SemanticRuleDefinitionCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleDefinitionRead:
@@ -806,38 +847,43 @@ def create_rule_definition(
             requires_review=request.requires_review,
             priority=request.priority,
             safety_profile=request.safety_profile,
-            created_by=request.created_by,
             metadata=request.metadata,
+            ontology_id=request.ontology_id,
+            created_by=principal.actor,
         )
     except RuleDefinitionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _rule_definition_read(rule)
+    return _rule_definition_read(rule, session)
 
 
 @router.get("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
 def get_rule_definition(
     rule_id: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleDefinitionRead:
     service = _rule_definition_service(session, settings)
     try:
         rule = service.get_rule(rule_id)
+        _ensure_rule_access(session, rule, principal)
     except RuleDefinitionNotFound as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    return _rule_definition_read(rule)
+    return _rule_definition_read(rule, session)
 
 
 @router.patch("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
 def update_rule_definition(
     rule_id: str,
     request: SemanticRuleDefinitionUpdate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleDefinitionRead:
     service = _rule_definition_service(session, settings)
     try:
         rule = service.get_rule(rule_id)
+        _ensure_rule_access(session, rule, principal)
         if request.name is not None or request.priority is not None or request.metadata is not None:
             if request.name is not None:
                 rule.name = request.name
@@ -851,17 +897,20 @@ def update_rule_definition(
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
     except RuleDefinitionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _rule_definition_read(rule)
+    return _rule_definition_read(rule, session)
 
 
 @router.delete("/rule-definitions/{rule_id}", status_code=204)
 def delete_rule_definition(
     rule_id: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     service = _rule_definition_service(session, settings)
     try:
+        rule = service.get_rule(rule_id)
+        _ensure_rule_access(session, rule, principal)
         service.delete_rule(rule_id)
     except RuleDefinitionNotFound as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
@@ -875,10 +924,14 @@ def delete_rule_definition(
 def create_graph_set_construct_run(
     graph_set_id: str,
     request: SemanticGraphSetConstructRunRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleRunRead:
+    if request.rule_definition_id is None and not principal.is_org_admin:
+        raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
+    _require_rule_graph_scope(session, graph_set_id, [request.rule_definition_id])
     service = _rule_execution_service(session, rdf_store, settings)
     try:
         result = service.execute_construct_template(
@@ -887,7 +940,7 @@ def create_graph_set_construct_run(
             rule_definition_id=request.rule_definition_id,
             rule_version=request.rule_version,
             promote_pointer=request.promote_pointer,
-            actor=request.actor,
+            actor=principal.actor,
             engine_version=request.engine_version,
         )
     except RuleExecutionError as exc:
@@ -902,29 +955,40 @@ def create_graph_set_construct_run(
 def create_graph_set_rule_run(
     graph_set_id: str,
     request: SemanticGraphSetRuleRunRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticRuleRunRead:
+    definition_ids = list(request.rule_definition_ids or [])
+    if request.rule_definition_id:
+        definition_ids.append(request.rule_definition_id)
+    definition_ids = _resolve_rule_ids_for_graph_set(
+        session,
+        graph_set_id,
+        definition_ids,
+        request.rule_iri,
+    )
+    _require_rule_graph_scope(session, graph_set_id, definition_ids)
     service = _rule_execution_service(session, rdf_store, settings)
     try:
-        if request.rule_definition_ids or (
+        if request.rule_definition_ids is not None or (
             not request.rule_definition_id and not request.rule_iri
         ):
             result = service.execute_rule_group(
                 graph_set_id=graph_set_id,
-                rule_definition_ids=request.rule_definition_ids,
+                rule_definition_ids=definition_ids,
                 promote_pointer=request.promote_pointer,
-                actor=request.actor,
+                actor=principal.actor,
                 engine_version=request.engine_version,
             )
         else:
             result = service.execute_rule(
                 graph_set_id=graph_set_id,
-                rule_definition_id=request.rule_definition_id,
-                rule_iri=request.rule_iri,
+                rule_definition_id=definition_ids[0] if definition_ids else None,
+                rule_iri=None,
                 promote_pointer=request.promote_pointer,
-                actor=request.actor,
+                actor=principal.actor,
                 engine_version=request.engine_version,
             )
     except RuleExecutionError as exc:
@@ -1048,6 +1112,7 @@ def preflight_migration(
 @router.post("/migrations", response_model=SemanticMigrationRunRead, status_code=201)
 def create_migration_run(
     request: SemanticMigrationCreateRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1060,13 +1125,11 @@ def create_migration_run(
             mode=request.mode,
             target_graph_set_id=request.target_graph_set_id,
             batch_size=request.batch_size,
-            created_by=request.created_by,
+            created_by=principal.actor,
             metadata=request.metadata,
         )
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticMigrationRunRead(**run)
 
 
@@ -1092,9 +1155,7 @@ def get_migration_run(
     try:
         run = service.get_run(run_id)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 404), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
     return SemanticMigrationRunRead(**run)
 
 
@@ -1112,9 +1173,7 @@ def run_next_migration_batch(
     try:
         result = service.run_next_batch(run_id)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     payload = {**result}
     batch = payload.pop("batch", None)
     return SemanticMigrationBatchRunResponse(
@@ -1138,9 +1197,7 @@ def rerun_failed_migration_batches(
         service.rerun_failed_batches(run_id)
         run = service.get_run(run_id)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticMigrationRunRead(**run)
 
 
@@ -1159,9 +1216,7 @@ def run_migration_parity_check(
     try:
         result = service.run_parity_check(run_id, check_name=check_name)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticMigrationParityCheckResponse(**result)
 
 
@@ -1179,9 +1234,7 @@ def cutover_migration_run(
     try:
         result = service.cutover(run_id)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 409), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 409), detail=str(exc)) from exc
     return SemanticMigrationCutoverResponse(**result)
 
 
@@ -1199,9 +1252,7 @@ def rollback_migration_run(
     try:
         result = service.rollback(run_id)
     except MigrationError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 409), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 409), detail=str(exc)) from exc
     return SemanticMigrationRollbackResponse(**result)
 
 
@@ -1211,6 +1262,7 @@ def rollback_migration_run(
 )
 def compile_and_apply_product_command(
     request: SemanticCanonicalProductWriteRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1234,14 +1286,14 @@ def compile_and_apply_product_command(
                 ontology.project_id,
                 reference_ids=request.evidence_reference_ids,
                 inline_evidence=request.evidence,
-                actor=request.actor,
+                actor=principal.actor,
                 persist=False,
             )
         result = service.apply_command(
             request.command_kind,
             request.payload,
             graph_set_id=request.graph_set_id,
-            actor=request.actor,
+            actor=principal.actor,
             reason=request.reason,
             validate=request.validate_edit,
             shape_graph_iris=request.shape_graph_iris,
@@ -1252,7 +1304,7 @@ def compile_and_apply_product_command(
                 ontology.project_id,
                 reference_ids=request.evidence_reference_ids,
                 inline_evidence=request.evidence,
-                actor=request.actor,
+                actor=principal.actor,
                 persist=True,
             )
             references = [row for row, _candidate, _created in resolved if row is not None]
@@ -1266,29 +1318,21 @@ def compile_and_apply_product_command(
                 client_item_id=request.client_item_id,
                 edit_audit_id=result["audit_id"],
                 references=references,
-                actor=request.actor,
+                actor=principal.actor,
             )
             session.commit()
-            result["evidence_associations"] = [
-                association_to_dict(row) for row in associations
-            ]
+            result["evidence_associations"] = [association_to_dict(row) for row in associations]
         else:
             result["evidence_associations"] = []
     except CanonicalSemanticWriteError as exc:
         session.rollback()
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     except CommandCompilerError as exc:
         session.rollback()
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     except EvidenceReferenceError as exc:
         session.rollback()
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticCanonicalProductWriteResponse(**result)
 
 
@@ -1370,9 +1414,7 @@ def read_model(
             q=q,
         )
     except (ReadModelError, ReadScopeError) as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticReadModelEnvelope(**envelope)
 
 
@@ -1407,9 +1449,7 @@ def read_class_shape_guidance(
     except OntologyGraphMissing as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ShapeEndpointError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
 
 
 @router.get("/resources/{resource_iri:path}", response_model=SemanticResourceRead)
@@ -1492,9 +1532,7 @@ def export_graph_set(
             allow_stale_derived=allow_stale_derived,
         )
     except (ExportError, ReadScopeError) as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     media_type = {
         "trig": "application/trig",
         "json-ld": "application/ld+json",
@@ -1516,9 +1554,7 @@ def create_projection_job_for_set(
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobRead:
     if request.graph_set_id != graph_set_id:
-        raise HTTPException(
-            status_code=400, detail="graph_set_id in body must match path"
-        )
+        raise HTTPException(status_code=400, detail="graph_set_id in body must match path")
     service = _projection_job_service(session, rdf_store, settings)
     try:
         job = service.create_job(
@@ -1532,9 +1568,7 @@ def create_projection_job_for_set(
             metadata=request.metadata,
         )
     except ProjectionJobError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return _projection_job_read(job)
 
 
@@ -1568,9 +1602,7 @@ def get_projection_job(
     try:
         job = service.get_job(job_id)
     except ProjectionJobError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 404), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
     return _projection_job_read(job)
 
 
@@ -1585,15 +1617,11 @@ def run_projection_job(
     try:
         job = service.run_job(job_id)
     except ProjectionJobError as exc:
-        raise HTTPException(
-            status_code=getattr(exc, "status_code", 400), detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return _projection_job_read(job)
 
 
-@router.post(
-    "/projections:reconcile", response_model=SemanticProjectionReconcileResponse
-)
+@router.post("/projections:reconcile", response_model=SemanticProjectionReconcileResponse)
 def reconcile_projections(
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
@@ -1675,9 +1703,82 @@ def _statement_count(rdf_store: RdfStoreRepository, graph_iri: str) -> int | Non
         return None
 
 
-def _rule_definition_read(rule) -> SemanticRuleDefinitionRead:
+def _rule_ontology_id(session: Session, rule: SemanticRuleDefinitionModel) -> str | None:
+    if rule.semantic_rule_id is None:
+        return None
+    semantic_rule = session.get(SemanticRuleModel, rule.semantic_rule_id)
+    return semantic_rule.ontology_id if semantic_rule else None
+
+
+def _graph_set_ontology_id(session: Session, graph_set_id: str) -> str:
+    graph_set = session.get(SemanticGraphSetModel, graph_set_id)
+    if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "forbidden_scope", "message": "Ontology-scoped Graph Set required"},
+        )
+    return graph_set.scope_id
+
+
+def _resolve_rule_ids_for_graph_set(
+    session: Session,
+    graph_set_id: str,
+    rule_definition_ids: list[str],
+    rule_iri: str | None,
+) -> list[str]:
+    ontology_id = _graph_set_ontology_id(session, graph_set_id)
+    if rule_definition_ids:
+        return list(dict.fromkeys(rule_definition_ids))
+    statement = select(SemanticRuleModel).where(
+        SemanticRuleModel.ontology_id == ontology_id,
+        SemanticRuleModel.current_definition_id.is_not(None),
+    )
+    if rule_iri:
+        statement = statement.where(SemanticRuleModel.rule_iri == rule_iri)
+    return [
+        item.current_definition_id
+        for item in session.scalars(statement)
+        if item.current_definition_id is not None
+    ]
+
+
+def _require_rule_graph_scope(
+    session: Session,
+    graph_set_id: str,
+    rule_definition_ids: list[str | None],
+) -> None:
+    ontology_id = _graph_set_ontology_id(session, graph_set_id)
+    for definition_id in rule_definition_ids:
+        if definition_id is None:
+            continue
+        definition = session.get(SemanticRuleDefinitionModel, definition_id)
+        if definition is None:
+            raise HTTPException(status_code=404, detail="Rule definition not found")
+        if _rule_ontology_id(session, definition) != ontology_id:
+            raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
+
+
+def _ensure_rule_access(
+    session: Session,
+    rule: SemanticRuleDefinitionModel,
+    principal: AuthPrincipal,
+) -> None:
+    ontology_id = _rule_ontology_id(session, rule)
+    if ontology_id is None:
+        if not principal.is_org_admin:
+            raise HTTPException(status_code=404, detail="Rule definition not found")
+        return
+    ontology = session.get(OntologyModel, ontology_id)
+    if ontology is None or (
+        principal.project_id is not None and ontology.project_id != principal.project_id
+    ):
+        raise HTTPException(status_code=404, detail="Rule definition not found")
+
+
+def _rule_definition_read(rule, session: Session) -> SemanticRuleDefinitionRead:
     return SemanticRuleDefinitionRead(
         id=rule.id,
+        ontology_id=_rule_ontology_id(session, rule),
         rule_iri=rule.rule_iri,
         name=rule.name,
         language=rule.language,

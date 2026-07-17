@@ -79,7 +79,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | Agent 查询测试 | 部分实现 | 当前 `agent-test` 在平台内调用 LLM 生成答案，与目标边界不一致，且中文分词能力不足。 |
 | Agent 构建接口 | 已实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、Ontology Lease，以及 R-004 带证据 Modeling Batch 的 dry-run、原子/部分 apply、查询和恢复。 |
 | 本体组合 | 部分实现 | Graph Set 可组合多个图，Mapping 命令存在；缺少本体依赖、导入版本和桥接关系契约。 |
-| 身份认证和项目隔离 | 未实现 | `ApiKeyModel` 是未使用的骨架，HTTP/MCP 路由没有认证依赖；R-006 Agent 查询入口已有 Project/Ontology 范围隔离，其他受控或 legacy 图级接口的授权仍待 R-008。 |
+| 身份认证和项目隔离 | 已实现 | R-008 已交付 hashed API key、UI session、scope 授权、Project 归属校验、MCP 策略和安全事件。 |
 | 操作语义模型 | 已实现 | Ontology 级 Operation 已接入 R-004 建模批次、受治理 RDF 编辑、R-005 lineage 与 R-006 Context Query；平台只返回通用工具绑定和凭证需求类型，不执行工具或保存凭证实例。 |
 | 异步任务执行 | 未实现 | 投影、推理和规则没有持久任务队列、重试与恢复机制。 |
 | Dify 端到端验收 | 未实现 | 当前没有固定资料集、问题集、外部 Agent 执行器和指标报告。 |
@@ -95,7 +95,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | R-005 | 统一知识来源与推导链 | P0 | 已实现 | L | 高 | R-002、R-004 |
 | R-006 | 面向 Agent 的结构化语义上下文查询 | P0 | 已实现 | L | 极高 | R-001、R-005 |
 | R-007 | 通用操作语义与外部工具绑定 | P0 | 已实现 | M | 极高 | R-004、R-005、R-006 |
-| R-008 | API/MCP 认证、授权与项目隔离 | P0 | 未实现 | L | 高 | R-001 |
+| R-008 | API/MCP 认证、授权与项目隔离 | P0 | 已实现 | L | 高 | R-001 |
 | R-009 | Agent Test 外部化与查询诊断重构 | P0 | 部分实现 | S | 极高 | R-006 |
 | R-010 | Dify 通用能力端到端验收套件 | P0 | 未实现 | M | 极高 | R-002 至 R-009 |
 | R-011 | 当前 API/MCP/配置文档对齐 | P0 | 已实现 | S | 高 | 无 |
@@ -284,8 +284,8 @@ Debug 区域已增加只读 Project 级 Build Context 诊断页，直接展示 `
 `cd frontend && npx playwright test`（30 passed）。
 
 R-004 apply 已调用 `authorize_apply(...)`，Modeling Batch、Attempt、Finding、Evidence
-Association、fence/recovering 摘要已进入 Build Context 和 Session detail。R-008 认证授权仍是
-外部接入前的独立安全依赖，但不改变 R-003 会话协议本身已完成。
+Association、fence/recovering 摘要已进入 Build Context 和 Session detail。R-008 此后已补齐
+外部接入的认证授权边界，不改变 R-003 会话协议本身已完成。
 
 技术设计：`docs/superpowers/specs/2026-07-14-r003-build-session-design.md`
 
@@ -721,7 +721,7 @@ PostgreSQL 并发 Batch/Attempt、Lease 和 Evidence upsert 定向测试（3 pas
   Modeling Context 和查询响应必须暴露 stale 警告，不能把旧派生结果伪装成当前结果。
 - 终态 Batch、Attempt、Item 结果、Finding、规范化 delta、证据关联和恢复诊断均为不可变审计事实。
   R-004 不提供 Agent 删除或改写历史记录的接口；修正建模内容通过新 Batch 完成。
-- actor 在 R-008 完成后必须来自认证主体，不能信任请求 payload 中自报身份。Lease token、凭证、
+- actor 现由 R-008 认证主体强制覆盖，不能信任请求 payload 中自报身份。Lease token、凭证、
   密钥和其他秘密不得进入 Batch 内容哈希、delta、Finding、审计或 Build/Modeling Context。
 
 验收标准：
@@ -1134,7 +1134,7 @@ R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批�
 
 ### R-008 API/MCP 认证、授权与项目隔离
 
-当前状态：`未实现`
+当前状态：`已实现`
 
 验收标准：
 
@@ -1144,6 +1144,145 @@ R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批�
 - SPARQL 必须限制到授权图范围，不能通过 `GRAPH ?g` 绕过项目隔离。
 - 编辑审计中的 actor 来自认证主体，不能完全信任请求体自报值。
 - 禁止把外部系统明文密钥写入本体、日志或审计 delta。
+
+#### 要解决的问题
+
+`ApiKeyModel` 与 `api_keys` 表已存在但完全没有被引用，HTTP 与 MCP 路由没有任何
+认证依赖。所有 SPARQL/Context Query 的项目隔离目前信任请求体中的 `project_id`，
+没有认证绑定。编辑审计的 `actor` 直接来自请求体（如
+`backend/app/api/semantic.py` 中 `request.actor`），即由客户端自报。Operation
+payload 已有 `reject_operation_secrets` 防护，但本体内容、日志和审计 delta 未覆盖。
+
+本需求在单组织、小团队、自托管的 v1 边界内，引入 API key 认证、UI session 认证、
+scope 授权、Project 归属校验、SPARQL 范围强约束、actor 强制覆盖和统一密钥扫描，
+使外部 Agent、消费方和 UI 都能在受控范围内读写。
+
+#### v1 身份与认证契约
+
+- **API key 绑定粒度**：每张 key 绑定一个 Project，scope 在 `{read, model, admin}`
+  中选一个或多个。`admin` scope 的 key 可不绑 Project（全组织 admin key），可访问
+  任意 Project。只有全组织 admin 能创建、列出和删除 Project，以及创建或撤销全组织
+  admin key。Project-bound admin 只能管理所绑定 Project 内的 Ontology 和 API key；不能
+  查看其他 Project、创建其他 Project，或创建未绑定 Project 的 key。UI bootstrap admin
+  视为全组织 admin。
+- **明文格式**：`sk_<scope>_<base62(32)>`，例如 `sk_admin_xxxxxxxx...`。明文仅在
+  创建时返回一次，服务端只存 `sha256(plaintext)` 哈希；key 本身是高熵随机串，不需要
+  慢哈希。复用现有 `api_keys.key_hash` 列。
+- **API key 生命周期**：key 创建后 Project 和 scope 不可修改，明文不可再次读取；查询
+  只返回名称、Project、scope、创建时间和撤销状态。撤销操作幂等且不可恢复，不提供单独
+  的硬删除接口；需要不同权限时创建新 key。删除 Project 前先撤销其全部 key，安全事件
+  记录不随 Project 删除。
+- **HTTP 认证**：所有非公开路由要求 `Authorization: Bearer <plaintext_key>`，服务端
+  按 sha256 反查 `api_keys`。命中 `revoked_at IS NOT NULL` → 401。
+- **MCP 认证**：MCP server 进程启动时读 `ONTOLOGY_MCP_API_KEY` 环境变量，整个进程
+  内所有 tool call 都认证为该 key 对应的主体。环境变量未设置 → MCP server 拒绝启动，
+  不允许默认未认证运行。
+- **UI 认证**：前端走 session cookie + login。新增 `POST /api/auth/login`（用户名/
+  密码）、`POST /api/auth/logout`、`GET /api/auth/me`。session 使用 `SECRET_KEY`
+  签名的 cookie，7 天过期，无服务端 session 表。session 写请求使用 CSRF token 和显式可信
+  UI origin allowlist；不能用代理改写后的 Host 与浏览器 Origin 直接比较。
+- **Bootstrap**：启动时读 `ONTOLOGY_BOOTSTRAP_ADMIN_USER` / `_PASSWORD`，若 `users`
+  表中不存在该用户则创建（密码哈希存储）。可选 `ONTOLOGY_BOOTSTRAP_ADMIN_API_KEY`
+  在 `api_keys` 表中幂等创建一张全组织 admin key。环境变量未设置仅打 warning 日志，
+  不阻断启动，便于本地与 CI 拉起。
+- **本地与测试旁路**：v1 **不提供** `AUTH_DISABLED` 类全局开关。测试通过 fixture
+  在 setup 中创建 admin key 并在 client headers 中携带。本地开发同样依赖 bootstrap
+  admin 凭据。安全 hard cut 首次重启前必须创建并保留一组非测试运营主体；唯一后缀测试
+  user/key 可以清理，但不能因此让部署回到仅 health 可用的无身份状态。
+- **用户管理范围**：v1 仅一个 bootstrap admin，不提供用户 CRUD 路由、不提供用户列表
+  UI。多人共用同一管理员账号；多用户管理、服务账号、key 轮换 UI 推迟到 R-109。
+
+#### v1 授权与项目隔离契约
+
+- **Scope 到操作的映射**：
+  - `read` = 所有 GET、`sparql:query`、`context:query`、export、list、get、Evidence
+    查询。
+  - `model` = `read` + 本体编辑：`/api/semantic/edits`（TTL/TriG/JSON-LD、受限 SPARQL
+    Update）、`/api/modeling-batches/*/apply`、build session、evidence association、
+    graph set 成员变更、operation 语义写入。
+  - `admin` = `model` + 跨本体管理：Project CRUD、Ontology CRUD、API key CRUD、
+    `migrations`、`canonical-mode` 切换、`derived-results:gc`。
+- **跨 Project 冲突**：Project-bound key（绑 P1）调用请求体中 `project_id=P2` 的
+  端点 → 返回 `403 forbidden_scope` 并写入审计日志。全组织 admin key
+  （`project_id=null`）遵循请求体 `project_id`。
+- **公开路由**：仅 `/api/health`、`/api/health/postgres`、`/api/health/dependencies` 和
+  完成登录所必需的 `POST /api/auth/login` 保持公开。其他所有路由必须认证。
+- **管理类路由限制**：API key CRUD、Project CRUD、Ontology CRUD 仅 `admin` scope
+  可调。全组织 admin 可管理全部 Project 和 key；Project-bound admin 只能管理自身
+  Project 的 Ontology 和同 Project key，不能调用 Project 集合创建/删除或全组织 key 能力。
+- **Rule Definition 归属**：新建 Rule Definition 必须绑定 Ontology，并通过
+  `SemanticRuleModel` 解析到 Project；list/get/update/delete 按该归属过滤。历史
+  `semantic_rule_id=null` 的 legacy definition 仅全组织 admin 可见。执行规则时，Rule Definition
+  与目标 Graph Set 必须属于同一 Ontology/Project，不能把 P1 规则用于 P2 图集合。
+- **SPARQL 范围**：保留现有 `scoped_sparql_query.inject_dataset_clauses` 的服务端注入
+  语义（`FROM` + `FROM NAMED`），客户端 `FROM` / `FROM NAMED` / `SERVICE` 已被拒绝。
+  `GRAPH ?g` 在 SPARQL 语义下只能枚举 `FROM NAMED` 注入的图，因此无法绕过项目隔离。
+  v1 必须在小规模 probe 中验证 Oxigraph 实际行为符合该语义。
+
+#### v1 审计与密钥防护契约
+
+- **Audit actor 强制覆盖**：所有写操作记录的 `actor` 强制设为认证主体：
+  - API key 请求 → `key:<key_name>`
+  - UI session 请求 → `user:<username>`
+
+  请求体中的 `actor` 字段被忽略。若客户端填了与认证主体不一致的 `actor`，请求仍然
+  以认证主体写入，并在审计中记一条 warning（具体 warning 字段或新增列由设计阶段定）。
+- **最小安全事件审计**：新增只追加的持久安全事件，仅记录登录成功/失败、无效或已撤销
+  key、跨 Project/scope 越权、API key 创建/撤销和请求体伪造 actor。普通成功读取不记录，
+  事件不得保存请求 payload、cookie、密钥或命中的秘密原文；全量查询审计、导出和保留策略
+  仍属于 R-108/R-109。
+- **统一密钥扫描**：所有文本写入路径走同一扫描器，仅在命中高可信真实秘密值时拒绝，
+  返回 HTTP 422 + `secret_in_payload`，且错误和日志不得包含命中原文：
+  - 允许 `secret` / `token` / `password` / `apiKey` / `credential` 等凭证术语、字段名、
+    凭证需求类型和明确脱敏的占位符。
+  - 拒绝平台自身完整 `sk_<scope>_<base62(32)>` key、完整 JWT、AWS access key、非占位
+    Bearer token 等高可信值；结构化 credential 字段仅在值非空且不是脱敏占位符时拒绝。
+  - 覆盖路径：`/api/semantic/edits`（TTL/TriG/JSON-LD、SPARQL Update）、
+    `/api/modeling-batches/*/apply`、`/api/evidence`（excerpt）、operation 语义写入
+    （沿用 `reject_operation_secrets`）。
+- **日志脱敏**：服务端日志按 key 名拒绝记录：`Authorization`、`api_key`、`password`、
+  `api-key`、`cookie`。结构化日志在序列化前过滤这些字段。
+
+#### v1 明确不在范围
+
+下列能力推迟到 R-109 或之后，v1 不实现：
+
+- 用户与服务账号区分、多用户管理 UI。
+- API key 轮换、撤销 UI（撤销机制本身已通过 `revoked_at` 字段存在，但没有管理界面）。
+- 按 Ontology 或 Graph Set 的细粒度角色。
+- 审计导出与敏感字段策略。
+- 多组织、SaaS、计费与配额（R-205，延后）。
+- 多因素认证。
+
+#### 关键假设与验证
+
+下列假设在设计阶段必须用最小实验或代码核对验证：
+
+1. **Oxigraph 严格执行 `FROM NAMED` 限定 `GRAPH ?g` 范围**。当前
+   `scoped_sparql_query.py` 注入 `FROM g FROM NAMED g`，理论上 `GRAPH ?g` 只能枚举
+   注入的命名图，但需要最小规模 probe 验证 Oxigraph 行为，防止项目隔离被绕过。
+2. **FastMCP 启动时拒绝运行的机制**。`backend/app/mcp/server.py` 当前是无副作用的
+   `FastMCP()` 实例化，需要在 `mcp.run()` 前加 `ONTOLOGY_MCP_API_KEY` 校验，并确认
+   FastMCP 没有"延迟初始化"导致校验被绕过。
+3. **现有 audit 表结构**。`actor` 字段是 TEXT，硬覆盖写入没有问题；但"客户端填了
+   不一致值时记 warning"需要找到合适的 warning 字段或新增列，由设计阶段确定。
+
+#### 实现与验收证据（2026-07-17）
+
+- migration `0027_r008_auth` 增加用户与只追加安全事件模型；API key 仅保存哈希，明文只在
+  创建时返回，支持不可恢复的幂等撤销。
+- HTTP、UI session 与 MCP 统一解析认证主体；55 个 MCP tool 均登记 scope、ownership 和
+  mutation 策略，Project-bound 主体不能访问或改变其他 Project 资源。
+- Rule Definition 新建时绑定 Ontology，Graph Set、Evidence、Build Session、Modeling Batch、
+  RDF dataset 和查询范围均执行 Project 归属校验；未知归属 fail closed。
+- 统一秘密扫描、认证 actor 覆盖、CSRF/Origin 校验和最小安全事件审计已接入；前端提供登录、
+  登出、401 回登录和 session gate。
+- 独立测试 Round 3 为 `PASS`：R-008 定向 `32 passed`，后端全量 `689 passed, 3 skipped`，
+  前端 Playwright `33 passed, 3 skipped`，构建、迁移、Ruff/format、真实 Oxigraph、MCP、重启和
+  数据清理门槛均通过；前两轮发现的两个 High 已修复并回归。
+- 本地部署已配置固定 session secret，并创建 gitignored、目录 `0700`/文件 `0600` 的持久运营
+  管理员凭据；最终重启后 UI 登录、`/api/auth/me` 和受保护业务端点均返回 200，匿名业务访问
+  返回 401。凭据明文未进入 Git、日志或本文档。
 
 ### R-009 Agent Test 外部化与查询诊断重构
 
@@ -1216,7 +1355,8 @@ R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批�
   `34 passed`；Ruff、format、Bash、YAML、JSON、diff、Skill validator/eval/registry 检查通过。
 - 隔离新上下文 ontology-builder forward test `PASS`；重启前后 live registry 与生成清单均为
   HTTP `115`、MCP `55`，服务、PostgreSQL/Oxigraph 依赖和 frontend 健康。
-- 无认证访问业务接口仍返回 200，作为 R-008 尚未实现的现状证据，不作为安全通过。
+- R-011 交付验证时无认证访问业务接口返回 200，作为当时 R-008 尚未实现的历史证据；R-008
+  完成后的当前行为为 401。
 
 ## P1 需求说明
 

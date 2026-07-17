@@ -14,7 +14,7 @@ from app.api.schemas import (
     ProjectBriefUpdate,
 )
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool
+from app.mcp.runtime import _run_tool, runtime_actor
 from app.services import interview as interview_service
 from app.services.build_sessions import BuildSessionService
 from app.services.ontology_workspace import OntologyWorkspaceService
@@ -40,9 +40,7 @@ def register_interview(server: FastMCP) -> None:
         )
 
     @server.tool()
-    def repair_ontology_workspace(
-        ontology_id: str, dry_run: bool = False
-    ) -> dict[str, Any]:
+    def repair_ontology_workspace(ontology_id: str, dry_run: bool = False) -> dict[str, Any]:
         """Idempotently inspect or repair an Ontology's default semantic workspace."""
         return _run_tool(
             lambda session, _driver, _embedding_client: OntologyWorkspaceService(
@@ -73,7 +71,7 @@ def register_interview(server: FastMCP) -> None:
                     session,
                     project_id,
                     InterviewAnswerCreate(
-                        answer=answer, source_type=source_type, actor_id=actor_id
+                        answer=answer, source_type=source_type, actor_id=runtime_actor()
                     ),
                 )
             ).model_dump()
@@ -96,9 +94,7 @@ def register_interview(server: FastMCP) -> None:
         return _run_tool(
             lambda session, _driver, _embedding_client: [
                 CompetencyQuestionRead.model_validate(item).model_dump()
-                for item in interview_service.list_questions(
-                    session, project_id, include_inactive
-                )
+                for item in interview_service.list_questions(session, project_id, include_inactive)
             ]
         )
 

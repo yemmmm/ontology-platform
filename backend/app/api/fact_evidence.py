@@ -38,6 +38,8 @@ from app.services.semantic_shape_endpoint_service import (
     SemanticShapeEndpointService,
 )
 from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 
 router = APIRouter(tags=["semantic"])
 
@@ -91,6 +93,7 @@ def _binding_to_dict(binding) -> dict:
 def create_fact_evidence(
     graph_set_id: str,
     payload: BindFactEvidenceRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -107,6 +110,7 @@ def create_fact_evidence(
         graph_iri=payload.graph_iri,
     )
     compile_payload = payload.model_dump()
+    compile_payload["actor"] = principal.actor
     compile_payload["graph_iri"] = asserted_graph_iri
     compile_payload["assertion_kind"] = "asserted"
     ns = namespace_from_settings(settings)
@@ -129,7 +133,7 @@ def create_fact_evidence(
                     ontology.project_id,
                     payload.document_filename or "",
                     payload.text,
-                    actor=payload.actor,
+                    actor=principal.actor,
                 )
         except EvidenceReferenceError as exc:
             session.rollback()
@@ -161,7 +165,7 @@ def create_fact_evidence(
             target_type="fact",
             target_id=cmd.metadata["fact_id"],
             references=[evidence_reference],
-            actor=payload.actor,
+            actor=principal.actor,
         )
     session.commit()
     return _binding_to_dict(binding)

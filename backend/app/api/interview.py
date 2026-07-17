@@ -23,6 +23,8 @@ from app.services import interview as service
 from app.services.interview import brief_summary_for_overview, question_summary_for_overview
 from app.services.semantic_build_overview import BuildOverviewService
 from app.services.semantic_read_model import SemanticReadModelService
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 
 router = APIRouter(tags=["project interview"])
 
@@ -45,9 +47,14 @@ def update_project_brief(
     status_code=status.HTTP_201_CREATED,
 )
 def create_interview_answer(
-    project_id: str, payload: InterviewAnswerCreate, session: Session = Depends(get_db_session)
+    project_id: str,
+    payload: InterviewAnswerCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
 ):
-    return service.create_answer(session, project_id, payload)
+    return service.create_answer(
+        session, project_id, payload.model_copy(update={"actor_id": principal.actor})
+    )
 
 
 @router.get(
@@ -102,6 +109,7 @@ def validate_competency_question(
 def _active_graph_set_for_ontology(session, ontology_id):
     """Return the active graph-set id for an ontology, or None."""
     from app.repositories.models import SemanticGraphSetModel
+
     return session.scalar(
         select(SemanticGraphSetModel.id)
         .where(
@@ -116,6 +124,7 @@ def _active_graph_set_for_ontology(session, ontology_id):
 
 def _build_overview_service(session, rdf_store, settings):
     from app.services.semantic_read_scope import SemanticReadScopeResolver
+
     scope_resolver = SemanticReadScopeResolver(session)
 
     read_model_service = SemanticReadModelService(

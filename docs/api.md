@@ -3,15 +3,23 @@
 本文档描述当前运行时实际注册的 HTTP API。完整操作清单由 FastAPI `app.openapi()` 生成；业务
 契约、边界和示例由人工维护。
 
-## 地址与认证现状
+## 地址与认证
 
 - `./scripts/start-local.sh` 与本地 systemd 服务：`http://127.0.0.1:8001/api`
 - 手动运行 `uv run uvicorn app.main:app --reload`：默认 `http://127.0.0.1:8000/api`
 - OpenAPI UI：对应 backend 地址的 `/docs`
 
-当前 HTTP API **没有实现认证或授权**，也不会校验调用方是否有权访问请求中的 Project 或
-Ontology。接口只适合受信任的本地开发环境。R-008 将补齐认证、授权、主体绑定和项目隔离；在
-该需求完成前，不能把服务直接暴露给不受信任网络。
+只有三个 `/api/health*` endpoint 和 `POST /api/auth/login` 公开。其他 API、OpenAPI JSON 和 docs
+要求 `Authorization: Bearer <API key>` 或有效 UI session。API key 只有创建响应展示一次明文，之后
+只能查询 metadata 或幂等撤销。
+
+- `read`：读取、export、Context Query 与 scoped SPARQL。
+- `model`：包含 read，并允许建模、Evidence、Build Session 与受治理 RDF 写入。
+- `admin`：包含 model/read，并允许 Project、Ontology、API key 与全局治理操作。
+
+Project-bound 主体只能访问其 Project；显式提交 foreign Project 返回 `403 forbidden_scope`，只提供
+foreign opaque resource ID 时返回 404。UI session 写请求还要求可信 Origin、CSRF cookie 与
+`X-CSRF-Token` 相等。
 
 ## 当前主要工作流
 
@@ -50,6 +58,8 @@ Context Query 返回结构化资源、事实、关系、操作、约束和精简
 ## 错误和兼容性边界
 
 - FastAPI 参数校验通常返回 `422`；业务冲突和不存在资源按各操作实现返回 `4xx`。
+- 缺少/无效/revoked credential 返回 `401 invalid_authentication`；scope 或 Project 越权返回
+  `403 forbidden_scope`；领域 payload 命中高可信真实秘密返回 `422 secret_in_payload`。
 - 受治理语义编辑、Modeling Batch 和 Build Session 有各自的冲突、幂等及恢复语义；调用方应保留
   返回的 session、lease、batch 和 checkpoint 标识。
 - 当前仍注册的 deprecated 兼容操作会继续出现在下方清单中；未注册的旧 Version、Proposal、
@@ -70,6 +80,13 @@ uv run python ../scripts/sync-interface-docs.py --write
 | Tag | Method | Path | Summary |
 | --- | --- | --- | --- |
 | agent-test | `POST` | `/api/agent-test/run` | Run Agent Test |
+| authentication | `GET` | `/api/api-keys` | List Api Keys |
+| authentication | `GET` | `/api/api-keys/{key_id}` | Get Api Key |
+| authentication | `GET` | `/api/auth/me` | Me |
+| authentication | `POST` | `/api/api-keys` | Create Key |
+| authentication | `POST` | `/api/api-keys/{key_id}:revoke` | Revoke Api Key |
+| authentication | `POST` | `/api/auth/login` | Login |
+| authentication | `POST` | `/api/auth/logout` | Logout |
 | build sessions | `GET` | `/api/build-sessions/{session_id}` | Get Build Session |
 | build sessions | `GET` | `/api/projects/{project_id}/build-context` | Get Project Build Context |
 | build sessions | `POST` | `/api/build-sessions/{session_id}/checkpoints` | Save Build Checkpoint |

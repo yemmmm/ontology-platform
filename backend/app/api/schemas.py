@@ -439,9 +439,9 @@ class SemanticQueryScopeRequest(BaseModel):
 
 class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     query: str = Field(min_length=1, max_length=2000)
-    resource_types: list[
-        Literal["concept", "instance", "relation", "fact", "rule", "operation"]
-    ] | None = None
+    resource_types: (
+        list[Literal["concept", "instance", "relation", "fact", "rule", "operation"]] | None
+    ) = None
     assertion_types: list[Literal["asserted", "derived"]] | None = None
     depth: int = Field(default=1, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
@@ -717,6 +717,7 @@ class SemanticGovernanceStatusResponse(BaseModel):
 
 
 class SemanticRuleDefinitionCreate(BaseModel):
+    ontology_id: str = Field(min_length=1, max_length=36)
     rule_iri: str = Field(min_length=1, max_length=1024)
     name: str = Field(min_length=1, max_length=255)
     language: Literal["sparql_construct", "platform_dsl", "workflow_state_machine"]
@@ -739,6 +740,7 @@ class SemanticRuleDefinitionUpdate(BaseModel):
 
 class SemanticRuleDefinitionRead(BaseModel):
     id: str
+    ontology_id: str | None = None
     rule_iri: str
     name: str
     language: str
@@ -926,9 +928,7 @@ class SemanticExportRequest(BaseModel):
 
 class SemanticProjectionJobCreate(BaseModel):
     graph_set_id: str
-    projection_kind: Literal[
-        "business_json", "search", "vector", "export_cache"
-    ]
+    projection_kind: Literal["business_json", "search", "vector", "export_cache"]
     projection_version: str
     include: Literal[
         "asserted",

@@ -10,6 +10,8 @@ from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
+    OntologyModel,
+    ProjectModel,
     SemanticEditAuditModel,
     SemanticGraphRegistryModel,
     SemanticGraphSetModel,
@@ -23,6 +25,8 @@ from app.repositories.rdf_store import SparqlResult, UpdateResult
 
 GRAPH = "http://ontology-platform.local/semantic/graph/data/demo"
 RESULT_GRAPH = "http://ontology-platform.local/semantic/graph/reasoning-result/run-1"
+TEST_PROJECT_ID = "semantic-api-project"
+TEST_ONTOLOGY_ID = "semantic-api-ontology"
 
 
 class FakeStore:
@@ -83,6 +87,22 @@ def _client(
     app = FastAPI()
     app.include_router(router, prefix="/api")
     settings = settings or Settings()
+    if session is not None and session.get(ProjectModel, TEST_PROJECT_ID) is None:
+        session.add(
+            ProjectModel(
+                id=TEST_PROJECT_ID,
+                name="Semantic API project",
+                normalized_label="semantic api project",
+            )
+        )
+        session.add(
+            OntologyModel(
+                id=TEST_ONTOLOGY_ID,
+                project_id=TEST_PROJECT_ID,
+                name="Semantic API ontology",
+            )
+        )
+        session.commit()
 
     def session_override() -> Generator[Session, None, None]:
         yield session  # type: ignore[misc]
@@ -119,13 +139,13 @@ def test_semantic_edit_endpoint_applies_turtle_insert(in_memory_session) -> None
         "/api/semantic/edits",
         json={
             "format": "turtle",
-            "content": "@prefix ex: <http://example.test/> . ex:alice ex:name \"Alice\" .",
+            "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
             "target_graph_iri": GRAPH,
             "validate": False,
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["applied"] is True
     assert body["graph_revisions"][GRAPH] == 1
@@ -140,7 +160,7 @@ def test_semantic_edit_endpoint_rejects_reasoning_result_graph(in_memory_session
         "/api/semantic/edits",
         json={
             "format": "turtle",
-            "content": "@prefix ex: <http://example.test/> . ex:alice ex:name \"Alice\" .",
+            "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
             "target_graph_iri": RESULT_GRAPH,
             "validate": False,
         },
@@ -219,7 +239,7 @@ def test_semantic_edit_audits_endpoint_lists_records(in_memory_session) -> None:
 
     response = client.get("/api/semantic/edits/audits")
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.json()[0]["id"] == "audit-1"
     assert response.json()[0]["actor"] == "agent:test"
     assert response.json()[0]["graph_delta"] == {"operation": "insert"}
@@ -256,8 +276,8 @@ def test_graph_set_endpoints_and_reasoning_pointer_promotion(in_memory_session) 
         "/api/semantic/graph-sets",
         json={
             "name": "working-version:v1",
-            "scope_type": "version",
-            "scope_id": "v1",
+            "scope_type": "ontology",
+            "scope_id": TEST_ONTOLOGY_ID,
             "members": [
                 {"graph_iri": GRAPH, "role": "asserted_data", "sort_order": 0},
             ],
@@ -397,8 +417,8 @@ def _create_graph_set(client, members=None) -> str:
         "/api/semantic/graph-sets",
         json={
             "name": "gs",
-            "scope_type": "version",
-            "scope_id": "v1",
+            "scope_type": "ontology",
+            "scope_id": TEST_ONTOLOGY_ID,
             "members": members,
         },
     )
@@ -412,6 +432,7 @@ def test_rule_definition_endpoint_creates_active_dsl_rule(in_memory_session) -> 
     response = client.post(
         "/api/semantic/rule-definitions",
         json={
+            "ontology_id": TEST_ONTOLOGY_ID,
             "rule_iri": f"{PREFIX}rule/test",
             "name": "test rule",
             "language": "platform_dsl",
@@ -447,13 +468,13 @@ def test_rule_definition_endpoint_rejects_unsafe_construct_template(
     response = client.post(
         "/api/semantic/rule-definitions",
         json={
+            "ontology_id": TEST_ONTOLOGY_ID,
             "rule_iri": f"{PREFIX}rule/bad",
             "name": "bad",
             "language": "sparql_construct",
             "body": {
                 "template": (
-                    "CONSTRUCT { ?s ?p ?o } WHERE { "
-                    "SERVICE <http://example.test/> { ?s ?p ?o } }"
+                    "CONSTRUCT { ?s ?p ?o } WHERE { SERVICE <http://example.test/> { ?s ?p ?o } }"
                 )
             },
             "input_roles": ["asserted_data"],
@@ -470,6 +491,7 @@ def test_list_rule_definitions_returns_immediately_active_rules(in_memory_sessio
         client.post(
             "/api/semantic/rule-definitions",
             json={
+                "ontology_id": TEST_ONTOLOGY_ID,
                 "rule_iri": f"{PREFIX}rule/{suffix}",
                 "name": suffix,
                 "language": "platform_dsl",
@@ -499,6 +521,7 @@ def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) ->
     create_response = client.post(
         "/api/semantic/rule-definitions",
         json={
+            "ontology_id": TEST_ONTOLOGY_ID,
             "rule_iri": f"{PREFIX}rule/editable",
             "name": "editable",
             "language": "platform_dsl",
@@ -565,8 +588,7 @@ def test_graph_set_construct_run_writes_only_to_rule_result(in_memory_session) -
         f"/api/semantic/graph-sets/{graph_set_id}/construct-runs",
         json={
             "template": (
-                f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{PREFIX}data/demo> "
-                f"{{ ?s ?p ?o }} }}"
+                f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{PREFIX}data/demo> {{ ?s ?p ?o }} }}"
             ),
             "promote_pointer": True,
         },
@@ -576,20 +598,14 @@ def test_graph_set_construct_run_writes_only_to_rule_result(in_memory_session) -
     assert body["status"] == "succeeded"
     assert body["result_graph_iri"].startswith(f"{PREFIX}rule-result/")
     assert body["derived_pointer"]["status"] == "current"
-    assert not any(
-        f"INSERT DATA {{ GRAPH <{PREFIX}data/demo>" in u for u in store.updates
-    )
+    assert not any(f"INSERT DATA {{ GRAPH <{PREFIX}data/demo>" in u for u in store.updates)
 
 
 def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> None:
     store = FakeStore(
         select_result={
             "head": {"vars": ["s"]},
-            "results": {
-                "bindings": [
-                    {"s": {"value": "<http://example.test/alice>"}}
-                ]
-            },
+            "results": {"bindings": [{"s": {"value": "<http://example.test/alice>"}}]},
         }
     )
     client = _client(store, in_memory_session)
@@ -598,13 +614,12 @@ def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> 
     create_response = client.post(
         "/api/semantic/rule-definitions",
         json={
+            "ontology_id": TEST_ONTOLOGY_ID,
             "rule_iri": f"{PREFIX}rule/dsl",
             "name": "dsl",
             "language": "platform_dsl",
             "body": {
-                "when": [
-                    {"s": "?s", "p": "<http://example.test/p>", "o": "?o"}
-                ],
+                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
                 "then": [
                     {
                         "s": "?s",
@@ -622,7 +637,7 @@ def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> 
         f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
         json={"rule_definition_id": rule_id},
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["generated_statement_count"] >= 1
@@ -634,11 +649,7 @@ def test_graph_set_rule_run_endpoint_executes_all_rules_when_no_rule_selected(
     store = FakeStore(
         select_result={
             "head": {"vars": ["s"]},
-            "results": {
-                "bindings": [
-                    {"s": {"value": "<http://example.test/alice>"}}
-                ]
-            },
+            "results": {"bindings": [{"s": {"value": "<http://example.test/alice>"}}]},
         }
     )
     client = _client(store, in_memory_session)
@@ -647,13 +658,12 @@ def test_graph_set_rule_run_endpoint_executes_all_rules_when_no_rule_selected(
     create_response = client.post(
         "/api/semantic/rule-definitions",
         json={
+            "ontology_id": TEST_ONTOLOGY_ID,
             "rule_iri": f"{PREFIX}rule/dsl-all",
             "name": "dsl all",
             "language": "platform_dsl",
             "body": {
-                "when": [
-                    {"s": "?s", "p": "<http://example.test/p>", "o": "?o"}
-                ],
+                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
                 "then": [
                     {
                         "s": "?s",
@@ -672,7 +682,7 @@ def test_graph_set_rule_run_endpoint_executes_all_rules_when_no_rule_selected(
         json={},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["engine_name"] == "rule_group"
@@ -691,7 +701,7 @@ def test_graph_set_rule_run_endpoint_noops_when_no_rules(
         json={},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["engine_name"] == "rule_group"
@@ -706,7 +716,7 @@ def test_graph_set_rule_run_endpoint_skips_construct_rules_for_other_graph_sets(
     in_memory_session,
 ) -> None:
     store = FakeStore(
-        construct_result="@prefix ex: <http://example.test/> . ex:alice ex:employmentLabel \"active\" ."
+        construct_result='@prefix ex: <http://example.test/> . ex:alice ex:employmentLabel "active" .'
     )
     client = _client(store, in_memory_session)
     graph_set_id = _create_graph_set(client)
@@ -715,13 +725,14 @@ def test_graph_set_rule_run_endpoint_skips_construct_rules_for_other_graph_sets(
         response = client.post(
             "/api/semantic/rule-definitions",
             json={
+                "ontology_id": TEST_ONTOLOGY_ID,
                 "rule_iri": f"{PREFIX}rule/construct-{suffix}",
                 "name": f"construct {suffix}",
                 "language": "sparql_construct",
                 "body": {
                     "template": (
                         "PREFIX ex: <http://example.test/> "
-                        "CONSTRUCT { ?person ex:employmentLabel \"active\" } "
+                        'CONSTRUCT { ?person ex:employmentLabel "active" } '
                         f"WHERE {{ GRAPH <{PREFIX}data/{suffix}> "
                         "{ ?person ex:worksFor ?org } }}"
                     )
@@ -963,10 +974,7 @@ def test_build_overview_route_registered() -> None:
     """Verify the build-overview route is registered on the interview router."""
     from app.api.interview import router
 
-    routes = [
-        r for r in router.routes
-        if hasattr(r, "path") and "build-overview" in r.path
-    ]
+    routes = [r for r in router.routes if hasattr(r, "path") and "build-overview" in r.path]
     assert len(routes) == 1
     assert "GET" in routes[0].methods
 
@@ -975,10 +983,7 @@ def test_competency_question_validate_route_registered() -> None:
     """Verify the validate route is still registered on the interview router."""
     from app.api.interview import router
 
-    routes = [
-        r for r in router.routes
-        if hasattr(r, "path") and "validate" in r.path
-    ]
+    routes = [r for r in router.routes if hasattr(r, "path") and "validate" in r.path]
     assert len(routes) >= 1
 
 
@@ -989,9 +994,7 @@ def test_project_build_context_replaces_legacy_route_without_deprecation(
     from app.api.build_sessions import router as build_sessions_router
     from app.repositories.models import ProjectModel
 
-    in_memory_session.add(
-        ProjectModel(id="smoke-proj", name="smoke", normalized_label="smoke")
-    )
+    in_memory_session.add(ProjectModel(id="smoke-proj", name="smoke", normalized_label="smoke"))
     in_memory_session.commit()
 
     app = FastAPI()

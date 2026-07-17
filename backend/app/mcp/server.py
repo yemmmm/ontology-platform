@@ -9,8 +9,16 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from app.mcp.tools import register_all
+from app.mcp.runtime import authenticate_runtime
 
-mcp = FastMCP("ontology-platform")
+
+class AuthenticatedFastMCP(FastMCP):
+    def run(self, *args, **kwargs):
+        authenticate_runtime()
+        return super().run(*args, **kwargs)
+
+
+mcp = AuthenticatedFastMCP("ontology-platform")
 register_all(mcp)
 
 

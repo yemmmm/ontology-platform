@@ -47,7 +47,7 @@ def test_build_session_tools_are_registered_with_agent_facing_identifiers() -> N
 
 
 @pytest.fixture()
-def mcp_scope(in_memory_session: Session, monkeypatch) -> Session:
+def mcp_scope(in_memory_session: Session, monkeypatch, mcp_principal_factory) -> Session:
     in_memory_session.add(
         ProjectModel(
             id="mcp-build-project",
@@ -64,9 +64,8 @@ def mcp_scope(in_memory_session: Session, monkeypatch) -> Session:
         )
     )
     in_memory_session.commit()
-    factory = sessionmaker(
-        bind=in_memory_session.get_bind(), autoflush=False, autocommit=False
-    )
+    mcp_principal_factory(in_memory_session)
+    factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)
 
     def resources():
         return factory, None, object()
@@ -154,12 +153,8 @@ def test_mcp_create_checkpoint_resume_and_get_use_shared_revision_semantics(mcp_
 
 
 def test_new_and_compatibility_build_context_tools_return_same_shape(mcp_scope) -> None:
-    new = _data(
-        _tool("get_project_build_context").fn(project_id="mcp-build-project")
-    )
-    compatibility = _data(
-        _tool("get_build_context").fn(project_id="mcp-build-project")
-    )
+    new = _data(_tool("get_project_build_context").fn(project_id="mcp-build-project"))
+    compatibility = _data(_tool("get_build_context").fn(project_id="mcp-build-project"))
     assert compatibility == new
     assert set(new) == {"project", "generated_at", "platform_state", "agent_state"}
 

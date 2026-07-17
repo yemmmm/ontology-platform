@@ -310,7 +310,7 @@ class SemanticRuleExecutionService:
     ) -> dict[str, Any]:
         graph_set = self.graph_set_service.get_graph_set(graph_set_id)
         graph_set_iris = [member.graph_iri for member in graph_set.members]
-        if rule_definition_ids:
+        if rule_definition_ids is not None:
             rules = [self._require_rule(rule_id) for rule_id in rule_definition_ids]
         else:
             rules = list(

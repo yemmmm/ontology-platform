@@ -17,6 +17,8 @@ from app.services.evidence_reference import (
     association_to_dict,
     reference_to_dict,
 )
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 
 
 router = APIRouter(tags=["evidence-references"])
@@ -90,18 +92,22 @@ def _association_count(session: Session, reference_id: str) -> int:
 def create_evidence_reference(
     project_id: str,
     payload: EvidenceReferenceCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
     service = EvidenceReferenceService(session)
     try:
         row, created = service.get_or_create(
-            project_id, payload.document_name, payload.excerpt, actor=payload.actor
+            project_id, payload.document_name, payload.excerpt, actor=principal.actor
         )
         session.commit()
     except EvidenceReferenceError as exc:
         session.rollback()
         _raise(exc)
-    return {**reference_to_dict(row, association_count=_association_count(session, row.id)), "created": created}
+    return {
+        **reference_to_dict(row, association_count=_association_count(session, row.id)),
+        "created": created,
+    }
 
 
 @router.get("/projects/{project_id}/evidence-references")
@@ -114,23 +120,27 @@ def list_evidence_references(
 ) -> dict:
     service = EvidenceReferenceService(session)
     try:
-        rows, total = service.list_references(
-            project_id, search=search, limit=limit, offset=offset
-        )
+        rows, total = service.list_references(project_id, search=search, limit=limit, offset=offset)
     except EvidenceReferenceError as exc:
         _raise(exc)
-    counts = dict(
-        session.execute(
-            select(
-                EvidenceAssociationModel.evidence_reference_id,
-                func.count(EvidenceAssociationModel.id),
-            )
-            .where(EvidenceAssociationModel.evidence_reference_id.in_([row.id for row in rows]))
-            .group_by(EvidenceAssociationModel.evidence_reference_id)
-        ).all()
-    ) if rows else {}
+    counts = (
+        dict(
+            session.execute(
+                select(
+                    EvidenceAssociationModel.evidence_reference_id,
+                    func.count(EvidenceAssociationModel.id),
+                )
+                .where(EvidenceAssociationModel.evidence_reference_id.in_([row.id for row in rows]))
+                .group_by(EvidenceAssociationModel.evidence_reference_id)
+            ).all()
+        )
+        if rows
+        else {}
+    )
     return {
-        "items": [reference_to_dict(row, association_count=int(counts.get(row.id, 0))) for row in rows],
+        "items": [
+            reference_to_dict(row, association_count=int(counts.get(row.id, 0))) for row in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -200,6 +210,7 @@ def list_target_evidence_associations(
 def resolve_evidence_references(
     project_id: str,
     payload: EvidenceReferenceResolveRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
     service = EvidenceReferenceService(session)
@@ -208,7 +219,7 @@ def resolve_evidence_references(
             project_id,
             reference_ids=payload.evidence_reference_ids,
             inline_evidence=[item.model_dump() for item in payload.evidence],
-            actor=payload.actor,
+            actor=principal.actor,
             persist=not payload.dry_run,
         )
         if payload.dry_run:
@@ -241,6 +252,7 @@ def resolve_evidence_references(
 def create_evidence_associations(
     project_id: str,
     payload: EvidenceAssociationCreate,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
     service = EvidenceReferenceService(session)
@@ -249,7 +261,7 @@ def create_evidence_associations(
             project_id,
             reference_ids=payload.evidence_reference_ids,
             inline_evidence=[item.model_dump() for item in payload.evidence],
-            actor=payload.actor,
+            actor=principal.actor,
             persist=True,
         )
         references = [row for row, _candidate, _created in resolved if row is not None]
@@ -262,7 +274,7 @@ def create_evidence_associations(
             client_item_id=payload.client_item_id,
             edit_audit_id=payload.edit_audit_id,
             references=references,
-            actor=payload.actor,
+            actor=principal.actor,
         )
         session.commit()
     except EvidenceReferenceError as exc:
@@ -278,9 +290,10 @@ def _preview_batch_item(
     actor: str | None,
 ) -> dict:
     service.require_ontology_scope(project_id, item.ontology_id, item.graph_set_id)
-    if item.edit_audit_id and service.session.get(
-        SemanticEditAuditModel, item.edit_audit_id
-    ) is None:
+    if (
+        item.edit_audit_id
+        and service.session.get(SemanticEditAuditModel, item.edit_audit_id) is None
+    ):
         raise EvidenceReferenceError("Semantic edit audit not found")
     resolved = service.resolve_candidates(
         project_id,
@@ -343,6 +356,7 @@ def _apply_batch_item(
 def apply_evidence_association_batch(
     project_id: str,
     payload: EvidenceAssociationBatchRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
     service = EvidenceReferenceService(session)
@@ -350,7 +364,7 @@ def apply_evidence_association_batch(
         results = []
         for item in payload.items:
             try:
-                results.append(_preview_batch_item(service, project_id, item, payload.actor))
+                results.append(_preview_batch_item(service, project_id, item, principal.actor))
             except EvidenceReferenceError as exc:
                 results.append(
                     {
@@ -368,7 +382,7 @@ def apply_evidence_association_batch(
         errors = []
         for item in payload.items:
             try:
-                _preview_batch_item(service, project_id, item, payload.actor)
+                _preview_batch_item(service, project_id, item, principal.actor)
             except EvidenceReferenceError as exc:
                 errors.append({"client_item_id": item.client_item_id, "error": str(exc)})
         if errors:
@@ -376,7 +390,7 @@ def apply_evidence_association_batch(
             raise HTTPException(status_code=422, detail={"items": errors})
         try:
             results = [
-                _apply_batch_item(service, project_id, item, payload.actor)
+                _apply_batch_item(service, project_id, item, principal.actor)
                 for item in payload.items
             ]
             session.commit()
@@ -389,8 +403,8 @@ def apply_evidence_association_batch(
     for item in payload.items:
         try:
             with session.begin_nested():
-                _preview_batch_item(service, project_id, item, payload.actor)
-                result = _apply_batch_item(service, project_id, item, payload.actor)
+                _preview_batch_item(service, project_id, item, principal.actor)
+                result = _apply_batch_item(service, project_id, item, principal.actor)
             results.append(result)
         except EvidenceReferenceError as exc:
             results.append(

@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy import select
+
 from mcp.server.fastmcp import FastMCP
 
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool
+from app.mcp.runtime import _run_tool, runtime_actor
 from app.repositories.rdf_store import RdfStoreRepository
+from app.repositories.models import (
+    SemanticGraphSetModel,
+    SemanticRuleDefinitionModel,
+    SemanticRuleModel,
+)
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService
 from app.services.semantic_context_query import SemanticContextQueryService
@@ -181,7 +188,7 @@ def register_semantic(server: FastMCP) -> None:
                 target_graph_iri=target_graph_iri,
                 validate=validate,
                 shape_graph_iris=shape_graph_iris or [],
-                actor=actor,
+                actor=runtime_actor(),
                 reason=reason,
                 warning_state=warning_state or {},
             )
@@ -273,7 +280,7 @@ def register_semantic(server: FastMCP) -> None:
                 reasoning_result_graph_iri=reasoning_result_graph_iri,
                 shape_version=shape_version,
                 persist_report_graph=persist_report_graph,
-                actor=actor,
+                actor=runtime_actor(),
             )
         )
 
@@ -301,6 +308,7 @@ def register_semantic(server: FastMCP) -> None:
 
     @server.tool()
     def submit_semantic_rule_definition(
+        ontology_id: str,
         rule_iri: str,
         name: str,
         language: str,
@@ -326,7 +334,8 @@ def register_semantic(server: FastMCP) -> None:
                     uses_inferred_facts=uses_inferred_facts,
                     requires_review=requires_review,
                     priority=priority,
-                    created_by=created_by,
+                    created_by=runtime_actor(),
+                    ontology_id=ontology_id,
                 )
                 .__dict__
             )
@@ -344,13 +353,14 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Run a single rule, a named group, or all rules for a graph set."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _rule_execution_service(session)._dispatch(
+            lambda session, _driver, _embedding_client: _run_scoped_rule(
+                session,
                 graph_set_id=graph_set_id,
                 rule_definition_id=rule_definition_id,
                 rule_iri=rule_iri,
                 rule_definition_ids=rule_definition_ids,
                 promote_pointer=promote_pointer,
-                actor=actor,
+                actor=runtime_actor(),
                 engine_version=engine_version,
             )
         )
@@ -493,7 +503,7 @@ def register_semantic(server: FastMCP) -> None:
                 mode=mode,
                 target_graph_set_id=target_graph_set_id,
                 batch_size=batch_size,
-                created_by=created_by,
+                created_by=runtime_actor(),
             )
         )
 
@@ -548,7 +558,7 @@ def register_semantic(server: FastMCP) -> None:
                 command_kind,
                 payload,
                 graph_set_id=graph_set_id,
-                actor=actor,
+                actor=runtime_actor(),
                 reason=reason,
                 shape_graph_iris=shape_graph_iris or [],
             )
@@ -717,3 +727,69 @@ def _statement_provenance(
         include_history=include in {"history", "all"},
     )
     return {**result, "deprecated": True, "replacement_tool": "get_ontology_lineage"}
+
+
+def _run_scoped_rule(
+    session,
+    *,
+    graph_set_id: str,
+    rule_definition_id: str | None,
+    rule_iri: str | None,
+    rule_definition_ids: list[str] | None,
+    promote_pointer: bool,
+    actor: str,
+    engine_version: str | None,
+):
+    graph_set = session.get(SemanticGraphSetModel, graph_set_id)
+    if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
+        raise PermissionError("Rule execution requires an Ontology-scoped Graph Set")
+    ontology_id = graph_set.scope_id
+    ids = list(rule_definition_ids or [])
+    if rule_definition_id:
+        ids.append(rule_definition_id)
+    if rule_iri:
+        semantic_rule = session.scalar(
+            select(SemanticRuleModel).where(
+                SemanticRuleModel.ontology_id == ontology_id,
+                SemanticRuleModel.rule_iri == rule_iri,
+            )
+        )
+        if semantic_rule is None or semantic_rule.current_definition_id is None:
+            raise ValueError("Rule definition not found")
+        ids.append(semantic_rule.current_definition_id)
+    if not ids:
+        ids = [
+            item.current_definition_id
+            for item in session.scalars(
+                select(SemanticRuleModel).where(
+                    SemanticRuleModel.ontology_id == ontology_id,
+                    SemanticRuleModel.current_definition_id.is_not(None),
+                )
+            )
+            if item.current_definition_id is not None
+        ]
+    for definition_id in ids:
+        definition = session.get(SemanticRuleDefinitionModel, definition_id)
+        semantic_rule = (
+            session.get(SemanticRuleModel, definition.semantic_rule_id)
+            if definition and definition.semantic_rule_id
+            else None
+        )
+        if semantic_rule is None or semantic_rule.ontology_id != ontology_id:
+            raise PermissionError("Rule definition is outside the Graph Set Ontology")
+    service = _rule_execution_service(session)
+    if rule_definition_ids is not None or (not rule_definition_id and not rule_iri):
+        return service.execute_rule_group(
+            graph_set_id=graph_set_id,
+            rule_definition_ids=ids,
+            promote_pointer=promote_pointer,
+            actor=actor,
+            engine_version=engine_version,
+        )
+    return service.execute_rule(
+        graph_set_id=graph_set_id,
+        rule_definition_id=ids[0],
+        promote_pointer=promote_pointer,
+        actor=actor,
+        engine_version=engine_version,
+    )

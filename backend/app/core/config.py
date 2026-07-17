@@ -1,9 +1,22 @@
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Annotated
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    secret_key: str = ""
+    ontology_bootstrap_admin_user: str = ""
+    ontology_bootstrap_admin_password: str = ""
+    ontology_bootstrap_admin_api_key: str = ""
+    ontology_mcp_api_key: str = ""
+    ontology_ui_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+        ]
+    )
 
     database_url: str = (
         "postgresql+psycopg://ontology:ontology@localhost:5434/"
@@ -24,9 +37,7 @@ class Settings(BaseSettings):
     semantic_base_iri: str = "http://ontology-platform.local/semantic/"
     semantic_graph_iri_prefix: str = "http://ontology-platform.local/semantic/graph/"
     semantic_query_timeout_seconds: float = Field(default=10, gt=0, le=120)
-    competency_question_sparql_timeout_seconds: float = Field(
-        default=5.0, gt=0, le=60
-    )
+    competency_question_sparql_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     semantic_query_result_limit: int = Field(default=1000, ge=1, le=10000)
     semantic_shacl_inference: str = "none"
     semantic_reasoner_command: str = ""
@@ -54,3 +65,12 @@ class Settings(BaseSettings):
     semantic_migration_default_scope: str = "ad_hoc"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("ontology_ui_origins", mode="before")
+    @classmethod
+    def parse_ui_origins(cls, value):
+        if isinstance(value, str):
+            value = [item.strip().rstrip("/") for item in value.split(",") if item.strip()]
+        if "*" in value:
+            raise ValueError("ONTOLOGY_UI_ORIGINS must not contain '*'")
+        return value

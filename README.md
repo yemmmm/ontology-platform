@@ -4,8 +4,8 @@ Ontology Platform 是供外部 Agent 构建、验证和查询领域本体的本�
 资料与建模判断；平台负责确定性校验、RDF/Oxigraph 语义存储、PostgreSQL 工作流与审计状态、
 Evidence Reference、可恢复建模批次、lineage 和结构化查询。
 
-当前 v1 已实现 R-001 至 R-007。认证授权（R-008）尚未实现，Agent Test 外部化（R-009）只部分
-实现，Dify 端到端验收（R-010）尚未实现。仓库只能在受信任的本地环境使用。
+当前 v1 已实现 R-001 至 R-008。Agent Test 外部化（R-009）只部分实现，Dify 端到端验收
+（R-010）尚未实现。部署仍应使用受控网络并妥善保管运营凭据。
 
 ## Repository Layout
 
@@ -75,17 +75,20 @@ uv run python -m app.mcp.server
 Vite dev server 的实际地址以命令输出为准；frontend 默认请求同源 `/api`，也可用
 `VITE_API_BASE_URL` 覆盖。
 
-## Current Authentication Boundary
+## Authentication Boundary
 
-当前 HTTP 与 MCP **均未实施认证和授权**：
+除三个 health endpoint 与登录外，HTTP、OpenAPI 和交互文档都要求 API key 或 UI session。
+首次启用前，迁移后在 `backend/` 中创建持久运营主体：
 
-- HTTP 路由不要求 `Authorization`，Project/Ontology 范围仍来自请求参数。
-- MCP server 无进程身份，工具也没有通用 `api_key` 参数。
-- `ADMIN_TOKEN`、`MCP_API_KEY`、`ONTOLOGY_MCP_API_KEY` 不是当前生效配置。
-- 请求中的 `actor` 尚未被认证主体覆盖。
+```bash
+uv run python -m app.cli.bootstrap_auth --username admin
+```
 
-因此只能在受信任本地环境运行，不应绑定到不受信任网络。上述能力属于 R-008，本文档不把其
-目标协议描述为当前能力。
+命令交互式读取密码，把 username、初始 password 和一次性 API key 写入 gitignored、权限 `0600` 的
+`backend/.local/ontology-platform-bootstrap.json`；该文件是 UI 登录和 API 接入的唯一初始凭据交付，
+读取后应转存到受控密码库。API key 通过
+`Authorization: Bearer <key>` 使用；MCP 从 `ONTOLOGY_MCP_API_KEY` 读取进程身份，缺失或失效时
+拒绝启动。浏览器使用 HttpOnly session cookie，并对写请求执行 CSRF token 与可信 Origin 校验。
 
 ## Environment Variables
 
@@ -95,6 +98,11 @@ backend 从进程工作目录的 `.env` 读取配置；仓库命令以 `backend/
 | Variable | Purpose | Current default/example |
 | --- | --- | --- |
 | `APP_ENV` | Runtime environment label | `development` |
+| `SECRET_KEY` | Persistent UI session signing key | empty generates an ephemeral process key |
+| `ONTOLOGY_BOOTSTRAP_ADMIN_USER` / `_PASSWORD` | Idempotent bootstrap admin login | both empty |
+| `ONTOLOGY_BOOTSTRAP_ADMIN_API_KEY` | Optional fixed-format org-admin bootstrap key | empty |
+| `ONTOLOGY_MCP_API_KEY` | Required API key for MCP process startup | empty |
+| `ONTOLOGY_UI_ORIGINS` | Exact comma-separated UI origins allowed for session writes | local `5173` origins |
 | `DATABASE_URL` | PostgreSQL SQLAlchemy URL | localhost port `5434` |
 | `LLM_BASE_URL` | OpenAI-compatible endpoint used only by current Agent Test | `https://api.openai.com/v1` |
 | `LLM_API_KEY` / `LLM_MODEL` | Optional current Agent Test credentials/model | empty |

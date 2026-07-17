@@ -10,7 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from app.api.modeling_batches import get_ontology_read_model as read_model_adapter
 from app.api.schemas import ModelingBatchSubmit
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool
+from app.mcp.runtime import _run_tool, runtime_actor
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
 
@@ -45,7 +45,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                     lease_token=lease_token,
                     items=items,
                 ),
-                authorization=ModelingAuthorizationContext(surface="mcp"),
+                authorization=ModelingAuthorizationContext(actor=runtime_actor(), surface="mcp"),
             )
         )
 

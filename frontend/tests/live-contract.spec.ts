@@ -23,6 +23,15 @@ interface GraphScope {
 }
 
 let counter = 0;
+const liveApiKey = process.env.ONTOLOGY_PLAYWRIGHT_API_KEY ?? "";
+
+function requireLiveApiKey() {
+  test.skip(
+    !liveApiKey,
+    "Set ONTOLOGY_PLAYWRIGHT_API_KEY to an organization-admin test key for authenticated live-contract checks.",
+  );
+}
+
 function uniqueScope(): GraphScope {
   counter += 1;
   const id = `${Date.now()}-${counter}`;
@@ -79,15 +88,18 @@ async function apiPost(page: Page, path: string, body: unknown) {
     await page.goto("/").catch(() => undefined);
   }
   return page.evaluate(
-    async ({ path, body }) => {
+    async ({ path, body, apiKey }) => {
       const res = await fetch(`/api${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
         body: JSON.stringify(body),
       });
       return { status: res.status, json: await res.json().catch(() => null) };
     },
-    { path, body },
+    { path, body, apiKey: liveApiKey },
   );
 }
 
@@ -95,14 +107,17 @@ async function apiGet(page: Page, path: string) {
   if (!page.url().startsWith("http://127.0.0.1:5173")) {
     await page.goto("/").catch(() => undefined);
   }
-  return page.evaluate(async (path) => {
-    const res = await fetch(`/api${path}`);
+  return page.evaluate(async ({ path, apiKey }) => {
+    const res = await fetch(`/api${path}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
     return { status: res.status, json: await res.json().catch(() => null) };
-  }, path);
+  }, { path, apiKey: liveApiKey });
 }
 
 test.describe("semantic live-contract (real backend + Oxigraph)", () => {
   test("runtime spine: load → query → write-SPARQL rejected", async ({ page }) => {
+    requireLiveApiKey();
     const suffix = `${Date.now()}-${counter += 1}`;
     const project = await apiPost(page, "/projects", { name: `R006 Live ${suffix}` });
     expect(project.status).toBe(201);
@@ -168,6 +183,7 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
   });
 
   test("governed edits accept valid Turtle and reject malformed RDF with 400", async ({ page }) => {
+    requireLiveApiKey();
     const s = uniqueScope();
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
@@ -204,6 +220,14 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
   });
 
   test("graph-set validation + CONSTRUCT rule (no LIMIT) succeed against Oxigraph", async ({ page }) => {
+    requireLiveApiKey();
+    const suffix = `${Date.now()}-${counter += 1}`;
+    const project = await apiPost(page, "/projects", { name: `R006 Rules ${suffix}` });
+    expect(project.status).toBe(201);
+    const ontology = await apiPost(page, `/projects/${project.json.id}/ontologies`, {
+      name: `R006 Rules Ontology ${suffix}`,
+    });
+    expect(ontology.status).toBe(201);
     const s = uniqueScope();
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
@@ -235,6 +259,7 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     expect(sh.json.conforms).toBe(true);
 
     const rule = await apiPost(page, "/semantic/rule-definitions", {
+      ontology_id: ontology.json.id,
       rule_iri: `http://ontology-platform.local/semantic/rule/live-${Date.now()}`,
       name: "Derive employment label",
       language: "sparql_construct",

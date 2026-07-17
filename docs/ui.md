@@ -12,6 +12,10 @@ frontend 默认请求同源 `/api`。一键启动使用 preview `http://127.0.0.
 backend `8001`；单独运行 dev server 时可用 `VITE_API_BASE_URL` 指定 backend（手动 uvicorn 默认
 为 `http://127.0.0.1:8000/api`）。
 
+UI 启动后先调用 `/api/auth/me`；无有效 session 时显示登录页。登录成功后使用 HttpOnly session，
+写请求自动发送 double-submit CSRF header。运行期 401 会清空 UI 主体并回到登录页，logout 清除
+session/CSRF cookie；用户名、密码和 API key 都不会写入 localStorage/sessionStorage。
+
 ## 当前页面
 
 - Home：Project 与 Ontology 的创建、选择和删除。
@@ -39,9 +43,9 @@ Agent Test 调用 `POST /api/agent-test/run`，当前仍可能通过 OpenAI-comp
 React UI -> FastAPI /api -> PostgreSQL + RDF Dataset/Oxigraph
 ```
 
-UI 不直接连接数据库。当前 frontend 没有 login/session；backend 也没有认证与授权，Project 和
-Ontology 隔离仅由请求范围校验提供，不能视为访问控制。只适合受信任本地环境，完整安全能力属于
-R-008。
+UI 不直接连接数据库。backend 从 session 解析全组织 admin 主体，并使用显式
+`ONTOLOGY_UI_ORIGINS` allowlist 校验 session 写请求的浏览器 Origin；Vite `changeOrigin` 改写后的
+backend Host 不参与信任判断。
 
 ## 验证
 
@@ -50,6 +54,9 @@ cd frontend
 npm run build
 npx playwright test
 ```
+
+其中三个真实 backend/Oxigraph contract 用例需要通过 `ONTOLOGY_PLAYWRIGHT_API_KEY` 注入专用的
+全组织 admin 测试 key；未配置时仅跳过这三个会写入真实运行时的用例，其余 UI 用例仍执行。
 
 手工验证应覆盖 Project/Ontology 选择、Overview、Evidence、Classes/Entities/Rules/Facts、Debug、
 Build Context、Agent Test、MCP Tools、Graph Sets 和 Settings 的 loading/empty/error 状态，并确认

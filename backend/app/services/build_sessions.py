@@ -87,9 +87,10 @@ def _token_hash(token: str) -> str:
 
 
 class BuildSessionService:
-    def __init__(self, session: Session, settings: Settings) -> None:
+    def __init__(self, session: Session, settings: Settings, actor: str | None = None) -> None:
         self.session = session
         self.settings = settings
+        self.actor = actor
 
     # ------------------------------------------------------------------
     # Public session and checkpoint workflow
@@ -132,6 +133,7 @@ class BuildSessionService:
             revision=1,
             unresolved_items=[],
             last_activity_at=now,
+            created_by=self.actor,
         )
         self.session.add(build_session)
         checkpoint: BuildCheckpointModel | None = None
@@ -517,6 +519,7 @@ class BuildSessionService:
                 build_session_id=session_id,
                 token_hash=_token_hash(token),
                 revision=1,
+                acquired_by=self.actor,
                 acquired_at=now,
                 expires_at=now + timedelta(seconds=self.settings.build_session_lease_ttl_seconds),
                 last_request_id=payload.client_request_id,
@@ -529,6 +532,7 @@ class BuildSessionService:
             lease.build_session_id = session_id
             lease.token_hash = _token_hash(token)
             lease.revision += 1
+            lease.acquired_by = self.actor
             lease.acquired_at = now
             lease.renewed_at = None
             lease.expires_at = now + timedelta(
@@ -687,9 +691,7 @@ class BuildSessionService:
             raise BuildSessionError("project_not_found", "Project was not found", status_code=404)
         return project
 
-    def _ontology(
-        self, project_id: str, ontology_id: str, *, lock: bool = False
-    ) -> OntologyModel:
+    def _ontology(self, project_id: str, ontology_id: str, *, lock: bool = False) -> OntologyModel:
         statement = select(OntologyModel).where(OntologyModel.id == ontology_id)
         if lock:
             statement = statement.with_for_update()
@@ -773,6 +775,7 @@ class BuildSessionService:
             failure_code=failure.code if failure else None,
             failure_message=failure.message if failure else None,
             related_batch_id=payload.related_batch_id,
+            reported_by=self.actor,
         )
 
     def _session_summary(

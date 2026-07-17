@@ -65,9 +65,10 @@ def _seed(session):
 
 
 def test_mcp_new_and_deprecated_tools_share_service_semantics(
-    in_memory_session, monkeypatch
+    in_memory_session, monkeypatch, mcp_principal_factory
 ) -> None:
     graph_set_id, statement_id = _seed(in_memory_session)
+    mcp_principal_factory(in_memory_session)
     factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)
     monkeypatch.setattr("app.mcp.runtime.get_resources", lambda: (factory, None, object()))
     new = _tool("get_ontology_lineage").fn(

@@ -20,6 +20,7 @@ from app.repositories.models import (
 from app.api.schemas import SemanticCanonicalProductWriteRequest
 from app.api.semantic import compile_and_apply_product_command
 from app.core.config import Settings
+from app.security.auth import AuthPrincipal
 
 
 PROJECT_ID = "project-evidence"
@@ -203,11 +204,14 @@ def test_cross_project_reference_is_hidden_and_atomic(in_memory_session: Session
         },
     )
     assert response.status_code == 404
-    assert in_memory_session.scalar(
-        select(func.count(EvidenceReferenceModel.id)).where(
-            EvidenceReferenceModel.project_id == PROJECT_ID
+    assert (
+        in_memory_session.scalar(
+            select(func.count(EvidenceReferenceModel.id)).where(
+                EvidenceReferenceModel.project_id == PROJECT_ID
+            )
         )
-    ) == 0
+        == 0
+    )
     assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 0
 
 
@@ -311,6 +315,14 @@ def test_canonical_write_atomically_persists_inline_evidence(
                     "excerpt": "A workflow can be published.",
                 }
             ],
+        ),
+        principal=AuthPrincipal(
+            subject_type="api_key",
+            subject_id="direct-test",
+            actor="key:direct-test",
+            scopes=frozenset({"admin"}),
+            project_id=None,
+            auth_method="bearer",
         ),
         session=in_memory_session,
         rdf_store=object(),

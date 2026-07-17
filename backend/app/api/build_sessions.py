@@ -19,6 +19,8 @@ from app.api.schemas import (
 )
 from app.core.config import Settings
 from app.services.build_sessions import BuildSessionError, BuildSessionService
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 
 router = APIRouter(tags=["build sessions"])
 
@@ -26,8 +28,9 @@ router = APIRouter(tags=["build sessions"])
 def _service(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
+    principal: AuthPrincipal = Depends(principal_dependency),
 ) -> BuildSessionService:
-    return BuildSessionService(session, settings)
+    return BuildSessionService(session, settings, actor=principal.actor)
 
 
 def _call(operation):
@@ -36,9 +39,7 @@ def _call(operation):
     except BuildSessionError as exc:
         raise HTTPException(
             status_code=exc.status_code,
-            detail=jsonable_encoder(
-                {"code": exc.code, "message": exc.message, **exc.detail}
-            ),
+            detail=jsonable_encoder({"code": exc.code, "message": exc.message, **exc.detail}),
         ) from exc
 
 
@@ -125,23 +126,17 @@ def cancel_build_session(
     return _call(lambda: service.cancel_session(session_id, payload))
 
 
-@router.post(
-    "/build-sessions/{session_id}/ontology-leases/{ontology_id}:acquire"
-)
+@router.post("/build-sessions/{session_id}/ontology-leases/{ontology_id}:acquire")
 def acquire_ontology_lease(
     session_id: str,
     ontology_id: str,
     payload: OntologyLeaseAcquire,
     service: BuildSessionService = Depends(_service),
 ):
-    return _call(
-        lambda: service.acquire_ontology_lease(session_id, ontology_id, payload)
-    )
+    return _call(lambda: service.acquire_ontology_lease(session_id, ontology_id, payload))
 
 
-@router.post(
-    "/build-sessions/{session_id}/ontology-leases/{ontology_id}:renew"
-)
+@router.post("/build-sessions/{session_id}/ontology-leases/{ontology_id}:renew")
 def renew_ontology_lease(
     session_id: str,
     ontology_id: str,
@@ -151,15 +146,11 @@ def renew_ontology_lease(
     return _call(lambda: service.renew_ontology_lease(session_id, ontology_id, payload))
 
 
-@router.post(
-    "/build-sessions/{session_id}/ontology-leases/{ontology_id}:release"
-)
+@router.post("/build-sessions/{session_id}/ontology-leases/{ontology_id}:release")
 def release_ontology_lease(
     session_id: str,
     ontology_id: str,
     payload: OntologyLeaseRelease,
     service: BuildSessionService = Depends(_service),
 ):
-    return _call(
-        lambda: service.release_ontology_lease(session_id, ontology_id, payload)
-    )
+    return _call(lambda: service.release_ontology_lease(session_id, ontology_id, payload))

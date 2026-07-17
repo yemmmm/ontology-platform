@@ -27,6 +27,8 @@ from app.services.modeling_batches import (
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
+from app.security.auth import AuthPrincipal
+from app.security.http import principal_dependency
 
 router = APIRouter(tags=["modeling batches"])
 
@@ -54,6 +56,7 @@ async def submit_modeling_batch(
     session_id: str,
     payload: ModelingBatchSubmit,
     request: Request,
+    principal: AuthPrincipal = Depends(principal_dependency),
     service: ModelingBatchService = Depends(_service),
 ):
     request_bytes = len(await request.body())
@@ -61,7 +64,7 @@ async def submit_modeling_batch(
         lambda: service.submit(
             session_id,
             payload,
-            authorization=ModelingAuthorizationContext(surface="rest"),
+            authorization=ModelingAuthorizationContext(actor=principal.actor, surface="rest"),
             request_bytes=request_bytes,
         )
     )

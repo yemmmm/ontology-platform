@@ -457,6 +457,42 @@ class ApiKeyModel(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class UserModel(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    username: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class SecurityAuditEventModel(Base):
+    __tablename__ = "security_audit_events"
+    __table_args__ = (
+        Index("ix_security_audit_events_created", "created_at"),
+        Index("ix_security_audit_events_project", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(255))
+    auth_method: Mapped[str | None] = mapped_column(String(32))
+    project_id: Mapped[str | None] = mapped_column(String(36))
+    resource_type: Mapped[str | None] = mapped_column(String(80))
+    resource_id: Mapped[str | None] = mapped_column(String(255))
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ProjectBriefModel(Base):
     __tablename__ = "project_briefs"
 

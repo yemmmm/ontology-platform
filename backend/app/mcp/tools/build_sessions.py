@@ -18,12 +18,12 @@ from app.api.schemas import (
     OntologyLeaseRenew,
 )
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool
+from app.mcp.runtime import _run_tool, runtime_actor
 from app.services.build_sessions import BuildSessionService
 
 
 def _service(session) -> BuildSessionService:
-    return BuildSessionService(session, Settings())
+    return BuildSessionService(session, Settings(), actor=runtime_actor())
 
 
 def register_build_sessions(server: FastMCP) -> None:
@@ -35,9 +35,7 @@ def register_build_sessions(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Read Project-wide platform facts and recoverable Agent session state."""
         return _run_tool(
-            lambda session, _driver, _embedding: _service(
-                session
-            ).get_project_build_context(
+            lambda session, _driver, _embedding: _service(session).get_project_build_context(
                 project_id,
                 recent_session_limit=recent_session_limit,
                 recent_session_cursor=recent_session_cursor,
@@ -183,9 +181,7 @@ def register_build_sessions(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Acquire or rotate this Build Session's exclusive Ontology write lease."""
         return _run_tool(
-            lambda session, _driver, _embedding: _service(
-                session
-            ).acquire_ontology_lease(
+            lambda session, _driver, _embedding: _service(session).acquire_ontology_lease(
                 session_id,
                 ontology_id,
                 OntologyLeaseAcquire(
@@ -206,9 +202,7 @@ def register_build_sessions(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Renew a valid Ontology lease using its opaque token."""
         return _run_tool(
-            lambda session, _driver, _embedding: _service(
-                session
-            ).renew_ontology_lease(
+            lambda session, _driver, _embedding: _service(session).renew_ontology_lease(
                 session_id,
                 ontology_id,
                 OntologyLeaseRenew(
@@ -229,9 +223,7 @@ def register_build_sessions(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Idempotently release this Build Session's Ontology write lease."""
         return _run_tool(
-            lambda session, _driver, _embedding: _service(
-                session
-            ).release_ontology_lease(
+            lambda session, _driver, _embedding: _service(session).release_ontology_lease(
                 session_id,
                 ontology_id,
                 OntologyLeaseRelease(

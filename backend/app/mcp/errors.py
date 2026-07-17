@@ -49,5 +49,9 @@ def map_exception(exc: Exception) -> tuple[str, str]:
         code = _STATUS_TO_CODE.get(status_code, ErrorCode.INTERNAL_ERROR)
         return code.value, str(exc)
     if isinstance(exc, (ValueError, TypeError)):
+        if exc.__class__.__name__ == "SecretDetected":
+            return "secret_in_payload", "A high-confidence secret was rejected"
         return ErrorCode.VALIDATION_ERROR.value, str(exc)
+    if isinstance(exc, PermissionError):
+        return "forbidden_scope", str(exc)
     return ErrorCode.INTERNAL_ERROR.value, str(exc)

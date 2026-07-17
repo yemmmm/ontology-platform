@@ -19,3 +19,17 @@ def test_modeling_batch_capacity_and_recovery_defaults():
     assert settings.modeling_batch_max_evidence_excerpt_chars == 20_000
     assert settings.modeling_batch_recovery_max_steps == 3
     assert settings.modeling_batch_execution_claim_ttl_seconds == 300
+
+
+def test_ui_origins_accept_comma_separated_environment_value(monkeypatch):
+    monkeypatch.setenv(
+        "ONTOLOGY_UI_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173/",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.ontology_ui_origins == [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ]

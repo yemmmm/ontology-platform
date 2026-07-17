@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.repositories.models import SemanticRuleDefinitionModel
+from app.repositories.models import OntologyModel, SemanticRuleDefinitionModel, SemanticRuleModel
 
 
 class RuleDefinitionError(RuntimeError):
@@ -47,6 +47,7 @@ ALLOWED_INPUT_ROLES: frozenset[str] = frozenset(
     }
 )
 
+
 def compute_rule_version(body: dict[str, Any], language: str) -> str:
     """Deterministic version hash for a rule body and language."""
     payload = json.dumps({"body": body, "language": language}, sort_keys=True).encode("utf-8")
@@ -73,6 +74,7 @@ class SemanticRuleDefinitionService:
         safety_profile: dict[str, Any] | None = None,
         created_by: str | None = None,
         metadata: dict[str, Any] | None = None,
+        ontology_id: str | None = None,
     ) -> SemanticRuleDefinitionModel:
         if language not in ALLOWED_LANGUAGES:
             raise RuleDefinitionError(f"Unsupported rule language: {language}")
@@ -86,9 +88,7 @@ class SemanticRuleDefinitionService:
             raise RuleDefinitionError("Rule must declare at least one input role")
         unknown_roles = [role for role in input_roles if role not in ALLOWED_INPUT_ROLES]
         if unknown_roles:
-            raise RuleDefinitionError(
-                f"Unknown input roles: {sorted(set(unknown_roles))}"
-            )
+            raise RuleDefinitionError(f"Unknown input roles: {sorted(set(unknown_roles))}")
         if uses_inferred_facts and "reasoning_result" not in input_roles:
             input_roles = [*input_roles, "reasoning_result"]
         if language == "sparql_construct":
@@ -98,15 +98,41 @@ class SemanticRuleDefinitionService:
         elif language == "workflow_state_machine":
             validate_workflow_state_machine(body)
         version = compute_rule_version(body, language)
-        existing = self.session.scalar(
-            select(SemanticRuleDefinitionModel)
-            .where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
-            .where(SemanticRuleDefinitionModel.version == version)
+        semantic_rule = None
+        if ontology_id is not None:
+            if self.session.get(OntologyModel, ontology_id) is None:
+                raise RuleDefinitionError("Ontology not found")
+            semantic_rule = self.session.scalar(
+                select(SemanticRuleModel).where(
+                    SemanticRuleModel.ontology_id == ontology_id,
+                    SemanticRuleModel.rule_iri == rule_iri,
+                )
+            )
+            if semantic_rule is None:
+                semantic_rule = SemanticRuleModel(
+                    id=str(uuid4()),
+                    ontology_id=ontology_id,
+                    rule_iri=rule_iri,
+                    status="active",
+                )
+                self.session.add(semantic_rule)
+                self.session.flush()
+        statement = select(SemanticRuleDefinitionModel).where(
+            SemanticRuleDefinitionModel.rule_iri == rule_iri,
+            SemanticRuleDefinitionModel.version == version,
         )
+        if semantic_rule is None:
+            statement = statement.where(SemanticRuleDefinitionModel.semantic_rule_id.is_(None))
+        else:
+            statement = statement.where(
+                SemanticRuleDefinitionModel.semantic_rule_id == semantic_rule.id
+            )
+        existing = self.session.scalar(statement)
         if existing is not None:
             return existing
         record = SemanticRuleDefinitionModel(
             id=str(uuid4()),
+            semantic_rule_id=semantic_rule.id if semantic_rule else None,
             rule_iri=rule_iri,
             name=name,
             language=language,
@@ -123,14 +149,14 @@ class SemanticRuleDefinitionService:
             rule_metadata=metadata or {},
         )
         self.session.add(record)
+        if semantic_rule is not None:
+            semantic_rule.current_definition_id = record.id
         self.session.commit()
         return record
 
     def get_rule(self, rule_id: str) -> SemanticRuleDefinitionModel:
         record = self.session.scalar(
-            select(SemanticRuleDefinitionModel).where(
-                SemanticRuleDefinitionModel.id == rule_id
-            )
+            select(SemanticRuleDefinitionModel).where(SemanticRuleDefinitionModel.id == rule_id)
         )
         if record is None:
             raise RuleDefinitionNotFound(f"Rule definition not found: {rule_id}")
@@ -145,9 +171,8 @@ class SemanticRuleDefinitionService:
         self,
         rule_iri: str,
     ) -> SemanticRuleDefinitionModel | None:
-        statement = (
-            select(SemanticRuleDefinitionModel)
-            .where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
+        statement = select(SemanticRuleDefinitionModel).where(
+            SemanticRuleDefinitionModel.rule_iri == rule_iri
         )
         statement = statement.order_by(SemanticRuleDefinitionModel.updated_at.desc())
         return self.session.scalar(statement)
@@ -157,6 +182,7 @@ class SemanticRuleDefinitionService:
         language: str | None = None,
         rule_iri: str | None = None,
         limit: int = 100,
+        project_id: str | None = None,
     ) -> list[SemanticRuleDefinitionModel]:
         bounded_limit = max(1, min(limit, 500))
         statement = select(SemanticRuleDefinitionModel).order_by(
@@ -168,15 +194,20 @@ class SemanticRuleDefinitionService:
             statement = statement.where(SemanticRuleDefinitionModel.language == language)
         if rule_iri:
             statement = statement.where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
-        return list(
-            self.session.scalars(statement.limit(bounded_limit))
-        )
+        if project_id is not None:
+            statement = (
+                statement.join(
+                    SemanticRuleModel,
+                    SemanticRuleModel.id == SemanticRuleDefinitionModel.semantic_rule_id,
+                )
+                .join(OntologyModel, OntologyModel.id == SemanticRuleModel.ontology_id)
+                .where(OntologyModel.project_id == project_id)
+            )
+        return list(self.session.scalars(statement.limit(bounded_limit)))
 
     def _normalise_safety_profile(self, safety_profile: dict[str, Any]) -> dict[str, Any]:
         normalised = {
-            "max_generated_statements": int(
-                safety_profile.get("max_generated_statements", 10000)
-            ),
+            "max_generated_statements": int(safety_profile.get("max_generated_statements", 10000)),
             "timeout_seconds": float(safety_profile.get("timeout_seconds", 30.0)),
             "allowed_predicates": list(safety_profile.get("allowed_predicates", [])),
         }
@@ -223,9 +254,7 @@ def validate_construct_template(body: dict[str, Any]) -> None:
         raise RuleDefinitionError("SPARQL CONSTRUCT template must include a WHERE clause")
     for keyword in CONSTRUCT_FORBIDDEN_KEYWORDS:
         if re_construct_search(lowered, rf"\b{keyword}\b"):
-            raise RuleDefinitionError(
-                f"SPARQL CONSTRUCT template may not use '{keyword.upper()}'"
-            )
+            raise RuleDefinitionError(f"SPARQL CONSTRUCT template may not use '{keyword.upper()}'")
     import re as _re
 
     sanitised = _re.sub(r"<[^>]*>", " <iri> ", lowered)
@@ -274,9 +303,7 @@ def validate_platform_dsl(body: dict[str, Any]) -> None:
                 )
             operator = next(iter(filter_clause))
             if operator not in PLATFORM_DSL_ALLOWED_FILTER_OPS:
-                raise RuleDefinitionError(
-                    f"Platform DSL filter operator not supported: {operator}"
-                )
+                raise RuleDefinitionError(f"Platform DSL filter operator not supported: {operator}")
             args = filter_clause[operator]
             if not isinstance(args, list) or len(args) < 2:
                 raise RuleDefinitionError(
@@ -310,9 +337,7 @@ def validate_workflow_state_machine(body: dict[str, Any]) -> None:
         )
     for transition in transitions:
         if not isinstance(transition, dict):
-            raise RuleDefinitionError(
-                "Workflow state-machine transitions must be JSON objects"
-            )
+            raise RuleDefinitionError("Workflow state-machine transitions must be JSON objects")
         if not {"from", "to"}.issubset(transition):
             raise RuleDefinitionError(
                 "Workflow state-machine transitions must include 'from' and 'to' states"

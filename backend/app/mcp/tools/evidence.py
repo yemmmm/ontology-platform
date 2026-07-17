@@ -6,7 +6,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from app.mcp.runtime import _run_tool
+from app.mcp.runtime import _run_tool, runtime_actor
 from app.services.evidence_reference import (
     EvidenceReferenceService,
     association_to_dict,
@@ -25,7 +25,7 @@ def register_evidence(server: FastMCP) -> None:
         """Create or idempotently reuse a project evidence reference."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _create(
-                session, project_id, document_name, excerpt, actor
+                session, project_id, document_name, excerpt, runtime_actor()
             )
         )
 
@@ -46,9 +46,7 @@ def register_evidence(server: FastMCP) -> None:
     @server.tool()
     def get_evidence_reference(reference_id: str) -> dict[str, Any]:
         """Read one evidence reference and its modeling-result associations."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _get(session, reference_id)
-        )
+        return _run_tool(lambda session, _driver, _embedding_client: _get(session, reference_id))
 
     @server.tool()
     def associate_evidence_reference(
@@ -76,7 +74,7 @@ def register_evidence(server: FastMCP) -> None:
                 graph_set_id=graph_set_id,
                 client_item_id=client_item_id,
                 edit_audit_id=edit_audit_id,
-                actor=actor,
+                actor=runtime_actor(),
             )
         )
 

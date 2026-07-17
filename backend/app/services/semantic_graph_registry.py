@@ -75,7 +75,7 @@ class GraphClassification:
     def classify(self, graph_iri: str) -> GraphCategory:
         if not graph_iri.startswith(self.prefix):
             return GraphCategory.UNKNOWN
-        suffix = graph_iri[len(self.prefix):]
+        suffix = graph_iri[len(self.prefix) :]
         head = suffix.split("/", 1)[0]
         normalized = head.replace("-", "_").lower()
         try:
@@ -137,9 +137,7 @@ class SemanticGraphRegistryService:
                 SemanticGraphRegistryModel.semantic_owner_type == owner_type
             )
         if owner_id:
-            statement = statement.where(
-                SemanticGraphRegistryModel.semantic_owner_id == owner_id
-            )
+            statement = statement.where(SemanticGraphRegistryModel.semantic_owner_id == owner_id)
         return list(self.session.scalars(statement))
 
     def register_graph(
@@ -204,13 +202,13 @@ class SemanticGraphRegistryService:
                 mutable_by_direct_edit=True,
             )
         elif not record.mutable_by_direct_edit:
-            raise DirectEditCategoryDenied(
-                f"Graph '{graph_iri}' is not mutable by direct edit"
-            )
+            raise DirectEditCategoryDenied(f"Graph '{graph_iri}' is not mutable by direct edit")
         return record
 
-    def status_summary(self) -> dict[str, Any]:
-        records = self.list_graphs()
+    def status_summary(
+        self, records: list[SemanticGraphRegistryModel] | None = None
+    ) -> dict[str, Any]:
+        records = self.list_graphs() if records is None else records
         by_category: dict[str, int] = {}
         editable_actual = 0
         locked_actual = 0
@@ -265,9 +263,7 @@ class SemanticGraphRegistryService:
 
     def _state(self, graph_iri: str) -> SemanticGraphStateModel | None:
         return self.session.scalar(
-            select(SemanticGraphStateModel).where(
-                SemanticGraphStateModel.graph_iri == graph_iri
-            )
+            select(SemanticGraphStateModel).where(SemanticGraphStateModel.graph_iri == graph_iri)
         )
 
     def _revision(self, graph_iri: str) -> SemanticGraphRevisionModel | None:

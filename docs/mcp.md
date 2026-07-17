@@ -16,9 +16,12 @@ uv run python -m app.mcp.server
 Codex 等客户端应把 MCP server 的工作目录设为仓库的 `backend` 目录，并运行上述 Python 模块。
 进程读取 `backend/.env` 中当前 `Settings` 支持的数据库、Oxigraph、LLM、Embedding 和语义运行参数。
 
-当前 MCP server **没有实现认证或授权**。`ADMIN_TOKEN`、`MCP_API_KEY` 和
-`ONTOLOGY_MCP_API_KEY` 都不是当前生效配置；工具参数也不接受通用 `api_key`。仅应在受信任本地
-环境中运行。R-008 将定义并实现 MCP 进程身份、scope 和 Project/Ontology 授权。
+启动前必须在 `backend/.env` 设置 `ONTOLOGY_MCP_API_KEY`。进程在进入 stdio/SSE/streamable HTTP
+event loop 前验证 hashed API key；缺少、无效或已撤销 key 时非零退出。每次 tool call 会再次检查
+撤销状态、required scope 和 Project/Ontology 归属，payload 中的 actor 不能覆盖认证主体。
+中央 policy registry 同时显式声明 scope、ownership mode 和是否写状态：除 health 外，Project-bound
+调用必须带可解析的本 Project 资源；全局工具为 org-only。`check_semantic_staleness` 会更新 derived
+pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是只读健康检查。
 
 ## 当前推荐流程
 
@@ -108,6 +111,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `semantic_sparql_query` | Run scoped read-only SPARQL against current Ontology semantic state. | project_id, query, scope_mode | ontology_ids, project_id, query, result_limit, scope_mode, timeout_seconds | `backend/app/mcp/tools/semantic.py` |
 | semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | graph_set_id, projection_kind, projection_version | allow_stale_derived, graph_set_id, include, mode, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
 | semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format | actor, content, format, reason, shape_graph_iris, target_graph_iri, validate, warning_state | `backend/app/mcp/tools/semantic.py` |
-| semantic | `submit_semantic_rule_definition` | Create or reuse an immediately executable platform rule definition. | body, language, name, rule_iri | body, created_by, input_roles, language, name, output_kind, priority, requires_review, rule_iri, uses_inferred_facts | `backend/app/mcp/tools/semantic.py` |
+| semantic | `submit_semantic_rule_definition` | Create or reuse an immediately executable platform rule definition. | body, language, name, ontology_id, rule_iri | body, created_by, input_roles, language, name, ontology_id, output_kind, priority, requires_review, rule_iri, uses_inferred_facts | `backend/app/mcp/tools/semantic.py` |
 
 <!-- END GENERATED MCP TOOL INVENTORY -->

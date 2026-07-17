@@ -143,15 +143,21 @@ def test_explicit_http_references_exist_in_openapi() -> None:
             )
 
 
-def test_configuration_and_unimplemented_requirements_are_truthful() -> None:
+def test_configuration_and_requirement_statuses_are_truthful() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     env = (ROOT / ".env.example").read_text(encoding="utf-8")
     requirements = (ROOT / "docs" / "requirements-v1.0.md").read_text(encoding="utf-8")
-    assert "当前 HTTP 与 MCP **均未实施认证和授权**" in readme
-    assert "不是当前生效配置" in readme
+    assert "ONTOLOGY_MCP_API_KEY" in readme
+    assert "backend/.local/ontology-platform-bootstrap.json" in readme
+    assert "ONTOLOGY_UI_ORIGINS" in env
+    assert "SECRET_KEY" in env
     assert "localhost:5434" in env
     assert "8001" in readme and "5173" in readme and "7878" in readme
-    for requirement_id, status in (("R-008", "未实现"), ("R-009", "部分实现"), ("R-010", "未实现")):
+    for requirement_id, status in (
+        ("R-008", "已实现"),
+        ("R-009", "部分实现"),
+        ("R-010", "未实现"),
+    ):
         row = re.search(rf"^\| {requirement_id} \|.*$", requirements, re.MULTILINE)
         assert row and f"| {status} |" in row.group(0)
         detail = re.search(

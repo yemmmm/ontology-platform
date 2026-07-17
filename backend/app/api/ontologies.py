@@ -8,7 +8,8 @@ callers post-B1, so they are intentionally not re-added here.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
@@ -28,12 +29,20 @@ from app.repositories.rdf_store import RdfStoreRepository
 from app.services import ontology_crud as service
 from app.services.ontology_lineage import OntologyLineageError, OntologyLineageService
 from app.services.ontology_workspace import OntologyWorkspaceError, OntologyWorkspaceService
+from app.repositories.models import ApiKeyModel
+from app.security.auth import AuthPrincipal, audit_security_event, revoke_key
+from app.security.http import principal_dependency
 
 router = APIRouter(tags=["ontologies"])
 
 
 @router.get("/projects", response_model=list[ProjectRead])
-def list_projects(session: Session = Depends(get_db_session)):
+def list_projects(
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+):
+    if principal.project_id is not None:
+        return [service.get_project(session, principal.project_id)]
     return service.list_projects(session)
 
 
@@ -57,7 +66,32 @@ def update_project(
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(project_id: str, session: Session = Depends(get_db_session)):
+def delete_project(
+    project_id: str,
+    request: Request,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+):
+    keys = list(
+        session.scalars(
+            select(ApiKeyModel).where(
+                ApiKeyModel.project_id == project_id,
+                ApiKeyModel.revoked_at.is_(None),
+            )
+        )
+    )
+    for key in keys:
+        revoke_key(session, key)
+        audit_security_event(
+            request.app.state.session_factory,
+            "api_key_revoked",
+            "success",
+            principal,
+            project_id=project_id,
+            resource_type="api_key",
+            resource_id=key.id,
+            details={"reason": "project_deleted"},
+        )
     service.delete_project(session, project_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

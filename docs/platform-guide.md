@@ -14,7 +14,8 @@ Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + o
 - SHACL、推理、规则、Context Query、scoped SPARQL 和固定读模型。
 
 平台不替外部 Agent 生成领域判断或最终自然语言答案，也不保存外部系统明文凭证或代执行外部
-Operation。R-008 认证授权尚未实现，R-009 Agent Test 重构只部分实现，R-010 Dify 验收未实现。
+Operation。R-008 已提供 HTTP/MCP/UI 认证、scope 授权和 Project 隔离；R-009 Agent Test 重构只部分
+实现，R-010 Dify 验收未实现。
 
 ## 本地启动
 
@@ -54,9 +55,15 @@ frontend 默认请求同源 `/api`；手动跨源运行时可设置 `VITE_API_BA
 
 ## 安全边界
 
-当前 HTTP 与 MCP 无认证、授权和可信 actor 绑定。任何能访问进程的调用方都可以构造 Project 或
-Ontology 范围参数；服务只适合受信任本地环境。`ADMIN_TOKEN`、`MCP_API_KEY`、
-`ONTOLOGY_MCP_API_KEY` 当前均不生效。R-008 完成前，不要将 backend 或 MCP 暴露到不受信任网络。
+三个 health endpoint 与登录公开，其他 HTTP 路由使用 hashed API key 或 UI session。`read`、
+`model`、`admin` scope 按包含关系授权，Project-bound 主体只能解析和访问自身 Project 的资源；全组织
+admin 才能管理 Project 与未绑定 key。MCP 必须配置 `ONTOLOGY_MCP_API_KEY`，每次 tool call 会重新
+检查 key 是否已撤销。写入 actor 来自认证主体，payload 自报 actor 只用于伪造检测。领域 payload
+命中高可信真实秘密时在持久化前拒绝。
+
+迁移后首次 hard cut 前运行 `cd backend && uv run python -m app.cli.bootstrap_auth --username admin`，
+并安全保管生成的 gitignored `0600` credentials 文件。文件一次性包含 username、UI 初始 password
+和组织管理员 API key；读取后应转存到受控密码库，不能提交到 Git 或复制到日志。
 
 ## 推荐的外部 Agent 构建流程
 
@@ -147,7 +154,6 @@ fence 隔离并发，并在原 attempt 下向前恢复不确定结果。
 
 ## 当前缺口
 
-- R-008：未实现认证、授权、Project 隔离和主体覆盖。
 - R-009：Agent Test 尚未重构为纯 Context Query 诊断，仍有平台内 LLM 和中文分词缺口。
 - R-010：没有固定 Dify 数据集、任务集、外部 Agent 执行器或指标报告。
 - P1：持久 Search/Vector、模块依赖、不可变 release、异步任务、完整构建工作台等仍未闭环。
