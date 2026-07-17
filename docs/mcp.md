@@ -1,526 +1,113 @@
-# MCP Tools
+# MCP 工具
 
-## v0.3 Governance Tools
+本文档描述当前 FastMCP 进程实际注册的工具。完整清单来自 `mcp.list_tools()`，并通过现有
+`app.api.mcp_catalog._enumerate_tools()` 补充 category 和源文件。
 
-- `submit_proposal`: create or retrieve an idempotent proposal; it never writes formal data.
-- `validate_proposal`: run deterministic proposal validation.
-- `get_proposal_status`: retrieve the complete audit and evidence chain.
+## 启动与配置
 
-MCP proposal writes use the same governance service and immutability checks as HTTP. Approval and
-application, fact review, conflict resolution, and publication remain explicit HTTP/workbench
-governance actions rather than natural-language interpretations.
+从 backend 目录启动 stdio MCP server：
 
-For phase-three Schema construction, `submit_proposal` accepts a `schema_change` batch containing
-Class, Property, RelationType, and Constraint candidates. `validate_proposal` returns deterministic
-Schema errors and modeling ambiguities. v0.4 validation requires the batch to cite persisted Evidence
-and at least one competency question. Candidate data may include `source_kind`
-(`domain_concept`, `data_source_structure`, `domain_fact`, or `governance_metadata`) so storage-shaped
-candidates remain visibly distinct from domain concepts. Human item edits, merges, decisions, and
-final approval are performed through the governance HTTP API and Schema Review workbench; MCP does
-not infer those decisions from chat text.
+```bash
+cd /path/to/ontology-platform/backend
+uv sync --extra dev
+uv run python -m app.mcp.server
+```
 
-The `ontology-builder` Skill uses these additional semantic tools:
+Codex 等客户端应把 MCP server 的工作目录设为仓库的 `backend` 目录，并运行上述 Python 模块。
+进程读取 `backend/.env` 中当前 `Settings` 支持的数据库、Oxigraph、LLM、Embedding 和语义运行参数。
 
-- `propose_schema_changes`: force a proposal to the `schema_change` type.
-- `propose_rules`: force a proposal to the `rule` type for governed RuleDefinition candidates.
-- `validate_draft`: validate all editable proposals targeting a draft version.
-- `list_review_items`: list review batches, counts, states, and deep links for an ontology.
-- `get_review_batch`: retrieve one stable batch after an interruption or while waiting; the response includes the workbench `deep_link`.
-- `get_publication_readiness`: evaluate publication gates without publishing.
-- `check_platform_health`: confirm PostgreSQL and platform services are reachable without direct DB credentials.
-- `list_data_sources` / `create_data_source` / `update_data_source`: register and maintain external systems.
-- `list_data_resources` / `create_data_resource` / `update_data_resource`: register tables, endpoints, or files; renames propagate to mapping metadata.
-- `list_external_fields` / `create_external_field` / `update_external_field`: manage field sensitivity, masking, approval, and audit metadata.
-- `list_semantic_mappings` / `create_semantic_mapping` / `update_semantic_mapping`: link ontology objects or entities to cataloged external fields.
-- `list_connector_templates` / `create_connector_template` / `update_connector_template`: maintain whitelisted connector query templates.
-- `run_connector_query`: execute a whitelisted connector template through platform policy checks.
-- `analyze_identifier_resolution`: compare identifier sets without asserting `SAME_AS`.
+当前 MCP server **没有实现认证或授权**。`ADMIN_TOKEN`、`MCP_API_KEY` 和
+`ONTOLOGY_MCP_API_KEY` 都不是当前生效配置；工具参数也不接受通用 `api_key`。仅应在受信任本地
+环境中运行。R-008 将定义并实现 MCP 进程身份、scope 和 Project/Ontology 授权。
 
-Fact audit decisions, proposal approval/rejection, conflict resolution, waivers, merges, and
-publication are intentionally absent from Agent MCP tools. They require authenticated HTTP and an
-explicit user action in the review workbench. Agent-visible natural-language consent is not a
-governance decision.
+## 当前推荐流程
 
-External system credentials and arbitrary SQL are also absent from MCP. Agents can inspect mappings
-and request connector templates, but the platform performs deterministic policy checks and records an
-audit result for every connector query attempt.
+1. 用 Project Build Context 恢复 Project 事实；需要写入时创建或恢复 Build Session。
+2. 通过 Brief、Interview Answer 和 Competency Question 工具澄清需求。
+3. 外部 Agent 自行读取资料，以 Evidence Reference 保存实际使用的文档名和原文片段。
+4. 获取 Ontology workspace/modeling context 和 lease，以 `submit_modeling_batch` 先 dry-run 再
+   apply；不经过旧 Proposal/Review/Publish 队列。
+5. 用 Context Query、scoped SPARQL、read model 和 lineage 验证，并保存 checkpoint、完成或取消
+   Build Session。
 
-Run the MCP server from the backend environment:
+平台返回结构化语义上下文，不生成最终自然语言答案，也不代替外部 Agent 调用目标系统。
+
+## 返回与错误边界
+
+多数业务工具通过 MCP runtime 返回 `{"ok": true, "data": ...}` 或
+`{"ok": false, "error": ..., "error_code": ...}`；具体输入和返回仍以运行时 tool schema 与实现
+为准，不能假设所有工具共享额外字段。session、lease、建模批次冲突和幂等语义由对应工具返回。
+
+当前未注册的旧 governance、catalog、connector、entity、fact、Evidence Artifact 上传和
+Proposal/Review 工具不是可调用能力。R-009 的 Agent Test 重构与 R-010 的 Dify 验收也尚未完成。
+
+## 完整运行时工具清单
+
+下方区块由脚本维护，不要手工编辑。registry 变更后运行：
 
 ```bash
 cd backend
-python -m app.mcp.server
+uv run python ../scripts/sync-interface-docs.py --write
 ```
 
-All tools return:
-
-```json
-{
-  "ok": true,
-  "data": {}
-}
-```
-
-On failure they return:
-
-```json
-{
-  "ok": false,
-  "error": "Human-readable message",
-  "error_code": "not_found"
-}
-```
-
-Most tools use `not_found`, `validation_error`, `conflict`, `governance_rejection`,
-`dependency_error`, or `internal_error`. Build-session tools preserve their more specific service
-codes, such as `build_session_not_found`, `session_revision_conflict`, and
-`ontology_lease_conflict`.
-
-## Tools
-
-### `search_entities`
-
-Recall entities globally using hybrid search by default. Ontology and class filters are optional.
-
-```json
-{
-  "query": "payment",
-  "mode": "hybrid",
-  "ontology_id": "optional-ontology-id",
-  "class_id": "optional-class-id",
-  "limit": 20
-}
-```
-
-`mode` accepts `text`, `vector`, or `hybrid`. Returns `data.results` and `data.count`; each result
-includes a relevance `score` and `match_source`.
-
-### `get_entity`
-
-Fetch one entity and optional relation context.
-
-```json
-{
-  "ontology_id": "ontology-id",
-  "entity_id": "entity-id",
-  "include_relations": true,
-  "relation_limit": 50
-}
-```
-
-Returns the entity plus `incoming` and `outgoing` relation arrays.
-
-### `find_related_entities`
-
-Traverse nearby graph context.
-
-```json
-{
-  "ontology_id": "ontology-id",
-  "entity_id": "entity-id",
-  "depth": 1,
-  "direction": "both",
-  "relation_type_ids": ["optional-relation-type-id"],
-  "target_class_ids": ["optional-class-id"],
-  "limit": 20
-}
-```
-
-`depth` is capped at 3 and `limit` is capped at 100.
-
-### `validate_entity`
-
-Validate proposed properties against the ontology class schema without writing data.
-
-```json
-{
-  "ontology_id": "ontology-id",
-  "class_id": "class-id",
-  "properties": {"status": "active"}
-}
-```
-
-Returns:
-
-```json
-{
-  "valid": true,
-  "errors": []
-}
-```
-
-### `explain_entity`
-
-Return entity, class schema, direct relations, related entities, and a short explanation.
-
-```json
-{
-  "ontology_id": "ontology-id",
-  "entity_id": "entity-id",
-  "depth": 1,
-  "limit": 20
-}
-```
-
-## v0.4 Catalog and Connector Tools
-
-### `check_platform_health`
-
-Verify connectivity to platform services. Returns `{"postgres": {"status": "ok"}}`
-on success. Use this instead of probing `/api/health/dependencies` over HTTP.
-
-```json
-{}
-```
-
-### `list_data_sources` / `create_data_source` / `update_data_source`
-
-Register an external system (database, API, file store) and its connection policy. Each project scopes
-its own data sources by unique name.
-
-```json
-{
-  "project_id": "project-id",
-  "data_source": {
-    "name": "教务系统",
-    "source_type": "postgres",
-    "owner": "registrar",
-    "authority_level": "authoritative",
-    "status": "available",
-    "connection_policy": {}
-  }
-}
-```
-
-`update_data_source` takes `data_source_id` and an `update` object with the editable fields.
-
-### `list_data_resources` / `create_data_resource` / `update_data_resource`
-
-Register a table, endpoint, or file under a data source. Renaming a resource propagates to the
-denormalized `external_resource_name` on every Semantic Mapping that references it.
-
-```json
-{
-  "project_id": "project-id",
-  "data_resource": {
-    "data_source_id": "data-source-id",
-    "name": "assessment_results",
-    "resource_type": "table",
-    "authority_level": "authoritative",
-    "status": "available"
-  }
-}
-```
-
-### `list_external_fields` / `create_external_field` / `update_external_field`
-
-Register a field with its sensitivity (`public`/`internal`/`confidential`/`restricted`), access policy
-(`allow`/`mask`/`approval_required`/`deny`), masking rule, and audit requirement. Field renames
-propagate to mapping location metadata.
-
-```json
-{
-  "project_id": "project-id",
-  "external_field": {
-    "data_resource_id": "resource-id",
-    "name": "id_card_number",
-    "data_type": "string",
-    "sensitivity": "restricted",
-    "access_policy": "approval_required",
-    "audit_required": true
-  }
-}
-```
-
-### `list_semantic_mappings` / `create_semantic_mapping` / `update_semantic_mapping`
-
-Map an ontology class, property, relation type, or entity to a cataloged external field with join keys,
-validity window, confidence, and owner. Mappings do not change the published ontology version.
-
-```json
-{
-  "project_id": "project-id",
-  "semantic_mapping": {
-    "ontology_id": "ontology-id",
-    "target_type": "entity",
-    "target_id": "student-li-si",
-    "field_id": "field-id",
-    "join_key": {"entity_property": "student_number", "external_field": "student_no"},
-    "confidence": 0.95,
-    "owner": "registrar"
-  }
-}
-```
-
-### `list_connector_templates` / `create_connector_template` / `update_connector_template`
-
-Define a whitelisted connector query template and the external fields it may return. The local v0.4
-implementation accepts deterministic static rows in `result_schema.rows`.
-
-```json
-{
-  "project_id": "project-id",
-  "connector_template": {
-    "data_source_id": "data-source-id",
-    "name": "student grade lookup",
-    "allowed_field_ids": ["score-field"],
-    "parameter_schema": {},
-    "result_schema": {"rows": [{"student_number": "S1", "midterm_score": 88}]},
-    "access_policy": "allow"
-  }
-}
-```
-
-### `run_connector_query`
-
-Run a whitelisted connector template. The result includes `authorized`, `denial_reason`, `source`,
-`queried_at`, and an audit id. This tool does not expose raw database credentials or arbitrary SQL.
-
-```json
-{
-  "project_id": "project-id",
-  "template_id": "template-id",
-  "parameters": {"student_number": "S1"},
-  "actor_id": "agent-id",
-  "approved": false
-}
-```
-
-### `analyze_identifier_resolution`
-
-Compare two identifier sets and return counts, overlap, coverage, and unmapped values. It does not
-create identity mappings, `SAME_AS`, or merge proposals.
-
-```json
-{
-  "left_values": ["S1", "S2"],
-  "right_values": ["S2", "S3"]
-}
-```
-
-## Ontology Building Interview
-
-The following tools use the same interview service as the HTTP API:
-
-- `get_build_context`: deprecated compatibility alias for `get_project_build_context`.
-- `get_ontology_workspace_context`: read the ready default Graph Set, canonical graph roles,
-  revisions, editability, and source signature for one Ontology.
-- `repair_ontology_workspace`: dry-run or idempotently repair missing default workspace resources;
-  ownership and membership conflicts are reported rather than overwritten.
-- `get_project_brief`: return completeness, missing fields, and no more than three clarification items.
-- `save_interview_answer`: persist user wording for source traceability.
-- `update_project_brief`: update/confirm fields or skip optional fields with explicit impact.
-- `list_competency_questions`: read ordered active or inactive questions and validation states.
-- `propose_competency_questions`: create draft questions only; it cannot approve them.
-
-Agent tools do not expose question approval. Approval and later validation-state changes remain
-governance actions on the authenticated HTTP surface.
-
-## External Agent Build Sessions
-
-These tools share the same service, idempotency rules, revisions, and lease state as the REST API:
-
-- `get_project_build_context`
-- `create_build_session`
-- `get_build_session`
-- `resume_build_session`
-- `save_build_checkpoint`
-- `complete_build_session`
-- `cancel_build_session`
-- `acquire_ontology_lease`
-- `renew_ontology_lease`
-- `release_ontology_lease`
-
-Build Context is Project-wide and separates `platform_state` from Agent-reported `agent_state`.
-A Build Session may move between Ontologies in the same Project. Checkpoints are append-only and
-completion/cancellation are terminal. Acquire and renew are the only ordinary recovery responses
-that return a plaintext lease token; list, detail, context, and error responses never do.
-
-The external protocol intentionally accepts `project_id`, `session_id`, and `ontology_id` rather
-than Graph Set IDs or graph IRIs. The platform resolves the default semantic workspace internally.
-`get_build_context` remains as a deprecated alias for one release and returns the same response as
-`get_project_build_context`.
-
-## Agent Integration Example
-
-```json
-{
-  "mcpServers": {
-    "ontology-platform": {
-      "command": "python",
-      "args": ["-m", "app.mcp.server"],
-      "cwd": "/home/yangxiang/ontology-platform/backend"
-    }
-  }
-}
-```
-
-Suggested flow:
-
-1. Call `search_entities` with the user's domain terms.
-2. Call `get_entity` or `explain_entity` for the best matches.
-3. Call `find_related_entities` when planning or explaining dependencies.
-4. Call `validate_entity` before suggesting new graph data.
-
-### Evidence artifact and graph-candidate tools
-
-- `list_evidence_artifacts(project_id)`
-- `get_evidence_artifact_status(artifact_id)`
-- `get_evidence_artifact_chunks(artifact_id, offset?, limit?)`
-- `propose_entities(proposal)`
-- `propose_relations(proposal)`
-- `propose_entity_merges(proposal)`
-- `propose_rules(proposal)`
-
-The `propose_*` tools are convenience wrappers around `submit_proposal` that force the matching
-`proposal_type` (`entity` / `relation` / `merge` / `rule`); they accept the same payload shape.
-Entity, relation, and rule items require persisted Evidence. Merge proposals never merge entities at
-submission time and still require validation plus an explicit platform review decision. Rule
-proposals validate Class, Property, RelationType, enum values, conditions, and Assertion templates
-before a human review can approve them. Files are uploaded as evidence artifacts through the
-authenticated HTTP endpoint so binary content is not embedded in MCP arguments.
-`validate_proposal` runs current Schema and graph endpoint checks using the shared service.
-
-### Fact audit tools
-
-- `generate_fact_claims(version_id)`: deterministically regenerate structured Fact Claims from the draft graph.
-- `list_fact_claims(version_id, layer?, claim_type?)`: list Fact Claims stratified by audit layer.
-- `sample_fact_claims(version_id, config?)`: return a stratified fact sample for human audit.
-- `execute_rule_definitions(version_id)`: run deterministic rules and write derived Assertions for review.
-- `recall_background_knowledge(version_id, query?, query_embedding?, limit?)`: recall unanchored background knowledge separately from governed facts.
-
-Fact-generating tools emit the full `FactClaimRead` shape (id, claim_key, layer, claim_type,
-subject, predicate, value, anchor, graph_path, evidence_ids, generation_reason, confidence,
-sensitivity, access_policy, override_of_claim_id, audit_status, stale, stale_reason, reviewed_at,
-review_decision, linked_fix_proposal_id, project_id, ontology_id, ontology_version_id, created_at,
-updated_at). Fact review decisions
-(approve/reject/needs_correction) are HTTP-only.
-
-## v1.0 Lightweight Evidence (R-002)
-
-- `create_evidence_reference(project_id, document_name, excerpt, actor?)`
-- `list_evidence_references(project_id, search?, limit?, offset?)`
-- `get_evidence_reference(reference_id)`
-- `associate_evidence_reference(project_id, ontology_id, target_type, target_id, ...)`
-
-These tools store only the document name and exact excerpt supplied by the external Agent. They do
-not upload or parse complete source files. References belong to a Project and may support concrete
-modeling results in any Ontology in that Project; cross-project IDs are returned as unavailable.
-
-## Modeling Batch tools (R-004)
-
-- `submit_modeling_batch`: the only R-004 write tool; selects `dry_run`, `apply_atomic`, or
-  `apply_partial` with `mode`.
-- `get_modeling_batch`: read immutable Batch content, all Attempts, Item results, Findings, and
-  recovery history.
-- `list_session_modeling_batches`: page one Build Session's history.
-- `list_ontology_modeling_batches`: page/filter cross-Session Ontology history.
-- `get_modeling_context`: read the current authoritative workspace version, counts, stale/fence
-  state, recent Batches, and detailed-query entry points.
-- `get_ontology_read_model`: resolve the default workspace and read a fixed semantic model without
-  supplying a Graph Set ID. For `delta`, the platform automatically chooses the latest prior
-  Ontology Graph Set and returns `no_prior_graph_set` when none exists.
-
-The tools call the same `ModelingBatchService` as REST and return the same status names and Finding
-codes. A retry uses the same idempotency key; switching from dry-run to apply uses a new key. Lease
-tokens are accepted only by apply submissions and are excluded from hashes, audit, ordinary reads,
-and errors. R-008 remains required before exposing these tools to untrusted callers.
-
-## Unified lineage tools (R-005)
-
-### `get_ontology_lineage`
-
-Read the same bounded lineage contract as
-`GET /api/ontologies/{ontology_id}/lineage` without exposing Graph Set IDs or graph IRIs as input:
-
-```json
-{
-  "ontology_id": "ontology-id",
-  "target_type": "statement",
-  "target_id": "sha256-statement-id",
-  "include_history": false,
-  "max_depth": 3,
-  "limit": 100
-}
-```
-
-`target_type` accepts `statement`, `resource`, or `rule`. The tool returns the platform-recorded
-Evidence References, Modeling Items, Edit Audits, Runs, immutable Rule Definition versions, and
-exact premises when available. It does not invoke an LLM to explain or supplement the result.
-Evidence, Agent rationale, Competency Questions, audit reasons, and derivation are always separate;
-derived results have `evidence_status=not_applicable` and report dependency evidence through their
-premises instead of copying excerpts.
-
-`max_depth` is bounded to `0..5`, `limit` to `1..200`, and both MCP and REST return the same
-`complete | partial | missing`, Evidence, proof, history, and truncation semantics. A target outside
-the requested Ontology is returned as `not_found`.
-
-### `inspect_semantic_statement_provenance` compatibility
-
-This legacy tool remains registered for one compatibility period. Its old `statement_iri` argument
-is treated as a resource IRI in the supplied Ontology-scoped Graph Set, it delegates to
-`get_ontology_lineage`, and its response includes `deprecated=true` plus
-`replacement_tool=get_ontology_lineage`. New callers should not use it as a statement-ID API.
-
-## Structured context query tools (R-006)
-
-### `query_semantic_context`
-
-Calls the same `SemanticContextQueryService` as REST and accepts public business scope only:
-
-```json
-{
-  "project_id": "project-id",
-  "scope_mode": "ontologies",
-  "ontology_ids": ["ontology-a", "ontology-b"],
-  "query": "发布工作流需要哪些参数",
-  "resource_types": ["concept", "instance", "relation", "fact", "rule", "operation"],
-  "assertion_types": ["asserted", "derived"],
-  "depth": 1,
-  "limit": 20
-}
-```
-
-Use `scope_mode=project` with an empty Ontology list for Project-wide recall. Explicit Ontology lists
-are all-or-nothing; Project mode can return partial scope and exclusions. The tool returns primary
-matches, flat related context, stable match reasons, current workspace versions, truncation, and
-objective warnings. It returns Evidence Reference IDs and status only, never Evidence text, Agent
-rationale, audit notes, a generated answer, or follow-up suggestions.
-
-### `semantic_sparql_query`
-
-This existing tool now requires the same public scope:
-
-```json
-{
-  "project_id": "project-id",
-  "scope_mode": "ontologies",
-  "ontology_ids": ["ontology-a"],
-  "query": "ASK { ?resource a <https://example.test/Workflow> }",
-  "timeout_seconds": 10,
-  "result_limit": 100
-}
-```
-
-It accepts read-only `SELECT`, `ASK`, `CONSTRUCT`, and `DESCRIBE`. Update, `SERVICE`, `FROM`, and
-`FROM NAMED` are rejected. Results retain the standard SPARQL shape plus public scope, current
-versions, truncation, and warnings. Neither R-006 MCP tool accepts Graph Set IDs or graph IRIs as
-scope inputs.
-
-`timeout_seconds` is `(0, 120]` and `result_limit` is `[1, 10000]`; the shared service applies the
-same validation as REST. The result limit is hard even when caller SPARQL contains a larger `LIMIT`.
-MCP errors preserve `query_timeout`, `query_unavailable`, and `invalid_query` as distinct codes.
-Raw SPARQL includes persisted default-workspace members and current derived pointers, while merged
-runtime/custom SHACL guidance remains a Context Query projection.
-
-## Operation semantics through existing tools (R-007)
-
-No Operation-specific MCP tool is registered. Agents submit `create_operation`, `update_operation`,
-or `delete_operation` items through `submit_modeling_batch`, then retrieve current Operations through
-`query_semantic_context` with optional `resource_types=["operation"]`. These tools share the REST
-services, ordering, scope, warnings, Evidence/lineage decoration, and error codes.
-
-The Operation response is structured `operation-v1` data. It describes generic HTTP API or MCP tool
-bindings but never executes them. Only credential requirement classifications such as `api_key`,
-`oauth2`, or `mcp_server_auth` are accepted and returned; credential reference instances and secret
-values are forbidden on both surfaces.
+<!-- BEGIN GENERATED MCP TOOL INVENTORY -->
+
+| Category | Tool | Description | Required parameters | All parameters | Source |
+| --- | --- | --- | --- | --- | --- |
+| system | `check_platform_health` | Verify API and PostgreSQL are reachable without direct DB credentials. | - | - | `backend/app/mcp/tools/system.py` |
+| interview | `get_build_context` | Deprecated alias for get_project_build_context; use the new tool. | project_id | project_id | `backend/app/mcp/tools/interview.py` |
+| interview | `get_ontology_workspace_context` | Read the default Graph Set, graph roles, revisions, and editability. | ontology_id | ontology_id | `backend/app/mcp/tools/interview.py` |
+| interview | `get_project_brief` | Read Project Brief completeness and up to three high-value clarification items. | project_id | project_id | `backend/app/mcp/tools/interview.py` |
+| interview | `list_competency_questions` | List ordered competency questions and their validation states. | project_id | include_inactive, project_id | `backend/app/mcp/tools/interview.py` |
+| interview | `propose_competency_questions` | Create ordered draft competency questions; this does not approve them. | project_id, questions | project_id, questions | `backend/app/mcp/tools/interview.py` |
+| interview | `repair_ontology_workspace` | Idempotently inspect or repair an Ontology's default semantic workspace. | ontology_id | dry_run, ontology_id | `backend/app/mcp/tools/interview.py` |
+| interview | `save_interview_answer` | Save a user answer so Project Brief fields and questions can cite it. | answer, project_id | actor_id, answer, project_id, source_type | `backend/app/mcp/tools/interview.py` |
+| interview | `update_project_brief` | Update and confirm interview fields with saved-answer source links. | project_id, update | project_id, update | `backend/app/mcp/tools/interview.py` |
+| interview | `validate_competency_question` | Run the bound query definition and record pass/fail result. | question_id | question_id | `backend/app/mcp/tools/interview.py` |
+| build_sessions | `acquire_ontology_lease` | Acquire or rotate this Build Session's exclusive Ontology write lease. | client_request_id, expected_session_revision, ontology_id, session_id | client_request_id, expected_session_revision, ontology_id, rotate_token, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `cancel_build_session` | Idempotently cancel a Build Session and release all its leases. | client_request_id, expected_revision, reason, session_id | client_request_id, expected_revision, reason, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `complete_build_session` | Idempotently complete a Build Session and release all its leases. | client_request_id, expected_revision, session_id, summary | client_request_id, expected_revision, session_id, summary, unresolved_items | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `create_build_session` | Idempotently create a Project-scoped external Agent Build Session. | client_session_id, project_id | client_session_id, initial_checkpoint, previous_session_id, project_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `get_build_session` | Read one Build Session's checkpoints, leases, and recovery context. | session_id | checkpoint_cursor, checkpoint_limit, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `get_modeling_batch` | Read immutable Items, Attempts, Findings, and recovery history. | batch_id | batch_id | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `get_modeling_context` | Read the authoritative current state from which further modeling starts. | ontology_id | ontology_id | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `get_ontology_read_model` | Resolve the default workspace and read a fixed Ontology semantic model. | model_name, ontology_id | allow_stale_derived, class_iri, entity_iri, field_set, include, kind, limit, model_name, ontology_id, q | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `get_project_build_context` | Read Project-wide platform facts and recoverable Agent session state. | project_id | project_id, recent_session_cursor, recent_session_limit | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `list_ontology_modeling_batches` | List Modeling Batches across Sessions for an Ontology. | ontology_id | created_from, created_to, cursor, limit, ontology_id, status | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `list_session_modeling_batches` | List Modeling Batches created in one Build Session. | session_id | cursor, limit, session_id, status | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `release_ontology_lease` | Idempotently release this Build Session's Ontology write lease. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `renew_ontology_lease` | Renew a valid Ontology lease using its opaque token. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `resume_build_session` | Resume an active Build Session without changing its revision. | client_request_id, expected_revision, session_id | client_request_id, expected_revision, session_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `save_build_checkpoint` | Idempotently append an Agent-reported Build Checkpoint. | client_checkpoint_id, current_step, expected_revision, phase, session_id | blockers, client_checkpoint_id, current_step, expected_revision, failure, next_step, ontology_id, phase, related_batch_id, session_id, summary | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_workspace_version, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_workspace_version, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
+| semantic | `associate_evidence_reference` | Create or reuse references and associate them with one concrete modeling result. | ontology_id, project_id, target_id, target_type | actor, client_item_id, edit_audit_id, evidence, evidence_reference_ids, graph_set_id, ontology_id, project_id, target_id, target_type | `backend/app/mcp/tools/evidence.py` |
+| semantic | `check_semantic_staleness` | Reconcile derived-result staleness and return current/stale counts. | - | - | `backend/app/mcp/tools/semantic.py` |
+| semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, graph_set_id, payload | actor, command_kind, graph_set_id, payload, reason, shape_graph_iris | `backend/app/mcp/tools/semantic.py` |
+| semantic | `create_evidence_reference` | Create or idempotently reuse a project evidence reference. | document_name, excerpt, project_id | actor, document_name, excerpt, project_id | `backend/app/mcp/tools/evidence.py` |
+| semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `cutover_semantic_migration_run` | Execute the guarded RDF-primary cutover for a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `describe_semantic_graph_set` | Return graph-set membership, source signature, and current derived pointers. | graph_set_id | graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `export_semantic_graph_set` | Export a graph set as Turtle, TriG, or JSON-LD. | graph_set_id | allow_stale_derived, format, graph_set_id, include | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_evidence_reference` | Read one evidence reference and its modeling-result associations. | reference_id | reference_id | `backend/app/mcp/tools/evidence.py` |
+| semantic | `get_ontology_lineage` | Read bounded statement, resource, or Rule Definition lineage for an Ontology. | ontology_id, target_id, target_type | include_history, limit, max_depth, ontology_id, target_id, target_type | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for a graph set. | graph_set_id, model_name | allow_stale_derived, graph_set_id, include, limit, model_name | `backend/app/mcp/tools/semantic.py` |
+| semantic | `inspect_semantic_projection_status` | Inspect projection freshness by graph set and projection kind. | - | graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `inspect_semantic_statement_provenance` | Deprecated compatibility wrapper; use get_ontology_lineage. | graph_set_id, statement_iri | graph_set_id, include, statement_iri | `backend/app/mcp/tools/semantic.py` |
+| semantic | `list_evidence_references` | List project evidence references without loading complete source documents. | project_id | limit, offset, project_id, search | `backend/app/mcp/tools/evidence.py` |
+| semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning/rule results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
+| semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
+| semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, query, scope_mode | assertion_types, depth, limit, ontology_ids, project_id, query, resource_types, scope_mode | `backend/app/mcp/tools/semantic.py` |
+| semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `run_semantic_migration_parity_check` | Run parity checks for a Phase 7 migration run. | run_id | check_name, run_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `run_semantic_reasoning` | Run OWL reasoning over a graph set and persist the result graph. | graph_set_id | engine_version, graph_set_id, persist_result_graph, shape_version, tasks | `backend/app/mcp/tools/semantic.py` |
+| semantic | `run_semantic_rule` | Run a single rule, a named group, or all rules for a graph set. | graph_set_id | actor, engine_version, graph_set_id, promote_pointer, rule_definition_id, rule_definition_ids, rule_iri | `backend/app/mcp/tools/semantic.py` |
+| semantic | `run_semantic_validation` | Run SHACL validation over a graph set, persisting the report graph and run metadata. | graph_set_id | actor, graph_set_id, persist_report_graph, reasoning_result_graph_iri, shape_graph_iris, shape_version, validation_scope | `backend/app/mcp/tools/semantic.py` |
+| semantic | `semantic_sparql_query` | Run scoped read-only SPARQL against current Ontology semantic state. | project_id, query, scope_mode | ontology_ids, project_id, query, result_limit, scope_mode, timeout_seconds | `backend/app/mcp/tools/semantic.py` |
+| semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | graph_set_id, projection_kind, projection_version | allow_stale_derived, graph_set_id, include, mode, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
+| semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format | actor, content, format, reason, shape_graph_iris, target_graph_iri, validate, warning_state | `backend/app/mcp/tools/semantic.py` |
+| semantic | `submit_semantic_rule_definition` | Create or reuse an immediately executable platform rule definition. | body, language, name, rule_iri | body, created_by, input_roles, language, name, output_kind, priority, requires_review, rule_iri, uses_inferred_facts | `backend/app/mcp/tools/semantic.py` |
+
+<!-- END GENERATED MCP TOOL INVENTORY -->

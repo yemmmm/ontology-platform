@@ -5,16 +5,19 @@
 This repository contains a FastAPI backend and a Vite/React frontend for an ontology and knowledge graph platform. Key paths:
 
 - `backend/app/api/`: HTTP routes, dependencies, and schemas.
-- `backend/app/api/catalog.py`: catalog, semantic mapping, connector, and identifier-resolution routes.
+- `backend/app/api/semantic.py`: semantic graph, query, validation, reasoning, and migration routes.
+- `backend/app/api/build_sessions.py`: project Build Session, checkpoint, and lease routes.
+- `backend/app/api/modeling_batches.py`: modeling batch dry-run, apply, query, and recovery routes.
 - `backend/app/domain/`: ontology and graph domain models.
-- `backend/app/repositories/`: PostgreSQL and Neo4j persistence.
+- `backend/app/repositories/`: PostgreSQL and RDF/Oxigraph persistence.
 - `backend/app/services/`: validation and application workflows.
-- `backend/app/services/catalog.py`: catalog, mapping, and connector service logic.
+- `backend/app/services/modeling_batches.py`: external-Agent modeling application workflow.
+- `backend/app/services/semantic_context_query.py`: structured Agent query pipeline.
 - `backend/app/mcp/`: MCP server entrypoint.
-- `backend/app/mcp/tools/catalog.py`: MCP tools for catalog, connector, and identifier analysis.
+- `backend/app/mcp/tools/`: current system, interview, build-session, modeling, evidence, and semantic tools.
 - `backend/migrations/`: Alembic migrations.
 - `frontend/src/`: React UI entrypoint and styles.
-- `frontend/src/pages/CatalogPage.tsx`: catalog and connector workspace UI.
+- `frontend/src/pages/BuildContextDebugPage.tsx`: read-only Build Session/modeling diagnostics.
 - `docs/`: architecture, API, MCP, UI docs, and ADRs.
 
 ## Project Target Guidance
@@ -31,7 +34,7 @@ code nor older planning documents override the requirements list.
 
 ## Build, Test, and Development Commands
 
-- `./scripts/start-local.sh`: checks PostgreSQL and Neo4j, syncs dependencies, runs migrations, and starts backend plus frontend.
+- `./scripts/start-local.sh`: starts/checks PostgreSQL and Oxigraph, syncs dependencies, runs migrations, and starts backend `8001` plus frontend preview `5173`.
 - `cd backend && uv sync --extra dev`: installs backend runtime and development dependencies.
 - `cd backend && uv run alembic upgrade head`: applies database migrations.
 - `cd backend && uv run uvicorn app.main:app --reload`: runs the API at `http://localhost:8000`.
@@ -53,8 +56,8 @@ Backend dev dependencies include `pytest`; place tests under `backend/tests/` wi
 
 Any change under `backend/` must include new or updated tests when behavior changes and must be
 verified with `cd backend && uv run pytest` before the work is considered complete. v0.4 work
-should keep coverage around catalog service behavior, relation metadata, governance application,
-and import/export round-trips. Do not report a backend change as complete while tests are failing.
+should keep coverage around semantic services, modeling application, relation metadata, lineage,
+governance application, and import/export round-trips. Do not report a backend change as complete while tests are failing.
 If the test command cannot be run because an external dependency is unavailable, document the exact
 blocker and the narrower checks that were run.
 

@@ -76,8 +76,10 @@ ensure_backend_env() {
     [[ -f "$ROOT_DIR/.env.example" ]] || fail "Missing .env.example; cannot create backend/.env"
     log "Creating backend/.env from .env.example"
     cp "$ROOT_DIR/.env.example" "$BACKEND_DIR/.env"
-    sed -i "s|POSTGRES_PORT=5432|POSTGRES_PORT=$POSTGRES_PORT|" "$BACKEND_DIR/.env"
-    sed -i "s|localhost:5432/|localhost:$POSTGRES_PORT/|" "$BACKEND_DIR/.env"
+    sed -i -E "s|^POSTGRES_PORT=.*$|POSTGRES_PORT=$POSTGRES_PORT|" "$BACKEND_DIR/.env"
+    sed -i -E \
+      "s|^(DATABASE_URL=.*@[^/:]+:)[0-9]+/|\\1$POSTGRES_PORT/|" \
+      "$BACKEND_DIR/.env"
   fi
 }
 
@@ -253,4 +255,6 @@ main() {
   wait "$BACKEND_PID" "$FRONTEND_PID"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -1,8 +1,6 @@
 # UI
 
-The frontend is a React/Vite operational workspace in `frontend/`.
-
-Run locally:
+frontend 是 `frontend/` 下的 React/Vite 本地操作工作区。
 
 ```bash
 cd frontend
@@ -10,79 +8,49 @@ npm install
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` to override the default `http://localhost:8000/api`.
+frontend 默认请求同源 `/api`。一键启动使用 preview `http://127.0.0.1:5173/` 并把 `/api` 代理到
+backend `8001`；单独运行 dev server 时可用 `VITE_API_BASE_URL` 指定 backend（手动 uvicorn 默认
+为 `http://127.0.0.1:8000/api`）。
 
-## Implemented Pages
+## 当前页面
 
-- Projects: list/create/delete projects, list/create/delete ontologies, select active context.
-- Build Overview: workflow stage, current version, deterministic blockers, next actions, and recent review batches.
-- Project Brief: structured field editing, confirmation/skipping, completeness, clarification, and unsaved-change protection.
-- Competency Questions: create/edit/order, approve/testable transitions, activation, and validation results.
-- Evidence Artifacts: upload, parse status, chunks, retry/reparse, and links to citing proposals.
-- Schema and Graph Review: proposal queues, item decisions, evidence, conflicts, and batch-scoped deep links.
-- Fact Audit: generation, stratified sampling, filters, stale-state handling, and approve/reject/correction decisions.
-- Publication: deterministic readiness gates, remediation links, final recheck, explicit confirmation, and immutable report.
-- Versions: lineage, snapshot metadata, schema/graph diff, and successor drafts from published versions.
-- Evidence Explorer: proposal-item evidence, source metadata, chunk location, and integrity warnings.
-- Ontology Designer: list/create/delete classes, properties, and relation types.
-- Graph Manager: list/create entities and relations, inspect a simple SVG graph view.
-- MCP/Agent Test: send a question to `POST /api/agent-test/run`, inspect answer, tool calls, graph context, and prompt preview.
-- Health: call `/api/health/dependencies` and show PostgreSQL/Neo4j status.
+- Home：Project 与 Ontology 的创建、选择和删除。
+- Overview：Project Brief、结构化需求问题和 Project 级 Evidence Reference。
+- Modeling：Classes、Entities、Rules 和 Facts 的当前 RDF 读模型视图。
+- Debug：语义治理/运行状态、Build Context、Agent Test、Recall、MCP Tools 和 Graph Sets。
+- Settings：编辑锁与 `/api/health/dependencies` 的 PostgreSQL/Oxigraph 状态。
 
-### v1.0 Evidence References
+Evidence 页面只保存文档名和原文片段，不上传或解析完整文档。Build Context 页面只读显示
+workspace version、lease/fence/recovery、最近 Modeling Batch、Attempt、Item 和 Finding；它不会
+触发 apply 或恢复。
 
-The Overview navigation includes an Evidence page for the R-002 lightweight workflow. It is a
-project-shared ledger even though it is opened from an ontology workspace. Users can create a
-reference from only a document name and exact excerpt, search the ledger, inspect hashes and creator
-metadata, and see which concrete modeling results cite it. The page explicitly states that the full
-document is not uploaded. Workspace lock keeps the ledger readable and disables creation.
+代码中仍有部分 legacy 页面组件和 URL tab 兼容重定向。它们不表示旧 Evidence Artifact、
+Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API 仍受支持。
 
-## Navigation and Deep Links
+## Agent Test 的当前边界
 
-Workspace navigation is grouped into Build, Review, Model, and Tools. The selected version is part of
-the global workspace context; published versions are visibly read-only.
+Agent Test 调用 `POST /api/agent-test/run`，当前仍可能通过 OpenAI-compatible LLM 生成答案，并使用
+不足以处理中文整句的简单分词。这与“平台只返回结构化上下文”的目标边界不一致，属于 R-009 的
+已知缺口。当前面向外部 Agent 的目标查询入口是 Context Query 与 scoped SPARQL。
 
-Review links use URL state as the source of truth:
+## 数据流与安全
 
 ```text
-/?project=<project-id>&ontology=<ontology-id>&version=<version-id>&tab=<tab>&batch=<batch-id>
+React UI -> FastAPI /api -> PostgreSQL + RDF Dataset/Oxigraph
 ```
 
-Schema and Graph review also accept `proposal`; Fact Audit accepts `claim`. Invalid cross-project,
-cross-ontology, version, or review-type combinations show an error instead of opening unrelated data.
+UI 不直接连接数据库。当前 frontend 没有 login/session；backend 也没有认证与授权，Project 和
+Ontology 隔离仅由请求范围校验提供，不能视为访问控制。只适合受信任本地环境，完整安全能力属于
+R-008。
 
-The current backend exposes Evidence through proposal-item sources. Fact Claims contain Evidence IDs
-but no proposal/item mapping, so unresolved Fact Evidence is shown as a traceability warning rather
-than an inferred source location.
+## 验证
 
-## Data Flow
-
-```text
-React UI
-  -> FastAPI /api routes
-  -> PostgreSQL for ontology metadata
-  -> Neo4j for graph instances
+```bash
+cd frontend
+npm run build
+npx playwright test
 ```
 
-The UI never connects directly to PostgreSQL or Neo4j.
-
-## Manual Checks
-
-At both 1280 px and 768 px widths, verify Overview, Brief, Questions, Facts, Publication, Versions,
-Evidence, and a batch deep link. Exercise loading/empty/error states, confirm published versions expose
-no mutation actions, and confirm a failed publication gate keeps Publish disabled.
-
-The Playwright mock-API smoke suite covers workspace loading and navigation through Overview, Brief,
-Questions, Facts, Publication, Versions, and Evidence at 1280 px and 768 px, including a horizontal
-overflow assertion, blocked publication state, and a fresh-session Schema Review Batch deep link. Run
-it with `cd frontend && npm run test:ui`.
-
-### R-004 read-only modeling diagnostics
-
-The Build Context Debug page can expand each Ontology's Modeling Context. It shows the composite
-workspace version, resource counts, derived stale state, Lease/fence/recovery state, recent Batch
-history, and immutable Attempt, Item, and Finding detail. Batch history supports GET-only pagination
-and loading, empty, error, recovering, and stale states.
-
-This is deliberately not a modeling workbench: there are no apply, retry, edit, or delete controls.
-Raw diagnostic JSON recursively removes tokens, credentials, API keys, Graph Set IDs, and graph IRIs.
+手工验证应覆盖 Project/Ontology 选择、Overview、Evidence、Classes/Entities/Rules/Facts、Debug、
+Build Context、Agent Test、MCP Tools、Graph Sets 和 Settings 的 loading/empty/error 状态，并确认
+依赖健康显示 PostgreSQL 与 Oxigraph。

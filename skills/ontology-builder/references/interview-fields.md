@@ -8,7 +8,7 @@ answer IDs.
 
 Start by understanding the current system and business context, not by asking the user to design an
 ontology or schema. Users may not know platform concepts and can introduce misleading structure if
-asked for classes, relations, mappings, connectors, or features too early.
+asked for classes, relations, operations, or platform features too early.
 
 Prefer questions like:
 
@@ -24,7 +24,7 @@ Avoid early questions like:
 - What ontology classes do you want?
 - What schema should I create?
 - What relation types should exist?
-- Which connector or mapping resources do you need?
+- Which RDF graph or internal batch structure do you need?
 - What feature should this ontology implement?
 
 Use platform terms only when reporting internal work or when the user already uses them accurately.
@@ -55,7 +55,7 @@ Clarify when material:
 4. Translate answers internally into the required fields and save that mapping.
 5. Summarize the business understanding in user-facing language.
 6. Derive competency questions from the summary and ask the user to confirm or correct them.
-7. Only after confirmation, derive schema, relation, mapping, catalog, and connector candidates.
+7. Only after confirmation, derive schema, relation, fact, rule, and Operation candidates.
 
 Ask no more than three questions per turn. Prefer questions whose answers unblock schema design or a
 high-priority competency question. An optional skip is a confirmed state, not a missing state; report

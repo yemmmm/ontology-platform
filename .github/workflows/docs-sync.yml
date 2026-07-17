@@ -1,0 +1,30 @@
+name: Documentation sync
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  interface-and-skill-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install backend development dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+      - name: Check generated interface documentation
+        working-directory: backend
+        run: uv run python ../scripts/sync-interface-docs.py --check
+      - name: Test documentation contracts
+        working-directory: backend
+        run: uv run pytest tests/test_documentation_sync.py -q
+      - name: Validate ontology-builder structure
+        working-directory: backend
+        run: uv run python ../skills/ontology-builder/evals/validate_skill.py
+      - name: Validate ontology-builder evals and registry dependencies
+        working-directory: backend
+        run: >-
+          uv run python ../skills/ontology-builder/evals/run_evals.py
+          --traces ../skills/ontology-builder/evals/example-traces.json
+          --check-registry

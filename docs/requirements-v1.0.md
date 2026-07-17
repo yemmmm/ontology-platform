@@ -3,11 +3,11 @@
 ## 文档信息
 
 - 文档状态：规划中
-- 当前实现基线：`07888f7`
+- 当前实现基线：R-011 交付提交（上一功能基线 `bb617e6`，接口以运行时 registry 核对）
 - 实现分支：`agent-semantic-layer-platform`
 - 目标用户：单组织、小团队、自托管
 - 参考验收场景：Dify 使用指南和 API 文档本体
-- 更新日期：2026-07-16
+- 更新日期：2026-07-17
 
 本文件是下一阶段的需求与状态账本。实现任何需求后，必须同步更新其“当前状态”、
 验收证据和相关提交，避免需求文档再次变成与代码脱节的历史计划。
@@ -64,14 +64,14 @@ Dify 指南 / API 文档 / OpenAPI 文档
 
 | 能力 | 当前状态 | 代码证据与差距 |
 | --- | --- | --- |
-| Project / Ontology 基础 CRUD | 已实现 | `backend/app/api/ontologies.py`；创建本体后不会初始化语义图和图集合。 |
+| Project / Ontology 基础 CRUD | 已实现 | `backend/app/api/ontologies.py`；创建本体时会初始化默认 RDF 图、Graph Registry 和 Ontology-scoped Graph Set，历史缺口可 repair。 |
 | 结构化 Brief 与能力问题 | 已实现 | `backend/app/api/interview.py`、`backend/app/mcp/tools/interview.py`。 |
 | RDF Dataset 与 SPARQL | 已实现 | Oxigraph、`RdfStoreRepository`、REST/MCP 只读 SPARQL。 |
 | 受治理语义编辑 | 已实现 | Turtle、TriG、JSON-LD、受限 SPARQL Update、编辑审计和图可编辑性。 |
 | 业务友好建模命令 | 已实现 | Class、Property、RelationType、Entity、Relation、Mapping、Fact 更新/删除等命令编译器。 |
 | Graph Registry / Graph Set | 已实现 | 成员角色、来源签名、图修订、派生结果指针、过期检测、历史和差异。 |
 | SHACL、推理和确定性规则 | 部分实现 | 服务和测试齐全；真实 OWL runner 依赖外部命令，执行仍是同步路径。 |
-| 事实证据绑定 | 部分实现 | Postgres `fact_evidence_bindings` 已支持文档名和原文片段；尚未形成项目级复用引用，也未覆盖模型结构。 |
+| 事实证据绑定 | 已实现 | Project 级 Evidence Reference、Modeling Item association 和 R-005 statement/derived lineage 已覆盖当前轻量证据闭环。 |
 | 轻量证据引用 | 已实现 | 项目级 Evidence Reference、查询、规范化复用以及 Modeling Item 级 Association 已接入 REST/MCP 与 R-004 apply。 |
 | 固定语义读模型 | 已实现 | Classes、Entities、Facts、Readiness、History、Delta、Entity Search 等读模型。 |
 | 自然语言语义查询 | 已实现 | REST/MCP 已提供统一 Context Query，支持 Project 全局或一个至多个 Ontology 范围、结构化上下文、精简 lineage/Evidence 状态和 scoped SPARQL。 |
@@ -98,7 +98,7 @@ Dify 指南 / API 文档 / OpenAPI 文档
 | R-008 | API/MCP 认证、授权与项目隔离 | P0 | 未实现 | L | 高 | R-001 |
 | R-009 | Agent Test 外部化与查询诊断重构 | P0 | 部分实现 | S | 极高 | R-006 |
 | R-010 | Dify 通用能力端到端验收套件 | P0 | 未实现 | M | 极高 | R-002 至 R-009 |
-| R-011 | 当前 API/MCP/配置文档对齐 | P0 | 部分实现 | S | 高 | 无 |
+| R-011 | 当前 API/MCP/配置文档对齐 | P0 | 已实现 | S | 高 | 无 |
 | R-101 | HTML、站点、数据库 Schema 等来源适配器 | P1 | 未实现 | L | 高 | R-002 |
 | R-102 | 来源变更检测与知识增量更新 | P1 | 部分实现 | L | 高 | R-101、R-004、R-005 |
 | R-103 | 持久化 Search/Vector 投影与混合召回 | P1 | 部分实现 | L | 高 | R-006 |
@@ -1184,7 +1184,7 @@ R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批�
 
 ### R-011 当前 API/MCP/配置文档对齐
 
-当前状态：`部分实现`
+当前状态：`已实现`
 
 当前 README 和部分 API/MCP 文档仍描述已删除的旧接口与尚未实际生效的认证配置。
 
@@ -1194,6 +1194,29 @@ R-001 至 R-006 已经形成默认语义工作区、证据、可恢复建模批�
 - `docs/api.md`、`docs/mcp.md` 只列出真实注册的接口，并说明缺失能力。
 - MCP 文档或生成物以运行时 registry 为准，避免维护第二份失真的手工清单。
 - CI 校验文档中的关键 endpoint/tool 名称是否仍存在。
+
+实施证据（2026-07-17）：
+
+- `scripts/sync-interface-docs.py` 从 FastAPI OpenAPI 和 FastMCP runtime registry 生成 HTTP/MCP
+  marker 区块，提供默认只读 `--check` 与显式 `--write`。
+- README、`.env.example`、AGENTS、API/MCP、平台指南、UI 与架构文档已按当前 8001/5173/5434/7878
+  启动方式、PostgreSQL + RDF/Oxigraph 存储和“R-008 尚未认证”事实整理。
+- `skills/ontology-builder` 已迁移到 Build Session、Evidence Reference、Modeling Batch、Context
+  Query 与 lineage；失效的完整文件上传和旧 Proposal/Catalog helper 已移除。
+- `.github/workflows/docs-sync.yml` 与 `backend/tests/test_documentation_sync.py` 校验 inventory、配置
+  真实性、Skill 结构/eval 和 MCP registry 依赖。
+- R-008 仍为未实现、R-009 仍为部分实现、R-010 仍为未实现，没有把目标态认证、查询诊断或 Dify
+  验收写成当前能力。
+
+验证证据（2026-07-17）：
+
+- plan review Round 3 `PASS`；独立测试 Round 1 的 R-009 状态矛盾为 `FAIL`，修复并增加总表/详细
+  条目一致性回归后，Round 2 `PASS`。
+- 文档聚焦测试 `10 passed`；全量 backend `656 passed, 3 skipped`；frontend build 与 Playwright
+  `34 passed`；Ruff、format、Bash、YAML、JSON、diff、Skill validator/eval/registry 检查通过。
+- 隔离新上下文 ontology-builder forward test `PASS`；重启前后 live registry 与生成清单均为
+  HTTP `115`、MCP `55`，服务、PostgreSQL/Oxigraph 依赖和 frontend 健康。
+- 无认证访问业务接口仍返回 200，作为 R-008 尚未实现的现状证据，不作为安全通过。
 
 ## P1 需求说明
 
