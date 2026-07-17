@@ -395,6 +395,9 @@ class ModelingBatchSubmit(ModelingBatchSchema):
     mode: Literal["dry_run", "apply_atomic", "apply_partial"] = "apply_atomic"
     expected_workspace_version: str = Field(min_length=1, max_length=128)
     lease_token: str | None = Field(default=None, min_length=1, max_length=1024)
+    # Compatibility hint only.  The authenticated REST/MCP principal is the
+    # sole audit actor; this client-supplied value is intentionally ignored.
+    actor: str | None = Field(default=None, max_length=255)
     items: list[ModelingItemInput] = Field(min_length=1)
 
 

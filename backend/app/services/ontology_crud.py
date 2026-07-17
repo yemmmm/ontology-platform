@@ -9,7 +9,7 @@ still needs.
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,12 @@ from app.api.schemas import (
     ProjectUpdate,
 )
 from app.core.config import Settings
-from app.repositories.models import OntologyModel, ProjectModel
+from app.repositories.models import (
+    OntologyModel,
+    ProjectModel,
+    SemanticRuleDefinitionModel,
+    SemanticRuleModel,
+)
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -82,6 +87,7 @@ def update_project(session: Session, project_id: str, payload: ProjectUpdate) ->
 
 def delete_project(session: Session, project_id: str) -> None:
     project = get_project(session, project_id)
+    _delete_ontology_rules(session, [ontology.id for ontology in project.ontologies])
     session.delete(project)
     commit_or_409(session, "Project could not be deleted")
 
@@ -143,5 +149,26 @@ def update_ontology(session: Session, ontology_id: str, payload: OntologyUpdate)
 
 def delete_ontology(session: Session, ontology_id: str) -> None:
     ontology = get_ontology(session, ontology_id)
+    _delete_ontology_rules(session, [ontology.id])
     session.delete(ontology)
     commit_or_409(session, "Ontology could not be deleted")
+
+
+def _delete_ontology_rules(session: Session, ontology_ids: list[str]) -> None:
+    """Break the rule/current-definition FK cycle before ontology cascade delete."""
+    if not ontology_ids:
+        return
+    rule_ids = list(
+        session.scalars(
+            select(SemanticRuleModel.id).where(SemanticRuleModel.ontology_id.in_(ontology_ids))
+        )
+    )
+    if not rule_ids:
+        return
+    session.execute(
+        delete(SemanticRuleDefinitionModel).where(
+            SemanticRuleDefinitionModel.semantic_rule_id.in_(rule_ids)
+        )
+    )
+    session.execute(delete(SemanticRuleModel).where(SemanticRuleModel.id.in_(rule_ids)))
+    session.flush()

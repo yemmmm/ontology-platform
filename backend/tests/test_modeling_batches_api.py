@@ -86,12 +86,10 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     assert context.json()["workspace"]["workspace_version"] == version
     delta = client.get("/api/ontologies/o/semantic-read-models/delta")
     assert delta.status_code == 200, delta.text
-    assert {warning["code"] for warning in delta.json()["warnings"]} == {
-        "no_prior_graph_set"
-    }
+    assert {warning["code"] for warning in delta.json()["warnings"]} == {"no_prior_graph_set"}
 
 
-def test_rest_rejects_actor_and_target_overrides_before_processing(
+def test_rest_accepts_actor_hint_but_uses_authenticated_actor(
     in_memory_session: Session,
 ) -> None:
     app = FastAPI()
@@ -117,4 +115,6 @@ def test_rest_rejects_actor_and_target_overrides_before_processing(
             ],
         },
     )
-    assert response.status_code == 422
+    # Unknown session is reached after the compatibility-only actor field is
+    # accepted; the field must not be rejected by Pydantic or become authority.
+    assert response.status_code == 404

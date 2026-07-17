@@ -19,6 +19,8 @@ from app.repositories.models import (
     SemanticGraphRevisionModel,
     SemanticGraphSetMemberModel,
     SemanticGraphSetModel,
+    SemanticRuleDefinitionModel,
+    SemanticRuleModel,
 )
 from app.services import ontology_crud
 from app.services.ontology_workspace import OntologyWorkspaceError, OntologyWorkspaceService
@@ -37,6 +39,36 @@ def _ontology(session, ontology_id: str = "o-1") -> OntologyModel:
     session.add(ontology)
     session.commit()
     return ontology
+
+
+def test_delete_project_removes_rule_definition_cycle_before_ontology_cascade(in_memory_session):
+    project = _project(in_memory_session, "rule-project")
+    ontology = OntologyModel(id="rule-ontology", project_id=project.id, name="Rule ontology")
+    rule = SemanticRuleModel(
+        id="rule", ontology_id=ontology.id, rule_iri="urn:rule", status="active"
+    )
+    definition = SemanticRuleDefinitionModel(
+        id="definition",
+        semantic_rule_id=rule.id,
+        rule_iri=rule.rule_iri,
+        name="Rule",
+        language="platform_dsl",
+        version="v1",
+        body={"statements": []},
+    )
+    in_memory_session.add_all([ontology, rule])
+    in_memory_session.flush()
+    in_memory_session.add(definition)
+    in_memory_session.flush()
+    rule.current_definition_id = definition.id
+    in_memory_session.commit()
+    rule_id, definition_id = rule.id, definition.id
+
+    ontology_crud.delete_project(in_memory_session, project.id)
+
+    assert in_memory_session.get(ProjectModel, project.id) is None
+    assert in_memory_session.get(SemanticRuleModel, rule_id) is None
+    assert in_memory_session.get(SemanticRuleDefinitionModel, definition_id) is None
 
 
 def test_create_ontology_initializes_complete_default_workspace(in_memory_session):
@@ -99,9 +131,15 @@ def test_ensure_is_idempotent_and_preserves_existing_revision(in_memory_session)
     assert next(m for m in second["members"] if m["role"] == "asserted_data")["revision"] == 7
     assert data_revision.content_hash == "existing-content"
     assert in_memory_session.scalar(select(func.count()).select_from(SemanticGraphSetModel)) == 1
-    assert in_memory_session.scalar(select(func.count()).select_from(SemanticGraphSetMemberModel)) == 4
-    assert in_memory_session.scalar(select(func.count()).select_from(SemanticGraphRegistryModel)) == 4
-    assert in_memory_session.scalar(select(func.count()).select_from(SemanticGraphRevisionModel)) == 4
+    assert (
+        in_memory_session.scalar(select(func.count()).select_from(SemanticGraphSetMemberModel)) == 4
+    )
+    assert (
+        in_memory_session.scalar(select(func.count()).select_from(SemanticGraphRegistryModel)) == 4
+    )
+    assert (
+        in_memory_session.scalar(select(func.count()).select_from(SemanticGraphRevisionModel)) == 4
+    )
 
 
 def test_repair_dry_run_reports_missing_resources_without_writing(in_memory_session):
@@ -157,9 +195,12 @@ def test_creation_rolls_back_ontology_when_workspace_initialization_fails(
             in_memory_session, "p-1", OntologyCreate(name="Broken"), Settings()
         )
 
-    assert in_memory_session.scalar(
-        select(func.count()).select_from(OntologyModel).where(OntologyModel.name == "Broken")
-    ) == 0
+    assert (
+        in_memory_session.scalar(
+            select(func.count()).select_from(OntologyModel).where(OntologyModel.name == "Broken")
+        )
+        == 0
+    )
 
 
 def test_default_graph_set_membership_cannot_be_removed(in_memory_session):

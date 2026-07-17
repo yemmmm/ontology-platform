@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 /**
  * Live-contract smoke: drives the running backend at :8001 (no mocks).
@@ -23,13 +24,28 @@ interface GraphScope {
 }
 
 let counter = 0;
-const liveApiKey = process.env.ONTOLOGY_PLAYWRIGHT_API_KEY ?? "";
+const cleanupProjects = new Set<string>();
+const cleanupGraphs = new Set<string>();
+function protectedLiveApiKey(): string {
+  if (process.env.ONTOLOGY_PLAYWRIGHT_API_KEY) return process.env.ONTOLOGY_PLAYWRIGHT_API_KEY;
+  try {
+    const credentialPath = new URL(
+      "../../backend/.local/ontology-platform-bootstrap.json",
+      import.meta.url,
+    );
+    const credentials = JSON.parse(readFileSync(credentialPath, "utf8")) as { api_key?: string };
+    return credentials.api_key ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const liveApiKey = protectedLiveApiKey();
 
 function requireLiveApiKey() {
-  test.skip(
-    !liveApiKey,
-    "Set ONTOLOGY_PLAYWRIGHT_API_KEY to an organization-admin test key for authenticated live-contract checks.",
-  );
+  if (!liveApiKey) {
+    throw new Error("Protected local live-contract credentials are unavailable.");
+  }
 }
 
 function uniqueScope(): GraphScope {
@@ -43,6 +59,11 @@ function uniqueScope(): GraphScope {
     evidence: `${base}/evidence/live-${id}`,
     policy: `${base}/policy/live-${id}`,
   };
+}
+
+function registerCleanup(projectId?: string, scope?: GraphScope) {
+  if (projectId) cleanupProjects.add(projectId);
+  if (scope) Object.values(scope).forEach((graph) => cleanupGraphs.add(graph));
 }
 
 function seedTrig(s: GraphScope): string {
@@ -116,6 +137,23 @@ async function apiGet(page: Page, path: string) {
 }
 
 test.describe("semantic live-contract (real backend + Oxigraph)", () => {
+  test.afterEach(async ({ request }) => {
+    for (const projectId of cleanupProjects) {
+      const response = await request.delete(`http://127.0.0.1:8001/api/projects/${projectId}`, {
+        headers: { Authorization: `Bearer ${liveApiKey}` },
+      });
+      expect(response.status(), `cleanup Project ${projectId}`).toBe(204);
+    }
+    cleanupProjects.clear();
+    for (const graph of cleanupGraphs) {
+      const response = await request.delete(
+        `http://127.0.0.1:7878/store?graph=${encodeURIComponent(graph)}`,
+      );
+      expect(response.ok(), `cleanup graph ${graph}`).toBeTruthy();
+    }
+    cleanupGraphs.clear();
+  });
+
   test("runtime spine: load → query → write-SPARQL rejected", async ({ page }) => {
     requireLiveApiKey();
     const suffix = `${Date.now()}-${counter += 1}`;
@@ -140,6 +178,7 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       evidence: `${members.policy}/evidence-not-in-query-scope`,
       policy: members.policy,
     };
+    registerCleanup(project.json.id, s);
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
       base_iri: "http://ontology-platform.local/semantic/",
@@ -185,6 +224,7 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
   test("governed edits accept valid Turtle and reject malformed RDF with 400", async ({ page }) => {
     requireLiveApiKey();
     const s = uniqueScope();
+    registerCleanup(undefined, s);
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
       base_iri: "http://ontology-platform.local/semantic/",
@@ -228,30 +268,27 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       name: `R006 Rules Ontology ${suffix}`,
     });
     expect(ontology.status).toBe(201);
-    const s = uniqueScope();
+    const members = Object.fromEntries(
+      (ontology.json.workspace.members as Array<{ role: string; graph_iri: string }>).map((member) => [
+        member.role,
+        member.graph_iri,
+      ]),
+    );
+    const s: GraphScope = {
+      ontology: members.asserted_ontology,
+      data: members.asserted_data,
+      shapes: members.shapes,
+      evidence: `${members.policy}/evidence-not-in-query-scope`,
+      policy: members.policy,
+    };
+    registerCleanup(project.json.id, s);
     await apiPost(page, "/semantic/datasets:load", {
       format: "trig",
       base_iri: "http://ontology-platform.local/semantic/",
       content: seedTrig(s),
     });
 
-    const gs = await apiPost(page, "/semantic/graph-sets", {
-      name: `live-${Date.now()}`,
-      scope_type: "ontology_version",
-      scope_id: `live-${Date.now()}`,
-      members: [
-        { graph_iri: s.ontology, role: "ontology", sort_order: 1 },
-        { graph_iri: s.data, role: "data", sort_order: 2 },
-        { graph_iri: s.shapes, role: "shapes", sort_order: 3 },
-        { graph_iri: s.evidence, role: "evidence", sort_order: 4 },
-        { graph_iri: s.policy, role: "policy", sort_order: 5 },
-      ],
-      created_by: "live-contract",
-    });
-    if (gs.status !== 200 && gs.status !== 201) {
-      throw new Error(`graph-set create failed: ${gs.status} ${JSON.stringify(gs.json)}`);
-    }
-    const gsId = gs.json.id;
+    const gsId = ontology.json.workspace.default_graph_set_id;
 
     const sh = await apiPost(page, `/semantic/graph-sets/${gsId}/validation-runs`, {});
     expect(sh.status).toBe(200);
