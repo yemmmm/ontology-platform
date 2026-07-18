@@ -3779,8 +3779,9 @@ textarea:focus {
 
 .tableActions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
+  align-items: center;
 }
 
 .ruleDetailList {

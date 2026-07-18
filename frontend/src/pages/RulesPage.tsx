@@ -288,12 +288,23 @@ export function RulesPage({ ontologyId, readOnly, request }: RulesPageProps) {
                               onClick={(event) => event.stopPropagation()}
                               onKeyDown={(event) => event.stopPropagation()}
                             >
-                              <Button size="small" icon={<Edit3 size={13} />} onClick={() => openEdit(rule)} disabled={readOnly}>
-                                {t("Edit")}
-                              </Button>
-                              <Button size="small" danger icon={<Trash2 size={13} />} onClick={() => void removeRule(rule)} disabled={readOnly || submitting}>
-                                {t("Delete")}
-                              </Button>
+                              <Button
+                                aria-label={t("Edit")}
+                                icon={<Edit3 size={13} />}
+                                onClick={() => openEdit(rule)}
+                                size="small"
+                                title={t("Edit")}
+                                disabled={readOnly}
+                              />
+                              <Button
+                                aria-label={t("Delete")}
+                                danger
+                                icon={<Trash2 size={13} />}
+                                onClick={() => void removeRule(rule)}
+                                size="small"
+                                title={t("Delete")}
+                                disabled={readOnly || submitting}
+                              />
                             </div>
                           </td>
                         </tr>
