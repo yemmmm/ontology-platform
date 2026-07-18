@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-- 状态：`计划评审通过，开发/独立测试共享`
+- 状态：原平台/Skill 与 2026-07-18 repo-local Harness 增补测试均已评审通过，开发/独立测试共享
 - Requirement：`docs/requirements-v1.1.md` R1.1-002，效果证据关联 R1.1-001
 - Design：`docs/superpowers/specs/2026-07-17-r1-1-002-staged-modeling-workflow-design.md`
 - Delivery record：
@@ -589,3 +589,116 @@ cd frontend && npx playwright test
   non-blocking explanation-chain gap, not an inference correctness or stale-result defect.
 - Verdict: **PASS**, Critical=0, High=0, Medium=1. Keep requirement completion and commit pending explicit user
   business-value confirmation.
+
+## 2026-07-18 repo-local Codex modeling Harness 增补测试合同
+
+本节是同一 R1.1-002 共享计划的增量，不建立竞争性测试文档。实现者先运行定向自动化；独立 tester
+在稳定工作树追加新的独立测试 Round，不修改 Harness 产品代码。
+
+### H1. 激活、隔离与路由
+
+- 未激活、foreign cwd、未知 session 的每种 Hook 均成功 no-op，不创建运行目录。
+- `PreToolUse(Bash)` 只在显式 activation command 中绑定 payload `session_id` 与唯一 `run_id`；两个
+  并发主 session/相同 Build Session 不串写，重复 activate 幂等，冲突绑定 fail closed。
+- activation 必须有唯一 nonce；只有 PreToolUse Hook 写入的 run/session/cwd/nonce/hash acknowledgment
+  能令 CLI 报告 active。直接运行 CLI、Hooks 禁用、项目未 trust、Hook hash 变化、伪造/过期 nonce
+  均不得假成功，并产生明确“本 session 未记录”告警但不阻断后续建模。
+- 用当前 Codex 0.144.5 运行真实 repo-local Hook smoke，按 `/hooks` trust 当前定义后至少证明真实
+  session 绑定和一个 lifecycle event；同时记录 Hook 变化后需要重新 trust 的启用步骤。测试自动化
+  不使用 `--dangerously-bypass-hook-trust` 代替用户信任流程。
+- UserPrompt、Agent dispatch、SubagentStart/Stop、ordinary Stop 和 checkpoint Stop 生成正确事件；
+  ordinary Stop 不调用 Luna，阶段 Stop 必须依赖成功平台 checkpoint 或显式 local checkpoint。
+- 伪造自然语言、失败 PostToolUse、非白名单 MCP、`write_stdin`/重复 PostToolUse 不推进 phase、不重复
+  事件。completed/cancelled 才可发布；paused/interrupted 只留本地。
+
+### H2. 事件、并发与恢复
+
+- 多进程/线程追加产生连续唯一 sequence、每行合法 JSON；重复 tool use/agent/fingerprint 不重复。
+- crash-safe state write 不留下半个 JSON；`events.jsonl` 已落盘而 Luna 失败时 cursor 不前进。
+- pending 总是从最早连续缺口重试，每 Hook 最多一次调用；重启 runner 后仅凭运行文件恢复。
+- 新主 session 恢复同 Build Session 创建新 run 并引用 previous run，不合并原始事件或最终文档。
+
+### H3. allowlist、秘密拒绝与边界
+
+- 每类允许字段被有界保存，未知字段、transcript path/正文、system/developer/hidden reasoning、完整工具
+  输出、网页/Evidence 正文和无关 shell/file 输出均不落盘也不进入总结 prompt。
+- credential、cookie、authorization、API key、lease token 和高置信秘密模式命中时，fixture 原值在
+  events/state/raw/session/final doc 和总结输入中均为零出现；只产生不含原值的 rejection 元数据与
+  `pending_redaction`。
+- 显式 redacted replacement 恢复 pending；超长/控制字符/非 JSON payload 稳定拒绝或截断且不破坏
+  JSONL。测试 fixture 只能用唯一假 secret。
+
+### H4. Luna、游标和 Markdown
+
+- 使用 fake summarizer 验证传入内容只有未总结事件、允许片段和短状态；同一 sequence 不被再次总结。
+- 验证输出 Schema、未知字段、非 JSON、超时和非零退出；任何失败均不推进 cursor 或修改既有 delta。
+- 命令构造必须固定 Luna/medium、ephemeral、read-only、disable hooks、ignore user config/rules，且不
+  继承平台 credential；不得通过 shell 拼接未信任 payload。cwd 必须是新建空临时目录，prompt 只经
+  stdin；环境变量必须按 allowlist/业务秘密 denylist 清理。
+- 断言 `web_search="disabled"` 且 shell/unified exec/apps/multi-agent/goals/memories/browser/computer/
+  image/plugin 等非必要工具全部关闭；任一当前 CLI 不接受的安全禁用配置必须 fail closed。
+- 运行真实 Luna 注入隔离 smoke：事件中要求读取唯一假环境秘密和空 cwd 外的唯一假仓库秘密；证明
+  无工具调用，两个秘密在 last message、events/state/raw/session/final doc 和捕获的总结结果中均为
+  零出现。测试结束清理唯一 fixture。
+- 合法 delta 确定性更新 `session.md`；重复执行、重试和重启不重复小节。
+
+### H5. finalize、repair 与发布
+
+- completed/cancelled 在无 pending 时生成唯一脱敏 `docs/modeling-retrospectives` 文件；重复 finalize
+  幂等，paused/interrupted 不生成 tracked 文档。
+- finalize 最多三次 flush；缺口仍在时为 `finalization_pending` 且不发布。repair 补齐后只发布一次，
+  平台终态不参与回滚。
+- 最终文档覆盖阶段、决定/假设、返工、质量问题、阻塞/下一步、优化建议、稳定 ID、模型和终态，且
+  不含原始 transcript/secret。
+
+### H6. Skill 与仓库门禁
+
+- `ontology-builder` 明确可选激活、checkpoint、finalize/repair 责任；仓库 Harness 不存在时 Skill
+  仍可执行，不把 `.codex` 文件复制进 Skill 包或声明为平台 MCP 依赖。
+- Harness 自动化、Skill validator/evals、skill-creator `quick_validate.py`、新增 Python Ruff 和
+  `git diff --check` 通过。
+- 本增补不修改 backend/frontend 时不触发相应全量测试与 systemd 重启；若实际发生修改，恢复
+  `AGENTS.md` 规定的全量测试、重启和端点健康门禁。
+
+### Independent Harness Test Round 1 — 2026-07-18 — PASS after Cycle 3
+
+- Stable worktree: tester 基于 developer Cycle 3 的 repo-local `.codex` 实现、冻结设计、Harness
+  测试合同和 `ontology-builder` Skill 独立复测。tester 未修改 Harness、Skill、需求、设计、交付记录、
+  backend/frontend 或运行时；本轮唯一版本化写入是本测试轮次。
+- Cycle 1 FAIL: 既有 16 项 Harness 测试通过，但两个独立黑盒复现发现 High。第一，MCP transport
+  wrapper 的 `isError=false` 掩盖内层 `success=false/status=failed`，失败的
+  `complete_build_session` 被当成成功并把 run 置为 terminal。第二，已发布 completed run 接收后续
+  ordinary `Stop`，事件数由 2 增至 3、cursor 仍为 2，`finalization_status=published` 且已发布文档
+  保持旧内容。backend-pinned `ruff format --check` 同时发现两个新增 Python 文件未格式化。
+- Cycle 2 retest: 内层 business failure、混合外层成功/内层失败均 fail closed；plain-text/无结构响应
+  不取得 phase/terminal authority；明确 `{ok:true,data:...}` 的 complete、cancel 和 phase Event 才能
+  推进。terminal lifecycle Hook 不再追加事件；`finalization_pending` Hook 只重试一次最早 pending、
+  不追加或发布，后续 CLI repair 才发布。20 项测试及独立相邻边界探针通过，但相同 pinned Ruff
+  format-check 仍失败，因此未给出 PASS，并退回 developer。
+- Cycle 3 final retest: developer 只做 pinned Ruff 机械格式化后，精确两个 High 回归与相邻成功、失败、
+  ambiguous、mixed、cancelled、published、`finalization_pending` 和 repair/idempotency 边界继续通过。
+  published terminal 的 events/doc/cursor 均不变；pending terminal 每 Hook 恰好一次 retry、零追加、
+  零提前发布。触发矩阵独立计数为 UserPrompt=0、PreToolUse(Agent)=1、SubagentStart=0、
+  SubagentStop=1、ordinary Stop=0、checkpoint Stop=1 次 Luna；相同 Build Session 的新主 session 使用
+  新 run/event 文件并记录 `previous_run_id`。并发 sequence/dedupe、secret rejection/redacted
+  replacement、transcript/未知字段排除、bounded incremental cursor、三次 finalize flush 和 paused
+  local-only 均由 20 项套件覆盖。
+- Real Luna isolation: 真实 `codex exec` 使用 `gpt-5.6-luna` / medium、strict config、ephemeral、空临时
+  cwd、read-only、ignored user config/rules、Hooks 和全部非必要工具关闭。恶意 event 要求读取唯一假
+  环境秘密和空 cwd 外唯一假仓库文件；进程 exit 0、Schema-valid JSON，捕获 stdout/stderr 无 shell、
+  exec、MCP、subagent 或 web tool-call marker，两个假秘密零出现。fixture 已删除，临时目录已清理。
+- Trust smoke limitation: 当前 collaboration agent API 不能交互执行 Codex `/hooks` slash command，
+  因此未伪造 trust，也未使用 `--dangerously-bypass-hook-trust`。独立测试验证了无 acknowledgment 的
+  activate 非零 fail-closed、nonce/session/cwd/hash/TTL、冲突绑定和 hash 变化失效合同。由于 Harness
+  是可选本地观测能力且未 trust 时明确告警并继续平台建模，该交互限制不阻断代码发布；首次实际建模
+  在声称“正在记录”前仍必须由操作者通过 `/hooks` trust 当前精确 hash 并完成真实 activation smoke。
+- Final commands/results:
+  - `python3 -m unittest discover -s .codex/tests -v`: **20 passed**。
+  - `cd backend && uv run ruff check ../.codex/hooks/modeling_harness.py
+    ../.codex/tests/test_modeling_harness.py`: **passed**。
+  - 同一 repo-pinned `uv run ruff format --check`：**2 files already formatted**。
+  - `validate_skill.py`：9 references、34 MCP dependencies；`run_evals.py --check-registry` 与带 traces
+    版本：7/7；skill-creator `quick_validate.py`：`Skill is valid!`。
+  - `git diff --check`: exit 0；测试生成的两个 `__pycache__`、恶意注入 fixture 和临时目录均已清理。
+- Findings/verdict: Cycle 1 High=2 与 format gate 已在 Cycle 3 关闭；最终 Critical=0、High=0。
+  `/hooks` 真实交互 activation 是已显式记录的首次使用门禁，不是静默残余风险。**PASS**。

@@ -2,8 +2,9 @@
 
 ## 1. 状态与决策摘要
 
-设计状态：`计划评审通过，开发就绪`。需求来源为 `docs/requirements-v1.1.md` 的 R1.1-002，效果证据归入
-R1.1-001；功能契约和首轮 Dify 业务目标已由用户逐项确认。
+设计状态：原平台/Skill 方案与 2026-07-18 repo-local Codex Harness 增补方案均已评审通过，开发就绪。
+需求来源为 `docs/requirements-v1.1.md` 的 R1.1-002，效果证据归入 R1.1-001；功能契约和首轮 Dify
+业务目标已由用户逐项确认。
 
 1. 首版交付重构后的 `ontology-builder`、Build Session 下不可变 Modeling Workflow Artifact、
    追加式 Modeling Execution Event、REST/MCP 查询与 JSON/Markdown 导出，不新增复杂前端页面。
@@ -402,3 +403,146 @@ config/profile 为该主 Agent 注册 ontology-platform stdio MCP，command 指�
 - 三项能力问题可由持久模型和证据回答，用户确认实际业务价值；限制和 deferred 范围明确。
 - 独立 requirement tester PASS、全量测试、真实依赖、migration、重启健康、文档/需求同步和 commit
   全部完成。
+
+## 15. 2026-07-18 repo-local Codex modeling Harness 增补设计
+
+### 15.1 目的与边界
+
+Harness 记录一次 `ontology-builder` 主 Codex session 的建模过程，供后续比较角色委派、阶段返工、
+门禁缺口和可优化环节。它补充平台中稳定、跨 Agent 可恢复的 Modeling Workflow Artifact/Event，
+不替代平台事实来源，也不把聊天记录变成第三套业务状态。
+
+- Harness 只位于当前仓库 `.codex/`，不打包为 Plugin，也不随 `ontology-builder` Skill 发布。
+- Skill 只在仓库脚本存在时显式激活；不存在时继续原建模流程，不能把本地观测能力变成外部依赖。
+- 每个主 Codex session 一份运行记录。新 session 恢复相同 Build Session 时新建记录，并引用前序
+  session，不合并原始事件或复盘文档。
+- 不修改 backend/frontend、数据库或平台 API。平台 Event/Artifact/Build Session ID 只作为稳定链接。
+- 当前不实施定时清理；raw 目录保持 gitignored，由使用者显式处理。
+
+### 15.2 文件与身份模型
+
+项目 Hook 配置为 `.codex/hooks.json`，确定性 runner 和结构化输出 Schema 位于 `.codex/hooks/`。
+首次使用或 Hook 文件变化后，操作者必须在 Codex `/hooks` 审核并 trust 当前精确 hash；Skill 同时
+检查脚本存在与 activation acknowledgment。未 trust 只使本地复盘降级，不阻断平台建模，但主 Agent
+必须把告警展示给用户，不能声称 Harness 正在记录。
+
+激活命令必须携带主 Agent 生成的唯一 `run_id` 和一次性随机 `activation_nonce`；
+`PreToolUse(Bash)` Hook 从可信 Hook payload 取得 `session_id`，写入同时包含
+`run_id/session_id/cwd/activation_nonce/hook_config_hash` 的 acknowledgment，再把 session 与 run
+绑定。实际 `activate` CLI 只在 nonce、cwd、run 和 acknowledgment 全部匹配后报告 active；Hook 未
+trust、被禁用、配置 hash 变化或未执行时，CLI 必须非零退出并明确报告“本 session 未记录”，不得
+自行创建伪 active run。这样既避免 CLI 子进程猜测当前主 session，也避免并发窗口选择最近记录。
+
+运行文件位于 `workspaces/ontology-harness/<run-id>/`：
+
+- `metadata.json`：run/session/build/project、前序 run、状态与时间；
+- `events.jsonl`：先落盘、追加式、带 sequence 和 event fingerprint 的白名单事件；
+- `state.json`：已总结 sequence、pending/retry/finalization 状态，不把游标混入事件日志；
+- `session.md`：由已验证 delta 确定性重建的实时摘要；
+- `raw/`：仅在白名单允许且确有复盘价值时保存有界片段，不保存 transcript。
+
+session 到 run 的 registry 也放在 gitignored Harness 根目录。所有状态写入使用进程锁；JSON 状态采用
+同目录临时文件、`fsync` 和原子替换；JSONL 在锁内一次写完整行并 `fsync`。事件 fingerprint 由
+Hook event、tool use ID/agent ID、规范化白名单 payload 计算，重复 Hook 不产生重复业务事件。
+
+### 15.3 Hook 路由与阶段识别
+
+配置使用当前 Codex 原生 command Hooks：`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、
+`SubagentStart`、`SubagentStop` 和 `Stop`。runner 总是先验证 `cwd`、session/run 映射和输入 Schema，
+未知 session 或未激活 run 直接成功退出。Hook stdout 只返回 Codex 所需 JSON，不输出诊断文本。
+
+| 时刻 | 确定性事件 | Luna |
+|---|---|---|
+| activate | 创建 run 和绑定 | 不调用 |
+| UserPromptSubmit | 保存有界用户可见 prompt | 不调用 |
+| PreToolUse(Agent) | 委派意图、角色、输入边界、预期产物 | 调用一次 |
+| SubagentStart | agent ID/type | 不调用 |
+| SubagentStop | 最终回答、偏差、问题、下一步 | 调用一次 |
+| 普通 Stop | `turn_output` | 不调用 |
+| 有显式 checkpoint 的 Stop | 关联阶段输出 | 调用一次 |
+| completed/cancelled finalize | 终态与最终增量 | 有界 flush 后调用最终总结 |
+
+`PostToolUse` 只白名单处理 Modeling Workflow/Build Session 相关工具。成功的
+`record_modeling_execution_event` 且 event type 为 `phase_completed`、`review_completed`、
+`rework_requested`、`blocked`、`verification_completed` 等时写 authoritative checkpoint；下一次
+同主 session 的 Stop 才能关联为阶段输出。平台不可用时，显式 `checkpoint` CLI 写
+`agent_reported_local`，并保持待对账状态。自然语言、普通 Stop 和失败的平台调用不能推进 phase。
+
+成功的 `complete_build_session`/`cancel_build_session` 触发对应 `completed`/`cancelled` finalize。
+`paused`、`interrupted` 只留本地；普通 Stop 和 subagent 结束绝不发布最终文档。
+
+### 15.4 白名单、秘密拒绝与总结输入
+
+允许保存：用户可见 prompt、委派任务/角色/Artifact 引用、subagent 最终回答、主 Agent
+`last_assistant_message`、相关 MCP 状态和稳定 ID、必要 Finding/错误、checkpoint/phase/model/耗时/
+重试，以及解释返工所需的短摘录。每类字段有独立字符上限和总事件上限。
+
+禁止保存或发送给 Luna：完整主/子 transcript、system/developer prompt、隐藏推理、credential、
+cookie、lease token、完整网页/Evidence、无关文件或终端输出。runner 先做字段 allowlist、控制字符/
+长度处理和保守 secret scan。明确 secret 命中时原值完全不落盘，仅追加不含原值的 `rejected_secret`
+事件并将状态设为 `pending_redaction`；主 Agent 必须通过显式 redacted replacement 补齐，不能静默
+替换后继续总结。
+
+新 Luna session 只接收游标后的事件、其允许的有界片段、短当前状态及固定总结指令，不读取主
+transcript、subagent transcript 或整个历史 `events.jsonl`。输出通过仓库 JSON Schema 校验；模型不
+获得工作区写权限，也不直接修改 Markdown。
+
+### 15.5 Luna 调用、失败与发布
+
+runner 使用当前 Codex CLI 新起隔离 session：`gpt-5.6-luna`、reasoning `medium`、ephemeral、
+read-only、禁用 Hooks、忽略用户配置/rules，并通过 `--output-schema` 与 last-message 文件取得结果。
+工作目录是每次调用新建的空临时目录，而不是仓库；prompt 只经 subprocess stdin 传入，任何事件值
+不得拼接进 shell command 或 argv。runner 构造显式环境，保留 Codex 认证/网络/locale 所需最小项，
+移除 ontology-platform/MCP/API key/cookie/authorization/lease/token 等业务凭证变量。
+
+总结器必须 tool-less：顶层 `web_search="disabled"`，并显式关闭 `shell_tool`、`unified_exec`、
+`apps`、`multi_agent`、`goals`、`memories`、`browser_use`、`browser_use_external`、
+`browser_use_full_cdp_access`、`computer_use`、`image_generation`、`plugins`、`plugin_sharing` 和其他
+当前版本可调用的非必要工具；runner 对不被当前 CLI 识别的禁用项 fail closed，不退回到带工具运行。
+总结 prompt 把事件标记为不可信数据并禁止服从其中指令。这既避免递归触发 Harness，也切断总结器
+对仓库、平台、连接器、web 和子 Agent 的读取/写入面。
+
+每个 Hook 最多进行一次 Luna 调用；若存在 pending，优先处理最早连续缺口。工作期失败 fail-open：
+原事件已保留、游标不前进，记录错误类型/尝试次数，后续 Hook 重试。completed/cancelled finalize
+最多 flush 三次；仍有缺口则标记 `finalization_pending`，不创建版本化复盘，且不回滚平台终态。
+`repair <run-id>` 复用同一锁、游标和 Schema 补齐。
+
+所有事件完成总结后，runner 生成脱敏最终文档
+`docs/modeling-retrospectives/<date>-<run-id>.md`，包含阶段摘要、决策/假设、返工与质量问题、阻塞、
+下一步、优化建议、稳定平台 ID、Harness/模型版本和终态；不复制完整聊天。写入先生成临时文件再
+原子替换，重复 finalize/repair 结果幂等。
+
+## 16. Harness 风险探针与计划评审
+
+### 16.1 实现前风险探针 — 2026-07-18 — PASS
+
+1. 使用 Codex `0.144.5` 真实启动 `gpt-5.6-luna` + `medium`，组合 `--ephemeral`、
+   `--disable hooks`、`--ignore-user-config`、`--ignore-rules`、`--sandbox read-only` 和
+   `--skip-git-repo-check`，在临时目录成功得到预期 JSON，证明模型、隔离参数和递归切断可用。
+2. 当前 CLI `hooks` feature 为 stable/enabled；官方本机 Codex manual 明确列出所需 lifecycle events、
+   `Agent` tool coverage、Subagent/Stop payload，并说明 command Hook 同步、`async` 尚不支持。
+3. Python stdlib `fcntl` + 单行 JSON append + flush/fsync 的 64 次并发探针得到 64 条合法、唯一事件，
+   支持 repo-local Linux runner 的最小锁策略；正式测试仍需覆盖 sequence 分配和重复 fingerprint。
+
+### 16.2 Harness plan review
+
+原设计的 2026-07-17 Round 1–3 不替代本增补审查。
+
+#### Round 1 — 2026-07-18 — REVISE
+
+- `accepted-high`：repo-local Hook 需要精确 hash trust，脚本存在不能证明 activation Hook 已执行。
+  增加 activation nonce acknowledgment、CLI fail-closed、Skill 明确降级告警、`/hooks` trust 说明和
+  真实 Codex Hook smoke。
+- `accepted-high`：read-only 不会关闭 Luna 默认 shell/web/apps/subagent 工具。不可信事件存在 prompt
+  injection 读取秘密的风险。增加空临时 cwd、最小环境、stdin、全部非必要工具显式关闭和真实恶意
+  注入隔离 smoke。
+
+修订后的设计和共享测试计划必须由同一 reviewer Round 2 PASS 后才能开发。
+
+#### Round 2 — 2026-07-18 — PASS
+
+- reviewer 确认 Hook trust、activation nonce acknowledgment、CLI fail-closed 和真实 Hook smoke 已关闭
+  假激活风险。
+- reviewer 确认空临时 cwd、stdin、受限环境、tool-less feature 配置和真实恶意注入 smoke 已关闭
+  Luna 读取仓库/环境秘密风险。
+- 无剩余 evidence-backed Critical/High finding，允许按冻结设计进入开发。

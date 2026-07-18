@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "phases",
+    "decisions",
+    "assumptions",
+    "rework",
+    "quality_issues",
+    "blockers",
+    "next_steps",
+    "optimization_opportunities",
+    "stable_ids"
+  ],
+  "properties": {
+    "summary": {"type": "string", "maxLength": 3000},
+    "phases": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phase", "summary"],
+        "properties": {
+          "phase": {"type": "string", "maxLength": 80},
+          "summary": {"type": "string", "maxLength": 1200}
+        }
+      }
+    },
+    "decisions": {"$ref": "#/$defs/shortList"},
+    "assumptions": {"$ref": "#/$defs/shortList"},
+    "rework": {"$ref": "#/$defs/shortList"},
+    "quality_issues": {"$ref": "#/$defs/shortList"},
+    "blockers": {"$ref": "#/$defs/shortList"},
+    "next_steps": {"$ref": "#/$defs/shortList"},
+    "optimization_opportunities": {"$ref": "#/$defs/shortList"},
+    "stable_ids": {"$ref": "#/$defs/shortList"}
+  },
+  "$defs": {
+    "shortList": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {"type": "string", "maxLength": 1000}
+    }
+  }
+}

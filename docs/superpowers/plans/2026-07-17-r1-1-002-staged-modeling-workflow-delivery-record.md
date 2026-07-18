@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements-v1.1.md` R1.1-002，效果证据归入 R1.1-001
 - Status: awaiting-user-business-value-review
 - Started: 2026-07-17T17:16:24+08:00
-- Last updated: 2026-07-17T22:20:00+08:00
+- Last updated: 2026-07-18T14:20:00+08:00
 - Design: `docs/superpowers/specs/2026-07-17-r1-1-002-staged-modeling-workflow-design.md`
 - Shared test plan: `docs/superpowers/plans/2026-07-17-r1-1-002-staged-modeling-workflow-test-plan.md`
 - Delivery baseline: `49a0b9e Add v1 full-chain acceptance coverage`；开始前已有用户改动，见首条时间线
@@ -491,3 +491,204 @@
   为 0 finding；所有临时 Project keys 已 revoked，无未释放 lease/write fence。
 - Outcome/next step: 实例、规则、推理、验证、查询和证据链已完成技术验收。R1.1-002 状态、Session
   completion 与 commit 仍等待用户明确确认业务价值，不因本轮 PASS 自动关闭。
+
+### 2026-07-18T10:58:26+08:00 — Codex modeling harness refinement resumed — user and main agent
+
+- Context: 用户希望把每次实际建模的 Codex 主 session 留成独立复盘文档，覆盖 subagent 委派、结束
+  和主流程阶段，以便后续识别建模方法、角色交接和质量门禁中可优化的环节，而不只依赖平台最终
+  结果或聊天记录。
+- Action/decision: 从 `2f62296 Implement staged modeling workflow` 创建并切换到
+  `feature/ontology-builder-harness`；Harness 作为 R1.1-002 执行记录的 Agent-runtime 补充和
+  R1.1-001 效果优化证据，不新增 R1.1-003。已确认外部建模 Agent 默认使用 Codex；总结器由独立
+  Codex session 执行，并固定为 `gpt-5.6-luna`、`model_reasoning_effort=medium`；每个主 Codex
+  session 形成一份独立复盘文档。
+- Evidence: 用户当前会话说明；`git branch --show-current`；本机 Codex model catalog 中
+  `gpt-5.6-luna` 支持且默认使用 `medium` reasoning。
+- Outcome/next step: 继续一次只确认一个会改变成本、隔离性或文档生命周期的功能边界；首先确认
+  总结器是每个 lifecycle event 新建临时 session，还是每个主 session 新建一个专用 session 并在
+  后续事件中恢复。
+
+### 2026-07-18T11:10:44+08:00 — incremental summarization contract — user and main agent
+
+- Context: 若每次新 Luna session 都重读完整主 transcript 或整份复盘文档，会重复总结早期内容并
+  随 session 增长持续增加延迟和 token 消耗。
+- Action/decision: 用户确认每个 ontology-builder 主 session 只激活一次 Harness；确定性 Hook runner
+  追加不可变 `events.jsonl`，通过独立 `state.json` 保存已总结 sequence。每次总结使用新的、隔离的
+  Luna/medium Codex session，只处理游标后的增量输入；模型返回结构化 delta，runner 负责 Schema
+  校验、幂等、文件锁和 Markdown 更新，模型不直接写运行文件。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 确认 Luna 的增量输入是纯事件元数据，还是事件连同相关、已脱敏的主 session
+  原文片段；默认建议后者，以支持有证据的建模复盘而不复制完整聊天记录。
+
+### 2026-07-18T11:36:07+08:00 — main-agent phase-output identification — user and main agent
+
+- Context: `Stop.last_assistant_message` 可能只是提问、普通进度或错误说明，若由总结模型根据自然
+  语言猜测阶段完成，会把非权威表达误记为流程事实。
+- Action/decision: 用户确认采用显式阶段事件。Harness 以成功的
+  `record_modeling_execution_event(event_type=phase_completed|review_completed|rework_requested|blocked|verification_completed)`
+  等平台调用识别阶段边界；对应 `Stop.last_assistant_message` 才关联为阶段性主 Agent 输出。没有
+  checkpoint 的 Stop 只记录 `turn_output`，不改变 phase。平台事件不可用时允许显式本地
+  `harness checkpoint`，来源标为 `agent_reported_local` 并等待后续对账；平台写入失败不能因自然
+  语言声明而被记为完成。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 确认原始事件、必要原文和最终复盘文档的保留位置及是否进入 Git；该决定影响
+  隐私、可恢复性和仓库噪声。
+
+### 2026-07-18T11:39:48+08:00 — harness retention and publication policy — user and main agent
+
+- Context: 全部 Hook 原文和中间状态若进入 Git，会持续制造仓库噪声并扩大敏感信息暴露面；全部
+  保持本地又不能形成长期可比较的建模优化样本。
+- Action/decision: 用户确认两层保留。每个主 session 的 `events.jsonl`、必要原文、游标状态和实时
+  `session.md` 保存在 gitignored `workspaces/ontology-harness/<session-id>/`；主 session 完成后生成
+  脱敏最终复盘并保存到版本化 `docs/modeling-retrospectives/<date>-<session-id>.md`。最终文档保留
+  阶段摘要、决策、返工、质量问题、优化建议和平台稳定资源 ID，不复制完整聊天；未完成或中断的
+  session 继续使用原运行目录，不提前发布到 `docs/`。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 确认主 session 的显式完成信号；Codex `Stop` 是 turn 级事件，不能直接作为整个
+  建模 session 的终态。
+
+### 2026-07-18T11:43:15+08:00 — harness finalization policy — user and main agent
+
+- Context: Codex `Stop` 只表示一轮结束，进程或窗口关闭也没有足够稳定的业务语义，不能据此把
+  一次建模主 session 发布为完成复盘。
+- Action/decision: 用户确认以显式平台/用户动作驱动终态。`complete_build_session` 成功后执行
+  `harness finalize --status completed`；`cancel_build_session` 成功后以 `cancelled` 终态生成并发布
+  最终复盘；用户显式暂停时以 `paused` 完成本地文档但不发布；异常退出保持 `interrupted`/active，
+  恢复同一 Codex session 时继续原文档。新的 Codex 主 session 恢复同一 Build Session 时创建新的
+  文档并引用前序 session，不跨主 session 合并。普通 Stop、用户问答结束和 subagent 完成均不触发
+  最终发布。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 确认总结模型失败、超时或结构化输出无效时是阻断建模，还是保留原始事件并
+  延迟补偿；最终发布必须如何处理尚未总结的事件。
+
+### 2026-07-18T11:54:45+08:00 — summarizer failure and repair policy — user and main agent
+
+- Context: Luna 调用属于可观测性增强；若单次超时或格式错误阻断建模，会把总结服务可用性错误
+  放大为平台业务失败，但若仍发布缺少事件的复盘，又会破坏后续优化样本的可信度。
+- Action/decision: 用户确认工作期 fail-open、最终发布 fail-complete。每次 Hook 在原始事件落盘后
+  最多调用一次 Luna；失败时游标不前进，记录 `summary_status=pending`、错误类型和尝试次数，后续
+  Hook 优先重试最早缺口。completed/cancelled 发布前执行有限 flush；仍有缺口时不生成 Git 复盘，
+  本地标记 `finalization_pending`。平台 Build Session 终态不回滚，后续通过
+  `harness repair <session-id>` 补齐并发布。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 确认允许保存和发送给 Luna 的必要原文范围、脱敏失败行为，以及明确禁止的
+  transcript/system/secret 内容。
+
+### 2026-07-18T11:59:07+08:00 — raw evidence and secret-rejection scope — user and main agent
+
+- Context: 纯事件元数据不足以解释业务误解、交接遗漏和返工原因，但复制完整 transcript、提示词
+  或工具输出会扩大隐私、secret 和无关上下文风险。
+- Action/decision: 用户确认白名单采集。允许用户可见 prompt、subagent 委派任务/角色/Artifact
+  引用、subagent 最终回答、主 Agent `Stop.last_assistant_message`、Modeling Workflow 相关 MCP
+  状态/稳定 ID/必要 Finding 或错误、checkpoint/phase/model/耗时/重试，以及解释返工所需的短摘录。
+  禁止完整 transcript、system/developer prompt、隐藏推理、凭证/cookie/lease token、完整网页或
+  Evidence、无关文件与终端输出。输入先做字段白名单、大小限制和 secret scan；命中明确秘密时原值
+  不落盘，只记录拒绝事件并标为 `pending_redaction`，由主 Agent 提供脱敏替代摘要后再总结，不静默
+  改写继续。
+- Evidence: 当前会话用户答复“同意”。
+- Outcome/next step: 剩余用户级决策集中在 Luna 触发频率、Harness 的 repo-local 或可安装 Plugin
+  分发边界，以及本地 raw payload 的保留/清理周期。
+
+### 2026-07-18T12:35:00+08:00 — harness trigger, distribution and retention contract — user and main agent
+
+- Context: Harness 需要在保留建模复盘价值的同时控制新 Codex session 的调用次数，并避免把当前
+  项目的测试编排误发布成通用 Skill 依赖。
+- Action/decision: 用户确认触发矩阵：激活和 `SubagentStart` 仅确定性落事件；委派前
+  `PreToolUse(Agent)`、`SubagentStop`、带显式 phase/review/rework/blocked/verification checkpoint 的
+  主 Agent Stop 以及终态 finalize 才调用 Luna；普通主 Agent Stop 不调用 Luna。每个 Hook 最多一次
+  Luna 调用，若存在旧 pending 缺口则优先补最早缺口。Harness 只作为当前仓库的 `.codex` 本地能力，
+  不随 Skill 或 Plugin 发布；对外发布的 `ontology-builder` 只做存在性检测，Harness 不可用时不影响
+  建模主流程。当前不为 gitignored raw 运行目录增加定时清理策略。
+- Evidence: 当前会话用户连续确认触发矩阵，并明确“harness 暂时只在当前项目，不发布出去，发布的
+  仅是 skill，harness 仅用于本地测试；当前不需要定时清理”。
+- Outcome/next step: 功能契约已闭合。进入实现前风险探针、Harness 设计/测试计划更新和独立计划评审；
+  后续不再为已确认边界重复请求用户确认。
+
+### 2026-07-18T13:05:00+08:00 — Harness plan review Round 1 — plan_reviewer and main agent
+
+- Context: 独立 reviewer 审查 Harness 增补设计、共享测试合同、当前 Codex 0.144.5 Hook/manual 和
+  `ontology-builder` 可移植边界；reviewer 只读、未修改文件。
+- Findings: Verdict `REVISE`，Critical=0、High=2。第一项 High：repo-local command Hook 需要按当前
+  hash 显式 trust，脚本存在不能证明 Hook 已加载；若 activation 没有 Hook acknowledgment，可能假
+  成功后整次 session 无记录。第二项 High：read-only/ignore config 不能关闭 Luna 的 shell、web、apps、
+  subagent 等默认工具，不可信事件中的 prompt injection 仍可能读取工作区或环境秘密。
+- Disposition: 两项均接受。activation 改为唯一 nonce handshake：PreToolUse Hook 必须写可信
+  `run_id/session_id/cwd/nonce` acknowledgment，CLI 验证后才报告 active；未 trust/禁用时显式失败并
+  告警但不阻断建模。Luna 改用空临时 cwd、stdin prompt、显式环境清理，并关闭 shell/unified exec、
+  web、apps、multi-agent、goals/memory/browser/computer/image/plugin 等非必要工具；增加真实 Hook
+  trust smoke 与恶意注入隔离测试。
+- Evidence: reviewer 回报；本机 manual “Review and trust hooks”；`codex exec --help`；
+  `codex features list` 显示 apps/multi_agent/shell_tool/unified_exec 等默认 enabled。
+- Outcome/next step: 修订设计和测试计划后由同一独立 reviewer Round 2 复审；PASS 前不进入开发。
+
+### 2026-07-18T13:20:00+08:00 — Harness plan review Round 2 — plan_reviewer and main agent
+
+- Context: 同一独立 reviewer 复核 Round 1 两项 High 的设计和测试闭环；reviewer 只读、未修改文件。
+- Action/decision: Verdict `PASS`，Critical=0、High=0。Hook trust + activation nonce acknowledgment +
+  CLI fail-closed + 真实 Hook smoke 已关闭假激活；空临时 cwd + stdin + 受限环境 + tool-less feature
+  配置 + 真实恶意注入 smoke 已关闭 Luna 读取仓库/环境秘密风险。
+- Evidence: design `15.2`、`15.5`、`16.2`；shared test plan H1/H4；本机 CLI 接受全部显式 feature
+  disable 参数。极小环境探针因缺少网络/代理环境超时，冻结设计因此只保留认证、网络/proxy/CA/locale
+  所需项并按业务秘密 denylist 清理，不放宽工具隔离。
+- Outcome/next step: Harness 增补设计和共享测试合同冻结，进入 `requirement_developer` 实现；开发者
+  不得修改本交付记录或提交代码。
+
+### 2026-07-18T13:45:00+08:00 — Harness independent test Cycle 1 — requirement_tester and main agent
+
+- Stable state: developer `DEVELOPMENT_READY`；新增 repo-local Hook runner/Schema/tests/runbook、
+  retrospective 目录和 `ontology-builder` 可选接入；未改 backend/frontend，未提交。
+- Verification: 既有 Harness tests `16 passed`，Ruff check、Skill quick validate/structural validator、
+  registry eval `7 + 7`、diff check 通过。真实 `gpt-5.6-luna` 恶意注入隔离 PASS：空 cwd、严格工具
+  禁用、Schema 输出成功，无 tool marker，唯一假环境/仓库秘密零泄露且 fixture 已清理。subagent API
+  无交互 `/hooks` trust 能力，tester 未使用 bypass；真实 trust smoke 保留为操作者启用门禁。
+- Findings: Verdict `FAIL`，Critical=0、High=2。其一，MCP transport wrapper `isError=false` 但内部
+  `success=false/status=failed` 时 `tool_succeeded()` 误判成功，可错误 finalize 或推进 checkpoint。
+  其二，completed/cancelled 已发布或 `finalization_pending` 后仍接受 ordinary Stop，追加新事件使游标
+  和 tracked retrospective 过期。另有 Ruff format check 在 tester 工具链中报告两文件需格式化。
+- Disposition: 两项 High 均接受，退回 developer。业务成功判断必须解析有界结构化 MCP content 并在
+  terminal/phase authority 不明确时 fail closed；一旦 `terminal_state` 已设置，lifecycle Hook 不再追加
+  建模事件，`finalization_pending` 后续 Hook 至多重试最早 pending 一次，repair 仍为 CLI。补精确回归
+  测试并统一 Ruff format 后由同一 tester 复测。
+- GitNexus: 修改前对 `tool_succeeded`、`active_run` 运行 upstream impact；因 `.codex` 新文件尚未进入
+  index，均返回 target not found/risk UNKNOWN。已知直接调用面限定为 `handle_hook` 与 Harness tests，
+  不把 UNKNOWN 误报成无影响。
+- Outcome/next step: 禁止提交；等待 narrow fix 的新 `DEVELOPMENT_READY` 后执行独立 Cycle 2。
+
+### 2026-07-18T14:10:00+08:00 — Harness independent test Cycle 2/3 and final PASS — requirement_tester and main agent
+
+- Cycle 2 fix/retest: developer 修复内层 MCP business failure、ambiguous authority 和 terminal 后追加
+  事件；Harness tests 从 16 增至 20。tester 的精确 High 回归与相邻 success/ambiguous/mixed/cancel/
+  pending/repair 边界均通过，但 backend-pinned Ruff format-check 仍失败，因此未放行。
+- Cycle 3: developer 只使用仓库 pinned Ruff 机械格式化两个 Python 文件。tester 再次独立确认
+  20/20 tests、Ruff check、`2 files already formatted`、Skill validator 9 refs/34 MCP dependencies、
+  两组 eval 7/7、quick validate 和 diff check 全部通过；published terminal 不再变化，pending terminal
+  每 Hook 至多一次 retry、零追加、零提前发布，CLI repair 幂等发布。
+- Security evidence: 真实 `gpt-5.6-luna`/medium 在 strict config、ephemeral、空 cwd、read-only、忽略
+  config/rules、禁用 Hooks/web/全部非必要工具下处理恶意 event，exit 0 且 Schema-valid；无 tool-call
+  marker，唯一假环境/仓库秘密零泄露，fixture/temp/pycache 已清理。
+- Verdict: 独立 Harness Test Round 1 最终 `PASS`，Critical=0、High=0；完整 Cycle 1 FAIL → Cycle 2
+  format gate → Cycle 3 PASS 已追加到唯一 shared test plan。
+- Residual gate: collaboration API 无法交互执行 `/hooks`，未使用 bypass。首次实际建模在声称记录前，
+  操作者仍必须 trust 当前精确 Hook hash，并以 activation acknowledgment 完成真实 smoke；未 trust 时
+  Harness 明确 fail-closed 告警且平台建模继续。
+- Requirement status: repo-local Harness 增补已实现并独立测试通过；R1.1-002 总体仍按需求文档保持
+  `未实现`，因为既有 Dify 结果的用户业务价值确认尚未完成，不能用本地观测能力 PASS 替代该门禁。
+- Outcome/next step: 同步 `docs/requirements-v1.1.md` 的 repo-local/非发布边界，执行最终 scope/
+  GitNexus detect_changes/测试检查，并只提交本需求相关文件，排除用户已有 AGENTS/CLAUDE 改动。
+
+### 2026-07-18T14:20:00+08:00 — Harness final verification and commit scope — main agent
+
+- Final gates: Harness unittest `20 passed`；backend-pinned Ruff check/format-check 通过；Hook config 与
+  summary Schema JSON parse 通过；Skill quick validate、9 references/34 MCP dependencies structural
+  validator、两组 registry eval `7/7` 和 `git diff --check` 全部通过。使用
+  `PYTHONDONTWRITEBYTECODE=1` 复验后无 `__pycache__`。
+- Runtime boundary: 本轮没有 backend/frontend、migration、依赖或服务配置变更，因此不触发 backend
+  全量 pytest、frontend build/Playwright、systemd restart 和 endpoint health；这些门禁不被声称执行。
+- Scope: 精确暂存 11 个 Harness/Skill/requirement/design/test/delivery 文件；`AGENTS.md`、`CLAUDE.md`
+  的 GitNexus 索引计数更新保持未暂存，不进入本提交。
+- GitNexus: staged `detect_changes` 返回 11 files、22 indexed sections、risk `low`、0 affected process。
+  `compare main` 返回 205 files、300 processes、`critical`，来源是当前长期功能分支相对 main 的累计
+  既有差异，不是本次 Harness 暂存集；以 staged 结果作为本提交 blast radius，不能把 branch-wide
+  critical 静默归因于 Harness，也不能据此扩大本轮测试范围。
+- Outcome/next step: 再次暂存本条追加记录并重跑 staged detect/diff check；若范围保持一致，创建短
+  imperative commit。首次真实使用仍需操作者 `/hooks` trust + activation smoke。

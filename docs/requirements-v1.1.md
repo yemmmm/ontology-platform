@@ -298,6 +298,10 @@ Session 时，应能够据此识别已完成工作、已确认问题、当前产
   JSON/Markdown 导出；不要求新增复杂可视化工作台，后续是否接入 R-107 由实际使用决定。
 - 平台不解析业务资料、不判断本体质量、不自动生成问题或下一步，也不托管 Agent Runtime。
 - 只有主 Agent 可以执行需要 Lease 的正式写入；子 Agent 产物和执行事件本身不授予写权限。
+- 当前仓库可使用 repo-local Codex Harness 记录每个主 session 的增量建模复盘，用于本地测试和后续
+  优化分析；Harness 不作为平台 API、Plugin 或已发布 `ontology-builder` Skill 的运行依赖。raw 事件
+  和游标仅保存在 gitignored workspace，只有 completed/cancelled 且已完整总结、脱敏的复盘进入
+  `docs/modeling-retrospectives/`；首次使用前必须显式 trust 当前项目 Hook。
 
 ### 验收标准
 
