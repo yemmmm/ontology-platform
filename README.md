@@ -148,7 +148,7 @@ mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
 ln -sfn "$PWD/skills/ontology-builder" "${CODEX_HOME:-$HOME/.codex}/skills/ontology-builder"
 ```
 
-按 [MCP 文档](docs/mcp.md) 配置并重启 Codex 后调用 `$ontology-builder`。Skill 使用 Build
+按 [MCP 文档](docs/reference/mcp.md) 配置并重启 Codex 后调用 `$ontology-builder`。Skill 使用 Build
 Context、Build Session、Evidence Reference、Modeling Batch、Context Query 和 lineage；不会调用已
 删除的文件上传、Proposal/Review/Publish 或 Catalog/Connector 工具。
 
@@ -166,10 +166,10 @@ CI 会校验生成清单、关键文档现状和 ontology-builder 的 registry �
 
 ## Documentation
 
-- [HTTP API](docs/api.md)
-- [MCP Tools](docs/mcp.md)
-- [UI](docs/ui.md)
-- [Architecture](docs/architecture.md)
-- [Platform Guide](docs/platform-guide.md)
-- [Glossary](docs/glossary.md)
-- [v1.0 requirements](docs/requirements-v1.0.md)
+- [HTTP API](docs/reference/api.md)
+- [MCP Tools](docs/reference/mcp.md)
+- [UI](docs/guides/ui.md)
+- [Architecture](docs/architecture/overview.md)
+- [Platform Guide](docs/guides/platform-guide.md)
+- [Glossary](docs/reference/glossary.md)
+- [v1.0 requirements](docs/requirements/requirements-v1.0.md)

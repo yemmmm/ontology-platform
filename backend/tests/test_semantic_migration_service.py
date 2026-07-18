@@ -1,6 +1,6 @@
 """Phase 7 SemanticMigrationService unit tests.
 
-Covers the test-plan items from docs/semantic/phase7-canonical-rdf-dataset-migration.md
+Covers the test-plan items from docs/architecture/semantic/phase7-canonical-rdf-dataset-migration.md
 that are exercisable without a live Oxigraph or Postgres instance:
 
   * Phase 2 IRI mapping is reused by migration output (item 2)

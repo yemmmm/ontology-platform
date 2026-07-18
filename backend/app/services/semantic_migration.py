@@ -2,7 +2,7 @@
 
 Coordinates the preflight → dry-run → shadow backfill → dual-write compare →
 RDF-primary cutover → legacy deprecation flow described in
-``docs/semantic/phase7-canonical-rdf-dataset-migration.md``.
+``docs/architecture/semantic/phase7-canonical-rdf-dataset-migration.md``.
 
 The service is environment-agnostic: it operates against any combination of
 existing product tables and RDF-derived projections through a parity comparator

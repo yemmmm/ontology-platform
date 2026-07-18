@@ -11,8 +11,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
-API_DOC = REPO_ROOT / "docs" / "api.md"
-MCP_DOC = REPO_ROOT / "docs" / "mcp.md"
+API_DOC = REPO_ROOT / "docs" / "reference" / "api.md"
+MCP_DOC = REPO_ROOT / "docs" / "reference" / "mcp.md"
 
 HTTP_BEGIN = "<!-- BEGIN GENERATED HTTP API INVENTORY -->"
 HTTP_END = "<!-- END GENERATED HTTP API INVENTORY -->"

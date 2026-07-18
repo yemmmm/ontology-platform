@@ -13,8 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "sync-interface-docs.py"
-API_DOC = ROOT / "docs" / "api.md"
-MCP_DOC = ROOT / "docs" / "mcp.md"
+API_DOC = ROOT / "docs" / "reference" / "api.md"
+MCP_DOC = ROOT / "docs" / "reference" / "mcp.md"
 
 
 def _module():
@@ -135,7 +135,7 @@ def test_explicit_http_references_exist_in_openapi() -> None:
     module = _module()
     operations = {(item["method"], item["path"]) for item in module.enumerate_http_operations()}
     pattern = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE) (/api/[^\s`),]+)")
-    for path in (ROOT / "README.md", API_DOC, ROOT / "docs" / "platform-guide.md"):
+    for path in (ROOT / "README.md", API_DOC, ROOT / "docs" / "guides" / "platform-guide.md"):
         for method, raw_path in pattern.findall(path.read_text(encoding="utf-8")):
             public_path = raw_path.split("?", 1)[0].rstrip(".；。")
             assert (method, public_path) in operations, (
@@ -146,7 +146,9 @@ def test_explicit_http_references_exist_in_openapi() -> None:
 def test_configuration_and_requirement_statuses_are_truthful() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     env = (ROOT / ".env.example").read_text(encoding="utf-8")
-    requirements = (ROOT / "docs" / "requirements-v1.0.md").read_text(encoding="utf-8")
+    requirements = (ROOT / "docs" / "requirements" / "requirements-v1.0.md").read_text(
+        encoding="utf-8"
+    )
     assert "ONTOLOGY_MCP_API_KEY" in readme
     assert "backend/.local/ontology-platform-bootstrap.json" in readme
     assert "ONTOLOGY_UI_ORIGINS" in env

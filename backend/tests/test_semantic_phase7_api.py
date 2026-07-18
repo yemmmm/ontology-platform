@@ -1,6 +1,6 @@
 """Phase 7 API integration tests.
 
-Covers the items in docs/semantic/phase7-canonical-rdf-dataset-migration.md that
+Covers the items in docs/architecture/semantic/phase7-canonical-rdf-dataset-migration.md that
 are best validated end-to-end through the HTTP surface:
 
   * preflight endpoint returns readiness summary

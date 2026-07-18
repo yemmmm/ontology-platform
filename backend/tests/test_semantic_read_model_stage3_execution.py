@@ -2,7 +2,7 @@
 
 Validates that the new templates route SPARQL to the correct named
 graphs and produce the envelope shape defined in
-docs/superpowers/specs/2026-07-06-semantic-stage3-publish-design.md §4.
+docs/delivery/designs/2026-07-06-semantic-stage3-publish-design.md §4.
 
 Reuses the ``conftest_stage3`` fixtures (in-memory SQLite + FakeStore with
 per-named-graph triple storage so the delta composer can diff real triples).
