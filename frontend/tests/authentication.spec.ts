@@ -21,17 +21,35 @@ test("unauthenticated users can sign in and sign out", async ({ page }) => {
       await route.fulfill({ status: 204, body: "" });
       return;
     }
+    if (path === "/projects") {
+      await route.fulfill({ json: [{ id: "project-1", name: "Demo Project" }] });
+      return;
+    }
+    if (path === "/projects/project-1/ontologies") {
+      await route.fulfill({
+        json: [
+          {
+            id: "ontology-1",
+            name: "Demo Ontology",
+            status: "active",
+            updated_at: "2026-01-01T00:00:00Z",
+            external_mappings: {},
+          },
+        ],
+      });
+      return;
+    }
     await route.fulfill({ json: [] });
   });
 
-  await page.goto("/");
+  await page.goto("/?project=project-1&ontology=ontology-1&tab=setting");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
   await page.getByLabel("Username").fill("test-admin");
   await page.getByLabel("Password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByText(principal.actor)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });

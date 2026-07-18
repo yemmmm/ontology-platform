@@ -36,6 +36,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const authContext = useMemo<AuthContextValue>(
+    () => ({ principal: principal!, logout }),
+    [principal, logout],
+  );
 
   const loadPrincipal = useCallback(async () => {
     try {
@@ -99,7 +103,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
-  const authContext = useMemo(() => ({ principal, logout }), [principal, logout]);
 
   return (
     <AuthContext.Provider value={authContext}>
