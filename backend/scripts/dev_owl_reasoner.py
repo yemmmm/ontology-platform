@@ -13,8 +13,8 @@ import json
 import sys
 from pathlib import Path
 
-from rdflib import Graph
-from rdflib.namespace import RDF, RDFS
+from rdflib import Graph, Literal
+from rdflib.namespace import RDF, RDFS, XSD
 from rdflib.term import Node
 
 
@@ -63,9 +63,11 @@ def _serialize_inferred_turtle(inferred_graph: Graph) -> str:
         return ""
     inferred_graph.bind("rdf", RDF)
     inferred_graph.bind("rdfs", RDFS)
+    inferred_graph.bind("xsd", XSD)
     lines = [
         "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .",
         "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .",
+        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
         "",
     ]
     for subject, predicate, obj in sorted(
@@ -156,7 +158,7 @@ def _infer_limited_rdfs(graph: Graph) -> tuple[list[dict[str, object]], str]:
                         "rule": "rdfs:domain",
                     }
                 )
-        if predicate in ranges:
+        if predicate in ranges and not isinstance(obj, Literal):
             inferred_type = (obj, RDF.type, ranges[predicate])
             if inferred_type not in graph and inferred_type not in inferred_graph:
                 inferred_graph.add(inferred_type)

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from rdflib import Graph, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
 from app.services.owl_reasoner import CommandOwlReasonerRunner, ReasonerInputDocument
@@ -90,3 +90,38 @@ def test_dev_owl_reasoner_command_infers_rdfs_subclass_types() -> None:
         URIRef("http://example.test/b"),
     ) in inferred_graph
     assert result.metadata["engine_name"] == "development_stub"
+
+
+def test_dev_owl_reasoner_serializes_typed_literal_entailments() -> None:
+    command = Path(__file__).parents[1] / "scripts" / "dev_owl_reasoner.py"
+    runner = CommandOwlReasonerRunner(str(command))
+
+    result = runner.run(
+        [
+            ReasonerInputDocument(
+                graph_iri="http://ontology-platform.local/semantic/graph/typed-literal-test",
+                content="""
+                    @prefix ex: <http://example.test/> .
+                    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                    @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+                    ex:a ex:score "1"^^xsd:integer .
+                    ex:score rdfs:subPropertyOf ex:value ;
+                        rdfs:range ex:IntegerValue .
+                """,
+            )
+        ],
+        tasks=["consistency", "classification"],
+        timeout_seconds=5,
+    )
+
+    assert result.consistent is True
+    assert result.inferred_rdf is not None
+    inferred_graph = Graph()
+    inferred_graph.parse(data=result.inferred_rdf, format="turtle")
+    assert (
+        URIRef("http://example.test/a"),
+        URIRef("http://example.test/value"),
+        Literal(1),
+    ) in inferred_graph
+    assert not any(item["kind"] == "rdfs_range_type" for item in result.entailments)

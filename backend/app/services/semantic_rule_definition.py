@@ -183,6 +183,8 @@ class SemanticRuleDefinitionService:
         rule_iri: str | None = None,
         limit: int = 100,
         project_id: str | None = None,
+        ontology_id: str | None = None,
+        current_only: bool = False,
     ) -> list[SemanticRuleDefinitionModel]:
         bounded_limit = max(1, min(limit, 500))
         statement = select(SemanticRuleDefinitionModel).order_by(
@@ -194,14 +196,22 @@ class SemanticRuleDefinitionService:
             statement = statement.where(SemanticRuleDefinitionModel.language == language)
         if rule_iri:
             statement = statement.where(SemanticRuleDefinitionModel.rule_iri == rule_iri)
+        if project_id is not None or ontology_id is not None or current_only:
+            statement = statement.join(
+                SemanticRuleModel,
+                SemanticRuleModel.id == SemanticRuleDefinitionModel.semantic_rule_id,
+            )
         if project_id is not None:
-            statement = (
-                statement.join(
-                    SemanticRuleModel,
-                    SemanticRuleModel.id == SemanticRuleDefinitionModel.semantic_rule_id,
-                )
-                .join(OntologyModel, OntologyModel.id == SemanticRuleModel.ontology_id)
-                .where(OntologyModel.project_id == project_id)
+            statement = statement.join(
+                OntologyModel, OntologyModel.id == SemanticRuleModel.ontology_id
+            ).where(OntologyModel.project_id == project_id)
+        if ontology_id is not None:
+            statement = statement.where(SemanticRuleModel.ontology_id == ontology_id)
+        if current_only:
+            statement = statement.where(
+                SemanticRuleModel.current_definition_id == SemanticRuleDefinitionModel.id,
+                SemanticRuleModel.status == "active",
+                SemanticRuleDefinitionModel.status == "active",
             )
         return list(self.session.scalars(statement.limit(bounded_limit)))
 

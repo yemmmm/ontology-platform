@@ -95,6 +95,14 @@ const entityListEnvelope = {
       class_iri: "http://x/Class1",
       class_label: "Class 1",
     },
+    {
+      iri: "http://x/Entity3",
+      label: "Rule Classified Entity",
+      source_graph_iri: "http://x/rule",
+      assertion_kind: "rule_derived",
+      class_iri: "http://x/RuleClass",
+      class_label: "Rule Class",
+    },
   ],
 };
 const entityRelationsEnvelope = {
@@ -195,6 +203,23 @@ const factEnvelopeEmpty = {
   ...factEnvelopeAsserted,
   items: [],
 };
+const factEnvelopeRule = {
+  ...factEnvelopeAsserted,
+  include: "asserted-plus-rules",
+  items: [
+    {
+      ...factRow("rule_derived"),
+      id: "fact-rule-type-1",
+      fact_id: "fact-rule-type-1",
+      subject_label: "Rule Classified Entity",
+      predicate_iri: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+      predicate_label: "type",
+      object_value: "http://x/RuleClass",
+      object_is_iri: true,
+      object_label: "Rule Class",
+    },
+  ],
+};
 
 const dataSource = {
   id: "src-1",
@@ -292,8 +317,12 @@ async function mockCommon(page: Page) {
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) {
       body = relationTypeEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) {
-      readModelRequests.push({ model: "entity-list", include: url.searchParams.get("include") });
-      body = entityListEnvelope;
+      const include = url.searchParams.get("include");
+      readModelRequests.push({ model: "entity-list", include });
+      body = {
+        ...entityListEnvelope,
+        items: entityListEnvelope.items.filter((row) => entityVisibleInInclude(row.assertion_kind, include)),
+      };
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) {
       const include = url.searchParams.get("include");
       readModelRequests.push({ model: "entity-relations", include });
@@ -309,7 +338,11 @@ async function mockCommon(page: Page) {
       body = mappingListEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`) {
       const kind = url.searchParams.get("kind");
-      body = kind === "asserted" ? factEnvelopeAsserted : factEnvelopeEmpty;
+      body = kind === "asserted"
+        ? factEnvelopeAsserted
+        : kind === "rule_derived"
+          ? factEnvelopeRule
+          : factEnvelopeEmpty;
     }
 
     else if (path === "/health/dependencies") body = { postgres: { status: "ok" } };
@@ -329,6 +362,14 @@ function relationVisibleInInclude(assertionKind: string, include: string | null)
     return include === "asserted-plus-rules" || include === "full-working-view";
   }
   return false;
+}
+
+function entityVisibleInInclude(assertionKind: string, include: string | null) {
+  if (assertionKind === "asserted") return true;
+  if (assertionKind === "rule_derived") {
+    return include === "asserted-plus-rules" || include === "full-working-view";
+  }
+  return include === "asserted-plus-reasoning" || include === "full-working-view";
 }
 
 test("ClassesPage graph-derived path renders class topology", async ({ page }) => {
@@ -417,7 +458,11 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
     page.locator("section.entitiesPage.stage2").getByText("Rule graph", { exact: true }).click(),
   ]);
   await expect(page.getByText("Facts plus currently available rule results.")).toBeVisible();
-  await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 3 nodes · 2 edges/)).toBeVisible();
+  await expect(page.locator('button[aria-label="Select node Rule Classified Entity"]')).toHaveAttribute(
+    "data-node-kind",
+    "rule_derived",
+  );
   await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-kind", "rule_derived");
   await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-stale", "true");
   await expect(page.locator("section.entitiesPage.stage2").getByText("Focus")).not.toBeVisible();
@@ -438,7 +483,7 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
     )),
     page.locator("section.entitiesPage.stage2").getByText("Complete view", { exact: true }).click(),
   ]);
-  await expect(page.getByText(/Entity force graph · 2 nodes · 3 edges/)).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 3 nodes · 3 edges/)).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByText("Focus", { exact: true })).toBeVisible();
   await page.locator("section.entitiesPage.stage2").getByText("Reasoning", { exact: true }).click();
   await expect(page.locator("section.entitiesPage.stage2").getByRole("radio", { name: "Reasoning", exact: true })).toBeChecked();
@@ -494,4 +539,7 @@ test("FactAuditPage graph-derived path renders asserted rows and kind tabs", asy
   await expect(page.locator("section.factAuditPage.stage2").getByText("Asserted", { exact: true })).toBeVisible();
   await expect(page.locator("section.factAuditPage.stage2").getByText("Inferred", { exact: true })).toBeVisible();
   await expect(page.locator("section.factAuditPage.stage2").getByText("Rule-derived", { exact: true })).toBeVisible();
+  await page.locator("section.factAuditPage.stage2").getByText("Rule-derived", { exact: true }).click();
+  await expect(page.getByText("Rule Classified Entity").first()).toBeVisible();
+  await expect(page.getByText("Rule Class").first()).toBeVisible();
 });

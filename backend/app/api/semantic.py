@@ -810,6 +810,8 @@ def get_reasoning_run(
 def list_rule_definitions(
     language: Annotated[str | None, Query()] = None,
     rule_iri: Annotated[str | None, Query()] = None,
+    ontology_id: Annotated[str | None, Query(min_length=1, max_length=36)] = None,
+    current_only: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
@@ -821,6 +823,8 @@ def list_rule_definitions(
         rule_iri=rule_iri,
         limit=limit,
         project_id=principal.project_id,
+        ontology_id=ontology_id,
+        current_only=current_only,
     )
     return SemanticRuleDefinitionListResponse(
         rules=[_rule_definition_read(rule, session) for rule in rules]

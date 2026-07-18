@@ -1,5 +1,3 @@
-import pytest
-
 from app.services.semantic_sparql_templates import get_template, list_templates
 
 
@@ -145,3 +143,11 @@ def test_fact_audit_queue_template_needs_reasoning_and_rules():
     template = get_template("fact-audit-queue")
     assert template.needs_reasoning is True
     assert template.needs_rules is True
+
+
+def test_rule_derived_fact_template_keeps_type_classifications():
+    template = get_template("fact-audit-queue-with-types")
+
+    assert "?subject ?predicate ?object" in template.body
+    assert "FILTER(?predicate != rdf:type)" not in template.body
+    assert template.assertion_kind == "rule_derived"

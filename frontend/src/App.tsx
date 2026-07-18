@@ -955,6 +955,7 @@ function WorkspaceContent(props: {
   if (props.tab === "rules") {
     return (
       <RulesPage
+        ontologyId={props.ontology.id}
         readOnly={readOnly}
         request={governedRequest}
       />

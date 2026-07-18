@@ -1237,7 +1237,9 @@ class SemanticReadModelService:
                     ),
                 }
             ]
-        rows = self._fetch_fact_rows([rule_iri], template_name="fact-audit-queue")
+        rows = self._fetch_fact_rows(
+            [rule_iri], template_name="fact-audit-queue-with-types"
+        )
         stale = self._is_stale(rule_iri, scope)
         stale_reason = self._staleness_reason(rule_iri, scope)
         run_id = (

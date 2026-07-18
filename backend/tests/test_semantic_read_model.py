@@ -45,7 +45,7 @@ def _resolution(
     members=None,
     derived_state=None,
 ):
-    from app.services.semantic_read_scope import ScopeMember, ScopeResolution
+    from app.services.semantic_read_scope import ScopeResolution
 
     # Handle reasoning/rule being either str (graph IRI) or dict (derived state).
     reasoning_iri = reasoning if isinstance(reasoning, str) else None
@@ -501,6 +501,8 @@ def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
         include="asserted-plus-rules",
     )
     assert store.last_graph_iris == [rule_iri]
+    assert "template: fact-audit-queue-with-types" in (store.last_query or "")
+    assert "FILTER(?predicate != rdf:type)" not in (store.last_query or "")
     row = envelope["items"][0]
     assert row["assertion_kind"] == "rule_derived"
     assert row["derived_from"]["run_id"] == "run-9"

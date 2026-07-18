@@ -332,15 +332,28 @@ export function listRuleRuns(
 
 export function listRuleDefinitions(
   request: SemanticRequester,
-  filters: { language?: string; ruleIri?: string; limit?: number } = {},
+  filters: {
+    language?: string;
+    ruleIri?: string;
+    ontologyId?: string;
+    currentOnly?: boolean;
+    limit?: number;
+  } = {},
 ) {
-  const path = withParams(`${SEMANTIC_BASE}/rule-definitions`, filters);
+  const path = withParams(`${SEMANTIC_BASE}/rule-definitions`, {
+    language: filters.language,
+    rule_iri: filters.ruleIri,
+    ontology_id: filters.ontologyId,
+    current_only: filters.currentOnly,
+    limit: filters.limit,
+  });
   return request<SemanticRuleDefinitionListResponse>(path);
 }
 
 export function createRuleDefinition(
   request: SemanticRequester,
   payload: {
+    ontologyId: string;
     ruleIri: string;
     name: string;
     language: "sparql_construct" | "platform_dsl" | "workflow_state_machine";
@@ -358,6 +371,7 @@ export function createRuleDefinition(
   return request<SemanticRuleDefinitionRead>(`${SEMANTIC_BASE}/rule-definitions`, {
     method: "POST",
     body: JSON.stringify({
+      ontology_id: payload.ontologyId,
       rule_iri: payload.ruleIri,
       name: payload.name,
       language: payload.language,

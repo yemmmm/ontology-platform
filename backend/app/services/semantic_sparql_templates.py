@@ -474,6 +474,35 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
+    "fact-audit-queue-with-types": ReadModelTemplate(
+        name="fact-audit-queue-with-types",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_data",),
+        needs_reasoning=True,
+        needs_rules=True,
+        default_limit=500,
+        assertion_kind="rule_derived",
+        body="""# template: fact-audit-queue-with-types
+        # Rule results may classify existing entities exclusively through
+        # rdf:type. Keep those classifications visible in the rule-derived
+        # fact view while the asserted/inferred queue retains its historical
+        # filtering contract.
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
+                        ?object ?object_label ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?subject ?predicate ?object .
+            FILTER(?predicate != rdfs:label)
+            OPTIONAL { ?subject rdfs:label ?subject_label . }
+            OPTIONAL { ?predicate rdfs:label ?predicate_label . }
+            OPTIONAL { ?object rdfs:label ?object_label . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """,
+    ),
     "publication-readiness": ReadModelTemplate(
         name="publication-readiness",
         projection_version="1",

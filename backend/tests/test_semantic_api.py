@@ -515,6 +515,59 @@ def test_list_rule_definitions_returns_immediately_active_rules(in_memory_sessio
     assert {rule["status"] for rule in body["rules"]} == {"active"}
 
 
+def test_list_rule_definitions_filters_to_current_ontology_versions(
+    in_memory_session,
+) -> None:
+    client = _client(FakeStore(), in_memory_session)
+    other_ontology_id = "semantic-api-other-ontology"
+    in_memory_session.add(
+        OntologyModel(
+            id=other_ontology_id,
+            project_id=TEST_PROJECT_ID,
+            name="Other ontology",
+            description=None,
+        )
+    )
+    in_memory_session.commit()
+
+    def create_rule(ontology_id: str, predicate: str):
+        return client.post(
+            "/api/semantic/rule-definitions",
+            json={
+                "ontology_id": ontology_id,
+                "rule_iri": f"{PREFIX}rule/scoped",
+                "name": f"scoped-{predicate}",
+                "language": "platform_dsl",
+                "body": {
+                    "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
+                    "then": [
+                        {
+                            "s": "?s",
+                            "p": f"<http://example.test/{predicate}>",
+                            "o": "?o",
+                        }
+                    ],
+                },
+                "input_roles": ["asserted_data"],
+            },
+        )
+
+    first = create_rule(TEST_ONTOLOGY_ID, "derived-v1")
+    current = create_rule(TEST_ONTOLOGY_ID, "derived-v2")
+    other = create_rule(other_ontology_id, "derived-other")
+    assert first.status_code == current.status_code == other.status_code == 200
+
+    response = client.get(
+        "/api/semantic/rule-definitions",
+        params={"ontology_id": TEST_ONTOLOGY_ID, "current_only": "true"},
+    )
+
+    assert response.status_code == 200
+    rules = response.json()["rules"]
+    assert [rule["id"] for rule in rules] == [current.json()["id"]]
+    assert rules[0]["ontology_id"] == TEST_ONTOLOGY_ID
+
+
 def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) -> None:
     client = _client(FakeStore(), in_memory_session)
 

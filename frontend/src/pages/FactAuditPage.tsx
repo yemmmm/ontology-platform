@@ -356,18 +356,35 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
       });
       const reasoningId = (reasoningRun as { run_id?: string }).run_id;
       const ruleId = (ruleRun as { run_id?: string }).run_id;
-      const polled: Array<{ label: string; status: string; error: string | null }> = [];
+      const polled: Array<{
+        label: string;
+        runId: string;
+        status: string;
+        error: string | null;
+      }> = [];
       if (reasoningId) {
-        polled.push({ label: "reasoning", ...(await pollRun(reasoningId, true)) });
+        polled.push({
+          label: "reasoning",
+          runId: reasoningId,
+          ...(await pollRun(reasoningId, true)),
+        });
       }
       if (ruleId) {
-        polled.push({ label: "rule", ...(await pollRun(ruleId, false)) });
+        polled.push({
+          label: "rule",
+          runId: ruleId,
+          ...(await pollRun(ruleId, false)),
+        });
       }
       const failures = polled.filter((p) => p.status === "failed" || p.status === "error" || p.status === "timeout");
       if (failures.length > 0) {
         setError(
           t("Some runs failed: {summary}", {
-            summary: failures.map((f) => `${f.label}=${f.status}`).join(", "),
+            summary: failures
+              .map((failure) => (
+                `${failure.label}=${failure.status} (${failure.runId})${failure.error ? `: ${failure.error}` : ""}`
+              ))
+              .join(", "),
           }),
         );
       } else {

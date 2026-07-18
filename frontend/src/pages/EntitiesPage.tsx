@@ -230,6 +230,7 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
       id: row.iri,
       label: row.label ?? compactIri(row.iri),
       group: row.class_label ?? (row.class_iri ? compactIri(row.class_iri) : t("Unclassified")),
+      kind: normalizeAssertionKind(row.assertion_kind),
     }));
     for (const row of entities?.items ?? []) entityMap.set(row.iri, row);
     const nodeIds = new Set(nodes.map((node) => node.id));

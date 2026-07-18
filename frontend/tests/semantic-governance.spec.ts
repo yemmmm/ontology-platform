@@ -244,6 +244,9 @@ async function mockApi(page: Page) {
       }],
     };
     else if (path === `/semantic/graph-sets/${graphSet.id}/missing-evidence`) body = missingEvidenceSummary;
+    else if (method === "POST" && path === "/semantic/rule-definitions") {
+      body = { ...ruleDefinition, ...route.request().postDataJSON() };
+    }
     else if (path === "/semantic/rule-definitions") body = { rules: [ruleDefinition] };
     else if (path === "/semantic/edits/audits") body = [auditRecord];
     else if (path === "/semantic/validation-runs") body = {
@@ -324,4 +327,31 @@ test("graph set detail shows members, pointers, and triggers reasoning run", asy
   );
   await page.getByRole("button", { name: "Run reasoning" }).click();
   await runRequest;
+});
+
+test("rules page scopes listing and creation to the active ontology", async ({ page }) => {
+  await mockApi(page);
+  const listRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname.endsWith("/semantic/rule-definitions") && request.method() === "GET";
+  });
+
+  await page.goto(
+    `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=rules`,
+  );
+
+  const listUrl = new URL((await listRequest).url());
+  expect(listUrl.searchParams.get("ontology_id")).toBe(ontology.id);
+  expect(listUrl.searchParams.get("current_only")).toBe("true");
+  await expect(page.getByLabel("rules-page").getByRole("heading", { name: "Rules" })).toBeVisible();
+
+  await page.getByRole("button", { name: "New rule" }).click();
+  const modal = page.getByRole("dialog", { name: "Create rule" });
+  await modal.getByLabel("Name").fill("Scoped rule");
+  const createRequest = page.waitForRequest(
+    (request) => request.url().includes("/semantic/rule-definitions") && request.method() === "POST",
+  );
+  await modal.getByRole("button", { name: "Create rule" }).click();
+
+  expect((await createRequest).postDataJSON().ontology_id).toBe(ontology.id);
 });

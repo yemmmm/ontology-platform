@@ -14,6 +14,7 @@ import { prettyJson } from "../utils";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
 type RulesPageProps = {
+  ontologyId: string;
   readOnly: boolean;
   request: WorkbenchRequest;
 };
@@ -43,7 +44,7 @@ const EMPTY_FORM: RuleFormState = {
 
 const PAGE_SIZE = 10;
 
-export function RulesPage({ readOnly, request }: RulesPageProps) {
+export function RulesPage({ ontologyId, readOnly, request }: RulesPageProps) {
   const t = useT();
   const [rules, setRules] = useState<SemanticRuleDefinitionRead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -60,14 +61,18 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
     setLoading(true);
     setError("");
     try {
-      const result = await listRuleDefinitions(request, { limit: 500 });
+      const result = await listRuleDefinitions(request, {
+        ontologyId,
+        currentOnly: true,
+        limit: 500,
+      });
       setRules(result.rules);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
     }
-  }, [request]);
+  }, [ontologyId, request]);
 
   useEffect(() => {
     void load();
@@ -140,7 +145,10 @@ export function RulesPage({ readOnly, request }: RulesPageProps) {
     setSubmitting(true);
     setError("");
     try {
-      const created = await createRuleDefinition(request, parsed.payload);
+      const created = await createRuleDefinition(request, {
+        ...parsed.payload,
+        ontologyId,
+      });
       setCreating(false);
       setSelectedId(created.id);
       await load();
@@ -441,7 +449,7 @@ function RuleModal({
 
 function parseCreateForm(form: RuleFormState):
   | {
-      payload: Parameters<typeof createRuleDefinition>[1];
+      payload: Omit<Parameters<typeof createRuleDefinition>[1], "ontologyId">;
     }
   | { error: string } {
   if (!form.name.trim()) return { error: "Rule name is required" };

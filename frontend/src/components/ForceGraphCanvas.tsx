@@ -12,6 +12,7 @@ export type ForceGraphNode = {
   label: string;
   group?: string | null;
   tone?: string | null;
+  kind?: string | null;
 };
 
 export type ForceGraphEdge = {
@@ -271,6 +272,10 @@ function applyVisualState(
         ? new Set(["owl_inferred", "inferred"])
         : new Set(["rule_derived"]);
     const highlightedNodes = new Set<string>();
+    cy.nodes().forEach((node) => {
+      const kind = String(node.data("kind") || "").toLowerCase();
+      if (targetKinds.has(kind)) highlightedNodes.add(node.id());
+    });
     cy.edges().forEach((edge) => {
       const kind = String(edge.data("kind") || "").toLowerCase();
       if (targetKinds.has(kind)) {
@@ -421,6 +426,12 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
+    selector: 'node[kind = "rule_derived"].focus-highlighted',
+    style: {
+      "border-color": "#2f8f75",
+    },
+  },
+  {
     selector: "node.focus-dimmed",
     style: {
       opacity: 0.42,
@@ -521,6 +532,7 @@ export function ForceGraphCanvas({
           label: node.label,
           group,
           color: node.tone || pickColor(group, allGroups),
+          kind: normalizeEdgeKind(node.kind),
           degree: nodeDegree,
           baseSize: nodeBaseSize(nodeDegree, mean, std),
         },
@@ -677,6 +689,7 @@ export function ForceGraphCanvas({
               onSelectRef.current(node.id);
             }}
             aria-label={`Select node ${node.label}`}
+            data-node-kind={normalizeEdgeKind(node.kind)}
           >
             {node.label}
           </button>
