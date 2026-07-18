@@ -274,10 +274,17 @@ def decode_operations(graph: Graph, settings: Settings) -> list[dict[str, Any]]:
     vocab = operation_vocabulary(settings)
     operation_type = URIRef(vocab["type"])
     subjects = set(graph.subjects(RDF.type, operation_type))
+    operation_iri_prefix = f"{namespace_from_settings(settings).base_iri.rstrip('/')}/operation/"
     predicates = {
-        URIRef(value) for key, value in vocab.items() if key not in {"type", "id", "ontology"}
+        URIRef(value)
+        for key, value in vocab.items()
+        if key not in {"type", "id", "ontology", "status"}
     }
-    subjects.update(subject for subject, predicate, _obj in graph if predicate in predicates)
+    subjects.update(
+        subject
+        for subject, predicate, _obj in graph
+        if predicate in predicates or str(subject).startswith(operation_iri_prefix)
+    )
     result = []
     for subject in sorted(subjects, key=str):
         if (subject, RDF.type, operation_type) not in graph:

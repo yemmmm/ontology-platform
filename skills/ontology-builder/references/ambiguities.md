@@ -25,4 +25,4 @@ Stop for a focused clarification rather than guessing when any distinction chang
 
 The clarification should state both interpretations, supporting evidence, confidence, affected
 candidates, and which competency-question answers would differ. Record the decision in the next
-checkpoint and item rationale; do not fabricate a platform review queue.
+Pack/Matrix version, execution event, and item rationale; do not fabricate a platform review queue.

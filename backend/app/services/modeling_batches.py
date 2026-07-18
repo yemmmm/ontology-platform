@@ -368,6 +368,7 @@ class ModelingBatchService:
                 "actor": auth.actor,
                 "evidence": self._evidence_plan(attempt, batch, selected),
             }
+            findings = self._fingerprint_findings(attempt.id, findings)
             attempt.findings = findings
             attempt.groups = groups
             attempt.normalized_delta = normalized_delta
@@ -2215,6 +2216,23 @@ class ModelingBatchService:
             key = _hash({k: v for k, v in finding.items() if k != "message"})
             unique.setdefault(key, finding)
         return list(unique.values())
+
+    @staticmethod
+    def _fingerprint_findings(attempt_id: str, findings: list[dict[str, Any]]):
+        """Assign stable, item-disambiguating identities to persisted Attempt findings."""
+        fingerprinted = []
+        for ordinal, finding in enumerate(findings):
+            identity = {
+                "attempt_id": attempt_id,
+                "ordinal": ordinal,
+                "code": finding["code"],
+                "scope": finding["scope"],
+                "client_item_ids": sorted(finding.get("client_item_ids") or []),
+                "path": finding.get("path") or [],
+                "details": finding.get("details") or {},
+            }
+            fingerprinted.append({**finding, "finding_fingerprint": _hash(identity)})
+        return fingerprinted
 
     @staticmethod
     def _evidence_candidates(batch):

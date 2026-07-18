@@ -7,9 +7,9 @@ Round 1/2 的三个 High 均已接受并修订：README 支持安装的
 `skills/ontology-builder` 仍依赖已删除工具；CI 不能依赖本机 Codex 绝对路径；手写 eval trace
 不能替代隔离新上下文的 Skill forward test。Round 3 无剩余 Critical/High。
 
-本设计落实 `docs/requirements-v1.0.md` 的 R-011。用户已确认按完整范围交付，但文档只能描述
-当前真实能力：R-008 仍未实现，R-009 仍部分实现，R-010 仍未实现，不得把规划中的认证、查询诊断
-或 Dify 验收写成已可用功能。
+本设计落实 `docs/requirements-v1.0.md` 的 R-011。首次交付时，R-008 尚未实现；该事实只用于解释
+下文的历史问题、初始文档契约和测试记录。R-008 完成后的当前文档必须描述真实认证、scope 授权和
+Project 隔离边界；R-009 仍部分实现，R-010 仍未实现，不得把规划中的查询诊断或 Dify 验收写成已可用功能。
 
 R-011 采用“运行时注册表生成接口清单、人工文档解释契约、CI 检查两者同步”的边界：
 
@@ -19,7 +19,7 @@ R-011 采用“运行时注册表生成接口清单、人工文档解释契约�
 4. 自动化工具只维护带标记的清单，不生成业务解释，也不修改需求状态。
 5. CI 运行只读 `--check`；开发者显式运行 `--write` 才更新生成区块。
 
-## 2. 当前问题
+## 2. 首次交付时的问题（历史基线）
 
 2026-07-17 的运行时核对结果：
 
@@ -37,7 +37,7 @@ R-011 采用“运行时注册表生成接口清单、人工文档解释契约�
   也固化了这些旧协议。
 - 仓库没有 CI 工作流，接口变更后没有文档漂移门禁。
 
-## 3. 目标与非目标
+## 3. 首次交付的目标与非目标（历史范围）
 
 ### 3.1 目标
 
@@ -64,7 +64,7 @@ R-011 采用“运行时注册表生成接口清单、人工文档解释契约�
 
 ## 4. 文档契约
 
-### 4.1 README 与配置
+### 4.1 README 与配置（首次交付契约，已被 R-008 刷新）
 
 README 区分两种运行方式：
 
@@ -81,7 +81,7 @@ README 区分两种运行方式：
 `.env.example` 的 PostgreSQL host port 与一键启动默认值统一为 `5434`，避免首次创建
 `backend/.env` 后与 Docker Compose 暴露端口冲突。该变更只修正示例，不改变运行时代码。
 
-### 4.2 HTTP API 文档
+### 4.2 HTTP API 文档（首次交付契约，已被 R-008 刷新）
 
 重写 `docs/api.md`：
 
@@ -92,7 +92,7 @@ README 区分两种运行方式：
 - 每行来自 OpenAPI operation，包含 method、完整 `/api` path 和 summary。
 - 移除所有未注册旧接口及其示例，历史能力只能在历史需求/设计文档中查阅。
 
-### 4.3 MCP 文档
+### 4.3 MCP 文档（首次交付契约，已被 R-008 刷新）
 
 重写 `docs/mcp.md`：
 
@@ -111,8 +111,8 @@ README 区分两种运行方式：
 - `docs/ui.md`：修正默认 API base、依赖健康和 Agent Test 当前边界。
 - `docs/architecture.md`：把 PostgreSQL + RDF Dataset/Oxigraph 标为当前权威存储；Neo4j 只在
   明确的历史背景中出现，不能作为当前写入路径。
-- `docs/requirements-v1.0.md`：修正过期的“当前实现基线”行；R-008/R-009/R-010 状态保持不变；
-  R-011 只有在全部门禁通过后改为 `已实现`。
+- `docs/requirements-v1.0.md`：修正过期的“当前实现基线”行，并在首次交付完成后更新 R-011 状态；
+  R-008/R-009/R-010 的具体状态以权威需求当前条目为准。
 
 ### 4.5 ontology-builder Skill
 
@@ -204,7 +204,7 @@ CI 负责确定性结构/契约门禁；fresh-agent forward test 依赖协作 Ag
 
 ## 7. 验收标准
 
-1. README、`.env.example`、启动命令、端口和当前无认证事实一致。
+1. README、`.env.example`、启动命令、端口和当前认证边界一致。
 2. `docs/api.md` 生成清单与 115 个当前 HTTP 操作完全一致，且没有旧接口被描述为当前能力。
 3. `docs/mcp.md` 生成清单与 55 个当前 MCP 工具完全一致，且无第二份手工全量清单。
 4. 相关开发/运行文档不再把 Neo4j、旧 Catalog/Proposal/Version 路径描述为当前实现。
@@ -212,5 +212,20 @@ CI 负责确定性结构/契约门禁；fresh-agent forward test 依赖协作 Ag
    自动验证，仓库可移植基础校验和更新后的 eval 全部通过，隔离新上下文 forward test PASS。
 6. `--write` 幂等，`--check` 能检测 API 或 MCP registry 漂移。
 7. CI 工作流执行文档和 Skill 同步测试。
-8. R-008 保持未实现、R-009 保持部分实现、R-010 保持未实现；文档明确其现实影响。
+8. R-008 保持已实现、R-009 保持部分实现、R-010 保持未实现；文档明确其现实影响。
 9. 独立测试 PASS、全量 backend/frontend 验证通过、服务重启健康，R-011 再更新为已实现并提交。
+
+## 8. R-008 完成后的文档刷新（2026-07-17）
+
+本节覆盖并取代第 2 节和第 4.1 至 4.3 节中关于“未认证运行”的当前态表述；原文保留为首次交付的
+历史证据，不再是运行文档的行为依据。
+
+- HTTP 当前使用统一认证主体、scope 授权和 Project 隔离。`health`、`/api/auth/login`、
+  `/api/auth/logout`、`/api/auth/register` 与 OpenAPI/docs 保持公开；其它业务接口缺少或无效凭证时
+  返回 `401`，跨 Project 或 scope 不足时按授权契约拒绝。
+- UI 通过 session 登录态访问业务 API，并在运行期 `401` 时回到登录入口；文档不得再描述匿名业务
+  API 可正常使用。
+- MCP 进程必须由 `ONTOLOGY_MCP_API_KEY` 建立认证主体；全部 tool 调用在 scope 与 Project 边界内
+  执行，文档不得建议无认证启动或把通用 `api_key` 当作 tool 参数。
+- README、API、MCP、平台指南、UI、架构、AGENTS 与生成清单继续以运行时 registry 为准；认证说明
+  属于人工维护的契约，必须与 R-008 的公开/受保护边界同步。

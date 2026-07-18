@@ -31,6 +31,7 @@ _TOOL_FILES: tuple[tuple[str, Path], ...] = (
     ("interview", _TOOLS_DIR / "interview.py"),
     ("build_sessions", _TOOLS_DIR / "build_sessions.py"),
     ("build_sessions", _TOOLS_DIR / "modeling_batches.py"),
+    ("build_sessions", _TOOLS_DIR / "modeling_workflow.py"),
     ("semantic", _TOOLS_DIR / "evidence.py"),
     ("semantic", _TOOLS_DIR / "semantic.py"),
 )
@@ -94,16 +95,12 @@ def _enumerate_tools() -> list[dict[str, Any]]:
     name_to_source = _build_name_to_source()
     out: list[dict[str, Any]] = []
     for tool in tools:
-        category, source_file = name_to_source.get(
-            tool.name, ("uncategorized", "unknown.py")
-        )
+        category, source_file = name_to_source.get(tool.name, ("uncategorized", "unknown.py"))
         out.append(
             {
                 "name": tool.name,
                 "description": tool.description,
-                "input_schema_summary": _summarize_input_schema(
-                    getattr(tool, "inputSchema", None)
-                ),
+                "input_schema_summary": _summarize_input_schema(getattr(tool, "inputSchema", None)),
                 "source_file": source_file,
                 "category": category,
             }

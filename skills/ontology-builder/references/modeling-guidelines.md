@@ -63,8 +63,8 @@ Compare identifiers, context, scope, aliases, and evidence.
 Use Operation only for externally executable capabilities that a consumer Agent needs to discover.
 Record purpose, binding kind/reference, input/output shape, constraints, side-effect/idempotency
 characteristics, and credential requirement *type*. Never store secrets or claim the platform will
-execute the Operation. Bindings must stay generic; Dify-specific behavior belongs to R-010 fixtures,
-not the domain model.
+execute the Operation. Bindings must stay generic; source-system-specific behavior belongs in
+evidence-backed domain content, never a platform-specific schema branch.
 
 ## Evidence quality
 

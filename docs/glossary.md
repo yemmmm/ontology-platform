@@ -103,6 +103,41 @@ failure explanation. It complements, but never replaces, progress derived from a
 records.
 _Avoid_: platform-inferred Agent plan, mutable progress note
 
+**Business Knowledge Pack**:
+A versioned, structured handoff that records the confirmed business goal and scope, source inventory,
+terminology, actors, objects, events, processes, rules, exceptions, boundaries, competency questions,
+evidence index, ambiguities, and deferred knowledge before ontology design begins. It expresses
+business understanding and must not silently pre-decide Classes, Properties, or Relation Types.
+_Avoid_: document summary, ontology schema, Agent chat transcript
+
+**Modeling Coverage Matrix**:
+A versioned trace from sources or user statements through business knowledge items and competency
+questions to model elements, Evidence References, and an explicit coverage state. It makes known
+omissions and deferrals reviewable but does not claim absolute knowledge completeness.
+_Avoid_: completion percentage, source upload manifest, validation report
+
+**Modeling Workflow Artifact**:
+An immutable, versioned structured handoff owned by a Build Session, such as a Business Knowledge
+Pack, Modeling Coverage Matrix, modeling draft, review report, or verification report. Execution
+Events refer to exact artifact versions so another authorized Agent can resume without access to the
+previous Agent's local files. The platform persists the artifact but does not endorse its conclusions.
+_Avoid_: source document, mutable local scratch file, accepted platform fact
+
+**Modeling Execution Record**:
+The durable, append-only timeline of structured Modeling Execution Events reported or referenced
+within one Build Session. It records visible actions, questions and answer references, explicit
+decisions, artifact versions, reviews, rework, platform resource references, and phase outcomes so
+authorized Agents can resume and teams can compare workflows. It is not hidden model reasoning or a
+complete conversation transcript, and it never replaces current platform facts.
+_Avoid_: chain-of-thought, chat history, mutable checkpoint, duplicate audit log
+
+**Modeling Execution Event**:
+One timestamped, actor-attributed occurrence in a Modeling Execution Record, such as scanning a
+source, creating an artifact, asking a question, recording an answer, making a decision, completing
+a dry-run or review, applying a batch, verifying results, or becoming blocked. Platform facts are
+linked by stable identifiers instead of copied into a second source of truth.
+_Avoid_: free-form diary entry, replay command, inferred hidden action
+
 **Ontology Lease**:
 A time-limited exclusive right held by a Build Session to apply modeling changes to one Ontology.
 It prevents concurrent Agents from silently overwriting the same Ontology, while reads and work on
@@ -137,6 +172,12 @@ _Avoid_: invalid cycle, sequential execution order, partial cyclic write
 A structured deterministic result that identifies a modeling error, warning, or informational
 observation at Batch, Atomic Dependency Group, or Modeling Item scope.
 _Avoid_: exception text, Agent opinion, unstructured validation message
+
+**Finding Fingerprint**:
+A stable SHA-256 identity assigned to one persisted Validation Finding within a specific Batch
+Attempt. It includes the Attempt, stable ordinal, scope, item IDs, path and canonical details so
+multiple Findings with the same code/path remain distinguishable and can be referenced exactly.
+_Avoid_: Finding code, display message, cross-Attempt global identifier
 
 **Modeling Command Handler**:
 A registered adapter that validates and normalizes one Modeling Item command and produces its

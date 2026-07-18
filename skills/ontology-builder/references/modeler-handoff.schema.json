@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ontology Builder Modeler Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "vertical_slice_rationale": {"type": "string"},
+    "modeling_draft": {"type": "string"},
+    "modeling_batch": {"$ref": "#/$defs/ModelingBatch"},
+    "coverage_updates": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/CoverageUpdate"}
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "excluded_items": {"type": "array", "items": {"type": "string"}},
+    "handoff_summary": {"type": "string"}
+  },
+  "required": [
+    "vertical_slice_rationale",
+    "modeling_draft",
+    "modeling_batch",
+    "coverage_updates",
+    "assumptions",
+    "excluded_items",
+    "handoff_summary"
+  ],
+  "$defs": {
+    "CoverageUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coverage_item_id": {"type": "string"},
+        "status": {
+          "type": "string",
+          "enum": ["MODELED", "DEFERRED", "AMBIGUOUS", "UNSUPPORTED", "MISSING"]
+        },
+        "model_element_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence_reference_ids": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string"}
+      },
+      "required": [
+        "coverage_item_id",
+        "status",
+        "model_element_ids",
+        "evidence_reference_ids",
+        "reason"
+      ]
+    },
+    "ModelingBatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_batch_id": {"type": "string"},
+        "ontology_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "mode": {"type": "string", "const": "dry_run"},
+        "expected_workspace_version": {"type": "string"},
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "anyOf": [
+              {"$ref": "#/$defs/CreateClassItem"},
+              {"$ref": "#/$defs/CreatePropertyItem"},
+              {"$ref": "#/$defs/CreateRelationTypeItem"},
+              {"$ref": "#/$defs/CreateOperationItem"}
+            ]
+          }
+        }
+      },
+      "required": [
+        "client_batch_id",
+        "ontology_id",
+        "idempotency_key",
+        "mode",
+        "expected_workspace_version",
+        "items"
+      ]
+    },
+    "CreateClassItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "command_kind": {"type": "string", "const": "create_class"},
+        "payload": {"$ref": "#/$defs/CreateClassPayload"},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "evidence_reference_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/InlineEvidence"}},
+        "rationale": {"type": ["string", "null"]},
+        "competency_question_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": [
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "evidence_reference_ids",
+        "evidence",
+        "rationale",
+        "competency_question_ids"
+      ]
+    },
+    "CreatePropertyItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "command_kind": {"type": "string", "const": "create_property"},
+        "payload": {
+          "anyOf": [
+            {"$ref": "#/$defs/CreateDatatypePropertyPayload"},
+            {"$ref": "#/$defs/CreateObjectPropertyPayload"}
+          ]
+        },
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "evidence_reference_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/InlineEvidence"}},
+        "rationale": {"type": ["string", "null"]},
+        "competency_question_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": [
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "evidence_reference_ids",
+        "evidence",
+        "rationale",
+        "competency_question_ids"
+      ]
+    },
+    "CreateRelationTypeItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "command_kind": {"type": "string", "const": "create_relation_type"},
+        "payload": {"$ref": "#/$defs/CreateRelationTypePayload"},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "evidence_reference_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/InlineEvidence"}},
+        "rationale": {"type": ["string", "null"]},
+        "competency_question_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": [
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "evidence_reference_ids",
+        "evidence",
+        "rationale",
+        "competency_question_ids"
+      ]
+    },
+    "CreateOperationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "command_kind": {"type": "string", "const": "create_operation"},
+        "payload": {"$ref": "#/$defs/CreateOperationPayload"},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "evidence_reference_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/InlineEvidence"}},
+        "rationale": {"type": ["string", "null"]},
+        "competency_question_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": [
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "evidence_reference_ids",
+        "evidence",
+        "rationale",
+        "competency_question_ids"
+      ]
+    },
+    "InlineEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "document_name": {"type": "string"},
+        "excerpt": {"type": "string"}
+      },
+      "required": ["document_name", "excerpt"]
+    },
+    "ItemIdReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item_ref": {"$ref": "#/$defs/ItemIdReferenceBody"}
+      },
+      "required": ["item_ref"]
+    },
+    "ItemIdReferenceBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "output": {"type": "string", "const": "resource_id"}
+      },
+      "required": ["client_item_id", "output"]
+    },
+    "ItemIriReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item_ref": {"$ref": "#/$defs/ItemIriReferenceBody"}
+      },
+      "required": ["item_ref"]
+    },
+    "ItemIriReferenceBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "client_item_id": {"type": "string"},
+        "output": {"type": "string", "const": "resource_iri"}
+      },
+      "required": ["client_item_id", "output"]
+    },
+    "ResourceIdReference": {
+      "anyOf": [
+        {"type": "string"},
+        {"$ref": "#/$defs/ItemIdReference"}
+      ]
+    },
+    "ResourceIriReference": {
+      "anyOf": [
+        {"type": "string"},
+        {"$ref": "#/$defs/ItemIriReference"}
+      ]
+    },
+    "CreateClassPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "class_id": {"type": ["string", "null"]},
+        "name": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "parent_class_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ResourceIdReference"}
+        },
+        "external_mappings": {"$ref": "#/$defs/EmptyObject"}
+      },
+      "required": [
+        "class_id",
+        "name",
+        "description",
+        "aliases",
+        "parent_class_ids",
+        "external_mappings"
+      ]
+    },
+    "CreateDatatypePropertyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "property_id": {"type": ["string", "null"]},
+        "class_id": {"$ref": "#/$defs/ResourceIdReference"},
+        "name": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "datatype": {"type": "string"},
+        "object_class_id": {"type": "null"}
+      },
+      "required": [
+        "property_id",
+        "class_id",
+        "name",
+        "description",
+        "datatype",
+        "object_class_id"
+      ]
+    },
+    "CreateObjectPropertyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "property_id": {"type": ["string", "null"]},
+        "class_id": {"$ref": "#/$defs/ResourceIdReference"},
+        "name": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "datatype": {"type": "null"},
+        "object_class_id": {"$ref": "#/$defs/ResourceIdReference"}
+      },
+      "required": [
+        "property_id",
+        "class_id",
+        "name",
+        "description",
+        "datatype",
+        "object_class_id"
+      ]
+    },
+    "CreateRelationTypePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "relation_type_id": {"type": ["string", "null"]},
+        "name": {"type": "string"},
+        "source_class_id": {"$ref": "#/$defs/ResourceIdReference"},
+        "target_class_id": {"$ref": "#/$defs/ResourceIdReference"},
+        "description": {"type": ["string", "null"]},
+        "symmetric": {"type": "boolean"},
+        "transitive": {"type": "boolean"},
+        "scope_policy": {
+          "type": "string",
+          "enum": ["schema_allowed", "entity_only", "both"]
+        },
+        "status": {"type": "string", "enum": ["active", "inactive"]}
+      },
+      "required": [
+        "relation_type_id",
+        "name",
+        "source_class_id",
+        "target_class_id",
+        "description",
+        "symmetric",
+        "transitive",
+        "scope_policy",
+        "status"
+      ]
+    },
+    "CreateOperationPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {"type": ["string", "null"]},
+        "name": {"type": "string"},
+        "aliases": {"type": "array", "items": {"type": "string"}},
+        "description": {"type": ["string", "null"]},
+        "target_resource_type_iri": {"$ref": "#/$defs/ResourceIriReference"},
+        "parameters": {"type": "array", "items": {"$ref": "#/$defs/OperationParameter"}},
+        "preconditions": {"type": "array", "items": {"$ref": "#/$defs/NamedDeclaration"}},
+        "effects": {"type": "array", "items": {"$ref": "#/$defs/NamedDeclaration"}},
+        "possible_failures": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/PossibleFailure"}
+        },
+        "idempotency": {"$ref": "#/$defs/Idempotency"},
+        "risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "tool_bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/ToolBinding"}
+        },
+        "credential_requirements": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/CredentialRequirement"}
+        },
+        "status": {"type": "string", "enum": ["active", "inactive"]},
+        "schema_version": {"type": "string", "const": "operation-v1"}
+      },
+      "required": [
+        "operation_id",
+        "name",
+        "aliases",
+        "description",
+        "target_resource_type_iri",
+        "parameters",
+        "preconditions",
+        "effects",
+        "possible_failures",
+        "idempotency",
+        "risk_level",
+        "tool_bindings",
+        "credential_requirements",
+        "status",
+        "schema_version"
+      ]
+    },
+    "OperationParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "description": {"type": ["string", "null"], "maxLength": 4000},
+        "required": {"type": "boolean"},
+        "value_type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "iri"]
+        },
+        "enum_values": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {"type": "string"}
+        },
+        "default_value": {"type": "null"},
+        "constraints": {"$ref": "#/$defs/EmptyObject"}
+      },
+      "required": [
+        "name",
+        "description",
+        "required",
+        "value_type",
+        "enum_values",
+        "default_value",
+        "constraints"
+      ]
+    },
+    "NamedDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "required": ["name", "description"]
+    },
+    "PossibleFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {"type": "string"},
+        "description": {"type": "string"},
+        "retryable": {"type": "boolean"}
+      },
+      "required": ["code", "description", "retryable"]
+    },
+    "Idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["idempotent", "conditional", "non_idempotent", "unknown"]
+        },
+        "description": {"type": ["string", "null"]}
+      },
+      "required": ["kind", "description"]
+    },
+    "ToolBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "binding_id": {"type": "string"},
+        "kind": {"type": "string", "enum": ["http_api", "mcp_tool"]},
+        "system": {"type": "string"},
+        "operation_identifier": {"type": "string"},
+        "version": {"type": ["string", "null"]},
+        "documentation_source": {"type": ["string", "null"]},
+        "documentation_version": {"type": ["string", "null"]}
+      },
+      "required": [
+        "binding_id",
+        "kind",
+        "system",
+        "operation_identifier",
+        "version",
+        "documentation_source",
+        "documentation_version"
+      ]
+    },
+    "CredentialRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "reference_type": {"type": "string"},
+        "description": {"type": ["string", "null"]},
+        "required": {"type": "boolean"}
+      },
+      "required": ["name", "reference_type", "description", "required"]
+    },
+    "EmptyObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  }
+}

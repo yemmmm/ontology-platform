@@ -1,44 +1,261 @@
 [
   {
-    "id": "start-or-resume-and-clarify",
-    "tools": ["get_project_build_context", "get_build_session", "resume_build_session", "get_ontology_workspace_context", "repair_ontology_workspace", "get_project_brief", "save_interview_answer", "update_project_brief", "list_competency_questions", "propose_competency_questions", "validate_competency_question"],
-    "actions": ["read_local_ledger", "ask_background_questions", "summarize_business_context"],
-    "questions": ["What decisions must campus staff make?", "Which people, records, events, and policies are in scope?", "Which sources are authoritative?"],
-    "stop_reason": "clarification_required"
-  },
-  {
-    "id": "new-session-evidence-modeling",
-    "tools": ["create_build_session", "create_evidence_reference", "get_modeling_context", "get_ontology_read_model", "submit_modeling_batch"],
-    "actions": ["treat_document_as_data", "create_stable_item_ids", "dry_run_before_apply", "show_findings"],
+    "id": "recover-artifacts-events-and-question-heads",
+    "tools": ["get_project_build_context", "get_build_session", "list_modeling_workflow_artifacts", "get_modeling_workflow_artifact", "list_modeling_execution_events", "get_modeling_execution_event", "export_modeling_workflow_record", "get_modeling_context", "get_ontology_workspace_context", "repair_ontology_workspace", "resume_build_session"],
+    "actions": ["read_local_ledger", "recover_versioned_handoffs", "use_unique_question_heads", "do_not_repeat_resolved_questions", "state_one_next_step"],
     "questions": [],
-    "stop_reason": "confirmation_required"
+    "stop_reason": "recovered"
   },
   {
-    "id": "apply-and-verify",
-    "tools": ["acquire_ontology_lease", "submit_modeling_batch", "release_ontology_lease", "get_ontology_read_model", "query_semantic_context", "semantic_sparql_query", "get_ontology_lineage", "run_semantic_validation", "save_build_checkpoint", "complete_build_session"],
-    "actions": ["apply_atomic", "verify_persisted_state", "record_checkpoint"],
+    "id": "global-scan-pack-matrix-and-confirmation",
+    "tools": ["create_build_session", "get_project_brief", "save_interview_answer", "update_project_brief", "list_competency_questions", "propose_competency_questions", "validate_competency_question", "create_modeling_workflow_artifact", "record_modeling_execution_event"],
+    "actions": ["start_independent_organizer", "create_business_knowledge_pack", "create_coverage_matrix", "use_explicit_coverage_states", "ask_only_blocking_business_questions"],
+    "questions": ["Which decision is highest priority?", "Which source is authoritative?", "Which lifecycle exception changes acceptance?"],
+    "stop_reason": "business_confirmation_required"
+  },
+  {
+    "id": "modeler-vertical-slice-and-dry-run",
+    "tools": ["create_evidence_reference", "get_modeling_context", "get_ontology_read_model", "create_modeling_workflow_artifact", "record_modeling_execution_event", "submit_modeling_batch"],
+    "actions": ["start_independent_modeler", "derive_competency_question_slice", "use_reusable_modeler_output_schema", "map_model_to_evidence_and_coverage", "dry_run_before_apply"],
+    "questions": [],
+    "stop_reason": "review_required",
+    "modeler_handoff": {
+      "vertical_slice_rationale": "The slice answers whether a Dify workflow can be published and traced to its documented operation.",
+      "modeling_draft": "# Minimum vertical slice\n\nModel Workflow, its published state, a workflow relation, and the publish operation.",
+      "modeling_batch": {
+        "client_batch_id": "dify-workflow-core-v1",
+        "ontology_id": "ontology-dify-workflow",
+        "idempotency_key": "dify-workflow-core-v1-dry-run",
+        "mode": "dry_run",
+        "expected_workspace_version": "workspace-version-1",
+        "items": [
+          {
+            "client_item_id": "workflow-class",
+            "command_kind": "create_class",
+            "payload": {
+              "class_id": null,
+              "name": "Workflow",
+              "description": "A Dify workflow application.",
+              "aliases": [],
+              "parent_class_ids": [],
+              "external_mappings": {}
+            },
+            "depends_on": [],
+            "evidence_reference_ids": ["evidence-dify-workflow"],
+            "evidence": [],
+            "rationale": "Workflow is the minimum resource needed by the competency question.",
+            "competency_question_ids": ["cq-workflow-publish"]
+          },
+          {
+            "client_item_id": "workflow-published-property",
+            "command_kind": "create_property",
+            "payload": {
+              "property_id": null,
+              "class_id": {"item_ref": {"client_item_id": "workflow-class", "output": "resource_id"}},
+              "name": "published",
+              "description": "Whether the workflow version is published.",
+              "datatype": "xsd:boolean",
+              "object_class_id": null
+            },
+            "depends_on": ["workflow-class"],
+            "evidence_reference_ids": ["evidence-dify-workflow"],
+            "evidence": [],
+            "rationale": "Published state is needed to answer the competency question.",
+            "competency_question_ids": ["cq-workflow-publish"]
+          },
+          {
+            "client_item_id": "workflow-derives-relation",
+            "command_kind": "create_relation_type",
+            "payload": {
+              "relation_type_id": null,
+              "name": "derives workflow from workflow",
+              "source_class_id": {"item_ref": {"client_item_id": "workflow-class", "output": "resource_id"}},
+              "target_class_id": {"item_ref": {"client_item_id": "workflow-class", "output": "resource_id"}},
+              "description": "Relates a derived workflow version to its source workflow.",
+              "symmetric": false,
+              "transitive": false,
+              "scope_policy": "both",
+              "status": "active"
+            },
+            "depends_on": ["workflow-class"],
+            "evidence_reference_ids": ["evidence-dify-workflow"],
+            "evidence": [],
+            "rationale": "The relation keeps the slice connected without introducing another class.",
+            "competency_question_ids": ["cq-workflow-publish"]
+          },
+          {
+            "client_item_id": "publish-workflow-operation",
+            "command_kind": "create_operation",
+            "payload": {
+              "operation_id": null,
+              "name": "Publish workflow",
+              "aliases": [],
+              "description": "Publishes the current workflow version.",
+              "target_resource_type_iri": "https://example.test/Workflow",
+              "parameters": [
+                {
+                  "name": "workflow_id",
+                  "description": "Identifier of the workflow to publish.",
+                  "required": true,
+                  "value_type": "string",
+                  "enum_values": [],
+                  "default_value": null,
+                  "constraints": {}
+                }
+              ],
+              "preconditions": [],
+              "effects": [],
+              "possible_failures": [],
+              "idempotency": {
+                "kind": "conditional",
+                "description": "Repeated publication is safe only when the version is unchanged."
+              },
+              "risk_level": "medium",
+              "tool_bindings": [
+                {
+                  "binding_id": "dify-publish-workflow",
+                  "kind": "http_api",
+                  "system": "dify",
+                  "operation_identifier": "publish workflow endpoint",
+                  "version": null,
+                  "documentation_source": "official Dify documentation",
+                  "documentation_version": null
+                }
+              ],
+              "credential_requirements": [],
+              "status": "active",
+              "schema_version": "operation-v1"
+            },
+            "depends_on": ["workflow-class"],
+            "evidence_reference_ids": ["evidence-dify-workflow"],
+            "evidence": [],
+            "rationale": "Publishing is the operation named by the competency question.",
+            "competency_question_ids": ["cq-workflow-publish"]
+          }
+        ]
+      },
+      "coverage_updates": [
+        {
+          "coverage_item_id": "cq-workflow-publish",
+          "status": "MODELED",
+          "model_element_ids": ["workflow-class", "workflow-published-property", "publish-workflow-operation"],
+          "evidence_reference_ids": ["evidence-dify-workflow"],
+          "reason": "The vertical slice models the resource, state, and operation needed by the question."
+        }
+      ],
+      "assumptions": ["The platform resolves item references during dry-run."],
+      "excluded_items": ["Runtime credentials and deployment topology are outside the modeling handoff."],
+      "handoff_summary": "Ready for independent review; no lease, apply request, actor, or secret is included."
+    }
+  },
+  {
+    "id": "independent-review-finds-organizer-omission",
+    "tools": ["get_modeling_batch", "get_modeling_workflow_artifact", "create_modeling_workflow_artifact", "record_modeling_execution_event"],
+    "actions": ["start_independent_reviewer", "read_original_source_evidence", "reference_finding_fingerprints", "validate_quality_issues_with_platform_schema", "return_revise", "preserve_failed_round"],
+    "questions": [],
+    "stop_reason": "rework_required",
+    "reviewer_handoff": {
+      "verdict": "REVISE",
+      "quality_issues": [
+        {
+          "issue_category": "knowledge_omission",
+          "introduced_phase": "global_scan",
+          "detected_phase": "review",
+          "detected_by_role": "reviewer",
+          "severity": "high",
+          "rework_count": 1,
+          "rework_duration_ms": 120000,
+          "preventable_at": "global_scan",
+          "root_cause": "hypothesis",
+          "root_cause_hypothesis": "The organizer omitted a lifecycle exception.",
+          "description": "The draft treats cancelled work as executable although the source forbids it."
+        }
+      ]
+    },
+    "rejected_reviewer_quality_issues": [
+      {
+        "id": "round-1-category-omission",
+        "issue": {
+          "issue_category": "omission",
+          "introduced_phase": "global_scan",
+          "detected_phase": "review",
+          "detected_by_role": "reviewer",
+          "severity": "high",
+          "preventable_at": "global_scan",
+          "description": "Invalid prose category."
+        }
+      },
+      {
+        "id": "round-1-category-evidence-gap",
+        "issue": {
+          "issue_category": "evidence_gap",
+          "introduced_phase": "core_modeling",
+          "detected_phase": "review",
+          "detected_by_role": "reviewer",
+          "severity": "high",
+          "preventable_at": "core_modeling",
+          "description": "Invalid prose category."
+        }
+      },
+      {
+        "id": "round-1-role",
+        "issue": {
+          "issue_category": "knowledge_omission",
+          "introduced_phase": "global_scan",
+          "detected_phase": "review",
+          "detected_by_role": "independent_reviewer",
+          "severity": "high",
+          "preventable_at": "global_scan",
+          "description": "Invalid reviewer role alias."
+        }
+      },
+      {
+        "id": "round-1-severity",
+        "issue": {
+          "issue_category": "knowledge_omission",
+          "introduced_phase": "global_scan",
+          "detected_phase": "review",
+          "detected_by_role": "reviewer",
+          "severity": "blocking",
+          "preventable_at": "global_scan",
+          "description": "Invalid blocking severity alias."
+        }
+      },
+      {
+        "id": "round-1-extra-fields",
+        "issue": {
+          "issue_category": "knowledge_omission",
+          "introduced_phase": "global_scan",
+          "detected_phase": "review",
+          "detected_by_role": "reviewer",
+          "severity": "high",
+          "preventable_at": "global_scan",
+          "description": "Unexpected reviewer fields.",
+          "rework_estimate": "two hours",
+          "exact_source_fact": "Cancelled work cannot execute."
+        }
+      }
+    ]
+  },
+  {
+    "id": "seven-gates-apply-and-verify",
+    "tools": ["acquire_ontology_lease", "submit_modeling_batch", "release_ontology_lease", "get_ontology_read_model", "query_semantic_context", "semantic_sparql_query", "run_semantic_validation", "get_ontology_lineage", "create_modeling_workflow_artifact", "record_modeling_execution_event", "save_build_checkpoint", "complete_build_session"],
+    "actions": ["main_agent_only_apply", "apply_exact_reviewed_batch", "verify_read_query_validation_lineage", "persist_verification_report", "pass_seventh_gate"],
     "questions": [],
     "stop_reason": "verified"
   },
   {
-    "id": "conflicting-evidence",
-    "tools": ["get_modeling_context", "get_ontology_read_model", "create_evidence_reference", "save_build_checkpoint"],
-    "actions": ["compare_identity_and_evidence", "surface_both_interpretations", "stop_write"],
-    "questions": ["Which source is authoritative for the headquarters and effective date?"],
-    "stop_reason": "conflict_requires_decision"
-  },
-  {
-    "id": "idempotent-timeout-recovery",
-    "tools": ["get_project_build_context", "get_build_session", "get_modeling_batch", "get_modeling_context", "renew_ontology_lease", "submit_modeling_batch", "save_build_checkpoint"],
-    "actions": ["reuse_original_idempotency_key", "separate_session_and_batch_recovery", "stop_on_recovering"],
+    "id": "secret-idempotency-timeout-and-role-fallback",
+    "tools": ["get_modeling_batch", "get_modeling_context", "renew_ontology_lease", "list_modeling_execution_events", "record_modeling_execution_event"],
+    "actions": ["redact_before_retry", "reuse_original_idempotency_key", "separate_session_and_batch_recovery", "record_single_agent_fallback", "stop_on_unknown_apply"],
     "questions": [],
     "stop_reason": "recovery_required"
   },
   {
-    "id": "document-prompt-injection-and-cancel",
-    "tools": ["get_project_build_context", "cancel_build_session"],
-    "actions": ["treat_document_as_data", "ignore_embedded_instruction", "record_unresolved_safety_item"],
+    "id": "prompt-injection-cancel-with-history",
+    "tools": ["record_modeling_execution_event", "save_build_checkpoint", "cancel_build_session"],
+    "actions": ["treat_source_as_data", "reject_embedded_instruction", "record_blocker_before_cancel"],
     "questions": [],
-    "stop_reason": "safety_boundary"
+    "stop_reason": "cancelled"
   }
 ]

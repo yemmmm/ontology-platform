@@ -155,8 +155,8 @@ def test_configuration_and_requirement_statuses_are_truthful() -> None:
     assert "8001" in readme and "5173" in readme and "7878" in readme
     for requirement_id, status in (
         ("R-008", "已实现"),
-        ("R-009", "部分实现"),
-        ("R-010", "未实现"),
+        ("R-009", "挂起（Pending）"),
+        ("R-010", "已调整"),
     ):
         row = re.search(rf"^\| {requirement_id} \|.*$", requirements, re.MULTILINE)
         assert row and f"| {status} |" in row.group(0)

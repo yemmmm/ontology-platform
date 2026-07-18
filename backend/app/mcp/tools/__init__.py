@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP
 
 from app.mcp.tools.interview import register_interview
 from app.mcp.tools.modeling_batches import register_modeling_batches
+from app.mcp.tools.modeling_workflow import register_modeling_workflow
 from app.mcp.tools.build_sessions import register_build_sessions
 from app.mcp.tools.evidence import register_evidence
 from app.mcp.tools.semantic import register_semantic
@@ -27,6 +28,7 @@ def register_all(server: FastMCP) -> None:
     register_interview(server)
     register_build_sessions(server)
     register_modeling_batches(server)
+    register_modeling_workflow(server)
     register_evidence(server)
     register_semantic(server)
 

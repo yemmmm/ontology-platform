@@ -26,12 +26,17 @@ pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是
 ## 当前推荐流程
 
 1. 用 Project Build Context 恢复 Project 事实；需要写入时创建或恢复 Build Session。
-2. 通过 Brief、Interview Answer 和 Competency Question 工具澄清需求。
-3. 外部 Agent 自行读取资料，以 Evidence Reference 保存实际使用的文档名和原文片段。
-4. 获取 Ontology workspace/modeling context 和 lease，以 `submit_modeling_batch` 先 dry-run 再
-   apply；不经过旧 Proposal/Review/Publish 队列。
-5. 用 Context Query、scoped SPARQL、read model 和 lineage 验证，并保存 checkpoint、完成或取消
-   Build Session。
+2. 列出当前 Modeling Workflow Artifact 版本、Execution Event timeline 和 question current heads，
+   不依赖旧聊天或本地 ledger 恢复。
+3. 通过 Brief、Interview Answer 和 Competency Question 澄清需求；先保存 Business Knowledge Pack
+   与 Modeling Coverage Matrix，再进入建模。
+4. 外部 Agent 自行读取资料，以 Evidence Reference 保存实际使用的文档名和原文片段；三个子角色
+   使用独立只读上下文，只有主 Agent 持有 MCP credential。
+5. 主 Agent 保存模型草案，调用 `submit_modeling_batch` dry-run；独立 reviewer 读取原资料、产物和
+   每个带 fingerprint 的 Finding，只有 PASS 才进入 apply。
+6. 主 Agent 获取 lease 并 apply exact reviewed batch；不经过旧 Proposal/Review/Publish 队列。
+7. 用 Context Query、scoped SPARQL、read model、validation 和 lineage 验证，保存 verification
+   artifact/event、checkpoint，并完成或取消 Build Session。
 
 平台返回结构化语义上下文，不生成最终自然语言答案，也不代替外部 Agent 调用目标系统。
 
@@ -40,6 +45,8 @@ pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是
 多数业务工具通过 MCP runtime 返回 `{"ok": true, "data": ...}` 或
 `{"ok": false, "error": ..., "error_code": ...}`；具体输入和返回仍以运行时 tool schema 与实现
 为准，不能假设所有工具共享额外字段。session、lease、建模批次冲突和幂等语义由对应工具返回。
+Artifact/Event 工具复用同一 service、R-008 Project resolver 与秘密扫描；外部调用不能自报
+`platform_observed` 或 actor。Artifact/Event 重试必须复用原 client ID 和完全相同 payload。
 
 当前未注册的旧 governance、catalog、connector、entity、fact、Evidence Artifact 上传和
 Proposal/Review 工具不是可调用能力。R-009 的 Agent Test 重构与 R-010 的 Dify 验收也尚未完成。
@@ -71,13 +78,20 @@ uv run python ../scripts/sync-interface-docs.py --write
 | build_sessions | `cancel_build_session` | Idempotently cancel a Build Session and release all its leases. | client_request_id, expected_revision, reason, session_id | client_request_id, expected_revision, reason, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `complete_build_session` | Idempotently complete a Build Session and release all its leases. | client_request_id, expected_revision, session_id, summary | client_request_id, expected_revision, session_id, summary, unresolved_items | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `create_build_session` | Idempotently create a Project-scoped external Agent Build Session. | client_session_id, project_id | client_session_id, initial_checkpoint, previous_session_id, project_id | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `create_modeling_workflow_artifact` | Create one immutable, idempotent workflow artifact version. | artifact_key, artifact_type, client_version_id, content, content_format, created_by_role, session_id, workflow_name, workflow_version | artifact_key, artifact_type, client_version_id, content, content_format, created_by_role, ontology_id, role_prompt_version, session_id, supersedes_workflow_artifact_id, workflow_name, workflow_version | `backend/app/mcp/tools/modeling_workflow.py` |
+| build_sessions | `export_modeling_workflow_record` | Export the complete execution record as structured JSON or Markdown. | session_id | format, session_id | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `get_build_session` | Read one Build Session's checkpoints, leases, and recovery context. | session_id | checkpoint_cursor, checkpoint_limit, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `get_modeling_batch` | Read immutable Items, Attempts, Findings, and recovery history. | batch_id | batch_id | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `get_modeling_context` | Read the authoritative current state from which further modeling starts. | ontology_id | ontology_id | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `get_modeling_execution_event` | Read one immutable Modeling Execution Event. | execution_event_id | execution_event_id | `backend/app/mcp/tools/modeling_workflow.py` |
+| build_sessions | `get_modeling_workflow_artifact` | Read one immutable workflow artifact version. | workflow_artifact_id | workflow_artifact_id | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `get_ontology_read_model` | Resolve the default workspace and read a fixed Ontology semantic model. | model_name, ontology_id | allow_stale_derived, class_iri, entity_iri, field_set, include, kind, limit, model_name, ontology_id, q | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `get_project_build_context` | Read Project-wide platform facts and recoverable Agent session state. | project_id | project_id, recent_session_cursor, recent_session_limit | `backend/app/mcp/tools/build_sessions.py` |
+| build_sessions | `list_modeling_execution_events` | List a stable sequence page from a Build Session's execution timeline. | session_id | cursor, event_type, limit, phase, session_id | `backend/app/mcp/tools/modeling_workflow.py` |
+| build_sessions | `list_modeling_workflow_artifacts` | List stable pages of workflow artifact versions for a Build Session. | session_id | artifact_key, artifact_type, current_only, cursor, limit, ontology_id, session_id | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `list_ontology_modeling_batches` | List Modeling Batches across Sessions for an Ontology. | ontology_id | created_from, created_to, cursor, limit, ontology_id, status | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `list_session_modeling_batches` | List Modeling Batches created in one Build Session. | session_id | cursor, limit, session_id, status | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `record_modeling_execution_event` | Append one idempotent event to a Build Session's execution record. | actor_role, client_event_id, event_type, phase, report_source, session_id, status, summary, workflow_name, workflow_version | actor_role, agent_model, agent_runtime, answer_reason, answer_text, blockers, client_event_id, cost_summary, decisions, duration_ms, event_type, expected_question_head_event_id, input_workflow_artifact_ids, interview_answer_id, next_step, occurred_at, ontology_id, output_workflow_artifact_ids, phase, quality_issues, question_id, question_state, question_text, reasoning_effort, rejected_alternatives, related_resources, report_source, role_prompt_version, session_id, status, summary, supersedes_execution_event_id, token_usage, unresolved_items, workflow_name, workflow_version | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `release_ontology_lease` | Idempotently release this Build Session's Ontology write lease. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `renew_ontology_lease` | Renew a valid Ontology lease using its opaque token. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `resume_build_session` | Resume an active Build Session without changing its revision. | client_request_id, expected_revision, session_id | client_request_id, expected_revision, session_id | `backend/app/mcp/tools/build_sessions.py` |

@@ -17,6 +17,8 @@ from app.repositories.models import (
     EvidenceChunkModel,
     EvidenceReferenceModel,
     ModelingBatchModel,
+    ModelingExecutionEventModel,
+    ModelingWorkflowArtifactModel,
     BuildCheckpointModel,
     OntologyModel,
     ProjectModel,
@@ -49,6 +51,11 @@ OWNER_RESOURCE_KEYS = frozenset(
         "build_session_id",
         "checkpoint_id",
         "batch_id",
+        "workflow_artifact_id",
+        "supersedes_workflow_artifact_id",
+        "execution_event_id",
+        "supersedes_execution_event_id",
+        "expected_question_head_event_id",
         "artifact_id",
         "chunk_id",
         "reference_id",
@@ -255,6 +262,16 @@ def _project_for_resource(session: Session, kind: str, value: str) -> str | None
     if kind == "batch_id":
         row = session.get(ModelingBatchModel, value)
         return row.project_id if row else None
+    if kind in {"workflow_artifact_id", "supersedes_workflow_artifact_id"}:
+        row = session.get(ModelingWorkflowArtifactModel, value)
+        return row.project_id if row else None
+    if kind in {
+        "execution_event_id",
+        "supersedes_execution_event_id",
+        "expected_question_head_event_id",
+    }:
+        row = session.get(ModelingExecutionEventModel, value)
+        return row.project_id if row else None
     if kind == "artifact_id":
         row = session.get(EvidenceArtifactModel, value)
         return row.project_id if row else None
@@ -322,6 +339,7 @@ def _collect_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
     if hasattr(value, "model_dump"):
         value = value.model_dump()
     if isinstance(value, dict):
+        workflow_event_payload = "client_event_id" in value and "event_type" in value
         if "owner_type" in value:
             owner_type = value.get("owner_type")
             owner_id = value.get("owner_id")
@@ -343,10 +361,18 @@ def _collect_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
                 (key in OWNER_RESOURCE_KEYS or key.endswith("graph_iri"))
                 and isinstance(child, str)
                 and child
+                and not (workflow_event_payload and key == "question_id")
             ):
                 output.append(("graph_iri" if key.endswith("graph_iri") else key, child))
             elif key == "ontology_ids" and isinstance(child, list):
                 output.extend(("ontology_id", item) for item in child if isinstance(item, str))
+            elif key in {
+                "input_workflow_artifact_ids",
+                "output_workflow_artifact_ids",
+            } and isinstance(child, list):
+                output.extend(
+                    ("workflow_artifact_id", item) for item in child if isinstance(item, str)
+                )
             elif key.endswith("graph_iris") and isinstance(child, list):
                 output.extend(("graph_iri", item) for item in child if isinstance(item, str))
             elif key == "supersedes" and isinstance(child, str) and child:
@@ -355,6 +381,42 @@ def _collect_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
     elif isinstance(value, list):
         for child in value:
             _collect_resource_ids(child, output)
+
+
+def _collect_modeling_batch_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump()
+    if not isinstance(value, dict):
+        _collect_resource_ids(value, output)
+        return
+    request_payload = dict(value)
+    items = request_payload.pop("items", None)
+    _collect_resource_ids(request_payload, output)
+    if not isinstance(items, list):
+        _collect_resource_ids(items, output)
+        return
+    for raw_item in items:
+        item = raw_item.model_dump() if hasattr(raw_item, "model_dump") else raw_item
+        if not (
+            isinstance(item, dict)
+            and item.get("command_kind") == "create_rule_definition"
+            and isinstance(item.get("payload"), dict)
+        ):
+            _collect_resource_ids(item, output)
+            continue
+        item_without_payload = dict(item)
+        rule_payload = dict(item_without_payload.pop("payload"))
+        _collect_resource_ids(item_without_payload, output)
+        candidate_rule_id = rule_payload.pop("rule_id", None)
+        if isinstance(candidate_rule_id, str) and candidate_rule_id:
+            output.append(("modeling_create_rule_id", candidate_rule_id))
+        _collect_resource_ids(rule_payload, output)
+
+
+def _project_for_modeling_rule_candidate(session: Session, value: str) -> str | None:
+    rule = session.get(SemanticRuleModel, value)
+    ontology = session.get(OntologyModel, rule.ontology_id) if rule else None
+    return ontology.project_id if ontology else None
 
 
 async def authorize_api_request(request: Request) -> None:
@@ -421,7 +483,16 @@ async def authorize_api_request(request: Request) -> None:
         "content-type", ""
     ):
         try:
-            _collect_resource_ids(await request.json(), ids)
+            modeling_batch_request = bool(
+                request.method == "POST"
+                and re.fullmatch(r"/api/build-sessions/[^/]+/modeling-batches", request.url.path)
+            )
+            collector = (
+                _collect_modeling_batch_resource_ids
+                if modeling_batch_request
+                else _collect_resource_ids
+            )
+            collector(await request.json(), ids)
         except Exception:
             pass
     if request.method == "POST" and request.url.path == "/api/semantic/graphs":
@@ -457,14 +528,22 @@ async def authorize_api_request(request: Request) -> None:
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     with request.app.state.session_factory() as session:
         for kind, value in ids:
-            target_project = _project_for_resource(session, kind, value)
+            modeling_rule_candidate = kind == "modeling_create_rule_id"
+            target_project = (
+                _project_for_modeling_rule_candidate(session, value)
+                if modeling_rule_candidate
+                else _project_for_resource(session, kind, value)
+            )
+            if modeling_rule_candidate and target_project is None:
+                continue
+            resource_kind = "rule_id" if modeling_rule_candidate else kind
             if target_project is None:
                 audit_security_event(
                     request.app.state.session_factory,
                     "authorization_failure",
                     "denied",
                     principal,
-                    resource_type=kind,
+                    resource_type=resource_kind,
                     resource_id=value,
                     details={"reason": "unresolved_owner"},
                 )
@@ -476,7 +555,7 @@ async def authorize_api_request(request: Request) -> None:
                     "denied",
                     principal,
                     project_id=target_project,
-                    resource_type=kind,
+                    resource_type=resource_kind,
                     resource_id=value,
                     details={"reason": "project"},
                 )

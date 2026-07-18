@@ -19,10 +19,12 @@ Safe recovery:
 
 1. stop further writes;
 2. read the original Build Session, Modeling Batch, and fresh Modeling Context;
+   also read current workflow Artifact versions, Event timeline, and question heads;
 3. reuse the original idempotency key only for an identical retry;
 4. show the user confirmed state, unresolved choices, and exactly one next action;
 5. checkpoint the failure/recovery state.
 
 Never fabricate approval, evidence, successful apply, or verification. Never bypass scope by using
-internal Graph Set IDs/graph IRIs. Current R-008 authentication is absent, so a session/lease is not
-proof of caller identity or authorization.
+internal Graph Set IDs/graph IRIs. R-008 authenticates the caller and enforces Project scope, but a
+session/lease still does not replace user intent, the quality gates, or business validation. Keep
+credentials in the Runtime environment; never pass them to subroles or persist them.

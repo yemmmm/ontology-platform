@@ -32,6 +32,12 @@ Each item identifies a supported command and payload. Include:
 Do not supply Graph Set ID or graph IRI for ordinary Ontology modeling. Do not invent server resource
 IDs before dry-run returns normalized identifiers.
 
+For the modeler role's first vertical slice, `modeler-handoff.schema.json` is the reusable strict
+Structured Outputs profile. It emits an exact dry-run batch for `create_class`, `create_property`,
+`create_relation_type`, and `create_operation`; the runtime Modeling Context remains authoritative
+for currently supported commands. The profile excludes lease tokens, actor/target overrides,
+runtime credentials, and secret-bearing tool-binding fields.
+
 ## Modes and Findings
 
 `dry_run` performs normalization and deterministic validation without applying mutations. Review all

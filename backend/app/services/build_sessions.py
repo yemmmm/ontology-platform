@@ -40,6 +40,7 @@ from app.repositories.models import (
 from app.services import interview
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workflow import ModelingWorkflowService
 
 
 class BuildSessionError(RuntimeError):
@@ -374,6 +375,9 @@ class BuildSessionService:
             "modeling_batches": [self._modeling_batch_summary(item) for item in session_batches],
             "evidence": {"references": [], "next_cursor": None},
             "recent_activity": recent_activity,
+            "modeling_workflow_summary": ModelingWorkflowService(
+                self.session, actor=self.actor
+            ).summary(session_id),
         }
 
     def resume_session(self, session_id: str, payload: BuildSessionResume) -> dict[str, Any]:

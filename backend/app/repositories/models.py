@@ -393,6 +393,171 @@ class ModelingBatchAttemptModel(Base):
     )
 
 
+class ModelingWorkflowArtifactModel(Base):
+    """One immutable, Session-scoped workflow artifact version."""
+
+    __tablename__ = "modeling_workflow_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "build_session_id",
+            "client_version_id",
+            name="uq_modeling_workflow_artifacts_session_client",
+        ),
+        UniqueConstraint(
+            "build_session_id",
+            "artifact_key",
+            "version",
+            name="uq_modeling_workflow_artifacts_session_key_version",
+        ),
+        CheckConstraint(
+            "artifact_type IN ('business_knowledge_pack','modeling_coverage_matrix',"
+            "'modeling_draft','review_report','verification_report')",
+            name="ck_modeling_workflow_artifacts_type",
+        ),
+        CheckConstraint(
+            "content_format IN ('json','markdown')",
+            name="ck_modeling_workflow_artifacts_format",
+        ),
+        Index(
+            "ix_modeling_workflow_artifacts_session_key_version",
+            "build_session_id",
+            "artifact_key",
+            "version",
+        ),
+        Index("ix_modeling_workflow_artifacts_ontology", "ontology_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="SET NULL")
+    )
+    artifact_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_version_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    workflow_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    role_prompt_version: Mapped[str | None] = mapped_column(String(120))
+    supersedes_workflow_artifact_id: Mapped[str | None] = mapped_column(
+        ForeignKey("modeling_workflow_artifacts.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ModelingExecutionEventModel(Base):
+    """Append-only event in a Build Session's modeling execution record."""
+
+    __tablename__ = "modeling_execution_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "build_session_id",
+            "client_event_id",
+            name="uq_modeling_execution_events_session_client",
+        ),
+        UniqueConstraint(
+            "build_session_id",
+            "sequence",
+            name="uq_modeling_execution_events_session_sequence",
+        ),
+        CheckConstraint(
+            "report_source IN ('agent_reported','user_reported','platform_observed')",
+            name="ck_modeling_execution_events_report_source",
+        ),
+        CheckConstraint(
+            "question_state IS NULL OR question_state IN "
+            "('open','answered','skipped','uncertain','reopened')",
+            name="ck_modeling_execution_events_question_state",
+        ),
+        Index(
+            "ix_modeling_execution_events_session_sequence",
+            "build_session_id",
+            "sequence",
+        ),
+        Index("ix_modeling_execution_events_session_phase", "build_session_id", "phase"),
+        Index("ix_modeling_execution_events_session_type", "build_session_id", "event_type"),
+        Index("ix_modeling_execution_events_question", "build_session_id", "question_id"),
+        Index("ix_modeling_execution_events_ontology", "ontology_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    build_session_id: Mapped[str] = mapped_column(
+        ForeignKey("build_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    ontology_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="SET NULL")
+    )
+    client_event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    workflow_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    phase: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    report_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    role_prompt_version: Mapped[str | None] = mapped_column(String(120))
+    agent_runtime: Mapped[str | None] = mapped_column(String(120))
+    agent_model: Mapped[str | None] = mapped_column(String(120))
+    reasoning_effort: Mapped[str | None] = mapped_column(String(40))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    input_workflow_artifact_ids: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    output_workflow_artifact_ids: Mapped[list[str]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    question_id: Mapped[str | None] = mapped_column(String(255))
+    question_state: Mapped[str | None] = mapped_column(String(32))
+    question_text: Mapped[str | None] = mapped_column(Text)
+    answer_text: Mapped[str | None] = mapped_column(Text)
+    answer_reason: Mapped[str | None] = mapped_column(Text)
+    expected_question_head_event_id: Mapped[str | None] = mapped_column(String(36))
+    interview_answer_id: Mapped[str | None] = mapped_column(String(36))
+    decisions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    rejected_alternatives: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    unresolved_items: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    blockers: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    next_step: Mapped[str | None] = mapped_column(Text)
+    related_resources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    quality_issues: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    token_usage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    cost_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    supersedes_execution_event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("modeling_execution_events.id", ondelete="RESTRICT")
+    )
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ModelingAttemptItemResultModel(Base):
     __tablename__ = "modeling_attempt_item_results"
     __table_args__ = (

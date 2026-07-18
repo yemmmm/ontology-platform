@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.ontology import PropertyType  # noqa: F401 - kept for downstream imports
 
@@ -354,6 +354,7 @@ class BuildSessionDetailRead(BaseModel):
     modeling_batches: list[dict[str, Any]] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
     recent_activity: list[dict[str, Any]] = Field(default_factory=list)
+    modeling_workflow_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectBuildContextRead(BaseModel):
@@ -361,6 +362,176 @@ class ProjectBuildContextRead(BaseModel):
     generated_at: datetime
     platform_state: dict[str, Any]
     agent_state: dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
+# R1.1-002 versioned modeling workflow records
+# ---------------------------------------------------------------------------
+
+
+WorkflowArtifactType = Literal[
+    "business_knowledge_pack",
+    "modeling_coverage_matrix",
+    "modeling_draft",
+    "review_report",
+    "verification_report",
+]
+WorkflowRole = Literal[
+    "business_organizer",
+    "modeler",
+    "reviewer",
+    "main_agent",
+    "user",
+    "platform",
+]
+WorkflowPhase = Literal[
+    "recovery",
+    "global_scan",
+    "business_confirmation",
+    "core_modeling",
+    "dry_run",
+    "review",
+    "apply",
+    "verification",
+    "expansion_or_handoff",
+]
+WorkflowEventType = Literal[
+    "source_scanned",
+    "artifact_created",
+    "question_asked",
+    "answer_recorded",
+    "decision_recorded",
+    "dry_run_completed",
+    "review_completed",
+    "rework_requested",
+    "batch_applied",
+    "verification_completed",
+    "phase_completed",
+    "blocked",
+]
+
+
+class ModelingWorkflowSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModelingWorkflowArtifactCreate(ModelingWorkflowSchema):
+    client_version_id: str = Field(min_length=1, max_length=255)
+    artifact_key: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    artifact_type: WorkflowArtifactType
+    content_format: Literal["json", "markdown"]
+    content: Any
+    created_by_role: WorkflowRole
+    workflow_name: str = Field(min_length=1, max_length=120)
+    workflow_version: str = Field(min_length=1, max_length=120)
+    role_prompt_version: str | None = Field(default=None, max_length=120)
+    ontology_id: str | None = Field(default=None, min_length=1, max_length=36)
+    supersedes_workflow_artifact_id: str | None = Field(default=None, min_length=1, max_length=36)
+
+
+class WorkflowRelatedResource(ModelingWorkflowSchema):
+    resource_type: Literal[
+        "competency_question",
+        "evidence_reference",
+        "modeling_batch",
+        "modeling_attempt",
+        "finding",
+        "validation_run",
+        "lineage",
+        "ontology",
+        "lease",
+        "workflow_artifact",
+        "execution_event",
+    ]
+    resource_id: str | None = Field(default=None, min_length=1, max_length=512)
+    attempt_id: str | None = Field(default=None, min_length=1, max_length=36)
+    finding_fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    ontology_id: str | None = Field(default=None, min_length=1, max_length=36)
+    target_type: Literal["statement", "resource", "rule"] | None = None
+    target_id: str | None = Field(default=None, min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_shape(self):
+        if self.resource_type == "finding":
+            if not self.attempt_id or not self.finding_fingerprint or self.resource_id:
+                raise ValueError("finding requires attempt_id and finding_fingerprint only")
+        elif self.resource_type == "lineage":
+            if not self.ontology_id or not self.target_type or not self.target_id:
+                raise ValueError("lineage requires ontology_id, target_type, and target_id")
+        elif not self.resource_id:
+            raise ValueError(f"{self.resource_type} requires resource_id")
+        return self
+
+
+class ModelingQualityIssue(ModelingWorkflowSchema):
+    issue_category: Literal[
+        "knowledge_omission",
+        "term_conflict",
+        "identity_error",
+        "relation_error",
+        "granularity_error",
+        "insufficient_evidence",
+        "competency_question_gap",
+        "over_modeling",
+        "stale_knowledge",
+        "other",
+    ]
+    introduced_phase: WorkflowPhase | Literal["unknown"]
+    detected_phase: WorkflowPhase
+    detected_by_role: WorkflowRole
+    severity: Literal["critical", "high", "medium", "low"]
+    rework_count: int | None = Field(default=None, ge=0)
+    rework_duration_ms: int | None = Field(default=None, ge=0)
+    preventable_at: WorkflowPhase | Literal["unknown"]
+    root_cause: Literal["unknown", "hypothesis"] = "unknown"
+    root_cause_hypothesis: str | None = Field(default=None, max_length=4000)
+    description: str = Field(min_length=1, max_length=10000)
+
+    @model_validator(mode="after")
+    def validate_root_cause(self):
+        if self.root_cause == "hypothesis" and not self.root_cause_hypothesis:
+            raise ValueError("root_cause_hypothesis is required for hypothesis")
+        if self.root_cause == "unknown" and self.root_cause_hypothesis:
+            raise ValueError("unknown root cause cannot include a hypothesis")
+        return self
+
+
+class ModelingExecutionEventCreate(ModelingWorkflowSchema):
+    client_event_id: str = Field(min_length=1, max_length=255)
+    ontology_id: str | None = Field(default=None, min_length=1, max_length=36)
+    workflow_name: str = Field(min_length=1, max_length=120)
+    workflow_version: str = Field(min_length=1, max_length=120)
+    phase: WorkflowPhase
+    event_type: WorkflowEventType
+    status: Literal["started", "recorded", "completed", "failed", "blocked"]
+    report_source: Literal["agent_reported", "user_reported"]
+    actor_role: WorkflowRole
+    role_prompt_version: str | None = Field(default=None, max_length=120)
+    agent_runtime: str | None = Field(default=None, max_length=120)
+    agent_model: str | None = Field(default=None, max_length=120)
+    reasoning_effort: str | None = Field(default=None, max_length=40)
+    summary: str = Field(min_length=1, max_length=10000)
+    input_workflow_artifact_ids: list[str] = Field(default_factory=list, max_length=100)
+    output_workflow_artifact_ids: list[str] = Field(default_factory=list, max_length=100)
+    question_id: str | None = Field(default=None, min_length=1, max_length=255)
+    question_state: Literal["open", "answered", "skipped", "uncertain", "reopened"] | None = None
+    question_text: str | None = Field(default=None, max_length=10000)
+    answer_text: str | None = Field(default=None, max_length=20000)
+    answer_reason: str | None = Field(default=None, max_length=10000)
+    expected_question_head_event_id: str | None = Field(default=None, min_length=1, max_length=36)
+    interview_answer_id: str | None = Field(default=None, min_length=1, max_length=36)
+    decisions: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    rejected_alternatives: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
+    unresolved_items: list[str] = Field(default_factory=list, max_length=100)
+    blockers: list[str] = Field(default_factory=list, max_length=100)
+    next_step: str | None = Field(default=None, max_length=10000)
+    related_resources: list[WorkflowRelatedResource] = Field(default_factory=list, max_length=200)
+    quality_issues: list[ModelingQualityIssue] = Field(default_factory=list, max_length=100)
+    duration_ms: int | None = Field(default=None, ge=0)
+    token_usage: dict[str, int | None] = Field(default_factory=dict)
+    cost_summary: dict[str, float | str | None] = Field(default_factory=dict)
+    supersedes_execution_event_id: str | None = Field(default=None, min_length=1, max_length=36)
+    occurred_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +573,7 @@ class ModelingBatchSubmit(ModelingBatchSchema):
 
 
 class ValidationFindingRead(BaseModel):
+    finding_fingerprint: str | None = None
     code: str
     severity: Literal["error", "warning", "info"]
     scope: Literal["batch", "group", "item"]

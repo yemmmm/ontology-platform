@@ -14,6 +14,7 @@ from app.api.evidence_references import router as evidence_references_router
 from app.api.fact_evidence import router as fact_evidence_router
 from app.api.mcp_catalog import router as mcp_catalog_router
 from app.api.modeling_batches import router as modeling_batches_router
+from app.api.modeling_workflow import router as modeling_workflow_router
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.health import check_oxigraph, check_postgres
 
@@ -24,6 +25,7 @@ router.include_router(agent_test_router)
 router.include_router(interview_router)
 router.include_router(build_sessions_router)
 router.include_router(modeling_batches_router)
+router.include_router(modeling_workflow_router)
 router.include_router(semantic_router)
 router.include_router(evidence_router)
 router.include_router(evidence_references_router)

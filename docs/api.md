@@ -40,6 +40,12 @@ workspace repair 操作修复。
 外部 Agent 使用 Build Session 和 Ontology Lease 管理恢复与并发，再通过 Modeling Batch 完成
 `dry_run` 和 apply。平台保存建模结果、幂等状态、冲突和审计，不在 HTTP 层替 Agent 做领域判断。
 
+R1.1 分阶段工作流使用 Build Session 下的 Modeling Workflow Artifact 和 Modeling Execution Event：
+Artifact 以 `artifact_key` 创建不可变线性版本，Event 以 `client_event_id` 幂等追加并获得 Session 内
+稳定序号。问题事件使用 current-head compare-and-set 保存 `open/answered/skipped/uncertain/reopened`
+状态；更正只能追加 superseding event。`GET .../modeling-workflow:export` 提供完整 JSON 或 Markdown
+复盘记录，`GET /api/build-sessions/{session_id}` 只内联小型 `modeling_workflow_summary`。
+
 证据采用轻量 Evidence Reference：外部 Agent 自行读取资料，只提交实际使用的
 `document_name + excerpt`，再把引用关联到 Modeling Item。当前没有完整文档上传、解析或旧
 Proposal/Review/Publish 队列。
@@ -62,6 +68,9 @@ Context Query 返回结构化资源、事实、关系、操作、约束和精简
   `403 forbidden_scope`；领域 payload 命中高可信真实秘密返回 `422 secret_in_payload`。
 - 受治理语义编辑、Modeling Batch 和 Build Session 有各自的冲突、幂等及恢复语义；调用方应保留
   返回的 session、lease、batch 和 checkpoint 标识。
+- Workflow Artifact/Event 写入要求 `model`，读取/export 要求 `read`；单 Artifact 版本上限 1 MiB、
+  Event payload 上限 64 KiB、export 上限 8 MiB。版本过期、foreign 引用、问题 stale head 和幂等
+  冲突分别返回稳定业务 code，命中 secret 时不会自动修改或回显内容。
 - 当前仍注册的 deprecated 兼容操作会继续出现在下方清单中；未注册的旧 Version、Proposal、
   Catalog、Connector 和 Neo4j Entity 接口不是当前能力。
 - R-010 的 Dify 端到端验收套件尚未实现，当前没有可引用的 Dify 基准通过率。
@@ -116,6 +125,13 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-context` | Get Modeling Context |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model |
 | modeling batches | `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Submit Modeling Batch |
+| modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-execution-events` | List Modeling Execution Events |
+| modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow-artifacts` | List Modeling Workflow Artifacts |
+| modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow:export` | Export Modeling Workflow Record |
+| modeling workflow | `GET` | `/api/modeling-execution-events/{execution_event_id}` | Get Modeling Execution Event |
+| modeling workflow | `GET` | `/api/modeling-workflow-artifacts/{workflow_artifact_id}` | Get Modeling Workflow Artifact |
+| modeling workflow | `POST` | `/api/build-sessions/{session_id}/modeling-execution-events` | Record Modeling Execution Event |
+| modeling workflow | `POST` | `/api/build-sessions/{session_id}/modeling-workflow-artifacts` | Create Modeling Workflow Artifact |
 | ontologies | `GET` | `/api/ontologies/{ontology_id}` | Get Ontology |
 | ontologies | `GET` | `/api/ontologies/{ontology_id}/lineage` | Get Ontology Lineage |
 | ontologies | `GET` | `/api/ontologies/{ontology_id}/workspace-context` | Get Ontology Workspace Context |

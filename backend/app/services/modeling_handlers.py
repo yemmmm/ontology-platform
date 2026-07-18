@@ -420,7 +420,12 @@ class ModelingCommandHandlerRegistry:
                         resource_key=f"{graph_iri}:{subject}",
                         slot_key=predicate,
                         operation=operation,
-                        cardinality="multi" if _is_multi_value_predicate(predicate) else "single",
+                        cardinality=(
+                            "multi"
+                            if prepared.command_kind == "create_relation"
+                            or _is_multi_value_predicate(predicate)
+                            else "single"
+                        ),
                         value_hash=_stable_value(obj),
                         object_key=obj,
                         match_pattern=f"{subject} {predicate} {obj}" if wildcard else None,

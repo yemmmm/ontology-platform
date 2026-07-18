@@ -4,25 +4,39 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+from pydantic import ValidationError as PydanticValidationError
+
 
 EVALS_DIR = Path(__file__).resolve().parent
 SKILL_DIR = EVALS_DIR.parent
 REPO_ROOT = SKILL_DIR.parents[1]
+MODEL_HANDOFF_SCHEMA = SKILL_DIR / "references" / "modeler-handoff.schema.json"
 REQUIRED_SCENARIOS = {
-    "start-or-resume-and-clarify",
-    "new-session-evidence-modeling",
-    "apply-and-verify",
-    "conflicting-evidence",
-    "idempotent-timeout-recovery",
-    "document-prompt-injection-and-cancel",
+    "recover-artifacts-events-and-question-heads",
+    "global-scan-pack-matrix-and-confirmation",
+    "modeler-vertical-slice-and-dry-run",
+    "independent-review-finds-organizer-omission",
+    "seven-gates-apply-and-verify",
+    "secret-idempotency-timeout-and-role-fallback",
+    "prompt-injection-cancel-with-history",
 }
 TOOL_REFERENCE = re.compile(r"`mcp:([a-z][a-z0-9_]*)`")
+ROUND_1_INVALID_QUALITY_ISSUES = {
+    "round-1-category-omission",
+    "round-1-category-evidence-gap",
+    "round-1-role",
+    "round-1-severity",
+    "round-1-extra-fields",
+}
 
 
 def load(path: Path) -> Any:
@@ -38,6 +52,29 @@ def documented_tools() -> set[str]:
     for path in [SKILL_DIR / "SKILL.md", *sorted((SKILL_DIR / "references").glob("*.md"))]:
         tools.update(TOOL_REFERENCE.findall(path.read_text(encoding="utf-8")))
     return tools
+
+
+def quality_issue_model():
+    backend = str(REPO_ROOT / "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    from app.api.schemas import ModelingQualityIssue
+
+    return ModelingQualityIssue
+
+
+def modeling_handler():
+    backend = str(REPO_ROOT / "backend")
+    if backend not in sys.path:
+        sys.path.insert(0, backend)
+    from app.core.config import Settings
+    from app.services.modeling_handlers import ModelingCommandHandlerRegistry
+
+    settings = Settings(
+        semantic_base_iri="https://ontology-builder-eval.test/semantic/",
+        semantic_graph_iri_prefix="https://ontology-builder-eval.test/graph/",
+    )
+    return ModelingCommandHandlerRegistry(settings)
 
 
 def validate_cases(cases: list[dict[str, Any]]) -> list[str]:
@@ -113,6 +150,122 @@ def score(cases: list[dict[str, Any]], traces: list[dict[str, Any]]) -> list[str
             errors.append(f"{case_id}: too many questions")
         if trace.get("stop_reason") != expected["expected_stop_reason"]:
             errors.append(f"{case_id}: unexpected stop reason {trace.get('stop_reason')!r}")
+        if case_id == "independent-review-finds-organizer-omission":
+            errors.extend(validate_reviewer_handoff(trace))
+        if case_id == "modeler-vertical-slice-and-dry-run":
+            errors.extend(validate_modeler_handoff(trace))
+    return errors
+
+
+def validate_modeler_handoff(trace: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    handoff = trace.get("modeler_handoff")
+    if not isinstance(handoff, dict):
+        return ["modeler-vertical-slice-and-dry-run: missing modeler_handoff"]
+    schema = load(MODEL_HANDOFF_SCHEMA)
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        return [f"modeler handoff schema is invalid: {exc.message}"]
+    validator = Draft202012Validator(schema)
+    for error in sorted(validator.iter_errors(handoff), key=lambda item: list(item.path)):
+        location = ".".join(str(part) for part in error.absolute_path) or "<root>"
+        errors.append(f"modeler_handoff {location} is invalid: {error.message}")
+
+    invalid_handoffs = {
+        "lease-token": copy.deepcopy(handoff),
+        "payload-actor": copy.deepcopy(handoff),
+        "command-payload-mismatch": copy.deepcopy(handoff),
+        "empty-batch": copy.deepcopy(handoff),
+        "active-operation-without-binding": copy.deepcopy(handoff),
+        "nullable-parameter-constraints": copy.deepcopy(handoff),
+    }
+    invalid_handoffs["lease-token"]["modeling_batch"]["lease_token"] = "forbidden"
+    first_item = invalid_handoffs["payload-actor"]["modeling_batch"]["items"][0]
+    first_item["payload"]["actor"] = "forbidden"
+    mismatch = invalid_handoffs["command-payload-mismatch"]["modeling_batch"]["items"][0]
+    mismatch["command_kind"] = "create_operation"
+    invalid_handoffs["empty-batch"]["modeling_batch"]["items"] = []
+    active_operation = next(
+        item
+        for item in invalid_handoffs["active-operation-without-binding"]["modeling_batch"]["items"]
+        if item["command_kind"] == "create_operation"
+    )
+    active_operation["payload"]["tool_bindings"] = []
+    nullable_constraints = next(
+        item
+        for item in invalid_handoffs["nullable-parameter-constraints"]["modeling_batch"]["items"]
+        if item["command_kind"] == "create_operation"
+    )
+    nullable_constraints["payload"]["parameters"][0]["constraints"] = {
+        "min_value": None,
+        "max_value": None,
+        "min_length": None,
+        "max_length": None,
+        "pattern": None,
+        "format": None,
+    }
+    for fixture_id, invalid_handoff in invalid_handoffs.items():
+        if validator.is_valid(invalid_handoff):
+            errors.append(f"modeler_handoff invalid fixture was accepted: {fixture_id}")
+
+    operation_items = [
+        item
+        for item in handoff["modeling_batch"]["items"]
+        if item["command_kind"] == "create_operation"
+    ]
+    if len(operation_items) != 1 or not operation_items[0]["payload"]["parameters"]:
+        errors.append("modeler_handoff must contain one operation with a nonempty parameter list")
+        return errors
+    operation_payload = operation_items[0]["payload"]
+    original_payload = copy.deepcopy(operation_payload)
+    try:
+        modeling_handler().prepare(
+            batch_id=handoff["modeling_batch"]["client_batch_id"],
+            ontology_id=handoff["modeling_batch"]["ontology_id"],
+            client_item_id=operation_items[0]["client_item_id"],
+            command_kind="create_operation",
+            payload=operation_payload,
+        )
+    except Exception as exc:
+        errors.append(
+            "modeler_handoff schema-valid operation failed platform prepare: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    if operation_payload != original_payload:
+        errors.append("modeler_handoff platform prepare mutated the operation input payload")
+    return errors
+
+
+def validate_reviewer_handoff(trace: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    handoff = trace.get("reviewer_handoff")
+    if not isinstance(handoff, dict):
+        return ["independent-review-finds-organizer-omission: missing reviewer_handoff"]
+    model = quality_issue_model()
+    for index, issue in enumerate(handoff.get("quality_issues", [])):
+        try:
+            normalized = model.model_validate(issue).model_dump(mode="json")
+        except PydanticValidationError as exc:
+            errors.append(f"reviewer_handoff quality issue {index} is invalid: {exc}")
+            continue
+        if normalized != issue:
+            errors.append(f"reviewer_handoff quality issue {index} is not normalized record-ready")
+
+    rejected = trace.get("rejected_reviewer_quality_issues", [])
+    rejected_ids = {item.get("id") for item in rejected}
+    if rejected_ids != ROUND_1_INVALID_QUALITY_ISSUES:
+        errors.append(
+            "reviewer_handoff rejected fixtures differ: "
+            f"missing={sorted(ROUND_1_INVALID_QUALITY_ISSUES - rejected_ids)}, "
+            f"unknown={sorted(rejected_ids - ROUND_1_INVALID_QUALITY_ISSUES)}"
+        )
+    for item in rejected:
+        try:
+            model.model_validate(item.get("issue"))
+        except PydanticValidationError:
+            continue
+        errors.append(f"reviewer_handoff invalid fixture was accepted: {item.get('id')}")
     return errors
 
 

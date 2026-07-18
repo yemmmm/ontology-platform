@@ -240,6 +240,117 @@ def test_operation_can_target_class_created_by_item_ref(modeling):
     assert outputs["publish"]["resource_iri"].endswith("/operation/publish-workflow")
 
 
+def test_32_item_dry_run_accepts_generated_operation_id_and_shared_status_vocab(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    classes = [_item(f"workflow-class-{index}") for index in range(8)]
+    operation = _item(
+        "invoke-published-workflow",
+        command_kind="create_operation",
+        depends_on=["workflow-class-0"],
+        payload={
+            "operation_id": None,
+            "name": "Invoke published workflow",
+            "target_resource_type_iri": {
+                "item_ref": {"client_item_id": "workflow-class-0", "output": "resource_iri"}
+            },
+            "parameters": [
+                {
+                    "name": "inputs",
+                    "required": False,
+                    "value_type": "string",
+                    "enum_values": [],
+                    "default_value": None,
+                    "constraints": {},
+                }
+            ],
+            "preconditions": [],
+            "effects": [],
+            "possible_failures": [],
+            "idempotency": {"kind": "unknown"},
+            "risk_level": "medium",
+            "tool_bindings": [
+                {
+                    "binding_id": "dify-workflow-rest-api",
+                    "kind": "http_api",
+                    "system": "Dify Workflow API",
+                    "operation_identifier": "Run Workflow",
+                }
+            ],
+            "credential_requirements": [
+                {
+                    "name": "Dify app API key",
+                    "reference_type": "app_api_key",
+                    "description": "Required for published-app REST API calls.",
+                    "required": True,
+                }
+            ],
+            "status": "active",
+            "schema_version": "operation-v1",
+        },
+    )
+    properties = [
+        _item(
+            f"workflow-property-{index}",
+            command_kind="create_property",
+            depends_on=["workflow-class-0"],
+            payload={
+                "property_id": None,
+                "name": f"workflow_property_{index}",
+                "class_id": {
+                    "item_ref": {
+                        "client_item_id": "workflow-class-0",
+                        "output": "resource_id",
+                    }
+                },
+                "datatype": "string",
+                "object_class_id": None,
+            },
+        )
+        for index in range(15)
+    ]
+    relations = [
+        _item(
+            f"workflow-relation-{index}",
+            command_kind="create_relation_type",
+            depends_on=["workflow-class-0", "workflow-class-1"],
+            payload={
+                "relation_type_id": None,
+                "name": f"workflow_relation_{index}",
+                "source_class_id": {
+                    "item_ref": {
+                        "client_item_id": "workflow-class-0",
+                        "output": "resource_id",
+                    }
+                },
+                "target_class_id": {
+                    "item_ref": {
+                        "client_item_id": "workflow-class-1",
+                        "output": "resource_id",
+                    }
+                },
+                "scope_policy": "schema_allowed",
+                "status": "active",
+            },
+        )
+        for index in range(8)
+    ]
+    items = [*classes, operation, *properties, *relations]
+
+    assert len(items) == 32
+    result = service.submit(
+        session_id,
+        _request(version, items, batch="mixed-operation-and-relation-vocabulary"),
+    )
+
+    assert result["attempt_status"] == "validated"
+    assert not any(finding["blocking"] for finding in result["findings"])
+    outputs = {item["client_item_id"]: item["resource_outputs"] for item in result["items"]}
+    assert outputs["invoke-published-workflow"]["resource_id"]
+    assert outputs["invoke-published-workflow"]["resource_iri"].startswith(
+        "https://r004.test/resource/operation/"
+    )
+
+
 def test_operation_dry_run_treats_not_yet_physical_ontology_graph_as_empty(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     service.rdf_store = MissingNamedGraphRdfStore()  # type: ignore[assignment]
@@ -631,6 +742,53 @@ def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
     )
 
     result = service.submit(session_id, _request(version, [delete, relation]))
+
+    assert result["attempt_status"] == "validation_failed"
+    assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
+
+
+def test_multiple_relation_targets_for_same_subject_and_type_are_valid(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    source = "https://r004.test/resource/entity/workflow-definition"
+    relation_type = "https://r004.test/resource/relation/has-input"
+    relations = [
+        ModelingItemInput(
+            client_item_id=f"definition-input-{index}",
+            command_kind="create_relation",
+            payload={
+                "source_entity_iri": source,
+                "relation_type_iri": relation_type,
+                "target_entity_iri": f"https://r004.test/resource/entity/input-{index}",
+            },
+        )
+        for index in range(2)
+    ]
+
+    result = service.submit(session_id, _request(version, relations))
+
+    assert result["attempt_status"] == "validated"
+    assert "conflicting_item_effects" not in {finding["code"] for finding in result["findings"]}
+
+
+def test_create_and_delete_same_relation_target_still_conflict(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    payload = {
+        "source_entity_iri": "https://r004.test/resource/entity/workflow-definition",
+        "relation_type_iri": "https://r004.test/resource/relation/has-input",
+        "target_entity_iri": "https://r004.test/resource/entity/input-1",
+    }
+    create = ModelingItemInput(
+        client_item_id="create-definition-input",
+        command_kind="create_relation",
+        payload=payload,
+    )
+    delete = ModelingItemInput(
+        client_item_id="delete-definition-input",
+        command_kind="delete_relation",
+        payload=payload,
+    )
+
+    result = service.submit(session_id, _request(version, [create, delete]))
 
     assert result["attempt_status"] == "validation_failed"
     assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}

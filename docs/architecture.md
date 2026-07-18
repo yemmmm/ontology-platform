@@ -28,7 +28,7 @@ External Agent ── stdio FastMCP adapters ────┘          │
 - FastAPI：UI/脚本使用的 HTTP adapter，并暴露 runtime OpenAPI。
 - FastMCP：外部 Agent 的 stdio tool adapter；工具复用相同 services。
 - PostgreSQL：Project/Ontology 元数据、访谈、Evidence Reference、Build Session/lease、Modeling
-  Batch、rule、审计和 lineage 辅助状态。
+  Batch、Modeling Workflow Artifact/Event、rule、审计和 lineage 辅助状态。
 - RDF Dataset / Oxigraph：当前权威本体结构、实例事实、Graph Registry/Graph Set、shape/policy、
   Operation 与 statement。
 - React/Vite：本地管理与诊断工作区，不是另一条持久化路径。
@@ -74,6 +74,24 @@ Modeling Batch Service
 
 PostgreSQL 与 RDF store 没有跨存储 ACID 事务承诺。平台先持久化计划、隔离并发，并对不确定 side
 effect 向前收敛。Build Session 的恢复与 Modeling Batch apply 恢复是不同层次。
+
+## 分阶段建模工作流（R1.1-002）
+
+`ModelingWorkflowService` 在 Build Session 下保存两类确定性资源：
+
+- Modeling Workflow Artifact：按 `artifact_key` 锁定 Session 行并建立不可变线性版本，保存规范
+  content hash、角色/workflow/prompt 版本和 supersedes；
+- Modeling Execution Event：按 `client_event_id` 幂等追加、分配 Session 内 sequence，保存显式动作、
+  决定、问题状态、Artifact 和平台资源引用、结构化质量问题及可用的 Runtime 指标。
+
+问题状态在同一 Session 行锁内按 current-head CAS 转换，并发回答只有一个可成为 head。Artifact/
+Event 追加只更新 `last_activity_at`，不增加 Build Session revision，因此不会让无关 checkpoint/lease
+CAS 失效。Event 对 Modeling Batch Finding 使用 Attempt ID + 持久 `finding_fingerprint` 精确引用；
+平台验证 Project/Session 归属但不判断 Pack、Coverage Matrix、review 或 verification 的业务结论。
+
+REST 与 MCP adapter 复用同一 service、认证 actor、R-008 Project ownership resolver 和高可信秘密
+扫描。JSON/Markdown export 可重建版本与时间线，但平台事实仍以 Modeling Batch、Validation、
+Evidence、Audit、lineage 和当前 RDF 模型为准，Event 不形成第二真相。
 
 ## Lineage 与查询（R-005/R-006）
 

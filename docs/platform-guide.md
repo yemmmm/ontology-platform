@@ -10,6 +10,7 @@ Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + o
 - Project 级 Build Session、Checkpoint 与 Ontology Lease；
 - 轻量 Evidence Reference 和建模结果关联；
 - Modeling Batch 的 dry-run、原子/部分 apply、幂等、冲突与恢复；
+- 版本化 Modeling Workflow Artifact、追加式 Execution Event 与 JSON/Markdown 执行记录导出；
 - RDF/Oxigraph 语义状态、PostgreSQL 工作流/审计状态与统一 lineage；
 - SHACL、推理、规则、Context Query、scoped SPARQL 和固定读模型。
 
@@ -90,7 +91,17 @@ R-008 的身份授权。
 
 当前没有完整文档上传、解析、chunk 状态或 Evidence Artifact 工作流。
 
-### 5. 提交 Modeling Batch
+### 5. 先形成版本化业务交接
+
+外部主 Agent 先全局扫描资料，让独立业务整理角色生成 Business Knowledge Pack 和 Modeling Coverage
+Matrix；两者分别保存为不可变 Modeling Workflow Artifact。向用户确认业务摘要、高优先级能力问题
+和阻塞歧义后，再启动独立建模角色。每轮最多提出三个阻塞问题；问题的 open/answered/skipped/
+uncertain/reopened current head 与显式决定保存为 Execution Event，恢复后不重复已回答或跳过的问题。
+
+业务整理角色不设计 Class/Property/RelationType/Batch；建模角色无平台 credential，不获取 lease 或
+apply；独立 reviewer 必须看到原资料清单/关键证据、Pack/Matrix、模型草案和 dry-run Findings。
+
+### 6. 提交、评审并应用 Modeling Batch
 
 获取 Ontology Modeling Context，以其 `workspace_version` 为预期版本组织命令：
 
@@ -100,14 +111,20 @@ R-008 的身份授权。
 4. 网络中断后用原 idempotency key 重试或查询原 batch，不创建新 batch 猜测结果。
 5. 遇到 stale workspace、lease/fence 冲突或 recovering 时停止写入，重新读取上下文并按返回状态恢复。
 
+dry-run 后保存 review report。只有业务、语义、覆盖、证据、平台与独立评审六个门禁全部通过，主
+Agent 才能获取 lease 并 apply exact reviewed batch。Finding 以 Attempt ID + `finding_fingerprint`
+引用；相同 code/path 不能代替唯一身份。REVISE/BLOCKED 必须追加返工/阻塞事件并保留失败轮次。
+
 Modeling Batch 是当前写入协议，不经过旧 Proposal/Review/Publish 队列。人工确认只决定 Agent 是否
 继续提交下一批，不能伪装成平台 approve/publish 调用。
 
-### 6. 查询和验证
+### 7. 查询、验证与导出
 
 用 Ontology read model、Context Query、scoped SPARQL、SHACL validation、reasoning/rule 结果和
 lineage 验证建模结果。普通 Agent 使用 Project/Ontology 范围，不需要读取或回传 Graph Set ID 和
 graph IRI。完成后保存 checkpoint 并 complete/cancel Build Session。
+同时保存 verification report 和事件，并可导出 JSON 或 Markdown 执行记录供另一个已授权 Agent
+恢复。平台 validation 通过不能单独代表业务质量通过。
 
 Context Query 返回结构化语义上下文，不生成最终答案。现有 Agent Test 页面仍会在平台内调用 LLM，
 且中文分词能力不足，只是 R-009 完成前的 legacy 调试入口。
@@ -136,6 +153,7 @@ HTTP 完整 operation 清单见 [api.md](api.md)，MCP 完整工具清单见 [mc
 - Build Session、Checkpoint、Ontology Lease；
 - Evidence Reference；
 - Modeling Context、Modeling Batch、read model；
+- Modeling Workflow Artifact/Event、question current state 和执行记录 export；
 - Context Query、scoped SPARQL、lineage 和语义验证。
 
 当前不存在受支持的完整文件上传、Proposal/Review/Publish、Catalog/Connector、Neo4j Entity/Fact
@@ -144,7 +162,7 @@ MCP 流程。
 ## 存储与一致性
 
 - PostgreSQL：Project/Ontology 元数据、访谈状态、Evidence Reference、Build Session、lease、
-  Modeling Batch、rule、审计与 lineage 辅助状态。
+  Modeling Batch、Modeling Workflow Artifact/Event、rule、审计与 lineage 辅助状态。
 - RDF Dataset / Oxigraph：当前本体结构、实例事实、Graph Registry/Graph Set、shape/policy 与语义
   statement。
 - Search/Vector writer 当前仍为 fake/in-memory 边界，不是持久召回索引。

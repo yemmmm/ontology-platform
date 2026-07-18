@@ -4,7 +4,8 @@
 
 - 需求：`docs/requirements-v1.0.md` R-011。
 - 设计：`docs/superpowers/specs/2026-07-17-r011-runtime-documentation-alignment-design.md`。
-- 当前功能基线：R-001 至 R-007 已实现；R-008 未实现；R-009 部分实现；R-010 未实现。
+- 当前功能基线：R-001 至 R-008 已实现；R-009 部分实现；R-010 未实现。第 8 节中“R-008 未实现”
+  的内容属于首次交付测试记录，不能作为当前行为断言。
 
 开发 Agent 与独立测试 Agent 必须复用本计划。测试 Agent 在第 8 节追加 Round，不覆盖此前记录，
 并使用 `PASS | FAIL | BLOCKED`；修复后使用 `FIXED | STILL FAILING | REGRESSION`。
@@ -37,7 +38,8 @@
 
 ### C. 文档与配置真实性
 
-- README 明确当前 HTTP/MCP 无认证，且不声称 `ADMIN_TOKEN`、`MCP_API_KEY` 已生效。
+- README 明确 HTTP/UI/MCP 的认证入口、公开与受保护边界，以及 Project scope/隔离约束；不得描述
+  匿名业务 API 或匿名 MCP 为当前支持路径。
 - README 区分一键启动 backend `8001` 与手动 uvicorn `8000`，frontend preview 为 `5173`。
 - `.env.example`、Docker Compose、Settings 和启动脚本的 PostgreSQL/Oxigraph 地址没有互相冲突。
 - `docs/api.md` 不把旧 Version、Proposal、Catalog、Connector、Neo4j Entity 接口列为当前能力。
@@ -46,8 +48,9 @@
 
 ### D. R-008/R-009/R-010 边界
 
-- R-008 仍为 `未实现`；文档说明接口只适合受信任本地环境。
-- 无凭证调用当前业务 API 仍能成功，作为“认证尚未实现”的运行态证据，不当作安全通过。
+- R-008 为 `已实现`；文档说明统一认证主体、scope 授权和 Project 隔离边界。
+- 无凭证调用受保护业务 API 返回 `401`；认证主体跨 Project 或 scope 不足时按授权契约拒绝。公开
+  `health`、认证入口和 OpenAPI/docs 保持可访问。
 - R-009 仍为 `部分实现`；Agent Test 的 LLM 调用和中文分词缺口被如实记录。
 - R-010 仍为 `未实现`；不存在虚构的 Dify 基准通过数字。
 
@@ -125,7 +128,8 @@ git diff --check
 
 1. 从 `http://127.0.0.1:8001/openapi.json` 枚举 HTTP operation，与生成 API 清单逐项比较。
 2. 从 `http://127.0.0.1:8001/api/mcp/tools` 枚举 MCP 工具，与生成 MCP 清单逐项比较。
-3. 无 Authorization header 请求 `/api/projects`，记录当前 200，证明 R-008 尚未实现。
+3. 无 Authorization header 请求受保护 `/api/projects`，验证返回 `401`；使用合法凭证的请求只在
+   主体 scope 与 Project 范围内成功。
 4. 检查 `/api/health`、`/api/health/dependencies` 和 frontend `5173`。
 5. 重启 `ontology-platform.service` 后重复 1 至 4，避免只验证导入态。
 
@@ -249,8 +253,8 @@ R-011 当前态契约的 High 缺陷，修复并重新独立测试前不能把 R
 - forward test 按设计是 mock/read-only，不访问 live 或执行真实 apply；其门槛验证 Skill 规划和停止
   行为，不能替代 R-004 已有的写入测试。
 - 本需求不创建业务数据，因此无数据库清理项。临时负向文件均已删除，服务按仓库要求保留为 active。
-- R-008 无认证、R-009 平台内 LLM/中文分词缺口和 R-010 无 Dify 验收仍是明确的后续需求风险，
-  本轮没有把这些缺口判作 R-011 实现失败；唯一阻断 R-011 的是上述状态文档矛盾及其测试遗漏。
+- R-009 平台内 LLM/中文分词缺口和 R-010 无 Dify 验收仍是明确的后续需求风险；R-008 的认证、
+  scope 授权和 Project 隔离已完成，R-011 只需持续保证文档与其运行态边界一致。
 
 ### Round 2（2026-07-17）— PASS
 
@@ -283,7 +287,8 @@ R-011 当前态契约的 High 缺陷，修复并重新独立测试前不能把 R
   - `/api/health`：200，`{"status":"ok"}`；
   - `/api/health/dependencies`：200，PostgreSQL/Oxigraph 均 `ok`；
   - live OpenAPI、MCP endpoint、本地 registry 与两个生成区块逐项一致：HTTP `115`、MCP `55`；
-  - frontend：200；无 Authorization header 的 `/api/projects`：200，继续准确证明 R-008 未实现。
+  - frontend：200；本条为首次交付的历史证据。R-008 完成后，当前回归断言已改为无 Authorization
+    header 的受保护 `/api/projects` 返回 401。
 - ontology-builder Skill、CI 负向漂移、仓库可移植校验和隔离 forward test 未被本次两文件修复影响；
   Round 1 的对应 PASS 证据继续成立。
 

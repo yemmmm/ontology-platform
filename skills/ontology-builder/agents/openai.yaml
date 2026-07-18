@@ -1,4 +1,4 @@
 interface:
   display_name: "Ontology Builder"
-  short_description: "Build evidence-backed ontologies with recoverable batches"
-  default_prompt: "Use $ontology-builder to recover current platform state, clarify the domain, dry-run evidence-backed modeling batches, stop at write decisions, and verify results with context and lineage."
+  short_description: "Run staged, evidence-backed ontology modeling"
+  default_prompt: "Use $ontology-builder to recover durable workflow state, organize business knowledge, model and independently review a vertical slice, then apply and verify it safely."

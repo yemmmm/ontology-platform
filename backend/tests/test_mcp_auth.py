@@ -42,6 +42,8 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
                 "ontology_id",
                 "session_id",
                 "batch_id",
+                "workflow_artifact_id",
+                "execution_event_id",
                 "reference_id",
                 "question_id",
                 "graph_set_id",

@@ -97,6 +97,21 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "get_build_session": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
+    "get_modeling_workflow_artifact": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "list_modeling_workflow_artifacts": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "get_modeling_execution_event": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "list_modeling_execution_events": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "export_modeling_workflow_record": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
     "submit_modeling_batch": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "create_evidence_reference": _policy(
         "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
@@ -126,6 +141,12 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
         "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
     ),
     "create_build_session": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
+    "create_modeling_workflow_artifact": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
+    "record_modeling_execution_event": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
     "resume_build_session": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "save_build_checkpoint": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "complete_build_session": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
