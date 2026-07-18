@@ -5,6 +5,25 @@ on:
   pull_request:
 
 jobs:
+  dify-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned Dify foundations corpus offline
+        run: >-
+          python docs/evaluation-corpora/dify-foundations/tools/corpus.py verify
+          docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a
+      - name: Test Dify foundations corpus contracts
+        run: >-
+          python -m unittest discover
+          -s docs/evaluation-corpora/dify-foundations/tests
+          -p 'test_*.py' -v
+      - name: Validate Dify corpus manifest JSON
+        run: >-
+          python -m json.tool
+          docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/manifest.json
+          >/dev/null
+
   interface-and-skill-contracts:
     runs-on: ubuntu-latest
     steps:

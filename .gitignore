@@ -12,6 +12,10 @@ dist/
 build/
 *.tsbuildinfo
 
+# Preserve immutable official corpus paths whose upstream documentation uses build/ directories.
+!docs/evaluation-corpora/dify-foundations/snapshots/**/official/**/build/
+!docs/evaluation-corpora/dify-foundations/snapshots/**/official/**/build/**
+
 .DS_Store
 
 # Agent tooling (external skills, caches, critique output)

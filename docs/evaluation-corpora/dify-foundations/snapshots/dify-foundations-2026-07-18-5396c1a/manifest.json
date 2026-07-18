@@ -1,0 +1,540 @@
+{
+  "schema_version": 1,
+  "corpus_id": "dify-foundations",
+  "snapshot_id": "dify-foundations-2026-07-18-5396c1a",
+  "created_at": "2026-07-18T00:00:00+08:00",
+  "purpose": "Reproducible offline input for modeling and reviewing Dify foundational capabilities and usage.",
+  "scope": [
+    "Official English source pages for Dify foundations, paired official Chinese pages from the same commit.",
+    "Product introduction, application types, Workflow and Chatflow, canvas and variables, test and publish, application reuse and DSL, core nodes, and the official quick start.",
+    "Pinned LICENSE and docs.json navigation configuration from the same official commit."
+  ],
+  "non_goals": [
+    "Full API reference, plugin development, deployment operations, advanced knowledge features, monitoring, or logs.",
+    "Images, videos, fonts, scripts, tracking assets, a generic crawler, automatic synchronization, or platform source management.",
+    "Treating local files as Evidence References or guaranteeing semantic parity of official translations."
+  ],
+  "status": "active",
+  "previous_snapshot": null,
+  "change_summary": "Initial Dify foundations snapshot.",
+  "source": {
+    "repository": "https://github.com/langgenius/dify-docs",
+    "commit": "5396c1a1afbea0dee3d089abfabdf6dac91d30d5",
+    "commit_time": "2026-07-17T19:52:12+08:00",
+    "raw_host": "raw.githubusercontent.com",
+    "website": "https://docs.dify.ai/",
+    "navigation_discovery": "https://docs.dify.ai/llms.txt"
+  },
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "attribution": "Dify documentation by LangGenius, used under CC BY 4.0.",
+    "file": "official/LICENSE"
+  },
+  "required_topics": [
+    "product-introduction",
+    "application-types",
+    "workflow-chatflow",
+    "blank-workflow-creation",
+    "canvas-orchestration",
+    "variables",
+    "test-publish",
+    "app-reuse",
+    "application-template",
+    "dsl",
+    "start-user-input",
+    "llm",
+    "if-else",
+    "iteration",
+    "jinja2-template",
+    "output",
+    "quick-start-example",
+    "navigation-index",
+    "license"
+  ],
+  "excluded_categories": [
+    "Full API reference",
+    "Plugin development",
+    "Self-hosted deployment operations",
+    "Advanced knowledge features",
+    "Monitoring and runtime logs",
+    "Images, video, fonts, JavaScript, and tracking assets"
+  ],
+  "entries": [
+    {
+      "source_path": "LICENSE",
+      "snapshot_path": "official/LICENSE",
+      "official_page_url": "https://github.com/langgenius/dify-docs/blob/5396c1a1afbea0dee3d089abfabdf6dac91d30d5/LICENSE",
+      "language": "neutral",
+      "title": "Creative Commons Attribution 4.0 International",
+      "topics": [
+        "license"
+      ],
+      "selection_reason": "Preserves the official documentation license and attribution terms.",
+      "sha256": "12d3a82a7d1378e6f597ec23d63a081aeb6ec4bc8de2a76ee9dc96c34c6d7a1b",
+      "translation_of": null,
+      "translation_status": "not_applicable"
+    },
+    {
+      "source_path": "docs.json",
+      "snapshot_path": "official/docs.json",
+      "official_page_url": "https://github.com/langgenius/dify-docs/blob/5396c1a1afbea0dee3d089abfabdf6dac91d30d5/docs.json",
+      "language": "neutral",
+      "title": "Dify documentation navigation configuration",
+      "topics": [
+        "navigation-index"
+      ],
+      "selection_reason": "Pins the official navigation index used to select and exclude pages.",
+      "sha256": "456126f61e2b78de5fd93e70c5f6fa1deeac77b5f1eff52d800559ebabd49e32",
+      "translation_of": null,
+      "translation_status": "not_applicable"
+    },
+    {
+      "source_path": "en/home.mdx",
+      "snapshot_path": "official/en/home.mdx",
+      "official_page_url": "https://docs.dify.ai/en/home",
+      "language": "en",
+      "title": "Dify Documentation",
+      "topics": [
+        "product-introduction"
+      ],
+      "selection_reason": "Establishes Dify's product positioning and primary usage surfaces.",
+      "sha256": "576d517d617b0b5d731fa9d0d7ef715460a90004a5c602c0d7473f6d86afb6ca",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/home.mdx",
+      "snapshot_path": "official/zh/home.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/home",
+      "language": "zh",
+      "title": "Dify 文档",
+      "topics": [
+        "product-introduction"
+      ],
+      "selection_reason": "Establishes Dify's product positioning and primary usage surfaces.",
+      "sha256": "a6f291c64ef9c522c9c3d2e8eb98903f7c68904d3469adf85d3d3d25dff9a4da",
+      "translation_of": "en/home.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/getting-started/introduction.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/getting-started/introduction.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/getting-started/introduction",
+      "language": "en",
+      "title": "Use Dify",
+      "topics": [
+        "product-introduction",
+        "application-types"
+      ],
+      "selection_reason": "Introduces the hosted product and the main ways users build with Dify.",
+      "sha256": "b2f28f15128632c1616691314428d356db8db8ea21fcd1d432f5297c6b2e357b",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/getting-started/introduction.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/getting-started/introduction.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/getting-started/introduction",
+      "language": "zh",
+      "title": "使用 Dify",
+      "topics": [
+        "product-introduction",
+        "application-types"
+      ],
+      "selection_reason": "Introduces the hosted product and the main ways users build with Dify.",
+      "sha256": "cf124f94abbcf1c9f2048a9418546b81ebf5274d2f98d7372314137af8a76731",
+      "translation_of": "en/cloud/use-dify/getting-started/introduction.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/learn/key-concepts.mdx",
+      "snapshot_path": "official/en/learn/key-concepts.mdx",
+      "official_page_url": "https://docs.dify.ai/en/learn/key-concepts",
+      "language": "en",
+      "title": "Key Concepts",
+      "topics": [
+        "application-types",
+        "workflow-chatflow",
+        "variables",
+        "dsl"
+      ],
+      "selection_reason": "Defines application types, workflows, variables, and DSL terminology.",
+      "sha256": "accff233a5755dd4097acdb7a6fdbf3ffd92e9bd05656ca832092b7d7251f679",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/learn/key-concepts.mdx",
+      "snapshot_path": "official/zh/learn/key-concepts.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/learn/key-concepts",
+      "language": "zh",
+      "title": "核心概念",
+      "topics": [
+        "application-types",
+        "workflow-chatflow",
+        "variables",
+        "dsl"
+      ],
+      "selection_reason": "Defines application types, workflows, variables, and DSL terminology.",
+      "sha256": "4821b00f11bd1cadb459a1b28c4ffd835f563ff60c61901baec5b973eb94d4f9",
+      "translation_of": "en/learn/key-concepts.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/build/workflow-chatflow.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/build/workflow-chatflow.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/build/workflow-chatflow",
+      "language": "en",
+      "title": "Workflow & Chatflow",
+      "topics": [
+        "workflow-chatflow",
+        "application-types"
+      ],
+      "selection_reason": "Explains when to choose single-run Workflow or conversational Chatflow.",
+      "sha256": "aa73bccc7f58cf8b5c0b221ab5606733cca2dde77cf6049f8b0249c9aee5f557",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/build/workflow-chatflow.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/build/workflow-chatflow.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/build/workflow-chatflow",
+      "language": "zh",
+      "title": "Workflow 与 Chatflow",
+      "topics": [
+        "workflow-chatflow",
+        "application-types"
+      ],
+      "selection_reason": "Explains when to choose single-run Workflow or conversational Chatflow.",
+      "sha256": "72f5a5161f48788f3adb494f4e76e225728d8ddd00bc1b080c806512ee150b12",
+      "translation_of": "en/cloud/use-dify/build/workflow-chatflow.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/build/orchestrate-node.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/build/orchestrate-node.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/build/orchestrate-node",
+      "language": "en",
+      "title": "Orchestration Logic",
+      "topics": [
+        "canvas-orchestration",
+        "variables"
+      ],
+      "selection_reason": "Documents canvas connections, execution structure, and variable dependencies.",
+      "sha256": "d49d51a0243dfcf60f5d8201fa6aa5b32cac3084ad6b3e8e08dc4a24015b9130",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/build/orchestrate-node.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/build/orchestrate-node.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/build/orchestrate-node",
+      "language": "zh",
+      "title": "编排逻辑",
+      "topics": [
+        "canvas-orchestration",
+        "variables"
+      ],
+      "selection_reason": "Documents canvas connections, execution structure, and variable dependencies.",
+      "sha256": "96f90099bbf94ffa6dc3618e680ca245ae5ce090a3d44e444fe25226916d3146",
+      "translation_of": "en/cloud/use-dify/build/orchestrate-node.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/workspace/app-management.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/workspace/app-management.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/workspace/app-management",
+      "language": "en",
+      "title": "Manage Apps",
+      "topics": [
+        "app-reuse",
+        "application-template",
+        "dsl"
+      ],
+      "selection_reason": "Distinguishes application duplication/templates from DSL portability.",
+      "sha256": "34ebd0389794b83ff307ebdb110b1059b55bee45fa27c04acc1dd9dd759868f8",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/workspace/app-management.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/workspace/app-management.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/workspace/app-management",
+      "language": "zh",
+      "title": "管理应用",
+      "topics": [
+        "app-reuse",
+        "application-template",
+        "dsl"
+      ],
+      "selection_reason": "Distinguishes application duplication/templates from DSL portability.",
+      "sha256": "71b4baef2cc1516768b50376a547f68954ed53e1603d8c654073e9084262c763",
+      "translation_of": "en/cloud/use-dify/workspace/app-management.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/build/version-control.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/build/version-control.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/build/version-control",
+      "language": "en",
+      "title": "Version Control",
+      "topics": [
+        "test-publish"
+      ],
+      "selection_reason": "Defines draft, test, publish, and version boundaries.",
+      "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/build/version-control.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/build/version-control.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/build/version-control",
+      "language": "zh",
+      "title": "版本控制",
+      "topics": [
+        "test-publish"
+      ],
+      "selection_reason": "Defines draft, test, publish, and version boundaries.",
+      "sha256": "c2653926e28933558c4da95d1a9c8ea375c32ea333c7690f050d11f23127973a",
+      "translation_of": "en/cloud/use-dify/build/version-control.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/quick-start.mdx",
+      "snapshot_path": "official/en/quick-start.mdx",
+      "official_page_url": "https://docs.dify.ai/en/quick-start",
+      "language": "en",
+      "title": "30-Minute Quick Start",
+      "topics": [
+        "blank-workflow-creation",
+        "canvas-orchestration",
+        "quick-start-example",
+        "jinja2-template"
+      ],
+      "selection_reason": "Provides the official Multi-platform content generator walkthrough and data flow.",
+      "sha256": "e1679921bd3ea9eacf8ddecc48f29194934efa872cffc0d59df48548632ff1c6",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/quick-start.mdx",
+      "snapshot_path": "official/zh/quick-start.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/quick-start",
+      "language": "zh",
+      "title": "30 分钟快速入门",
+      "topics": [
+        "blank-workflow-creation",
+        "canvas-orchestration",
+        "quick-start-example",
+        "jinja2-template"
+      ],
+      "selection_reason": "Provides the official Multi-platform content generator walkthrough and data flow.",
+      "sha256": "ef185cbade8dc339db856c142807591d1d4c3546577c985d05c3889d9257efd2",
+      "translation_of": "en/quick-start.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/start.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/start.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/start",
+      "language": "en",
+      "title": "Start Node",
+      "topics": [
+        "start-user-input",
+        "variables"
+      ],
+      "selection_reason": "Defines Workflow start input variables.",
+      "sha256": "74f738073b722288dc39d355156ad0eee0cd9ee97fdd07b2254db2657a667b15",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/start.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/start.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/start",
+      "language": "zh",
+      "title": "开始节点",
+      "topics": [
+        "start-user-input",
+        "variables"
+      ],
+      "selection_reason": "Defines Workflow start input variables.",
+      "sha256": "cfb7e23134862b98e8fc6fbd32bf8dad22428d1508fcdd671da3dd9598d4431c",
+      "translation_of": "en/cloud/use-dify/nodes/start.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/user-input.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/user-input.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/user-input",
+      "language": "en",
+      "title": "User Input",
+      "topics": [
+        "start-user-input",
+        "variables"
+      ],
+      "selection_reason": "Defines Chatflow user input and variable collection.",
+      "sha256": "b6561d336462feb06290387101481fd8de4909c2ff5ed6f8d5d700327e05b0a9",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/user-input.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/user-input.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/user-input",
+      "language": "zh",
+      "title": "用户输入",
+      "topics": [
+        "start-user-input",
+        "variables"
+      ],
+      "selection_reason": "Defines Chatflow user input and variable collection.",
+      "sha256": "b0909bab1b124e25c32852ca780887b1e2d5ad30dc3d56371afce5d975ef9a8d",
+      "translation_of": "en/cloud/use-dify/nodes/user-input.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/llm.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/llm.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/llm",
+      "language": "en",
+      "title": "LLM",
+      "topics": [
+        "llm"
+      ],
+      "selection_reason": "Defines the core LLM workflow node.",
+      "sha256": "e70ba914782831fe7b0a8beb637caf876011dd9705836d80a42f5faa8cf40621",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/llm.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/llm.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/llm",
+      "language": "zh",
+      "title": "大语言模型",
+      "topics": [
+        "llm"
+      ],
+      "selection_reason": "Defines the core LLM workflow node.",
+      "sha256": "56da7a931cc92c6e8f03df6b617d56a569c8ca073e07560a60ad343fa8bae7da",
+      "translation_of": "en/cloud/use-dify/nodes/llm.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/ifelse.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/ifelse.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/ifelse",
+      "language": "en",
+      "title": "If-Else",
+      "topics": [
+        "if-else"
+      ],
+      "selection_reason": "Defines conditional routing in workflows.",
+      "sha256": "45b93f270f440b62d8ec9162eec07e09cde4c17fa46c3527616e6ec7c0a1f738",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/ifelse.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/ifelse.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/ifelse",
+      "language": "zh",
+      "title": "If-Else",
+      "topics": [
+        "if-else"
+      ],
+      "selection_reason": "Defines conditional routing in workflows.",
+      "sha256": "fb1a65dfbccb1729447baf50c3e9dea9327c96932aadaca02cd134c82ee40d13",
+      "translation_of": "en/cloud/use-dify/nodes/ifelse.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/iteration.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/iteration.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/iteration",
+      "language": "en",
+      "title": "Iteration",
+      "topics": [
+        "iteration"
+      ],
+      "selection_reason": "Defines repeated processing over arrays.",
+      "sha256": "760b6c77fdf699e48219ebadd9e121c359b2beb3266a22236cb3c5258ffce37f",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/iteration.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/iteration.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/iteration",
+      "language": "zh",
+      "title": "迭代",
+      "topics": [
+        "iteration"
+      ],
+      "selection_reason": "Defines repeated processing over arrays.",
+      "sha256": "780575f8a5418287b8df9b598808d025a2db77f465337476c6e9597bbd1859d3",
+      "translation_of": "en/cloud/use-dify/nodes/iteration.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/template.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/template.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/template",
+      "language": "en",
+      "title": "Template",
+      "topics": [
+        "jinja2-template"
+      ],
+      "selection_reason": "Defines the Jinja2 data transformation node, distinct from app templates.",
+      "sha256": "eda580ca7301991c873dcd2f5e0cfa4827dc05349b760cde8ab88086974e33c6",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/template.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/template.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/template",
+      "language": "zh",
+      "title": "模板转换",
+      "topics": [
+        "jinja2-template"
+      ],
+      "selection_reason": "Defines the Jinja2 data transformation node, distinct from app templates.",
+      "sha256": "b3b05b919c81556203ce7cdaec81cb0f1f928c1c7cd4d43a82ed453368280ed2",
+      "translation_of": "en/cloud/use-dify/nodes/template.mdx",
+      "translation_status": "official_same_commit"
+    },
+    {
+      "source_path": "en/cloud/use-dify/nodes/output.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/output.mdx",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/nodes/output",
+      "language": "en",
+      "title": "Output",
+      "topics": [
+        "output"
+      ],
+      "selection_reason": "Defines Workflow output variables and terminal behavior.",
+      "sha256": "456021c18efdfcafa51750e44053199f5a5c037a55db338b8935533225cfc2ba",
+      "translation_of": null,
+      "translation_status": "source"
+    },
+    {
+      "source_path": "zh/cloud/use-dify/nodes/output.mdx",
+      "snapshot_path": "official/zh/cloud/use-dify/nodes/output.mdx",
+      "official_page_url": "https://docs.dify.ai/zh/cloud/use-dify/nodes/output",
+      "language": "zh",
+      "title": "输出",
+      "topics": [
+        "output"
+      ],
+      "selection_reason": "Defines Workflow output variables and terminal behavior.",
+      "sha256": "5e329c3c13130e1524ce2d50738adb2cbfb8dbee6cc4cba8420d12cf9c738353",
+      "translation_of": "en/cloud/use-dify/nodes/output.mdx",
+      "translation_status": "official_same_commit"
+    }
+  ]
+}

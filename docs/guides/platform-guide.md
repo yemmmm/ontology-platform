@@ -91,6 +91,13 @@ R-008 的身份授权。
 
 当前没有完整文档上传、解析、chunk 状态或 Evidence Artifact 工作流。
 
+用于 v1.1 Dify 场景的仓库本地验收资料位于
+`docs/evaluation-corpora/dify-foundations/`。它固定官方文档 commit、逐文件来源与 SHA-256，并提供
+离线校验、重建、版本差异和主题定位工具。外部角色应在一个 Build Session 中使用同一 snapshot
+ID，并把 snapshot ID、manifest hash、实际文件路径/hash 写入 Business Knowledge Pack；发现官方
+更新时先报告新鲜度差异，不能静默混用正文。该资料集只是可复现业务输入，不是平台上传能力，也
+不直接等于 Evidence Reference；建模项仍要保存实际使用的精确原文摘录。
+
 ### 5. 先形成版本化业务交接
 
 外部主 Agent 先全局扫描资料，让独立业务整理角色生成 Business Knowledge Pack 和 Modeling Coverage
@@ -173,7 +180,8 @@ fence 隔离并发，并在原 attempt 下向前恢复不确定结果。
 ## 当前缺口
 
 - R-009：Agent Test 尚未重构为纯 Context Query 诊断，仍有平台内 LLM 和中文分词缺口。
-- R-010：没有固定 Dify 数据集、任务集、外部 Agent 执行器或指标报告。
+- R-010：v1.1 已交付固定 Dify 官方文档资料快照，但任务集、外部 Agent 执行器、指标报告以及
+  R1.1-003 后的完整 Dify 集成重跑仍未闭环。
 - P1：持久 Search/Vector、模块依赖、不可变 release、异步任务、完整构建工作台等仍未闭环。
 
 需求目标与最新状态以 [requirements-v1.0.md](requirements-v1.0.md) 为准。
