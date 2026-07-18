@@ -700,3 +700,20 @@
   `AGENTS.md`、`CLAUDE.md` 的未暂存索引计数变化。
 - Outcome: repo-local Harness 增补实现完成。R1.1-002 全局 `Delivery commit` 继续保持 pending，原因
   仍是用户业务价值门禁，而不是 Harness 实现或测试缺口。
+
+### 2026-07-18T15:10:00+08:00 — R1.1-002 business-value confirmation and requirement closure — user and main agent
+
+- User confirmation: 用户确认“当前 ontology 已经具备了一定的使用价值，但也还有优化空间，可以
+  算作阶段性地完成了 v1.1 需求”。该结论满足 R1.1-002 的用户业务价值门禁，不把阶段性完成扩大为
+  建模效果已无优化空间。
+- Platform evidence: 在 Build Session `006345fd-c5ef-408a-8199-392cc4846b1a` 中持久化
+  `user_reported` 的 `phase_completed` 事件
+  `b51e5314-a089-4309-b20a-fb7da1f7bb0e`（sequence 40），关联当前 Ontology
+  `d980c9ed-6808-4d4c-bd60-8077fa016a37` 和 verification artifact
+  `a712a75a-006a-480f-a807-2838085cb7f4`。
+- Final checkpoint: 保存 handoff checkpoint `012396c3-9694-4f82-abfd-c9dc73290b66`，随后将
+  Build Session 更新为 `completed`、revision 12；完成后活动 Ontology lease 数为 0。
+- Requirement decision: R1.1-002 更新为 `已实现`。R1.1-001 保持开放，继续承接推理血缘完整性、
+  branch/retry/loop/parallel 场景以及真实 Dify 账号资料的重复或受控验证。
+- Delivery commit: 本闭环使用提交主题 `Close staged modeling workflow requirement`；最终提交哈希可由
+  `git log -- docs/requirements-v1.1.md` 和本交付记录路径解析，避免用 amend 回写自身提交哈希。
