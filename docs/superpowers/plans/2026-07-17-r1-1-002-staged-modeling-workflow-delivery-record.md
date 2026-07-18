@@ -3,11 +3,12 @@
 - Requirement source: `docs/requirements-v1.1.md` R1.1-002，效果证据归入 R1.1-001
 - Status: awaiting-user-business-value-review
 - Started: 2026-07-17T17:16:24+08:00
-- Last updated: 2026-07-18T14:20:00+08:00
+- Last updated: 2026-07-18T14:25:00+08:00
 - Design: `docs/superpowers/specs/2026-07-17-r1-1-002-staged-modeling-workflow-design.md`
 - Shared test plan: `docs/superpowers/plans/2026-07-17-r1-1-002-staged-modeling-workflow-test-plan.md`
 - Delivery baseline: `49a0b9e Add v1 full-chain acceptance coverage`；开始前已有用户改动，见首条时间线
 - Delivery commit: pending
+- Repo-local Harness implementation commit: `0d5604d Add local modeling harness`
 
 ## Confirmed contract
 
@@ -692,3 +693,10 @@
   critical 静默归因于 Harness，也不能据此扩大本轮测试范围。
 - Outcome/next step: 再次暂存本条追加记录并重跑 staged detect/diff check；若范围保持一致，创建短
   imperative commit。首次真实使用仍需操作者 `/hooks` trust + activation smoke。
+
+### 2026-07-18T14:25:00+08:00 — Harness commit closure — main agent
+
+- Commit: `0d5604d Add local modeling harness`，包含 11 个精确暂存文件和最终独立测试证据；未包含
+  `AGENTS.md`、`CLAUDE.md` 的未暂存索引计数变化。
+- Outcome: repo-local Harness 增补实现完成。R1.1-002 全局 `Delivery commit` 继续保持 pending，原因
+  仍是用户业务价值门禁，而不是 Harness 实现或测试缺口。
