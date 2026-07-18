@@ -1,4 +1,12 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  FormEvent,
+  useCallback,
+  useContext,
+  useMemo,
+  useEffect,
+  useState,
+} from "react";
 import { apiRequest } from "./api";
 
 type Principal = {
@@ -6,6 +14,21 @@ type Principal = {
   scopes: string[];
   project_id: string | null;
 };
+
+type AuthContextValue = {
+  principal: Principal;
+  logout: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function useAuth() {
+  const auth = useContext(AuthContext);
+  if (!auth) {
+    throw new Error("useAuth must be used within an AuthGate provider");
+  }
+  return auth;
+}
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [principal, setPrincipal] = useState<Principal | null>(null);
@@ -76,13 +99,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
+  const authContext = useMemo(() => ({ principal, logout }), [principal, logout]);
+
   return (
-    <>
-      <div className="auth-session">
-        <span>{principal.actor}</span>
-        <button type="button" onClick={() => void logout()}>Sign out</button>
-      </div>
+    <AuthContext.Provider value={authContext}>
       {children}
-    </>
+    </AuthContext.Provider>
   );
 }

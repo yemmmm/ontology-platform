@@ -11,6 +11,7 @@ import {
   History,
   Layers,
   Loader2,
+  LogOut,
   Lock,
   Network,
   Plus,
@@ -27,6 +28,7 @@ import {
   Workflow,
   Wrench,
   X,
+  User2,
 } from "lucide-react";
 // Note: CircleGauge removed (overview tab gone), as were FileCheck2/FileText/Link2/Save/Braces/Box.
 import { Card, ConfigProvider, Modal, Progress, Tag, Tooltip } from "antd";
@@ -60,6 +62,7 @@ import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
 import { BuildContextDebugPage } from "./pages/BuildContextDebugPage";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
+import { useAuth } from "./AuthGate";
 import { useT } from "./i18n";
 import {
   getGovernanceStatus,
@@ -236,6 +239,7 @@ function useStoredWorkspaceTab(key: string, fallback: WorkspaceTab) {
 
 export function App() {
   const t = useT();
+  const { principal, logout } = useAuth();
   const [view, setView] = useState<AppView>(() =>
     queryValue("ontology") || (queryValue("project") && queryValue("tab") === "build-context")
       ? "workspace"
@@ -533,6 +537,8 @@ export function App() {
                   navigateWorkspace={navigateWorkspace}
                   setPageDirty={setPageDirty}
                   showError={showError}
+                  currentUser={principal.actor}
+                  onSignOut={logout}
                   tab={workspaceTab}
                 />
               )}
@@ -805,6 +811,8 @@ function WorkspaceContent(props: {
   setPageDirty: (dirty: boolean) => void;
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
+  currentUser: string;
+  onSignOut: () => Promise<void>;
 }) {
   const t = useT();
   const governedRequest = props.request;
@@ -1108,6 +1116,8 @@ function WorkspaceContent(props: {
       request={props.request}
       setHealth={props.setHealth}
       showError={props.showError}
+      currentUser={props.currentUser}
+      onSignOut={props.onSignOut}
     />
   );
 }
@@ -1120,8 +1130,11 @@ function SettingsPage(props: {
   request: Requester;
   setHealth: (health: Health | null) => void;
   showError: (error: unknown) => void;
+  currentUser: string;
+  onSignOut: () => Promise<void>;
 }) {
   const t = useT();
+  const { currentUser, onSignOut } = props;
   async function checkHealth() {
     try {
       props.setHealth(await props.request<Health>("/health/dependencies"));
@@ -1132,6 +1145,16 @@ function SettingsPage(props: {
 
   return (
     <section className="pageGrid systemGrid">
+      <Panel title={t("Account")} icon={<User2 size={17} />} wide>
+        <dl className="detailList">
+          <dt>{t("Signed in as")}</dt>
+          <dd>{currentUser}</dd>
+        </dl>
+        <button className="secondaryButton" onClick={() => void onSignOut()} type="button">
+          <LogOut size={15} />
+          {t("Sign out")}
+        </button>
+      </Panel>
       <Panel title={t("Workspace edit lock")} icon={props.locked ? <Lock size={17} /> : <Unlock size={17} />} wide>
         <div className={classNames("lockStatePanel", props.locked ? "locked" : "unlocked")}>
           <div>
