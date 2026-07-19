@@ -3,9 +3,11 @@
 - Requirement source: `docs/requirements/requirements-v1.1.md` R1.1-003
 - Status: in-progress
 - Started: 2026-07-19T11:12:20+08:00
-- Last updated: 2026-07-19T12:18:19+08:00
-- Design: pending refinement
-- Shared test plan: pending refinement
+- Last updated: 2026-07-19T12:39:58+08:00
+- Design:
+  `docs/delivery/designs/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-design.md`
+- Shared test plan:
+  `docs/delivery/test-plans/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-test-plan.md`
 - Delivery baseline: worktree at `527966a457667a2c5ddaa0fbcdef1a6c585dbcc1`;
   pre-existing R1.2-002 record/design/test-plan changes are unrelated and excluded
 - Delivery commit: `Refine reliable modeling artifact handoff requirement`; resolve the immutable
@@ -200,10 +202,84 @@
   plan, mandatory plan review, delegated development, independent testing, runtime restart, and
   R1.1-003/R1.1-004 closeout remain pending a future implementation request.
 
+### 2026-07-19T12:26:35+08:00 — implementation authorization and risk probes — main agent
+
+- Context: the user explicitly requested completion of the remaining requirement-delivery phases.
+- Action/decision: resumed at commit `2de5ec7` and probed the three assumptions most likely to
+  invalidate the frozen contract: representative payload size, real Codex file/manifest handoff,
+  and platform-side linear/idempotent concurrency.
+- Evidence: live PostgreSQL contains two 32-item Dify drafts of 32,422 and 32,433 canonical bytes,
+  leaving 96.91% headroom under 1 MiB. An isolated real `codex exec --ephemeral` created an
+  atomically published 42,227-byte/40-item JSON with matching SHA-256, byte count, and item count,
+  while its final manifest was 163 bytes and the temporary file was absent. Focused service tests
+  returned `2 passed`; the opt-in real PostgreSQL concurrency test returned `1 passed` with
+  `RUN_POSTGRES_CONCURRENCY_TESTS=1`.
+- Outcome/next step: all probes support the frozen contract. Reuse the current platform Artifact
+  CAS and event/checkpoint facts; implement the missing Codex-controlled spool, bounded manifest,
+  validation/recovery, lifecycle, and Skill/Harness integration without a new general upload API.
+
+### 2026-07-19T12:30:42+08:00 — design and shared test plan freeze — main agent
+
+- Context: the three probes removed the storage-size, Runtime-output, and platform-CAS unknowns.
+- Action/decision: froze one functional design and one shared test plan. The design uses a
+  gitignored Build Session/artifact/generation spool, fresh ephemeral Codex with
+  output-last-message redirected to a temporary file, trusted validation plus atomic publication,
+  a bounded manifest/state machine, local head CAS, existing platform Artifact CAS, platform-first
+  recovery, two-round rework, and terminal cleanup. It adds no general upload API, migration, or UI.
+- Evidence:
+  `docs/delivery/designs/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-design.md`;
+  `docs/delivery/test-plans/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-test-plan.md`;
+  Harness baseline `20 tests OK`; Skill structure validation passed; `git diff --check` passed.
+  Direct host execution of `run_evals.py` lacked `jsonschema`, so the reviewed required command
+  is the backend uv environment where the dependency exists.
+- Outcome/next step: send the exact frozen requirement/design/test plan and repository constraints
+  to the mandatory plan reviewer. No implementation starts before PASS or accepted-high repair.
+
+### 2026-07-19T12:36:30+08:00 — plan review round 1 and revision — plan reviewer and main agent
+
+- Context: the independent reviewer returned REVISE with three evidence-backed High findings.
+- Action/decision: the main agent verified and accepted all three. The revised design now covers
+  runner death with complete temp output or post-rename/pre-state output, live-child identity and
+  conflict handling; freezes the dry-run-to-apply envelope while preserving one immutable Batch
+  content hash; and maps generated/validated/persisted/blocked to stable Event/Checkpoint IDs,
+  payloads, locators, and next steps including retroactive recovery recording.
+- Evidence: Codex output-last-message behavior; modeling batch request hash and immutable content
+  construction; existing Build Checkpoint/Event schemas; revised design generation, recovery,
+  exact apply, and platform-recording sections; revised test-plan D/F/I sections.
+- Outcome/next step: return the changed plan to the same reviewer. No developer handoff until PASS.
+
+### 2026-07-19T12:38:52+08:00 — plan review round 2 and revision — plan reviewer and main agent
+
+- Context: Round 2 confirmed the apply-envelope and Event/Checkpoint findings resolved, but found
+  one remaining High: a replacement runner cannot infer a dead Codex child's exit code from PID
+  identity and a complete-looking temp file.
+- Action/decision: accepted-high. Added a minimal detached supervisor that waits for Codex and
+  atomically persists trusted owner-only process status. Recovery publishes only with matching
+  durable exit-zero evidence; non-zero, signal, missing, invalid, or mismatched status fails closed
+  without rerun. Aligned success/non-zero/unknown-status crash tests and publication wording.
+- Evidence: revised design controlled-spool, running recovery, state/failpoint, and error sections;
+  revised test-plan B/D sections.
+- Outcome/next step: return the second revision to the reviewer. Development remains gated.
+
+### 2026-07-19T12:39:58+08:00 — plan review round 3 PASS — plan reviewer and main agent
+
+- Context: the reviewer rechecked the durable supervisor, state/failpoint ordering, exact apply,
+  and platform recovery-record revisions against the repository.
+- Action/decision: reviewer returned PASS with no remaining evidence-backed Critical/High issue.
+  The main agent freezes the reviewed design/test scope for development.
+- Evidence: plan reviewer Round 3; `git diff --check` passed; design marked reviewed PASS.
+- Outcome/next step: commit the reviewed planning baseline, then hand the exact requirement,
+  design, shared test plan, delivery record, constraints, and verification commands to the
+  requirement developer. Developer must not edit this record or commit.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
 | --- | --- | --- | --- | --- |
+| 1 | Temp-output crash window contradicted generated/validated ordering | accepted-high | Codex output-last-message and original design/test ordering | Added running/temp/final recovery, process identity, four crash failpoints, aligned states/tests |
+| 1 | Dry-run envelope could not become exact valid apply | accepted-high | modeler schema; modeling batch request/content hashes | Froze fresh apply Attempt envelope and same immutable Batch/hash assertions |
+| 1 | Generation/handoff/validation platform recording unspecified | accepted-high | R1.1-003 contract; checkpoint/event schemas | Added stable Event/Checkpoint mapping, payloads, next steps, and retroactive recovery tests |
+| 2 | Dead child plus temp file did not prove successful Codex exit | accepted-high | runner cannot recover reaped-process exit code | Added detached supervisor, durable exit status, fail-closed unknown/non-zero handling and crash tests |
 
 ## Development and defect history
 
