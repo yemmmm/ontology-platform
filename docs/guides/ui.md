@@ -28,8 +28,9 @@ Evidence 页面只保存文档名和原文片段，不上传或解析完整文�
 workspace version、lease/fence/recovery、最近 Modeling Batch、Attempt、Item 和 Finding；它不会
 触发 apply 或恢复。
 
-代码中仍有部分 legacy 页面组件和 URL tab 兼容重定向。它们不表示旧 Evidence Artifact、
-Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API 仍受支持。
+legacy 页面组件已经移除，仅保留旧 URL tab 到 Overview 或 Debug 的兼容重定向。它们不表示旧
+Evidence Artifact、Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API
+仍受支持。
 
 ## Agent 查询边界
 

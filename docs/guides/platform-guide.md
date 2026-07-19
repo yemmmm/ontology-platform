@@ -145,8 +145,8 @@ Context Query 返回结构化语义上下文，不生成最终答案。平台不
 - Debug：governance/runtime diagnostics、Build Context、Recall、MCP Tools、Graph Sets；
 - Settings：编辑锁与平台依赖健康。
 
-部分历史页面组件仍保留在代码中并重定向到当前工作区，它们不代表旧 Version、Proposal、Catalog、
-Connector 或 Publication HTTP/MCP 协议仍然存在。
+历史页面组件已经移除，仅保留旧 URL tab 到当前工作区的轻量兼容跳转；这些跳转不代表旧 Version、
+Proposal、Catalog、Connector 或 Publication HTTP/MCP 协议仍然存在。
 
 ## HTTP 与 MCP
 

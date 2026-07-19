@@ -1,5 +1,13 @@
 # Functional Semantic-Load Inventory
 
+> **Historical planning artifact (superseded 2026-07-19):** This inventory captures the
+> semantic-load migration plan generated on 2026-07-06; it is no longer an inventory of the
+> current UI. `PublicationPage`, `GraphSetHistoryPage`, `NamedGraphsPage`,
+> `SemanticEditWorkbenchPage`, `SemanticRunsPage`, and `SemanticImportExportPage` have been
+> removed. Their supported capabilities remain available through the consolidated Overview,
+> Debug, Graph Sets, HTTP, and MCP surfaces described in `docs/guides/ui.md` and
+> `docs/requirements/requirements-v1.0.md`. The rows below are retained only as migration history.
+
 > **Note (2026-07-08):** The `EvidenceExplorer` evidence-browser row below
 > originally planned to rebuild evidence→fact bindings by reading
 > `prov:wasDerivedFrom` triples. That approach has been replaced: evidence

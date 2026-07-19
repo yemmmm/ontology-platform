@@ -2,11 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Database,
   FileCheck2,
   Layers,
   Network,
-  RefreshCw,
   ShieldCheck,
   Workflow,
 } from "lucide-react";
@@ -289,20 +287,8 @@ export function GraphGovernancePage({
       </section>
 
       <section className="governanceActions" aria-label="governance-actions">
-        <button className="secondaryButton" onClick={() => navigate("named-graphs")} type="button">
-          <Database size={14} /> {t("Open named graph registry")}
-        </button>
         <button className="secondaryButton" onClick={() => navigate("graph-sets")} type="button">
           <Layers size={14} /> {t("Open graph sets")}
-        </button>
-        <button className="secondaryButton" onClick={() => navigate("semantic-runs")} type="button">
-          <Workflow size={14} /> {t("Open runs")}
-        </button>
-        <button className="secondaryButton" onClick={() => navigate("semantic-edits")} type="button">
-          <FileCheck2 size={14} /> {t("Open semantic workbench")}
-        </button>
-        <button className="secondaryButton" onClick={() => navigate("semantic-import-export")} type="button">
-          <RefreshCw size={14} /> {t("Open import / export")}
         </button>
       </section>
     </section>

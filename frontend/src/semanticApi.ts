@@ -2,23 +2,15 @@ import { API_BASE_URL, apiRequest } from "./api";
 import type {
   FactEvidenceBinding,
   MissingEvidenceFactsResponse,
-  SemanticDatasetLoadResponse,
   SemanticDerivedResultReconcileResponse,
   SemanticEditAuditRead,
-  SemanticEditInputFormat,
-  SemanticEditResponse,
   SemanticExportFormat,
   SemanticExportInclude,
-  SemanticGraphEditabilityResponse,
-  SemanticGraphGcResponse,
   SemanticGraphRegistryListResponse,
-  SemanticGraphRegistryRead,
   SemanticGraphSetListResponse,
   SemanticGraphSetRead,
   SemanticGovernanceStatusResponse,
   SemanticJsonObject,
-  SemanticProjectionJobListResponse,
-  SemanticProjectionJobRead,
   SemanticProjectionStatusResponse,
   SemanticReadModelEnvelope,
   SemanticReasoningRunListResponse,
@@ -26,8 +18,6 @@ import type {
   SemanticRuleDefinitionRead,
   SemanticRuleRunListResponse,
   SemanticRuleRunRead,
-  SemanticSparqlQueryResponse,
-  SemanticValidationRunRead,
   SemanticValidationRunListResponse,
   SemanticReasoningRunRead,
 } from "./types";
@@ -61,26 +51,6 @@ export function listGraphRegistry(
     include_revisions: filters.includeRevisions,
   });
   return request<SemanticGraphRegistryListResponse>(path);
-}
-
-export function getGraphRegistry(request: SemanticRequester, graphIri: string) {
-  return request<SemanticGraphRegistryRead>(`${SEMANTIC_BASE}/graphs/${encodeURIComponent(graphIri)}`);
-}
-
-export function updateGraphEditability(
-  request: SemanticRequester,
-  graphIri: string,
-  editable: boolean,
-  actor?: string,
-  reason?: string,
-) {
-  return request<SemanticGraphEditabilityResponse>(
-    `${SEMANTIC_BASE}/graphs/${encodeURIComponent(graphIri)}/editability`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ editable, actor, reason }),
-    },
-  );
 }
 
 export function listGraphSets(
@@ -156,60 +126,6 @@ export function listEditAudits(request: SemanticRequester, limit = 25) {
   return request<SemanticEditAuditRead[]>(path);
 }
 
-export function previewSemanticEdit(
-  request: SemanticRequester,
-  payload: {
-    format: SemanticEditInputFormat;
-    content: string;
-    targetGraphIri?: string;
-    shapeGraphIris?: string[];
-    actor?: string;
-    reason?: string;
-    warningState?: SemanticJsonObject;
-  },
-) {
-  return request<SemanticEditResponse>(`${SEMANTIC_BASE}/edits`, {
-    method: "POST",
-    body: JSON.stringify({
-      format: payload.format,
-      content: payload.content,
-      target_graph_iri: payload.targetGraphIri,
-      validate: false,
-      shape_graph_iris: payload.shapeGraphIris ?? [],
-      actor: payload.actor,
-      reason: payload.reason,
-      warning_state: payload.warningState ?? {},
-    }),
-  });
-}
-
-export function applySemanticEdit(
-  request: SemanticRequester,
-  payload: {
-    format: SemanticEditInputFormat;
-    content: string;
-    targetGraphIri?: string;
-    shapeGraphIris?: string[];
-    actor?: string;
-    reason?: string;
-    warningState?: SemanticJsonObject;
-  },
-) {
-  return request<SemanticEditResponse>(`${SEMANTIC_BASE}/edits`, {
-    method: "POST",
-    body: JSON.stringify({
-      format: payload.format,
-      content: payload.content,
-      target_graph_iri: payload.targetGraphIri,
-      validate: true,
-      shape_graph_iris: payload.shapeGraphIris ?? [],
-      actor: payload.actor,
-      reason: payload.reason,
-      warning_state: payload.warningState ?? {},
-    }),
-  });
-}
-
 export function runGraphSetValidation(
   request: SemanticRequester,
   graphSetId: string,
@@ -277,10 +193,6 @@ export function runGraphSetRules(
       actor: payload.actor,
     }),
   });
-}
-
-export function getValidationRun(request: SemanticRequester, runId: string) {
-  return request<SemanticValidationRunRead>(`${SEMANTIC_BASE}/validation-runs/${runId}`);
 }
 
 export function listValidationRuns(
@@ -517,26 +429,6 @@ export function reconcileDerivedResults(request: SemanticRequester) {
   });
 }
 
-export function runDerivedResultsGc(request: SemanticRequester, targetKind = "reasoning_result", dryRun = false) {
-  return request<SemanticGraphGcResponse>(`${SEMANTIC_BASE}/derived-results:gc`, {
-    method: "POST",
-    body: JSON.stringify({ target_kind: targetKind, dry_run: dryRun }),
-  });
-}
-
-export function listStatements(
-  request: SemanticRequester,
-  payload: { graphSetId: string; include?: SemanticExportInclude; allowStaleDerived?: boolean; limit?: number },
-) {
-  const path = withParams(`${SEMANTIC_BASE}/statements`, {
-    graph_set_id: payload.graphSetId,
-    include: payload.include ?? "asserted",
-    allow_stale_derived: payload.allowStaleDerived ?? true,
-    limit: payload.limit,
-  });
-  return request<SemanticReadModelEnvelope>(path);
-}
-
 // Stage 2 §3.2 — read-model fetchers ----------------------------------------
 
 export function readModel<T = SemanticReadModelEnvelope>(
@@ -605,16 +497,6 @@ export type SemanticShaclFormGuidance = {
   shape_split?: { generated_subgraph: string; custom_subgraph: string };
 };
 
-export function getClassShapeGuidance(
-  request: SemanticRequester,
-  graphSetId: string,
-  classIri: string,
-) {
-  return request<SemanticShaclFormGuidance>(
-    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/shapes/classes/${classIri}`,
-  );
-}
-
 // Stage 2 §3.3 — canonical-write dispatcher ---------------------------------
 
 export type SemanticCanonicalWriteResult = {
@@ -651,43 +533,6 @@ export function compileAndApplyProductCommand(
   );
 }
 
-export function sparqlQuery(
-  request: SemanticRequester,
-  payload: {
-    projectId: string;
-    ontologyIds: string[];
-    query: string;
-    timeoutSeconds?: number;
-    resultLimit?: number;
-  },
-) {
-  return request<SemanticSparqlQueryResponse>(`${SEMANTIC_BASE}/sparql:query`, {
-    method: "POST",
-    body: JSON.stringify({
-      project_id: payload.projectId,
-      scope_mode: "ontologies",
-      ontology_ids: payload.ontologyIds,
-      query: payload.query,
-      timeout_seconds: payload.timeoutSeconds,
-      result_limit: payload.resultLimit,
-    }),
-  });
-}
-
-export function loadDataset(
-  request: SemanticRequester,
-  payload: { content: string; format: "trig" | "turtle" | "json-ld"; baseIri?: string },
-) {
-  return request<SemanticDatasetLoadResponse>(`${SEMANTIC_BASE}/datasets:load`, {
-    method: "POST",
-    body: JSON.stringify({
-      content: payload.content,
-      format: payload.format,
-      base_iri: payload.baseIri,
-    }),
-  });
-}
-
 export function buildGraphSetExportUrl(
   graphSetId: string,
   payload: {
@@ -712,18 +557,6 @@ export function buildGraphSetExportUrl(
   return `${API_BASE_URL}${SEMANTIC_BASE}/graph-sets/${graphSetId}/export?${params.toString()}`;
 }
 
-export function listProjectionJobs(
-  request: SemanticRequester,
-  filters: { graphSetId?: string; projectionKind?: string; status?: string } = {},
-) {
-  const path = withParams(`${SEMANTIC_BASE}/projection-jobs`, {
-    graph_set_id: filters.graphSetId,
-    projection_kind: filters.projectionKind,
-    status: filters.status,
-  });
-  return request<SemanticProjectionJobListResponse>(path);
-}
-
 export function getProjectionStatus(
   request: SemanticRequester,
   filters: { graphSetId?: string } = {},
@@ -732,16 +565,6 @@ export function getProjectionStatus(
     graph_set_id: filters.graphSetId,
   });
   return request<SemanticProjectionStatusResponse>(path);
-}
-
-export function getProjectionJob(request: SemanticRequester, jobId: string) {
-  return request<SemanticProjectionJobRead>(`${SEMANTIC_BASE}/projection-jobs/${jobId}`);
-}
-
-export function runProjectionJob(request: SemanticRequester, jobId: string) {
-  return request<SemanticProjectionJobRead>(`${SEMANTIC_BASE}/projection-jobs/${jobId}:run`, {
-    method: "POST",
-  });
 }
 
 export { SEMANTIC_BASE };

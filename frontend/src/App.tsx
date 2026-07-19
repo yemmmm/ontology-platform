@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Database,
   FileText,
-  Flag,
   GitBranch,
   History,
   Layers,
@@ -22,7 +21,6 @@ import {
   ShieldCheck,
   Trash2,
   Unlock,
-  Upload,
   Waypoints,
   Workflow,
   Wrench,
@@ -50,13 +48,7 @@ import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
 import { EvidenceReferencesPage } from "./pages/EvidenceReferencesPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
-import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
-import { PublicationPage } from "./pages/PublicationPage";
-import { NamedGraphsPage } from "./pages/NamedGraphsPage";
 import { GraphSetPage } from "./pages/GraphSetPage";
-import { SemanticRunsPage } from "./pages/SemanticRunsPage";
-import { SemanticEditWorkbenchPage } from "./pages/SemanticEditWorkbenchPage";
-import { SemanticImportExportPage } from "./pages/SemanticImportExportPage";
 import { BuildContextDebugPage } from "./pages/BuildContextDebugPage";
 import { ConfirmActionDialog } from "./components/workbench";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
@@ -80,27 +72,28 @@ import type {
 } from "./types";
 
 type AppView = "home" | "workspace";
-type WorkspaceTab =
+type LegacyWorkspaceTab =
+  | "publication"
+  | "graph-set-history"
+  | "named-graphs"
+  | "semantic-edits"
+  | "semantic-runs"
+  | "semantic-import-export";
+type CurrentWorkspaceTab =
   | "brief"
   | "questions"
   | "evidence"
   | "facts"
-  | "publication"
   | "classes"
   | "entities"
   | "rules"
-  | "graph-set-history"
   | "search"
   | "mcp-tools"
   | "setting"
   | "graph-governance"
   | "build-context"
-  | "named-graphs"
-  | "graph-sets"
-  | "semantic-edits"
-  | "semantic-runs"
-  | "semantic-import-export";
-type WorkspaceStage = "intake" | "knowledge" | "publish" | "tools" | "governance";
+  | "graph-sets";
+type WorkspaceTab = CurrentWorkspaceTab | LegacyWorkspaceTab;
 type VisibleWorkspaceStage = "overview" | "modeling" | "debug" | "settings";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -122,7 +115,7 @@ const stageMeta: Array<{
   { id: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
 ];
 
-const stageDefaultTab: Record<VisibleWorkspaceStage, WorkspaceTab> = {
+const stageDefaultTab: Record<VisibleWorkspaceStage, CurrentWorkspaceTab> = {
   overview: "brief",
   modeling: "classes",
   debug: "graph-governance",
@@ -130,7 +123,7 @@ const stageDefaultTab: Record<VisibleWorkspaceStage, WorkspaceTab> = {
 };
 
 const workspaceTabs: Array<{
-  id: WorkspaceTab;
+  id: CurrentWorkspaceTab;
   stage: VisibleWorkspaceStage;
   label: string;
   detail: string;
@@ -151,23 +144,16 @@ const workspaceTabs: Array<{
   { id: "setting", stage: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
 ];
 
-const legacyWorkspaceTabs: Array<{
-  id: WorkspaceTab;
-  stage: WorkspaceStage;
-  label: string;
-  detail: string;
-  icon: typeof Network;
-}> = [
-  { id: "publication", stage: "publish", label: "Publication", detail: "Readiness & release", icon: Flag },
-  { id: "graph-set-history", stage: "publish", label: "Graph Set History", detail: "Lineage & diff", icon: History },
-  { id: "named-graphs", stage: "governance", label: "Named Graphs", detail: "Registry · editability", icon: Database },
-  { id: "semantic-edits", stage: "governance", label: "Semantic Edit", detail: "Direct workbench", icon: ShieldCheck },
-  { id: "semantic-runs", stage: "governance", label: "Semantic Runs", detail: "Validation · reasoning · rule", icon: History },
-  { id: "semantic-import-export", stage: "governance", label: "Import / Export", detail: "Standards exchange", icon: Upload },
+const legacyWorkspaceTabs: LegacyWorkspaceTab[] = [
+  "publication",
+  "graph-set-history",
+  "named-graphs",
+  "semantic-edits",
+  "semantic-runs",
+  "semantic-import-export",
 ];
 
-const allWorkspaceTabs = [...workspaceTabs, ...legacyWorkspaceTabs];
-const legacyTabRedirects: Partial<Record<WorkspaceTab, WorkspaceTab>> = {
+const legacyTabRedirects: Record<LegacyWorkspaceTab, CurrentWorkspaceTab> = {
   publication: "brief",
   "graph-set-history": "graph-governance",
   "named-graphs": "graph-governance",
@@ -176,12 +162,15 @@ const legacyTabRedirects: Partial<Record<WorkspaceTab, WorkspaceTab>> = {
   "semantic-import-export": "graph-governance",
 };
 
-function normalizeWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
-  return legacyTabRedirects[tab] ?? tab;
+function normalizeWorkspaceTab(tab: WorkspaceTab): CurrentWorkspaceTab {
+  return legacyTabRedirects[tab as LegacyWorkspaceTab] ?? tab;
 }
 
 function isWorkspaceTab(value: string | null): value is WorkspaceTab {
-  return allWorkspaceTabs.some((tab) => tab.id === value);
+  return (
+    workspaceTabs.some((tab) => tab.id === value) ||
+    legacyWorkspaceTabs.includes(value as LegacyWorkspaceTab)
+  );
 }
 
 function queryValue(name: string) {
@@ -212,8 +201,8 @@ function useStoredString(key: string, fallback = "") {
   return [value, setValue] as const;
 }
 
-function useStoredWorkspaceTab(key: string, fallback: WorkspaceTab) {
-  const [value, setValue] = useState<WorkspaceTab>(() => {
+function useStoredWorkspaceTab(key: string, fallback: CurrentWorkspaceTab) {
+  const [value, setValue] = useState<CurrentWorkspaceTab>(() => {
     try {
       const stored = localStorage.getItem(key);
       return isWorkspaceTab(stored) ? normalizeWorkspaceTab(stored) : fallback;
@@ -257,7 +246,7 @@ export function App() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedOntology = ontologies.find((ontology) => ontology.id === selectedOntologyId) ?? null;
-  const activeTab = allWorkspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
+  const activeTab = workspaceTabs.find((tab) => tab.id === workspaceTab) ?? workspaceTabs[0];
 
   const request = useCallback(<T,>(path: string, options?: RequestInit) => apiRequest<T>(path, options), []);
   const showError = useCallback((error: unknown) => setNotice(errorNotice(error)), []);
@@ -796,7 +785,7 @@ function OntologyHomePage(props: {
 }
 
 function WorkspaceContent(props: {
-  tab: WorkspaceTab;
+  tab: CurrentWorkspaceTab;
   project: Project;
   ontology: Ontology;
   health: Health | null;
@@ -839,7 +828,7 @@ function WorkspaceContent(props: {
       setGraphSetId(explicitGraphSetId);
       return;
     }
-    if (!["classes", "entities", "facts", "search", "publication", "graph-set-history"].includes(props.tab)) {
+    if (!["classes", "entities", "facts", "search"].includes(props.tab)) {
       return;
     }
     let cancelled = false;
@@ -958,55 +947,6 @@ function WorkspaceContent(props: {
     );
   }
 
-  if (props.tab === "publication") {
-    const graphSetId = queryValue("graphSet");
-    if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<History size={22} />}
-          title={t("Select a graph set to view publication readiness")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
-    }
-    return (
-      <PublicationPage
-        request={governedRequest}
-        graphSetId={graphSetId}
-        readOnly={readOnly}
-      />
-    );
-  }
-
-  if (props.tab === "graph-set-history") {
-    const graphSetId = queryValue("graphSet");
-    if (!graphSetId) {
-      return (
-        <EmptyState
-          icon={<History size={22} />}
-          title={t("Select a graph set to view its history")}
-          action={
-            <button className="primaryButton" onClick={() => props.navigateWorkspace("graph-sets")} type="button">
-              <Layers size={15} /> {t("Open Graph Sets")}
-            </button>
-          }
-        />
-      );
-    }
-    return (
-      <GraphSetHistoryPage
-        request={governedRequest}
-        ontologyId={props.ontology.id}
-        graphSetId={graphSetId}
-        readOnly={readOnly}
-      />
-    );
-  }
-
   if (props.tab === "search") {
     if (!graphSetId) {
       return graphSetGate(t("Workspace data is not ready yet"));
@@ -1033,58 +973,12 @@ function WorkspaceContent(props: {
     );
   }
 
-  if (props.tab === "named-graphs") {
-    return (
-      <NamedGraphsPage
-        initialCategory={queryValue("category") || undefined}
-        notify={props.notify}
-        request={governedRequest}
-      />
-    );
-  }
-
   if (props.tab === "graph-sets") {
     return (
       <GraphSetPage
         initialGraphSetId={queryValue("graphSet") || undefined}
         navigate={props.navigateWorkspace}
         notify={props.notify}
-        request={governedRequest}
-      />
-    );
-  }
-
-  if (props.tab === "semantic-edits") {
-    return (
-      <SemanticEditWorkbenchPage
-        initialGraphSetId={queryValue("graphSet") || undefined}
-        initialTargetGraphIri={queryValue("graph") || undefined}
-        notify={props.notify}
-        request={governedRequest}
-      />
-    );
-  }
-
-  if (props.tab === "semantic-runs") {
-    const runParam = queryValue("run");
-    const [runKind, runId] = runParam.includes(":") ? runParam.split(":") : ["", runParam];
-    return (
-      <SemanticRunsPage
-        initialRunId={runId || undefined}
-        initialRunKind={(runKind as "validation" | "reasoning" | "rule") || undefined}
-        notify={props.notify}
-        request={governedRequest}
-      />
-    );
-  }
-
-  if (props.tab === "semantic-import-export") {
-    return (
-      <SemanticImportExportPage
-        initialGraphSetId={queryValue("graphSet") || undefined}
-        notify={props.notify}
-        ontologyId={props.ontology.id}
-        projectId={props.project.id}
         request={governedRequest}
       />
     );
