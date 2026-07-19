@@ -10,7 +10,7 @@
   大体量结构化产物的可靠交接与恢复；R1.1-004 可复现的 Dify 官方文档建模资料集
 - 参考业务场景：将 Dify 使用指南、API/OpenAPI 文档和必要的业务说明整理进平台
 - 目标用户：需要把外部业务知识沉淀为可复用语义模型的用户和团队
-- 更新日期：2026-07-18
+- 更新日期：2026-07-19
 
 ## 背景
 
@@ -368,6 +368,8 @@ Session 时，应能够据此识别已完成工作、已确认问题、当前产
 
 确认日期：2026-07-18
 
+首版功能合同细化确认：2026-07-19
+
 依赖：R1.1-001、R1.1-002，以及 v1.0 的 R-003、R-004
 
 ### 现状与本次暴露的问题
@@ -401,10 +403,10 @@ Pack、Modeling Coverage Matrix、能力问题和第一版草案评审。返工�
 主 Agent 返回简短交接信息。PTY、聊天消息和终端展示只用于返回产物定位符、格式版本、内容哈希、
 大小、项目数量和摘要，不再作为完整 Modeling Draft 或 Modeling Batch JSON 的唯一载体。
 
-首选路径是在 Runtime 提供的受控工作目录中原子写入结构化文件，由主 Agent 读取、校验并持久化为
-版本化 Modeling Workflow Artifact；若平台提供符合角色权限边界的受控 Artifact 上传通道，也可
-直接返回 Artifact ID。无论采用哪条路径，都不得让建模子 Agent 获得 Ontology Lease 或执行 apply，
-正式写入仍只能由主 Agent 在全部质量门禁通过后完成。
+首版固定为在 Runtime 提供的受控工作目录中原子写入结构化文件，由主 Agent 读取、校验并持久化为
+版本化 Modeling Workflow Artifact；本需求不新增建模子 Agent 直接上传平台的通道。建模子 Agent
+不得获得平台凭证、Ontology Lease 或 apply 权限，正式写入仍只能由主 Agent 在全部质量门禁通过
+后完成。
 
 可靠交接至少包含以下合同：
 
@@ -421,6 +423,53 @@ Pack、Modeling Coverage Matrix、能力问题和第一版草案评审。返工�
   apply，也不得自动制造多次无边界重试；
 - 受控产物不得包含密钥、Lease token、Authorization header、隐藏推理或不必要的完整对话；临时
   文件的权限、保留和清理规则必须明确。
+
+### 首版细化合同
+
+首版只承诺建模子 Agent 的完整七字段 `modeling_draft` / Modeling Batch 候选 JSON 交接。
+Business Knowledge Pack、Modeling Coverage Matrix、Review Report 等其他工作流产物继续使用现有
+Modeling Workflow Artifact 接口；不新增通用文件上传、用户文件管理或前端文件页面。内部工具可以
+复用原子发布和 Manifest 机制，但不能据此扩大本需求的公开能力范围。
+
+受控文件和平台 Artifact 的权威边界如下：
+
+- 平台 Artifact 创建前，Build Session 专属受控目录中的原子文件和有界 Manifest 是临时恢复来源；
+- Artifact 与成功事件持久化后，平台 Artifact 成为唯一权威内容，本地完整载荷应被清理，只保留
+  Manifest、内容哈希和平台 ID；
+- 新 Agent 恢复时先读取平台状态，仅在状态明确为“已生成但未持久化”时读取受控文件；
+- 失败文件只保留到修正版成功持久化或 Build Session 完成、取消；若检测到密钥、token 或
+  Authorization 内容，立即清理原文并只留下脱敏 blocker；异常退出遗留文件必须可恢复或定期清理，
+  不能无限期积累。
+
+修正轮次不得依赖原建模子 Agent 的隐藏对话上下文。每轮使用新的干净上下文，并由主 Agent 显式
+交接原 Business Knowledge Pack、Coverage Matrix、当前 Modeling Context、上一版完整草案、Schema
+版本、结构化失败项和本轮允许修改的范围。原 Agent 上下文仍存在时可以作为执行优化，但不能成为
+恢复条件；主 Agent 不得原地修补或覆盖模型内容。修正版必须使用新的 `generation_id`、原子文件和
+Manifest，并显式关联被替代版本。
+
+同一校验或评审阶段最多自动修正两轮。每轮均创建不可变版本并记录失败原因与差异；两轮后仍未
+通过，或更早重复出现同类错误时，追加 `blocked` 事件并停止继续调用模型、dry-run、Lease 和 apply。
+只有用户补充信息或明确授权继续后，才能开启新一轮修正。
+
+恢复和并发遵循以下一致性规则：
+
+- 每次生成使用稳定 `generation_id` 和内容哈希作为幂等标识；新 Agent 可以自动完成“已生成未校验”、
+  “已校验未创建 Artifact”、“Artifact 已创建未创建 Batch”或 Batch 后续尚未完成的第一个安全步骤；
+- 相同 `generation_id` 对应不同哈希、状态链冲突、文件缺失、校验失败、业务语义变化或可能重复产生
+  费用的动作必须失败关闭并询问用户，正常技术恢复不要求重复确认；
+- 同一 Build Session、`artifact_key` 和建模阶段只有一个有效生成链，通过
+  `expected_previous_generation_id` 或等价 CAS 防止分叉；不同 Ontology 或不同 `artifact_key` 可并行；
+- 并发失败方记录 `generation_conflict` 后停止，不覆盖、不自动合并、不创建 Artifact 或 Batch；若
+  后续选择该候选，必须作为显式新版本进入当前生成链。
+
+首版继续使用现有 Modeling Workflow Artifact 的 1 MiB 单产物上限，以规范化 UTF-8 JSON 字节数
+计算，绝不截断。超过上限时要求缩小当前核心纵向切片，不自动分片、不静默拼接，也不在本需求中
+建设大对象存储。风险验证必须证明不小于本次 Dify v2 的 27 项代表性草案能够明显低于该上限，
+否则设计必须停止并重新评估该边界。
+
+Manifest、原子发布、完整性和恢复状态合同保持 Runtime 无关，但首版实现和验收只覆盖当前 Codex
+子 Agent、`ontology-builder` Skill 与 repo-local Harness；平台不托管或启动 Agent Runtime，也不
+同时提供 Claude Code、OpenCode 等其他 Runtime 适配器。
 
 ### Dify 资料输入边界
 
@@ -447,6 +496,10 @@ Pack、Modeling Coverage Matrix、能力问题和第一版草案评审。返工�
   apply、能力问题查询、validation 和 lineage 验收，并正常完成 Build Session。
 - 若建立 Dify 本地验收资料集，能够列出快照文件、原始官方 URL、抓取时间和内容哈希；若未建立，
   文档和执行记录必须明确资料仍为在线读取加平台 Evidence Reference 摘录，不得声称已离线下载。
+
+R1.1-003 只有在使用 R1.1-004 固定资料集通过上述完整 Dify 技术链路和独立测试后才能关闭；同一次
+重跑可以关闭 R1.1-004 的“等待 R1.1-003 后集成重跑”门禁。模型业务价值和质量改善能否重复仍由
+R1.1-001 验收，不因可靠交接链路成功而自动宣称完成，也不作为 R1.1-003 的重复质量证明要求。
 
 ## R1.1-004 可复现的 Dify 官方文档建模资料集
 
