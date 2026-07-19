@@ -9,7 +9,7 @@ from sqlalchemy import select
 from mcp.server.fastmcp import FastMCP
 
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool, runtime_actor
+from app.mcp.runtime import _run_tool, runtime_actor, runtime_principal
 from app.repositories.rdf_store import RdfStoreRepository
 from app.repositories.models import (
     SemanticGraphSetModel,
@@ -17,6 +17,7 @@ from app.repositories.models import (
     SemanticRuleModel,
 )
 from app.services.owl_reasoner import CommandOwlReasonerRunner
+from app.services.authorized_scope_discovery import AuthorizedScopeDiscoveryService
 from app.services.semantic import SemanticService
 from app.services.semantic_context_query import SemanticContextQueryService
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
@@ -123,6 +124,26 @@ def _lineage_service(session) -> OntologyLineageService:
 
 
 def register_semantic(server: FastMCP) -> None:
+    @server.tool()
+    def discover_semantic_scopes(
+        query: str | None = None,
+        queryable: bool | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Discover authorized Project/Ontology query scopes and readiness."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: AuthorizedScopeDiscoveryService(
+                session, Settings()
+            ).discover(
+                authorized_project_id=runtime_principal().project_id,
+                query=query,
+                queryable=queryable,
+                cursor=cursor,
+                limit=limit,
+            )
+        )
+
     @server.tool()
     def semantic_sparql_query(
         project_id: str,

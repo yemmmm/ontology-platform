@@ -59,6 +59,7 @@ from app.api.schemas import (
     SemanticRuleDefinitionRead,
     SemanticRuleDefinitionUpdate,
     SemanticRuleRunRead,
+    SemanticScopeDiscoveryResponse,
     SemanticSparqlQueryRequest,
     SemanticSparqlQueryResponse,
     SemanticValidationRunRead,
@@ -86,6 +87,10 @@ from app.services.semantic import SemanticService, SemanticServiceError
 from app.services.semantic_context_query import (
     SemanticContextQueryError,
     SemanticContextQueryService,
+)
+from app.services.authorized_scope_discovery import (
+    AuthorizedScopeDiscoveryService,
+    ScopeDiscoveryError,
 )
 from app.services.semantic_query_scope import (
     SemanticQueryScopeError,
@@ -348,6 +353,29 @@ def _semantic_query_http_exception(exc: RuntimeError) -> HTTPException:
             "message": str(exc),
         },
     )
+
+
+@router.get("/scopes:discover", response_model=SemanticScopeDiscoveryResponse)
+def discover_semantic_scopes(
+    query: Annotated[str | None, Query()] = None,
+    queryable: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query()] = 50,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> SemanticScopeDiscoveryResponse:
+    try:
+        result = AuthorizedScopeDiscoveryService(session, settings).discover(
+            authorized_project_id=principal.project_id,
+            query=query,
+            queryable=queryable,
+            cursor=cursor,
+            limit=limit,
+        )
+        return SemanticScopeDiscoveryResponse(**result)
+    except ScopeDiscoveryError as exc:
+        raise _semantic_query_http_exception(exc) from exc
 
 
 @router.post("/context:query", response_model=SemanticContextQueryResponse)

@@ -19,13 +19,15 @@ Codex 等客户端应把 MCP server 的工作目录设为仓库的 `backend` 目
 启动前必须在 `backend/.env` 设置 `ONTOLOGY_MCP_API_KEY`。进程在进入 stdio/SSE/streamable HTTP
 event loop 前验证 hashed API key；缺少、无效或已撤销 key 时非零退出。每次 tool call 会再次检查
 撤销状态、required scope 和 Project/Ontology 归属，payload 中的 actor 不能覆盖认证主体。
-中央 policy registry 同时显式声明 scope、ownership mode 和是否写状态：除 health 外，Project-bound
-调用必须带可解析的本 Project 资源；全局工具为 org-only。`check_semantic_staleness` 会更新 derived
+中央 policy registry 同时显式声明 scope、ownership mode 和是否写状态：一般 Project-bound
+调用必须带可解析的本 Project 资源；只读 `discover_semantic_scopes` 是身份感知的 global-safe
+发现入口，由运行时 principal 限制 Project，其他无资源全局工具为 org-only。`check_semantic_staleness` 会更新 derived
 pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是只读健康检查。
 
 ## 当前推荐流程
 
-1. 用 Project Build Context 恢复 Project 事实；需要写入时创建或恢复 Build Session。
+1. 新消费会话先用 `discover_semantic_scopes` 分页发现授权 Project/Ontology；已有明确范围的客户端
+   可直接查询。建模会话再用 Project Build Context 恢复 Project 事实。
 2. 列出当前 Modeling Workflow Artifact 版本、Execution Event timeline 和 question current heads，
    不依赖旧聊天或本地 ledger 恢复。
 3. 通过 Brief、Interview Answer 和 Competency Question 澄清需求；先保存 Business Knowledge Pack
@@ -39,6 +41,14 @@ pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是
    artifact/event、checkpoint，并完成或取消 Build Session。
 
 平台返回结构化语义上下文，不生成最终自然语言答案，也不代替外部 Agent 调用目标系统。
+
+`discover_semantic_scopes` 接受可选 `query`、`queryable`、`cursor` 和 `limit`，返回扁平、稳定排序
+的 Project/Ontology 候选。Project-bound credential 无需在参数中重复 Project ID；工具仍在服务层
+先按当前认证主体过滤授权目录。返回的 `query_scope` 可直接传给 `query_semantic_context` 或
+`semantic_sparql_query`，但发现结果不是授权或版本锁。
+Cursor 还绑定当前认证主体的授权 Project 边界。配置 `SECRET_KEY` 后可跨 MCP/backend 进程和重启
+验证；未配置时使用每个进程私有的随机完整性材料，因此跨进程或重启后的 cursor 会返回
+`invalid_cursor`，调用方应重新开始发现。
 
 ## 返回与错误边界
 
@@ -104,6 +114,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `cutover_semantic_migration_run` | Execute the guarded RDF-primary cutover for a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `describe_semantic_graph_set` | Return graph-set membership, source signature, and current derived pointers. | graph_set_id | graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `discover_semantic_scopes` | Discover authorized Project/Ontology query scopes and readiness. | - | cursor, limit, query, queryable | `backend/app/mcp/tools/semantic.py` |
 | semantic | `export_semantic_graph_set` | Export a graph set as Turtle, TriG, or JSON-LD. | graph_set_id | allow_stale_derived, format, graph_set_id, include | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_evidence_reference` | Read one evidence reference and its modeling-result associations. | reference_id | reference_id | `backend/app/mcp/tools/evidence.py` |
 | semantic | `get_ontology_lineage` | Read bounded statement, resource, or Rule Definition lineage for an Ontology. | ontology_id, target_id, target_type | include_history, limit, max_depth, ontology_id, target_id, target_type | `backend/app/mcp/tools/semantic.py` |

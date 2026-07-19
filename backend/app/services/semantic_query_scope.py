@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import OntologyModel, ProjectModel
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
-from app.services.ontology_workspace import OntologyWorkspaceService
-from app.services.semantic_read_scope import SemanticReadScopeResolver
+from app.services.authorized_scope_discovery import (
+    OntologyQueryReadiness,
+    OntologyQueryReadinessEvaluator,
+)
 
 
 class SemanticQueryScopeError(RuntimeError):
@@ -84,9 +85,7 @@ class SemanticQueryScopeResolver:
     def __init__(self, session: Session, settings: Settings) -> None:
         self.session = session
         self.settings = settings
-        self.workspace_service = OntologyWorkspaceService(session, settings)
-        self.read_scope_resolver = SemanticReadScopeResolver(session)
-        self.version_service = ModelingWorkspaceVersionService(session, settings)
+        self.readiness = OntologyQueryReadinessEvaluator(session, settings)
 
     def resolve(
         self,
@@ -137,20 +136,24 @@ class SemanticQueryScopeResolver:
         resolved: list[ResolvedOntologyScope] = []
         excluded: list[dict[str, str]] = []
         for ontology in ontologies:
-            try:
-                resolved.append(self._resolve_ontology(ontology))
-            except (LookupError, RuntimeError) as exc:
+            readiness = self.readiness.evaluate(ontology)
+            if not readiness.queryable:
                 if scope_mode == "ontologies":
                     raise SemanticQueryScopeNotReady(
                         "One or more selected Ontology workspaces are not ready"
-                    ) from exc
+                    )
                 excluded.append(
                     {
                         "ontology_id": ontology.id,
                         "ontology_name": ontology.name,
-                        "reason": "workspace_not_ready",
+                        "reason": readiness.unavailable_reason or "workspace_not_ready",
                     }
                 )
+                continue
+            resolved.append(self._resolved_ontology(ontology, readiness))
+
+        if not resolved:
+            raise SemanticQueryScopeNotReady("Semantic query scope is not ready")
 
         status: Literal["complete", "partial"] = "partial" if excluded else "complete"
         warnings: list[dict[str, str]] = []
@@ -173,9 +176,7 @@ class SemanticQueryScopeResolver:
             graph: item.ontology_id for item in resolved for graph in item.graph_iris
         }
         graph_assertion_kinds = {
-            graph: kind
-            for item in resolved
-            for graph, kind in item.graph_assertion_kinds.items()
+            graph: kind for item in resolved for graph, kind in item.graph_assertion_kinds.items()
         }
         return SemanticQueryScope(
             project_id=project_id,
@@ -189,15 +190,20 @@ class SemanticQueryScopeResolver:
         )
 
     def _resolve_ontology(self, ontology: OntologyModel) -> ResolvedOntologyScope:
-        workspace = self.workspace_service.context(ontology.id)
-        graph_set_id = workspace.get("default_graph_set_id")
-        if workspace.get("state") != "ready" or not graph_set_id:
+        readiness = self.readiness.evaluate(ontology)
+        if not readiness.queryable:
             raise SemanticQueryScopeNotReady("Ontology workspace is not ready")
-        read_scope = self.read_scope_resolver.resolve(
-            graph_set_id,
-            include="full-working-view",
-            allow_stale_derived=True,
-        )
+        return self._resolved_ontology(ontology, readiness)
+
+    @staticmethod
+    def _resolved_ontology(
+        ontology: OntologyModel, readiness: OntologyQueryReadiness
+    ) -> ResolvedOntologyScope:
+        graph_set_id = readiness.graph_set_id
+        read_scope = readiness.read_scope
+        workspace_version = readiness.workspace_version
+        if not graph_set_id or read_scope is None or not workspace_version:
+            raise SemanticQueryScopeNotReady("Ontology workspace is not ready")
         graph_assertion_kinds = {
             graph: "asserted"
             for graph in [*read_scope.source_graph_iris, *read_scope.shape_graph_iris]
@@ -206,7 +212,6 @@ class SemanticQueryScopeResolver:
             graph_assertion_kinds[read_scope.reasoning_result_graph_iri] = "owl_inferred"
         if read_scope.rule_result_graph_iri:
             graph_assertion_kinds[read_scope.rule_result_graph_iri] = "rule_derived"
-        warnings = tuple(self._public_warning(item) for item in read_scope.warnings)
         derived_state = {
             kind: {
                 "status": value.get("status"),
@@ -218,21 +223,10 @@ class SemanticQueryScopeResolver:
             ontology_id=ontology.id,
             ontology_name=ontology.name,
             graph_set_id=graph_set_id,
-            workspace_version=self.version_service.version_for(ontology.id),
+            workspace_version=workspace_version,
             source_signature=read_scope.source_signature,
             graph_iris=tuple(graph_assertion_kinds),
             graph_assertion_kinds=graph_assertion_kinds,
             derived_state=derived_state,
-            warnings=warnings,
+            warnings=readiness.derived_warnings,
         )
-
-    @staticmethod
-    def _public_warning(warning: dict[str, str]) -> dict[str, str]:
-        code = warning.get("code", "derived_result_missing")
-        if code.startswith("stale_"):
-            public_code = "derived_result_stale"
-        elif code.startswith("missing_"):
-            public_code = "derived_result_missing"
-        else:
-            public_code = code
-        return {"code": public_code, "message": warning.get("message", public_code)}

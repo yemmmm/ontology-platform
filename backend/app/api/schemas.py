@@ -612,6 +612,57 @@ class SemanticQueryScopeRequest(BaseModel):
     ontology_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
+class SemanticDiscoveryQueryScope(BaseModel):
+    project_id: str
+    scope_mode: Literal["project", "ontologies"]
+    ontology_ids: list[str] = Field(default_factory=list)
+
+
+class SemanticDiscoveryExcludedOntology(BaseModel):
+    ontology_id: str
+    ontology_name: str
+    reason: str
+
+
+class SemanticDiscoveryProjectSummary(BaseModel):
+    id: str
+    name: str
+    description: str | None
+
+
+class SemanticDiscoveryProjectItem(BaseModel):
+    resource_type: Literal["project"]
+    id: str
+    name: str
+    description: str | None
+    matched_on: list[Literal["id", "name", "project"]] = Field(default_factory=list)
+    query_status: Literal["complete", "partial", "unavailable"]
+    query_scope: SemanticDiscoveryQueryScope
+    excluded_ontologies: list[SemanticDiscoveryExcludedOntology] = Field(default_factory=list)
+
+
+class SemanticDiscoveryOntologyItem(BaseModel):
+    resource_type: Literal["ontology"]
+    id: str
+    project: SemanticDiscoveryProjectSummary
+    name: str
+    description: str | None
+    status: Literal["draft", "active", "archived"]
+    queryable: bool
+    unavailable_reason: Literal["ontology_archived", "workspace_not_ready"] | None
+    workspace_version: str | None
+    derived_warnings: list[dict[str, str]] = Field(default_factory=list)
+    matched_on: list[Literal["id", "name", "project"]] = Field(default_factory=list)
+    query_scope: SemanticDiscoveryQueryScope
+
+
+class SemanticScopeDiscoveryResponse(BaseModel):
+    items: list[SemanticDiscoveryProjectItem | SemanticDiscoveryOntologyItem]
+    has_more: bool
+    next_cursor: str | None
+    generated_at: datetime
+
+
 class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     query: str = Field(min_length=1, max_length=2000)
     resource_types: (

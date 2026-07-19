@@ -76,7 +76,7 @@ v1.0 的 R-006 已提供自然语言 Context Query 和受作用域约束的只�
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
 | R1.2-001 | 消费 Agent 查询闭环与绕行消除 | P0 | 未实现 | v1.0 R-005、R-006、R-008 |
-| R1.2-002 | Project 与 Ontology 的授权发现和范围解析 | P0 | 未实现 | R1.2-001、v1.0 R-008 |
+| R1.2-002 | Project 与 Ontology 的授权发现和范围解析 | P0 | 已实现 | R1.2-001、v1.0 R-008 |
 | R1.2-003 | 多语言与语义候选召回及可解释回退 | P0 | 未实现 | R1.2-001、v1.0 R-006 |
 | R1.2-004 | 面向任务的聚合语义读模型 | P0 | 未实现 | R1.2-001、v1.0 R-006 |
 | R1.2-005 | 规则定义查询与触发解释 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
@@ -133,7 +133,14 @@ R1.2-002 至 R1.2-006 分别交付闭环所需的具体能力；闭环实际使�
 
 ## R1.2-002 Project 与 Ontology 的授权发现和范围解析
 
-当前状态：`未实现`
+当前状态：`已实现`
+
+实现结果（2026-07-19）：共享 `AuthorizedScopeDiscoveryService` 和
+`OntologyQueryReadinessEvaluator` 已接入 REST `GET /api/semantic/scopes:discover`、MCP
+`discover_semantic_scopes` 与现有 R-006 范围解析；授权过滤、稳定游标、metadata 筛选、
+`complete/partial/unavailable`、archived/workspace readiness 和派生警告已有专项回归。共享
+测试计划保留 Round 1 High 缺陷及修复，并在 Round 2 独立 PASS；完整回归、真实 REST/MCP、
+Context/SPARQL 闭环、systemd 重启和清理均通过。
 
 ### 需求定位
 

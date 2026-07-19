@@ -52,6 +52,7 @@ Proposal/Review/Publish 队列。
 
 ### 查询与验证
 
+- 授权范围发现：`GET /api/semantic/scopes:discover`
 - Context Query：`POST /api/semantic/context:query`
 - scoped SPARQL：`POST /api/semantic/sparql:query`
 - Ontology read model、lineage、statement provenance、SHACL validation、reasoning 和 rule
@@ -60,6 +61,16 @@ Proposal/Review/Publish 队列。
 Context Query 返回结构化资源、事实、关系、操作、约束和精简 lineage，不生成最终自然语言答案。
 现有 Agent Test 仍会在平台内调用兼容 OpenAI 的 LLM，且中文分词能力不足；这是 R-009 的已知
 缺口，不应作为目标态查询入口。
+
+消费 Agent 新会话可先调用范围发现。无筛选时它以稳定游标分页返回当前主体可访问的 Project 与
+Ontology；`query` 仅匹配稳定 ID 或名称（trim + case-insensitive contains），`queryable` 仅筛选
+Ontology。Project 项返回 `complete/partial/unavailable` 和排除清单，Ontology 项分别返回业务
+`status`、技术 `queryable`、不可用原因、当前 `workspace_version` 和简要派生警告。响应中的
+`query_scope` 可直接用于 Context Query/scoped SPARQL；实际查询仍会重新校验授权、就绪性和版本。
+Cursor 同时绑定筛选条件和当前授权 Project 边界，不能在 Project-bound 与组织管理员主体之间或
+不同 Project 主体之间复用。配置 `SECRET_KEY` 时 cursor 可跨进程重启继续验证；未配置时后端使用
+进程私有随机完整性材料，cursor 只能在生成它的进程生命周期内使用，重启或切换进程后应重新从
+第一页发现。
 
 ## 错误和兼容性边界
 
@@ -178,6 +189,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/rule-definitions/{rule_id}` | Get Rule Definition |
 | semantic | `GET` | `/api/semantic/rule-runs` | List Rule Runs |
 | semantic | `GET` | `/api/semantic/rule-runs/{run_id}` | Get Rule Run |
+| semantic | `GET` | `/api/semantic/scopes:discover` | Discover Semantic Scopes |
 | semantic | `GET` | `/api/semantic/statements` | List Statements |
 | semantic | `GET` | `/api/semantic/status` | Get Governance Status |
 | semantic | `GET` | `/api/semantic/validation-runs` | List Validation Runs |

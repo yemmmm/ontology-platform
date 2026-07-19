@@ -93,17 +93,24 @@ REST 与 MCP adapter 复用同一 service、认证 actor、R-008 Project ownersh
 扫描。JSON/Markdown export 可重建版本与时间线，但平台事实仍以 Modeling Batch、Validation、
 Evidence、Audit、lineage 和当前 RDF 模型为准，Event 不形成第二真相。
 
-## Lineage 与查询（R-005/R-006）
+## Lineage 与查询（R-005/R-006、R1.2-002）
 
 R-005 把 statement occurrence、Evidence Reference、Modeling Item、Audit、revision、derived premise
-和 stale 状态连成统一来源/推导链。R-006 提供两级读入口：
+和 stale 状态连成统一来源/推导链。R1.2-002 与 R-006 提供三级读入口：
 
+- Scope Discovery：先按认证主体过滤 PostgreSQL Project/Ontology 目录，再执行确定性 metadata
+  筛选、查询就绪评估和稳定 keyset 分页，不读取 RDF 业务事实；
 - Context Query：解析 Project/一个或多个 Ontology 的当前默认工作区，执行有界检索、关系扩展、
   constraint 与精简 lineage projection，返回结构化资源、事实、关系和 Operation；
 - scoped SPARQL：只接受 read-only query，由服务端注入经过验证的数据集范围并限制结果。
 
 外部 Agent 负责把结构化上下文转成最终答案。现有 Agent Test 内部 LLM 路径只是 R-009 未完成前
 的 legacy 调试能力。
+
+Scope Discovery 与 `SemanticQueryScopeResolver` 复用同一 Ontology readiness 评估。archived 和默认
+工作区损坏项保持可发现但不可查询；Project 范围可排除部分不可用 Ontology，但全不可用范围失败
+关闭。目录 cursor 不创建快照或授权锁，Context/SPARQL 每次重新校验当前 Project 归属、生命周期、
+工作区和 `workspace_version`。
 
 ## Operation（R-007）
 

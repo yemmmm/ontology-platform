@@ -65,7 +65,11 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
         if policy.ownership is McpOwnership.GLOBAL_SAFE:
             global_safe.add(tool.name)
 
-    assert global_safe == {"check_platform_health"}
+    assert global_safe == {"check_platform_health", "discover_semantic_scopes"}
+    discovery_policy = MCP_TOOL_POLICIES["discover_semantic_scopes"]
+    assert discovery_policy.required_scope == "read"
+    assert discovery_policy.ownership is McpOwnership.GLOBAL_SAFE
+    assert discovery_policy.mutates_state is False
     assert MCP_TOOL_POLICIES["check_semantic_staleness"].required_scope == "admin"
     assert MCP_TOOL_POLICIES["check_semantic_staleness"].ownership is McpOwnership.ORG_ONLY
     assert MCP_TOOL_POLICIES["check_semantic_staleness"].mutates_state is True

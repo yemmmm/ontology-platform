@@ -13,6 +13,7 @@ Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + o
 - 版本化 Modeling Workflow Artifact、追加式 Execution Event 与 JSON/Markdown 执行记录导出；
 - RDF/Oxigraph 语义状态、PostgreSQL 工作流/审计状态与统一 lineage；
 - SHACL、推理、规则、Context Query、scoped SPARQL 和固定读模型。
+- 面向消费 Agent 的授权 Project/Ontology 范围发现与查询就绪状态。
 
 平台不替外部 Agent 生成领域判断或最终自然语言答案，也不保存外部系统明文凭证或代执行外部
 Operation。R-008 已提供 HTTP/MCP/UI 认证、scope 授权和 Project 隔离；R-009 Agent Test 重构只部分
@@ -127,6 +128,10 @@ Modeling Batch 是当前写入协议，不经过旧 Proposal/Review/Publish 队�
 
 ### 7. 查询、验证与导出
 
+新消费会话先调用 REST `GET /api/semantic/scopes:discover` 或 MCP
+`discover_semantic_scopes`，分页读取当前身份的授权目录并显式选择 Project/Ontology。不要因为候选
+唯一而静默选择，也不要把发现时的 `workspace_version` 当成锁；后续查询会重新校验当前状态。
+
 用 Ontology read model、Context Query、scoped SPARQL、SHACL validation、reasoning/rule 结果和
 lineage 验证建模结果。普通 Agent 使用 Project/Ontology 范围，不需要读取或回传 Graph Set ID 和
 graph IRI。完成后保存 checkpoint 并 complete/cancel Build Session。
@@ -162,6 +167,7 @@ HTTP 完整 operation 清单见 [api.md](api.md)，MCP 完整工具清单见 [mc
 - Modeling Context、Modeling Batch、read model；
 - Modeling Workflow Artifact/Event、question current state 和执行记录 export；
 - Context Query、scoped SPARQL、lineage 和语义验证。
+- 授权范围发现 `discover_semantic_scopes`。
 
 当前不存在受支持的完整文件上传、Proposal/Review/Publish、Catalog/Connector、Neo4j Entity/Fact
 MCP 流程。

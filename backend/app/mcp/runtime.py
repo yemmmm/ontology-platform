@@ -52,6 +52,7 @@ def _policy(
 
 MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "check_platform_health": _policy("read", McpOwnership.GLOBAL_SAFE, mutates_state=False),
+    "discover_semantic_scopes": _policy("read", McpOwnership.GLOBAL_SAFE, mutates_state=False),
     "get_modeling_batch": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "list_session_modeling_batches": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
@@ -224,6 +225,12 @@ def runtime_actor() -> str:
     if _principal is None:
         raise RuntimeError("MCP authentication has not completed")
     return _principal.actor
+
+
+def runtime_principal() -> AuthPrincipal:
+    if _principal is None:
+        raise RuntimeError("MCP authentication has not completed")
+    return _principal
 
 
 def _closure_values(fn: Callable) -> dict[str, Any]:

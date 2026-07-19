@@ -49,6 +49,7 @@ ALLOWED_TOOLS = {
     "associate_evidence_reference",
     "semantic_sparql_query",
     "query_semantic_context",
+    "discover_semantic_scopes",
     "submit_semantic_edit",
     "list_semantic_edit_audits",
     "describe_semantic_graph_set",
