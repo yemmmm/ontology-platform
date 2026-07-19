@@ -188,7 +188,6 @@ test("main navigation separates overview questions and debug tools", async ({ pa
   await expect(nav.getByRole("button", { name: "Structured Requirements", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Modeling/ }).first()).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Debug/ }).first()).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Agent Test", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: "Recall", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: "MCP Tools", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: "Graph Sets", exact: true })).toBeVisible();

@@ -8,7 +8,6 @@ from app.api.interview import router as interview_router
 from app.api.build_sessions import router as build_sessions_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
-from app.api.agent_test import router as agent_test_router
 from app.api.evidence import router as evidence_router
 from app.api.evidence_references import router as evidence_references_router
 from app.api.fact_evidence import router as fact_evidence_router
@@ -21,7 +20,6 @@ from app.services.health import check_oxigraph, check_postgres
 router = APIRouter(dependencies=[Depends(authorize_api_request)])
 router.include_router(auth_router)
 router.include_router(ontologies_router)
-router.include_router(agent_test_router)
 router.include_router(interview_router)
 router.include_router(build_sessions_router)
 router.include_router(modeling_batches_router)

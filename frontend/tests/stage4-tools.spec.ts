@@ -6,13 +6,11 @@ import { expect, test, type Page } from "@playwright/test";
 //   1. Tools → Search: query "acme" returns one row with [asserted] chip.
 //   2. Asserted scope filter keeps row count unchanged.
 //   3. OWL inferred scope filter drops row count to 0 (fixture has no inferred).
-//   4. Tools → Agent Test: question run returns answer + graph_context.entries
-//      containing the Acme Corp entry.
-//   5. Tools → MCP tools: catalog shows ≥ 30 tools including
+//   4. Tools → MCP tools: catalog shows ≥ 30 tools including
 //      `compile_and_apply_canonical_command`.
-//   6. Knowledge → Facts: fact drawer renders EvidenceExplorer bindings
+//   5. Knowledge → Facts: fact drawer renders EvidenceExplorer bindings
 //      (document_filename + sequence + text_preview).
-//   7. Governance → Graph Governance: OWL Consistency section renders
+//   6. Governance → Graph Governance: OWL Consistency section renders
 //      consistent: true, is_stale: false.
 //
 // Mocks follow the single-catch-all pattern used by `stage3-publish.spec.ts`.
@@ -79,36 +77,6 @@ const entityLiteralFactsEnvelope = {
       stale: false,
     },
   ],
-};
-
-// ---------------------------------------------------------------------------
-// Fixtures — agent-test/run + graph_context (spec §7.2)
-// ---------------------------------------------------------------------------
-
-const agentTestRunResponse = {
-  answer: "Acme Corp is an organization that manufactures widgets.",
-  tool_calls: [],
-  graph_context: {
-    entries: [
-      {
-        iri: "http://op.local/entity/acme-corp",
-        label: "Acme Corp",
-        class_label: "Organization",
-        assertion_kind: "asserted",
-        source_graph_iri: DATA_GRAPH,
-        source_signature: "sig-acme",
-        is_stale: false,
-      },
-    ],
-    generated_at: "2026-07-07T00:00:00Z",
-    scope: {
-      graph_set_id: GRAPH_SET_ID,
-      ontology_id: ontology.id,
-    },
-  },
-  prompt_preview: "Question: What is Acme Corp?\nContext: Acme Corp ...",
-  warnings: [],
-  errors: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -347,16 +315,6 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
       body = owlConsistencyEnvelope;
     }
 
-    // --- Stage 4 agent-test run ---
-    else if (path === "/agent-test/run" && method === "POST") {
-      if (mode === "failFirst") {
-        status = 500;
-        body = { detail: "agent-test run failed (mock)" };
-      } else {
-        body = agentTestRunResponse;
-      }
-    }
-
     // --- Stage 4 MCP catalog (spec §5.4) ---
     else if (path === "/mcp/tools") {
       body = mcpToolsEnvelope;
@@ -572,40 +530,7 @@ test("entity search row click expands inline detail panel with facts", async ({
 });
 
 // ---------------------------------------------------------------------------
-// Step 4 — Tools → Agent Test: question returns answer + graph_context
-//          entry for Acme Corp with [asserted] chip.
-// ---------------------------------------------------------------------------
-
-test("agent test run surfaces structured graph context entries", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("agent-test"));
-
-  await page.locator('[aria-label="agent-test-question"]').fill("What is Acme Corp?");
-  const runRequest = page.waitForRequest(
-    (req) => req.method() === "POST" && req.url().includes("/agent-test/run"),
-  );
-  await page.locator('[aria-label="agent-test-run"]').click();
-  await runRequest;
-
-  // Answer panel populates with the fixture string.
-  await expect(page.locator('[aria-label="agent-test-answer"]')).toContainText(
-    "Acme Corp is an organization",
-  );
-
-  // Graph context renders the Acme Corp entry with the asserted chip via
-  // its aria-label suffix (frontend emits
-  // `agent-test-context-{iri}`).
-  const entry = page.locator(
-    '[aria-label="agent-test-context-http://op.local/entity/acme-corp"]',
-  );
-  await expect(entry).toBeVisible();
-  await expect(entry).toContainText("Acme Corp");
-});
-
-// ---------------------------------------------------------------------------
-// Step 5 — Tools → MCP tools: ≥ 30 tools and includes
+// Step 4 — Tools → MCP tools: ≥ 30 tools and includes
 //          `compile_and_apply_canonical_command`.
 // ---------------------------------------------------------------------------
 

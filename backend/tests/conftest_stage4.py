@@ -17,7 +17,6 @@ Mirrors the FakeStore pattern from ``conftest_stage3.py``.
 
 from __future__ import annotations
 
-from collections.abc import Generator
 from datetime import datetime, timezone
 from typing import Any
 
@@ -33,7 +32,7 @@ from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateR
 from app.services.semantic_read_model import SemanticReadModelService
 from app.services.semantic_read_scope import SemanticReadScopeResolver
 
-from conftest_stage3 import PREFIX, GRAPH_PREFIX, ONTOLOGY_GRAPH, DATA_GRAPH
+from conftest_stage3 import PREFIX, GRAPH_PREFIX
 
 
 # Stage 4 fixtures reuse the Stage 3 graph-set iris to keep the test
@@ -125,8 +124,7 @@ class FakeStoreStage4(RdfStoreRepository):
     ):
         self.queries.append(query)
         upper = query.upper()
-        # entity-search / agent-test-context both project ?entity ?label
-        # ?class ?class_label; entity-search additionally has ?comment. The
+        # Entity search projects ?entity, ?label, ?class, and ?class_label. The
         # bound ?q literal appears inside the FILTER as LCASE(?q).
         if "?ENTITY" in upper and "?CLASS" in upper and "?LABEL" in upper:
             q_value = _extract_marker_literal(query, "q_filter")

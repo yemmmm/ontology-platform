@@ -58,8 +58,7 @@ Proposal/Review/Publish 队列。
   execution 均以清单中的当前操作为准。
 
 Context Query 返回结构化资源、事实、关系、操作、约束和精简 lineage，不生成最终自然语言答案。
-现有 Agent Test 仍会在平台内调用兼容 OpenAI 的 LLM，且中文分词能力不足；这是 R-009 的已知
-缺口，不应作为目标态查询入口。
+旧 Agent Test API 已移除；外部 Agent 负责组合结构化结果并生成最终答案。
 
 ## 错误和兼容性边界
 
@@ -88,7 +87,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 
 | Tag | Method | Path | Summary |
 | --- | --- | --- | --- |
-| agent-test | `POST` | `/api/agent-test/run` | Run Agent Test |
 | authentication | `GET` | `/api/api-keys` | List Api Keys |
 | authentication | `GET` | `/api/api-keys/{key_id}` | Get Api Key |
 | authentication | `GET` | `/api/auth/me` | Me |

@@ -49,7 +49,7 @@ Artifact/Event 工具复用同一 service、R-008 Project resolver 与秘密扫�
 `platform_observed` 或 actor。Artifact/Event 重试必须复用原 client ID 和完全相同 payload。
 
 当前未注册的旧 governance、catalog、connector、entity、fact、Evidence Artifact 上传和
-Proposal/Review 工具不是可调用能力。R-009 的 Agent Test 重构与 R-010 的 Dify 验收也尚未完成。
+Proposal/Review 工具不是可调用能力。R-009 查询诊断仍处于 Pending；旧 Agent Test 平台内 LLM 路径已移除。
 
 ## 完整运行时工具清单
 

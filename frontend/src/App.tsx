@@ -17,7 +17,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Send,
   ServerCog,
   Settings,
   ShieldCheck,
@@ -49,7 +48,6 @@ import { RulesPage } from "./pages/RulesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
 import { EvidenceReferencesPage } from "./pages/EvidenceReferencesPage";
-import { AgentTestPage } from "./pages/AgentTestPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetHistoryPage } from "./pages/GraphSetHistoryPage";
@@ -92,7 +90,6 @@ type WorkspaceTab =
   | "entities"
   | "rules"
   | "graph-set-history"
-  | "agent-test"
   | "search"
   | "mcp-tools"
   | "setting"
@@ -148,7 +145,6 @@ const workspaceTabs: Array<{
   { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
   { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
   { id: "build-context", stage: "debug", label: "Build Context", detail: "Platform facts · Agent reports", icon: ServerCog },
-  { id: "agent-test", stage: "debug", label: "Agent Test", detail: "Question runs", icon: Send },
   { id: "search", stage: "debug", label: "Recall", detail: "Entity search", icon: Search },
   { id: "mcp-tools", stage: "debug", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
   { id: "graph-sets", stage: "debug", label: "Graph Sets", detail: "Members · runs", icon: Layers },
@@ -843,7 +839,7 @@ function WorkspaceContent(props: {
       setGraphSetId(explicitGraphSetId);
       return;
     }
-    if (!["classes", "entities", "facts", "agent-test", "search", "publication", "graph-set-history"].includes(props.tab)) {
+    if (!["classes", "entities", "facts", "search", "publication", "graph-set-history"].includes(props.tab)) {
       return;
     }
     let cancelled = false;
@@ -1007,20 +1003,6 @@ function WorkspaceContent(props: {
         ontologyId={props.ontology.id}
         graphSetId={graphSetId}
         readOnly={readOnly}
-      />
-    );
-  }
-
-  if (props.tab === "agent-test") {
-    if (!graphSetId) {
-      return graphSetGate(t("Workspace data is not ready yet"));
-    }
-    return (
-      <AgentTestPage
-        ontology={props.ontology}
-        graphSetId={graphSetId}
-        request={governedRequest}
-        mutate={props.mutate}
       />
     );
   }
@@ -1401,12 +1383,6 @@ function DebugPage(props: {
             title={t("Build Context")}
             detail={t("Compare server-observed facts with external Agent session reports.")}
             onClick={() => props.navigateWorkspace("build-context")}
-          />
-          <DebugToolCard
-            icon={<Send size={17} />}
-            title={t("Agent Test")}
-            detail={t("Run ontology-grounded questions against the active graph set.")}
-            onClick={() => props.navigateWorkspace("agent-test")}
           />
           <DebugToolCard
             icon={<Search size={17} />}

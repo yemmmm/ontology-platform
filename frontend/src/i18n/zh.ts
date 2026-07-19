@@ -64,8 +64,6 @@ export const zh: TranslationMap = {
   "Lineage & diff": "版本谱系与差异",
   "Search": "检索",
   "Retrieval tests": "检索测试",
-  "Agent Test": "Agent 测试",
-  "Question runs": "问题运行",
   "MCP Tools": "MCP 工具",
   "Tool catalog": "工具目录",
   "Build Context": "构建上下文",
@@ -425,19 +423,13 @@ export const zh: TranslationMap = {
   "Entity detail": "实体详情",
   "Select or lookup an entity": "请选择或查找一个实体",
 
-  // Agent test page
-  "Agent test": "Agent 测试",
-  "Ask a question against the selected ontology": "针对所选本体提问",
   "Run": "运行",
   "Run output": "运行输出",
   "Answer": "回答",
   "Tool calls": "工具调用",
   "Graph context": "图谱上下文",
-  "Prompt preview": "Prompt 预览",
   "Warnings": "警告",
   "Errors": "错误",
-  "No run output yet": "暂无运行输出",
-  "Agent test completed": "Agent 测试已完成",
   "No tool calls": "无工具调用",
   "Copy": "复制",
 
@@ -1120,18 +1112,6 @@ export const zh: TranslationMap = {
   "Label": "名称",
   "IRI": "IRI",
   "Assertion": "断言",
-
-  // AgentTestPage · Stage 4
-  "Ask a question against the active graph set": "针对当前图集提问",
-  "Select a graph set to run an agent test": "请选择一个图集以运行 Agent 测试",
-  "Graph context · {n} entries": "图谱上下文 · {n} 条",
-  "Generated at": "生成时间",
-  "Scope": "范围",
-  "No graph context matched the question.": "图谱上下文中没有匹配该问题的条目。",
-  "Run produced errors": "运行产生错误",
-  "Run produced warnings": "运行产生警告",
-  "Copy result": "复制结果",
-  "(empty answer)": "（回答为空）",
 
   // McpToolsPage · Stage 4
   "{total} tools across {categories} categories": "共 {total} 个工具，分布于 {categories} 个分类",

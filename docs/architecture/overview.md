@@ -102,8 +102,8 @@ R-005 把 statement occurrence、Evidence Reference、Modeling Item、Audit、re
   constraint 与精简 lineage projection，返回结构化资源、事实、关系和 Operation；
 - scoped SPARQL：只接受 read-only query，由服务端注入经过验证的数据集范围并限制结果。
 
-外部 Agent 负责把结构化上下文转成最终答案。现有 Agent Test 内部 LLM 路径只是 R-009 未完成前
-的 legacy 调试能力。
+外部 Agent 负责把结构化上下文转成最终答案。旧 Agent Test 内部 LLM 路径已移除；
+R-009 如恢复交付，只提供纯 Context Query 调试和诊断。
 
 ## Operation（R-007）
 
@@ -121,8 +121,8 @@ Set source signature。Search/Vector writer 目前仍是假实现，真实持久
 ## 安全与未完成边界
 
 - R-008 已实现：HTTP/UI/MCP 使用统一认证主体、scope 授权与 Project 访问控制。
-- R-009 部分实现：Agent Test 仍在平台内调用 LLM，中文分词不足。
-- R-010 未实现：没有 Dify 固定资料集、任务集、执行器和验收指标。
+- R-009 挂起：旧 Agent Test 已移除，纯查询诊断尚未实现。
+- R-010 已调整：Dify 建模效果验收已转入 v1.1，固定资料快照已交付，集成重跑尚未闭环。
 - `ApiKeyModel` 只保存 SHA-256 key hash；`UserModel` 保存 Argon2id password hash，
   `SecurityAuditEventModel` 保存最小只追加安全事件。HTTP/MCP adapter 将 credential 解析为统一
   `AuthPrincipal`，服务写入使用 principal actor，并在访问 RDF/Postgres 资源前校验 Project 归属。
