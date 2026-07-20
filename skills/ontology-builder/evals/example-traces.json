@@ -16,7 +16,7 @@
   {
     "id": "modeler-vertical-slice-and-dry-run",
     "tools": ["create_evidence_reference", "get_modeling_context", "get_ontology_read_model", "create_modeling_workflow_artifact", "record_modeling_execution_event", "submit_modeling_batch"],
-    "actions": ["start_independent_modeler", "derive_competency_question_slice", "use_reusable_modeler_output_schema", "map_model_to_evidence_and_coverage", "dry_run_before_apply"],
+    "actions": ["start_independent_modeler", "prepare_controlled_modeler_spool", "return_bounded_manifest_only", "validate_complete_handoff_before_platform_write", "derive_competency_question_slice", "use_reusable_modeler_output_schema", "map_model_to_evidence_and_coverage", "dry_run_before_apply"],
     "questions": [],
     "stop_reason": "review_required",
     "modeler_handoff": {

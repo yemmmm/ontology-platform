@@ -477,6 +477,68 @@ def activation_args(command: str) -> dict[str, str] | None:
     return values
 
 
+def handoff_command(command: str) -> str | None:
+    """Return a trusted handoff subcommand without retaining command arguments."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    script_indexes = [
+        index for index, token in enumerate(tokens) if Path(token).name == "modeling_handoff.py"
+    ]
+    if len(script_indexes) != 1:
+        return None
+    allowed = {
+        "prepare",
+        "run",
+        "inspect",
+        "mark-persisted",
+        "cleanup-session",
+        "cleanup-stale",
+    }
+    trailing = tokens[script_indexes[0] + 1 :]
+    return next((token for token in trailing if token in allowed), None)
+
+
+def handoff_outcome(payload: dict[str, Any], command: str) -> dict[str, Any]:
+    """Extract only the bounded manifest contract from an exec response."""
+    response = payload.get("tool_response", payload.get("tool_result"))
+    output = response.get("output") if isinstance(response, dict) else response
+    manifest: dict[str, Any] = {}
+    if isinstance(output, str) and len(output) <= MAX_EVENT_BYTES:
+        candidates = [line for line in output.splitlines() if line.strip().startswith("{")]
+        if candidates:
+            with contextlib.suppress(json.JSONDecodeError):
+                parsed = json.loads(candidates[-1])
+                if isinstance(parsed, dict):
+                    manifest = parsed
+    allowed = {
+        "manifest_version",
+        "schema_version",
+        "build_session_id",
+        "artifact_key",
+        "generation_id",
+        "expected_previous_generation_id",
+        "correction_round",
+        "state",
+        "sha256",
+        "canonical_content_hash",
+        "size_bytes",
+        "item_count",
+        "workflow_artifact_id",
+        "failure_code",
+        "removed",
+    }
+    bounded = {
+        key: value
+        for key, value in manifest.items()
+        if key in allowed and isinstance(value, (str, int, type(None)))
+    }
+    bounded["command"] = command
+    bounded["succeeded"] = tool_succeeded(payload)
+    return bounded
+
+
 def validate_activation_values(values: dict[str, str]) -> None:
     if not RUN_ID.fullmatch(values["run_id"]):
         raise HarnessError("invalid run_id")
@@ -731,6 +793,16 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
                     atomic_json(run_dir / "state.json", state)
         if created and tool_name in TERMINAL_TOOLS and authoritative:
             finalize_run(paths, run_dir, TERMINAL_TOOLS[tool_name])
+    elif event_name == "PostToolUse" and tool_name in {"Bash", "exec_command"}:
+        command = handoff_command(str(tool_input.get("command") or tool_input.get("cmd") or ""))
+        if command:
+            append_sanitized(
+                run_dir,
+                "modeling_handoff_outcome",
+                handoff_outcome(hook, command),
+                identity,
+            )
+            should_summarize = True
     elif event_name == "Stop":
         output = clean_text(hook.get("last_assistant_message"), MAX_MESSAGE_CHARS)
         with run_lock(run_dir):

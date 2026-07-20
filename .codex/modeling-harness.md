@@ -5,6 +5,11 @@ local to this repository: only `.codex/hooks.json` and `.codex/hooks/` implement
 files stay under the gitignored `workspaces/ontology-harness/`. It does not replace platform
 Modeling Workflow Artifacts or Execution Events.
 
+R1.1-003 modeler payload transport is a separate local mechanism documented in
+[`modeling-handoff.md`](modeling-handoff.md). The Harness records only its bounded command outcome;
+it never copies the Manifest locator, draft, prompt, subprocess output, or absolute spool path into
+events or retrospectives.
+
 ## Trust before activation
 
 Open `/hooks` in Codex and review/trust the exact project Hook hashes. Repeat this after changing

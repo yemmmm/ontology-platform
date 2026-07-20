@@ -207,6 +207,45 @@ class HarnessTest(unittest.TestCase):
             {"build_session_id": "build-123", "finding_fingerprint": "abc123"},
         )
 
+    def test_handoff_hook_records_only_bounded_manifest_fields(self) -> None:
+        run_dir = self.activate()
+        secret = "sk-ThisMustNeverBePersisted123456789"
+        hook = {
+            "hook_event_name": "PostToolUse",
+            "session_id": "codex-session-1",
+            "cwd": str(self.repo),
+            "tool_use_id": "handoff-run-1",
+            "tool_name": "exec_command",
+            "tool_input": {
+                "cmd": (
+                    "python3 .codex/modeling_handoff.py inspect "
+                    "--build-session-id build-session-1 --artifact-key modeling-draft "
+                    "--generation-id generation-1"
+                )
+            },
+            "tool_response": {
+                "exit_code": 0,
+                "output": (
+                    '{"manifest_version":"1","state":"validated",'
+                    '"generation_id":"generation-1","artifact_key":"modeling-draft",'
+                    '"locator":"/forbidden/absolute/spool",'
+                    f'"draft":"{secret}","item_count":27}}'
+                ),
+            },
+        }
+        original = harness.invoke_luna
+        harness.invoke_luna = lambda _run, _prompt: delta()
+        try:
+            harness.handle_hook(self.paths, hook)
+        finally:
+            harness.invoke_luna = original
+        persisted = (run_dir / "events.jsonl").read_text(encoding="utf-8")
+        self.assertIn("modeling_handoff_outcome", persisted)
+        self.assertIn('"item_count":27', persisted)
+        self.assertNotIn("absolute/spool", persisted)
+        self.assertNotIn(secret, persisted)
+        self.assertNotIn('"draft"', persisted)
+
     def test_nested_mcp_business_failure_is_not_tool_success(self) -> None:
         failure = {
             "tool_response": {

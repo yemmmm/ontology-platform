@@ -29,8 +29,8 @@
     "input": {"pack": "confirmed-v2", "matrix": "confirmed-v2", "modeler_credential": false},
     "assertions": {
       "required_tools": ["create_evidence_reference", "get_modeling_context", "get_ontology_read_model", "create_modeling_workflow_artifact", "record_modeling_execution_event", "submit_modeling_batch"],
-      "required_actions": ["start_independent_modeler", "derive_competency_question_slice", "use_reusable_modeler_output_schema", "map_model_to_evidence_and_coverage", "dry_run_before_apply"],
-      "forbidden_actions": ["generate_ad_hoc_output_schema", "modeler_acquires_lease", "modeler_applies", "fabricate_evidence", "model_everything"],
+      "required_actions": ["start_independent_modeler", "prepare_controlled_modeler_spool", "return_bounded_manifest_only", "validate_complete_handoff_before_platform_write", "derive_competency_question_slice", "use_reusable_modeler_output_schema", "map_model_to_evidence_and_coverage", "dry_run_before_apply"],
+      "forbidden_actions": ["generate_ad_hoc_output_schema", "transport_draft_through_pty_or_chat", "resume_hidden_modeler_context", "main_agent_edits_modeler_draft", "modeler_acquires_lease", "modeler_applies", "fabricate_evidence", "model_everything"],
       "max_questions": 0,
       "expected_stop_reason": "review_required"
     }

@@ -88,6 +88,9 @@ Read [workflow-artifacts.md](references/workflow-artifacts.md) before creating A
 
 - Start the modeler in a fresh context with confirmed Pack/Matrix versions, exact Evidence
   References, competency questions, and current Modeling Context only.
+- Read [reliable-modeler-handoff.md](references/reliable-modeler-handoff.md) and use the repo-local
+  controlled spool for the complete seven-field result. Standard output may contain only its
+  bounded Manifest; never use PTY/chat/rollout text as the draft transport.
 - Read [modeling-guidelines.md](references/modeling-guidelines.md) and
   [modeling-batch-formats.md](references/modeling-batch-formats.md). For a Codex modeler, pass the
   reusable [modeler-handoff.schema.json](references/modeler-handoff.schema.json) directly to
@@ -166,4 +169,6 @@ Read [safety-and-stop-rules.md](references/safety-and-stop-rules.md) before any 
 - [modeling-batch-formats.md](references/modeling-batch-formats.md): current batch item shapes.
 - [modeler-handoff.schema.json](references/modeler-handoff.schema.json): strict Codex Structured
   Outputs contract for the modeler handoff and four vertical-slice create commands.
+- [reliable-modeler-handoff.md](references/reliable-modeler-handoff.md): controlled spool,
+  platform-first recovery, immutable correction, CAS, persistence, and exact apply rules.
 - [safety-and-stop-rules.md](references/safety-and-stop-rules.md): security and stop conditions.

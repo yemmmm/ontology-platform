@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v1.1.md` R1.1-003
 - Status: in-progress
 - Started: 2026-07-19T11:12:20+08:00
-- Last updated: 2026-07-19T12:39:58+08:00
+- Last updated: 2026-07-19T14:27:07+08:00
 - Design:
   `docs/delivery/designs/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-design.md`
 - Shared test plan:
@@ -272,6 +272,108 @@
   design, shared test plan, delivery record, constraints, and verification commands to the
   requirement developer. Developer must not edit this record or commit.
 
+### 2026-07-19T13:07:51+08:00 — development cycle 1 ready — requirement developer and main agent
+
+- Context: developer implemented the reviewed plan from stable baseline `c4a6157`, did not edit
+  this record, did not commit, and stopped writing after an explicit DEVELOPMENT_READY signal.
+- Action/decision: added the repo-local controlled handoff runner and 17 focused tests; integrated
+  bounded/redacted Harness outcomes, Skill routing/reference, and eval traces. No backend, REST,
+  MCP, database, migration, frontend, or platform Runtime code changed. Self-review fixed supervisor
+  argument ordering, system-Python schema dependency, duplicate-key/NaN parsing, and cleanup/CAS
+  crash/lock races.
+- Evidence: final `.codex` suite `38 passed`; Skill validator `10 references / 34 MCP dependencies`;
+  Skill evals `7 cases`; backend focused `74 passed`; real PostgreSQL concurrency `2 passed`;
+  backend full `729 passed, 6 skipped, 166 warnings in 71.04s`; changed-Python Ruff/format and
+  `git diff --check` passed; GitNexus LOW/0 affected processes, with hidden `handle_hook` reported
+  UNKNOWN/not indexed rather than HIGH. Main-agent diff inspection confirmed exactly ten product/
+  Skill/Harness files and no delivery-record edit by developer.
+- Outcome/next step: stable independent-test baseline is `c4a6157` plus implementation file-set
+  digest `96d00401cac9017bde1f8f200a125f28161cf64a57df5b0f8561622d56cca964`.
+  Deferred to independent test/closeout: real production Codex run, fixed-corpus 27+ platform run,
+  Event/Checkpoint runtime assertions, service restart/health, and terminal cleanup.
+
+### 2026-07-19T14:18:42+08:00 — independent test round 1 FAIL and containment — requirement tester and main agent
+
+- Context: tester independently passed direct regressions, real Codex handoff/recovery, Artifact,
+  and dry-run gates, then observed the real detached supervisor during a long correction run.
+- Action/decision: accepted-high product defect. Supervisor wrote unbounded, unredacted Codex stderr
+  to `.diagnostic.tmp` while live and scanned only the final 2 KiB after normal exit. Real v1 reached
+  93,436 bytes; v2 contained the full prompt. This violates the reviewed no-prompt/no-hidden-
+  reasoning/no-secret local-file contract, so tester stopped before Lease/apply.
+- Evidence: shared test plan Round 1; `.codex/modeling_handoff.py` supervisor stderr path; real spool
+  file size/content-category inspection without echoing content. Passed evidence: 38 direct/Harness,
+  32-file corpus plus 24 tests, 7 Skill evals, Ruff/format, PostgreSQL concurrency, fresh Codex
+  32-item/42,342-byte handoff, both interruption recoveries, exact Artifact hash, stable
+  Event/Checkpoint facts, and canonical dry-run 32 items/0 Findings.
+- Outcome/next step: tester terminated only the uniquely identified idle test process group, read no
+  partial output, deleted diagnostic/temp inputs, removed two local generations, restored
+  `legacy_only`, and verified service/backend/frontend health. Platform Project/Session and
+  immutable BLOCKED review history remain for repair/retest. Send High defect to developer; Round 2
+  must prove bounded in-memory/redacted diagnostics during live/crash states before resuming apply.
+
+### 2026-07-19T14:27:07+08:00 — repair cycle 2 ready and GitNexus disposition — requirement developer and main agent
+
+- Context: developer reproduced the Round 1 High and repaired only the supervisor diagnostic path.
+- Action/decision: removed all raw stderr files. A drain thread now continuously consumes PIPE
+  stderr into a constant-memory accumulator with at most 4 KiB scan overlap; durable status stores
+  only byte count, booleans, and named secret categories. Live, nonzero, normal, and supervisor-
+  crash paths persist no prompt, stderr, matched token, hidden reasoning, or raw diagnostic.
+- Evidence: focused `20 passed`; full `.codex` `41 passed`; Skill validator/evals PASS; backend
+  focused `74 passed`; PostgreSQL concurrency `2 passed`; Ruff/format/diff PASS. Added >200/250 KiB
+  live/nonzero/crash stderr, split-secret, bounded status, and no-file regressions. No spool residue.
+- Outcome/next step: repair stable state is `c4a6157` plus implementation digest
+  `a1bef6ff4a79f3e712cece4bef7b3b68f146eb0406da61691dc45a24fe47dab8`.
+  GitNexus final detect reported CRITICAL/52, but every affected process attributed the Skill
+  Markdown section name `Reference map` as a changed code step in unrelated frontend/backend flows;
+  no product-code file or indexed product symbol changed, while hidden `.codex` remains unindexed.
+  Main agent rejects/downgrades this as evidence-backed graph name-collision false positive and
+  preserves the warning here. Return the stable repair to the same independent tester for Round 2.
+
+### 2026-07-19T15:56:29+08:00 — independent test round 2 FAIL and containment — requirement tester and main agent
+
+- Context: tester first reproduced the repaired diagnostic contract, independently passed the
+  full regression suites, and resumed the retained Build Session with one fresh correction
+  generation. During the live run it inspected the process boundary rather than any partial model
+  output.
+- Action/decision: accepted-high product defect. The runner invoked `codex exec` without the
+  supported `--ignore-user-config` flag and retained the user configuration location, so Codex
+  loaded global MCP configuration. Its process tree started the ontology MCP with the environment
+  variable name `ONTOLOGY_MCP_API_KEY`. A read-only filesystem sandbox does not constrain external
+  MCP tools; therefore the supposedly credential-free Modeler had a platform-capable channel.
+- Evidence: shared test plan Round 2; live supervisor/Codex/MCP parent-child tree; variable-name-only
+  inspection (no value read); `codex exec --help` confirms `--ignore-user-config`. Before the High,
+  independent checks passed: backend `729 passed, 6 skipped`; real PostgreSQL concurrency `2
+  passed`; `.codex` `41 passed`; Skill validator `10 references / 34 MCP dependencies`; seven Skill
+  evals; fixed corpus 32-file verification and `24 passed`; Ruff, format, and diff checks.
+- Outcome/next step: tester sent SIGTERM only to the unique Codex process group; supervisor,
+  code-mode host, and MCP children exited without SIGKILL. No partial draft was read or reused;
+  inspection failed closed as `handoff_file_missing`, and session cleanup removed exactly one local
+  generation. Platform state remains six Artifacts, one Batch, eight Events, four Checkpoints, with
+  no new write, Lease, or apply; service/backend/frontend remain healthy in `legacy_only`. Repair
+  must isolate user configuration and platform/MCP credential categories while preserving only the
+  minimum Codex authentication/proxy environment, then restart independent testing in Round 3.
+
+### 2026-07-19T16:03:00+08:00 — repair cycle 3 ready — requirement developer and main agent
+
+- Context: developer repaired only the credential/configuration boundary exposed by Round 2 and
+  stopped writing without editing the shared test plan or this record.
+- Action/decision: `codex exec` now always receives `--ignore-user-config`; the child environment
+  is built from a positive allowlist backed by category denial for platform, MCP, API key, token,
+  authorization, cookie, Lease, password, secret, and credential names. Credential-bearing proxy
+  URLs are rejected. `HOME`/`CODEX_HOME` remain solely for file-backed Codex authentication, which
+  the CLI documents as independent from ignored user configuration. Explicit empty source input no
+  longer falls back to the real process environment.
+- Evidence: a black-box supervisor/fake-Codex test supplies a malicious user config declaring an
+  ontology MCP, captures actual argv/environment, and proves the ignore flag, absent MCP loading,
+  visible file auth, absent credential categories, and credential-free proxy behavior. Focused
+  handoff `21 passed`; full `.codex` `42 passed`; Skill validator/evals PASS; backend workflow/API/
+  MCP focused `15 passed`; Ruff, format, and diff checks PASS. GitNexus reports UNKNOWN/zero indexed
+  dependents because the hidden `.codex` supervisor is not indexed.
+- Outcome/next step: stable implementation digest is
+  `eb0e05e72533f8a59f9870e0e3750660aec420f4805b8105051958db12f0f859`. Round 3 must use the
+  production Codex binary and inspect the live process tree/environment-category boundary before
+  accepting a result, then resume the retained platform workflow only if no global MCP is started.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -285,11 +387,17 @@
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
+| 1 | `c4a6157` + digest `96d00401...a964` | Implemented controlled spool/supervisor/manifest/recovery/CAS/lifecycle plus Skill/Harness integration; self-review fixed four local issues | 38 `.codex`; 7 eval; 74 focused; 729 backend; 2 PostgreSQL; Ruff/diff | DEVELOPMENT_READY; independent runtime/Dify gates pending |
+| Repair 1 | Round 1 FAIL baseline | High: live supervisor persisted unbounded/unredacted stderr prompt in `.diagnostic.tmp` | Real v1/v2 diagnostic evidence; no partial output read | Assigned for root-cause repair |
+| 2 | `c4a6157` + digest `a1bef6ff...dab8` | Replaced raw diagnostic file with bounded in-memory streaming classifier | 20 focused; 41 `.codex`; Skill/eval; 74 focused; 2 PostgreSQL; Ruff/diff | DEVELOPMENT_READY for Round 2 |
+| 3 | `c4a6157` + digest `eb0e05e...f859` | Ignored global user config and restricted the child to a credential-free allowlisted environment | 21 focused; 42 `.codex`; Skill/eval; 15 backend focused; Ruff/format/diff | DEVELOPMENT_READY for Round 3 production-boundary retest |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
+| 1 | `c4a6157` + digest `96d00401...a964` | FAIL | High unbounded/unredacted live stderr file; apply/query/validation/lineage/completion not executed | Shared test plan Round 1; real Codex 32-item recovery/Artifact/dry-run passed; containment complete |
+| 2 | `c4a6157` + digest `a1bef6ff...dab8` | FAIL | High global Codex config loaded a credentialed ontology MCP; correction persistence and all later gates not executed | Shared test plan Round 2; full independent regressions passed; unique process-group containment complete |
 
 ## Final verification
 
