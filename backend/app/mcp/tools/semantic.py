@@ -19,7 +19,10 @@ from app.repositories.models import (
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.authorized_scope_discovery import AuthorizedScopeDiscoveryService
 from app.services.semantic import SemanticService
-from app.services.semantic_context_query import SemanticContextQueryService
+from app.services.semantic_context_query import (
+    SemanticContextQueryError,
+    SemanticContextQueryService,
+)
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
@@ -74,6 +77,21 @@ def _scope_resolver(session) -> SemanticQueryScopeResolver:
 
 def _context_query_service(session) -> SemanticContextQueryService:
     return SemanticContextQueryService(session, _rdf_store(), _scope_resolver(session))
+
+
+def _normalize_mcp_queries(*, query: str | None, queries: list[str] | None) -> list[str]:
+    """Apply the R1.2-004 ``query`` xor ``queries`` rule at the MCP boundary.
+
+    The shared service still re-validates; this helper keeps the MCP error code
+    aligned with the REST adapter for symmetric client feedback.
+    """
+    if query is not None and queries is not None:
+        raise SemanticContextQueryError("Provide exactly one of 'queries' or 'query'")
+    if queries is not None:
+        return list(queries)
+    if query is not None:
+        return [query]
+    raise SemanticContextQueryError("Provide exactly one of 'queries' or 'query'")
 
 
 def _scoped_sparql_service(session) -> ScopedSparqlQueryService:
@@ -170,26 +188,34 @@ def register_semantic(server: FastMCP) -> None:
     def query_semantic_context(
         project_id: str,
         scope_mode: str,
-        query: str,
+        query: str | None = None,
+        queries: list[str] | None = None,
         ontology_ids: list[str] | None = None,
         resource_types: list[str] | None = None,
         assertion_types: list[str] | None = None,
         search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
+        context_limit: int = 100,
+        match_cursor: str | None = None,
+        context_cursor: str | None = None,
     ) -> dict[str, Any]:
         """Recall structured semantic context from one Project's current Ontologies."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _context_query_service(session).query(
+            lambda session, _driver, _embedding_client: _context_query_service(session).query_multi(
                 project_id=project_id,
                 scope_mode=scope_mode,
                 ontology_ids=ontology_ids or [],
-                query=query,
+                queries=_normalize_mcp_queries(query=query, queries=queries),
                 resource_types=resource_types,
                 assertion_types=assertion_types,
                 search_mode=search_mode,
                 depth=depth,
                 limit=limit,
+                context_limit=context_limit,
+                principal=runtime_principal(),
+                match_cursor=match_cursor,
+                context_cursor=context_cursor,
             )
         )
 

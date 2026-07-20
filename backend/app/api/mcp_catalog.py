@@ -19,7 +19,9 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from app.core.config import Settings
 from app.mcp.server import mcp
+from app.services.semantic_context_capabilities import context_query_capabilities
 
 router = APIRouter(tags=["mcp-catalog"])
 
@@ -129,4 +131,7 @@ def list_mcp_tools() -> dict[str, Any]:
         "tools": tools,
         "total": len(tools),
         "by_category": by_category,
+        "capabilities": {
+            "semantic_context_query": context_query_capabilities(Settings()),
+        },
     }

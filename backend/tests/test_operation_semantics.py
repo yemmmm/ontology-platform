@@ -8,6 +8,7 @@ from rdflib.namespace import OWL, RDF, RDFS
 
 from app.core.config import Settings
 from app.repositories.rdf_store import SparqlResult
+from app.security.auth import AuthPrincipal
 from app.services.operation_semantics import (
     JSON_DATATYPE,
     OperationValidationError,
@@ -21,6 +22,17 @@ from app.services.semantic_command_compiler import compile_command
 from app.services.semantic_context_query import SemanticContextQueryService
 from app.services.semantic_query_scope import SemanticQueryScopeResolver
 from app.repositories.models import OntologyModel, ProjectModel
+
+
+def _principal() -> AuthPrincipal:
+    return AuthPrincipal(
+        subject_type="api_key",
+        subject_id="test-principal",
+        actor="key:test-principal",
+        scopes=frozenset({"read"}),
+        project_id=None,
+        auth_method="bearer",
+    )
 
 
 def _settings() -> Settings:
@@ -205,6 +217,7 @@ def test_context_query_returns_structured_operation_and_hides_raw_json(in_memory
         ontology_ids=["o1"],
         query="workflow_id",
         depth=0,
+        principal=_principal(),
     )
     assert result["primary_matches"][0]["kind"] == "operation"
     assert result["primary_matches"][0]["data"]["parameters"][0]["name"] == "workflow_id"
@@ -217,6 +230,7 @@ def test_context_query_returns_structured_operation_and_hides_raw_json(in_memory
         query="workflow_id",
         resource_types=["fact"],
         depth=0,
+        principal=_principal(),
     )
     assert fact_only["result_status"] == "no_match"
     assert "workflow_id" not in str(fact_only["primary_matches"])

@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     semantic_retrieval_build_batch_size: int = Field(default=16, ge=1, le=128)
     semantic_retrieval_query_timeout_seconds: float = Field(default=8, gt=0, le=120)
 
+    # R1.2-004 related-query aggregation public safety limits and cursor policy.
+    semantic_context_query_min_queries: int = Field(default=1, ge=1, le=8)
+    semantic_context_query_max_queries: int = Field(default=8, ge=1, le=64)
+    semantic_context_query_item_char_limit: int = Field(default=2000, ge=1, le=10_000)
+    semantic_context_query_aggregate_char_limit: int = Field(default=8000, ge=1, le=50_000)
+    semantic_context_query_match_limit_default: int = Field(default=20, ge=1, le=100)
+    semantic_context_query_match_limit_max: int = Field(default=100, ge=1, le=1000)
+    semantic_context_query_context_limit_default: int = Field(default=100, ge=0, le=1000)
+    semantic_context_query_context_limit_max: int = Field(default=1000, ge=0, le=10_000)
+    semantic_context_query_depth_default: int = Field(default=1, ge=0, le=3)
+    semantic_context_query_depth_max: int = Field(default=3, ge=0, le=10)
+    semantic_context_query_cursor_signing_secret: str = ""
+    semantic_context_query_cursor_lifetime_seconds: int = Field(default=600, ge=1, le=86_400)
+
     oxigraph_url: str = "http://localhost:7878"
     semantic_base_iri: str = "http://ontology-platform.local/semantic/"
     semantic_graph_iri_prefix: str = "http://ontology-platform.local/semantic/graph/"

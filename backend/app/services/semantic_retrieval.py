@@ -776,6 +776,125 @@ class SemanticResourceRetrievalService:
             "completeness": "degraded" if unavailable else "complete",
         }
 
+    def recall_multi(
+        self,
+        *,
+        scope: Any,
+        queries: list[str],
+        resource_kinds: set[str],
+        search_mode: str,
+        limit: int,
+    ) -> dict[str, Any]:
+        """Run one bounded embedding batch for multiple related expressions.
+
+        Reuses the same scope, manifest fences, and degradation rules as
+        ``recall``. Expressions are embedded in a single provider call;
+        exact-vector scans then run per expression inside the resolved scope.
+        The returned ``candidates_by_query`` preserves input order, including
+        duplicates. ``completeness`` aggregates per-expression degradation so
+        R1.2-004 fusion can still surface available evidence.
+        """
+        if search_mode not in {"hybrid", "lexical"}:
+            raise SemanticRetrievalError("search_mode must be hybrid or lexical")
+        signatures = {
+            item.ontology_id: rule_set_signature(self.session, item.ontology_id)
+            for item in scope.ontologies
+        }
+        indexes = [
+            self.repository.index_status(
+                graph_set_id=item.graph_set_id,
+                ontology_id=item.ontology_id,
+                workspace_version=item.workspace_version,
+                source_signature=item.source_signature,
+                current_rule_signature=signatures[item.ontology_id],
+            )
+            for item in scope.ontologies
+        ]
+        if search_mode == "lexical" or not queries:
+            return {
+                "candidates_by_query": [[] for _ in queries],
+                "indexes": indexes,
+                "warnings": [],
+                "completeness": "complete",
+            }
+        unavailable = [item for item in indexes if item["status"] != "current"]
+        warnings = [_index_warning(item["status"]) for item in unavailable]
+        if not any(item["status"] == "current" for item in indexes):
+            return {
+                "candidates_by_query": [[] for _ in queries],
+                "indexes": indexes,
+                "warnings": warnings,
+                "completeness": "degraded",
+            }
+        try:
+            vectors = self.embedding_client.embed(list(queries))
+            if len(vectors) != len(queries):
+                raise SemanticRetrievalError(
+                    "Embedding provider returned an invalid document count"
+                )
+            for vector in vectors:
+                _validate_vector(vector, self.config.dimensions)
+        except (EmbeddingServiceError, IndexError, TypeError, ValueError):
+            return {
+                "candidates_by_query": [[] for _ in queries],
+                "indexes": indexes,
+                "warnings": [
+                    *warnings,
+                    {"code": "semantic_recall_degraded", "message": "Vector recall is unavailable."},
+                ],
+                "completeness": "degraded",
+            }
+        per_ontology_limit = min(200, max(50, limit * 5))
+        candidates_by_query: list[list[dict[str, Any]]] = []
+        any_complete = False
+        try:
+            for vector in vectors:
+                per_expression: list[dict[str, Any]] = []
+                for ontology in scope.ontologies:
+                    status = next(
+                        item for item in indexes if item["ontology_id"] == ontology.ontology_id
+                    )["status"]
+                    if status != "current":
+                        continue
+                    rows = self.repository.exact_cosine_candidates(
+                        graph_set_id=ontology.graph_set_id,
+                        ontology_id=ontology.ontology_id,
+                        workspace_version=ontology.workspace_version,
+                        source_signature=ontology.source_signature,
+                        rule_signature=signatures[ontology.ontology_id],
+                        resource_kinds=resource_kinds,
+                        query_vector=vector,
+                        limit=per_ontology_limit,
+                    )
+                    per_expression.extend(
+                        _semantic_candidate(row, ontology.ontology_id, self.config.min_similarity)
+                        for row in rows
+                        if float(row["similarity"]) >= self.config.min_similarity
+                    )
+                candidates_by_query.append(per_expression)
+                if per_expression:
+                    any_complete = True
+        except Exception:
+            return {
+                "candidates_by_query": [[] for _ in queries],
+                "indexes": indexes,
+                "warnings": [
+                    *warnings,
+                    {"code": "semantic_recall_degraded", "message": "Vector recall is unavailable."},
+                ],
+                "completeness": "degraded",
+            }
+        if any_complete:
+            completeness = "degraded" if unavailable else "complete"
+        else:
+            completeness = "degraded"
+        return {
+            "candidates_by_query": candidates_by_query,
+            "indexes": indexes,
+            "warnings": warnings,
+            "completeness": completeness,
+        }
+
     def recall_graph_set(
         self,
         *,

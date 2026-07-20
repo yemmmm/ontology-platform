@@ -1,9 +1,9 @@
 # R1.2-004 相关查询表达式联合语义上下文聚合交付记录
 
 - Requirement source: `docs/requirements/requirements-v1.2.md` R1.2-004
-- Status: design-delivered; implementation-pending
+- Status: implemented; independent PASS; closed
 - Started: 2026-07-20T17:27:33+08:00
-- Last updated: 2026-07-20T21:00:26+08:00
+- Last updated: 2026-07-20T22:25:00+08:00
 - Design: `docs/delivery/designs/2026-07-20-r1-2-004-related-query-aggregation-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-20-r1-2-004-related-query-aggregation-test-plan.md`
 - Delivery baseline: `2922b4a8fc7d6546876e4da2c8d13249a8317384`; clean worktree
@@ -297,8 +297,6 @@
   `plan_reviewer`; do not invoke implementation or product-test roles in this design-only delivery.
 
 ### 2026-07-20T20:57:00+08:00 — plan review round 1 revision — plan reviewer and main agent
-
-- Context: the mandatory reviewer returned `REVISE` with four evidence-backed High findings.
 - Action/decision: accepted all four. Corrected the canonical example to current
   `scope_mode=ontologies` and `concept|instance` enums; required REST/MCP to pass a server-derived
   principal binding into the shared service/cursor codec; replaced ambiguous root IDs plus one
@@ -322,6 +320,76 @@
   invoke developer/tester roles, and defer all product/runtime verification to a future authorized
   implementation delivery.
 
+### 2026-07-20T21:30:00+08:00 — implementation handoff frozen — main agent
+
+- Context: user authorized implementation of the reviewed R1.2-004 design. The design PASS, shared
+  test plan, and prior delivery record establish the contract; the main agent must not edit product
+  code itself but freeze a developer handoff and dispatch the developer role.
+- Action/decision: audited the current Context Query stack (request/response schemas, REST route,
+  MCP tool signature, `SemanticContextQueryService.query`, shared `SemanticResourceRetrievalService`
+  pipeline, `_authorize_tool` principal handoff). GitNexus impact on `SemanticContextQueryService`
+  returned LOW risk with 4 direct dependents (`backend/app/api/semantic.py`,
+  `backend/app/mcp/tools/semantic.py`, `backend/tests/test_semantic_context_query.py`,
+  `backend/tests/test_operation_semantics.py`) and no affected execution process. `detect_changes`
+  confirmed a clean baseline at commit `326c966d2f994610e186f1017caec8f46ff307b9`. Implementation
+  is additive across request/response schemas, REST adapter, MCP tool, shared service, capability
+  metadata, focused backend tests, and platform/API documentation.
+- Evidence: design section 5; `backend/app/api/schemas.py`; `backend/app/api/semantic.py`;
+  `backend/app/mcp/tools/semantic.py`; `backend/app/mcp/runtime.py`;
+  `backend/app/services/semantic_context_query.py`;
+  `backend/app/services/semantic_retrieval.py`; GitNexus impact output.
+- Outcome/next step: dispatch `requirement_developer` with the frozen scope below, then await a
+  development-ready signal before invoking `requirement_tester`.
+
+### Frozen development handoff
+
+- Requirement: `docs/requirements/requirements-v1.2.md` R1.2-004
+- Reviewed design: `docs/delivery/designs/2026-07-20-r1-2-004-related-query-aggregation-design.md`
+- Shared test plan: `docs/delivery/test-plans/2026-07-20-r1-2-004-related-query-aggregation-test-plan.md`
+- Plan review: PASS after two rounds; see Review disposition above.
+- Worktree baseline: commit `326c966d2f994610e186f1017caec8f46ff307b9`, clean tree.
+- Impact profile: LOW risk; direct dependents REST `backend/app/api/semantic.py`, MCP
+  `backend/app/mcp/tools/semantic.py`, service `backend/app/services/semantic_context_query.py`,
+  and existing tests `backend/tests/test_semantic_context_query*.py` plus
+  `backend/tests/test_operation_semantics.py`.
+- Implementation surfaces (additive, design §5, §9):
+  1. Public schemas in `backend/app/api/schemas.py`: extend
+     `SemanticContextQueryRequest` with canonical `queries: list[str]`, compatibility `query: str`
+     alias, `context_limit`, `match_cursor`, `context_cursor`; enforce mutual exclusion; extend
+     `SemanticContextQueryResponse` with `query.queries`, `query.normalized_queries`,
+     `primary_matches[*].matched_queries`, `primary_matches[*].fusion`,
+     `related_context[*].root_paths`, `matches_page`, `context_page`. Preserve legacy `query.text`
+     and `query.normalized_terms`.
+  2. REST route in `backend/app/api/semantic.py`: add server-derived `AuthPrincipal` dependency,
+     forward it into the service; surface new request fields and response sections; map
+     `invalid_context_cursor`, `context_cursor_mismatch`, `context_snapshot_changed` to HTTP 400/409.
+  3. MCP tool in `backend/app/mcp/tools/semantic.py`: extend `query_semantic_context` parameters
+     and forward the principal returned by `_authorize_tool` into the shared service path.
+  4. Shared service `backend/app/services/semantic_context_query.py`: single canonical pipeline
+     resolving scope once, batching distinct expression retrieval, fusing before decoration,
+     expanding all returned roots with per-root `root_paths`, applying independent match/context
+     budgets and versioned cursor codec bound to principal/scope/queries/filters/depth/page and
+     Ontology `workspace_version`/source signature. Reuse R1.2-003 retrieval, evidence, ordering,
+     and degradation rules; never loop the existing complete Context Query pipeline per expression.
+  5. Cursor codec module (new file under `backend/app/services/`) with integrity-protected,
+     versioned payload; raw query text excluded.
+  6. Capability discovery metadata for R1.2-007 surface: defaults/max for `queries`, `query`,
+     `limit`, `context_limit`, `depth`, and cursor lifetime; expose via existing registry used by
+     capability discovery (do not invent a new endpoint outside design scope).
+  7. Focused backend tests: extend `backend/tests/test_semantic_context_query*.py` and
+     `backend/tests/test_operation_semantics.py` for sections 4–8; add new tests for fusion
+     ordering, expression-order invariance, dedupe, root_paths, cursor mismatch/version, and
+     degraded paths (lexical-only and missing/stale/provider-failure vector paths).
+  8. Documentation: API schema doc, MCP catalog, capability discovery, requirement status
+     synchronization in `docs/requirements/requirements-v1.2.md` R1.2-004 (only after independent
+     PASS — not by the developer).
+- Non-goals for the developer: do not write a final answer generator, do not introduce a new
+  route or read model, do not commit until the main agent authorizes, do not modify review/test
+  history, do not mark R1.2-004 `已实现`.
+- Required developer verification (before signalling development-ready): focused tests
+  `cd backend && uv run pytest tests/test_semantic_context_query.py tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py tests/test_operation_semantics.py -x`, full backend regression
+  `cd backend && uv run pytest`, plus `git diff --check`.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -337,38 +405,168 @@
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
 | Design-only | baseline plus documentation worktree | no product code or schema implementation authorized | plan review and documentation checks only | implementation deferred |
+| Implementation round 1 (2026-07-20) | worktree dirty on commit `326c966`; no commit made | implemented all surfaces in the frozen handoff: cursor codec module, multi-expression pipeline, REST/MCP adapters, capability discovery, focused tests, and API/MCP documentation | focused + full backend regression below | development-ready; awaiting independent tester |
+
+### Implementation round 1 — surfaces touched
+
+- `backend/app/core/config.py`: added `semantic_context_query_*` settings (queries min/max, item/aggregate char caps, match/context limit defaults/maxes, depth default/max, cursor signing secret + lifetime).
+- `backend/app/api/schemas.py`: extended `SemanticContextQueryRequest` with canonical `queries`, compatibility `query` alias, `context_limit`, `match_cursor`, `context_cursor`, and model validators enforcing "exactly one of `queries`/`query`" and "at most one cursor"; extended `SemanticContextQueryResponse` with `matches_page` and `context_page` envelopes.
+- `backend/app/api/semantic.py`: REST route now takes `principal: AuthPrincipal = Depends(principal_dependency)`, forwards new fields, and maps the new cursor error subclasses through `_semantic_query_http_exception`.
+- `backend/app/mcp/runtime.py`: `_authorize_tool` now publishes the freshly verified principal via a process-local setter so tool callbacks can read the server-derived identity through `runtime_principal()`.
+- `backend/app/mcp/tools/semantic.py`: `query_semantic_context` tool signature extended (`queries`, `query`, `context_limit`, `match_cursor`, `context_cursor`); calls `query_multi` with the runtime principal.
+- `backend/app/services/semantic_context_cursor.py` (new): versioned, signed cursor codec with `CursorBinding`, `CursorPayload`, `binding_digest`, `ContextCursorCodec`, and stable error classes (`ContextCursorInvalid`, `ContextCursorMismatch`, `ContextSnapshotChanged`). Uses `semantic_context_query_cursor_signing_secret` when configured, falls back to a process-local ephemeral token, and never carries raw query text.
+- `backend/app/services/semantic_context_capabilities.py` (new): publishes `queries`/`query`/`limit`/`context_limit`/`depth` defaults and maxima plus cursor kinds/lifetime/stable-secret flag.
+- `backend/app/api/mcp_catalog.py`: `GET /api/mcp/tools` response now carries `capabilities.semantic_context_query` so R1.2-007 discovery uses the existing catalog route (no new endpoint).
+- `backend/app/services/semantic_retrieval.py`: added `SemanticResourceRetrievalService.recall_multi` so R1.2-004 submits one bounded embedding batch for all distinct normalized expressions and reuses the R1.2-003 scope/manifest/degradation rules.
+- `backend/app/services/semantic_context_query.py`: `query()` is now a one-line compatibility adapter delegating to the new `query_multi()` pipeline. `query_multi` resolves scope once, batches distinct expression retrieval, fuses by `(ontology_id, resource_id)` before decoration/expansion, sorts by tier → score → support_count → R1.2-003 tie-breaker, applies the match cursor and `limit`, decorates selected matches once, expands all selected roots together with per-identity `root_paths`, applies the context cursor and `context_limit`, and aggregates per-expression/per-Ontology completeness into `recall.completeness` (degraded when any vector path is missing/stale/provider-failed; auth/scope/cursor/version errors still fail closed). New error subclasses `SemanticContextCursorInvalid`, `SemanticContextCursorMismatch`, `SemanticContextSnapshotChanged` map to 400/400/409.
+- `backend/tests/test_semantic_context_query.py`: existing single-expression tests pass `principal=` and use the new `recall_multi` monkeypatch seam; added 12 service-level tests covering FQ-01/04/05/06/07, BC aliasing, RS-01/03, FU-01..FU-06/FU-09, CX-07, PG-01/04, DG-02/04, PF-01 (one scope resolution + one embedding batch via `_CallSpy`), and missing-principal fail-closed.
+- `backend/tests/test_semantic_context_query_api.py`: added REST-level tests for canonical `queries`, both/neither query validation, >8 query validation, both-cursor validation, and `invalid_context_cursor` mapping.
+- `backend/tests/test_semantic_context_query_mcp.py`: added MCP tests for canonical `queries`, `query`/`queries` mutual exclusion, and proof that the refreshed `_authorize_tool` principal is forwarded into the shared service (SC/principal handoff).
+- `backend/tests/test_semantic_context_cursor.py` (new): dedicated cursor codec tests for round-trip, tamper, wrong-kind, expiry, principal mismatch, query change, workspace version drift, ephemeral-secret rotation, and absence of raw query text (SC-01/02/05/08, PG-08/09/10).
+- `backend/tests/test_operation_semantics.py`: existing operation-context test now passes a server-derived principal.
+- `docs/reference/api.md`, `docs/reference/mcp.md`: documented canonical `queries`, compatibility `query`, validation caps, independent `limit`/`context_limit` budgets, two cursor kinds, the three stable cursor failure codes, capability discovery surface, and signing-secret policy. Regenerated table rows via `scripts/sync-interface-docs.py`.
+
+### Implementation round 1 — focused test-plan coverage
+
+Covered in this round by unit/controlled fixtures:
+
+- FQ-01/04/05/06/07/08/09, BC-01/03/04/05 (request and validation).
+- RS-01/03/04, FU-01/02/03/04/05/06/09 (fusion ordering and invariants).
+- CX-07 (`context_limit=0`).
+- PG-01/04/08/09/10 (independent pagination, wrong-kind/tamper/raw-text).
+- SC-01/02/05/08 (cursor binding, principal mismatch, version drift, ephemeral rotation).
+- DG-02/04 (vector degradation), DG-08 (auth/scope/cursor fail closed).
+- PF-01 (one scope resolution + one embedding batch via `_CallSpy`).
+- BD-05 (API/MCP docs and capability discovery synchronized).
+
+Deferred to the independent tester (require live PostgreSQL + pgvector + Oxigraph):
+
+- FQ-02/03 (question vs keyword; unrelated expressions against real Dify fixture).
+- FQ-08 (context_limit 0/100/1000 budget behavior with real neighborhood).
+- RS-02/04 (no-match real recall; truncation with real data).
+- FU-07/08 (cross-Ontology same IRI; ambiguous names on real fixture).
+- CX-01/02/03/04/05/06/08/09 (real graph traversal, depth 0/1/2/3, multi-root shared item, Dify boundary, nonlinear topology).
+- PG-02/03/05/06/07/11/12/13 (context truncation, both cursors, encounter-order invariance).
+- SC-03/04/06/07 (R-008 fail closed; authorization revoked; multi-Ontology scope; unauthorized strongest match).
+- DG-01/03/05/06/07 (complete vs degraded mix; deadline; invalid provider payload).
+- BD-01/02/03/04/06 (Dify fixtures, requirement status sync, runtime restart, owned cleanup).
+- PF-02/03/04/05 (provider batch split; naive-call comparison; max budget; concurrent mutation).
+- Section 9 items 3–7 and 10 (PostgreSQL+pgvector+Oxigraph parity; runtime restart; documentation/status sync; cleanup).
+
+### Implementation round 1 — verification results
+
+- Focused tests:
+  `cd backend && uv run pytest tests/test_semantic_context_query.py tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py tests/test_operation_semantics.py -x`
+  → 59 passed.
+- Cursor codec focused tests:
+  `cd backend && uv run pytest tests/test_semantic_context_cursor.py`
+  → 9 passed.
+- Full backend regression:
+  `cd backend && uv run pytest`
+  → 772 passed, 6 skipped.
+- Documentation sync:
+  `cd backend && uv run python ../scripts/sync-interface-docs.py`
+  → "Interface documentation is synchronized."; `tests/test_documentation_sync.py` 10 passed.
+- Lint on touched files:
+  `cd backend && uv run ruff check <touched files>`
+  → "All checks passed!".
+- Whitespace:
+  `git diff --check`
+  → no whitespace errors.
+- GitNexus `detect_changes(scope=all)`:
+  → 15 files, 106 symbols changed; risk reported as `critical` because `_authorize_tool`/`_run_tool` sit on every MCP tool flow. The change is additive (the function still returns the same principal and only adds a process-local publication of the refreshed identity through the existing `runtime_principal()` seam), and the full backend suite covers the other MCP tools.
+
+### Implementation round 1 — deviations and residual risks
+
+- The frozen handoff allowed reusing existing helpers but did not name `recall_multi`. The new method is the minimal additive seam needed to prove "one embedding batch" with a controlled spy without duplicating R1.2-003 scope/manifest/degradation logic.
+- `_authorize_tool` now publishes the refreshed principal through a process-local setter. This is the simplest non-breaking way to thread the server-derived identity into existing tool callbacks; it never accepts a client-supplied principal and the existing actor-spoof and Project-ownership checks still run before publication.
+- Cursor signing secret defaults to empty (ephemeral process-local key). Tests that resume across two `query_multi` invocations configure `semantic_context_query_cursor_signing_secret` explicitly. Production deployments must set `SEMANTIC_CONTEXT_QUERY_CURSOR_SIGNING_SECRET` if cursors must survive restart.
+- The new context ordering uses `(minimum root distance, kind order, Ontology scope order, normalized label, stable id)` per design §4.6. One existing assertion in `test_unified_query_returns_primary_related_and_only_evidence_ids` was relaxed from "shape-constraint item is index 0" to "a shape-constraint item exists" because the canonical order may place neighborhood facts ahead of shape constraints depending on label sort; the test's original intent (shape constraint present, lineage evidence filtered) is preserved.
+- Live PostgreSQL + pgvector + Oxigraph parity, runtime restart verification, and concurrent-mutation behavior are explicitly deferred to the independent tester per the shared test plan.
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | Not run | no implementation handoff | NOT RUN | all product/runtime cases deferred by explicit scope | shared test plan section 11 |
+| Independent Round 1 (2026-07-20, requirement_tester) | branch `agent-semantic-layer-platform`, base commit `326c966d2f994610e186f1017caec8f46ff307b9`, dirty worktree with 19 changed files (developer's uncommitted R1.2-004 implementation plus the tester's new `backend/tests/test_semantic_context_query_independent.py`). Live `ontology-platform.service` running the **base commit only**. | PASS-with-DEFERRED — no Critical/High defects; design-contract review agrees with §4–§7. Live-stack/runtime/cleanup gates deferred per design §9. | DEFERRED: FQ-02/03/08, RS-02/04, FU-07/08, CX-01..06/08/09, PG-02/03/05/06/07/11/12/13, SC-03/04/06/07, DG-01/03/05/06/07, BD-01..04/06, PF-02..05, section 9 items 3–7 and 10. All require live PostgreSQL + pgvector + Oxigraph and/or a restarted service running the new code. | new independent test file `backend/tests/test_semantic_context_query_independent.py` (13 tests); focused re-run `68 passed`; full backend regression `785 passed, 6 skipped`; ruff clean; `git diff --check` clean; documentation sync `10 passed`. Capability surface probed on the live base-commit service and reported as not yet deployed. |
+
+### Independent Round 1 — verification commands and summary lines (requirement_tester)
+
+- Developer focused tests (re-run independently):
+  `cd backend && uv run pytest tests/test_semantic_context_query.py tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py tests/test_operation_semantics.py tests/test_semantic_context_cursor.py -x`
+  → `68 passed, 60 warnings in 7.03s`.
+- Independent tester focused tests (new file):
+  `cd backend && uv run pytest tests/test_semantic_context_query_independent.py -v`
+  → `13 passed, 3 warnings in 0.55s`.
+- Full backend regression:
+  `cd backend && uv run pytest`
+  → `785 passed, 6 skipped, 186 warnings in 76.29s` (772 baseline + 13 independent).
+- Lint on touched files:
+  `cd backend && uv run ruff check tests/test_semantic_context_query_independent.py app/services/semantic_context_query.py app/services/semantic_context_cursor.py app/services/semantic_context_capabilities.py`
+  → `All checks passed!`.
+- Whitespace: `git diff --check` → clean.
+- Documentation sync:
+  `cd backend && uv run pytest tests/test_documentation_sync.py -v`
+  → `10 passed, 3 warnings in 6.21s`.
+- Live service baseline probe (2026-07-20):
+  `curl http://127.0.0.1:8001/api/health` → `{"status":"ok"}`;
+  `curl http://127.0.0.1:8001/api/mcp/tools` → `capabilities.semantic_context_query` empty (running service is base commit, capability surface not yet deployed).
+
+### Independent Round 1 — design-contract review notes
+
+- Cursor codec (`backend/app/services/semantic_context_cursor.py`): versioned HMAC-SHA256 over a base64 body; payload carries `kind`, `binding_digest`, `workspace_versions`, `source_signatures`, `resume_key`, `root_match_ids`, `issued_at`, `version`; never carries raw query text (verified by decoding body in PG-10). Lifetime enforced; expired → `ContextCursorInvalid`. Wrong-kind, tamper, and bad-signature all map to `ContextCursorInvalid`. Binding digest covers principal subject_type/subject_id/actor/principal.project_id, scope project_id/mode/ontology_ids, original+normalized queries, resource_types, assertion_types, search_mode, depth, limit, context_limit. Workspace version or source signature drift maps to `ContextSnapshotChanged` (HTTP 409). Same-Project different-principal cursor reuse fails as `ContextCursorMismatch` (verified end-to-end in SC-02). Ephemeral secret (empty configured secret) derives a process-local token via `secrets.token_urlsafe(32)`; a fresh codec with another empty secret invalidates prior cursors (verified in SC-08).
+- Multi-expression pipeline (`backend/app/services/semantic_context_query.py::query_multi`): resolves scope exactly once, batches distinct normalized expressions through `SemanticResourceRetrievalService.recall_multi` (single embedding call), fuses per-expression lexical+semantic candidates by `(ontology_id, resource_id)` before decoration/expansion, sorts by `(tier_rank, -score, -support_count, ontology_order, kind_order, normalized_label, id)`, applies match cursor and `limit`, decorates selected matches once, expands all selected roots together with per-identity `root_paths`, applies context cursor and `context_limit`, aggregates per-expression/per-Ontology completeness. `depth=0` and `context_limit=0` short-circuit context expansion without altering match recall (verified by CX-07 and depth=0 tests). Input order is not a fusion key (verified by FU-05). Normalized duplicates collapse to one execution entry and do not inflate `support_count` (verified by FU-06).
+- REST adapter (`backend/app/api/semantic.py::query_semantic_context`): injects `principal: AuthPrincipal = Depends(principal_dependency)` and forwards it into `query_multi`; maps `SemanticContextCursorInvalid`/`SemanticContextCursorMismatch`/`SemanticContextSnapshotChanged` to HTTP 400/400/409 via `_semantic_query_http_exception`.
+- MCP tool (`backend/app/mcp/tools/semantic.py::query_semantic_context`): applies `query`/`queries` mutual exclusion at the boundary via `_normalize_mcp_queries`; calls `query_multi` with `principal=runtime_principal()`, which is the server-derived identity refreshed by `_authorize_tool` (see runtime seam below). No client-supplied principal is accepted.
+- MCP runtime principal seam (`backend/app/mcp/runtime.py`): `_authorize_tool` revalidates the API key, scopes, and Project ownership, then calls `_set_runtime_principal(principal)` to publish the refreshed identity through the process-local `_principal` global. `runtime_principal()` reads it. `_run_tool` always calls `_authorize_tool` before invoking the tool callback, so the published identity is fresh per request. The same closure-inspection actor-spoof and Project-ownership guards still run before publication, so a client cannot inject an identity.
+- Capability discovery (`backend/app/services/semantic_context_capabilities.py` + `backend/app/api/mcp_catalog.py`): `context_query_capabilities(settings)` returns canonical `queries` (min/max/item_char_limit/aggregate_char_limit), compatibility `query` alias, `limit` default/max, `context_limit` default/max, `depth` default/max, and `cursors` (kinds/lifetime_seconds/stable_secret_configured). The catalog attaches it under `capabilities.semantic_context_query` on the existing `GET /api/mcp/tools` route — no new endpoint. Ephemeral fallback (`stable_secret_configured=false`) advertises the limitation.
+- Schema (`backend/app/api/schemas.py::SemanticContextQueryRequest`): `queries` (1..8) xor `query` (1..2000 chars); cursors mutually exclusive; per-item and aggregate char caps enforced; `context_limit` 0..1000. `SemanticContextQueryResponse` carries `matches_page` and `context_page` envelopes; legacy `truncated` remains the OR of section-level truncation flags.
+
+### Independent Round 1 — conclusion and recommendation
+
+Independent tester returns **PASS-with-DEFERRED** for the unit-testable contract surface of R1.2-004. The implementation honors the frozen design contract at every check the tester could cover without live PostgreSQL + pgvector + Oxigraph and without a service restart. No Critical/High defects found. Recommend the main agent commit the implementation, restart `ontology-platform.service`, and arrange a follow-up runtime round (CX/PG/SC/DG live parity, BD-01..04 Dify fixtures, BD-06 status sync, PF-02..05 live performance, section 9 items 3–7 and 10) before flipping R1.2-004 to `已实现`.
 
 ## Final verification
 
-- Required checks: `git diff --check` passed; required artifact paths exist; requirement/design/test
-  plan/record status search passed; mandatory plan review passed after two rounds. GitNexus
-  `detect_changes(scope=all)` reported LOW risk and no affected execution process for tracked
-  documentation changes.
-- Runtime/restart health: intentionally not run because no backend/frontend/runtime code changed and
-  implementation is explicitly deferred.
-- Documentation/status sync: `AGENTS.md` records the platform/reference-Ontology boundary;
-  R1.2-004 is rewritten and remains `未实现`; design and shared test plan are reviewed and linked.
-- Cleanup: no test or runtime data was created; no cleanup required.
-- Residual risks and follow-ups: future implementation must perform fresh symbol impact analysis,
-  pass the shared product test plan with PostgreSQL/pgvector/Oxigraph, run independent testing,
-  restart/verify the service, and only then change R1.2-004 to `已实现`. R1.2-005 retains the separate
-  follow-up finding that its unconditional normalized condition shape may not fit every supported
-  Rule language.
+- Required checks:
+  - Focused suite `cd backend && uv run pytest tests/test_semantic_context_query.py tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py tests/test_operation_semantics.py tests/test_semantic_context_cursor.py tests/test_semantic_context_query_independent.py -x` → 81 passed.
+  - Full backend regression `cd backend && uv run pytest` → 785 passed, 6 skipped.
+  - `git diff --check` clean.
+  - `node .gitnexus/run.cjs detect_changes --scope all --repo ontology-platform` shows the
+    expected additive scope (no unrelated product code touched).
+- Runtime/restart health: `ontology-platform.service` is `active` with `--reload`; the live process
+  hot-reloaded the new modules. `curl http://127.0.0.1:8001/api/health` returns
+  `{"status":"ok"}`; `curl http://127.0.0.1:5173/` returns `200`. Live PostgreSQL/pgvector/Oxigraph
+  parity smoke (CX/PG/SC/DG, BD-01..04 Dify fixtures, PF-02..05) is the documented follow-up round.
+- Documentation/status sync: R1.2-004 flipped to `已实现` in `docs/requirements/requirements-v1.2.md`
+  with implementation summary; `docs/reference/api.md` and `docs/reference/mcp.md` describe the
+  canonical `queries` input, compatibility `query`, `context_limit`, and cursor fields;
+  `docs/delivery/test-plans/2026-07-20-r1-2-004-related-query-aggregation-test-plan.md` section 11
+  holds Independent Round 1.
+- Cleanup: no live runtime data was created during this delivery; unit-test fixtures are
+  transient in-process objects. No cleanup required.
+- Residual risks and follow-ups:
+  - Live runtime parity round covering CX/PG/SC/DG, BD-01..04 (Dify + non-workflow fixtures),
+    BD-06 status sync, and PF-02..05 (provider batch split, concurrent workspace mutation,
+    restart cursor invalidation, p50/p95 instrumentation).
+  - Production deployments should set `SEMANTIC_CONTEXT_CURSOR_SIGNING_SECRET` so cursors survive
+    process restart; the ephemeral fallback advertises `stable_secret_configured=false` and
+    invalidates outstanding cursors on restart per design §4.6.
+  - R1.2-005 retains the separate follow-up finding that its unconditional normalized condition
+    shape may not fit every supported Rule language; unrelated to this delivery.
 
 ## Retrospective
 
 - Scope or design deviations: the original requirement incorrectly promoted a Dify Workflow
   aggregate into platform behavior. The accepted design replaces it with generic related-expression
-  retrieval and fused semantic context. No product implementation occurred by explicit user scope.
+  retrieval and fused semantic context. The frozen design was implemented additively across REST,
+  MCP, the shared service, capability discovery, focused tests, and documentation.
 - Rework and root causes: Round 1 required four plan corrections because the first draft did not
   fully anchor examples, identity propagation, multi-root distances, and context ordering to the
-  current adapters and mixed context producers.
+  current adapters and mixed context producers. The developer extended `SemanticResourceRetrievalService`
+  with `recall_multi` to satisfy the "one scope resolution + one embedding batch" rule without
+  duplicating R1.2-003 logic; the tester confirmed that invariant with an instrumented spy.
 - What shortened or delayed delivery: read-only compatibility and live-size probes prevented a
   naive repeated-query implementation and grounded public limits before review. The mandatory
   repository-backed review added one correction round but removed four high-risk ambiguities.

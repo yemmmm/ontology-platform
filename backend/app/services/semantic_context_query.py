@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Any, Iterable
 
 from rdflib import Literal, URIRef
@@ -16,7 +17,20 @@ from sqlalchemy.orm import Session
 
 from app.repositories.models import SemanticRuleDefinitionModel, SemanticRuleModel
 from app.repositories.rdf_store import RdfStoreRepository
+from app.security.auth import AuthPrincipal
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
+from app.services.semantic_context_cursor import (
+    CURSOR_KIND_CONTEXT,
+    CURSOR_KIND_MATCH,
+    ContextCursorCodec,
+    ContextCursorInvalid,
+    ContextCursorMismatch,
+    ContextSnapshotChanged,
+    CursorBinding,
+    CursorPayload,
+    binding_digest,
+    make_binding,
+)
 from app.services.semantic_lineage_identity import statement_id_for_quad
 from app.services.semantic_query_scope import SemanticQueryScope, SemanticQueryScopeResolver
 from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointService
@@ -66,6 +80,21 @@ class SemanticContextQueryError(RuntimeError):
     code = "invalid_query"
 
 
+class SemanticContextCursorInvalid(SemanticContextQueryError):
+    status_code = 400
+    code = "invalid_context_cursor"
+
+
+class SemanticContextCursorMismatch(SemanticContextQueryError):
+    status_code = 400
+    code = "context_cursor_mismatch"
+
+
+class SemanticContextSnapshotChanged(SemanticContextQueryError):
+    status_code = 409
+    code = "context_snapshot_changed"
+
+
 class SemanticContextQueryService:
     """Run one lexical candidate, ranking, neighborhood, and lineage pipeline."""
 
@@ -101,32 +130,297 @@ class SemanticContextQueryService:
         search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
+        context_limit: int = 100,
+        principal: AuthPrincipal | None = None,
+        match_cursor: str | None = None,
+        context_cursor: str | None = None,
     ) -> dict[str, Any]:
-        text, terms = normalize_query_text(query)
+        """Backward-compatible single-expression entry point.
+
+        Normalizes the legacy ``query`` string into a one-item ``queries``
+        list and delegates to :meth:`query_multi`. Existing single-expression
+        callers continue to work; new callers should use ``query_multi``.
+        """
+        return self.query_multi(
+            project_id=project_id,
+            scope_mode=scope_mode,
+            ontology_ids=ontology_ids,
+            queries=[query],
+            resource_types=resource_types,
+            assertion_types=assertion_types,
+            search_mode=search_mode,
+            depth=depth,
+            limit=limit,
+            context_limit=context_limit,
+            principal=principal,
+            match_cursor=match_cursor,
+            context_cursor=context_cursor,
+        )
+
+    def query_multi(
+        self,
+        *,
+        project_id: str,
+        scope_mode: str,
+        ontology_ids: list[str] | None,
+        queries: list[str],
+        resource_types: list[str] | None = None,
+        assertion_types: list[str] | None = None,
+        search_mode: str = "hybrid",
+        depth: int = 1,
+        limit: int = 20,
+        context_limit: int = 100,
+        principal: AuthPrincipal | None = None,
+        match_cursor: str | None = None,
+        context_cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Run the R1.2-004 multi-expression Context Query pipeline.
+
+        See design §5 for the contract. This method resolves scope once,
+        submits one bounded embedding batch for all distinct normalized
+        expressions, fuses candidates before decoration/expansion, and emits
+        one response with independent match/context page state and cursors.
+        """
+        if principal is None:
+            raise SemanticContextQueryError(
+                "A server-derived principal binding is required for Context Query"
+            )
+        if (match_cursor is not None) and (context_cursor is not None):
+            raise SemanticContextQueryError(
+                "Provide at most one of match_cursor or context_cursor"
+            )
+        normalized_input = _normalize_input_queries(queries)
+        original_queries = list(normalized_input.original)
+        execution_set = normalized_input.execution
+        normalized_queries = [item.text for item in execution_set]
+        if not execution_set:
+            raise SemanticContextQueryError("queries must contain at least one expression")
         _validate_filters(resource_types, assertion_types, depth, limit)
+        _validate_context_limit(context_limit)
         if search_mode not in {"hybrid", "lexical"}:
             raise SemanticContextQueryError("search_mode must be hybrid or lexical")
         selected_resource_types = set(resource_types or RESOURCE_TYPES)
         selected_assertion_types = set(assertion_types or ASSERTION_TYPES)
+
         scope = self.scope_resolver.resolve(
             project_id=project_id,
             scope_mode=scope_mode,
             ontology_ids=ontology_ids,
         )
-        warnings = [*scope.warnings, *_ontology_warnings(scope)]
+        cursor_codec = ContextCursorCodec.from_settings(self.settings)
+        workspace_versions = tuple(
+            (entry.ontology_id, entry.workspace_version) for entry in scope.ontologies
+        )
+        source_signatures = tuple(
+            (entry.ontology_id, entry.source_signature) for entry in scope.ontologies
+        )
+        binding = make_binding(
+            principal=principal,
+            project_id=project_id,
+            scope_mode=scope_mode,
+            ontology_ids=ontology_ids or [],
+            original_queries=original_queries,
+            normalized_queries=normalized_queries,
+            resource_types=resource_types,
+            assertion_types=assertion_types,
+            search_mode=search_mode,
+            depth=depth,
+            limit=limit,
+            context_limit=context_limit,
+            workspace_versions=workspace_versions,
+            source_signatures=source_signatures,
+        )
+
+        warnings: list[dict[str, str]] = [*scope.warnings, *_ontology_warnings(scope)]
         if not scope.graph_iris:
-            return self._response(
-                text,
-                terms,
-                scope,
-                [],
-                [],
-                False,
-                warnings,
-                {"mode": search_mode, "match_status": "no_match", "completeness": "complete", "indexes": []},
+            return self._multi_response(
+                scope=scope,
+                original_queries=original_queries,
+                normalized_queries=normalized_queries,
+                primary=[],
+                related=[],
+                matched_queries_by_item={},
+                fusion_by_item={},
+                root_paths_by_item={},
+                recall=self._empty_recall(search_mode),
+                warnings=warnings,
+                matches_truncated=False,
+                context_truncated=False,
+                match_cursor_out=None,
+                context_cursor_out=None,
             )
 
         candidate_limit = min(5000, max(500, limit * 50))
+        lexical_by_expression: list[list[dict[str, Any]]] = []
+        retrieval_warnings: list[dict[str, str]] = []
+        retrieval_indexes: list[dict[str, Any]] = []
+        retrieval_completeness = "complete"
+        for expression in execution_set:
+            rows = self._lexical_candidate_rows(scope, expression.terms, candidate_limit)
+            candidates = self._rdf_candidates(rows, scope, expression.text, expression.terms)
+            candidates.extend(self._rule_candidates(scope, expression.text, expression.terms))
+            if "operation" in selected_resource_types:
+                candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
+            candidates.extend(
+                governed_mapping_lexical_candidates(
+                    self.session,
+                    ontology_ids=(entry.ontology_id for entry in scope.ontologies),
+                    query=expression.text,
+                    resource_kinds=selected_resource_types,
+                )
+            )
+            for item in candidates:
+                item.setdefault("_expression_indexes", set()).update(expression.original_indexes)
+            lexical_by_expression.append(candidates)
+
+        retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall_multi(
+            scope=scope,
+            queries=[item.text for item in execution_set],
+            resource_kinds=selected_resource_types - {"fact"},
+            search_mode=search_mode,
+            limit=limit,
+        )
+        retrieval_warnings = list(retrieval.get("warnings") or [])
+        retrieval_indexes = list(retrieval.get("indexes") or [])
+        retrieval_completeness = retrieval.get("completeness", "complete")
+        for expression_index, candidates in enumerate(retrieval.get("candidates_by_query") or []):
+            promoted = promote_exact_label_candidates(
+                candidates, execution_set[expression_index].text
+            )
+            for item in promoted:
+                item.setdefault("_expression_indexes", set()).update(
+                    execution_set[expression_index].original_indexes
+                )
+            lexical_by_expression[expression_index] = fuse_context_candidates(
+                lexical_by_expression[expression_index], promoted
+            )
+
+        warnings.extend(retrieval_warnings)
+        fused, matched_queries_by_item, support_count_by_item = self._fuse_multi_expression(
+            lexical_by_expression, execution_set
+        )
+        fused = [
+            item
+            for item in fused
+            if item["kind"] in selected_resource_types
+            and _assertion_filter_value(item["assertion_kind"]) in selected_assertion_types
+        ]
+        fusion_by_item = self._fusion_summary(
+            fused, matched_queries_by_item, support_count_by_item
+        )
+        fused.sort(key=lambda item: _multi_sort_key(item, scope, fusion_by_item))
+        fused = _dedupe_multi(fused)
+
+        # Apply match cursor (resume after the bound sort key) and the match budget.
+        match_payload = self._decode_cursor_opt(
+            cursor_codec,
+            match_cursor,
+            binding=binding,
+            expected_kind=CURSOR_KIND_MATCH,
+        )
+        if match_payload is not None:
+            fused = _resume_after_key(fused, match_payload.resume_key)
+
+        matches_truncated = len(fused) > limit
+        primary = fused[:limit]
+        next_match_cursor: str | None = None
+        if matches_truncated:
+            next_match_cursor = self._encode_cursor(
+                cursor_codec,
+                CursorPayload(
+                    kind=CURSOR_KIND_MATCH,
+                    binding_digest=binding_digest(binding),
+                    workspace_versions=workspace_versions,
+                    source_signatures=source_signatures,
+                    resume_key=_match_resume_key(fused[limit]),
+                    root_match_ids=(),
+                ),
+            )
+
+        primary_ids = [self._identity_key(item) for item in primary]
+        decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
+            primary=primary,
+            scope=scope,
+            depth=depth,
+            context_limit=context_limit,
+            selected_resource_types=selected_resource_types,
+            selected_assertion_types=selected_assertion_types,
+        )
+
+        # Apply context cursor within the bound root-match page only.
+        context_payload = self._decode_cursor_opt(
+            cursor_codec,
+            context_cursor,
+            binding=binding,
+            expected_kind=CURSOR_KIND_CONTEXT,
+        )
+        if context_payload is not None:
+            related_raw = _resume_context_after_key(related_raw, context_payload.resume_key)
+        context_truncated = len(related_raw) > context_limit
+        related_page = related_raw[:context_limit]
+        next_context_cursor: str | None = None
+        if context_truncated:
+            next_context_cursor = self._encode_cursor(
+                cursor_codec,
+                CursorPayload(
+                    kind=CURSOR_KIND_CONTEXT,
+                    binding_digest=binding_digest(binding),
+                    workspace_versions=workspace_versions,
+                    source_signatures=source_signatures,
+                    resume_key=_context_resume_key(related_raw[context_limit]),
+                    root_match_ids=tuple(primary_ids),
+                ),
+            )
+
+        decorated_related = self._decorate_related(related_page, scope, root_paths_by_item)
+        if context_truncated:
+            warnings.append(
+                {"code": "context_truncated", "message": "Semantic context was truncated."}
+            )
+        if matches_truncated:
+            warnings.append(
+                {"code": "matches_truncated", "message": "Primary matches were truncated."}
+            )
+        if _has_ambiguous_match(decorated_primary):
+            warnings.append(
+                {
+                    "code": "ambiguous_match",
+                    "message": "Multiple primary matches share the same normalized label.",
+                }
+            )
+        recall = recall_summary(decorated_primary, {"completeness": retrieval_completeness, "indexes": retrieval_indexes}, search_mode)
+        if recall["match_status"] == "ambiguous" and not _has_ambiguous_match(decorated_primary):
+            warnings.append(
+                {
+                    "code": "ambiguous_match",
+                    "message": "Multiple primary matches have similar retrieval scores.",
+                }
+            )
+        warnings.extend(
+            warning
+            for item in [*decorated_primary, *decorated_related]
+            for warning in item.get("warnings", [])
+        )
+        return self._multi_response(
+            scope=scope,
+            original_queries=original_queries,
+            normalized_queries=normalized_queries,
+            primary=decorated_primary,
+            related=decorated_related,
+            matched_queries_by_item=matched_queries_by_item,
+            fusion_by_item=fusion_by_item,
+            root_paths_by_item=root_paths_by_item,
+            recall=recall,
+            warnings=warnings,
+            matches_truncated=matches_truncated,
+            context_truncated=context_truncated,
+            match_cursor_out=next_match_cursor,
+            context_cursor_out=next_context_cursor,
+        )
+
+    def _lexical_candidate_rows(
+        self, scope: SemanticQueryScope, terms: list[str], candidate_limit: int
+    ) -> list[dict[str, Any]]:
         candidate_fetch_limit = candidate_limit + 1
         raw_result = self.rdf_store.query_sparql(
             semantic_context_candidates_query(
@@ -140,114 +434,345 @@ class SemanticContextQueryService:
             limit=candidate_fetch_limit,
         )
         rows = _bindings(raw_result.result)
-        candidate_scan_truncated = raw_result.truncated or len(rows) > candidate_limit
-        rows = rows[:candidate_limit]
-        candidates = self._rdf_candidates(rows, scope, text, terms)
-        candidates.extend(self._rule_candidates(scope, text, terms))
-        if "operation" in selected_resource_types:
-            candidates.extend(self._operation_candidates(scope, text, terms))
-        candidates.extend(
-            governed_mapping_lexical_candidates(
-                self.session,
-                ontology_ids=(entry.ontology_id for entry in scope.ontologies),
-                query=text,
-                resource_kinds=selected_resource_types,
-            )
-        )
-        retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall(
-            scope=scope,
-            query=text,
-            resource_kinds=selected_resource_types - {"fact"},
-            search_mode=search_mode,
-            limit=limit,
-        )
-        retrieval_candidates = promote_exact_label_candidates(retrieval["candidates"], text)
-        candidates = fuse_context_candidates(candidates, retrieval_candidates)
-        warnings.extend(retrieval["warnings"])
-        candidates = [
-            item
-            for item in candidates
-            if item["kind"] in selected_resource_types
-            and _assertion_filter_value(item["assertion_kind"]) in selected_assertion_types
-        ]
-        candidates.sort(key=lambda item: _sort_key(item, scope))
-        candidates = _dedupe_items(candidates)
+        return rows[:candidate_limit]
 
-        primary = candidates[:limit]
+    def _fuse_multi_expression(
+        self,
+        lexical_by_expression: list[list[dict[str, Any]]],
+        execution_set: list["_ExecutionExpression"],
+    ) -> tuple[
+        list[dict[str, Any]],
+        dict[tuple[str, str], list[dict[str, Any]]],
+        dict[tuple[str, str], int],
+    ]:
+        by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        expression_indexes_by_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+        per_expression_evidence: dict[tuple[str, str], dict[int, dict[str, Any]]] = defaultdict(dict)
+
+        for expression_index, candidates in enumerate(lexical_by_expression):
+            for item in candidates:
+                key = (item["ontology_id"], item["id"])
+                existing = by_key.get(key)
+                tagged = dict(item)
+                tagged.pop("_expression_indexes", None)
+                if existing is None:
+                    by_key[key] = tagged
+                    existing = tagged
+                else:
+                    merged = self._merge_into(existing, tagged)
+                    existing = merged
+                expression_indexes_by_key[key].update(
+                    execution_set[expression_index].original_indexes
+                )
+                per_expression_evidence[key][expression_index] = {
+                    "indexes": sorted(execution_set[expression_index].original_indexes),
+                    "evidence_tier": _evidence_tier_for(existing),
+                    "evidence": _evidence_payload(existing),
+                }
+
+        support_count_by_item: dict[tuple[str, str], int] = {}
+        matched_queries_by_item: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for key, evidence_by_expression in per_expression_evidence.items():
+            support_count_by_item[key] = len(evidence_by_expression)
+            tier_groups: dict[str, list[int]] = defaultdict(list)
+            for expression_index, evidence in evidence_by_expression.items():
+                tier_groups[evidence["evidence_tier"]].extend(evidence["indexes"])
+            ordered: list[dict[str, Any]] = []
+            for tier in _TIER_ORDER:
+                if tier not in tier_groups:
+                    continue
+                indexes = sorted(set(tier_groups[tier]))
+                source_evidence = next(
+                    evidence
+                    for evidence in evidence_by_expression.values()
+                    if evidence["evidence_tier"] == tier
+                )
+                ordered.append(
+                    {
+                        "indexes": indexes,
+                        "evidence_tier": tier,
+                        "evidence": source_evidence["evidence"],
+                    }
+                )
+            matched_queries_by_item[key] = ordered
+
+        for key, item in by_key.items():
+            item.setdefault("_expression_indexes", set()).update(expression_indexes_by_key[key])
+
+        return list(by_key.values()), matched_queries_by_item, support_count_by_item
+
+    def _merge_into(self, existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+        match = existing.get("match") or {}
+        incoming_match = incoming.get("match") or {}
+        if not match:
+            existing["match"] = incoming_match
+            return existing
+        if not incoming_match:
+            return existing
+        existing["match"]["lexical_score"] = max(
+            int(match.get("lexical_score", match.get("score", 0)) or 0),
+            int(incoming_match.get("lexical_score", incoming_match.get("score", 0)) or 0),
+        )
+        existing["match"]["reasons"] = sorted(
+            set(match.get("reasons") or []) | set(incoming_match.get("reasons") or [])
+        )
+        existing["match"]["matched_fields"] = sorted(
+            set(match.get("matched_fields") or []) | set(incoming_match.get("matched_fields") or [])
+        )
+        existing["match"]["matched_terms"] = sorted(
+            set(match.get("matched_terms") or []) | set(incoming_match.get("matched_terms") or [])
+        )
+        semantic_similarity = match.get("semantic_similarity")
+        if incoming_match.get("semantic_similarity") is not None:
+            semantic_similarity = max(
+                float(semantic_similarity or 0.0),
+                float(incoming_match["semantic_similarity"]),
+            )
+        _normalise_match_local(existing, semantic_similarity)
+        mapping_existing = existing.get("mapping_evidence") or (existing.get("data") or {}).get("mapping_evidence") or []
+        mapping_incoming = incoming.get("mapping_evidence") or (incoming.get("data") or {}).get("mapping_evidence") or []
+        if mapping_existing or mapping_incoming:
+            merged = _dedupe_mapping_evidence([*mapping_existing, *mapping_incoming])
+            existing["mapping_evidence"] = merged
+            existing.setdefault("data", {})["mapping_evidence"] = merged
+        return existing
+
+    def _fusion_summary(
+        self,
+        items: list[dict[str, Any]],
+        matched_queries_by_item: dict[tuple[str, str], list[dict[str, Any]]],
+        support_count_by_item: dict[tuple[str, str], int],
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        summary: dict[tuple[str, str], dict[str, Any]] = {}
+        for item in items:
+            key = self._identity_key(item)
+            tiers = matched_queries_by_item.get(key, [])
+            best_tier = _TIER_ORDER[-1]
+            for tier in _TIER_ORDER:
+                if any(entry["evidence_tier"] == tier for entry in tiers):
+                    best_tier = tier
+                    break
+            summary[key] = {
+                "best_evidence_tier": best_tier,
+                "support_count": int(support_count_by_item.get(key, len(tiers))),
+            }
+        return summary
+
+    def _expand_multi_primary(
+        self,
+        *,
+        primary: list[dict[str, Any]],
+        scope: SemanticQueryScope,
+        depth: int,
+        context_limit: int,
+        selected_resource_types: set[str],
+        selected_assertion_types: set[str],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[tuple[str, str], list[dict[str, Any]]]]:
+        decorated_primary = [self._decorate(item, scope) for item in primary]
+        related_raw: list[dict[str, Any]] = []
+        root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+        if context_limit <= 0 or depth <= 0 or not primary:
+            return decorated_primary, related_raw, root_paths_by_item
+
+        for rank, item in enumerate(primary):
+            for related_item in self._related_for_root(
+                item,
+                scope=scope,
+                depth=depth,
+                context_limit=context_limit,
+                selected_resource_types=selected_resource_types,
+                selected_assertion_types=selected_assertion_types,
+            ):
+                key = self._identity_key(related_item)
+                root_id = item["id"]
+                root_paths_by_item[key].append(
+                    {
+                        "root_match_id": root_id,
+                        "graph_distance": int(related_item.get("distance") or 1),
+                        "_root_rank": rank,
+                    }
+                )
+                related_item.setdefault("_seen_keys", set()).add(key)
+                related_raw.append(related_item)
+
+        # Dedupe by (ontology, kind, id), aggregating all root paths per identity.
+        deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for item in related_raw:
+            key = self._identity_key(item)
+            existing = deduped.get(key)
+            if existing is None:
+                item = dict(item)
+                item.pop("_seen_keys", None)
+                deduped[key] = item
+        for item in deduped.values():
+            key = self._identity_key(item)
+            paths = sorted(
+                root_paths_by_item.get(key, []),
+                key=lambda path: (path["_root_rank"], path["graph_distance"], path["root_match_id"]),
+            )
+            cleaned = [
+                {"root_match_id": path["root_match_id"], "graph_distance": path["graph_distance"]}
+                for path in paths
+            ]
+            root_paths_by_item[key] = cleaned
+
+        ordered = list(deduped.values())
+        ordered.sort(key=lambda item: _context_sort_key(item, scope, root_paths_by_item))
+        return decorated_primary, ordered, root_paths_by_item
+
+    def _related_for_root(
+        self,
+        root: dict[str, Any],
+        *,
+        scope: SemanticQueryScope,
+        depth: int,
+        context_limit: int,
+        selected_resource_types: set[str],
+        selected_assertion_types: set[str],
+    ) -> list[dict[str, Any]]:
         related: list[dict[str, Any]] = []
-        remaining = limit - len(primary)
-        related_truncated = False
+        if context_limit <= 0:
+            return related
+        budget = context_limit
         if (
-            depth
-            and primary
-            and "fact" in selected_resource_types
+            "fact" in selected_resource_types
             and "asserted" in selected_assertion_types
         ):
-            shape_items = self._shape_constraint_items(primary, scope, limit=remaining + 1)
-            related_truncated = len(shape_items) > remaining
-            related = shape_items[:remaining]
-            remaining -= len(related)
-        if depth and primary and not related_truncated:
-            operation_context = self._operation_target_context(
-                primary,
-                scope,
-                limit=remaining + 1,
-                enabled="concept" in selected_resource_types,
-            )
-            related_truncated = len(operation_context) > remaining
-            related.extend(operation_context[:remaining])
-            remaining -= min(len(operation_context), remaining)
-        if depth and primary and not related_truncated:
-            neighborhood = self._expand_neighborhood(
-                primary,
-                scope,
-                depth=depth,
-                limit=remaining + 1,
-                resource_types=selected_resource_types,
-                assertion_types=selected_assertion_types,
-            )
-            related_truncated = len(neighborhood) > remaining
-            related.extend(neighborhood[:remaining])
-
-        truncated = bool(
-            candidate_scan_truncated or len(candidates) > len(primary) or related_truncated
-        )
-        if truncated:
-            warnings.append(
-                {"code": "context_truncated", "message": "Semantic context was truncated."}
-            )
-        if _has_ambiguous_match(primary):
-            warnings.append(
-                {
-                    "code": "ambiguous_match",
-                    "message": "Multiple primary matches share the same normalized label.",
-                }
-            )
-        recall = recall_summary(primary, retrieval, search_mode)
-        if recall["match_status"] == "ambiguous" and not _has_ambiguous_match(primary):
-            warnings.append(
-                {
-                    "code": "ambiguous_match",
-                    "message": "Multiple primary matches have similar retrieval scores.",
-                }
-            )
-        decorated_primary = [self._decorate(item, scope) for item in primary]
-        decorated_related = [self._decorate(item, scope) for item in related]
-        warnings.extend(
-            warning
-            for item in [*decorated_primary, *decorated_related]
-            for warning in item["warnings"]
-        )
-        return self._response(
-            text,
-            terms,
+            shape_items = self._shape_constraint_items([root], scope, limit=budget + 1)
+            related.extend(shape_items[:budget])
+            budget -= len(related)
+        if budget <= 0:
+            return related
+        operation_context = self._operation_target_context(
+            [root],
             scope,
-            decorated_primary,
-            decorated_related,
-            truncated,
-            warnings,
-            recall,
+            limit=budget + 1,
+            enabled="concept" in selected_resource_types,
         )
+        related.extend(operation_context[:budget])
+        budget -= len(operation_context)
+        if budget <= 0:
+            return related
+        neighborhood = self._expand_neighborhood(
+            [root],
+            scope,
+            depth=depth,
+            limit=budget + 1,
+            resource_types=selected_resource_types,
+            assertion_types=selected_assertion_types,
+        )
+        related.extend(neighborhood[:budget])
+        return related
+
+    def _decorate_related(
+        self,
+        items: list[dict[str, Any]],
+        scope: SemanticQueryScope,
+        root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        decorated: list[dict[str, Any]] = []
+        for item in items:
+            decorated_item = self._decorate(item, scope)
+            key = self._identity_key(item)
+            decorated_item["root_paths"] = list(root_paths_by_item.get(key, []))
+            decorated.append(decorated_item)
+        return decorated
+
+    def _identity_key(self, item: dict[str, Any]) -> tuple[str, str]:
+        return (item["ontology_id"], item["id"])
+
+    def _decode_cursor_opt(
+        self,
+        codec: ContextCursorCodec,
+        token: str | None,
+        *,
+        binding: CursorBinding,
+        expected_kind: str,
+    ) -> CursorPayload | None:
+        if token is None:
+            return None
+        try:
+            return codec.decode(token, binding=binding, expected_kind=expected_kind)
+        except ContextCursorInvalid as exc:
+            raise SemanticContextCursorInvalid(str(exc)) from exc
+        except ContextCursorMismatch as exc:
+            raise SemanticContextCursorMismatch(str(exc)) from exc
+        except ContextSnapshotChanged as exc:
+            raise SemanticContextSnapshotChanged(str(exc)) from exc
+
+    def _encode_cursor(self, codec: ContextCursorCodec, payload: CursorPayload) -> str:
+        return codec.encode(payload)
+
+    def _empty_recall(self, search_mode: str) -> dict[str, Any]:
+        return {
+            "mode": search_mode,
+            "match_status": "no_match",
+            "completeness": "complete",
+            "indexes": [],
+        }
+
+    def _multi_response(
+        self,
+        *,
+        scope: SemanticQueryScope,
+        original_queries: list[str],
+        normalized_queries: list[str],
+        primary: list[dict[str, Any]],
+        related: list[dict[str, Any]],
+        matched_queries_by_item: dict[tuple[str, str], list[dict[str, Any]]],
+        fusion_by_item: dict[tuple[str, str], dict[str, Any]],
+        root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]],
+        recall: dict[str, Any],
+        warnings: list[dict[str, str]],
+        matches_truncated: bool,
+        context_truncated: bool,
+        match_cursor_out: str | None,
+        context_cursor_out: str | None,
+    ) -> dict[str, Any]:
+        decorated_primary: list[dict[str, Any]] = []
+        for item in primary:
+            key = self._identity_key(item)
+            item_copy = dict(item)
+            item_copy["matched_queries"] = list(matched_queries_by_item.get(key, []))
+            item_copy["fusion"] = dict(fusion_by_item.get(key, {"best_evidence_tier": "semantic", "support_count": 0}))
+            decorated_primary.append(item_copy)
+        decorated_related: list[dict[str, Any]] = []
+        for item in related:
+            key = self._identity_key(item)
+            item_copy = dict(item)
+            item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
+            decorated_related.append(item_copy)
+        truncated = bool(matches_truncated or context_truncated)
+        # Legacy callers may still inspect ``query.text``/``normalized_terms``
+        # when the request used the single-expression compatibility alias.
+        query_echo: dict[str, Any] = {
+            "queries": list(original_queries),
+            "normalized_queries": list(normalized_queries),
+        }
+        if len(original_queries) == 1:
+            text, terms = normalize_query_text(original_queries[0])
+            query_echo["text"] = text
+            query_echo["normalized_terms"] = terms
+        return {
+            "query": query_echo,
+            "result_status": "matched" if decorated_primary else "no_match",
+            "scope": scope.public_dict(),
+            "primary_matches": decorated_primary,
+            "related_context": decorated_related,
+            "matches_page": {
+                "returned": len(decorated_primary),
+                "truncated": bool(matches_truncated),
+                "next_match_cursor": match_cursor_out,
+            },
+            "context_page": {
+                "returned": len(decorated_related),
+                "truncated": bool(context_truncated),
+                "next_context_cursor": context_cursor_out,
+            },
+            "truncated": truncated,
+            "recall": recall,
+            "warnings": _dedupe_warnings(warnings),
+        }
 
     def _rdf_candidates(
         self,
@@ -846,7 +1371,7 @@ LIMIT 5000
         }
 
     @staticmethod
-    def _response(
+    def _legacy_response(
         text: str,
         terms: list[str],
         scope: SemanticQueryScope,
@@ -856,12 +1381,23 @@ LIMIT 5000
         warnings: list[dict[str, str]],
         recall: dict[str, Any],
     ) -> dict[str, Any]:
+        """Compatibility envelope retained for tests that build responses directly."""
         return {
             "query": {"text": text, "normalized_terms": terms},
             "result_status": "matched" if primary else "no_match",
             "scope": scope.public_dict(),
             "primary_matches": primary,
             "related_context": related,
+            "matches_page": {
+                "returned": len(primary),
+                "truncated": False,
+                "next_match_cursor": None,
+            },
+            "context_page": {
+                "returned": len(related),
+                "truncated": False,
+                "next_context_cursor": None,
+            },
             "truncated": truncated,
             "recall": recall,
             "warnings": _dedupe_warnings(warnings),
@@ -1122,6 +1658,215 @@ def _find_first(value: Any, key: str) -> Any:
 
 def _ontology_warnings(scope: SemanticQueryScope) -> list[dict[str, str]]:
     return [warning for ontology in scope.ontologies for warning in ontology.warnings]
+
+
+_TIER_ORDER = ("exact", "semantic")
+
+
+@dataclass(frozen=True)
+class _ExecutionExpression:
+    text: str
+    terms: list[str]
+    digest: str
+    original_indexes: frozenset[int]
+
+
+@dataclass(frozen=True)
+class _NormalizedInput:
+    original: tuple[str, ...]
+    execution: list[_ExecutionExpression]
+
+
+def _normalize_input_queries(queries: list[str] | None) -> _NormalizedInput:
+    if not queries:
+        raise SemanticContextQueryError("queries must contain at least one expression")
+    stripped = [item.strip() for item in queries]
+    if any(not item for item in stripped):
+        raise SemanticContextQueryError("queries must contain non-empty expressions")
+    if len(stripped) > 8:
+        raise SemanticContextQueryError("queries may contain at most 8 expressions")
+    if any(len(item) > 2000 for item in stripped):
+        raise SemanticContextQueryError("queries entries must contain at most 2000 characters")
+    if sum(len(item) for item in stripped) > 8000:
+        raise SemanticContextQueryError("queries aggregate length must not exceed 8000 characters")
+    by_digest: dict[str, _ExecutionExpression] = {}
+    digest_to_indexes: dict[str, set[int]] = defaultdict(set)
+    for index, raw in enumerate(stripped):
+        text, terms = normalize_query_text(raw)
+        digest = _expression_digest(text)
+        digest_to_indexes[digest].add(index)
+        by_digest.setdefault(
+            digest,
+            _ExecutionExpression(text=text, terms=terms, digest=digest, original_indexes=frozenset()),
+        )
+    execution: list[_ExecutionExpression] = []
+    for digest, expression in by_digest.items():
+        execution.append(
+            _ExecutionExpression(
+                text=expression.text,
+                terms=expression.terms,
+                digest=digest,
+                original_indexes=frozenset(digest_to_indexes[digest]),
+            )
+        )
+    execution.sort(key=lambda item: min(item.original_indexes))
+    return _NormalizedInput(original=tuple(stripped), execution=execution)
+
+
+def _expression_digest(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _validate_context_limit(context_limit: int) -> None:
+    if not 0 <= context_limit <= 1000:
+        raise SemanticContextQueryError("context_limit must be between 0 and 1000")
+
+
+def _evidence_tier_for(item: dict[str, Any]) -> str:
+    reasons = set((item.get("match") or {}).get("reasons") or [])
+    candidate_level = (item.get("match") or {}).get("candidate_level")
+    if candidate_level == "exact" or reasons & {
+        "exact_label",
+        "exact_alias",
+        "exact_mapping",
+        "identifier",
+    }:
+        return "exact"
+    return "semantic"
+
+
+def _evidence_payload(item: dict[str, Any]) -> list[dict[str, Any]]:
+    match = item.get("match") or {}
+    payload = {
+        "matched_fields": list(match.get("matched_fields") or []),
+        "reasons": list(match.get("reasons") or []),
+        "score": match.get("score"),
+    }
+    mapping = item.get("mapping_evidence") or (item.get("data") or {}).get("mapping_evidence")
+    if mapping:
+        payload["mapping_evidence"] = list(mapping)
+    return [payload]
+
+
+def _normalise_match_local(item: dict[str, Any], semantic_similarity: float | None) -> None:
+    match = item.get("match")
+    if not isinstance(match, dict):
+        return
+    lexical_score = int(match.get("lexical_score", match.get("score", 0)) or 0)
+    similarity = (
+        semantic_similarity
+        if semantic_similarity is not None
+        else match.get("semantic_similarity")
+    )
+    semantic_rank = int(round(float(similarity) * 1000)) if similarity is not None else 0
+    score = max(lexical_score, semantic_rank)
+    match["score"] = score
+    match["lexical_score"] = lexical_score
+    if similarity is not None:
+        match["semantic_similarity"] = round(float(similarity), 3)
+    match["effective_score"] = round(score / 1000, 3)
+    reasons = set(match.get("reasons") or [])
+    exact = bool(reasons & {"exact_label", "exact_alias", "exact_mapping", "identifier"})
+    match["candidate_level"] = "exact" if exact else match.get("candidate_level", "lexical_candidate")
+
+
+def _dedupe_mapping_evidence(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique = {
+        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")): item
+        for item in records
+        if isinstance(item, dict)
+    }
+    return [unique[key] for key in sorted(unique)]
+
+
+def _multi_sort_key(
+    item: dict[str, Any],
+    scope: SemanticQueryScope,
+    fusion_by_item: dict[tuple[str, str], dict[str, Any]],
+) -> tuple[Any, ...]:
+    ontology_order = {entry.ontology_id: index for index, entry in enumerate(scope.ontologies)}
+    key = (item["ontology_id"], item["id"])
+    fusion = fusion_by_item.get(key, {})
+    tier_rank = 0 if fusion.get("best_evidence_tier") == "exact" else 1
+    stale_penalty = 100 if _item_is_stale(item, scope) else 0
+    score = (item.get("match") or {}).get("score", 0) or 0
+    return (
+        tier_rank,
+        -(int(score) - stale_penalty),
+        -int(fusion.get("support_count", 0)),
+        ontology_order.get(item["ontology_id"], len(ontology_order)),
+        _KIND_ORDER.get(item["kind"], 99),
+        _normalize_value(item.get("label")),
+        item["id"],
+    )
+
+
+def _dedupe_multi(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        key = (item["ontology_id"], item["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _match_resume_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        item["ontology_id"],
+        item["id"],
+    )
+
+
+def _context_resume_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        item.get("ontology_id") or "",
+        item.get("kind") or "",
+        item.get("id") or "",
+    )
+
+
+def _resume_after_key(items: list[dict[str, Any]], key: tuple[Any, ...]) -> list[dict[str, Any]]:
+    if not key:
+        return items
+    key_prefix = tuple(key[:2])
+    for index, item in enumerate(items):
+        if _match_resume_key(item) == key_prefix:
+            return items[index:]
+    # Fall back: resume key from a stale/rotated cursor stream is no longer present.
+    return items
+
+
+def _resume_context_after_key(
+    items: list[dict[str, Any]], key: tuple[Any, ...]
+) -> list[dict[str, Any]]:
+    if not key:
+        return items
+    for index, item in enumerate(items):
+        if _context_resume_key(item) == tuple(key):
+            return items[index:]
+    return items
+
+
+def _context_sort_key(
+    item: dict[str, Any],
+    scope: SemanticQueryScope,
+    root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]],
+) -> tuple[Any, ...]:
+    ontology_order = {entry.ontology_id: index for index, entry in enumerate(scope.ontologies)}
+    identity = (item["ontology_id"], item["id"])
+    paths = root_paths_by_item.get(identity, [])
+    min_distance = min((int(path["graph_distance"]) for path in paths), default=99)
+    return (
+        min_distance,
+        _KIND_ORDER.get(item["kind"], 99),
+        ontology_order.get(item["ontology_id"], len(ontology_order)),
+        _normalize_value(item.get("label")),
+        item["id"],
+    )
 
 
 def _dedupe_warnings(warnings: list[dict[str, str]]) -> list[dict[str, str]]:

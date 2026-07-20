@@ -78,7 +78,7 @@ v1.0 的 R-006 已提供自然语言 Context Query 和受作用域约束的只�
 | R1.2-001 | 消费 Agent 查询闭环与绕行消除 | P0 | 未实现 | v1.0 R-005、R-006、R-008 |
 | R1.2-002 | Project 与 Ontology 的授权发现和范围解析 | P0 | 已实现 | R1.2-001、v1.0 R-008 |
 | R1.2-003 | 多语言与语义候选召回及可解释回退 | P0 | 已实现 | R1.2-001、v1.0 R-006 |
-| R1.2-004 | 相关查询表达式联合语义上下文聚合 | P0 | 未实现 | R1.2-001、v1.0 R-006 |
+| R1.2-004 | 相关查询表达式联合语义上下文聚合 | P0 | 已实现 | R1.2-001、v1.0 R-006 |
 | R1.2-005 | 规则定义查询与触发解释 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
 | R1.2-006 | 有效语义分类与派生状态一致性 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
 | R1.2-007 | 紧凑响应、能力发现和可继续读取 | P1 | 未实现 | R1.2-001、v1.0 R-006、R-011 |
@@ -330,7 +330,21 @@ Dataset 中的 Class、Entity、Relation、规则或业务事实。
 
 ## R1.2-004 相关查询表达式联合语义上下文聚合
 
-当前状态：`未实现`
+当前状态：`已实现`
+
+实现结果（2026-07-20）：现有 Context Query REST 路由与 MCP 工具扩展为接受规范 `queries:
+list[str]`（1–8 项，单项 ≤ 2000 字符，聚合 ≤ 8000 字符）与兼容 `query: str` 别名；新增
+`context_limit`、`match_cursor`、`context_cursor`，响应引入 `matches_page`/`context_page` 与
+每个匹配资源的 `matched_queries`/`fusion` 与每条相关资源的 `root_paths`。共享服务
+`SemanticContextQueryService.query_multi` 解析一次授权范围、批量召回与 embedding、按
+`(ontology_id, resource_id)` 去重融合、按证据等级 → 分数 → 支持数 → R1.2-003 稳定
+tie-breaker 排序，对所有返回根按真实图边展开并聚合每根 `root_paths`，匹配/上下文使用
+独立预算和版本化、绑定服务端派生 principal 的不透明 cursor。REST/MCP 都接入
+`AuthPrincipal`，cursor codec 排除原始查询文本并在签名密钥轮换或重启时返回稳定的
+`invalid_context_cursor`。能力发现通过 `/api/mcp/tools` 暴露 `queries`/`query`/limit/
+context_limit/depth 默认与最大值、cursor 种类与生命周期、stable-secret 标志。共享测试
+计划独立 Round 1 PASS；785 个后端测试通过；运行时重启与真实 PostgreSQL/pgvector/Oxigraph
+parity 验证作为后续运行时轮次。
 
 ### 要解决的问题
 

@@ -50,6 +50,22 @@ Cursor 还绑定当前认证主体的授权 Project 边界。配置 `SECRET_KEY`
 验证；未配置时使用每个进程私有的随机完整性材料，因此跨进程或重启后的 cursor 会返回
 `invalid_cursor`，调用方应重新开始发现。
 
+R1.2-004 起 `query_semantic_context` 支持一次提交一组同主题的相关表达式：标准参数为
+`queries: list[string]`（1–8 项，每项 trim 后 1–2000 字符、合计 ≤ 8000 字符），兼容参数
+`query: string` 等价于单元素列表，二者必须提供且只提供一个。服务对去重后的规范化表达式只解析一次
+范围、执行一次 embedding 批处理，再按证据层级、得分、表达式支持数和 R1.2-003 既有 tie-breaker
+融合排序；输入顺序不影响打分或排序。匹配与上下文使用独立预算（`limit` 默认 20/最大 100；
+`context_limit` 默认 100/最大 1000）和独立 cursor：`match_cursor` 继续下一页匹配，
+`context_cursor` 只在当前匹配页内继续上下文。请求同时只能携带其中一种 cursor，且 cursor 必须与
+当前 principal、Project/Ontology 范围、原始 `queries`、过滤、深度、页大小及绑定的
+`workspace_version`/source signature 完全匹配；否则返回 `invalid_context_cursor`、
+`context_cursor_mismatch` 或 `context_snapshot_changed`。响应新增 `query.queries`、
+`query.normalized_queries`、`primary_matches[*].matched_queries`、`primary_matches[*].fusion`、
+`related_context[*].root_paths`、`matches_page`、`context_page`。配置
+`SEMANTIC_CONTEXT_QUERY_CURSOR_SIGNING_SECRET` 时 cursor 可跨进程重启继续验证；未配置时使用进程
+私有随机完整性材料，并经 `GET /api/mcp/tools` 的 `capabilities.semantic_context_query` 字段声明
+该限制、cursor 种类、生命周期与各项默认/上限。
+
 ## 返回与错误边界
 
 多数业务工具通过 MCP runtime 返回 `{"ok": true, "data": ...}` 或
@@ -126,7 +142,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning/rule results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
 | semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, query, scope_mode | assertion_types, depth, limit, ontology_ids, project_id, query, resource_types, scope_mode, search_mode | `backend/app/mcp/tools/semantic.py` |
+| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode | `backend/app/mcp/tools/semantic.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_migration_parity_check` | Run parity checks for a Phase 7 migration run. | run_id | check_name, run_id | `backend/app/mcp/tools/semantic.py` |

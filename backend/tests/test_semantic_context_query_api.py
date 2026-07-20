@@ -247,3 +247,119 @@ def test_scoped_sparql_rest_rejects_invalid_query_bounds(
     )
 
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# R1.2-004 API-level multi-expression Context Query validation and parity.
+# ---------------------------------------------------------------------------
+
+
+def test_context_query_rest_accepts_canonical_queries(in_memory_session, monkeypatch):
+    settings = Settings()
+    _ready_scope(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[], []],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    response = _client(in_memory_session, settings).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "queries": ["one", "two"],
+            "depth": 0,
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["query"]["queries"] == ["one", "two"]
+    assert body["query"]["normalized_queries"] == ["one", "two"]
+    assert body["matches_page"]["returned"] == 0
+    assert body["context_page"]["returned"] == 0
+
+
+def test_context_query_rest_rejects_both_query_and_queries(in_memory_session):
+    response = _client(in_memory_session, Settings()).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "query": "x",
+            "queries": ["x"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_context_query_rest_rejects_neither_query_nor_queries(in_memory_session):
+    response = _client(in_memory_session, Settings()).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_context_query_rest_rejects_too_many_queries(in_memory_session):
+    response = _client(in_memory_session, Settings()).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "queries": [f"q{index}" for index in range(9)],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_context_query_rest_rejects_both_cursors(in_memory_session):
+    response = _client(in_memory_session, Settings()).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "queries": ["x"],
+            "match_cursor": "abc",
+            "context_cursor": "def",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_context_query_rest_rejects_invalid_context_cursor(in_memory_session, monkeypatch):
+    settings = Settings()
+    _ready_scope(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[]],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    response = _client(in_memory_session, settings).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "queries": ["x"],
+            "depth": 0,
+            "context_cursor": "tampered.payload",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "invalid_context_cursor"

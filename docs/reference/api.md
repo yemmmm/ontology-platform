@@ -61,6 +61,26 @@ Proposal/Review/Publish 队列。
 Context Query 返回结构化资源、事实、关系、操作、约束和精简 lineage，不生成最终自然语言答案。
 旧 Agent Test API 已移除；外部 Agent 负责组合结构化结果并生成最终答案。
 
+R1.2-004 起 Context Query 支持一次提交一组同主题的相关表达式。请求体的标准字段是
+`queries: list[string]`（1–8 项，每项 trim 后 1–2000 字符、合计 ≤ 8000 字符）；兼容字段
+`query: string` 等价于 `queries: [query]` 的单元素列表，二者必须提供且只提供一个。服务对去重
+后的规范化表达式只执行一次检索与一次 embedding 批处理；融合结果按证据层级、得分、表达式支持数
+和 R1.2-003 既有 tie-breaker 排序，输入顺序不影响打分或排序。匹配结果与相关上下文使用独立预算
+（`limit` 默认 20/最大 100；`context_limit` 默认 100/最大 1000）和独立的游标：`match_cursor`
+继续下一页匹配，`context_cursor` 只在当前匹配页内继续上下文。请求同时只能携带其中一种 cursor，
+且 cursor 必须与当前 principal、Project/Ontology 范围、原始 `queries`、过滤、深度、页大小以及
+绑定的 `workspace_version`/source signature 完全匹配；否则返回 `400 invalid_context_cursor`、
+`400 context_cursor_mismatch` 或 `409 context_snapshot_changed`。响应新增 `query.queries`、
+`query.normalized_queries`、`primary_matches[*].matched_queries`、`primary_matches[*].fusion`、
+`related_context[*].root_paths`、`matches_page`、`context_page`，顶层 `truncated` 等于两页
+`truncated` 的逻辑或。配置 `SEMANTIC_CONTEXT_QUERY_CURSOR_SIGNING_SECRET` 时 cursor 可跨进程
+重启继续验证；未配置时后端使用进程私有随机完整性材料并经能力发现声明该限制。
+
+能力发现：`GET /api/mcp/tools` 在响应的 `capabilities.semantic_context_query` 中返回当前部署
+公开的 `queries`/`query`/`limit`/`context_limit`/`depth` 上下限、cursor 种类
+（`match`、`context`）、cursor 生命周期（默认 600 秒），以及是否配置了稳定 cursor 签名密钥。
+该字段是 R1.2-007 capability discovery 在 Context Query 合约上的唯一展示位置，未引入新路由。
+
 消费 Agent 新会话可先调用范围发现。无筛选时它以稳定游标分页返回当前主体可访问的 Project 与
 Ontology；`query` 仅匹配稳定 ID 或名称（trim + case-insensitive contains），`queryable` 仅筛选
 Ontology。Project 项返回 `complete/partial/unavailable` 和排除清单，Ontology 项分别返回业务

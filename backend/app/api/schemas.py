@@ -618,7 +618,8 @@ class SemanticScopeDiscoveryResponse(BaseModel):
 
 
 class SemanticContextQueryRequest(SemanticQueryScopeRequest):
-    query: str = Field(min_length=1, max_length=2000)
+    queries: list[str] | None = Field(default=None, min_length=1, max_length=8)
+    query: str | None = Field(default=None, min_length=1, max_length=2000)
     resource_types: (
         list[Literal["concept", "instance", "relation", "fact", "rule", "operation"]] | None
     ) = None
@@ -626,6 +627,30 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     search_mode: Literal["hybrid", "lexical"] = "hybrid"
     depth: int = Field(default=1, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
+    context_limit: int = Field(default=100, ge=0, le=1000)
+    match_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+    context_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def _validate_query_and_cursors(self) -> "SemanticContextQueryRequest":
+        if (self.queries is None) == (self.query is None):
+            raise ValueError(
+                "Provide exactly one of 'queries' or 'query'"
+            )
+        if self.queries is not None:
+            trimmed = [item.strip() for item in self.queries]
+            if any(not item for item in trimmed):
+                raise ValueError("'queries' must contain non-empty expressions")
+            if any(len(item) > 2000 for item in trimmed):
+                raise ValueError("'queries' entries must contain at most 2000 characters")
+            if sum(len(item) for item in trimmed) > 8000:
+                raise ValueError("'queries' aggregate length must not exceed 8000 characters")
+            object.__setattr__(self, "queries", trimmed)
+        if (self.match_cursor is not None) and (self.context_cursor is not None):
+            raise ValueError(
+                "Provide at most one of 'match_cursor' or 'context_cursor'"
+            )
+        return self
 
 
 class SemanticContextQueryResponse(BaseModel):
@@ -634,6 +659,8 @@ class SemanticContextQueryResponse(BaseModel):
     scope: dict[str, Any]
     primary_matches: list[dict[str, Any]] = Field(default_factory=list)
     related_context: list[dict[str, Any]] = Field(default_factory=list)
+    matches_page: dict[str, Any] = Field(default_factory=dict)
+    context_page: dict[str, Any] = Field(default_factory=dict)
     truncated: bool = False
     recall: dict[str, Any] = Field(default_factory=dict)
     warnings: list[dict[str, str]] = Field(default_factory=list)

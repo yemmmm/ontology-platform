@@ -17,8 +17,10 @@ from app.repositories.models import (
     SemanticMappingModel,
 )
 from app.repositories.rdf_store import SparqlResult
+from app.security.auth import AuthPrincipal
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_context_query import (
+    SemanticContextQueryError,
     SemanticContextQueryService,
     normalize_query_text,
 )
@@ -27,6 +29,31 @@ from app.services.semantic_query_scope import (
     SemanticQueryScopeNotReady,
     SemanticQueryScopeResolver,
 )
+
+
+def _principal(project_id: str | None = None) -> AuthPrincipal:
+    return AuthPrincipal(
+        subject_type="api_key",
+        subject_id="test-principal",
+        actor="key:test-principal",
+        scopes=frozenset({"read"}),
+        project_id=project_id,
+        auth_method="bearer",
+    )
+
+
+def _lexical_recall(candidates):
+    """Adapter so monkeypatches remain readable across single/multi pipelines."""
+
+    def _recall_multi(*_args, **_kwargs):
+        return {
+            "candidates_by_query": [candidates],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        }
+
+    return _recall_multi
 
 
 pytestmark = pytest.mark.filterwarnings(
@@ -253,12 +280,17 @@ def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_s
         query="发布工作流需要哪些参数",
         depth=1,
         limit=20,
+        principal=_principal(),
     )
 
     assert result["result_status"] == "matched"
     assert result["primary_matches"][0]["kind"] == "concept"
-    assert result["related_context"][0]["match"]["reasons"] == ["shape_constraint"]
-    assert result["related_context"][0]["data"]["constraint"]["required"] is True
+    shape_item = next(
+        item
+        for item in result["related_context"]
+        if item["match"]["reasons"] == ["shape_constraint"]
+    )
+    assert shape_item["data"]["constraint"]["required"] is True
     facts = [item for item in result["related_context"] if item["data"].get("object")]
     assert next(item for item in facts if item["data"]["object"] == "datasetId")["data"][
         "object_datatype"
@@ -294,6 +326,7 @@ def test_no_match_is_not_reported_as_unsupported(in_memory_session):
         ontology_ids=["ontology-1"],
         query="完全不存在的词条",
         depth=0,
+        principal=_principal(),
     )
 
     assert result["result_status"] == "no_match"
@@ -317,41 +350,35 @@ def test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate(
     )
     in_memory_session.commit()
 
-    def semantic_recall(*_args, **_kwargs):
-        return {
-            "candidates": [
-                {
-                    "id": "https://example.test/SemanticCandidate",
-                    "kind": "concept",
-                    "ontology_id": "ontology-1",
-                    "iri": "https://example.test/SemanticCandidate",
-                    "label": "Semantic candidate",
-                    "aliases": [],
-                    "description": None,
-                    "data": {"rdf_types": []},
-                    "distance": 0,
-                    "assertion_kind": "asserted",
-                    "match": {
-                        "score": 950,
-                        "lexical_score": 0,
-                        "semantic_similarity": 0.95,
-                        "effective_score": 0.95,
-                        "candidate_level": "semantic_candidate",
-                        "method": "semantic",
-                        "matched_terms": [],
-                        "matched_fields": [],
-                        "reasons": ["semantic_candidate"],
-                    },
-                }
-            ],
-            "indexes": [],
-            "warnings": [],
-            "completeness": "complete",
+    semantic_candidates = [
+        {
+            "id": "https://example.test/SemanticCandidate",
+            "kind": "concept",
+            "ontology_id": "ontology-1",
+            "iri": "https://example.test/SemanticCandidate",
+            "label": "Semantic candidate",
+            "aliases": [],
+            "description": None,
+            "data": {"rdf_types": []},
+            "distance": 0,
+            "assertion_kind": "asserted",
+            "match": {
+                "score": 950,
+                "lexical_score": 0,
+                "semantic_similarity": 0.95,
+                "effective_score": 0.95,
+                "candidate_level": "semantic_candidate",
+                "method": "semantic",
+                "matched_terms": [],
+                "matched_fields": [],
+                "reasons": ["semantic_candidate"],
+            },
         }
+    ]
 
     monkeypatch.setattr(
-        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
-        semantic_recall,
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall(semantic_candidates),
     )
     result = SemanticContextQueryService(
         in_memory_session,
@@ -366,6 +393,7 @@ def test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate(
         query="class",
         resource_types=["concept"],
         depth=0,
+        principal=_principal(),
     )
 
     assert [item["iri"] for item in result["primary_matches"]] == [
@@ -395,9 +423,9 @@ def test_exact_alias_precedes_higher_scoring_semantic_candidate(
     _ready_ontology(in_memory_session, settings)
 
     monkeypatch.setattr(
-        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
-        lambda *_args, **_kwargs: {
-            "candidates": [
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall(
+            [
                 {
                     "id": "https://example.test/SemanticCandidate",
                     "kind": "concept",
@@ -421,11 +449,8 @@ def test_exact_alias_precedes_higher_scoring_semantic_candidate(
                         "reasons": ["semantic_candidate"],
                     },
                 }
-            ],
-            "indexes": [],
-            "warnings": [],
-            "completeness": "complete",
-        },
+            ]
+        ),
     )
     result = SemanticContextQueryService(
         in_memory_session,
@@ -440,6 +465,7 @@ def test_exact_alias_precedes_higher_scoring_semantic_candidate(
         query="PublishWorkflow",
         resource_types=["concept"],
         depth=0,
+        principal=_principal(),
     )
 
     assert [item["iri"] for item in result["primary_matches"]] == [
@@ -462,9 +488,9 @@ def test_scoped_semantic_chinese_label_recovers_exact_label_when_lexical_scan_is
     settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
     _ready_ontology(in_memory_session, settings)
     monkeypatch.setattr(
-        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
-        lambda *_args, **_kwargs: {
-            "candidates": [
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall(
+            [
                 {
                     "id": "https://example.test/CustomerSupportWorkflow",
                     "kind": "concept",
@@ -500,11 +526,8 @@ def test_scoped_semantic_chinese_label_recovers_exact_label_when_lexical_scan_is
                         "reasons": ["semantic_candidate"],
                     },
                 }
-            ],
-            "indexes": [{"ontology_id": "ontology-1", "status": "current"}],
-            "warnings": [],
-            "completeness": "complete",
-        },
+            ]
+        ),
     )
     result = SemanticContextQueryService(
         in_memory_session,
@@ -519,6 +542,7 @@ def test_scoped_semantic_chinese_label_recovers_exact_label_when_lexical_scan_is
         query="客户支持工作流",
         resource_types=["concept"],
         depth=0,
+        principal=_principal(),
     )
 
     match = result["primary_matches"][0]["match"]
@@ -536,13 +560,8 @@ def test_bilingual_rdf_label_match_uses_matched_value_not_sampled_display_label(
     _ready_ontology(in_memory_session, settings)
     graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/ontology-1"
     monkeypatch.setattr(
-        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
-        lambda *_args, **_kwargs: {
-            "candidates": [],
-            "indexes": [],
-            "warnings": [],
-            "completeness": "complete",
-        },
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall([]),
     )
     result = SemanticContextQueryService(
         in_memory_session,
@@ -572,6 +591,7 @@ def test_bilingual_rdf_label_match_uses_matched_value_not_sampled_display_label(
         query="客户支持工作流",
         resource_types=["concept"],
         depth=0,
+        principal=_principal(),
     )
 
     match = result["primary_matches"][0]["match"]
@@ -604,13 +624,8 @@ def test_mapping_evidence_stays_with_its_same_ontology_target(in_memory_session,
     in_memory_session.commit()
 
     monkeypatch.setattr(
-        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
-        lambda *_args, **_kwargs: {
-            "candidates": [],
-            "indexes": [],
-            "warnings": [],
-            "completeness": "complete",
-        },
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall([]),
     )
     result = SemanticContextQueryService(
         in_memory_session,
@@ -625,6 +640,7 @@ def test_mapping_evidence_stays_with_its_same_ontology_target(in_memory_session,
         query="customer_id",
         resource_types=["concept"],
         depth=0,
+        principal=_principal(),
     )
 
     assert [
@@ -705,6 +721,7 @@ def test_candidate_query_filters_terms_before_limit(in_memory_session):
         ontology_ids=["ontology-1"],
         query="发布工作流",
         depth=0,
+        principal=_principal(),
     )
 
     assert result["result_status"] == "matched"
@@ -750,6 +767,7 @@ def test_property_label_matches_facts_only_within_the_same_ontology(in_memory_se
         query="billing",
         resource_types=["fact"],
         depth=0,
+        principal=_principal(),
     )
 
     assert [item["ontology_id"] for item in result["primary_matches"]] == ["ontology-1"]
@@ -785,6 +803,7 @@ def test_same_property_label_keeps_each_fact_in_its_own_ontology(in_memory_sessi
         query="shared marker",
         resource_types=["fact"],
         depth=0,
+        principal=_principal(),
     )
 
     ownership = {
@@ -834,6 +853,7 @@ def test_direct_matches_use_the_full_response_limit_without_false_truncation(
         resource_types=["concept"],
         depth=0,
         limit=20,
+        principal=_principal(),
     )
     one = SemanticContextQueryService(
         in_memory_session,
@@ -848,6 +868,7 @@ def test_direct_matches_use_the_full_response_limit_without_false_truncation(
         query="match",
         resource_types=["concept"],
         depth=1,
+        principal=_principal(),
         limit=1,
     )
 
@@ -870,3 +891,469 @@ def test_scoped_sparql_excludes_non_member_shape_views(in_memory_session):
     assert "https://graphs.test/shapes/ontology-1" in scope.graph_iris
     assert "https://graphs.test/shapes/ontology-1/custom" not in scope.graph_iris
     assert "https://graphs.test/shapes/ontology-1/generated" not in scope.graph_iris
+
+
+# ---------------------------------------------------------------------------
+# R1.2-004 multi-expression Context Query (service-level coverage for
+# FQ/RS/FU/CX/PG/DG/PF cases that can be proven with controlled fixtures).
+# ---------------------------------------------------------------------------
+
+
+class _CallSpy:
+    """Wraps a fake recall_multi implementation and records call count."""
+
+    def __init__(self, candidates_by_query):
+        self._candidates_by_query = candidates_by_query
+        self.calls = 0
+
+    def __call__(self, *_args, **_kwargs):
+        self.calls += 1
+        return {
+            "candidates_by_query": self._candidates_by_query,
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        }
+
+
+def _concept_candidate(
+    *,
+    iri,
+    label,
+    ontology_id="ontology-1",
+    score=600,
+    reasons=("semantic_candidate",),
+    candidate_level="semantic_candidate",
+    similarity=0.6,
+):
+    return {
+        "id": iri,
+        "kind": "concept",
+        "ontology_id": ontology_id,
+        "iri": iri,
+        "label": label,
+        "aliases": [],
+        "description": None,
+        "data": {"rdf_types": []},
+        "distance": 0,
+        "assertion_kind": "asserted",
+        "match": {
+            "score": score,
+            "lexical_score": 0,
+            "semantic_similarity": similarity,
+            "effective_score": (round(similarity, 3) if similarity is not None else 1.0),
+            "candidate_level": candidate_level,
+            "method": "semantic",
+            "matched_terms": [],
+            "matched_fields": [],
+            "reasons": list(reasons),
+        },
+    }
+
+
+def _exact_candidate(
+    *,
+    iri,
+    label,
+    ontology_id="ontology-1",
+    reason="exact_label",
+    score=1000,
+):
+    candidate = _concept_candidate(
+        iri=iri,
+        label=label,
+        ontology_id=ontology_id,
+        score=score,
+        reasons=(reason,),
+        candidate_level="exact",
+        similarity=None,
+    )
+    candidate["match"]["lexical_score"] = score
+    candidate["match"]["semantic_similarity"] = None
+    candidate["match"]["effective_score"] = 1.0
+    candidate["match"]["method"] = "label"
+    return candidate
+
+
+def _multi_service(in_memory_session, settings, store, recall_multi=None, monkeypatch=None):
+    if recall_multi is not None and monkeypatch is not None:
+        monkeypatch.setattr(
+            "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+            recall_multi,
+        )
+    return SemanticContextQueryService(
+        in_memory_session,
+        store,
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    )
+
+
+def test_multi_expression_echoes_original_queries_and_dedupes(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    # Two normalized duplicates ("x") plus one distinct ("y") -> execution set size 2.
+    spy = _CallSpy([[], []])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["x", "x", "y"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    assert result["query"]["queries"] == ["x", "x", "y"]
+    # Normalized duplicates collapse to one execution entry, preserving first-seen order.
+    assert result["query"]["normalized_queries"] == ["x", "y"]
+    # One scope resolution, one embedding batch (PF-01).
+    assert spy.calls == 1
+
+
+def test_multi_expression_support_count_does_not_boost_duplicates(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    shared = _concept_candidate(iri="https://example.test/Shared", label="shared")
+    other = _concept_candidate(
+        iri="https://example.test/Other", label="other", score=400, similarity=0.4
+    )
+    spy = _CallSpy([[shared], [other]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["a", "b", "a"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    shared_match = next(
+        item for item in result["primary_matches"] if item["iri"] == "https://example.test/Shared"
+    )
+    # "a" appears twice in input but its normalized duplicate only supports once.
+    assert shared_match["fusion"]["support_count"] == 1
+    assert result["query"]["queries"] == ["a", "b", "a"]
+
+
+def test_multi_expression_exact_evidence_ranks_above_semantic_only(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    exact = _exact_candidate(iri="https://example.test/Exact", label="exact")
+    weak = _concept_candidate(
+        iri="https://example.test/Weak",
+        label="weak",
+        score=950,
+        similarity=0.95,
+    )
+    spy = _CallSpy([[exact, weak]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    assert [item["iri"] for item in result["primary_matches"]] == [
+        "https://example.test/Exact",
+        "https://example.test/Weak",
+    ]
+    assert result["primary_matches"][0]["fusion"]["best_evidence_tier"] == "exact"
+
+
+def test_multi_expression_same_tier_higher_score_ranks_first(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    higher = _concept_candidate(
+        iri="https://example.test/Higher", label="higher", score=900, similarity=0.9
+    )
+    lower = _concept_candidate(
+        iri="https://example.test/Lower", label="lower", score=400, similarity=0.4
+    )
+    spy = _CallSpy([[higher, lower]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    assert [item["iri"] for item in result["primary_matches"]] == [
+        "https://example.test/Higher",
+        "https://example.test/Lower",
+    ]
+
+
+def test_multi_expression_support_count_breaks_ties_within_tier(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    supported = _concept_candidate(
+        iri="https://example.test/Supported", label="supported", score=500, similarity=0.5
+    )
+    alone = _concept_candidate(
+        iri="https://example.test/Alone", label="alone", score=500, similarity=0.5
+    )
+    spy = _CallSpy([[supported, alone], [supported]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["a", "b"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    assert [item["iri"] for item in result["primary_matches"]] == [
+        "https://example.test/Supported",
+        "https://example.test/Alone",
+    ]
+    assert result["primary_matches"][0]["fusion"]["support_count"] == 2
+    assert result["primary_matches"][1]["fusion"]["support_count"] == 1
+
+
+def test_multi_expression_reorder_invariance(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    a = _concept_candidate(
+        iri="https://example.test/A", label="a", score=500, similarity=0.5
+    )
+    b = _concept_candidate(
+        iri="https://example.test/B", label="b", score=500, similarity=0.5
+    )
+
+    def run(queries, candidates_by_query):
+        spy = _CallSpy(candidates_by_query)
+        service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+        return service.query_multi(
+            project_id="project-1",
+            scope_mode="ontologies",
+            ontology_ids=["ontology-1"],
+            queries=queries,
+            resource_types=["concept"],
+            depth=0,
+            principal=_principal(),
+        )
+
+    first = run(["x", "y"], [[a, b], [a]])
+    second = run(["y", "x"], [[a], [a, b]])
+    assert [item["iri"] for item in first["primary_matches"]] == [
+        item["iri"] for item in second["primary_matches"]
+    ]
+    assert [item["fusion"]["support_count"] for item in first["primary_matches"]] == [
+        item["fusion"]["support_count"] for item in second["primary_matches"]
+    ]
+
+
+def test_multi_expression_matched_queries_correlate_by_index(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    shared = _concept_candidate(
+        iri="https://example.test/Shared", label="shared", score=500, similarity=0.5
+    )
+    spy = _CallSpy([[shared], [shared]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["first", "second"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    matched = result["primary_matches"][0]["matched_queries"]
+    indexes = sorted({index for entry in matched for index in entry["indexes"]})
+    assert indexes == [0, 1]
+
+
+def test_multi_expression_match_pagination_returns_match_cursor_only(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    candidates = [
+        _concept_candidate(
+            iri=f"https://example.test/Item{index}",
+            label=f"item{index}",
+            score=500 - index,
+            similarity=0.5,
+        )
+        for index in range(5)
+    ]
+    spy = _CallSpy([candidates])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        limit=2,
+        context_limit=0,
+        principal=_principal(),
+    )
+
+    assert len(result["primary_matches"]) == 2
+    assert result["matches_page"]["truncated"] is True
+    assert result["matches_page"]["next_match_cursor"] is not None
+    assert result["context_page"]["truncated"] is False
+    assert result["context_page"]["next_context_cursor"] is None
+    assert result["truncated"] is True
+
+
+def test_multi_expression_context_limit_zero_returns_no_context(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    candidate = _exact_candidate(iri="https://example.test/Exact", label="exact")
+    spy = _CallSpy([[candidate]])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["exact"],
+        resource_types=["concept"],
+        depth=1,
+        context_limit=0,
+        principal=_principal(),
+    )
+
+    assert len(result["primary_matches"]) == 1
+    assert result["related_context"] == []
+    assert result["context_page"]["next_context_cursor"] is None
+
+
+def test_multi_expression_match_cursor_continues_global_stream(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(
+        semantic_graph_iri_prefix="https://graphs.test/",
+        semantic_context_query_cursor_signing_secret="stable-test-secret",
+    )
+    _ready_ontology(in_memory_session, settings)
+    candidates = [
+        _concept_candidate(
+            iri=f"https://example.test/Item{index}",
+            label=f"item{index}",
+            score=500 - index,
+            similarity=0.5,
+        )
+        for index in range(4)
+    ]
+    spy = _CallSpy([candidates])
+    service = _multi_service(in_memory_session, settings, FakeStore([]), spy, monkeypatch)
+
+    first = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        limit=2,
+        context_limit=0,
+        principal=_principal(),
+    )
+    cursor = first["matches_page"]["next_match_cursor"]
+    assert cursor is not None
+
+    second = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        limit=2,
+        context_limit=0,
+        principal=_principal(),
+        match_cursor=cursor,
+    )
+
+    first_ids = [item["iri"] for item in first["primary_matches"]]
+    second_ids = [item["iri"] for item in second["primary_matches"]]
+    assert set(first_ids).isdisjoint(set(second_ids))
+    assert len(second["primary_matches"]) == 2
+    assert second["matches_page"]["truncated"] is False
+
+
+def test_multi_expression_degraded_recall_returns_partial_results(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    candidate = _concept_candidate(
+        iri="https://example.test/Available", label="available", score=500, similarity=0.5
+    )
+
+    def recall_multi(*_args, **_kwargs):
+        return {
+            "candidates_by_query": [[candidate]],
+            "indexes": [{"ontology_id": "ontology-1", "status": "stale"}],
+            "warnings": [
+                {"code": "vector_index_stale", "message": "Semantic vector recall is unavailable for one Ontology."}
+            ],
+            "completeness": "degraded",
+        }
+
+    service = _multi_service(in_memory_session, settings, FakeStore([]), recall_multi, monkeypatch)
+
+    result = service.query_multi(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["topic"],
+        resource_types=["concept"],
+        depth=0,
+        principal=_principal(),
+    )
+
+    assert result["result_status"] == "matched"
+    assert result["recall"]["completeness"] == "degraded"
+    assert len(result["primary_matches"]) == 1
+
+
+def test_multi_expression_rejects_missing_principal(in_memory_session):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    )
+    with pytest.raises(SemanticContextQueryError):
+        service.query_multi(
+            project_id="project-1",
+            scope_mode="ontologies",
+            ontology_ids=["ontology-1"],
+            queries=["topic"],
+            depth=0,
+        )

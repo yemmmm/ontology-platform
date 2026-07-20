@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -193,3 +194,114 @@ def test_context_mcp_keeps_bilingual_asserted_label_exactness(scoped_mcp, monkey
     assert body["recall"]["match_status"] == "exact"
     assert body["primary_matches"][0]["label"] == "客户支持工作流"
     assert body["primary_matches"][0]["match"]["reasons"] == ["exact_label"]
+
+
+# ---------------------------------------------------------------------------
+# R1.2-004 MCP-level multi-expression Context Query validation and parity.
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_context_query_accepts_canonical_queries(scoped_mcp, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
+
+    class EmptyCandidates:
+        def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+            return SparqlResult(
+                result={"head": {"vars": []}, "results": {"bindings": []}},
+                result_format="application/sparql-results+json",
+            )
+
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._context_query_service",
+        lambda session: SemanticContextQueryService(
+            session,
+            EmptyCandidates(),
+            SemanticQueryScopeResolver(session, settings),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[], []],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    scoped_mcp(EmptyStore())
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        queries=["one", "two"],
+        depth=0,
+    )
+    assert result["ok"] is True
+    body = result["data"]
+    assert body["query"]["queries"] == ["one", "two"]
+    assert body["matches_page"]["returned"] == 0
+
+
+def test_mcp_context_query_rejects_both_query_and_queries(scoped_mcp):
+    scoped_mcp(EmptyStore())
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        query="x",
+        queries=["x"],
+    )
+    assert result["ok"] is False
+    assert result["error_code"] == "invalid_query"
+
+
+def test_mcp_context_query_forwards_refreshed_principal(scoped_mcp, monkeypatch):
+    """R1.2-004: MCP must forward the refreshed _authorize_tool principal."""
+    settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
+    captured: dict[str, Any] = {}
+
+    class CapturingStore(EmptyStore):
+        def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+            return SparqlResult(
+                result={"head": {"vars": []}, "results": {"bindings": []}},
+                result_format="application/sparql-results+json",
+            )
+
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._context_query_service",
+        lambda session: SemanticContextQueryService(
+            session,
+            CapturingStore(),
+            SemanticQueryScopeResolver(session, settings),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[]],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+
+    real_query_multi = SemanticContextQueryService.query_multi
+
+    def wrapper(self, *args, **kwargs):
+        captured["principal"] = kwargs.get("principal")
+        return real_query_multi(self, *args, **kwargs)
+
+    monkeypatch.setattr(SemanticContextQueryService, "query_multi", wrapper)
+
+    scoped_mcp(EmptyStore())
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        query="topic",
+        depth=0,
+    )
+    assert result["ok"] is True
+    forwarded = captured.get("principal")
+    assert forwarded is not None
+    assert forwarded.subject_type == "api_key"

@@ -242,3 +242,43 @@ testers append rounds here without removing earlier failures.
 | Round | Stable state | Result | Defects or unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | Pending | no implementation handoff | NOT RUN | all product cases deferred by approved scope | this plan |
+| Independent Round 1 (2026-07-20, requirement_tester) | branch `agent-semantic-layer-platform`, base commit `326c966d2f994610e186f1017caec8f46ff307b9`, dirty worktree (developer's uncommitted R1.2-004 implementation plus this tester's new `backend/tests/test_semantic_context_query_independent.py`); live `ontology-platform.service` running the **base commit only** (capability surface NOT yet deployed). | PASS-with-DEFERRED — no Critical/High defects found in the unit-testable contract surface; design-contract review agrees with §4–§7. Live-stack/runtime/cleanup gates deferred per design §9. | DEFERRED (require live PostgreSQL + pgvector + Oxigraph or a restarted service running the new code): FQ-02/03 (question vs keyword; unrelated expressions against real Dify fixture), FQ-08 (context_limit 0/100/1000 budget behavior with real neighborhood), RS-02/04 (real-data no-match and truncation), FU-07/08 (cross-Ontology same IRI; ambiguous names on real fixture), CX-01/02/03/04/05/06/08/09 (real graph traversal, depth 0/1/2/3, multi-root shared item, Dify boundary, nonlinear topology), PG-02/03/05/06/07/11/12/13 (real-data context truncation, both-cursor input, encounter-order invariance), SC-03/04/06/07 (R-008 fail closed against live authorization; revoked authorization; multi-Ontology scope; unauthorized strongest match), DG-01/03/05/06/07 (complete vs degraded mix on real provider; deadline; invalid provider payload), BD-01/02/03/04/06 (Dify fixtures, requirement status sync, runtime restart verification, owned cleanup), PF-02/03/04/05 (provider batch split; naive-call comparison; max budget; concurrent mutation). Section 9 items 3–7 and 10 also remain deferred (PostgreSQL+pgvector+Oxigraph parity; runtime restart; documentation/status sync after independent PASS; cleanup). | see "Independent Round 1 — evidence" below |
+
+### Independent Round 1 — scope and method
+
+- Stable state: branch `agent-semantic-layer-platform`, base commit `326c966d2f994610e186f1017caec8f46ff307b9`; dirty worktree with 19 changed files (15 modified, 4 new including this tester's `backend/tests/test_semantic_context_query_independent.py`).
+- Method: read the frozen design (`docs/delivery/designs/2026-07-20-r1-2-004-related-query-aggregation-design.md` §4–§7), this shared test plan, the frozen development handoff and developer's Round 1 notes in the delivery record, and the full implementation under test. Re-ran the developer's focused tests, the full backend regression, and added a new independent test file covering contract rules that the developer's coverage treats only at the codec level or with weaker assertions. Performed static design-contract review of cursor codec, fusion/order, multi-expression pipeline, REST/MCP adapters, runtime principal seam, capability metadata, and config.
+- Design-contract review outcome: no Critical/High issues. Confirmed: cursor payload excludes raw query text (§4.6/§6); cursor binds server-derived principal including subject_type, subject_id, actor, principal.project_id, scope, original+normalized queries, filters, mode, depth, limit, context_limit, workspace_versions, source_signatures (§5/§6); fusion order is tier → score → support_count → R1.2-003 tie-breaker and input order is not a key (§4.4); normalized duplicates do not inflate support_count and original list is echoed verbatim (§4.2); `limit` and `context_limit` are independent budgets with independent cursors and section-level truncation flags whose OR feeds the legacy `truncated` field (§4.3/§4.6); `depth=0` yields empty `related_context` and no context cursor; `context_limit=0` with positive depth keeps matches unaffected (§4.5); the shared pipeline resolves scope once and submits one bounded embedding batch (§5); the MCP runtime forwards the refreshed `_authorize_tool` principal through `runtime_principal()` rather than accepting any client-supplied identity (§5/§6); capability metadata exposes canonical `queries`, compatibility `query` alias, defaults/maxes for limit/context_limit/depth, cursor kinds/lifetime/stable-secret flag (§7).
+
+### Independent Round 1 — verification commands and summary lines
+
+- Developer focused tests (re-run independently):
+  `cd backend && uv run pytest tests/test_semantic_context_query.py tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py tests/test_operation_semantics.py tests/test_semantic_context_cursor.py -x`
+  → `68 passed, 60 warnings in 7.03s`.
+- Independent tester focused tests (new file):
+  `cd backend && uv run pytest tests/test_semantic_context_query_independent.py -v`
+  → `13 passed, 3 warnings in 0.55s`. Covers SC-02 (full-pipeline same-Project different-principal cursor fail-closed), SC-08 (ephemeral signer rotation full pipeline), PG-10 (decoded cursor body excludes raw expression), FU-05 (expression-order invariance over identity/score/tier/support/rank), FU-06 (normalized duplicates do not boost support_count; original list echoed verbatim), BD-05 (capability discovery advertises canonical queries, query alias, limit/context_limit/depth defaults+maxes, cursor kinds/lifetime/stable-secret flag; ephemeral fallback advertises limitation), PF-01 (one scope resolution + one embedding batch with queries seen in first-seen order), CX-07 (context_limit=0 with depth=1 keeps matches unaffected), depth=0 (empty related_context, no context cursor), schema mutual-exclusion for queries/query and match_cursor/context_cursor.
+- Full backend regression:
+  `cd backend && uv run pytest`
+  → `785 passed, 6 skipped, 186 warnings in 76.29s` (772 baseline + 13 independent).
+- Lint on touched files:
+  `cd backend && uv run ruff check tests/test_semantic_context_query_independent.py app/services/semantic_context_query.py app/services/semantic_context_cursor.py app/services/semantic_context_capabilities.py`
+  → `All checks passed!`.
+- Whitespace:
+  `git diff --check`
+  → clean.
+- Documentation sync:
+  `cd backend && uv run pytest tests/test_documentation_sync.py -v`
+  → `10 passed, 3 warnings in 6.21s`.
+
+### Independent Round 1 — evidence artifacts
+
+- New independent test file: `backend/tests/test_semantic_context_query_independent.py` (13 tests; absolute path: `/home/yangxiang/projects/ontology-platform/backend/tests/test_semantic_context_query_independent.py`).
+- Capability metadata path: `backend/app/services/semantic_context_capabilities.py` (`context_query_capabilities(settings)` → dict advertised via `GET /api/mcp/tools` `capabilities.semantic_context_query`).
+- Cursor codec path: `backend/app/services/semantic_context_cursor.py` (versioned HMAC-signed payload; never carries raw query text; uses `semantic_context_query_cursor_signing_secret` when configured and falls back to a process-local ephemeral token).
+- Runtime principal seam: `backend/app/mcp/runtime.py` `_authorize_tool` → `_set_runtime_principal` → `runtime_principal()` read by `backend/app/mcp/tools/semantic.py::query_semantic_context`.
+- Live service baseline probe (2026-07-20): `curl http://127.0.0.1:8001/api/health` → `{"status":"ok"}`; `curl http://127.0.0.1:8001/api/mcp/tools` → `capabilities.semantic_context_query` is **empty** because the running service is the base commit and the new capability surface is not yet deployed. The runtime-restart verification gate (section 9 item 7) is therefore DEFERRED to the main agent's commit+restart step.
+
+### Independent Round 1 — conclusion
+
+Independent tester returns **PASS-with-DEFERRED** for the unit-testable contract surface of R1.2-004. The implementation honors the frozen design contract at every check the tester could cover without live PostgreSQL + pgvector + Oxigraph and without a service restart. No Critical/High defects. The remaining cases require live infrastructure and a service restart and are explicitly out of scope for this independent tester per the dispatch instructions; the main agent should arrange them as a follow-up runtime round before flipping R1.2-004 to `已实现`.

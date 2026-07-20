@@ -276,6 +276,10 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
         project_id=record.project_id,
         auth_method="mcp",
     )
+    # R1.2-004: refresh the process-wide principal so tool callbacks can read
+    # the verified identity through ``runtime_principal()`` instead of trusting
+    # a client-supplied field. This never accepts a caller-controlled identity.
+    _set_runtime_principal(principal)
     policy = MCP_TOOL_POLICIES.get(tool_name)
     if policy is None or policy.required_scope not in principal.effective_scopes:
         raise PermissionError("MCP operation is not authorized")
@@ -304,6 +308,12 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
         if policy.ownership is McpOwnership.PROJECT_RESOURCE and not resolved:
             raise PermissionError("MCP operation requires a Project-owned resource")
     return principal
+
+
+def _set_runtime_principal(principal: AuthPrincipal) -> None:
+    """Internal setter used by ``_authorize_tool`` to publish the refreshed principal."""
+    global _principal
+    _principal = principal
 
 
 def _run_tool(fn: Callable[[Session, Any, EmbeddingClient], T]) -> dict[str, Any]:

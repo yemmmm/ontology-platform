@@ -387,22 +387,27 @@ def discover_semantic_scopes(
 @router.post("/context:query", response_model=SemanticContextQueryResponse)
 def query_semantic_context(
     request: SemanticContextQueryRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticContextQueryResponse:
     try:
         resolver = SemanticQueryScopeResolver(session, settings)
-        result = SemanticContextQueryService(session, rdf_store, resolver).query(
+        result = SemanticContextQueryService(session, rdf_store, resolver).query_multi(
             project_id=request.project_id,
             scope_mode=request.scope_mode,
             ontology_ids=request.ontology_ids,
-            query=request.query,
+            queries=request.queries if request.queries is not None else [request.query],
             resource_types=request.resource_types,
             assertion_types=request.assertion_types,
             search_mode=request.search_mode,
             depth=request.depth,
             limit=request.limit,
+            context_limit=request.context_limit,
+            principal=principal,
+            match_cursor=request.match_cursor,
+            context_cursor=request.context_cursor,
         )
         return SemanticContextQueryResponse(**result)
     except (SemanticContextQueryError, SemanticQueryScopeError, RdfStoreError) as exc:
