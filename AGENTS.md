@@ -32,6 +32,29 @@ requirements list when the target or delivery decision changes. `docs/reference/
 reference for canonical terminology only; ADRs record architectural decisions. Neither the current
 code nor older planning documents override the requirements list.
 
+## Platform and Reference-Ontology Boundary
+
+Treat concepts that appear in a customer ontology, evaluation corpus, or reference scenario as
+ontology data by default, not as platform product concepts. Dify Workflow, Input, Node, Output,
+`hasNode`, and `node_order` are examples of business semantics that must remain in the modeled
+ontology unless an authoritative requirement and architectural decision explicitly promote a
+concept into the platform domain.
+
+- Do not add domain-specific routes, read models, schemas, fields, branches, or sorting rules merely
+  to answer one reference-ontology question.
+- When several business scenarios need easier consumption, improve generic semantic capabilities:
+  authorized scope, related-expression retrieval, resource-kind filters, fused context,
+  fact/relation expansion, field projection, Evidence/lineage, pagination, and explicit
+  completeness.
+- The platform returns modeled resources, predicates, values, topology, provenance, and state. The
+  consuming Agent interprets those facts into domain-specific structures and natural-language
+  answers; the platform must not silently assign business meaning or invent missing facts.
+- Domain-specific names and expected values may appear in fixtures and acceptance assertions to
+  prove generic behavior, but production code must remain usable for unrelated ontologies.
+- If a requirement appears to promote a reference-ontology concept into platform behavior, stop
+  before implementation, surface the boundary conflict, and correct or explicitly confirm the
+  requirement first.
+
 ## Build, Test, and Development Commands
 
 - `./scripts/start-local.sh`: starts/checks PostgreSQL and Oxigraph, syncs dependencies, runs migrations, and starts backend `8001` plus frontend preview `5173`.
