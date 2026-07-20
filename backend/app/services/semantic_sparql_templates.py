@@ -47,9 +47,16 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         primary_iri_variable="class",
         body="""# template: schema-summary
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?class ?label ?graph WHERE {
-          GRAPH ?graph { ?class a rdfs:Class . OPTIONAL { ?class rdfs:label ?label . } }
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            VALUES ?class_type { owl:Class rdfs:Class }
+            ?class a ?class_type .
+            OPTIONAL { ?class rdfs:label ?label . }
+          }
+          BIND(?g AS ?graph)
         }
         ORDER BY ?label
         LIMIT {limit}
@@ -65,9 +72,16 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         primary_iri_variable="class",
         body="""# template: class-detail
+        PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?class ?label ?graph WHERE {
-          GRAPH ?graph { ?class a rdfs:Class . ?class rdfs:label ?label . }
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            VALUES ?class_type { owl:Class rdfs:Class }
+            ?class a ?class_type ;
+                   rdfs:label ?label .
+          }
+          BIND(?g AS ?graph)
         }
         LIMIT {limit}
         """,

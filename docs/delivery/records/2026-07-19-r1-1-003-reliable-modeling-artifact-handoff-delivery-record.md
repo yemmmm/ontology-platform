@@ -1,16 +1,16 @@
 # R1.1-003 Reliable Modeling Artifact Handoff Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v1.1.md` R1.1-003
-- Status: in-progress
+- Status: delivered
 - Started: 2026-07-19T11:12:20+08:00
-- Last updated: 2026-07-19T14:27:07+08:00
+- Last updated: 2026-07-20T12:06:01+08:00
 - Design:
   `docs/delivery/designs/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-design.md`
 - Shared test plan:
   `docs/delivery/test-plans/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-test-plan.md`
 - Delivery baseline: worktree at `527966a457667a2c5ddaa0fbcdef1a6c585dbcc1`;
   pre-existing R1.2-002 record/design/test-plan changes are unrelated and excluded
-- Delivery commit: `Refine reliable modeling artifact handoff requirement`; resolve the immutable
+- Delivery commit: `Close reliable modeling handoff`; resolve the immutable
   hash with `git log -- docs/delivery/records/2026-07-19-r1-1-003-reliable-modeling-artifact-handoff-delivery-record.md`
 
 ## Confirmed contract
@@ -374,6 +374,194 @@
   production Codex binary and inspect the live process tree/environment-category boundary before
   accepting a result, then resume the retained platform workflow only if no global MCP is started.
 
+### 2026-07-20T09:50:16+08:00 — independent test round 3 blocked on authorized rework — requirement tester and main agent
+
+- Context: tester resumed the retained Dify Build Session from clean commit `920b5ed`, first
+  revalidated the Round 2 security repair, and then executed the fixed-corpus handoff, both required
+  interruption recoveries, Artifact persistence, Batch creation, dry-run, and fresh review.
+- Action/decision: Round 3 is `BLOCKED`, not a product-code FAIL. The production Modeler loaded no
+  user MCP configuration or credential environment; the final immutable Draft contained 39 items,
+  all 39 excerpts matched the 32-file corpus, Artifact/Batch idempotency passed, and dry-run returned
+  zero Findings. The main agent confirmed the Reviewer's coverage defect: 15 updates use the old
+  Matrix ordering while Matrix v2 has 32 source-specific rows. The separate claim that 31 corpus
+  bodies were unavailable was rejected using direct 32/32 file and 39/39 excerpt evidence.
+- Evidence: shared test plan Round 3; Draft Artifact
+  `6e4cfea4-9912-40fc-b037-8acfccf32892`; Batch
+  `5e93f7f6-a522-4db1-b2c9-8995ee854673`; dry-run Attempt
+  `308a2e45-2b28-4400-b656-e83b7c73a097`; BLOCKED Review Artifact
+  `d43b7475-2f4b-4f88-b898-e913560fbbca`; Event
+  `d6a353c8-32d5-4ad3-85e5-679064465203`. Regressions passed: `.codex` 42, corpus 24,
+  Skill/evals 7, PostgreSQL concurrency 2, and final backend 720 passed/6 skipped; service,
+  backend health, and frontend remained healthy in restored `legacy_only` mode.
+- Outcome/next step: no Lease or apply occurred. Both automatic correction rounds are consumed, so
+  the next fresh Modeler run requires explicit user authorization marker
+  `r11003-round3-coverage-correction-authorized`. Its scope is limited to rebuilding
+  `coverage_updates` for all 32 Matrix v2 rows while preserving the 39 model items, IDs,
+  dependencies, evidence, exclusions, and Batch envelope. The Project/Session/Ontology remain as
+  the authoritative recoverable blocker; uniquely owned local generations and temporary review
+  files were cleaned.
+
+### 2026-07-20T10:22:25+08:00 — coverage-only correction authorized — user and main agent
+
+- Context: Round 3 stopped after the independent BLOCKED review because the two automatic
+  correction rounds were exhausted and the contract prohibited another Modeler run without an
+  explicit user decision.
+- Action/decision: the user supplied authorization marker
+  `r11003-round3-coverage-correction-authorized`. The authorized successor may rebuild only the
+  `coverage_updates` mapping against all 32 Matrix v2 rows. It must preserve the 39 model items,
+  client IDs, dependencies, Evidence, exclusions, and Batch content; the main agent may not edit
+  model content directly.
+- Evidence: current user authorization; retained Build Session
+  `0b3050da-aba3-47e4-97eb-60ae4e969f1e` revision 10 with zero active Leases, BLOCKED Review
+  Artifact `d43b7475-2f4b-4f88-b898-e913560fbbca`, and next step
+  `user_authorization_required_for_new_correction_round` before authorization is recorded.
+- Outcome/next step: record the marker in the platform Execution Event/Checkpoint timeline, launch
+  one fresh credential-free Modeler successor, prove the frozen non-coverage fields are unchanged,
+  and return the stable successor to independent review before any Lease or apply.
+
+### 2026-07-20T10:45:49+08:00 — authorized coverage successor failed invariant gate — requirement developer and main agent
+
+- Context: platform Event sequence 15 and Checkpoint sequence 10 recorded authorization marker
+  `r11003-round3-coverage-correction-authorized`; a fresh credential-free production Modeler then
+  generated successor `r11003-coverage-v4-20260720t1030` from the frozen Draft/Batch, Matrix v2,
+  Pack, BLOCKED Review, and all 32 corpus bodies.
+- Action/decision: fail closed and do not persist or retry. The 39-item, 55,402-byte result passed
+  atomic handoff, Schema, hash, secret, 32-row coverage completeness, Matrix-row Evidence subset,
+  and coverage source/topic checks. Exact invariant comparison found one unauthorized frozen item
+  change: `cls-workflow-trigger-node` lost alias `Workflow Trigger` and received a rewritten excerpt
+  that is not a contiguous source18 substring. Evidence therefore fell from 39/39 to 38/39 and the
+  frozen Batch canonical hash changed. Main-agent repair is forbidden.
+- Evidence: candidate raw SHA-256
+  `4b194e8e6a6488aff489a4c2cc11b01f24bed200c74be61a52c5b8e448706d4b`, canonical hash
+  `aaa8ee5a66aa4139ae717c80363fcfe66d1abe2dc15b7e5eabc87b154086767b`; frozen/new Batch
+  canonical hashes `b60d101d20eeb67ac8d87d5e4f3ae54c7ff511a37ec91086cbe1efaebbeb9c3f`
+  and `db8f7553de67a776bf2190c11d4b99ad0cdff8e916598eb0bf8ca44d6a92721f`.
+  Platform BLOCKED Event `91460888-42f1-4edf-b440-85cfbfcaeb85` sequence 16 and Checkpoint
+  `b16a2fc8-d466-427e-8f6c-7d5f0efa2709` sequence 11 leave Session revision 12 with zero Lease.
+- Outcome/next step: current platform Draft v2 and Batch remain unchanged; no candidate Artifact,
+  Batch, dry-run, Lease, or apply exists. The non-secret invalid generation remains in the controlled
+  spool until a valid successor persists or the Session terminates. A new fresh generation requires
+  explicit marker `r11003-round3-coverage-correction-retry-authorized`; it must keep the same narrow
+  scope, explicitly freeze the two observed fields and full non-coverage/Batch hashes, and again
+  prove zero non-coverage diff, unchanged Batch, 39/39 Evidence, and 32/32 Matrix alignment.
+
+### 2026-07-20T10:48:27+08:00 — retry and current-session continuation authorized — user and main agent
+
+- Context: the first user-authorized coverage successor aligned all 32 Matrix rows but failed
+  closed because it changed one frozen model item and one Evidence excerpt.
+- Action/decision: the user supplied marker
+  `r11003-round3-coverage-correction-retry-authorized` and explicitly waived further per-correction
+  authorization prompts for the remainder of this Build Session. This standing authorization is
+  limited to continuing the already frozen R1.1-003/R1.1-004 delivery contract; it does not permit
+  scope expansion, main-agent model edits, bypassing invariant/review gates, or unbounded retries.
+- Evidence: current user decision; retained invalid generation
+  `r11003-coverage-v4-20260720t1030`; platform Session revision 12 and BLOCKED Event sequence 16.
+- Outcome/next step: append the standing authorization to the platform Event/Checkpoint timeline,
+  launch a fresh immutable correction with the observed alias/excerpt and full non-coverage/Batch
+  hashes explicitly frozen, and continue without another authorization prompt while each attempt
+  remains within this contract and fails closed independently.
+
+### 2026-07-20T11:03:52+08:00 — bounded retry development-ready — requirement developer and main agent
+
+- Context: platform Event sequence 17 and Checkpoint sequence 12 recorded the standing session
+  authorization. Developer prepared fresh generation `r11003-coverage-v5-20260720t1055` with
+  predecessor `r11003-coverage-v4-20260720t1030`, correction round 4, a six-field frozen hash
+  manifest, the full Batch request hash, and the previously violated alias/excerpt called out as
+  immutable.
+- Action/decision: accept `DEVELOPMENT_READY` and freeze the successor for independent review. The
+  39-item result passed Schema, atomic handoff, secret scan, exact zero-diff for all six non-coverage
+  fields, frozen Batch equality, 32/32 Matrix alignment, and 39/39 contiguous Evidence checks.
+  Developer persisted Draft v3, created a distinct successor Batch/dry-run so the previous BLOCKED
+  Review cannot be reused, restored the original `legacy_only` runtime, and stopped before review,
+  Lease, or apply.
+- Evidence: generation raw SHA-256
+  `4dfec97fa31c59954da6a6ab1d3cecd7d555fa9f68ee2454ba9a3ed438ed8ea4`, canonical hash
+  `84c05dd08170af149acb61810870ff03bab759dbaee117ea9caea537a97b07ba`, non-coverage combined
+  hash `85a234ac5239824a525048e3dba973d8611d30556ff495b655b999da74fd55d4`, frozen Batch request
+  hash `b60d101d20eeb67ac8d87d5e4f3ae54c7ff511a37ec91086cbe1efaebbeb9c3f`, and normalized
+  Batch hash `2071aae2d1456bbf058207e3af28086f4d464ae5ae44ced1d9662fa365e2e58a`.
+  Draft Artifact `02f62ea4-3bc7-4fa0-b9a4-2d299321c9e1` supersedes v2; successor Batch
+  `d3302dc5-6ea3-4a67-b9df-44f1f31bbb46` and dry-run Attempt
+  `d6eb0baa-850a-4a50-b33b-3d1b7be6a8be` contain 39 items, zero Findings, and passed idempotent
+  retry. Session revision 17, Event sequence 21, Checkpoint sequence 16, and Lease count zero.
+- Outcome/next step: complete payloads from invalid v4 and valid v5 were removed after persistence;
+  only bounded state/manifests remain. Stable next step is
+  `independent_review_successor_draft_and_batch`; hand the unchanged worktree plus platform IDs to
+  the independent tester for Round 4.
+
+### 2026-07-20T11:31:13+08:00 — independent test round 4 failed after exact apply — requirement tester and main agent
+
+- Context: tester independently re-proved the successor Draft/Batch invariants and production
+  credential boundary, obtained a fresh Reviewer PASS with zero quality issues, and applied the exact
+  reviewed 39-item Batch under RDF canonical mode using the current workspace version and a fresh
+  idempotency key.
+- Action/decision: accept one High product defect and one repository completion-gate defect; keep
+  the applied Session recoverable and enter the developer repair loop. R-004 writes modeled classes
+  as `owl:Class`, while `ontology-schema-summary` and `class-detail` query only `rdfs:Class`, so the
+  supported classes current-read returns zero despite SPARQL seeing the applied resources. Ruff also
+  reports two handoff Python files need formatting. The Pack CQ `/validate` 409 is rejected as a
+  requirement defect because these questions are intentionally `draft + semantic_context`; matched
+  Context Query plus explicit SPARQL and separate conforming SHACL validation satisfy the frozen
+  acceptance split.
+- Evidence: PASS Review Artifact `c59a9712-73bf-4b08-8fd7-c88d69a55dbc`; exact apply Attempt
+  `c418ce1d...` on Batch `d3302dc5-6ea3-4a67-b9df-44f1f31bbb46`, normalized hash
+  `2071aae2d1456bbf058207e3af28086f4d464ae5ae44ced1d9662fa365e2e58a`, workspace
+  `051052af...` to `16f56c80...`, zero Findings; SHACL run `d58f3803...` conforms; lineage complete
+  for eight checked items. Context Query matched Workflow Trigger, Chatflow, and DSL; direct SPARQL
+  saw 42 class rows but supported classes current-read returned zero. GitNexus impact on `_TEMPLATES`
+  is LOW with zero indexed processes; manual impact is limited to schema-summary/class-detail and
+  their classes read-model consumers.
+- Outcome/next step: Round 4 remains FAIL in the shared plan. No Verification Artifact/Event,
+  Session completion/export, or Project deletion occurred. Runtime was restored to
+  `legacy/legacy-only/legacy` and remained healthy. Developer must add OWL/RDFS compatibility plus
+  real RDF read-model regressions, format the two handoff files, restart/verify, and return a new
+  stable state for independent Round 5.
+
+### 2026-07-20T11:49:50+08:00 — round 4 repair development-ready — requirement developer and main agent
+
+- Context: developer repaired the same LOW-indexed `_TEMPLATES` registry after Round 4 proved that
+  R-004-applied `owl:Class` resources were invisible. The first live repair exposed a second
+  requirement-relevant scope defect: schema-summary/class-detail used unbounded `GRAPH ?graph` and
+  therefore read classes outside the resolved Graph Set.
+- Action/decision: accept `DEVELOPMENT_READY`. Both templates now support `owl:Class` and
+  `rdfs:Class`, use `VALUES ?g { {graph_iris} }` plus `GRAPH ?g`, bind the origin graph, and retain
+  `SELECT DISTINCT`. A real RDFLib endpoint regression covers OWL-only, RDFS-only, dual-typed
+  de-duplication, labels, and exclusion of an out-of-scope graph. The earlier total-count expectation
+  of 21 was rejected: live data contains 42 globally unique class IRIs; the correct gate is that all
+  21 class IRIs from the applied successor Batch appear exactly once with no graph leakage.
+- Evidence: focused read-model tests `17 passed`; full backend `721 passed, 6 skipped`; `.codex`
+  `42` passed; target Ruff/format and diff checks passed. Live canonical read matched all 21 current
+  Batch class IRIs exactly once, with no missing/duplicate current-Batch IRI; all 42 returned rows
+  were unique and sourced only from the active Ontology Graph in Graph Set
+  `57f07326-3246-5791-a611-d322b4b92050`. The extra 21 are pre-existing distinct IRIs. Runtime was
+  restored to unset read override, service active, backend health OK, and frontend HTTP 200.
+- Outcome/next step: stable repair changes are limited to
+  `backend/app/services/semantic_sparql_templates.py` and new
+  `backend/tests/test_semantic_class_type_read_models.py`; no model/platform mutation or cleanup
+  occurred. Return the applied Session to the independent tester for Round 5 final current-read,
+  verification, export, completion, cleanup, and repository gates.
+
+### 2026-07-20T12:02:14+08:00 — independent Round 5 PASS and requirement closure — requirement tester and main agent
+
+- Context: Round 5 independently retested the graph-scoped OWL/RDFS read-model repair, the full
+  repository gates, the already applied fixed-corpus model, final verification, export, cleanup,
+  and runtime restoration.
+- Action/decision: accept PASS and close R1.1-003 plus R1.1-004. Both supported class read models
+  returned every one of the current Batch's 21 class IRIs exactly once, with no missing, duplicate,
+  or out-of-scope graph result. Context Query, SPARQL, SHACL validation, and lineage remained
+  consistent. R1.1-001 remains open because one technically successful run is not repeatable
+  business-quality evidence.
+- Evidence: backend `725 passed, 6 skipped`; `.codex` 42 tests; corpus 24/24; seven Skill evals;
+  PostgreSQL concurrency 2/2; Review Artifact `c59a9712-73bf-4b08-8fd7-c88d69a55dbc`; applied
+  Batch `d3302dc5-6ea3-4a67-b9df-44f1f31bbb46`; conforming SHACL run
+  `c8bbb08d-cfb7-4e47-9d3e-0fc1bd1cfcab`; Verification Artifact
+  `9fc18f35-d0b7-4d31-8b1b-2a1053fcc742` with hash
+  `4d57f3f7423cd9926f01f65c93da0940e747373777add56064352f0b18157555`; Verification Event
+  `8f07513b-8367-4269-8210-c93ac50808ef`; completed Session revision 21. JSON and Markdown exports
+  were hashed before the uniquely owned Project was deleted; scoped endpoints then returned 404.
+- Outcome/next step: synchronize requirement/design/guide status, run final repository and runtime
+  gates, and create the isolated delivery commit without staging concurrent R1.2 work.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -391,6 +579,11 @@
 | Repair 1 | Round 1 FAIL baseline | High: live supervisor persisted unbounded/unredacted stderr prompt in `.diagnostic.tmp` | Real v1/v2 diagnostic evidence; no partial output read | Assigned for root-cause repair |
 | 2 | `c4a6157` + digest `a1bef6ff...dab8` | Replaced raw diagnostic file with bounded in-memory streaming classifier | 20 focused; 41 `.codex`; Skill/eval; 74 focused; 2 PostgreSQL; Ruff/diff | DEVELOPMENT_READY for Round 2 |
 | 3 | `c4a6157` + digest `eb0e05e...f859` | Ignored global user config and restricted the child to a credential-free allowlisted environment | 21 focused; 42 `.codex`; Skill/eval; 15 backend focused; Ruff/format/diff | DEVELOPMENT_READY for Round 3 production-boundary retest |
+| Round 3 | `920b5ed` | Model transport/security passed; independent review found Matrix v2 coverage-row misalignment after two allowed correction rounds | `.codex` 42; corpus 24; Skill/eval 7; PostgreSQL 2; backend 720 passed/6 skipped; runtime healthy | BLOCKED pending explicit user-authorized coverage-only correction |
+| Authorized correction 1 | `920b5ed` + generation `r11003-coverage-v4-20260720t1030` | Coverage alignment passed, but Modeler changed one frozen alias/excerpt and broke 39/39 Evidence plus Batch hash invariants | Schema/hash/secret and 32-row checks PASS; exact frozen diff and source check FAIL | DEVELOPMENT_BLOCKED; no persistence/retry/Lease/apply; new explicit authorization required |
+| Authorized correction 2 | HEAD `a3405b2` + generation `r11003-coverage-v5-20260720t1055` | Added frozen hash manifest and explicit observed-diff constraints; persisted valid Draft v3 and successor Batch/dry-run | Non-coverage zero diff; Batch invariant; Matrix 32/32; Evidence 39/39; dry-run 39/0 Findings; runtime healthy | DEVELOPMENT_READY for independent Round 4; no Lease/apply |
+| Repair 4 | Round 4 FAIL applied state | High: OWL classes invisible in schema-summary/class-detail current-read; completion gate: two handoff files fail Ruff format-check | Fresh review/apply/query/SPARQL/SHACL/lineage evidence; GitNexus `_TEMPLATES` impact LOW/0 indexed processes | Assigned for focused read-model compatibility and formatting repair |
+| Repair 5 | Round 4 applied state + read-model patch | Added OWL/RDFS compatibility and Graph Set scoping; new real RDF endpoint regression; repo-configured handoff format gate passed without file changes | Focused 17; backend 721/6; `.codex` 42; live 21/21 current-Batch IRIs exactly once; runtime healthy | DEVELOPMENT_READY for independent Round 5 |
 
 ## Independent test rounds
 
@@ -398,18 +591,44 @@
 | --- | --- | --- | --- | --- |
 | 1 | `c4a6157` + digest `96d00401...a964` | FAIL | High unbounded/unredacted live stderr file; apply/query/validation/lineage/completion not executed | Shared test plan Round 1; real Codex 32-item recovery/Artifact/dry-run passed; containment complete |
 | 2 | `c4a6157` + digest `a1bef6ff...dab8` | FAIL | High global Codex config loaded a credentialed ontology MCP; correction persistence and all later gates not executed | Shared test plan Round 2; full independent regressions passed; unique process-group containment complete |
+| 3 | `920b5ed` | BLOCKED | Confirmed coverage updates use stale 15-row ordering against the 32-row Matrix; third correction requires explicit user authorization; no product-code defect | Shared test plan Round 3; security/handoff/recovery/Artifact/Batch/dry-run passed; no Lease/apply |
+| 4 | HEAD `a3405b2` + Draft v3/Batch `d3302dc5...` | FAIL | Exact apply passed, but `owl:Class` current-read returned zero; two handoff Python files failed Ruff format-check; final verification/completion/cleanup unexecuted | Shared test plan Round 4; fresh Reviewer PASS, apply 39/0 Findings, Context/SPARQL/SHACL/lineage partial acceptance |
+| 5 | HEAD `a3405b2` + graph-scoped OWL/RDFS repair | PASS | None for R1.1-003/R1.1-004; R1.1-001 remains a separate quality-evidence requirement | Shared test plan Round 5; backend 725/6; current Batch classes 21/21 exactly once; verification/export/completion/cleanup/runtime PASS |
 
 ## Final verification
 
-- Required checks: pending reviewed design and shared test plan
-- Runtime/restart health: pending
-- Documentation/status sync: pending
-- Cleanup: pending
-- Residual risks and follow-ups: pending refinement
+- Required checks: independent Round 5 passed the focused and affected read-model tests, full
+  backend (`725 passed, 6 skipped`), `.codex` 42 tests, fixed corpus 24/24, seven Skill evals,
+  PostgreSQL concurrency 2/2, target Ruff/format, and `git diff --check`. After documentation sync,
+  the main-agent closure run passed 11 focused/documentation tests, interface documentation check,
+  target Ruff/format, and the then-current concurrent worktree's full backend suite (`726 passed,
+  6 skipped`).
+- Runtime/restart health: final service state active; backend health and frontend returned success;
+  temporary canonical-mode overrides were removed and legacy defaults restored.
+- Documentation/status sync: requirement, design, shared test plan, delivery record, and platform
+  guide state that R1.1-003/R1.1-004 are delivered while R1.1-001 remains open.
+- Cleanup: final JSON and Markdown exports were created and hashed; the uniquely owned Project and
+  its Session/Ontology/Batch/Artifact state were deleted and verified absent; controlled-spool
+  payloads and the Round-5 helper were removed.
+- Residual risks and follow-ups: the successful fixed-corpus run proves reliable transport and the
+  integration contract, not repeatable business-value improvement. That evidence remains explicitly
+  owned by R1.1-001.
 
 ## Retrospective
 
-- Scope or design deviations: pending
-- Rework and root causes: pending
-- What shortened or delayed delivery: pending
-- Reusable lessons: pending
+- Scope or design deviations: the authorized coverage correction required two extra immutable
+  generations after the normal two-round cap. Live apply also exposed a graph read-model defect not
+  visible in the original transport-focused design. The accepted CQ contract remained Context Query
+  plus separate SHACL validation; draft `semantic_context` questions were not mutated merely to make
+  `/validate` accept them.
+- Rework and root causes: the first modeler corrections used a stale Coverage Matrix ordering, and
+  one narrowly scoped retry still changed frozen alias/evidence content. Exact field and Batch hashes
+  caught both failures. The read-model defect came from assuming only `rdfs:Class` and querying
+  unbounded graphs although R-004 writes `owl:Class` into resolved Graph Set members.
+- What shortened or delayed delivery: immutable hashes, stable client IDs, platform checkpoints,
+  controlled spool recovery, and standing in-session authorization made safe retries possible.
+  Production model/reviewer calls and five truly independent rounds dominated elapsed time.
+- Reusable lessons: freeze non-correction fields by canonical hash; use a fresh idempotency key and
+  current workspace version for exact apply while preserving the reviewed Batch; validate live reads
+  against the Batch's own resource IRIs rather than an unstable total count; semantic read models
+  must honor both RDF type compatibility and resolved Graph Set scope.
