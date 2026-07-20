@@ -79,7 +79,7 @@ v1.0 的 R-006 已提供自然语言 Context Query 和受作用域约束的只�
 | R1.2-002 | Project 与 Ontology 的授权发现和范围解析 | P0 | 已实现 | R1.2-001、v1.0 R-008 |
 | R1.2-003 | 多语言与语义候选召回及可解释回退 | P0 | 已实现 | R1.2-001、v1.0 R-006 |
 | R1.2-004 | 相关查询表达式联合语义上下文聚合 | P0 | 已实现 | R1.2-001、v1.0 R-006 |
-| R1.2-005 | 规则定义查询与触发解释 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
+| R1.2-005 | 规则活动定义按需读取 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
 | R1.2-006 | 有效语义分类与派生状态一致性 | P0 | 未实现 | R1.2-001、v1.0 R-005、R-006 |
 | R1.2-007 | 紧凑响应、能力发现和可继续读取 | P1 | 未实现 | R1.2-001、v1.0 R-006、R-011 |
 
@@ -471,34 +471,54 @@ R1.2-007 的能力发现公开，不能运行时静默变化。
 - 使用一个与工作流无关的 Ontology 执行同类相关查询表达式联合查询，返回结构和状态合同一致，以证明能力
   与 Dify 业务词汇无关。
 
-## R1.2-005 规则定义查询与触发解释
+## R1.2-005 规则活动定义按需读取
 
 当前状态：`未实现`
 
 ### 要解决的问题
 
-Rules 读模型当前返回规则名称、状态、版本和当前定义 ID，但不返回活动规则正文。消费 Agent
-可以看到“Resource-intensive synthetic workflow runs”存在，却无法通过公开 MCP 确认触发属性、
-比较符号、阈值和结果断言，只能读取内部规则定义服务。
+Rules 读模型当前返回规则名称、状态、版本和当前定义 ID，但不返回活动规则正文。现有授权 REST
+定义读取已经返回存储的规则 `body`，公开 MCP 却只有创建和执行能力，没有对应的按 ID 读取能力。
+消费 Agent 因此可以看到“Resource-intensive synthetic workflow runs”存在，却无法只用公开 MCP
+读取其当前 Platform DSL 原文，只能绕行内部规则定义服务。
 
 ### 目标行为
 
-提供 Ontology 作用域内的规则详情和针对具体资源的触发解释：
+以最小增量补齐规则原文的公开按需读取：
 
-- 返回当前活动定义、语言、版本、输入角色、规范化条件、阈值、结果断言、优先级和解释文本；
-- 对具体资源区分“满足”“不满足”“缺少属性”“规则未运行”和“结果已过期”；
-- 返回参与匹配的实际属性值、比较操作、阈值、绑定和产生的 statement/lineage 标识；
-- 规则使用 Class、RelationType 或 Property 时，同时返回可读名称和稳定 IRI；
-- 不暴露内部执行细节、秘密或不适合消费 Agent 的隐藏推理。
+- 普通 Rules 读模型和 Context Query 继续只返回紧凑规则摘要及稳定
+  `current_definition_id`，不默认嵌入规则正文；
+- 现有 `GET /api/semantic/rule-definitions/{rule_definition_id}` 继续作为权威 REST 读取合同；
+  MCP 增加同合同的薄读取工具，按 `rule_definition_id` 返回相同受权定义；
+- 返回存储的 `body` 原文以及已有的定义 ID、Ontology、Rule IRI、名称、语言、版本、状态、输入角色、
+  输出类型和优先级等定义元数据，不另建条件规范化或自然语言解释层；
+- Agent 使用 Rules 摘要提供的当前定义 ID 下钻，并把规则原文与现有 Context Query、固定读模型、
+  Rule Run、派生 statement 和 lineage 组合，自行解释具体资源为什么触发；
+- Rules 摘要的 `current_definition_id` 是当前版本的唯一读取依据；已知旧 ID 仍按其现有存储状态
+  读取，不要求本需求统一既有写入路径的 Definition 生命周期；
+- REST/MCP 复用现有 Project/Ontology 授权，未知、已删除或无权访问的定义不返回 `body` 或定义
+  内容；本需求不统一两个传输当前已有的错误码和错误消息；
+- 不暴露秘密、未持久化执行器状态或其他隐藏内部推理。
+
+本需求不新增资源级触发解释接口，不返回规范化条件树、比较符、阈值、匹配值、绑定或平台生成的
+解释文本，也不改变规则执行、派生状态、有效分类和 lineage 合同。有效分类与派生完整性继续由
+R1.2-006 负责。
 
 ### 验收标准
 
-- 公开 REST/MCP 能读取活动规则 `Resource-intensive synthetic workflow runs` 的当前定义。
-- 对合同审查运行返回 `total_tokens=128000`、比较条件 `>= 50000` 和直接结果类型
-  `ResourceIntensiveWorkflowRun`。
-- 解释明确指出 `status=succeeded` 不属于该规则条件，因此执行成功不阻止资源关注规则触发。
-- 阈值边界至少验证 `49999` 不触发、`50000` 触发，整数比较语义稳定。
-- 规则未执行、定义已替换、结果过期和 lineage 不完整具有明确状态，不能展示为当前已触发。
+- Rules 摘要返回 `Resource-intensive synthetic workflow runs` 的当前定义 ID；公开 REST/MCP 按该
+  ID 返回语义一致的当前 Platform DSL `body`、语言、版本和状态。
+- 原文保留 `total_tokens`、`gte`、整数 `50000` 和直接结果类型
+  `ResourceIntensiveWorkflowRun`；`status=succeeded` 不出现在规则条件中，平台不生成另一份解释。
+- Agent 仅使用公开接口即可把该原文与现有事实 `total_tokens=128000`、派生 statement 和 lineage
+  组合；`49999`/`50000` 规则执行边界继续由既有规则引擎合同验证，不在读取接口重复计算。
+- 至少一个 `sparql_construct` 或 `workflow_state_machine` 定义按其存储原文读取，证明接口不依赖
+  Platform DSL 条件结构。
+- 定义替换后，当前 Rules 摘要指向新 ID；即使旧 Definition 的现存 `status` 未统一为
+  `superseded`，Agent 也只以该指针判断当前版本，005 不扩展为生命周期修复。
+- 未知、已删除、跨 Project 或无权访问的 ID 均不返回规则 `body` 或定义内容；REST/MCP 保留现有
+  传输级错误映射，不在本需求内新增错误归一化工程。
+- 普通 Rules 读模型和 Context Query 的紧凑响应不因本需求增加规则正文或触发解释字段。
 
 ## R1.2-006 有效语义分类与派生状态一致性
 
