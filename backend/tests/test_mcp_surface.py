@@ -60,6 +60,7 @@ ALLOWED_TOOLS = {
     "run_semantic_reasoning",
     "submit_semantic_rule_definition",
     "run_semantic_rule",
+    "get_semantic_rule_definition",
     "get_semantic_read_model",
     "export_semantic_graph_set",
     "inspect_semantic_projection_status",

@@ -136,6 +136,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `get_ontology_lineage` | Read bounded statement, resource, or Rule Definition lineage for an Ontology. | ontology_id, target_id, target_type | include_history, limit, max_depth, ontology_id, target_id, target_type | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for a graph set. | graph_set_id, model_name | allow_stale_derived, graph_set_id, include, limit, model_name | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_semantic_rule_definition` | Read the current stored body and metadata of one Rule Definition by ID. | rule_definition_id | rule_definition_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `inspect_semantic_projection_status` | Inspect projection freshness by graph set and projection kind. | - | graph_set_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `inspect_semantic_statement_provenance` | Deprecated compatibility wrapper; use get_ontology_lineage. | graph_set_id, statement_iri | graph_set_id, include, statement_iri | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_evidence_references` | List project evidence references without loading complete source documents. | project_id | limit, offset, project_id, search | `backend/app/mcp/tools/evidence.py` |

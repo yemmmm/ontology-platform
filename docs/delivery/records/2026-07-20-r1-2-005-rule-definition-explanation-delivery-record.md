@@ -1,14 +1,15 @@
 # R1.2-005 Rule Definition Query and Trigger Explanation Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v1.2.md`, R1.2-005
-- Status: delivered (documentation-only; product requirement remains `未实现`)
+- Status: delivered (product implementation PASS, independently tested Round 1)
 - Started: 2026-07-20T21:17:20+08:00
-- Last updated: 2026-07-20T23:17:28+08:00
+- Last updated: 2026-07-21T00:30:00+08:00
 - Design: `docs/delivery/designs/2026-07-20-r1-2-005-rule-definition-read-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-20-r1-2-005-rule-definition-read-test-plan.md`
 - Delivery baseline: clean detached worktree at `326c966d2f994610e186f1017caec8f46ff307b9`
 - Delivery commit: `Refine R1.2-005 rule definition read` (resolve immutable hash with
   `git log -- docs/delivery/records/2026-07-20-r1-2-005-rule-definition-explanation-delivery-record.md`)
+- Implementation commit: pending close-out commit on `agent-semantic-layer-platform`
 
 ## Confirmed contract
 
@@ -146,6 +147,32 @@
 - Outcome/next step: close documentation consistency checks, run GitNexus change detection, and
   commit the reviewed artifacts without product implementation or runtime restart.
 
+### 2026-07-21T00:05:00+08:00 — product implementation handoff — main agent and requirement developer
+
+- Context: the user requested product implementation against the frozen, PASS-reviewed design.
+- Action/decision: dispatched `requirement_developer` with the fixed scope — register one MCP tool
+  `get_semantic_rule_definition(rule_definition_id)` reusing the existing service, access check,
+  and serializer; register `read` / `PROJECT_RESOURCE` / non-mutating MCP policy; update the
+  `ALLOWED_TOOLS` whitelist; add focused regression tests; do not enlarge Rules read model, Context
+  Query, response schema, or rule lifecycle.
+- Evidence: developer DONE_WITH_CONCERNS report; minimal diff in
+  `backend/app/mcp/tools/semantic.py`, `backend/app/mcp/runtime.py`,
+  `backend/tests/test_mcp_surface.py`, new `backend/tests/test_semantic_rule_definition_mcp.py`,
+  and one auto-synced row in `docs/reference/mcp.md`.
+- Outcome/next step: main agent verified the diff, ran focused pytest (68/68 pass), and dispatched
+  the independent tester.
+
+### 2026-07-21T00:30:00+08:00 — independent test Round 1 — requirement tester and main agent
+
+- Context: stable implementation worktree on `agent-semantic-layer-platform`.
+- Action/decision: tester executed shared test plan §4–§7 scenarios, inspected implementation
+  diff for design conformance, ran the full pytest suite and ruff, and appended Round 1 to §10.
+- Evidence: tester PASS verdict; §10 Round 1 row; pytest 792 passed / 6 skipped / 0 failed;
+  focused R1.2-005 suite 10/10 pass; ruff clean on all R1.2-005-touched files (47 pre-existing
+  baseline errors unchanged).
+- Outcome/next step: synchronize requirement status, this record, restart runtime, verify health,
+  and commit the verified product implementation.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -160,40 +187,49 @@
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
+| 1 | docs-only PASS at `e988d11` | add MCP `get_semantic_rule_definition(rule_definition_id)` thin adapter; register `read` / `PROJECT_RESOURCE` / non-mutating policy; update `ALLOWED_TOOLS`; add focused regression `backend/tests/test_semantic_rule_definition_mcp.py` (7 tests) | focused pytest 68/68 pass; full pytest 792 passed / 6 skipped / 0 failed; ruff clean on touched files | developer DONE_WITH_CONCERNS; main agent verified diff and dispatched tester |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
+| 1 | git `e988d11` + uncommitted R1.2-005 worktree | PASS | restricted: SQLite in-memory + JSONB shim (no real PostgreSQL/Oxigraph); AU-07 log inspection best-effort; AU-08 no secret material; RD-06 workflow_state_machine not exercised (RD-05 SPARQL CONSTRUCT covers language neutrality); AU-04 missing-read-scope structurally equivalent to unauthenticated because `model`/`admin` imply `read` | §10 of shared test plan; pytest 792/6/0; ruff clean on touched files |
 
 ## Final verification
 
-- Required checks: requirement/design/test-plan/record path and terminology consistency passed;
-  linked Markdown paths exist; `git diff --check` passed; mandatory plan review passed after three
-  rounds. GitNexus `detect_changes(scope=all)` reported low risk, zero changed symbols, and zero
-  affected processes for the tracked documentation diff.
-- Runtime/restart health: intentionally not run because no backend/frontend/runtime code changed and
-  implementation is explicitly deferred.
-- Documentation/status sync: R1.2-005 is renamed and narrowed in the authoritative v1.2 requirement;
-  reviewed design and shared test plan are linked; product status remains `未实现`; current API/MCP
-  references are unchanged because the future MCP tool does not exist yet.
-- Cleanup: no test or runtime data was created; no cleanup required.
-- Residual risks and follow-ups: future implementation must perform fresh symbol/API impact analysis,
-  register the read-only `PROJECT_RESOURCE` MCP policy/tool, reuse the existing Definition service,
-  pass the shared plan and independent testing, update generated MCP docs, restart/verify runtime,
-  and only then mark R1.2-005 implemented.
+- Required checks: requirement/design/test-plan/record terminology consistency passed; §1 plan
+  status updated to reflect delivered implementation; §10 Round 1 appended; `git diff --check`
+  pending final commit; mandatory plan review passed after three rounds earlier; independent
+  tester Round 1 PASS.
+- Runtime/restart health: pending `systemctl --user restart ontology-platform.service` and
+  `/api/health` + `/` verification before commit.
+- Documentation/status sync: R1.2-005 status in `docs/requirements/requirements-v1.2.md` updated
+  to `已实现`; MCP reference auto-synced by `sync-interface-docs` test side-effect; design and
+  shared test plan unchanged in contract.
+- Cleanup: no production runtime data created; tests use in-memory SQLite and project-standard
+  fixtures; no uniquely identifiable shared test data requires cleanup.
+- Residual risks and follow-ups: real PostgreSQL + Oxigraph replacement/cross-Project parity
+  deferred to a later runtime round; RD-06 `workflow_state_machine` body coverage recommended when
+  such a fixture exists; AU-07 body-audit log path may be revisited if logging policy broadens.
 
 ## Retrospective
 
 - Scope or design deviations: the original requirement proposed normalized trigger explanations.
   User refinement intentionally reduced it to on-demand raw Definition reads and Agent-side
-  interpretation, with no product implementation in this delivery.
+  interpretation. The follow-on implementation round delivered exactly that scope — one MCP tool,
+  one policy entry, one whitelist entry, focused tests — with no schema, migration, or lifecycle
+  expansion.
 - Rework and root causes: plan-review Rounds 1 and 2 removed assumptions that every old Definition
   is `superseded` and that REST/MCP failure mappings are identical. Both assumptions came from
-  extrapolating one code path into a universal contract.
+  extrapolating one code path into a universal contract. The implementation reused REST helpers
+  via private import (`# noqa: PLC2701`) rather than refactoring them into the service layer,
+  keeping blast radius to four backend files plus tests.
 - What shortened or delayed delivery: reusing the existing REST schema/service and existing compact
   `current_definition_id` eliminated new response models, normalization, evaluation, migrations,
-  UI, and runtime work. Two extra review rounds were needed to remove stale wording completely.
+  UI, and runtime work. Two extra review rounds were needed to remove stale wording completely;
+  implementation itself was a single developer cycle and a single tester round.
 - Reusable lessons: for thin transport parity, promise parity only where the shared implementation
   actually exists; use explicit current pointers rather than secondary status fields when write
-  paths maintain lifecycle state differently.
+  paths maintain lifecycle state differently; private-import-with-noqa is acceptable when the
+  alternative refactor would touch many call sites and split exception types without changing the
+  contract.

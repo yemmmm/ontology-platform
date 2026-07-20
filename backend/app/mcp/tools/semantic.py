@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from mcp.server.fastmcp import FastMCP
 
+from app.api.semantic import _ensure_rule_access, _rule_definition_read  # noqa: PLC2701
 from app.core.config import Settings
 from app.mcp.runtime import _run_tool, runtime_actor, runtime_principal
 from app.repositories.rdf_store import RdfStoreRepository
@@ -414,6 +415,18 @@ def register_semantic(server: FastMCP) -> None:
                 engine_version=engine_version,
             )
         )
+
+    @server.tool()
+    def get_semantic_rule_definition(rule_definition_id: str) -> dict[str, Any]:
+        """Read the current stored body and metadata of one Rule Definition by ID."""
+        def _handle(session, _driver, _embedding_client):
+            principal = runtime_principal()
+            service = _rule_definition_service(session)
+            rule = service.get_rule(rule_definition_id)
+            _ensure_rule_access(session, rule, principal)
+            return _rule_definition_read(rule, session).model_dump(mode="json")
+
+        return _run_tool(_handle)
 
     @server.tool()
     def get_semantic_read_model(
