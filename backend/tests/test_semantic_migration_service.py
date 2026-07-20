@@ -99,7 +99,6 @@ def _settings(**overrides: Any) -> Settings:
 
 def _inventory_provider(items: list[MigrationInventoryItem]):
     def provider(session, scope_type, scope_id):
-        from app.services.semantic_migration import MigrationInventory
         import hashlib
         import json
 
@@ -515,10 +514,30 @@ def test_rollback_lists_graph_set_members_when_target_known(in_memory_session) -
     assert rollback["rolled_back_graphs"] == [f"{GRAPH_PREFIX}ontology/ont-1"]
 
 
-def test_command_compiler_and_canonical_writer_share_delta_shape(in_memory_session) -> None:
+def test_command_compiler_and_canonical_writer_share_delta_shape(
+    in_memory_session, monkeypatch
+) -> None:
     """Item 7: command compiler and canonical writer share RDF delta shape."""
     from app.services.semantic_canonical_write import CanonicalSemanticWriteService
 
+    class StaleRetrievalCoordinator:
+        def __init__(self, session, rdf_store, settings):  # noqa: ANN001, ARG002
+            pass
+
+        def rebuild_affected(self, *, affected_graph_iris=(), ontology_ids=()):
+            return [
+                {
+                    "ontology_id": ontology_ids[0],
+                    "write_applied": True,
+                    "status": "stale",
+                    "warning": "retrieval_index_missing",
+                }
+            ]
+
+    monkeypatch.setattr(
+        "app.services.semantic_canonical_write.SemanticRetrievalCoordinator",
+        StaleRetrievalCoordinator,
+    )
     settings = _settings()
     store = FakeStore()
     writer = CanonicalSemanticWriteService(in_memory_session, store, settings)
@@ -532,6 +551,14 @@ def test_command_compiler_and_canonical_writer_share_delta_shape(in_memory_sessi
     assert result["delta"]["operation"] == "insert_delete"
     assert result["delta"]["inserted_quad_count"] == compiled.delta.inserts.__len__()
     assert store.applied_deltas[0] is compiled.delta
+    assert result["retrieval_indexes"] == [
+        {
+            "ontology_id": "ont-1",
+            "write_applied": True,
+            "status": "stale",
+            "warning": "retrieval_index_missing",
+        }
+    ]
 
 
 def test_unsupported_scope_type_rejected(in_memory_session) -> None:

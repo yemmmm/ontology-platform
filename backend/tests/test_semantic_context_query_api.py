@@ -73,6 +73,84 @@ def test_context_query_rest_returns_no_match_and_public_scope(in_memory_session)
     assert "graph_iri" not in str(body)
 
 
+def test_context_query_rest_keeps_bilingual_asserted_label_exactness(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://context-rest.test/graphs")
+    _ready_scope(in_memory_session, settings)
+    graph = "https://context-rest.test/graphs/ontology/o"
+
+    class BilingualStore:
+        def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+            return SparqlResult(
+                result={
+                    "head": {"vars": []},
+                    "results": {
+                        "bindings": [
+                            {
+                                "graph": {"type": "uri", "value": graph},
+                                "subject": {
+                                    "type": "uri",
+                                    "value": "https://example.test/CustomerSupportWorkflow",
+                                },
+                                "predicate": {
+                                    "type": "uri",
+                                    "value": "http://www.w3.org/2000/01/rdf-schema#label",
+                                },
+                                "object": {
+                                    "type": "literal",
+                                    "value": "客户支持工作流",
+                                    "xml:lang": "zh",
+                                },
+                                "subjectLabel": {
+                                    "type": "literal",
+                                    "value": "Customer Support Workflow",
+                                    "xml:lang": "en",
+                                },
+                                "subjectTypes": {
+                                    "type": "literal",
+                                    "value": "http://www.w3.org/2002/07/owl#Class",
+                                },
+                                "matchedField": {"type": "literal", "value": "label"},
+                                "matchedValue": {
+                                    "type": "literal",
+                                    "value": "客户支持工作流",
+                                },
+                            }
+                        ]
+                    },
+                },
+                result_format="application/sparql-results+json",
+            )
+
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    response = _client(in_memory_session, settings, BilingualStore).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "query": "客户支持工作流",
+            "resource_types": ["concept"],
+            "depth": 0,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["recall"]["match_status"] == "exact"
+    assert body["primary_matches"][0]["label"] == "客户支持工作流"
+    assert body["primary_matches"][0]["match"]["reasons"] == ["exact_label"]
+
+
 def test_context_query_rest_rejects_internal_scope_fields(in_memory_session):
     response = _client(in_memory_session, Settings()).post(
         "/api/semantic/context:query",

@@ -8,7 +8,14 @@ from rdflib import Dataset, Literal, URIRef
 from rdflib.namespace import RDFS
 
 from app.core.config import Settings
-from app.repositories.models import OntologyModel, ProjectModel
+from app.repositories.models import (
+    DataResourceModel,
+    DataSourceModel,
+    ExternalFieldModel,
+    OntologyModel,
+    ProjectModel,
+    SemanticMappingModel,
+)
 from app.repositories.rdf_store import SparqlResult
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_context_query import (
@@ -151,6 +158,81 @@ def _candidate_rows(settings: Settings, ontology_id: str) -> list[dict[str, Any]
     ]
 
 
+def _mapping(
+    *,
+    mapping_id: str,
+    ontology_id: str,
+    target_id: str,
+    target_type: str = "class",
+    external_field: str = "customer_id",
+) -> SemanticMappingModel:
+    return SemanticMappingModel(
+        id=mapping_id,
+        project_id="project-1",
+        ontology_id=ontology_id,
+        target_type=target_type,
+        target_id=target_id,
+        data_source_id=f"source-{mapping_id}",
+        resource_id=f"resource-{mapping_id}",
+        field_id=f"field-{mapping_id}",
+        external_resource_name="customers",
+        external_field_name=external_field,
+        join_key={"customer_id": "customer_id"},
+        status="active",
+    )
+
+
+def _persist_mapping(session, mapping: SemanticMappingModel) -> None:
+    """Seed the governed catalog chain required by SemanticMappingModel FKs."""
+    if session.get(ProjectModel, mapping.project_id) is None:
+        session.add(
+            ProjectModel(
+                id=mapping.project_id,
+                name=mapping.project_id,
+                normalized_label=mapping.project_id,
+            )
+        )
+        session.flush()
+    if session.get(OntologyModel, mapping.ontology_id) is None:
+        session.add(
+            OntologyModel(
+                id=mapping.ontology_id,
+                project_id=mapping.project_id,
+                name=mapping.ontology_id,
+            )
+        )
+        session.flush()
+    session.add(
+        DataSourceModel(
+            id=mapping.data_source_id,
+            project_id=mapping.project_id,
+            name=mapping.data_source_id,
+            source_type="database",
+        )
+    )
+    session.flush()
+    session.add(
+        DataResourceModel(
+            id=mapping.resource_id,
+            project_id=mapping.project_id,
+            data_source_id=mapping.data_source_id,
+            name=mapping.resource_id,
+        )
+    )
+    session.flush()
+    session.add(
+        ExternalFieldModel(
+            id=mapping.field_id,
+            project_id=mapping.project_id,
+            data_source_id=mapping.data_source_id,
+            data_resource_id=mapping.resource_id,
+            name=mapping.external_field_name,
+        )
+    )
+    session.flush()
+    session.add(mapping)
+
+
 def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_session):
     settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
     _ready_ontology(in_memory_session, settings)
@@ -217,6 +299,341 @@ def test_no_match_is_not_reported_as_unsupported(in_memory_session):
     assert result["result_status"] == "no_match"
     assert result["primary_matches"] == []
     assert "unsupported" not in str(result).lower()
+
+
+def test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    target_iri = "https://example.test/Customer"
+    _persist_mapping(
+        in_memory_session,
+        _mapping(
+            mapping_id="mapping-customer-id",
+            ontology_id="ontology-1",
+            target_id=target_iri,
+        ),
+    )
+    in_memory_session.commit()
+
+    def semantic_recall(*_args, **_kwargs):
+        return {
+            "candidates": [
+                {
+                    "id": "https://example.test/SemanticCandidate",
+                    "kind": "concept",
+                    "ontology_id": "ontology-1",
+                    "iri": "https://example.test/SemanticCandidate",
+                    "label": "Semantic candidate",
+                    "aliases": [],
+                    "description": None,
+                    "data": {"rdf_types": []},
+                    "distance": 0,
+                    "assertion_kind": "asserted",
+                    "match": {
+                        "score": 950,
+                        "lexical_score": 0,
+                        "semantic_similarity": 0.95,
+                        "effective_score": 0.95,
+                        "candidate_level": "semantic_candidate",
+                        "method": "semantic",
+                        "matched_terms": [],
+                        "matched_fields": [],
+                        "reasons": ["semantic_candidate"],
+                    },
+                }
+            ],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        }
+
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        semantic_recall,
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="class",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    assert [item["iri"] for item in result["primary_matches"]] == [
+        target_iri,
+        "https://example.test/SemanticCandidate",
+    ]
+    mapping_match = result["primary_matches"][0]
+    assert mapping_match["match"]["candidate_level"] == "exact"
+    assert mapping_match["match"]["reasons"] == ["exact_mapping"]
+    assert mapping_match["match"]["matched_fields"] == ["mapping_target_type"]
+    assert mapping_match["mapping_evidence"] == [
+        {
+            "mapping_id": "mapping-customer-id",
+            "target_type": "class",
+            "external_field": "customer_id",
+            "join_keys": "customer_id",
+        }
+    ]
+
+
+def test_exact_alias_precedes_higher_scoring_semantic_candidate(
+    in_memory_session, monkeypatch
+):
+    """The Context exact layer is independent from semantic score magnitude."""
+
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [
+                {
+                    "id": "https://example.test/SemanticCandidate",
+                    "kind": "concept",
+                    "ontology_id": "ontology-1",
+                    "iri": "https://example.test/SemanticCandidate",
+                    "label": "Semantic candidate",
+                    "aliases": [],
+                    "description": None,
+                    "data": {"rdf_types": []},
+                    "distance": 0,
+                    "assertion_kind": "asserted",
+                    "match": {
+                        "score": 950,
+                        "lexical_score": 0,
+                        "semantic_similarity": 0.95,
+                        "effective_score": 0.95,
+                        "candidate_level": "semantic_candidate",
+                        "method": "semantic",
+                        "matched_terms": [],
+                        "matched_fields": [],
+                        "reasons": ["semantic_candidate"],
+                    },
+                }
+            ],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore(_candidate_rows(settings, "ontology-1")[:1]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="PublishWorkflow",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    assert [item["iri"] for item in result["primary_matches"]] == [
+        "https://example.test/Workflow",
+        "https://example.test/SemanticCandidate",
+    ]
+    assert result["primary_matches"][0]["match"]["candidate_level"] == "exact"
+    assert result["primary_matches"][0]["match"]["reasons"] == ["exact_alias"]
+
+
+def test_scoped_semantic_chinese_label_recovers_exact_label_when_lexical_scan_is_empty(
+    in_memory_session, monkeypatch
+):
+    """A current scoped document may repair a missing lexical-SPARQL row only.
+
+    This models the live Chinese-label failure: the asserted label is present
+    in the current retrieval partition, but no lexical row made it into the
+    candidate scan.  Scope is still constrained by the recall service.
+    """
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [
+                {
+                    "id": "https://example.test/CustomerSupportWorkflow",
+                    "kind": "concept",
+                    "ontology_id": "ontology-1",
+                    "iri": "https://example.test/CustomerSupportWorkflow",
+                    "label": "Customer Support Workflow",
+                    "labels": [
+                        {
+                            "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
+                            "value": "Customer Support Workflow",
+                            "language": "en",
+                        },
+                        {
+                            "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
+                            "value": "客户支持工作流",
+                            "language": "zh",
+                        },
+                    ],
+                    "aliases": [],
+                    "description": None,
+                    "data": {"rdf_types": []},
+                    "distance": 0,
+                    "assertion_kind": "asserted",
+                    "match": {
+                        "score": 637,
+                        "lexical_score": 0,
+                        "semantic_similarity": 0.637,
+                        "effective_score": 0.637,
+                        "candidate_level": "semantic_candidate",
+                        "method": "semantic",
+                        "matched_terms": [],
+                        "matched_fields": [],
+                        "reasons": ["semantic_candidate"],
+                    },
+                }
+            ],
+            "indexes": [{"ontology_id": "ontology-1", "status": "current"}],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="客户支持工作流",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    match = result["primary_matches"][0]["match"]
+    assert result["recall"]["match_status"] == "exact"
+    assert match["candidate_level"] == "exact"
+    assert match["lexical_score"] == 1000
+    assert match["matched_fields"] == ["label"]
+    assert match["reasons"] == ["exact_label", "semantic_candidate"]
+
+
+def test_bilingual_rdf_label_match_uses_matched_value_not_sampled_display_label(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/ontology-1"
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore(
+            [
+                {
+                    "graph": _binding(graph),
+                    "subject": _binding("https://example.test/CustomerSupportWorkflow"),
+                    "predicate": _binding("http://www.w3.org/2000/01/rdf-schema#label"),
+                    "object": _binding("客户支持工作流", "literal"),
+                    "subjectLabel": _binding("Customer Support Workflow", "literal"),
+                    "subjectTypes": _binding(
+                        "http://www.w3.org/2002/07/owl#Class", "literal"
+                    ),
+                    "matchedField": _binding("label", "literal"),
+                    "matchedValue": _binding("客户支持工作流", "literal"),
+                }
+            ]
+        ),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="客户支持工作流",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    match = result["primary_matches"][0]["match"]
+    assert result["primary_matches"][0]["label"] == "客户支持工作流"
+    assert result["recall"]["match_status"] == "exact"
+    assert match["candidate_level"] == "exact"
+    assert match["reasons"] == ["exact_label"]
+
+
+def test_mapping_evidence_stays_with_its_same_ontology_target(in_memory_session, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings, ontology_id="ontology-1")
+    _ready_ontology(in_memory_session, settings, ontology_id="ontology-2")
+    _persist_mapping(
+        in_memory_session,
+        _mapping(
+            mapping_id="mapping-one",
+            ontology_id="ontology-1",
+            target_id="https://example.test/CustomerOne",
+        ),
+    )
+    _persist_mapping(
+        in_memory_session,
+        _mapping(
+            mapping_id="mapping-two",
+            ontology_id="ontology-2",
+            target_id="https://example.test/CustomerTwo",
+        ),
+    )
+    in_memory_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1", "ontology-2"],
+        query="customer_id",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    assert [
+        (item["ontology_id"], item["iri"], item["mapping_evidence"][0]["mapping_id"])
+        for item in result["primary_matches"]
+    ] == [
+        ("ontology-1", "https://example.test/CustomerOne", "mapping-one"),
+        ("ontology-2", "https://example.test/CustomerTwo", "mapping-two"),
+    ]
 
 
 def test_project_scope_is_partial_but_explicit_scope_is_all_or_nothing(in_memory_session):

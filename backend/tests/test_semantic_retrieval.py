@@ -2,17 +2,35 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from sqlalchemy import select
+
 from app.core.config import Settings
-from app.repositories.models import SemanticGraphSetModel, SemanticProjectionManifestModel
+from app.repositories.models import (
+    OntologyModel,
+    ProjectModel,
+    SemanticGraphSetModel,
+    SemanticProjectionManifestModel,
+    SemanticRetrievalDocumentModel,
+)
+from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.ontology_workspace import OntologyWorkspaceService
+from app.services.semantic_projection_job import SemanticProjectionJobService
 from app.services.semantic_retrieval import (
+    RETRIEVAL_KIND,
     RetrievalConfig,
     PgVectorRetrievalRepository,
+    SemanticRetrievalCoordinator,
     SemanticRetrievalProjectionService,
+    SemanticResourceRetrievalService,
     fuse_context_candidates,
     mark_retrieval_stale,
     normalize_retrieval_text,
     recall_summary,
+    rule_set_signature,
 )
+from app.services.semantic_read_scope import SemanticReadScopeResolver
 
 
 class _NoopStore:
@@ -23,6 +41,14 @@ class _NoopStore:
 class _NoopEmbedding:
     def embed(self, texts):  # noqa: ARG002
         raise AssertionError("Document construction must not call the provider")
+
+
+class _FixedEmbedding:
+    def __init__(self, dimensions: int) -> None:
+        self.dimensions = dimensions
+
+    def embed(self, texts):
+        return [[0.25] * self.dimensions for _ in texts]
 
 
 def test_retrieval_config_hash_includes_versioned_threshold_and_provider_identity() -> None:
@@ -82,6 +108,246 @@ def test_metadata_document_allow_list_keeps_mapping_key_names_not_values(in_memo
     assert "customer_id" in document["document_text"]
     assert "Evidence" not in document["document_text"]
     assert "secret" not in document["document_text"].casefold()
+
+
+def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_scan(
+    in_memory_session,
+) -> None:
+    """A promoted vector job must use the exact public reader identity tuple."""
+
+    settings = Settings(
+        semantic_graph_iri_prefix="https://retrieval-identity.test/graphs",
+        embedding_dimensions=256,
+    )
+    in_memory_session.add(
+        ProjectModel(id="project-retrieval", name="Retrieval", normalized_label="retrieval")
+    )
+    ontology = OntologyModel(
+        id="ontology-retrieval",
+        project_id="project-retrieval",
+        name="Retrieval ontology",
+    )
+    in_memory_session.add(ontology)
+    in_memory_session.flush()
+    workspace_service = OntologyWorkspaceService(in_memory_session, settings)
+    workspace_service.ensure(ontology)
+    in_memory_session.commit()
+    workspace = workspace_service.context(ontology.id)
+    graph_set_id = workspace["default_graph_set_id"]
+    data_graph_iri = next(
+        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_data"
+    )
+
+    class PersistentFixtureStore:
+        def get_graph(self, graph_iri, _format):
+            if graph_iri != data_graph_iri:
+                return ""
+            return f'''
+                @prefix owl: <http://www.w3.org/2002/07/owl#> .
+                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                <{data_graph_iri}> {{
+                  <https://example.test/CustomerSupportWorkflow>
+                    a owl:Class ;
+                    rdfs:label "Customer Support Workflow"@en,
+                               "客户支持工作流"@zh .
+                }}
+            '''
+
+    projection = SemanticRetrievalProjectionService(
+        in_memory_session,
+        PersistentFixtureStore(),
+        _FixedEmbedding(settings.embedding_dimensions),
+        settings,
+    )
+    jobs = SemanticProjectionJobService(
+        in_memory_session,
+        writers={RETRIEVAL_KIND: projection},
+        scope_resolver_builder=SemanticReadScopeResolver,
+    )
+    job = jobs.create_job(
+        graph_set_id=graph_set_id,
+        projection_kind=RETRIEVAL_KIND,
+        projection_version=settings.semantic_retrieval_projection_version,
+    )
+    job = jobs.run_job(job.id)
+
+    document = in_memory_session.scalar(
+        select(SemanticRetrievalDocumentModel).where(
+            SemanticRetrievalDocumentModel.build_job_id == job.id
+        )
+    )
+    manifest = in_memory_session.scalar(
+        select(SemanticProjectionManifestModel).where(
+            SemanticProjectionManifestModel.graph_set_id == graph_set_id,
+            SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
+        )
+    )
+    graph_set = in_memory_session.get(SemanticGraphSetModel, graph_set_id)
+    assert job.status == "succeeded"
+    assert document is not None
+    assert manifest is not None and manifest.status == "current"
+    assert manifest.active_job_id == job.id
+    assert graph_set is not None
+    assert document.label == "Customer Support Workflow"
+    assert document.labels == [
+        {
+            "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
+            "value": "Customer Support Workflow",
+            "language": "en",
+        },
+        {
+            "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
+            "value": "客户支持工作流",
+            "language": "zh",
+        },
+    ]
+    assert "客户支持工作流" in document.document_text
+
+    config = RetrievalConfig.from_settings(settings)
+    reader_identity = {
+        "graph_set_id": graph_set_id,
+        "ontology_id": ontology.id,
+        "workspace_version": ModelingWorkspaceVersionService(
+            in_memory_session, settings
+        ).version_for(ontology.id),
+        "source_signature": graph_set.source_signature,
+        "rule_set_signature": rule_set_signature(in_memory_session, ontology.id),
+        "projection_version": config.projection_version,
+        "embedding_config_hash": config.config_hash,
+        "build_job_id": manifest.active_job_id,
+    }
+    persisted_identity = {
+        "graph_set_id": document.graph_set_id,
+        "ontology_id": document.ontology_id,
+        "workspace_version": document.workspace_version,
+        "source_signature": document.source_signature,
+        "rule_set_signature": document.rule_set_signature,
+        "projection_version": document.projection_version,
+        "embedding_config_hash": document.embedding_config_hash,
+        "build_job_id": document.build_job_id,
+    }
+
+    assert persisted_identity == reader_identity
+    assert reader_identity["workspace_version"] != graph_set.graph_set_metadata["workspace_version"]
+
+    repository = PgVectorRetrievalRepository(in_memory_session, config)
+    status = repository.index_status(
+        graph_set_id=reader_identity["graph_set_id"],
+        ontology_id=reader_identity["ontology_id"],
+        workspace_version=reader_identity["workspace_version"],
+        source_signature=reader_identity["source_signature"],
+        current_rule_signature=reader_identity["rule_set_signature"],
+    )
+    assert status["status"] == "current"
+
+    scanned_identity = {}
+
+    def candidate_scan(**kwargs):
+        scanned_identity.update(kwargs)
+        return [
+            {
+                "resource_iri": document.resource_iri,
+                "resource_kind": document.resource_kind,
+                "assertion_kind": document.assertion_kind,
+                "label": document.label,
+                "labels": document.labels,
+                "aliases": document.aliases,
+                "descriptions": document.descriptions,
+                "mapping_evidence": document.mapping_evidence,
+                "rdf_types": document.rdf_types,
+                "similarity": 0.99,
+            }
+        ]
+
+    reader = SemanticResourceRetrievalService(
+        in_memory_session,
+        settings,
+        embedding_client=_FixedEmbedding(settings.embedding_dimensions),
+    )
+    reader.repository.exact_cosine_candidates = candidate_scan
+    result = reader.recall(
+        scope=SimpleNamespace(
+            ontologies=(
+                SimpleNamespace(
+                    ontology_id=ontology.id,
+                    graph_set_id=graph_set_id,
+                    workspace_version=reader_identity["workspace_version"],
+                    source_signature=reader_identity["source_signature"],
+                ),
+            )
+        ),
+        query="客户支持工作流",
+        resource_kinds={"concept"},
+        search_mode="hybrid",
+        limit=10,
+    )
+
+    assert scanned_identity == {
+        "graph_set_id": reader_identity["graph_set_id"],
+        "ontology_id": reader_identity["ontology_id"],
+        "workspace_version": reader_identity["workspace_version"],
+        "source_signature": reader_identity["source_signature"],
+        "rule_signature": reader_identity["rule_set_signature"],
+        "resource_kinds": {"concept"},
+        "query_vector": [0.25] * settings.embedding_dimensions,
+        "limit": 50,
+    }
+    assert result["completeness"] == "complete"
+    assert result["indexes"][0]["status"] == "current"
+    assert [item["iri"] for item in result["candidates"]] == [
+        "https://example.test/CustomerSupportWorkflow"
+    ]
+    assert result["candidates"][0]["label"] == "客户支持工作流"
+    assert result["candidates"][0]["match"]["candidate_level"] == "exact"
+    assert result["candidates"][0]["match"]["reasons"] == [
+        "exact_label",
+        "semantic_candidate",
+    ]
+
+    scanned_identity.clear()
+    entity_result = reader.recall_graph_set(
+        scope=SemanticReadScopeResolver(in_memory_session).resolve(graph_set_id),
+        query="客户支持工作流",
+        resource_kinds={"concept"},
+        search_mode="hybrid",
+        limit=10,
+    )
+
+    assert scanned_identity["workspace_version"] == reader_identity["workspace_version"]
+    assert entity_result["indexes"][0]["status"] == "current"
+    assert [item["iri"] for item in entity_result["candidates"]] == [
+        "https://example.test/CustomerSupportWorkflow"
+    ]
+
+    retry = jobs.create_job(
+        graph_set_id=graph_set_id,
+        projection_kind=RETRIEVAL_KIND,
+        projection_version=settings.semantic_retrieval_projection_version,
+    )
+    retry = jobs.run_job(retry.id)
+    documents = list(
+        in_memory_session.scalars(
+            select(SemanticRetrievalDocumentModel).where(
+                SemanticRetrievalDocumentModel.resource_iri
+                == "https://example.test/CustomerSupportWorkflow"
+            )
+        )
+    )
+    current_manifest = in_memory_session.scalar(
+        select(SemanticProjectionManifestModel).where(
+            SemanticProjectionManifestModel.graph_set_id == graph_set_id,
+            SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
+            SemanticProjectionManifestModel.status == "current",
+        )
+    )
+    assert retry.status == "succeeded"
+    assert len(documents) == 2
+    assert {item.build_job_id for item in documents} == {job.id, retry.id}
+    assert len({item.id for item in documents}) == 2
+    assert len({item.target_partition for item in documents}) == 2
+    assert current_manifest is not None
+    assert current_manifest.active_job_id == retry.id
+    assert manifest.status == "stale"
 
 
 def test_fusion_preserves_exact_lexical_evidence_and_exposes_candidate_summary() -> None:
@@ -185,3 +451,53 @@ def test_rule_transaction_marks_current_retrieval_manifests_stale(in_memory_sess
 
     assert mark_retrieval_stale(in_memory_session, "ontology-1") == ["manifest-1"]
     assert in_memory_session.get(SemanticProjectionManifestModel, "manifest-1").status == "stale"
+
+
+def test_rebuild_failure_keeps_prior_retrieval_manifest_stale(
+    in_memory_session, monkeypatch
+) -> None:
+    """A failed rebuild cannot make a pre-write vector partition look current."""
+
+    in_memory_session.add(
+        SemanticGraphSetModel(
+            id="set-rebuild",
+            name="Ontology workspace",
+            scope_type="ontology",
+            scope_id="ontology-rebuild",
+            is_default=True,
+            source_signature="source-v1",
+            graph_set_metadata={"workspace_version": "workspace-v1"},
+        )
+    )
+    in_memory_session.add(
+        SemanticProjectionManifestModel(
+            id="manifest-rebuild",
+            graph_set_id="set-rebuild",
+            projection_kind="vector",
+            active_job_id="job-before-write",
+            source_signature="source-v1",
+            projection_version="semantic-retrieval-v1",
+            target_partition="set-rebuild/vector/before-write",
+            status="current",
+        )
+    )
+    in_memory_session.commit()
+
+    class FailingProjectionJobs:
+        def __init__(self, **_kwargs):
+            pass
+
+        def create_job(self, **_kwargs):
+            raise RuntimeError("embedding provider unavailable")
+
+    monkeypatch.setattr(
+        "app.services.semantic_retrieval.SemanticProjectionJobService", FailingProjectionJobs
+    )
+    result = SemanticRetrievalCoordinator(
+        in_memory_session, _NoopStore(), Settings()
+    ).rebuild_ontology("ontology-rebuild")
+
+    assert result["write_applied"] is True
+    assert result["status"] == "failed"
+    assert result["stale_manifest_ids"] == ["manifest-rebuild"]
+    assert in_memory_session.get(SemanticProjectionManifestModel, "manifest-rebuild").status == "stale"

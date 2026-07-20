@@ -46,7 +46,10 @@ from app.services.semantic_search_projection import (
     FakeSearchWriter,
     SemanticSearchProjectionService,
 )
-from app.services.semantic_retrieval import SemanticRetrievalProjectionService
+from app.services.semantic_retrieval import (
+    SemanticRetrievalProjectionService,
+    SemanticResourceRetrievalService,
+)
 from app.services.embedding import EmbeddingClient
 from app.services.semantic_visibility import SemanticVisibilityPolicy
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
@@ -610,6 +613,8 @@ def _read_model_service(session) -> SemanticReadModelService:
         visibility_policy=SemanticVisibilityPolicy(
             graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
         ),
+        session=session,
+        retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
 
 

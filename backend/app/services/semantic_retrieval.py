@@ -33,6 +33,7 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
 from app.services.embedding import EmbeddingClient, EmbeddingServiceError
+from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.semantic_projection_job import SemanticProjectionJobService
 from app.services.semantic_read_scope import ScopeResolution
 from app.services.semantic_read_scope import SemanticReadScopeResolver
@@ -139,6 +140,17 @@ def rule_set_signature(session: Session, ontology_id: str) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def retrieval_workspace_version(session: Session, settings: Settings, ontology_id: str) -> str:
+    """Use the public read contract's authoritative workspace version.
+
+    Retrieval documents are only queryable when their identity tuple agrees
+    with the public Context and Entity readers.  Graph-set metadata contains
+    setup-era annotations (including the initial ``r001-v1`` marker), not the
+    current graph-and-Rule version fence.
+    """
+    return ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
 
 
 def mark_retrieval_stale(session: Session, ontology_id: str) -> list[str]:
@@ -265,7 +277,7 @@ class PgVectorRetrievalRepository:
             text(
                 """
                 SELECT d.resource_iri, d.resource_kind, d.assertion_kind, d.label,
-                       d.aliases, d.descriptions, d.mapping_evidence, d.rdf_types,
+                       d.labels, d.aliases, d.descriptions, d.mapping_evidence, d.rdf_types,
                        1 - (d.embedding <=> CAST(:query_vector AS vector)) AS similarity
                   FROM semantic_retrieval_documents AS d
                   JOIN semantic_projection_manifests AS m
@@ -328,9 +340,12 @@ class SemanticRetrievalProjectionService:
         if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
             raise SemanticRetrievalError("Retrieval projection requires an Ontology-scoped workspace")
         ontology_id = graph_set.scope_id
-        workspace_version = str((graph_set.graph_set_metadata or {}).get("workspace_version") or "")
-        if not workspace_version:
-            raise SemanticRetrievalError("Retrieval projection requires a workspace version")
+        try:
+            workspace_version = retrieval_workspace_version(
+                self.session, self.settings, ontology_id
+            )
+        except LookupError as exc:
+            raise SemanticRetrievalError("Retrieval projection requires a workspace version") from exc
         documents = self._metadata_documents(
             ontology_id=ontology_id,
             graph_set_id=scope.graph_set_id,
@@ -455,6 +470,7 @@ class SemanticRetrievalProjectionService:
         document_text = _document_text(
             iri=value["iri"],
             label=label,
+            labels=labels,
             aliases=aliases,
             descriptions=descriptions,
             rdf_types=rdf_types,
@@ -464,6 +480,7 @@ class SemanticRetrievalProjectionService:
             resource_iri=value["iri"],
             resource_kind=resource_kind,
             label=label,
+            labels=labels,
             aliases=aliases,
             descriptions=descriptions,
             mapping_evidence=mappings,
@@ -496,6 +513,7 @@ class SemanticRetrievalProjectionService:
             document_text = _document_text(
                 iri=rule.rule_iri,
                 label=definition.name,
+                labels=[],
                 aliases=[],
                 descriptions=descriptions,
                 rdf_types=[definition.language, definition.output_kind],
@@ -506,6 +524,7 @@ class SemanticRetrievalProjectionService:
                     resource_iri=rule.rule_iri,
                     resource_kind="rule",
                     label=definition.name,
+                    labels=[],
                     aliases=[],
                     descriptions=descriptions,
                     mapping_evidence=[],
@@ -557,6 +576,20 @@ class SemanticRetrievalCoordinator:
         self.settings = settings
 
     def rebuild_ontology(self, ontology_id: str) -> dict[str, Any]:
+        # Persist invalidation in its own transaction. A later provider/job
+        # failure must never roll this back and leave an old vector partition
+        # queryable as though it reflected the just-committed RDF/Rule fact.
+        try:
+            stale_manifest_ids = mark_retrieval_stale(self.session, ontology_id)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            return {
+                "ontology_id": ontology_id,
+                "write_applied": True,
+                "status": "failed",
+                "warning": "retrieval_index_failed",
+            }
         graph_set = self.session.scalar(
             select(SemanticGraphSetModel).where(
                 SemanticGraphSetModel.scope_type == "ontology",
@@ -570,6 +603,7 @@ class SemanticRetrievalCoordinator:
                 "write_applied": True,
                 "status": "stale",
                 "warning": "retrieval_index_missing",
+                "stale_manifest_ids": stale_manifest_ids,
             }
         service = SemanticProjectionJobService(
             session=self.session,
@@ -599,6 +633,7 @@ class SemanticRetrievalCoordinator:
                     "workspace_version"
                 ),
                 "projection_version": self.settings.semantic_retrieval_projection_version,
+                "stale_manifest_ids": stale_manifest_ids,
             }
         except Exception:
             # Deliberately do not expose provider errors, query text, or
@@ -610,6 +645,7 @@ class SemanticRetrievalCoordinator:
                 "write_applied": True,
                 "status": "failed",
                 "warning": "retrieval_index_failed",
+                "stale_manifest_ids": stale_manifest_ids,
             }
 
     def rebuild_affected(
@@ -732,6 +768,7 @@ class SemanticResourceRetrievalService:
                 "warnings": [*warnings, {"code": "semantic_recall_degraded", "message": "Vector recall is unavailable."}],
                 "completeness": "degraded",
             }
+        promote_exact_label_candidates(candidates, query)
         return {
             "candidates": candidates,
             "indexes": indexes,
@@ -758,12 +795,23 @@ class SemanticResourceRetrievalService:
                 ],
                 "completeness": "degraded",
             }
+        try:
+            workspace_version = retrieval_workspace_version(
+                self.session, self.settings, graph_set.scope_id
+            )
+        except LookupError:
+            return {
+                "candidates": [],
+                "indexes": [],
+                "warnings": [
+                    {"code": "semantic_recall_degraded", "message": "Vector recall is unavailable."}
+                ],
+                "completeness": "degraded",
+            }
         ontology = SimpleNamespace(
             ontology_id=graph_set.scope_id,
             graph_set_id=scope.graph_set_id,
-            workspace_version=str(
-                (graph_set.graph_set_metadata or {}).get("workspace_version") or ""
-            ),
+            workspace_version=workspace_version,
             source_signature=scope.source_signature,
         )
         return self.recall(
@@ -778,19 +826,218 @@ class SemanticResourceRetrievalService:
 def fuse_context_candidates(
     lexical: list[dict[str, Any]], semantic: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """Fuse by stable Ontology/IRI, never by display label or vector proximity."""
+    """Fuse scoped lexical, governed-mapping, and semantic candidates by identity."""
     by_key = {(item["ontology_id"], item["id"]): item for item in lexical}
     for item in lexical:
         _normalise_match(item, semantic_similarity=None)
+        _merge_mapping_evidence(item, item)
     for item in semantic:
         key = (item["ontology_id"], item["id"])
         existing = by_key.get(key)
         if existing is None:
             by_key[key] = item
+            if not _is_semantic_candidate(item):
+                _normalise_match(item, semantic_similarity=None)
+            _merge_mapping_evidence(item, item)
             continue
-        semantic_similarity = item["match"]["semantic_similarity"]
-        _normalise_match(existing, semantic_similarity=semantic_similarity)
+        if _is_semantic_candidate(item):
+            _normalise_match(
+                existing,
+                semantic_similarity=item["match"].get("semantic_similarity"),
+            )
+        else:
+            _merge_lexical_match(existing, item)
+        _merge_mapping_evidence(existing, item)
     return list(by_key.values())
+
+
+def promote_exact_label_candidates(
+    candidates: list[dict[str, Any]], query: str
+) -> list[dict[str, Any]]:
+    """Recover asserted-label exactness from a scoped retrieval candidate.
+
+    The lexical SPARQL corpus remains the primary source of exact evidence.
+    This guard covers an incomplete lexical scan without expanding its scope:
+    it only promotes a candidate which has already passed the same current
+    graph-set/manifest fences as semantic recall, and only when one of its
+    persisted asserted ``rdfs:label`` evidence values equals the normalized
+    user query. Callers run this before fusion so exact evidence is never
+    reconstructed from a fused semantic row.
+    """
+    normalized_query = normalize_retrieval_text(query)
+    if not normalized_query:
+        return candidates
+    for item in candidates:
+        matching_label = _matching_asserted_label(item, normalized_query)
+        if matching_label is None:
+            continue
+        item["label"] = matching_label
+        match = item.get("match")
+        if not isinstance(match, dict):
+            continue
+        reasons = set(match.get("reasons") or [])
+        reasons.add("exact_label")
+        match["reasons"] = sorted(reasons)
+        match["matched_fields"] = sorted(
+            set(match.get("matched_fields") or []) | {"label"}
+        )
+        match["matched_terms"] = sorted(
+            set(match.get("matched_terms") or []) | {normalized_query}
+        )
+        match["lexical_score"] = max(int(match.get("lexical_score", 0) or 0), 1000)
+        _normalise_match(item, semantic_similarity=match.get("semantic_similarity"))
+    return candidates
+
+
+def _matching_asserted_label(item: dict[str, Any], normalized_query: str) -> str | None:
+    """Return the exact asserted-label value without trusting display-label choice."""
+    evidence = [
+        value
+        for source in (item.get("labels"), (item.get("data") or {}).get("label_evidence"))
+        for value in (source or [])
+        if isinstance(value, dict)
+    ]
+    for value in evidence:
+        if value.get("predicate") != str(RDFS.label):
+            continue
+        raw = value.get("value")
+        if isinstance(raw, str) and normalize_retrieval_text(raw) == normalized_query:
+            return raw
+    # Documents created before label evidence was added retain their primary
+    # asserted label only.  The migration materialises it as evidence, while
+    # this fallback keeps a current in-process candidate backwards compatible.
+    display_label = item.get("label")
+    if isinstance(display_label, str) and normalize_retrieval_text(display_label) == normalized_query:
+        return display_label
+    return None
+
+
+def governed_mapping_lexical_candidates(
+    session: Session | None,
+    *,
+    ontology_ids: Iterable[str],
+    query: str,
+    resource_kinds: set[str],
+) -> list[dict[str, Any]]:
+    """Return exact matches from active, scope-bound Mapping evidence only.
+
+    Mapping values are governed PostgreSQL metadata, not a vector side effect.
+    The query is deliberately equality-only across an allow-list of structural
+    fields, and every candidate carries the same safe evidence payload stored
+    in the retrieval projection.  That makes an external field name usable as
+    a deterministic lexical anchor without joining to another Ontology.
+    """
+    scoped_ontology_ids = sorted({value for value in ontology_ids if value})
+    normalized_query = normalize_retrieval_text(query)
+    if session is None or not scoped_ontology_ids or not normalized_query:
+        return []
+    rows = session.scalars(
+        select(SemanticMappingModel)
+        .where(
+            SemanticMappingModel.ontology_id.in_(scoped_ontology_ids),
+            SemanticMappingModel.status == "active",
+        )
+        .order_by(
+            SemanticMappingModel.ontology_id,
+            SemanticMappingModel.target_id,
+            SemanticMappingModel.id,
+        )
+    )
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        kind = _mapping_target_kind(row.target_type)
+        if kind not in resource_kinds:
+            continue
+        evidence = _mapping_evidence(row)
+        matching_fields = {
+            "mapping_id": evidence["mapping_id"],
+            "mapping_external_field": evidence["external_field"],
+            "mapping_join_key": evidence["join_keys"],
+            "mapping_target_type": evidence["target_type"],
+        }
+        matched_fields = sorted(
+            field
+            for field, value in matching_fields.items()
+            if normalize_retrieval_text(value) == normalized_query
+        )
+        if not matched_fields:
+            continue
+        candidates.append(
+            {
+                "id": row.target_id,
+                "kind": kind,
+                "ontology_id": row.ontology_id,
+                "iri": row.target_id,
+                "label": _local_name(row.target_id),
+                "aliases": [],
+                "description": None,
+                "data": {"rdf_types": [], "mapping_evidence": [evidence]},
+                "mapping_evidence": [evidence],
+                "distance": 0,
+                "assertion_kind": "asserted",
+                "match": {
+                    "score": 900,
+                    "lexical_score": 900,
+                    "semantic_similarity": None,
+                    "effective_score": 0.9,
+                    "candidate_level": "exact",
+                    "method": "mapping",
+                    "matched_terms": [normalized_query],
+                    "matched_fields": matched_fields,
+                    "reasons": ["exact_mapping"],
+                },
+            }
+        )
+    return candidates
+
+
+def _is_semantic_candidate(item: dict[str, Any]) -> bool:
+    match = item.get("match") or {}
+    return (
+        match.get("candidate_level") == "semantic_candidate"
+        or "semantic_candidate" in set(match.get("reasons") or [])
+    )
+
+
+def _merge_lexical_match(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    """Merge exact governed evidence without discarding an existing vector score."""
+    match = existing["match"]
+    incoming_match = incoming["match"]
+    match["lexical_score"] = max(
+        int(match.get("lexical_score", match.get("score", 0)) or 0),
+        int(incoming_match.get("lexical_score", incoming_match.get("score", 0)) or 0),
+    )
+    match["reasons"] = sorted(
+        set(match.get("reasons") or []) | set(incoming_match.get("reasons") or [])
+    )
+    match["matched_fields"] = sorted(
+        set(match.get("matched_fields") or []) | set(incoming_match.get("matched_fields") or [])
+    )
+    match["matched_terms"] = sorted(
+        set(match.get("matched_terms") or []) | set(incoming_match.get("matched_terms") or [])
+    )
+    _normalise_match(existing, semantic_similarity=match.get("semantic_similarity"))
+
+
+def _merge_mapping_evidence(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    records = [
+        item
+        for source in (existing, incoming)
+        for item in [
+            *(source.get("mapping_evidence") or []),
+            *((source.get("data") or {}).get("mapping_evidence") or []),
+        ]
+        if isinstance(item, dict)
+    ]
+    if not records:
+        return
+    unique = {
+        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")): item
+        for item in records
+    }
+    evidence = [unique[key] for key in sorted(unique)]
+    existing["mapping_evidence"] = evidence
+    existing.setdefault("data", {})["mapping_evidence"] = evidence
 
 
 def _normalise_match(item: dict[str, Any], semantic_similarity: float | None) -> None:
@@ -839,15 +1086,25 @@ def recall_summary(candidates: list[dict[str, Any]], retrieval: dict[str, Any], 
 def _semantic_candidate(row: dict[str, Any], ontology_id: str, threshold: float) -> dict[str, Any]:
     similarity = round(float(row["similarity"]), 3)
     score = int(round(similarity * 1000))
+    mapping_evidence = _sanitise_mapping_evidence(row.get("mapping_evidence") or [])
+    labels = _sanitise_label_evidence(
+        row.get("labels") or [], row.get("label"), row.get("resource_kind")
+    )
     return {
         "id": row["resource_iri"],
         "kind": row["resource_kind"],
         "ontology_id": ontology_id,
         "iri": row["resource_iri"],
         "label": row.get("label") or _local_name(row["resource_iri"]),
+        "labels": labels,
         "aliases": [item.get("value", "") for item in row.get("aliases") or []],
         "description": next((item.get("value") for item in row.get("descriptions") or []), None),
-        "data": {"rdf_types": row.get("rdf_types") or []},
+        "data": {
+            "rdf_types": row.get("rdf_types") or [],
+            "mapping_evidence": mapping_evidence,
+            "label_evidence": labels,
+        },
+        "mapping_evidence": mapping_evidence,
         "distance": 0,
         "assertion_kind": row.get("assertion_kind") or "asserted",
         "match": {
@@ -865,10 +1122,23 @@ def _semantic_candidate(row: dict[str, Any], ontology_id: str, threshold: float)
     }
 
 
-def _document_record(*, resource_iri: str, resource_kind: str, label: str, aliases: list[dict[str, str]], descriptions: list[dict[str, str]], mapping_evidence: list[dict[str, str]], rdf_types: list[str], document_text: str, config: RetrievalConfig, **identity: Any) -> dict[str, Any]:
+def _document_record(*, resource_iri: str, resource_kind: str, label: str, labels: list[dict[str, str]], aliases: list[dict[str, str]], descriptions: list[dict[str, str]], mapping_evidence: list[dict[str, str]], rdf_types: list[str], document_text: str, config: RetrievalConfig, **identity: Any) -> dict[str, Any]:
     text_hash = hashlib.sha256(document_text.encode("utf-8")).hexdigest()
     document_id = hashlib.sha256(
-        f"{identity['graph_set_id']}|{resource_iri}|{resource_kind}|{config.projection_version}".encode("utf-8")
+        "|".join(
+            (
+                identity["graph_set_id"],
+                identity["workspace_version"],
+                identity["source_signature"],
+                identity["rule_signature"],
+                resource_iri,
+                resource_kind,
+                config.projection_version,
+                config.config_hash,
+                identity["job_id"],
+                identity["partition"],
+            )
+        ).encode("utf-8")
     ).hexdigest()
     return {
         "id": document_id,
@@ -876,6 +1146,7 @@ def _document_record(*, resource_iri: str, resource_kind: str, label: str, alias
         "resource_kind": resource_kind,
         "assertion_kind": "asserted",
         "label": label,
+        "labels": labels,
         "aliases": aliases,
         "descriptions": descriptions,
         "mapping_evidence": mapping_evidence,
@@ -902,6 +1173,7 @@ def _document_text(
     *,
     iri: str,
     label: str,
+    labels: list[dict[str, str]],
     aliases: list[dict[str, str]],
     descriptions: list[dict[str, str]],
     rdf_types: list[str],
@@ -909,6 +1181,7 @@ def _document_text(
 ) -> str:
     fields = [
         ("label", label),
+        ("labels", ", ".join(item["value"] for item in labels)),
         ("aliases", ", ".join(item["value"] for item in aliases)),
         ("description", " ".join(item["value"] for item in descriptions)),
         ("identifier", _local_name(iri)),
@@ -959,6 +1232,31 @@ def _sorted_evidence(values: list[dict[str, str]]) -> list[dict[str, str]]:
     ]
 
 
+def _sanitise_label_evidence(
+    values: list[Any], fallback: Any, resource_kind: Any
+) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for value in values:
+        if not isinstance(value, dict) or value.get("predicate") != str(RDFS.label):
+            continue
+        label = value.get("value")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        language = value.get("language")
+        records.append(
+            {
+                "predicate": str(RDFS.label),
+                "value": label,
+                "language": language if isinstance(language, str) else "",
+            }
+        )
+    if not records and resource_kind != "rule" and isinstance(fallback, str) and fallback.strip():
+        records.append(
+            {"predicate": str(RDFS.label), "value": fallback, "language": ""}
+        )
+    return _sorted_evidence(records)
+
+
 def _vector_literal(vector: list[float]) -> str:
     return "[" + ",".join(f"{item:.9g}" for item in vector) + "]"
 
@@ -1000,6 +1298,55 @@ def _mapping_join_key_names(value: Any) -> list[str]:
     if isinstance(value, list):
         return sorted({name for item in value for name in _mapping_join_key_names(item)})
     return []
+
+
+def _mapping_target_kind(target_type: str) -> str:
+    return {
+        "class": "concept",
+        "concept": "concept",
+        "property": "relation",
+        "relation_type": "relation",
+        "relation": "relation",
+        "entity": "instance",
+        "instance": "instance",
+        "rule": "rule",
+        "operation": "operation",
+    }.get(target_type, "instance")
+
+
+def _mapping_evidence(row: SemanticMappingModel) -> dict[str, str]:
+    return {
+        "mapping_id": row.id,
+        "target_type": row.target_type,
+        "external_field": _local_name(row.external_field_name),
+        "join_keys": ", ".join(_mapping_join_key_names(row.join_key or {})),
+    }
+
+
+def _sanitise_mapping_evidence(values: list[Any]) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        mapping_id = value.get("mapping_id")
+        target_type = value.get("target_type")
+        external_field = value.get("external_field")
+        join_keys = value.get("join_keys")
+        if not all(isinstance(item, str) for item in (mapping_id, target_type, external_field)):
+            continue
+        records.append(
+            {
+                "mapping_id": mapping_id,
+                "target_type": target_type,
+                "external_field": external_field,
+                "join_keys": join_keys if isinstance(join_keys, str) else "",
+            }
+        )
+    unique = {
+        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")): item
+        for item in records
+    }
+    return [unique[key] for key in sorted(unique)]
 
 
 def _configured_ambiguity_margin(retrieval: dict[str, Any]) -> float:

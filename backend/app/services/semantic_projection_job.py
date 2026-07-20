@@ -162,9 +162,15 @@ class SemanticProjectionJobService:
             if mode == "rebuild":
                 self._promote_manifest(job)
         except Exception as exc:
-            job.status = "failed"
-            job.error = str(exc)
-            job.finished_at = datetime.now(UTC)
+            # A writer can fail during ``flush`` (for example an immutable
+            # retrieval partition colliding with a prior build).  SQLAlchemy
+            # then marks this session inactive, so the failure lifecycle must
+            # start with a rollback and reload before it can be persisted.
+            self.session.rollback()
+            failed_job = self._get_job(job_id)
+            failed_job.status = "failed"
+            failed_job.error = str(exc)
+            failed_job.finished_at = datetime.now(UTC)
             self.session.commit()
             raise
         return job

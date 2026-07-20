@@ -11,6 +11,7 @@ from app.repositories.models import OntologyModel, ProjectModel
 from app.repositories.rdf_store import RdfStoreUnavailable, SparqlQueryTimeout, SparqlResult
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.scoped_sparql_query import ScopedSparqlQueryService
+from app.services.semantic_context_query import SemanticContextQueryService
 from app.services.semantic_query_scope import SemanticQueryScopeResolver
 
 
@@ -112,3 +113,83 @@ def test_sparql_mcp_preserves_runtime_error_codes(scoped_mcp, error, code):
 
     assert result["ok"] is False
     assert result["error_code"] == code
+
+
+def test_context_mcp_keeps_bilingual_asserted_label_exactness(scoped_mcp, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
+    graph = "https://mcp.test/graph/ontology/o"
+
+    class BilingualStore:
+        def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+            return SparqlResult(
+                result={
+                    "head": {"vars": []},
+                    "results": {
+                        "bindings": [
+                            {
+                                "graph": {"type": "uri", "value": graph},
+                                "subject": {
+                                    "type": "uri",
+                                    "value": "https://example.test/CustomerSupportWorkflow",
+                                },
+                                "predicate": {
+                                    "type": "uri",
+                                    "value": "http://www.w3.org/2000/01/rdf-schema#label",
+                                },
+                                "object": {
+                                    "type": "literal",
+                                    "value": "客户支持工作流",
+                                    "xml:lang": "zh",
+                                },
+                                "subjectLabel": {
+                                    "type": "literal",
+                                    "value": "Customer Support Workflow",
+                                    "xml:lang": "en",
+                                },
+                                "subjectTypes": {
+                                    "type": "literal",
+                                    "value": "http://www.w3.org/2002/07/owl#Class",
+                                },
+                                "matchedField": {"type": "literal", "value": "label"},
+                                "matchedValue": {
+                                    "type": "literal",
+                                    "value": "客户支持工作流",
+                                },
+                            }
+                        ]
+                    },
+                },
+                result_format="application/sparql-results+json",
+            )
+
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._context_query_service",
+        lambda session: SemanticContextQueryService(
+            session,
+            BilingualStore(),
+            SemanticQueryScopeResolver(session, settings),
+        ),
+    )
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall",
+        lambda *_args, **_kwargs: {
+            "candidates": [],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        query="客户支持工作流",
+        resource_types=["concept"],
+        depth=0,
+    )
+
+    assert result["ok"] is True
+    body = result["data"]
+    assert body["recall"]["match_status"] == "exact"
+    assert body["primary_matches"][0]["label"] == "客户支持工作流"
+    assert body["primary_matches"][0]["match"]["reasons"] == ["exact_label"]

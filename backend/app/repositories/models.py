@@ -1289,6 +1289,7 @@ class SemanticRetrievalDocumentModel(Base):
             "resource_kind",
             "projection_version",
             "embedding_config_hash",
+            "build_job_id",
             name="uq_semantic_retrieval_document_current_input",
         ),
         Index(
@@ -1314,6 +1315,7 @@ class SemanticRetrievalDocumentModel(Base):
     resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     assertion_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="asserted")
     label: Mapped[str | None] = mapped_column(Text)
+    labels: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
     aliases: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
     descriptions: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
     mapping_evidence: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)

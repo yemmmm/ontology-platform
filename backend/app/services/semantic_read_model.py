@@ -24,7 +24,9 @@ from app.services.semantic_sparql_templates import ReadModelTemplate, get_templa
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     fuse_context_candidates,
+    governed_mapping_lexical_candidates,
     normalize_retrieval_text,
+    promote_exact_label_candidates,
     recall_summary,
 )
 
@@ -247,6 +249,24 @@ class SemanticReadModelService:
                     decorated["evidence_ids"] = []
                     decorated["evidence_status"] = "not_applicable"
             items.append(decorated)
+        if q and template.name in {"ontology-schema-summary", "entity-list"}:
+            items, retrieval = self._compose_public_list_search(
+                template,
+                scope,
+                items,
+                q=q,
+                class_iri=class_iri,
+                limit=bounded_limit,
+                search_mode=search_mode,
+            )
+            envelope = self._envelope(
+                template=template,
+                scope=scope,
+                items=items,
+                warnings=[*warnings, *retrieval.get("warnings", [])],
+            )
+            envelope["recall"] = recall_summary(items, retrieval, search_mode)
+            return envelope
         return self._envelope(
             template=template,
             scope=scope,
@@ -1502,6 +1522,7 @@ class SemanticReadModelService:
                     limit=bounded_limit,
                 )
                 semantic_items = retrieval["candidates"]
+            promote_exact_label_candidates(semantic_items, q)
             if class_iri:
                 semantic_items = [
                     item
@@ -1513,12 +1534,152 @@ class SemanticReadModelService:
                 self._entity_lexical_candidate(item, q, ontology_id) for item in items
             ]
             semantic_rows = [
-                self._entity_semantic_row(candidate, scope) for candidate in semantic_items
+                self._entity_semantic_row(candidate, scope)
+                for candidate in [
+                    *semantic_items,
+                    *governed_mapping_lexical_candidates(
+                        self.session,
+                        ontology_ids=[ontology_id],
+                        query=q,
+                        resource_kinds={"instance"},
+                    ),
+                ]
             ]
             items = fuse_context_candidates(lexical_items, semantic_rows)
             items.sort(key=_entity_search_sort_key)
             items = items[:bounded_limit]
         return items, retrieval
+
+    def _compose_public_list_search(
+        self,
+        template: ReadModelTemplate,
+        scope: ScopeResolution,
+        items: list[dict[str, Any]],
+        *,
+        q: str,
+        class_iri: str | None,
+        limit: int,
+        search_mode: str,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Add hybrid recall to legacy public list models without changing rows.
+
+        ``entity-list`` and ``ontology-schema-summary`` are established public
+        contracts.  Their SPARQL templates still provide canonical row shape;
+        this adapter merely filters lexical rows and merges scope-fenced recall
+        candidates into that same shape when callers supply ``q``.
+        """
+        resource_kind = "instance" if template.name == "entity-list" else "concept"
+        ontology_id = self._entity_search_ontology_id(scope.graph_set_id)
+        lexical_items = [
+            candidate
+            for item in items
+            if (
+                candidate := self._public_list_lexical_candidate(
+                    item,
+                    q,
+                    ontology_id,
+                    resource_kind,
+                    class_iri,
+                )
+            )
+            is not None
+        ]
+        retrieval: dict[str, Any] = {
+            "candidates": [], "indexes": [], "warnings": [], "completeness": "complete"
+        }
+        semantic_items: list[dict[str, Any]] = []
+        if self.retrieval_service is not None:
+            retrieval = self.retrieval_service.recall_graph_set(
+                scope=scope,
+                query=q,
+                resource_kinds={resource_kind},
+                search_mode=search_mode,
+                limit=limit,
+            )
+            semantic_items = retrieval["candidates"]
+        promote_exact_label_candidates(semantic_items, q)
+        if class_iri and resource_kind == "instance":
+            semantic_items = [
+                item
+                for item in semantic_items
+                if class_iri in item.get("data", {}).get("rdf_types", [])
+            ]
+        semantic_rows = [
+            self._public_list_semantic_row(candidate, scope, template)
+            for candidate in [
+                *semantic_items,
+                *governed_mapping_lexical_candidates(
+                    self.session,
+                    ontology_ids=[ontology_id],
+                    query=q,
+                    resource_kinds={resource_kind},
+                ),
+            ]
+        ]
+        fused = fuse_context_candidates(lexical_items, semantic_rows)
+        fused.sort(key=_entity_search_sort_key)
+        return fused[:limit], retrieval
+
+    @staticmethod
+    def _public_list_lexical_candidate(
+        item: dict[str, Any],
+        query: str,
+        ontology_id: str,
+        resource_kind: str,
+        class_iri: str | None,
+    ) -> dict[str, Any] | None:
+        if class_iri and resource_kind == "instance" and item.get("class_iri") != class_iri:
+            return None
+        normalized_query = normalize_retrieval_text(query)
+        label = normalize_retrieval_text(str(item.get("label") or ""))
+        iri = normalize_retrieval_text(str(item.get("iri") or ""))
+        if label == normalized_query:
+            score, reason, field = 1000, "exact_label", "label"
+        elif iri == normalized_query:
+            score, reason, field = 600, "identifier", "identifier"
+        elif normalized_query and normalized_query in label:
+            score, reason, field = 750, "label_contains", "label"
+        else:
+            return None
+        return {
+            **item,
+            "kind": resource_kind,
+            "ontology_id": ontology_id,
+            "match": {
+                "score": score,
+                "reasons": [reason],
+                "matched_fields": [field],
+                "matched_terms": [normalized_query],
+            },
+        }
+
+    @staticmethod
+    def _public_list_semantic_row(
+        candidate: dict[str, Any], scope: ScopeResolution, template: ReadModelTemplate
+    ) -> dict[str, Any]:
+        rdf_types = list(candidate.get("data", {}).get("rdf_types", []))
+        item = {
+            **candidate,
+            "source_graph_iri": scope.source_graph_iris[0] if scope.source_graph_iris else "",
+            "evidence_status": template.evidence_status,
+            "evidence_ids": [],
+            "provenance": {
+                "generated_by": None,
+                "run_id": None,
+                "actor": None,
+                "timestamp": None,
+            },
+            "audit_status": "system_accepted",
+            "staleness": {"is_stale": False, "reason": None},
+        }
+        if template.name == "entity-list":
+            item.update(
+                {
+                    "class_iri": rdf_types[0] if rdf_types else None,
+                    "class_label": None,
+                }
+            )
+        return item
 
     def _entity_search_ontology_id(self, graph_set_id: str) -> str:
         if self.session is None:

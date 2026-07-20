@@ -118,6 +118,45 @@ def test_turtle_edit_builds_insert_data_update(service, in_memory_session) -> No
     assert result["graph_revisions"][GRAPH] == 1
 
 
+def test_edit_keeps_committed_fact_when_retrieval_rebuild_fails(
+    in_memory_session, settings, monkeypatch
+) -> None:
+    """A disposable vector failure must not turn a successful RDF edit into a failure."""
+
+    calls = []
+
+    class FailingRetrievalCoordinator:
+        def __init__(self, session, rdf_store, settings):  # noqa: ANN001, ARG002
+            self.session = session
+
+        def rebuild_affected(self, *, affected_graph_iris=(), ontology_ids=()):
+            calls.append((list(affected_graph_iris), list(ontology_ids)))
+            return [
+                {
+                    "ontology_id": "ontology-1",
+                    "write_applied": True,
+                    "status": "failed",
+                    "warning": "retrieval_index_failed",
+                }
+            ]
+
+    monkeypatch.setattr(
+        "app.services.semantic.SemanticRetrievalCoordinator", FailingRetrievalCoordinator
+    )
+    store = FakeRdfStore()
+    turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
+
+    result = SemanticService(in_memory_session, store, settings).apply_edit(
+        "turtle", turtle, target_graph_iri=GRAPH, validate=False
+    )
+
+    assert result["applied"] is True
+    assert store.updates
+    assert in_memory_session.get(SemanticEditAuditModel, result["audit_id"]) is not None
+    assert result["retrieval_indexes"][0]["status"] == "failed"
+    assert calls == [([GRAPH], [])]
+
+
 def test_edit_records_audit_metadata(service, in_memory_session) -> None:
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
     result = service.apply_edit(

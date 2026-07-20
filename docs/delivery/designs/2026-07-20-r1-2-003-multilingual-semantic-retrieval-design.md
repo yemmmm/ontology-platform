@@ -5,7 +5,15 @@
 - Shared test plan: `docs/delivery/test-plans/2026-07-20-r1-2-003-multilingual-semantic-retrieval-test-plan.md`
 - Delivery record: `docs/delivery/records/2026-07-20-r1-2-003-multilingual-semantic-retrieval-delivery-record.md`
 - Contract frozen: 2026-07-20 user-confirmed decisions
-- Status: plan review Round 2 PASS; product implementation not started
+- Status: implemented; independent Round 8 PASS after migrations `0029`–`0031`
+
+## 实现结果
+
+- PostgreSQL/pgvector 持久化投影、预过滤 exact cosine、版本化文档身份和安全降级已交付；旧多标签
+  投影在 `0031` 后显式 stale，需重建后才作为 complete 检索参与查询。
+- Context、MCP、Entity 与 Class 复用候选融合、精确证据、稳定排序和 `recall` 合同；非 Rule 写入
+  同步重建或以 `failed|stale` 明确降级，不回滚已提交权威事实。
+- 交付证据、失败/修复轮次和最终独立验收见共享测试计划与交付记录。
 
 ## 目标
 

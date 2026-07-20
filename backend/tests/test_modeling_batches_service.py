@@ -723,6 +723,43 @@ def test_apply_marks_projection_manifest_stale_immediately(modeling):
     assert service.get_modeling_context(ONTOLOGY_ID)["derived_state"]["stale_projection_count"] == 1
 
 
+def test_apply_keeps_modeling_fact_when_retrieval_rebuild_is_degraded(modeling, monkeypatch):
+    service, _db, _rdf, session_id, lease, version = modeling
+    calls = []
+
+    class FailingRetrievalCoordinator:
+        def __init__(self, session, rdf_store, settings):  # noqa: ANN001, ARG002
+            pass
+
+        def rebuild_affected(self, *, affected_graph_iris=(), ontology_ids=()):
+            calls.append((list(affected_graph_iris), list(ontology_ids)))
+            return [
+                {
+                    "ontology_id": ONTOLOGY_ID,
+                    "write_applied": True,
+                    "status": "failed",
+                    "warning": "retrieval_index_failed",
+                }
+            ]
+
+    monkeypatch.setattr(
+        "app.services.modeling_batches.SemanticRetrievalCoordinator", FailingRetrievalCoordinator
+    )
+    result = service.submit(
+        session_id,
+        _request(
+            version,
+            [_item("customer")],
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert result["attempt_status"] == "applied"
+    assert result["retrieval_indexes"][0]["status"] == "failed"
+    assert calls == [([], [ONTOLOGY_ID])]
+
+
 def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     entity_iri = "https://r004.test/resource/entity/customer"

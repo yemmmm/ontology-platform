@@ -23,6 +23,8 @@ from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointSe
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     fuse_context_candidates,
+    governed_mapping_lexical_candidates,
+    promote_exact_label_candidates,
     recall_summary,
 )
 from app.services.semantic_sparql_templates import (
@@ -144,6 +146,14 @@ class SemanticContextQueryService:
         candidates.extend(self._rule_candidates(scope, text, terms))
         if "operation" in selected_resource_types:
             candidates.extend(self._operation_candidates(scope, text, terms))
+        candidates.extend(
+            governed_mapping_lexical_candidates(
+                self.session,
+                ontology_ids=(entry.ontology_id for entry in scope.ontologies),
+                query=text,
+                resource_kinds=selected_resource_types,
+            )
+        )
         retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall(
             scope=scope,
             query=text,
@@ -151,7 +161,8 @@ class SemanticContextQueryService:
             search_mode=search_mode,
             limit=limit,
         )
-        candidates = fuse_context_candidates(candidates, retrieval["candidates"])
+        retrieval_candidates = promote_exact_label_candidates(retrieval["candidates"], text)
+        candidates = fuse_context_candidates(candidates, retrieval_candidates)
         warnings.extend(retrieval["warnings"])
         candidates = [
             item
@@ -267,6 +278,7 @@ class SemanticContextQueryService:
                         "ontology_id": ontology_id,
                         "iri": subject,
                         "label": None,
+                        "labels": [],
                         "aliases": [],
                         "description": None,
                         "types": set(),
@@ -275,7 +287,9 @@ class SemanticContextQueryService:
                         "data": {},
                     },
                 )
-                resource["label"] = resource["label"] or _value(row, "subjectLabel")
+                subject_label = _value(row, "subjectLabel")
+                if subject_label and subject_label not in resource["labels"]:
+                    resource["labels"].append(subject_label)
                 for alias in _split_aggregate(_value(row, "aliases")):
                     if alias not in resource["aliases"]:
                         resource["aliases"].append(alias)
@@ -285,7 +299,8 @@ class SemanticContextQueryService:
                 matched_field = _value(row, "matchedField")
                 matched_value = _value(row, "matchedValue")
                 if matched_field == "label" and matched_value:
-                    resource["label"] = resource["label"] or matched_value
+                    if matched_value not in resource["labels"]:
+                        resource["labels"].append(matched_value)
                 elif matched_field == "alias" and matched_value:
                     if matched_value not in resource["aliases"]:
                         resource["aliases"].append(matched_value)
@@ -322,19 +337,27 @@ class SemanticContextQueryService:
         candidates: list[dict[str, Any]] = []
         for resource in resources.values():
             types = resource.pop("types")
+            labels = resource.pop("labels")
             if self.operation_type in types:
                 continue
             if types & _CLASS_TYPES:
                 resource["kind"] = "concept"
             elif types & _RELATION_TYPES:
                 resource["kind"] = "relation"
-            resource["data"] = {"rdf_types": sorted(types)}
-            resource["label"] = resource["label"] or _local_name(resource["iri"])
+            exact_label = next(
+                (value for value in labels if _normalize_value(value) == _normalize_value(text)),
+                None,
+            )
+            resource["data"] = {
+                "rdf_types": sorted(types),
+                "label_evidence": sorted(set(labels)),
+            }
+            resource["label"] = exact_label or (labels[0] if labels else _local_name(resource["iri"]))
             match = _best_match(
                 text,
                 terms,
                 [
-                    ("label", resource["label"], 1000, "exact_label"),
+                    *(("label", value, 1000, "exact_label") for value in labels),
                     *(("alias", alias, 900, "exact_alias") for alias in resource["aliases"]),
                     ("identifier", resource["iri"], 600, "identifier"),
                     ("description", resource["description"], 450, "description"),
@@ -1026,6 +1049,7 @@ def _sort_key(item: dict[str, Any], scope: SemanticQueryScope) -> tuple[Any, ...
     ontology_order = {entry.ontology_id: index for index, entry in enumerate(scope.ontologies)}
     stale_penalty = 100 if _item_is_stale(item, scope) else 0
     return (
+        0 if item["match"].get("candidate_level") == "exact" else 1,
         -(item["match"]["score"] - stale_penalty),
         ontology_order.get(item["ontology_id"], len(ontology_order)),
         _KIND_ORDER.get(item["kind"], 99),

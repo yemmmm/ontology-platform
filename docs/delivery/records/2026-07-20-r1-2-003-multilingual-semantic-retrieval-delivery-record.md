@@ -1,15 +1,15 @@
 # R1.2-003 多语言与语义候选召回交付记录
 
 - Requirement source: `docs/requirements/requirements-v1.2.md` R1.2-003
-- Status: in-progress — implementation resumed from frozen design
+- Status: delivered
 - Started: 2026-07-20T10:41:46+08:00
-- Last updated: 2026-07-20T12:15:29+08:00
+- Last updated: 2026-07-20T14:16:13+08:00
 - Design: `docs/delivery/designs/2026-07-20-r1-2-003-multilingual-semantic-retrieval-design.md`
 - Architecture decision: `docs/architecture/decisions/0006-pgvector-semantic-retrieval-projection.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-20-r1-2-003-multilingual-semantic-retrieval-test-plan.md`
 - Delivery baseline: `920b5ed7df1e2f3575b6ef5ff0f5fe900c60d432`; pre-existing R1.1-003 and
   `.codex/r11003_*` worktree changes are unrelated and excluded
-- Delivery commit: pending; subject will be `Design multilingual semantic retrieval`
+- Delivery commit: pending repair closure; subject will be `Complete multilingual semantic retrieval`
 
 ## Confirmed contract
 
@@ -222,6 +222,114 @@
   backfill remain unexecuted because the local environment has neither an authorized test key nor
   a safe persistent retrieval fixture.
 
+### 2026-07-20T12:36:32+08:00 — independent test Round 2 — requirement_tester and main agent
+
+- Context: Round 2 first re-tested the two Round 1 High defects after the shared coordinator and
+  Entity-fusion repair.
+- Action/decision: the prior write-lifecycle and Entity fusion/order defects pass, but Round 2 is
+  `FAIL` with two new High contract defects: Context ranking permits a higher numeric semantic score
+  ahead of an exact alias/identifier; Mapping terms are only opaque embedding input, not exact,
+  explainable lexical evidence in Context or Entity results.
+- Evidence: appended Round 2 in the shared test plan; `142` affected regressions, full backend
+  `731 passed, 6 skipped`, frontend build/38 Playwright, restart and health checks pass. A direct
+  deterministic probe demonstrated semantic `950` ranking before exact alias `900`.
+- Outcome/next step: developer must make exact evidence a precedence layer and expose governed
+  Mapping evidence through the shared retrieval contract; independent Round 3 must retest both
+  new defects. Authenticated public REST/MCP and persistent backfill remain environment-unexecuted.
+
+### 2026-07-20T12:55:05+08:00 — independent test Round 3 — requirement_tester and main agent
+
+- Context: Round 3 re-tested exact-priority and Mapping evidence repairs together with their
+  Context/Entity parity contract.
+- Action/decision: Round 3 is `FAIL`. Exact alias/Mapping precedence, scope safety and Entity
+  Mapping return now pass, but the governed Mapping `target_type` is embedded/stored without being
+  accepted as an exact lexical Mapping term. This is a High gap because `target_type` is explicitly
+  in the frozen Mapping text contract.
+- Evidence: appended Round 3 in the shared test plan; 25 focused tests, full backend
+  `735 passed, 6 skipped`, frontend build/38 Playwright, restart/health and whitespace checks pass;
+  direct probe finds `customer_id` and mapping ID but not `target_type=class`.
+- Outcome/next step: expand the same active/scope-bound Mapping matcher to include `target_type`,
+  with regression and parity re-test in Round 4. Authenticated public REST/MCP, persistent backfill
+  and write-rebuild runtime cases remain environment-unexecuted.
+
+### 2026-07-20T13:03:17+08:00 — independent test Round 4 — requirement_tester and main agent
+
+- Context: Round 4 independently re-tested the final Mapping `target_type` repair and all earlier
+  repair contracts.
+- Action/decision: no code defect reproduced; `target_type=class` returns `exact_mapping` with
+  `mapping_target_type`, previous exact-priority/scope/Entity/write-lifecycle repairs remain valid.
+  The round is `BLOCKED`, not PASS, because no authorized REST/MCP test credential exists and the
+  persistent database intentionally has zero retrieval documents.
+- Evidence: Round 4 appended in the shared test plan; 113 focused tests, full backend
+  `735 passed, 6 skipped`, frontend build/38 Playwright, restart, health and whitespace checks pass.
+- Outcome/next step: create a uniquely prefixed temporary local acceptance fixture and test key;
+  run authorized public REST/MCP, backfill and write/rebuild checks; then remove only that proven
+  fixture and record cleanup before the final independent PASS decision.
+
+### 2026-07-20T13:21:25+08:00 — independent test Round 5 — requirement_tester and main agent
+
+- Context: a unique, authorized temporary fixture removed the prior credentials/documents block;
+  its `finally` cleanup proved zero remaining fixture graphs, documents, edits, graph sets, jobs,
+  keys, manifests, ontologies and projects.
+- Action/decision: Round 5 is `FAIL` with a High persistent-retrieval identity defect. Backfill
+  succeeded with five documents and a current manifest, but the public Chinese Context request for
+  that same fixture returned `config_mismatch`, degraded `no_match` and no candidates.
+- Evidence: Round 5 appended in the shared test plan, including projection settings, response
+  shape and cleanup counts. The reader's identity predicates include graph set, Ontology, workspace
+  and source/rule signatures, projection/config identity and active job; implementation must trace
+  the writer-to-reader mismatch rather than relaxing isolation.
+- Outcome/next step: repair the exact identity mismatch and re-run the isolated authorized fixture
+  end-to-end, including Context/Entity/Class, MCP parity and non-Rule write/rebuild matrix, before
+  considering independent PASS.
+
+### 2026-07-20T13:42:57+08:00 — independent test Round 6 — requirement_tester and main agent
+
+- Context: a fresh authorized fixture proved the Round 5 workspace-version repair: initial
+  persistent backfill and public REST/MCP Context parity were current and complete; controlled
+  provider failure safely degraded. Every fixture resource was removed with zero residual graphs,
+  documents, jobs, manifests, audits, keys, Ontologies and Projects.
+- Action/decision: Round 6 is `FAIL` with four High defects. A Chinese asserted label is returned
+  only as semantic rather than `exact_label`; Entity/Class public routes omit their hybrid recall
+  behavior; non-Rule RDF edit applies facts but fails/stales rebuilding; retrieval document IDs omit
+  workspace/source/job identity, causing replacement-build collisions and leaving jobs `running`
+  without persisted error.
+- Evidence: Round 6 in the shared test plan. Live root cause: same-resource rebuild reuses the
+  document primary key, `write_documents(... flush)` conflicts, and `run_job` attempts to record
+  failure after the failed flush. Initial backfill/Context parity and provider degradation prove
+  the defect is limited to replacement-build and read-adapter contracts.
+- Outcome/next step: repair document partition identity and failure persistence, trace exact-label
+  loss, connect Entity/Class public read adapters to shared retrieval, then run a fresh full fixture
+  in Round 7 with the same zero-residue cleanup proof.
+
+### 2026-07-20T14:03:21+08:00 — independent test Round 7 — requirement_tester and main agent
+
+- Context: fresh authorized fixture re-tested the 0030 partition identity, public Entity/Class
+  adapters, Context/MCP and non-Rule rebuild failure/recovery paths. Cleanup again left zero test
+  data and keys.
+- Action/decision: Round 7 is `FAIL` with one remaining High defect. Class hybrid recall, exact
+  evidence for the tested route, non-Rule applied/current, retry current, growing documents without
+  collision, provider failure persistence and recovery all pass; however bilingual asserted Chinese
+  `rdfs:label` returns only semantic candidate in REST/MCP Context and Entity, not `exact_label`.
+- Evidence: Round 7 in the shared test plan; migration 0030 current, service health and whitespace
+  check pass; public document count grows `3` to `7` across rebuild without collision.
+- Outcome/next step: trace the actual bilingual RDF-label normalization/evidence path and make
+  exact-label promotion work across Context, MCP and Entity; re-run a fresh isolated Round 8
+  fixture with complete cleanup proof.
+
+### 2026-07-20T14:16:13+08:00 — independent test Round 8 and delivery acceptance — requirement_tester and main agent
+
+- Context: migration `0031` forced legacy primary-label-only manifests stale so a fresh bilingual
+  fixture could verify full label evidence after explicit rebuild.
+- Action/decision: Round 8 returned `PASS`. Authorized REST/MCP Context, Entity and Class returned
+  Chinese exact-label evidence from a current projection; initial backfill, non-Rule write/retry,
+  provider failure degradation and public recovery all met the frozen contract.
+- Evidence: Round 8 in the shared test plan; backend migration head `0031`, full backend
+  `742 passed, 6 skipped`, frontend build/38 Playwright, restart/health and `git diff --check` pass.
+  Fixture cleanup left zero RDF graphs, Projects, Ontologies, documents, jobs, manifests, both keys
+  and edit audits.
+- Outcome/next step: synchronize requirement/design/test/record status, execute final local gates,
+  inspect change impact and commit the verified repair closure.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -238,6 +346,7 @@
 | --- | --- | --- | --- | --- |
 | Documentation 1 | baseline `920b5ed` | Write requirement, ADR, design, test plan, and this record | plan review Round 2 PASS; final checks pending | review-complete |
 | Implementation 1 | replacement development handoff | Independent Round 1 found missing non-Rule synchronous rebuild/outcome and divergent Entity fusion/order | Round 1 FAIL; exact affected paths and passing evidence in shared test plan | repair and retest required |
+| Implementation 2 | Rounds 2–7 repair cycles | Fixed exact evidence, Mapping terms, write coordination, partition identity, public adapters and bilingual labels | focused/full/runtime checks and final Round 8 independent PASS | delivered |
 
 ## Independent test rounds
 
@@ -245,6 +354,8 @@
 | --- | --- | --- | --- | --- |
 | Not started | documentation-only delivery | N/A | Product implementation and independent acceptance remain future work | shared test plan |
 | 1 | replacement development handoff | FAIL | High: non-Rule write lifecycle; High: Entity fusion/order; authenticated public paths and persistent backfill unexecuted | shared test plan Round 1 |
+| 2–7 | successive repair handoffs | FAIL | Exact-priority/Mapping, runtime identity, public adapters, replacement build and bilingual-label defects; each remains detailed in the shared plan | shared test plan Rounds 2–7 |
+| 8 | migration `0031` fresh authorized fixture | PASS | All prior High defects resolved; no unexecuted acceptance gate | shared test plan Round 8 |
 
 ## Final verification
 
@@ -259,10 +370,32 @@
 - Residual risks and follow-ups: product implementation, migration rehearsal, real index backfill,
   independent PASS, runtime restart, and R1.2/R-103 status closure remain pending.
 
+## Final closure update
+
+- Required checks: plan review Round 3 `PASS`; developer and independent full backend suites pass
+  (`742 passed, 6 skipped`); frontend build and 38 Playwright pass; migrations `0029`–`0031` are
+  current; `git diff --check` passes. Final GitNexus detection reports 50 changed symbols across
+  six expected Context/Projection/Read-model flows (high risk by breadth); their caller paths were
+  rechecked through the full suite and Round 8 live acceptance.
+- Runtime/restart health: `ontology-platform.service` active; backend health and frontend root pass.
+  Round 8 independently exercised authorized REST/MCP, persistent backfill, Entity/Class, non-Rule
+  write/retry, provider failure degradation and recovery using a fully cleaned temporary fixture.
+- Documentation/status sync: R1.2-003 requirement, design, shared plan and this record are marked
+  delivered. R-103 remains Pending because this delivery intentionally covers its required
+  consumption subset, not a new generic platform commitment.
+- Cleanup: Round 8 confirmed zero fixture-owned RDF graphs, Projects, Ontologies, documents, jobs,
+  manifests, keys and edit audits.
+- Residual risks and follow-ups: PostgreSQL's pre-existing collation-version warning (glibc 2.41
+  database versus 2.36 host) did not affect migration/query acceptance; schedule normal
+  refresh/reindex maintenance separately.
+
 ## Retrospective
 
-- Scope or design deviations: none at document creation.
-- Rework and root causes: pending.
+- Scope or design deviations: no functional scope expansion; implementation required migrations
+  `0030` and `0031` to honor immutable replacement partitions and multilingual label evidence.
+- Rework and root causes: independent runtime fixtures exposed missing non-Rule coordination,
+  document identity, public read adapters and multi-label persistence that unit-level checks had not
+  covered; each failure remains retained in the shared plan.
 - What shortened or delayed delivery: reusing the existing R-006 scope, match, projection-job, and
   manifest contracts reduced new surface; the current fake vector backend requires explicit infra
   design.

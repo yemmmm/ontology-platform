@@ -1,5 +1,4 @@
-from datetime import UTC, datetime
-
+import pytest
 from sqlalchemy import select
 
 from app.repositories.models import (
@@ -116,6 +115,51 @@ def test_run_job_calls_writer_and_promotes_manifest(in_memory_session):
     assert manifest is not None
     assert manifest.status == "current"
     assert manifest.active_job_id == job.id
+
+
+def test_writer_flush_failure_marks_job_failed_and_allows_retry(in_memory_session):
+    """A failed flush must not strand the committed job in ``running``."""
+    _seed_graph_set(in_memory_session)
+
+    class FlushFailingWriter:
+        kind = "search"
+
+        def rebuild(self, job_id, scope, partition):  # noqa: ARG002
+            in_memory_session.add(
+                SemanticGraphSetModel(
+                    id="gs-1",
+                    name="duplicate",
+                    scope_type="ontology_version",
+                    scope_id="duplicate",
+                    source_signature="duplicate",
+                )
+            )
+            in_memory_session.flush()
+            return {"node_count": 0, "relationship_count": 0, "document_count": 0}
+
+    service = _service(in_memory_session, search=FlushFailingWriter())
+    failed = service.create_job(
+        graph_set_id="gs-1",
+        projection_kind="search",
+        projection_version="search-v1",
+    )
+    with pytest.raises(Exception):
+        service.run_job(failed.id)
+
+    in_memory_session.expire_all()
+    persisted = in_memory_session.get(SemanticProjectionJobModel, failed.id)
+    assert persisted is not None
+    assert persisted.status == "failed"
+    assert persisted.error
+    assert persisted.finished_at is not None
+
+    service.writers["search"] = FakeProjectionWriter()
+    retry = service.create_job(
+        graph_set_id="gs-1",
+        projection_kind="search",
+        projection_version="search-v1",
+    )
+    assert service.run_job(retry.id).status == "succeeded"
 
 
 def test_dry_run_does_not_mutate_target(in_memory_session):

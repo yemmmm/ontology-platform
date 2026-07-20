@@ -5,7 +5,7 @@
 - ADR: `docs/architecture/decisions/0006-pgvector-semantic-retrieval-projection.md`
 - Delivery record: `docs/delivery/records/2026-07-20-r1-2-003-multilingual-semantic-retrieval-delivery-record.md`
 - Contract freeze: 2026-07-20 user-confirmed hybrid/pgvector contract
-- Status: planned; independent rounds append below and never replace prior failures
+- Status: completed; Independent Round 8 PASS (prior failures remain below as delivery history)
 
 ## 完成门禁
 
@@ -247,3 +247,398 @@ atomically invalidates the correct manifest, synchronously rebuilds and reports 
 Entity search must reuse the Context fusion/scoring/sorting helper (or an equivalent single shared helper)
 without discarding lexical evidence. A new independent round must then verify all authenticated REST/MCP
 paths against a backfilled isolated Ontology before this requirement can pass.
+
+### Independent Round 2 — 2026-07-20 (FAIL)
+
+- Result: **FAIL**. Both High defects from Round 1 were repaired and their affected regressions pass, but
+  independent acceptance review found two different High retrieval-contract defects. No product code or
+  delivery record was changed during this round.
+- Stable state: repair handoff with `SemanticRetrievalCoordinator` in the shared retrieval module,
+  coordinator calls from governed RDF/canonical/modeling write paths, and Entity post-fusion sorting. The
+  prior Round 1 evidence remains valid for migration, pgvector, real-provider cross-language recall,
+  privacy and authenticated-runtime limitations.
+
+#### Round 1 repair verification
+
+- `SemanticService.apply_edit` commits authoritative RDF/audit state, then calls
+  `SemanticRetrievalCoordinator.rebuild_affected` with its affected graph IRIs. The canonical writer invokes
+  the same coordinator only after `commit=True`, and `ModelingBatchService._execute` commits the final
+  attempt before rebuilding by Ontology ID. The coordinator persists stale manifests before it starts a
+  disposable projection job and returns stable `current|stale|failed` data without rolling back the
+  authoritative write.
+- Entity search now constructs lexical candidates, converts vector rows to the same shape, calls
+  `fuse_context_candidates`, applies deterministic evidence-first sorting, and applies the limit after
+  fusion. Targeted E2E assertions confirm a lexical/vector duplicate remains `exact`/`mixed`, preserves
+  the lexical row's authoritative fields, and is sorted/truncated after fusion.
+- Affected regression command passed: `cd backend && uv run pytest
+  tests/test_semantic_retrieval.py tests/test_semantic_service.py
+  tests/test_semantic_migration_service.py tests/test_modeling_batches_service.py
+  tests/test_semantic_stage4_e2e.py tests/test_semantic_context_query.py
+  tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py
+  tests/test_semantic_read_model.py tests/test_semantic_class_type_read_models.py -q` -> `142 passed`.
+- Full required backend suite `cd backend && uv run pytest -q --cache-clear` passed (731 passed, 6 skipped);
+  `git diff --check` passed. `cd frontend && npm run build` passed with only the existing Vite large-chunk
+  warning; `cd frontend && npx playwright test` -> `38 passed`. After
+  `systemctl --user restart ontology-platform.service`, the unit was active and both
+  `http://127.0.0.1:8001/api/health` and `http://127.0.0.1:5173/` passed.
+
+#### Confirmed High defects
+
+1. **Context Query does not prioritize exact evidence over a higher-scoring semantic-only candidate.**
+   `fuse_context_candidates` correctly labels exact evidence, but
+   `backend/app/services/semantic_context_query.py:_sort_key` sorts only numeric `match.score` before
+   Ontology/kind/label/ID. Exact alias and identifier lexical matches are deliberately scored `900` and
+   `600`, whereas a semantic-only candidate may score up to `1000`. A direct deterministic probe fused an
+   `exact_alias` candidate at `900` with a semantic-only candidate at `950`; Context sorting returned the
+   semantic candidate first. This violates the required rule that exact label/altLabel/Mapping/stable-ID
+   evidence always ranks before a merely similar candidate. Existing fusion tests check one duplicate but
+   not the required cross-resource ranking invariant.
+2. **Mapping terms cannot produce an exact Mapping result or return Mapping evidence.** Repository review
+   found `exact_mapping` only in the constant used to interpret reasons. The projection builds and SQL reads
+   `mapping_evidence`, but no Context/Entity lexical candidate producer emits `exact_mapping`, and
+   `_semantic_candidate` discards the selected mapping evidence. A mapping term can therefore influence only
+   an opaque semantic candidate, not the required explicit Mapping match with evidence and exact priority.
+   No regression covers this contract.
+
+#### Remaining unexecuted cases and residual risk
+
+- The local service still has no bootstrap/MCP key and its permanent retrieval document count remains zero;
+  authenticated REST/MCP parity, public traces over backfilled existing data, write header checks and true
+  write/rebuild integration against an authorized isolated Ontology remain blocked without changing
+  permanent data.
+- After repairing the two defects above, the next round must add boundary tests for exact alias/identifier/
+  Mapping versus higher vector scores, expose Mapping evidence in REST/MCP and Entity/Class where relevant,
+  then repeat the authenticated/backfilled runtime matrix. Until then a consumer can be led to a less
+  trustworthy semantic candidate and cannot inspect a Mapping-backed match, so R1.2-003 cannot pass.
+
+### Independent Round 3 — 2026-07-20 (FAIL)
+
+- Result: **FAIL**. The two High defects recorded in Round 2 are repaired and independently pass their
+  Context, Entity, REST/MCP-contract and regression gates. A further High Mapping-contract omission remains:
+  the implementation does not make a Mapping `target_type` an exact lexical Mapping term, although the
+  approved design includes it in the governed Mapping term set. No product code or delivery record was
+  changed during this round.
+- Stable state: developer handoff containing exact-before-score Context ordering and the shared scoped
+  `governed_mapping_lexical_candidates` producer used by Context and Entity. Existing Round 1 evidence for
+  migration, pgvector, real-provider multilingual recall, metadata privacy, and the authorized-runtime
+  limitation remains applicable.
+
+#### Round 2 repair verification
+
+- `SemanticContextQueryService` now fuses governed Mapping lexical rows before vector rows and `_sort_key`
+  puts `candidate_level=exact` before rank score. The independent cases
+  `test_exact_alias_precedes_higher_scoring_semantic_candidate` and
+  `test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate` pass: an exact `0.90` alias or
+  Mapping result precedes a distinct semantic-only `0.95` candidate.
+- Context and Entity both call `governed_mapping_lexical_candidates`; its SQL predicate bounds active Mapping
+  rows to the resolved Ontology IDs, and fusion remains keyed by `(ontology_id, iri)`. The independent
+  cross-Ontology test passes with each target retaining only its own Mapping evidence, while the Entity E2E
+  test returns an `exact`/`mapping` instance before a `0.95` semantic candidate and exposes its safe
+  `mapping_evidence` payload.
+- Focused public-contract and repair regressions passed: `cd backend && uv run pytest -q
+  tests/test_semantic_context_query.py::test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate
+  tests/test_semantic_context_query.py::test_exact_alias_precedes_higher_scoring_semantic_candidate
+  tests/test_semantic_context_query.py::test_mapping_evidence_stays_with_its_same_ontology_target
+  tests/test_semantic_stage4_e2e.py::test_entity_search_returns_exact_governed_mapping_evidence
+  tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py
+  tests/test_semantic_retrieval.py` -> `25 passed`.
+- Full backend gate passed: `cd backend && uv run pytest -q --cache-clear` -> `735 passed, 6 skipped`.
+  `cd frontend && npm run build` passed with only the existing Vite large-chunk warning, and
+  `cd frontend && npx playwright test` -> `38 passed`. After restarting
+  `ontology-platform.service`, it became active; both `/api/health` and the frontend root returned success,
+  and `git diff --check` passed. The first post-restart curl occurred during startup and returned connection
+  refused; the retry and final probes passed after the service reported ready.
+
+#### Confirmed High defect
+
+1. **Mapping `target_type` is indexed but cannot be an exact Mapping lexical match.** The approved design
+   requires the Mapping term set to include external-field local name, join key, **target type**, and Mapping
+   ID. The deterministic document builder includes all four, but
+   `governed_mapping_lexical_candidates` compares only `mapping_id`, `mapping_external_field`, and
+   `mapping_join_key`; it omits `evidence["target_type"]`. An isolated direct probe over one active,
+   in-scope `class` Mapping returned `exact_mapping` for `customer_id` and `mapping-customer`, but `[]` for
+   `class`. Therefore callers cannot receive the required explicit exact evidence when the target-type
+   Mapping term is the query, even though it is in the indexed document text. There is no regression for this
+   required Mapping field. This is a High contract defect because a governed explicit Mapping term degrades
+   to an absent/semantic-only answer rather than deterministic exact evidence.
+
+#### Remaining unexecuted cases and residual risk
+
+- A repair must add `target_type` to the governed exact Mapping candidate fields, preserve evidence and scope
+  isolation, and add Context/Entity boundary tests with a higher-scoring semantic candidate. Repeat this
+  independent round after that repair.
+- The service still lacks a bootstrap/MCP credential. The live public Context probe correctly returned
+  `401 invalid_authentication`; authenticated REST/MCP parity, response-header checks and public Chinese-name
+  trace remain blocked without authorized credentials.
+- Persistent retrieval document count remains zero, so existing-data backfill, authenticated live Mapping
+  traces, write/rebuild/retry integration, concurrent-write and crash-window tests remain intentionally
+  unexecuted to avoid changing permanent business data. Until the target-type repair and that authorized,
+  backfilled runtime matrix pass, R1.2-003 cannot be accepted.
+
+### Independent Round 4 — 2026-07-20 (BLOCKED)
+
+- Result: **BLOCKED**. Every previously confirmed High defect now passes independent source, direct-probe and
+  regression verification; no new product defect was found. R1.2-003 cannot yet receive a requirement-level
+  PASS because its required authenticated public-runtime and existing-data-backfill gates remain unavailable
+  in this environment. No product code or delivery record was changed during this round.
+
+#### Prior defects independently reverified as repaired
+
+- The Round 3 Mapping target-type gap is closed. The active, Ontology-bound exact Mapping allow-list now
+  emits `mapping_target_type` from safe `target_type` evidence. An isolated direct probe over one scoped
+  `class` Mapping returned `exact_mapping` with `matched_fields=["mapping_target_type"]` for query `class`,
+  and retained the expected safe Mapping evidence. The same probe still returned exact evidence for external
+  field and Mapping ID; no raw join values or unrelated Ontology data were exposed.
+- Context keeps the exact-before-score boundary: exact alias and Mapping candidates at `0.90` precede a
+  separate semantic-only candidate at `0.95`. Mapping candidates remain limited to active Mapping rows in
+  resolver-provided Ontology scope and fuse by `(ontology_id, iri)`, so cross-Ontology evidence does not join
+  onto the wrong resource.
+- Entity uses the same producer/fusion/order path. Its target-type `entity` case returns an exact Mapping
+  candidate with `mapping_target_type` evidence before a higher-score semantic candidate. Round 1 fact-first
+  write/rebuild outcomes and post-fusion Entity ordering remain covered by the affected service tests.
+
+#### Passing evidence
+
+- Broader focused repair/public-contract suite passed: `cd backend && uv run pytest -q
+  tests/test_semantic_context_query.py::test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate
+  tests/test_semantic_context_query.py::test_exact_alias_precedes_higher_scoring_semantic_candidate
+  tests/test_semantic_context_query.py::test_mapping_evidence_stays_with_its_same_ontology_target
+  tests/test_semantic_stage4_e2e.py::test_entity_search_returns_exact_governed_mapping_evidence
+  tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py
+  tests/test_semantic_retrieval.py tests/test_semantic_service.py
+  tests/test_semantic_migration_service.py tests/test_modeling_batches_service.py` -> `113 passed`.
+- Full backend gate passed: `cd backend && uv run pytest -q --cache-clear` -> `735 passed, 6 skipped`.
+  `cd frontend && npm run build` passed with only the existing Vite large-chunk warning and
+  `cd frontend && npx playwright test` -> `38 passed`.
+- `systemctl --user restart ontology-platform.service` completed. The first 15-second curl window occurred
+  while `start-local.sh` was synchronizing dependencies, applying migrations and rebuilding the frontend; the
+  unit journal then reported backend/frontend ready. Final `/api/health` and frontend-root probes passed, the
+  unit is active, and `git diff --check` passed.
+
+#### Remaining blocked acceptance gates and residual risk
+
+- No bootstrap/MCP credential is configured. Authenticated live REST/MCP parity, response-header checks and
+  the public Chinese-name trace cannot be executed without authorized credentials; unauthenticated calls are
+  correctly fail-closed.
+- The persistent retrieval document count remains zero. Existing-data backfill and its live multilingual
+  recall, plus authorized isolated write/rebuild/retry, concurrent-write and crash-window probes, remain
+  intentionally unexecuted to avoid modifying permanent business data.
+- There is no remaining reproduced code-level defect in the repaired scope. The residual risk is limited to
+  the blocked deployment/data gates above; completion requires an authorized isolated fixture, explicit
+  backfill, and a final independent public-runtime pass.
+
+### Independent Round 5 — 2026-07-20 (FAIL)
+
+- Result: **FAIL**. An authorized, isolated live fixture removed the Round 4 authentication and existing-data
+  restrictions and reproduced a High runtime defect at the first public retrieval gate. An explicit persistent
+  vector backfill reported `succeeded`, generated five documents, and promoted a `current` manifest, but an
+  authorized Chinese Context query against that same fixture returned `config_mismatch`, `degraded`, and
+  `no_match` with no primary results. No product code or delivery record was changed during this round.
+
+#### Fixture, public REST evidence, and cleanup
+
+- The harness created a unique temporary organization-admin API key through the application `create_api_key`
+  workflow (the key value was never printed), then used authorized REST calls to create an isolated Project and
+  Ontology and load a minimal TriG dataset. The fixture included a Chinese-labeled
+  `Customer Support Workflow` resource and its governed semantic retrieval inputs.
+- The explicit vector job used projection version `semantic-retrieval-v1`, embedding model `embedding-3`,
+  dimensions `1024`, and threshold `0.45`. It completed with `status=succeeded`, `document_count=5`; the
+  resulting retrieval manifest was `current` with `document_count=5`.
+- The authorized Context request that should have returned the exact `Customer Support Workflow` label instead
+  returned HTTP `200` with `result.status=no_match`, `completeness=degraded`,
+  `match_status=no_match`, `index_statuses=["config_mismatch"]`, no primary candidates, and warnings
+  `derived_result_missing` (twice) plus `vector_index_config_mismatch`.
+- The harness stopped at this first observable public failure; authorized Entity/Class, MCP-parity, and
+  non-Rule write/rebuild success/failure/degraded/recovery probes were therefore not run. This is a defect
+  stop, not an environment block.
+- Cleanup was completed in the same `finally` path: the exact fixture RDF named graphs were dropped, the
+  temporary Project was removed through its public API, and only fixture-owned retrieval rows, graph-set,
+  Ontology/Project state, and temporary API key were revoked/deleted. Final residual counts were zero for RDF
+  graphs, documents, edits, graph sets, jobs, keys, manifests, ontologies, and projects.
+
+#### Confirmed High defect and root-cause evidence
+
+- **High — successful current vector backfill is not queryable by its own public Context reader.** R1.2-003
+  requires persistent vector retrieval to make the promoted current projection available to multilingual
+  semantic retrieval. Here, the writer reported five documents and a current manifest while the public reader
+  considered the exact same projection configuration mismatched and returned no candidates; this blocks the
+  required persistent-backfill acceptance path.
+- In `PgVectorRetrievalRepository.index_status`, `config_mismatch` is returned when a current manifest exists
+  but no retrieval document matches the reader identity predicates for graph set, Ontology, workspace version,
+  source/rule signatures, projection version, embedding-config hash, and active job. The live evidence proves
+  that at least one writer/reader identity value differs despite the visible projection and embedding settings
+  matching. The exact differing predicate was not retained after safe fixture cleanup and remains for the
+  implementation repair to identify; likely candidates must be audited from the writer metadata through the
+  reader's document lookup, rather than weakening the reader's isolation checks.
+
+#### Required re-test after repair
+
+- Re-run an isolated authorized fixture end to end: persistent Chinese-name Context plus Entity/Class retrieval,
+  MCP parity, and the non-Rule write/rebuild success, failure, degraded, recovery, and retry matrix. Confirm the
+  promoted manifest's document identity values are precisely those used by the public reader and that cleanup
+  again leaves no fixture-owned state.
+
+### Independent Round 6 — 2026-07-20 (FAIL)
+
+- Result: **FAIL**. The Round 5 workspace-version reader/writer repair is verified for an initial persistent
+  backfill, including authorized REST/MCP Context parity. Three separate fresh, uniquely prefixed fixtures then
+  exposed three remaining High acceptance defects: Chinese exact labels are downgraded to semantic candidates,
+  the public Entity/Class adapters do not expose the required hybrid retrieval contract, and a successful
+  non-Rule semantic write cannot rebuild or recover its vector projection. No product code or delivery record
+  was changed during this round.
+
+#### Passing persistent-backfill and REST/MCP evidence
+
+- In the first authorized fixture, dataset load returned HTTP `200`; the explicit ontology retrieval rebuild
+  returned `current`; and the Chinese Context request returned `matched`, `completeness=complete`,
+  `index_statuses=["current"]`, and one primary result for the expected scoped Class. The temporary Project was
+  deleted with HTTP `204`, all four fixture RDF graphs were absent afterwards, and Project, Ontology, document,
+  and key residual counts were zero.
+- In the expanded fixture, the explicit persistent rebuild wrote three documents and promoted a `current`
+  manifest with an active job. Authorized REST and a stdio MCP server authenticated with a temporary
+  Project-admin key both returned the same expected Chinese Class, `matched`, `complete`, and
+  `index_statuses=["current"]`. No plaintext temporary key was printed.
+- A controlled fixture-local embedding failure through the official projection-job service produced a persisted
+  failed job; public Context safely retained exact lexical evidence while returning `completeness=degraded` and
+  `index_statuses=["stale"]`. This confirms the failure-to-degraded reader path itself.
+
+#### Confirmed High defects
+
+- **High — an exact Chinese `rdfs:label` is returned as a semantic candidate.** The fixture Class had the
+  exact Chinese label `客户支持工作流`. REST and MCP both found that exact Class, but both returned
+  `match_status=candidate` and only `candidate_level=semantic_candidate`, `method=semantic`,
+  `semantic_similarity=0.637`, with no lexical score, matched field, or `exact_label` reason. The frozen
+  contract requires exact label evidence to remain in the `exact` layer ahead of candidate scoring; a successful
+  vector hit must not discard that deterministic evidence.
+- **High — public Entity/Class routes do not deliver the shared hybrid adapter contract.** Authorized
+  `GET /api/ontologies/{ontology_id}/semantic-read-models/entities?q=客户支持工作流实例` returned HTTP `200`
+  but zero items, no expected Entity, and no `recall` object despite a current three-document projection. The
+  Class request with `q=客户支持工作流` returned the Class only as an unfiltered topology row (two items) and
+  likewise omitted `recall` and any match metadata. The product route constructs `SemanticReadModelService`
+  without a retrieval service, while the generic Class path has no query adapter; these responses therefore do
+  not expose the required shared service, index status, or exact/candidate ordering.
+- **High — non-Rule write applies its RDF fact but leaves vector retrieval stale and unrecoverable.** An
+  authorized Turtle edit against the fixture asserted Ontology graph returned HTTP `200` and `applied=true`,
+  but its `retrieval_indexes=[{"status":"failed","write_applied":true}]`. The newly written exact Chinese
+  Class remained lexically visible, but Context correctly became `degraded` with `index_statuses=["stale"]`.
+  The admin-only `POST /api/semantic/ontologies/{ontology_id}/retrieval:rebuild` retry also returned `failed`,
+  so the required recovery path cannot restore a current projection.
+- **High — rebuild document identity collides across workspace versions and masks failure state.** A focused
+  replay began with two persisted documents and a `current` manifest. The non-Rule edit changed
+  `ModelingWorkspaceVersionService.version_for(...)`, while the graph-set source signature stayed unchanged.
+  `semantic_retrieval._document_record` derives each document primary key only from
+  `graph_set_id|resource_iri|resource_kind|projection_version`, excluding workspace version, source signature,
+  and job/partition. Rebuilding unchanged resources into the new workspace therefore reuses existing primary
+  keys when `write_documents(... add_all/flush)` writes the new partition. Runtime evidence showed the new job
+  left `running`, with `document_count=0`, an empty stored error, and a stale manifest: the flush failure is not
+  durably transitioned to the required `failed` job state. This is also why the public retry remains failed.
+
+#### Cleanup and required re-test
+
+- Each fixture used a unique temporary organization-admin key; MCP used a separate temporary Project-admin key.
+  Every `finally` path dropped only its known workspace RDF graphs, deleted the fixture Project, revoked/deleted
+  the exact temporary keys, and removed fixture-only documents, jobs, manifests, graph state/registry/revisions,
+  and edit audit. The full fixture's final residual counts were zero for RDF graphs, Project, Ontology,
+  documents, jobs, manifests, both keys, and edit audits.
+- After repair, repeat the isolated end-to-end matrix: exact Chinese Context evidence plus REST/MCP parity,
+  Entity and Class hybrid responses (including `recall`), non-Rule write `applied/current`, controlled provider
+  failure `applied/degraded`, and admin retry recovery to `current`. Verify each replacement partition can keep
+  historical rows without primary-key collision and that a rebuild exception persistently marks its job failed.
+
+### Independent Round 7 — 2026-07-20 (FAIL)
+
+- Result: **FAIL**. The Round 6 public Entity/Class adapter and non-Rule replacement-build repairs work in a
+  fresh live fixture, as do persisted provider-failure and recovery states. However, the required multilingual
+  exact-evidence contract is still not met: the exact asserted Chinese label for a resource with both English
+  and Chinese labels remains a semantic candidate in public REST and MCP Context, and is not `exact_label` in
+  Entity hybrid output. No product code or delivery record was changed during this round.
+
+#### Runtime and migration preflight
+
+- `/api/health` returned `{"status":"ok"}` and `cd backend && uv run alembic current` reported
+  `0030_retrieval_partition_id (head)` before the live probe.
+- Every fixture used a newly generated organization-admin key; the REST/MCP fixture also used a separate
+  temporary Project-admin key. No key value was printed.
+
+#### Repaired paths independently verified
+
+- The initial explicit backfill wrote three documents, promoted a `current` manifest with an active job, and
+  returned `status=current`.
+- `GET /api/ontologies/{ontology_id}/semantic-read-models/classes?q=客户支持工作流&search_mode=hybrid`
+  returned only the expected Class, with `recall` present, `completeness=complete`,
+  `index_statuses=["current"]`, and exact-label evidence. Entity hybrid now also returned the expected Entity
+  with `recall` present, `complete`, and `current`; its remaining exact-evidence defect is recorded below.
+- An authorized non-Rule Turtle edit returned `applied=true`,
+  `retrieval_indexes=[{"status":"current","write_applied":true}]`. The current post-write Context query
+  was `matched`, `exact`, `complete`, and `current`; an explicit admin rebuild retry also returned `current`.
+  Retrieval documents increased from three to seven without a primary-key collision, confirming that the
+  replacement-partition identity repair handles unchanged documents plus the new Class.
+- A separate fixture forced an embedding call by using a fixture-only alternate document-template config hash.
+  After the current manifest was marked stale, the official projection-job service persisted
+  `job_status=failed` with a non-empty error. Public Context returned `matched` lexical evidence with
+  `completeness=degraded` and `index_statuses=["stale"]`; the public admin rebuild then returned `current`, and
+  Context returned `complete` with `index_statuses=["current"]`.
+
+#### Remaining High defect
+
+- **High — multilingual asserted labels are still not all promoted into exact evidence.** A scoped Class carried
+  both `rdfs:label "Customer Support Workflow"@en` and the exact asserted Chinese
+  `rdfs:label "客户支持工作流"@zh`. Authorized REST Context and stdio MCP Context both returned the expected
+  resource and agreed on `matched`, `complete`, and `index_statuses=["current"]`, but each returned
+  `match_status=candidate`, `candidate_level=semantic_candidate`, `method=semantic`, and
+  `semantic_similarity=0.637`, with no lexical field or `exact_label` reason. The public Entity hybrid query
+  similarly returned the expected Chinese-labeled Entity and a current recall envelope, but did not mark it as
+  `exact_label`. Class hybrid is the contrasting repaired path: it did promote the expected exact label.
+- R1.2-003 requires all label/alias evidence to retain the exact layer ahead of semantic ranking. The remaining
+  defect appears to be the Context/Entity handling of multiple language labels for one IRI, not index health or
+  REST/MCP scope parity. It prevents acceptance of the multilingual exact-match contract.
+
+#### Cleanup and required re-test
+
+- Both Round 7 fixture `finally` paths deleted their Projects with HTTP `204`, dropped only their four known RDF
+  graphs, revoked/deleted temporary keys, and removed fixture-only documents, jobs, manifests, graph state,
+  registry/revisions, and edit audits. Final residual counts were zero for RDF graphs, Projects, Ontologies,
+  documents, jobs, manifests, temporary keys, and edit audits.
+- After correcting multi-label exact promotion, repeat the isolated bilingual Class and Entity checks through
+  REST and stdio MCP. Require `match_status=exact`, `candidate_level=exact`, and `exact_label` evidence for the
+  Chinese query while retaining the verified current/degraded/recovery matrix.
+
+### Independent Round 8 — 2026-07-20 (PASS)
+
+- Result: **PASS**. A fresh authorized fixture verified the Round 7 bilingual label repair and re-ran every
+  prior High acceptance path: persistent current rebuild, exact Chinese REST/MCP Context, Entity/Class hybrid
+  adapters, non-Rule write/retry, persisted provider failure degradation, and public recovery. No product code
+  or delivery record was changed during this round.
+
+#### Runtime, migration, and exact-evidence evidence
+
+- `/api/health` returned `{"status":"ok"}` and `cd backend && uv run alembic current` reported
+  `0031_retrieval_label_evidence (head)` before fixture creation.
+- The explicit initial rebuild wrote three documents, returned `current`, and promoted one current manifest with
+  an active job. The bilingual Class carried English plus exact Chinese `rdfs:label` values.
+- Authorized REST Context and stdio MCP Context both returned that Class for `客户支持工作流` with
+  `result_status=matched`, `match_status=exact`, `completeness=complete`,
+  `index_statuses=["current"]`, and exact-label evidence (`method=mixed`). MCP returned `ok=true`; no temporary
+  key value was printed.
+- Authorized Entity and Class hybrid public routes both returned their expected Chinese-labeled resource with
+  `exact_label`, a present `recall` envelope, `completeness=complete`, and
+  `recall.index_statuses=["current"]`.
+
+#### Write, failure, and recovery evidence
+
+- An authorized non-Rule Turtle edit returned `applied=true` and
+  `retrieval_indexes=[{"status":"current","write_applied":true}]`. The new Chinese Class was immediately
+  `matched/exact/complete/current`; the explicit admin retrieval retry again returned `current` with the same
+  public Context result.
+- After marking only the fixture manifest stale, a fixture-only alternate document-template config forced the
+  controlled embedding provider failure. The official projection job persisted `status=failed` with a non-empty
+  error. Context retained exact lexical evidence while returning `degraded` and `index_statuses=["stale"]`.
+  The authorized public rebuild recovered to `current`; Context then returned `complete` and
+  `index_statuses=["current"]`.
+
+#### Cleanup
+
+- The `finally` path deleted the fixture Project with HTTP `204`, dropped only its four known RDF graphs,
+  revoked/deleted the exact organization-admin and Project-admin keys, and deleted fixture-only retrieval
+  documents, jobs, manifests, graph registry/state/revisions, and edit audit. Residual counts were zero for RDF
+  graphs, Projects, Ontologies, documents, jobs, manifests, both keys, and edit audits.

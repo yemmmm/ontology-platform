@@ -27,6 +27,7 @@ from app.services.modeling_batches import (
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
+from app.services.semantic_retrieval import SemanticResourceRetrievalService
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 
@@ -138,6 +139,7 @@ def get_ontology_read_model(
     class_iri: str | None = None,
     kind: str | None = None,
     q: str | None = None,
+    search_mode: str = "hybrid",
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -189,6 +191,7 @@ def get_ontology_read_model(
         rdf_store=rdf_store,
         scope_resolver=SemanticReadScopeResolver(session),
         session=session,
+        retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
     try:
         base_graph_set_id = graph_set_id
@@ -220,6 +223,7 @@ def get_ontology_read_model(
             class_iri=class_iri,
             kind=kind,
             q=q,
+            search_mode=search_mode,
         )
         if no_delta_baseline:
             response["warnings"] = [
