@@ -183,20 +183,6 @@ class SemanticReadModelService:
                 items=items,
                 warnings=list(scope.warnings),
             )
-        if template.name == "agent-test-context":
-            items = self._compose_agent_test_context(
-                template,
-                scope,
-                q=q,
-                limit=limit or template.default_limit,
-                field_set=field_set,
-            )
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=items,
-                warnings=list(scope.warnings),
-            )
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         if not graph_iris and "{graph_iris}" in template.body:
             return self._envelope(
@@ -463,8 +449,7 @@ class SemanticReadModelService:
             and source_graph_iri == scope.rule_result_graph_iri
         ):
             return "rule_derived"
-        # Stage 4 templates (entity-search, agent-test-context) declare
-        # assertion_kind="any" because the SPARQL may match rows from the
+        # Entity search declares assertion_kind="any" because the SPARQL may match rows from the
         # asserted, reasoning, or rule graph depending on the include scope.
         # When the row actually came from an asserted source graph, "any"
         # resolves to "asserted" so the AssertionKind chip on the UI carries
@@ -1490,39 +1475,6 @@ class SemanticReadModelService:
             decorated["class_label"] = self._cell(row, "class_label")
             decorated["graph_set_id"] = scope.graph_set_id
             items.append(decorated)
-        return items
-
-    # ------------------------------------------------------------------
-    # agent-test-context composer (Stage 4 §4.2)
-    # ------------------------------------------------------------------
-
-    def _compose_agent_test_context(
-        self,
-        template: ReadModelTemplate,
-        scope: ScopeResolution,
-        *,
-        q: str | None,
-        limit: int,
-        field_set: str,
-    ) -> list[dict[str, Any]]:
-        """Thin wrapper over ``_compose_entity_search`` that projects a
-        smaller field set for the AgentTestService pre-LLM retrieval.
-
-        The underlying SPARQL is the agent-test-context template body
-        (no ``comment`` projection). The composed rows still carry the
-        decorator's full envelope fields; downstream consumers simply
-        read a subset."""
-        items = self._compose_entity_search(
-            template,
-            scope,
-            q=q,
-            class_iri=None,
-            limit=limit,
-            field_set="agent",
-        )
-        # Strip the comment field for the agent projection.
-        for item in items:
-            item.pop("comment", None)
         return items
 
     # ------------------------------------------------------------------

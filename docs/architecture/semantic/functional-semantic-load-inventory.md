@@ -1,5 +1,13 @@
 # Functional Semantic-Load Inventory
 
+> **Historical planning artifact (superseded 2026-07-19):** This inventory captures the
+> semantic-load migration plan generated on 2026-07-06; it is no longer an inventory of the
+> current UI. `PublicationPage`, `GraphSetHistoryPage`, `NamedGraphsPage`,
+> `SemanticEditWorkbenchPage`, `SemanticRunsPage`, and `SemanticImportExportPage` have been
+> removed. Their supported capabilities remain available through the consolidated Overview,
+> Debug, Graph Sets, HTTP, and MCP surfaces described in `docs/guides/ui.md` and
+> `docs/requirements/requirements-v1.0.md`. The rows below are retained only as migration history.
+
 > **Note (2026-07-08):** The `EvidenceExplorer` evidence-browser row below
 > originally planned to rebuild evidence→fact bindings by reading
 > `prov:wasDerivedFrom` triples. That approach has been replaced: evidence
@@ -70,7 +78,7 @@ rows document why a feature stays out of the semantic cutover scope.
 | Page / feature | Current backend | Semantic dimension | Disposition | Notes |
 | --- | --- | --- | --- | --- |
 | `EntitiesSearchPage` search | `/entities/search`, `/ontologies/{id}/entities/search` | semantic consumer | **P** | Search results must carry `AssertionKind`, graph IRI, and provenance. Backend joins the search projection against `graph/data`. |
-| `AgentTestPage` agent test | `/agent-test/run` | semantic consumer | **P** | Question → SPARQL or graph-derived read-model query. Responses distinguish asserted vs inferred vs rule-derived. |
+| `AgentTestPage` agent test | removed | semantic consumer | **removed** | The platform-internal LLM path conflicted with the external-Agent boundary. Context Query and scoped SPARQL are the supported consumption paths. |
 | `EvidenceExplorer` evidence browser | `/evidence-artifacts/{id}`, `/chunks`, `/proposals/{id}/items/{key}/sources` | files + evidence bindings | **split** | File and chunk rendering stays in Postgres (**K**). The "evidence→fact" binding rebuild (**R**) by reading `prov:wasDerivedFrom` triples. |
 | `McpToolsPage` MCP tools | static frontend list | metadata | **P** | Replace hardcoded tool list with a dynamic enumeration from `/mcp/tools`. Content points at the semantic MCP set in `backend/app/mcp/tools/semantic.py`. |
 | Settings (runtime status) | `/health/dependencies`, `/health/postgres` | operational | **K** | Pure runtime telemetry. Stays unchanged. |

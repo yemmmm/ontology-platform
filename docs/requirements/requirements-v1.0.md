@@ -97,7 +97,7 @@ Pending 不表示否定这些能力，也不要求回滚已经存在的代码；
 | 固定语义读模型 | 已实现 | Classes、Entities、Facts、Readiness、History、Delta、Entity Search 等读模型。 |
 | 自然语言语义查询 | 已实现 | REST/MCP 已提供统一 Context Query，支持 Project 全局或一个至多个 Ontology 范围、结构化上下文、精简 lineage/Evidence 状态和 scoped SPARQL。 |
 | Search / Vector 投影 | 部分实现 | 文档构建器和任务模型已存在，但运行时使用 `FakeSearchWriter` / `FakeVectorWriter`，结果不会持久化。 |
-| Agent 查询测试 | 部分实现 / Pending | 当前 `agent-test` 在平台内调用 LLM 生成答案，与目标边界不一致，且中文分词能力不足；R-009 暂不继续投入。 |
+| Agent 查询诊断 | 未实现 / Pending | 与目标边界冲突的旧 `agent-test` 平台内 LLM 路径已移除；外部 Agent 使用 Context Query 或 scoped SPARQL。R-009 暂不继续投入。 |
 | Agent 构建接口 | 已实现 | REST/MCP 已支持 Project 级 Build Session、Checkpoint、Ontology Lease，以及 R-004 带证据 Modeling Batch 的 dry-run、原子/部分 apply、查询和恢复。 |
 | 本体组合 | 部分实现 | Graph Set 可组合多个图，Mapping 命令存在；缺少本体依赖、导入版本和桥接关系契约。 |
 | 身份认证和项目隔离 | 已实现 | R-008 已交付 hashed API key、UI session、scope 授权、Project 归属校验、MCP 策略和安全事件。 |
@@ -1009,7 +1009,7 @@ R-010。
 - REST：`POST /api/semantic/context:query`
 - MCP：`query_semantic_context`
 
-R-006 首版不新增面向普通用户的业务查询页面。R-009 将现有 Agent Test 页面改为 Context Query
+R-006 首版不新增面向普通用户的业务查询页面。R-009 如恢复交付，应新建 Context Query
 调试页，并调用 R-006 的同一查询能力展示识别结果、召回过程、排序原因和警告；调试页不得
 建立另一套查询语义或生成最终答案。
 
@@ -1310,10 +1310,11 @@ scope 授权、Project 归属校验、SPARQL 范围强约束、actor 强制覆�
 当前状态：`挂起（Pending）`
 
 范围调整说明：本需求主要改善消费 Agent 的查询调试和结果展示，不直接提升建模 Agent 对外部
-业务知识的理解与建模判断。已有 Context Query 和页面基础保留，但本需求不再阻塞 v1 收口，
+业务知识的理解与建模判断。已有 Context Query 基础保留，但本需求不再阻塞 v1 收口，
 也不作为 v1.1 的默认前置；只有 v1.1 实践证明查询诊断是建模效果的主要瓶颈时才恢复。
 
-现有 `agent-test` 由平台调用 LLM 生成最终答案，不符合目标边界。将其改为“查询诊断”能力：
+原 `agent-test` 由平台调用 LLM 生成最终答案，不符合目标边界，已删除 API、服务、页面和专用读模型。
+如本需求后续恢复，应作为新的“查询诊断”能力交付：
 
 - 展示结构化上下文、检索步骤、排序原因、版本和警告。
 - 不在平台核心调用聊天模型。
@@ -1321,9 +1322,9 @@ scope 授权、Project 归属校验、SPARQL 范围强约束、actor 强制覆�
 
 验收标准：
 
-- 未配置 LLM API key 时平台核心功能不降级。
+- 平台核心不接受或依赖 LLM API key、model 或 temperature 配置。
 - 移除英文空格分词依赖，至少正确处理中文和 API 标识符。
-- 前端 Agent Test 页面改为 Context Query 调试页。
+- 新增的前端入口是 Context Query 调试页，不恢复平台内 LLM 问答。
 
 ### R-010 Dify 通用能力端到端验收套件
 

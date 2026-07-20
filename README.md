@@ -4,8 +4,8 @@ Ontology Platform 是供外部 Agent 构建、验证和查询领域本体的本�
 资料与建模判断；平台负责确定性校验、RDF/Oxigraph 语义存储、PostgreSQL 工作流与审计状态、
 Evidence Reference、可恢复建模批次、lineage 和结构化查询。
 
-当前 v1 已实现 R-001 至 R-008。Agent Test 外部化（R-009）只部分实现，Dify 端到端验收
-（R-010）尚未实现。部署仍应使用受控网络并妥善保管运营凭据。
+当前 v1 已实现 R-001 至 R-008 及 R-011。R-009 纯查询诊断暂时挂起，旧 Agent Test
+内置 LLM 路径已移除；R-010 的建模效果目标已转入 v1.1。部署仍应使用受控网络并妥善保管运营凭据。
 
 ## Repository Layout
 
@@ -104,9 +104,6 @@ backend 从进程工作目录的 `.env` 读取配置；仓库命令以 `backend/
 | `ONTOLOGY_MCP_API_KEY` | Required API key for MCP process startup | empty |
 | `ONTOLOGY_UI_ORIGINS` | Exact comma-separated UI origins allowed for session writes | local `5173` origins |
 | `DATABASE_URL` | PostgreSQL SQLAlchemy URL | localhost port `5434` |
-| `LLM_BASE_URL` | OpenAI-compatible endpoint used only by current Agent Test | `https://api.openai.com/v1` |
-| `LLM_API_KEY` / `LLM_MODEL` | Optional current Agent Test credentials/model | empty |
-| `LLM_TEMPERATURE` | Current Agent Test temperature | `0.2` |
 | `EMBEDDING_BASE_URL` | Embedding-compatible endpoint | BigModel v4 endpoint |
 | `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | Embedding credentials/model | empty / `embedding-3` |
 | `EMBEDDING_DIMENSIONS` / `EMBEDDING_TIMEOUT_SECONDS` | Embedding vector size/timeout | `1024` / `45` |

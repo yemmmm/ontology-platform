@@ -19,7 +19,7 @@ The platform manages:
 - knowledge graph instances
 - validation and import/export contracts
 - MCP tools/resources for external consumption
-- a demo agent test area for local validation
+- structured query and validation interfaces for external agents
 
 The platform does not manage:
 
@@ -31,4 +31,3 @@ The platform does not manage:
 ## Consequences
 
 Agents consume the platform through MCP and do not become first-class platform-owned entities. A test agent may exist only to validate the ontology layer and MCP tool design.
-

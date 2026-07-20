@@ -22,11 +22,6 @@ class Settings(BaseSettings):
         "postgresql+psycopg://ontology:ontology@localhost:5434/"
         "ontology_platform?client_encoding=utf8"
     )
-    llm_base_url: str = "https://api.openai.com/v1"
-    llm_api_key: str = ""
-    llm_model: str = ""
-    llm_temperature: float = Field(default=0.2, ge=0, le=2)
-
     embedding_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     embedding_api_key: str = ""
     embedding_model: str = "embedding-3"

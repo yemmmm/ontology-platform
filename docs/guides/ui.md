@@ -21,21 +21,21 @@ session/CSRF cookie；用户名、密码和 API key 都不会写入 localStorage
 - Home：Project 与 Ontology 的创建、选择和删除。
 - Overview：Project Brief、结构化需求问题和 Project 级 Evidence Reference。
 - Modeling：Classes、Entities、Rules 和 Facts 的当前 RDF 读模型视图。
-- Debug：语义治理/运行状态、Build Context、Agent Test、Recall、MCP Tools 和 Graph Sets。
+- Debug：语义治理/运行状态、Build Context、Recall、MCP Tools 和 Graph Sets。
 - Settings：编辑锁与 `/api/health/dependencies` 的 PostgreSQL/Oxigraph 状态。
 
 Evidence 页面只保存文档名和原文片段，不上传或解析完整文档。Build Context 页面只读显示
 workspace version、lease/fence/recovery、最近 Modeling Batch、Attempt、Item 和 Finding；它不会
 触发 apply 或恢复。
 
-代码中仍有部分 legacy 页面组件和 URL tab 兼容重定向。它们不表示旧 Evidence Artifact、
-Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API 仍受支持。
+legacy 页面组件已经移除，仅保留旧 URL tab 到 Overview 或 Debug 的兼容重定向。它们不表示旧
+Evidence Artifact、Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API
+仍受支持。
 
-## Agent Test 的当前边界
+## Agent 查询边界
 
-Agent Test 调用 `POST /api/agent-test/run`，当前仍可能通过 OpenAI-compatible LLM 生成答案，并使用
-不足以处理中文整句的简单分词。这与“平台只返回结构化上下文”的目标边界不一致，属于 R-009 的
-已知缺口。当前面向外部 Agent 的目标查询入口是 Context Query 与 scoped SPARQL。
+旧 `POST /api/agent-test/run` 和 Agent Test 页面已移除。当前面向外部 Agent 的查询入口是
+Context Query 与 scoped SPARQL；平台返回结构化事实和诊断状态，最终自然语言答案由外部 Agent 生成。
 
 ## 数据流与安全
 
@@ -59,5 +59,5 @@ npx playwright test
 全组织 admin 测试 key；未配置时仅跳过这三个会写入真实运行时的用例，其余 UI 用例仍执行。
 
 手工验证应覆盖 Project/Ontology 选择、Overview、Evidence、Classes/Entities/Rules/Facts、Debug、
-Build Context、Agent Test、MCP Tools、Graph Sets 和 Settings 的 loading/empty/error 状态，并确认
+Build Context、Recall、MCP Tools、Graph Sets 和 Settings 的 loading/empty/error 状态，并确认
 依赖健康显示 PostgreSQL 与 Oxigraph。

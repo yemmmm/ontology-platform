@@ -8,10 +8,6 @@ Tests:
 
 * ``test_read_model_entity_search`` — spec §11 step 2 (Search entity by query
   returns the Acme Corp row with the ``[asserted]`` chip).
-* ``test_read_model_agent_test_context`` — spec §11 step 5 prelude (the
-  agent-test-context read model returns the Acme Corp entry for the keyword
-  "acme"). AgentTestService itself is covered by Phase B (Task B2); this test
-  only exercises the read model.
 * ``test_read_model_owl_consistency_summary`` — spec §11 step 8 (the OWL
   Consistency summary returns ``consistent: True`` and ``is_stale: False``
   for the freshly seeded reasoning run).
@@ -20,11 +16,6 @@ Tests:
   populated from the Postgres ``fact_evidence_bindings`` table).
 """
 from __future__ import annotations
-
-# Load the Stage 4 fixtures.
-pytest_plugins = ("conftest_stage4",)
-
-from app.repositories.models import SemanticEditAuditModel
 
 from conftest_stage4 import (
     ACME_CLASS,
@@ -35,6 +26,9 @@ from conftest_stage4 import (
     CHUNK_TEXT,
     EVIDENCE_DATA_GRAPH,
 )
+
+# Load the Stage 4 fixtures.
+pytest_plugins = ("conftest_stage4",)
 
 
 # ---------------------------------------------------------------------------
@@ -89,31 +83,6 @@ def test_read_model_entity_search_class_filter(fake_graph_set_with_evidence):
         limit=50,
     )
     assert envelope_empty["items"] == []
-
-
-# ---------------------------------------------------------------------------
-# Step 5 prelude — agent-test-context
-# ---------------------------------------------------------------------------
-
-
-def test_read_model_agent_test_context(fake_graph_set_with_evidence):
-    svc, graph_set_id = fake_graph_set_with_evidence
-    envelope = svc.read_model(
-        graph_set_id=graph_set_id,
-        model_name="agent-test-context",
-        q="acme",
-        limit=15,
-    )
-    assert envelope["model_name"] == "agent-test-context"
-    items = envelope["items"]
-    assert len(items) == 1
-    entry = items[0]
-    assert entry["iri"] == ACME_ENTITY
-    assert entry["label"] == ACME_LABEL
-    assert entry["class_label"] == ACME_CLASS_LABEL
-    assert entry["source_graph_iri"] == EVIDENCE_DATA_GRAPH
-    # The agent field_set does NOT carry comment in the projection.
-    assert "comment" not in entry
 
 
 # ---------------------------------------------------------------------------

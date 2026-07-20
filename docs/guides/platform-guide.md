@@ -16,8 +16,8 @@ Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + o
 - 面向消费 Agent 的授权 Project/Ontology 范围发现与查询就绪状态。
 
 平台不替外部 Agent 生成领域判断或最终自然语言答案，也不保存外部系统明文凭证或代执行外部
-Operation。R-008 已提供 HTTP/MCP/UI 认证、scope 授权和 Project 隔离；R-009 Agent Test 重构只部分
-实现，R-010 Dify 验收未实现。
+Operation。R-008 已提供 HTTP/MCP/UI 认证、scope 授权和 Project 隔离；R-009 纯查询诊断
+仍处于 Pending，旧 Agent Test 内置 LLM 路径已移除。R-010 的建模效果目标已转入 v1.1。
 
 ## 本地启动
 
@@ -138,8 +138,8 @@ graph IRI。完成后保存 checkpoint 并 complete/cancel Build Session。
 同时保存 verification report 和事件，并可导出 JSON 或 Markdown 执行记录供另一个已授权 Agent
 恢复。平台 validation 通过不能单独代表业务质量通过。
 
-Context Query 返回结构化语义上下文，不生成最终答案。现有 Agent Test 页面仍会在平台内调用 LLM，
-且中文分词能力不足，只是 R-009 完成前的 legacy 调试入口。
+Context Query 返回结构化语义上下文，不生成最终答案。平台不再提供内置 LLM 问答；
+外部消费 Agent 应使用 Context Query 或 scoped SPARQL 获取事实并自行生成答案。
 
 ## 当前 UI 工作区
 
@@ -147,11 +147,11 @@ Context Query 返回结构化语义上下文，不生成最终答案。现有 Ag
 
 - Overview：Project Brief、Structured Requirements、Evidence Reference；
 - Modeling：Classes、Entities、Rules、Facts；
-- Debug：governance/runtime diagnostics、Build Context、Agent Test、Recall、MCP Tools、Graph Sets；
+- Debug：governance/runtime diagnostics、Build Context、Recall、MCP Tools、Graph Sets；
 - Settings：编辑锁与平台依赖健康。
 
-部分历史页面组件仍保留在代码中并重定向到当前工作区，它们不代表旧 Version、Proposal、Catalog、
-Connector 或 Publication HTTP/MCP 协议仍然存在。
+历史页面组件已经移除，仅保留旧 URL tab 到当前工作区的轻量兼容跳转；这些跳转不代表旧 Version、
+Proposal、Catalog、Connector 或 Publication HTTP/MCP 协议仍然存在。
 
 ## HTTP 与 MCP
 
@@ -185,7 +185,7 @@ fence 隔离并发，并在原 attempt 下向前恢复不确定结果。
 
 ## 当前缺口
 
-- R-009：Agent Test 尚未重构为纯 Context Query 诊断，仍有平台内 LLM 和中文分词缺口。
+- R-009：旧平台内 LLM 问答已移除；如后续恢复本需求，只实现 Context Query 调试与诊断。
 - R-010：v1.1 已交付固定 Dify 官方文档资料快照，但任务集、外部 Agent 执行器、指标报告以及
   R1.1-003 后的完整 Dify 集成重跑仍未闭环。
 - P1：持久 Search/Vector、模块依赖、不可变 release、异步任务、完整构建工作台等仍未闭环。
