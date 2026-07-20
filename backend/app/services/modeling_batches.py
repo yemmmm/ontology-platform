@@ -53,6 +53,7 @@ from app.services.operation_semantics import (
     OperationValidationError,
     reject_operation_secrets,
 )
+from app.services.semantic_retrieval import SemanticRetrievalCoordinator
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
@@ -1305,6 +1306,24 @@ class ModelingBatchService:
             self._finalize_success(locked)
             self.session.commit()
             attempt = locked
+            try:
+                retrieval_indexes = SemanticRetrievalCoordinator(
+                    self.session, self.rdf_store, self.settings
+                ).rebuild_affected(ontology_ids=[batch.ontology_id])
+            except Exception:
+                retrieval_indexes = [
+                    {
+                        "ontology_id": batch.ontology_id,
+                        "write_applied": True,
+                        "status": "failed",
+                        "warning": "retrieval_index_failed",
+                    }
+                ]
+            attempt.recovery_detail = {
+                **(attempt.recovery_detail or {}),
+                "retrieval_indexes": retrieval_indexes,
+            }
+            self.session.commit()
         except _ExecutionClaimLost:
             self.session.rollback()
             current = self.session.get(ModelingBatchAttemptModel, attempt.id)
@@ -1995,6 +2014,7 @@ class ModelingBatchService:
                 ),
                 "detail": attempt.recovery_detail or {},
             },
+            "retrieval_indexes": list((attempt.recovery_detail or {}).get("retrieval_indexes") or []),
             "created_at": attempt.created_at,
             "completed_at": attempt.completed_at,
         }

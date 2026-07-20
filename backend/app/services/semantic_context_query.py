@@ -20,6 +20,11 @@ from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineage
 from app.services.semantic_lineage_identity import statement_id_for_quad
 from app.services.semantic_query_scope import SemanticQueryScope, SemanticQueryScopeResolver
 from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointService
+from app.services.semantic_retrieval import (
+    SemanticResourceRetrievalService,
+    fuse_context_candidates,
+    recall_summary,
+)
 from app.services.semantic_sparql_templates import (
     semantic_context_candidates_query,
     semantic_context_neighborhood_query,
@@ -91,11 +96,14 @@ class SemanticContextQueryService:
         query: str,
         resource_types: list[str] | None = None,
         assertion_types: list[str] | None = None,
+        search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
     ) -> dict[str, Any]:
         text, terms = normalize_query_text(query)
         _validate_filters(resource_types, assertion_types, depth, limit)
+        if search_mode not in {"hybrid", "lexical"}:
+            raise SemanticContextQueryError("search_mode must be hybrid or lexical")
         selected_resource_types = set(resource_types or RESOURCE_TYPES)
         selected_assertion_types = set(assertion_types or ASSERTION_TYPES)
         scope = self.scope_resolver.resolve(
@@ -105,7 +113,16 @@ class SemanticContextQueryService:
         )
         warnings = [*scope.warnings, *_ontology_warnings(scope)]
         if not scope.graph_iris:
-            return self._response(text, terms, scope, [], [], False, warnings)
+            return self._response(
+                text,
+                terms,
+                scope,
+                [],
+                [],
+                False,
+                warnings,
+                {"mode": search_mode, "match_status": "no_match", "completeness": "complete", "indexes": []},
+            )
 
         candidate_limit = min(5000, max(500, limit * 50))
         candidate_fetch_limit = candidate_limit + 1
@@ -127,6 +144,15 @@ class SemanticContextQueryService:
         candidates.extend(self._rule_candidates(scope, text, terms))
         if "operation" in selected_resource_types:
             candidates.extend(self._operation_candidates(scope, text, terms))
+        retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall(
+            scope=scope,
+            query=text,
+            resource_kinds=selected_resource_types - {"fact"},
+            search_mode=search_mode,
+            limit=limit,
+        )
+        candidates = fuse_context_candidates(candidates, retrieval["candidates"])
+        warnings.extend(retrieval["warnings"])
         candidates = [
             item
             for item in candidates
@@ -186,6 +212,14 @@ class SemanticContextQueryService:
                     "message": "Multiple primary matches share the same normalized label.",
                 }
             )
+        recall = recall_summary(primary, retrieval, search_mode)
+        if recall["match_status"] == "ambiguous" and not _has_ambiguous_match(primary):
+            warnings.append(
+                {
+                    "code": "ambiguous_match",
+                    "message": "Multiple primary matches have similar retrieval scores.",
+                }
+            )
         decorated_primary = [self._decorate(item, scope) for item in primary]
         decorated_related = [self._decorate(item, scope) for item in related]
         warnings.extend(
@@ -201,6 +235,7 @@ class SemanticContextQueryService:
             decorated_related,
             truncated,
             warnings,
+            recall,
         )
 
     def _rdf_candidates(
@@ -796,6 +831,7 @@ LIMIT 5000
         related: list[dict[str, Any]],
         truncated: bool,
         warnings: list[dict[str, str]],
+        recall: dict[str, Any],
     ) -> dict[str, Any]:
         return {
             "query": {"text": text, "normalized_terms": terms},
@@ -804,6 +840,7 @@ LIMIT 5000
             "primary_matches": primary,
             "related_context": related,
             "truncated": truncated,
+            "recall": recall,
             "warnings": _dedupe_warnings(warnings),
         }
 

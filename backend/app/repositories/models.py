@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.repositories.postgres import Base
 
@@ -1272,6 +1273,63 @@ class SemanticProjectionManifestModel(Base):
     )
     manifest_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
+    )
+
+
+class SemanticRetrievalDocumentModel(Base):
+    """Rebuildable pgvector projection row; RDF and active Rules remain authoritative."""
+
+    __tablename__ = "semantic_retrieval_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "ontology_id",
+            "workspace_version",
+            "source_signature",
+            "resource_iri",
+            "resource_kind",
+            "projection_version",
+            "embedding_config_hash",
+            name="uq_semantic_retrieval_document_current_input",
+        ),
+        Index(
+            "ix_semantic_retrieval_scope",
+            "ontology_id",
+            "workspace_version",
+            "source_signature",
+            "resource_kind",
+            "projection_version",
+            "embedding_config_hash",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ontology_id: Mapped[str] = mapped_column(
+        ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
+    )
+    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    workspace_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_signature: Mapped[str] = mapped_column(String(128), nullable=False)
+    rule_set_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    resource_iri: Mapped[str] = mapped_column(Text, nullable=False)
+    resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    assertion_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="asserted")
+    label: Mapped[str | None] = mapped_column(Text)
+    aliases: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
+    descriptions: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
+    mapping_evidence: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list, nullable=False)
+    rdf_types: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    document_text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1024), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    embedding_config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    projection_version: Mapped[str] = mapped_column(String(120), nullable=False)
+    visibility: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    build_job_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    target_partition: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
 

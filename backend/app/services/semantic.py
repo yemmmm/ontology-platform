@@ -42,6 +42,7 @@ from app.services.semantic_derived_state import (
 )
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
+from app.services.semantic_retrieval import SemanticRetrievalCoordinator
 from app.services.operation_semantics import (
     OperationValidationError,
     operation_vocabulary,
@@ -288,7 +289,7 @@ class SemanticService:
             raise SemanticServiceError(str(exc)) from exc
         audit.warning_state = {**audit.warning_state, "stale_pointers": stale_pointers}
         self.session.commit()
-        return {
+        result = {
             "audit_id": audit.id,
             "applied": update_result.applied,
             "affected_graph_iris": affected_graphs,
@@ -298,6 +299,13 @@ class SemanticService:
             "graph_revisions": revision_bumps,
             "stale_derived_pointers": stale_pointers,
         }
+        if update_result.applied:
+            result["retrieval_indexes"] = SemanticRetrievalCoordinator(
+                self.session, self.rdf_store, self.settings
+            ).rebuild_affected(affected_graph_iris=affected_graphs)
+        else:
+            result["retrieval_indexes"] = []
+        return result
 
     def _graph_contains_operation(self, graph_iri: str, operation_type: str) -> bool:
         graph = Graph()

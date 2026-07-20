@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import OntologyModel, SemanticRuleDefinitionModel, SemanticRuleModel
+from app.services.semantic_retrieval import mark_retrieval_stale
 
 
 class RuleDefinitionError(RuntimeError):
@@ -151,6 +152,7 @@ class SemanticRuleDefinitionService:
         self.session.add(record)
         if semantic_rule is not None:
             semantic_rule.current_definition_id = record.id
+            mark_retrieval_stale(self.session, ontology_id)
         self.session.commit()
         return record
 
@@ -164,6 +166,14 @@ class SemanticRuleDefinitionService:
 
     def delete_rule(self, rule_id: str) -> None:
         record = self.get_rule(rule_id)
+        semantic_rule = (
+            self.session.get(SemanticRuleModel, record.semantic_rule_id)
+            if record.semantic_rule_id
+            else None
+        )
+        if semantic_rule and semantic_rule.current_definition_id == record.id:
+            semantic_rule.current_definition_id = None
+            mark_retrieval_stale(self.session, semantic_rule.ontology_id)
         self.session.delete(record)
         self.session.commit()
 

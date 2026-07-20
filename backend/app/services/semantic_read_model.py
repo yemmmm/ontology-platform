@@ -21,6 +21,12 @@ from app.services.semantic_read_scope import (
     SemanticReadScopeResolver,
 )
 from app.services.semantic_sparql_templates import ReadModelTemplate, get_template
+from app.services.semantic_retrieval import (
+    SemanticResourceRetrievalService,
+    fuse_context_candidates,
+    normalize_retrieval_text,
+    recall_summary,
+)
 
 
 class ReadModelError(RuntimeError):
@@ -56,6 +62,7 @@ class SemanticReadModelService:
         visibility_policy: _VisibilityPolicy | None = None,
         shape_endpoint: _ShapeEndpointProtocol | None = None,
         session: Any = None,
+        retrieval_service: SemanticResourceRetrievalService | None = None,
     ) -> None:
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
@@ -71,6 +78,7 @@ class SemanticReadModelService:
         # the request-scoped session here; older composers (graph-set-staleness,
         # entity-shape, fact-audit-queue) keep using ``scope_resolver`` only.
         self.session = session
+        self.retrieval_service = retrieval_service
 
     def read_model(
         self,
@@ -86,6 +94,7 @@ class SemanticReadModelService:
         kind: str | None = None,
         target: str | None = None,
         q: str | None = None,
+        search_mode: str = "hybrid",
     ) -> dict[str, Any]:
         try:
             template = get_template(model_name)
@@ -169,20 +178,23 @@ class SemanticReadModelService:
                 warnings=list(scope.warnings),
             )
         if template.name == "entity-search":
-            items = self._compose_entity_search(
+            items, retrieval = self._compose_entity_search(
                 template,
                 scope,
                 q=q,
                 class_iri=class_iri,
                 limit=limit or template.default_limit,
                 field_set=field_set,
+                search_mode=search_mode,
             )
-            return self._envelope(
+            envelope = self._envelope(
                 template=template,
                 scope=scope,
                 items=items,
-                warnings=list(scope.warnings),
+                warnings=[*scope.warnings, *retrieval.get("warnings", [])],
             )
+            envelope["recall"] = recall_summary(items, retrieval, search_mode)
+            return envelope
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         if not graph_iris and "{graph_iris}" in template.body:
             return self._envelope(
@@ -1436,7 +1448,8 @@ class SemanticReadModelService:
         class_iri: str | None,
         limit: int,
         field_set: str,
-    ) -> list[dict[str, Any]]:
+        search_mode: str = "hybrid",
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Run the entity-search SPARQL against the active scope's data graphs,
         decorating each row with the standard decorator plus the
         ``comment`` / ``class_iri`` / ``class_label`` / ``graph_set_id``
@@ -1475,7 +1488,96 @@ class SemanticReadModelService:
             decorated["class_label"] = self._cell(row, "class_label")
             decorated["graph_set_id"] = scope.graph_set_id
             items.append(decorated)
-        return items
+        retrieval: dict[str, Any] = {
+            "candidates": [], "indexes": [], "warnings": [], "completeness": "complete"
+        }
+        if q:
+            semantic_items: list[dict[str, Any]] = []
+            if self.retrieval_service is not None:
+                retrieval = self.retrieval_service.recall_graph_set(
+                    scope=scope,
+                    query=q,
+                    resource_kinds={"instance"},
+                    search_mode=search_mode,
+                    limit=bounded_limit,
+                )
+                semantic_items = retrieval["candidates"]
+            if class_iri:
+                semantic_items = [
+                    item
+                    for item in semantic_items
+                    if class_iri in item.get("data", {}).get("rdf_types", [])
+                ]
+            ontology_id = self._entity_search_ontology_id(scope.graph_set_id)
+            lexical_items = [
+                self._entity_lexical_candidate(item, q, ontology_id) for item in items
+            ]
+            semantic_rows = [
+                self._entity_semantic_row(candidate, scope) for candidate in semantic_items
+            ]
+            items = fuse_context_candidates(lexical_items, semantic_rows)
+            items.sort(key=_entity_search_sort_key)
+            items = items[:bounded_limit]
+        return items, retrieval
+
+    def _entity_search_ontology_id(self, graph_set_id: str) -> str:
+        if self.session is None:
+            return graph_set_id
+        from app.repositories.models import SemanticGraphSetModel
+
+        graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
+        return (
+            graph_set.scope_id
+            if graph_set is not None
+            and graph_set.scope_type == "ontology"
+            and graph_set.scope_id
+            else graph_set_id
+        )
+
+    @staticmethod
+    def _entity_lexical_candidate(
+        item: dict[str, Any], query: str, ontology_id: str
+    ) -> dict[str, Any]:
+        label = item.get("label") or item.get("iri") or ""
+        normalized_query = normalize_retrieval_text(query)
+        normalized_label = normalize_retrieval_text(str(label))
+        normalized_iri = normalize_retrieval_text(str(item.get("iri") or ""))
+        if normalized_label == normalized_query:
+            score, reason, field = 1000, "exact_label", "label"
+        elif normalized_iri == normalized_query:
+            score, reason, field = 600, "identifier", "identifier"
+        elif normalized_query and normalized_query in normalized_label:
+            score, reason, field = 750, "label_contains", "label"
+        else:
+            score, reason, field = 450, "description_contains", "description"
+        return {
+            **item,
+            "kind": "instance",
+            "ontology_id": ontology_id,
+            "match": {
+                "score": score,
+                "reasons": [reason],
+                "matched_fields": [field],
+                "matched_terms": [normalized_query],
+            },
+        }
+
+    @staticmethod
+    def _entity_semantic_row(candidate: dict[str, Any], scope: ScopeResolution) -> dict[str, Any]:
+        rdf_types = list(candidate.get("data", {}).get("rdf_types", []))
+        return {
+            **candidate,
+            "source_graph_iri": scope.source_graph_iris[0] if scope.source_graph_iris else "",
+            "evidence_status": "not_applicable",
+            "evidence_ids": [],
+            "provenance": {},
+            "audit_status": "system_accepted",
+            "staleness": {"is_stale": False, "reason": None},
+            "comment": candidate.get("description"),
+            "class_iri": rdf_types[0] if rdf_types else None,
+            "class_label": None,
+            "graph_set_id": scope.graph_set_id,
+        }
 
     # ------------------------------------------------------------------
     # owl-consistency-summary composer (Stage 4 §4.3)
@@ -1597,3 +1699,16 @@ def _sparql_iri_value(value: str) -> str:
     if not stripped or any(ch in stripped for ch in "<> \t\r\n"):
         raise ReadModelError("Invalid entity IRI")
     return stripped
+
+
+def _entity_search_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
+    """Keep entity results deterministic while preferring evidence-backed matches."""
+    match = item.get("match") or {}
+    is_exact = match.get("candidate_level") == "exact"
+    score = int(match.get("score", 0) or 0)
+    return (
+        0 if is_exact else 1,
+        -score,
+        normalize_retrieval_text(str(item.get("label") or "")),
+        str(item.get("iri") or ""),
+    )

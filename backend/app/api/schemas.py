@@ -623,6 +623,7 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
         list[Literal["concept", "instance", "relation", "fact", "rule", "operation"]] | None
     ) = None
     assertion_types: list[Literal["asserted", "derived"]] | None = None
+    search_mode: Literal["hybrid", "lexical"] = "hybrid"
     depth: int = Field(default=1, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
 
@@ -634,6 +635,7 @@ class SemanticContextQueryResponse(BaseModel):
     primary_matches: list[dict[str, Any]] = Field(default_factory=list)
     related_context: list[dict[str, Any]] = Field(default_factory=list)
     truncated: bool = False
+    recall: dict[str, Any] = Field(default_factory=dict)
     warnings: list[dict[str, str]] = Field(default_factory=list)
 
 
@@ -721,6 +723,7 @@ class SemanticEditResponse(BaseModel):
     validation: dict[str, Any] | None = None
     graph_revisions: dict[str, int] = Field(default_factory=dict)
     stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_indexes: list[dict[str, Any]] = Field(default_factory=list)
     # Stage 5 §4.5 — structured parse error. Only populated when parsing the
     # edit content failed; absent on successful preview/apply. Backwards-
     # compatible: existing consumers can ignore this field.
@@ -1074,6 +1077,7 @@ class SemanticReadModelEnvelope(BaseModel):
     include: str
     derived_state: dict[str, Any]
     warnings: list[dict[str, str]] = Field(default_factory=list)
+    recall: dict[str, Any] | None = None
     items: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -1120,6 +1124,7 @@ class SemanticProjectionJobCreate(BaseModel):
     mode: Literal["dry_run", "rebuild", "rebuild_side_by_side", "reconcile"] = "rebuild"
     target_partition: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    retrieval_index: dict[str, Any] | None = None
 
 
 class SemanticProjectionJobRead(BaseModel):
@@ -1361,6 +1366,7 @@ class SemanticCanonicalProductWriteResponse(BaseModel):
     validation: dict[str, Any] | None = None
     graph_revisions: dict[str, int] = Field(default_factory=dict)
     stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_indexes: list[dict[str, Any]] = Field(default_factory=list)
     evidence_associations: list[dict[str, Any]] = Field(default_factory=list)
 
 

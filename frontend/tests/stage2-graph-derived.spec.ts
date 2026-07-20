@@ -316,6 +316,32 @@ async function mockCommon(page: Page) {
       body = classTopologyEnvelope;
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/relation-type-list`) {
       body = relationTypeEnvelope;
+    } else if (path === "/semantic/context:query") {
+      const payload = route.request().postDataJSON();
+      expect(method).toBe("POST");
+      expect(payload).toEqual(expect.objectContaining({
+        project_id: project.id,
+        scope_mode: "ontologies",
+        ontology_ids: [ontology.id],
+        resource_types: ["concept"],
+        depth: 0,
+        search_mode: "hybrid",
+      }));
+      const entityOnly = payload.query === "entity-only";
+      body = {
+        query: { text: payload.query, normalized_terms: [payload.query] },
+        result_status: "matched",
+        scope: {},
+        primary_matches: entityOnly
+          ? [{ kind: "instance", iri: "http://x/Entity1" }]
+          : [
+              { kind: "concept", iri: "http://x/Class1" },
+              { kind: "instance", iri: "http://x/Entity1" },
+            ],
+        related_context: [],
+        warnings: [],
+        recall: { completeness: "complete" },
+      };
     } else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) {
       const include = url.searchParams.get("include");
       readModelRequests.push({ model: "entity-list", include });
@@ -402,6 +428,38 @@ test("ClassesPage graph-derived path renders class topology", async ({ page }) =
   await details.getByRole("button", { name: "Close details" }).click();
   await expect(page.getByLabel("Graph item details")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
+});
+
+test("ClassesPage uses concept-only hybrid recall to filter loaded topology", async ({ page }) => {
+  await mockCommon(page);
+  await page.goto(
+    `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=classes&graphSet=${GRAPH_SET_ID}`,
+  );
+
+  const input = page.getByPlaceholder("Search classes");
+  const recallRequest = page.waitForRequest((request) =>
+    request.method() === "POST" &&
+    request.url().includes("/semantic/context:query") &&
+    request.postDataJSON().query === "分类",
+  );
+  await input.fill("分类");
+  await recallRequest;
+  await expect(page.locator('button[aria-label="Select node Class 1"]')).toBeVisible();
+  await expect(page.locator('button[aria-label="Select node Class 0"]')).toHaveCount(0);
+
+  const instanceOnlyRequest = page.waitForRequest((request) =>
+    request.method() === "POST" &&
+    request.url().includes("/semantic/context:query") &&
+    request.postDataJSON().query === "entity-only",
+  );
+  await input.fill("entity-only");
+  await instanceOnlyRequest;
+  await expect(page.locator('button[aria-label="Select node Class 1"]')).toHaveCount(0);
+  await expect(page.locator('button[aria-label="Select node Class 0"]')).toHaveCount(0);
+
+  await input.fill("");
+  await expect(page.locator('button[aria-label="Select node Class 1"]')).toBeVisible();
+  await expect(page.locator('button[aria-label="Select node Class 0"]')).toBeVisible();
 });
 
 test("EntitiesPage graph-derived path renders entity topology only", async ({ page }) => {

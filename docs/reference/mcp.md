@@ -126,7 +126,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning/rule results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
 | semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, query, scope_mode | assertion_types, depth, limit, ontology_ids, project_id, query, resource_types, scope_mode | `backend/app/mcp/tools/semantic.py` |
+| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, query, scope_mode | assertion_types, depth, limit, ontology_ids, project_id, query, resource_types, scope_mode, search_mode | `backend/app/mcp/tools/semantic.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_migration_parity_check` | Run parity checks for a Phase 7 migration run. | run_id | check_name, run_id | `backend/app/mcp/tools/semantic.py` |

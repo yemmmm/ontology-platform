@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -124,10 +124,13 @@ from app.services.semantic_search_projection import (
     FakeSearchWriter,
     SemanticSearchProjectionService,
 )
-from app.services.semantic_vector_projection import (
-    FakeVectorWriter,
-    SemanticVectorProjectionService,
+from app.services.semantic_retrieval import (
+    SemanticResourceRetrievalService,
+    SemanticRetrievalCoordinator,
+    SemanticRetrievalProjectionService,
+    mark_retrieval_stale,
 )
+from app.services.embedding import EmbeddingClient
 from app.services.semantic_visibility import SemanticVisibilityPolicy
 from app.services.semantic_reasoning import SemanticReasoningService
 from app.services.semantic_rule_definition import (
@@ -246,6 +249,7 @@ def _read_model_service(
         visibility_policy=_visibility_policy(settings),
         shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
         session=session,
+        retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
 
 
@@ -269,7 +273,9 @@ def _projection_job_service(
 ) -> SemanticProjectionJobService:
     writers: dict[str, object] = {
         "search": SemanticSearchProjectionService(rdf_store, FakeSearchWriter()),
-        "vector": SemanticVectorProjectionService(rdf_store, FakeVectorWriter()),
+        "vector": SemanticRetrievalProjectionService(
+            session, rdf_store, EmbeddingClient(settings), settings
+        ),
     }
     return SemanticProjectionJobService(
         session=session,
@@ -394,6 +400,7 @@ def query_semantic_context(
             query=request.query,
             resource_types=request.resource_types,
             assertion_types=request.assertion_types,
+            search_mode=request.search_mode,
             depth=request.depth,
             limit=request.limit,
         )
@@ -864,7 +871,9 @@ def create_rule_definition(
     request: SemanticRuleDefinitionCreate,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
+    response: Response = None,
 ) -> SemanticRuleDefinitionRead:
     service = _rule_definition_service(session, settings)
     try:
@@ -885,7 +894,9 @@ def create_rule_definition(
         )
     except RuleDefinitionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _rule_definition_read(rule, session)
+    retrieval_index = _rebuild_retrieval_for_ontology(session, rdf_store, settings, rule)
+    _set_retrieval_headers(response, retrieval_index)
+    return _rule_definition_read(rule, session, retrieval_index=retrieval_index)
 
 
 @router.get("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
@@ -910,7 +921,9 @@ def update_rule_definition(
     request: SemanticRuleDefinitionUpdate,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
+    response: Response = None,
 ) -> SemanticRuleDefinitionRead:
     service = _rule_definition_service(session, settings)
     try:
@@ -923,13 +936,18 @@ def update_rule_definition(
                 rule.priority = request.priority
             if request.metadata is not None:
                 rule.rule_metadata = {**(rule.rule_metadata or {}), **request.metadata}
+            ontology_id = _rule_ontology_id(session, rule)
+            if ontology_id:
+                mark_retrieval_stale(session, ontology_id)
             session.commit()
             session.refresh(rule)
     except RuleDefinitionNotFound as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
     except RuleDefinitionError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _rule_definition_read(rule, session)
+    retrieval_index = _rebuild_retrieval_for_ontology(session, rdf_store, settings, rule)
+    _set_retrieval_headers(response, retrieval_index)
+    return _rule_definition_read(rule, session, retrieval_index=retrieval_index)
 
 
 @router.delete("/rule-definitions/{rule_id}", status_code=204)
@@ -937,16 +955,43 @@ def delete_rule_definition(
     rule_id: str,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     service = _rule_definition_service(session, settings)
     try:
         rule = service.get_rule(rule_id)
         _ensure_rule_access(session, rule, principal)
+        ontology_id = _rule_ontology_id(session, rule)
         service.delete_rule(rule_id)
     except RuleDefinitionNotFound as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    return Response(status_code=204)
+    retrieval_index = _rebuild_retrieval_for_ontology_id(
+        session, rdf_store, settings, ontology_id
+    )
+    headers = _retrieval_headers(retrieval_index)
+    if principal.is_org_admin and ontology_id:
+        headers["Link"] = f'</api/semantic/ontologies/{ontology_id}/retrieval:rebuild>; rel="rebuild"'
+    return Response(status_code=204, headers=headers)
+
+
+@router.post("/ontologies/{ontology_id}/retrieval:rebuild")
+def rebuild_ontology_retrieval(
+    ontology_id: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Retry one Ontology's disposable retrieval projection for an org admin."""
+    ontology = session.get(OntologyModel, ontology_id)
+    if ontology is None or (
+        principal.project_id is not None and ontology.project_id != principal.project_id
+    ):
+        raise HTTPException(status_code=404, detail="Ontology not found")
+    if not principal.is_org_admin:
+        raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
+    return _rebuild_retrieval_for_ontology_id(session, rdf_store, settings, ontology_id)
 
 
 @router.post(
@@ -1354,6 +1399,12 @@ def compile_and_apply_product_command(
             )
             session.commit()
             result["evidence_associations"] = [association_to_dict(row) for row in associations]
+            result["retrieval_indexes"] = SemanticRetrievalCoordinator(
+                session, rdf_store, settings
+            ).rebuild_affected(
+                affected_graph_iris=result["affected_graph_iris"],
+                ontology_ids=[ontology.id],
+            )
         else:
             result["evidence_associations"] = []
     except CanonicalSemanticWriteError as exc:
@@ -1426,6 +1477,7 @@ def read_model(
     kind: Annotated[str | None, Query()] = None,
     target: Annotated[str | None, Query()] = None,
     q: Annotated[str | None, Query()] = None,
+    search_mode: Annotated[str, Query(pattern="^(hybrid|lexical)$")] = "hybrid",
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1444,6 +1496,7 @@ def read_model(
             kind=kind,
             target=target,
             q=q,
+            search_mode=search_mode,
         )
     except (ReadModelError, ReadScopeError) as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
@@ -1807,7 +1860,9 @@ def _ensure_rule_access(
         raise HTTPException(status_code=404, detail="Rule definition not found")
 
 
-def _rule_definition_read(rule, session: Session) -> SemanticRuleDefinitionRead:
+def _rule_definition_read(
+    rule, session: Session, retrieval_index: dict[str, Any] | None = None
+) -> SemanticRuleDefinitionRead:
     return SemanticRuleDefinitionRead(
         id=rule.id,
         ontology_id=_rule_ontology_id(session, rule),
@@ -1827,7 +1882,45 @@ def _rule_definition_read(rule, session: Session) -> SemanticRuleDefinitionRead:
         created_at=rule.created_at,
         updated_at=rule.updated_at,
         metadata=dict(rule.rule_metadata or {}),
+        retrieval_index=retrieval_index,
     )
+
+
+def _rebuild_retrieval_for_ontology(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+    rule: SemanticRuleDefinitionModel,
+) -> dict[str, Any]:
+    return _rebuild_retrieval_for_ontology_id(
+        session, rdf_store, settings, _rule_ontology_id(session, rule)
+    )
+
+
+def _rebuild_retrieval_for_ontology_id(
+    session: Session,
+    rdf_store: RdfStoreRepository,
+    settings: Settings,
+    ontology_id: str | None,
+) -> dict[str, Any]:
+    if not ontology_id:
+        return {"write_applied": True, "status": "stale", "warning": "retrieval_index_unscoped"}
+    return SemanticRetrievalCoordinator(session, rdf_store, settings).rebuild_ontology(ontology_id)
+
+
+def _retrieval_headers(retrieval_index: dict[str, Any]) -> dict[str, str]:
+    headers = {
+        "X-Semantic-Write-Applied": "true",
+        "X-Retrieval-Index-Status": str(retrieval_index.get("status", "stale")),
+    }
+    if retrieval_index.get("job_id"):
+        headers["X-Retrieval-Index-Job-Id"] = str(retrieval_index["job_id"])
+    return headers
+
+
+def _set_retrieval_headers(response: Response | None, retrieval_index: dict[str, Any]) -> None:
+    if response is not None:
+        response.headers.update(_retrieval_headers(retrieval_index))
 
 
 def _rule_run_response(result: dict) -> dict:

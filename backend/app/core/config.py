@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     embedding_model: str = "embedding-3"
     embedding_dimensions: int = Field(default=1024, ge=256, le=2048)
     embedding_timeout_seconds: float = Field(default=45, gt=0, le=300)
+    semantic_retrieval_projection_version: str = "semantic-retrieval-v1"
+    semantic_retrieval_document_template_version: str = "semantic-retrieval-document-v1"
+    semantic_retrieval_normalization_version: str = "nfkc-casefold-v1"
+    semantic_retrieval_fusion_version: str = "max-rank-score-v1"
+    semantic_retrieval_min_similarity: float = Field(default=0.45, ge=0, le=1)
+    semantic_retrieval_ambiguity_margin: float = Field(default=0.03, ge=0, le=1)
+    semantic_retrieval_build_batch_size: int = Field(default=16, ge=1, le=128)
+    semantic_retrieval_query_timeout_seconds: float = Field(default=8, gt=0, le=120)
 
     oxigraph_url: str = "http://localhost:7878"
     semantic_base_iri: str = "http://ontology-platform.local/semantic/"

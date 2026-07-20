@@ -77,11 +77,12 @@ class SemanticProjectionJobService:
         )
         revisions = self._revisions_for(scope.source_graph_iris)
         pointers = self._derived_pointers(graph_set_id)
+        job_id = str(uuid4())
         partition = target_partition or self._default_partition(
-            graph_set_id, projection_kind, projection_version
+            graph_set_id, projection_kind, projection_version, job_id
         )
         job = SemanticProjectionJobModel(
-            id=str(uuid4()),
+            id=job_id,
             graph_set_id=graph_set_id,
             projection_kind=projection_kind,
             projection_version=projection_version,
@@ -137,6 +138,24 @@ class SemanticProjectionJobService:
                 job.node_count = int(counts.get("node_count", 0))
                 job.relationship_count = int(counts.get("relationship_count", 0))
                 job.document_count = int(counts.get("document_count", 0))
+            # A writer is allowed to take time (notably while embedding).  Do
+            # not promote a partition that was built from a superseded scope.
+            current_graph_set = self._get_graph_set(job.graph_set_id)
+            current_scope = self.scope_resolver_builder(self.session).resolve(
+                graph_set_id=job.graph_set_id,
+                include=job.projection_scope,
+                allow_stale_derived=True,
+            )
+            if (
+                current_graph_set.source_signature != job.source_signature
+                or current_scope.source_signature != job.source_signature
+                or self._revisions_for(current_scope.source_graph_iris) != job.input_graph_revisions
+                or self._derived_pointers(job.graph_set_id) != (job.input_derived_pointers or {})
+            ):
+                job.status = "stale"
+                job.finished_at = datetime.now(UTC)
+                self.session.commit()
+                return job
             job.status = "succeeded"
             job.finished_at = datetime.now(UTC)
             self.session.commit()
@@ -269,6 +288,22 @@ class SemanticProjectionJobService:
         }
 
     def _promote_manifest(self, job: SemanticProjectionJobModel) -> None:
+        graph_set = self._get_graph_set(job.graph_set_id)
+        if graph_set.source_signature != job.source_signature:
+            job.status = "stale"
+            self.session.commit()
+            return
+        # A projection partition becomes queryable only when it is the one
+        # current partition for this graph set/kind.  Older partitions remain
+        # recoverable but cannot leak into a current query.
+        for prior in self.session.scalars(
+            select(SemanticProjectionManifestModel).where(
+                SemanticProjectionManifestModel.graph_set_id == job.graph_set_id,
+                SemanticProjectionManifestModel.projection_kind == job.projection_kind,
+                SemanticProjectionManifestModel.status == "current",
+            )
+        ):
+            prior.status = "stale"
         manifest = self.session.scalar(
             select(SemanticProjectionManifestModel).where(
                 SemanticProjectionManifestModel.graph_set_id == job.graph_set_id,
@@ -315,9 +350,9 @@ class SemanticProjectionJobService:
         self.session.commit()
 
     def _default_partition(
-        self, graph_set_id: str, kind: str, version: str
+        self, graph_set_id: str, kind: str, version: str, job_id: str
     ) -> str:
-        return f"{graph_set_id}/{kind}/{version}"
+        return f"{graph_set_id}/{kind}/{version}/{job_id}"
 
     def _target_store_for(self, kind: str) -> str | None:
         return {

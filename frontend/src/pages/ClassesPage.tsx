@@ -11,7 +11,7 @@
 
 import { Alert, Button, Card, Input, Modal, Skeleton, Tag } from "antd";
 import { Edit3, Plus, RefreshCw, Save, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ForceGraphCanvas,
@@ -21,6 +21,7 @@ import {
 import { useT } from "../i18n";
 import {
   compileAndApplyProductCommand,
+  querySemanticConcepts,
   readModel,
   type SemanticShaclFormGuidance,
 } from "../semanticApi";
@@ -59,12 +60,21 @@ type RelationTypeEnvelope = {
 
 type ClassesPageProps = {
   graphSetId: string;
+  projectId: string;
   ontologyId: string;
   readOnly: boolean;
   request: WorkbenchRequest;
 };
 
-export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: ClassesPageProps) {
+const CLASS_SEARCH_DEBOUNCE_MS = 200;
+
+export function ClassesPage({
+  graphSetId,
+  projectId,
+  ontologyId,
+  readOnly,
+  request,
+}: ClassesPageProps) {
   const t = useT();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -73,6 +83,12 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
   const [selectedIri, setSelectedIri] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [semanticMatchIris, setSemanticMatchIris] = useState<Set<string> | null>(null);
+  const [semanticSearchRecall, setSemanticSearchRecall] = useState<
+    "complete" | "degraded" | null
+  >(null);
+  const semanticSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -102,9 +118,59 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (semanticSearchTimer.current) clearTimeout(semanticSearchTimer.current);
+    semanticSearchTimer.current = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, CLASS_SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (semanticSearchTimer.current) clearTimeout(semanticSearchTimer.current);
+    };
+  }, [searchQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!debouncedSearchQuery) {
+      setSemanticMatchIris(null);
+      setSemanticSearchRecall(null);
+      return;
+    }
+    setSemanticMatchIris(null);
+    setSemanticSearchRecall(null);
+    void querySemanticConcepts(request, {
+      projectId,
+      ontologyId,
+      query: debouncedSearchQuery,
+      searchMode: "hybrid",
+      limit: 50,
+    })
+      .then((response) => {
+        if (cancelled) return;
+        const iriSet = new Set(
+          response.primary_matches
+            .filter((match) => match.kind === "concept" && typeof match.iri === "string")
+            .map((match) => match.iri as string),
+        );
+        setSemanticMatchIris(iriSet);
+        setSemanticSearchRecall(response.recall?.completeness ?? "complete");
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setSemanticMatchIris(new Set());
+        setSemanticSearchRecall(null);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSearchQuery, ontologyId, projectId, request]);
+
   const { graphNodes, graphEdges, classByIri, edgeById } = useMemo(() => {
     const byIri = new Map<string, ClassTopologyRow>();
-    for (const row of envelope?.items ?? []) {
+    const topologyRows = semanticMatchIris
+      ? (envelope?.items ?? []).filter((row) => semanticMatchIris.has(row.iri))
+      : (envelope?.items ?? []);
+    for (const row of topologyRows) {
       if (!byIri.has(row.iri)) byIri.set(row.iri, row);
     }
     const nodes: ForceGraphNode[] = Array.from(byIri.values()).map((row) => ({
@@ -116,7 +182,7 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
     const edges: ForceGraphEdge[] = [];
     const edgePayloads = new Map<string, ClassGraphEdgePayload>();
 
-    for (const row of envelope?.items ?? []) {
+    for (const row of topologyRows) {
       if (row.parent && nodeIds.has(row.parent) && nodeIds.has(row.iri)) {
         const id = `subclass:${row.iri}:${row.parent}`;
         edges.push({
@@ -141,7 +207,7 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
       }
     }
     return { graphNodes: nodes, graphEdges: edges, classByIri: byIri, edgeById: edgePayloads };
-  }, [envelope, relations, t]);
+  }, [envelope, relations, semanticMatchIris, t]);
 
   const selectedClass = selectedIri ? classByIri.get(selectedIri) ?? null : null;
   const selectedEdge = selectedEdgeId ? edgeById.get(selectedEdgeId) ?? null : null;
@@ -304,6 +370,13 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
           message={t("Workspace is locked. Unlock in Settings to edit modeling data.")}
         />
       )}
+      {semanticSearchRecall === "degraded" && (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("Semantic class recall is degraded; results reflect currently available retrieval paths.")}
+        />
+      )}
 
       <Card
         size="small"
@@ -353,8 +426,14 @@ export function ClassesPage({ graphSetId, ontologyId, readOnly, request }: Class
                   setSelectedEdgeId(id);
                   if (id) setSelectedIri(null);
                 }}
-                searchQuery={searchQuery}
-                emptyTitle={t("No classes in this workspace yet.")}
+                searchQuery=""
+                emptyTitle={
+                  debouncedSearchQuery
+                    ? semanticSearchRecall === "degraded"
+                      ? t("No classes matched through the currently available retrieval paths.")
+                      : t("No classes match this search.")
+                    : t("No classes in this workspace yet.")
+                }
                 emptyHint={t("Create a class to populate the force graph.")}
               />
             )}

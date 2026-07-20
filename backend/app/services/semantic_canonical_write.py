@@ -53,6 +53,7 @@ from app.services.semantic_graph_registry import (
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 from app.services.operation_semantics import OperationValidationError, validate_operation_delta
+from app.services.semantic_retrieval import SemanticRetrievalCoordinator
 
 
 class CanonicalSemanticWriteError(RuntimeError):
@@ -204,7 +205,7 @@ class CanonicalSemanticWriteService:
         audit.warning_state = {**audit.warning_state, "stale_pointers": stale_pointers}
         if commit:
             self.session.commit()
-        return {
+        result = {
             "audit_id": audit.id,
             "applied": write_result.applied,
             "command_kind": compiled.command_kind,
@@ -215,6 +216,17 @@ class CanonicalSemanticWriteService:
             "graph_revisions": revision_bumps,
             "stale_derived_pointers": stale_pointers,
         }
+        if commit and write_result.applied:
+            ontology_id = compiled.metadata.get("ontology_id")
+            result["retrieval_indexes"] = SemanticRetrievalCoordinator(
+                self.session, self.rdf_store, self.settings
+            ).rebuild_affected(
+                affected_graph_iris=affected,
+                ontology_ids=[str(ontology_id)] if ontology_id else [],
+            )
+        else:
+            result["retrieval_indexes"] = []
+        return result
 
     def apply_command(
         self,

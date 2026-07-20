@@ -902,6 +902,7 @@ function WorkspaceContent(props: {
     return (
       <ClassesPage
         graphSetId={graphSetId}
+        projectId={props.project.id}
         ontologyId={props.ontology.id}
         readOnly={readOnly}
         request={governedRequest}

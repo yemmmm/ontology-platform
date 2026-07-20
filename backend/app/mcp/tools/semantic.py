@@ -46,10 +46,8 @@ from app.services.semantic_search_projection import (
     FakeSearchWriter,
     SemanticSearchProjectionService,
 )
-from app.services.semantic_vector_projection import (
-    FakeVectorWriter,
-    SemanticVectorProjectionService,
-)
+from app.services.semantic_retrieval import SemanticRetrievalProjectionService
+from app.services.embedding import EmbeddingClient
 from app.services.semantic_visibility import SemanticVisibilityPolicy
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 
@@ -173,6 +171,7 @@ def register_semantic(server: FastMCP) -> None:
         ontology_ids: list[str] | None = None,
         resource_types: list[str] | None = None,
         assertion_types: list[str] | None = None,
+        search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
     ) -> dict[str, Any]:
@@ -185,6 +184,7 @@ def register_semantic(server: FastMCP) -> None:
                 query=query,
                 resource_types=resource_types,
                 assertion_types=assertion_types,
+                search_mode=search_mode,
                 depth=depth,
                 limit=limit,
             )
@@ -626,9 +626,12 @@ def _export_service(session) -> SemanticExportService:
 
 
 def _projection_job_service(session, driver) -> SemanticProjectionJobService:
+    settings = Settings()
     writers = {
         "search": SemanticSearchProjectionService(_rdf_store(), FakeSearchWriter()),
-        "vector": SemanticVectorProjectionService(_rdf_store(), FakeVectorWriter()),
+        "vector": SemanticRetrievalProjectionService(
+            session, _rdf_store(), EmbeddingClient(settings), settings
+        ),
     }
     return SemanticProjectionJobService(
         session=session,

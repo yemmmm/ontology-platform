@@ -16,7 +16,7 @@ import { ChevronDown, ChevronRight, Database, RefreshCw, Search } from "lucide-r
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "../i18n";
-import { readModel, type SemanticRequester } from "../semanticApi";
+import { readEntitySearch, readModel, type SemanticRequester } from "../semanticApi";
 
 type AssertionKindFilter = "all" | "asserted" | "owl_inferred" | "rule_derived";
 
@@ -38,6 +38,7 @@ type EntitySearchEnvelope = {
   graph_set_id: string;
   model_name: string;
   projection_version: string;
+  recall?: { completeness?: "complete" | "degraded" };
   items: EntitySearchRow[];
 };
 
@@ -114,16 +115,14 @@ export function EntitiesSearchPage({
     setLoading(true);
     setError("");
     try {
-      const envelope = await readModel<EntitySearchEnvelope>(
+      const envelope = await readEntitySearch<EntitySearchEnvelope>(
         request,
         graphSetId,
-        "entity-search",
         {
           q: debouncedQuery,
           classIri: classIri || undefined,
-          include: "asserted",
-          fieldSet: "summary",
           limit: 50,
+          searchMode: "hybrid",
         },
       );
       setResult(envelope);
@@ -240,7 +239,9 @@ export function EntitiesSearchPage({
             <Database size={22} />
             <span>
               {debouncedQuery
-                ? t("No entities matched. Try a broader query.")
+                ? result?.recall?.completeness === "degraded"
+                  ? t("No entities matched through the currently available retrieval paths.")
+                  : t("No entities matched. Try a broader query.")
                 : t("Type to search across the active graph set.")}
             </span>
           </div>

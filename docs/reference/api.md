@@ -213,6 +213,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:rollback` | Rollback Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:run-next-batch` | Run Next Migration Batch |
 | semantic | `POST` | `/api/semantic/migrations:preflight` | Preflight Migration |
+| semantic | `POST` | `/api/semantic/ontologies/{ontology_id}/retrieval:rebuild` | Rebuild Ontology Retrieval |
 | semantic | `POST` | `/api/semantic/projection-jobs/{job_id}:run` | Run Projection Job |
 | semantic | `POST` | `/api/semantic/projections:reconcile` | Reconcile Projections |
 | semantic | `POST` | `/api/semantic/reasoning-runs` | Create Reasoning Run |

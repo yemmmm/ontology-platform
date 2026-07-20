@@ -403,6 +403,21 @@ test("entity search returns the Acme Corp row with [asserted] chip", async ({
   await expect(page.locator('[aria-label="entity-search-assertion-asserted"]')).toBeVisible();
 });
 
+test("entity search explicitly uses the default hybrid retrieval mode", async ({ page }) => {
+  await mockStage4(page);
+  await page.goto(workspaceUrl("search"));
+
+  const searchRequest = page.waitForRequest(
+    (req) =>
+      req.method() === "GET" &&
+      req.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-search`) &&
+      req.url().includes("q=acme") &&
+      new URL(req.url()).searchParams.get("search_mode") === "hybrid",
+  );
+  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
+  await searchRequest;
+});
+
 // ---------------------------------------------------------------------------
 // Step 2 — Asserted scope filter keeps the row count unchanged.
 // ---------------------------------------------------------------------------

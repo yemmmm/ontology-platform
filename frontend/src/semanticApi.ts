@@ -24,6 +24,22 @@ import type {
 
 export type SemanticRequester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 
+export type SemanticSearchMode = "hybrid" | "lexical";
+
+type SemanticRecallState = {
+  completeness?: "complete" | "degraded";
+};
+
+type SemanticContextConceptMatch = {
+  kind?: string;
+  iri?: string;
+};
+
+export type SemanticContextConceptResponse = {
+  primary_matches: SemanticContextConceptMatch[];
+  recall?: SemanticRecallState;
+};
+
 const SEMANTIC_BASE = "/semantic";
 
 function withParams(base: string, params: Record<string, unknown> = {}): string {
@@ -467,6 +483,65 @@ export function readModel<T = SemanticReadModelEnvelope>(
     },
   );
   return request<T>(path);
+}
+
+/**
+ * R1.2-003 Entity adapter. This deliberately remains a read-model request:
+ * it only makes the shared retrieval mode explicit and does not create a
+ * parallel client-side search contract.
+ */
+export function readEntitySearch<T>(
+  request: SemanticRequester,
+  graphSetId: string,
+  params: {
+    q: string;
+    classIri?: string;
+    searchMode?: SemanticSearchMode;
+    limit?: number;
+  },
+) {
+  const path = withParams(
+    `${SEMANTIC_BASE}/graph-sets/${graphSetId}/read-models/entity-search`,
+    {
+      q: params.q,
+      class_iri: params.classIri,
+      include: "asserted",
+      field_set: "summary",
+      limit: params.limit ?? 50,
+      search_mode: params.searchMode ?? "hybrid",
+    },
+  );
+  return request<T>(path);
+}
+
+/**
+ * R1.2-003 Class adapter. The server-side Context Query remains the sole
+ * retrieval implementation; callers only receive concept candidates so the
+ * page can map their stable IRIs onto topology it already loaded.
+ */
+export function querySemanticConcepts(
+  request: SemanticRequester,
+  params: {
+    projectId: string;
+    ontologyId: string;
+    query: string;
+    searchMode?: SemanticSearchMode;
+    limit?: number;
+  },
+) {
+  return request<SemanticContextConceptResponse>(`${SEMANTIC_BASE}/context:query`, {
+    method: "POST",
+    body: JSON.stringify({
+      project_id: params.projectId,
+      scope_mode: "ontologies",
+      ontology_ids: [params.ontologyId],
+      query: params.query,
+      resource_types: ["concept"],
+      depth: 0,
+      limit: params.limit ?? 50,
+      search_mode: params.searchMode ?? "hybrid",
+    }),
+  });
 }
 
 // Stage 2 §3.4 — per-class shape guidance -----------------------------------

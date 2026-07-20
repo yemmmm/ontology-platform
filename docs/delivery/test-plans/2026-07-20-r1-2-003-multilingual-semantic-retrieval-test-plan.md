@@ -162,10 +162,88 @@ curl --fail http://127.0.0.1:5173/
 
 独立 tester 在开发停止写入后的稳定状态追加 Round；不得修改上述合同或删除失败历史。
 
-### Independent Round 1 — pending
+### Independent Round 1 — 2026-07-20 (FAIL)
 
-- Result: pending product implementation.
-- Stable state: pending.
-- Evidence: pending.
-- Defects/unexecuted cases: all product/runtime cases remain unexecuted in this documentation-only
-  delivery.
+- Result: **FAIL**. The retrieval core, migration, provider integration, regression suite and runtime
+  health pass, but two High contract defects prevent R1.2-003 acceptance. No product code was changed
+  during this round.
+- Stable state: developer handoff after `SET LOCAL statement_timeout` was present in
+  `PgVectorRetrievalRepository.exact_cosine_candidates`; worktree was stable during execution. Existing
+  unrelated dirty files, including `AGENTS.md` and `CLAUDE.md`, were preserved.
+
+#### Passing evidence
+
+- `cd backend && uv run alembic current` returned `0029_pgvector_semantic_retrieval (head)`. The live
+  PostgreSQL 17.10 database reported `vector:0.8.5` and `pg_trgm:1.6`; the retrieval embedding column is
+  a user-defined `vector`, its DDL is `vector(1024)`, and its indexes are scope B-tree, partition B-tree,
+  unique input and `gin_trgm`. The live catalog returned zero HNSW/IVFFlat indexes.
+- A real PostgreSQL transaction created a uniquely named, scoped temporary Project/Ontology/Graph Set,
+  current manifest and four retrieval documents, then rolled back. The actual repository query returned
+  only the in-scope `concept`, excluded a foreign Ontology, wrong kind and stale source signature, returned
+  `semantic_candidate`, kept `lexical` complete without an embedding call, mapped provider failure to
+  `degraded`, and returned complete `no_match` for a negative vector. `SHOW statement_timeout` was
+  `500ms`; document count was `0` before and after rollback.
+- A second rollback-only probe used the configured real `embedding-3` provider with real pgvector cosine
+  search. It recalled the intended English candidates for all required Chinese names with complete indexes:
+  `客服工单` -> `Customer Support Workflow` (0.694), `发票对账` ->
+  `Invoice Reconciliation Workflow` (0.661), and `合同风险审查` ->
+  `Quarterly Contract Risk Review` (0.761). No test document remained (`0` before/after).
+- Metadata-document probe admitted a labelled Class but excluded a fact literal, Evidence excerpt and
+  secret marker; the generated record contains no query text or query vector fields. A direct provider
+  probe returned one finite 1024-dimensional vector.
+- Focused backend checks passed: `cd backend && uv run pytest
+  tests/test_semantic_retrieval.py tests/test_semantic_context_query.py
+  tests/test_semantic_context_query_api.py tests/test_semantic_context_query_mcp.py
+  tests/test_semantic_read_model.py tests/test_semantic_class_type_read_models.py
+  tests/test_semantic_projection_job.py -q` -> `53 passed`. The required full command
+  `cd backend && uv run pytest -q --cache-clear` completed with no `lastfailed` cache (732 collected;
+  726 passed/6 skipped). `uv run pytest tests/test_owl_reasoner.py -q` -> `2 passed`; a direct
+  `.venv/bin/python` invocation's missing-`rdflib` shebang failure is therefore a non-required-invocation
+  environment caveat, not this round's product failure.
+- Frontend checks passed: `cd frontend && npm run build` succeeded (only the pre-existing Vite large-chunk
+  warning), and `cd frontend && npx playwright test` -> `38 passed`. `git diff --check` passed.
+- `systemctl --user restart ontology-platform.service` completed; the unit became active and
+  `curl --fail http://127.0.0.1:8001/api/health` returned `{"status":"ok"}`, while
+  `curl --fail http://127.0.0.1:5173/` returned the frontend document.
+
+#### Confirmed High defects
+
+1. **Non-Rule semantic writes do not synchronously rebuild the retrieval projection.** R1.2-003 requires
+   every current-resource write to commit the authority first, mark/rebuild the affected Ontology index in
+   the same request, and report `write_applied` plus the index outcome. The reviewed design explicitly
+   includes modeling batches, governed semantic/canonical edits, import/workspace replacement, Operation
+   changes and derived-pointer changes. Repository-wide call-site review found `mark_retrieval_stale` and
+   `_rebuild_retrieval_for_*` only on Rule Definition POST/PATCH/DELETE
+   (`backend/app/services/semantic_rule_definition.py` and `backend/app/api/semantic.py`). The vector
+   writer is merely registered with manual projection-job services in REST/MCP. Thus a non-Rule RDF write
+   changes the source signature so an old document is rejected/degraded, but does not perform the required
+   synchronous rebuild or return the required write/index contract. New coverage only asserts Rule stale
+   behaviour.
+2. **Entity `hybrid` search does not use the shared fusion and stable-order contract.**
+   `SemanticReadModelService._compose_entity_search` retains SPARQL substring rows in their original order,
+   appends vector candidates, and for a shared IRI overwrites `existing["match"]` with the semantic match
+   (`backend/app/services/semantic_read_model.py:1480-1528`). It neither calls
+   `fuse_context_candidates` nor computes lexical exact evidence, stable fusion ordering, or a post-fusion
+   limit. An Entity with an exact lexical label plus a vector result can therefore be reported as only
+   `semantic_candidate`, and Entity ordering can diverge from Context Query. This violates the requirement
+   that Context, Entity and Class use the same candidate basis, thresholds and stable ordering.
+
+#### Blocked or intentionally unexecuted runtime cases
+
+- The local service has no configured bootstrap or MCP API key. Unauthenticated Context and read-model
+  calls correctly returned `401`, and `python -m app.mcp.server` failed closed with
+  `ONTOLOGY_MCP_API_KEY is required`. Consequently authenticated live REST/MCP parity, Rule response-header
+  checks and the public three-Chinese-name trace could not be run without creating credentials.
+- The live database has zero retrieval documents and existing Ontologies were not backfilled. To preserve
+  permanent business data, this round did not create a persistent index or execute governed/modeling writes.
+  Existing-data backfill, authenticated public queries, write-success/failure/retry, concurrent-write and
+  Rule crash-window cases must be re-run after the two defects are repaired and an authorized isolated
+  fixture is available.
+
+#### Residual risk and repair gate
+
+Repair must route every in-scope semantic write through one coordinator that preserves fact-first semantics,
+atomically invalidates the correct manifest, synchronously rebuilds and reports the per-Ontology outcome.
+Entity search must reuse the Context fusion/scoring/sorting helper (or an equivalent single shared helper)
+without discarding lexical evidence. A new independent round must then verify all authenticated REST/MCP
+paths against a backfilled isolated Ontology before this requirement can pass.
