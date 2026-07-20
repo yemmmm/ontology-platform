@@ -612,10 +612,89 @@ Query、SPARQL、SHACL validation、lineage、Build Session 完成、导出和�
 R1.1-004 的集成门禁，但不把本地快照当成平台 Evidence Reference 或通用采集功能，也不替代
 R1.1-001 对可重复业务质量改善的验收。
 
+## R1.1-005 Claude Code 双主 Agent 建模交互评测 Harness
+
+当前状态：`已实现`
+
+方案状态：`已确认并交付；独立测试 Round 2 与真实 Claude Code 2.1.215 硬门禁 PASS`
+
+确认日期：2026-07-20
+
+依赖：R1.1-001、R1.1-002、R1.1-003；复用 R1.1-004 固定资料集进行后续效果实验
+
+### 要解决的问题
+
+现有 repo-local Harness 只把一个 Codex 主 session 绑定到一个评测 run。该主 Agent 同时承担用户
+交互、建模编排、人工审批代理和平台进度管理，因此记录只能观察一个上下文中的角色切换，不能模拟
+独立用户与建模 Agent 之间的真实多轮提问、回答、拒绝、批准和返工过程。
+
+### 目标行为
+
+在同一评测 run 中显式启动两个相互独立的 Claude Code 顶层 session：`simulated-user` 只模拟
+用户目标、回答和审批，`ontology-modeling-agent` 负责建模编排，并在自己的 session 内调用抽取、
+分析和独立评审 subagent。两个顶层 session 通过 Harness 的 repo-local 追加式 mailbox 交换可见消息；
+Harness 使用稳定 run ID、参与者角色和各自 session ID 将消息、任务、subagent、阶段摘要及平台
+资源引用关联起来，供后续比较工作流版本。
+
+双主 session 必须由操作者分别激活并绑定同一 run，不得把 Claude Code 的普通 `local_agent`
+subagent 冒充为独立顶层 teammate。Claude Code Runtime 只负责会话和 Hook 事件；Build Checkpoint、
+Modeling Execution Event、Modeling Workflow Artifact、Batch、Attempt、Validation、Lineage 和当前读
+模型继续是平台事实的权威来源。
+
+### 角色与记录边界
+
+- `simulated-user` 可以读取明确提供的场景包，提出或回答用户可见问题，并发送模拟批准、拒绝或
+  补充信息；所有决定必须标记为 `agent_reported` 和 `simulated=true`，不能记为真人
+  `user_reported`，也不能代替平台正式授权。
+- `ontology-modeling-agent` 协调业务理解、建模、dry-run、评审、返工、apply 和验收；只有该参与者
+  可以把成功的平台执行事件关联为 Harness 阶段 checkpoint。
+- 抽取、分析和评审 subagent 使用独立新上下文，由建模主 Agent 显式传入版本化资料或产物；Hook
+  记录其角色、生命周期和有界结果摘要，不保存完整 transcript 或隐藏推理。
+- Harness 记录两个顶层 session 间的可见消息方向、消息类型和有界内容，记录任务及阶段变化，并
+  为每个参与者独立去重、恢复和停止；秘密或超限内容失败关闭并允许人工提供脱敏替代。
+- mailbox 的发送和确认以及双模式本地 checkpoint 必须先由当前 Claude session 的 `PreToolUse`
+  Hook 建立一次性操作回执，CLI 再原子验证回执与绑定角色；仅填写角色名不能获得该角色权限。
+- 评测原始事件保持 repo-local。只有完成或取消且摘要成功的 run 发布脱敏 retrospective；这些记录
+  用于流程优化，不宣称模型质量或平台状态已经通过验证。
+
+### 验收标准
+
+- 两个不同 Claude Code session 能以互斥角色绑定同一 run，重复激活幂等；同一 session 不能冒充
+  两个角色，第三个顶层角色、Build Session/Project 冲突和错误 nonce 必须失败关闭。
+- 参与者崩溃或丢失时，操作者可以用新 nonce 显式替换该角色；替换原子递增 participant epoch、
+  失效旧 registry，旧 session 的延迟 Hook 或操作回执不能继续写入。
+- Hook 事件能区分 `simulated_user` 与 `modeling_agent`，保留可见消息的发送方、接收方、类型、时间
+  和有界摘要；模拟审批始终带 `simulated=true`，不得成为平台人工审批事实。
+- 建模主 Agent 调用抽取、分析和评审 subagent 时，`subagent_type`、agent ID、开始/结束和有界结果
+  可追踪；模拟用户 session 不能把自己的 subagent 事件登记为建模工作阶段。
+- 只有建模参与者成功调用既有建模 MCP 工具时才生成平台 checkpoint 关联；两端 Stop、恢复、任务
+  和消息事件不会相互覆盖或重复，终态汇总覆盖完整 run。
+- Claude Code 项目级 Agent 定义、Hook 配置和双终端操作说明纳入版本控制；本机兼容版本不足时给出
+  明确诊断和升级命令，不静默降级为单 session 角色扮演。
+- 两个真实顶层 session 的 mailbox 问答、模拟审批、建模 Agent 嵌套 subagent 和 Hook 记录是需求
+  关闭硬门禁；环境不兼容时保留 `进行中/blocked`，不得标记为 `已实现`。
+- 原 Codex 单主 Harness 仍可使用，现有 Harness/handoff 回归全部通过；新增双参与者、消息、嵌套
+  subagent、权限边界、脱敏、恢复和并发测试通过，并由独立测试角色给出 PASS。
+
+### 当前交付结果
+
+repo-local Harness 已升级为兼容 v1 Codex 单参与者与 v2 Claude 双参与者的公共 recorder。
+`.claude/settings.json`、五个角色定义和双终端 runbook 已纳入版本控制；两个顶层 session 通过
+Hook 绑定 session/role/epoch，并使用一次性操作回执保护的追加式 mailbox 交换可见消息。建模
+session 可调用抽取、分析和评审 subagent，只有建模参与者能推进本地阶段 checkpoint；参与者替换、
+消息 ack、Claude 生命周期事件、失败记录和终态摘要均可恢复并保持追加式记录。
+
+独立测试先发现并修复 Claude CLI 不接受 Draft 2020-12 `$schema` 声明的问题。最终稳定实现通过
+51 项 Harness/handoff 自动化、Ruff、JSON 和 diff 检查；真实 Claude Code 2.1.215 使用两个不同
+顶层 session 完成激活、clarification、模拟 approval、ack 和 `source-extractor` 嵌套调用，并将
+22 个事件经真实 structured-output summarizer 汇总、推进 cursor 和发布 retrospective。模拟批准
+保持 `agent_reported` 与 `simulated=true`，未变成真人或平台授权；synthetic run 和发布物已精确
+清理。本机系统安装版仍为 2.1.153，操作手册要求实际评测前升级到已验证的 2.1.215 或更高版本。
+
 ## 需求变更与代码落点规则
 
 v1.1 当前包含仍待效果证据关闭的总体目标 R1.1-001，以及已实现的 R1.1-002、R1.1-003、
-R1.1-004。R1.1-003 来自首轮 Dify 实际建模中已经复现并阻断正式交付的结构化产物交接问题；
+R1.1-004、R1.1-005。R1.1-003 来自首轮 Dify 实际建模中已经复现并阻断正式交付的结构化产物交接问题；
 R1.1-004 来自同一次运行暴露的输入资料不可复现问题，二者都不是脱离实践预设的平台扩张。
 
 R1.1-003 与 R1.1-004 已通过同一固定资料集端到端验收关闭。后续 v1.1 工作回到 R1.1-001：用
@@ -635,3 +714,7 @@ Execution Event，不另建与平台事实竞争的第二套工作流状态。
 
 属于 Dify 官方资料选择、固定版本获取、快照清单、哈希校验、离线建模输入和资料更新差异的改动
 还应关联 R1.1-004。实现时保持为 repo-local 评测资料能力，不直接扩张为平台通用来源管理功能。
+
+属于 Claude Code 双顶层 session、模拟用户与建模 Agent 可见交互、建模 Agent 嵌套 subagent、
+Hook 过程采集和跨 session 评测关联的改动还应关联 R1.1-005。实现保持 repo-local，不把模拟用户
+批准提升为真人授权，也不把 Harness 状态提升为平台事实。

@@ -1,9 +1,13 @@
 # Repo-local modeling Harness
 
-This Harness records one `ontology-builder` main Codex session for later process review. It is
-local to this repository: only `.codex/hooks.json` and `.codex/hooks/` implement it, while runtime
+This Harness records one legacy `ontology-builder` main Codex session for later process review and
+also provides the common recorder for the Claude dual-session experiment. It is local to this
+repository: `.codex/hooks.json`, `.claude/settings.json`, and `.codex/hooks/` implement it, while runtime
 files stay under the gitignored `workspaces/ontology-harness/`. It does not replace platform
 Modeling Workflow Artifacts or Execution Events.
+
+For the two-top-level-session workflow, use [the Claude runbook](../.claude/modeling-harness.md).
+The no-role command below remains the compatible version-1 Codex activation path.
 
 R1.1-003 modeler payload transport is a separate local mechanism documented in
 [`modeling-handoff.md`](modeling-handoff.md). The Harness records only its bounded command outcome;

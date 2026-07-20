@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import multiprocessing
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -574,6 +578,361 @@ class HarnessTest(unittest.TestCase):
             self.paths, run_dir, "cancelled", lambda _run, _prompt: delta()
         )
         self.assertIsNotNone(target)
+
+
+class DualClaudeHarnessTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="dual-harness-test-")
+        self.repo = Path(self.temporary.name)
+        (self.repo / ".git").mkdir()
+        (self.repo / ".codex" / "hooks").mkdir(parents=True)
+        (self.repo / "docs" / "modeling-retrospectives").mkdir(parents=True)
+        for relative in (
+            Path(".codex/hooks.json"),
+            Path(".codex/hooks/modeling_harness.py"),
+            Path(".codex/hooks/summary.schema.json"),
+        ):
+            target = self.repo / relative
+            target.write_bytes((REPO / relative).read_bytes())
+        self.paths = harness.Paths(self.repo)
+        self.run_id = "dual-run-12345678"
+        self.base = {
+            "run_id": self.run_id,
+            "build_session_id": "build-session-dual",
+            "project_id": "project-dual",
+            "runtime": "claude",
+        }
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def activate_participant(self, role: str, session: str, nonce: str) -> None:
+        values = {
+            **self.base,
+            "participant_role": role,
+            "activation_nonce": nonce,
+        }
+        hook = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "session_id": session,
+            "cwd": str(self.repo),
+            "tool_use_id": f"activate-{role}-{session}",
+        }
+        harness.acknowledge_activation(self.paths, hook, values)
+        harness.activate_cli(self.paths, argparse.Namespace(**values))
+
+    def activate_dual(self) -> Path:
+        self.activate_participant("simulated_user", "claude-user-session", "u" * 32)
+        metadata = harness.read_json(self.paths.run(self.run_id) / "metadata.json")
+        self.assertEqual(metadata["status"], "activating")
+        self.activate_participant("modeling_agent", "claude-model-session", "m" * 32)
+        return self.paths.run(self.run_id)
+
+    def hook(self, role: str, event: str, **values: object) -> dict[str, object]:
+        session = "claude-user-session" if role == "simulated_user" else "claude-model-session"
+        return {
+            "hook_event_name": event,
+            "session_id": session,
+            "cwd": str(self.repo),
+            **values,
+        }
+
+    def authorize(self, role: str, command: str, tool_id: str) -> None:
+        harness.handle_hook(
+            self.paths,
+            self.hook(
+                role,
+                "PreToolUse",
+                tool_name="Bash",
+                tool_use_id=tool_id,
+                tool_input={"command": command},
+            ),
+        )
+
+    def test_dual_activation_is_role_bound_ready_and_idempotent(self) -> None:
+        run_dir = self.activate_dual()
+        metadata = harness.read_json(run_dir / "metadata.json")
+        self.assertEqual(metadata["status"], "active")
+        self.assertEqual(set(metadata["participants"]), harness.PARTICIPANT_ROLES)
+        self.assertNotEqual(
+            metadata["participants"]["simulated_user"]["session_id"],
+            metadata["participants"]["modeling_agent"]["session_id"],
+        )
+        self.activate_participant("modeling_agent", "claude-model-session", "m" * 32)
+        activated = [
+            event for event in harness.load_events(run_dir) if event["kind"] == "activated"
+        ]
+        self.assertEqual(len(activated), 2)
+        conflicting = {
+            **self.base,
+            "participant_role": "simulated_user",
+            "activation_nonce": "x" * 32,
+        }
+        with self.assertRaises(harness.HarnessError):
+            harness.acknowledge_activation(
+                self.paths,
+                self.hook("modeling_agent", "PreToolUse", tool_name="Bash"),
+                conflicting,
+            )
+
+    def test_checked_in_claude_hooks_and_agent_definitions_are_complete(self) -> None:
+        settings = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        required = {
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "SubagentStart",
+            "SubagentStop",
+            "TaskCreated",
+            "TaskCompleted",
+            "TeammateIdle",
+            "Stop",
+            "StopFailure",
+            "SessionEnd",
+        }
+        self.assertEqual(set(settings["hooks"]), required)
+        for entries in settings["hooks"].values():
+            for entry in entries:
+                for hook in entry["hooks"]:
+                    self.assertIn("${CLAUDE_PROJECT_DIR}", hook["command"])
+        expected_agents = {
+            "simulated-user",
+            "ontology-modeling-agent",
+            "source-extractor",
+            "semantic-analyst",
+            "ontology-reviewer",
+        }
+        self.assertEqual(
+            {path.stem for path in (REPO / ".claude" / "agents").glob("*.md")},
+            expected_agents,
+        )
+
+    def test_activation_nonce_is_removed_from_visible_prompt(self) -> None:
+        run_dir = self.activate_dual()
+        nonce = "nonce-value-must-never-persist-123456"
+        harness.handle_hook(
+            self.paths,
+            self.hook(
+                "modeling_agent",
+                "UserPromptSubmit",
+                prompt=f"run activate --activation-nonce {nonce} --project-id project-dual",
+                prompt_id="prompt-with-nonce",
+            ),
+        )
+        persisted = (run_dir / "events.jsonl").read_text(encoding="utf-8")
+        self.assertNotIn(nonce, persisted)
+        self.assertIn("--activation-nonce REDACTED", persisted)
+
+    def test_message_receipts_are_single_use_and_simulated_decisions_are_labeled(self) -> None:
+        run_dir = self.activate_dual()
+        operation = "operation-send-001"
+        command = (
+            "python3 .codex/hooks/modeling_harness.py message send "
+            f"--run-id {self.run_id} --operation-id {operation} "
+            "--recipient-role modeling_agent --message-kind approval "
+            "--content 'I approve the simulated proposal'"
+        )
+        args = harness.command_arguments(command)
+        assert args
+        with self.assertRaisesRegex(harness.HarnessError, "no Hook-issued receipt"):
+            harness.message_cli(self.paths, args)
+        self.authorize("simulated_user", command, "authorize-message")
+        tampered = harness.command_arguments(
+            command.replace("simulated proposal", "other proposal")
+        )
+        assert tampered
+        with self.assertRaisesRegex(harness.HarnessError, "does not match"):
+            harness.message_cli(self.paths, tampered)
+        output = StringIO()
+        with redirect_stdout(output):
+            harness.message_cli(self.paths, args)
+        message_id = output.getvalue().strip()
+        event = harness.load_events(run_dir)[-1]
+        self.assertEqual(event["kind"], "mailbox_message")
+        self.assertTrue(event["payload"]["simulated"])
+        self.assertEqual(event["payload"]["report_source"], "agent_reported")
+        self.assertEqual(event["payload"]["runtime_session_id"], "claude-user-session")
+        with self.assertRaisesRegex(harness.HarnessError, "stale, consumed"):
+            harness.message_cli(self.paths, args)
+
+        poll = argparse.Namespace(
+            message_command="poll",
+            run_id=self.run_id,
+            participant_role="modeling_agent",
+        )
+        polled = StringIO()
+        with redirect_stdout(polled):
+            harness.message_cli(self.paths, poll)
+        self.assertEqual(json.loads(polled.getvalue())[0]["message_id"], message_id)
+
+        ack_command = (
+            "python3 .codex/hooks/modeling_harness.py message ack "
+            f"--run-id {self.run_id} --operation-id operation-ack-001 "
+            f"--message-id {message_id}"
+        )
+        self.authorize("modeling_agent", ack_command, "authorize-ack")
+        ack_args = harness.command_arguments(ack_command)
+        assert ack_args
+        with redirect_stdout(StringIO()):
+            harness.message_cli(self.paths, ack_args)
+        self.assertIn(
+            message_id,
+            harness.read_json(run_dir / "state.json")["message_acks"]["modeling_agent"],
+        )
+
+    def test_replacement_invalidates_old_session_and_receipt_epoch(self) -> None:
+        run_dir = self.activate_dual()
+        command = (
+            "python3 .codex/hooks/modeling_harness.py message send "
+            f"--run-id {self.run_id} --operation-id operation-stale-001 "
+            "--recipient-role modeling_agent --message-kind answer --content old"
+        )
+        self.authorize("simulated_user", command, "authorize-stale")
+        nonce_output = StringIO()
+        with redirect_stdout(nonce_output):
+            harness.replace_participant_cli(
+                self.paths,
+                argparse.Namespace(run_id=self.run_id, participant_role="simulated_user"),
+            )
+        before = len(harness.load_events(run_dir))
+        harness.handle_hook(
+            self.paths,
+            self.hook("simulated_user", "Stop", last_assistant_message="late old-session output"),
+        )
+        self.assertEqual(len(harness.load_events(run_dir)), before)
+        args = harness.command_arguments(command)
+        assert args
+        with self.assertRaisesRegex(harness.HarnessError, "stale, consumed"):
+            harness.message_cli(self.paths, args)
+        self.activate_participant(
+            "simulated_user", "claude-user-session-new", nonce_output.getvalue().strip()
+        )
+        participant = harness.read_json(run_dir / "metadata.json")["participants"]["simulated_user"]
+        self.assertEqual(participant["epoch"], 2)
+        self.assertEqual(participant["session_id"], "claude-user-session-new")
+
+    def test_nested_agent_task_lifecycle_and_modeling_authority_are_role_scoped(self) -> None:
+        run_dir = self.activate_dual()
+        original = harness.invoke_claude
+        harness.invoke_claude = lambda _run, _prompt: delta()
+        try:
+            harness.handle_hook(
+                self.paths,
+                self.hook(
+                    "modeling_agent",
+                    "PreToolUse",
+                    tool_name="Agent",
+                    tool_use_id="agent-dispatch",
+                    tool_input={"subagent_type": "source-extractor", "prompt": "Extract facts"},
+                ),
+            )
+            harness.handle_hook(
+                self.paths,
+                self.hook(
+                    "modeling_agent",
+                    "SubagentStop",
+                    agent_id="extractor-1",
+                    agent_type="source-extractor",
+                    agent_transcript_path="/must/not/persist",
+                    last_assistant_message="Extraction complete",
+                ),
+            )
+            for event_name in ("TaskCreated", "TaskCompleted", "TeammateIdle", "StopFailure"):
+                harness.handle_hook(
+                    self.paths,
+                    self.hook(
+                        "modeling_agent",
+                        event_name,
+                        task_id="task-1",
+                        subject="Extract evidence",
+                        status="completed",
+                        error="synthetic failure" if event_name == "StopFailure" else "",
+                    ),
+                )
+        finally:
+            harness.invoke_claude = original
+        persisted = (run_dir / "events.jsonl").read_text(encoding="utf-8")
+        self.assertIn("source-extractor", persisted)
+        self.assertIn("taskcreated", persisted)
+        self.assertNotIn("must/not/persist", persisted)
+
+        platform_hook = self.hook(
+            "simulated_user",
+            "PostToolUse",
+            tool_name="record_modeling_execution_event",
+            tool_use_id="user-platform-call",
+            tool_input={"event_type": "review_completed", "phase": "review"},
+            tool_response={"success": True, "status": "completed"},
+        )
+        harness.handle_hook(self.paths, platform_hook)
+        self.assertEqual(harness.read_json(run_dir / "state.json")["pending_checkpoints"], {})
+
+    def test_dual_checkpoint_requires_modeler_receipt(self) -> None:
+        run_dir = self.activate_dual()
+        command = (
+            "python3 .codex/hooks/modeling_harness.py checkpoint "
+            f"--run-id {self.run_id} --phase review --event-type review_completed "
+            "--summary 'review passed' --client-checkpoint-id checkpoint-dual-1 "
+            "--operation-id operation-checkpoint-1"
+        )
+        args = harness.command_arguments(command)
+        assert args
+        with self.assertRaisesRegex(harness.HarnessError, "no Hook-issued receipt"):
+            harness.checkpoint_cli(self.paths, args)
+        self.authorize("modeling_agent", command, "authorize-checkpoint")
+        with redirect_stdout(StringIO()):
+            harness.checkpoint_cli(self.paths, args)
+        checkpoint = harness.read_json(run_dir / "state.json")["pending_checkpoints"][
+            "modeling_agent"
+        ]
+        self.assertEqual(checkpoint["event_type"], "review_completed")
+
+        denied = command.replace("operation-checkpoint-1", "operation-checkpoint-user")
+        self.authorize("simulated_user", denied, "authorize-user-checkpoint")
+        denied_args = harness.command_arguments(denied)
+        assert denied_args
+        with self.assertRaisesRegex(harness.HarnessError, "only modeling_agent"):
+            harness.checkpoint_cli(self.paths, denied_args)
+
+    def test_claude_summarizer_requires_structured_output_and_isolated_command(self) -> None:
+        run_dir = self.activate_dual()
+        completed = mock.Mock(returncode=0, stdout=json.dumps({"structured_output": delta()}))
+        with mock.patch.object(harness.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(
+                harness.invoke_claude(run_dir, "bounded prompt")["summary"], "A bounded summary"
+            )
+        command = run.call_args.args[0]
+        self.assertIn("--no-session-persistence", command)
+        self.assertIn("--json-schema", command)
+        self.assertEqual(run.call_args.kwargs["input"], "bounded prompt")
+        self.assertNotEqual(Path(run.call_args.kwargs["cwd"]), self.repo)
+        with mock.patch.object(
+            harness.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=0, stdout=json.dumps({"result": delta()})),
+        ):
+            with self.assertRaisesRegex(harness.HarnessError, "structured_output"):
+                harness.invoke_claude(run_dir, "bounded prompt")
+
+    def test_claude_command_removes_only_unsupported_schema_declaration(self) -> None:
+        schema_path = self.paths.schema
+        original_bytes = schema_path.read_bytes()
+        original = json.loads(original_bytes)
+
+        command = harness.claude_command(self.paths)
+        adapted = json.loads(command[command.index("--json-schema") + 1])
+
+        self.assertNotIn("$schema", adapted)
+        self.assertEqual(
+            adapted, {key: value for key, value in original.items() if key != "$schema"}
+        )
+        self.assertEqual(adapted["additionalProperties"], False)
+        self.assertEqual(adapted["required"], original["required"])
+        self.assertEqual(adapted["properties"], original["properties"])
+        self.assertEqual(adapted["$defs"], original["$defs"])
+        self.assertEqual(schema_path.read_bytes(), original_bytes)
 
 
 if __name__ == "__main__":

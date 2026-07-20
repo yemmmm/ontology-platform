@@ -12,6 +12,7 @@ import contextlib
 import datetime as dt
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
@@ -27,10 +28,11 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 
-HARNESS_VERSION = "1"
+HARNESS_VERSION = "2"
 MODEL = "gpt-5.6-luna"
 REASONING_EFFORT = "medium"
 ACK_TTL_SECONDS = 180
+RECEIPT_TTL_SECONDS = 180
 MAX_EVENT_BYTES = 32 * 1024
 MAX_PROMPT_CHARS = 4_000
 MAX_MESSAGE_CHARS = 6_000
@@ -108,6 +110,19 @@ SAFE_ENV_KEYS = {
     "all_proxy",
     "no_proxy",
 }
+CLAUDE_ENV_KEYS = SAFE_ENV_KEYS | {
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "AWS_REGION",
+    "AWS_PROFILE",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "CLOUD_ML_REGION",
+    "CLAUDECODE",
+}
 SECRET_PATTERNS = (
     ("bearer_token", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{16,}={0,2}")),
     (
@@ -130,6 +145,9 @@ RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$")
 SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{7,200}$")
 NONCE = re.compile(r"^[A-Za-z0-9_-]{24,128}$")
 PHASE = re.compile(r"^[a-z][a-z0-9_-]{1,79}$")
+OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$")
+PARTICIPANT_ROLES = {"simulated_user", "modeling_agent"}
+RUNTIMES = {"codex", "claude"}
 
 
 class HarnessError(RuntimeError):
@@ -151,6 +169,10 @@ class Paths:
     @property
     def hooks_config(self) -> Path:
         return self.repo / ".codex" / "hooks.json"
+
+    @property
+    def claude_config(self) -> Path:
+        return self.repo / ".claude" / "settings.json"
 
     @property
     def schema(self) -> Path:
@@ -182,11 +204,15 @@ def canonical(value: Any) -> str:
 
 def config_hash(paths: Paths) -> str:
     digest = hashlib.sha256()
-    for path in (
+    candidates = [
         paths.hooks_config,
         paths.repo / ".codex" / "hooks" / "modeling_harness.py",
         paths.schema,
-    ):
+        paths.claude_config,
+        paths.repo / ".claude" / "modeling-harness.md",
+        *(paths.repo / ".claude" / "agents").glob("*.md"),
+    ]
+    for path in sorted((path for path in candidates if path.is_file()), key=str):
         digest.update(path.relative_to(paths.repo).as_posix().encode())
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -243,6 +269,15 @@ def clean_text(value: Any, limit: int) -> str:
     return value
 
 
+def redact_control_values(value: str) -> str:
+    """Remove activation material that may appear in an operator-visible prompt."""
+    return re.sub(
+        r"(?i)(--activation-nonce(?:=|\s+))(?:'[^']*'|\"[^\"]*\"|\S+)",
+        r"\1REDACTED",
+        value,
+    )
+
+
 def secret_categories(value: Any) -> list[str]:
     text = canonical(value) if not isinstance(value, str) else value
     if any(placeholder in text for placeholder in SAFE_PLACEHOLDERS):
@@ -279,6 +314,8 @@ def initial_state() -> dict[str, Any]:
         "deltas": [],
         "pending_redaction": [],
         "pending_checkpoint": None,
+        "pending_checkpoints": {},
+        "message_acks": {},
         "summary_attempts": 0,
         "last_summary_error": None,
         "finalization_status": "open",
@@ -464,6 +501,8 @@ def activation_args(command: str) -> dict[str, str] | None:
         "--activation-nonce": "activation_nonce",
         "--build-session-id": "build_session_id",
         "--project-id": "project_id",
+        "--runtime": "runtime",
+        "--participant-role": "participant_role",
     }
     cursor = index + 1
     while cursor < len(tokens):
@@ -472,7 +511,10 @@ def activation_args(command: str) -> dict[str, str] | None:
             return None
         values[mapped] = tokens[cursor + 1]
         cursor += 2
-    if set(values) != set(allowed.values()):
+    required = {"run_id", "activation_nonce", "build_session_id", "project_id"}
+    if not required.issubset(values) or bool(values.get("runtime")) != bool(
+        values.get("participant_role")
+    ):
         return None
     return values
 
@@ -547,6 +589,14 @@ def validate_activation_values(values: dict[str, str]) -> None:
     for key in ("build_session_id", "project_id"):
         if not values[key] or len(values[key]) > 160:
             raise HarnessError(f"invalid {key}")
+    runtime = values.get("runtime")
+    role = values.get("participant_role")
+    if bool(runtime) != bool(role):
+        raise HarnessError("runtime and participant_role must be supplied together")
+    if runtime is not None and runtime not in RUNTIMES:
+        raise HarnessError("invalid runtime")
+    if role is not None and role not in PARTICIPANT_ROLES:
+        raise HarnessError("invalid participant_role")
 
 
 def previous_run(paths: Paths, build_session_id: str, excluding: str) -> str | None:
@@ -575,34 +625,74 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
     with run_lock(run_dir):
         metadata_path = run_dir / "metadata.json"
         existing = read_json(metadata_path) if metadata_path.exists() else None
+        dual = bool(values.get("participant_role"))
+        mode = "dual_claude" if dual else "legacy"
+        role = values.get("participant_role", "main_agent")
+        runtime = values.get("runtime", "codex")
+        if dual and runtime != "claude":
+            raise HarnessError("dual participants require the Claude runtime")
         if existing and (
-            existing.get("session_id") != session_id
-            or existing.get("activation_nonce") != values["activation_nonce"]
-            or existing.get("build_session_id") != values["build_session_id"]
+            existing.get("build_session_id") != values["build_session_id"]
+            or existing.get("project_id") != values["project_id"]
+            or existing.get("mode", "legacy") != mode
         ):
             raise HarnessError("run_id is already bound to conflicting activation data")
         registry_path = paths.registry / f"{session_id}.json"
         if registry_path.exists():
             registry = read_json(registry_path)
-            if registry.get("run_id") != values["run_id"]:
-                raise HarnessError("main session is already bound to another run")
+            if (
+                registry.get("run_id") != values["run_id"]
+                or registry.get("participant_role", "main_agent") != role
+            ):
+                raise HarnessError("runtime session is already bound to another run or role")
         timestamp = now_iso()
         metadata = existing or {
-            "schema_version": 1,
+            "schema_version": 2 if dual else 1,
             "harness_version": HARNESS_VERSION,
             "run_id": values["run_id"],
-            "session_id": session_id,
             "build_session_id": values["build_session_id"],
             "project_id": values["project_id"],
             "previous_run_id": previous_run(paths, values["build_session_id"], values["run_id"]),
-            "activation_nonce": values["activation_nonce"],
             "cwd": str(paths.repo.resolve()),
             "created_at": timestamp,
             "status": "activating",
             "terminal_state": None,
+            "mode": mode,
+            "participants": {},
         }
+        if dual:
+            participants = metadata.setdefault("participants", {})
+            existing_participant = participants.get(role)
+            nonce_hash = hashlib.sha256(values["activation_nonce"].encode()).hexdigest()
+            if existing_participant and (
+                existing_participant.get("activation_nonce_hash") != nonce_hash
+                or existing_participant.get("session_id") not in {None, session_id}
+            ):
+                raise HarnessError("participant role is already bound or nonce is stale")
+            epoch = int(existing_participant.get("epoch", 1)) if existing_participant else 1
+            participants[role] = {
+                "role": role,
+                "runtime": runtime,
+                "session_id": session_id,
+                "epoch": epoch,
+                "activation_nonce_hash": nonce_hash,
+                "acknowledged_at": timestamp,
+                "activated_at": existing_participant.get("activated_at")
+                if existing_participant
+                else None,
+                "last_seen_at": timestamp,
+                "stopped_at": None,
+            }
+        else:
+            if existing and (
+                existing.get("session_id") != session_id
+                or existing.get("activation_nonce") != values["activation_nonce"]
+            ):
+                raise HarnessError("run_id is already bound to conflicting activation data")
+            metadata["session_id"] = session_id
+            metadata["activation_nonce"] = values["activation_nonce"]
+            metadata["acknowledged_at"] = timestamp
         metadata["hook_config_hash"] = config_hash(paths)
-        metadata["acknowledged_at"] = timestamp
         atomic_json(metadata_path, metadata)
         if not (run_dir / "state.json").exists():
             atomic_json(run_dir / "state.json", initial_state())
@@ -613,6 +703,9 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
             {
                 "run_id": values["run_id"],
                 "session_id": session_id,
+                "participant_role": role,
+                "runtime": runtime,
+                "epoch": epoch if dual else 1,
                 "cwd": str(paths.repo.resolve()),
                 "hook_config_hash": metadata["hook_config_hash"],
             },
@@ -626,6 +719,10 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
         "build_session_id": args.build_session_id,
         "project_id": args.project_id,
     }
+    runtime = getattr(args, "runtime", None)
+    role = getattr(args, "participant_role", None)
+    if runtime or role:
+        values.update({"runtime": runtime, "participant_role": role})
     validate_activation_values(values)
     run_dir = paths.run(args.run_id)
     try:
@@ -634,13 +731,31 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
         raise HarnessError(
             "this session is not being recorded: activation Hook did not acknowledge"
         ) from exc
-    age = time.time() - dt.datetime.fromisoformat(metadata["acknowledged_at"]).timestamp()
+    dual = metadata.get("mode") == "dual_claude"
+    if dual != bool(runtime and role):
+        raise HarnessError("activation mode does not match the acknowledged run")
+    participant = metadata.get("participants", {}).get(role) if dual else None
+    acknowledged_at = (
+        participant.get("acknowledged_at") if participant else metadata.get("acknowledged_at")
+    )
+    if not isinstance(acknowledged_at, str):
+        raise HarnessError("activation acknowledgment is incomplete")
+    age = time.time() - dt.datetime.fromisoformat(acknowledged_at).timestamp()
     expected = config_hash(paths)
     if (
         age < -5
         or age > ACK_TTL_SECONDS
         or metadata.get("run_id") != args.run_id
-        or metadata.get("activation_nonce") != args.activation_nonce
+        or (
+            dual
+            and (
+                not participant
+                or participant.get("activation_nonce_hash")
+                != hashlib.sha256(args.activation_nonce.encode()).hexdigest()
+                or participant.get("runtime") != runtime
+            )
+        )
+        or (not dual and metadata.get("activation_nonce") != args.activation_nonce)
         or metadata.get("build_session_id") != args.build_session_id
         or metadata.get("project_id") != args.project_id
         or Path(str(metadata.get("cwd"))).resolve() != paths.repo.resolve()
@@ -649,8 +764,18 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
         raise HarnessError("this session is not being recorded: invalid/stale Hook acknowledgment")
     with run_lock(run_dir):
         metadata = read_json(run_dir / "metadata.json")
-        metadata["status"] = "active"
-        metadata["activated_at"] = now_iso()
+        timestamp = now_iso()
+        if dual:
+            participant = metadata["participants"][role]
+            participant["activated_at"] = participant.get("activated_at") or timestamp
+            participant["last_seen_at"] = timestamp
+            ready = PARTICIPANT_ROLES.issubset(metadata["participants"]) and all(
+                metadata["participants"][item].get("activated_at") for item in PARTICIPANT_ROLES
+            )
+            metadata["status"] = "active" if ready else "activating"
+        else:
+            metadata["status"] = "active"
+            metadata["activated_at"] = timestamp
         atomic_json(run_dir / "metadata.json", metadata)
         append_event_locked(
             run_dir,
@@ -659,13 +784,27 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
                 "build_session_id": args.build_session_id,
                 "project_id": args.project_id,
                 "previous_run_id": metadata.get("previous_run_id"),
+                "participant_role": role or "main_agent",
+                "runtime": runtime or "codex",
+                "participant_epoch": participant.get("epoch") if dual else 1,
             },
-            f"activate:{args.run_id}",
+            f"activate:{args.run_id}:{role or 'main_agent'}",
         )
-    print(f"modeling Harness active: {args.run_id}")
+    readiness = "active" if metadata["status"] == "active" else "waiting for peer participant"
+    print(f"modeling Harness {readiness}: {args.run_id}")
 
 
-def active_run(paths: Paths, hook: dict[str, Any]) -> Path | None:
+@dataclass(frozen=True)
+class ActiveBinding:
+    run_dir: Path
+    participant_role: str
+    runtime: str
+    session_id: str
+    epoch: int
+
+
+def active_binding(paths: Paths, hook: dict[str, Any]) -> ActiveBinding | None:
+    """Resolve a Hook runtime session to a current participant epoch."""
     session_id = clean_text(hook.get("session_id"), 200)
     cwd = Path(str(hook.get("cwd") or ".")).resolve()
     if not SESSION_ID.fullmatch(session_id) or cwd != paths.repo.resolve():
@@ -679,13 +818,331 @@ def active_run(paths: Paths, hook: dict[str, Any]) -> Path | None:
         metadata = read_json(run_dir / "metadata.json")
     except (OSError, KeyError, json.JSONDecodeError, HarnessError):
         return None
-    if (
-        metadata.get("status") not in {"active", "finalization_pending", "completed", "cancelled"}
-        or registry.get("hook_config_hash") != config_hash(paths)
-        or metadata.get("session_id") != session_id
-    ):
+    role = str(registry.get("participant_role", "main_agent"))
+    runtime = str(registry.get("runtime", "codex"))
+    epoch = int(registry.get("epoch", 1))
+    if metadata.get("status") not in {
+        "active",
+        "activating",
+        "finalization_pending",
+        "completed",
+        "cancelled",
+    } or registry.get("hook_config_hash") != config_hash(paths):
         return None
-    return run_dir
+    if metadata.get("mode", "legacy") == "dual_claude":
+        participant = metadata.get("participants", {}).get(role, {})
+        if (
+            role not in PARTICIPANT_ROLES
+            or participant.get("session_id") != session_id
+            or int(participant.get("epoch", 0)) != epoch
+            or participant.get("activated_at") is None
+        ):
+            return None
+    elif metadata.get("session_id") != session_id or role != "main_agent":
+        return None
+    return ActiveBinding(run_dir, role, runtime, session_id, epoch)
+
+
+def active_run(paths: Paths, hook: dict[str, Any]) -> Path | None:
+    binding = active_binding(paths, hook)
+    return binding.run_dir if binding else None
+
+
+def command_arguments(command: str) -> argparse.Namespace | None:
+    """Parse only an invocation of this checked-in runner."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    indexes = [
+        index for index, token in enumerate(tokens) if Path(token).name == "modeling_harness.py"
+    ]
+    if len(indexes) != 1:
+        return None
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return parse_args(tokens[indexes[0] + 1 :])
+    except (SystemExit, argparse.ArgumentError):
+        return None
+
+
+def operation_payload(args: argparse.Namespace) -> dict[str, Any] | None:
+    if args.command == "message" and args.message_command == "send":
+        return {
+            "command": "message_send",
+            "run_id": args.run_id,
+            "operation_id": args.operation_id,
+            "recipient_role": args.recipient_role,
+            "message_kind": args.message_kind,
+            "content": args.content,
+        }
+    if args.command == "message" and args.message_command == "ack":
+        return {
+            "command": "message_ack",
+            "run_id": args.run_id,
+            "operation_id": args.operation_id,
+            "message_id": args.message_id,
+        }
+    if args.command == "checkpoint" and getattr(args, "operation_id", None):
+        return {
+            "command": "checkpoint",
+            "run_id": args.run_id,
+            "operation_id": args.operation_id,
+            "phase": args.phase,
+            "event_type": args.event_type,
+            "summary": args.summary,
+            "client_checkpoint_id": args.client_checkpoint_id,
+        }
+    return None
+
+
+def operation_fingerprint(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical(payload).encode()).hexdigest()
+
+
+def authorize_operation(binding: ActiveBinding, args: argparse.Namespace) -> None:
+    payload = operation_payload(args)
+    if payload is None or not OPERATION_ID.fullmatch(str(payload.get("operation_id", ""))):
+        return
+    if binding.run_dir.name != payload["run_id"]:
+        return
+    receipt_path = binding.run_dir / "receipts" / f"{payload['operation_id']}.json"
+    with run_lock(binding.run_dir):
+        existing = read_json(receipt_path) if receipt_path.exists() else None
+        receipt = {
+            "run_id": payload["run_id"],
+            "operation_id": payload["operation_id"],
+            "fingerprint": operation_fingerprint(payload),
+            "session_id": binding.session_id,
+            "participant_role": binding.participant_role,
+            "runtime": binding.runtime,
+            "participant_epoch": binding.epoch,
+            "issued_at": now_iso(),
+            "expires_at_epoch": time.time() + RECEIPT_TTL_SECONDS,
+            "consumed_at": None,
+            "invalidated_at": None,
+        }
+        if existing:
+            if any(
+                existing.get(key) != receipt[key]
+                for key in (
+                    "fingerprint",
+                    "session_id",
+                    "participant_role",
+                    "participant_epoch",
+                )
+            ):
+                return
+            return
+        atomic_json(receipt_path, receipt)
+
+
+def consume_receipt(
+    paths: Paths, run_dir: Path, args: argparse.Namespace
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    payload = operation_payload(args)
+    if payload is None or not OPERATION_ID.fullmatch(str(payload.get("operation_id", ""))):
+        raise HarnessError("operation requires a valid operation_id")
+    receipt_path = run_dir / "receipts" / f"{payload['operation_id']}.json"
+    if not receipt_path.exists():
+        raise HarnessError("operation has no Hook-issued receipt")
+    receipt = read_json(receipt_path)
+    metadata = read_json(run_dir / "metadata.json")
+    participant = metadata.get("participants", {}).get(receipt.get("participant_role"), {})
+    if (
+        receipt.get("run_id") != payload["run_id"]
+        or receipt.get("fingerprint") != operation_fingerprint(payload)
+        or receipt.get("consumed_at")
+        or receipt.get("invalidated_at")
+        or float(receipt.get("expires_at_epoch", 0)) < time.time()
+        or participant.get("session_id") != receipt.get("session_id")
+        or int(participant.get("epoch", 0)) != int(receipt.get("participant_epoch", -1))
+        or metadata.get("status") != "active"
+    ):
+        raise HarnessError("operation receipt is stale, consumed, or does not match")
+    return receipt, payload
+
+
+def mark_receipt_consumed(run_dir: Path, receipt: dict[str, Any]) -> None:
+    receipt["consumed_at"] = now_iso()
+    atomic_json(run_dir / "receipts" / f"{receipt['operation_id']}.json", receipt)
+
+
+def participant_context(binding: ActiveBinding) -> dict[str, Any]:
+    return {
+        "participant_role": binding.participant_role,
+        "runtime": binding.runtime,
+        "runtime_session_id": binding.session_id,
+        "participant_epoch": binding.epoch,
+    }
+
+
+def message_cli(paths: Paths, args: argparse.Namespace) -> None:
+    run_dir = paths.run(args.run_id)
+    if args.message_command == "poll":
+        if args.participant_role not in PARTICIPANT_ROLES:
+            raise HarnessError("invalid participant role")
+        state = read_json(run_dir / "state.json")
+        acknowledged = set(state.get("message_acks", {}).get(args.participant_role, []))
+        messages = []
+        for event in load_events(run_dir):
+            payload = event.get("payload", {})
+            if (
+                event.get("kind") == "mailbox_message"
+                and payload.get("recipient_role") == args.participant_role
+            ):
+                messages.append(
+                    {
+                        "message_id": payload["message_id"],
+                        "sequence": event["sequence"],
+                        "sender_role": payload["sender_role"],
+                        "message_kind": payload["message_kind"],
+                        "content": payload["content"],
+                        "acknowledged": payload["message_id"] in acknowledged,
+                    }
+                )
+        print(json.dumps(messages, ensure_ascii=False))
+        return
+    with run_lock(run_dir):
+        receipt, payload = consume_receipt(paths, run_dir, args)
+        role = str(receipt["participant_role"])
+        state = read_json(run_dir / "state.json", initial_state())
+        context = {
+            "participant_role": role,
+            "runtime": receipt["runtime"],
+            "runtime_session_id": receipt["session_id"],
+            "participant_epoch": receipt["participant_epoch"],
+        }
+        if args.message_command == "send":
+            recipient = payload["recipient_role"]
+            if recipient not in PARTICIPANT_ROLES or recipient == role:
+                raise HarnessError("message recipient must be the peer participant")
+            content = clean_text(payload["content"], MAX_MESSAGE_CHARS)
+            if not content or secret_categories(content):
+                raise HarnessError("message is empty or rejected by secret scanner")
+            kind = clean_text(payload["message_kind"], 80)
+            if not PHASE.fullmatch(kind):
+                raise HarnessError("invalid message kind")
+            decision = role == "simulated_user" and kind in {
+                "approval",
+                "rejection",
+                "answer",
+            }
+            message_id = f"msg-{hashlib.sha256(payload['operation_id'].encode()).hexdigest()[:20]}"
+            event_payload = {
+                **context,
+                "message_id": message_id,
+                "operation_id": payload["operation_id"],
+                "sender_role": role,
+                "recipient_role": recipient,
+                "message_kind": kind,
+                "content": content,
+                "report_source": "agent_reported" if decision else "runtime_observed",
+                "simulated": decision,
+            }
+            event, _ = append_event_locked(
+                run_dir, "mailbox_message", event_payload, f"message:{payload['operation_id']}"
+            )
+            mark_receipt_consumed(run_dir, receipt)
+            print(event_payload["message_id"])
+        else:
+            message_id = clean_text(payload["message_id"], 200)
+            target = next(
+                (
+                    event
+                    for event in load_events(run_dir)
+                    if event.get("kind") == "mailbox_message"
+                    and event.get("payload", {}).get("message_id") == message_id
+                ),
+                None,
+            )
+            if target is None or target["payload"].get("recipient_role") != role:
+                raise HarnessError("message does not belong to this participant")
+            acknowledgements = state.setdefault("message_acks", {}).setdefault(role, [])
+            if message_id not in acknowledgements:
+                acknowledgements.append(message_id)
+            append_event_locked(
+                run_dir,
+                "mailbox_acknowledged",
+                {**context, "message_id": message_id, "operation_id": payload["operation_id"]},
+                f"message-ack:{payload['operation_id']}",
+            )
+            atomic_json(run_dir / "state.json", state)
+            mark_receipt_consumed(run_dir, receipt)
+            print(f"acknowledged {message_id}")
+
+
+def replace_participant_cli(paths: Paths, args: argparse.Namespace) -> None:
+    if args.participant_role not in PARTICIPANT_ROLES:
+        raise HarnessError("invalid participant role")
+    run_dir = paths.run(args.run_id)
+    nonce = uuid.uuid4().hex + uuid.uuid4().hex
+    with run_lock(run_dir):
+        metadata = read_json(run_dir / "metadata.json")
+        if metadata.get("mode") != "dual_claude" or metadata.get("terminal_state") is not None:
+            raise HarnessError("participant replacement requires an open dual run")
+        participant = metadata.get("participants", {}).get(args.participant_role)
+        if not participant:
+            raise HarnessError("participant has not been initialized")
+        old_session = participant.get("session_id")
+        new_epoch = int(participant.get("epoch", 1)) + 1
+        participant.update(
+            {
+                "session_id": None,
+                "epoch": new_epoch,
+                "activation_nonce_hash": hashlib.sha256(nonce.encode()).hexdigest(),
+                "acknowledged_at": None,
+                "activated_at": None,
+                "last_seen_at": None,
+                "stopped_at": None,
+            }
+        )
+        metadata["status"] = "activating"
+        atomic_json(run_dir / "metadata.json", metadata)
+        if old_session:
+            with contextlib.suppress(FileNotFoundError):
+                (paths.registry / f"{old_session}.json").unlink()
+        receipts = run_dir / "receipts"
+        if receipts.exists():
+            for receipt_path in receipts.glob("*.json"):
+                receipt = read_json(receipt_path)
+                if receipt.get("participant_role") == args.participant_role and not receipt.get(
+                    "consumed_at"
+                ):
+                    receipt["invalidated_at"] = now_iso()
+                    atomic_json(receipt_path, receipt)
+        append_event_locked(
+            run_dir,
+            "participant_replacement_requested",
+            {"participant_role": args.participant_role, "participant_epoch": new_epoch},
+            f"replace:{args.participant_role}:{new_epoch}",
+        )
+    print(nonce)
+
+
+def status_cli(paths: Paths, args: argparse.Namespace) -> None:
+    metadata = read_json(paths.run(args.run_id) / "metadata.json")
+    participants = {
+        role: {
+            "runtime": participant.get("runtime"),
+            "epoch": participant.get("epoch"),
+            "active": bool(participant.get("activated_at")),
+            "last_seen_at": participant.get("last_seen_at"),
+        }
+        for role, participant in metadata.get("participants", {}).items()
+    }
+    print(
+        json.dumps(
+            {
+                "run_id": metadata["run_id"],
+                "mode": metadata.get("mode", "legacy"),
+                "status": metadata.get("status"),
+                "ready": metadata.get("status") == "active",
+                "participants": participants,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def hook_identity(hook: dict[str, Any], kind: str, payload: dict[str, Any]) -> str:
@@ -697,7 +1154,9 @@ def hook_identity(hook: dict[str, Any], kind: str, payload: dict[str, Any]) -> s
 
 def maybe_summarize(run_dir: Path) -> None:
     try:
-        summarize_pending(run_dir, invoke_luna)
+        metadata = read_json(run_dir / "metadata.json")
+        summarizer = invoke_claude if metadata.get("mode") == "dual_claude" else invoke_luna
+        summarize_pending(run_dir, summarizer)
     except Exception as exc:  # Hook is fail-open; sanitized failure metadata is persisted.
         with run_lock(run_dir):
             state = read_json(run_dir / "state.json", initial_state())
@@ -711,27 +1170,47 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
     tool_name = normalize_tool_name(hook.get("tool_name"))
     tool_input = hook.get("tool_input") if isinstance(hook.get("tool_input"), dict) else {}
     if event_name == "PreToolUse" and tool_name in {"Bash", "exec_command"}:
-        values = activation_args(str(tool_input.get("command") or tool_input.get("cmd") or ""))
+        command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+        values = activation_args(command)
         if values:
             acknowledge_activation(paths, hook, values)
             return
-    run_dir = active_run(paths, hook)
-    if run_dir is None:
+    binding = active_binding(paths, hook)
+    if binding is None:
         return
+    run_dir = binding.run_dir
+    if event_name == "PreToolUse" and tool_name in {"Bash", "exec_command"}:
+        arguments = command_arguments(str(tool_input.get("command") or tool_input.get("cmd") or ""))
+        if arguments:
+            authorize_operation(binding, arguments)
+            if operation_payload(arguments):
+                return
     metadata = read_json(run_dir / "metadata.json")
     if metadata.get("terminal_state") is not None:
         if metadata.get("status") == "finalization_pending":
             maybe_summarize(run_dir)
         return
+    if metadata.get("mode") == "dual_claude":
+        with run_lock(run_dir):
+            metadata = read_json(run_dir / "metadata.json")
+            participant = metadata.get("participants", {}).get(binding.participant_role, {})
+            if int(participant.get("epoch", 0)) == binding.epoch:
+                participant["last_seen_at"] = now_iso()
+                atomic_json(run_dir / "metadata.json", metadata)
     identity = hook_identity(hook, event_name, tool_input)
+    context = participant_context(binding)
     should_summarize = False
     if event_name == "UserPromptSubmit":
-        prompt = clean_text(hook.get("prompt"), MAX_PROMPT_CHARS)
-        append_sanitized(run_dir, "user_prompt", {"prompt": prompt}, identity)
-    elif event_name == "PreToolUse" and tool_name == "Agent":
+        prompt = redact_control_values(clean_text(hook.get("prompt"), MAX_PROMPT_CHARS))
+        append_sanitized(run_dir, "user_prompt", {**context, "prompt": prompt}, identity)
+    elif event_name == "PreToolUse" and tool_name in {"Agent", "Task"}:
         delegation = {
+            **context,
             "role": clean_text(
-                tool_input.get("agent_type") or tool_input.get("role") or tool_input.get("name"),
+                tool_input.get("subagent_type")
+                or tool_input.get("agent_type")
+                or tool_input.get("role")
+                or tool_input.get("name"),
                 120,
             ),
             "task": clean_text(
@@ -748,8 +1227,9 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
             run_dir,
             "subagent_started",
             {
+                **context,
                 "agent_id": clean_text(hook.get("agent_id"), 200),
-                "agent_type": clean_text(hook.get("agent_type"), 120),
+                "agent_type": clean_text(hook.get("agent_type") or hook.get("subagent_type"), 120),
             },
             identity,
         )
@@ -758,17 +1238,24 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
             run_dir,
             "subagent_stopped",
             {
+                **context,
                 "agent_id": clean_text(hook.get("agent_id"), 200),
-                "agent_type": clean_text(hook.get("agent_type"), 120),
+                "agent_type": clean_text(hook.get("agent_type") or hook.get("subagent_type"), 120),
                 "final_response": clean_text(hook.get("last_assistant_message"), MAX_MESSAGE_CHARS),
             },
             identity,
         )
         should_summarize = True
-    elif event_name == "PostToolUse" and tool_name in MODELING_TOOLS and tool_succeeded(hook):
+    elif (
+        event_name == "PostToolUse"
+        and tool_name in MODELING_TOOLS
+        and tool_succeeded(hook)
+        and binding.participant_role in {"modeling_agent", "main_agent"}
+    ):
         response = hook.get("tool_response", hook.get("tool_result"))
         platform_payload = selected_ids(tool_input)
         platform_payload.update(selected_ids(response))
+        platform_payload.update(context)
         platform_payload["tool"] = tool_name
         event, created = append_sanitized(
             run_dir, "platform_tool_succeeded", platform_payload, identity
@@ -784,32 +1271,84 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
             if event_type in PHASE_EVENTS:
                 with run_lock(run_dir):
                     state = read_json(run_dir / "state.json", initial_state())
-                    state["pending_checkpoint"] = {
+                    checkpoint = {
                         "sequence": event["sequence"],
                         "phase": str(platform_payload.get("phase") or event_type),
                         "event_type": event_type,
                         "source": "platform",
                     }
+                    if metadata.get("mode") == "dual_claude":
+                        state.setdefault("pending_checkpoints", {})[binding.participant_role] = (
+                            checkpoint
+                        )
+                    else:
+                        state["pending_checkpoint"] = checkpoint
                     atomic_json(run_dir / "state.json", state)
         if created and tool_name in TERMINAL_TOOLS and authoritative:
             finalize_run(paths, run_dir, TERMINAL_TOOLS[tool_name])
+    elif event_name == "PostToolUse" and tool_name in MODELING_TOOLS:
+        append_sanitized(
+            run_dir,
+            "platform_tool_not_authorized",
+            {**context, "tool": tool_name, "stable_ids": selected_ids(tool_input)},
+            identity,
+        )
     elif event_name == "PostToolUse" and tool_name in {"Bash", "exec_command"}:
         command = handoff_command(str(tool_input.get("command") or tool_input.get("cmd") or ""))
         if command:
             append_sanitized(
                 run_dir,
                 "modeling_handoff_outcome",
-                handoff_outcome(hook, command),
+                {**context, **handoff_outcome(hook, command)},
                 identity,
             )
             should_summarize = True
+    elif event_name in {"TaskCreated", "TaskCompleted", "TeammateIdle"}:
+        bounded = {
+            **context,
+            "task_id": clean_text(hook.get("task_id") or tool_input.get("taskId"), 200),
+            "subject": clean_text(hook.get("subject") or tool_input.get("subject"), 1_000),
+            "status": clean_text(hook.get("status") or tool_input.get("status"), 80),
+            "owner": clean_text(hook.get("owner") or tool_input.get("owner"), 120),
+            "agent_id": clean_text(hook.get("agent_id"), 200),
+        }
+        append_sanitized(run_dir, event_name.lower(), bounded, identity)
+    elif event_name in {"PostToolUseFailure", "StopFailure"}:
+        append_sanitized(
+            run_dir,
+            "runtime_failure",
+            {
+                **context,
+                "event_name": event_name,
+                "tool": tool_name,
+                "error": clean_text(hook.get("error"), 1_000),
+            },
+            identity,
+        )
+    elif event_name == "SessionEnd":
+        append_sanitized(
+            run_dir,
+            "session_ended",
+            {**context, "reason": clean_text(hook.get("reason"), 200)},
+            identity,
+        )
+        with run_lock(run_dir):
+            latest = read_json(run_dir / "metadata.json")
+            if latest.get("mode") == "dual_claude":
+                participant = latest.get("participants", {}).get(binding.participant_role, {})
+                if int(participant.get("epoch", 0)) == binding.epoch:
+                    participant["stopped_at"] = now_iso()
+                    atomic_json(run_dir / "metadata.json", latest)
     elif event_name == "Stop":
         output = clean_text(hook.get("last_assistant_message"), MAX_MESSAGE_CHARS)
         with run_lock(run_dir):
             state = read_json(run_dir / "state.json", initial_state())
-            checkpoint = state.get("pending_checkpoint")
+            if metadata.get("mode") == "dual_claude":
+                checkpoint = state.get("pending_checkpoints", {}).get(binding.participant_role)
+            else:
+                checkpoint = state.get("pending_checkpoint")
             kind = "phase_output" if checkpoint else "turn_output"
-            payload = {"output": output}
+            payload = {**context, "output": output}
             if checkpoint:
                 payload["checkpoint"] = checkpoint
             categories = secret_categories(payload)
@@ -827,7 +1366,12 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
             else:
                 _, created = append_event_locked(run_dir, kind, payload, identity)
                 if created and checkpoint:
-                    state["pending_checkpoint"] = None
+                    if metadata.get("mode") == "dual_claude":
+                        state.setdefault("pending_checkpoints", {}).pop(
+                            binding.participant_role, None
+                        )
+                    else:
+                        state["pending_checkpoint"] = None
             atomic_json(run_dir / "state.json", state)
             should_summarize = bool(checkpoint and created)
     if should_summarize:
@@ -870,6 +1414,17 @@ def safe_environment(source: dict[str, str] | None = None) -> dict[str, str]:
         safe[key] = value
     safe.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
     safe.setdefault("LANG", "C.UTF-8")
+    return safe
+
+
+def claude_environment(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Pass only Claude authentication/runtime selectors without logging their values."""
+    source = source or os.environ
+    safe = safe_environment(source)
+    for key in CLAUDE_ENV_KEYS - SAFE_ENV_KEYS:
+        value = source.get(key)
+        if value is not None:
+            safe[key] = value
     return safe
 
 
@@ -966,6 +1521,55 @@ def invoke_luna(run_dir: Path, prompt: str) -> dict[str, Any]:
     return validate_delta(value)
 
 
+def claude_command(paths: Paths) -> list[str]:
+    # Claude Code 2.1.215 validates the supplied schema with an Ajv build that does not
+    # register the Draft 2020-12 meta-schema. Keep the checked-in schema authoritative
+    # for local validation and Luna, but omit the unsupported declaration from the
+    # disposable CLI adapter copy.
+    cli_schema = dict(read_json(paths.schema))
+    cli_schema.pop("$schema", None)
+    schema = canonical(cli_schema)
+    return [
+        shutil.which("claude") or "claude",
+        "-p",
+        "--bare",
+        "--tools",
+        "",
+        "--no-session-persistence",
+        "--output-format",
+        "json",
+        "--json-schema",
+        schema,
+    ]
+
+
+def invoke_claude(run_dir: Path, prompt: str) -> dict[str, Any]:
+    paths = Paths(find_repo(run_dir))
+    with tempfile.TemporaryDirectory(prefix="ontology-harness-claude-") as directory:
+        cwd = Path(directory)
+        result = subprocess.run(
+            claude_command(paths),
+            input=prompt,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            env=claude_environment(),
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise HarnessError(f"Claude summarizer exited {result.returncode}")
+        try:
+            envelope = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise HarnessError("Claude summarizer returned invalid JSON envelope") from exc
+        structured = envelope.get("structured_output") if isinstance(envelope, dict) else None
+        if not isinstance(structured, dict):
+            raise HarnessError("Claude summarizer omitted structured_output")
+    return validate_delta(structured)
+
+
 Summarizer = Callable[[Path, str], dict[str, Any]]
 
 
@@ -1041,7 +1645,7 @@ def render_session(run_dir: Path, state: dict[str, Any]) -> None:
         f"- Project: `{metadata['project_id']}`",
         f"- Previous run: `{metadata.get('previous_run_id') or 'none'}`",
         f"- Harness: `{HARNESS_VERSION}`",
-        f"- Summarizer: `{MODEL}` / `{REASONING_EFFORT}`",
+        f"- Summarizer: `{'claude structured output' if metadata.get('mode') == 'dual_claude' else f'{MODEL} / {REASONING_EFFORT}'}`",
         f"- Status: `{metadata.get('terminal_state') or metadata.get('status')}`",
         f"- Summarized through event: `{state['summarized_sequence']}`",
         "",
@@ -1104,7 +1708,7 @@ def finalize_run(
     paths: Paths,
     run_dir: Path,
     terminal_state: str,
-    summarizer: Summarizer = invoke_luna,
+    summarizer: Summarizer | None = None,
 ) -> Path | None:
     if terminal_state not in {"completed", "cancelled", "paused", "interrupted"}:
         raise HarnessError("invalid terminal state")
@@ -1128,6 +1732,9 @@ def finalize_run(
             state["finalization_status"] = "local_only"
             atomic_json(run_dir / "state.json", state)
         return None
+    if summarizer is None:
+        metadata = read_json(run_dir / "metadata.json")
+        summarizer = invoke_claude if metadata.get("mode") == "dual_claude" else invoke_luna
     for _ in range(3):
         try:
             summarize_pending(run_dir, summarizer)
@@ -1166,6 +1773,12 @@ def checkpoint_cli(paths: Paths, args: argparse.Namespace) -> None:
         metadata = read_json(run_dir / "metadata.json")
         if metadata.get("status") != "active":
             raise HarnessError("run is not active")
+        dual = metadata.get("mode") == "dual_claude"
+        receipt: dict[str, Any] | None = None
+        if dual:
+            receipt, _ = consume_receipt(paths, run_dir, args)
+            if receipt.get("participant_role") != "modeling_agent":
+                raise HarnessError("only modeling_agent may record a dual checkpoint")
         state = read_json(run_dir / "state.json")
         payload = {
             "phase": args.phase,
@@ -1173,6 +1786,16 @@ def checkpoint_cli(paths: Paths, args: argparse.Namespace) -> None:
             "report_source": "agent_reported_local",
             "summary": clean_text(args.summary, MAX_SUMMARY_CHARS),
         }
+        if receipt:
+            payload.update(
+                {
+                    "participant_role": receipt["participant_role"],
+                    "runtime": receipt["runtime"],
+                    "runtime_session_id": receipt["session_id"],
+                    "participant_epoch": receipt["participant_epoch"],
+                    "operation_id": args.operation_id,
+                }
+            )
         categories = secret_categories(payload)
         if categories:
             raise HarnessError("checkpoint rejected by secret scanner")
@@ -1182,14 +1805,20 @@ def checkpoint_cli(paths: Paths, args: argparse.Namespace) -> None:
             payload,
             f"checkpoint:{args.client_checkpoint_id}",
         )
-        state["pending_checkpoint"] = {
+        checkpoint = {
             "sequence": event["sequence"],
             "phase": args.phase,
             "event_type": args.event_type,
             "source": "agent_reported_local",
             "reconciliation": "pending",
         }
+        if dual:
+            state.setdefault("pending_checkpoints", {})["modeling_agent"] = checkpoint
+        else:
+            state["pending_checkpoint"] = checkpoint
         atomic_json(run_dir / "state.json", state)
+        if receipt:
+            mark_receipt_consumed(run_dir, receipt)
     print(f"local checkpoint recorded at event {event['sequence']}")
 
 
@@ -1225,12 +1854,35 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     activate.add_argument("--activation-nonce", required=True)
     activate.add_argument("--build-session-id", required=True)
     activate.add_argument("--project-id", required=True)
+    activate.add_argument("--runtime", choices=sorted(RUNTIMES))
+    activate.add_argument("--participant-role", choices=sorted(PARTICIPANT_ROLES))
     checkpoint = subparsers.add_parser("checkpoint")
     checkpoint.add_argument("--run-id", required=True)
     checkpoint.add_argument("--phase", required=True)
     checkpoint.add_argument("--event-type", required=True)
     checkpoint.add_argument("--summary", required=True)
     checkpoint.add_argument("--client-checkpoint-id", required=True)
+    checkpoint.add_argument("--operation-id")
+    message = subparsers.add_parser("message")
+    message_subparsers = message.add_subparsers(dest="message_command", required=True)
+    send = message_subparsers.add_parser("send")
+    send.add_argument("--run-id", required=True)
+    send.add_argument("--operation-id", required=True)
+    send.add_argument("--recipient-role", required=True, choices=sorted(PARTICIPANT_ROLES))
+    send.add_argument("--message-kind", required=True)
+    send.add_argument("--content", required=True)
+    poll = message_subparsers.add_parser("poll")
+    poll.add_argument("--run-id", required=True)
+    poll.add_argument("--participant-role", required=True, choices=sorted(PARTICIPANT_ROLES))
+    acknowledge = message_subparsers.add_parser("ack")
+    acknowledge.add_argument("--run-id", required=True)
+    acknowledge.add_argument("--operation-id", required=True)
+    acknowledge.add_argument("--message-id", required=True)
+    replace = subparsers.add_parser("replace-participant")
+    replace.add_argument("--run-id", required=True)
+    replace.add_argument("--participant-role", required=True, choices=sorted(PARTICIPANT_ROLES))
+    status = subparsers.add_parser("status")
+    status.add_argument("--run-id", required=True)
     redact = subparsers.add_parser("redact")
     redact.add_argument("--run-id", required=True)
     redact.add_argument("--for-sequence", required=True, type=int)
@@ -1263,6 +1915,12 @@ def main(argv: list[str] | None = None) -> int:
             activate_cli(paths, args)
         elif args.command == "checkpoint":
             checkpoint_cli(paths, args)
+        elif args.command == "message":
+            message_cli(paths, args)
+        elif args.command == "replace-participant":
+            replace_participant_cli(paths, args)
+        elif args.command == "status":
+            status_cli(paths, args)
         elif args.command == "redact":
             redact_cli(paths, args)
         elif args.command == "finalize":
