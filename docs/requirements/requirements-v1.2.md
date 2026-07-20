@@ -8,7 +8,7 @@
 - 总体目标：降低外部消费 Agent 查询和解释本体知识时对内部 ID、IRI、SPARQL 与平台实现细节的依赖
 - 参考验收场景：查询 Dify 合成参考本体中的工作流结构、规则触发条件和推理分类
 - 目标用户：通过 REST/MCP 消费平台语义知识的外部 Agent、Agent Skill 开发者和查询调试人员
-- 更新日期：2026-07-18
+- 更新日期：2026-07-20
 
 ## 背景
 
@@ -235,6 +235,16 @@ Dataset 中的 Class、Entity、Relation、规则或业务事实。
 
 当前状态：`未实现`
 
+### 需求定位
+
+本需求在调用方已经通过 R1.2-002 建立明确授权范围后，为 R-006 Context Query 及同一共享检索
+模块上的 Entity/Class 搜索增加多语言混合召回。Project/Ontology 目录继续使用 R1.2-002 已确认的
+稳定 ID 和名称确定性匹配，不在本需求中改为模糊、翻译或向量发现。
+
+本需求交付 v1.0 R-103“持久化混合召回”中消费 Agent 当前必需的子集：真实持久化索引、Embedding
+生成、词面与向量融合、版本/范围/过期过滤和可解释降级。R-103 的全平台泛化状态不因本需求进入
+设计而自动改变。
+
 ### 要解决的问题
 
 查询“客服工单”“发票对账”“合同风险审查”时，当前 Context Query 对本体中的对应英文工作流
@@ -243,13 +253,66 @@ Dataset 中的 Class、Entity、Relation、规则或业务事实。
 
 ### 目标行为
 
-在 R-006 的确定性范围和结果边界内，增加多语言、别名、标识符拆分及语义候选召回。允许使用
-可重建的检索投影、向量或受控查询扩展提升候选发现，但检索相似不能自动变成已确认的语义等价：
+在 R-006 的确定性范围和结果边界内建立默认混合召回。每次查询同时执行现有确定性词面匹配和
+受相同 Ontology、当前工作空间版本及授权约束的向量召回，再用稳定规则融合候选。向量索引是由
+当前 RDF Dataset 和活动 Rule 元数据生成的可重建投影，不是新的语义事实源。
 
-- 本体已有 `label`、`altLabel`、描述或 Mapping 时，返回对应依据；
-- 只有语义相似性时，标记为候选命中，返回匹配原因、得分或等级，不伪装成精确别名；
-- 候选不足以唯一确定资源时返回歧义，交由消费 Agent 或用户确认；
-- 首轮没有词面命中时，可在同一受限范围内执行可解释回退，不直接返回无依据的答案。
+#### 召回范围与索引内容
+
+- 共享模块覆盖 Class、Entity、Relation/Property、Rule 和 Operation。Context Query、现有 Entity
+  搜索和 Class 搜索默认使用 `hybrid`，同时保留显式 `lexical` 诊断模式。
+- 索引文本只包含带语言信息的 `label`、`altLabel`、描述、IRI 本地名、类型名称，以及显式指向
+  该资源的 Mapping 术语。不得索引任意业务事实值、Evidence 原文、审计内容、秘密或用户查询
+  文本。
+- 本体已有 label、altLabel 或 Mapping 时，结果返回具体谓词、值和语言等依据；标识符拆分支持
+  NFKC、casefold、CamelCase、下划线、连字符和稳定 IRI 本地名。
+- 只有语义相似性时标记为 `semantic_candidate`，返回模型/投影版本下的相似度和候选等级，不
+  创建 altLabel、Mapping、关系或事实，也不伪装成已确认等价。
+- 首版使用 PostgreSQL + pgvector 持久化 Ontology 内部检索投影，不引入独立向量数据库或 rerank
+  模型。更换模型、维度、文档模板、阈值或融合规则必须创建新的检索投影版本并重新验收。
+
+#### 排序、歧义与返回合同
+
+- 精确 label、altLabel、Mapping 和稳定标识符命中属于显式依据，优先于仅相似候选；其他词面与
+  向量分数使用版本化规则融合。最终 tie-breaker 保持 Ontology 顺序、资源类型、规范化 label 和
+  稳定 ID，结果可重放。
+- v1 `semantic-retrieval-v1` 在当前 `embedding-3`、1024 维文档合同下使用 cosine 最低候选阈值
+  `0.45` 和歧义分差 `0.03`。这些值只能随新的投影版本变更，不能运行时静默漂移。
+- 没有显式唯一依据且多个候选处于歧义分差内时返回全部候选，保留 Ontology、稳定 ID、语义类型、
+  匹配方法和各自得分，由消费 Agent 或用户确认。
+- 保留 R-006 `result_status=matched|no_match` 兼容性；新增召回摘要区分
+  `exact|candidate|ambiguous|no_match` 及 `complete|degraded`，每个 item 的 match 信息区分词面
+  分数、向量相似度、候选等级和依据。
+
+#### 版本、同步与降级
+
+- 每条索引记录和 manifest 绑定 Ontology、工作空间版本、source signature、Embedding 配置哈希和
+  投影版本；Rule 资源还绑定由活动 Rule 和当前 Definition 可索引内容生成的 rule-set signature。
+  查询只读取与本次实际范围和签名完全一致且 `current` 的索引，禁止使用旧索引冒充当前结果或
+  跨授权 Ontology 召回。
+- v1 在授权 Ontology、版本、签名和资源类型过滤后执行 pgvector exact cosine scan，不使用可能因
+  ANN post-filter 产生漏召回的 HNSW/IVFFlat。查询超时只能标记 degraded，不能产生完整 no-match；
+  近似索引需以后续投影版本和 exact parity 验收另行引入。
+- 影响当前语义资源的写入提交后，同一请求同步重建受影响 Ontology 索引并等待结果。RDF/Rule
+  权威事实优先提交；Embedding 或 pgvector 失败不能伪造跨存储回滚，写响应必须说明
+  `write_applied` 与 `index_failed/stale`，并允许幂等重建。
+- 新索引全部写完且再次确认工作空间版本未变化后才能原子提升为 `current`。并发变化、构建失败或
+  返回维度/数量非法时不得提升；旧分区可以保留用于恢复，但不能参与当前查询。
+- Rule create/PATCH/DELETE 必须在同一 PostgreSQL 事务中修改 Rule 和将受影响检索 manifest 标记
+  stale，提交后才同步重建。即使进程在提交后、重建前退出，查询时的 rule-set signature 校验也
+  必须拒绝旧 Rule 文档。
+- 索引缺失、未回填、过期、配置不匹配或 provider 不可用时，查询继续返回可用词面结果，并在
+  Ontology 粒度返回降级状态。若词面也无命中，仍使用 `result_status=no_match`，但召回摘要必须
+  表明结果不完整，不能把降级误报为已完整证明知识不存在。
+- 数据库迁移只建立扩展和表结构，不在迁移或服务启动时调用外部模型。既有 Ontology 通过显式、
+  可重试的 backfill 建立首个 current 索引；完成前按上述规则降级。
+
+### 明确不在范围
+
+- 不改变 R1.2-002 Project/Ontology 目录发现和授权失败语义。
+- 不把向量相似度写回本体或生成翻译、别名、Mapping、关系、事实和最终自然语言答案。
+- 不索引任意事实/Evidence/审计文本，不记录查询正文，不在首版提供 rerank 模型。
+- 不新增独立万能语义搜索接口；REST、MCP 和现有 read model 复用同一服务。
 
 ### 验收标准
 
@@ -258,6 +321,12 @@ Dataset 中的 Class、Entity、Relation、规则或业务事实。
 - 相似但不同的工作流不会被静默合并；歧义候选保留各自 Ontology、稳定 ID 和匹配原因。
 - 本体确实没有相关知识时仍返回未命中，不由平台生成不存在的资源、关系或事实。
 - 检索索引缺失、未构建或过期时明确降级到可用路径，并返回降级状态。
+- Context Query、Entity 和 Class 搜索对相同范围、查询和类型过滤使用同一候选依据、阈值和稳定
+  排序；REST/MCP 的核心候选、版本、歧义及降级判断一致。
+- 查询和索引构建始终先施加授权 Ontology、当前工作空间版本和资源类型过滤；无权资源不出现在
+  候选、数量、相似度或索引状态中。
+- 语义写入后索引成功时返回同一工作空间版本的 current 结果；索引失败时事实保持可读，响应明确
+  写入已应用及索引失败，重建成功前只走可用降级路径。
 
 ## R1.2-004 面向任务的聚合语义读模型
 
