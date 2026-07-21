@@ -12,7 +12,7 @@
   R1.1-007 本地/正式建模执行 Profile
 - 参考业务场景：将 Dify 使用指南、API/OpenAPI 文档和必要的业务说明整理进平台
 - 目标用户：需要把外部业务知识沉淀为可复用语义模型的用户和团队
-- 更新日期：2026-07-21
+- 更新日期：2026-07-22
 
 ## 背景
 
@@ -740,7 +740,7 @@ fast-local 的验收包括：一条命令完成 run/Build Session/双 session �
 
 当前状态：`待实现`
 
-方案状态：`已按简单优先原则重新设计；独立计划评审 PASS，等待实现`
+方案状态：`已按 R1.1-007 重新调整；独立计划复审 PASS，等待实现`
 
 确认日期：2026-07-21
 
@@ -784,8 +784,11 @@ Ontology 和一组明确的 Coverage 项/能力问题。不同 Ontology 的单�
 Work Unit 和 Ontology 产物；资料索引必须给出 `source_id`、稳定位置和当前内容哈希；Coverage 必须把
 每个覆盖项关联到 `source_id`、能力问题、Ontology 和 Work Unit；`task.json` 必须声明这些引用、
 直接依赖和允许的结构化输出；`result.json` 必须回填同一作用域的引用并按当前平台
-`ModelingItemInput` 结构给出候选项。校验器必须确认所有引用存在、作用域一致且输入未变化，不能只
-检查 JSON 是否可解析。
+`ModelingItemInput` 结构给出候选项。校验器必须确认所有引用存在、作用域一致，并把输入指纹变化
+标记为需要显式处理，不能只检查 JSON 是否可解析，也不能把任意输入字节变化直接等同于必须重新
+建模。R1.1-006 单独运行时可保守重跑受影响 Work Unit；经 R1.1-007 协调时，由受影响子 Agent 返回
+`no_change | modify_existing | remodel`，只有能够证明规范化语义内容未变化时才能重绑新输入指纹并
+复用原候选哈希。
 
 ### 简化后的执行流程
 
@@ -801,9 +804,10 @@ Work Unit 和 Ontology 产物；资料索引必须给出 `source_id`、稳定位
 ```
 
 本地共享目录是当前调试阶段的协作事实来源；已 apply 的语义模型、Batch 结果和查询结果仍以平台为
-准。当前模式不要求为每个中间动作创建 Modeling Workflow Artifact、Execution Event、Checkpoint
-或 Harness summary，也不要求发布 retrospective。需要正式发布或严格评测时，可以另行运行现有
-完整流程，但它不再是每次本地优化实验的前置条件。
+准。共享目录的初始化、校验、合并、Batch 规划和定向重跑原语本身不要求创建 Modeling Workflow
+Artifact、Execution Event、Checkpoint、Harness summary 或 retrospective，也不决定 Local/Formal
+Profile。普通建模运行由 R1.1-007 选择 Profile：Local Modeling Mode 默认启用本地 Harness，Formal
+Modeling Mode 使用正式平台合同；该下游行为不反向扩张 R1.1-006 的目录组件职责。
 
 ### 当前质量门槛
 
@@ -816,9 +820,13 @@ Work Unit 和 Ontology 产物；资料索引必须给出 `source_id`、稳定位
 - `result.json` 必须能表达当前平台支持的 Entity、Relation 以及必要的 Class、Property、Relation
   Type、Fact 和 Operation 等建模项，不能只验证小型 Schema 草案。
 - 正式写入前保留平台 dry-run 和一次独立模型评审；评审按 Ontology 合并结果执行，不要求每个小
-  单元重复走完整评审流程。超过当前 `modeling_batch_max_items` 或
-  `modeling_batch_max_request_bytes` 的候选必须按依赖顺序拆成多个可独立提交的 Batch，并在每个
-  前置 Batch apply 后刷新 Modeling Context，再处理后续 Batch。
+  单元重复走完整评审流程。候选必须满足当前 item 数、请求字节、内联 Evidence 数和单条 excerpt
+  长度限制；可分片超限按依赖顺序确定性拆成多个可独立提交的 Batch，单条不可分片内容超限则在
+  提交前阻断。每个物化 Batch 在首次提交前固定 `ontology_id` 和 `client_batch_id`，dry-run/apply
+  必须返回同一平台 `batch_id`。在每个
+  前置 Batch apply 后刷新 Modeling Context，再处理后续 Batch。平台 `depends_on` 和 Item 输出引用
+  只在单个 Batch 内有效；后续 Batch 必须使用前置 Batch 返回的稳定资源 ID/IRI 实体化请求，不能
+  提交跨 Batch `client_item_id` 引用。
 - apply 后必须用预先记录的能力问题和召回查询验证结果；流程顺利、文件齐全或平台结构校验通过
   都不能替代建模质量和召回质量验收。
 - 新 Agent Session 只依靠共享目录和平台当前状态即可继续一个未完成 Work Unit，并能识别缺失
@@ -847,8 +855,9 @@ Agent Runtime。JSON 写入只需避免读到半文件；并发通过“一个 W
   均与同一候选哈希一致，修改候选后不能复用旧评审。
 - 使用超过当前单 Batch item 上限的代表性场景（至少包含数百个 Entity 及 Entity Relation）完成
   确定性多 Batch dry-run/apply，最终能力问题/召回验收不低于当前固定资料场景的既有可用结果。
-- 一次典型调试不要求创建平台 Workflow Artifact/Event/Checkpoint、执行 Harness 严格激活或发布
-  summary；可以直接查看和修改共享目录后重跑受影响单元。
+- 共享目录组件的典型调试不要求创建平台 Workflow Artifact/Event/Checkpoint、执行 Harness 激活或
+  发布 summary；可以直接查看和修改共享目录后重跑受影响单元。该组件级验收不替代 R1.1-007 对
+  普通 Local Modeling Mode 默认 Harness 的要求。
 - 实现仅限 repo-local Agent/脚本、必要测试和文档；产品化能力保留在未来清单，不进入当前完成门槛。
 
 ## R1.1-007 本地/正式建模执行 Profile
