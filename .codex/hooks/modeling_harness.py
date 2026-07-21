@@ -167,6 +167,10 @@ class Paths:
         return self.root / ".sessions"
 
     @property
+    def registry_lock(self) -> Path:
+        return self.root / ".registry.lock"
+
+    @property
     def hooks_config(self) -> Path:
         return self.repo / ".codex" / "hooks.json"
 
@@ -210,6 +214,10 @@ def config_hash(paths: Paths) -> str:
         paths.schema,
         paths.claude_config,
         paths.repo / ".claude" / "modeling-harness.md",
+        paths.repo / ".claude" / "ontology-mcp.json",
+        paths.repo / ".claude" / "empty-mcp.json",
+        paths.repo / ".codex" / "fast_local_launcher.py",
+        *(paths.repo / ".claude" / "scenarios").glob("*.json"),
         *(paths.repo / ".claude" / "agents").glob("*.md"),
     ]
     for path in sorted((path for path in candidates if path.is_file()), key=str):
@@ -253,6 +261,18 @@ def read_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, An
 def run_lock(run_dir: Path) -> Iterator[None]:
     run_dir.mkdir(parents=True, exist_ok=True)
     with (run_dir / ".lock").open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def registry_lock(paths: Paths) -> Iterator[None]:
+    """Serialize every mutation of the root-shared runtime-session registry."""
+    paths.root.mkdir(parents=True, exist_ok=True)
+    with paths.registry_lock.open("a+b") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield
@@ -507,7 +527,9 @@ def activation_args(command: str) -> dict[str, str] | None:
     cursor = index + 1
     while cursor < len(tokens):
         mapped = allowed.get(tokens[cursor])
-        if mapped is None or cursor + 1 >= len(tokens):
+        if mapped is None:
+            break
+        if cursor + 1 >= len(tokens):
             return None
         values[mapped] = tokens[cursor + 1]
         cursor += 2
@@ -622,94 +644,309 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
     if not SESSION_ID.fullmatch(session_id) or cwd != paths.repo.resolve():
         raise HarnessError("activation Hook session/cwd mismatch")
     run_dir = paths.run(values["run_id"])
-    with run_lock(run_dir):
-        metadata_path = run_dir / "metadata.json"
-        existing = read_json(metadata_path) if metadata_path.exists() else None
-        dual = bool(values.get("participant_role"))
-        mode = "dual_claude" if dual else "legacy"
-        role = values.get("participant_role", "main_agent")
-        runtime = values.get("runtime", "codex")
-        if dual and runtime != "claude":
-            raise HarnessError("dual participants require the Claude runtime")
-        if existing and (
-            existing.get("build_session_id") != values["build_session_id"]
-            or existing.get("project_id") != values["project_id"]
-            or existing.get("mode", "legacy") != mode
-        ):
-            raise HarnessError("run_id is already bound to conflicting activation data")
-        registry_path = paths.registry / f"{session_id}.json"
-        if registry_path.exists():
-            registry = read_json(registry_path)
-            if (
-                registry.get("run_id") != values["run_id"]
-                or registry.get("participant_role", "main_agent") != role
-            ):
-                raise HarnessError("runtime session is already bound to another run or role")
-        timestamp = now_iso()
-        metadata = existing or {
-            "schema_version": 2 if dual else 1,
-            "harness_version": HARNESS_VERSION,
-            "run_id": values["run_id"],
-            "build_session_id": values["build_session_id"],
-            "project_id": values["project_id"],
-            "previous_run_id": previous_run(paths, values["build_session_id"], values["run_id"]),
-            "cwd": str(paths.repo.resolve()),
-            "created_at": timestamp,
-            "status": "activating",
-            "terminal_state": None,
-            "mode": mode,
-            "participants": {},
-        }
-        if dual:
-            participants = metadata.setdefault("participants", {})
-            existing_participant = participants.get(role)
-            nonce_hash = hashlib.sha256(values["activation_nonce"].encode()).hexdigest()
-            if existing_participant and (
-                existing_participant.get("activation_nonce_hash") != nonce_hash
-                or existing_participant.get("session_id") not in {None, session_id}
-            ):
-                raise HarnessError("participant role is already bound or nonce is stale")
-            epoch = int(existing_participant.get("epoch", 1)) if existing_participant else 1
-            participants[role] = {
-                "role": role,
-                "runtime": runtime,
-                "session_id": session_id,
-                "epoch": epoch,
-                "activation_nonce_hash": nonce_hash,
-                "acknowledged_at": timestamp,
-                "activated_at": existing_participant.get("activated_at")
-                if existing_participant
-                else None,
-                "last_seen_at": timestamp,
-                "stopped_at": None,
-            }
-        else:
+    with registry_lock(paths):
+        with run_lock(run_dir):
+            metadata_path = run_dir / "metadata.json"
+            existing = read_json(metadata_path) if metadata_path.exists() else None
+            dual = bool(values.get("participant_role"))
+            mode = "dual_claude" if dual else "legacy"
+            role = values.get("participant_role", "main_agent")
+            runtime = values.get("runtime", "codex")
+            if dual and runtime != "claude":
+                raise HarnessError("dual participants require the Claude runtime")
             if existing and (
-                existing.get("session_id") != session_id
-                or existing.get("activation_nonce") != values["activation_nonce"]
+                existing.get("build_session_id") != values["build_session_id"]
+                or existing.get("project_id") != values["project_id"]
+                or existing.get("mode", "legacy") != mode
             ):
                 raise HarnessError("run_id is already bound to conflicting activation data")
-            metadata["session_id"] = session_id
-            metadata["activation_nonce"] = values["activation_nonce"]
-            metadata["acknowledged_at"] = timestamp
-        metadata["hook_config_hash"] = config_hash(paths)
-        atomic_json(metadata_path, metadata)
-        if not (run_dir / "state.json").exists():
-            atomic_json(run_dir / "state.json", initial_state())
-        (run_dir / "raw").mkdir(exist_ok=True)
-        paths.registry.mkdir(parents=True, exist_ok=True)
-        atomic_json(
-            registry_path,
-            {
+            registry_path = paths.registry / f"{session_id}.json"
+            if registry_path.exists():
+                registry = read_json(registry_path)
+                if (
+                    registry.get("run_id") != values["run_id"]
+                    or registry.get("participant_role", "main_agent") != role
+                ):
+                    raise HarnessError("runtime session is already bound to another run or role")
+            timestamp = now_iso()
+            metadata = existing or {
+                "schema_version": 2 if dual else 1,
+                "harness_version": HARNESS_VERSION,
                 "run_id": values["run_id"],
-                "session_id": session_id,
-                "participant_role": role,
-                "runtime": runtime,
-                "epoch": epoch if dual else 1,
+                "build_session_id": values["build_session_id"],
+                "project_id": values["project_id"],
+                "previous_run_id": previous_run(
+                    paths, values["build_session_id"], values["run_id"]
+                ),
                 "cwd": str(paths.repo.resolve()),
-                "hook_config_hash": metadata["hook_config_hash"],
-            },
-        )
+                "created_at": timestamp,
+                "status": "activating",
+                "terminal_state": None,
+                "mode": mode,
+                "evaluation_profile": "strict_eval" if dual else "legacy",
+                "summary_policy": "automatic",
+                "participants": {},
+            }
+            if dual:
+                participants = metadata.setdefault("participants", {})
+                existing_participant = participants.get(role)
+                nonce_hash = hashlib.sha256(values["activation_nonce"].encode()).hexdigest()
+                if existing_participant and (
+                    existing_participant.get("activation_nonce_hash") != nonce_hash
+                    or existing_participant.get("session_id") not in {None, session_id}
+                ):
+                    raise HarnessError("participant role is already bound or nonce is stale")
+                epoch = int(existing_participant.get("epoch", 1)) if existing_participant else 1
+                participants[role] = {
+                    "role": role,
+                    "runtime": runtime,
+                    "session_id": session_id,
+                    "epoch": epoch,
+                    "activation_nonce_hash": nonce_hash,
+                    "acknowledged_at": timestamp,
+                    "activated_at": existing_participant.get("activated_at")
+                    if existing_participant
+                    else None,
+                    "last_seen_at": timestamp,
+                    "stopped_at": None,
+                }
+            else:
+                if existing and (
+                    existing.get("session_id") != session_id
+                    or existing.get("activation_nonce") != values["activation_nonce"]
+                ):
+                    raise HarnessError("run_id is already bound to conflicting activation data")
+                metadata["session_id"] = session_id
+                metadata["activation_nonce"] = values["activation_nonce"]
+                metadata["acknowledged_at"] = timestamp
+            metadata["hook_config_hash"] = config_hash(paths)
+            atomic_json(metadata_path, metadata)
+            if not (run_dir / "state.json").exists():
+                atomic_json(run_dir / "state.json", initial_state())
+            (run_dir / "raw").mkdir(exist_ok=True)
+            paths.registry.mkdir(parents=True, exist_ok=True)
+            atomic_json(
+                registry_path,
+                {
+                    "run_id": values["run_id"],
+                    "session_id": session_id,
+                    "participant_role": role,
+                    "runtime": runtime,
+                    "epoch": epoch if dual else 1,
+                    "cwd": str(paths.repo.resolve()),
+                    "hook_config_hash": metadata["hook_config_hash"],
+                },
+            )
+
+
+def _canonical_uuid(value: str, label: str) -> str:
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError) as exc:
+        raise HarnessError(f"invalid {label}") from exc
+    if str(parsed) != value.lower():
+        raise HarnessError(f"invalid {label}")
+    return str(parsed)
+
+
+def _fast_identity(paths: Paths, args: argparse.Namespace) -> dict[str, Any]:
+    if not RUN_ID.fullmatch(args.run_id):
+        raise HarnessError("invalid run_id")
+    for name in ("project_id", "build_session_id"):
+        value = str(getattr(args, name, ""))
+        if not value or len(value) > 160:
+            raise HarnessError(f"invalid {name}")
+    if not re.fullmatch(r"[0-9a-f]{64}", str(args.launch_intent_hash)):
+        raise HarnessError("invalid launch_intent_hash")
+    scenario = (paths.repo / args.scenario).resolve()
+    try:
+        scenario_relative = scenario.relative_to(paths.repo.resolve()).as_posix()
+    except ValueError as exc:
+        raise HarnessError("scenario must be inside the repository") from exc
+    if not scenario.is_file():
+        raise HarnessError("scenario file does not exist")
+    user_session = _canonical_uuid(args.simulated_user_session_id, "simulated_user_session_id")
+    modeler_session = _canonical_uuid(args.modeling_agent_session_id, "modeling_agent_session_id")
+    if user_session == modeler_session:
+        raise HarnessError("fast participants require distinct session UUIDs")
+    return {
+        "run_id": args.run_id,
+        "project_id": args.project_id,
+        "build_session_id": args.build_session_id,
+        "scenario": scenario_relative,
+        "launch_intent_hash": args.launch_intent_hash,
+        "sessions": {
+            "simulated_user": user_session,
+            "modeling_agent": modeler_session,
+        },
+    }
+
+
+def _remove_preparation_registries(paths: Paths, preparation_id: str) -> None:
+    if not paths.registry.exists():
+        return
+    for registry_path in paths.registry.glob("*.json"):
+        with contextlib.suppress(OSError, json.JSONDecodeError, HarnessError):
+            registry = read_json(registry_path)
+            if registry.get("preparation_id") == preparation_id:
+                registry_path.unlink()
+
+
+def prepare_fast_cli(paths: Paths, args: argparse.Namespace) -> None:
+    """Crash-recoverably pre-bind both fast-local Claude participant sessions."""
+    identity = _fast_identity(paths, args)
+    run_dir = paths.run(args.run_id)
+    with registry_lock(paths):
+        with run_lock(run_dir):
+            metadata_path = run_dir / "metadata.json"
+            existing = read_json(metadata_path) if metadata_path.exists() else None
+            if existing:
+                if existing.get("evaluation_profile") != "fast_local":
+                    raise HarnessError("run_id is already bound to another evaluation profile")
+                if existing.get("fast_identity") != identity:
+                    raise HarnessError("run_id is already bound to conflicting fast-local data")
+                preparation_id = str(existing.get("preparation_id", ""))
+                if existing.get("preparation_complete") is True:
+                    if existing.get("status") != "active":
+                        raise HarnessError("completed fast preparation is not active")
+                    for role in sorted(PARTICIPANT_ROLES):
+                        session_id = identity["sessions"][role]
+                        registry_path = paths.registry / f"{session_id}.json"
+                        if not registry_path.exists():
+                            raise HarnessError("completed fast preparation registry is missing")
+                        registry = read_json(registry_path)
+                        if (
+                            registry.get("run_id") != args.run_id
+                            or registry.get("participant_role") != role
+                            or registry.get("preparation_id") != preparation_id
+                        ):
+                            raise HarnessError("completed fast preparation registry conflicts")
+                    print(f"fast-local Harness active: {args.run_id}")
+                    return
+                if not preparation_id:
+                    raise HarnessError("incomplete preparation has no repair identity")
+                _remove_preparation_registries(paths, preparation_id)
+            else:
+                preparation_id = str(uuid.uuid4())
+
+            for role in sorted(PARTICIPANT_ROLES):
+                session_id = identity["sessions"][role]
+                registry_path = paths.registry / f"{session_id}.json"
+                if registry_path.exists():
+                    raise HarnessError("runtime session is already bound to another run or role")
+
+            timestamp = now_iso()
+            hook_hash = config_hash(paths)
+            participants = {
+                role: {
+                    "role": role,
+                    "runtime": "claude",
+                    "session_id": identity["sessions"][role],
+                    "epoch": 1,
+                    "activation_nonce_hash": None,
+                    "acknowledged_at": timestamp,
+                    "activated_at": None,
+                    "last_seen_at": timestamp,
+                    "stopped_at": None,
+                    "activation_method": "fast_prebound",
+                    "preparation_id": preparation_id,
+                }
+                for role in sorted(PARTICIPANT_ROLES)
+            }
+            metadata = {
+                "schema_version": 2,
+                "harness_version": HARNESS_VERSION,
+                "run_id": args.run_id,
+                "build_session_id": args.build_session_id,
+                "project_id": args.project_id,
+                "previous_run_id": previous_run(paths, args.build_session_id, args.run_id),
+                "cwd": str(paths.repo.resolve()),
+                "created_at": existing.get("created_at", timestamp) if existing else timestamp,
+                "status": "preparing",
+                "terminal_state": None,
+                "mode": "dual_claude",
+                "evaluation_profile": "fast_local",
+                "summary_policy": "explicit",
+                "scenario": identity["scenario"],
+                "launch_intent_hash": identity["launch_intent_hash"],
+                "preparation_id": preparation_id,
+                "preparation_complete": False,
+                "hook_config_hash": hook_hash,
+                "fast_identity": identity,
+                "participants": participants,
+            }
+            try:
+                # The ready metadata replacement below is the sole commit marker. Every other
+                # durable write is complete and retry-idempotent before it becomes Hook-visible.
+                atomic_json(metadata_path, metadata)
+                state = read_json(run_dir / "state.json", initial_state())
+                state["preparation_id"] = preparation_id
+                atomic_json(run_dir / "state.json", state)
+                (run_dir / "raw").mkdir(exist_ok=True)
+                paths.registry.mkdir(parents=True, exist_ok=True)
+                for role in sorted(PARTICIPANT_ROLES):
+                    session_id = identity["sessions"][role]
+                    registry_path = paths.registry / f"{session_id}.json"
+                    atomic_json(
+                        registry_path,
+                        {
+                            "run_id": args.run_id,
+                            "session_id": session_id,
+                            "participant_role": role,
+                            "runtime": "claude",
+                            "epoch": 1,
+                            "cwd": str(paths.repo.resolve()),
+                            "hook_config_hash": hook_hash,
+                            "preparation_id": preparation_id,
+                        },
+                    )
+                append_event_locked(
+                    run_dir,
+                    "fast_preparation_started",
+                    {
+                        "build_session_id": args.build_session_id,
+                        "project_id": args.project_id,
+                        "scenario": identity["scenario"],
+                        "preparation_id": preparation_id,
+                    },
+                    f"prepare-fast:{preparation_id}",
+                )
+                for role in sorted(PARTICIPANT_ROLES):
+                    append_event_locked(
+                        run_dir,
+                        "activated",
+                        {
+                            "build_session_id": args.build_session_id,
+                            "project_id": args.project_id,
+                            "previous_run_id": metadata.get("previous_run_id"),
+                            "participant_role": role,
+                            "runtime": "claude",
+                            "participant_epoch": 1,
+                            "activation_method": "fast_prebound",
+                            "preparation_id": preparation_id,
+                        },
+                        f"prepare-fast:{preparation_id}:activate:{role}",
+                    )
+                committed_at = now_iso()
+                for participant in participants.values():
+                    participant["activated_at"] = committed_at
+                    participant["last_seen_at"] = committed_at
+                metadata["participants"] = participants
+                metadata["status"] = "active"
+                metadata["preparation_complete"] = True
+                metadata["prepared_at"] = committed_at
+                atomic_json(metadata_path, metadata)
+            except Exception:
+                _remove_preparation_registries(paths, preparation_id)
+                with contextlib.suppress(Exception):
+                    failed = read_json(metadata_path, metadata)
+                    if failed.get("preparation_complete") is not True:
+                        failed["status"] = "preparation_failed"
+                        failed["preparation_complete"] = False
+                        failed["preparation_error"] = "durable_write_failed"
+                        atomic_json(metadata_path, failed)
+                raise
+    print(f"fast-local Harness active: {args.run_id}")
 
 
 def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
@@ -828,6 +1065,11 @@ def active_binding(paths: Paths, hook: dict[str, Any]) -> ActiveBinding | None:
         "completed",
         "cancelled",
     } or registry.get("hook_config_hash") != config_hash(paths):
+        return None
+    if metadata.get("evaluation_profile") == "fast_local" and (
+        metadata.get("preparation_complete") is not True
+        or registry.get("preparation_id") != metadata.get("preparation_id")
+    ):
         return None
     if metadata.get("mode", "legacy") == "dual_claude":
         participant = metadata.get("participants", {}).get(role, {})
@@ -1077,7 +1319,7 @@ def replace_participant_cli(paths: Paths, args: argparse.Namespace) -> None:
         raise HarnessError("invalid participant role")
     run_dir = paths.run(args.run_id)
     nonce = uuid.uuid4().hex + uuid.uuid4().hex
-    with run_lock(run_dir):
+    with registry_lock(paths), run_lock(run_dir):
         metadata = read_json(run_dir / "metadata.json")
         if metadata.get("mode") != "dual_claude" or metadata.get("terminal_state") is not None:
             raise HarnessError("participant replacement requires an open dual run")
@@ -1122,6 +1364,7 @@ def replace_participant_cli(paths: Paths, args: argparse.Namespace) -> None:
 
 def status_cli(paths: Paths, args: argparse.Namespace) -> None:
     metadata = read_json(paths.run(args.run_id) / "metadata.json")
+    default_profile = "strict_eval" if metadata.get("mode") == "dual_claude" else "legacy"
     participants = {
         role: {
             "runtime": participant.get("runtime"),
@@ -1136,8 +1379,12 @@ def status_cli(paths: Paths, args: argparse.Namespace) -> None:
             {
                 "run_id": metadata["run_id"],
                 "mode": metadata.get("mode", "legacy"),
+                "evaluation_profile": metadata.get("evaluation_profile", default_profile),
+                "summary_policy": metadata.get("summary_policy", "automatic"),
                 "status": metadata.get("status"),
-                "ready": metadata.get("status") == "active",
+                "preparation_complete": metadata.get("preparation_complete"),
+                "ready": metadata.get("status") == "active"
+                and metadata.get("preparation_complete", True) is True,
                 "participants": participants,
             },
             ensure_ascii=False,
@@ -1155,6 +1402,8 @@ def hook_identity(hook: dict[str, Any], kind: str, payload: dict[str, Any]) -> s
 def maybe_summarize(run_dir: Path) -> None:
     try:
         metadata = read_json(run_dir / "metadata.json")
+        if metadata.get("summary_policy") == "explicit":
+            return
         summarizer = invoke_claude if metadata.get("mode") == "dual_claude" else invoke_luna
         summarize_pending(run_dir, summarizer)
     except Exception as exc:  # Hook is fail-open; sanitized failure metadata is persisted.
@@ -1709,6 +1958,8 @@ def finalize_run(
     run_dir: Path,
     terminal_state: str,
     summarizer: Summarizer | None = None,
+    *,
+    publish_requested: bool = False,
 ) -> Path | None:
     if terminal_state not in {"completed", "cancelled", "paused", "interrupted"}:
         raise HarnessError("invalid terminal state")
@@ -1732,8 +1983,15 @@ def finalize_run(
             state["finalization_status"] = "local_only"
             atomic_json(run_dir / "state.json", state)
         return None
+    metadata = read_json(run_dir / "metadata.json")
+    if metadata.get("summary_policy") == "explicit" and not publish_requested:
+        with run_lock(run_dir):
+            state = read_json(run_dir / "state.json", initial_state())
+            state["finalization_status"] = "local_only"
+            state["last_summary_error"] = None
+            atomic_json(run_dir / "state.json", state)
+        return None
     if summarizer is None:
-        metadata = read_json(run_dir / "metadata.json")
         summarizer = invoke_claude if metadata.get("mode") == "dual_claude" else invoke_luna
     for _ in range(3):
         try:
@@ -1890,6 +2148,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     finalize = subparsers.add_parser("finalize")
     finalize.add_argument("--run-id", required=True)
     finalize.add_argument("--terminal-state", required=True)
+    finalize.add_argument("--publish", action="store_true")
+    prepare_fast = subparsers.add_parser("prepare-fast")
+    prepare_fast.add_argument("--run-id", required=True)
+    prepare_fast.add_argument("--build-session-id", required=True)
+    prepare_fast.add_argument("--project-id", required=True)
+    prepare_fast.add_argument("--scenario", required=True)
+    prepare_fast.add_argument("--launch-intent-hash", required=True)
+    prepare_fast.add_argument("--simulated-user-session-id", required=True)
+    prepare_fast.add_argument("--modeling-agent-session-id", required=True)
     repair = subparsers.add_parser("repair")
     repair.add_argument("run_id")
     return parser.parse_args(argv)
@@ -1913,6 +2180,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "activate":
             activate_cli(paths, args)
+        elif args.command == "prepare-fast":
+            prepare_fast_cli(paths, args)
         elif args.command == "checkpoint":
             checkpoint_cli(paths, args)
         elif args.command == "message":
@@ -1924,7 +2193,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "redact":
             redact_cli(paths, args)
         elif args.command == "finalize":
-            target = finalize_run(paths, paths.run(args.run_id), args.terminal_state)
+            target = finalize_run(
+                paths,
+                paths.run(args.run_id),
+                args.terminal_state,
+                publish_requested=args.publish,
+            )
             print(
                 target.relative_to(paths.repo) if target else "finalization pending or local-only"
             )
@@ -1934,7 +2208,7 @@ def main(argv: list[str] | None = None) -> int:
             terminal = metadata.get("terminal_state")
             if terminal not in {"completed", "cancelled"}:
                 raise HarnessError("repair requires a completed/cancelled run")
-            target = finalize_run(paths, run_dir, terminal)
+            target = finalize_run(paths, run_dir, terminal, publish_requested=True)
             print(target.relative_to(paths.repo) if target else "finalization still pending")
         return 0
     except (

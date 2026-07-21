@@ -2,15 +2,17 @@
 
 ## 文档信息
 
-- 文档状态：总体目标持续推进；R1.1-002、R1.1-003、R1.1-004 已实现；R1.1-001
-  仍需可重复的业务质量改善证据
+- 文档状态：总体目标持续推进；R1.1-002、R1.1-003、R1.1-004、R1.1-005 已实现；
+  R1.1-006、R1.1-007 已细化待实现；R1.1-001 仍需可重复的业务质量改善证据
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 总体效果目标：R1.1-001 优化外部建模 Agent 的实际建模效果
 - 已确认实施需求：R1.1-002 分阶段、可追溯的建模工作流；R1.1-003 建模子 Agent
-  大体量结构化产物的可靠交接与恢复；R1.1-004 可复现的 Dify 官方文档建模资料集
+  大体量结构化产物的可靠交接与恢复；R1.1-004 可复现的 Dify 官方文档建模资料集；
+  R1.1-005 Claude Code 双主 Agent 建模交互评测 Harness；R1.1-006 轻量共享建模目录与分片协作；
+  R1.1-007 本地/正式建模执行 Profile
 - 参考业务场景：将 Dify 使用指南、API/OpenAPI 文档和必要的业务说明整理进平台
 - 目标用户：需要把外部业务知识沉淀为可复用语义模型的用户和团队
-- 更新日期：2026-07-20
+- 更新日期：2026-07-21
 
 ## 背景
 
@@ -27,6 +29,21 @@ Operation 等基础能力。这些能力能够保证建模过程可提交、可�
 因此，v1.1 不以继续堆叠平台功能为默认方向，而是把“提升建模 Agent 的实际建模效果”作为
 总体效果目标。R1.1-002 是围绕该目标首个确认实施的工作流需求；其他优化手段仍应先由实际
 建模问题证明价值，不能脱离 R1.1-001 单独扩张平台范围。
+
+## 当前阶段的简单优先原则
+
+当前项目首先验证建模质量和语义召回质量。只要不降低资料忠实度、业务范围理解、模型正确性、
+平台 dry-run/apply 正确性和能力问题/召回验收，工作流、Agent 协作和调试方式应选择最简单的实现。
+
+安全加固、细粒度权限、通用版本管理、不可变审计、跨机器协作、自动故障恢复、通用调度框架和
+产品化管理界面可以在设计中保留扩展方向，但默认属于未来产品化能力，不进入当前实现范围和完成
+门槛。已有平台治理能力可以按需复用，但不能仅因其已经存在，就要求每次本地建模实验完整执行
+全部 Artifact、Event、Checkpoint、Harness summary、lineage 和审计流程。
+
+当前本地优化优先使用 gitignored、可直接查看的 repo-local 文件和少量确定性脚本，使不同 Agent
+Session 能通过稳定路径读取同一任务信息和结果。平台在当前阶段重点负责最终 Modeling Batch 的
+dry-run/apply、当前语义状态和召回验证；中间协作状态只有在直接影响建模或召回质量时才需要进入
+平台。
 
 ## 与 v1.0 的关系
 
@@ -614,7 +631,7 @@ R1.1-001 对可重复业务质量改善的验收。
 
 ## R1.1-005 Claude Code 双主 Agent 建模交互评测 Harness
 
-当前状态：`已实现`
+当前状态：`已实现；fast-local 本地迭代配置交付中`
 
 方案状态：`已确认并交付；独立测试 Round 2 与真实 Claude Code 2.1.215 硬门禁 PASS`
 
@@ -691,10 +708,283 @@ session 可调用抽取、分析和评审 subagent，只有建模参与者能推
 保持 `agent_reported` 与 `simulated=true`，未变成真人或平台授权；synthetic run 和发布物已精确
 清理。本机系统安装版仍为 2.1.153，操作手册要求实际评测前升级到已验证的 2.1.215 或更高版本。
 
+### fast-local 本地迭代配置
+
+R1.1-005 的正式关闭证据继续来自上述 `strict-eval` 双顶层 session 合同。为高频优化建模 Agent，
+另提供一个不作为正式验收证据的 `fast-local` 配置，避免把 session 激活、平台鉴权发现、场景说明
+和摘要发布等非建模工作重复交给 LLM：
+
+- 一个 repo-local 启动命令读取版本化场景和 gitignored 本地运行配置，检查平台健康，幂等创建
+  本轮独立 Build Session，生成 run/session 标识，预先绑定两个 Claude 顶层 session，并启动两个
+  终端及首条 prompt；操作者不再分别复制激活命令或输入“开始流程”。
+- `ontology-modeling-agent` 使用 `--strict-mcp-config` 只加载 `.claude/ontology-mcp.json`；
+  `simulated-user` 使用空 MCP 配置。MCP 进程从 `backend/.env` 完成认证，Agent 不再搜索 HTTP
+  鉴权代码或把 API key 拼入 Bash/curl 命令。
+- 场景文件固定建模目标、资料快照路径、约束、模拟用户已知事实和验收问题；Project 和 API key
+  由 gitignored 本地配置提供。每轮仍创建新的 Build Session，不跨实验复用 apply 状态。
+- fast-local 可以跳过增量 Claude summary，并在平台终态后只保留本地 Harness 记录；需要发布
+  retrospective 时再显式执行 publish/repair。mailbox、模拟决定 provenance、建模角色平台写权限
+  和追加式事件仍复用原 Harness。
+- fast-local 允许在非 GUI/CI 环境使用 `--no-launch` 只准备并打印脱敏启动说明；准备失败必须清楚
+  指出健康、配置、Build Session 或终端依赖问题，不得退化成一个 session 角色扮演两端。
+- 本地 credential 可保存在 gitignored、权限受控的运行文件或 `backend/.env`；验收必须证明拟提交
+  文件和本次提交增量不包含实际 API key 原文。此约束不要求本需求建设通用 secret vault。
+
+fast-local 的验收包括：一条命令完成 run/Build Session/双 session 准备；预设 session ID 与 Hook
+身份一致；modeler 启动上下文只出现 ontology-platform MCP，simulated user 不出现 MCP；首条 prompt
+自动注入；strict-eval、legacy Codex 和现有 receipt/epoch/summary 回归不退化。真实 GUI 启动不可用
+时，独立测试至少执行 `--no-launch`、真实 MCP stdio 认证调用和受控 Claude CLI session/config 探针，
+并把未执行的 GUI 交互列为残余限制。
+
+## R1.1-006 轻量共享建模目录与分片协作
+
+当前状态：`待实现`
+
+方案状态：`已按简单优先原则重新设计；独立计划评审 PASS，等待实现`
+
+确认日期：2026-07-21
+
+依赖：R1.1-001；复用 R1.1-004 的固定资料路径和现有 Modeling Batch、Context Query 能力
+
+### 要解决的问题
+
+当前完整工作流要求主 Agent 在多个 Session 之间传递 Pack、Matrix、Evidence、草案、评审结果、
+平台状态和恢复信息。即使这些信息已经被持久化，主 Agent 仍需组织大量引用和步骤；调试一个 Prompt、
+模型或分片策略时，经常把时间消耗在激活、交接、版本、事件、摘要和恢复流程，而不是建模和召回
+质量本身。业务规模扩大到多个 Ontology 和数百个 Entity 后，主 Agent 还可能因为漏传信息导致
+子 Agent 对任务范围、依赖或验收目标理解不完整。
+
+### 当前最小目标
+
+在同一台开发机和同一仓库工作目录中，为一次建模 run 建立 gitignored 的 `Shared Modeling
+Directory（共享建模目录）`。所有参与本轮工作的 Agent Session 都从该目录读取任务信息，并把自己
+负责单元的当前结果写回目录；主 Agent 只需要传递 run 路径和 `work_unit_id`，不再复制完整业务
+上下文。
+
+目录至少包含：
+
+- `run.json`：run、Project、Build Session、资料位置、目标 Ontology 和工作单元索引；
+- `shared/brief.md`：当前业务目标、范围、术语、能力问题和明确约束；
+- `shared/source-index.json`：固定资料路径及与工作单元的关联，不复制整套资料正文；
+- `shared/coverage.json`：当前覆盖项、所属 Ontology、状态和负责工作单元；
+- `units/<work_unit_id>/task.json`：一个子 Agent 的完整任务、输入路径、直接依赖、输出合同和验收问题；
+- `units/<work_unit_id>/status.json`：`pending | working | ready | blocked | accepted` 当前状态；
+- `units/<work_unit_id>/result.json`：结构化建模候选或分析结果；
+- `ontologies/<ontology_id>/candidate.json`：由相关 Work Unit 合并后的唯一 Ontology 候选；
+- `ontologies/<ontology_id>/review.json`：绑定候选内容哈希的独立评审结论；
+- `ontologies/<ontology_id>/batch-plan.json`：按当前平台容量上限确定性拆分的有序 Batch；
+- `ontologies/<ontology_id>/verification.json`：apply 后的能力问题和召回验收结果。
+
+`Modeling Work Unit（建模工作单元）` 是可交给一个建模子 Agent 的有界任务，默认只针对一个
+Ontology 和一组明确的 Coverage 项/能力问题。不同 Ontology 的单元可以并行；同一 Ontology 默认
+串行，只有主 Agent 明确确认范围不重叠时才并行。第一版由主 Agent 预先分配单元目录，不实现动态
+抢占、Lease、TTL、participant registry 或通用调度器。
+
+第一版只定义防止任务漏传所需的最小字段，不建设通用元数据系统：`run.json` 必须索引 shared 文件、
+Work Unit 和 Ontology 产物；资料索引必须给出 `source_id`、稳定位置和当前内容哈希；Coverage 必须把
+每个覆盖项关联到 `source_id`、能力问题、Ontology 和 Work Unit；`task.json` 必须声明这些引用、
+直接依赖和允许的结构化输出；`result.json` 必须回填同一作用域的引用并按当前平台
+`ModelingItemInput` 结构给出候选项。校验器必须确认所有引用存在、作用域一致且输入未变化，不能只
+检查 JSON 是否可解析。
+
+### 简化后的执行流程
+
+```text
+主 Agent 创建共享目录、业务 Brief、Coverage 和 Work Unit
+  -> 子 Agent 只接收 run 路径与 work_unit_id
+  -> 子 Agent 自行读取共享资料和直接依赖，写入自己的 result/status
+  -> 主 Agent 合并同一 Ontology 到唯一 candidate.json，并做一次绑定内容哈希的独立评审
+  -> 按平台当前 item 数和请求字节上限确定性拆成有序 Batch
+  -> 对每个 Batch 依次 dry-run/apply，发现问题时只退回受影响的 Work Unit
+  -> 使用能力问题、Context Query/SPARQL 和必要 validation 验证建模与召回质量
+  -> 更新 Coverage，继续下一组 Work Unit
+```
+
+本地共享目录是当前调试阶段的协作事实来源；已 apply 的语义模型、Batch 结果和查询结果仍以平台为
+准。当前模式不要求为每个中间动作创建 Modeling Workflow Artifact、Execution Event、Checkpoint
+或 Harness summary，也不要求发布 retrospective。需要正式发布或严格评测时，可以另行运行现有
+完整流程，但它不再是每次本地优化实验的前置条件。
+
+### 当前质量门槛
+
+- 每个 Work Unit 必须包含稳定资料位置、范围、能力问题、直接依赖和结构化输出合同；子 Agent
+  不能只依赖主 Agent 的聊天摘要理解任务。
+- 建模候选必须通过本地 Schema/引用检查；同一 Ontology 合并前检查重复标识、冲突术语和未满足
+  依赖。
+- 每个 Ontology 只有一个稳定的合并候选；独立评审、Batch 计划、dry-run 和 apply 都必须绑定该候选
+  的规范内容哈希。候选语义内容变化后旧评审和 Batch 计划立即失效，但不要求保存历史版本链。
+- `result.json` 必须能表达当前平台支持的 Entity、Relation 以及必要的 Class、Property、Relation
+  Type、Fact 和 Operation 等建模项，不能只验证小型 Schema 草案。
+- 正式写入前保留平台 dry-run 和一次独立模型评审；评审按 Ontology 合并结果执行，不要求每个小
+  单元重复走完整评审流程。超过当前 `modeling_batch_max_items` 或
+  `modeling_batch_max_request_bytes` 的候选必须按依赖顺序拆成多个可独立提交的 Batch，并在每个
+  前置 Batch apply 后刷新 Modeling Context，再处理后续 Batch。
+- apply 后必须用预先记录的能力问题和召回查询验证结果；流程顺利、文件齐全或平台结构校验通过
+  都不能替代建模质量和召回质量验收。
+- 新 Agent Session 只依靠共享目录和平台当前状态即可继续一个未完成 Work Unit，并能识别缺失
+  输入或 blocker；不要求恢复原 Session 的聊天记录。
+
+### 当前明确不做与未来产品化能力
+
+第一版不新增 backend 表、REST/MCP 接口或前端页面，不建设平台托管共享空间、跨机器同步、细粒度
+Agent 权限、不可变版本链、完整审计、自动冲突合并、崩溃恢复、动态任务领取、超时续租或通用
+Agent Runtime。JSON 写入只需避免读到半文件；并发通过“一个 Work Unit 一个写入者、主 Agent
+独占 shared 全局文件”约定处理。
+
+这些能力只有在本地共享目录已经证明能够改善大规模建模/召回质量，并且真实使用暴露相应问题后
+再评估。未来实现不得改变 Work Unit 的任务边界、稳定输入引用和质量验收语义。
+
+### 验收标准
+
+- 两个或以上独立 Agent Session 能在主 Agent 不复制业务正文的情况下，凭同一 run 路径和不同
+  `work_unit_id` 并行完成不同 Ontology 的建模候选。
+- 每个 Session 读取到相同 Brief、资料索引、Coverage 和直接依赖；缺失文件或未完成依赖会明确
+  blocked，不会基于猜测继续。
+- 本地校验能证明 Source、Coverage、能力问题、依赖、Ontology 和输出合同引用完整且作用域一致；
+  任一引用缺失或输入指纹过期都不会进入合并。
+- 新 Session 能接续已有单元；已 ready 的单元不会因聊天上下文丢失而重新建模。
+- 合并结果通过结构化检查、Ontology 级独立评审和平台 dry-run；评审、Batch 计划和实际提交内容
+  均与同一候选哈希一致，修改候选后不能复用旧评审。
+- 使用超过当前单 Batch item 上限的代表性场景（至少包含数百个 Entity 及 Entity Relation）完成
+  确定性多 Batch dry-run/apply，最终能力问题/召回验收不低于当前固定资料场景的既有可用结果。
+- 一次典型调试不要求创建平台 Workflow Artifact/Event/Checkpoint、执行 Harness 严格激活或发布
+  summary；可以直接查看和修改共享目录后重跑受影响单元。
+- 实现仅限 repo-local Agent/脚本、必要测试和文档；产品化能力保留在未来清单，不进入当前完成门槛。
+
+## R1.1-007 本地/正式建模执行 Profile
+
+当前状态：`已细化，待实现`
+
+方案状态：`功能合同已确认；设计、计划评审与实现待开始`
+
+确认日期：2026-07-21
+
+依赖：R1.1-001、R1.1-002、R1.1-006；复用 R1.1-005 的 Harness 记录能力，但改变其在本地模式中的用途和完成语义
+
+### 要解决的问题
+
+当前 `ontology-builder` 把业务访谈、资料分析、分片建模、评审、平台提交与 Artifact、Event、
+Checkpoint、版本链、审计/恢复等产品化保障写在同一默认路径中。本地持续优化 Prompt、模型、
+角色协作和分片策略时，建模活动本身仍然必要，但产品化保障不应成为前置条件或由建模 Agent 逐项
+编排。另一方面，若仅删减现有 Skill，正式交付接口与本地共享目录接口的不同结构容易演变成两套
+互相漂移的建模方法。
+
+当前子 Agent 依靠短预制提示词和主 Agent 的任务消息工作。角色提示词本身不大，但稳定的建模规则、
+质量门、Schema 和交接说明仍可能随每个 Work Unit 重复传输；业务资料、当前任务与依赖结果也容易
+被复制进任务消息，而不是由子 Agent 按稳定引用读取。
+
+### 核心目标
+
+建立一个共享建模核心和两个执行 Profile：`Local Modeling Mode（本地建模模式）` 与
+`Formal Modeling Mode（正式建模模式）`。两种 Profile 的业务访谈、资料分析、Coverage/能力问题、
+Work Unit 分片、子 Agent 建模、Ontology 合并、独立评审、平台 dry-run/apply 和 apply 后召回验证
+完全一致；差异只在接口封装与产品化保障，不以删减建模活动换取简化，也不做效率或 Token 的量化
+对比。
+
+普通建模和 Prompt、模型、角色协作、分片策略的本地优化默认选择 Local Modeling Mode。用户明确
+要求正式交付、严格评测、完整平台记录或全链路验收时选择 Formal Modeling Mode。主 Agent 开始时
+必须告知当前 Profile；可以说明原因并建议切换，但不能静默切换。
+
+### 持续业务交流与主子 Agent 协作
+
+建模从开始到结束都是与用户持续交流和确认业务情况的过程。Local Modeling Mode 取消的是机械
+审批与产品化编排，不是用户对话。主建模 Agent 是唯一直接与用户交流的角色，应多轮确认业务事实、
+术语、范围、例外、优先级和能力问题。
+
+子 Agent 遇到无法从已确认信息解决的问题时立即停止，将问题直接返回主 Agent，不先写入 Shared
+Modeling Directory。主 Agent 判断已有信息是否足够：足够时直接答复子 Agent；不足时先询问用户，
+再把答案返回子 Agent。子 Agent 不直接打断用户。
+
+用户的业务描述发生变化时，主 Agent 判断可能受影响的子 Agent 并分别传递变更。每个子 Agent
+根据自己的 Work Unit 返回 `no_change | modify_existing | remodel`、理由和更新结果；主 Agent 不
+替代其具体建模判断，但负责检查影响范围、接受评估并决定是否继续。合并候选的语义内容没有变化时
+可以复用原评审和 Batch 计划；语义内容变化时旧评审和 Batch 计划失效，必须重新评审和 dry-run。
+
+若变化发生在旧结果 apply 之后，不自动回滚或重放旧 Batch。主 Agent 读取平台当前语义状态，受影响
+子 Agent 据此生成增量纠正候选，再经过独立评审、dry-run、apply 以及受影响和依赖能力问题/召回
+验证。删除、不可逆影响或影响范围不明确时，必须在 apply 前询问用户。
+
+### 执行 Profile 与接口边界
+
+`ontology-builder` 只保留一套共享建模核心；Local/Formal 分别拥有自己的 Profile、输入输出 Schema
+和提交 Adapter。允许提供很薄的模式入口，但不得复制完整 Skill 或建模规则。不同接口结构由 Adapter
+转换，子 Agent 根据 `task.json` 中的 `output_contract` 或明确 Schema 路径产出结果。
+
+Local Modeling Mode 复用 R1.1-006 的 Shared Modeling Directory。最终模型仍通过平台 Modeling
+Batch dry-run/apply 写入，查询和验收仍读取平台当前语义状态，不建设本地 Ontology 存储。平台现有
+鉴权边界也不被绕过：凭证只由本地启动器/工具从既有配置读取，凭证值不得进入主/子 Agent Prompt、
+共享目录、Harness 或用户可见错误。凭证缺失、失效或权限不足时返回脱敏错误并停止。
+
+Build Session、Lease、当前 workspace version、幂等键和 Batch 容量合同由本地工具自动处理，不让
+建模 Agent 编排，也不把当前 workspace version 扩展成版本历史。Local Modeling Mode 不要求创建
+Modeling Workflow Artifact、Modeling Execution Event、Build Checkpoint、不可变中间版本链、审计链、
+retrospective 或强制 lineage 报告。Formal Modeling Mode 按正式交付需要使用这些平台能力，但不
+要求本地 Harness。
+
+### 本地 Harness 的用途与失败行为
+
+Local Modeling Mode 默认启用 Harness。Harness 不是审计能力，而是本地流程优化证据，用于分析和
+持续改进 Skill、Prompt、提问方式、角色协作、返工与质量瓶颈。它记录用户与主 Agent 的可见对话、
+主 Agent 与子 Agent 的问题/答复/暂停/恢复、阶段变化、受限工具结果、评审、返工和最终验证。
+
+Harness 不记录隐藏推理、凭证、完整资料正文、大型建模候选或 Batch Payload；大型内容仅记录稳定
+路径、内容哈希和有界摘要。原始记录留在 gitignored 本地目录，不默认发布 retrospective。
+
+Harness 启用失败或运行中断时不得静默继续。流程在安全节点暂停并告知用户；用户可以修复后重试，
+也可以明确允许本轮无记录继续。后者标记 `recording_unavailable`，不影响建模结果验收，但该运行不能
+作为完整的流程优化样本。
+
+### 子 Agent 专属能力 Skill
+
+首版建立四个 repo-local、运行时无关的能力 Skill：
+
+- `ontology-business-organizer`：资料梳理、Business Brief、Coverage 和业务问题；
+- `ontology-work-unit-modeler`：一个有界领域 Work Unit 的语义建模与变更评估；
+- `ontology-model-reviewer`：独立模型评审、Finding 和返工要求；
+- `ontology-retrieval-evaluator`：apply 后能力问题与语义召回验证。
+
+`.claude/agents/` 中的角色定义保持为薄封装，只声明角色、工具边界和预加载 Skill。主 Agent 下发
+任务只传 run 路径、`work_unit_id`、输出合同/Schema 路径、有界变更信息和输出路径；Brief、Coverage、
+资料索引、依赖结果和当前产物由子 Agent 从共享目录读取。不得为每个业务领域或 Work Unit 创建 Skill，
+也不得在四个 Skill 之间复制共享建模核心。
+
+首版只要求 Claude Code subagent 通过 `skills:` 完成接入和真实 Harness 验证。Skill 内容保持 Agent
+Skills 兼容，但 Codex 子 Agent 配置与双运行时同时验收不属于本需求完成门槛。
+
+### 当前明确不做
+
+- 不改变或缩短业务建模流程，不限制业务交流轮次，不设置效率、工具调用或 Token 降幅指标；
+- 不删除或关闭平台已有能力，不新增免鉴权写入通道，不建设通用 feature flag 框架；
+- 不新增 backend 表、REST/MCP 接口、前端页面、平台托管共享空间或本地 Ontology 存储；
+- 不复制两套完整 `ontology-builder`，不创建领域/Work Unit 专属 Skill；
+- 不要求 Formal Modeling Mode 使用本地 Harness，不要求首版同时接入 Codex 子 Agent。
+
+### 验收标准
+
+- 普通建模默认进入 Local Modeling Mode；明确正式交付/严格评测意图进入 Formal Modeling Mode；
+  主 Agent 在开始时报告 Profile，测试能证明没有静默切换。
+- 两种 Profile 复用同一套业务访谈、分片建模、独立评审、dry-run/apply 和召回验证规则，但分别通过
+  自己的 Schema/Adapter 生成对应接口数据；共享规则不存在复制副本。
+- 一次真实 Local Modeling Mode 运行能够完成多轮用户业务交流；子 Agent 的问题直接返回主 Agent，
+  主 Agent 能从已确认信息答复或询问用户后恢复该子 Agent，不依赖共享目录 mailbox。
+- 四个能力 Skill 能被对应 Claude Code subagent 预加载；主 Agent 仅传 run/Work Unit/合同/输出路径
+  等有界信息，子 Agent 能自行读取完整任务与依赖，产生通过 Schema 校验的结构化结果。
+- 本地工具使用既有配置凭证并自动处理 Build Session、Lease、workspace version、幂等和容量合同；
+  建模 Agent 不接触凭证值，拟提交文件、共享目录、Harness 和错误信息均不包含实际凭证。
+- Local Modeling Mode 默认产生可用于流程优化的 Harness 记录，并覆盖可见对话、子 Agent 暂停/恢复、
+  评审返工和验证；激活失败和中途断录均按“暂停并由用户选择重试或无记录继续”的合同执行。
+- 业务描述变化能定向触发受影响子 Agent 的 `no_change | modify_existing | remodel` 评估；语义候选变化
+  后旧评审/Batch 不会被复用。已 apply 场景能通过增量纠正再次完成评审、dry-run/apply 和召回验证，
+  删除或不明影响在 apply 前获得用户确认。
+- Local 运行不创建本需求明确排除的 Artifact/Event/Checkpoint/审计/版本历史/retrospective/强制
+  lineage；Formal 运行不以本地 Harness 为前置条件。验收不要求两种 Profile 的效率量化比较，也不
+  要求 Codex 子 Agent 接入。
+
 ## 需求变更与代码落点规则
 
 v1.1 当前包含仍待效果证据关闭的总体目标 R1.1-001，以及已实现的 R1.1-002、R1.1-003、
-R1.1-004、R1.1-005。R1.1-003 来自首轮 Dify 实际建模中已经复现并阻断正式交付的结构化产物交接问题；
+R1.1-004、R1.1-005，以及已细化待实现的 R1.1-006、R1.1-007。R1.1-003 来自首轮 Dify 实际
+建模中已经复现并阻断正式交付的结构化产物交接问题；
 R1.1-004 来自同一次运行暴露的输入资料不可复现问题，二者都不是脱离实践预设的平台扩张。
 
 R1.1-003 与 R1.1-004 已通过同一固定资料集端到端验收关闭。后续 v1.1 工作回到 R1.1-001：用
@@ -718,3 +1008,12 @@ Execution Event，不另建与平台事实竞争的第二套工作流状态。
 属于 Claude Code 双顶层 session、模拟用户与建模 Agent 可见交互、建模 Agent 嵌套 subagent、
 Hook 过程采集和跨 session 评测关联的改动还应关联 R1.1-005。实现保持 repo-local，不把模拟用户
 批准提升为真人授权，也不把 Harness 状态提升为平台事实。
+
+属于大业务分片、跨 Agent Session 共享当前任务信息、Work Unit 并行和减少主 Agent 上下文搬运的
+改动关联 R1.1-006。当前实现优先 repo-local 共享目录，不得为了未来产品化提前新增平台表、通用
+编排接口、权限系统或审计链；只有建模和召回质量门槛是当前硬门槛。
+
+属于 Local/Formal Profile、自动处理平台必要写入合同、本地 Harness 流程优化记录、能力型子 Agent
+Skill、薄 Agent 定义及两种接口 Adapter 的改动关联 R1.1-007。不得借本需求改变建模活动、删除平台
+已有能力、建设通用 feature flag 框架、复制完整建模 Skill，或把 repo-local 中间状态提升为平台
+语义事实。

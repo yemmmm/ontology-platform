@@ -17,3 +17,17 @@ Only you may associate successful platform modeling events or local checkpoints 
 simulated approval is `agent_reported` with `simulated=true`; it is evaluation evidence, not human
 authorization. Preserve platform validation and persistence as the authority. Never save full
 transcripts, hidden reasoning, secrets, activation nonces, or raw tool output in Harness messages.
+
+## Harness startup profiles
+
+The initial prompt identifies the Harness run. Read
+`workspaces/ontology-harness/active-run.json` only when its run ID matches that prompt.
+
+- For `evaluation_profile=fast_local`, the launcher has already pre-bound both top-level sessions.
+  Run `python3 .codex/hooks/modeling_harness.py status --run-id RUN_ID` once, require
+  `ready=true` and `evaluation_profile=fast_local`, then immediately read the supplied versioned
+  scenario and begin evidenced modeling. Do not search for credentials, reconstruct activation, or
+  ask the operator to start the peer.
+- For `strict_eval`, follow `.claude/modeling-harness.md`; explicit nonce activation and a real peer
+  top-level session remain mandatory.
+- If no matching active locator exists, do not claim that the session is Harness-recorded.

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1040" viewBox="0 0 1280 1040">
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker><style>text{font-family:Arial,'Noto Sans SC',sans-serif;fill:#172033}.node{stroke-width:2}.label{font-size:18px;font-weight:600;text-anchor:middle;dominant-baseline:middle}.small{font-size:15px;font-weight:500}.edge{stroke:#475569;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.tag{font-size:15px;font-weight:700;fill:#475569}</style></defs>
+  <rect width="1280" height="1040" fill="#fff"/><text x="640" y="55" text-anchor="middle" font-size="28" font-weight="700">线上问诊预约：模拟流程</text>
+  <rect class="node" x="500" y="95" width="280" height="62" rx="31" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="640" y="126">用户发起预约</text>
+  <rect class="node" x="500" y="210" width="280" height="64" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="640" y="242">选择医生与时段</text>
+  <polygon class="node" points="640,325 760,390 640,455 520,390" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="640" y="390">号源是否可用？</text>
+  <rect class="node" x="925" y="357" width="230" height="66" rx="12" fill="#e1d5e7" stroke="#9673a6"/><text class="label small" x="1040" y="380">推荐其他时段</text><text class="label small" x="1040" y="403">返回选择</text>
+  <rect class="node" x="500" y="510" width="280" height="64" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="640" y="542">确认预约并支付</text>
+  <polygon class="node" points="640,625 760,690 640,755 520,690" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="640" y="690">支付成功？</text>
+  <rect class="node" x="925" y="657" width="230" height="66" rx="12" fill="#f8cecc" stroke="#b85450"/><text class="label small" x="1040" y="680">提示失败</text><text class="label small" x="1040" y="703">重新支付</text>
+  <rect class="node" x="500" y="810" width="280" height="66" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label small" x="640" y="833">生成问诊单</text><text class="label small" x="640" y="856">医生按时接诊</text>
+  <rect class="node" x="500" y="930" width="280" height="62" rx="31" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="640" y="961">完成线上问诊</text>
+  <path class="edge" d="M640 157V210"/><path class="edge" d="M640 274V325"/><path class="edge" d="M640 455V510"/><text class="tag" x="654" y="487">是</text>
+  <path class="edge" d="M760 390H925"/><text class="tag" x="830" y="380">否</text><path class="edge" d="M925 423H865V242H780"/>
+  <path class="edge" d="M640 574V625"/><path class="edge" d="M640 755V810"/><text class="tag" x="654" y="787">是</text>
+  <path class="edge" d="M760 690H925"/><text class="tag" x="830" y="680">否</text><path class="edge" d="M925 723H865V542H780"/>
+  <path class="edge" d="M640 876V930"/>
+</svg>

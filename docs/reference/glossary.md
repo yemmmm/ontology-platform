@@ -138,6 +138,35 @@ a dry-run or review, applying a batch, verifying results, or becoming blocked. P
 linked by stable identifiers instead of copied into a second source of truth.
 _Avoid_: free-form diary entry, replay command, inferred hidden action
 
+**Shared Modeling Directory**:
+A repo-local, gitignored directory used during the current experimentation stage so multiple Agent
+runtime sessions on one development machine can read the same business brief, source index,
+coverage state, work-unit tasks, and current results. It is a lightweight collaboration aid, not an
+Ontology Workspace, platform fact store, versioned audit record, or cross-machine product service.
+_Avoid_: Ontology Workspace, platform-hosted Agent memory, Modeling Workflow Artifact replacement
+
+**Modeling Work Unit**:
+A bounded modeling or analysis task assigned to one Agent runtime session, normally scoped to one
+Ontology and an explicit set of coverage items and competency questions. It names stable input
+paths, direct dependencies, an output contract, and acceptance questions so the Agent does not rely
+on conversational handoff alone.
+_Avoid_: Modeling Batch, chat prompt, dynamically scheduled platform job
+
+**Local Modeling Mode**:
+The default execution profile for local modeling-quality experiments. It preserves the same
+business interview, modeling, review, platform dry-run/apply, and retrieval-verification activities
+as formal modeling, while repo-local adapters automatically satisfy mandatory platform write
+contracts and omit productization records from the completion path. A local Harness record remains
+enabled as process-optimization evidence rather than audit evidence.
+_Avoid_: shortened modeling workflow, local Ontology store, ungoverned direct write, audit profile
+
+**Formal Modeling Mode**:
+The explicitly selected execution profile for formal delivery, strict evaluation, complete platform
+recording, or full-chain acceptance. It shares the same modeling core as Local Modeling Mode, uses
+the formal platform schemas and productization capabilities required by that delivery, and does not
+require the repo-local process-optimization Harness.
+_Avoid_: different modeling method, mandatory local Harness, copied ontology-builder Skill
+
 **Ontology Lease**:
 A time-limited exclusive right held by a Build Session to apply modeling changes to one Ontology.
 It prevents concurrent Agents from silently overwriting the same Ontology, while reads and work on

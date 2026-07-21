@@ -158,3 +158,111 @@ definitions and the runbook so retrospective comparisons identify the exact expe
 Because only repo-local `.claude`, `.codex`, tests, and docs change, backend/frontend service restart
 is not required. Rollback is removal of Claude config/agents plus use of legacy activation; existing
 platform records and version-1 Harness data remain readable.
+
+## 2026-07-21 fast-local optimization extension
+
+### Functional contract and profile boundary
+
+The existing behavior is named `strict-eval`: operators explicitly activate two top-level Claude
+sessions, Hook-issued identity/operation receipts remain mandatory, and real dual interaction plus
+structured retrospective publication are release evidence. The new `fast-local` profile is an
+iteration aid for optimizing the modeling agent and is never accepted as a substitute for that
+hard gate.
+
+One launcher performs the non-modeling setup: validate a checked-in scenario, read a gitignored
+local credential/config file, check backend health, create a fresh Project Build Session, generate a
+Harness run ID and two Claude session UUIDs, pre-bind those sessions as the two existing participant
+roles, write the ignored active-run locator, and launch both top-level sessions with an initial
+prompt. `--no-launch` performs every deterministic preparation step and emits bounded commands for
+test/headless use. It never collapses the roles into one session.
+
+Before creating platform state, the launcher checks an existing active-run locator. It refuses to
+replace a locator whose referenced Harness run is still non-terminal unless the operator supplies
+an explicit replacement option; replacement changes only the locator and never deletes or finalizes
+the earlier run. This prevents a convenience file from silently hiding a recoverable experiment.
+
+The launcher may read the existing local evaluation API key because this profile is explicitly
+machine-local. It must not echo the key, put it in a Claude command/prompt, write it to Harness
+events, or copy it into tracked configuration. A delivery gate compares the actual ignored local
+values against the staged diff and new commit content. Building a general credential store is a
+non-goal.
+
+### Scenario and Build Session lifecycle
+
+A versioned JSON scenario contains only reusable business input: scenario/version, goal, fixed
+corpus snapshot/path, constraints, simulated-user facts/decision policy, and acceptance questions.
+Machine-specific Project identity and the API key remain in the ignored local runtime file. The
+launcher creates a new idempotent Build Session with a unique client ID and intake checkpoint on
+every run unless an explicit existing active Build Session is supplied for recovery. A failed
+launch after Build Session creation reports the stable session/run IDs for recovery; it does not
+silently cancel work that may already have been observed by a started Agent.
+
+Before the create request, the launcher durably writes an ignored launch-intent manifest keyed by
+run ID. It contains no credential, but freezes Project ID, client session ID, exact create payload
+hash, scenario hash, and both Claude session UUIDs. Retrying the same run reuses the intent and
+identical POST payload, accepting the API's idempotent 200 response after an earlier 201. A changed
+payload for the same intent fails locally. An explicitly supplied recovery Build Session is read
+first and must be active and owned by the configured Project before Harness preparation; terminal,
+missing, or foreign-Project sessions are rejected.
+
+### Fast participant preparation
+
+`modeling_harness.py prepare-fast` accepts the generated run ID, Project/Build Session IDs, scenario
+locator, launch-intent hash, and two caller-generated UUID session IDs. All registry mutations,
+including strict activation and participant replacement, share a root-level registry lock before
+acquiring a run lock. While holding it, prepare-fast preflights the run plus both globally registered
+session UUIDs before making any participant active.
+
+Preparation first writes version-2 metadata with `evaluation_profile=fast_local`,
+`summary_policy=explicit`, a unique `preparation_id`, `preparation_complete=false`, and non-ready
+status. State and both registry entries carry the same preparation ID. Bounded preparation and two
+activation events are written while the run is still incomplete and therefore invisible to Hooks.
+Only after metadata, state, both registries, and all required events succeed does the final metadata
+write act as the commit marker by setting both epoch-1 participants active,
+`preparation_complete=true`, and status active. Hooks reject an incomplete preparation even if a
+registry or event file exists.
+On an ordinary write failure the command removes only registry entries carrying its preparation ID
+and leaves bounded failed metadata. On retry after a process crash, the root lock detects and repairs
+incomplete matching preparation files before proceeding. A completed preparation is idempotent only
+for the same full identity and intent hash; conflicts fail without replacement.
+
+Existing strict activation continues to create `evaluation_profile=strict_eval` implicitly and
+still requires nonce plus PreToolUse acknowledgment.
+
+Pre-binding is intentionally weaker identity evidence and is allowed only for `fast_local`; status
+must expose the profile so it cannot be mistaken for strict evidence. Once launched, ordinary Hook
+events and mailbox/checkpoint mutations still resolve the actual CLI `--session-id` through the
+same registry and retain role/epoch receipts. A conflicting existing run/session binding fails
+without partial replacement.
+
+### Runtime launch and MCP isolation
+
+The launcher starts two GNOME Terminal processes when available:
+
+- simulated user: `--agent simulated-user`, predetermined `--session-id`, initial scenario prompt,
+  bypassed interactive permission prompts, `--strict-mcp-config`, and a checked-in empty MCP config;
+- modeler: `--agent ontology-modeling-agent`, predetermined `--session-id`, initial modeling prompt,
+bypassed interactive permission prompts, `--strict-mcp-config`, and only
+  `.claude/ontology-mcp.json`.
+
+Arguments are passed as a subprocess argv, never shell-joined with credentials or inline command
+substitution. The initial prompts include stable run/Build Session/scenario locators but no key.
+The launcher uses the single-token `--mcp-config=<path>` form because the installed Claude CLI
+treats the space form as variadic and can consume following command arguments.
+The canonical argv puts all named options before one final bounded positional prompt; tests assert
+the exact token order and a real CLI probe proves the prompt was received unchanged.
+Agent definitions treat `fast_local` as already activated, confirm status once, then begin their
+role; the strict runbook retains manual activation commands.
+
+### Summary, errors, compatibility, and rollback
+
+Incremental summary calls are disabled when `summary_policy=explicit`. A successful terminal
+platform tool marks a fast run completed/cancelled and local-only without invoking a Claude
+summarizer; explicit `finalize --publish` or existing `repair` performs the normal bounded summary
+and retrospective path. Strict and legacy profiles retain their current automatic behavior.
+
+Configuration, health, credential, HTTP, scenario, Harness preparation, terminal, and Claude
+executable errors are bounded and actionable. `--no-launch` is not an error and is the deterministic
+test seam. No backend/frontend code or service configuration changes. Rollback removes the launcher,
+scenario/empty MCP config and fast preparation branch; strict/legacy metadata and runs remain
+readable.

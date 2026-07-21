@@ -6,6 +6,53 @@ append-only mailbox. The modeler may start fresh extraction, analysis, and revie
 its own session. The mailbox and Hook record are evaluation evidence; platform Build Checkpoints,
 Execution Events, validation, batches, lineage, and read models remain authoritative.
 
+## Fast local iteration
+
+Use `fast-local` for frequent modeling-Agent experiments where setup speed matters more than formal
+release evidence. It still launches two independent top-level Claude sessions, but deterministically
+creates the Build Session, pre-binds both session UUIDs, isolates MCP configuration and injects the
+first prompt. It is not a substitute for the `strict-eval` procedure below.
+
+Copy the credential-free template into the ignored Harness workspace and set the existing local
+Project ID. The default reads `ONTOLOGY_MCP_API_KEY` from `backend/.env`; do not put a key in the
+tracked template or scenario.
+
+```bash
+mkdir -p workspaces/ontology-harness
+cp .claude/fast-local.example.json workspaces/ontology-harness/fast-local.json
+${EDITOR:-vi} workspaces/ontology-harness/fast-local.json
+python3 .codex/fast_local_launcher.py
+```
+
+For headless preparation and deterministic command inspection, use:
+
+```bash
+python3 .codex/fast_local_launcher.py --no-launch
+```
+
+The checked-in default scenario is `.claude/scenarios/dify-foundations-v1.json`. A non-terminal
+`active-run.json` is never overwritten implicitly; inspect it and pass `--replace-active-locator`
+only when the older recoverable experiment should no longer be the active convenience locator.
+Retry a failed launch with its printed `--run-id` to reuse the durable launch intent and idempotent
+Build Session create payload. To recover an already known active session, pass
+`--build-session-id ID`; missing, terminal, and foreign-Project sessions are rejected.
+
+Before creating a Build Session, the launcher runs a captured project-settings-only MCP inventory
+probe. It requires exactly `ontology-platform` for the modeler and no MCP server for the simulated
+user. Raw diagnostic output is never echoed because some plugin commands may contain credentials.
+If the installed Claude runtime cannot prove those inventories, the launcher fails before the API
+POST and asks for Claude Code 2.1.215 or newer (or the strict-eval workflow).
+
+Fast-local completion/cancellation records a local-only terminal run without starting the Claude
+summarizer. Publish only when the retrospective is useful:
+
+```bash
+python3 .codex/hooks/modeling_harness.py finalize \
+  --run-id RUN_ID_LITERAL --terminal-state completed --publish
+```
+
+Everything below is the formal `strict-eval` workflow.
+
 ## 1. Verify the runtime and project Hooks
 
 Run from the repository root:

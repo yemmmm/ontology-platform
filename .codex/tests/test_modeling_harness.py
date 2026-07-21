@@ -7,6 +7,7 @@ import multiprocessing
 import sys
 import tempfile
 import unittest
+import uuid
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -39,6 +40,14 @@ def delta(summary: str = "A bounded summary") -> dict[str, object]:
 
 def append_worker(run_dir: str, index: int) -> None:
     harness.append_sanitized(Path(run_dir), "worker", {"index": index}, f"worker:{index}")
+
+
+def prepare_fast_worker(repo: str, values: dict[str, str], queue: multiprocessing.Queue) -> None:
+    try:
+        harness.prepare_fast_cli(harness.Paths(Path(repo)), argparse.Namespace(**values))
+        queue.put("ok")
+    except Exception as exc:
+        queue.put(type(exc).__name__)
 
 
 class HarnessTest(unittest.TestCase):
@@ -123,14 +132,15 @@ class HarnessTest(unittest.TestCase):
             handle.write("\n")
         self.assertIsNone(harness.active_run(self.paths, self.hook))
 
-    def test_activation_command_parser_is_strict(self) -> None:
+    def test_activation_command_parser_accepts_harmless_trailing_shell_tokens(self) -> None:
         command = (
             "python3 .codex/hooks/modeling_harness.py activate "
             f"--run-id {self.run_id} --activation-nonce {self.nonce} "
             "--build-session-id build-session-1 --project-id project-1"
         )
         self.assertEqual(harness.activation_args(command), self.values)
-        self.assertIsNone(harness.activation_args(command + " --unknown value"))
+        self.assertEqual(harness.activation_args(command + " 2>/dev/null ; true"), self.values)
+        self.assertIsNone(harness.activation_args(command.replace("--project-id", "--unknown")))
 
     def test_concurrent_append_is_contiguous_and_deduplicated(self) -> None:
         run_dir = self.activate()
@@ -933,6 +943,201 @@ class DualClaudeHarnessTest(unittest.TestCase):
         self.assertEqual(adapted["properties"], original["properties"])
         self.assertEqual(adapted["$defs"], original["$defs"])
         self.assertEqual(schema_path.read_bytes(), original_bytes)
+
+
+class FastLocalHarnessTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="fast-harness-test-")
+        self.repo = Path(self.temporary.name)
+        (self.repo / ".git").mkdir()
+        (self.repo / ".codex" / "hooks").mkdir(parents=True)
+        (self.repo / ".claude" / "scenarios").mkdir(parents=True)
+        (self.repo / "docs" / "modeling-retrospectives").mkdir(parents=True)
+        for relative in (
+            Path(".codex/hooks.json"),
+            Path(".codex/hooks/modeling_harness.py"),
+            Path(".codex/hooks/summary.schema.json"),
+        ):
+            target = self.repo / relative
+            target.write_bytes((REPO / relative).read_bytes())
+        (self.repo / ".claude" / "scenarios" / "fixture.json").write_text(
+            '{"scenario":"fixture"}\n', encoding="utf-8"
+        )
+        self.paths = harness.Paths(self.repo)
+        self.values = {
+            "run_id": "fast-run-12345678",
+            "build_session_id": "build-fast-1",
+            "project_id": "project-fast-1",
+            "scenario": ".claude/scenarios/fixture.json",
+            "launch_intent_hash": "a" * 64,
+            "simulated_user_session_id": "11111111-1111-4111-8111-111111111111",
+            "modeling_agent_session_id": "22222222-2222-4222-8222-222222222222",
+        }
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def prepare(self, **changes: str) -> Path:
+        values = {**self.values, **changes}
+        with redirect_stdout(StringIO()):
+            harness.prepare_fast_cli(self.paths, argparse.Namespace(**values))
+        return self.paths.run(values["run_id"])
+
+    def test_prepare_fast_commits_whole_identity_and_is_idempotent(self) -> None:
+        run_dir = self.prepare()
+        metadata = harness.read_json(run_dir / "metadata.json")
+        self.assertEqual(metadata["evaluation_profile"], "fast_local")
+        self.assertEqual(metadata["summary_policy"], "explicit")
+        self.assertTrue(metadata["preparation_complete"])
+        self.assertEqual(metadata["status"], "active")
+        self.assertEqual(set(metadata["participants"]), harness.PARTICIPANT_ROLES)
+        for role, session_id in metadata["fast_identity"]["sessions"].items():
+            participant = metadata["participants"][role]
+            self.assertEqual(participant["session_id"], session_id)
+            self.assertIsNotNone(participant["activated_at"])
+            registry = harness.read_json(self.paths.registry / f"{session_id}.json")
+            self.assertEqual(registry["preparation_id"], metadata["preparation_id"])
+        before = (run_dir / "events.jsonl").read_bytes()
+        self.prepare()
+        self.assertEqual((run_dir / "events.jsonl").read_bytes(), before)
+        hook = {
+            "session_id": self.values["modeling_agent_session_id"],
+            "cwd": str(self.repo),
+        }
+        binding = harness.active_binding(self.paths, hook)
+        self.assertIsNotNone(binding)
+        assert binding
+        self.assertEqual(binding.participant_role, "modeling_agent")
+
+        status = StringIO()
+        with redirect_stdout(status):
+            harness.status_cli(self.paths, argparse.Namespace(run_id=self.values["run_id"]))
+        value = json.loads(status.getvalue())
+        self.assertTrue(value["ready"])
+        self.assertEqual(value["evaluation_profile"], "fast_local")
+        self.assertNotIn("session_id", status.getvalue())
+
+    def test_prepare_fast_rejects_conflicts_invalid_sessions_and_outside_scenario(self) -> None:
+        self.prepare()
+        with self.assertRaisesRegex(harness.HarnessError, "conflicting"):
+            self.prepare(build_session_id="other-build")
+        with self.assertRaisesRegex(harness.HarnessError, "distinct"):
+            self.prepare(
+                run_id="fast-run-distinct",
+                modeling_agent_session_id=self.values["simulated_user_session_id"],
+            )
+        outside = Path(self.temporary.name).parent / "outside-fast-scenario.json"
+        outside.write_text("{}", encoding="utf-8")
+        try:
+            with self.assertRaisesRegex(harness.HarnessError, "inside the repository"):
+                self.prepare(run_id="fast-run-outside1", scenario=str(outside))
+        finally:
+            outside.unlink()
+
+    def test_incomplete_preparation_is_hook_invisible_and_retry_repairs_each_write(self) -> None:
+        original_atomic = harness.atomic_json
+        original_append = harness.append_event_locked
+        cases = [("atomic", index) for index in range(1, 6)] + [
+            ("append", index) for index in range(1, 4)
+        ]
+        for case_index, (kind, fail_at) in enumerate(cases):
+            values = {
+                **self.values,
+                "run_id": f"fast-fault-{case_index:08d}",
+                "simulated_user_session_id": str(uuid.UUID(int=100 + case_index)),
+                "modeling_agent_session_id": str(uuid.UUID(int=200 + case_index)),
+            }
+            calls = 0
+
+            def atomic(path: Path, value: dict[str, object]) -> None:
+                nonlocal calls
+                calls += 1
+                if kind == "atomic" and calls == fail_at:
+                    raise OSError("injected atomic failure")
+                original_atomic(path, value)
+
+            append_calls = 0
+
+            def append(*args, **kwargs):
+                nonlocal append_calls
+                append_calls += 1
+                if kind == "append" and append_calls == fail_at:
+                    raise OSError("injected append failure")
+                return original_append(*args, **kwargs)
+
+            with (
+                mock.patch.object(harness, "atomic_json", atomic),
+                mock.patch.object(harness, "append_event_locked", append),
+            ):
+                with self.assertRaises(OSError):
+                    harness.prepare_fast_cli(self.paths, argparse.Namespace(**values))
+            metadata_path = self.paths.run(values["run_id"]) / "metadata.json"
+            if metadata_path.exists():
+                metadata = harness.read_json(metadata_path)
+                self.assertIsNot(metadata.get("preparation_complete"), True)
+            hook = {"session_id": values["simulated_user_session_id"], "cwd": str(self.repo)}
+            self.assertIsNone(harness.active_binding(self.paths, hook))
+            with redirect_stdout(StringIO()):
+                harness.prepare_fast_cli(self.paths, argparse.Namespace(**values))
+            metadata = harness.read_json(metadata_path)
+            self.assertTrue(metadata["preparation_complete"])
+            events = harness.load_events(self.paths.run(values["run_id"]))
+            self.assertEqual(
+                sum(event["kind"] == "fast_preparation_started" for event in events), 1
+            )
+            self.assertEqual(sum(event["kind"] == "activated" for event in events), 2)
+
+    def test_shared_registry_lock_allows_exactly_one_cross_run_claim(self) -> None:
+        queue: multiprocessing.Queue = multiprocessing.Queue()
+        first = dict(self.values, run_id="fast-race-first1")
+        second = dict(
+            self.values,
+            run_id="fast-race-second",
+            modeling_agent_session_id="33333333-3333-4333-8333-333333333333",
+        )
+        processes = [
+            multiprocessing.Process(
+                target=prepare_fast_worker, args=(str(self.repo), values, queue)
+            )
+            for values in (first, second)
+        ]
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(10)
+            self.assertEqual(process.exitcode, 0)
+        self.assertEqual(sorted(queue.get(timeout=2) for _ in processes), ["HarnessError", "ok"])
+        registry = harness.read_json(
+            self.paths.registry / f"{self.values['simulated_user_session_id']}.json"
+        )
+        self.assertIn(registry["run_id"], {first["run_id"], second["run_id"]})
+        rejected = second if registry["run_id"] == first["run_id"] else first
+        rejected_metadata = self.paths.run(rejected["run_id"]) / "metadata.json"
+        self.assertFalse(rejected_metadata.exists())
+
+    def test_explicit_summary_stays_local_until_publish_is_requested(self) -> None:
+        run_dir = self.prepare()
+        calls = 0
+
+        def summarize(_run: Path, _prompt: str) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            return delta()
+
+        self.assertIsNone(harness.finalize_run(self.paths, run_dir, "completed", summarize))
+        self.assertEqual(calls, 0)
+        self.assertEqual(
+            harness.read_json(run_dir / "state.json")["finalization_status"], "local_only"
+        )
+        target = harness.finalize_run(
+            self.paths,
+            run_dir,
+            "completed",
+            summarize,
+            publish_requested=True,
+        )
+        self.assertIsNotNone(target)
+        self.assertGreater(calls, 0)
 
 
 if __name__ == "__main__":

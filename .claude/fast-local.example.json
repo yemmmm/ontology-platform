@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "project_id": "replace-with-local-project-id",
+  "api_base_url": "http://127.0.0.1:8001/api",
+  "api_key_env_file": "backend/.env",
+  "api_key_env_name": "ONTOLOGY_MCP_API_KEY",
+  "terminal_executable": "gnome-terminal",
+  "claude_executable": "claude"
+}

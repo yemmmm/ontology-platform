@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "scenario_id": "dify-foundations-modeling",
+  "version": "1.0.0",
+  "goal": "Model the foundational Dify application, Workflow, node, variable, test, publish, reuse, and DSL concepts evidenced by the pinned official corpus.",
+  "corpus": {
+    "snapshot_id": "dify-foundations-2026-07-18-5396c1a",
+    "path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/manifest.json"
+  },
+  "constraints": [
+    "Use only the pinned checked-in corpus as business evidence.",
+    "Keep Dify business concepts as ontology data rather than platform product concepts.",
+    "Do not infer missing facts; ask the simulated user when a consequential ambiguity remains.",
+    "Use platform validation, governance, persistence, lineage, and Build Session state as authority.",
+    "Keep the iteration focused on useful foundational modeling rather than exhaustive Dify coverage."
+  ],
+  "simulated_user": {
+    "facts": [
+      "The desired scope is Dify foundational application and Workflow knowledge covered by the pinned corpus.",
+      "Workflow creation, application reuse and DSL, Jinja2 Template nodes, variables, test, and publish must remain distinguishable.",
+      "The user prefers evidence-backed reusable semantics over scenario-specific shortcuts.",
+      "A proposal may be approved only after ambiguities are resolved and the acceptance questions can be answered from persisted facts."
+    ],
+    "decision_policy": "Answer from these fixed facts, request correction for unsupported or conflated semantics, and mark every approval or rejection as simulated evaluation evidence."
+  },
+  "acceptance_questions": [
+    "How does a user create a blank Dify Workflow application and orchestrate its nodes?",
+    "How are inputs, node variables, outputs, and execution order represented without inventing undocumented facts?",
+    "How do application templates differ from DSL export and import reuse?",
+    "What distinguishes a Jinja2 Template node from other foundational nodes in the corpus?",
+    "How are testing and publishing related to a Dify application's modeled lifecycle?"
+  ]
+}

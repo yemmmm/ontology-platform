@@ -32,6 +32,26 @@ requirements list when the target or delivery decision changes. `docs/reference/
 reference for canonical terminology only; ADRs record architectural decisions. Neither the current
 code nor older planning documents override the requirements list.
 
+## Current Development Priority
+
+The current project stage prioritizes **modeling quality and semantic retrieval quality**. Prefer
+the simplest implementation and operating workflow that preserves or improves those two outcomes.
+
+- Do not make productization concerns such as fine-grained security, generalized version
+  management, immutable audit history, cross-machine coordination, automatic crash recovery,
+  complex orchestration, or polished management UI prerequisites for a modeling-quality experiment.
+- Design documents may reserve extension points and list those concerns as future capabilities, but
+  current implementation and acceptance must not include them unless they are necessary to protect
+  modeling correctness, retrieval correctness, or the integrity of an immediately applied model.
+- For local Agent workflow experiments, prefer a repo-local, gitignored, human-readable shared
+  directory and small deterministic scripts over new backend tables, APIs, services, or frameworks.
+- Keep only the quality gates that directly protect source fidelity, business scope, model
+  correctness, deterministic dry-run/application, and competency-question or retrieval acceptance.
+- Separate every new modeling-workflow design into `current minimal scope` and `future
+  productization`. Do not silently promote future features into the current completion gate.
+- Existing platform capabilities may be reused, but do not require every available governance,
+  recovery, lineage, event, or audit mechanism in each local iteration merely because it exists.
+
 ## Platform and Reference-Ontology Boundary
 
 Treat concepts that appear in a customer ontology, evaluation corpus, or reference scenario as
