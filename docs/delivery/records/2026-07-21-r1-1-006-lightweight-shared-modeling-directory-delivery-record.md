@@ -1,13 +1,13 @@
 # R1.1-006 轻量共享建模目录与分片协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v1.1.md` R1.1-006
-- Status: in-progress (design realignment against R1.1-007)
+- Status: delivered; independent test Round 2 PASS
 - Started: 2026-07-21T18:44:46+08:00
-- Last updated: 2026-07-22T00:41:14+08:00
+- Last updated: 2026-07-22T01:41:48+08:00
 - Design: `docs/delivery/designs/2026-07-21-r1-1-006-lightweight-shared-modeling-directory-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-21-r1-1-006-lightweight-shared-modeling-directory-test-plan.md`
 - Delivery baseline: `e7c4dd4`; unrelated in-progress R1.1-005 fast-local changes are preserved
-- Delivery commit: `Adjust R1.1-006 design for execution profiles` (resolve hash with
+- Delivery commit: `Implement R1.1-006 shared modeling directory` (resolve hash with
   `git log -- docs/delivery/records/2026-07-21-r1-1-006-lightweight-shared-modeling-directory-delivery-record.md`)
 
 ## Confirmed contract
@@ -137,6 +137,96 @@
 - Outcome/next step: the adjusted R1.1-006 design is ready for a later implementation handoff; this
   turn closes documentation and plan review only.
 
+### 2026-07-22T00:43:23+08:00 — development handoff freeze — main agent
+
+- Context: the user authorized continuation from the reviewed design into complete requirement
+  delivery. Commit `c8f3495` is a clean, stable baseline; Round 4 plan review is PASS with every
+  accepted High finding closed.
+- Action/decision: freeze R1.1-006 implementation to the linked design and shared test plan. The
+  developer may add only repo-local shared-directory commands/modules, focused tests, and directly
+  necessary documentation. Backend tables/routes, frontend, Profile/Harness policy, credentials and
+  protected-write automation, capability Skills, and Agent wiring remain R1.1-007 or future scope.
+- Evidence: `git status --short --branch` clean at `c8f3495`; review disposition table above.
+- Outcome/next step: hand off to `requirement_developer`; require GitNexus impact before editing any
+  existing symbol, focused and full `.codex` unit tests, Ruff checks, diff checks, and an explicit
+  development-ready signal. Real multi-session and authenticated platform integration remain part
+  of the stable independent-test handoff.
+
+### 2026-07-22T01:11:55+08:00 — development ready — requirement developer and main agent
+
+- Context: the first developer execution completed repository/design analysis but produced no file
+  changes or blocker after repeated bounded follow-ups, so the main agent replaced that execution
+  while preserving the frozen scope. The replacement developer changed no existing function,
+  class, or method and therefore had no existing-symbol impact gate.
+- Action/decision: add one repo-local implementation module, one focused unittest module, and one
+  operator runbook. The implementation covers initialize/inspect/validate/reset, explicit semantic
+  `no_change` rebind, deterministic merge/hash/review gates, four-limit Batch planning,
+  cross-Batch materialization, stable client/platform Batch identity, response binding, and
+  retrieval-verification validation. It does not implement any R1.1-007-owned capability.
+- Evidence: `.codex/shared_modeling_directory.py` SHA-256
+  `86a3b612b047cba8df4954ed12402d0d8865986dac765e7f8e0371a5a25fb1f6`;
+  `.codex/tests/test_shared_modeling_directory.py` SHA-256
+  `1b02a4bed1c2baae8d15817afe61806d6f9c5b51c62d52e0d569c84776e20597`;
+  `.codex/shared-modeling-directory.md` SHA-256
+  `d686521d432598678430db3226d5efb223525d0098586f0263d1af89e3aff044`.
+- Outcome/next step: development-ready at the uncommitted three-file state. Focused 13 tests and
+  full `.codex` 81 tests passed; Ruff check/format and diff checks passed. One pre-existing
+  `ResourceWarning` remained non-failing. Start independent testing only against this stable state.
+
+### 2026-07-22T01:33:35+08:00 — independent test Round 1 and repair handoff — tester and main agent
+
+- Context: independent testing exercised real Agent replacement and the authenticated live platform
+  after two acceptance-fixture corrections were safely blocked before apply. A reversible
+  `rdf_primary` runtime override was required because the restored local default is `legacy_only`.
+- Action/decision: Round 1 is `FAIL` with one confirmed High defect,
+  `R1.1-006-IT-001`. The main agent accepts the severity: `validate_verification` accepted
+  `verdict=PASS` when a passed check contained only a CQ ID/status and no executed query or
+  structured result evidence. This can falsely close an unexecuted retrieval acceptance and is
+  directly within R1.1-006 completion scope. Route only this defect to the developer; preserve the
+  successful real-platform evidence and failed Round 1 history.
+- Evidence: shared test plan Round 1; real `[100, 100, 5]` Batch sequence, 409 stale-workspace
+  recovery with 99-Entity prefix retained, final SPARQL `200` Entities/`3` Relations, Context Query
+  `matched`, and exact cleanup/runtime-restoration results recorded there.
+- Outcome/next step: add focused missing/malformed/valid verification-evidence regressions, require
+  bounded executed-check evidence for PASS, return a new development-ready state, then retest the
+  defect plus affected/full/runtime gates in Round 2.
+
+### 2026-07-22T01:37:27+08:00 — defect repair ready — requirement developer and main agent
+
+- Context: the repair was limited to confirmed High `R1.1-006-IT-001`. GitNexus could not resolve
+  the symbol because the implementation file is still new/untracked, so the developer recorded
+  risk `UNKNOWN` and inspected all direct same-file/CLI/test call sites instead of claiming a false
+  safe impact result.
+- Action/decision: a passed verification check now requires a bounded non-empty query or check
+  description plus structured non-empty result evidence, or an explicit valid empty-result
+  assertion with `expected=true`, `observed_count=0`, and a bounded assertion. Missing, malformed,
+  and contradictory evidence is rejected. The runbook and focused regressions were updated.
+- Evidence: implementation SHA-256
+  `7a37bdb9148f0c8bece2af3886f2e6a612643e6fad7d4fd3bddce97b5ef63fa1`;
+  focused-test SHA-256
+  `e43f72929c01e2cfe831f4c7ea7d5a4f94d86b3dd7dee95f82e6fbbcb6a058a3`;
+  runbook SHA-256
+  `1f063db211379f524dc18ac78d68f24035fb89cd422bb70f495550b2689e1c2d`.
+- Outcome/next step: DEVELOPMENT READY FOR RETEST. Focused 13/13, full `.codex` 81/81, existing
+  valid live verification recheck, Ruff, format, and diff checks passed; send the stable state back
+  to the independent tester for Round 2.
+
+### 2026-07-22T01:41:48+08:00 — independent test Round 2 and delivery close — tester and main agent
+
+- Context: Round 2 retested the exact verification-evidence defect and the stable repaired files,
+  while preserving Round 1's expensive live platform evidence because the repair did not touch
+  candidate hashing, Batch planning/materialization, binding, or submission behavior.
+- Action/decision: accept Round 2 `PASS`. Missing query/check description, missing structured
+  result, malformed result shape, and contradictory empty-result assertions now block; valid
+  non-empty evidence and a contract-valid explicit empty result pass. No Critical/High defect or
+  unexecuted R1.1-006 completion gate remains.
+- Evidence: shared test plan Round 2; focused 13/13 and full `.codex` 81/81; Ruff and diff checks;
+  preserved live verification revalidated under the repaired contract; all four acceptance run
+  identities at zero Project, zero Batch, and zero matching RDF graph; systemd active, backend and
+  frontend HTTP 200, product write mode restored to `legacy_only` with no manager override.
+- Outcome/next step: R1.1-006 is delivered. Synchronize requirement/design/test status, run final
+  repository checks including GitNexus change detection, and create the delivery commit.
+
 ## Review disposition
 
 The Round 2 PASS remains historical evidence for the original scope. R1.1-007 introduced a newer
@@ -154,29 +244,49 @@ downstream contract, so a fresh review is required after realignment.
 
 ## Development and defect history
 
-No implementation cycle has started.
+Implementation completed through the following development and repair cycles.
+
+| Cycle | Stable state | Change or defect | Verification | Outcome |
+| --- | --- | --- | --- | --- |
+| 1 | `c8f3495` plus the three SHA-256-pinned uncommitted `.codex` files | Initial R1.1-006 repo-local implementation | 13 focused and 81 full `.codex` tests; Ruff check/format; diff checks; GitNexus low risk/0 mapped symbols | DEVELOPMENT READY; real Agent/platform acceptance deferred to independent test |
+| 2 | Round 1 stable state | Confirmed High `R1.1-006-IT-001`: verification PASS accepted without executed query/result evidence | Independent minimal failing check in shared plan Round 1 | Repair handed to developer; implementation remains incomplete |
+| 3 | Three repaired `.codex` files pinned by the 2026-07-22T01:37:27 hashes | Require executed query/result evidence or explicit valid empty-result assertion | 13 focused and 81 full `.codex` tests; prior valid live artifact recheck; Ruff/format/diff | DEVELOPMENT READY FOR RETEST |
+| 4 | Same repaired files | No product change; independent defect retest and full acceptance closure | Shared test plan Round 2; focused 13/13, full 81/81, preserved real acceptance, cleanup/runtime checks | DELIVERED |
 
 ## Independent test rounds
 
-No independent test round has started.
+Independent testing completed in two rounds.
+
+| Round | Stable state | Result | Defects/unexecuted cases | Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | `c8f3495` plus the three pinned `.codex` files | FAIL | High `R1.1-006-IT-001`; real clarification-return case unforced; R1.1-007 intentionally out of scope | Shared test plan Round 1: 13/13 focused, 81/81 full, real Agent replacement, live 205-item multi-Batch/recovery/retrieval, zero residual DB/Graph data, restored healthy runtime |
+| 2 | Three files pinned by the 2026-07-22T01:37:27 hashes | PASS | No residual Critical/High; real clarification return remained unnecessary in the accepted run; R1.1-007 remains downstream | Exact defect matrix passed; 13/13 focused, 81/81 full, preserved live verification passed stricter contract, zero platform residuals, healthy restored runtime |
 
 ## Final verification
 
-- Required checks: document consistency and `git diff --check` for this design turn.
-- Runtime/restart health: not required for documentation-only redesign.
-- Documentation/status sync: complete for the redesign; implementation remains pending.
-- Cleanup: none.
-- Residual risks and follow-ups: first implementation and real multi-session quality run remain;
-  multi-Batch apply is intentionally not atomic, and deterministic hash behavior needs implementation
-  tests.
+- Required checks: focused 13/13, full `.codex` 81/81, Ruff check/format, `git diff --check`, and
+  GitNexus `detect_changes` before commit.
+- Runtime/restart health: no backend/frontend product code changed, so no delivery restart is
+  required. Independent testing restored the temporary acceptance override and verified systemd
+  active, backend/frontend HTTP 200, and `product_write_mode=legacy_only`.
+- Documentation/status sync: requirement, design, shared test plan, runbook, and this delivery
+  record are aligned to delivered / independent test Round 2 PASS.
+- Cleanup: all four live acceptance identities have zero Project, Modeling Batch, and matching RDF
+  graph residuals. The bounded gitignored run directory remains local test evidence.
+- Residual risks and follow-ups: multi-Batch apply intentionally preserves an already applied valid
+  prefix instead of promising atomic rollback. Profile/Harness/credential/Agent automation remains
+  R1.1-007 scope, and the real clarification-return branch was not needed by the accepted run.
 
 ## Retrospective
 
-- Scope or design deviations: replaced the platform-grade shared-space proposal with a repo-local
-  current-state directory.
+- Scope or design deviations: the delivered implementation stayed repo-local and did not absorb any
+  R1.1-007 Profile/Harness/credential/Agent responsibility.
 - Rework and root causes: the earlier design optimized future productization before proving modeling
-  and retrieval benefit.
+  and retrieval benefit; Round 1 then exposed that file completeness alone could falsely represent
+  retrieval acceptance.
 - What shortened or delayed delivery: reusing existing platform dry-run/apply/query capabilities
-  avoids backend work.
-- Reusable lessons: make the main Agent a coordinator, not a courier, but do not productize the
-  coordination channel before the quality experiment proves value.
+  avoided backend work; the real 205-item run revealed both the expected `legacy_only` boundary and
+  the intended non-atomic stale-workspace recovery behavior.
+- Reusable lessons: make the main Agent a coordinator, not a courier; bind acceptance to observable
+  query results, not status labels; and do not productize the coordination channel before the
+  quality experiment proves value.

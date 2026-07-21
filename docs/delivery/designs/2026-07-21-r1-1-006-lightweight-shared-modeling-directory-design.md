@@ -2,7 +2,7 @@
 
 - Requirement: `docs/requirements/requirements-v1.1.md` R1.1-006
 - Downstream contract: `docs/requirements/requirements-v1.1.md` R1.1-007
-- Status: realigned with R1.1-007; independent plan re-review PASS; implementation pending
+- Status: delivered; independent test Round 2 PASS
 - Priority: modeling quality and retrieval quality first
 
 ## Goal
@@ -284,3 +284,19 @@ productization.
   R1.1-007 remains responsible for ordinary Local/Formal execution behavior.
 - No backend, database, MCP, frontend, Profile, Harness, credential-management, or Agent-Skill
   change is required for the first R1.1-006 implementation.
+
+## Implementation result
+
+The delivered repo-local module and runbook are `.codex/shared_modeling_directory.py` and
+`.codex/shared-modeling-directory.md`, with focused coverage in
+`.codex/tests/test_shared_modeling_directory.py`. They implement the scoped directory lifecycle,
+reference and stale-input validation, deterministic merge/hash/review gates, four-limit Batch
+planning, cross-Batch materialization, platform response binding, and evidence-bearing retrieval
+verification without adding backend, frontend, Profile, Harness, credential, or Skill behavior.
+
+Independent Round 2 closed the only Round 1 High defect by requiring every passed retrieval check
+to carry an executed query/check description and structured observed results, or a contract-valid
+explicit empty-result assertion. The final focused suite passed 13/13, full `.codex` regression
+passed 81/81, and the preserved live acceptance proved two-Ontology Agent collaboration, fresh-
+Session continuation, real `[100, 100, 5]` dry-run/apply, stale-workspace forward recovery, and
+final retrieval acceptance with zero residual platform data.
