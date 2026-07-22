@@ -2,12 +2,12 @@
 
 ## 文档信息
 
-- 文档状态：v2.0 方向已确认；R2.0-001 已细化，待实现
+- 文档状态：v2.0 方向已确认；R2.0-001 已验证，R2.0-002 已细化、待实现
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`
 - 总体目标：以 Pi 为首个候选实现，建立平台可控制、可观测、可调试且可替换的第一方建模
   Agent Runtime
-- 当前实施需求：R2.0-001 Pi 建模 Agent Runtime 能力验证
+- 当前实施需求：R2.0-002 Pi 第一方建模 Agent Runtime 正式集成
 - 目标用户：平台建模工作流开发者、建模质量调优人员和后续第一方建模 Agent 使用者
 - 更新日期：2026-07-22
 
@@ -96,11 +96,11 @@ Agent 可以提出模型、问题、解释和下一步，但只有 Semantic Plat
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
 | R2.0-001 | Pi 建模 Agent Runtime 能力验证 | P0 | 已验证，PASS | v1.1 R1.1-002 至 R1.1-007 |
-| R2.0-002 | Pi 第一方建模 Agent Runtime 正式集成 | P0 | 待细化；仅在 R2.0-001 PASS 后启动 | R2.0-001 |
+| R2.0-002 | Pi 第一方建模 Agent Runtime 正式集成 | P0 | 已细化，待实现 | R2.0-001 |
 
-R2.0-002 当前只表示已确认的后续方向，不在本文中预先冻结生产架构、平台接口、部署方式、迁移范围
-或真实建模验收合同。R2.0-001 的结论、限制和改造清单是 R2.0-002 细化的输入；若 R2.0-001 FAIL，
-则不得以 R2.0-002 名义继续默认集成 Pi，应重新选型或先解决明确阻塞项。
+R2.0-001 已证明 Pi 的公开 RPC、Extension、结构化工具、角色隔离、澄清和事件能力足以承载后续
+建模 Agent。R2.0-002 据此迁移 Local 日常建模流程，并以一次固定真实语料的完整平台建模验收作为
+完成门槛；本期不建设生产 Runtime 服务，也不迁移 Formal/strict-eval。
 
 ## R2.0-001 Pi 建模 Agent Runtime 能力验证
 
@@ -310,16 +310,173 @@ FAIL 后应记录重新选型、缩小目标或先解决阻塞项的建议，不
 - 只有 PASS 才建议进入 R2.0-002；FAIL 或 BLOCKED 时，需求状态和后续路线与证据一致；
 - 原型不提交真实密钥或外部服务凭证。
 
-## 后续需求细化规则
+## R2.0-002 Pi 第一方建模 Agent Runtime 正式集成
 
-R2.0-001 PASS 后再细化 R2.0-002。R2.0-002 至少需要基于能力矩阵重新确认：
+当前状态：`已细化，待实现`
 
-- Pi 采用 SDK 嵌入、RPC 子进程还是独立服务；
-- 第一方 Extension、Runtime Adapter 和 Modeling Workflow Package 的模块边界；
-- Local/Formal Profile、现有 Harness/Hook/Adapter 的复用、替代和兼容策略；
-- 如何运行真实资料建模、比较现有流程并持续优化建模效果；
-- 哪些监看事件和阶段 Summary 最能解释遗漏、返工和质量瓶颈；
-- 主 Agent、建模角色、评审角色和用户澄清的实际工作流；
-- 只有在真实实验需要时才加入恢复、安全、平台事件映射、分发和运维能力。
+优先级：`P0`
 
-这些内容是后续设计输入，不因写入本节而成为 R2.0-001 的实现或完成条件。
+### 需求定位
+
+本需求把当前 Local 日常建模流程迁移到 Pi 第一方 Runtime，并让 Pi 成为唯一受支持、主动维护的
+日常建模入口。它不以“Pi 能启动并调用模型”为完成，而要求 Pi 从真实资料和用户目标开始，完成
+业务澄清、分片建模、独立评审、确定性应用及应用后语义验收。
+
+R2.0-002 优先保护建模质量、来源忠实度、业务范围、模型正确性和检索结果。安全加固、完整崩溃
+恢复、常驻服务、管理 UI、分布式协调、成本优化和 Formal 能力均不成为本期前置条件。
+
+### 当前现状
+
+当前 Local 流程的建模方法和确定性核心已存在：业务访谈、Brief/CQ、Coverage、Work Unit、Shared
+Modeling Directory、candidate hash、独立 review、Modeling Batch dry-run/apply、CQ、检索和
+provenance 验收均已有合同和实现。
+
+但运行环境仍分散在 Claude Code 项目 Agent、Skill、Hook、Harness、双 Session mailbox、launcher
+和 Claude summarizer 中。平台不能直接控制这些外部 Runtime 行为，且 Pi 尚未连接真实资料和平台
+写入链路。现有 Local Adapter 的关键写动作还强制依赖 Claude Harness receipt，不能在删除 Harness
+后原样使用。
+
+### 目标行为
+
+用户通过一个 repo-local 命令启动 Pi Local 建模。该命令：
+
+1. 读取本地非密钥场景配置、现有 Project、资料定位符、建模目标和可选约束；
+2. 启动一个持续与用户交互的 Pi 主协调 Agent；
+3. 按需启动相互隔离的业务整理、Work Unit 建模和独立评审 Pi Session；
+4. 通过结构化产物和稳定定位符交接，不共享隐藏对话；
+5. 只通过现有平台受支持接口提交 Brief/CQ、dry-run/apply 和验证请求；
+6. 输出最小流程事件、阶段 Summary、已应用模型、当前共享产物、明确遗漏和最终质量结论；
+7. 完成或失败后回收本次启动的 Pi 子进程，不要求 backend 或常驻 Runtime 服务托管 Session。
+
+Pi Runtime 不获得绕过 R-004、R-008、Modeling Batch、Evidence、Lease、当前 workspace version、
+验证或查询合同的特殊通道。
+
+### 当前最小范围
+
+#### 1. Pi Local Runtime
+
+- 使用固定 `@earendil-works/pi-coding-agent` 版本、依赖锁和 Node `>=22.19.0`；
+- 采用 repo-local Runner 和 headless RPC 子进程，不嵌入 backend、不接入 systemd；
+- 启动时显式加载并核验受控的 Pi Workflow Package、Extension、角色 Prompt 和工具清单；
+- Runner 把 `agent_end` 仅视为一次底层 run 结束；一次性角色必须等到 `agent_settled`、Session
+  空闲且待处理消息队列为空后，才能接受结构化结果并回收子进程；
+- 模型和 Provider 由 gitignored 本地配置显式选择，Workflow Package 不硬编码唯一供应商；
+- 首版只支持 Pi Local，不提供 Pi Formal 或远程 Runtime。
+
+#### 2. Pi-only Modeling Workflow Package
+
+Pi Agent 的建模规则成为唯一主动维护的规则来源。Package 至少包含：
+
+- 主协调、业务整理、Work Unit 建模、独立评审和阶段 Summary 的角色 Prompt；
+- 业务访谈字段、来源忠实度、Coverage、分片、建模指南、结构化产物 Schema 和质量门禁；
+- 用户澄清、candidate/review 绑定、Finding 修正、apply 决策和最终验收规则；
+- 固定真实验收场景及其资料和验收问题定位符。
+
+不要求 Package 保持 Claude Code Skill、Agent 或 Hook 兼容。Pi 全链路验收 PASS 后，旧 Claude
+建模规则、入口和现行使用文档退役，不再作为回退或后续维护对象。
+
+#### 3. 角色与交接
+
+- 主协调 Agent 持续面向用户，负责阶段推进、任务划分、澄清、合并和平台集成；
+- 业务整理 Session 只负责资料理解、Brief、CQ 和 Coverage，不产生 Modeling Item；
+- 每个 Work Unit 使用新建模 Session，只读取其任务、共享引用和已完成依赖，只写自己的结果；
+- 独立评审 Session 不读取建模隐藏对话，只根据资料、业务合同和 candidate 返回
+  `PASS | REVISE | BLOCKED`；
+- 不相互依赖的 Work Unit 可以并行；同一 Ontology 必须先合并为一个 candidate 再统一评审；
+- 角色交接只能使用 Shared Modeling Directory 中的结构化产物、hash 和稳定定位符。
+
+#### 4. 完整建模闭环
+
+Pi Local 从 Project、资料和目标开始，依次完成：
+
+```text
+资料理解与用户访谈
+  -> Brief/CQ 确认
+  -> Coverage 与 Work Unit
+  -> 分片建模与候选合并
+  -> 独立评审
+  -> 确定性 Batch 规划、dry-run、apply
+  -> CQ、语义检索与 provenance 验证
+  -> 最终质量结论
+```
+
+只生成候选、只通过静态校验或只完成 dry-run 均不算完整成功。
+
+### 用户确认和自动应用
+
+以下情况必须暂停并取得用户确认：
+
+- Brief/CQ 形成业务承诺之前；
+- 资料无法消除的业务歧义；
+- 删除、不可逆修改或影响范围不明的变更准备 apply 之前。
+
+普通新增和影响明确的修改，在独立评审 `PASS`、candidate hash 一致、请求内容与 review 绑定且
+dry-run 无阻断 Finding 后自动 apply，不逐 Batch 请求确认。
+
+### 失败和局部恢复
+
+- 某角色失败时保留已完成共享产物，仅以相同稳定输入重启对应角色或 Work Unit；
+- 平台校验或 dry-run Finding 必须映射回受影响 Work Unit，修正后重新合并、评审和 dry-run；
+- apply 超时或结果未知时，先使用原 `client_batch_id`、Batch ID 和幂等标识核对平台状态；不得
+  创建替代 Batch 猜测结果；
+- 用户澄清暂停当前 run，回答后从共享产物继续；
+- 已成功应用的 Batch 不自动回滚，后续修正从平台当前状态继续；
+- 不要求恢复完整聊天、隐藏推理、崩溃前 Pi 进程或自动重放完整 run。
+
+### 流程监看和阶段 Summary
+
+repo-local 事件流至少记录：run、角色/Session、阶段开始/结束、模型调用状态、工具调用及结果、
+队列变化、自动重试、压缩重试、`agent_end`、`agent_settled`、澄清暂停/继续、产物定位符和失败原因。
+
+以下阶段完成时生成结构化 Summary：业务整理、每个 Work Unit、独立评审/apply、最终验证。
+Summary 至少包含阶段、角色、目标、简明动作、输入输出或产物引用、可见问题与决定、结果、未解决
+项和下一步。Summary 只根据可见事件与稳定产物生成；不保存隐藏推理、完整 transcript，也不要求
+逐 Turn Summary、服务端事件库或监控 UI。
+
+### Claude 路径退役
+
+在 Pi 真实全链路独立验收 PASS 前，旧 Claude 路径仅作为临时实施回退保留，不再接收规则更新。
+PASS 后同一需求内：
+
+- 删除 Claude 专属建模 Agent、Hook、Harness、launcher、场景适配和现行使用文档；
+- 删除或改写只验证 Claude 建模入口的现行测试与能力声明，包括 README 的安装/运行说明、
+  `backend/tests/test_documentation_sync.py` 的 ontology-builder 契约以及
+  `.github/workflows/docs-sync.yml` 中旧 Skill validator/eval 步骤；替代检查必须验证 Pi Workflow
+  Package 的现行合同，不能留下读取已删除路径的 CI；
+- 保留历史交付记录、Git 历史，以及 Pi 继续使用的 Shared Modeling Directory 和确定性平台
+  Adapter 核心；
+- 不删除与建模 Runtime 无关的 Claude/GitNexus 配置或其他通用开发工具；
+- 原 Claude Formal/strict-eval 同时退役。未来需要时以独立需求设计 Pi Formal，不在本期补齐。
+
+### 明确不在范围
+
+- 不建设 backend 内嵌 Runtime、常驻服务、systemd 单元、远程执行或分布式调度；
+- 不建设管理 UI、服务端 Agent 事件库、完整审计、跨机器协作或自动升级；
+- 不验证生产级凭证隔离、sandbox、危险工具策略、租户安全或发布分发；
+- 不要求完整 Session 持久化、进程崩溃恢复、自动重试编排、分支/压缩语义；
+- 不实现 Pi Formal/strict-eval，不保留 Claude Formal/strict-eval 兼容入口；
+- 不比较 Pi 与 Claude 的模型回答质量、token、耗时、成本或工具调用数；
+- 不要求根据本次 Summary 找出瓶颈、修改流程后再跑一次或证明 Pi 优于 Claude；
+- 不新增参考本体或客户领域专属平台 API、Schema、排序规则或解释逻辑；
+- 不 fork 或 patch Pi 核心，不把 Pi Session/事件结构写入 Semantic Platform Core 公共协议；
+- 不改变平台作为确定性语义事实、验证、Evidence、Batch、持久化和查询权威的边界。
+
+### 验收标准
+
+- 固定 Pi 版本、lock、Node 下限、本地配置模板和可重复启动说明完整，仓库不包含真实密钥；
+- 一个本地命令能够启动主协调 Agent，并按需创建业务整理、Work Unit、评审和 Summary Session；
+- `agent_end` 后出现自动重试、压缩重试或排队 follow-up 时不得提前接受产物或回收子进程；一次性
+  角色只能在 `agent_settled`、空闲且队列为空后完成，持续协调 Agent 还必须满足工作流终态；
+- 角色只通过结构化共享产物交接，worker/reviewer 读写边界、candidate hash 和 review 绑定可验证；
+- 用户能够完成 Brief/CQ 确认、业务歧义问答和暂停/继续；普通安全变更按已确认门禁自动 apply；
+- 平台 Finding 触发受影响范围局部返工；未知 apply 结果使用原 Batch/幂等身份核对；
+- 事件流和约定阶段 Summary 满足最小字段合同，不包含隐藏推理或完整 transcript；
+- 使用固定版本的 Dify Foundations 或同等代表性真实资料，完成从资料/访谈到实际 apply 后
+  CQ、语义检索和 provenance 验收的完整 Pi 运行；
+- 真实运行没有静默 Coverage 丢失、无来源关键事实、未解决阻断 Finding、重要项 Evidence 缺失、
+  CQ 失败、检索失败或未证明的 provenance；
+- 不以 mock-only 测试证明真实 Pi、真实模型、真实平台 apply 或检索正确；
+- Pi 独立测试 PASS 后完成 Claude 建模路径退役和现行文档/status 同步，仓库只声明 Pi Local 为
+  受支持日常建模入口；
+- 不要求 Claude 对照、二次优化运行、backend/frontend 产品代码变更或生产 Runtime 能力；退役旧
+  文档契约所需的 backend 测试文件和 CI 调整属于本需求。

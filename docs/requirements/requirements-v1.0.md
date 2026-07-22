@@ -49,6 +49,11 @@
    不接管完整文档采集、解析和版本管理。
 8. Dify 只作为通用能力的参考实现，平台代码不得包含 Dify 专用分支。
 
+v2.0 对第 1、2 项的解释见 `docs/requirements/requirements-v2.0.md` 和 ADR 0007：建模 Agent
+Runtime 仍位于 Semantic Platform Core 之外，核心不执行大模型判断，也不把 Runtime 状态当作语义
+事实；但平台产品仓库可以交付一个与核心解耦的第一方 Pi Local Runtime。这里的“外部”指外部于
+确定性核心和事实权威边界，不再表示建模 Runtime 必须由另一个产品或仓库维护。
+
 ## v1.0 端到端验收闭环
 
 ```text
