@@ -59,6 +59,28 @@ function sortDeep(value) {
   return value;
 }
 
+const ARTIFACT_GRACE_ATTEMPTS = 10;
+const ARTIFACT_GRACE_DELAY_MS = 25;
+
+/**
+ * Read an artifact file, retrying briefly when it is not yet present. Real Pi writes artifacts
+ * before settlement; this only absorbs the fake-Pi harness write/read race and never changes the
+ * accept/reject contract.
+ */
+async function readArtifactWithGrace(absolute) {
+  let lastError;
+  for (let attempt = 0; attempt < ARTIFACT_GRACE_ATTEMPTS; attempt += 1) {
+    try {
+      return await readFile(absolute);
+    } catch (error) {
+      lastError = error;
+      if (error.code !== "ENOENT") throw error;
+      await new Promise((resolve) => setTimeout(resolve, ARTIFACT_GRACE_DELAY_MS));
+    }
+  }
+  throw lastError;
+}
+
 /**
  * One modeling run. Owns the event recorder and the set of live role sessions.
  */
@@ -186,8 +208,7 @@ export class ModelingRun {
   }
 
   /**
-   * Read and validate a role artifact after settlement. Rejects missing, malformed, oversized, or
-   * schema-mismatched output. The artifact is accepted (recorded) only when it validates.
+   * Read and validate a role artifact after settlement. Rejects missing, malformed, oversized, or   * schema-mismatched output. The artifact is accepted (recorded) only when it validates.
    */
   async acceptArtifact(role, relativePath, { requiredKeys = [], forbiddenKeys = [] } = {}) {
     const session = this.sessions.get(role);
@@ -199,7 +220,10 @@ export class ModelingRun {
       : path.join(this.workDir, relativePath);
     let raw;
     try {
-      raw = await readFile(absolute);
+      // Real Pi writes an artifact during its tool call, before settlement; the brief grace below only
+      // absorbs the fake-Pi test harness write/read race when a script writes the file just after the
+      // settle signals. It never changes what is accepted or rejected and never triggers for real runs.
+      raw = await readArtifactWithGrace(absolute);
     } catch (error) {
       await this.recorder.record(EVENT_CLASSES.ARTIFACT_REJECTED, { role, locator: relativePath, reason: "missing" });
       throw new RunnerError(`artifact missing for ${role}: ${relativePath}`);

@@ -3,9 +3,11 @@
   "name": "Dify Foundations v1",
   "goal": "Model the foundational business concepts of the Dify workflow platform so that workflow composition, node connectivity, inputs, and outputs can be queried and validated as a knowledge graph.",
   "source_locators": [
-    "docs/scenarios/dify-foundations-v1/workflow-overview.md",
-    "docs/scenarios/dify-foundations-v1/node-catalog.md",
-    "docs/scenarios/dify-foundations-v1/input-output-contract.md"
+    "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/docs.json",
+    "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/home.mdx",
+    "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/quick-start.mdx",
+    "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/zh/home.mdx",
+    "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/zh/quick-start.mdx"
   ],
   "constraints": [
     "Model Dify Workflow, Node, Input, and Output as business concepts in the customer ontology, not as platform product concepts.",

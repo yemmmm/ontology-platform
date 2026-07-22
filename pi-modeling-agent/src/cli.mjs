@@ -4,10 +4,19 @@
 // any platform business write is allowed. Secrets are rejected anywhere in the tracked input.
 
 import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { ROLE_TOOLS, ROLE_PROMPTS } from "./runner.mjs";
+import {
+  ModelingOrchestrator,
+  RealDirectoryDriver,
+  realRoleLauncher,
+  resolvePiAgentDir,
+  writeAdapterConfig,
+  writeAdapterLauncher,
+} from "./orchestrator.mjs";
 
 export const NODE_LOWER = [22, 19, 0];
 export const PINNED_PI = "@earendil-works/pi-coding-agent@0.81.1";
@@ -149,6 +158,56 @@ export function roleInventory() {
   );
 }
 
+/**
+ * Build and execute the real modeling orchestrator after CLI validation. The real pinned `pi`
+ * binary, the migrated Python deterministic core, and the existing platform REST contract are wired
+ * here. Clarification/confirmation handlers are left to the host agent/user (G2); this entry starts
+ * the runtime but a real model run requires those handlers to be connected by the operator.
+ */
+async function runRealModeling({ packageRoot, scenario, config }) {
+  const repoRoot = path.resolve(packageRoot, "..");
+  const piBinary = resolvePiBinary(packageRoot);
+  const piAgentDir = resolvePiAgentDir(packageRoot);
+  const modelingExtension = path.join(packageRoot, "extensions", "modeling-tools.ts");
+  const runId = `pi-run-${Date.now()}`;
+  const workDir = path.join(packageRoot, "workspaces", "modeling-runs", runId);
+  await mkdir(workDir, { recursive: true });
+  const adapterScript = path.join(packageRoot, "lib", "platform_adapter.py");
+  const adapterConfigPath = await writeAdapterConfig({ workDir, config, repoRoot });
+  const adapterBin = await writeAdapterLauncher({
+    workDir,
+    adapterScript,
+    adapterConfigPath,
+  });
+  const directory = new RealDirectoryDriver({
+    smdPath: path.join(packageRoot, "lib", "shared_modeling_directory.py"),
+    runDir: workDir,
+  });
+  const orchestrator = new ModelingOrchestrator({
+    packageRoot,
+    repoRoot,
+    scenario,
+    config,
+    runId,
+    workDir,
+    roleLauncher: realRoleLauncher({
+      piBinary,
+      packageRoot,
+      provider: config.provider,
+      model: config.model,
+      piAgentDir,
+      modelingExtension,
+    }),
+    directory,
+    adapterBin,
+    adapterConfigPath,
+    maxParallelWorkers: config.max_parallel_workers,
+  });
+  const result = await orchestrator.execute();
+  console.log(JSON.stringify({ ...result, pinned_pi: PINNED_PI }, null, 2));
+  return result.status === "completed" ? 0 : 2;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const selfCheck = argv.includes("--self-check");
   const packageRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -183,15 +242,12 @@ export async function main(argv = process.argv.slice(2)) {
     }
     await validateScenario(path.resolve(scenarioArg));
     await validateLocalConfig(path.resolve(configArg));
-    const runId = `pi-run-${Date.now()}`;
-    console.log(
-      JSON.stringify(
-        { run_id: runId, status: "prepared", roles: inventory, pinned_pi: PINNED_PI },
-        null,
-        2,
-      ),
-    );
-    return 0;
+    const scenarioPath = path.resolve(scenarioArg);
+    const configPath = path.resolve(configArg);
+    const scenario = await validateScenario(scenarioPath);
+    const config = await validateLocalConfig(configPath);
+    const code = await runRealModeling({ packageRoot: packageRoot, scenario, config });
+    return code;
   } catch (error) {
     console.error(JSON.stringify({ status: "blocked", error: error.message }));
     return 2;

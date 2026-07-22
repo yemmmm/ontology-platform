@@ -285,6 +285,226 @@ Residual risks:
   `ontology-platform.service` (no backend/frontend runtime code changed; only the documentation-contract
   test edit is planned for retirement in a later phase).
 
+### Round 2 — 2026-07-23 — PASS (G1 end-to-end orchestrator, section G subset)
+
+- Tester: requirement_tester (independent). Reviewed `orchestrator.mjs` source before testing; did not trust
+  developer numbers and re-ran all suites plus targeted probes for paths the fake harness masks.
+- Stable state: HEAD `2c4a678` (phase 1 committed) + uncommitted G1 worktree changes only under
+  `pi-modeling-agent/`: modified `{scenarios/dify-foundations-v1.json, src/cli.mjs, src/runner.mjs,
+  tests/fixtures/fake-pi.mjs}`; new `{src/orchestrator.mjs, tests/fixtures/fake-adapter.mjs,
+  tests/g-orchestration.test.mjs, tests/smoke-real-pi.mjs}`. Developer stopped (development-ready). Not committed.
+- Scope: G1 only — the end-to-end `ModelingOrchestrator` over the phase-1 `ModelingRun` primitives, driven by
+  the fake-Pi subprocess + fake platform adapter. G2 (real model call, real platform apply, real CQ/retrieval/
+  provenance verification), H (Claude retirement), and I retirement cleanup are NOT attempted and not counted
+  as pass. No real `pi` model call and no real platform write occurred (the G2 gate).
+- Result: PASS for the G1 automated gate. The orchestration contract holds end to end with fakes: stage
+  ordering, business-confirmation gate, same-Ontology candidate merge, review hard-gate, protected-write
+  wrapping with one-shot authorize, clarification routing, schema-valid stage summaries, local Work-Unit
+  recovery, terminal disposal with no orphan, frozen-path and secret/leak invariants, and the phase-1 A–F
+  suite still green after the `acceptArtifact`/`fake-pi` race fix. Four recovery-completeness/prompt findings
+  (below) are masked by the fake harness and do not break the G1 gate but must be dispositioned before G2.
+
+Execution (exact commands and results):
+
+- `cd pi-modeling-agent && npm test` -> 32/32 pass, 0 fail (node:test). 30–32 are the G1 orchestrator cases
+  (full stage sequence, local recovery, cancel-before-confirm); 1–29 are the phase-1 A–F cases re-run after
+  the race fix.
+- `python3 -m unittest discover -s pi-modeling-agent/tests` -> 59/59 pass (unchanged deterministic core +
+  runner-authorization gating).
+- `git diff --check` -> clean (exit 0).
+- `git diff --stat 2c4a678 -- .claude .codex skills README.md .github backend/` -> empty; same for `backend/app`
+  -> empty (frozen paths and backend product code untouched by G1).
+- Secret scan across `pi-modeling-agent/{src,lib,workflow,extensions,scenarios}` -> 0 hits. Receipt/Harness
+  residue (`recording_grant|recording_health|recording_unavailable|modeling_harness|.codex/hooks`) -> 0.
+  Pi Session/event types (`agent_settled|extension_ui_request|queue_update|modeling_idle|RpcSession|ModelingRun|
+  invokeAdapter`) into `backend/app` -> 0 (no backend schema/API leakage).
+- Scenario `dify-foundations-v1.json` source locators repointed to the real evaluation-corpus snapshot
+  (`docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/...`);
+  all 5 locators exist on disk; top keys are exactly the allowed business-input set; the Dify business-concept
+  constraint is retained (no platform-domain promotion, no credential).
+
+Independent contract verification (not just developer assertions; highlights of the load-bearing paths):
+
+- Stage ordering (`_runWorkflow`): coordinator introduce -> business organize (Brief/CQ/Coverage accepted after
+  settlement) -> host `confirm` gate -> directory init + platform start + commit_business -> per ontology:
+  capacity-aware dependency-disjoint Work-Unit scheduling -> merge one candidate -> review -> plan + dry-run/
+  apply loop -> per-stage summary -> per-ontology verify -> finish -> final-verification summary. Matches the
+  design Runtime lifecycle. Coordinator is persistent and only stopped in `execute()` finally after
+  `markTerminal`; `stopRole` enforces `terminal` for the coordinator.
+- Business confirmation gate (`_organizeBusiness`): `confirm(plan)` returning false calls `_platform("cancel")`
+  and throws before any `start`/`commit_business`. The dedicated test proves no `commit-business` adapter call
+  and a `cancel` was issued. Cancel is not a runner-granted write (matches the real adapter, which has no
+  `_consume_runner_grant` on `cancel`).
+- Review hard-gate (`_reviewOntology`): PASS returns and is the only path into `_planAndApply`; REVISE/BLOCKED
+  never reaches apply. Protected writes are wrapped (`_platform` -> `invokeAdapter` records `tool_start` before
+  and `tool_end` after; test proves balanced counts and dry-run start-before-end ordering). Each protected write
+  (commit/dry/apply/verify/finish) is preceded by its own `authorize-runner-write` (one-shot grant; the real
+  adapter's `authorize_runner_write` stores one unconsumed grant per `operation_id` and `_consume_runner_grant`
+  marks it consumed exactly once). The adapter CLI records `role_settled=True` by internal trust; the
+  orchestrator only calls `_authorize` at points where the producing role already settled (`acceptArtifact`
+  requires `isCompleteEligible()`), so the trust boundary holds.
+- Clarification routing (`driveRole` + `_observe`): `extension_ui_request input` -> `clarification_requested`
+  -> `clarification_paused` -> handler -> `respondUi` -> `clarification_answered`, ordered, single handler
+  invocation, no duplicate request id.
+- Same-Ontology candidate merge: two Work Units under one ontology merge into one candidate per review round;
+  the test asserts `mergeCount >= 2` (initial + after REVISE).
+- Local Work-Unit recovery (`_driveWorkUnit`): a Work Unit that hangs/is killed mid-output is `reclaimRole`-ed
+  and re-run with the same stable inputs (bounded by `MAX_WORK_UNIT_ATTEMPTS`); the rerun's complete artifact is
+  accepted. The dedicated test proves a reclaim event and post-rerun acceptance.
+- Race-fix non-regression: `acceptArtifact` still gates on `isCompleteEligible()` at the top (settled + idle +
+  empty queue + no pending + not exited); `readArtifactWithGrace` only retries on `ENOENT` and never changes
+  accept/reject semantics. `fake-pi.mjs` now writes artifacts atomically (temp + rename). All 29 phase-1 cases
+  re-pass under these changes.
+- Stage summaries: business-organization, work-unit-<ontology>, and final-verification each produced a Summary
+  whose key set exactly matches the shared schema (`validateSummary` runs inside `summarizeStage`).
+- Lifecycle/dispose: `execute()` finally stops the coordinator (only when terminal) and `dispose()` force-reclaims
+  every remaining session; `sessions.size === 0` after every case (no orphan).
+
+Defects (by severity; all masked by the fake harness, none breaks the G1 automated gate):
+
+- Medium — `_reviewerPrompt` emits a literal `${ontologyId}` instead of the ontology id
+  (`src/orchestrator.mjs:669` uses a double-quoted string, not a template literal). The fake reviewer ignores the
+  prompt, so G1 passes; in G2 a real reviewer model would be told the file path
+  `artifacts/review-${ontologyId}.json` literally. Trivial one-token fix (double quotes -> backticks). Related
+  acceptance: B/E reviewer bounded output + correct artifact locator.
+- Medium (High for G2 readiness) — REVISE/BLOCKED does not regenerate Work Units. `_reviewOntology` only
+  re-merges the unchanged Work-Unit outputs and re-reviews (`src/orchestrator.mjs:441-471`); its own comment
+  claims "regenerate the affected Work Units" but no `_driveWorkUnit` re-occurs. Independent probe (all-REVISE
+  sequence) confirmed: `wuLaunches == 1`, 3 re-merges, then throw after `MAX_REVIEW_ROUNDS`. The fake masks it
+  because the fake merge returns a fresh hash per round and the fake reviewer is scripted PASS on round 2. In G2
+  a genuine reviewer REVISE on an unchanged candidate would loop to the round cap and fail with no recovery. The
+  "never apply on REVISE" hard gate still holds. Design "Failure and recovery" requires "regenerate, merge, and
+  review again". Recommend disposition before G2 (implement finding->affected-Work-Unit regeneration, or
+  explicitly scope it and document).
+- Medium — blocking dry-run Finding hard-stops instead of mapping to Work Units. `_planAndApply` throws on
+  `dry_run_findings` (`src/orchestrator.mjs:493-495`) rather than mapping the Finding to affected Work Units for
+  regeneration/re-merge/re-review/re-dry-run. It correctly never waives (no apply — probe confirmed `apply-next`
+  count 0), but it does not auto-recover. Design "Failure and recovery" requires "map to affected Work Units and
+  repeat merge/review/dry-run". Masked in G1 (fake adapter never returns a Finding on the happy path).
+- Low — candidate-hash early-mismatch check absent. `_modelOntology` replaces the merged hash with
+  `review.artifact.candidate_hash` (`src/orchestrator.mjs:382,456`) without verifying the reviewer's hash equals
+  the merged one. The real adapter is the backstop (grant binds `artifact_hash`), so this is defense-in-depth
+  only.
+- Low — Summary granularity vs the literal design. The design lists summaries at "each Work Unit" and
+  "independent review/apply" as distinct points; the orchestrator emits one per-ontology summary
+  (`work-unit-<ontology>`) combining Work-Unit-modeler and reviewer records. Schema is still valid; only
+  granularity collapses for multi-Work-Unit ontologies.
+
+Unexecuted cases (out of G1, not counted as pass):
+
+- G2 real Pi/model/platform run (real model call, real platform apply, real post-apply CQ/retrieval/provenance);
+  H Claude retirement regression; I retirement cleanup + final backend suite + docs-sync CI rewrite.
+- `tests/smoke-real-pi.mjs` (real pinned-pi startup/reclaim, no prompt/model) is manual-only (not matched by
+  `*.test.mjs`); not run here because it needs a gitignored `.pi/agent/{auth,models-store}.json`. It is a G2
+  readiness aid, not a G1 gate.
+- Full `cd backend && uv run pytest` and `ontology-platform.service` restart were not run: G1 changed no
+  backend/frontend runtime code or shared runtime configuration (only `pi-modeling-agent/`).
+
+Residual risks:
+
+- The four findings above are masked by fakes and will surface in G2. The REVISE-regeneration gap is the highest
+  G2-readiness risk: a real reviewer is likely to REVISE at least once, after which the unchanged candidate
+  re-review cannot satisfy the gate and the run throws. The main agent should resolve the prompt bug and
+  disposition REVISE-regeneration + dry-run-Finding mapping before launching G2.
+- G1 routes business confirmation through an independent host `confirm` callback (not a persistent-coordinator
+  clarification turn), and clarifications through an injectable `clarify` handler. This cleanly avoids
+  multi-driving the persistent coordinator. For G2 the host (main agent/user) must wire real handlers; the CLI's
+  `runRealModeling` intentionally leaves both at their throwing defaults, so the shipped CLI cannot complete a
+  real run unattended — that is expected and is G2's integration point, not a G1 defect.
+- `_verificationDoc` is a placeholder (`candidate_hash: null`, empty checks/gaps, verdict PASS); G2 must populate
+  real CQ/retrieval/provenance content before the platform verify gate is meaningful.
+
+### Round 3 — 2026-07-23 — PASS (G1 orchestrator repair retest, #1-#4 fixed, no regression)
+
+- Tester: requirement_tester (independent repair retest). Did not trust the developer's 5 regression tests; wrote a
+  separate probe harness with deliberately different targets (findings on the OTHER work unit, transitive-dependency
+  expansion, REVISE+wrong-hash combos) so a hardcoded-to-developer-scenario bug would still be caught.
+- Stable state: HEAD `2c4a678` (phase 1 committed) + uncommitted G1+repair worktree changes only under
+  `pi-modeling-agent/`. The repair round touched ONLY the G1 untracked files: `src/orchestrator.mjs`,
+  `tests/g-orchestration.test.mjs`, `tests/fixtures/fake-adapter.mjs` (+ the pre-repair G1 tracked modifications
+  `scenarios/dify-foundations-v1.json`, `src/{cli,runner}.mjs`, `tests/fixtures/fake-pi.mjs`, unchanged by the repair).
+  Developer stopped (development-ready). Not committed.
+- Scope: repair retest of Round 2 defects #1-#4 plus full A-F + G1 contract non-regression, all under the fake-Pi +
+  fake-adapter harness. G2 (real model call, real platform apply, real CQ/retrieval/provenance), H (Claude retirement),
+  and I retirement cleanup remain NOT attempted and not counted as pass.
+- Result: PASS. #1-#4 are independently confirmed fixed; the phase-1 A-F (race-fix) and G1 happy/recover/cancel
+  contracts still hold (37/37 npm, 59/59 python); frozen paths and secret/leak invariants are clean. No new defect.
+
+Execution (exact commands and results):
+
+- `cd pi-modeling-agent && npm test` -> 37/37 pass, 0 fail (node:test). 1-29 phase-1 A-F (race-fix); 30-32 G1
+  happy/recover/cancel; 33-37 the developer's 5 repair-round regression tests (#1/#2x2/#3/#4).
+- `python3 -m unittest discover -s pi-modeling-agent/tests` -> 59/59 pass (unchanged deterministic core).
+- Independent Round 3 probe harness (`/tmp/r3-probe.mjs`, written by tester, since-removed): 12/12 probe checks passed.
+- `git diff --check` -> clean (exit 0).
+- `git diff --stat 2c4a678 -- .claude .codex skills README.md .github backend/ docs/architecture docs/requirements
+  docs/delivery/designs` -> empty (frozen paths untouched by repair).
+- Secret scan across `pi-modeling-agent/{src,lib,workflow,extensions,scenarios}` -> 0 real-credential hits. Receipt/Harness
+  residue (`recording_grant|recording_health|recording_unavailable|modeling_harness|.codex/hooks`) -> 0. Pi
+  Session/event types into `backend/app` -> 0 (no backend schema/API leakage).
+
+Independent contract verification (#1-#4, not just developer assertions — each probed with a target/shape the
+developer's tests did not use):
+
+- #1 — reviewer prompt: `_reviewerPrompt` now uses a backtick template literal
+  (`\`artifacts/review-${ontologyId}.json\``). Direct call with ids `ont-xyz`, `ont-probe`, `dify-foundations` each
+  produced a prompt containing the concrete path `artifacts/review-<id>.json` and containing neither the literal
+  `${ontologyId}` nor any `review-${` token. Static source check confirms the backtick form and the absence of the old
+  single/double-quoted literal placeholder. The literal-leak defect from Round 2 is gone.
+- #2 — REVISE/BLOCKED regeneration: `_modelOntology` stabilization loop merges -> reviews -> on a non-`{ok:true}`
+  outcome calls `_regenerateAffected` which re-fires `_driveWorkUnit` for each affected unit, then re-merges and
+  re-reviews. Independent probes: (a) REVISE finding naming `wu-b` (the OTHER unit, not the developer's `wu-workflow`)
+  regenerated ONLY `wu-b` (`wuLaunchCount(wu-b)==2`, `wu-a==1`) then PASS -> apply — confirms mapping is not hardcoded;
+  (b) three-unit chain `wu-c <- wu-b <- wu-a`, finding on the root `wu-a` regenerated all three (transitive dependent
+  closure in `_affectedUnits`); (c) a locator-shaped finding `artifacts/wu-b.json` mapped to `wu-b`; (d) a finding with
+  no resolvable work_unit reference conservatively regenerated ALL units; (e) an unresolvable all-REVISE sequence threw
+  after exactly `MAX_REVIEW_ROUNDS(3)` review rounds with `/did not stabilize/`, never reached `dry-run-next` or
+  `apply-next`, and left `sessions.size==0`. The developer's locator/`reviewSequence:["REVISE"]` assertions were
+  reproduced independently.
+- #3 — blocking dry-run Finding: `_planAndApply` surfaces `dry_run_findings` to the stabilization loop
+  (`{blocked:"dry_run_findings", findings}`) instead of throwing; the loop regenerates affected Work Units, re-merges,
+  re-reviews, and re-dry-runs; apply runs only after a clean dry-run. Independent probe with a Finding pointing at
+  `wu-workflow` and a companion `wu-other`: `dry-run-next` ran >= 2 times, `wu-workflow` regenerated (launch 2),
+  `wu-other` untouched (launch 1), `apply-next` ran exactly once, a `FAILURE` event with `reason:"dry_run_findings"` was
+  recorded. The Finding is never waived.
+- #4 — candidate_hash mismatch: `_reviewOnce` returns `{ok:true}` only when `verdict==="PASS" && returnedHash===candidateHash`;
+  any mismatch is classified `candidate_hash_mismatch` (hash precedence over verdict) and routed to regeneration.
+  Independent probe: PASS verdict with a mismatched hash on round 1 was rejected (not silently applied), recorded a
+  `candidate_hash_mismatch` FAILURE event, regenerated, then round-2 PASS with matching hash applied. A second probe
+  (REVISE + wrong hash + finding) confirmed the mismatch classification takes precedence over REVISE and the run still
+  recovered and applied. Static check confirms the source encodes `returnedHash !== candidateHash ? "candidate_hash_mismatch"
+  : verdict` and that ok requires PASS AND matching hash.
+- Non-regression (race-fix + G1 contracts): `rpc-session.mjs` triple gate intact (`isCompleteEligible` requires
+  `settled && extensionIdle && ...`; `RESET_EVENTS` still includes `agent_end` and clears `settled`/`extensionIdle`;
+  `acceptArtifact` gates on `isCompleteEligible()`). `cli.mjs` still wires `ModelingOrchestrator.execute()` via
+  `runRealModeling`. `agent_settled` three-door, dispose-no-orphan, one-shot authorize, business-confirmation gate, and
+  cancel-before-confirm no-commit all hold (assertions unchanged in tests 1-32). `smoke-real-pi.mjs` remains manual-only
+  (not matched by `tests/*.test.mjs`; needs gitignored `.pi/agent`).
+
+Defects (by severity): none. #1-#4 from Round 2 are fixed; no new defect introduced by the repair round.
+
+Residual risks carried forward (not blocking G1, tracked for G2):
+
+- #5 (Round 2 Low, unchanged): Summary granularity is per-ontology (`work-unit-<ontology>`) rather than the design's
+  literal per-Work-Unit + independent-review/apply points; schema is valid. G2 must judge whether this collapses useful
+  signal for multi-Work-Unit ontologies.
+- Finding locator/work_unit mapping relies on the real reviewer naming `work_unit_id`/`work_unit`/a locator that
+  contains the unit id. The conservative fallback regenerates ALL units when a finding is unmappable, so a blocker is
+  never silently skipped, but G2 with a real reviewer is the first test of locator fidelity. BLOCKED is treated as
+  recoverable via regeneration (design lumps REVISE/BLOCKED together); a genuinely user-blocking BLOCKED would still
+  loop to the cap rather than pause — acceptable for G1, to confirm against real reviewer semantics in G2.
+- G1 routes business confirmation through an independent host `confirm` callback and clarifications through an injectable
+  `clarify` handler; the shipped CLI leaves both at their throwing defaults, so a real run needs the host (G2) to wire
+  real handlers. Expected G2 integration point, not a defect.
+- `_verificationDoc` is still a placeholder; G2 must populate real CQ/retrieval/provenance content.
+
+Unexecuted cases (out of G1, not counted as pass):
+
+- G2 real Pi/model/platform run; H Claude retirement regression; I retirement cleanup + final backend suite + docs-sync
+  CI rewrite. `smoke-real-pi.mjs` is manual-only (needs gitignored `.pi/agent/{auth,models-store}.json`).
+- Full `cd backend && uv run pytest` and `ontology-platform.service` restart were not run: the repair changed no
+  backend/frontend runtime code or shared runtime configuration (only `pi-modeling-agent/`).
+
 ### Final post-retirement round — pending
 
 - Stable state: pending Pi real-runtime PASS and Claude retirement.

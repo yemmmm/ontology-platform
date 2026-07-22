@@ -14,7 +14,7 @@
 // The fake begins replaying after it receives the first prompt line on stdin and stays alive after
 // the script drains (like real Pi) until stdin closes or it is killed.
 
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
@@ -100,7 +100,10 @@ const replay = async () => {
         out({ type: "tool_execution_start", toolName: "write_modeling_artifact" });
         const file = join(runDir, "artifacts", `${step.name}.json`);
         await mkdir(dirname(file), { recursive: true });
-        await writeFile(file, `${JSON.stringify(step.json, null, 2)}\n`);
+        // Atomic write (temp + rename) so a concurrent Runner reader never observes a partial file.
+        const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+        await writeFile(temporary, `${JSON.stringify(step.json, null, 2)}\n`);
+        await rename(temporary, file);
         out({
           type: "tool_execution_end",
           toolName: "write_modeling_artifact",

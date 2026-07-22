@@ -1,16 +1,17 @@
 # R2.0-002 Pi 第一方建模 Agent Runtime 正式集成 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.0.md` R2.0-002
-- Status: phase 1 (sections A–F) independently tested PASS; pending user go-ahead for G (real run) + H (retirement)
+- Status: phase 1 (A–F) independently tested PASS and committed (`2c4a678`); preparing G (real run)
 - Started: 2026-07-22T16:30:00+08:00
-- Last updated: 2026-07-22T22:29:14+08:00
+- Last updated: 2026-07-23T03:05:00+08:00
 - Design: `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
 - Architecture decision: `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
-- Delivery baseline: `294e5eb` (design package committed; clean `main`, ahead of `origin/main` by 1)
+- Delivery baseline: `294e5eb`
+- Phase 1 commit: `2c4a678` (Build Pi Local modeling runtime phase 1; 37 files; clean `main`)
 - Phase 1 model decision: `deepseek/deepseek-v4-flash` (carried from R2.0-001; key staged in gitignored
-  config, not needed for phase 1)
-- Delivery commit: pending phase 1 implementation
+  config; required for G)
+- Delivery commit: pending G/H completion
 
 ## Confirmed contract
 
@@ -320,6 +321,28 @@
 - Evidence: tester Round 1 报告（test-plan `### Round 1`、delivery-record `Independent test rounds` 表）；主 agent 此前 diff audit。
 - Outcome/next step: **phase 1（A–F 自动合同）独立测试 PASS，达阶段完成门禁**。按用户"分阶段"策略，暂停并向用户汇报；确认进入 G（真实端到端运行，需 deepseek key + 真实模型调用 + 场景真实资料路径）的准备工作后再启动。Medium/Low 已知项随 H 处理。
 
+### 2026-07-22T23:37:01+08:00 — phase 1 checkpoint committed — main agent
+
+- Context: phase 1（A–F）独立测试 PASS；用户确认"先提交 phase 1，再进 G"。
+- Action/decision: 提交 phase 1 checkpoint `2c4a678`（37 文件，11694 insertions）：`pi-modeling-agent/` 全包 + delivery-record + 共享测试计划 Round 1。提交前核查：staged 37 文件；密钥扫描 2 hits 均为 `tests/entry-validation.test.mjs` deliberate test fixtures（`sk-secretvalue123456` / `sk-test1234567890abcdef`，验证 CLI 拒含密钥 scenario）；`.pi/agent` / `node_modules` / `workspaces` / `__pycache__` 均被 `.gitignore` 未进 commit；冻结路径与 `backend/app` 零改动。新 baseline `2c4a678`。
+- Evidence: `git commit` → `2c4a678`；post-commit `git status` clean。
+- Outcome/next step: phase 1 checkpoint 固化，进入 G（真实端到端建模运行）准备：deepseek key 配置、场景真实资料路径修正（指向 `docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/`）、fresh ownership-proven 目标 Project。G 需真实模型调用（成本/时间）与用户在 Brief/CQ/apply 确认点交互。
+
+### 2026-07-23T01:36:41+08:00 — G preparation findings and G1 handoff — main agent
+
+- Context: phase 1 committed (`2c4a678`)；用户确认"主 agent 驱动真实运行"+"创建 fresh 隔离 Project"。驱动 G 前审阅 phase 1 代码确认真实运行入口。
+- Action/decision: **范围发现**——phase 1 交付 `ModelingRun` 引擎原语（A–F fake Pi 独立 PASS），但 `src/cli.mjs main()` 只校验+输出 `{"status":"prepared"}` 就 return，**未调用 ModelingRun、未连通端到端真实运行**；无全流程编排器（execute/orchestrate）。phase 1 测试直接 `new ModelingRun()` + fake Pi 驱动单原语，绕过 CLI。这不是 phase 1 缺陷（A–F 范围=引擎原语+fake 测试，真实运行是 G），但意味着 **G 不能直接跑已有 CLI，须先实现端到端真实运行编排器**。另确认：deepseek key 有效（`d['deepseek']['key']`，余额 ¥48.24 CNY，`deepseek-v4-flash` 可用，复用 R2.0-001 `.pi/agent/`）。
+- G 拆为两步：**G1（developer）** 实现端到端编排器（连通 cli→ModelingRun 全流程：访谈→Brief/CQ→业务整理→Work Unit 建模→候选合并→评审→authorize+dry-run/apply→验收；真实 Pi 启动；澄清路由可注入 handler；阶段 Summary；局部重跑）+ 环境配置（场景真实资料路径、`.pi/agent` deepseek）+ 编排测试（fake Pi，不调真实模型）；**G2（主 agent）** 创建 fresh Project、写 local.config、驱动真实运行（真实模型）、监看/转达澄清、验收 CQ/检索/provenance。
+- Evidence: `src/cli.mjs:186-194`（main 仅 prepared）；`src/runner.mjs`（ModelingRun 原语无 execute）；`grep ModelingRun src/cli.mjs` 空；tests 直接 `driveRole`；deepseek balance API `is_available:true total_balance:48.24`。
+- Outcome/next step: 交 `requirement_developer` 实现 G1（不 commit、不调真实模型）；G1 development-ready 后冻结稳定态交 G2（主 agent 驱动真实运行）。
+
+### 2026-07-23T02:16:30+08:00 — G1 implemented, Round 2 PASS with defects, repair round launched — main agent
+
+- Context: G1 developer 返回 development-ready（`orchestrator.mjs` 连通 `cli main`、真实 pi args、clarify/confirm 接缝、3 编排测试、真实 pi smoke exit 0 无孤儿；npm 32/32、python 59/59、冻结路径/backend 零改动、`.pi/agent` deepseek 就绪、无密钥泄漏）；主 agent diff audit 通过。`requirement_tester` Round 2 独立测试 **PASS（G1 自动化门禁）**，独立 probe 发现 4 个被 fake 掩盖的缺陷。
+- Action/decision: 主 agent 逐条判定 tester 缺陷：**#1 accepted 必修**（`orchestrator.mjs:669` `_reviewerPrompt` 双引号输出字面 `${ontologyId}`，一行修复）；**#2 accepted 必修**（`_reviewOntology:441-471` REVISE/BLOCKED 只 re-merge 不重生成 Work Unit，3 轮后 throw；设计 Failure and recovery 要求 regenerate；G2 真实 reviewer 大概率 REVISE → 硬阻塞）；**#3 accepted 应修**（`_planAndApply:493-495` dry-run Finding 硬抛不映射 Work Unit；设计要求 map 回 Work Unit 重生成/合并/评审/dry-run）；**#4 accepted 一并修**（`_modelOntology:382,456` 缺 candidate-hash 一致性校验，adapter grant 后盾在，纵深防御）；**#5 low 记录不阻塞**（Summary per-ontology 而非设计字面 per-work-unit，schema 有效，G2 真实运行评估）。
+- Evidence: tester Round 2 报告（test-plan `### Round 2`、delivery-record `Independent test rounds` 表）；独立 probe 确认 #1/#2/#3；主 agent G1 diff audit（cli 连通 orchestrator、agent_settled 门、.pi/agent gitignored、secret 0）。
+- Outcome/next step: 启动修复轮（`requirement_developer` 修 #1-#4 + 加回归测试覆盖 REVISE 重生成/Finding 映射，fake）；修复后交 `requirement_tester` Round 3 重测，再进 G2（主 agent 创建 fresh Project + 驱动真实 deepseek 运行 + 验收）。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
@@ -331,6 +354,8 @@
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | 1 (phase 1, A–F) | HEAD `294e5eb` + untracked `pi-modeling-agent/` (43 files) + modified delivery-record; developer stopped | PASS | Medium: `lib/modeling_handoff.py` dead-codes Codex CLI launcher + `skills/ontology-builder` schema path (breaks at H unless stripped/removed). Low: ~7 >100-char lines in `platform_adapter.py` (migration-fidelity, main-agent-noted). Unexecuted: G real run, H Claude retirement, I retirement cleanup — out of phase 1 | `npm test` 29/29; `python3 -m unittest discover -s pi-modeling-agent/tests` 59/59; `git diff --check` clean; frozen-path + `backend/app` diff empty vs `294e5eb`; receipt/harness grep 0; backend Pi-leakage grep 0; full details in shared test plan `### Round 1` |
+| 2 (G1 orchestrator, section G subset) | HEAD `2c4a678` + uncommitted G1 worktree changes only under `pi-modeling-agent/` (`scenarios/dify-foundations-v1.json`, `src/{cli,runner}.mjs`, `tests/fixtures/fake-pi.mjs` modified; new `src/orchestrator.mjs`, `tests/fixtures/fake-adapter.mjs`, `tests/g-orchestration.test.mjs`, `tests/smoke-real-pi.mjs`); developer stopped, not committed | PASS (G1 automated gate) | Medium: `_reviewerPrompt` literal `${ontologyId}` (double-quote not template, `orchestrator.mjs:669`). Medium/High-G2: REVISE/BLOCKED re-merges but does NOT regenerate Work Units (`orchestrator.mjs:441-471`, probe-confirmed `wuLaunches==1`+throw after 3 rounds); masked by fake. Medium: dry-run Finding hard-throws instead of mapping to Work Units (`orchestrator.mjs:493-495`, never waives). Low: no early candidate-hash mismatch check (adapter backstop); per-ontology Summary collapses design's per-Work-Unit + review/apply points. Unexecuted: G2 real model/platform/CQ/provenance, H retirement, I retirement cleanup; `smoke-real-pi.mjs` manual (needs gitignored `.pi/agent`) | `npm test` 32/32; `python3 -m unittest discover -s pi-modeling-agent/tests` 59/59; `git diff --check` clean; frozen-path + `backend/app` diff empty vs `2c4a678`; secret/receipt/backend-leakage grep 0; scenario locators exist + business-input-only; independent probes confirm 3 masked gaps; full details in shared test plan `### Round 2` |
+| 3 (G1 orchestrator repair retest) | HEAD `2c4a678` + uncommitted G1+repair worktree changes only under `pi-modeling-agent/`; repair round touched ONLY G1 untracked files (`src/orchestrator.mjs`, `tests/g-orchestration.test.mjs`, `tests/fixtures/fake-adapter.mjs`; pre-repair G1 tracked mods `scenarios/dify-foundations-v1.json`, `src/{cli,runner}.mjs`, `tests/fixtures/fake-pi.mjs` unchanged by repair); developer stopped, not committed | PASS (#1-#4 fixed, no regression) | None. Round 2 #1 (`_reviewerPrompt` now backtick template), #2 (REVISE/BLOCKED -> `_regenerateAffected` re-fires `_driveWorkUnit`, bounded by `MAX_REVIEW_ROUNDS(3)`, never applies), #3 (dry-run Finding surfaced to stabilization loop -> regenerate/merge/review/re-dry-run, never waived), #4 (`_reviewOnce` ok only on PASS+matching hash; mismatch -> `candidate_hash_mismatch` regeneration) all independently confirmed. Race-fix triple-gate (`agent_settled`+idle+empty, `RESET_EVENTS` incl `agent_end`), one-shot authorize, business-confirm gate, dispose-no-orphan intact. Residual (non-blocking, G2): #5 Summary granularity; finding locator fidelity + BLOCKED-as-recoverable semantics depend on real reviewer; `_verificationDoc` placeholder; CLI confirm/clarify left throwing for G2 host wiring. Unexecuted: G2 real run, H retirement, I retirement cleanup; `smoke-real-pi.mjs` manual | `npm test` 37/37; `python3 -m unittest discover -s pi-modeling-agent/tests` 59/59; tester's own `/tmp/r3-probe.mjs` 12/12 (deliberately different targets: REVISE/Finding on the OTHER unit, transitive-dep expansion, REVISE+wrong-hash combo); `git diff --check` clean; frozen-path + `backend/app` + `docs/delivery/designs` diff empty vs `2c4a678`; secret/receipt/backend-leakage grep 0; full details in shared test plan `### Round 3` |
 
 ## Design-phase verification
 
