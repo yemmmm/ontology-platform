@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <marker id="arrowPurple" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#9673a6"/></marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#82b366"/></marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#6c8ebf"/></marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#b85450"/></marker>
+    <style>
+      text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700;text-anchor:middle}.subtitle{font-size:16px;fill:#475569;text-anchor:middle}
+      .laneTitle{font-size:19px;font-weight:700}.node{stroke-width:2}.label{font-size:15px;font-weight:600;text-anchor:middle}.small{font-size:13px;font-weight:500;text-anchor:middle}.tiny{font-size:12px;font-weight:500;text-anchor:middle}
+      .edge{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#arrow)}.purple{stroke:#9673a6;marker-end:url(#arrowPurple)}.green{stroke:#82b366;marker-end:url(#arrowGreen)}.blue{stroke:#6c8ebf;marker-end:url(#arrowBlue)}.red{stroke:#b85450;marker-end:url(#arrowRed)}
+      .edgeLabel{font-size:12px;font-weight:600;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="#ffffff"/>
+  <text class="title" x="800" y="46">建模 Agent 当前架构（代码与文档基线：2026-07-22）</text>
+  <text class="subtitle" x="800" y="78">智能建模在平台外部；平台负责确定性验证、治理、存储、证据、lineage 与查询</text>
+
+  <rect x="40" y="120" width="410" height="750" rx="14" fill="#faf5ff" stroke="#9673a6" stroke-width="2"/>
+  <rect x="40" y="120" width="410" height="42" rx="14" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
+  <text class="laneTitle" x="60" y="148">外部智能建模层</text>
+
+  <rect class="node" x="80" y="190" width="330" height="72" rx="12" fill="#e1d5e7" stroke="#9673a6"/>
+  <text class="label" x="245" y="219"><tspan x="245">用户</tspan><tspan class="small" x="245" dy="23">业务目标 · 范围 · 澄清 · 价值判断</tspan></text>
+  <path class="node" d="M80 295H410V365Q390 352 370 365Q350 378 330 365Q310 352 290 365Q270 378 250 365Q230 352 210 365Q190 378 170 365Q150 352 130 365Q105 378 80 365Z" fill="#fff2cc" stroke="#d6b656"/>
+  <text class="label" x="245" y="322"><tspan x="245">业务资料 / 固定评测快照</tspan><tspan class="small" x="245" dy="23">原文、Schema、API/OpenAPI、业务说明</tspan></text>
+  <rect class="node" x="80" y="425" width="330" height="105" rx="12" fill="#e1d5e7" stroke="#9673a6"/>
+  <text class="label" x="245" y="457"><tspan x="245">主建模 Agent + ontology-builder Skill</tspan><tspan class="small" x="245" dy="23">用户交流 · 阶段协调 · 质量判断</tspan><tspan class="small" x="245" dy="21">唯一获取 Lease / 正式 apply 的角色</tspan></text>
+  <rect class="node" x="65" y="585" width="112" height="76" rx="10" fill="#f5f5f5" stroke="#666"/><text class="small" x="121" y="615"><tspan x="121">业务整理</tspan><tspan x="121" dy="21">Pack / Coverage</tspan></text>
+  <rect class="node" x="189" y="585" width="112" height="76" rx="10" fill="#f5f5f5" stroke="#666"/><text class="small" x="245" y="608"><tspan x="245">建模子 Agent</tspan><tspan x="245" dy="20">候选模型</tspan><tspan x="245" dy="19">Batch 草案</tspan></text>
+  <rect class="node" x="313" y="585" width="112" height="76" rx="10" fill="#f5f5f5" stroke="#666"/><text class="small" x="369" y="608"><tspan x="369">独立评审</tspan><tspan x="369" dy="20">PASS / REVISE</tspan><tspan x="369" dy="19">/ BLOCKED</tspan></text>
+  <text class="small" x="245" y="735" fill="#6b21a8"><tspan x="245">角色使用独立上下文；子 Agent 不持有平台凭证、</tspan><tspan x="245" dy="21">Lease token 或写权限</tspan></text>
+
+  <rect x="480" y="120" width="430" height="750" rx="14" fill="#f0fdf4" stroke="#82b366" stroke-width="2"/>
+  <rect x="480" y="120" width="430" height="42" rx="14" fill="#d5e8d4" stroke="#82b366" stroke-width="2"/>
+  <text class="laneTitle" x="500" y="148">Repo-local 协作与交接层（已实现）</text>
+  <rect class="node" x="515" y="185" width="360" height="145" rx="12" fill="#d5e8d4" stroke="#82b366"/>
+  <text class="label" x="695" y="216"><tspan x="695">Shared Modeling Directory（R1.1-006）</tspan><tspan class="small" x="695" dy="23">run / brief / source-index / coverage</tspan><tspan class="small" x="695" dy="21">Work Unit task · result · status</tspan><tspan class="small" x="695" dy="21">candidate · review · batch-plan · verification</tspan></text>
+  <rect class="node" x="515" y="355" width="360" height="94" rx="12" fill="#f5f5f5" stroke="#82b366"/>
+  <text class="label" x="695" y="382"><tspan x="695">shared_modeling_directory.py</tspan><tspan class="small" x="695" dy="22">原子写入 · 引用校验 · 合并 · 确定性分批</tspan><tspan class="small" x="695" dy="20">materialize / bind response / verification gate</tspan></text>
+  <rect class="node" x="515" y="480" width="360" height="105" rx="12" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text class="label" x="695" y="510"><tspan x="695">Reliable Modeler Handoff（R1.1-003）</tspan><tspan class="small" x="695" dy="23">受控 spool · 原子发布 · Manifest / SHA-256</tspan><tspan class="small" x="695" dy="21">完整七字段 JSON 不经 PTY / chat 传输</tspan></text>
+  <rect class="node" x="515" y="620" width="360" height="96" rx="12" fill="#f5f5f5" stroke="#666" stroke-dasharray="7 5"/>
+  <text class="label" x="695" y="649"><tspan x="695">Repo-local Harness（可选 / 评测用途）</tspan><tspan class="small" x="695" dy="22">Hook 事件、阶段、有限摘要、脱敏 retrospective</tspan><tspan class="small" x="695" dy="20">不替代平台事实，不作为建模恢复输入</tspan></text>
+  <rect class="node" x="515" y="750" width="360" height="75" rx="12" fill="#fff2cc" stroke="#d6b656" stroke-dasharray="8 5"/>
+  <text class="small" x="695" y="779"><tspan x="695">R1.1-007：Local / Formal 统一 Profile 与薄 Adapter</tspan><tspan x="695" dy="21">当前状态：已细化，待实现（虚线表示非现状）</tspan></text>
+
+  <rect x="940" y="120" width="620" height="750" rx="14" fill="#eff6ff" stroke="#6c8ebf" stroke-width="2"/>
+  <rect x="940" y="120" width="620" height="42" rx="14" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/>
+  <text class="laneTitle" x="960" y="148">Ontology Platform 确定性平台层</text>
+  <rect class="node" x="985" y="185" width="235" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="1102" y="213"><tspan x="1102">FastMCP</tspan><tspan class="small" x="1102" dy="22">外部 Agent stdio tools</tspan></text>
+  <rect class="node" x="1280" y="185" width="235" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="1397" y="213"><tspan x="1397">FastAPI</tspan><tspan class="small" x="1397" dy="22">UI / HTTP adapters</tspan></text>
+  <rect class="node" x="970" y="300" width="270" height="76" rx="12" fill="#f5f5f5" stroke="#6c8ebf"/><text class="label" x="1105" y="328"><tspan x="1105">BuildSessionService</tspan><tspan class="small" x="1105" dy="22">Context · Session · Checkpoint · Lease</tspan></text>
+  <rect class="node" x="1260" y="300" width="270" height="76" rx="12" fill="#f5f5f5" stroke="#6c8ebf"/><text class="label" x="1395" y="328"><tspan x="1395">ModelingWorkflowService</tspan><tspan class="small" x="1395" dy="22">Artifact versions · Events · export</tspan></text>
+  <rect class="node" x="970" y="410" width="270" height="100" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="1105" y="438"><tspan x="1105">ModelingBatchService</tspan><tspan class="small" x="1105" dy="21">compile · dry-run · Findings · idempotency</tspan><tspan class="small" x="1105" dy="20">Lease/version guard · fence · recovery</tspan></text>
+  <rect class="node" x="1260" y="410" width="270" height="100" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="1395" y="438"><tspan x="1395">语义读与验收服务</tspan><tspan class="small" x="1395" dy="21">Context Query · scoped SPARQL</tspan><tspan class="small" x="1395" dy="20">SHACL · lineage / Evidence</tspan></text>
+  <path class="node" d="M970 580Q970 560 1105 560Q1240 560 1240 580V680Q1240 700 1105 700Q970 700 970 680Z" fill="#f8cecc" stroke="#b85450"/>
+  <ellipse cx="1105" cy="580" rx="135" ry="20" fill="#fbe4e3" stroke="#b85450" stroke-width="2"/>
+  <text class="label" x="1105" y="613"><tspan x="1105">PostgreSQL</tspan><tspan class="small" x="1105" dy="21">Project / Brief / CQ / Evidence</tspan><tspan class="small" x="1105" dy="19">Session / Lease · Batch / Attempt</tspan><tspan class="small" x="1105" dy="19">Artifact / Event · Audit / lineage 辅助状态</tspan></text>
+  <path class="node" d="M1260 580Q1260 560 1395 560Q1530 560 1530 580V680Q1530 700 1395 700Q1260 700 1260 680Z" fill="#f8cecc" stroke="#b85450"/>
+  <ellipse cx="1395" cy="580" rx="135" ry="20" fill="#fbe4e3" stroke="#b85450" stroke-width="2"/>
+  <text class="label" x="1395" y="613"><tspan x="1395">RDF Dataset / Oxigraph</tspan><tspan class="small" x="1395" dy="21">权威本体结构与实例事实</tspan><tspan class="small" x="1395" dy="19">asserted ontology/data · shapes · policy</tspan><tspan class="small" x="1395" dy="19">Operation · statements</tspan></text>
+  <rect class="node" x="970" y="745" width="560" height="65" rx="12" fill="#fff2cc" stroke="#d6b656"/>
+  <text class="small" x="1250" y="773"><tspan x="1250">R-008：认证主体 · read/model/admin scope · Project 隔离</tspan><tspan x="1250" dy="21">secret 扫描 · actor 覆盖</tspan></text>
+
+  <path class="edge purple" d="M245 262V425"/><text class="edgeLabel" x="300" y="392">目标 / 澄清 / 反馈</text>
+  <path class="edge purple" d="M245 365V425"/>
+  <path class="edge purple" d="M245 530V585"/><text class="edgeLabel" x="315" y="568">有界任务</text>
+  <path class="edge green" d="M410 477H470Q480 477 480 467V260Q480 250 515 250"/><text class="edgeLabel" x="472" y="350">run 路径</text>
+  <path class="edge blue" d="M301 623H470Q485 623 485 532H515"/><text class="edgeLabel" x="430" y="610">完整候选</text>
+  <path class="edge blue" d="M515 545H465Q450 545 450 495H410"/><text class="edgeLabel" x="480" y="520">Manifest + hash</text>
+  <path class="edge blue" d="M410 455H900Q925 455 925 221H985"/><text class="edgeLabel" x="705" y="442">MCP tools（首选 Agent 接口）</text>
+  <path class="edge blue" d="M1102 257V285Q1102 300 1105 300"/><text class="edgeLabel" x="1060" y="282">同一服务层</text>
+  <path class="edge blue" d="M1397 257V300"/><text class="edgeLabel" x="1445" y="282">同一服务层</text>
+  <path class="edge green" d="M1105 376V410"/><text class="edgeLabel" x="1160" y="398">authorize_apply</text>
+  <path class="edge red" d="M1105 510V560"/><text class="edgeLabel" x="1030" y="545">plan / attempt / evidence</text>
+  <path class="edge red" d="M1240 460H1260"/><text class="edgeLabel" x="1250" y="448">canonical write</text>
+  <path class="edge red" d="M1395 510V560"/><text class="edgeLabel" x="1460" y="545">bounded read</text>
+  <path class="edge red" d="M1260 490H1240Q1220 490 1220 600H1240"/><text class="edgeLabel" x="1195" y="540">scope / lineage</text>
+  <path class="edge red" d="M1395 376V560"/><text class="edgeLabel" x="1452" y="390">Artifact / Event</text>
+
+  <text class="subtitle" x="800" y="927">图例：紫色=智能判断　绿色=协作/质量门　蓝色=接口/交接　红色=持久化　黄色虚线=已设计未实现</text>
+</svg>

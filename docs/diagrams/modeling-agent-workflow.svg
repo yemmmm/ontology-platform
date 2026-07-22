@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1820" viewBox="0 0 1800 1820">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#82b366"/></marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#b85450"/></marker>
+    <style>
+      text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172033}
+      .title{font-size:28px;font-weight:700;text-anchor:middle}.subtitle{font-size:16px;fill:#475569;text-anchor:middle}
+      .laneTitle{font-size:18px;font-weight:700;text-anchor:middle}.node{stroke-width:2}.label{font-size:14px;font-weight:600;text-anchor:middle}.small{font-size:13px;font-weight:500;text-anchor:middle}.tiny{font-size:12px;font-weight:500;text-anchor:middle}
+      .edge{fill:none;stroke:#475569;stroke-width:2.2;marker-end:url(#arrow)}.green{stroke:#82b366;marker-end:url(#arrowGreen)}.red{stroke:#b85450;marker-end:url(#arrowRed)}.dash{stroke-dasharray:8 5}
+      .edgeLabel{font-size:12px;font-weight:700;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+    </style>
+  </defs>
+  <rect width="1800" height="1820" fill="#fff"/>
+  <text class="title" x="900" y="47">建模 Agent 端到端流程</text>
+  <text class="subtitle" x="900" y="79">共享建模核心：业务理解先宽后深，模型按核心纵向切片与 Work Unit 分批写入</text>
+
+  <rect x="30" y="110" width="250" height="1660" fill="#faf5ff" stroke="#9673a6" stroke-width="2"/><rect x="30" y="110" width="250" height="44" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/><text class="laneTitle" x="155" y="139">用户</text>
+  <rect x="290" y="110" width="500" height="1660" fill="#eff6ff" stroke="#6c8ebf" stroke-width="2"/><rect x="290" y="110" width="500" height="44" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/><text class="laneTitle" x="540" y="139">主建模 Agent</text>
+  <rect x="800" y="110" width="450" height="1660" fill="#f0fdf4" stroke="#82b366" stroke-width="2"/><rect x="800" y="110" width="450" height="44" fill="#d5e8d4" stroke="#82b366" stroke-width="2"/><text class="laneTitle" x="1025" y="139">子 Agent / Repo-local 工具</text>
+  <rect x="1260" y="110" width="510" height="1660" fill="#fffbeb" stroke="#d6b656" stroke-width="2"/><rect x="1260" y="110" width="510" height="44" fill="#fff2cc" stroke="#d6b656" stroke-width="2"/><text class="laneTitle" x="1515" y="139">Ontology Platform</text>
+
+  <ellipse class="node" cx="540" cy="195" rx="115" ry="30" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="540" y="200">开始 / 恢复一次建模任务</text>
+  <rect class="node" x="365" y="255" width="350" height="80" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="282"><tspan x="540">读取本地 ledger（如有）</tspan><tspan class="small" x="540" dy="22">请求 Build Context / Session / Modeling Context</tspan></text>
+  <rect class="node" x="1330" y="255" width="370" height="80" rx="12" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="1515" y="278"><tspan x="1515">返回平台事实</tspan><tspan class="small" x="1515" dy="21">Ontology / workspace version / Batch</tspan><tspan class="small" x="1515" dy="19">Artifact / Event / unresolved items</tspan></text>
+
+  <rect class="node" x="365" y="380" width="350" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="407"><tspan x="540">全局扫描资料与业务范围</tspan><tspan class="small" x="540" dy="22">登记权威性、新鲜度、范围与非目标</tspan></text>
+  <rect class="node" x="855" y="380" width="340" height="88" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="1025" y="405"><tspan x="1025">业务整理子 Agent（独立上下文）</tspan><tspan class="small" x="1025" dy="21">Business Knowledge Pack</tspan><tspan class="small" x="1025" dy="19">Modeling Coverage Matrix</tspan></text>
+
+  <rect class="node" x="365" y="505" width="350" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="small" x="540" y="532"><tspan x="540">只提出会改变模型语义、范围、优先级</tspan><tspan x="540" dy="21">或验收的问题（每轮最多 3 个阻塞问题）</tspan></text>
+  <rect class="node" x="65" y="505" width="180" height="88" rx="12" fill="#e1d5e7" stroke="#9673a6"/><text class="small" x="155" y="531"><tspan x="155">确认业务摘要与 CQ</tspan><tspan x="155" dy="20">关键歧义</tspan><tspan x="155" dy="19">可接受缺口</tspan></text>
+  <polygon class="node" points="540,615 645,662 540,709 435,662" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="540" y="657"><tspan x="540">业务 / 语义门禁</tspan><tspan x="540" dy="20">通过？</tspan></text>
+
+  <rect class="node" x="365" y="750" width="350" height="76" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="778"><tspan x="540">选择能回答高优先级 CQ 的核心纵向切片</tspan><tspan class="small" x="540" dy="22">拆分 Work Unit，固定输入与验收合同</tspan></text>
+  <rect class="node" x="855" y="735" width="340" height="106" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="small" x="1025" y="763"><tspan x="1025">Work Unit 读取 Shared Modeling Directory</tspan><tspan x="1025" dy="21">按 source / coverage / dependency 生成 result</tspan><tspan x="1025" dy="21">大产物经原子 handoff + Manifest 交接</tspan></text>
+  <rect class="node" x="365" y="865" width="350" height="94" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="891"><tspan x="540">合并为 Ontology 唯一 candidate</tspan><tspan class="small" x="540" dy="21">检查标识、术语、依赖与 candidate hash</tspan><tspan class="small" x="540" dy="20">按平台容量上限规划有序 Batch</tspan></text>
+
+  <rect class="node" x="365" y="1000" width="350" height="78" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="1028"><tspan x="540">提交同一 Modeling Batch：dry_run</tspan><tspan class="small" x="540" dy="22">不需要 Lease，不产生语义 / Evidence 副作用</tspan></text>
+  <rect class="node" x="1330" y="985" width="370" height="94" rx="12" fill="#fff2cc" stroke="#d6b656"/><text class="small" x="1515" y="1012"><tspan x="1515">编译命令 + 解析依赖 / Evidence</tspan><tspan x="1515" dy="21">候选状态与 SHACL 确定性校验</tspan><tspan x="1515" dy="20">返回 normalized delta + Findings</tspan></text>
+  <polygon class="node" points="540,1105 645,1150 540,1195 435,1150" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="540" y="1146"><tspan x="540">存在 blocking</tspan><tspan x="540" dy="20">Finding？</tspan></text>
+
+  <rect class="node" x="855" y="1110" width="340" height="104" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="small" x="1025" y="1137"><tspan x="1025">独立评审子 Agent</tspan><tspan x="1025" dy="21">抽查原始资料 + Pack / Matrix</tspan><tspan x="1025" dy="20">candidate + dry-run Findings</tspan><tspan x="1025" dy="19">PASS / REVISE / BLOCKED</tspan></text>
+  <polygon class="node" points="540,1225 635,1268 540,1311 445,1268" fill="#fff2cc" stroke="#d6b656"/><text class="label" x="540" y="1264"><tspan x="540">评审</tspan><tspan x="540" dy="20">PASS？</tspan></text>
+  <rect class="node" x="855" y="1250" width="340" height="72" rx="12" fill="#f8cecc" stroke="#b85450"/><text class="small" x="1025" y="1277"><tspan x="1025">定向返工受影响 Work Unit</tspan><tspan x="1025" dy="21">新 hash 使旧评审 / Batch plan 失效</tspan></text>
+  <rect class="node" x="65" y="1245" width="180" height="72" rx="12" fill="#f8cecc" stroke="#b85450"/><text class="small" x="155" y="1273"><tspan x="155">补充资料 / 澄清</tspan><tspan x="155" dy="21">或停止本轮</tspan></text>
+
+  <rect class="node" x="365" y="1345" width="350" height="92" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="1372"><tspan x="540">主 Agent 获取 Ontology Lease</tspan><tspan class="small" x="540" dy="21">新 idempotency key 提交 exact reviewed Batch</tspan><tspan class="small" x="540" dy="20">默认 apply_atomic</tspan></text>
+  <rect class="node" x="1330" y="1325" width="370" height="108" rx="12" fill="#fff2cc" stroke="#d6b656"/><text class="small" x="1515" y="1353"><tspan x="1515">校验 Session / Lease / workspace version</tspan><tspan x="1515" dy="21">持久化 deterministic plan + write fence</tspan><tspan x="1515" dy="20">写 PostgreSQL 与 RDF</tspan><tspan x="1515" dy="19">不确定结果在同一 Attempt 向前恢复</tspan></text>
+
+  <rect class="node" x="365" y="1465" width="350" height="92" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="1492"><tspan x="540">从平台当前态反向验收</tspan><tspan class="small" x="540" dy="21">Read Model · Context Query · scoped SPARQL</tspan><tspan class="small" x="540" dy="20">SHACL · Evidence / lineage</tspan></text>
+  <rect class="node" x="1330" y="1465" width="370" height="78" rx="12" fill="#fff2cc" stroke="#d6b656"/><text class="small" x="1515" y="1493"><tspan x="1515">结构化上下文、查询结果、验证 Findings</tspan><tspan x="1515" dy="21">证据状态与来源链</tspan></text>
+  <rect class="node" x="855" y="1575" width="340" height="92" rx="12" fill="#d5e8d4" stroke="#82b366"/><text class="small" x="1025" y="1602"><tspan x="1025">更新 Coverage：未覆盖 → 下一批</tspan><tspan x="1025" dy="21">CQ/召回失败 → 定向返工</tspan><tspan x="1025" dy="21">全部通过 → complete Build Session</tspan></text>
+  <ellipse class="node" cx="540" cy="1715" rx="115" ry="30" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="540" y="1720">完成 Build Session / 交接</text>
+
+  <rect class="node" x="855" y="175" width="340" height="120" rx="12" fill="#fff2cc" stroke="#d6b656" stroke-dasharray="8 5"/><text class="tiny" x="1025" y="202"><tspan x="1025">现状说明</tspan><tspan x="1025" dy="20">Formal：当前 Skill 使用平台 Artifact / Event / Checkpoint</tspan><tspan x="1025" dy="20">Local：共享目录已实现</tspan><tspan x="1025" dy="20">统一 Profile / Adapter 属 R1.1-007 待实现</tspan></text>
+
+  <path class="edge green" d="M540 225V255"/>
+  <path class="edge" d="M715 295H1330"/><text class="edgeLabel" x="1020" y="286">读取当前事实</text>
+  <path class="edge" d="M1330 322H760Q735 322 735 416H715"/><text class="edgeLabel" x="1000" y="342">确定唯一下一步</text>
+  <path class="edge" d="M715 416H855"/><text class="edgeLabel" x="785" y="405">资料清单</text>
+  <path class="edge" d="M855 448H760Q735 448 735 541H715"/><text class="edgeLabel" x="790" y="470">歧义 / 缺口</text>
+  <path class="edge" d="M365 541H245"/><text class="edgeLabel" x="305" y="530">提问</text>
+  <path class="edge" d="M245 572H330Q350 572 350 662H435"/><text class="edgeLabel" x="315" y="602">可见回答</text>
+  <path class="edge red" d="M435 662H330Q315 662 315 541H365"/><text class="edgeLabel" x="350" y="650">否：继续澄清</text>
+  <path class="edge green" d="M540 709V750"/><text class="edgeLabel" x="560" y="733">是</text>
+  <path class="edge" d="M715 788H855"/><text class="edgeLabel" x="785" y="777">run path + work_unit_id</text>
+  <path class="edge" d="M855 815H760Q735 815 735 912H715"/><text class="edgeLabel" x="790" y="840">result / Manifest / hash</text>
+  <path class="edge green" d="M540 959V1000"/><text class="edgeLabel" x="605" y="986">固定 client_batch_id</text>
+  <path class="edge" d="M715 1039H1330"/><text class="edgeLabel" x="1020" y="1028">MCP / HTTP</text>
+  <path class="edge" d="M1330 1064H760Q735 1064 735 1150H645"/><text class="edgeLabel" x="1020" y="1084">normalized delta + Findings</text>
+  <path class="edge green" d="M645 1150H855"/><text class="edgeLabel" x="750" y="1139">否：进入独立评审</text>
+  <path class="edge red" d="M645 1172H790Q815 1172 815 1286H855"/><text class="edgeLabel" x="770" y="1193">是：返工</text>
+  <path class="edge" d="M855 1192H760Q735 1192 735 1268H635"/><text class="edgeLabel" x="790" y="1215">评审结论</text>
+  <path class="edge red" d="M635 1268H855"/><text class="edgeLabel" x="745" y="1257">REVISE</text>
+  <path class="edge red" d="M445 1288H245"/><text class="edgeLabel" x="345" y="1277">BLOCKED</text>
+  <path class="edge red" d="M1025 1250V905Q1025 885 715 885"/><text class="edgeLabel" x="930" y="902">新候选 → 重新合并 / dry-run</text>
+  <path class="edge red" d="M155 1245V620Q155 600 365 550"/><text class="edgeLabel" x="185" y="930">补充信息后恢复</text>
+  <path class="edge green" d="M540 1311V1345"/><text class="edgeLabel" x="575" y="1333">PASS</text>
+  <path class="edge green" d="M715 1391H1330"/><text class="edgeLabel" x="1020" y="1380">Lease + exact reviewed content</text>
+  <path class="edge" d="M1330 1420H760Q735 1420 735 1511H715"/><text class="edgeLabel" x="1020" y="1440">applied / recovering</text>
+  <path class="edge" d="M715 1511H1330"/><text class="edgeLabel" x="1020" y="1500">查询 / 验证</text>
+  <path class="edge green" d="M1330 1532H1225Q1210 1532 1210 1621H1195"/><text class="edgeLabel" x="1245" y="1553">观测结果</text>
+  <path class="edge green" d="M855 1621H760Q735 1621 735 1715H655"/><text class="edgeLabel" x="760" y="1660">全部验收通过</text>
+  <path class="edge dash" d="M1025 1575V835Q1025 820 1195 805"/><text class="edgeLabel" x="1100" y="1558">下一批 / 定向返工</text>
+
+  <text class="subtitle" x="900" y="1795">平台校验通过 ≠ 业务质量通过；正式 apply 只由主 Agent 在七类质量门全部通过后执行</text>
+</svg>
