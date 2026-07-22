@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Model Reviewer"
+  short_description: "Independently review a candidate ontology."
+  default_prompt: "Review the candidate against its evidence and return PASS, REVISE, or BLOCKED."

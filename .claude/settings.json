@@ -62,16 +62,6 @@
         ]
       }
     ],
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.codex/hooks/modeling_harness.py\" hook"
-          }
-        ]
-      }
-    ],
     "TaskCompleted": [
       {
         "hooks": [
@@ -93,16 +83,6 @@
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.codex/hooks/modeling_harness.py\" hook"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
       {
         "hooks": [
           {

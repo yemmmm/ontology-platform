@@ -87,20 +87,31 @@ def assess_brief(
     for key in BRIEF_FIELDS:
         state = field_states.get(key)
         if key in missing:
-            clarification.append({"field": key, "question": FIELD_PROMPTS[key], "reason": "missing"})
+            clarification.append(
+                {"field": key, "question": FIELD_PROMPTS[key], "reason": "missing"}
+            )
         elif _nonempty(content.get(key)) and state != "confirmed":
             clarification.append(
-                {"field": key, "question": f"Please confirm the {key.replace('_', ' ')}.", "reason": "unconfirmed"}
+                {
+                    "field": key,
+                    "question": f"Please confirm the {key.replace('_', ' ')}.",
+                    "reason": "unconfirmed",
+                }
             )
     skipped = [key for key in BRIEF_FIELDS if field_states.get(key) == "skipped"]
     for key in skipped:
         clarification.append(
-            {"field": key, "question": "Skipped", "reason": SKIP_IMPACTS.get(key, "Quality may decrease.")}
+            {
+                "field": key,
+                "question": "Skipped",
+                "reason": SKIP_IMPACTS.get(key, "Quality may decrease."),
+            }
         )
     resolved = sum(
         1
         for key in BRIEF_FIELDS
-        if field_states.get(key) in {"confirmed", "skipped"} and (key not in REQUIRED_FIELDS or _nonempty(content.get(key)))
+        if field_states.get(key) in {"confirmed", "skipped"}
+        and (key not in REQUIRED_FIELDS or _nonempty(content.get(key)))
     )
     return {
         "fields": content,
@@ -123,9 +134,13 @@ def _project(session: Session, project_id: str) -> ProjectModel:
 
 def get_project_brief(session: Session, project_id: str) -> dict[str, Any]:
     _project(session, project_id)
-    brief = session.scalar(select(ProjectBriefModel).where(ProjectBriefModel.project_id == project_id))
+    brief = session.scalar(
+        select(ProjectBriefModel).where(ProjectBriefModel.project_id == project_id)
+    )
     result = assess_brief(
-        brief.content if brief else {}, brief.field_states if brief else {}, brief.field_sources if brief else {}
+        brief.content if brief else {},
+        brief.field_states if brief else {},
+        brief.field_sources if brief else {},
     )
     return {"id": brief.id if brief else None, "project_id": project_id, **result}
 
@@ -147,7 +162,8 @@ def _validate_answer_ids(session: Session, project_id: str, answer_ids: set[str]
     found = set(
         session.scalars(
             select(InterviewAnswerModel.id).where(
-                InterviewAnswerModel.project_id == project_id, InterviewAnswerModel.id.in_(answer_ids)
+                InterviewAnswerModel.project_id == project_id,
+                InterviewAnswerModel.id.in_(answer_ids),
             )
         )
     )
@@ -166,15 +182,23 @@ def update_project_brief(
         | set(payload.source_answer_ids)
     ) - set(BRIEF_FIELDS)
     if unknown:
-        raise HTTPException(status_code=422, detail=f"Unknown Project Brief fields: {sorted(unknown)}")
+        raise HTTPException(
+            status_code=422, detail=f"Unknown Project Brief fields: {sorted(unknown)}"
+        )
     illegal_skips = set(payload.skipped_fields) & set(REQUIRED_FIELDS)
     if illegal_skips:
-        raise HTTPException(status_code=422, detail=f"Required fields cannot be skipped: {sorted(illegal_skips)}")
+        raise HTTPException(
+            status_code=422, detail=f"Required fields cannot be skipped: {sorted(illegal_skips)}"
+        )
     source_ids = {item for values in payload.source_answer_ids.values() for item in values}
     _validate_answer_ids(session, project_id, source_ids)
-    brief = session.scalar(select(ProjectBriefModel).where(ProjectBriefModel.project_id == project_id))
+    brief = session.scalar(
+        select(ProjectBriefModel).where(ProjectBriefModel.project_id == project_id)
+    )
     if brief is None:
-        brief = ProjectBriefModel(id=_id(), project_id=project_id, content={}, field_states={}, field_sources={})
+        brief = ProjectBriefModel(
+            id=_id(), project_id=project_id, content={}, field_states={}, field_sources={}
+        )
         session.add(brief)
     old_content = dict(brief.content)
     old_sources = {key: list(value) for key, value in brief.field_sources.items()}
@@ -192,8 +216,10 @@ def update_project_brief(
         content.pop(key, None)
     sources.update(payload.source_answer_ids)
     changed = {
-        key for key in set(payload.fields) | set(payload.source_answer_ids)
-        if old_content.get(key) != content.get(key) or old_sources.get(key, []) != sources.get(key, [])
+        key
+        for key in set(payload.fields) | set(payload.source_answer_ids)
+        if old_content.get(key) != content.get(key)
+        or old_sources.get(key, []) != sources.get(key, [])
     }
     brief.content, brief.field_states, brief.field_sources = content, states, sources
     if changed:
@@ -206,9 +232,7 @@ def update_project_brief(
     return {"id": brief.id, "project_id": project_id, **assess_brief(content, states, sources)}
 
 
-def invalidate_questions_for_brief_change(
-    questions: Any, changed_fields: set[str]
-) -> None:
+def invalidate_questions_for_brief_change(questions: Any, changed_fields: set[str]) -> None:
     for question in questions:
         affected = changed_fields.intersection(question.source_brief_fields)
         if affected and question.status in {"testable", "passed", "failed"}:
@@ -221,9 +245,7 @@ def invalidate_questions_for_brief_change(
             }
 
 
-def invalidate_questions_for_graph_change(
-    questions: Any, changed_entity_ids: set[str]
-) -> int:
+def invalidate_questions_for_graph_change(questions: Any, changed_entity_ids: set[str]) -> int:
     """Knock validated questions back to testable when their evidence graph changes."""
     if not changed_entity_ids:
         return 0
@@ -245,12 +267,18 @@ def invalidate_questions_for_graph_change(
     return affected
 
 
-def list_questions(session: Session, project_id: str, include_inactive: bool = False) -> list[CompetencyQuestionModel]:
+def list_questions(
+    session: Session, project_id: str, include_inactive: bool = False
+) -> list[CompetencyQuestionModel]:
     _project(session, project_id)
     query = select(CompetencyQuestionModel).where(CompetencyQuestionModel.project_id == project_id)
     if not include_inactive:
         query = query.where(CompetencyQuestionModel.active.is_(True))
-    return list(session.scalars(query.order_by(CompetencyQuestionModel.position, CompetencyQuestionModel.created_at)))
+    return list(
+        session.scalars(
+            query.order_by(CompetencyQuestionModel.position, CompetencyQuestionModel.created_at)
+        )
+    )
 
 
 def create_question(
@@ -263,7 +291,9 @@ def create_question(
     _validate_answer_ids(session, project_id, set(payload.source_answer_ids))
     unknown = set(payload.source_brief_fields) - set(BRIEF_FIELDS)
     if unknown:
-        raise HTTPException(status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}")
+        raise HTTPException(
+            status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}"
+        )
     position = payload.position
     if position is None:
         maximum = session.scalar(
@@ -273,8 +303,12 @@ def create_question(
         )
         position = int(maximum if maximum is not None else -1) + 1
     question = CompetencyQuestionModel(
-        id=_id(), project_id=project_id, status="draft", active=True,
-        **payload.model_dump(exclude={"position"}), position=position,
+        id=_id(),
+        project_id=project_id,
+        status="draft",
+        active=True,
+        **payload.model_dump(exclude={"position"}),
+        position=position,
     )
     session.add(question)
     session.commit()
@@ -299,7 +333,9 @@ def update_question(
     if "source_brief_fields" in values:
         unknown = set(values["source_brief_fields"]) - set(BRIEF_FIELDS)
         if unknown:
-            raise HTTPException(status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}")
+            raise HTTPException(
+                status_code=422, detail=f"Unknown source brief fields: {sorted(unknown)}"
+            )
     substantive = set(values) - {"position", "active"}
     for key, value in values.items():
         setattr(question, key, value)
@@ -316,11 +352,20 @@ def set_question_status(
 ) -> CompetencyQuestionModel:
     question = _question(session, question_id)
     if not question.active:
-        raise HTTPException(status_code=409, detail="Inactive competency questions cannot transition")
+        raise HTTPException(
+            status_code=409, detail="Inactive competency questions cannot transition"
+        )
     if payload.status not in QUESTION_TRANSITIONS.get(question.status, set()):
-        raise HTTPException(status_code=409, detail=f"Invalid question transition: {question.status} -> {payload.status}")
-    if payload.status == "approved" and not (question.source_answer_ids or question.source_brief_fields):
-        raise HTTPException(status_code=422, detail="Approved questions require an answer or Project Brief source")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invalid question transition: {question.status} -> {payload.status}",
+        )
+    if payload.status == "approved" and not (
+        question.source_answer_ids or question.source_brief_fields
+    ):
+        raise HTTPException(
+            status_code=422, detail="Approved questions require an answer or Project Brief source"
+        )
     if payload.status == "approved" and question.source_brief_fields:
         brief = session.scalar(
             select(ProjectBriefModel).where(ProjectBriefModel.project_id == question.project_id)
@@ -383,10 +428,13 @@ def run_question_validation(session, store, question_id, settings):
             class_iri = resolve_class_iri(session, question.ontology_id, class_id)
             query = (
                 f"SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE {{ "
-                f"GRAPH ?g {{ ?e rdf:type/rdfs:subClassOf* <{class_iri}> }} }}"
+                f"GRAPH ?g {{ ?e a/<http://www.w3.org/2000/01/rdf-schema#subClassOf>* "
+                f"<{class_iri}> }} }}"
             )
             count = run_select_count(
-                store=store, query=query, graph_iris=iris,
+                store=store,
+                query=query,
+                graph_iris=iris,
                 timeout_seconds=settings.competency_question_sparql_timeout_seconds,
             ).count
             expected_min = int(definition.get("min_count", 0))
@@ -395,14 +443,18 @@ def run_question_validation(session, store, question_id, settings):
         elif kind == "relation_count":
             rt_id = definition.get("relation_type_id")
             if not rt_id:
-                raise HTTPException(status_code=422, detail="relation_count query requires relation_type_id")
+                raise HTTPException(
+                    status_code=422, detail="relation_count query requires relation_type_id"
+                )
             predicate = resolve_relation_type_iri(session, question.ontology_id, rt_id)
             query = (
                 f"SELECT (COUNT(DISTINCT ?s) AS ?count) WHERE {{ "
                 f"GRAPH ?g {{ ?s <{predicate}> ?o }} }}"
             )
             count = run_select_count(
-                store=store, query=query, graph_iris=iris,
+                store=store,
+                query=query,
+                graph_iris=iris,
                 timeout_seconds=settings.competency_question_sparql_timeout_seconds,
             ).count
             expected_min = int(definition.get("min_count", 0))
@@ -418,7 +470,9 @@ def run_question_validation(session, store, question_id, settings):
             if not user_query.strip():
                 raise HTTPException(status_code=422, detail="sparql query is empty")
             count = run_select_count(
-                store=store, query=user_query, graph_iris=iris,
+                store=store,
+                query=user_query,
+                graph_iris=iris,
                 timeout_seconds=settings.competency_question_sparql_timeout_seconds,
             ).count
             expected_min = definition.get("expected_min")
@@ -487,9 +541,7 @@ def active_data_and_ontology_graphs_for_question(session, question_id: str) -> l
             SemanticGraphSetModel.scope_type == "ontology",
             SemanticGraphSetModel.scope_id == question.ontology_id,
             SemanticGraphSetModel.status == "active",
-            SemanticGraphSetMemberModel.role.in_(
-                ("asserted_ontology", "asserted_data")
-            ),
+            SemanticGraphSetMemberModel.role.in_(("asserted_ontology", "asserted_data")),
         )
     ).all()
     return [r[0] for r in rows]
@@ -503,10 +555,7 @@ def resolve_class_iri(session, ontology_id: str, class_id: str) -> str:
     if mapped:
         return mapped
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(class_id))
-    return (
-        f"http://ontology-platform.local/semantic/ontology/{ontology_id}"
-        f"/class/{safe}"
-    )
+    return f"http://ontology-platform.local/semantic/class/{safe}"
 
 
 def resolve_relation_type_iri(session, ontology_id: str, relation_type_id: str) -> str:
@@ -517,10 +566,7 @@ def resolve_relation_type_iri(session, ontology_id: str, relation_type_id: str) 
     if mapped:
         return mapped
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(relation_type_id))
-    return (
-        f"http://ontology-platform.local/semantic/ontology/{ontology_id}"
-        f"/relation/{safe}"
-    )
+    return f"http://ontology-platform.local/semantic/relation-type/{safe}"
 
 
 def brief_summary_for_overview(session, project_id):
@@ -534,9 +580,16 @@ def brief_summary_for_overview(session, project_id):
     states = brief.field_states or {}
     # All expected brief fields
     brief_fields = [
-        "domain_name", "business_goal", "scope", "core_concepts",
-        "identity_rules", "expected_granularity", "data_sources",
-        "boundaries", "terminology", "inference_scope",
+        "domain_name",
+        "business_goal",
+        "scope",
+        "core_concepts",
+        "identity_rules",
+        "expected_granularity",
+        "data_sources",
+        "boundaries",
+        "terminology",
+        "inference_scope",
     ]
     missing = [k for k, v in states.items() if v != "confirmed"]
     missing += [k for k in brief_fields if k not in content and k not in missing]

@@ -142,6 +142,52 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(harness.activation_args(command + " 2>/dev/null ; true"), self.values)
         self.assertIsNone(harness.activation_args(command.replace("--project-id", "--unknown")))
 
+    def test_adapter_health_parser_accepts_only_bounded_receipt_request(self) -> None:
+        command = (
+            "python3 .codex/local_modeling_adapter.py recording-health "
+            f"workspaces/modeling-runs/{self.run_id} --run-id {self.run_id} --operation-id operation-health-001 "
+            f"--harness-run-id {self.run_id}"
+        )
+        values = harness.adapter_health_args(command)
+        self.assertIsNotNone(values)
+        assert values is not None
+        self.assertEqual(values.run_id, self.run_id)
+        self.assertEqual(values.operation_id, "operation-health-001")
+        self.assertIsNone(harness.adapter_health_args(command + " --unexpected nope"))
+
+    def test_single_claude_local_health_requires_a_fresh_hook_receipt(self) -> None:
+        values = {
+            **self.values,
+            "runtime": "claude",
+            "participant_role": None,
+            "execution_profile": "local",
+        }
+        harness.acknowledge_activation(self.paths, self.hook, values)
+        harness.activate_cli(self.paths, argparse.Namespace(**values))
+        run_dir = self.paths.run(self.run_id)
+        metadata = harness.read_json(run_dir / "metadata.json")
+        self.assertEqual(metadata["mode"], "single_claude")
+        self.assertEqual(metadata["execution_profile"], "local")
+        operation_id = "operation-health-001"
+        command = (
+            "python3 .codex/hooks/modeling_harness.py recording-health "
+            f"--run-id {self.run_id} --operation-id {operation_id}"
+        )
+        harness.handle_hook(
+            self.paths,
+            {
+                **self.hook,
+                "tool_use_id": "tool-health",
+                "tool_input": {"command": command},
+            },
+        )
+        args = argparse.Namespace(
+            command="recording-health", run_id=self.run_id, operation_id=operation_id
+        )
+        harness.recording_health_cli(self.paths, args)
+        with self.assertRaisesRegex(harness.HarnessError, "stale, consumed"):
+            harness.recording_health_cli(self.paths, args)
+
     def test_concurrent_append_is_contiguous_and_deduplicated(self) -> None:
         run_dir = self.activate()
         processes = [
@@ -695,11 +741,9 @@ class DualClaudeHarnessTest(unittest.TestCase):
             "PostToolUseFailure",
             "SubagentStart",
             "SubagentStop",
-            "TaskCreated",
             "TaskCompleted",
             "TeammateIdle",
             "Stop",
-            "StopFailure",
             "SessionEnd",
         }
         self.assertEqual(set(settings["hooks"]), required)
@@ -713,11 +757,23 @@ class DualClaudeHarnessTest(unittest.TestCase):
             "source-extractor",
             "semantic-analyst",
             "ontology-reviewer",
+            "ontology-business-organizer",
+            "ontology-work-unit-modeler",
+            "ontology-model-reviewer",
+            "ontology-retrieval-evaluator",
         }
         self.assertEqual(
             {path.stem for path in (REPO / ".claude" / "agents").glob("*.md")},
             expected_agents,
         )
+        for name in {
+            "ontology-business-organizer",
+            "ontology-work-unit-modeler",
+            "ontology-model-reviewer",
+            "ontology-retrieval-evaluator",
+        }:
+            body = (REPO / ".claude" / "agents" / f"{name}.md").read_text(encoding="utf-8")
+            self.assertIn("skills:", body)
 
     def test_activation_nonce_is_removed_from_visible_prompt(self) -> None:
         run_dir = self.activate_dual()

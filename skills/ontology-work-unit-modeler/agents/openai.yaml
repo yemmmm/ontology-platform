@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Work Unit Modeler"
+  short_description: "Model one bounded ontology work unit."
+  default_prompt: "Model the assigned shared-directory work unit and return a schema-valid result."

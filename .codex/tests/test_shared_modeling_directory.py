@@ -250,6 +250,77 @@ class SharedModelingDirectoryTest(unittest.TestCase):
         with self.assertRaisesRegex(smd.DirectoryContractError, "not embed its body"):
             smd.initialize_run(self.repo / "body-run", body_spec)
 
+    def test_local_profile_and_cq_binding_are_fixed_and_non_secret(self) -> None:
+        spec = self._spec()
+        spec["execution_profile"] = "local"
+        smd.initialize_run(self.run_dir, spec)
+        result = smd.bind_platform_competency_questions(
+            self.run_dir, {"cq-sales": "platform-cq-sales"}
+        )
+        self.assertEqual(result["competency_question_bindings"]["cq-sales"], "platform-cq-sales")
+        smd.bind_local_execution(
+            self.run_dir, build_session_id="build-local-1", harness_run_id="run-1"
+        )
+        report = smd.validate_run(self.run_dir)
+        self.assertTrue(report["valid"], report["errors"])
+        with self.assertRaisesRegex(smd.DirectoryContractError, "another platform ID"):
+            smd.bind_platform_competency_questions(
+                self.run_dir, {"cq-sales": "different-platform-cq"}
+            )
+
+    def test_local_cq_binding_projects_platform_ids_through_task_candidate_and_batch(self) -> None:
+        spec = self._spec()
+        spec["execution_profile"] = "local"
+        smd.initialize_run(self.run_dir, spec)
+        bindings = smd.bind_platform_competency_questions(
+            self.run_dir,
+            {"cq-support": "platform-cq-support", "cq-sales": "platform-cq-sales"},
+        )
+        self.assertEqual(
+            bindings["competency_question_bindings"],
+            {"cq-sales": "platform-cq-sales", "cq-support": "platform-cq-support"},
+        )
+        coverage = smd._read_json(self.run_dir / "shared/coverage.json")
+        sales_question = next(
+            item
+            for item in coverage["competency_questions"]
+            if item["local_competency_question_id"] == "cq-sales"
+        )
+        self.assertEqual(sales_question["competency_question_id"], "platform-cq-sales")
+        self.assertEqual(coverage["items"][0]["competency_question_ids"], ["platform-cq-sales"])
+        task = smd._read_json(self.run_dir / "units/sales-unit/task.json")
+        self.assertEqual(task["competency_question_ids"], ["platform-cq-sales"])
+        item = self._item("platform-cq-item")
+        item["competency_question_ids"] = ["platform-cq-sales"]
+        result = self._ready("sales-unit", [item])
+        self.assertEqual(result["competency_question_ids"], ["platform-cq-sales"])
+        candidate = smd.merge_ontology(self.run_dir, "sales-ontology")
+        self.assertEqual(
+            candidate["modeling_items"][0]["competency_question_ids"], ["platform-cq-sales"]
+        )
+        self._review("sales-ontology", candidate["candidate_hash"])
+        plan = smd.plan_batches(self.run_dir, "sales-ontology", self._limits(), self._attempts())
+        request = smd.materialize_batch(
+            self.run_dir,
+            "sales-ontology",
+            plan["batches"][0]["client_batch_id"],
+            self._attempts(),
+        )
+        serialized = json.dumps(request["items"])
+        self.assertIn("platform-cq-sales", serialized)
+        self.assertNotIn('"cq-sales"', serialized)
+
+    def test_local_cq_binding_rejects_any_late_modeling_progress(self) -> None:
+        spec = self._spec()
+        spec["execution_profile"] = "local"
+        smd.initialize_run(self.run_dir, spec)
+        status_path = self.run_dir / "units/sales-unit/status.json"
+        status = smd._read_json(status_path)
+        status["state"] = "working"
+        smd._atomic_write_json(status_path, status)
+        with self.assertRaisesRegex(smd.DirectoryContractError, "binding is too late"):
+            smd.bind_platform_competency_questions(self.run_dir, {"cq-sales": "platform-cq-sales"})
+
     def test_missing_and_cross_scope_references_fail_actionably(self) -> None:
         self._initialize()
         task_path = self.run_dir / "units/sales-unit/task.json"

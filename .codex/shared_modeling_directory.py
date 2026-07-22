@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 SCHEMA_VERSION = "1.0"
+EXECUTION_PROFILES = {"local", "formal"}
 STATUSES = {"pending", "working", "ready", "blocked", "accepted"}
 REVIEW_VERDICTS = {"PASS", "REVISE", "BLOCKED"}
 VERIFICATION_VERDICTS = {"PASS", "FAIL", "BLOCKED"}
@@ -265,6 +266,11 @@ def initialize_run(run_dir: Path | str, spec: dict[str, Any]) -> dict[str, Any]:
     _require(repo_root.is_dir(), f"repository_root does not exist: {repo_root}")
     allowed_commands = _unique(spec.get("allowed_command_kinds", []), "allowed command kind")
     _require(allowed_commands, "allowed_command_kinds snapshot must not be empty")
+    execution_profile = spec.get("execution_profile")
+    _require(
+        execution_profile is None or execution_profile in EXECUTION_PROFILES,
+        "execution_profile must be local or formal",
+    )
     sources = copy.deepcopy(spec.get("sources", []))
     questions = copy.deepcopy(spec.get("competency_questions", []))
     coverage_items = copy.deepcopy(spec.get("coverage_items", []))
@@ -374,6 +380,10 @@ def initialize_run(run_dir: Path | str, spec: dict[str, Any]) -> dict[str, Any]:
         "work_units": work_unit_index,
         "ontologies": ontology_index,
     }
+    if execution_profile is not None:
+        # A Profile is selected by the coordinator at initialization and is intentionally absent
+        # from legacy R1.1-006 runs.  It is never a worker-controlled task field.
+        run["execution_profile"] = execution_profile
     (run_dir / "shared").mkdir(exist_ok=True)
     (run_dir / "shared" / "brief.md").write_text(brief.rstrip() + "\n", encoding="utf-8")
     _atomic_write_json(run_dir / "shared" / "source-index.json", source_index)
@@ -495,6 +505,24 @@ def validate_run(run_dir: Path | str) -> dict[str, Any]:
         _require(run.get("schema_version") == SCHEMA_VERSION, "unsupported run schema_version")
         _bounded_text(run.get("run_id"), "run_id", 120)
         _require(
+            run.get("execution_profile") is None
+            or run.get("execution_profile") in EXECUTION_PROFILES,
+            "run execution_profile is invalid",
+        )
+        local_execution = run.get("local_execution")
+        _require(
+            local_execution is None or run.get("execution_profile") == "local",
+            "local_execution requires a local Profile run",
+        )
+        if local_execution is not None:
+            _require(isinstance(local_execution, dict), "local_execution must be an object")
+            _bounded_text(local_execution.get("build_session_id"), "local build_session_id", 255)
+            harness_run_id = local_execution.get("harness_run_id")
+            _require(
+                harness_run_id is None or (isinstance(harness_run_id, str) and harness_run_id),
+                "local harness_run_id is invalid",
+            )
+        _require(
             isinstance(run.get("project_ref"), dict) and run["project_ref"].get("project_id"),
             "project_ref.project_id is required",
         )
@@ -561,6 +589,21 @@ def validate_run(run_dir: Path | str) -> dict[str, Any]:
                 question.get("acceptance") is not None,
                 f"question {question.get('competency_question_id')} lacks acceptance",
             )
+            bound_id = question.get("platform_competency_question_id")
+            _require(
+                bound_id is None or (isinstance(bound_id, str) and bound_id),
+                f"question {question.get('competency_question_id')} has invalid platform binding",
+            )
+            local_alias = question.get("local_competency_question_id")
+            _require(
+                local_alias is None or (isinstance(local_alias, str) and local_alias),
+                f"question {question.get('competency_question_id')} has invalid local alias",
+            )
+            if bound_id is not None:
+                _require(
+                    question.get("competency_question_id") == bound_id,
+                    f"question {local_alias or question.get('competency_question_id')} binding is not projected",
+                )
         for item in coverage["items"]:
             _require(
                 item.get("ontology_id") in ontology_ids,
@@ -695,6 +738,11 @@ def validate_run(run_dir: Path | str) -> dict[str, Any]:
                 _bounded_text(result.get("summary"), f"unit {unit_id} summary", 2_000)
                 for item in result.get("modeling_items", []):
                     _validate_item(item, set(task["output_contract"]["allowed_command_kinds"]))
+                    _require(
+                        set(item.get("competency_question_ids", []))
+                        <= set(task.get("competency_question_ids", [])),
+                        f"unit {unit_id} item has a competency question outside its task contract",
+                    )
                 _topological_items(result.get("modeling_items", []))
             else:
                 current = compute_unit_input_fingerprint(run_dir, unit_id)
@@ -725,6 +773,11 @@ def validate_run(run_dir: Path | str) -> dict[str, Any]:
                     candidate.get("candidate_hash") == expected,
                     f"ontology {ontology_id} candidate_hash mismatch",
                 )
+                for item in candidate.get("modeling_items", []):
+                    _require(
+                        set(item.get("competency_question_ids", [])) <= set(question_ids),
+                        f"ontology {ontology_id} candidate has unknown competency question",
+                    )
                 review_path = _run_path(run_dir, ontology_entry["review_path"])
                 if review_path.exists():
                     validate_review(run_dir, ontology_id, require_pass=False)
@@ -771,6 +824,138 @@ def inspect_run(run_dir: Path | str) -> dict[str, Any]:
         "ontologies": ontologies,
         "validation": validate_run(run_dir),
     }
+
+
+def bind_platform_competency_questions(
+    run_dir: Path | str, bindings: dict[str, str]
+) -> dict[str, Any]:
+    """Project accepted local CQ aliases into platform IDs before any Work Unit modeling.
+
+    The local alias remains traceable in Coverage, while the platform ID replaces it in Coverage
+    references and every downstream task/result/candidate/Batch contract.  This is intentionally a
+    one-time pre-modeling transformation: changing IDs after a result or candidate exists would
+    rewrite reviewed semantic content and is therefore rejected.
+    """
+    run_dir = Path(run_dir).resolve()
+    _require(isinstance(bindings, dict) and bindings, "competency question bindings are required")
+    _reject_secrets(bindings, "competency question bindings")
+    run, _, coverage = _indexes(run_dir)
+    _require(run.get("execution_profile") == "local", "CQ binding requires a local Profile run")
+    validate_cq_binding_window(run_dir)
+    questions = coverage.get("competency_questions", [])
+    by_alias = {
+        question.get(
+            "local_competency_question_id", question.get("competency_question_id")
+        ): question
+        for question in questions
+    }
+    _require(len(by_alias) == len(questions), "competency questions are not uniquely indexed")
+    _require(
+        len(set(bindings.values())) == len(bindings),
+        "platform competency question bindings collide",
+    )
+    for question_id, platform_id in bindings.items():
+        _require(question_id in by_alias, f"unknown competency question: {question_id}")
+        _bounded_text(platform_id, f"platform competency question for {question_id}", 255)
+        existing = by_alias[question_id].get("platform_competency_question_id")
+        _require(
+            existing in {None, platform_id},
+            f"competency question {question_id} is already bound to another platform ID",
+        )
+    mapped_ids = {question_id: platform_id for question_id, platform_id in bindings.items()}
+    for question_id, platform_id in mapped_ids.items():
+        question = by_alias[question_id]
+        question["local_competency_question_id"] = question_id
+        question["competency_question_id"] = platform_id
+        question["platform_competency_question_id"] = platform_id
+    for item in coverage.get("items", []):
+        item["competency_question_ids"] = [
+            mapped_ids.get(question_id, question_id)
+            for question_id in item.get("competency_question_ids", [])
+        ]
+    _atomic_write_json(run_dir / run["shared_paths"]["coverage"], coverage)
+    for entry in run.get("work_units", []):
+        task_path = _run_path(run_dir, entry["task_path"])
+        task = _read_json(task_path)
+        task["competency_question_ids"] = [
+            mapped_ids.get(question_id, question_id)
+            for question_id in task.get("competency_question_ids", [])
+        ]
+        _atomic_write_json(task_path, task)
+    for entry in run.get("work_units", []):
+        task_path = _run_path(run_dir, entry["task_path"])
+        task = _read_json(task_path)
+        task["input_fingerprint"] = compute_unit_input_fingerprint(run_dir, entry["work_unit_id"])
+        _atomic_write_json(task_path, task)
+    report = validate_run(run_dir)
+    _require(report["valid"], "; ".join(report["errors"]))
+    return {
+        "run_id": run["run_id"],
+        "execution_profile": "local",
+        "competency_question_bindings": {
+            question_id: by_alias[question_id]["platform_competency_question_id"]
+            for question_id in sorted(bindings)
+        },
+    }
+
+
+def validate_cq_binding_window(run_dir: Path | str) -> None:
+    """Reject a CQ-ID projection once downstream semantic content could need rewriting."""
+    run_dir = Path(run_dir).resolve()
+    run = _load_run(run_dir)
+    for entry in run.get("work_units", []):
+        status = _read_json(_run_path(run_dir, entry["status_path"]))
+        _require(
+            status.get("state") == "pending",
+            f"competency question binding is too late: unit {entry['work_unit_id']} is active",
+        )
+        _require(
+            not _run_path(run_dir, entry["result_path"]).exists(),
+            f"competency question binding is too late: unit {entry['work_unit_id']} has a result",
+        )
+    for ontology in run.get("ontologies", []):
+        for field in ("candidate_path", "review_path", "batch_plan_path", "verification_path"):
+            _require(
+                not _run_path(run_dir, ontology[field]).exists(),
+                f"competency question binding is too late: {ontology['ontology_id']} has modeling progress",
+            )
+
+
+def bind_local_execution(
+    run_dir: Path | str,
+    *,
+    build_session_id: str,
+    harness_run_id: str | None = None,
+) -> dict[str, Any]:
+    """Store only stable non-secret Local execution references in a fixed Profile run."""
+    run_dir = Path(run_dir).resolve()
+    run = _load_run(run_dir)
+    _require(
+        run.get("execution_profile") == "local", "Local execution requires a local Profile run"
+    )
+    _bounded_text(build_session_id, "build_session_id", 255)
+    if harness_run_id is not None:
+        _bounded_text(harness_run_id, "harness_run_id", 255)
+    existing = run.get("local_execution", {})
+    _require(isinstance(existing, dict), "local_execution must be an object")
+    expected = {"build_session_id": build_session_id}
+    if harness_run_id is not None:
+        expected["harness_run_id"] = harness_run_id
+    _require(
+        not existing
+        or existing == expected
+        or (
+            existing.get("build_session_id") == build_session_id
+            and harness_run_id is not None
+            and existing.get("harness_run_id") in {None, harness_run_id}
+        ),
+        "Local execution references are already bound to another Session or Harness run",
+    )
+    if existing.get("harness_run_id") and harness_run_id is None:
+        expected["harness_run_id"] = existing["harness_run_id"]
+    run["local_execution"] = expected
+    _atomic_write_json(run_dir / "run.json", run)
+    return {"run_id": run["run_id"], "execution_profile": "local", **expected}
 
 
 def reset_unit(run_dir: Path | str, unit_id: str) -> dict[str, Any]:

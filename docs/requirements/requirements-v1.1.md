@@ -2,8 +2,8 @@
 
 ## 文档信息
 
-- 文档状态：总体目标持续推进；R1.1-002、R1.1-003、R1.1-004、R1.1-005、R1.1-006
-  已实现；R1.1-007 已细化待实现；R1.1-001 仍需可重复的业务质量改善证据
+- 文档状态：总体目标持续推进；R1.1-002、R1.1-003、R1.1-004、R1.1-005、R1.1-006、
+  R1.1-007 已实现；R1.1-001 仍需可重复的业务质量改善证据
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 总体效果目标：R1.1-001 优化外部建模 Agent 的实际建模效果
 - 已确认实施需求：R1.1-002 分阶段、可追溯的建模工作流；R1.1-003 建模子 Agent
@@ -869,11 +869,11 @@ dry-run/apply、409 版本冲突后的前缀保留与继续应用，并最终得
 
 ## R1.1-007 本地/正式建模执行 Profile
 
-当前状态：`已细化，待实现`
+当前状态：`已实现`
 
-方案状态：`功能合同已确认；设计、计划评审与实现待开始`
+方案状态：`已确认并交付；独立测试 Round 14 组合证据 PASS，保留已接受残余`
 
-确认日期：2026-07-21
+确认日期：2026-07-22
 
 依赖：R1.1-001、R1.1-002、R1.1-006；复用 R1.1-005 的 Harness 记录能力，但改变其在本地模式中的用途和完成语义
 
@@ -901,6 +901,49 @@ Work Unit 分片、子 Agent 建模、Ontology 合并、独立评审、平台 dr
 要求正式交付、严格评测、完整平台记录或全链路验收时选择 Formal Modeling Mode。主 Agent 开始时
 必须告知当前 Profile；可以说明原因并建议切换，但不能静默切换。
 
+### 信息最小化与质量等价边界
+
+Local Modeling Mode 的“轻量”只表示减少建模 Agent 需要接收、理解和编排的信息，不表示减少业务
+理解、建模或验收活动。首版采用以下最小信息边界：
+
+- 必须保留当前已确认的业务目标与成功条件、范围与非目标、资料位置/哈希/权威性、术语与别名、
+  参与者/对象/事件、身份与生命周期、边界、规则与例外、歧义与缺口、能力问题、Coverage 状态、
+  当前语义基线、当前候选及哈希、独立评审、dry-run Findings、Evidence 和 apply 后验证证据；
+- 主 Agent 只接收 Profile、run 路径、当前阶段、需要向用户确认的问题、质量 Finding、平台操作的
+  有界结果和下一动作，不接收凭证值、Lease token、workspace revision、幂等键、完整 HTTP/MCP
+  响应、重复 Batch Payload、审计历史或运行时成本信息；
+- 子 Agent 只接收 run 路径、`work_unit_id`/`ontology_id`、输出合同或 Schema 路径、必要的有界
+  业务变更和输出路径；业务正文、Brief、Coverage、资料索引、直接依赖和当前产物由其按引用读取；
+- 大型资料正文、候选和平台请求不复制到 Prompt、Harness 或角色间消息。共享目录保存当前候选和
+  Batch 计划，但不复制原始资料，也不保存隐藏推理、完整 transcript、权限配置或平台产品化历史；
+- Harness 是后台流程优化记录，不是建模 Agent 的恢复输入。建模恢复依赖 Shared Modeling
+  Directory 和平台当前语义事实，不要求 Agent 回读 Harness 事件。
+
+Local 省略的是调用方显式创建的 Modeling Workflow Artifact、Modeling Execution Event、Build
+Checkpoint、不可变中间版本链、额外审计/lineage 报告和 retrospective。受保护的 Modeling Batch
+写入自然产生的 Batch、Attempt、Item、Finding、Evidence Association、编辑审计、图修订和失效
+状态仍由平台保留，不得关闭、绕过或伪装成“本地无记录”。
+
+两种 Profile 共享同一组语义质量门。Local 可以用当前态文件和有界查询结果证明门禁，Formal 使用
+版本化 Artifact/Event 等正式记录证明门禁。重要建模项仍必须关联精确 Evidence；验收仍需检查
+来源可追溯性。Local 可省略独立、完整的 lineage 报告，但查询结果未携带足够 provenance 时必须
+执行定向 lineage/Evidence 检查；stale 或不完整结果不能通过验收。
+
+### Profile 选择、组合与生命周期
+
+`execution_profile=local | formal` 与 R1.1-005 的
+`evaluation_profile=fast_local | strict_eval` 是两条正交轴：
+
+- 普通真实用户建模默认 `local`，不等同于双主 Session 的 `fast_local` 评测；
+- 正式交付、完整平台记录或全链路验收选择 `formal`，通常不要求本地 Harness；
+- 严格评测选择 `formal + strict_eval`，仍必须满足 R1.1-005 的双 Session、Harness 和发布证据；
+- 本地 Prompt/模型/协作实验可以选择 `local`，是否同时使用 R1.1-005 的模拟用户 Harness 由该
+  实验意图决定，不能仅凭 `local` 自动冒充严格评测。
+
+Profile 在 run 初始化后固定。若用户中途要求从 Local 改为 Formal，必须新建 Formal run 并从当前
+平台语义状态和明确选择的本地产物继续；不得追补或伪造之前不存在的 Artifact/Event/Checkpoint。
+反向切换同样创建新 run。主 Agent 必须报告新旧 run 的边界和已存在的平台事实。
+
 ### 持续业务交流与主子 Agent 协作
 
 建模从开始到结束都是与用户持续交流和确认业务情况的过程。Local Modeling Mode 取消的是机械
@@ -920,6 +963,41 @@ Modeling Directory。主 Agent 判断已有信息是否足够：足够时直接�
 子 Agent 据此生成增量纠正候选，再经过独立评审、dry-run、apply 以及受影响和依赖能力问题/召回
 验证。删除、不可逆影响或影响范围不明确时，必须在 apply 前询问用户。
 
+用户开始一次建模/更新并确认业务范围后，该意图授权 Local 对范围内、非破坏性的新增和修改在
+通过所有质量门后执行，不再对每个确定性 Batch 重复请求机械批准。以下情况仍必须在 apply 前询问
+用户：删除或不可逆影响、超出已确认范围、影响范围不明确、需要 `apply_partial`、需要接受未解决
+的业务/语义/证据 Finding，或当前平台状态与用户已确认意图发生实质冲突。Formal 继续遵守其正式
+审批与记录合同。
+
+### Local 业务提交边界
+
+Shared Modeling Directory 在 Local 建模期间保存完整当前态 Brief、Coverage 和能力问题。平台
+Project Brief 只接收现有字段合同能够表达的已确认摘要，不扩展 backend schema，也不默认保存每轮
+Interview Answer 或完整对话。更丰富的业务细节继续留在本地 Brief，必要语义通过模型及 Evidence
+进入平台。
+
+Local 在业务门禁通过、首批 Coverage/CQ 已确认且即将启动正式 Work Unit 建模前，进入一次明确的
+业务提交边界。这样后续 result/candidate/review 从一开始就引用平台 CQ ID，不需要在评审后改写候选。
+顺序固定为：
+
+```text
+冻结已确认的本地 Brief/CQ
+  -> 同步平台可表达的已确认 Project Brief 字段
+  -> 精确匹配、创建或更新已接受 CQ，并取得平台 CQ ID
+  -> 只把具有平台支持 query_definition 的 CQ 推进到可测试状态
+  -> 把平台 CQ ID 写入 Coverage/Work Unit 合同并执行建模、合并和独立评审
+  -> 使用相同平台 CQ ID 生成/物化 Modeling Batch
+  -> dry-run/apply
+  -> CQ、Context Query/SPARQL 和来源可追溯性验证
+```
+
+提交边界前取消或放弃实验时，不同步 Brief/CQ 或候选；Local 启动器已经建立的空 Build Session 可以
+安全取消。提交边界后的 Brief/CQ 是已确认业务事实；若后续 Batch 或验证失败，保留这些事实并让
+同一 run 恢复，不承诺跨 Brief/CQ/Batch 回滚。CQ 同步重试先使用已绑定平台 ID；没有绑定时只允许
+对 Ontology、规范化问题文本和 query definition 的唯一精确匹配，歧义时阻断，不能创建重复问题。
+用户接受的 CQ 可标记为 `approved`；只有真实执行平台支持的 query definition 后才能标记
+`passed | failed`。Context Query 等复杂验收保存在本地 `verification.json`，不得伪造平台 CQ PASS。
+
 ### 执行 Profile 与接口边界
 
 `ontology-builder` 只保留一套共享建模核心；Local/Formal 分别拥有自己的 Profile、输入输出 Schema
@@ -931,11 +1009,25 @@ Batch dry-run/apply 写入，查询和验收仍读取平台当前语义状态，
 鉴权边界也不被绕过：凭证只由本地启动器/工具从既有配置读取，凭证值不得进入主/子 Agent Prompt、
 共享目录、Harness 或用户可见错误。凭证缺失、失效或权限不足时返回脱敏错误并停止。
 
-Build Session、Lease、当前 workspace version、幂等键和 Batch 容量合同由本地工具自动处理，不让
-建模 Agent 编排，也不把当前 workspace version 扩展成版本历史。Local Modeling Mode 不要求创建
-Modeling Workflow Artifact、Modeling Execution Event、Build Checkpoint、不可变中间版本链、审计链、
-retrospective 或强制 lineage 报告。Formal Modeling Mode 按正式交付需要使用这些平台能力，但不
-要求本地 Harness。
+每个 Local run 使用一个由 Adapter 管理的 active Build Session。Adapter 自动创建/恢复 Session，
+不创建 Build Checkpoint；成功同步和验证后自动 complete，无 in-flight Batch 的明确放弃才 cancel，
+进程中断则保持 active 供原 run 恢复。Lease、当前 workspace version、幂等键、Batch 容量、请求
+序列化、超时查单和冲突恢复由 Adapter 自动处理，不让建模 Agent 编排，也不把 workspace version
+扩展成版本历史。Lease token 和凭证只存在于单次受控调用内存中，不写入共享目录或 Adapter 状态。
+
+首版固定同一仓库、同一开发机和当前本地平台服务；Adapter 从与该服务相同的现有配置读取四项
+Modeling Batch 容量限制。当前平台没有公开容量发现接口，因此首版不得把 Adapter 指向限制未知的
+远端服务，也不为此新增 backend API。若配置与服务身份无法证明一致，必须在规划前阻断。
+
+Local 默认只使用 `apply_atomic`，按依赖顺序串行处理物化 Batch，不因逐项失败静默切换
+`apply_partial`。后续 Batch 失败时保留已成功前缀，刷新平台当前语义状态后继续；语义内容变化必须
+产生新候选哈希、独立评审和 Batch 身份。Adapter 向 Agent 只返回稳定资源 ID、有界 Findings、当前
+状态和下一动作，不回显内部协议字段或原始响应。
+
+Formal Modeling Mode 继续使用现有 Build Session、Workflow Artifact/Event、Checkpoint、可靠
+大产物交接和正式平台 Adapter。两种 Adapter 均消费同一个当前候选和质量门定义，不能各自修改
+业务模型或维护不同 Modeling Item 语义。Formal 正式交付通常不要求本地 Harness；strict-eval 的
+Harness 义务仍由 R1.1-005 决定。
 
 ### 本地 Harness 的用途与失败行为
 
@@ -950,6 +1042,17 @@ Harness 启用失败或运行中断时不得静默继续。流程在安全节点
 也可以明确允许本轮无记录继续。后者标记 `recording_unavailable`，不影响建模结果验收，但该运行不能
 作为完整的流程优化样本。
 
+普通 Local 首版需要一个单主 Agent 的 Claude Harness Profile，不使用 R1.1-005 双顶层 Session
+mailbox，也不把现有 `fast_local` 评测启动器当作普通建模入口。Harness 必须在第一项建模动作前完成
+绑定；触发本轮的初始用户请求以受限原文或用户可见摘要登记为启动事件。每个阶段边界、子 Agent
+恢复前、独立评审前、apply 前和最终验收前执行轻量 recording health 探针，证明当前 Session 的最新
+Hook 序号/心跳仍在推进；仅检查旧 `ready=true` 不足以证明未断录。
+
+Harness Hook 本身继续 fail-open，不能阻塞任意工具调用；流程暂停由主 Agent 在上述安全节点根据
+health 结果执行。用户 Prompt、delegation 和子 Agent 结果先做 secret/内容边界检查；疑似资料正文、
+候选或 Payload 只记录路径、哈希和摘要，不因低于字符上限就直接保存。Harness 记录不自动生成
+retrospective，也不被任何建模角色作为输入回读。
+
 ### 子 Agent 专属能力 Skill
 
 首版建立四个 repo-local、运行时无关的能力 Skill：
@@ -960,9 +1063,14 @@ Harness 启用失败或运行中断时不得静默继续。流程在安全节点
 - `ontology-retrieval-evaluator`：apply 后能力问题与语义召回验证。
 
 `.claude/agents/` 中的角色定义保持为薄封装，只声明角色、工具边界和预加载 Skill。主 Agent 下发
-任务只传 run 路径、`work_unit_id`、输出合同/Schema 路径、有界变更信息和输出路径；Brief、Coverage、
-资料索引、依赖结果和当前产物由子 Agent 从共享目录读取。不得为每个业务领域或 Work Unit 创建 Skill，
-也不得在四个 Skill 之间复制共享建模核心。
+任务只传 run 路径、`work_unit_id`/`ontology_id`、输出合同/Schema 路径、有界变更信息和输出路径；
+Brief、Coverage、资料索引、依赖结果和当前产物由子 Agent 从共享目录读取。不得为每个业务领域或
+Work Unit 创建 Skill，也不得在四个 Skill 之间复制共享建模核心。
+
+普通 Local 主 Agent 不加载暴露全部 Workflow Artifact/Event/Checkpoint/Lease 写工具的完整 MCP
+表面，只使用 repo-local Adapter 的有界入口以及完成业务理解和读取/验收所需的受限能力；子 Agent
+不接收平台写工具。Formal 继续使用完整正式 MCP。此限制是减少无关工具和协议信息，不是新的安全
+边界；平台 R-008 鉴权仍为写入权威。
 
 首版只要求 Claude Code subagent 通过 `skills:` 完成接入和真实 Harness 验证。Skill 内容保持 Agent
 Skills 兼容，但 Codex 子 Agent 配置与双运行时同时验收不属于本需求完成门槛。
@@ -972,34 +1080,50 @@ Skills 兼容，但 Codex 子 Agent 配置与双运行时同时验收不属于�
 - 不改变或缩短业务建模流程，不限制业务交流轮次，不设置效率、工具调用或 Token 降幅指标；
 - 不删除或关闭平台已有能力，不新增免鉴权写入通道，不建设通用 feature flag 框架；
 - 不新增 backend 表、REST/MCP 接口、前端页面、平台托管共享空间或本地 Ontology 存储；
+- 不新增 Interview Answer 流水账、通用凭证管理器或隐藏 R-004/R-008 强制平台事实的旁路；
 - 不复制两套完整 `ontology-builder`，不创建领域/Work Unit 专属 Skill；
 - 不要求 Formal Modeling Mode 使用本地 Harness，不要求首版同时接入 Codex 子 Agent。
 
 ### 验收标准
 
+交付验收采用可复核的组合证据，不要求为证明接口串联而在同一个外部 Runtime Run 中重复已经分别
+通过的真实平台与 Agent/Harness 链路。Round 14 接受的残余是：DeepSeek 余额耗尽后，没有在同一个
+Claude Run 中重新串行执行修复后的角色动态边界、当前 Reviewer、dry-run/apply、验证和 finish；
+该残余不得被描述为已实际执行通过。真实平台 apply/查询/来源/finish、真实四角色与 Harness、业务
+提交/CQ ID 传播以及修复后的引用隔离均已有独立证据，且当前没有已知未修复产品缺陷。
+
 - 普通建模默认进入 Local Modeling Mode；明确正式交付/严格评测意图进入 Formal Modeling Mode；
-  主 Agent 在开始时报告 Profile，测试能证明没有静默切换。
+  主 Agent 在开始时报告 Profile，测试能证明 Profile 固定、没有静默切换，且 Local/Formal 与
+  fast-local/strict-eval 不会混为一谈。
 - 两种 Profile 复用同一套业务访谈、分片建模、独立评审、dry-run/apply 和召回验证规则，但分别通过
   自己的 Schema/Adapter 生成对应接口数据；共享规则不存在复制副本。
+- 静态和真实 Agent 验证证明 Local 主 Agent/子 Agent 只获得本节定义的最小信息；删去版本、审计、
+  协议和大 Payload 信息后，完整业务 Brief、Coverage、Evidence、评审和验证门仍未删减。
 - 一次真实 Local Modeling Mode 运行能够完成多轮用户业务交流；子 Agent 的问题直接返回主 Agent，
   主 Agent 能从已确认信息答复或询问用户后恢复该子 Agent，不依赖共享目录 mailbox。
 - 四个能力 Skill 能被对应 Claude Code subagent 预加载；主 Agent 仅传 run/Work Unit/合同/输出路径
   等有界信息，子 Agent 能自行读取完整任务与依赖，产生通过 Schema 校验的结构化结果。
 - 本地工具使用既有配置凭证并自动处理 Build Session、Lease、workspace version、幂等和容量合同；
   建模 Agent 不接触凭证值，拟提交文件、共享目录、Harness 和错误信息均不包含实际凭证。
+- 业务提交边界前取消不会同步 Brief/CQ/候选；边界后按 Brief→CQ ID→Batch→验证执行。重试不会重复
+  CQ，平台支持的 CQ 状态和本地复杂检索验证不会互相冒充。
 - Local Modeling Mode 默认产生可用于流程优化的 Harness 记录，并覆盖可见对话、子 Agent 暂停/恢复、
   评审返工和验证；激活失败和中途断录均按“暂停并由用户选择重试或无记录继续”的合同执行。
 - 业务描述变化能定向触发受影响子 Agent 的 `no_change | modify_existing | remodel` 评估；语义候选变化
   后旧评审/Batch 不会被复用。已 apply 场景能通过增量纠正再次完成评审、dry-run/apply 和召回验证，
   删除或不明影响在 apply 前获得用户确认。
-- Local 运行不创建本需求明确排除的 Artifact/Event/Checkpoint/审计/版本历史/retrospective/强制
-  lineage；Formal 运行不以本地 Harness 为前置条件。验收不要求两种 Profile 的效率量化比较，也不
-  要求 Codex 子 Agent 接入。
+- Local 运行不显式创建本需求排除的 Artifact/Event/Checkpoint/额外审计或版本历史/retrospective/
+  强制 lineage 报告，但平台强制 Batch/Attempt/Finding/Evidence/审计/修订事实仍存在；Formal 正式
+  交付不以本地 Harness 为前置条件，strict-eval 仍按 R1.1-005 使用 Harness。
+- 使用 R1.1-004 固定资料或同等代表性场景完成真实 Local run：多轮业务确认、Coverage 无静默遗漏、
+  独立评审 PASS、blocking Finding 关闭、真实 dry-run/apply、预声明能力问题/召回通过、重要项来源
+  可追溯，结果不低于该场景既有可用验收。无需同时重跑 Formal，不比较耗时、Token 或工具次数，也
+  不要求 Codex 子 Agent 接入。
 
 ## 需求变更与代码落点规则
 
 v1.1 当前包含仍待效果证据关闭的总体目标 R1.1-001，以及已实现的 R1.1-002、R1.1-003、
-R1.1-004、R1.1-005，以及已细化待实现的 R1.1-006、R1.1-007。R1.1-003 来自首轮 Dify 实际
+R1.1-004、R1.1-005、R1.1-006，以及已细化待实现的 R1.1-007。R1.1-003 来自首轮 Dify 实际
 建模中已经复现并阻断正式交付的结构化产物交接问题；
 R1.1-004 来自同一次运行暴露的输入资料不可复现问题，二者都不是脱离实践预设的平台扩张。
 

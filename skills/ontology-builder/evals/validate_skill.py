@@ -14,6 +14,7 @@ SKILL_FILE = SKILL_DIR / "SKILL.md"
 MODEL_HANDOFF_SCHEMA = SKILL_DIR / "references" / "modeler-handoff.schema.json"
 TOOL_REFERENCE = re.compile(r"`mcp:([a-z][a-z0-9_]*)`")
 RESOURCE_REFERENCE = re.compile(r"(?:`|\()(references/[a-z0-9_.-]+\.(?:md|json))(?:`|\))")
+FORMAL_ONLY_BOUNDARY = "## Formal execution only — never follow this section for `local`"
 STALE_TOOLS = {
     "get_evidence_artifact_status",
     "get_evidence_artifact_chunks",
@@ -197,6 +198,20 @@ def main() -> None:
         errors.append("SKILL.md frontmatter description is missing or too short")
     if len(skill_text.splitlines()) >= 500:
         errors.append("SKILL.md must stay below 500 lines")
+    if skill_text.count(FORMAL_ONLY_BOUNDARY) != 1:
+        errors.append("SKILL.md must have exactly one explicit Formal-only boundary")
+    else:
+        local_path, _formal_path = skill_text.split(FORMAL_ONLY_BOUNDARY, 1)
+        if TOOL_REFERENCE.search(local_path):
+            errors.append("Local path contains an unqualified MCP instruction")
+        for forbidden in (
+            "Workflow Artifact",
+            "Execution Event",
+            "mcp:acquire_ontology_lease",
+            "mcp:save_build_checkpoint",
+        ):
+            if forbidden in local_path and "Adapter" not in local_path:
+                errors.append(f"Local path contains unqualified Formal orchestration: {forbidden}")
 
     resource_refs = set(RESOURCE_REFERENCE.findall(skill_text))
     actual_refs = {

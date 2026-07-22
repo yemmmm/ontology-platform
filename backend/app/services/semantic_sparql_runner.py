@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.services.scoped_sparql_query import (
+    ScopedSparqlQueryError,
+    inject_dataset_clauses,
+)
+
 
 class SparqlGuardError(ValueError):
     """Raised when user-provided SPARQL violates the read-only SELECT contract."""
@@ -16,8 +21,16 @@ class SparqlCountResult:
 
 
 _FORBIDDEN_KEYWORDS = (
-    "INSERT", "DELETE", "LOAD", "CLEAR", "DROP",
-    "CREATE", "MODIFY", "ADD", "MOVE", "COPY",
+    "INSERT",
+    "DELETE",
+    "LOAD",
+    "CLEAR",
+    "DROP",
+    "CREATE",
+    "MODIFY",
+    "ADD",
+    "MOVE",
+    "COPY",
 )
 
 
@@ -43,19 +56,19 @@ def _validate_select_only(query: str) -> None:
 
 
 def _scope_query_to_graphs(query: str, graph_iris: list[str]) -> str:
-    """Wrap the query so it only sees data from the specified graphs.
+    """Inject the approved RDF dataset into the original SELECT query.
 
-    Injects VALUES ?g { ... } before the user's WHERE body so GRAPH ?g
-    can only bind to allowed IRIs. If the user query has no GRAPH clause,
-    the wrapper yields no rows.
+    ``FROM`` provides the approved default graph, and ``FROM NAMED`` limits
+    ``GRAPH ?g`` to that same approved graph set.  Keeping the user's SELECT
+    as the top-level query preserves its ``?count`` projection and avoids
+    embedding a SELECT inside a graph-pattern group.
     """
-    values = " ".join(f"<{iri}>" for iri in graph_iris)
-    return (
-        f"SELECT (COUNT(*) AS ?count) WHERE {{ "
-        f"VALUES ?g {{ {values} }} "
-        f"{_strip_comments(query).strip()} "
-        f"}} LIMIT 1"
-    )
+    try:
+        return inject_dataset_clauses(query, graph_iris)
+    except ScopedSparqlQueryError as exc:
+        raise SparqlGuardError(str(exc)) from exc
+    except Exception as exc:
+        raise SparqlGuardError("Unable to build a safe scoped SPARQL query") from exc
 
 
 def run_select_count(
@@ -82,7 +95,9 @@ def run_select_count(
     _validate_select_only(query)
     wrapped = _scope_query_to_graphs(query, graph_iris)
     result = store.query_sparql(
-        query=wrapped, timeout_seconds=timeout_seconds, limit=1,
+        query=wrapped,
+        timeout_seconds=timeout_seconds,
+        limit=1,
     )
     bindings = []
     if isinstance(result.result, dict):

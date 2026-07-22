@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Retrieval Evaluator"
+  short_description: "Evaluate applied ontology retrieval evidence."
+  default_prompt: "Evaluate the accepted questions from observed platform results and return structured gaps."

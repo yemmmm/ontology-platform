@@ -174,16 +174,18 @@ _Avoid_: Modeling Batch, chat prompt, dynamically scheduled platform job
 **Local Modeling Mode**:
 The default execution profile for local modeling-quality experiments. It preserves the same
 business interview, modeling, review, platform dry-run/apply, and retrieval-verification activities
-as formal modeling, while repo-local adapters automatically satisfy mandatory platform write
-contracts and omit productization records from the completion path. A local Harness record remains
-enabled as process-optimization evidence rather than audit evidence.
+as formal modeling, while a repo-local Adapter hides mandatory platform protocol details from the
+Agent and omits explicit Workflow Artifact/Event/Checkpoint and extra report creation. Protected
+Batch writes still produce their mandatory platform facts. A local Harness record remains enabled
+as background process-optimization evidence rather than audit or Agent recovery input.
 _Avoid_: shortened modeling workflow, local Ontology store, ungoverned direct write, audit profile
 
 **Formal Modeling Mode**:
 The explicitly selected execution profile for formal delivery, strict evaluation, complete platform
 recording, or full-chain acceptance. It shares the same modeling core as Local Modeling Mode, uses
 the formal platform schemas and productization capabilities required by that delivery, and does not
-require the repo-local process-optimization Harness.
+by itself require the repo-local process-optimization Harness. Strict evaluation additionally
+composes the R1.1-005 Harness contract.
 _Avoid_: different modeling method, mandatory local Harness, copied ontology-builder Skill
 
 **Ontology Lease**:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Business Organizer"
+  short_description: "Organize evidence-backed business briefs and Coverage."
+  default_prompt: "Organize the current shared modeling run into a Brief, Coverage, and bounded questions."

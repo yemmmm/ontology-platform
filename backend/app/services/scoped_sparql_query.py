@@ -79,9 +79,7 @@ class ScopedSparqlQueryService:
         _enforce_result_limit(result, query_type=query_type, limit=limit)
         warnings = [*scope.warnings, *_ontology_warnings(scope)]
         if result.truncated:
-            warnings.append(
-                {"code": "query_truncated", "message": "SPARQL result was truncated."}
-            )
+            warnings.append({"code": "query_truncated", "message": "SPARQL result was truncated."})
         return {
             "result": result.result,
             "result_format": result.result_format,
@@ -139,9 +137,7 @@ def inject_dataset_clauses(
     form_tokens = [
         token
         for token in tokens
-        if token.brace_depth == 0
-        and token.paren_depth == 0
-        and token.value == query_type.upper()
+        if token.brace_depth == 0 and token.paren_depth == 0 and token.value == query_type.upper()
     ]
     if len(form_tokens) != 1:
         raise ScopedSparqlQueryError("Unable to locate a unique top-level SPARQL query form")
@@ -178,9 +174,7 @@ def enforce_top_level_limit(
     if max_solutions < 1:
         raise ScopedSparqlQueryError("SPARQL solution limit must be positive")
     tokens = _scan_tokens(query)
-    top_level = [
-        token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0
-    ]
+    top_level = [token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0]
     limits = [token for token in top_level if token.value == "LIMIT"]
     if len(limits) > 1:
         raise ScopedSparqlQueryError("Unable to locate a unique top-level SPARQL LIMIT")
@@ -188,18 +182,14 @@ def enforce_top_level_limit(
         bounded = f"{query.rstrip()} LIMIT {max_solutions}"
     else:
         limit_token = limits[0]
-        value_token = next(
-            (token for token in top_level if token.start >= limit_token.end), None
-        )
+        value_token = next((token for token in top_level if token.start >= limit_token.end), None)
         if value_token is None or not value_token.value.isdigit():
             raise ScopedSparqlQueryError("Unable to locate a safe top-level SPARQL LIMIT value")
         caller_limit = int(value_token.value)
         if caller_limit <= max_solutions:
             bounded = query
         else:
-            bounded = (
-                f"{query[:value_token.start]}{max_solutions}{query[value_token.end:]}"
-            )
+            bounded = f"{query[: value_token.start]}{max_solutions}{query[value_token.end :]}"
     try:
         parsed = parseQuery(bounded)
     except Exception as exc:
@@ -210,9 +200,7 @@ def enforce_top_level_limit(
 
 
 def _where_or_group_position(tokens: list[_Token]) -> int | None:
-    top_level = [
-        token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0
-    ]
+    top_level = [token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0]
     where = next((token for token in top_level if token.value == "WHERE"), None)
     group = next((token for token in top_level if token.value == "{"), None)
     if where and group and where.start > group.start:
@@ -222,9 +210,7 @@ def _where_or_group_position(tokens: list[_Token]) -> int | None:
 
 
 def _construct_dataset_position(query: str, tokens: list[_Token]) -> int | None:
-    top_level = [
-        token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0
-    ]
+    top_level = [token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0]
     first = next((token for token in top_level if token.value in {"WHERE", "{"}), None)
     if first is None:
         return None
@@ -247,9 +233,7 @@ def _describe_dataset_position(query: str, tokens: list[_Token]) -> int | None:
     boundary = _where_or_group_position(tokens)
     if boundary is not None:
         return boundary
-    top_level = [
-        token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0
-    ]
+    top_level = [token for token in tokens if token.brace_depth == 0 and token.paren_depth == 0]
     modifier = next(
         (
             token
@@ -333,17 +317,13 @@ def _scan_tokens(query: str) -> list[_Token]:
             if ":" in value:
                 index = end
                 continue
-            tokens.append(
-                _Token(value.upper(), index, end, brace_depth, paren_depth)
-            )
+            tokens.append(_Token(value.upper(), index, end, brace_depth, paren_depth))
             index = end
             continue
         number = re.match(r"[0-9]+", query[index:])
         if number:
             end = index + len(number.group(0))
-            tokens.append(
-                _Token(number.group(0), index, end, brace_depth, paren_depth)
-            )
+            tokens.append(_Token(number.group(0), index, end, brace_depth, paren_depth))
             index = end
             continue
         index += 1
@@ -402,9 +382,7 @@ def _resolve_query_bounds(
     result_limit: int | None,
 ) -> tuple[float, int]:
     timeout = (
-        settings.semantic_query_timeout_seconds
-        if timeout_seconds is None
-        else timeout_seconds
+        settings.semantic_query_timeout_seconds if timeout_seconds is None else timeout_seconds
     )
     limit = settings.semantic_query_result_limit if result_limit is None else result_limit
     if not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:

@@ -147,6 +147,7 @@ NONCE = re.compile(r"^[A-Za-z0-9_-]{24,128}$")
 PHASE = re.compile(r"^[a-z][a-z0-9_-]{1,79}$")
 OPERATION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$")
 PARTICIPANT_ROLES = {"simulated_user", "modeling_agent"}
+LOCAL_MAIN_ROLE = "main_agent"
 RUNTIMES = {"codex", "claude"}
 
 
@@ -523,6 +524,7 @@ def activation_args(command: str) -> dict[str, str] | None:
         "--project-id": "project_id",
         "--runtime": "runtime",
         "--participant-role": "participant_role",
+        "--execution-profile": "execution_profile",
     }
     cursor = index + 1
     while cursor < len(tokens):
@@ -534,11 +536,53 @@ def activation_args(command: str) -> dict[str, str] | None:
         values[mapped] = tokens[cursor + 1]
         cursor += 2
     required = {"run_id", "activation_nonce", "build_session_id", "project_id"}
-    if not required.issubset(values) or bool(values.get("runtime")) != bool(
-        values.get("participant_role")
-    ):
+    if not required.issubset(values):
+        return None
+    local = values.get("execution_profile") == "local"
+    paired = bool(values.get("runtime")) == bool(values.get("participant_role"))
+    if not local and not paired:
+        return None
+    if local and values.get("runtime") != "claude":
         return None
     return values
+
+
+def adapter_health_args(command: str) -> argparse.Namespace | None:
+    """Recognize only the Adapter health action so its nested Harness call can consume a receipt."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    indexes = [
+        index
+        for index, token in enumerate(tokens)
+        if Path(token).name == "local_modeling_adapter.py"
+    ]
+    if len(indexes) != 1:
+        return None
+    trailing = tokens[indexes[0] + 1 :]
+    if "recording-health" not in trailing:
+        return None
+    index = trailing.index("recording-health")
+    values: dict[str, str] = {}
+    cursor = index + 1
+    if cursor < len(trailing) and not trailing[cursor].startswith("--"):
+        cursor += 1  # Adapter positional run_dir; only stable receipt arguments are retained.
+    while cursor < len(trailing):
+        if trailing[cursor] not in {"--run-id", "--operation-id", "--harness-run-id"}:
+            return None
+        if cursor + 1 >= len(trailing):
+            return None
+        values[trailing[cursor]] = trailing[cursor + 1]
+        cursor += 2
+    if set(values) - {"--run-id", "--operation-id", "--harness-run-id"} or not {
+        "--run-id",
+        "--operation-id",
+    }.issubset(values):
+        return None
+    return argparse.Namespace(
+        command="recording-health", run_id=values["--run-id"], operation_id=values["--operation-id"]
+    )
 
 
 def handoff_command(command: str) -> str | None:
@@ -613,11 +657,18 @@ def validate_activation_values(values: dict[str, str]) -> None:
             raise HarnessError(f"invalid {key}")
     runtime = values.get("runtime")
     role = values.get("participant_role")
-    if bool(runtime) != bool(role):
+    local = values.get("execution_profile") == "local"
+    if values.get("execution_profile") not in {None, "local"}:
+        raise HarnessError("invalid execution_profile")
+    if not local and bool(runtime) != bool(role):
         raise HarnessError("runtime and participant_role must be supplied together")
+    if local and runtime != "claude":
+        raise HarnessError("single Local recording requires the Claude runtime")
+    if local and role not in {None, LOCAL_MAIN_ROLE}:
+        raise HarnessError("single Local recording has only the main_agent participant")
     if runtime is not None and runtime not in RUNTIMES:
         raise HarnessError("invalid runtime")
-    if role is not None and role not in PARTICIPANT_ROLES:
+    if role is not None and role not in PARTICIPANT_ROLES | {LOCAL_MAIN_ROLE}:
         raise HarnessError("invalid participant_role")
 
 
@@ -648,10 +699,11 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
         with run_lock(run_dir):
             metadata_path = run_dir / "metadata.json"
             existing = read_json(metadata_path) if metadata_path.exists() else None
-            dual = bool(values.get("participant_role"))
-            mode = "dual_claude" if dual else "legacy"
-            role = values.get("participant_role", "main_agent")
-            runtime = values.get("runtime", "codex")
+            local = values.get("execution_profile") == "local"
+            dual = bool(values.get("participant_role")) and not local
+            mode = "single_claude" if local else ("dual_claude" if dual else "legacy")
+            role = LOCAL_MAIN_ROLE if local else values.get("participant_role", LOCAL_MAIN_ROLE)
+            runtime = "claude" if local else values.get("runtime", "codex")
             if dual and runtime != "claude":
                 raise HarnessError("dual participants require the Claude runtime")
             if existing and (
@@ -670,7 +722,7 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
                     raise HarnessError("runtime session is already bound to another run or role")
             timestamp = now_iso()
             metadata = existing or {
-                "schema_version": 2 if dual else 1,
+                "schema_version": 3 if local else (2 if dual else 1),
                 "harness_version": HARNESS_VERSION,
                 "run_id": values["run_id"],
                 "build_session_id": values["build_session_id"],
@@ -684,7 +736,8 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
                 "terminal_state": None,
                 "mode": mode,
                 "evaluation_profile": "strict_eval" if dual else "legacy",
-                "summary_policy": "automatic",
+                "execution_profile": "local" if local else None,
+                "summary_policy": "explicit" if local else "automatic",
                 "participants": {},
             }
             if dual:
@@ -719,6 +772,8 @@ def acknowledge_activation(paths: Paths, hook: dict[str, Any], values: dict[str,
                 metadata["session_id"] = session_id
                 metadata["activation_nonce"] = values["activation_nonce"]
                 metadata["acknowledged_at"] = timestamp
+                if local:
+                    metadata["execution_profile"] = "local"
             metadata["hook_config_hash"] = config_hash(paths)
             atomic_json(metadata_path, metadata)
             if not (run_dir / "state.json").exists():
@@ -958,8 +1013,11 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
     }
     runtime = getattr(args, "runtime", None)
     role = getattr(args, "participant_role", None)
+    execution_profile = getattr(args, "execution_profile", None)
     if runtime or role:
         values.update({"runtime": runtime, "participant_role": role})
+    if execution_profile:
+        values["execution_profile"] = execution_profile
     validate_activation_values(values)
     run_dir = paths.run(args.run_id)
     try:
@@ -968,8 +1026,12 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
         raise HarnessError(
             "this session is not being recorded: activation Hook did not acknowledge"
         ) from exc
-    dual = metadata.get("mode") == "dual_claude"
-    if dual != bool(runtime and role):
+    mode = metadata.get("mode")
+    dual = mode == "dual_claude"
+    local = mode == "single_claude"
+    if local != (getattr(args, "execution_profile", None) == "local"):
+        raise HarnessError("activation mode does not match the acknowledged run")
+    if not local and dual != bool(runtime and role):
         raise HarnessError("activation mode does not match the acknowledged run")
     participant = metadata.get("participants", {}).get(role) if dual else None
     acknowledged_at = (
@@ -1021,7 +1083,7 @@ def activate_cli(paths: Paths, args: argparse.Namespace) -> None:
                 "build_session_id": args.build_session_id,
                 "project_id": args.project_id,
                 "previous_run_id": metadata.get("previous_run_id"),
-                "participant_role": role or "main_agent",
+                "participant_role": role or LOCAL_MAIN_ROLE,
                 "runtime": runtime or "codex",
                 "participant_epoch": participant.get("epoch") if dual else 1,
             },
@@ -1109,6 +1171,12 @@ def command_arguments(command: str) -> argparse.Namespace | None:
 
 
 def operation_payload(args: argparse.Namespace) -> dict[str, Any] | None:
+    if args.command == "recording-health":
+        return {
+            "command": "recording_health",
+            "run_id": args.run_id,
+            "operation_id": args.operation_id,
+        }
     if args.command == "message" and args.message_command == "send":
         return {
             "command": "message_send",
@@ -1191,18 +1259,53 @@ def consume_receipt(
     receipt = read_json(receipt_path)
     metadata = read_json(run_dir / "metadata.json")
     participant = metadata.get("participants", {}).get(receipt.get("participant_role"), {})
+    single = metadata.get("mode") == "single_claude"
+    participant_matches = (
+        (
+            metadata.get("session_id") == receipt.get("session_id")
+            and receipt.get("participant_role") == LOCAL_MAIN_ROLE
+            and receipt.get("runtime") == "claude"
+            and int(receipt.get("participant_epoch", 0)) == 1
+        )
+        if single
+        else (
+            participant.get("session_id") == receipt.get("session_id")
+            and int(participant.get("epoch", 0)) == int(receipt.get("participant_epoch", -1))
+        )
+    )
     if (
         receipt.get("run_id") != payload["run_id"]
         or receipt.get("fingerprint") != operation_fingerprint(payload)
         or receipt.get("consumed_at")
         or receipt.get("invalidated_at")
         or float(receipt.get("expires_at_epoch", 0)) < time.time()
-        or participant.get("session_id") != receipt.get("session_id")
-        or int(participant.get("epoch", 0)) != int(receipt.get("participant_epoch", -1))
+        or not participant_matches
         or metadata.get("status") != "active"
     ):
         raise HarnessError("operation receipt is stale, consumed, or does not match")
     return receipt, payload
+
+
+def recording_health_cli(paths: Paths, args: argparse.Namespace) -> None:
+    """Consume a fresh Hook receipt; old ready metadata cannot prove current recording."""
+    run_dir = paths.run(args.run_id)
+    with run_lock(run_dir):
+        metadata = read_json(run_dir / "metadata.json")
+        if metadata.get("mode") != "single_claude" or metadata.get("execution_profile") != "local":
+            raise HarnessError("recording health is only available for a single Local Claude run")
+        receipt, _payload = consume_receipt(paths, run_dir, args)
+        event, _created = append_event_locked(
+            run_dir,
+            "recording_health",
+            {
+                "participant_role": LOCAL_MAIN_ROLE,
+                "runtime": "claude",
+                "receipt_issued_at": receipt["issued_at"],
+            },
+            f"recording-health:{receipt['operation_id']}",
+        )
+        mark_receipt_consumed(run_dir, receipt)
+    print(json.dumps({"run_id": args.run_id, "healthy": True, "sequence": event["sequence"]}))
 
 
 def mark_receipt_consumed(run_dir: Path, receipt: dict[str, Any]) -> None:
@@ -1380,6 +1483,7 @@ def status_cli(paths: Paths, args: argparse.Namespace) -> None:
                 "run_id": metadata["run_id"],
                 "mode": metadata.get("mode", "legacy"),
                 "evaluation_profile": metadata.get("evaluation_profile", default_profile),
+                "execution_profile": metadata.get("execution_profile"),
                 "summary_policy": metadata.get("summary_policy", "automatic"),
                 "status": metadata.get("status"),
                 "preparation_complete": metadata.get("preparation_complete"),
@@ -1429,7 +1533,8 @@ def handle_hook(paths: Paths, hook: dict[str, Any]) -> None:
         return
     run_dir = binding.run_dir
     if event_name == "PreToolUse" and tool_name in {"Bash", "exec_command"}:
-        arguments = command_arguments(str(tool_input.get("command") or tool_input.get("cmd") or ""))
+        command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+        arguments = command_arguments(command) or adapter_health_args(command)
         if arguments:
             authorize_operation(binding, arguments)
             if operation_payload(arguments):
@@ -2114,6 +2219,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     activate.add_argument("--project-id", required=True)
     activate.add_argument("--runtime", choices=sorted(RUNTIMES))
     activate.add_argument("--participant-role", choices=sorted(PARTICIPANT_ROLES))
+    activate.add_argument("--execution-profile", choices=["local"])
+    recording_health = subparsers.add_parser("recording-health")
+    recording_health.add_argument("--run-id", required=True)
+    recording_health.add_argument("--operation-id", required=True)
     checkpoint = subparsers.add_parser("checkpoint")
     checkpoint.add_argument("--run-id", required=True)
     checkpoint.add_argument("--phase", required=True)
@@ -2180,6 +2289,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "activate":
             activate_cli(paths, args)
+        elif args.command == "recording-health":
+            recording_health_cli(paths, args)
         elif args.command == "prepare-fast":
             prepare_fast_cli(paths, args)
         elif args.command == "checkpoint":
