@@ -1,0 +1,40 @@
+{
+  "$comment": "Structured artifact shapes consumed/produced by roles. These are documentation of the stable handoff contract; production code validates the generic modeled-resource envelope, not domain-specific shapes.",
+  "brief": {
+    "type": "object",
+    "required": ["fields", "confirmed_fields"],
+    "properties": {
+      "fields": { "type": "object", "description": "Confirmed business brief fields (domain_name, business_goal, scope, ...)." },
+      "confirmed_fields": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "coverage": {
+    "type": "object",
+    "required": ["competency_questions", "coverage_items", "work_units"],
+    "description": "Coverage partitions the business scope into Work Units with exact dependencies and CQ traces."
+  },
+  "candidate": {
+    "type": "object",
+    "required": ["ontology_id", "items", "immutable_content_hash"],
+    "description": "Merged Work Unit results for one ontology, bound by hash to its review."
+  },
+  "review": {
+    "type": "object",
+    "required": ["verdict", "candidate_hash", "findings", "next_action"],
+    "properties": {
+      "verdict": { "type": "string", "enum": ["PASS", "REVISE", "BLOCKED"] },
+      "candidate_hash": { "type": "string" },
+      "findings": { "type": "array", "items": { "type": "object" } },
+      "next_action": { "type": "string" }
+    }
+  },
+  "summary": {
+    "type": "object",
+    "required": ["stage", "roles", "goal", "actions", "inputs_outputs", "issues_decisions", "result", "unresolved", "next_step"],
+    "description": "Stage Summary; built only from that stage's bounded visible events and stable artifact references."
+  },
+  "verification": {
+    "type": "object",
+    "description": "Observed CQ/retrieval/provenance evidence for the applied model; verdict PASS only on observed results."
+  }
+}

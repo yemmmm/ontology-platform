@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "Dify Foundations v1",
+  "goal": "Model the foundational business concepts of the Dify workflow platform so that workflow composition, node connectivity, inputs, and outputs can be queried and validated as a knowledge graph.",
+  "source_locators": [
+    "docs/scenarios/dify-foundations-v1/workflow-overview.md",
+    "docs/scenarios/dify-foundations-v1/node-catalog.md",
+    "docs/scenarios/dify-foundations-v1/input-output-contract.md"
+  ],
+  "constraints": [
+    "Model Dify Workflow, Node, Input, and Output as business concepts in the customer ontology, not as platform product concepts.",
+    "Capture node connectivity and ordering as modeled relations with provenance; do not invent connections absent from the sources.",
+    "Bound the first pass to workflow foundations; advanced node subtypes and plugins are out of scope unless a source supports them."
+  ],
+  "acceptance_questions": [
+    "Which nodes can follow the LLM node in a Dify workflow, and what inputs do they require?",
+    "What outputs does the Workflow produce when an End node terminates execution?",
+    "Which node kinds accept a variable binding from a predecessor node output?"
+  ]
+}

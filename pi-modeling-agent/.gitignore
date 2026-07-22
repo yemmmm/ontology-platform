@@ -1,0 +1,8 @@
+node_modules/
+# Local run data and machine-local configuration never enter the tracked package.
+workspaces/
+.pi/agent/
+.pi/auth.json
+*.log
+# Local (gitignored) modeling configuration: selects project, platform URL, credential source, model.
+local.config.json

@@ -198,13 +198,92 @@ every repository-mandated suite and restart/health procedure for that surface.
 
 Append every round below. Do not delete failed or blocked rounds.
 
-### Round 1 — pending
+### Round 1 — 2026-07-22 — PASS (phase 1, sections A–F)
 
-- Stable state: pending implementation-ready handoff.
-- Scope: automated contract and pre-retirement Pi path.
-- Result: not run.
-- Defects/unexecuted cases: pending.
-- Evidence: pending.
+- Tester: requirement_tester (independent). Did not trust developer numbers; re-ran all suites and
+  reviewed implementation source.
+- Stable state: worktree at HEAD `294e5eb` + untracked `pi-modeling-agent/` (43 tracked files,
+  `node_modules` installed) + modified delivery-record. Developer stopped (development-ready).
+- Scope: shared test plan sections A–F only (automated contract + pre-retirement Pi path). G (real
+  Pi/model/platform run), H (Claude retirement), and the retirement portion of I are out of phase 1
+  and were NOT attempted: no real model call, no real platform apply, no Claude file removed/retired.
+- Result: PASS. All A–F automated contracts hold; no Critical/High defect found. Phase 1 may proceed
+  to G after the Medium residual below is dispositioned by the main agent.
+
+Execution (exact commands and results):
+
+- `cd pi-modeling-agent && npm test` -> 29/29 pass, 0 fail (node:test). Covers A lifecycle/entry,
+  B role isolation, C clarification, E events/summaries, F recovery, entry-validation.
+- `python3 -m unittest discover -s pi-modeling-agent/tests` -> 59/59 pass (test_shared_modeling_directory
+  16, test_platform_adapter 20, test_modeling_handoff 21, test_modeling_profiles 2). Covers D migrated
+  deterministic core + runner-authorization gating.
+- `git diff --check` -> clean.
+- `git diff --stat 294e5eb -- .claude .codex skills README.md .github backend/tests/test_documentation_sync.py`
+  -> empty (frozen paths untouched). `git diff --stat 294e5eb -- backend/app` -> empty (backend product
+  code untouched).
+- grep `recording_grant|recording_health|recording_unavailable|modeling_harness` across
+  `pi-modeling-agent` -> 0 matches (receipt/Harness coupling fully removed).
+- grep Pi Session/event types into `backend/app` -> 0 matches (no backend schema/API leakage).
+- Secret scan across tracked pi files -> only deliberate test fixtures in `tests/*.py`/`*.test.mjs`;
+  no real credential in production files.
+
+Independent contract verification (highlights, not just developer assertions):
+
+- A lifecycle (load-bearing): `src/rpc-session.mjs` `isCompleteEligible()` requires
+  settled && extensionIdle && queueEmpty && pendingInputs empty && !exited, all simultaneously.
+  `RESET_EVENTS` (agent_end/turn_start/auto_retry/compaction_start/compaction_end) clear
+  settled/idle. `a-lifecycle.test.mjs` proves a plain `agent_end` without `agent_settled` rejects
+  (`/before role settlement/`), and parametrized normal/auto-retry/compaction/queued-follow-up cases
+  each complete only after the final triple signal. Interrupt/timeout kills only the victim child and
+  `dispose()` leaves `run.sessions.size == 0` with every child exited (no orphan).
+- D migration: `lib/{shared_modeling_directory,modeling_handoff,modeling_profiles}.py` are byte-identical
+  to the `.codex` originals (contracts preserved); `lib/platform_adapter.py` is the cleaned
+  `local_modeling_adapter.py` (1278->1209 lines, receipt coupling removed). Every protected write
+  (commit_business/dry_run_next/apply_next/verify/finish) calls `_consume_runner_grant`; tests prove
+  refusal before any platform call (request_mock call_count == 2 / assert_not_called) and single-use
+  consumption. apply-timeout keeps original client_batch_id + idempotency key, no lease-token leak.
+  failed-CQ blocks before local verification, marks `cq_recovery_required`, recovers with a fresh
+  grant; reconcile uses the real platform batch detail attempt without resubmission.
+- B/C/E/F: reviewer forbidden-key (transcript) rejection, unsettled-artifact rejection, clarification
+  requested->paused->answered ordering with no duplicate id, cancel-before-confirm writes no accepted
+  artifact, summary schema rejects missing/extra/hidden fields and keeps applied state on summary
+  failure, worker-kill rejects partial output and reruns same unit, coordinator per-turn settlement
+  does not end the persistent session until `markTerminal`.
+
+Defects (by severity):
+
+- Medium (residual, not phase-1 blocking): `pi-modeling-agent/lib/modeling_handoff.py` is byte-identical
+  to `.codex/modeling_handoff.py` and still contains a Codex CLI subprocess launcher
+  (`start_codex`/`supervisor` spawning `codex exec`, `--codex-bin` args) plus a hard-coded reference to
+  `skills/ontology-builder/references/modeler-handoff.schema.json`. It is dead code in the Pi package
+  (no non-test reference; the Pi Runner and `platform_adapter.py` do not import it). It does NOT carry
+  the removed receipt coupling, and its own 21 tests pass. Risk: it ships in the "only actively
+  maintained" Pi package and its schema/supervisor paths will break when Claude retirement (H) deletes
+  `skills/ontology-builder`. The design's proposed layout listed only `shared_modeling_directory.py`
+  and `platform_adapter.py` under `lib/`; this module should be removed from the Pi package or its
+  Codex supervisor stripped before/in H. ADR/requirement boundary not violated because nothing invokes
+  it. Related: README "Layout" line and delivery-record handoff both describe `lib/` as including
+  handoff/profiles, so wording should track the final disposition.
+- Low (already documented by main agent): `lib/platform_adapter.py` has ~7 lines >100 chars (longest
+  159), inherited verbatim from the `.codex` original to preserve migration fidelity. Ruff 100-col
+  style conformance deferred.
+
+Unexecuted cases (out of phase 1, not counted as pass):
+
+- G real Pi/model/platform run; H Claude retirement regression; I retirement cleanup + final backend
+  suite + docs-sync CI rewrite. These require a real model key and the post-retirement stable state.
+- Entry-command rejection matrix for "unavailable Pi executable" and "unloaded project Extension" is
+  only unit-covered indirectly (`resolvePiBinary`/`validateWorkflowPackage`); full rejection proof
+  belongs to the real run (G).
+
+Residual risks:
+
+- `modeling_handoff.py` dead-coupling (see Medium above) surfaces at Claude retirement.
+- Mock/fake-based A–F cannot prove real Pi 0.81.1 event sequencing, real model correctness, or real
+  platform apply idempotency; that remains G's gate.
+- Phase 1 did not run the full `cd backend && uv run pytest` suite or restart
+  `ontology-platform.service` (no backend/frontend runtime code changed; only the documentation-contract
+  test edit is planned for retirement in a later phase).
 
 ### Final post-retirement round — pending
 

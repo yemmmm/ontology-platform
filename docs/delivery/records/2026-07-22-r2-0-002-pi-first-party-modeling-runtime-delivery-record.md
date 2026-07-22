@@ -1,14 +1,16 @@
 # R2.0-002 Pi 第一方建模 Agent Runtime 正式集成 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.0.md` R2.0-002
-- Status: in-progress
+- Status: phase 1 (sections A–F) independently tested PASS; pending user go-ahead for G (real run) + H (retirement)
 - Started: 2026-07-22T16:30:00+08:00
-- Last updated: 2026-07-22T20:16:40+08:00
+- Last updated: 2026-07-22T22:29:14+08:00
 - Design: `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
-- Delivery baseline: `d6f8255`; clean `main...origin/main`
-- Design package commit: this commit
-- Delivery commit: pending implementation
+- Architecture decision: `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
+- Delivery baseline: `294e5eb` (design package committed; clean `main`, ahead of `origin/main` by 1)
+- Phase 1 model decision: `deepseek/deepseek-v4-flash` (carried from R2.0-001; key staged in gitignored
+  config, not needed for phase 1)
+- Delivery commit: pending phase 1 implementation
 
 ## Confirmed contract
 
@@ -271,15 +273,64 @@
 - Outcome/next step: 设计包可以提交。真实 Pi workflow、完整 backend 测试、真实场景运行、Claude
   退役和独立测试仍属于后续实现周期，不能由本次文档验证代替。
 
+### 2026-07-22T21:30:45+08:00 — phase 1 development handoff frozen — user and main agent
+
+- Context: 用户确认分阶段推进，本次只做阶段 1；真实模型沿用 `deepseek/deepseek-v4-flash`（key 就绪，
+  阶段 1 不需要）。设计、共享测试计划、ADR 0007 已评审 PASS，合同冻结。
+- Action/decision: 冻结阶段 1 开发交接，baseline `294e5eb`（设计包已提交，工作区 clean）。
+  - Phase 1 scope：新建 `pi-modeling-agent/`（`package.json`+`package-lock.json`、`README.md`、
+    `src/{cli,runner,rpc-session,event-recorder,stage-summary}.mjs`、`extensions/modeling-tools.ts`、
+    `workflow/{coordinator,business-organizer,work-unit-modeler,model-reviewer,stage-summarizer}.md` +
+    `references/` + `schemas/`、`scenarios/dify-foundations-v1.json`、`lib/`、`tests/`）；迁移
+    `.codex/shared_modeling_directory.py`(平移)、`.codex/modeling_handoff.py`、`.codex/modeling_profiles.py`
+    到 `pi-modeling-agent/lib/`；把 `.codex/local_modeling_adapter.py` 迁移为内部 `lib/platform_adapter.py`，
+    移除 Claude Harness receipt 耦合；`.codex/fast_local_launcher.py` 的启动逻辑替换为 Pi RPC Runner。
+    覆盖共享测试计划 A–F 自动合同。
+  - Constraints：Pi `@earendil-works/pi-coding-agent@0.81.1`（以 R2.0-001
+    `backend/.local/pi-v2-001/package-lock.json` 为基线，不混 upstream commit，见 R2.0-001 P3）；Node
+    `>=22.19.0`；RPC `--mode rpc --no-session --approve` + NDJSON；一次性角色完成条件为 `agent_settled`
+    + Extension `ctx.isIdle()` + 无 pending + Runner 空队列，**不得**在 `agent_end` 提前接受产物或回收
+    子进程（Pi 0.81.1 `docs/rpc.md`、`docs/extensions.md`；本记录 Review disposition round 1 已修正）；
+    Runner 必须外部超时 + 显式 kill 回收子进程（R2.0-001 P1）；迁移而非重写确定性核心，保留 candidate
+    hash、review 绑定、input fingerprint、capacity-aware Batch 规划、幂等、verify 合同；移除
+    `recording_grant`/`recording_health`/`.codex/hooks/modeling_harness.py` 依赖，由 Runner 内部边界信任
+    取代；不新增 backend schema、Pi Session/事件公开 API、systemd 单元、远程调度；domain 概念（Dify
+    Workflow/Node 等）只出现在场景与测试断言，不进生产代码。
+  - Out of phase 1：真实端到端建模运行（测试计划 G）、Claude 路径退役（H）、文档/status 退役同步（I 的
+    退役部分）。`.claude`/`.codex` 现有 Claude 建模文件在本阶段保持冻结不动，仅作为回退。
+- Evidence: 用户确认（分阶段 + `deepseek/deepseek-v4-flash`）；本记录 Review disposition round 2 PASS；
+  Explore 基线报告（迁移源 + 退役目标清单）；`backend/.local/pi-v2-001/{rpc-clarification-probe,integrated-rpc-probe,full-probe}.mjs`。
+- Outcome/next step: 交 `requirement_developer` 实现 phase 1，不 commit；完成后交
+  `requirement_tester` 独立测试 Round 1（A–F）。G/H 在阶段 1 PASS 后单独启动。
+
+### 2026-07-22T22:21:49+08:00 — phase 1 development-ready and main-agent diff audit — main agent
+
+- Context: `requirement_developer` 返回 development-ready signal；按工作流第 7 步，主 agent 必须亲自核查 diff 与关键约束，不采信报告。
+- Action/decision: 核查通过。git 仅 `pi-modeling-agent/`（43 tracked 文件，untracked）+ 本 delivery-record（M）；冻结路径（`.claude`/`.codex`/`skills`/`README.md`/`docs-sync.yml`/`test_documentation_sync.py`/designs/test-plans/architecture/requirements）相对 `294e5eb` 零改动。主 agent 复跑 `npm test` 29/29、`python3 -m unittest discover -s tests` 59/59、`git diff --check` clean。关键约束落实：`src/rpc-session.mjs` 三重完成门（`agent_settled` + Extension `modeling_idle` + 空 `queue_update`，顶部注释明确**不**在 `agent_end` 关 stdin；`gracefulShutdown` SIGTERM→SIGKILL→await exit→无孤儿）；`lib/` receipt/harness 残留 0（仅 `platform_adapter.py:8` 一句说明性注释）；`authorize_runner_write`/`_consume_runner_grant`/`runner_authorization_required` 门禁到位；`backend/app` 无 Pi Session/事件泄漏。真实 `pi@0.81.1` RPC smoke 被 Runner 干净回收（exit 0）。
+- Evidence: 主 agent git status / npm test / python unittest / grep 约束核查输出；developer development-ready signal（29/29 + 59/59 + smoke）。
+- Outcome/next step: 冻结稳定态（worktree at `294e5eb` + untracked `pi-modeling-agent/`，developer 已停止），交 `requirement_tester` 独立测试 Round 1（A–F）。已知低优先级项：`platform_adapter.py` 残留 7 处 >100 字符行（迁移原文件折行，最长 159，与 `.codex` 原文一致，未折行以保迁移忠实度）；`__pycache__` 已被 `.gitignore` 忽略；G/H/I 退役不在 phase 1。
+
+### 2026-07-22T22:29:14+08:00 — phase 1 independent test Round 1 PASS and findings disposition — main agent
+
+- Context: `requirement_tester` 独立测试 Round 1（A–F）完成，自行重跑全部套件并 review 实现源码，不采信 developer 数字。
+- Action/decision: Round 1 **PASS**（phase 1 A–F）。tester 证据：`npm test` 29/29、`python3 -m unittest` 59/59、`git diff --check` clean、冻结路径与 `backend/app` 相对 `294e5eb` 零改动、receipt/Harness grep 0、backend Pi 泄漏 grep 0、tracked 无真实密钥。关键合同独立复核：A 节 `isCompleteEligible()` 三重门 + `RESET_EVENTS`（含 `agent_end`）清空 settled/idle，普通 `agent_end` 无 `agent_settled` 直接 reject，normal/auto-retry/compaction/queued 四情形只在三重信号齐备后完成，超时只杀 victim 无孤儿；D 节三库 byte-identical、`platform_adapter` 清理版（1278→1209 行）、5 个受保护写均 `_consume_runner_grant` 且授权缺失时不触达平台写。
+- 主 agent 对 tester 2 条发现的判定：
+  - **Medium（`lib/modeling_handoff.py` 死代码，含 Codex CLI supervisor + `skills/ontology-builder/references/modeler-handoff.schema.json` 硬编码）**：**接受为已知项，降级到 H 阶段处理，不阻塞 phase 1**。理由：tester 判定"非 phase-1 阻断""无调用方、未违 ADR/需求边界"；其 schema/supervisor 路径与 `skills/ontology-builder` 去留强耦合，而 skills 去留是 H（退役）的决定，在退役上下文一次处理（删除模块或剥离 Codex supervisor）更准确，避免现在改 H 又改。README Layout 行与交接文字需随最终 disposition 同步。
+  - **Low（`platform_adapter.py` ~7 行 >100 字符）**：**已记录，迁移忠实度保留，不阻塞**。Ruff 100 列顺从在关闭阶段或 H 一并 ruff format。
+- Evidence: tester Round 1 报告（test-plan `### Round 1`、delivery-record `Independent test rounds` 表）；主 agent 此前 diff audit。
+- Outcome/next step: **phase 1（A–F 自动合同）独立测试 PASS，达阶段完成门禁**。按用户"分阶段"策略，暂停并向用户汇报；确认进入 G（真实端到端运行，需 deepseek key + 真实模型调用 + 场景真实资料路径）的准备工作后再启动。Medium/Low 已知项随 H 处理。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
+| 1 | `294e5eb` + untracked `pi-modeling-agent/` (43 files) + modified delivery-record; developer stopped, worktree stable | Phase 1: built `pi-modeling-agent` package; migrated deterministic libraries out of Claude Harness coupling; built Pi RPC Runner + Workflow Package + events/summaries; automated contract tests A–F | developer: `npm ci` (133 pkgs), `npm test` 29/29, `python3 -m unittest` 59/59, `git diff --check` clean, real `pi@0.81.1` RPC smoke 回收 exit 0; main-agent diff audit PASS (`agent_settled` 三重门 / receipt 残留 0 / runner-auth / 无 Pi 泄漏 backend / 冻结路径未动) | developer-ready; independent test Round 1 PASS (A–F); Medium `modeling_handoff` dead-code + Low >100-col lines deferred to H, non-blocking |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
+| 1 (phase 1, A–F) | HEAD `294e5eb` + untracked `pi-modeling-agent/` (43 files) + modified delivery-record; developer stopped | PASS | Medium: `lib/modeling_handoff.py` dead-codes Codex CLI launcher + `skills/ontology-builder` schema path (breaks at H unless stripped/removed). Low: ~7 >100-char lines in `platform_adapter.py` (migration-fidelity, main-agent-noted). Unexecuted: G real run, H Claude retirement, I retirement cleanup — out of phase 1 | `npm test` 29/29; `python3 -m unittest discover -s pi-modeling-agent/tests` 59/59; `git diff --check` clean; frozen-path + `backend/app` diff empty vs `294e5eb`; receipt/harness grep 0; backend Pi-leakage grep 0; full details in shared test plan `### Round 1` |
 
 ## Design-phase verification
 

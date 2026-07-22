@@ -1,0 +1,21 @@
+{
+  "name": "pi-modeling-agent",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "First-party Pi Local modeling Agent Runtime for the ontology platform. Repo-local Runner that drives headless Pi RPC child processes through the daily modeling workflow.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "pi-modeling": "src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "smoke": "node src/cli.mjs --self-check"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.81.1",
+    "typebox": "1.1.38"
+  }
+}
