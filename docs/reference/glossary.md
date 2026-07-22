@@ -138,6 +138,25 @@ a dry-run or review, applying a batch, verifying results, or becoming blocked. P
 linked by stable identifiers instead of copied into a second source of truth.
 _Avoid_: free-form diary entry, replay command, inferred hidden action
 
+**Semantic Platform Core**:
+The deterministic platform authority for Project and Ontology state, Evidence, Modeling Batches,
+leases, validation, versions, audit, query, authorization, and persistence. It does not perform
+modeling judgment through a general model and does not treat Agent Runtime state as semantic fact.
+_Avoid_: Modeling Agent, Agent Runtime, model host
+
+**First-party Modeling Agent Runtime**:
+An officially maintained but replaceable runtime that performs model calls, session and context
+management, tool coordination, role isolation, event observation, pause/resume, and debugging for
+the modeling workflow. It is a controlled client of Semantic Platform Core, not a semantic-fact
+authority or a permanently provider-specific platform type.
+_Avoid_: Semantic Platform Core, embedded model, privileged write bypass, Pi-specific platform fact
+
+**Modeling Workflow Package**:
+The runtime-portable collection of modeling prompts, Skills, role responsibilities, artifact
+schemas, semantic rules, quality gates, and acceptance methods. A first-party runtime may load it
+directly, while later distributions may expose it through a Skill, Plugin, or standalone Agent.
+_Avoid_: Agent Runtime, platform backend, complete chat transcript
+
 **Shared Modeling Directory**:
 A repo-local, gitignored directory used during the current experimentation stage so multiple Agent
 runtime sessions on one development machine can read the same business brief, source index,
