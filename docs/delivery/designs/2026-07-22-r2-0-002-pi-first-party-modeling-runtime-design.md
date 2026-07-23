@@ -8,7 +8,7 @@
 - Architecture decision:
   `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
 - Status: paused at retained checkpoint; reviewed contract kept as historical baseline, no further
-  execution before R2.0-003 refinement
+  execution before v2.1 R2.1-001 refinement
 - Priority: modeling quality and semantic retrieval quality first
 
 ## Outcome

@@ -8,7 +8,7 @@
   Unmet original gates: G2 completion (work-unit result chain + apply + verification), H Claude
   retirement, and final closure; these are not active follow-up work under R2.0-002.
 - Started: 2026-07-22T16:30:00+08:00
-- Last updated: 2026-07-23T15:24:39+08:00
+- Last updated: 2026-07-23T17:11:19+08:00
 - Design: `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
 - Architecture decision: `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
@@ -18,7 +18,7 @@
 - G2 checkpoint commit: `11f60f2` (Advance Pi modeling G2 real run through Work Unit modeling)
 - Phase 1 model decision: `deepseek/deepseek-v4-flash` (carried from R2.0-001; key staged in gitignored
   config; required for G; G2 apply additionally requires `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`)
-- Delivery commit: pending G2 completion + H + closure
+- Delivery commit: original full closure is paused; status migration recorded after `1dc5d54`
 
 ## Confirmed contract
 
@@ -450,3 +450,13 @@
   shared test plan Round 1-3 及未执行门禁；commit `11f60f2`。
 - Outcome/next step: 当前无实施中 v2.0 需求。后续从 R2.0-003 的功能细化开始，再决定 R2.0-002
   未完成链路和既有 Workflow Package 的复用、调整或替换范围。
+
+### 2026-07-23T17:11:19+08:00 — 本体建模流程重构迁移至 v2.1 — main agent + user
+
+- Context: 用户要求将原 R2.0-003“本体建模流程重构”迁移为 v2.1 需求，以便将 Runtime 集成的
+  暂停状态与下一阶段的 Ontology 建模方法重构分离。
+- Action/decision: R2.0-003 从 v2.0 总需求和正文移除，原背景、当前方向和待细化问题迁移为
+  `docs/requirements/requirements-v2.1.md` 的 R2.1-001。R2.0-002 继续只保留 Runtime 检查点和
+  历史证据；其未完成链路是否复用、调整或替换由 R2.1-001 后续决定。
+- Evidence: `docs/requirements/requirements-v2.1.md` R2.1-001；R2.1-001 delivery record。
+- Outcome/next step: 当前无实施中 v2.0 需求；后续从 R2.1-001 的功能细化开始。
