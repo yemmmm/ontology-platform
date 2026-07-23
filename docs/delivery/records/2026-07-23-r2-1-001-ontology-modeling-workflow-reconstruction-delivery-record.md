@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 最小本体路线与 Workflow-as-Tool 切片边界已确认
+- Status: 细化中；M1 路线、Workflow-as-Tool 切片与最小影响上下文已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T18:31:21+08:00
+- Last updated: 2026-07-23T18:38:48+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -113,3 +113,16 @@
   make domain-specific impact judgments. Dify concepts remain reference-ontology data.
 - Outcome/next step: Refine the minimum information contract that must be returned for each affected
   caller candidate.
+
+### 2026-07-23T18:38:48+08:00 — Confirm caller-internal propagation context — main agent + user
+
+- Question: Whether an affected-caller result must include how a bound Workflow Tool output is used by
+  downstream nodes inside the caller, rather than returning only caller Workflow IDs.
+- Decision: Yes. Each caller candidate must include the stable call site, input/output bindings,
+  upstream input source, downstream variable-use path, conditions, outputs, and any next Workflow Tool
+  invocation. Transitive results must preserve the cross-Workflow propagation path.
+- Completeness: Missing node, binding, or variable-use facts must be returned as explicit gaps. An empty
+  path result cannot be interpreted as evidence that no downstream impact exists.
+- Responsibility boundary: The platform returns modeled topology, contracts, provenance, and
+  completeness; the consuming Agent decides whether path membership creates actual business impact.
+- Outcome/next step: Refine the first concrete Change Set and positive/negative fixtures for M1.

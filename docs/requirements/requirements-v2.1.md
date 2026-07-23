@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：重构背景、最小本体迭代路线与首个业务切片边界已确认，信息合同待细化
+- 文档状态：重构背景、M1 路线、业务切片边界与最小影响上下文已确认，详细合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 路线与切片边界已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 核心信息合同已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 最小本体路线与 Workflow-as-Tool 切片边界已确认）`
+当前状态：`细化中（M1 路线、Workflow-as-Tool 切片与最小影响上下文已确认）`
 
 优先级：`P0`
 
@@ -164,6 +164,29 @@ Dify 资料中的“子工作流”至少有两种不同含义，M1 不应继续
 Dify 的 Workflow、Tool、Version、Binding 和 Change 仍是参考本体数据，不得成为平台专属 API、
 Schema、排序规则或解释分支。
 
+### 已确认的最小影响上下文
+
+平台不能只返回“哪些 Workflow 调用了被修改 Workflow”的 ID 列表。对每个直接或传递调用方候选，
+至少需要返回以下已建模信息，使消费 Agent 能够沿实际数据使用路径判断影响：
+
+- 被修改 Workflow、变更前后 Version、Current Draft/Latest Version 状态以及已知 Change Set；
+- 从被修改 Workflow 到当前调用方的完整 Tool Invocation / Dependency Path，并区分直接与传递调用；
+- 每一层调用所在的 Workflow Version、Tool 调用节点或稳定调用位置；
+- 调用方传入被调用 Workflow Input 的 Variable Binding，以及绑定值在调用方内部的上游来源；
+- 被调用 Workflow Output 到调用方变量的 Binding，以及该变量在调用方内部被哪些后续节点、条件、
+  Output 或下一层 Tool Invocation 继续使用；
+- 相关 Input/Output Contract、变量名称、类型、必填性、来源、Evidence、版本和 provenance；
+- 每一层依赖、Binding 和变量使用路径的完整性状态，以及未建模、不可用或无法确认的明确未知项。
+
+对于传递调用，变量使用路径不能在第一层调用方停止。例如 C 被 B 作为 Tool 调用，而 B 的输出又被
+A 调用或消费时，平台应返回 `C -> B 调用位置 -> B 内部变量使用/输出 -> A 调用位置` 的可追踪
+上下文。平台只陈述已建模拓扑、合同与事实，不把“位于路径上”直接解释为“业务上一定受影响”；
+最终筛选和解释仍由消费 Agent 完成。
+
+若某个 Workflow 的节点、Binding 或变量使用尚未建模，平台必须把结果标记为不完整并指出缺口，
+不能因为路径查询没有返回数据就宣称不存在后续影响。M1 的“影响范围可分析”要求的是上下文与缺口
+均显式，而不是平台保证业务资料已经绝对完整。
+
 当前固定 Dify 快照已经包含 Start、Output、Iteration、Version Control、Orchestration Logic 和
 Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页面。M1 进入正式建模和验收前，
 应创建新的不可变快照或场景资料包补入该官方页面；不得原地修改
@@ -178,7 +201,7 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 - M1 Workflow-as-Tool 切片的最终语义问题、Change Set 分类、影响信息清单和具体 Fixture；
 - M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
 - 后续切片的模块复用和演进合同；
-- 平台返回影响上下文的最小信息字段、完整性与未知项表达；
+- 影响上下文的具体查询入口、字段投影、分页和完整性状态表达；
 - 现有 Brief、CQ、Coverage、Work Unit、review、Modeling Batch 和 Shared Modeling Directory
   的保留、调整或替换范围；
 - 与知识实例、知识图谱写入及后续消费检索的关系；
