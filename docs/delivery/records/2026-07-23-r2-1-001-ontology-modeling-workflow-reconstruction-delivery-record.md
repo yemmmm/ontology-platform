@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 最小本体路线已确认，Workflow-as-Tool 业务切片待确认
+- Status: 细化中；M1 最小本体路线与 Workflow-as-Tool 切片边界已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T18:02:21+08:00
+- Last updated: 2026-07-23T18:31:21+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -92,3 +92,24 @@
   passed. The test run emitted one pre-existing Python invalid-escape `SyntaxWarning`.
 - Scope: Documentation and source analysis only; no runtime, platform schema, corpus snapshot, or
   modeling implementation was changed.
+
+### 2026-07-23T18:31:21+08:00 — Confirm impact-information boundary — main agent + user
+
+- Clarification: The user confirmed Workflow-as-Tool change impact as the M1 slice but corrected the
+  responsibility boundary. Ontology should identify the information needed for impact analysis, and
+  the platform should return all modeled facts, dependency paths, bindings, versions, provenance, and
+  unknowns. The consuming Agent performs the actual impact judgment.
+- Decision: M1 does not require Ontology or Semantic Platform Core to compare before/after behavioral
+  test metrics or produce impact severity. Test metrics and output comparisons are optional external
+  observations that a consuming Agent may use; if submitted as facts, the platform may return them
+  without interpreting them.
+- Deterministic platform result: Direct and transitive caller candidates, publication state, affected
+  call sites, input/output bindings, downstream variable use, dependency paths, sources, and explicit
+  missing information.
+- Agent result: Decide which candidates are actually affected, how they are affected, and the final
+  impact size from the returned context plus the actual Workflow/DSL change and optional runtime
+  evidence.
+- Boundary: Semantic Platform Core does not parse Dify DSL, execute behavior tests, compare metrics, or
+  make domain-specific impact judgments. Dify concepts remain reference-ontology data.
+- Outcome/next step: Refine the minimum information contract that must be returned for each affected
+  caller candidate.

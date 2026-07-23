@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：重构背景与最小本体迭代路线已确认，首个业务切片待细化
+- 文档状态：重构背景、最小本体迭代路线与首个业务切片边界已确认，信息合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 路线已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 路线与切片边界已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 最小本体路线已确认，业务切片待确认）`
+当前状态：`细化中（M1 最小本体路线与 Workflow-as-Tool 切片边界已确认）`
 
 优先级：`P0`
 
@@ -107,7 +107,7 @@ M1 至少证明：
 4. 目标语义问题能够通过 validation、inference、Context Query 或 SPARQL 得到可解释结果；
 5. 修改相关约束或公理后，验证或推理结果按预期变化。
 
-### M1 推荐业务切片：Workflow-as-Tool 变更影响
+### M1 业务切片：Workflow-as-Tool 变更影响范围
 
 Dify 资料中的“子工作流”至少有两种不同含义，M1 不应继续混用：
 
@@ -132,18 +132,35 @@ Dify 资料中的“子工作流”至少有两种不同含义，M1 不应继续
   同一种影响。
 
 候选本体可以围绕 `Workflow`、`Workflow Version`、`Workflow Tool`、`Tool Invocation`、
-`Input/Output Contract`、`Variable Binding`、`Change Set` 和 `Impact Assessment` 建立概念边界。
-首轮推理目标建议为：
+`Input/Output Contract`、`Variable Binding`、`Change Set` 和 `Dependency Path` 建立概念边界。
+首轮确定性能力目标为：
 
 1. 根据 Tool Invocation 依赖推导一个变更可能影响的直接和传递调用方 Workflow；
 2. 区分仅存在于 Current Draft 的变更与已经进入 Latest Version 的变更；
-3. 当输入或输出被删除、重命名、改变类型或必填性，并且调用方存在对应 Binding 时，推导结构性
-   兼容风险及受影响调用位置；
-4. 对 Prompt、模型选择或内部节点逻辑等“合同未变但行为可能变化”的修改，只推导潜在行为影响，
-   不在缺少运行证据时伪造确定的影响等级。
+3. 当输入或输出被删除、重命名、改变类型或必填性，并且调用方存在对应 Binding 时，返回对应
+   调用位置、Binding、上下游变量使用和依赖路径；
+4. 对 Prompt、模型选择、内部节点逻辑或输入输出合同等变化，返回消费 Agent 判断影响所需的所有
+   已知事实、来源、版本、调用路径、绑定关系和明确未知项，不由本体或平台给出最终影响等级。
 
-Agent 负责读取 Workflow/DSL 差异并把实际变更解释为显式 Change Set、Binding 和业务判断；
-Semantic Platform Core 负责保存已提交的模型与事实、执行确定性约束和规则、返回依赖与推导结果。
+这里的“评估影响范围”不是要求 Ontology 或 Semantic Platform Core 代替消费 Agent 得出高、中、
+低风险结论。三者职责明确区分为：
+
+- Ontology 定义 Workflow、Version、Tool、Invocation、Contract、Binding、Change 和 Dependency
+  等概念、关系、约束，以及分析某类变化时需要关注哪些信息；
+- Semantic Platform Core 保存已提交的本体与实例事实，执行确定性约束和依赖推导，并通过现有
+  Context Query、SPARQL、validation、inference 和 provenance 能力返回完整可用上下文；
+- 消费 Agent 读取平台上下文和实际 Workflow/DSL 变化，结合业务用途、调用方式以及可选运行证据，
+  判断哪些调用方真正受影响、影响表现和影响大小，并生成最终解释。
+
+内部行为变化的前后测试指标、真实输出对比和业务效果属于消费 Agent 可以按需使用的外部观察
+证据，不是 Ontology 必须生成的内容，也不是平台在 M1 中必须执行或比较的能力。若这些观察已经
+由外部 Agent 提交为明确事实，Ontology 可以描述其含义，平台可以连同来源返回；缺失时只需明确
+报告未知，不能阻断依赖范围查询，也不能由平台补造结论。
+
+建模 Agent 负责读取业务资料并形成上述本体；外部 Agent 可以把实际 Workflow、Version、Binding
+和 Change Set 作为明确事实提交。Semantic Platform Core 不解析 Dify DSL、不执行测试、不比较
+指标，也不作领域影响判断。
+
 Dify 的 Workflow、Tool、Version、Binding 和 Change 仍是参考本体数据，不得成为平台专属 API、
 Schema、排序规则或解释分支。
 
@@ -158,14 +175,14 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- M1 Workflow-as-Tool 切片的最终语义问题、Change Set 分类、影响等级和具体 Fixture；
+- M1 Workflow-as-Tool 切片的最终语义问题、Change Set 分类、影响信息清单和具体 Fixture；
 - M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
 - 后续切片的模块复用和演进合同；
-- Agent 与 Semantic Platform Core 在语义判断、确定性校验、存储和应用方面的责任；
+- 平台返回影响上下文的最小信息字段、完整性与未知项表达；
 - 现有 Brief、CQ、Coverage、Work Unit、review、Modeling Batch 和 Shared Modeling Directory
   的保留、调整或替换范围；
 - 与知识实例、知识图谱写入及后续消费检索的关系；
 - 真实场景、质量指标、完成门槛、迁移方式和旧流程退役条件。
 
-R2.1-001 的 M1 在完成业务切片确认、需求细化、设计评审和共享测试计划前不得进入实现，也不得
+R2.1-001 的 M1 在完成影响信息合同、需求细化、设计评审和共享测试计划前不得进入实现，也不得
 以当前路线和候选场景宣称最终建模方案已经确定。
