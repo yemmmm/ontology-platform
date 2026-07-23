@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 路线、Workflow-as-Tool 切片与最小影响上下文已确认
+- Status: 细化中；M1 路线、Workflow-as-Tool 建模边界与首个 Fixture 已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T18:38:48+08:00
+- Last updated: 2026-07-23T18:51:46+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -126,3 +126,20 @@
 - Responsibility boundary: The platform returns modeled topology, contracts, provenance, and
   completeness; the consuming Agent decides whether path membership creates actual business impact.
 - Outcome/next step: Refine the first concrete Change Set and positive/negative fixtures for M1.
+
+### 2026-07-23T18:51:46+08:00 — Confirm ontology-first fixture and no platform adaptation — main agent + user
+
+- Fixture decision: Use a three-level `C -> B -> A` Workflow-as-Tool chain. C publishes a version that
+  removes or renames an Output consumed by B; B's derived output is consumed by A. The positive case
+  must expose the full cross-Workflow binding/use path. The negative case keeps the same C change in
+  Current Draft without changing Latest Version.
+- User reminder: Required impact context must come from improving the ontology structure and modeled
+  instance facts. It must not be implemented by customizing platform capabilities for Dify data.
+- Boundary decision: M1 reuses existing generic Context Query, SPARQL, validation, inference, and
+  provenance. It does not add Dify-specific REST/MCP APIs, response fields, read models, query branches,
+  ordering rules, DSL parsing, fixture generation, or impact judgment.
+- Escalation rule: If a correctly modeled required fact cannot be retrieved through current generic
+  capabilities, record reproducible evidence and refine a separate generic platform requirement before
+  changing platform code.
+- Outcome/next step: Define the concrete Workflow/variable names, Change Set fields, ontology elements,
+  and positive/negative query assertions.

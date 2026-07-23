@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：重构背景、M1 路线、业务切片边界与最小影响上下文已确认，详细合同待细化
+- 文档状态：M1 路线、业务切片、建模边界与首个 Fixture 已确认，详细语义合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 核心信息合同已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 核心合同与 Fixture 已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 路线、Workflow-as-Tool 切片与最小影响上下文已确认）`
+当前状态：`细化中（M1 路线、Workflow-as-Tool 切片、建模边界与 Fixture 已确认）`
 
 优先级：`P0`
 
@@ -164,10 +164,11 @@ Dify 资料中的“子工作流”至少有两种不同含义，M1 不应继续
 Dify 的 Workflow、Tool、Version、Binding 和 Change 仍是参考本体数据，不得成为平台专属 API、
 Schema、排序规则或解释分支。
 
-### 已确认的最小影响上下文
+### 已确认的最小影响上下文建模目标
 
-平台不能只返回“哪些 Workflow 调用了被修改 Workflow”的 ID 列表。对每个直接或传递调用方候选，
-至少需要返回以下已建模信息，使消费 Agent 能够沿实际数据使用路径判断影响：
+本体模型不能只记录“某个 Workflow 调用了另一个 Workflow”。它必须表达足够的 Version、
+Invocation、Binding、Contract 和变量使用事实，使消费 Agent 能够通过平台现有通用查询能力，沿
+实际数据使用路径取得以下上下文并自行判断影响：
 
 - 被修改 Workflow、变更前后 Version、Current Draft/Latest Version 状态以及已知 Change Set；
 - 从被修改 Workflow 到当前调用方的完整 Tool Invocation / Dependency Path，并区分直接与传递调用；
@@ -178,14 +179,46 @@ Schema、排序规则或解释分支。
 - 相关 Input/Output Contract、变量名称、类型、必填性、来源、Evidence、版本和 provenance；
 - 每一层依赖、Binding 和变量使用路径的完整性状态，以及未建模、不可用或无法确认的明确未知项。
 
-对于传递调用，变量使用路径不能在第一层调用方停止。例如 C 被 B 作为 Tool 调用，而 B 的输出又被
-A 调用或消费时，平台应返回 `C -> B 调用位置 -> B 内部变量使用/输出 -> A 调用位置` 的可追踪
-上下文。平台只陈述已建模拓扑、合同与事实，不把“位于路径上”直接解释为“业务上一定受影响”；
-最终筛选和解释仍由消费 Agent 完成。
+对于传递调用，本体中建模的变量使用路径不能在第一层调用方停止。例如 C 被 B 作为 Tool 调用，
+而 B 的输出又被 A 调用或消费时，现有通用查询应能读取
+`C -> B 调用位置 -> B 内部变量使用/输出 -> A 调用位置` 的可追踪上下文。平台只陈述已建模
+拓扑、合同与事实，不把“位于路径上”直接解释为“业务上一定受影响”；最终筛选和解释仍由消费
+Agent 完成。
 
-若某个 Workflow 的节点、Binding 或变量使用尚未建模，平台必须把结果标记为不完整并指出缺口，
-不能因为路径查询没有返回数据就宣称不存在后续影响。M1 的“影响范围可分析”要求的是上下文与缺口
-均显式，而不是平台保证业务资料已经绝对完整。
+若某个 Workflow 的节点、Binding 或变量使用尚未建模，本体实例必须显式记录相应完整性状态或
+缺口，使现有通用查询能够连同事实一起返回。消费 Agent 不能因为路径查询没有返回数据就宣称
+不存在后续影响。M1 的“影响范围可分析”要求的是上下文与缺口均显式，而不是平台保证业务资料
+已经绝对完整。
+
+上述内容是对本体结构和实例事实完整性的要求，不是新增平台产品能力的清单。M1 必须通过优化
+Ontology 中的通用概念、关系、约束和实例建模，复用现有 Context Query、SPARQL、validation、
+inference 与 provenance 获得结果；不得为 Dify 新增专属 REST/MCP 接口、响应字段、Read Model、
+查询分支、排序规则、DSL 解析器或影响分析器。若现有通用能力确实无法读取一个已正确建模的必要
+事实，必须先以独立证据说明通用能力缺口，再单独细化平台需求，不能在 M1 中静默定制适配。
+
+### 已确认的首个 Fixture
+
+M1 使用一个三层 Workflow-as-Tool 调用链验证本体能否提供完整影响上下文：
+
+```text
+C（被调用 Workflow）
+  -> 作为 Workflow Tool 被 B 调用
+  -> C 的一个 Output 绑定到 B 的变量并被后续条件或 Output 使用
+  -> B 又作为 Workflow Tool 被 A 调用
+  -> A 消费 B 对应的输出
+```
+
+正例 Change Set：C 的新版本删除或重命名一个已被 B 使用的 Output，并发布为新的 Latest Version。
+基于已建模事实，现有通用查询应能取得 `C -> B 调用位置 -> B Binding -> B 内部使用/Output
+-> A 调用位置 -> A Binding/使用位置` 的完整路径、版本、合同、来源和完整性信息。平台不输出
+“A/B 一定受影响”或影响等级，消费 Agent 根据这些事实形成最终分析。
+
+反例 Change Set：C 发生相同变化，但只存在于 Current Draft，Latest Version 尚未改变。查询仍可
+返回草稿变化及其潜在调用上下文，但必须清楚区分它尚未进入当前发布调用链，不能把它与已经发布
+的变化混为同一状态。
+
+Fixture 中的 C、B、A、节点、变量、Version、Change Set、Binding 和使用路径都作为参考本体的
+实例数据由外部 Agent 提交；平台不生成 Dify Fixture，也不通过代码识别其业务含义。
 
 当前固定 Dify 快照已经包含 Start、Output、Iteration、Version Control、Orchestration Logic 和
 Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页面。M1 进入正式建模和验收前，
@@ -198,14 +231,14 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- M1 Workflow-as-Tool 切片的最终语义问题、Change Set 分类、影响信息清单和具体 Fixture；
+- M1 Fixture 的具体 Workflow/节点/变量名称、Change Set 字段和查询断言；
 - M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
 - 后续切片的模块复用和演进合同；
-- 影响上下文的具体查询入口、字段投影、分页和完整性状态表达；
+- 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
 - 现有 Brief、CQ、Coverage、Work Unit、review、Modeling Batch 和 Shared Modeling Directory
   的保留、调整或替换范围；
 - 与知识实例、知识图谱写入及后续消费检索的关系；
 - 真实场景、质量指标、完成门槛、迁移方式和旧流程退役条件。
 
-R2.1-001 的 M1 在完成影响信息合同、需求细化、设计评审和共享测试计划前不得进入实现，也不得
+R2.1-001 的 M1 在完成详细语义合同、需求细化、设计评审和共享测试计划前不得进入实现，也不得
 以当前路线和候选场景宣称最终建模方案已经确定。
