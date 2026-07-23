@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
 - Status: 细化中；M1 路线、Workflow-as-Tool 建模边界与首个 Fixture 已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T18:51:46+08:00
+- Last updated: 2026-07-23T18:55:04+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -143,3 +143,13 @@
   changing platform code.
 - Outcome/next step: Define the concrete Workflow/variable names, Change Set fields, ontology elements,
   and positive/negative query assertions.
+
+### 2026-07-23T18:55:04+08:00 — Select Output deletion as the first positive Change Set — main agent + user
+
+- Decision: The first positive Fixture uses a newly published C version that deletes one Output already
+  bound and consumed by B. Output rename is deferred to a later case.
+- Reason: Deletion has an unambiguous before/after contract. Rename requires additional semantic
+  identity or mapping facts to decide whether the new variable is equivalent to the old one; without
+  those facts it must be modeled as one deletion plus one addition.
+- Outcome/next step: Choose concrete C/B/A workflow purposes, node names, the deleted Output, and exact
+  positive/negative query assertions.

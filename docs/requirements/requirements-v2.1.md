@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：M1 路线、业务切片、建模边界与首个 Fixture 已确认，详细语义合同待细化
+- 文档状态：M1 路线、业务切片、建模边界与首个删除型 Fixture 已确认，详细语义合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -46,7 +46,7 @@
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 路线、Workflow-as-Tool 切片、建模边界与 Fixture 已确认）`
+当前状态：`细化中（M1 路线、Workflow-as-Tool 切片、建模边界与删除型 Fixture 已确认）`
 
 优先级：`P0`
 
@@ -208,10 +208,15 @@ C（被调用 Workflow）
   -> A 消费 B 对应的输出
 ```
 
-正例 Change Set：C 的新版本删除或重命名一个已被 B 使用的 Output，并发布为新的 Latest Version。
-基于已建模事实，现有通用查询应能取得 `C -> B 调用位置 -> B Binding -> B 内部使用/Output
--> A 调用位置 -> A Binding/使用位置` 的完整路径、版本、合同、来源和完整性信息。平台不输出
-“A/B 一定受影响”或影响等级，消费 Agent 根据这些事实形成最终分析。
+首个正例 Change Set 固定为：C 的新版本删除一个已被 B 使用的 Output，并发布为新的 Latest
+Version。基于已建模事实，现有通用查询应能取得
+`C -> B 调用位置 -> B Binding -> B 内部使用/Output -> A 调用位置 -> A Binding/使用位置`
+的完整路径、版本、合同、来源和完整性信息。平台不输出“A/B 一定受影响”或影响等级，消费 Agent
+根据这些事实形成最终分析。
+
+Output 重命名不进入首个正例。它保留为后续扩展案例，因为判断“新名称是否仍代表原变量”需要
+额外的语义身份或映射事实；在这些事实不存在时，重命名只能被表示为删除旧 Output 和新增新
+Output，不能由平台猜测二者等价。
 
 反例 Change Set：C 发生相同变化，但只存在于 Current Draft，Latest Version 尚未改变。查询仍可
 返回草稿变化及其潜在调用上下文，但必须清楚区分它尚未进入当前发布调用链，不能把它与已经发布
@@ -231,7 +236,7 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- M1 Fixture 的具体 Workflow/节点/变量名称、Change Set 字段和查询断言；
+- M1 Fixture 的具体 Workflow/节点/变量名称、删除型 Change Set 字段和查询断言；
 - M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
 - 后续切片的模块复用和演进合同；
 - 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
