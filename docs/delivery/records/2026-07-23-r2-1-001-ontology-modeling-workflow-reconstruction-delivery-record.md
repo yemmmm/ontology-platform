@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 路线、Workflow-as-Tool 建模边界与首个 Fixture 已确认
+- Status: 细化中；M1 路线、Workflow-as-Tool 建模边界与首个合成 Fixture 已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T18:55:04+08:00
+- Last updated: 2026-07-23T20:16:03+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -153,3 +153,22 @@
   those facts it must be modeled as one deletion plus one addition.
 - Outcome/next step: Choose concrete C/B/A workflow purposes, node names, the deleted Output, and exact
   positive/negative query assertions.
+
+### 2026-07-23T20:16:03+08:00 — Confirm synthetic Dify-valid C/B/A Fixture — main agent + user
+
+- Decision: Use a synthetic but Dify-valid three-Workflow acceptance scenario rather than claiming the
+  official documentation contains an existing three-level application chain.
+- Fixture:
+  - C is `Content Quality Scoring Workflow`; it accepts `content:string` and initially returns
+    `quality_score:number`.
+  - B is `Content Generation Workflow`; it calls C, binds `quality_score`, uses it in IF/ELSE, and
+    exposes `approved_content:string`.
+  - A is `Campaign Publication Workflow`; it calls B, binds `approved_content` to `publish_content`,
+    and passes it to a downstream publication-preparation node or Output.
+- Positive change: Publish a new C Latest Version that deletes `quality_score:number`.
+- Negative change: Keep the same deletion only in C Current Draft.
+- Evidence boundary: Official Dify sources support Workflow-as-Tool, Output contract, and publication
+  semantics. C/B/A purposes, variables, bindings, and changes are synthetic Fixture facts. Documents
+  and reports must keep official facts, synthetic facts, and Agent inferences explicitly separated.
+- Outcome/next step: Define stable IRIs/IDs, the Change Set structure, ontology elements, and executable
+  query definitions.

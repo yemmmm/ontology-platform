@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：M1 路线、业务切片、建模边界与首个删除型 Fixture 已确认，详细语义合同待细化
+- 文档状态：M1 路线、建模边界与首个合成 Fixture 已确认，详细本体合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 核心合同与 Fixture 已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 核心合同与合成 Fixture 已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 路线、Workflow-as-Tool 切片、建模边界与删除型 Fixture 已确认）`
+当前状态：`细化中（M1 路线、Workflow-as-Tool 建模边界与合成 Fixture 已确认）`
 
 优先级：`P0`
 
@@ -201,15 +201,24 @@ inference 与 provenance 获得结果；不得为 Dify 新增专属 REST/MCP 接
 M1 使用一个三层 Workflow-as-Tool 调用链验证本体能否提供完整影响上下文：
 
 ```text
-C（被调用 Workflow）
+C：Content Quality Scoring Workflow
+  Input: content:string
+  Output: quality_score:number
   -> 作为 Workflow Tool 被 B 调用
-  -> C 的一个 Output 绑定到 B 的变量并被后续条件或 Output 使用
-  -> B 又作为 Workflow Tool 被 A 调用
-  -> A 消费 B 对应的输出
+
+B：Content Generation Workflow
+  -> 把待评估内容绑定到 C.content
+  -> 把 C.quality_score 绑定到本地 quality_score
+  -> IF/ELSE 使用 quality_score 决定是否形成 approved_content:string
+  -> 作为 Workflow Tool 被 A 调用
+
+A：Campaign Publication Workflow
+  -> 把 B.approved_content 绑定到本地 publish_content
+  -> 后续发布准备节点或 Output 消费 publish_content
 ```
 
 首个正例 Change Set 固定为：C 的新版本删除一个已被 B 使用的 Output，并发布为新的 Latest
-Version。基于已建模事实，现有通用查询应能取得
+Version；被删除的 Output 固定为 `quality_score:number`。基于已建模事实，现有通用查询应能取得
 `C -> B 调用位置 -> B Binding -> B 内部使用/Output -> A 调用位置 -> A Binding/使用位置`
 的完整路径、版本、合同、来源和完整性信息。平台不输出“A/B 一定受影响”或影响等级，消费 Agent
 根据这些事实形成最终分析。
@@ -225,6 +234,21 @@ Output，不能由平台猜测二者等价。
 Fixture 中的 C、B、A、节点、变量、Version、Change Set、Binding 和使用路径都作为参考本体的
 实例数据由外部 Agent 提交；平台不生成 Dify Fixture，也不通过代码识别其业务含义。
 
+该三层内容处理场景是为 M1 设计的合成验收数据，不是 Dify 官方文档声称存在的产品内置应用或
+标准业务流程。官方资料只用于支持 User Input Workflow 可发布为 Tool、调用方可以消费 Workflow
+Tool 的 Output、Current Draft 与 Latest Version 的区别以及发布行为等通用 Dify 语义。需求、
+模型、Evidence 和最终报告必须把“官方来源事实”“合成 Fixture 事实”和“Agent 推论”分开标注，
+不得用官方文档的 provenance 为合成业务内容背书。
+
+首轮查询断言至少覆盖：
+
+1. 对已发布的删除型 Change Set，查询能取得 B 和 A 两个调用方候选及完整 `C -> B -> A` 依赖路径；
+2. B 的调用位置、`quality_score` Binding、IF/ELSE 使用位置和 `approved_content` Output 可追踪；
+3. A 的调用位置、`approved_content -> publish_content` Binding 和后续使用位置可追踪；
+4. 相同删除只存在于 C 的 Current Draft 时，查询明确返回草稿状态，不把它混入当前 Latest Version
+   的已发布变化；
+5. 每一层结果均返回完整性或明确缺口，消费 Agent 能区分“确认没有路径”和“路径尚未建模”。
+
 当前固定 Dify 快照已经包含 Start、Output、Iteration、Version Control、Orchestration Logic 和
 Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页面。M1 进入正式建模和验收前，
 应创建新的不可变快照或场景资料包补入该官方页面；不得原地修改
@@ -236,7 +260,7 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- M1 Fixture 的具体 Workflow/节点/变量名称、删除型 Change Set 字段和查询断言；
+- M1 Fixture 的稳定 IRI/ID、删除型 Change Set 结构和可执行查询定义；
 - M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
 - 后续切片的模块复用和演进合同；
 - 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
