@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：重构背景已确认，待需求细化
+- 文档状态：重构背景与最小本体迭代路线已确认，首个业务切片待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 待细化 | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 路线已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`待细化`
+当前状态：`细化中（M1 最小本体路线已确认，业务切片待确认）`
 
 优先级：`P0`
 
@@ -60,18 +60,112 @@
 - 在新流程完成细化和真实验收前，不退役现有 Claude 建模路径；
 - 不以“双轨建模”命名或预设最终方案。
 
+### 已确认的长期迭代路线
+
+R2.1-001 是一个较长的本体建模效果优化过程，但不把旧流程的全部机制放进每轮实验的完成门槛。
+当前采用“最小本体、语义测试、逐轮扩展”的路线：
+
+```text
+选择一个有界业务语义切片
+  -> 明确业务语义问题、术语定义、概念边界和非目标
+  -> 构建以 TBox、约束和推理预期为主的本体候选
+  -> 使用少量正例与反例验证约束和推理
+  -> 通过平台 Modeling Batch dry-run/apply 写入最终候选
+  -> 通过 validation、inference、Context Query 或 SPARQL 验收
+  -> 根据真实失败决定下一轮增加哪一种建模或协作机制
+```
+
+每轮只引入能够解释实际质量问题的一项主要变化，并记录假设、固定场景、模型变化、测试结果、
+仍未解决的问题和下一轮决定。Brief、Coverage、Work Unit、独立评审、Shared Modeling Directory、
+Pi Runtime、完整执行事件和其他既有能力都可以复用，但不能仅因已经存在就自动成为每轮前置门槛：
+
+- 术语或业务边界持续歧义时，再加强结构化访谈和术语合同；
+- 规模导致上下文过载时，再引入 Work Unit；
+- 重要语义静默遗漏时，再引入 Coverage；
+- Agent 自审不能发现重复错误时，再引入独立评审；
+- 跨 Session 无法可靠继续时，再引入 Shared Modeling Directory；
+- 手工流程已经稳定且需要重复执行时，再推进 Pi Runtime 集成。
+
+### 当前最小范围：M1 最小本体纵向切片
+
+M1 的目标不是批量抽取业务实体和事实，而是证明一个业务语义模型能够定义概念含义、拒绝无效
+结构并产生可验证推论。它是当前范围上限，不是以元素数量代替质量的量化指标：
+
+- 只选择一个有界业务切片和少量权威资料；
+- 以三个左右的语义问题驱动模型，至少覆盖概念区分、无效状态或结构、预期推论；
+- 首轮候选原则上控制在约五至八个核心 Class、三至五个 Property/Relation；
+- 至少提供一个可执行语义约束和一个当前平台能够执行的推理预期；
+- 使用少量正例和反例作为测试 Fixture，不要求导入真实业务实例或构建完整知识图谱；
+- 探索期产物优先使用可直接审阅的 repo-local 文件；只在最终候选边界复用 Evidence、
+  Modeling Batch dry-run/apply、确定性校验和应用后语义验证。
+
+M1 至少证明：
+
+1. 核心术语具有可区分的定义、身份或边界，不能只依靠名称相似度；
+2. 一个违反业务语义的反例被约束稳定拒绝；
+3. 一个未直接声明的结论能够由模型语义稳定推出；
+4. 目标语义问题能够通过 validation、inference、Context Query 或 SPARQL 得到可解释结果；
+5. 修改相关约束或公理后，验证或推理结果按预期变化。
+
+### M1 推荐业务切片：Workflow-as-Tool 变更影响
+
+Dify 资料中的“子工作流”至少有两种不同含义，M1 不应继续混用：
+
+- `Iteration 内部流程`：Iteration 节点在同一个 Workflow 内部为每个数组元素执行的一组步骤；
+- `Workflow-as-Tool 调用依赖`：一个以 User Input 开始的独立 Workflow 发布为 Tool，另一个
+  Workflow 通过 Tool 调用并消费它的输入输出合同。
+
+用户提出的“修改子工作流并推导受影响主工作流”对应第二种含义。M1 建议使用
+`被调用工作流（callee Workflow）`、`调用方工作流（caller Workflow）` 和
+`Workflow Tool`，不使用容易把内部流程、复制产物和独立应用混在一起的“主/子工作流”作为
+正式模型术语。
+
+当前资料支持以下初步语义：
+
+- 只有以 User Input 开始的 Workflow 能够作为 Tool 被其他 Dify 应用复用；
+- 被调用 Workflow 的 Input 定义构成 Tool 输入合同，Output 节点定义 Tool 返回合同，调用方
+  Workflow 可以引用这些输出变量；
+- Current Draft 是尚未上线的工作版本；发布后草稿成为新的 Latest Version；
+- 复制 Workflow、跨 Workflow 复制节点或 Iteration 内部流程不自动形成对原 Workflow 的运行时
+  调用依赖，必须作为影响传播的反例；
+- 因此，未发布草稿变更、已发布实现变更、输入输出合同变更和被调用 Workflow 删除不能被视为
+  同一种影响。
+
+候选本体可以围绕 `Workflow`、`Workflow Version`、`Workflow Tool`、`Tool Invocation`、
+`Input/Output Contract`、`Variable Binding`、`Change Set` 和 `Impact Assessment` 建立概念边界。
+首轮推理目标建议为：
+
+1. 根据 Tool Invocation 依赖推导一个变更可能影响的直接和传递调用方 Workflow；
+2. 区分仅存在于 Current Draft 的变更与已经进入 Latest Version 的变更；
+3. 当输入或输出被删除、重命名、改变类型或必填性，并且调用方存在对应 Binding 时，推导结构性
+   兼容风险及受影响调用位置；
+4. 对 Prompt、模型选择或内部节点逻辑等“合同未变但行为可能变化”的修改，只推导潜在行为影响，
+   不在缺少运行证据时伪造确定的影响等级。
+
+Agent 负责读取 Workflow/DSL 差异并把实际变更解释为显式 Change Set、Binding 和业务判断；
+Semantic Platform Core 负责保存已提交的模型与事实、执行确定性约束和规则、返回依赖与推导结果。
+Dify 的 Workflow、Tool、Version、Binding 和 Change 仍是参考本体数据，不得成为平台专属 API、
+Schema、排序规则或解释分支。
+
+当前固定 Dify 快照已经包含 Start、Output、Iteration、Version Control、Orchestration Logic 和
+Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页面。M1 进入正式建模和验收前，
+应创建新的不可变快照或场景资料包补入该官方页面；不得原地修改
+`dify-foundations-2026-07-18-5396c1a`，也不得把本次在线查看结果直接当成可复现验收输入。
+
 ### 待后续细化
 
 以下内容尚未形成合同，不在本次记录中提前决定：
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- 本体建模产物、语义约束、公理、推理预期、模块复用和演进合同；
+- M1 Workflow-as-Tool 切片的最终语义问题、Change Set 分类、影响等级和具体 Fixture；
+- M1 本体候选的最终 Class、Property、Relation、约束、公理和推理规则；
+- 后续切片的模块复用和演进合同；
 - Agent 与 Semantic Platform Core 在语义判断、确定性校验、存储和应用方面的责任；
 - 现有 Brief、CQ、Coverage、Work Unit、review、Modeling Batch 和 Shared Modeling Directory
   的保留、调整或替换范围；
 - 与知识实例、知识图谱写入及后续消费检索的关系；
 - 真实场景、质量指标、完成门槛、迁移方式和旧流程退役条件。
 
-R2.1-001 在完成后续需求细化、设计评审和共享测试计划前不得进入实现，也不得以本条背景记录
-宣称最终建模方案已经确定。
+R2.1-001 的 M1 在完成业务切片确认、需求细化、设计评审和共享测试计划前不得进入实现，也不得
+以当前路线和候选场景宣称最终建模方案已经确定。

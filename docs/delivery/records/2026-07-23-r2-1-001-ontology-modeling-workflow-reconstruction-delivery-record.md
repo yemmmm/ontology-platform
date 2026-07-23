@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 待细化；本次只完成从 R2.0-003 的版本迁移与背景记录
+- Status: 细化中；M1 最小本体路线已确认，Workflow-as-Tool 业务切片待确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T17:11:19+08:00
+- Last updated: 2026-07-23T18:02:21+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -32,3 +32,63 @@
 - Evidence: `docs/requirements/requirements-v2.0.md`; commit `1dc5d54`; R2.0-002 delivery record.
 - Outcome/next step: R2.1-001 remains `待细化`. Begin collaborative functional refinement only when the
   user asks to determine the final ontology modeling workflow.
+
+### 2026-07-23T18:00:38+08:00 — Confirm minimal-ontology iteration route — main agent + user
+
+- Context: The user wants R2.1-001 to remain a longer optimization process but considers the current
+  end-to-end workflow too large to optimize effectively. The immediate goal is to construct a minimal
+  ontology that is distinguishable from an instance-heavy knowledge graph.
+- Action/decision: Adopt a `minimal ontology -> semantic tests -> incremental expansion` route. M1 uses
+  one bounded semantic slice, a small TBox, at least one executable constraint, at least one executable
+  inference expectation, and positive/negative fixtures. The platform Modeling Batch and deterministic
+  verification boundary remains at final candidate application.
+- Deferred by default: Full Coverage, Work Unit partitioning, independent review, Shared Modeling
+  Directory recovery, Pi Runtime integration, complete execution events, and bulk instance extraction.
+  Each mechanism is restored only when an observed modeling-quality failure justifies it.
+- Evidence: `docs/requirements/requirements-v2.1.md`; current v1.1 simple-priority guidance; current
+  class/property/relation/SHACL compiler and limited RDFS reasoner.
+- Outcome/next step: Inspect the pinned Dify corpus for a bounded first semantic slice.
+
+### 2026-07-23T18:00:38+08:00 — Inspect Dify change-impact slice — main agent
+
+- User candidate: Modify a child workflow, infer which parent workflows are affected, then assess
+  impact from the actual change.
+- Terminology finding: Dify documentation uses `sub-workflow` for the internal workflow of an Iteration
+  node. Cross-application reuse is documented as a Workflow published as a Tool. The candidate should
+  therefore use `callee Workflow`, `caller Workflow`, `Workflow Tool`, and `Tool Invocation`, not one
+  overloaded parent/child relationship.
+- Pinned-source evidence:
+  - `official/en/cloud/use-dify/nodes/start.mdx` states that only User Input workflows can be reused as
+    tools in other Dify apps.
+  - `official/en/cloud/use-dify/nodes/output.mdx` states that Output variables define a Workflow Tool's
+    return schema and are accessible to the invoking parent workflow.
+  - `official/en/cloud/use-dify/build/version-control.mdx` distinguishes Current Draft, Latest Version,
+    Previous Versions, and publication.
+  - `official/en/cloud/use-dify/nodes/iteration.mdx`,
+    `official/en/cloud/use-dify/build/orchestrate-node.mdx`, and
+    `official/en/cloud/use-dify/workspace/app-management.mdx` provide counterexamples for internal
+    sub-workflows, copied nodes, and duplicated independent apps.
+- Supplemental official-source check:
+  - `https://docs.dify.ai/en/cloud/use-dify/workspace/tools` confirms that a User Input Workflow can be
+    turned into a Tool and reused across apps.
+  - `https://docs.dify.ai/en/cloud/use-dify/build/version-control` confirms that a draft becomes the new
+    Latest Version only when published.
+- Source gap: The current immutable corpus snapshot does not include the Dify Tools page even though
+  the pinned Output page links to it. Formal M1 modeling must use a new immutable snapshot or
+  scenario-specific source pack; the existing snapshot must not be edited in place.
+- Assessment: Workflow-as-Tool change impact is the strongest current M1 candidate because it requires
+  concept boundaries, publication-state semantics, dependency inference, binding constraints, and
+  negative cases that distinguish an ontology from a flat workflow knowledge graph.
+- Remaining boundary: Dependency reachability and structural contract risk can be deterministic.
+  Prompt/model/internal-logic changes without an interface change require Agent interpretation and
+  runtime evidence; M1 must not fabricate a precise impact level from topology alone.
+- Outcome/next step: Ask whether M1 should first close only published interface-contract changes or also
+  include behavior-only changes with an explicitly uncertain impact result.
+
+### 2026-07-23T18:02:21+08:00 — Verify route documentation — main agent
+
+- Checks: `git diff --check`; pinned Dify corpus verification; Dify corpus unit tests.
+- Result: Snapshot `dify-foundations-2026-07-18-5396c1a` verified with 32 files; all 24 corpus tests
+  passed. The test run emitted one pre-existing Python invalid-escape `SyntaxWarning`.
+- Scope: Documentation and source analysis only; no runtime, platform schema, corpus snapshot, or
+  modeling implementation was changed.
