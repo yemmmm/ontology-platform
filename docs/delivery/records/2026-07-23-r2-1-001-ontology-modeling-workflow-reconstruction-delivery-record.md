@@ -1,12 +1,14 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 需求边界、合成 Fixture 与建模 Agent 迭代授权已确认
+- Status: M1 第一版已交付；R2.1-001 长期迭代继续
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T20:31:50+08:00
+- Last updated: 2026-07-24T02:14:08+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
-- Design: not created; final process is intentionally not frozen
-- Shared test plan: not created; acceptance contract is intentionally not frozen
+- Design: no standalone document; candidate ontology, Fixture, queries, and iteration record are the
+  evolving design artifacts
+- Shared test plan: no standalone document; executable assertions and the scenario README form the
+  lightweight acceptance checklist
 
 ## Initial context
 
@@ -187,3 +189,170 @@
   truth boundary.
 - Outcome/next step: Produce and review an initial M1 ontology design and shared test plan, then iterate
   the model against the agreed positive and negative Fixtures.
+
+### 2026-07-24T01:31:52+08:00 — Authorize first minimal implementation without a formal design document — main agent + user
+
+- Context: The user confirmed that M1 is an iterative modeling experiment and questioned whether a
+  separate design document is needed.
+- Decision: Do not create a standalone formal design or shared test-plan document for M1. The
+  requirement entry fixes the business contract; the candidate ontology, Shapes, Fixture, executable
+  query assertions, scenario README, and iteration record jointly carry the evolving design and
+  lightweight acceptance checklist.
+- Implementation boundary: Use a committed, offline-reproducible scenario pack and existing generic
+  RDF, SHACL, RDFS reasoning, Context Query, and scoped SPARQL capabilities. Do not change platform
+  product code or introduce Dify-specific behavior.
+- Formal-design trigger: Only a separate requirement that adds platform API, storage, runtime,
+  Dify-specific adaptation, or another hard-to-reverse architecture change requires a formal design.
+- Outcome/next step: Review this minimal delivery plan, then implement and independently test the first
+  candidate model.
+
+### 2026-07-24T01:37:47+08:00 — Review M1 minimal delivery plan — plan reviewer + main agent
+
+- Result: `PASS`; no evidence-backed Critical or High issue.
+- Evidence: Current scoped SPARQL accepts standard read-only `SELECT` property paths; the development
+  reasoner supports only RDFS subclass, subproperty, domain, and range entailments; managed Graph Sets
+  separate ontology, data, and shapes graphs for validation, reasoning, and scoped query.
+- Main-agent disposition: No findings required revision. Accept the reviewer assumptions as completion
+  gates: isolate published, draft-only, and invalid Fixtures; use RDFS only for a separately stated
+  supported entailment; compute transitive callers with scoped SPARQL; and exercise a managed workspace
+  write/application path rather than claiming success from an ungoverned raw dataset load.
+- Reviewer verification: 41 focused repository tests passed across the development reasoner, scoped
+  SPARQL, SHACL validation, and reasoning service.
+- Outcome/next step: Freeze the reviewed scope and hand it to the requirement developer.
+
+### 2026-07-24T01:48:56+08:00 — Produce first candidate scenario package — requirement developer
+
+- Stable state: Uncommitted worktree containing only the main-agent requirement/record updates and new
+  files under `docs/evaluation-scenarios/dify-workflow-impact-m1/`; no platform product code changed.
+- Artifacts: Candidate ontology and Shapes; isolated published, draft-only, invalid, and explicit-gap
+  Fixtures; three scoped-SPARQL queries; immutable supplemental official source pack; one executable
+  offline acceptance suite; scenario README; and iteration log.
+- Modeling decision: Keep Tool Invocation as a first-class resource on Workflow Version. Compute caller
+  reachability with SPARQL property paths, while limiting RDFS acceptance to a separately named
+  subclass entailment supported by the development reasoner.
+- Developer verification: `uv run --directory backend python
+  ../docs/evaluation-scenarios/dify-workflow-impact-m1/tests/test_scenario.py` ran 9 tests successfully;
+  `git diff --check` passed.
+- Runtime state: Local service, backend health, and frontend were healthy. The developer did not create
+  a runtime Project/Ontology; README records the governed semantic-edit path and a claimed Modeling
+  Batch expressiveness limitation for independent verification.
+- Outcome/next step: Freeze this state for independent contract and real-runtime testing.
+
+### 2026-07-24T01:55:40+08:00 — Independent test Round 1 — requirement tester + main agent
+
+- Result: `FAIL`. Offline acceptance passed 9/9 and 69 focused platform regressions passed, but the
+  model did not satisfy the confirmed end-to-end context contract.
+- Accepted High defect: The positive Fixture omitted C's `content:string` Input, represented the input
+  Binding as `B.content -> B.content`, and did not relate B's IF/ELSE use to production of
+  `approved_content`. The current query could therefore pass from independent facts without proving
+  the required propagation path.
+- Accepted High runtime defect: A fresh owned managed workspace proved that active runtime Modeling
+  Batch dry-run is blocked by `SEMANTIC_PRODUCT_WRITE_MODE=legacy_only`. Governed ontology and Shapes
+  edits succeeded, but the published Fixture with `validate=true` failed because the data-only
+  candidate validation could not see the subclass axiom stored in the separate ontology graph.
+- Main-agent disposition: Both findings are requirement-relevant and reproducible. Repair the missing
+  Input/Binding/production semantics, add anti-cartesian assertions, and make the published Fixture
+  pass governed validation without disabling validation or using a raw dataset loader. Treat the
+  Modeling Batch runtime configuration as an explicit generic limitation; do not alter platform
+  product code in M1.
+- Cleanup: The tester verified ownership of the uniquely named temporary Project/Ontology, deleted the
+  Project, and confirmed it returned 404 afterward.
+- Detailed evidence: Scenario `iteration-log.md`, Independent test Round 1.
+- Outcome/next step: Return confirmed defects to the requirement developer, then run Round 2.
+
+### 2026-07-24T02:03:10+08:00 — Repair Round 1 defects — requirement developer
+
+- Stable state: Repaired scenario package only; platform product code, requirements, delivery record,
+  and the append-only failed Round 1 record were preserved.
+- Model repair: Added C's current `content:string` Input, a real B-upstream-to-C-input Binding, an
+  explicit IF/ELSE-to-`approved_content` production relation, stable call-site identifiers and
+  locations, and explicit previous/current Change Set versions.
+- Query/test repair: The context query now requires every C-to-B-to-A data-use link. Eleven offline
+  tests include remove-and-swap mutations for nine critical links, direct base-type assertions for
+  data-only SHACL, and a separately stated limited-RDFS entailment.
+- Developer verification: 11/11 scenario tests passed; scenario test Ruff check and
+  `git diff --check` passed.
+- Real runtime evidence: In a fresh owned workspace, governed semantic edits for ontology, Shapes, and
+  published Fixture all succeeded with `validate=true`; managed validation succeeded with
+  `conforms=true`; reasoning succeeded with `consistent=true`; scoped SPARQL returned both A and B.
+  The temporary Project was deleted and a follow-up GET returned 404.
+- Residual limitation: Active runtime remains `product_write_mode=legacy_only`, so Modeling Batch's
+  canonical writer cannot be used. No configuration or product-code change was made; the generic
+  governed semantic-edit path is verified.
+- Outcome/next step: Run independent Round 2 over the repaired model, property semantics, mutation
+  assertions, and managed-runtime acceptance.
+
+### 2026-07-24T02:07:09+08:00 — Independent test Round 2 — requirement tester + main agent
+
+- Result: `FAIL`. All Round 1 repairs, 11 offline tests, 69 focused regressions, and fresh governed
+  runtime validation/reasoning/scoped-SPARQL acceptance passed.
+- Accepted High defect: `producesVariable rdfs:subPropertyOf derivedFromVariable` placed a
+  `VariableUse -> Variable` predicate below a `Variable -> Variable` predicate. Standard RDFS closure
+  therefore inferred B's IF/ELSE Variable Use to also be a Variable, collapsing a required concept
+  boundary. The development reasoner's non-recursive implementation hid this invalid inference.
+- Evidence: Independent `owlrl.RDFS_Semantics` closure reproduced the conflicting `rdf:type Variable`
+  assertion. This is a semantic model failure, not a style preference.
+- Main-agent disposition: Replace the incompatible superproperty with a domain-compatible generic
+  relation, update the limited-RDFS expectation, and add a standards-based regression that forbids
+  Variable Use from being inferred as Variable. Preserve all passing propagation and runtime behavior.
+- Runtime/cleanup: Fresh governed writes with `validate=true`, validation, reasoning, and both scoped
+  queries passed; the uniquely owned temporary Project was deleted and confirmed absent.
+- Detailed evidence: Scenario `iteration-log.md`, Independent test Round 2.
+- Outcome/next step: Apply the narrow TBox/test repair, then run Independent Round 3.
+
+### 2026-07-24T02:09:30+08:00 — Repair Round 2 TBox defect — requirement developer
+
+- Model repair: Introduced `referencesVariable` with the compatible
+  `VariableUse -> Variable` domain/range; made `usesVariable` and `producesVariable` its
+  subproperties; kept `derivedFromVariable` exclusively `Variable -> Variable`.
+- Test repair: The limited development-reasoner expectation now infers `referencesVariable`. A
+  standards-based RDFS closure regression verifies that B's IF/ELSE remains a Variable Use and is
+  never inferred to be a Variable.
+- Verification: 12/12 scenario tests passed; scenario test Ruff check passed; focused reasoner and
+  validation tests passed 3/3; `git diff --check` passed.
+- Runtime decision: No intermediate runtime was created because this repair changed only TBox
+  hierarchy and inference assertions; Independent Round 3 was instructed to decide whether fresh
+  runtime evidence was needed.
+- Outcome/next step: Run Independent Round 3.
+
+### 2026-07-24T02:12:06+08:00 — Independent test Round 3 — requirement tester + main agent
+
+- Result: `PASS`.
+- Semantic acceptance: Compatible property hierarchy and standard RDFS closure preserve the
+  `VariableUse`/`Variable` concept boundary. The development reasoner produces only the declared
+  compatible subproperty entailment.
+- Executable acceptance: 12/12 scenario tests and 69 focused platform regressions passed;
+  `git diff --check` passed. Source hashes, provenance layers, SHACL isolation, exact C-to-B-to-A
+  context, draft separation, explicit gaps, limited/standard RDFS, and mutation resistance are covered.
+- Fresh runtime acceptance: Because the TBox participates in reasoning, the tester created a fresh
+  owned workspace and repeated governed `validate=true` ontology/Shapes/Fixture writes. Managed
+  validation conformed, reasoning was consistent, and scoped context SPARQL returned one complete
+  C-to-B-to-A row. No raw loader or validation bypass was used.
+- Boundary verification: No Dify-specific platform code was added. The active
+  `product_write_mode=legacy_only` Modeling Batch blocker remains explicit but does not block the
+  verified generic governed semantic-edit path.
+- Cleanup: The uniquely owned temporary Project was deleted and confirmed absent.
+- Detailed evidence: Scenario `iteration-log.md`, Independent test Round 3.
+- Outcome/next step: Synchronize requirement status, run final checks, and commit the M1 first version.
+
+### 2026-07-24T02:14:08+08:00 — Final verification and documentation sync — main agent
+
+- Requirement sync: Marked M1 first version implemented and independently accepted while keeping
+  R2.1-001 in long-term iteration. Recorded the two failed rounds, final PASS, runtime boundary, and
+  next-iteration status without claiming a final ontology design.
+- Final executable checks:
+  - Scenario acceptance: 12/12 passed.
+  - Focused Modeling Batch, validation, reasoning, and Context Query regression suite: 69/69 passed
+    with five pre-existing deprecation warnings.
+  - Scenario test Ruff check and `git diff --check`: passed.
+- Runtime health: `ontology-platform.service` remained active; backend `/api/health` returned
+  `{"status":"ok"}`; frontend returned HTTP 200. No restart was required because only documentation,
+  RDF/query Fixtures, and a scenario-local test were changed.
+- Change-scope check: GitNexus reported zero changed symbols, zero affected processes, and low risk for
+  the tracked documentation changes; manual status review confirmed the remaining additions are
+  confined to the scenario package.
+- Residual risk: Active `legacy_only` product write mode blocks Modeling Batch canonical apply. M1 uses
+  the independently verified governed semantic-edit path; any product-mode or generic batch-
+  expressiveness work must be a separate platform requirement.
+- Delivery commit: Subject `Add minimal workflow impact ontology`; `git log -- <this record path>`
+  resolves the immutable commit hash.

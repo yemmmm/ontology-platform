@@ -1,0 +1,8 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix ex: <https://example.org/ontology/dify-workflow-impact-m1/fixture/explicit-gap#> .
+
+ex:c a impact:Workflow ; impact:completeness "complete" .
+ex:c-v1 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:c ; impact:publicationState "latest" ; impact:completeness "complete" .
+ex:c-tool a impact:WorkflowTool ; impact:toolTargetsVersion ex:c-v1 ; impact:completeness "complete" .
+ex:unmodeled-invocation a impact:ToolInvocation ; impact:invokesTool ex:c-tool ; impact:callSiteId "unknown-tool-node" ; impact:callSiteLocation "unknown" ; impact:completeness "explicit-gap" ;
+  impact:unknownDetail "Caller-version, bindings, and downstream use were not supplied." .

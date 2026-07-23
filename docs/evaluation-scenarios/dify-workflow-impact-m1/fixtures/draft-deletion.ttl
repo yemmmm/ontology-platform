@@ -1,0 +1,13 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix ex: <https://example.org/ontology/dify-workflow-impact-m1/fixture/draft#> .
+
+ex:c a impact:Workflow ; impact:hasVersion ex:c-v1, ex:c-draft ; impact:activeLatestVersion ex:c-v1 ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+ex:c-v1 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:c ; impact:publicationState "latest" ; impact:completeness "complete" .
+ex:c-draft a impact:WorkflowVersion ; impact:versionOf ex:c ; impact:publicationState "current-draft" ; impact:completeness "complete" .
+ex:c-quality-score a impact:Variable ; impact:declaredByVersion ex:c-v1 ; impact:variableName "quality_score" ; impact:dataType "number" ; impact:variableRole "output" ; impact:completeness "complete" .
+ex:draft-delete-quality a impact:ChangeSet ; impact:previousVersion ex:c-v1 ; impact:changeAppliesToVersion ex:c-draft ; impact:deletesVariable ex:c-quality-score ; impact:publicationState "current-draft" ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+
+ex:b a impact:Workflow ; impact:hasVersion ex:b-v1 ; impact:activeLatestVersion ex:b-v1 ; impact:completeness "complete" .
+ex:b-v1 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:b ; impact:publicationState "latest" ; impact:completeness "complete" ; impact:hasInvocation ex:b-c-invocation .
+ex:c-tool a impact:WorkflowTool ; impact:toolTargetsVersion ex:c-v1 ; impact:completeness "complete" .
+ex:b-c-invocation a impact:ToolInvocation ; impact:invokesTool ex:c-tool ; impact:callSiteId "b-v1.node.tool-c" ; impact:callSiteLocation "Content Generation Workflow v1 / Tool C node" ; impact:completeness "complete" .

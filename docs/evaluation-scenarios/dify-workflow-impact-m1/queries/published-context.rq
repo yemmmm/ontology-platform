@@ -1,0 +1,29 @@
+PREFIX impact: <https://example.org/ontology/dify-workflow-impact-m1#>
+
+SELECT ?change ?cBeforeVersion ?cVersion ?cInput ?bVersion ?bInvocation
+       ?bCallSiteId ?bCallSiteLocation ?bContentBinding ?bQualityBinding
+       ?bIfUse ?bOutput ?aVersion ?aInvocation ?aCallSiteId ?aCallSiteLocation
+       ?aBinding ?aUse WHERE {
+  ?change a impact:ChangeSet ; impact:publicationState "latest" ;
+    impact:previousVersion ?cBeforeVersion ; impact:changeAppliesToVersion ?cVersion ;
+    impact:deletesVariable ?deleted .
+  ?cInput impact:declaredByVersion ?cVersion ; impact:variableName "content" ;
+    impact:dataType "string" ; impact:variableRole "input" .
+  ?bVersion impact:hasInvocation ?bInvocation ;
+    impact:hasUse ?bIfUse .
+  ?bInvocation impact:invokesTool ?cTool ; impact:bindingAtInvocation ?bContentBinding, ?bQualityBinding ;
+    impact:callSiteId ?bCallSiteId ; impact:callSiteLocation ?bCallSiteLocation .
+  ?cTool impact:toolTargetsVersion ?cVersion .
+  ?bContentBinding impact:bindingSource ?bUpstream ; impact:bindingTarget ?cInput .
+  ?bUpstream impact:declaredByVersion ?bVersion ; impact:variableName "content" ;
+    impact:dataType "string" .
+  ?bQualityBinding impact:bindingSource ?deleted ; impact:bindingTarget ?bQuality .
+  ?bIfUse impact:usesVariable ?bQuality ; impact:producesVariable ?bOutput ;
+    impact:useKind "if-else-condition" .
+  ?aVersion impact:hasInvocation ?aInvocation ; impact:hasUse ?aUse .
+  ?aInvocation impact:invokesTool ?bTool ; impact:bindingAtInvocation ?aBinding ;
+    impact:callSiteId ?aCallSiteId ; impact:callSiteLocation ?aCallSiteLocation .
+  ?bTool impact:toolTargetsVersion ?bVersion .
+  ?aBinding impact:bindingSource ?bOutput ; impact:bindingTarget ?aPublish .
+  ?aUse impact:usesVariable ?aPublish ; impact:useKind "publication-preparation" .
+}

@@ -2,14 +2,14 @@
 
 ## 文档信息
 
-- 文档状态：M1 目标、边界、Fixture 与迭代授权已确认，初始设计待形成
+- 文档状态：M1 第一版最小本体已实现并通过独立验收；长期迭代继续
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
 - 总体目标：重构 Ontology 建模流程，使其以可解释、可验证、可复用和可演进的业务语义模型为中心
-- 当前实施需求：无；先细化 R2.1-001
+- 当前实施需求：R2.1-001 下一轮建模质量问题待选择
 - 目标用户：需要将业务知识沉淀为可复用本体的建模人员、建模 Agent 工作流开发者和语义质量调优人员
-- 更新日期：2026-07-23
+- 更新日期：2026-07-24
 
 ## 背景
 
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 细化中（M1 需求边界已确认） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 迭代中（M1 第一版已实现） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`细化中（M1 需求边界与建模 Agent 迭代授权已确认）`
+当前状态：`迭代中（M1 第一版最小本体已实现）`
 
 优先级：`P0`
 
@@ -273,13 +273,57 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 应创建新的不可变快照或场景资料包补入该官方页面；不得原地修改
 `dify-foundations-2026-07-18-5396c1a`，也不得把本次在线查看结果直接当成可复现验收输入。
 
+### 第一版最小实现约定
+
+M1 第一版不编写独立的正式设计文档，也不以一份脱离模型的共享测试计划作为实施前置条件。
+需求条目固定业务目标和边界；可审阅的候选本体、Shapes、Fixture、SPARQL 查询断言与逐轮记录共同
+构成可演进的设计和轻量验收清单。只有当后续工作需要新增平台 API、存储、运行时、Dify 专属适配
+或其他难以回退的架构能力时，才另行细化平台需求并编写正式设计。
+
+第一版使用 repo-local、可提交、可离线复现的场景包，至少包含：
+
+- 一个补齐 Workflow-as-Tool 官方语义来源的不可变场景资料包，记录固定提交、文件哈希和来源；
+- 一版本体候选及其 Shapes，明确区分 Workflow、Workflow Version、Workflow Tool、Tool
+  Invocation、Variable、Binding、Use 与 Change Set；
+- 已发布 Output 删除正例、仅 Current Draft 删除反例，以及至少一个应被 Shapes 拒绝的无效
+  Fixture；
+- 可执行的 validation、受当前开发 reasoner 支持的 RDFS 推理和只读 SPARQL 查询断言；
+- 一份逐轮记录，说明建模假设、模型变化、针对的问题、结果、限制和下一轮候选。
+
+首版优先通过离线确定性测试固定模型质量，再使用现有通用平台路径做真实运行验收。允许使用
+SPARQL property path 组合已建模 Invocation 关系取得传递调用方；这属于消费查询，不把
+`Dependency Path` 强制物化为平台专属数据结构。真实平台验收只验证通用导入/应用、
+validation、reasoning、Context Query 或 scoped SPARQL 能否保存和取回这些 RDF 事实，不要求
+平台输出 Dify 业务结论。
+
+### 第一版实现结果
+
+第一版场景包位于 `docs/evaluation-scenarios/dify-workflow-impact-m1/`，包含不可变补充资料包、
+候选本体、Shapes、四组隔离 Fixture、三条查询、十二项离线断言和追加式迭代/独立测试记录。
+它已经证明：
+
+- 已发布删除能够返回 B、A 两个调用方候选及完整 C 输入、C 输出、B Binding、IF/ELSE 生产、
+  B Output、A Binding 和下游使用路径；
+- 仅 Current Draft 的相同删除与 active Latest 路径分离；
+- 无效调用结构被 SHACL 拒绝，显式缺口必须携带未知说明；
+- 有限 RDFS 推理产生领域兼容的 `referencesVariable` 结论，标准 RDFS 闭包不混淆
+  `VariableUse` 与 `Variable`；
+- 真实受管工作区能够以 `validate=true` 写入候选并完成 validation、reasoning 和 scoped SPARQL；
+  整个过程没有新增 Dify 专属平台代码，临时 Project/Ontology 已清理。
+
+独立测试经历两轮失败并保留记录：第一轮发现输入 Binding 与内部生产链缺失，第二轮发现
+RDFS superproperty 的 domain 冲突；修复后第三轮通过。当前运行时仍为
+`SEMANTIC_PRODUCT_WRITE_MODE=legacy_only`，因此 Modeling Batch canonical writer 未能进入
+本轮真实应用链。M1 已通过现有 generic governed semantic-edit 路径完成验收；是否启用 Modeling
+Batch canonical writer 以及其对任意候选 RDF 的剩余表达边界，作为独立通用平台问题保留，不在
+M1 中修改平台或做 Dify 定制。
+
 ### 待后续细化
 
 以下内容尚未形成合同，不在本次记录中提前决定：
 
 - 本体建模的目标用户、入口、阶段划分和人机协作方式；
 - 业务资料、现有本体、术语标准和用户意图如何成为建模输入；
-- M1 Fixture 的稳定 IRI/ID、删除型 Change Set 结构和可执行查询定义；
 - 后续切片的模块复用和演进合同；
 - 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
 - 现有 Brief、CQ、Coverage、Work Unit、review、Modeling Batch 和 Shared Modeling Directory
@@ -287,6 +331,6 @@ Manage Apps 页面，但没有包含被 Output 页面引用的 `Dify Tools` 页�
 - 与知识实例、知识图谱写入及后续消费检索的关系；
 - 真实场景、质量指标、完成门槛、迁移方式和旧流程退役条件。
 
-R2.1-001 的 M1 在完成初始设计、设计评审和共享测试计划前不得进入实现。初始设计必须说明第一版
-建模假设和调整记录方式，但不需要把模型结构冻结为不可变需求；也不得以当前路线和候选场景宣称
-最终建模方案已经确定。
+R2.1-001 的 M1 在第一版本体候选、Fixture 和查询断言形成后即可进入逐轮验证，不设置独立正式
+设计评审或共享测试计划文档门槛。第一版结构是可验证假设，不是最终方案；每轮必须保留建模假设
+和调整记录，也不得以首轮通过宣称长期建模流程或最终本体结构已经确定。

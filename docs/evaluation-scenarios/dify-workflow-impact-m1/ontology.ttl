@@ -1,0 +1,48 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+impact: a owl:Ontology ; rdfs:label "Workflow-as-Tool impact M1 candidate" .
+
+impact:Workflow a owl:Class ; rdfs:label "Workflow" .
+impact:WorkflowVersion a owl:Class ; rdfs:label "Workflow Version" .
+impact:PublishedWorkflowVersion a owl:Class ; rdfs:subClassOf impact:WorkflowVersion ; rdfs:label "Published Workflow Version" .
+impact:WorkflowTool a owl:Class ; rdfs:label "Workflow Tool" .
+impact:ToolInvocation a owl:Class ; rdfs:label "Tool Invocation" .
+impact:Variable a owl:Class ; rdfs:label "Variable" .
+impact:VariableBinding a owl:Class ; rdfs:label "Variable Binding" .
+impact:VariableUse a owl:Class ; rdfs:label "Variable Use" .
+impact:ChangeSet a owl:Class ; rdfs:label "Change Set" .
+
+impact:hasVersion a owl:ObjectProperty ; rdfs:domain impact:Workflow ; rdfs:range impact:WorkflowVersion .
+impact:versionOf a owl:ObjectProperty ; rdfs:domain impact:WorkflowVersion ; rdfs:range impact:Workflow .
+impact:activeLatestVersion a owl:ObjectProperty ; rdfs:domain impact:Workflow ; rdfs:range impact:WorkflowVersion .
+impact:hasInvocation a owl:ObjectProperty ; rdfs:domain impact:WorkflowVersion ; rdfs:range impact:ToolInvocation .
+impact:invokesTool a owl:ObjectProperty ; rdfs:domain impact:ToolInvocation ; rdfs:range impact:WorkflowTool .
+impact:toolTargetsVersion a owl:ObjectProperty ; rdfs:domain impact:WorkflowTool ; rdfs:range impact:WorkflowVersion .
+impact:bindingAtInvocation a owl:ObjectProperty ; rdfs:domain impact:ToolInvocation ; rdfs:range impact:VariableBinding .
+impact:bindingSource a owl:ObjectProperty ; rdfs:domain impact:VariableBinding ; rdfs:range impact:Variable .
+impact:bindingTarget a owl:ObjectProperty ; rdfs:domain impact:VariableBinding ; rdfs:range impact:Variable .
+impact:hasUse a owl:ObjectProperty ; rdfs:domain impact:WorkflowVersion ; rdfs:range impact:VariableUse .
+impact:referencesVariable a owl:ObjectProperty ; rdfs:domain impact:VariableUse ; rdfs:range impact:Variable .
+impact:usesVariable a owl:ObjectProperty ; rdfs:subPropertyOf impact:referencesVariable ;
+  rdfs:domain impact:VariableUse ; rdfs:range impact:Variable .
+impact:producesVariable a owl:ObjectProperty ; rdfs:subPropertyOf impact:referencesVariable ;
+  rdfs:domain impact:VariableUse ; rdfs:range impact:Variable .
+impact:derivedFromVariable a owl:ObjectProperty ; rdfs:domain impact:Variable ; rdfs:range impact:Variable .
+impact:declaredByVersion a owl:ObjectProperty ; rdfs:domain impact:Variable ; rdfs:range impact:WorkflowVersion .
+impact:changeAppliesToVersion a owl:ObjectProperty ; rdfs:domain impact:ChangeSet ; rdfs:range impact:WorkflowVersion .
+impact:deletesVariable a owl:ObjectProperty ; rdfs:domain impact:ChangeSet ; rdfs:range impact:Variable .
+
+impact:publicationState a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:completeness a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:unknownDetail a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:variableName a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:dataType a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:variableRole a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:useKind a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:callSiteId a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:callSiteLocation a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:sourceKind a owl:DatatypeProperty ; rdfs:range xsd:string .
+impact:previousVersion a owl:ObjectProperty ; rdfs:domain impact:ChangeSet ; rdfs:range impact:WorkflowVersion .

@@ -1,0 +1,29 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix ex: <https://example.org/ontology/dify-workflow-impact-m1/fixture/published#> .
+
+ex:c a impact:Workflow ; impact:hasVersion ex:c-v1, ex:c-v2 ; impact:activeLatestVersion ex:c-v2 ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+ex:c-v1 a impact:WorkflowVersion ; impact:versionOf ex:c ; impact:publicationState "superseded" ; impact:completeness "complete" .
+ex:c-v2 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:c ; impact:publicationState "latest" ; impact:completeness "complete" .
+ex:c-content a impact:Variable ; impact:declaredByVersion ex:c-v2 ; impact:variableName "content" ; impact:dataType "string" ; impact:variableRole "input" ; impact:completeness "complete" .
+ex:c-quality-score a impact:Variable ; impact:declaredByVersion ex:c-v1 ; impact:variableName "quality_score" ; impact:dataType "number" ; impact:variableRole "output" ; impact:completeness "complete" .
+ex:published-delete-quality a impact:ChangeSet ; impact:previousVersion ex:c-v1 ; impact:changeAppliesToVersion ex:c-v2 ; impact:deletesVariable ex:c-quality-score ; impact:publicationState "latest" ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+
+ex:b a impact:Workflow ; impact:hasVersion ex:b-v1 ; impact:activeLatestVersion ex:b-v1 ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+ex:b-v1 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:b ; impact:publicationState "latest" ; impact:completeness "complete" ; impact:hasInvocation ex:b-c-invocation ; impact:hasUse ex:b-if-use, ex:b-output-use .
+ex:c-tool a impact:WorkflowTool ; impact:toolTargetsVersion ex:c-v2 ; impact:completeness "complete" .
+ex:b-c-invocation a impact:ToolInvocation ; impact:invokesTool ex:c-tool ; impact:callSiteId "b-v1.node.tool-c" ; impact:callSiteLocation "Content Generation Workflow v1 / Tool C node" ; impact:bindingAtInvocation ex:b-content-binding, ex:b-quality-binding ; impact:completeness "complete" .
+ex:b-content-source a impact:Variable ; impact:declaredByVersion ex:b-v1 ; impact:variableName "content" ; impact:dataType "string" ; impact:variableRole "input" ; impact:completeness "complete" .
+ex:b-content-binding a impact:VariableBinding ; impact:bindingSource ex:b-content-source ; impact:bindingTarget ex:c-content ; impact:completeness "complete" .
+ex:b-quality-score a impact:Variable ; impact:declaredByVersion ex:b-v1 ; impact:variableName "quality_score" ; impact:dataType "number" ; impact:variableRole "local" ; impact:derivedFromVariable ex:c-quality-score ; impact:completeness "complete" .
+ex:b-quality-binding a impact:VariableBinding ; impact:bindingSource ex:c-quality-score ; impact:bindingTarget ex:b-quality-score ; impact:completeness "complete" .
+ex:b-if-use a impact:VariableUse ; impact:usesVariable ex:b-quality-score ; impact:producesVariable ex:b-approved-content ; impact:useKind "if-else-condition" ; impact:completeness "complete" .
+ex:b-approved-content a impact:Variable ; impact:declaredByVersion ex:b-v1 ; impact:variableName "approved_content" ; impact:dataType "string" ; impact:variableRole "output" ; impact:completeness "complete" .
+ex:b-output-use a impact:VariableUse ; impact:usesVariable ex:b-approved-content ; impact:useKind "output" ; impact:completeness "complete" .
+
+ex:a a impact:Workflow ; impact:hasVersion ex:a-v1 ; impact:activeLatestVersion ex:a-v1 ; impact:completeness "complete" ; impact:sourceKind "synthetic-fixture" .
+ex:a-v1 a impact:PublishedWorkflowVersion, impact:WorkflowVersion ; impact:versionOf ex:a ; impact:publicationState "latest" ; impact:completeness "complete" ; impact:hasInvocation ex:a-b-invocation ; impact:hasUse ex:a-publish-use .
+ex:b-tool a impact:WorkflowTool ; impact:toolTargetsVersion ex:b-v1 ; impact:completeness "complete" .
+ex:a-b-invocation a impact:ToolInvocation ; impact:invokesTool ex:b-tool ; impact:callSiteId "a-v1.node.tool-b" ; impact:callSiteLocation "Campaign Publication Workflow v1 / Tool B node" ; impact:bindingAtInvocation ex:a-approved-binding ; impact:completeness "complete" .
+ex:a-publish-content a impact:Variable ; impact:declaredByVersion ex:a-v1 ; impact:variableName "publish_content" ; impact:dataType "string" ; impact:variableRole "local" ; impact:derivedFromVariable ex:b-approved-content ; impact:completeness "complete" .
+ex:a-approved-binding a impact:VariableBinding ; impact:bindingSource ex:b-approved-content ; impact:bindingTarget ex:a-publish-content ; impact:completeness "complete" .
+ex:a-publish-use a impact:VariableUse ; impact:usesVariable ex:a-publish-content ; impact:useKind "publication-preparation" ; impact:completeness "complete" .

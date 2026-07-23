@@ -1,0 +1,10 @@
+PREFIX impact: <https://example.org/ontology/dify-workflow-impact-m1#>
+
+SELECT ?change ?draftVersion ?activeLatestVersion WHERE {
+  ?change a impact:ChangeSet ; impact:publicationState "current-draft" ;
+    impact:changeAppliesToVersion ?draftVersion .
+  ?draftVersion impact:versionOf ?workflow .
+  ?workflow impact:activeLatestVersion ?activeLatestVersion .
+  FILTER (?draftVersion != ?activeLatestVersion)
+  FILTER NOT EXISTS { ?workflow impact:activeLatestVersion ?draftVersion }
+}

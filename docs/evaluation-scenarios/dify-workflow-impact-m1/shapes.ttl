@@ -1,0 +1,47 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+impact:VersionShape a sh:NodeShape ;
+  sh:targetClass impact:WorkflowVersion ;
+  sh:property [ sh:path impact:versionOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:Workflow ] ;
+  sh:property [ sh:path impact:publicationState ; sh:minCount 1 ; sh:in ( "latest" "superseded" "current-draft" ) ] ;
+  sh:property [ sh:path impact:completeness ; sh:minCount 1 ; sh:in ( "complete" "explicit-gap" ) ] .
+
+impact:InvocationShape a sh:NodeShape ;
+  sh:targetClass impact:ToolInvocation ;
+  sh:property [ sh:path impact:invokesTool ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:WorkflowTool ] ;
+  sh:property [ sh:path impact:callSiteId ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path impact:callSiteLocation ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path impact:completeness ; sh:minCount 1 ; sh:in ( "complete" "explicit-gap" ) ] .
+
+impact:BindingShape a sh:NodeShape ;
+  sh:targetClass impact:VariableBinding ;
+  sh:property [ sh:path impact:bindingSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:Variable ] ;
+  sh:property [ sh:path impact:bindingTarget ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:Variable ] ;
+  sh:property [ sh:path impact:completeness ; sh:minCount 1 ; sh:in ( "complete" "explicit-gap" ) ] .
+
+impact:UseShape a sh:NodeShape ;
+  sh:targetClass impact:VariableUse ;
+  sh:property [ sh:path impact:usesVariable ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:Variable ] ;
+  sh:property [ sh:path impact:completeness ; sh:minCount 1 ; sh:in ( "complete" "explicit-gap" ) ] .
+
+impact:ChangeShape a sh:NodeShape ;
+  sh:targetClass impact:ChangeSet ;
+  sh:property [ sh:path impact:changeAppliesToVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:WorkflowVersion ] ;
+  sh:property [ sh:path impact:deletesVariable ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:Variable ] ;
+  sh:property [ sh:path impact:previousVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:class impact:WorkflowVersion ] ;
+  sh:property [ sh:path impact:publicationState ; sh:minCount 1 ; sh:in ( "latest" "current-draft" ) ] ;
+  sh:property [ sh:path impact:completeness ; sh:minCount 1 ; sh:in ( "complete" "explicit-gap" ) ] .
+
+impact:ExplicitGapShape a sh:NodeShape ;
+  sh:targetSubjectsOf impact:completeness ;
+  sh:sparql [
+    sh:message "An explicit-gap component must state what remains unknown." ;
+    sh:select """
+      PREFIX impact: <https://example.org/ontology/dify-workflow-impact-m1#>
+      SELECT $this WHERE {
+        $this impact:completeness "explicit-gap" .
+        FILTER NOT EXISTS { $this impact:unknownDetail ?detail }
+      }
+    """
+  ] .

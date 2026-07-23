@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "pack_id": "dify-workflow-impact-m1-supplement-2026-07-24",
+  "purpose": "Immutable supplemental official source for the R2.1-001 M1 Workflow-as-Tool evaluation scenario.",
+  "source": {
+    "repository": "https://github.com/langgenius/dify-docs",
+    "commit": "5396c1a1afbea0dee3d089abfabdf6dac91d30d5",
+    "license": "CC-BY-4.0",
+    "attribution": "Dify documentation by LangGenius, used under CC BY 4.0."
+  },
+  "entries": [
+    {
+      "source_path": "en/cloud/use-dify/workspace/tools.mdx",
+      "snapshot_path": "official/en/cloud/use-dify/workspace/tools.mdx",
+      "sha256": "8033c8d3efd0f8fe52f4de90fc6a905d1fcafcff6ac3dc802aae966122a552ae",
+      "official_page_url": "https://docs.dify.ai/en/cloud/use-dify/workspace/tools",
+      "role": "new supplemental official English source: User Input Workflow can be reused as a Tool"
+    }
+  ],
+  "reused_existing_snapshot_entries": [
+    {
+      "existing_snapshot": "dify-foundations-2026-07-18-5396c1a",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/output.mdx",
+      "sha256": "456021c18efdfcafa51750e44053199f5a5c037a55db338b8935533225cfc2ba",
+      "role": "Output contract semantics"
+    },
+    {
+      "existing_snapshot": "dify-foundations-2026-07-18-5396c1a",
+      "snapshot_path": "official/en/cloud/use-dify/build/version-control.mdx",
+      "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b",
+      "role": "Current Draft and Latest Version semantics"
+    },
+    {
+      "existing_snapshot": "dify-foundations-2026-07-18-5396c1a",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/start.mdx",
+      "sha256": "74f738073b722288dc39d355156ad0eee0cd9ee97fdd07b2254db2657a667b15",
+      "role": "Start node context"
+    },
+    {
+      "existing_snapshot": "dify-foundations-2026-07-18-5396c1a",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/user-input.mdx",
+      "sha256": "b6561d336462feb06290387101481fd8de4909c2ff5ed6f8d5d700327e05b0a9",
+      "role": "User Input context"
+    },
+    {
+      "existing_snapshot": "dify-foundations-2026-07-18-5396c1a",
+      "snapshot_path": "official/en/cloud/use-dify/nodes/ifelse.mdx",
+      "sha256": "45b93f270f440b62d8ec9162eec07e09cde4c17fa46c3527616e6ec7c0a1f738",
+      "role": "IF/ELSE downstream variable use"
+    }
+  ],
+  "claim_layers": {
+    "official_source": "Dify product behavior supported by pinned documentation only.",
+    "synthetic_fixture": "C/B/A workflows, names, variables, paths and changes in this scenario.",
+    "agent_or_query_inference": "Whether a caller is actually affected and any business severity."
+  }
+}

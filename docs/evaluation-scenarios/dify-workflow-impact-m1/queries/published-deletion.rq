@@ -1,0 +1,14 @@
+PREFIX impact: <https://example.org/ontology/dify-workflow-impact-m1#>
+
+SELECT DISTINCT ?callerWorkflow ?callerVersion WHERE {
+  ?change a impact:ChangeSet ;
+    impact:publicationState "latest" ;
+    impact:changeAppliesToVersion ?changedVersion ;
+    impact:deletesVariable ?deletedVariable .
+  ?changedWorkflow impact:activeLatestVersion ?changedVersion .
+  ?callerVersion
+    (impact:hasInvocation/impact:invokesTool/impact:toolTargetsVersion)+
+    ?changedVersion ;
+    impact:versionOf ?callerWorkflow .
+}
+ORDER BY ?callerWorkflow

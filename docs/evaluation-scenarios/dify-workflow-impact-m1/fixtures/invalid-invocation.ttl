@@ -1,0 +1,4 @@
+@prefix impact: <https://example.org/ontology/dify-workflow-impact-m1#> .
+@prefix ex: <https://example.org/ontology/dify-workflow-impact-m1/fixture/invalid#> .
+
+ex:orphan-invocation a impact:ToolInvocation ; impact:completeness "complete" .
