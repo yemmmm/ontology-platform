@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: 细化中；M1 路线、Workflow-as-Tool 建模边界与首个合成 Fixture 已确认
+- Status: 细化中；M1 需求边界、合成 Fixture 与建模 Agent 迭代授权已确认
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-23T20:16:03+08:00
+- Last updated: 2026-07-23T20:31:50+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: not created; final process is intentionally not frozen
 - Shared test plan: not created; acceptance contract is intentionally not frozen
@@ -172,3 +172,18 @@
   and reports must keep official facts, synthetic facts, and Agent inferences explicitly separated.
 - Outcome/next step: Define stable IRIs/IDs, the Change Set structure, ontology elements, and executable
   query definitions.
+
+### 2026-07-23T20:31:50+08:00 — Delegate ontology-structure choices to iterative modeling — main agent + user
+
+- User direction: The modeling structure does not need to be fixed or individually confirmed now. The
+  modeling Agent may decide the initial structure and adjust it repeatedly in later iterations.
+- Decision: Requirements freeze the M1 goal, responsibility boundary, Fixture, and acceptance outcome,
+  not one immutable set of Classes, Properties, Relations, Shapes, axioms, rules, IRIs, or version
+  representation.
+- Working rule: The modeling Agent records each hypothesis, model change, targeted problem, test result,
+  and known limitation. Internal structure changes do not require user confirmation.
+- Reconfirmation triggers: A change to the business goal, Fixture, completion gate, platform/Agent
+  responsibility boundary, platform capability scope, Dify-specific adaptation, or source/evidence
+  truth boundary.
+- Outcome/next step: Produce and review an initial M1 ontology design and shared test plan, then iterate
+  the model against the agreed positive and negative Fixtures.
