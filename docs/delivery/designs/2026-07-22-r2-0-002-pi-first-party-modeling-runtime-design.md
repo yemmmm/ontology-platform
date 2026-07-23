@@ -7,7 +7,8 @@
   `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
 - Architecture decision:
   `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
-- Status: reviewed; contract frozen, mandatory plan review PASS
+- Status: paused at retained checkpoint; reviewed contract kept as historical baseline, no further
+  execution before R2.0-003 refinement
 - Priority: modeling quality and semantic retrieval quality first
 
 ## Outcome

@@ -5,7 +5,8 @@
   `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Delivery record:
   `docs/delivery/records/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-delivery-record.md`
-- Status: reviewed; mandatory plan review PASS, implementation rounds pending
+- Status: paused at G2 checkpoint; original completion gates not met, remaining rounds will not
+  continue before R2.0-003 refinement
 
 ## Completion gates
 

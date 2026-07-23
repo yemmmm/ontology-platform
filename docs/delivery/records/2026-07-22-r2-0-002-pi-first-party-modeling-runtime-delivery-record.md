@@ -1,20 +1,21 @@
 # R2.0-002 Pi 第一方建模 Agent Runtime 正式集成 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.0.md` R2.0-002
-- Status: **G2 real-run defect loop paused at checkpoint (in-progress)**. phase 1 (`2c4a678`) + G1
+- Status: **暂不继续推进；检查点保留，原验收未完成**。phase 1 (`2c4a678`) + G1
   orchestrator (`8881d4d`) committed & independently tested PASS (Round 1/2/3). G2 real run advanced
   across 9 rounds through coordinator→business-organizer→commit-business→Work Unit modeling (4 units
   accepted); blocked on work-unit result→SMD submission (migration gap, needs accept-unit-result path).
-  Remaining: G2 completion (work-unit result chain + apply + verification), H Claude retirement, closure.
+  Unmet original gates: G2 completion (work-unit result chain + apply + verification), H Claude
+  retirement, and final closure; these are not active follow-up work under R2.0-002.
 - Started: 2026-07-22T16:30:00+08:00
-- Last updated: 2026-07-23T13:57:45+08:00
+- Last updated: 2026-07-23T15:24:39+08:00
 - Design: `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
 - Architecture decision: `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
 - Delivery baseline: `294e5eb`
 - Phase 1 commit: `2c4a678` (Build Pi Local modeling runtime phase 1; 37 files; clean `main`)
 - G1 commit: `8881d4d` (Pi modeling orchestrator + Round 2/3 PASS)
-- G2 checkpoint commit: pending (this delivery cycle)
+- G2 checkpoint commit: `11f60f2` (Advance Pi modeling G2 real run through Work Unit modeling)
 - Phase 1 model decision: `deepseek/deepseek-v4-flash` (carried from R2.0-001; key staged in gitignored
   config; required for G; G2 apply additionally requires `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`)
 - Delivery commit: pending G2 completion + H + closure
@@ -434,3 +435,18 @@
 - Rework and root causes: pending.
 - What shortened or delayed delivery: pending.
 - Reusable lessons: pending.
+
+### 2026-07-23T15:24:39+08:00 — R2.0-002 暂停推进，R2.0-003 记录重构背景 — main agent + user
+
+- Context: 对 R2.0-002 原需求、设计、共享测试计划、真实 G2 运行和当前提交重新审计。现有
+  `11f60f2` 已保留 Pi Runtime 基础与真实运行至 Work Unit 的检查点，但 merge、独立 review、
+  dry-run/apply、应用后 CQ/检索/provenance、Claude 退役和最终独立 PASS 均未完成。同时现有
+  流程的目标与质量门禁逐渐把业务文档建模收敛为知识图谱构建，不能代表新的 Ontology 建模目标。
+- Action/decision: 用户确认 R2.0-002 标记为“暂不继续推进”，保留代码、测试、设计、真实运行
+  证据和 Project 检查点，不把它标记为已实现，不继续原 G2 链路，也不退役 Claude。新增
+  R2.0-003“本体建模流程重构”，本次只记录背景、方向和待细化问题；明确不以“双轨建模”命名或
+  预设最终方案。
+- Evidence: `docs/requirements/requirements-v2.0.md` R2.0-002/R2.0-003；本记录 G2 checkpoint；
+  shared test plan Round 1-3 及未执行门禁；commit `11f60f2`。
+- Outcome/next step: 当前无实施中 v2.0 需求。后续从 R2.0-003 的功能细化开始，再决定 R2.0-002
+  未完成链路和既有 Workflow Package 的复用、调整或替换范围。
