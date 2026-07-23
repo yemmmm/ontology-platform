@@ -50,6 +50,10 @@ BRIEF_FIELDS = {
     "terminology",
     "inference_scope",
 }
+# The local ontology_id is the deterministic Shared Modeling Directory key. The platform owns a
+# separate generated Ontology id; this external_mappings marker durably binds the two so a resumed
+# or re-initialized run rediscovers the same platform Ontology instead of creating a duplicate.
+ONTOLOGY_EXTERNAL_KEY = "pi_modeling_local_ontology_id"
 
 
 class AdapterError(RuntimeError):
@@ -177,6 +181,80 @@ def _request(
     return value
 
 
+def _ontology_external_mappings(local_id: str) -> dict[str, str]:
+    return {ONTOLOGY_EXTERNAL_KEY: local_id}
+
+
+def _ensure_platform_ontologies(
+    config: dict[str, Any], run: dict[str, Any], state: dict[str, Any]
+) -> dict[str, str]:
+    """Idempotently create or rediscover one platform Ontology per local ontology id.
+
+    The local ontology_id is the deterministic Shared Modeling Directory key (run.json, Coverage,
+    candidate, Batch plan and verification are all keyed on it); the platform owns a separate
+    generated Ontology id. Each local id is durably bound to its platform id through the Ontology
+    ``external_mappings`` so a resumed or re-initialized run rediscovers the same Ontology instead
+    of creating a duplicate. This is a platform setup step (like Build Session creation in
+    ``start``), not a protected modeling write, so it is not Runner-grant gated.
+    """
+    bindings: dict[str, str] = {
+        key: value
+        for key, value in (state.get("ontology_bindings") or {}).items()
+        if isinstance(key, str) and isinstance(value, str) and value
+    }
+    listed: list[dict[str, Any]] | None = None
+    project_ontology_path = (
+        f"/projects/{urllib.parse.quote(config['project_id'], safe='')}/ontologies"
+    )
+    for entry in run.get("ontologies", []):
+        local_id = entry.get("ontology_id") if isinstance(entry, dict) else None
+        if not isinstance(local_id, str) or not local_id:
+            raise AdapterError("run_ontology_invalid")
+        if bindings.get(local_id):
+            continue
+        if listed is None:
+            listed = _request(config, "GET", project_ontology_path)
+            if not isinstance(listed, list):
+                raise AdapterError("platform_response_invalid")
+        existing_id: str | None = None
+        for item in listed:
+            if not isinstance(item, dict):
+                continue
+            mappings = item.get("external_mappings")
+            if isinstance(mappings, dict) and mappings.get(ONTOLOGY_EXTERNAL_KEY) == local_id:
+                candidate = item.get("id")
+                if isinstance(candidate, str) and candidate:
+                    existing_id = candidate
+                    break
+        if existing_id:
+            bindings[local_id] = existing_id
+            continue
+        created = _request(
+            config,
+            "POST",
+            project_ontology_path,
+            {
+                "name": local_id[:200],
+                "description": f"Pi modeling ontology {local_id}",
+                "external_mappings": _ontology_external_mappings(local_id),
+            },
+        )
+        platform_id = created.get("id") if isinstance(created, dict) else None
+        if not isinstance(platform_id, str) or not platform_id:
+            raise AdapterError("ontology_create_invalid")
+        bindings[local_id] = platform_id
+    return bindings
+
+
+def _platform_ontology_id(state: dict[str, Any], local_id: str) -> str:
+    """Resolve the bound platform Ontology id for one local ontology id at a platform boundary."""
+    bindings = state.get("ontology_bindings")
+    platform_id = bindings.get(local_id) if isinstance(bindings, dict) else None
+    if not isinstance(platform_id, str) or not platform_id:
+        raise AdapterError("ontology_binding_missing")
+    return platform_id
+
+
 def _ledger(repo: Path, run_id: str) -> Path:
     return repo / "workspaces" / "modeling-adapter" / run_id / "state.json"
 
@@ -240,6 +318,9 @@ def start(repo: Path, run_dir: Path, config_path: Path) -> dict[str, Any]:
         "build_session_id": session_id,
         "session_revision": session.get("revision"),
     }
+    # Bind every local ontology id to a platform Ontology id before any CQ or Batch references it.
+    # A resumed start rediscovers existing bindings and only creates missing Ontologies.
+    state["ontology_bindings"] = _ensure_platform_ontologies(config, run, state)
     # A resumed start drops any stale one-shot Runner authorizations: each protected write must be
     # re-confirmed against the current settled role, artifact hash, review verdict and dry-run.
     state.pop("runner_grants", None)
@@ -306,7 +387,9 @@ def _business_manifest(path: Path) -> dict[str, Any]:
     return value
 
 
-def _question_payload(local: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+def _question_payload(
+    local: dict[str, Any], metadata: dict[str, Any], ontology_id: str
+) -> dict[str, Any]:
     query = metadata.get("query_definition", local.get("query_definition", {}))
     if not isinstance(query, dict):
         raise AdapterError("business_question_invalid")
@@ -319,7 +402,7 @@ def _question_payload(local: dict[str, Any], metadata: dict[str, Any]) -> dict[s
     ):
         raise AdapterError("business_question_invalid")
     return {
-        "ontology_id": local["ontology_id"],
+        "ontology_id": ontology_id,
         "question": question.strip(),
         "importance": int(metadata.get("importance", 3)),
         "query_definition": query,
@@ -359,7 +442,7 @@ def commit_business(
     if run.get("execution_profile") != "local":
         raise AdapterError("local_profile_required")
     manifest = _business_manifest(manifest_path)
-    _consume_runner_grant(repo, run, operation_id)
+    state = _consume_runner_grant(repo, run, operation_id)
     smd.validate_cq_binding_window(run_dir)
     coverage = smd._read_json(run_dir / run["shared_paths"]["coverage"])
     # Refuse an unaccepted CQ before writing the Brief: allowing it through would let later Work
@@ -371,7 +454,9 @@ def commit_business(
             raise AdapterError("business_question_missing")
         if metadata.get("accepted") is not True:
             raise AdapterError("business_question_not_accepted")
-        payload = _question_payload(local, metadata)
+        payload = _question_payload(
+            local, metadata, _platform_ontology_id(state, local["ontology_id"])
+        )
         source_fields = set(payload["source_brief_fields"])
         confirmed_fields = set(manifest["brief"]["confirmed_fields"])
         if not source_fields <= BRIEF_FIELDS or not source_fields <= confirmed_fields:
@@ -397,7 +482,9 @@ def commit_business(
         metadata = manifest["questions"].get(local_id)
         if not isinstance(local_id, str) or not isinstance(metadata, dict):
             raise AdapterError("business_question_missing")
-        payload = _question_payload(local, metadata)
+        payload = _question_payload(
+            local, metadata, _platform_ontology_id(state, local["ontology_id"])
+        )
         exact = [
             item
             for item in listed
@@ -915,6 +1002,7 @@ def dry_run_next(
     config, limits = load_config(repo, config_path)
     run = smd._load_run(run_dir)
     state = _consume_runner_grant(repo, run, operation_id)
+    platform_ontology_id = _platform_ontology_id(state, ontology_id)
     smd.validate_review(run_dir, ontology_id)
     plan = smd.validate_batch_plan(run_dir, ontology_id)
     if plan.get("limits") != limits:
@@ -931,7 +1019,9 @@ def dry_run_next(
         immutable_content_hash=materialized["immutable_content_hash"],
     )
     context = _request(
-        config, "GET", f"/ontologies/{urllib.parse.quote(ontology_id, safe='')}/modeling-context"
+        config,
+        "GET",
+        f"/ontologies/{urllib.parse.quote(platform_ontology_id, safe='')}/modeling-context",
     )
     version = context.get("workspace", {}).get("workspace_version")
     if not isinstance(version, str) or not version:
@@ -941,7 +1031,7 @@ def dry_run_next(
         state["build_session_id"],
         {
             "client_batch_id": materialized["client_batch_id"],
-            "ontology_id": ontology_id,
+            "ontology_id": platform_ontology_id,
             "items": materialized["items"],
         },
         run_id=run["run_id"],
@@ -983,6 +1073,7 @@ def apply_next(
     config, _limits = load_config(repo, config_path)
     run = smd._load_run(run_dir)
     state = _consume_runner_grant(repo, run, operation_id)
+    platform_ontology_id = _platform_ontology_id(state, ontology_id)
     batch = _next_planned_batch(run_dir, ontology_id)
     if batch.get("state") != "dry_run_bound":
         raise AdapterError("dry_run_required")
@@ -996,7 +1087,7 @@ def apply_next(
     lease = _request(
         config,
         "POST",
-        f"/build-sessions/{urllib.parse.quote(state['build_session_id'], safe='')}/ontology-leases/{urllib.parse.quote(ontology_id, safe='')}:acquire",
+        f"/build-sessions/{urllib.parse.quote(state['build_session_id'], safe='')}/ontology-leases/{urllib.parse.quote(platform_ontology_id, safe='')}:acquire",
         {
             "client_request_id": _attempt_identity(
                 run["run_id"], batch["client_batch_id"], "lease"
@@ -1022,7 +1113,7 @@ def apply_next(
         context = _request(
             config,
             "GET",
-            f"/ontologies/{urllib.parse.quote(ontology_id, safe='')}/modeling-context",
+            f"/ontologies/{urllib.parse.quote(platform_ontology_id, safe='')}/modeling-context",
         )
         version = context.get("workspace", {}).get("workspace_version")
         if not isinstance(version, str) or not version:
@@ -1032,7 +1123,7 @@ def apply_next(
             state["build_session_id"],
             {
                 "client_batch_id": batch["client_batch_id"],
-                "ontology_id": ontology_id,
+                "ontology_id": platform_ontology_id,
                 "items": batch.get("materialized_items", []),
             },
             run_id=run["run_id"],
@@ -1049,7 +1140,7 @@ def apply_next(
             _request(
                 config,
                 "POST",
-                f"/build-sessions/{urllib.parse.quote(state['build_session_id'], safe='')}/ontology-leases/{urllib.parse.quote(ontology_id, safe='')}:release",
+                f"/build-sessions/{urllib.parse.quote(state['build_session_id'], safe='')}/ontology-leases/{urllib.parse.quote(platform_ontology_id, safe='')}:release",
                 {
                     "client_request_id": _attempt_identity(
                         run["run_id"], batch["client_batch_id"], "release"

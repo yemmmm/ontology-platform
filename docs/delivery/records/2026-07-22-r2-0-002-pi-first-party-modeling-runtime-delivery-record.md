@@ -1,17 +1,23 @@
 # R2.0-002 Pi 第一方建模 Agent Runtime 正式集成 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.0.md` R2.0-002
-- Status: phase 1 (A–F) independently tested PASS and committed (`2c4a678`); preparing G (real run)
+- Status: **G2 real-run defect loop paused at checkpoint (in-progress)**. phase 1 (`2c4a678`) + G1
+  orchestrator (`8881d4d`) committed & independently tested PASS (Round 1/2/3). G2 real run advanced
+  across 9 rounds through coordinator→business-organizer→commit-business→Work Unit modeling (4 units
+  accepted); blocked on work-unit result→SMD submission (migration gap, needs accept-unit-result path).
+  Remaining: G2 completion (work-unit result chain + apply + verification), H Claude retirement, closure.
 - Started: 2026-07-22T16:30:00+08:00
-- Last updated: 2026-07-23T03:05:00+08:00
+- Last updated: 2026-07-23T13:57:45+08:00
 - Design: `docs/delivery/designs/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-07-22-r2-0-002-pi-first-party-modeling-runtime-test-plan.md`
 - Architecture decision: `docs/architecture/decisions/0007-first-party-modeling-runtime-boundary.md`
 - Delivery baseline: `294e5eb`
 - Phase 1 commit: `2c4a678` (Build Pi Local modeling runtime phase 1; 37 files; clean `main`)
+- G1 commit: `8881d4d` (Pi modeling orchestrator + Round 2/3 PASS)
+- G2 checkpoint commit: pending (this delivery cycle)
 - Phase 1 model decision: `deepseek/deepseek-v4-flash` (carried from R2.0-001; key staged in gitignored
-  config; required for G)
-- Delivery commit: pending G/H completion
+  config; required for G; G2 apply additionally requires `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`)
+- Delivery commit: pending G2 completion + H + closure
 
 ## Confirmed contract
 
@@ -342,6 +348,59 @@
 - Action/decision: 主 agent 逐条判定 tester 缺陷：**#1 accepted 必修**（`orchestrator.mjs:669` `_reviewerPrompt` 双引号输出字面 `${ontologyId}`，一行修复）；**#2 accepted 必修**（`_reviewOntology:441-471` REVISE/BLOCKED 只 re-merge 不重生成 Work Unit，3 轮后 throw；设计 Failure and recovery 要求 regenerate；G2 真实 reviewer 大概率 REVISE → 硬阻塞）；**#3 accepted 应修**（`_planAndApply:493-495` dry-run Finding 硬抛不映射 Work Unit；设计要求 map 回 Work Unit 重生成/合并/评审/dry-run）；**#4 accepted 一并修**（`_modelOntology:382,456` 缺 candidate-hash 一致性校验，adapter grant 后盾在，纵深防御）；**#5 low 记录不阻塞**（Summary per-ontology 而非设计字面 per-work-unit，schema 有效，G2 真实运行评估）。
 - Evidence: tester Round 2 报告（test-plan `### Round 2`、delivery-record `Independent test rounds` 表）；独立 probe 确认 #1/#2/#3；主 agent G1 diff audit（cli 连通 orchestrator、agent_settled 门、.pi/agent gitignored、secret 0）。
 - Outcome/next step: 启动修复轮（`requirement_developer` 修 #1-#4 + 加回归测试覆盖 REVISE 重生成/Finding 映射，fake）；修复后交 `requirement_tester` Round 3 重测，再进 G2（主 agent 创建 fresh Project + 驱动真实 deepseek 运行 + 验收）。
+
+### 2026-07-23T08:25:29+08:00 — G1 Round 3 PASS, committed; G2 first real run failed (read-tool root cause); G2 repair launched — main agent
+
+- Context: G1 修复轮后 Round 3 独立重测 PASS（#1-#4 独立 probe 确认修复，A-F + G1 合同保持，无新缺陷）；G1 编排器 checkpoint 提交 `8881d4d`。G2 真实 deepseek 运行首次启动（主 agent 驱动，fresh Project `52542fa4-5161-4d7e-9c81-cf62a9c95d7c`，deepseek-v4-flash ¥48.19）。
+- Action/decision: **G2 失败（exit 1）**。根因：coordinator introduce 成功 settled，但 business-organizer 阶段 `pi exited (code 143 / SIGTERM) before role settlement`（约 9 分钟后）。诊断：`realPiRoleArgs`（orchestrator.mjs:44）用 `--no-builtin-tools`，`ROLE_TOOLS`（runner.mjs:18）无 `read`，但 `_organizerPrompt`（orchestrator.mjs:737）要求 role "Read only these source locators: <资料文件路径>"——**role 被要求读资料文件却没有 read 工具**，模型无法读、行为异常导致 pi exit 143。`pi --help` 确认 `--tools` allowlist 适用于 built-in（read/grep/find）+ extension 工具，故修复方向：给需读资料的 role 在 `--tools` 加 `read`（保留 `--no-builtin-tools` 关闭 bash/edit/write 等危险内置）。另：pi stderr 未记录到 events（recordableClass 不含 stderr），修复轮一并加 stderr 捕获便于后续诊断。
+- Evidence: G2 `events.jsonl`（seq 1-10 coordinator introduce settled，seq 11 failure code 143，roles 仅 coordinator，无 business-organizer role_start）；`pi --help`（`--tools` 适用 built-in + extension，内置 read/grep/find）。
+- Outcome/next step: 启动 G2 修复轮（`requirement_developer`：ROLE_TOOLS 给 business-organizer/work-unit-modeler/model-reviewer 加 read（+grep）；realRoleLauncher `--tools` 含 read；更新 fake 测试 tools 断言；加 stderr 捕获到 events；真实 pi probe 验证 role 能读资料不 exit 143；npm test 不破坏）。修复后主 agent 重跑 G2。
+
+### 2026-07-23T08:51:34+08:00 — G2 read 修复后二次失败，真根因 queueEmpty（Pi 不发 queue_update），queueEmpty 修复轮 — main agent
+
+- Context: read 工具修复（probe 证明 business-organizer 能读资料）后重跑 G2，**仍失败**（exit 1），与首次相同：coordinator introduce settled → `pi exited (code 143)`，roles 仅 coordinator（business-organizer 未启动），stderr 空。
+- Action/decision: 深入诊断 reveal **真根因**（前次 read 误判）：`recordableClass` 含 `queue_update`（会记录 events），但 G2 events **无 queue_update** → 真实 Pi 0.81.1 **不发 queue_update**；`rpc-session.mjs:61` `queueEmpty` 初始 false，**只**由 queue_update（line 217）set → 永远 false；`isCompleteEligible()`（line 130）要求 `queueEmpty` → 永远不满足 → `awaitSettlement` 卡（agent_settled 记录了但 TERMINAL_IDLE/STAGE_END 未记录，证明 driveRole 卡在 awaitSettlement）→ pi idle ~8:48 后 exit 143。fake-pi 模拟 queue_update 故测试通过。两次失败根因相同（coordinator introduce awaitSettlement 卡），read 修复虽有效但非失败根因（business-organizer 未启动到 read 阶段）。
+- 修复判定：Pi `agent_settled` 是"队列空 + 无 auto-continue"权威信号（plan review round 1 修正依据），故 agent_settled 时 set `queueEmpty=true`（双信号 settled+idle 仍强，不削弱三重门合同；保留 queue_update 处理若 Pi 未来发）。交 `requirement_developer` 修 + 真实 probe 验证（coordinator introduce 完整 settle 不卡 + 进入 business-organizer）。
+- Evidence: G2 events.jsonl（无 queue_update，settled 后无 TERMINAL_IDLE/STAGE_END）；`event-recorder.mjs:90` recordableClass 含 queue_update；`rpc-session.mjs:61,130,217`（queueEmpty 初始 false / isCompleteEligible 要求 / 只 queue_update set）；ts delta settled→failure 8:48。
+- Outcome/next step: G2 queueEmpty 修复轮；修复后主 agent 第三次重跑 G2。
+
+### 2026-07-23T09:14:09+08:00 — G2 第三次重跑过 coordinator 关，business-organizer 产物路径/文件名不一致，修复轮 — main agent
+
+- Context: queueEmpty+extensionIdle 修复后第三次重跑 G2，**coordinator introduce 完整 settle**（terminal_idle+stage_end 记录，修复生效），business-organizer 启动并运行到 settle，但 `acceptArtifact` 拒 `artifacts/brief.json`（reason: missing）→ failure。
+- Action/decision: 双根因：①**路径不一致**——`realRoleLauncher` env 只设 `PI_CODING_AGENT_DIR` 未设 `PI_MODELING_RUN_DIR`，modeling-tools.ts `runDir` 默认 `cwd/workspaces/modeling-runs/current`，business-organizer 写到 `current/artifacts/`，orchestrator 从 `g2-run-<ts>/artifacts/` 读；②**文件名双后缀**——prompt 让 role 用 name=`brief.json`，Extension `write_modeling_artifact` 写 `${name}.json` → `brief.json.json`，acceptArtifact 读 `brief.json`。证据：`workspaces/modeling-runs/current/artifacts/{brief,coverage,questions}.json.json` 实际存在。修复：`realRoleLauncher` 接受 workDir 并 env 加 `PI_MODELING_RUN_DIR=workDir`（cli.runRealModeling / g2-drive 构造时传 workDir）；modeling-tools.ts `write_modeling_artifact` 不重复 `.json` 后缀（name 已含则不加）。
+- Evidence: current/artifacts/brief.json.json 等存在（已清理）；`orchestrator.mjs:66 realRoleLauncher` env 无 PI_MODELING_RUN_DIR；`extensions/modeling-tools.ts:24 runDir` 默认 current、`:68 file=${name}.json`；G2 events artifact_rejected reason=missing locator=brief.json。
+- Outcome/next step: G2 路径/文件名修复轮；修复后主 agent 第四次重跑 G2（应进入 confirm → commit_business → Work Unit 建模）。
+
+### 2026-07-23T09:27:31+08:00 — G2 第四次重跑过 business-organizer settle，产物 schema 不符，business-organizer 合同修复轮 — main agent
+
+- Context: 路径/文件名修复后第四次重跑 G2，coordinator + business-organizer 都完整 settle，产物写出（brief/coverage/questions.json 路径+文件名正确），但 `acceptArtifact` 拒 brief.json（reason missing_key:fields）。
+- Action/decision: **G1 编排器 business-organizer 合同缺口**：`_organizerPrompt` 只说"Produce brief.json"未指定 schema，business-organizer（deepseek）自由产出 `{domain, scenario_goal, source_documents, core_entities, key_relationships}`，但 orchestrator `acceptArtifact requiredKeys` 期望 `{fields, confirmed_fields}`（brief）/`{competency_questions, coverage_items, work_units}`（coverage），且 `_commitBusiness`/`_initializeDirectory`/`shared_modeling_directory.initialize_run` 消费的平台合同又是另一套（brief 文本/competency_questions/coverage_items/work_units/sources）。fake 测试用恰好符合 requiredKeys 的 fixture 绕过了 schema 明确化。深层修复：统一 business-organizer 产物 schema 跨 acceptArtifact/_commitBusiness/_initializeDirectory，匹配 shared_modeling_directory 平台合同，并在 prompt 明确。
+- Evidence: G2 events artifact_rejected reason=missing_key:fields；实际 brief.json keys 与期望不符；`orchestrator.mjs:267 requiredKeys fields/confirmed_fields`、`:270 competency_questions/coverage_items/work_units`；`shared_modeling_directory.py:259 brief=_bounded_text`、`:275-277 competency_questions/coverage_items/work_units`。
+- Outcome/next step: G2 business-organizer 合同修复轮（统一 schema + prompt 明确）；修复后主 agent 第五次重跑 G2。
+
+### 2026-07-23T10:36:09+08:00 — G2 第五次过 commit_business PATCH brief，CQ POST 400（ontology 不存在），系统性平台合同对齐发现 — main agent
+
+- Context: R1+R2 修复后第五次重跑 G2，首次跑到 commit_business：coordinator+business-organizer 真实 grounding settle → 3 产物 accepted → confirm_business（1 ontology, 3 work_units, 3 CQs, 10 brief fields）→ adapter start（build_session 创建）+ authorize → commit_business PATCH brief **200 ✅** + GET CQ 200 ✅ + **POST CQ 400**。
+- Action/decision: 平台日志定位 POST /competency-questions 400。根因：`interview.py create_question` 验证 `ontology_id` 属于 project，但 Project `52542fa4` fresh 无 ontology（`GET /ontologies` = []）；adapter start 只创建 build_session 不创建 ontology；`.codex` 原版也无 create_ontology（原版假设 ontology 已存在）。且平台 `OntologyCreate` schema 无 client id（平台生成 ontology_id），而编排器用 scenario-slug `ont-dify-foundations-v1` 作 ontology_id——ontology 创建 + id 来源合同不匹配。
+- **根本发现（重要）**：G2 defect loop 已 6 轮修复（read/queueEmpty/extensionIdle/路径/文件名/schema/SMD 布局/cwd grounding），每轮一个**真实平台合同/schema 不匹配点**。这暴露 G1 编排器 + 迁移 adapter 与**真实平台合同系统性未对齐**：phase-1/G1 的 fake-Pi + mock-adapter + mock-平台测试让编排器在非真实环境 PASS（Round 1/2/3），但真实平台合同依赖链（ontology 创建/id、CQ-on-ontology 依赖、build_session、brief、coverage/work_unit schema、apply、verify）从未被真实平台验证。G2 真实运行逐个暴露这些 fake/mock 盲区。
+- 策略调整：停止"逐轮 defect loop（一次真实运行发现一个合同点）"，改为让 developer **系统性用真实平台逐 action 对齐 adapter**（start/commit_business/dry_run_next/apply_next/verify/finish + ontology 创建/id 绑定 + CQ/coverage/work_unit schema），一次性发现+修复所有真实合同不匹配，再回到 G2 完整真实运行。这减少 defect loop 轮次（每轮真实运行 10–30 分钟 + 深度平台合同诊断，逐轮效率低）。
+- Evidence: 平台日志 `POST /competency-questions 400`；`interview.py:288-290 ontology must belong to project`；`GET /projects/{id}/ontologies = []`；`OntologyCreate` 无 id 字段；adapter start 只创建 build_session。
+- Outcome/next step: 启动系统性真实平台合同对齐修复轮（developer 逐 action 真实平台验证 + 对齐）；完成后回到 G2 真实运行验收。
+
+### 2026-07-23T11:38:16+08:00 — G2 第六次过 start/ontology 创建，commit-business POST status 422（CQ source_brief_fields 空），系统性产物 schema 补全 — main agent
+
+- Context: 系统性平台合同对齐（ontology 创建/id 绑定 + apply 合同）+ 设 `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary` 重启后，第六次重跑 G2：coordinator+business-organizer settle → confirm（1 ontology, 5 work_units, 5 CQs）→ start（build_session + **ontology 创建成功**）→ commit-business PATCH brief 200 + POST CQ **201 Created**（系统性对齐生效）→ POST /status **422**。
+- Action/decision: 平台 `set_question_status` 要求 approved CQ 必须有 `source_answer_ids` 或 `source_brief_fields`，但 coverage CQ 无 `source_brief_fields`（business-organizer 没产）→ `_question_payload` source_brief_fields=[] → 422。又是 business-organizer 产物 schema 链一个字段缺失。为避免逐轮，启动 developer **系统性补全 business-organizer + work-unit-modeler 产物的所有平台要求字段**（CQ source_brief_fields/importance/query_definition、coverage_items/work_units 字段、modeling item Evidence/command_kind payload），一次性对齐 _organizerPrompt/_workUnitPrompt + 消费点 + 平台合同，写进 prompt 并真实 deepseek probe 验证。
+- Evidence: 平台日志 POST /status 422；`interview.py set_question_status`（approved 需 source）；coverage CQ 无 source_brief_fields；`_question_payload` source_brief_fields=[]。
+- Outcome/next step: 系统性产物 schema 补全修复轮；完成后主 agent 第七次重跑 G2。
+
+### 2026-07-23T13:57:45+08:00 — G2 checkpoint: 9 real-run rounds advanced to Work Unit modeling, paused on work-unit result→SMD migration gap — main agent + user
+
+- Context: G2 真实运行 defect loop 持续。系统性产物 schema 补全 developer 因 API 错误提前终止（部分完成）；主 agent 自补 CQ source_brief_fields（`_businessManifest` 默认 confirmed_fields）+ stage-summarizer artifact name（prompt 明确 `summary-<stage>`）+ summary array 字段类型指引。
+- Action/decision: G2 第七/八/九次重跑持续推进：commit-business POST status approved 过（CQ source_brief_fields）→ stage-summarizer 产物 accepted（name 修复）→ summary validate 过（array 字段类型）→ **Work Unit modeler 全部跑了**（wu-1/2/3/4 启动+settle+artifact_accepted，真实 deepseek 建模 4 Work Unit）。第九次阻塞在 `shared_modeling_directory.py merge`：`unit wu-1 is not ready`。**根因：迁移设计缺口**——原版 `.codex` 经 Claude Harness 提交 work-unit result 到 SMD，迁移版移除 Harness 但 orchestrator `_driveWorkUnit` 只 acceptArtifact 返回，未写入 SMD `units/<id>/result.json`（modeling_items/terms/input_fingerprint）+ 设 status.state=ready；SMD CLI 无 `accept-unit-result` 命令。实质修复（SMD 加提交命令 + orchestrator 提交 + artifact→result schema + status 转换），且 apply/验收可能还有合同点。
+- 用户决策：**仅 commit + 暂停 G2**（会话上下文已极大，当前会话完成 G2→H→关闭不现实）。
+- Evidence: G2 events.jsonl（roles 含 work-unit-modeler:wu-1..4 artifact_accepted；merge 失败 unit not ready）；units/wu-1/status.json state=pending + 无 result.json；SMD CLI 命令无 accept-unit-result；`.codex` 原版经 Harness。
+- Outcome/next step: **G2 暂停 checkpoint**。commit 当前 G2 大量修复（read/queueEmpty/extensionIdle/路径/文件名/business schema/SMD 布局/cwd grounding/系统性平台合同对齐/CQ source_brief_fields/stage-summary name+array + Work Unit 建模推进）。还原 `SEMANTIC_PRODUCT_WRITE_MODE` 至默认（legacy_only）。后续会话继续 G2：①work-unit result→SMD 提交链（SMD accept-unit-result + orchestrator + artifact→result schema）；②apply；③CQ/检索/provenance 验收；然后 H Claude 退役 + 关闭。G2 fresh Project `52542fa4-5161-4d7e-9c81-cf62a9c95d7c`（已提交 ontology/brief/CQ，无 apply）保留供后续。
 
 ## Development and defect history
 

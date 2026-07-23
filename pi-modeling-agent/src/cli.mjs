@@ -193,10 +193,12 @@ async function runRealModeling({ packageRoot, scenario, config }) {
     roleLauncher: realRoleLauncher({
       piBinary,
       packageRoot,
+      repoRoot,
       provider: config.provider,
       model: config.model,
       piAgentDir,
       modelingExtension,
+      workDir,
     }),
     directory,
     adapterBin,

@@ -14,16 +14,30 @@ import { RpcSession, defaultRoleArgs } from "./rpc-session.mjs";
 import { EventRecorder, EVENT_CLASSES, recordableClass } from "./event-recorder.mjs";
 import { validateSummary, summarizeVisibleEvents, SUMMARY_FIELDS } from "./stage-summary.mjs";
 
-/** Role tool inventories. The organizer never receives modeling-item or apply tools. */
+/**
+ * Role tool inventories. The organizer never receives modeling-item or apply tools.
+ *
+ * `read` and `grep` are read-only Pi built-ins, re-enabled per role through `--tools` even though
+ * `--no-builtin-tools` keeps the dangerous built-ins (bash/edit/write) disabled. Roles whose prompts
+ * require reading real source locators or shared-directory artifacts (business organizer, Work Unit
+ * modeler, reviewer) get them; the coordinator's introduce prompt does not read files, and the
+ * stage summarizer only consumes bounded events already injected through its prompt.
+ */
 export const ROLE_TOOLS = Object.freeze({
   coordinator: [
     "request_modeling_clarification",
     "complete_stage",
     "submit_platform_action",
   ],
-  "business-organizer": ["request_modeling_clarification", "write_modeling_artifact", "complete_stage"],
-  "work-unit-modeler": ["write_modeling_artifact", "complete_stage"],
-  "model-reviewer": ["write_modeling_artifact", "complete_stage"],
+  "business-organizer": [
+    "read",
+    "grep",
+    "request_modeling_clarification",
+    "write_modeling_artifact",
+    "complete_stage",
+  ],
+  "work-unit-modeler": ["read", "grep", "write_modeling_artifact", "complete_stage"],
+  "model-reviewer": ["read", "grep", "write_modeling_artifact", "complete_stage"],
   "stage-summarizer": ["write_modeling_artifact"],
 });
 
@@ -177,12 +191,18 @@ export class ModelingRun {
     }
     const cls = recordableClass(record.type);
     if (cls) {
-      await this.recorder.record(cls, {
+      const payload = {
         role,
         tool: record.toolName ?? null,
         isError: record.isError ?? null,
         queue_length: record.length ?? (Array.isArray(record.queue) ? record.queue.length : null),
-      });
+      };
+      // Bound stderr text so Pi diagnostics are visible in events.jsonl without unbounded dumps.
+      // stderr is observability only; it is never parsed as protocol or treated as a tool result.
+      if (cls === EVENT_CLASSES.STDERR && typeof record.text === "string") {
+        payload.text = record.text.slice(0, 1000);
+      }
+      await this.recorder.record(cls, payload);
     }
   }
 
@@ -265,7 +285,12 @@ export class ModelingRun {
     const visible = summarizeVisibleEvents(stageRecords);
     const prompt =
       `Summarize stage "${stage}" using ONLY these bounded visible events and artifact references. ` +
-      `Emit a JSON object with exactly these keys: ${SUMMARY_FIELDS.join(", ")}. ` +
+      `Emit a JSON object with EXACTLY these keys: ${SUMMARY_FIELDS.join(", ")}. ` +
+      `Field types: stage/goal/result/next_step are non-empty strings; ` +
+      `roles/actions/issues_decisions/unresolved are arrays (use [] when empty, NEVER null); ` +
+      `inputs_outputs is an object of bounded reference key/values (no transcript/reasoning/raw). ` +
+      `Then persist it by calling write_modeling_artifact(name: "summary-${stage}", json: <that JSON object as a single JSON string>). ` +
+      `The artifact name MUST be exactly "summary-${stage}" (no suffix, no rearrangement). ` +
       `Visible events: ${JSON.stringify(visible)}. Artifact references: ${JSON.stringify(artifactRefs ?? {})}.`;
     await this.driveRole(role, prompt, { promptId: `summary-${stage}` });
     const { artifact } = await this.acceptArtifact(role, `artifacts/summary-${stage}.json`);

@@ -10,6 +10,7 @@
 //   {type:"clarify", id, title, question}    emit extension_ui_request input, await matching response
 //   {type:"idle"}                            emit extension_ui_request notify modeling_idle
 //   {type:"queue", length}                   emit queue_update with the given length
+//   {type:"stderr", text}                    write one line to process.stderr (observability only)
 //   {type:"exit", code}                      process.exit(code ?? 0)
 // The fake begins replaying after it receives the first prompt line on stdin and stays alive after
 // the script drains (like real Pi) until stdin closes or it is killed.
@@ -86,6 +87,9 @@ const replay = async () => {
       case "idle":
         out({ type: "extension_ui_request", method: "notify", message: "modeling_idle" });
         break;
+      case "stderr":
+        process.stderr.write(step.text ?? "");
+        break;
       case "clarify":
         out({
           type: "extension_ui_request",
@@ -98,7 +102,9 @@ const replay = async () => {
         break;
       case "artifact": {
         out({ type: "tool_execution_start", toolName: "write_modeling_artifact" });
-        const file = join(runDir, "artifacts", `${step.name}.json`);
+        // Mirror the real Extension: never append a second `.json` when the script name already has one.
+        const fileName = step.name.endsWith(".json") ? step.name : `${step.name}.json`;
+        const file = join(runDir, "artifacts", fileName);
         await mkdir(dirname(file), { recursive: true });
         // Atomic write (temp + rename) so a concurrent Runner reader never observes a partial file.
         const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
@@ -108,7 +114,7 @@ const replay = async () => {
           type: "tool_execution_end",
           toolName: "write_modeling_artifact",
           isError: false,
-          content: `artifact_written:${step.name}`,
+          content: `artifact_written:${fileName}`,
         });
         break;
       }

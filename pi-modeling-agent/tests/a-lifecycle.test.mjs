@@ -135,14 +135,18 @@ test("RpcSession lifecycle booleans reset on retry/compaction/turn boundaries", 
   // Simulate ingest directly to unit-test the state machine.
   session._ingest({ type: "agent_settled" });
   assert.equal(session.settled, true);
+  assert.equal(session.queueEmpty, true, "agent_settled implies an empty queue (real Pi 0.81.1 path)");
   session._ingest({ type: "agent_end" });
   assert.equal(session.settled, false, "agent_end resets settled");
+  assert.equal(session.queueEmpty, false, "agent_end resets queueEmpty");
   session._ingest({ type: "agent_settled" });
   session._ingest({ type: "auto_retry" });
   assert.equal(session.settled, false, "auto_retry resets settled");
+  assert.equal(session.queueEmpty, false, "auto_retry resets queueEmpty");
   session._ingest({ type: "agent_settled" });
   session._ingest({ type: "compaction_start" });
   assert.equal(session.settled, false, "compaction_start resets settled");
+  assert.equal(session.queueEmpty, false, "compaction_start resets queueEmpty");
   session._ingest({ type: "agent_settled" });
   session._ingest({ type: "extension_ui_request", method: "notify", message: "modeling_idle" });
   assert.equal(session.extensionIdle, true);
@@ -153,4 +157,27 @@ test("RpcSession lifecycle booleans reset on retry/compaction/turn boundaries", 
   assert.equal(session.queueEmpty, true);
   session._ingest({ type: "queue_update", queue: [{}], length: 1 });
   assert.equal(session.queueEmpty, false);
+  // The earlier clarification is now resolved (the Runner answers it before the turn ends).
+  session.pendingInputs.delete("c1");
+  // A non-empty queue_update overrides agent_settled's empty-queue implication (forward compat).
+  session._ingest({ type: "agent_settled" });
+  assert.equal(session.queueEmpty, true, "agent_settled re-establishes empty queue after a retry");
+  // Real-Pi terminal ordering: the Extension's modeling_idle fires DURING the final tool, BEFORE
+  // agent_end; agent_end clobbers extensionIdle, then agent_settled re-asserts it (no pending input).
+  // A role whose final action is to settle (no further tool) must still be complete-eligible.
+  session._ingest({ type: "extension_ui_request", method: "notify", message: "modeling_idle" });
+  assert.equal(session.extensionIdle, true);
+  session._ingest({ type: "agent_end" });
+  assert.equal(session.extensionIdle, false, "agent_end resets extensionIdle");
+  session._ingest({ type: "agent_settled" });
+  assert.equal(session.settled, true);
+  assert.equal(session.extensionIdle, true, "agent_settled re-asserts the Extension idle clobbered by agent_end");
+  assert.equal(session.queueEmpty, true);
+  assert.equal(session.isCompleteEligible(), true, "terminal agent_settled after a final tool makes the role complete-eligible");
+  // An open clarification at settle time keeps the role blocked even though settled+queueEmpty hold:
+  // agent_settled does not re-assert extensionIdle while an input is pending, and pendingInputs gates.
+  session._ingest({ type: "extension_ui_request", method: "input", id: "late" });
+  session._ingest({ type: "agent_settled" });
+  assert.equal(session.pendingInputs.has("late"), true);
+  assert.equal(session.isCompleteEligible(), false, "a pending clarification still blocks completion");
 });

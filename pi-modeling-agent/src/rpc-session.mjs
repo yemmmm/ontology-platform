@@ -6,7 +6,13 @@
 //   child is reclaimed ONLY when all three hold simultaneously:
 //     1. Pi emitted `agent_settled` for the current run;
 //     2. the modeling Extension reports idle with no pending message;
-//     3. the latest observed `queue_update` reports an empty queue.
+//     3. the observed queue is empty.
+//   Real-Pi signal sourcing (verified by probe against Pi 0.81.1): real Pi does NOT emit
+//   `queue_update`, so `agent_settled` is treated as the authoritative "queue empty + no
+//   auto-continue" marker (settlement implies an empty queue). It emits the Extension's
+//   `modeling_idle` notify DURING the final tool call, before `agent_end`; `agent_end` resets
+//   `extensionIdle`, so `agent_settled` re-asserts it when no clarification is pending. `queue_update`
+//   is still honored (and, if non-empty, overrides to false) for forward compatibility.
 //   The R2.0-001 integrated-rpc-probe closed stdin on `agent_end`; this module MUST NOT do that.
 
 import { spawn } from "node:child_process";
@@ -213,6 +219,17 @@ export class RpcSession {
     switch (record.type) {
       case "agent_settled":
         this.settled = true;
+        // Real Pi 0.81.1 does not emit `queue_update`; `agent_settled` is the authoritative
+        // "queue empty + no auto-continue" signal, so settlement implies an empty queue. Without
+        // this, `queueEmpty` stays false forever and `awaitSettlement` never resolves on real runs.
+        this.queueEmpty = true;
+        // Real Pi emits the Extension's `modeling_idle` notify DURING the final tool call, BEFORE
+        // `agent_end`. `agent_end` (a RESET_EVENT) then clobbers `extensionIdle=false`, and no fresh
+        // `modeling_idle` follows the settle (the Extension only notifies inside tool calls). So at
+        // settlement the Extension is genuinely idle (its last tool already reported so) but the
+        // boolean was discarded. Re-assert it here when no clarification is pending; an open input
+        // still blocks via `pendingInputs`, so the three-way gate semantics are preserved.
+        if (this.pendingInputs.size === 0) this.extensionIdle = true;
         break;
       case "queue_update":
         this.queueEmpty = Number(record.length ?? (Array.isArray(record.queue) ? record.queue.length : 1)) === 0;
@@ -227,9 +244,10 @@ export class RpcSession {
         break;
       default:
         if (RESET_EVENTS.has(record.type)) {
-          // The role is still running; an earlier settled/idle state no longer counts.
+          // The role is still running; an earlier settled/idle/empty-queue state no longer counts.
           this.settled = false;
           this.extensionIdle = false;
+          this.queueEmpty = false;
         }
     }
     if (this.isCompleteEligible()) this._resolveSettlement(null);

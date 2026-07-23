@@ -24,6 +24,19 @@ test("role tool inventories are distinct and the organizer cannot submit platfor
   // reviewer and summarizer have no platform action tool
   assert.ok(!tools["model-reviewer"].includes("submit_platform_action"));
   assert.deepEqual(tools["stage-summarizer"], ["write_modeling_artifact"]);
+  // Roles whose prompts read real source locators or shared-directory artifacts get the read-only
+  // built-ins (read/grep); coordinator's introduce prompt reads no files and the summarizer only
+  // consumes bounded events injected through its prompt, so neither gets them. bash/edit/write stay
+  // disabled via --no-builtin-tools and are never in any inventory.
+  for (const readingRole of ["business-organizer", "work-unit-modeler", "model-reviewer"]) {
+    assert.ok(tools[readingRole].includes("read"), `${readingRole} must read source locators`);
+    assert.ok(tools[readingRole].includes("grep"), `${readingRole} must grep source locators`);
+    assert.ok(!tools[readingRole].includes("bash"), `${readingRole} must not run bash`);
+    assert.ok(!tools[readingRole].includes("edit"), `${readingRole} must not edit files`);
+    assert.ok(!tools[readingRole].includes("write"), `${readingRole} must not use generic write`);
+  }
+  assert.ok(!tools.coordinator.includes("read"));
+  assert.ok(!tools["stage-summarizer"].includes("read"));
 });
 
 test("each role gets a distinct Pi session identity (pid) and prompt scope", async () => {

@@ -34,6 +34,25 @@ export const DEFAULT_ROLE_TIMEOUT_MS = 10 * 60 * 1000;
 export const MAX_WORK_UNIT_ATTEMPTS = 3;
 export const MAX_REVIEW_ROUNDS = 3;
 
+/**
+ * The confirmed business-Brief field names the platform accepts (lib/platform_adapter.py BRIEF_FIELDS).
+ * Mirrored here so the organizer prompt names exactly the fields the Brief commit will validate, and so
+ * the Brief artifact contract is self-documenting on the orchestration side. Keep in sync with the
+ * platform adapter if that authoritative set ever changes.
+ */
+export const BRIEF_FIELD_NAMES = Object.freeze([
+  "domain_name",
+  "business_goal",
+  "scope",
+  "core_concepts",
+  "identity_rules",
+  "expected_granularity",
+  "data_sources",
+  "boundaries",
+  "terminology",
+  "inference_scope",
+]);
+
 export class OrchestratorError extends Error {}
 
 /**
@@ -63,15 +82,25 @@ export function realPiRoleArgs({ provider, model, tools, modelingExtension }) {
  * Default role launcher: spawns the real pinned `pi` binary. Tests replace it with a launcher that
  * spawns the scripted fake-Pi subprocess.
  */
-export function realRoleLauncher({ piBinary, packageRoot, provider, model, piAgentDir, modelingExtension }) {
+export function realRoleLauncher({ piBinary, packageRoot, repoRoot, provider, model, piAgentDir, modelingExtension, workDir }) {
   return async (role, { tools, persistent, hint }) => {
     void hint; // real runs derive output names from the role prompt/Extension, not the launcher hint.
+    void packageRoot; // kept in the signature for callers; the role cwd is the repo root (see below).
     const args = realPiRoleArgs({ provider, model, tools, modelingExtension });
     return {
       command: piBinary,
       args,
-      cwd: packageRoot,
-      env: { PI_CODING_AGENT_DIR: piAgentDir },
+      // Roles read scenario.source_locators, which are repository-root-relative paths
+      // (e.g. docs/evaluation-corpora/...). Their read/grep tools resolve relatives against cwd, so
+      // cwd MUST be repoRoot (not packageRoot) or the role cannot open the real sources and grounds
+      // its output from the goal/its priors instead. Artifact writing is unaffected: PI_MODELING_RUN_DIR
+      // below takes priority over the Extension's ctx.cwd default (modeling-tools.ts runDir), so
+      // artifacts still land under <workDir>/artifacts regardless of cwd.
+      cwd: repoRoot,
+      // PI_MODELING_RUN_DIR MUST point at this run's workspace so the modeling Extension writes
+      // artifacts under <workDir>/artifacts (what acceptArtifact reads). Without it the Extension
+      // falls back to <cwd>/workspaces/modeling-runs/current and artifacts never reach the Runner.
+      env: { PI_CODING_AGENT_DIR: piAgentDir, PI_MODELING_RUN_DIR: workDir },
       persistent,
     };
   };
@@ -196,6 +225,15 @@ export class ModelingOrchestrator {
     await mkdir(this.workDir, { recursive: true });
     this._artifactRoot = path.join(this.workDir, "artifacts");
     await mkdir(this._artifactRoot, { recursive: true });
+    // R1: the deterministic Shared Modeling Directory requires its run_dir to be EMPTY at init
+    // (shared_modeling_directory.initialize_run rejects a non-empty dir), but workDir already holds
+    // artifacts/ (role outputs acceptArtifact reads) and events.jsonl. Give SMD its own empty
+    // subdirectory and point every run_dir consumer at it: the directory driver (its CLI run_dir) and
+    // every platform adapter call (the adapter's run_dir is the SMD dir, where run.json/shared/units
+    // live, NOT workDir). Role artifacts and the event stream stay in workDir, unchanged.
+    this.smdDir = path.join(this.workDir, "shared-directory");
+    await mkdir(this.smdDir, { recursive: true });
+    if (this.directory) this.directory.runDir = this.smdDir;
     const eventFile = path.join(this.workDir, "events.jsonl");
     this.run = new ModelingRun({ runId: this.runId, eventFile, workDir: this.workDir });
     await this.run.start();
@@ -280,19 +318,23 @@ export class ModelingOrchestrator {
       ontologies,
       sources: this._buildSources(),
     };
+    // Adapt the organizer's free-form artifact to the deterministic Shared Modeling Directory
+    // contract before confirmation: drop only dangling cross-references so initialize_run's strict
+    // validation cannot reject the confirmed plan, and rebuild the ontology grouping from survivors.
+    this._normalizeBusinessPlan(plan);
 
     // Explicit user confirmation gate before any business commit (frozen contract). This is a host
     // pause, not a Pi turn, so the persistent coordinator is not multi-driven here.
     const confirmed = await this.confirm(plan);
     if (!confirmed) {
-      await this._platform("cancel", [this.workDir, "--reason", "business_confirmation_declined"]);
+      await this._platform("cancel", [this.smdDir, "--reason", "business_confirmation_declined"]);
       throw new OrchestratorError("business confirmation declined; run cancelled before commit");
     }
 
     // Initialize the deterministic Shared Modeling Directory from the confirmed plan, then start the
     // platform Build Session and commit the confirmed Brief/CQ.
     await this._initializeDirectory(plan);
-    await this._platform("start", [this.workDir]);
+    await this._platform("start", [this.smdDir]);
     await this._commitBusiness(plan, brief.hash);
     return plan;
   }
@@ -318,6 +360,208 @@ export class ModelingOrchestrator {
     return [...byOntology.values()];
   }
 
+  /**
+   * Adapt the business-organizer's free-form Brief to the platform's commit-business contract.
+   * lib/platform_adapter.py `_business_manifest` requires exactly {fields, confirmed_fields}, where
+   * fields is an object whose keys are a subset of BRIEF_FIELDS and confirmed_fields is a list of the
+   * same. A free-form model commonly merges the sibling confirmed_fields into fields or invents an
+   * unsupported field name; this keeps only the recognized platform fields (preserving the model's
+   * content for them) and rebuilds confirmed_fields from the surviving keys. Anything dropped is
+   * recorded so the change is observable.
+   */
+  _normalizeBrief(plan) {
+    const brief = plan.brief;
+    const rawFields = brief?.fields;
+    if (!brief || typeof rawFields !== "object" || rawFields === null || Array.isArray(rawFields)) {
+      throw new OrchestratorError("business brief.fields must be an object of platform brief fields");
+    }
+    const validNames = new Set(BRIEF_FIELD_NAMES);
+    const cleaned = {};
+    let droppedKeys = 0;
+    for (const [name, value] of Object.entries(rawFields)) {
+      if (validNames.has(name)) {
+        cleaned[name] = value;
+      } else {
+        droppedKeys += 1;
+      }
+    }
+    const filledNames = Object.keys(cleaned);
+    if (!filledNames.length) {
+      throw new OrchestratorError("business brief has no recognized platform fields after normalization");
+    }
+    let confirmed = Array.isArray(brief.confirmed_fields) ? brief.confirmed_fields : [];
+    confirmed = confirmed.filter((name) => validNames.has(name) && name in cleaned);
+    if (!confirmed.length) {
+      confirmed = filledNames.slice();
+    }
+    // Rebuild brief with exactly the two platform keys so _business_manifest's set-equality check holds.
+    plan.brief = { fields: cleaned, confirmed_fields: confirmed };
+    if (droppedKeys) {
+      this.run?.recorder?.record(EVENT_CLASSES.FAILURE, {
+        role: "business-organizer",
+        reason: "business_brief_normalized",
+        dropped_field_keys: droppedKeys,
+        next_action: "continue_with_platform_fields",
+      });
+    }
+    return plan.brief;
+  }
+
+  /**
+   * Adapt the business-organizer's free-form artifact to the deterministic Shared Modeling Directory
+   * contract. The organizer is instructed to emit self-consistent ids, but a free-form model can still
+   * produce a dangling reference (a source_id/coverage_id/work_unit_id/ontology_id nothing else
+   * declares), which initialize_run's strict validation would reject. This drops ONLY the inconsistent
+   * pieces (it never invents content or remaps ids) and rebuilds the ontology grouping from the
+   * surviving Work Units. Anything dropped is recorded so the loss is observable, never silent.
+   */
+  _normalizeBusinessPlan(plan) {
+    this._normalizeBrief(plan);
+    const sourceIds = new Set((plan.sources ?? []).map((s) => s.source_id).filter(Boolean));
+    const rawUnits = Array.isArray(plan.coverage?.work_units) ? plan.coverage.work_units : [];
+    const units = rawUnits.filter(
+      (u) =>
+        u &&
+        typeof u.work_unit_id === "string" &&
+        u.work_unit_id &&
+        typeof u.ontology_id === "string" &&
+        u.ontology_id,
+    );
+    const workUnitIds = new Set(units.map((u) => u.work_unit_id));
+    const ontologyIds = new Set(units.map((u) => u.ontology_id));
+
+    const rawCqs = Array.isArray(plan.coverage?.competency_questions)
+      ? plan.coverage.competency_questions
+      : [];
+    const cqs = [];
+    for (const question of rawCqs) {
+      if (
+        !question ||
+        typeof question.competency_question_id !== "string" ||
+        !question.competency_question_id ||
+        typeof question.text !== "string" ||
+        !question.text ||
+        !ontologyIds.has(question.ontology_id)
+      ) {
+        continue;
+      }
+      const cq = { ...question };
+      if (!cq.local_competency_question_id) {
+        cq.local_competency_question_id = cq.competency_question_id;
+      }
+      // query_definition must be an object when present (commit_business rejects non-dict); drop if not.
+      if (
+        cq.query_definition != null &&
+        (typeof cq.query_definition !== "object" || Array.isArray(cq.query_definition))
+      ) {
+        delete cq.query_definition;
+      }
+      // The deterministic core requires acceptance to be non-null; default to empty criteria.
+      if (cq.acceptance == null) {
+        cq.acceptance = "";
+      }
+      cqs.push(cq);
+    }
+    const cqIds = new Set(cqs.map((q) => q.competency_question_id));
+
+    const rawItems = Array.isArray(plan.coverage?.coverage_items) ? plan.coverage.coverage_items : [];
+    const items = [];
+    for (const item of rawItems) {
+      if (
+        !item ||
+        typeof item.coverage_id !== "string" ||
+        !item.coverage_id ||
+        !ontologyIds.has(item.ontology_id) ||
+        !workUnitIds.has(item.work_unit_id)
+      ) {
+        continue;
+      }
+      items.push({
+        ...item,
+        source_ids: this._filterValid(item.source_ids, sourceIds),
+        competency_question_ids: this._filterValid(item.competency_question_ids, cqIds),
+      });
+    }
+    const coverageIds = new Set(items.map((i) => i.coverage_id));
+
+    const normalizedUnits = units.map((unit) => ({
+      ...unit,
+      source_ids: this._filterValid(unit.source_ids, sourceIds),
+      coverage_ids: this._filterValid(unit.coverage_ids, coverageIds),
+      competency_question_ids: this._filterValid(unit.competency_question_ids, cqIds),
+      dependency_work_unit_ids: this._filterValid(unit.dependency_work_unit_ids, workUnitIds),
+    }));
+
+    const droppedWorkUnits = rawUnits.length - normalizedUnits.length;
+    const droppedCqs = rawCqs.length - cqs.length;
+    const droppedItems = rawItems.length - items.length;
+    if (droppedWorkUnits || droppedCqs || droppedItems) {
+      this.run?.recorder?.record(EVENT_CLASSES.FAILURE, {
+        role: "business-organizer",
+        reason: "business_artifact_normalized",
+        dropped_work_units: droppedWorkUnits,
+        dropped_competency_questions: droppedCqs,
+        dropped_coverage_items: droppedItems,
+        next_action: "continue_with_consistent_subset",
+      });
+    }
+    if (!normalizedUnits.length || !ontologyIds.size || !cqs.length) {
+      throw new OrchestratorError(
+        "business artifacts yielded no consistent ontology/work_unit/competency_question after normalization",
+      );
+    }
+
+    plan.coverage = {
+      competency_questions: cqs,
+      coverage_items: items,
+      work_units: normalizedUnits,
+    };
+    plan.ontologies = this._deriveOntologies(plan.coverage);
+    this._normalizeSourceScopes(plan);
+    return plan;
+  }
+
+  /**
+   * Project each source's ontology scope from the normalized Work Unit and Coverage usage. The
+   * deterministic core (shared_modeling_directory.validate_run) requires that every source a Work Unit
+   * references lists that unit's ontology in scope.ontology_ids; the organizer declares usage via
+   * work_unit/coverage source_ids, so the scope is derived deterministically rather than asked of the
+   * model. Sources no unit references keep an empty ontology_ids list (the scope check never fires for
+   * them). Never invents a scope fact: it only mirrors the usage the organizer already declared.
+   */
+  _normalizeSourceScopes(plan) {
+    const usage = new Map(); // source_id -> Set(ontology_id)
+    const record = (sourceId, ontologyId) => {
+      if (typeof sourceId !== "string" || typeof ontologyId !== "string") return;
+      if (!usage.has(sourceId)) usage.set(sourceId, new Set());
+      usage.get(sourceId).add(ontologyId);
+    };
+    for (const unit of plan.coverage?.work_units ?? []) {
+      for (const sourceId of unit.source_ids ?? []) record(sourceId, unit.ontology_id);
+    }
+    for (const item of plan.coverage?.coverage_items ?? []) {
+      for (const sourceId of item.source_ids ?? []) record(sourceId, item.ontology_id);
+    }
+    for (const source of plan.sources ?? []) {
+      const ontologyIds = [...(usage.get(source.source_id) ?? [])].sort();
+      source.scope = { ...(source.scope ?? {}), ontology_ids: ontologyIds };
+    }
+  }
+
+  /** Keep only the unique string entries of `values` that exist in `valid`, preserving order. */
+  _filterValid(values, valid) {
+    if (!Array.isArray(values)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const value of values) {
+      if (typeof value === "string" && valid.has(value) && !seen.has(value)) {
+        seen.add(value);
+        out.push(value);
+      }
+    }
+    return out;
+  }
+
   async _confirmBusiness(plan) {
     // The confirmation is a host pause injected by the caller (G2: main agent/user; G1: fake). Kept
     // distinct from per-role clarification routing so the persistent coordinator is not multi-driven.
@@ -331,7 +575,7 @@ export class ModelingOrchestrator {
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     await this._authorize(operationId, "commit_business", { artifactHash: briefHash });
     await this._platform("commit-business", [
-      this.workDir,
+      this.smdDir,
       "--business",
       manifestPath,
       "--operation-id",
@@ -342,10 +586,23 @@ export class ModelingOrchestrator {
   _businessManifest(plan) {
     const confirmedFields = plan.brief.confirmed_fields ?? [];
     const questions = {};
-    for (const question of plan.questions?.competency_questions ?? plan.coverage.competency_questions ?? []) {
+    // The platform's commit-business iterates the coverage competency_questions and requires a manifest
+    // entry for each. Authoritatively walk that same list (not the decoupled questions.json artifact) so
+    // every local competency_question_id is accepted, regardless of how the organizer split the two
+    // artifacts. The platform's set_question_status(approved) requires a NON-empty source
+    // (source_answer_ids or source_brief_fields). Each CQ is grounded in the confirmed Brief, so when
+    // the organizer did not enumerate specific source fields, default to all confirmed fields (a
+    // non-empty subset of confirmed_fields, which the platform accepts as confirmed Brief sources).
+    for (const question of plan.coverage?.competency_questions ?? []) {
       const localId = question.local_competency_question_id ?? question.competency_question_id;
       if (localId) {
-        questions[localId] = { accepted: true };
+        const enumerated = Array.isArray(question.source_brief_fields)
+          ? question.source_brief_fields.filter((field) => confirmedFields.includes(field))
+          : [];
+        questions[localId] = {
+          accepted: true,
+          source_brief_fields: enumerated.length ? enumerated : confirmedFields,
+        };
       }
     }
     return { brief: { fields: plan.brief.fields, confirmed_fields: confirmedFields }, questions };
@@ -566,7 +823,7 @@ export class ModelingOrchestrator {
         reviewVerdict: "PASS",
       });
       const dry = await this._platform("dry-run-next", [
-        this.workDir,
+        this.smdDir,
         ontologyId,
         "--operation-id",
         dryOperationId,
@@ -588,7 +845,7 @@ export class ModelingOrchestrator {
         dryRunClean: true,
       });
       const applied = await this._platform("apply-next", [
-        this.workDir,
+        this.smdDir,
         ontologyId,
         "--operation-id",
         applyOperationId,
@@ -596,7 +853,7 @@ export class ModelingOrchestrator {
       if (applied.status !== "ok") {
         // Unknown apply outcome: reconcile the original Batch identity; never create a replacement.
         if (applied.error_code === "apply_outcome_unknown") {
-          await this._platform("reconcile-apply", [this.workDir, ontologyId]);
+          await this._platform("reconcile-apply", [this.smdDir, ontologyId]);
           continue;
         }
         throw new OrchestratorError(`apply-next blocked for ${ontologyId}: ${applied.error_code}`);
@@ -638,7 +895,7 @@ export class ModelingOrchestrator {
     await writeFile(verificationPath, `${JSON.stringify(this._verificationDoc(ontology), null, 2)}\n`);
     await this._authorize(operationId, "verify");
     const result = await this._platform("verify", [
-      this.workDir,
+      this.smdDir,
       ontologyId,
       "--verification",
       verificationPath,
@@ -665,7 +922,7 @@ export class ModelingOrchestrator {
   async _finishRun(ontologies) {
     const operationId = `finish-${this.runId}`;
     await this._authorize(operationId, "finish");
-    const result = await this._platform("finish", [this.workDir, "--operation-id", operationId]);
+    const result = await this._platform("finish", [this.smdDir, "--operation-id", operationId]);
     if (result.status !== "ok") {
       throw new OrchestratorError(`finish blocked: ${result.error_code}`);
     }
@@ -686,7 +943,7 @@ export class ModelingOrchestrator {
   // -- Protected platform writes -------------------------------------------
 
   async _authorize(operationId, operation, { artifactHash, reviewVerdict, dryRunClean } = {}) {
-    const args = [this.workDir, "--operation-id", operationId, "--operation", operation];
+    const args = [this.smdDir, "--operation-id", operationId, "--operation", operation];
     if (artifactHash) args.push("--artifact-hash", artifactHash);
     if (reviewVerdict) args.push("--review-verdict", reviewVerdict);
     if (dryRunClean) args.push("--dry-run-clean");
@@ -731,14 +988,76 @@ export class ModelingOrchestrator {
   }
 
   _organizerPrompt(scenario) {
-    const locators = (scenario.source_locators ?? []).join(", ");
+    const locators = scenario.source_locators ?? [];
+    const ontologyId = this._ontologyIdFor(scenario);
+    const sourceRows = locators.map((locator, i) => `  - source-${i + 1} = ${locator}`);
+    const briefFields = BRIEF_FIELD_NAMES.join(", ");
     return [
-      "You are the business organizer.",
-      `Read only these source locators: ${locators}.`,
+      `You are the business organizer for exactly ONE modeling ontology: ${ontologyId}.`,
+      "Read ONLY these source locators, and refer to each by its stable source_id (never by path):",
+      ...(sourceRows.length ? sourceRows : ["  - (no source locators provided)"]),
       `Scenario goal: ${scenario.goal}.`,
-      "Produce brief.json, coverage.json, and questions.json via write_modeling_artifact, then complete_stage.",
-      "Ask one structured clarification if sources conflict, then continue.",
-    ].join(" ");
+      "Produce three artifacts by calling write_modeling_artifact(name, json) where json is the object rendered as a single JSON string, then call complete_stage. The schemas below are fixed: do not add, rename, or omit keys.",
+      "",
+      `ARTIFACT 1 — name="brief.json": the confirmed business Brief. It MUST be an object with exactly these keys:`,
+      '  { "fields": { "<brief_field>": "<short text grounded in the sources>", ... }, "confirmed_fields": ["<brief_field>", ...] }',
+      `  Each <brief_field> MUST be one of: ${briefFields}.`,
+      "  \"fields\" and \"confirmed_fields\" are SEPARATE top-level keys in the same object. The ONLY keys allowed inside \"fields\" are the brief_field names listed above; never put \"confirmed_fields\" (or any other key) inside \"fields\".",
+      "  confirmed_fields MUST list every key you placed in fields (the Brief fields you confirmed from the sources). Do NOT put entities, relations, or node lists in the Brief; those belong in the Work Units below.",
+      "",
+      `ARTIFACT 2 — name="coverage.json": the competency questions, coverage items, and Work Units for ontology ${ontologyId}. It MUST be an object with exactly these keys:`,
+      "  {",
+      '    "competency_questions": [',
+      "      {",
+      '        "competency_question_id": "cq-1",',
+      '        "local_competency_question_id": "cq-1",',
+      `        "ontology_id": "${ontologyId}",`,
+      '        "text": "<one competency question>",',
+      '        "acceptance": "<acceptance criteria for this question>",',
+      '        "query_definition": {}',
+      "      }",
+      "    ],",
+      '    "coverage_items": [',
+      "      {",
+      '        "coverage_id": "cov-1",',
+      `        "ontology_id": "${ontologyId}",`,
+      '        "work_unit_id": "wu-1",',
+      '        "source_ids": ["source-1"],',
+      '        "competency_question_ids": ["cq-1"]',
+      "      }",
+      "    ],",
+      '    "work_units": [',
+      "      {",
+      '        "work_unit_id": "wu-1",',
+      `        "ontology_id": "${ontologyId}",`,
+      '        "source_ids": ["source-1"],',
+      '        "coverage_ids": ["cov-1"],',
+      '        "competency_question_ids": ["cq-1"],',
+      '        "dependency_work_unit_ids": []',
+      "      }",
+      "    ]",
+      "  }",
+      `  Cross-reference rules (the platform rejects any dangling id): every ontology_id is "${ontologyId}"; every source_id is one of source-1.."source-${locators.length}"; every competency_question_id/local_competency_question_id matches a cq-* id you declared; every coverage_id matches a cov-* id you declared; every work_unit_id and dependency_work_unit_id matches a wu-* id you declared. Declare at least one competency question (derive one per scenario acceptance question where applicable) and at least one Work Unit that covers it. Use distinct ids (cq-1, cq-2, ...; wu-1, wu-2, ...; cov-1, cov-2, ...).`,
+      "",
+      'ARTIFACT 3 — name="questions.json": clarifications you raised and their resolution. It MUST be:',
+      '  { "open_questions": [ { "question": "<text>", "status": "resolved", "resolution": "<text>" } ] }',
+      '  Emit { "open_questions": [] } when no clarification was needed.',
+      "",
+      "Ask at most one structured clarification via request_modeling_clarification if the sources genuinely conflict, then continue. Never invent a fact absent from the sources; record an explicit gap instead.",
+    ].join("\n");
+  }
+
+  /**
+   * Derive a stable, domain-neutral single-ontology id for the organizer to target. Production code
+   * must not hard-code reference-ontology names, so the id is a slug of the scenario name; the
+   * scenario (not this orchestrator) is what carries the domain concept.
+   */
+  _ontologyIdFor(scenario) {
+    const slug = String(scenario.name ?? scenario.goal ?? "ontology")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return `ont-${slug || "ontology"}`;
   }
 
   _workUnitPrompt(unit) {
@@ -773,7 +1092,17 @@ export class ModelingOrchestrator {
       project_ref: { project_id: this.config.project_id },
       repository_root: this.repoRoot,
       execution_profile: "local",
-      allowed_command_kinds: ["upsert_resource", "upsert_relation"],
+      // Platform-supported Modeling command kinds only. The Modeling Batch compiler rejects unknown
+      // command_kind values, so the run-level and unit-level allowed sets must stay within the
+      // platform registry (see backend semantic_command_compiler._COMPILERS). This foundations set
+      // lets a Work Unit build classes, relation types, entities, relations and fact values.
+      allowed_command_kinds: [
+        "create_class",
+        "create_relation_type",
+        "create_entity",
+        "create_relation",
+        "update_fact",
+      ],
       sources: plan.sources,
       competency_questions: plan.coverage.competency_questions ?? [],
       coverage_items: plan.coverage.coverage_items ?? [],
@@ -786,7 +1115,13 @@ export class ModelingOrchestrator {
         dependency_work_unit_ids: unit.dependency_work_unit_ids ?? [],
         output_contract: unit.output_contract ?? {
           result_schema: { type: "object" },
-          allowed_command_kinds: ["upsert_resource", "upsert_relation"],
+          allowed_command_kinds: [
+            "create_class",
+            "create_relation_type",
+            "create_entity",
+            "create_relation",
+            "update_fact",
+          ],
         },
       })),
       ontologies: plan.ontologies.map((ontology) => ({ ontology_id: ontology.ontology_id })),

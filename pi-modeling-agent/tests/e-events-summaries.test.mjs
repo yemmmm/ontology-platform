@@ -80,8 +80,35 @@ test("recorded events are ordered with stable run/role correlation", async () =>
   await run.dispose();
 });
 
-test("invokeAdapter wraps the call with tool start before and tool end after", async () => {
+test("pi stderr is recorded as a bounded STDERR event for diagnostics and never parsed as protocol", async () => {
   const workDir = await makeWorkDir();
+  const run = await makeRun(workDir);
+  await startFakeRole({
+    run,
+    role: "work-unit-modeler",
+    workDir,
+    steps: [
+      { type: "event", record: { type: "agent_start" } },
+      { type: "stderr", text: "model context length exceeded\n" },
+      { type: "event", record: { type: "agent_end" } },
+      { type: "event", record: { type: "agent_settled" } },
+      { type: "idle" },
+      { type: "queue", length: 0 },
+    ],
+    timeoutMs: 6000,
+  });
+  await run.driveRole("work-unit-modeler", "model");
+  const events = await readEvents(workDir);
+  const stderrEvents = events.filter((entry) => entry.class === "stderr");
+  assert.equal(stderrEvents.length, 1, "one stderr event recorded");
+  assert.equal(stderrEvents[0].role, "work-unit-modeler");
+  assert.ok(/model context length exceeded/.test(stderrEvents[0].text), "stderr text captured");
+  // No event class should ever be the literal raw record type "stderr" outside the mapped class.
+  assert.ok(events.every((entry) => typeof entry.text === "undefined" || entry.class === "stderr"));
+  await run.dispose();
+});
+
+test("invokeAdapter wraps the call with tool start before and tool end after", async () => {  const workDir = await makeWorkDir();
   const run = await makeRun(workDir);
   // Provide a fake adapter bin that echoes an ok envelope.
   const { writeFile } = await import("node:fs/promises");

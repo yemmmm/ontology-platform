@@ -130,7 +130,7 @@ class FakeLauncher {
         { type: "clarify", id: "biz-ambiguity", title: "Scope ambiguity", question: "Model workflow foundations only?" },
         { type: "artifact", name: "brief", json: { fields: { domain_name: "Dify" }, confirmed_fields: ["domain_name"] } },
         { type: "artifact", name: "coverage", json: COVERAGE },
-        { type: "artifact", name: "questions", json: { competency_questions: COVERAGE.competency_questions } },
+        { type: "artifact", name: "questions", json: { open_questions: [] } },
         ...SETTLE,
       ];
     }
@@ -500,4 +500,252 @@ test("#4 reviewer candidate_hash mismatch is rejected and recovered via regenera
   );
   // Final candidate_hash equals the last merged hash (no silent hash substitution).
   assert.equal(directory.mergeCount("ont-workflow"), 2);
+});
+
+// -- G2 schema-contract regression: business-organizer artifact shape -------------------
+// The G1 fake fixture happened to match the platform contract, so a free-form real model (G2) exposed
+// a gap: the organizer prompt named no schema and acceptArtifact/_commitBusiness/_initializeDirectory
+// diverged. These tests pin the unified contract: the prompt enumerates the platform Brief fields and a
+// domain-neutral ontology id; normalization adapts a free-form artifact to the deterministic Shared
+// Modeling Directory by dropping only dangling references; and the business manifest walks the coverage
+// competency questions authoritatively (what commit_business validates), not the decoupled questions.json.
+
+function bareOrchestrator() {
+  // Pure-logic methods (_normalizeBusinessPlan/_businessManifest/_organizerPrompt/_ontologyIdFor) touch
+  // none of the launch/directory/adapter leaves, so they can be null here; execute() is never called.
+  return buildOrchestrator({ workDir: "/tmp/pi-schema-test", launcher: null, directory: null, adapterBin: "/tmp/pi-schema-test" });
+}
+
+test("organizer prompt pins the unified schema and a domain-neutral derived ontology id", () => {
+  const orchestrator = bareOrchestrator();
+  const scenario = {
+    name: "Dify Foundations v1",
+    goal: "Model Dify foundations",
+    source_locators: ["docs/a.md", "docs/b.md"],
+  };
+  assert.equal(orchestrator._ontologyIdFor(scenario), "ont-dify-foundations-v1");
+  const prompt = orchestrator._organizerPrompt(scenario);
+  // Domain-neutral ontology id (slug of the scenario name, not a hard-coded reference-ontology name).
+  assert.ok(prompt.includes("ont-dify-foundations-v1"));
+  // Deterministic source_ids, one per locator.
+  assert.ok(prompt.includes("source-1 = docs/a.md"));
+  assert.ok(prompt.includes("source-2 = docs/b.md"));
+  // Platform Brief fields enumerated so the model fills only accepted field names.
+  for (const field of ["domain_name", "business_goal", "core_concepts", "boundaries", "inference_scope"]) {
+    assert.ok(prompt.includes(field), `prompt names brief field ${field}`);
+  }
+  // All three artifacts named with their fixed shape.
+  assert.ok(prompt.includes('name="brief.json"'));
+  assert.ok(prompt.includes('name="coverage.json"'));
+  assert.ok(prompt.includes('name="questions.json"'));
+  assert.ok(prompt.includes('"confirmed_fields"'));
+  assert.ok(prompt.includes('"work_units"'));
+  assert.ok(prompt.includes('"coverage_items"'));
+  assert.ok(prompt.includes('"competency_questions"'));
+  assert.ok(prompt.includes('"open_questions"'));
+});
+
+test("normalizeBusinessPlan drops only dangling references and keeps the consistent subset", () => {
+  const orchestrator = bareOrchestrator();
+  const recorded = [];
+  orchestrator.run = { recorder: { record: (cls, payload) => recorded.push({ cls, payload }) } };
+  const plan = {
+    brief: { fields: { domain_name: "Dify", scope: "foundations" }, confirmed_fields: ["domain_name", "scope"] },
+    coverage: {
+      competency_questions: [
+        { competency_question_id: "cq-1", ontology_id: "ont-good", text: "Q1", acceptance: true },
+        { competency_question_id: "cq-2", ontology_id: "ont-other", text: "Q2", acceptance: true }, // dropped: no unit declares ont-other
+        { competency_question_id: "cq-3", ontology_id: "ont-good", acceptance: true }, // dropped: no text
+      ],
+      coverage_items: [
+        {
+          coverage_id: "cov-1",
+          ontology_id: "ont-good",
+          work_unit_id: "wu-1",
+          source_ids: ["source-1", "source-bogus"],
+          competency_question_ids: ["cq-1", "cq-missing"],
+        },
+        { coverage_id: "cov-2", ontology_id: "ont-good", work_unit_id: "wu-ghost" }, // dropped: unknown work_unit_id
+      ],
+      work_units: [
+        {
+          work_unit_id: "wu-1",
+          ontology_id: "ont-good",
+          source_ids: ["source-1", "source-bogus"],
+          coverage_ids: ["cov-1", "cov-missing"],
+          competency_question_ids: ["cq-1", "cq-missing"],
+          dependency_work_unit_ids: ["wu-ghost"],
+        },
+        { ontology_id: "ont-good" }, // dropped: no work_unit_id
+      ],
+    },
+    questions: { open_questions: [] },
+    sources: [{ source_id: "source-1", locator: "docs/x.md", scope: {} }],
+    ontologies: [{ ontology_id: "ont-good" }],
+  };
+
+  orchestrator._normalizeBusinessPlan(plan);
+
+  // Survivors only.
+  assert.deepEqual(
+    plan.coverage.competency_questions.map((q) => q.competency_question_id),
+    ["cq-1"],
+  );
+  assert.deepEqual(
+    plan.coverage.work_units.map((u) => u.work_unit_id),
+    ["wu-1"],
+  );
+  assert.deepEqual(
+    plan.coverage.coverage_items.map((i) => i.coverage_id),
+    ["cov-1"],
+  );
+  // References repaired to the consistent subset only.
+  assert.deepEqual(plan.coverage.coverage_items[0].source_ids, ["source-1"]);
+  assert.deepEqual(plan.coverage.coverage_items[0].competency_question_ids, ["cq-1"]);
+  assert.deepEqual(plan.coverage.work_units[0].source_ids, ["source-1"]);
+  assert.deepEqual(plan.coverage.work_units[0].coverage_ids, ["cov-1"]);
+  assert.deepEqual(plan.coverage.work_units[0].competency_question_ids, ["cq-1"]);
+  assert.deepEqual(plan.coverage.work_units[0].dependency_work_unit_ids, []);
+  // local_competency_question_id defaulted; ontology regrouped from survivors.
+  assert.equal(plan.coverage.competency_questions[0].local_competency_question_id, "cq-1");
+  assert.deepEqual(plan.ontologies.map((o) => o.ontology_id), ["ont-good"]);
+  assert.equal(plan.ontologies[0].work_units.length, 1);
+  // Source ontology scope derived from the surviving Work Unit usage (platform validate_run requires it).
+  assert.deepEqual(plan.sources[0].scope.ontology_ids, ["ont-good"]);
+  // The drop is observable, not silent.
+  const note = recorded.find((r) => r.payload?.reason === "business_artifact_normalized");
+  assert.ok(note, "normalization recorded a failure note");
+  assert.equal(note.payload.dropped_work_units, 1);
+  assert.equal(note.payload.dropped_competency_questions, 2);
+  assert.equal(note.payload.dropped_coverage_items, 1);
+});
+
+test("normalizeBusinessPlan throws when no consistent ontology/work_unit/question remains", () => {
+  const orchestrator = bareOrchestrator();
+  orchestrator.run = { recorder: { record() {} } };
+  const plan = {
+    brief: { fields: { domain_name: "x" }, confirmed_fields: ["domain_name"] },
+    coverage: {
+      competency_questions: [{ competency_question_id: "cq-1", ontology_id: "ont-missing", text: "Q" }],
+      coverage_items: [],
+      work_units: [],
+    },
+    questions: { open_questions: [] },
+    sources: [],
+    ontologies: [],
+  };
+  assert.throws(() => orchestrator._normalizeBusinessPlan(plan), OrchestratorError);
+});
+
+test("normalizeBusinessPlan derives each source ontology scope from declared Work Unit/Coverage usage", () => {
+  const orchestrator = bareOrchestrator();
+  orchestrator.run = { recorder: { record() {} } };
+  const plan = {
+    brief: { fields: { domain_name: "x" }, confirmed_fields: ["domain_name"] },
+    coverage: {
+      competency_questions: [
+        { competency_question_id: "cq-1", ontology_id: "ont-a", text: "Q1", acceptance: true },
+        { competency_question_id: "cq-2", ontology_id: "ont-b", text: "Q2", acceptance: true },
+      ],
+      coverage_items: [
+        { coverage_id: "cov-1", ontology_id: "ont-a", work_unit_id: "wu-1", source_ids: ["source-1", "source-2"], competency_question_ids: ["cq-1"] },
+        { coverage_id: "cov-2", ontology_id: "ont-b", work_unit_id: "wu-2", source_ids: ["source-2"], competency_question_ids: ["cq-2"] },
+      ],
+      work_units: [
+        { work_unit_id: "wu-1", ontology_id: "ont-a", source_ids: ["source-1", "source-2"], coverage_ids: ["cov-1"], competency_question_ids: ["cq-1"], dependency_work_unit_ids: [] },
+        { work_unit_id: "wu-2", ontology_id: "ont-b", source_ids: ["source-2"], coverage_ids: ["cov-2"], competency_question_ids: ["cq-2"], dependency_work_unit_ids: [] },
+      ],
+    },
+    questions: { open_questions: [] },
+    sources: [
+      { source_id: "source-1", locator: "docs/a.md", scope: {} },
+      { source_id: "source-2", locator: "docs/b.md", scope: {} },
+      { source_id: "source-3", locator: "docs/c.md", scope: {} }, // unreferenced
+    ],
+    ontologies: [{ ontology_id: "ont-a" }, { ontology_id: "ont-b" }],
+  };
+  orchestrator._normalizeBusinessPlan(plan);
+  const byId = Object.fromEntries(plan.sources.map((s) => [s.source_id, s.scope.ontology_ids]));
+  // source-1 used only by ont-a; source-2 shared by both ontologies; source-3 unused -> empty.
+  assert.deepEqual(byId["source-1"], ["ont-a"]);
+  assert.deepEqual(byId["source-2"], ["ont-a", "ont-b"]);
+  assert.deepEqual(byId["source-3"], []);
+});
+
+test("normalizeBusinessPlan adapts a free-form Brief to the platform _business_manifest contract", () => {
+  const orchestrator = bareOrchestrator();
+  const recorded = [];
+  orchestrator.run = { recorder: { record: (cls, payload) => recorded.push({ cls, payload }) } };
+  // Mirror the real free-form deviation observed from deepseek: confirmed_fields merged INTO fields,
+  // plus an unsupported invented field key. The platform _business_manifest rejects both.
+  const plan = {
+    brief: {
+      fields: {
+        domain_name: "Dify",
+        scope: "foundations",
+        confirmed_fields: ["domain_name", "scope"],
+        invented_field: "junk",
+      },
+      confirmed_fields: ["domain_name", "scope", "phantom"],
+    },
+    coverage: {
+      competency_questions: [
+        { competency_question_id: "cq-1", ontology_id: "ont-good", text: "Q1", acceptance: true },
+      ],
+      coverage_items: [],
+      work_units: [{ work_unit_id: "wu-1", ontology_id: "ont-good" }],
+    },
+    questions: { open_questions: [] },
+    sources: [],
+    ontologies: [{ ontology_id: "ont-good" }],
+  };
+
+  orchestrator._normalizeBusinessPlan(plan);
+
+  // brief rebuilt with exactly the two platform keys; spurious keys dropped; confirmed reconciled.
+  assert.deepEqual(Object.keys(plan.brief).sort(), ["confirmed_fields", "fields"]);
+  assert.deepEqual(Object.keys(plan.brief.fields).sort(), ["domain_name", "scope"]);
+  assert.deepEqual(plan.brief.confirmed_fields, ["domain_name", "scope"]);
+  const note = recorded.find((r) => r.payload?.reason === "business_brief_normalized");
+  assert.ok(note, "brief normalization recorded");
+  assert.equal(note.payload.dropped_field_keys, 2);
+});
+
+test("normalizeBusinessPlan throws when the Brief has no recognized platform field", () => {
+  const orchestrator = bareOrchestrator();
+  orchestrator.run = { recorder: { record() {} } };
+  const plan = {
+    brief: { fields: { only_invented: "x" }, confirmed_fields: [] },
+    coverage: { competency_questions: [], coverage_items: [], work_units: [] },
+    questions: { open_questions: [] },
+    sources: [],
+    ontologies: [],
+  };
+  assert.throws(() => orchestrator._normalizeBusinessPlan(plan), OrchestratorError);
+});
+
+test("businessManifest accepts every coverage competency question regardless of questions.json", () => {
+  const orchestrator = bareOrchestrator();
+  const plan = {
+    brief: { fields: { domain_name: "Dify" }, confirmed_fields: ["domain_name"] },
+    coverage: {
+      competency_questions: [
+        { competency_question_id: "cq-1", local_competency_question_id: "cq-1", ontology_id: "ont-good", text: "Q1", acceptance: true },
+        { competency_question_id: "cq-2", local_competency_question_id: "cq-2", ontology_id: "ont-good", text: "Q2", acceptance: true },
+      ],
+      coverage_items: [],
+      work_units: [{ work_unit_id: "wu-1", ontology_id: "ont-good" }],
+    },
+    // questions.json is decoupled from the manifest; commit_business validates coverage, not this.
+    questions: { open_questions: [{ question: "unrelated", status: "open" }] },
+    sources: [],
+    ontologies: [{ ontology_id: "ont-good" }],
+  };
+  const manifest = orchestrator._businessManifest(plan);
+  assert.deepEqual(Object.keys(manifest).sort(), ["brief", "questions"]);
+  assert.deepEqual(Object.keys(manifest.questions).sort(), ["cq-1", "cq-2"]);
+  assert.equal(manifest.questions["cq-1"].accepted, true);
+  assert.equal(manifest.questions["cq-2"].accepted, true);
+  assert.deepEqual(manifest.brief.fields, { domain_name: "Dify" });
+  assert.deepEqual(manifest.brief.confirmed_fields, ["domain_name"]);
 });

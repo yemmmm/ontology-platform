@@ -65,12 +65,15 @@ export default function modelingTools(pi: ExtensionAPI): void {
       const parsed = parseJsonObject(params.json);
       const directory = join(runDir(ctx), "artifacts");
       await mkdir(directory, { recursive: true });
-      const file = join(directory, `${params.name}.json`);
+      // Idempotent `.json` suffix: role prompts ask for names like "brief.json", so a name that
+      // already ends in `.json` must not gain a second suffix (brief.json -> brief.json.json).
+      const fileName = params.name.endsWith(".json") ? params.name : `${params.name}.json`;
+      const file = join(directory, fileName);
       await writeFile(file, `${JSON.stringify(parsed, null, 2)}\n`);
       await ctx.ui.notify(IDLE);
       return {
-        content: [{ type: "text", text: `artifact_written:${params.name}` }],
-        details: { locator: `artifacts/${params.name}.json` },
+        content: [{ type: "text", text: `artifact_written:${fileName}` }],
+        details: { locator: `artifacts/${fileName}` },
       };
     },
   });
@@ -87,8 +90,11 @@ export default function modelingTools(pi: ExtensionAPI): void {
     execute: async (_id, params, _signal, _update, ctx) => {
       const directory = join(runDir(ctx), "stages");
       await mkdir(directory, { recursive: true });
+      // Defensive idempotent suffix: the stage pattern forbids dots, but keep the file-name rule
+      // uniform with write_modeling_artifact so a future ".json" suffix never doubles up.
+      const stageFile = params.stage.endsWith(".json") ? params.stage : `${params.stage}.json`;
       await writeFile(
-        join(directory, `${params.stage}.json`),
+        join(directory, stageFile),
         `${JSON.stringify({ stage: params.stage, result: params.result }, null, 2)}\n`,
       );
       await ctx.ui.notify(IDLE);

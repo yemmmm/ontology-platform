@@ -109,6 +109,9 @@ class PlatformAdapterTest(unittest.TestCase):
         state = adapter._read_json(ledger) if ledger.exists() else {}
         state.setdefault("schema_version", 1)
         state.setdefault("build_session_id", "session-1")
+        # commit_business/dry_run/apply translate the local ontology id "o" to a platform Ontology id
+        # at every platform boundary; seed the binding so non-start tests can exercise those actions.
+        state.setdefault("ontology_bindings", {"o": "ontology-platform-1"})
         adapter._atomic_json(ledger, state)
         adapter.smd.bind_local_execution(self.run_dir, build_session_id="session-1")
 
@@ -164,6 +167,13 @@ class PlatformAdapterTest(unittest.TestCase):
                         "revision": 1,
                     }
                 }
+            if method == "GET" and path.endswith("/projects/project-1/ontologies"):
+                return []
+            if method == "POST" and path.endswith("/projects/project-1/ontologies"):
+                return {
+                    "id": "ontology-platform-1",
+                    "external_mappings": payload.get("external_mappings", {}),
+                }
             if method == "GET" and path.endswith("/competency-questions"):
                 return []
             if method == "POST" and path.endswith("/competency-questions"):
@@ -204,6 +214,17 @@ class PlatformAdapterTest(unittest.TestCase):
         self.assertEqual(
             coverage["competency_questions"][0]["platform_competency_question_id"], "remote-cq-1"
         )
+        # start provisioned one platform Ontology and bound the local id "o" to its platform id.
+        ledger = adapter._read_json(adapter._ledger(self.repo, "run-local-123"))
+        self.assertEqual(ledger["ontology_bindings"], {"o": "ontology-platform-1"})
+        cq_posts = [
+            payload
+            for method, path, payload in calls
+            if method == "POST" and path.endswith("/competency-questions")
+        ]
+        self.assertEqual(len(cq_posts), 1)
+        # The CQ was submitted against the PLATFORM ontology id, not the local slug "o".
+        self.assertEqual(cq_posts[0]["ontology_id"], "ontology-platform-1")
         self.assertEqual(
             sum(
                 path.endswith("/competency-questions") and method == "POST"
@@ -225,6 +246,10 @@ class PlatformAdapterTest(unittest.TestCase):
                         "revision": 1,
                     }
                 }
+            if method == "GET" and path.endswith("/projects/project-1/ontologies"):
+                return []
+            if method == "POST" and path.endswith("/projects/project-1/ontologies"):
+                return {"id": "ontology-platform-1", "external_mappings": {}}
             raise AssertionError((method, path))
 
         manifest = self.repo / "business-blocked.json"
@@ -245,8 +270,10 @@ class PlatformAdapterTest(unittest.TestCase):
                     self.repo, self.run_dir, self.config, manifest, "never-authorized"
                 )
         self.assertEqual(started["next_action"], "organize_business")
-        # Only health + build-session creation happened; no business write attempted.
-        self.assertEqual(request_mock.call_count, 2)
+        # Only setup calls happened (health, build-session, ontology list, ontology create); no
+        # protected business write (brief / competency-questions) was attempted without a grant.
+        paths = [call.args[2] for call in request_mock.call_args_list]
+        self.assertFalse(any(p.endswith("/brief") or "/competency-questions" in p for p in paths))
 
     def test_business_ambiguity_blocks_without_duplicate_and_batch_identity_uses_run_id(
         self,
@@ -272,7 +299,9 @@ class PlatformAdapterTest(unittest.TestCase):
         )
         duplicate = {
             "id": "remote",
-            "ontology_id": "o",
+            # Remote CQs carry the PLATFORM ontology id; the binding "o"->"ontology-platform-1" is
+            # seeded by _seed_session, so the matching filter compares platform ids.
+            "ontology_id": "ontology-platform-1",
             "question": "Which customer ordered?",
             "query_definition": {},
         }
@@ -935,6 +964,74 @@ class PlatformAdapterTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(adapter.AdapterError, "in_flight_batch"):
             adapter.cancel(self.repo, self.run_dir, self.config, "explicit abandonment")
+
+    def test_start_creates_then_rediscovers_platform_ontology_idempotently(self) -> None:
+        """start binds each local ontology id to one platform Ontology id; a resume rediscovers the
+        same Ontology by its external_mappings marker instead of creating a duplicate."""
+        run = adapter.smd._load_run(self.run_dir)
+        created: list[dict] = []
+
+        def request(_config, method, path, payload=None):
+            if path == "/health":
+                return {"status": "ok"}
+            if method == "POST" and path.endswith("/build-sessions"):
+                return {
+                    "session": {
+                        "id": "session-1",
+                        "project_id": "project-1",
+                        "status": "active",
+                        "revision": 1,
+                    }
+                }
+            if method == "GET" and path == "/build-sessions/session-1":
+                return {
+                    "session": {
+                        "id": "session-1",
+                        "project_id": "project-1",
+                        "status": "active",
+                        "revision": 1,
+                    }
+                }
+            if method == "GET" and path.endswith("/projects/project-1/ontologies"):
+                # Second invocation (resume): the previously created Ontology is rediscovered.
+                if created:
+                    return [
+                        {
+                            "id": created[0]["id"],
+                            "external_mappings": created[0]["external_mappings"],
+                        }
+                    ]
+                return []
+            if method == "POST" and path.endswith("/projects/project-1/ontologies"):
+                created.append(
+                    {
+                        "id": "ontology-platform-1",
+                        "external_mappings": payload["external_mappings"],
+                    }
+                )
+                return created[0]
+            raise AssertionError((method, path))
+
+        with mock.patch.object(adapter, "_request", side_effect=request):
+            adapter.start(self.repo, self.run_dir, self.config)
+        ledger = adapter._read_json(adapter._ledger(self.repo, "run-local-123"))
+        self.assertEqual(ledger["ontology_bindings"], {"o": "ontology-platform-1"})
+        self.assertEqual(len(created), 1)
+        self.assertEqual(
+            created[0]["external_mappings"],
+            {adapter.ONTOLOGY_EXTERNAL_KEY: "o"},
+        )
+
+        # A fresh start over the same ledger (resume) must NOT create a second Ontology.
+        adapter._atomic_json(
+            adapter._ledger(self.repo, "run-local-123"),
+            {**ledger, "ontology_bindings": {}},  # force rediscovery, drop the cached binding
+        )
+        with mock.patch.object(adapter, "_request", side_effect=request):
+            adapter.start(self.repo, self.run_dir, self.config)
+        self.assertEqual(len(created), 1)  # still only the first creation
+        ledger = adapter._read_json(adapter._ledger(self.repo, "run-local-123"))
+        self.assertEqual(ledger["ontology_bindings"], {"o": "ontology-platform-1"})
 
     def test_apply_timeout_keeps_original_identity_for_reconciliation(self) -> None:
         self._authorize("apply-timeout-1", operation="apply_next")

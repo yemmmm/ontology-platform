@@ -76,9 +76,15 @@ export const EVENT_CLASSES = Object.freeze({
   CANCELLED: "cancelled",
   TIMEOUT: "timeout",
   FAILURE: "failure",
+  STDERR: "stderr",
 });
 
-/** Map a raw Pi RPC record type to a recorder event class, or null when not recordable. */
+/**
+ * Map a raw Pi RPC record type to a recorder event class, or null when not recordable.
+ *
+ * `stderr` is surfaced as its own STDERR class so Pi diagnostics are visible in events.jsonl when a
+ * role exits abnormally (e.g. code 143). stderr is observability only and is never parsed as protocol.
+ */
 export function recordableClass(recordType) {
   const map = {
     queue_update: EVENT_CLASSES.QUEUE_UPDATE,
@@ -89,6 +95,7 @@ export function recordableClass(recordType) {
     agent_settled: EVENT_CLASSES.AGENT_SETTLED,
     model_call_start: EVENT_CLASSES.MODEL_CALL_START,
     model_call_end: EVENT_CLASSES.MODEL_CALL_END,
+    stderr: EVENT_CLASSES.STDERR,
   };
   return map[recordType] ?? null;
 }
