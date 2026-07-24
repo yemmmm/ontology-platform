@@ -13,6 +13,7 @@ from pathlib import Path
 
 from pyshacl import validate
 from rdflib import Graph, Namespace, RDF
+from rdflib.namespace import OWL, RDFS
 from owlrl import DeductiveClosure, RDFS_Semantics
 
 
@@ -188,6 +189,27 @@ class ScenarioAcceptanceTest(unittest.TestCase):
         self.assertTrue(published_versions)
         for version in published_versions:
             self.assertIn((version, RDF.type, IMPACT.WorkflowVersion), graph)
+
+    def test_published_fixture_resources_are_visualizable_named_individuals(self) -> None:
+        graph = graph_for("published-deletion.ttl")
+        expected_resources = {
+            PUBLISHED.c,
+            PUBLISHED["c-v2"],
+            PUBLISHED["published-delete-quality"],
+            PUBLISHED.b,
+            PUBLISHED["b-v1"],
+            PUBLISHED["b-c-invocation"],
+            PUBLISHED["b-if-use"],
+            PUBLISHED["b-approved-content"],
+            PUBLISHED.a,
+            PUBLISHED["a-v1"],
+            PUBLISHED["a-b-invocation"],
+            PUBLISHED["a-publish-use"],
+        }
+        for resource in expected_resources:
+            with self.subTest(resource=resource):
+                self.assertIn((resource, RDF.type, OWL.NamedIndividual), graph)
+                self.assertIsNotNone(graph.value(resource, RDFS.label))
 
     def test_draft_query_returns_draft_only_and_not_active_latest_path(self) -> None:
         graph = graph_for("draft-deletion.ttl")

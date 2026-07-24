@@ -55,6 +55,11 @@ The C/B/A facts are marked `synthetic-fixture`. The tests return topology,
 contracts and completeness only. Any statement that B or A is really affected,
 or any severity, remains a consuming Agent/query inference.
 
+The published Fixture also declares its resources as standard
+`owl:NamedIndividual` values with `rdfs:label` annotations. These statements do
+not change the domain semantics; they provide the generic identity and display
+metadata used by the platform's entity graph visualization.
+
 ## Offline acceptance
 
 From repository root:
@@ -63,10 +68,12 @@ From repository root:
 uv run --directory backend python ../docs/evaluation-scenarios/dify-workflow-impact-m1/tests/test_scenario.py
 ```
 
-Expected result: 12 tests pass. They verify every source hash without network,
+Expected result: 13 tests pass. They verify every source hash without network,
 parse all RDF, validate positive/draft fixtures with SHACL, reject the invalid
 fixture, invoke `backend/scripts/dev_owl_reasoner.py` for one supported RDFS
-entailment, and evaluate the published/draft SPARQL assertions in fresh graphs.
+entailment, evaluate the published/draft SPARQL assertions in fresh graphs, and
+check that the published resources can be rendered through the generic entity
+read model.
 
 ## Managed-platform runtime acceptance
 
