@@ -356,3 +356,24 @@
   expressiveness work must be a separate platform requirement.
 - Delivery commit: Subject `Add minimal workflow impact ontology`; `git log -- <this record path>`
   resolves the immutable commit hash.
+
+### 2026-07-24T09:53:33+08:00 — Split the next workflow proof into M2 and M3 — main agent + user
+
+- Context: After accepting M1 as complete, the user agreed that the formal modeling path should be
+  exercised by the main Agent before an autonomous modeling Agent is asked to discover both the
+  workflow and the ontology at the same time. The user requested two explicit milestones.
+- Decision: M2 is a controlled formal-path rehearsal in which the main Agent performs the M1 task
+  through Project/Ontology/Build Session, Evidence, Modeling Batch dry-run/correction/apply, and
+  post-apply semantic verification. M3 starts only after M2 passes and asks an autonomous modeling
+  Agent to reproduce the M1 semantic behavior in a fresh workspace without answer-shaped ontology,
+  Shapes, Batch payloads, or main-Agent semantic decisions.
+- Boundary: Neither milestone may claim success through `semantic/edits`, raw loading, direct
+  database writes, validation bypasses, or Dify-specific platform behavior. A continuing
+  `legacy_only` or generic Modeling Batch expressiveness blocker must be classified and handled as
+  configuration or a separately confirmed generic platform requirement.
+- Acceptance direction: Compare semantic behavior rather than RDF graph identity. M2 must leave a
+  complete append-only rehearsal log and minimal repeatable operating checklist. M3 additionally
+  requires an independent consumer Agent to trace its impact explanation to platform facts while
+  keeping final impact judgment outside the ontology and platform core.
+- Outcome/next step: R2.1-001 now records M1 complete, M2/M3 refined, and M2 controlled modeling
+  rehearsal as the next implementation stage.
