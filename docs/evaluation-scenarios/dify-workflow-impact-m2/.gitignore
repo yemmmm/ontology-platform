@@ -1,0 +1,4 @@
+# Live rehearsal evidence is intentionally retained locally for independent testing/M3,
+# but it contains runtime identifiers and must not become a checked-in fixture.
+runtime/*
+!runtime/.gitkeep

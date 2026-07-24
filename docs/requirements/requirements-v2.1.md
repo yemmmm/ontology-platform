@@ -2,12 +2,12 @@
 
 ## 文档信息
 
-- 文档状态：M1 第一版最小本体已实现并通过独立验收；M2、M3 已细化，长期迭代继续
+- 文档状态：M1、M2 已实现并通过独立验收；M3 已细化，长期迭代继续
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
 - 总体目标：重构 Ontology 建模流程，使其以可解释、可验证、可复用和可演进的业务语义模型为中心
-- 当前实施需求：R2.1-001 M2 受控建模流程演练待实施
+- 当前实施需求：R2.1-001 M3 自主建模 Agent 复现待实施
 - 目标用户：需要将业务知识沉淀为可复用本体的建模人员、建模 Agent 工作流开发者和语义质量调优人员
 - 更新日期：2026-07-24
 
@@ -42,11 +42,11 @@
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.1-001 | 本体建模流程重构 | P0 | 迭代中（M1 已完成，M2/M3 已细化） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
+| R2.1-001 | 本体建模流程重构 | P0 | 迭代中（M1/M2 已完成，M3 已细化） | v1.0 语义平台边界、v1.1 建模工作流证据、R2.0-002 检查点 |
 
 ## R2.1-001 本体建模流程重构
 
-当前状态：`迭代中（M1 已完成，M2/M3 已细化）`
+当前状态：`迭代中（M1/M2 已完成，M3 已细化）`
 
 优先级：`P0`
 
@@ -358,6 +358,27 @@ M2 完成门槛：
 - 最小操作清单不包含主 Agent 的隐藏本地状态或未记录步骤，能够直接交给 M3；
 - 没有直接 RDF 成功旁路，也没有新增 Dify 专属平台能力。
 
+### M2 实现结果
+
+M2 场景包位于 `docs/evaluation-scenarios/dify-workflow-impact-m2/`。主 Agent 在用户允许的隔离
+`rdf_primary` 后端中新建 Project、Ontology 和 Build Session，分别登记官方资料、合成 Fixture
+和建模合同 Evidence，并只通过 Modeling Batch 完成 TBox、Shapes、published、draft 和
+explicit-gap 候选的 dry-run 与 `apply_atomic`。常驻服务配置未修改，演练前后均保持
+`legacy_only`。
+
+首轮真实演练保留了一个跨 Batch 误用 `item_ref` 的失败：draft Batch 返回四个
+`unresolved_item_ref` 和后续 Shape violation。修正为引用已应用资源 IRI 后，第二轮完整通过；
+错误 Shape 与缺少 `invokesTool` 的 Invocation 均被 `shacl_violation` 拒绝且未 apply。应用后
+validation 显式使用 Graph Set 的 `shapes` member 并 `conforms=true`，reasoning
+`consistent=true` 且产生预期 subclass entailment，scoped SPARQL 返回恰好 B、A、完整
+C -> B -> A 上下文、独立 draft 和显式未知项。
+
+独立验收复核了两轮留存 Project、Evidence、Batch/Attempt、validation/reasoning 运行记录，
+重放同 Shape 负例和全部 scoped 查询，并通过 M1 13 项、M2 5 项及 69 项聚焦后端测试。整个路径
+未调用 semantic edit、`datasets:load`、直接数据库/RDF 写入或 `validate=false`，也未新增
+Dify 专属平台能力。最小操作清单已满足 M3 交接条件；M2 的场景 Project 和运行证据继续保留，
+作为 M3 的流程证据而非答案型建模输入。
+
 ### M3：自主建模 Agent 复现
 
 M3 以 M2 已完整通过、正式建模路径稳定且最小操作清单可用为前置条件。其目标是在一个新的空
@@ -405,5 +426,5 @@ M2、M3 均不要求单独编写正式设计文档。其当前设计和验收合
 
 R2.1-001 的 M1 在第一版本体候选、Fixture 和查询断言形成后即可进入逐轮验证，不设置独立正式
 设计评审或共享测试计划文档门槛。第一版结构是可验证假设，不是最终方案；每轮必须保留建模假设
-和调整记录，也不得以首轮通过宣称长期建模流程或最终本体结构已经确定。当前下一步是 M2 受控
-建模流程演练；M2 完成后才进入 M3 自主建模 Agent 复现。
+和调整记录，也不得以首轮通过宣称长期建模流程或最终本体结构已经确定。M2 受控建模流程演练已
+完成，当前下一步是 M3 自主建模 Agent 复现。

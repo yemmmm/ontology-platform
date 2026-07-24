@@ -3,12 +3,12 @@
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
 - Status: M1 第一版已交付；R2.1-001 长期迭代继续
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-24T02:14:08+08:00
+- Last updated: 2026-07-24T16:04:21+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
-- Design: no standalone document; candidate ontology, Fixture, queries, and iteration record are the
-  evolving design artifacts
-- Shared test plan: no standalone document; executable assertions and the scenario README form the
-  lightweight acceptance checklist
+- Design: M1 uses its candidate artifacts; M2 execution contract is
+  `docs/delivery/designs/2026-07-24-r2-1-001-m2-controlled-modeling-rehearsal-design.md`
+- Shared test plan: M2 uses
+  `docs/delivery/test-plans/2026-07-24-r2-1-001-m2-controlled-modeling-rehearsal-test-plan.md`
 
 ## Initial context
 
@@ -377,3 +377,216 @@
   keeping final impact judgment outside the ontology and platform core.
 - Outcome/next step: R2.1-001 now records M1 complete, M2/M3 refined, and M2 controlled modeling
   rehearsal as the next implementation stage.
+
+### 2026-07-24T15:32:58+08:00 — Start M2 delivery and capture baseline — main agent
+
+- Context: The user requested execution of the R2.1-001 M2 controlled modeling rehearsal.
+- Baseline: Clean worktree at `8b640fa` (`Define M2 and M3 modeling milestones`). M1's immutable
+  source pack, ontology, Shapes, four Fixtures, three queries, executable scenario tests, and prior
+  iteration evidence are present under `docs/evaluation-scenarios/dify-workflow-impact-m1/`.
+- Current behavior: M1 proved the semantic behavior through the generic governed semantic-edit
+  path, while the active runtime was still recorded as `product_write_mode=legacy_only`; the
+  formal Modeling Batch canonical path has not yet replayed the M1 task.
+- Target and non-goals: M2 must use a fresh Project/Ontology/Build Session and the formal
+  Evidence -> Modeling Batch dry-run/correction/apply -> post-apply verification path. It must not
+  use semantic edits, raw RDF loading, validation bypasses, direct database writes, or Dify-specific
+  platform behavior, and it does not require RDF graph identity with M1.
+- Tooling evidence: GitNexus was 35 commits behind `HEAD`, so its initial search result is not used
+  as current-path evidence; the index must be refreshed before code-impact decisions.
+- Outcome/next step: Confirm the one execution-environment choice that can materially affect M2,
+  then probe the active write mode and formal path.
+
+### 2026-07-24T15:36:00+08:00 — Confirm isolated canonical-mode execution — user + main agent
+
+- Decision: If `legacy_only` is only a configuration blocker, M2 may start a temporary isolated
+  backend with canonical product writes enabled and continue through the formal Modeling Batch
+  path.
+- Boundary: Do not persistently change the regular `ontology-platform.service` configuration.
+- Outcome/next step: Refresh code intelligence, probe the active configuration and formal-path
+  contracts, and stop for separate requirement refinement if the blocker is generic Modeling Batch
+  expressiveness rather than configuration.
+
+### 2026-07-24T16:04:21+08:00 — Probe M2 formal-path assumptions — main agent
+
+- Probe 1, active mode: Authenticated `GET /api/semantic/canonical-mode` on the regular service
+  returned `canonical_store=legacy`, `product_write_mode=legacy_only`, and `read_mode=legacy`.
+- Probe 2, isolated mode: A temporary backend on port 8012 started with
+  `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`, `SEMANTIC_CANONICAL_STORE=rdf`, and
+  `SEMANTIC_READ_MODE=canonical`; its authenticated mode endpoint returned those values. The
+  regular service configuration was not changed.
+- Probe 3, formal dry-run: In a fresh owned Project/Ontology/Build Session, one structured batch
+  containing a Class, Datatype Property, and Shape passed the real Modeling Batch dry-run with
+  `attempt_status=validated`. The only findings were non-blocking `missing_rationale` warnings.
+  Project cleanup returned HTTP 204.
+- Expressiveness conclusion: Modeling Batch does not accept arbitrary Turtle, `sh:sparql`,
+  `sh:targetSubjectsOf`, or arbitrary `rdfs:subPropertyOf`. M2 can preserve the fixed behavior by
+  using existing generic commands: Class parent links for RDFS inference, Object/Datatype
+  Properties for topology and fields, target-Class Shapes for cardinality/pattern constraints, and
+  an explicit-gap Class whose Shape requires `unknownDetail`. This is an allowed internal model
+  change, not a Dify-specific platform extension.
+- Code-intelligence evidence: GitNexus was refreshed to `8b640fa` before tracing
+  `submit_modeling_batch -> ModelingBatchService.submit -> compile/validate/execute`.
+- Outcome/next step: Freeze the minimal M2 execution design and shared test plan, then run the
+  mandatory plan review.
+
+### 2026-07-24T16:11:44+08:00 — M2 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`.
+- Accepted High: Default Graph Set validation resolves role `shape`, while the default workspace
+  registers role `shapes`; an empty Shape graph can therefore return `conforms=true` and create a
+  false M2 PASS.
+- Disposition: `accepted-high`. The design and test plan now require reading the Graph Set's
+  `shapes` member, passing its IRI explicitly, reading the persisted validation run to prove the
+  non-empty exact Shape set, and rejecting a known-invalid Invocation with that applied Shape.
+- Confirmed assumption: Every object predicate constrained by a Shape is created with
+  `create_property(object_class_id)`, and Fixture relations reference that exact `/property/{id}`
+  IRI; no `/relation-type/{id}` versus `/property/{id}` mismatch is allowed.
+- Evidence: `backend/app/services/ontology_workspace.py`,
+  `backend/app/api/semantic.py`, `backend/app/mcp/tools/semantic.py`,
+  `backend/app/services/semantic_validation.py`, and the revised M2 design/test plan.
+- Outcome/next step: Re-review the revised plan before development handoff.
+
+### 2026-07-24T16:13:40+08:00 — M2 plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`.
+- Accepted High: `SemanticValidationRunModel` persists `shape_graph_iris`, but the formal REST/MCP
+  validation-run read model omits it, so the Round 1 persisted-run assertion was not executable
+  through the stated public path.
+- Disposition: `accepted-high`. The execution path now records the exact Graph Set member, explicit
+  validation request, run ID and public run status. Independent testing uses a scenario-local
+  read-only ORM verifier to assert the stored `shape_graph_iris`; it may not write SQL. The M3
+  checklist remains formal-entry-only and proves Shape activation through explicit parameters plus
+  a known-invalid rejection.
+- Boundary decision: M2 will not add an API/MCP field solely for test observability. If the public
+  field later becomes a consumer requirement, it must be refined as a separate generic platform
+  capability.
+- Evidence: `backend/app/repositories/models.py`,
+  `backend/app/services/semantic_validation.py`, `backend/app/api/schemas.py`, and revised M2
+  design/test plan.
+- Outcome/next step: Re-review the executable evidence path.
+
+### 2026-07-24T16:14:46+08:00 — M2 plan review Round 3 and development freeze — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High findings or unverified core assumptions.
+- Closed findings: Explicit `shapes` member selection prevents empty-Shape false PASS; the
+  scenario-local read-only verifier makes the persisted input assertion executable without adding a
+  platform API; constrained object predicates and Fixture relations share exact `/property/{id}`
+  IRIs.
+- Frozen artifacts: M2 execution design and shared test plan dated 2026-07-24, this delivery record,
+  requirement R2.1-001 M2, and clean code baseline `8b640fa` plus the listed uncommitted M2 docs.
+- Development boundary: Implement the deterministic scenario package, exact reviewed payloads,
+  append-only rehearsal log, minimal M3 checklist, and focused tests. Do not change the semantic
+  contract, product code, requirement status, delivery record, or commit.
+- Required verification: M1 scenario suite, focused Modeling Batch/validation/reasoning/Context
+  Query tests, scenario Ruff, `git diff --check`, isolated runtime checks, and explicit no-bypass
+  review.
+- Outcome/next step: Hand the fixed scope to the requirement developer.
+
+### 2026-07-24T16:26:31+08:00 — M2 development cycle 1 and main-agent review — requirement developer + main agent
+
+- Development-ready state: Added only
+  `docs/evaluation-scenarios/dify-workflow-impact-m2/`: REST rehearsal runner, safe ignored runtime
+  record, read-only validation-run verifier, focused offline tests, append-only log template and M3
+  checklist. No live run or product-code change occurred.
+- Developer verification: M2 focused tests 4/4 passed; scenario Ruff and `git diff --check` passed.
+- Main-agent review found confirmed pre-live defects:
+  - `previousVersion` was attached to Version rather than Change Set;
+  - the caller property path used zero-or-more and would include C itself;
+  - the context query did not require the complete C -> B -> A input/binding/use path;
+  - official, synthetic and Agent/model-contract Evidence were mixed;
+  - Invocation Shape omitted call-site location;
+  - a failed live run after workspace creation would not persist safe progress IDs.
+- Impact: These defects could either fail the live assertion or produce a semantically incomplete
+  PASS and an untraceable partial run. They are confined to the new scenario package; no indexed
+  product symbol is edited.
+- Outcome/next step: Repair the reviewed payload/query/Evidence/logging contract, strengthen focused
+  tests, then return a new stable development-ready state before live execution.
+
+### 2026-07-24T16:32:52+08:00 — M2 live rehearsal Round 1 — main agent
+
+- Stable state: Repaired scenario package passed 5/5 focused tests, Ruff, and `git diff --check`.
+- Result: `FAIL` at the draft Fixture dry-run; the runner stopped without using a bypass.
+- Successful prior stages: Fresh Project `eca27355-177d-45ab-a8d0-bb27573ab242`, Ontology
+  `458c1939-0c13-4f35-a34f-4470199dbc4f`, Build Session
+  `c1ac6d1a-7395-4826-9256-1036c85850cb`, three Evidence layers, intentional bad-Shape
+  rejection, corrected TBox/Shapes dry-run/apply, and published Fixture dry-run/apply.
+- Failed Batch evidence: Batch `d68bdc03-c54a-4dca-b760-cd4f85cb5c47`, Attempt
+  `9c9597f5-06c7-4a4b-895a-382c55bae145`, status `validation_failed`. Four relation Items returned
+  `unresolved_item_ref`; candidate SHACL then rejected the incomplete Change/Version structure.
+- Root cause: `item_ref` is scoped to one Modeling Batch. The draft payload referenced `c`, `c-v2`
+  and `c-quality-score` from the already applied published Batch as if they were current-Batch
+  Items.
+- Evidence preservation: The safe runtime record was archived locally as
+  `runtime/runtime-record-0d952d8711d7.json`; the append-only rehearsal log records the owned
+  workspace. No API key, lease token, header, cookie, direct DB/RDF write, semantic edit, raw load,
+  or validation bypass was used.
+- Outcome/next step: Resolve cross-Batch references to the emitted existing entity IRIs, preserve
+  run-specific failure records, and link the corrected live round to `0d952d8711d7`.
+
+### 2026-07-24T16:37:21+08:00 — M2 defect repair and live rehearsal Round 2 — developer + main agent
+
+- Repair: Draft Fixture relations now use emitted entity IRIs for resources applied by the
+  published Batch; only resources declared in the current draft Batch use `item_ref`. The runner
+  also preserves one ignored runtime record per run, accepts `--corrects-run-tag`, and records a
+  failed dry-run response before asserting its expected status.
+- Pre-live verification: M2 focused tests passed 5/5, scenario Ruff passed, and
+  `git diff --check` passed.
+- Result: `PASS`; corrected run tag `2fde5cd4f165` explicitly corrects failed run
+  `0d952d8711d7`.
+- Owned workspace: Project `94dcff15-dc45-40d3-b85f-b9318d96aef6`, Ontology
+  `a093b881-f2ad-4fc9-aaa5-541e77a01992`, Build Session
+  `f17db96f-c78f-4fbd-9089-b66899458469`.
+- Evidence layers: official `abc6301e-9ab4-4f8f-a8d0-013bc2dae891`, synthetic Fixture
+  `86fa990a-ef1f-49a6-bca7-287f6baf9bcf`, and model contract
+  `e8b68a43-0c98-4367-bb0c-4860185c4f5b`.
+- Modeling gates: The intentional bad Shape and known-invalid Invocation both stopped at
+  `validation_failed` with `shacl_violation`. Corrected TBox/Shapes, published Fixture, draft
+  Fixture, and explicit-gap Batches each passed dry-run and `apply_atomic`.
+- Managed services: Validation run `9225a4fc-d693-45b0-b5f8-473c1721c2a0` succeeded with
+  `conforms=true` using the exact Shapes graph
+  `http://ontology-platform.local/semantic/graph/shapes/a093b881-f2ad-4fc9-aaa5-541e77a01992`.
+  The scenario-local read-only ORM verifier confirmed the exact persisted `shape_graph_iris`.
+  Reasoning run `37bc96ef-de33-4856-962c-46d27b84b32d` succeeded with `consistent=true`, created
+  its result graph, and exposed the expected subclass entailment.
+- Query acceptance: published callers returned exactly B and A; exact C -> B -> A context returned
+  one complete row; draft/latest separation and the explicit known-gap/unknown-detail result each
+  returned one row.
+- Isolation and traceability: The normal service stayed in `legacy_only`; the isolated backend ran
+  in `rdf_primary` canonical mode. No semantic edit, raw dataset load, direct DB/RDF write,
+  `validate=false`, credential disclosure, or Dify-specific platform change was used. Safe local
+  records are `runtime/runtime-record-0d952d8711d7.json` and
+  `runtime/runtime-record-2fde5cd4f165.json`.
+- Outcome/next step: Freeze this state for independent requirement testing. Retain both owned
+  Projects and their immutable Batch/Attempt evidence until testing and M3 handoff are complete.
+
+### 2026-07-24T16:48:37+08:00 — M2 independent acceptance and closure — requirement tester + main agent
+
+- Independent result: `PASS`; all M2 completion gates are met and no product defect or retest loop
+  is required.
+- Regression evidence: M1 scenario passed 13/13, M2 scenario passed 5/5, focused Modeling Batch,
+  validation, reasoning and semantic-context backend tests passed 69/69, scenario Ruff and
+  `git diff --check` passed.
+- Runtime evidence: The tester independently re-read both retained Projects, their three-layer
+  Evidence, Build Session, Batch/Attempt histories, Graph Set, validation and reasoning runs. It
+  repeated the scoped queries with callers=2 (B/A), exact context=1, draft=1 and gap=1.
+- Negative evidence: An independent dry-run against the same applied Shapes produced Batch
+  `b12bf02c-32a6-4dd5-927a-0e5da84499e6` / Attempt
+  `c510c80a-04dc-417c-808c-4901eed6180e`, stopped with one `shacl_violation`, and had no apply
+  attempt or workspace after-version.
+- Shape activation: The read-only verifier confirmed validation run
+  `9225a4fc-d693-45b0-b5f8-473c1721c2a0` persisted exactly the expected singleton
+  `shape_graph_iris`; it performed no database write.
+- Boundary evidence: Static and runtime review found no semantic edit, dataset load, direct
+  DB/RDF write, `validate=false`, Dify-specific product path, credential, lease token, cookie or
+  Authorization value in the tracked artifacts.
+- Runtime closure: The isolated `127.0.0.1:8012` backend was stopped after acceptance. The regular
+  systemd unit remained active; backend `8001` health returned OK, frontend `5173` returned HTTP
+  200, and authenticated canonical-mode remained `legacy_only`.
+- Documentation: Requirements v2.1 now records M1/M2 complete and M3 as the next implementation;
+  v2.0 cross-reference, M2 design, shared test plan, README, rehearsal log and minimal handoff
+  materials are synchronized to the accepted result.
+- Retention: Success Project `94dcff15-dc45-40d3-b85f-b9318d96aef6` and failed Project
+  `eca27355-177d-45ab-a8d0-bb27573ab242` remain intentionally retained for traceability and M3
+  handoff. Local runtime JSON remains ignored and is not committed.
+- Outcome/next step: Commit the scoped M2 delivery. R2.1-001 remains iterative; the next requirement
+  stage is M3 autonomous modeling Agent reproduction.
