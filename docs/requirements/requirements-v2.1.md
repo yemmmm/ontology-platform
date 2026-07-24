@@ -385,11 +385,11 @@ M3 以 M2 已完整通过、正式建模路径稳定且最小操作清单可用�
 Project/Ontology 中，由自主建模 Agent 根据同一资料、合成业务事实、语义问题和平台反馈独立形成
 并应用本体候选，验证建模质量不依赖主 Agent 逐步代做。
 
-自主建模 Agent 可以使用 M2 形成的通用操作清单和平台工具说明，但不得读取或复制 M1/M2 的最终
-`ontology.ttl`、`shapes.ttl`、最终 Batch payload 或答案型查询结果。主 Agent 可以处理环境故障、
-权限或明确的平台阻塞，但不得替 Agent 选择 Class、Property、Shape、公理、关系结构或修改最终
-候选。Agent 可以根据 dry-run、validation、reasoning 和查询失败自主迭代，无需与 M1 使用相同的
-IRI 或内部结构。
+自主建模 Agent 可以使用 M2 形成的通用操作清单、`m3-reusable-lessons.md` 经验交接和平台工具
+说明，但不得读取或复制 M1/M2 的最终 `ontology.ttl`、`shapes.ttl`、`run_rehearsal.py`、最终
+Batch payload、runtime record 或答案型查询结果。主 Agent 可以处理环境故障、权限或明确的平台
+阻塞，但不得替 Agent 选择 Class、Property、Shape、公理、关系结构或修改最终候选。Agent 可以
+根据 dry-run、validation、reasoning 和查询失败自主迭代，无需与 M1 使用相同的 IRI 或内部结构。
 
 M3 至少覆盖：
 

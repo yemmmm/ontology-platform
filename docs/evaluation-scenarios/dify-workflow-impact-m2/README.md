@@ -77,5 +77,7 @@ back before closing.
   separation, and an explicit `unknownDetail` gap.  RDFS subclass evidence is
   asserted from the managed reasoning result.
 
-See [minimal-checklist.md](minimal-checklist.md) for the M3-safe operational
-handoff.  It deliberately contains no ORM/database step and no answer payload.
+See [m3-reusable-lessons.md](m3-reusable-lessons.md) for the reusable modeling
+lessons and [minimal-checklist.md](minimal-checklist.md) for the M3-safe
+operational handoff. They deliberately contain no ORM/database step or answer
+payload. M3 must not read or execute this package's `run_rehearsal.py`.

@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: M1 第一版已交付；R2.1-001 长期迭代继续
+- Status: M1/M2 已交付；M3 待实施；R2.1-001 长期迭代继续
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-24T16:04:21+08:00
+- Last updated: 2026-07-24T17:32:30+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: M1 uses its candidate artifacts; M2 execution contract is
   `docs/delivery/designs/2026-07-24-r2-1-001-m2-controlled-modeling-rehearsal-design.md`
@@ -590,3 +590,22 @@
   handoff. Local runtime JSON remains ignored and is not committed.
 - Outcome/next step: Commit the scoped M2 delivery. R2.1-001 remains iterative; the next requirement
   stage is M3 autonomous modeling Agent reproduction.
+
+### 2026-07-24T17:32:30+08:00 — Distill M2 lessons for M3 — main agent
+
+- User request: Preserve the modeling lessons from M2 as reusable M3 documentation.
+- New artifact:
+  `docs/evaluation-scenarios/dify-workflow-impact-m2/m3-reusable-lessons.md`.
+- Reusable content: mode preflight, Evidence separation, dependency-ordered Batches, Batch-local
+  `item_ref`, immutable dry-run correction, explicit `shapes` selection, positive plus negative
+  validation controls, layered semantic gates, behavior-based acceptance, explicit unknowns,
+  safe progress records and the human-intervention boundary.
+- Input-isolation correction: The prior minimal checklist pointed M3 to `run_rehearsal.py`; that
+  script contains M2's final answer-shaped payload and would invalidate autonomous reproduction.
+  The checklist now describes only formal generic calls and explicitly forbids M3 from reading or
+  executing the runner. Requirements v2.1 and the scenario README carry the same boundary.
+- Scope decision: This is documentation and handoff hardening only. It does not change platform
+  behavior, M3's semantic acceptance criteria or the M2 implementation, so no new design/review/test
+  cycle is required.
+- Outcome/next step: Use the new lessons document and revised checklist as M3's process inputs;
+  withhold M1/M2 model artifacts, payloads, runtime records and answer-shaped query results.
