@@ -1,0 +1,107 @@
+{
+  "manifest_version": 1,
+  "mount_policy": "copy each listed file to its mounted_path; never mount a source directory",
+  "files": [
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m3/input-pack/m3-contract.md",
+      "mounted_path": "m3-contract.md",
+      "purpose": "sanitized M3 requirement and responsibility boundary",
+      "sha256": "ddecdb6282e00656c10e942cfd7ee2972d3badfe124bf26d80a7eaa324c8bc08"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m3/input-pack/modeling-agent-prompt.md",
+      "mounted_path": "modeling-agent-prompt.md",
+      "purpose": "exact fresh-agent initial task",
+      "sha256": "e58beb89bb45cb2fa7b8a642c467a527138c418723210b0acfc6887843988f4a"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m3/business-brief.md",
+      "mounted_path": "business-brief.md",
+      "purpose": "business-user facts, questions, boundaries and acceptance",
+      "sha256": "83fa5f80c7c7e806542cb26abd876c67b6958a4b4ce57e7f62d223f666d2b008"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m2/m3-reusable-lessons.md",
+      "mounted_path": "m3-reusable-lessons.md",
+      "purpose": "answer-free platform workflow lessons",
+      "sha256": "74e10be1e888dc78905b4a1c22803289d4abccf172bc1f58b57484989fdf75c6"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m2/minimal-checklist.md",
+      "mounted_path": "minimal-checklist.md",
+      "purpose": "answer-free formal operation checklist",
+      "sha256": "c6e5840e8f8c8a6a10f806cb575470a2f302c0d73d9e668364bf847210c43eb6"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m1/source-pack/official/en/cloud/use-dify/workspace/tools.mdx",
+      "mounted_path": "official/tools.mdx",
+      "purpose": "official Workflow-as-Tool semantics",
+      "sha256": "8033c8d3efd0f8fe52f4de90fc6a905d1fcafcff6ac3dc802aae966122a552ae"
+    },
+    {
+      "source_path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/nodes/user-input.mdx",
+      "mounted_path": "official/user-input.mdx",
+      "purpose": "official User Input semantics",
+      "sha256": "b6561d336462feb06290387101481fd8de4909c2ff5ed6f8d5d700327e05b0a9"
+    },
+    {
+      "source_path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/nodes/output.mdx",
+      "mounted_path": "official/output.mdx",
+      "purpose": "official Workflow Output contract semantics",
+      "sha256": "456021c18efdfcafa51750e44053199f5a5c037a55db338b8935533225cfc2ba"
+    },
+    {
+      "source_path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/build/version-control.mdx",
+      "mounted_path": "official/version-control.mdx",
+      "purpose": "official Current Draft and Latest Version semantics",
+      "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b"
+    },
+    {
+      "source_path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/nodes/iteration.mdx",
+      "mounted_path": "official/iteration.mdx",
+      "purpose": "official counterexample for internal iteration flow",
+      "sha256": "760b6c77fdf699e48219ebadd9e121c359b2beb3266a22236cb3c5258ffce37f"
+    },
+    {
+      "source_path": "docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/workspace/app-management.mdx",
+      "mounted_path": "official/app-management.mdx",
+      "purpose": "official counterexample for copied independent apps",
+      "sha256": "34ebd0389794b83ff307ebdb110b1059b55bee45fa27c04acc1dd9dd759868f8"
+    },
+    {
+      "source_path": "docs/reference/api.md",
+      "mounted_path": "platform/api.md",
+      "purpose": "generic public REST reference",
+      "sha256": "07d9ed8bdb249a4d8c0501625b22f8df70c3b8ef4c8b097cc6514319093dfef3"
+    },
+    {
+      "source_path": "docs/reference/mcp.md",
+      "mounted_path": "platform/mcp.md",
+      "purpose": "generic public MCP reference",
+      "sha256": "75aa17012efb96ee29d24f1cecbf95a7c06cc692467c726f584a01bf7434ca55"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m3/input-pack/platform-modeling-command-contract.md",
+      "mounted_path": "platform/modeling-command-contract.md",
+      "purpose": "generic deterministic Modeling Item payload and reference contract",
+      "sha256": "a25e29a89ae6f2da6a604051b86f21c0ac0b08a060ccfa35a4b0a344970f5ad6"
+    }
+  ],
+  "live_inputs": [
+    {
+      "transport": "file_spool_rpc_gateway",
+      "path": "/openapi.json",
+      "purpose": "isolated platform public API schema"
+    },
+    {
+      "transport": "file_spool_rpc_gateway",
+      "path_prefix": "/api/",
+      "purpose": "current M3 run public platform calls only"
+    }
+  ],
+  "forbidden": [
+    "complete requirements-v2.1.md",
+    "M1 or M2 ontology, shapes, fixtures, queries, runners, logs, runtime records or accepted Projects",
+    "host repository, Codex memories, histories, sessions, plugins or prior project state"
+  ]
+}

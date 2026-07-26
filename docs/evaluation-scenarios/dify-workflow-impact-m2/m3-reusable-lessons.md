@@ -48,19 +48,21 @@ M3 行动：
 2. 在产生候选前记录模式探针；
 3. 模式不符时停止，把问题归类为环境阻塞，不能改走 semantic edit 或直接 RDF 写入。
 
-### 2. Evidence 必须按事实性质分层
+### 2. 来源 Evidence 与建模判断必须使用不同渠道
 
-M2 初期曾把官方资料、合成 Fixture 和 Agent 的建模理由混在一起。这样虽然可以写入，但消费方
-无法区分“来源事实”“测试设定”和“建模判断”。
+M2 初期曾把官方资料、合成 Fixture 和 Agent 的建模理由混在一起。这样会让消费方无法区分
+“来源事实”“测试设定”和“建模判断”，也不符合 R-002 对 Evidence 必须保存直接原文、不得保存
+Agent 推断的合同。
 
-M3 至少分开登记：
+M3 只登记两类 Evidence Reference：
 
 - `official source`：权威资料实际表达的内容；
 - `synthetic fixture`：为了验证模型而人为构造的业务事实；
-- `modeling decision`：Agent 的概念边界、约束选择、假设和理由。
 
-任何推论或 Agent 判断都不能伪装成官方来源事实。每个 Modeling Batch Item 应引用与其声明性质
-一致的 Evidence。
+Agent 的概念边界、约束选择、假设和理由必须记录在 Modeling Item `rationale`、Build
+Checkpoint 和追加式执行日志中，不能创建 `modeling decision` Evidence。任何推论或 Agent 判断
+都不能伪装成来源事实。每个 Modeling Batch Item 应引用与其声明性质一致的官方或合成 Evidence，
+没有直接来源支持的建模结构可以保留明确的 `rationale` 和“无 Evidence”状态。
 
 ### 3. 候选按依赖顺序分批，不能把 `item_ref` 当作全局 ID
 
@@ -200,7 +202,7 @@ M3 的主 Agent 可以：
 ```text
 读取允许输入与非目标
   -> 建立术语边界和建模假设
-  -> 创建新工作区并分层登记 Evidence
+  -> 创建新工作区并登记官方/合成 Evidence，另记 modeling rationale
   -> 形成第一批候选
   -> immutable dry-run
   -> 根据 finding 自主修正或说明接受理由
@@ -222,7 +224,7 @@ M3 的主 Agent 可以：
 
 - [ ] 使用全新的 Project、Ontology、Build Session，且模式探针符合预期；
 - [ ] 自主 Agent 没有读取禁止输入；
-- [ ] 官方、合成和建模判断 Evidence 分层；
+- [ ] 官方与合成 Evidence 分层；建模判断只进入 rationale/checkpoint/log；
 - [ ] 至少一轮 dry-run 决策可追踪，失败 Attempt 未被覆盖；
 - [ ] 所有 apply 均来自已 validated 的候选并使用 `apply_atomic`；
 - [ ] 显式选择 `shapes` member，正例 conforms，已知负例被拒绝；

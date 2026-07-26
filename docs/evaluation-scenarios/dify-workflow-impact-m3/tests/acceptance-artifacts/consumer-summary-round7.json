@@ -1,0 +1,26 @@
+{
+  "result": "CONSUMER_READY",
+  "run_tag": "m3-consumer-round7-cycle12-20260726",
+  "project_id": "8c9e0e2c-1a36-415f-a677-0082151ef5e4",
+  "ontology_id": "3999db8b-845c-4d1b-a99b-401889669059",
+  "forwarded_count": 10,
+  "receipt_count": 10,
+  "receipt_log_sha256": "b93af614ba6ed5ce42647ab517b2661ef1633572da1e701d6efefe147becaa72",
+  "audit_sha256": "514137188932522a75b13f4f5aa2a385dd814b5153ffa33eb6899512cd686313",
+  "transcript_sha256": "14c9aea6146a4e72573b8ad3adcab277d56dafe8b6ca86ea9d0f5293a90f2b24",
+  "receipt_audit": "PASS",
+  "operation_audit": "PASS",
+  "isolation_probe": "PASS",
+  "artifact_and_secret_audit": "PASS",
+  "process_argv_audit": "PASS",
+  "answer_contract": {
+    "official_source": "present",
+    "synthetic_fixture": "present",
+    "inference": "present",
+    "agent_judgment": "present",
+    "explicit_unknowns": "present",
+    "draft_latest_separation": "present",
+    "risk_level": "absent"
+  },
+  "raw_artifact_policy": "Full audit, transcript, gateway and receipt artifacts remain under the gitignored runtime consumer run directory."
+}

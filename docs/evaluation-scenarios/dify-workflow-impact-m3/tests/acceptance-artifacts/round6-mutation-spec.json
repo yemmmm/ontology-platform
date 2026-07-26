@@ -1,0 +1,515 @@
+{
+  "seed_items_files": [
+    "runtime/runs/m3-session-cycle5-rerun-20260726/work/requests/schema-batch.json",
+    "runtime/runs/m3-session-cycle5-rerun-20260726/work/requests/fixture-batch.json"
+  ],
+  "seed_actions": [],
+  "orthogonal_decoy_actions": [
+    {
+      "id": "decoy",
+      "items": [
+        {
+          "client_item_id": "decoy-gap-explanation",
+          "command_kind": "update_fact",
+          "payload": {
+            "subject_iri": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+            "predicate_iri": "http://ontology-platform.local/semantic/property/gap-explanation",
+            "old_object_value": "The fixture confirms an A preparation/output use but does not identify whether further nodes or uses consume publish_content; absence of more paths is not confirmed absence.",
+            "new_object_value": "Tester-only orthogonal decoy; it does not alter the checked propagation relations.",
+            "old_object_is_iri": false,
+            "new_object_is_iri": false
+          },
+          "depends_on": [],
+          "evidence_reference_ids": [],
+          "evidence": [],
+          "rationale": "tester orthogonal decoy",
+          "competency_question_ids": []
+        }
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "id": "b_input_source",
+      "remove": {
+        "id": "b_input_source-remove",
+        "items": [
+          {
+            "client_item_id": "b_input_source-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-input",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "object_value": "http://ontology-platform.local/semantic/entity/b-content-local",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_input_source-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_input_source-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-input",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/b-content-local",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "b_input_target",
+      "remove": {
+        "id": "b_input_target-remove",
+        "items": [
+          {
+            "client_item_id": "b_input_target-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-input",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "object_value": "http://ontology-platform.local/semantic/entity/c-content",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_input_target-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_input_target-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-input",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/c-content",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "b_output_source",
+      "remove": {
+        "id": "b_output_source-remove",
+        "items": [
+          {
+            "client_item_id": "b_output_source-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "object_value": "http://ontology-platform.local/semantic/entity/c-quality-score",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_output_source-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_output_source-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/c-quality-score",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "b_output_target",
+      "remove": {
+        "id": "b_output_target-remove",
+        "items": [
+          {
+            "client_item_id": "b_output_target-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "object_value": "http://ontology-platform.local/semantic/entity/b-quality-score-local",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_output_target-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_output_target-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-bc-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/b-quality-score-local",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "b_variable_use",
+      "remove": {
+        "id": "b_variable_use-remove",
+        "items": [
+          {
+            "client_item_id": "b_variable_use-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-b-if",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/use-of-variable",
+              "object_value": "http://ontology-platform.local/semantic/entity/b-quality-score-local",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_variable_use-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_variable_use-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-b-if",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/use-of-variable",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/b-quality-score-local",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "b_produces_output",
+      "remove": {
+        "id": "b_produces_output-remove",
+        "items": [
+          {
+            "client_item_id": "b_produces_output-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-b-if",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/produces-variable",
+              "object_value": "http://ontology-platform.local/semantic/entity/b-approved-content",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "b_produces_output-sentinel",
+        "items": [
+          {
+            "client_item_id": "b_produces_output-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-b-if",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/produces-variable",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/b-approved-content",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_binding_source",
+      "remove": {
+        "id": "a_binding_source-remove",
+        "items": [
+          {
+            "client_item_id": "a_binding_source-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-ab-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "object_value": "http://ontology-platform.local/semantic/entity/b-approved-content",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "a_binding_source-sentinel",
+        "items": [
+          {
+            "client_item_id": "a_binding_source-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-ab-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-source",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/b-approved-content",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_binding_target",
+      "remove": {
+        "id": "a_binding_target-remove",
+        "items": [
+          {
+            "client_item_id": "a_binding_target-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-ab-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "object_value": "http://ontology-platform.local/semantic/entity/a-publish-content",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "a_binding_target-sentinel",
+        "items": [
+          {
+            "client_item_id": "a_binding_target-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/bind-ab-output",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/binding-target",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/a-publish-content",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "a_downstream_use",
+      "remove": {
+        "id": "a_downstream_use-remove",
+        "items": [
+          {
+            "client_item_id": "a_downstream_use-remove",
+            "command_kind": "delete_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-a-preparation",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/use-of-variable",
+              "object_value": "http://ontology-platform.local/semantic/entity/a-publish-content",
+              "object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester mutation",
+            "competency_question_ids": []
+          }
+        ]
+      },
+      "sentinel_replace": {
+        "id": "a_downstream_use-sentinel",
+        "items": [
+          {
+            "client_item_id": "a_downstream_use-sentinel-del",
+            "command_kind": "update_fact",
+            "payload": {
+              "subject_iri": "http://ontology-platform.local/semantic/entity/use-a-preparation",
+              "predicate_iri": "http://ontology-platform.local/semantic/property/use-of-variable",
+              "old_object_value": "http://ontology-platform.local/semantic/entity/a-publish-content",
+              "new_object_value": "http://ontology-platform.local/semantic/entity/gap-a-additional-uses",
+              "old_object_is_iri": true,
+              "new_object_is_iri": true
+            },
+            "depends_on": [],
+            "evidence_reference_ids": [],
+            "evidence": [],
+            "rationale": "tester sentinel replacement",
+            "competency_question_ids": []
+          }
+        ]
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "producer_behavior",
+      "body": {
+        "project_id": "${project_id}",
+        "ontology_ids": [
+          "${ontology_id}"
+        ],
+        "scope_mode": "ontologies",
+        "query": "PREFIX p: <http://ontology-platform.local/semantic/property/> PREFIX e: <http://ontology-platform.local/semantic/entity/> SELECT ?bin ?bout ?useb ?abind ?usea WHERE { e:bind-bc-input p:binding-source e:b-content-local; p:binding-target e:c-content . e:bind-bc-output p:binding-source e:c-quality-score; p:binding-target e:b-quality-score-local . e:use-b-if p:use-of-variable e:b-quality-score-local; p:produces-variable e:b-approved-content . e:bind-ab-output p:binding-source e:b-approved-content; p:binding-target e:a-publish-content . e:use-a-preparation p:use-of-variable e:a-publish-content . BIND(e:bind-bc-input AS ?bin) BIND(e:bind-bc-output AS ?bout) BIND(e:use-b-if AS ?useb) BIND(e:bind-ab-output AS ?abind) BIND(e:use-a-preparation AS ?usea) }"
+      },
+      "same_row_identity": [
+        "bin",
+        "bout",
+        "useb",
+        "abind",
+        "usea"
+      ],
+      "expected": {
+        "baseline": {
+          "http_status": 200,
+          "row_count": 1,
+          "same_row_identity": [
+          {
+            "bin": "http://ontology-platform.local/semantic/entity/bind-bc-input",
+            "bout": "http://ontology-platform.local/semantic/entity/bind-bc-output",
+            "useb": "http://ontology-platform.local/semantic/entity/use-b-if",
+            "abind": "http://ontology-platform.local/semantic/entity/bind-ab-output",
+            "usea": "http://ontology-platform.local/semantic/entity/use-a-preparation"
+          }
+          ]
+        },
+        "decoy": {
+          "same_as_baseline": true
+        },
+        "remove": {
+          "break": true
+        },
+        "sentinel_replace": {
+          "break": true
+        }
+      }
+    },
+    {
+      "id": "withheld_chain_check",
+      "body": {
+        "project_id": "${project_id}",
+        "ontology_ids": [
+          "${ontology_id}"
+        ],
+        "scope_mode": "ontologies",
+        "query": "PREFIX p: <http://ontology-platform.local/semantic/property/> PREFIX e: <http://ontology-platform.local/semantic/entity/> SELECT ?usea ?abind ?useb ?bout ?bin WHERE { e:bind-bc-input p:binding-source e:b-content-local; p:binding-target e:c-content . e:bind-bc-output p:binding-source e:c-quality-score; p:binding-target e:b-quality-score-local . e:use-b-if p:use-of-variable e:b-quality-score-local; p:produces-variable e:b-approved-content . e:bind-ab-output p:binding-source e:b-approved-content; p:binding-target e:a-publish-content . e:use-a-preparation p:use-of-variable e:a-publish-content . BIND(e:bind-bc-input AS ?bin) BIND(e:bind-bc-output AS ?bout) BIND(e:use-b-if AS ?useb) BIND(e:bind-ab-output AS ?abind) BIND(e:use-a-preparation AS ?usea) }"
+      },
+      "same_row_identity": [
+        "bin",
+        "bout",
+        "useb",
+        "abind",
+        "usea"
+      ],
+      "expected": {
+        "baseline": {
+          "http_status": 200,
+          "row_count": 1
+        },
+        "decoy": {
+          "same_as_baseline": true
+        },
+        "remove": {
+          "break": true
+        },
+        "sentinel_replace": {
+          "break": true
+        }
+      }
+    }
+  ]
+}

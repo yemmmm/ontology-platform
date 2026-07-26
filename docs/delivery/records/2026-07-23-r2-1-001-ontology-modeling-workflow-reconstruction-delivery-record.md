@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: M1/M2 已交付；M3 待实施；R2.1-001 长期迭代继续
+- Status: M1/M2 已交付；M3 实施中；R2.1-001 长期迭代继续
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-24T17:32:30+08:00
+- Last updated: 2026-07-26T18:06:35+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: M1 uses its candidate artifacts; M2 execution contract is
   `docs/delivery/designs/2026-07-24-r2-1-001-m2-controlled-modeling-rehearsal-design.md`
@@ -609,3 +609,480 @@
   cycle is required.
 - Outcome/next step: Use the new lessons document and revised checklist as M3's process inputs;
   withhold M1/M2 model artifacts, payloads, runtime records and answer-shaped query results.
+
+### 2026-07-26T16:53:06+08:00 — Start M3 and delegate the business-user role — main agent + user
+
+- User direction: Begin implementing the v2.1 M3 target, with the main agent simulating the business
+  user and describing the business details clearly to the autonomous modeling Agent.
+- Refinement decision: The user delegated business clarification for the already frozen synthetic
+  C -> B -> A slice. The main agent therefore created a first-person business brief that fixes the
+  goals, facts, competency questions, source boundary, expected behavior and non-goals without
+  choosing Classes, Properties, Shapes, axioms, IRIs or answer queries for the modeling Agent.
+- New artifacts:
+  - `docs/evaluation-scenarios/dify-workflow-impact-m3/business-brief.md`
+  - `docs/evaluation-scenarios/dify-workflow-impact-m3/execution-log.md`
+  - `docs/delivery/test-plans/2026-07-26-r2-1-001-m3-autonomous-modeling-reproduction-test-plan.md`
+- Input isolation: The shared plan explicitly lists allowed process/source inputs and withholds M1/M2
+  answer artifacts. M3 acceptance compares semantic behavior, not graph structure.
+- Baseline: clean `7687682` worktree before these documentation changes; regular service active,
+  backend health OK and frontend listening. No isolated `rdf_primary` backend was running.
+- Outcome/next step: Run the mandatory plan review over the M3 contract and input-isolation plan,
+  then freeze the reviewed handoff for the autonomous modeling Agent.
+
+### 2026-07-26T17:04:33+08:00 — M3 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; three evidence-backed High findings accepted.
+- Finding 1: The draft plan inherited an invalid `modeling-decision Evidence` convention. R-002
+  allows only document name plus direct excerpt and forbids Agent inference as Evidence; R-004
+  provides Item `rationale` for modeling explanation.
+- Disposition: `accepted-high`. Official and synthetic direct excerpts remain separate Evidence;
+  modeling decisions move to Item rationale, Checkpoint and execution log. The business brief,
+  M3 lessons, minimal checklist and test plan were corrected.
+- Finding 2: A policy-only forbidden-read list could not prove autonomous modeling or independent
+  consumption because inherited context, memory and unrestricted filesystem access were not
+  excluded.
+- Disposition: `accepted-high`. The revised plan requires fresh non-forked external processes,
+  temporary memory/session-free `CODEX_HOME`, OS-level allowlisted mounts, exact hashed input
+  manifests and complete audited JSONL transcripts for both modeling and consumer Agents. An
+  isolation probe confirmed `bubblewrap` can hide the host repository and Codex memory while
+  exposing only dedicated mounts. Failure to prove isolation yields `INCONCLUSIVE`, not PASS.
+- Finding 3: Mutating one path edge cannot reject incomplete or Cartesian propagation queries.
+- Disposition: `accepted-high`. Independent testing now removes and sentinel-swaps every required
+  B/A binding/use/production link, adds orthogonal decoys and asserts row-level identity/version
+  co-binding against both Agent and withheld queries in a formally written temporary Project.
+- Outcome/next step: Return the revised contract to the plan reviewer. No product or modeling
+  implementation starts until Round 2 passes.
+
+### 2026-07-26T17:11:39+08:00 — M3 plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; the Evidence and full-path findings were resolved, but one input-isolation High
+  remained.
+- Finding: The allowlist still named the complete `requirements-v2.1.md`, which contains M1/M2
+  candidate hints and accepted results. OS isolation cannot prevent leakage from a file deliberately
+  staged as allowed input.
+- Disposition: `accepted-high`. Added a sanitized M3-only contract and exact initial prompt plus a
+  committed machine-readable input manifest. The manifest lists every source file, mounted path,
+  purpose and SHA-256; official documents are individual files, never a directory mount. The complete
+  requirement is explicitly forbidden inside the autonomous namespace.
+- Independent gate: Verify source/staged hashes, exact set equality and mount arguments, and prove the
+  complete requirement and answer artifacts are absent before accepting the autonomy claim.
+- Outcome/next step: Re-review the exact input pack and manifest. Implementation remains gated.
+
+### 2026-07-26T17:15:39+08:00 — M3 plan review Round 3 — plan reviewer + main agent
+
+- Result: `REVISE`; all semantic and isolation findings were resolved except one self-reference
+  inconsistency in the mount-set assertion.
+- Finding: The Agent must read `input-manifest.json`, but the test required staged files to equal only
+  `manifest.files[].mounted_path`, which excluded the manifest itself.
+- Disposition: `accepted-high`. Defined the exact mount set as
+  `{"input-manifest.json"} ∪ files[].mounted_path` and froze the manifest SHA-256 independently in
+  the shared plan. The launcher and independent test must use this same definition.
+- Outcome/next step: Run the final plan review over the non-self-referential launch contract.
+
+### 2026-07-26T17:16:47+08:00 — M3 plan review Round 4 — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical or High issue and no unresolved assumption.
+- Verified: Frozen manifest hash matches; all 13 input hashes match; mounted paths are unique and
+  traversal-free; the declared mount-set definition is consistent; Evidence/rationale, dual-Agent
+  isolation and full-path anti-Cartesian contracts align.
+- Review disposition summary: Three original High findings and the two isolation-contract follow-ups
+  were accepted and corrected. No finding was downgraded or rejected.
+- Development freeze: Use the reviewed requirement M3 section, sanitized business/input pack,
+  shared test plan, reusable lessons and minimal checklist. Preserve this delivery record; required
+  checks include manifest/isolation/transcript/secret audit, formal runtime gates, M1/M2 regressions,
+  focused backend tests, Ruff, `git diff --check`, service closure and health.
+- Outcome/next step: Start a fresh isolated `rdf_primary` backend and hand the reviewed scope to the
+  requirement developer as environment coordinator for the externally isolated autonomous Agent.
+
+### 2026-07-26T17:36:15+08:00 — M3 development Cycle 1 — requirement developer + main agent
+
+- Prepare-only result: `PASS`. Frozen manifest and 13 per-file hashes, exact staging set, isolated
+  `rdf_primary` mode, host repository/Codex-state invisibility and temporary-state cleanup passed.
+- Failed run 1: `m3-autonomous-20260726` was marked `INCONCLUSIVE` because the initial launcher placed
+  the API key in bubblewrap process argv. The run was stopped; no key was found in Agent transcript
+  or workspace and temporary auth/gateway state was removed. The credential was not rotated.
+- Correction: Real key injection moved entirely into the host gateway; the Agent environment received
+  only a non-secret marker. Fresh run `m3-autonomous-rerun-20260726` passed argv, transcript,
+  workspace, gateway and stderr secret/forbidden-access audits.
+- Failed run 2: `BLOCKED` before the first platform request because Codex `workspace-write` rejected
+  the allowlisted Unix socket with `EPERM`. The autonomous Agent produced only its own hypothesis,
+  client/query drafts and safe logs; no Project/Ontology/Build Session/Batch was created and no
+  semantic-decision intervention or bypass occurred.
+- Verification: Launcher tests 6 passed; M3 Ruff, compile and `git diff --check` passed; regular
+  backend/frontend and isolated backend were healthy.
+- Confirmed environment defect: Unix-socket transport is incompatible with the required Codex tool
+  sandbox. Preserve both failed run records and start another fresh Agent after an isolation-safe
+  transport repair.
+- Plan revision: Replace the socket with a host file-spool RPC gateway. Agent tools remain
+  networkless and credential-free; gateway requests are strict regular files with no-follow,
+  traversal/size/path/header/id controls and atomic responses. Never switch to
+  `danger-full-access`.
+- Security follow-up: The locally configured API key was transiently visible in a host process argv
+  during failed run 1 and should be rotated by the environment owner after this delivery.
+- Outcome/next step: Re-review the changed isolation transport, then hand the confirmed defect back
+  to the developer for a fresh non-resumed run.
+
+### 2026-07-26T17:41:24+08:00 — M3 file-spool plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding accepted.
+- Finding: A response spool under an Agent-writable RPC root allows the Agent to precreate, replace
+  or mutate apparent platform feedback. Host atomic rename/no-follow alone cannot prove the body read
+  by the Agent came from the platform.
+- Disposition: `accepted-high`. Split Agent-writable requests from a host-owned response directory
+  mounted read-only into the namespace. The Agent cannot create, change or delete responses.
+  Gateway audit now requires canonical request/response SHA-256; processed requests are archived and
+  responses retained for independent comparison with transcript/runtime results.
+- Negative gates: Precreation, forgery, write-after-response, replacement and deletion must fail
+  closed for both modeling and consumer Agents, in addition to path/header/size/id controls.
+- Frozen input update: Modeling prompt hash
+  `5d435e6e5358db58680f181da988f4b2623d56af36f53f5aaaa7f941c2676e55`;
+  manifest hash `f99a8b2a10b99643a157b1b306cbc9a34e74dd748f10131ac024d0b46b7c0ac7`.
+- Outcome/next step: Re-review the split-spool integrity contract before developer repair.
+
+### 2026-07-26T17:42:44+08:00 — M3 file-spool plan review Round 2 — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High issue or unresolved assumption.
+- Verified: Frozen prompt/manifest and all 13 file hashes match; mounted paths are unique; request and
+  response ownership is separated; canonical request archive, host response and bidirectional hashes
+  can be matched to transcript/runtime; response forgery/replacement/deletion gates cover both Agents.
+- Outcome/next step: Send the confirmed environment defect and reviewed file-spool repair to the
+  requirement developer. Require a new fresh Agent process, not resume.
+
+### 2026-07-26T18:01:58+08:00 — M3 development Cycle 2 — requirement developer + main agent
+
+- Transport repair: Implemented split file-spool RPC with Agent-writable requests, host-owned
+  read-only responses, request archive and request/response hashes. Security negatives and
+  prepare-only checks passed before a new fresh Agent run.
+- Fresh run behavior: The autonomous Agent read only the frozen inputs, created a new Project,
+  Ontology, Build Session and separated official/synthetic Evidence, probed the public contract,
+  then independently dry-ran and applied its first Class Batch through `apply_atomic`.
+- Result: `BLOCKED` by a `tool-contract` gap before entity/Shape modeling. Public OpenAPI and MCP
+  represented `ModelingItemInput.payload` as an unconstrained object and did not publish nested
+  command fields. The Agent's own probe showed a reference-shaped object compiling into a literal
+  entity property, so it stopped instead of guessing syntax, reading M2 payload or bypassing the
+  canonical writer.
+- Disposition: The blocker is not a semantic-model failure and does not require new platform write
+  capability. Current handlers already support the needed generic commands. Add a repo-local,
+  answer-free companion tool contract derived from `ModelingBatchSubmit`,
+  `ModelingCommandHandlerRegistry` and `semantic_command_compiler`; do not expose M1/M2 structures.
+- Current minimal scope: No backend/API change. Typed public OpenAPI/MCP Modeling Item schemas remain
+  future productization unless later evidence makes them a platform requirement.
+- Frozen input update: Added
+  `input-pack/platform-modeling-command-contract.md`
+  (SHA-256 `a84800b475a03772d99d2aa4feb1e25699b202001c1bc0ffa120c4658b60cea3`);
+  new manifest SHA-256 `30ba21f0b9331fff394ef42b0449f34f43f7ad8e243e5d25ce50dc9932d12bda`.
+- Outcome/next step: Review the companion contract for answer leakage and accuracy, then start a
+  completely new Agent. Do not resume the partially applied Project.
+
+### 2026-07-26T18:06:35+08:00 — M3 companion tool-contract plan review — plan reviewer + main agent
+
+- Result: `PASS`; no Critical/High finding or unresolved assumption.
+- Verified: Companion and 14-file manifest hashes match; mounted paths are unique; every documented
+  Batch field, output, `item_ref`, literal/object, Shape path, Evidence/rationale and error contract
+  has current code evidence.
+- Answer-isolation result: The companion contains no Dify resource name, M1/M2 structure, IRI,
+  payload, query or acceptance answer and does not select the Agent's semantic model.
+- Outcome/next step: Launch another fresh, non-resumed Agent with the reviewed 14-file input pack.
+
+### 2026-07-26T18:26:23+08:00 — M3 development Cycle 3 — requirement developer + main agent
+
+- Fresh autonomous run: `m3-companion-autonomous-20260726` started a new, non-resumed Agent with
+  only the reviewed 14-file input pack. It independently created a new Project, Ontology, Build
+  Session and separated official/synthetic Evidence, proposed its own semantic model, then completed
+  TBox and fixture dry-run/apply through the formal Modeling Batch writer.
+- Runtime result: `DEVELOPMENT_READY`. The Agent proved invalid Invocation rejection, successful
+  validation and reasoning, the published A-to-B-to-C dependency path, draft exclusion, an explicit
+  missing-propagation gap and a reasoning-supertype query. It did not assign a business risk level.
+- Isolation/integrity result: Agent exit code `0`; credential and forbidden host-input scans passed;
+  161 forwarded calls had complete archived-request and host-response hashes; 38 rejected atomic
+  temporary names were fail-closed. The Agent had no platform credential, network access, repository
+  mount, M1/M2 answer artifact or main-Agent semantic intervention.
+- Audit correction: The first post-run audit called the run `INCONCLUSIVE` because a public reasoning
+  API response reported the host-side reasoner provenance path. That string was platform output, not
+  an Agent-controlled host-file access. The corrected scoped audit preserved all Agent artifacts and
+  reports `DEVELOPMENT_READY` in `audit-recheck-3.json`.
+- UUID anomaly disposition: The final Project id
+  `21ba4269-d027-4322-aee1-b911874c4e0a` was absent from every earlier M3 run directory. Its archived
+  `POST /api/projects` response was `201` with the current run timestamp, so the suspected reuse was
+  a search/audit misunderstanding, not evidence of state reuse.
+- Developer verification: M3 launcher tests `8 passed`; M3 Ruff and Python compilation passed;
+  `git diff --check` passed; regular backend/frontend and isolated `rdf_primary` backend were healthy.
+- Outcome/next step: Freeze this development state and hand it to an independent requirement tester.
+  Acceptance still requires a separate consumer-Agent blind test, nine critical-link
+  anti-Cartesian mutations, decoys, formal runtime gates and the full regression set.
+
+### 2026-07-26T18:32:28+08:00 — M3 independent test Round 1 — requirement tester + main agent
+
+- Result: `FAIL`; two confirmed traceability defects were returned to development.
+- High defect: All 161 forwarded gateway calls had matching canonical archive and host-response
+  hashes, but none of their request IDs appeared in the complete Agent transcript. The Agent runtime
+  record listed only 20 call summaries and no request/response hashes. Host-only evidence therefore
+  could not prove that the isolated Agent consumed the platform feedback it used.
+- Medium defect: `work/runtime-record.json` used `m3-autonomous-20260726`, while the enclosing run
+  and audit used `m3-companion-autonomous-20260726`; the final run lacked one immutable identity.
+- Passed checks: M1 `13/13`, M2 `5/5`, M3 launcher `8/8`, focused backend `69/69`, Ruff,
+  `git diff --check`, and health for ports 8001, 8012 and 5173.
+- Deferred correctly: The consumer Agent and nine-link mutation/decoy suite were not run because an
+  inadmissible producer evidence chain cannot become acceptable through downstream behavior tests.
+- Disposition: Add Agent-controlled per-call consumption receipts and launcher-side exact-set/hash
+  validation; inject one launcher-owned run identity; update negative tests; launch a completely new
+  producer Agent and repeat the full plan as Round 2. Do not retrofit the failed run.
+
+### 2026-07-26T18:51:56+08:00 — M3 development Cycle 4 — requirement developer + main agent
+
+- Impact analysis: GitNexus did not yet index the new M3 launcher symbols and reported
+  `UNKNOWN / 0 direct impact`; no HIGH/CRITICAL blast radius was found before editing.
+- Repair: The launcher now injects one `M3_RUN_TAG` and fails closed unless every forwarded call has
+  exactly one Agent-controlled post-read receipt whose request id, canonical request hash, raw
+  read-only response hash, actual HTTP status and run tag match the archive, gateway audit, host
+  response, runtime record and transcript receipt summary.
+- Failed repair run retained: `m3-receipts-cycle4-20260726` stopped `BLOCKED` after a valid Project
+  creation returned `201`, because the first receipt schema had incorrectly fixed status to `200`.
+  The Agent left the unmatched call visible and did not continue or falsify a receipt.
+- Contract correction: Receipt status now records and must equal the actual HTTP status, including
+  successful `201` and rejected `422` responses. Missing, duplicate, extra and identity-drift cases
+  remain fail-closed. Updated manifest SHA-256:
+  `febdc765818a63d02ce68e7341b51d01c2ed52e334b2194540a769cb252356ab`.
+- Fresh run: `m3-receipts-cycle4-rerun-20260726` created Project
+  `22226ade-e3f7-4746-ba63-b486620a2115`, Ontology
+  `f3ca5853-4d99-43ca-aacc-03d31034a147` and Build Session
+  `c4f7a809-769a-4fa6-9d15-05b244ffe1d8`, then independently completed the M3 modeling flow.
+- Result: `DEVELOPMENT_READY`. Exactly 74 forwarded calls matched 74 Agent receipts; receipt digest
+  `fff770872bb6938f4a19ac21c5156e307f264a18e32c3ae4535b8c2327bd3335`; automatic audit and re-audit
+  passed with no secret, forbidden host path or argv finding. Three temporary atomic filenames were
+  rejected as intended.
+- Developer verification: M3 launcher `11 passed`, Python compilation, Ruff and
+  `git diff --check` passed; ports 8001, 8012 and 5173 were healthy.
+- Outcome/next step: Freeze the repaired fresh run and repeat the full independent plan as Round 2,
+  including consumer-Agent blind interpretation and nine-link anti-Cartesian mutation/decoy gates.
+
+### 2026-07-26T18:54:52+08:00 — M3 independent test Round 2 — requirement tester + main agent
+
+- Result: `FAIL`; Round 1's request-consumption and run-identity defects are confirmed fixed.
+- Passed repair evidence: 74 forwarded calls matched 74 Agent-controlled receipts across exact IDs,
+  archive/request hashes, raw response hashes, HTTP status, run tag, runtime mirror and transcript
+  summary. M1 `13/13`, M2 `5/5`, M3 launcher `11/11`, focused backend `69/69`, Ruff,
+  `git diff --check` and three-endpoint health also passed.
+- New High defect: Build Session `c4f7a809-769a-4fa6-9d15-05b244ffe1d8` remained `active` with
+  `completed_at=null` and `latest_checkpoint=null`; the producer transcript contained no checkpoint
+  or complete request. The autonomous Agent therefore did not persist its modeling
+  decisions/progress through the frozen Build Session contract.
+- Deferred correctly: Consumer and mutation gates again remained unexecuted because a developer or
+  operator must not repair autonomous process evidence after the fact.
+- Disposition: Make Agent-authored checkpoint and Build Session completion mandatory and
+  launcher-audited, retain the failed run, create a new Project/Ontology/Build Session with a fresh
+  producer, then execute the full Round 3.
+
+### 2026-07-26T19:29:09+08:00 — M3 development Cycle 5 — requirement developer + main agent
+
+- Impact analysis: New M3 symbols remained outside the current GitNexus index
+  (`UNKNOWN / 0 direct impact`); no HIGH/CRITICAL caller risk was found.
+- Completion repair: The answer-free execution contract now requires the Agent to read the current
+  Build Session revision, write a handoff Checkpoint containing its own hypothesis, accepted/rejected
+  decisions, formal evidence references, retries/interventions, unresolved items and recommendations,
+  call `:complete`, and read back final state. All calls remain receipt-bound and launcher-audited.
+- Environment failure retained: Fresh run `m3-session-cycle5-20260726` became `INCONCLUSIVE` after
+  27 matched calls when the gateway hit a `scandir`/atomic-rename race: a temporary request entry
+  vanished between enumeration and stat, raising uncaught `FileNotFoundError`. The Agent process
+  was stopped without completing or retrofitting artifacts.
+- Gateway repair: Vanished temporary entries are now ignored while strict handling of stable request
+  filenames remains unchanged. A mocked regression covers this race.
+- Replacement run: `m3-session-cycle5-rerun-20260726` independently created Project
+  `8c9e0e2c-1a36-415f-a677-0082151ef5e4`, Ontology
+  `3999db8b-845c-4d1b-a99b-401889669059` and Build Session
+  `006f4f0a-863b-4186-8357-c16b16b6911f`.
+- Agent closure: It wrote Checkpoint `4aab29a9-b17f-43d8-bfb8-a31ee022ba6b`, completed the session
+  at `2026-07-26T11:25:41.121139+00:00`, and read the final public state. Exactly 40 forwarded calls
+  matched 40 receipts.
+- Audit-only correction: Original `audit.json` remained `INCONCLUSIVE` because the launcher expected
+  runtime key `session_id` while the Agent used `build_session_id`. The launcher now accepts either
+  and rejects inconsistent dual values. `audit-recheck.json` is `DEVELOPMENT_READY`; all 150 Agent
+  files remained byte/size/mtime-identical with aggregate fingerprint
+  `42fe9a7c88014edcab99689f525e47206c78c589a7b20833439528c437e11d86`.
+- Developer verification: Python compilation, Ruff, M3 launcher `14 passed`,
+  `git diff --check`, and ports 8001/8012/5173 passed.
+- Outcome/next step: Freeze this completed producer and run independent Round 3 through all deferred
+  mutation and blind consumer gates.
+
+### 2026-07-26T19:31:20+08:00 — M3 independent test Round 3 — requirement tester + main agent
+
+- Result: `FAIL`, with no new producer defect.
+- Confirmed fixed: Public Build Session completion and Agent-authored Checkpoint, exact 40/40 receipt
+  chain, immutable re-audit fingerprint, negative validation, explicit Shapes, reasoning, M1
+  `13/13`, M2 `5/5`, M3 launcher `14/14`, focused backend `69/69`, Ruff, diff and health gates.
+- Remaining High blocker: No executed tester-owned temporary-Project nine-role
+  remove/sentinel/decoy suite and no second fresh isolated read-only consumer Agent evidence existed.
+  Producer queries and M1 offline tests cannot substitute for either mandatory independent gate.
+- Disposition: Add answer-free, data-driven acceptance infrastructure only. The developer may
+  implement generic formal-Batch mutation and isolated consumer launch helpers, but the independent
+  tester must supply withheld queries/assertions, execute them, inspect the blind answer and own the
+  final verdict.
+
+### 2026-07-26T19:38:56+08:00 — M3 development Cycle 6 — requirement developer + main agent
+
+- Scope: Added generic acceptance infrastructure only; no producer model, business answer, product
+  API or M1/M2 answer artifact changed.
+- Mutation runner: `tests/m3_acceptance_mutations.py` accepts a tester-owned data spec with exactly
+  nine roles, remove/sentinel variants, decoys, arbitrary producer/withheld SPARQL and row-identity
+  assertions. Every variant creates a new retained Project/Ontology/Session and writes semantic
+  resources only through formal Modeling Batch dry-run and `apply_atomic`. The runner records
+  expected/actual JSON but contains no domain query or PASS answer.
+- Consumer harness: `run_readonly_consumer.py`, `readonly_consumer_gateway.py` and the consumer input
+  pack launch a fresh OS-isolated Agent with a fresh Codex home, split spool and receipt audit.
+  Inputs are limited to UUIDs, one business question and an answer-free read/query contract; the
+  gateway permits scoped reads and semantic SPARQL query only and rejects writes.
+- Safety coverage: Added nine-role spec, row identity, consumer write-denial, extra-input and path
+  forgery tests. Existing producer gateway defaults remain unchanged.
+- Verification: Python compilation, M3 Ruff, M3 tests `19 passed` and `git diff --check` passed.
+- Outcome/next step: Independent tester owns the Round 4 spec, withheld queries, execution artifacts,
+  blind answer evaluation and final verdict.
+
+### 2026-07-26T19:42:07+08:00 — M3 independent test Round 4 — requirement tester + main agent
+
+- Result: `FAIL`; two acceptance-harness defects, not producer-model defects.
+- Consumer defect: Fresh isolated run `m3-consumer-round4-20260726` passed allowlist, OS probe, argv
+  and secret checks, but the prompt searched `/mnt` while its only allowed inputs were mounted under
+  `/opt`. It correctly stopped with zero RPC calls; zero-call audit handling then also treated the
+  absent gateway log as `INCONCLUSIVE`.
+- Mutation defect: The runner echoed tester-supplied expected and actual values but did not compare
+  them, evaluate same-row identity or return nonzero on baseline/mutation/decoy failure. Eighteen
+  executions would therefore not prove the anti-Cartesian gate.
+- Disposition: Align the consumer prompt and fixed mount paths; make zero-call audit deterministic.
+  Add a generic assertion evaluator whose expected values remain tester-owned, with per-query and
+  per-variant expected/actual output, same-row checks and fail exit. Verify the public Batch response
+  field shape without adding business answers.
+
+### 2026-07-26T19:48:01+08:00 — M3 development Cycle 7 — requirement developer + main agent
+
+- Impact analysis: GitNexus did not index the new acceptance symbols and reported
+  `UNKNOWN / 0 affected`; no HIGH/CRITICAL risk was found.
+- Consumer repair: The prompt, staging tests and bwrap contract now agree on the three fixed `/opt`
+  input paths. A missing/empty gateway log reports `consumer made zero RPC calls`; write denial and
+  all isolation restrictions remain unchanged.
+- Mutation repair: The runner uses real public `attempt_status` plus `batch_status`, rejects a
+  misleading top-level-only status, and generically evaluates tester-owned row counts, bindings,
+  declared predicates and same-row identities. Decoy results must equal baseline; every role's
+  remove and sentinel variants must break it. Failures retain expected/actual/evaluation details,
+  set summary `FAIL` and exit `2`.
+- Verification: Python compilation, M3 Ruff, M3 tests `22 passed` and `git diff --check` passed.
+- Outcome/next step: Round 5 must create and execute the independent spec and consumer run; tool
+  availability itself is no longer an acceptance result.
+
+### 2026-07-26T19:53:07+08:00 — M3 independent test Round 5 — requirement tester + main agent
+
+- Result: `BLOCKED`; no semantic verdict.
+- Consumer evidence: Fresh run `m3-consumer-round5-20260726` found the corrected `/opt` inputs, but
+  every attempted request was rejected. The generic read contract did not state the gateway's exact
+  five-key request object, strict id grammar and exact `<id>.json` filename, so the Agent tried
+  several incompatible forms. It was manually interrupted before the configured 900-second timeout
+  and is not admissible.
+- Mutation preparation: The runner required roughly 109 schema/fixture Modeling Items inline, making
+  tester-owned spec construction an avoidable manual transcription task; the spec was not executed.
+- Disposition: Publish the exact answer-free file-spool RPC shape or mount a proven generic read
+  client, add a real forwarded-call integration test, and let the mutation runner import seed Item
+  arrays mechanically from the stable producer's schema/fixture Batch files while keeping every
+  role mapping, mutation, decoy, query and expected result tester-owned.
+
+### 2026-07-26T19:59:15+08:00 — M3 development Cycle 8 — requirement developer + main agent
+
+- Impact analysis: Modified acceptance symbols remained outside the GitNexus index
+  (`UNKNOWN / 0 affected`); no HIGH/CRITICAL risk was found.
+- Consumer contract: Added mounted `/opt/m3_readonly_rpc.py` with the exact five-field request
+  envelope, strict id/filename rule, off-spool temporary write plus atomic replace, response
+  validation and canonical post-read receipt. It has no credential and enforces the read-only
+  gateway policy.
+- Integration proof: A subprocess test starts the actual gateway, forwards a fresh scoped GET,
+  consumes its response, writes a receipt and passes receipt/operation audit with no rejection.
+- Seed import: The mutation runner accepts scenario-relative `seed_items_files` and mechanically
+  normalizes only Batch Item arrays from the stable schema/fixture inputs. It removes prior
+  Project-bound Evidence/CQ references and never imports queries, answers, role mappings or
+  expectations. `--write-starter-spec` generates the neutral tester template.
+- Verification: Python compilation, M3 Ruff, M3 tests `24 passed` and `git diff --check` passed.
+- Outcome/next step: Round 6 must fill the independent assertions, execute all variants and let a
+  fresh consumer run to normal exit or its configured timeout.
+
+### 2026-07-26T20:03:02+08:00 — M3 independent test Round 6 — requirement tester + main agent
+
+- Result: `FAIL`; consumer behavior passed substantively but its evidence record remained
+  inadmissible.
+- Consumer behavior: Fresh run `m3-consumer-round6-20260726` completed eight read-only RPC calls and
+  returned a four-way attributed explanation distinguishing official source, synthetic fixture,
+  inference and Agent judgment, stated explicit unknowns and assigned no risk level.
+- Traceability defect: `runtime-record.json` wrote `spool_receipt_log` as a path string instead of
+  the required `{path, sha256, count}` object. All eight call receipts existed, but exact audit
+  correctly returned `INCONCLUSIVE`.
+- Mutation state: The neutral starter spec was generated and referenced the schema/fixture seed
+  files without old queries or answers, but the nine tester-owned role actions and assertions were
+  not yet completed or executed.
+- Disposition: Fix and integration-test the consumer runtime-record receipt summary without
+  retrofitting the failed run; add only a neutral seed-item inspection aid; start a fresh consumer
+  and complete the independent mutation spec.
+
+### 2026-07-26T20:06:15+08:00 — M3 development Cycle 9 — requirement developer + main agent
+
+- Impact analysis: Relevant new M3 tools remained unindexed (`UNKNOWN / 0 affected`); no
+  HIGH/CRITICAL risk was found.
+- Runtime finalizer: Mounted `m3_readonly_rpc.py --finalize-runtime-record` strictly parses the
+  canonical receipt log, validates run tag and duplicate IDs, atomically writes the required
+  `{path, sha256, count}` summary plus ordered receipt mirror, and emits the exact transcript
+  `M3_RECEIPT_SUMMARY`.
+- Strict regression: The Round 6-style string field is still rejected by the existing audit; the
+  helper-generated object, mirror and summary pass both receipt and operation audits.
+- Tester aid: `--inspect-seed-items` outputs only source, item index/ref/type, payload keys and hash
+  for the Cycle 5 schema/fixture files. It does not choose roles, mutations, queries or expectations.
+- Verification: Python compilation, M3 Ruff, M3 tests `24 passed` and `git diff --check` passed.
+- Outcome/next step: Round 7 must run a fresh consumer and finish/execute the tester-owned mutation
+  spec.
+
+### 2026-07-26T20:44:13+08:00 — M3 development Cycles 10–14 — requirement developer + main agent
+
+- Mutation API fix: Removed invalid `session_id` from Modeling Batch bodies; Session association
+  remains solely in the route. Strict public-shape fixtures cover dry-run/apply envelopes.
+- Consumer terminal fix: Defined `CONSUMER_READY|BLOCKED|INCONCLUSIVE`, required the marker after
+  the receipt summary, and parsed only decoded completed `agent_message.text` JSONL events. Tool
+  output, malformed JSON and conflicting markers fail closed.
+- Query observation fix: Strictly unwrapped `SemanticSparqlQueryResponse.body.result` and extracted
+  only valid binding rows; unknown shapes now fail instead of becoming zero rows.
+- Evaluator fix: Standardized `http_status` and compared decoy invariance on normalized semantic
+  observations rather than temporary Project/scope metadata.
+- Tester-owned corrections: The independent spec replaced client item refs with real resource IRIs,
+  used formal `update_fact` unrelated sentinels, and changed its decoy to a valid unrelated
+  explicit-gap explanation update. Developers did not modify its roles, queries or expected answers.
+- Impact and verification: Each changed M3 symbol remained outside the GitNexus index
+  (`UNKNOWN / 0 affected`), with no HIGH/CRITICAL result. The final M3 suite reached `27 passed`;
+  Python compilation, Ruff and `git diff --check` passed.
+
+### 2026-07-26T20:44:13+08:00 — M3 independent test Round 7 — requirement tester + main agent
+
+- Result: `PASS`; no active defect.
+- Producer: Stable Cycle 5 Project/Ontology/Session and Agent-authored Checkpoint passed public state,
+  40/40 receipt, isolation, negative validation, Shapes, reasoning and autonomous traceability gates.
+- Anti-Cartesian suite: Tester-owned `round6-mutation-spec.json` produced final evidence
+  `round7-mutations-cycle14.json`: 20 isolated environments, 9/9 role evaluations, no Batch/query
+  failure. Baseline and valid decoy returned one same-identity row; all 18 remove/unrelated-sentinel
+  variants validated/applied and returned zero rows for both producer and withheld query structures.
+- Blind consumer: Fresh `m3-consumer-round7-cycle12-20260726` finished `CONSUMER_READY`; ten
+  read-only calls matched ten receipts and all operation/isolation/secret audits. Its answer
+  distinguished official/synthetic/inference/judgment, separated draft/latest state, preserved
+  unknowns and assigned no risk level.
+- Regression: M1 `13/13`, M2 `5/5`, M3 `27/27`, focused backend `69/69` with five non-failing
+  dependency deprecation warnings, Ruff, `git diff --check`, and 8001/8012/5173 health all passed.
+- Closure: R2.1-001 M3 is accepted. Update the v2.1 current-slice status, stop the isolated backend,
+  verify the regular runtime and commit the relevant artifacts.
+
+### 2026-07-26T20:47:34+08:00 — M3 delivery closure — main agent
+
+- Requirements and evidence sync: Updated `requirements-v2.1.md` to show M1–M3 accepted, closed the
+  current slice without predefining the next long-term experiment, and added committed mutation and
+  consumer summary artifacts with hashes of the retained raw evidence.
+- Runtime cleanup: Stopped the isolated 8012 `rdf_primary` backend. The regular
+  `ontology-platform.service` remained active; 8001 health returned OK and frontend 5173 returned
+  HTTP 200. Port 8012 no longer served health.
+- Final verification: M1 `13/13`, M2 `5/5`, M3 `27/27`, focused backend `69/69` with five
+  non-failing deprecation warnings, M3 Ruff and `git diff --check` passed.
+- GitNexus: Compare-to-main change detection reported low risk and no affected indexed execution
+  process. New M3 scenario tools are outside the current index and are covered by the executable
+  test suite.
+- Remaining operational follow-up: The environment owner should rotate the local API key that was
+  briefly present in a host process argv during the first failed isolation run. No credential appears
+  in committed scenario, transcript-summary or test-plan artifacts.

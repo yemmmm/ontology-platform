@@ -1,0 +1,29 @@
+{
+  "result": "PASS",
+  "raw_artifact": "round7-mutations-cycle14.json",
+  "raw_artifact_sha256": "7194403ce0b228fe2e580a6d2b5ec77bad039da4fc948b13894cd4cb55638654",
+  "spec": "round6-mutation-spec.json",
+  "spec_sha256": "a04ddecb2383949d85e51926b19cf44d3fee828d460100e6c91c046e1b7b7a59",
+  "variant_count": 20,
+  "variants": {
+    "baseline": 1,
+    "orthogonal_decoy": 1,
+    "remove": 9,
+    "unrelated_sentinel_replace": 9
+  },
+  "role_evaluations": {
+    "b_input_source": "PASS",
+    "b_input_target": "PASS",
+    "b_output_source": "PASS",
+    "b_output_target": "PASS",
+    "b_variable_use": "PASS",
+    "b_produces_output": "PASS",
+    "a_binding_source": "PASS",
+    "a_binding_target": "PASS",
+    "a_downstream_use": "PASS"
+  },
+  "batch_failure_count": 0,
+  "query_failure_count": 0,
+  "retained_temporary_project_count": 20,
+  "raw_artifact_policy": "Retained locally and gitignored because the full expected/actual public API evidence is approximately 15 MiB."
+}

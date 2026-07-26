@@ -13,8 +13,10 @@ variable.
    isolated mode is `rdf_primary`.  Separately verify that the normal service
    remains `legacy_only`.
 2. Create a fresh Project, Ontology and Build Session through formal platform
-   calls. Register official-source, synthetic-fixture and modeling-decision
-   Evidence separately.
+   calls. Register official-source and synthetic-fixture Evidence separately.
+   Put modeling decisions only in Modeling Item `rationale`, Build Checkpoints
+   and the append-only execution log; never create Evidence from Agent
+   inference or modeling rationale.
 3. Keep findings from deliberately invalid negative candidates created from
    the Agent's own constraints. Do not apply them and do not replace their
    idempotency keys.
