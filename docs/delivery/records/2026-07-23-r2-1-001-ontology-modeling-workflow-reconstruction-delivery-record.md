@@ -1086,3 +1086,40 @@
 - Remaining operational follow-up: The environment owner should rotate the local API key that was
   briefly present in a host process argv during the first failed isolation run. No credential appears
   in committed scenario, transcript-summary or test-plan artifacts.
+
+### 2026-07-27T09:14:30+08:00 — M4–M6 roadmap decision — user + main agent
+
+- User decision: Before expanding the validated business slice into a module, add M4 for autonomous
+  modeling-Agent discovery and one-question-at-a-time clarification of consequential business
+  semantics, then add M5 to reproduce the frozen interaction contract with a real Pi Agent. Defer
+  slice-to-module expansion to M6.
+- M4 boundary: Reuse the M3 formal modeling and validation path, add intentionally ambiguous business
+  decisions and a hidden user-answer contract, and prove that answers cause traceable model changes
+  while unanswered semantics remain explicit unknowns. Do not make the older full interview,
+  Coverage, Work Unit, review or shared-directory workflow a prerequisite.
+- M5 boundary: Run the same semantic and interaction contract in a fresh isolated environment with
+  a pinned Pi/model/Prompt-or-Skill configuration. Compare business behavior rather than wording or
+  graph identity. Do not treat this compatibility run as resuming or completing the paused full
+  R2.0-002 integration.
+- M6 boundary: Expand to a module only after M4 and M5 pass. Select the concrete module, reuse and
+  evolution contract, scope limits and acceptance criteria after the M4/M5 evidence is available.
+- Documentation result: The authoritative v2.1 requirement now records M4, M5 and M6 in this order,
+  their current minimal scope and non-goals, and the remaining stage-level details that must be
+  refined before each stage starts. No M4 implementation or runtime mutation was authorized by this
+  roadmap-only update.
+
+### 2026-07-27T09:24:07+08:00 — M4–M6 roadmap plan review — plan reviewer + main agent
+
+- Review availability: The first two review attempts returned no verdict because the selected
+  reviewer model was at capacity. They were not treated as review results. A fresh plan-review run
+  subsequently completed against `requirements-v2.1.md`, the earlier M1–M3 contract, paused
+  R2.0-002 and `AGENTS.md`.
+- Result: `PASS`; no evidence-backed Critical or High finding and no unresolved key assumption.
+- Evidence: M4 keeps answer isolation, explicit unknowns, traceable answer-to-model changes and the
+  formal M3 application boundary. M5 replays the frozen behavior in Pi without reviving the full
+  R2.0-002 integration. M6 remains gated on M4/M5 and defers its module contract until their evidence
+  exists. None of the three milestones silently makes productization or older workflow machinery a
+  prerequisite.
+- Main-agent disposition: Accept the PASS. No plan revision or re-review is required. Stage-specific
+  design and shared test plans remain mandatory when each milestone enters implementation; they are
+  intentionally not created by this roadmap-only change.
