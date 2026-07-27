@@ -66,6 +66,33 @@ class FakeRdfStore:
         )
 
 
+class PersistentFakeRdfStore(FakeRdfStore):
+    """In-memory N-Quads source for apply-then-dry-run validation coverage."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.graphs: dict[str, str] = {}
+
+    def graph_exists(self, graph_iri):
+        return bool(self.graphs.get(graph_iri))
+
+    def get_graph(self, graph_iri, _format):
+        return self.graphs.get(graph_iri, "")
+
+    def apply_dataset_delta(self, delta):
+        for subject, predicate, obj, graph_iri in delta.inserts:
+            self.graphs[graph_iri] = self.graphs.get(graph_iri, "") + (
+                f"{subject} {predicate} {obj} .\n"
+            )
+        self.deltas.append(delta)
+        return GraphWriteResult(
+            graph_iri=delta.affected_graph_iris()[0] if delta.affected_graph_iris() else "",
+            applied=not delta.is_empty,
+            inserted_quad_count=len(delta.inserts),
+            deleted_quad_count=len(delta.deletes),
+        )
+
+
 class MissingNamedGraphRdfStore(FakeRdfStore):
     def get_graph(self, graph_iri, _format):
         raise AssertionError(f"get_graph must not be called for missing graph: {graph_iri}")
@@ -636,6 +663,47 @@ def test_new_shape_validates_entities_in_the_same_candidate_batch(modeling):
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
 
 
+def test_urn_schema_ids_and_bare_string_datatype_validate_in_one_principal_dry_run(modeling):
+    service, _db, _rdf, session_id, _lease, version = modeling
+    class_id = "urn:m4:Workflow"
+    property_id = "urn:m4:workflowKey"
+    shape_id = "urn:m4:WorkflowShape"
+    items = [
+        _item(
+            "workflow-class",
+            command_kind="create_class",
+            payload={"class_id": class_id, "name": "Workflow"},
+        ),
+        _item(
+            "workflow-key",
+            command_kind="create_property",
+            depends_on=["workflow-class"],
+            payload={
+                "class_id": class_id,
+                "datatype": "string",
+                "name": "workflow key",
+                "property_id": property_id,
+            },
+        ),
+        _item(
+            "workflow-shape",
+            command_kind="create_shape",
+            depends_on=["workflow-class", "workflow-key"],
+            payload={
+                "constraints": [{"datatype": "string", "min_count": 1, "path_id": property_id}],
+                "shape_id": shape_id,
+                "target_class_id": class_id,
+            },
+        ),
+    ]
+
+    result = service.submit(session_id, _request(version, items, batch="urn-schema-batch"))
+
+    assert result["mode"] == "dry_run"
+    assert result["attempt_status"] == "validated"
+    assert not [finding for finding in result["findings"] if finding["blocking"]]
+
+
 def test_malformed_nested_shape_payload_becomes_a_finding(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     shape = ModelingItemInput(
@@ -690,6 +758,196 @@ def test_shape_apply_targets_workspace_member_and_changes_version(modeling):
     assert rdf.deltas[0].affected_graph_iris() == [
         f"{_settings().semantic_graph_iri_prefix.rstrip('/')}/shapes/{ONTOLOGY_ID}"
     ]
+
+
+def test_applied_multi_enum_shapes_validate_following_abox_dry_runs(modeling):
+    _service, db, _rdf, session_id, lease, version = modeling
+    rdf = PersistentFakeRdfStore()
+    service = ModelingBatchService(db, _settings(), rdf)  # type: ignore[arg-type]
+    schema_items = [
+        _item(
+            "workflow-class",
+            command_kind="create_class",
+            payload={"class_id": "workflow", "name": "Workflow"},
+        ),
+        _item(
+            "workflow-status",
+            command_kind="create_property",
+            depends_on=["workflow-class"],
+            payload={
+                "class_id": "workflow",
+                "datatype": "string",
+                "name": "status",
+                "property_id": "status",
+            },
+        ),
+        _item(
+            "workflow-priority",
+            command_kind="create_property",
+            depends_on=["workflow-class"],
+            payload={
+                "class_id": "workflow",
+                "datatype": "string",
+                "name": "priority",
+                "property_id": "priority",
+            },
+        ),
+        _item(
+            "workflow-status-shape",
+            command_kind="create_shape",
+            depends_on=["workflow-class", "workflow-status"],
+            payload={
+                "shape_id": "workflow-status-shape",
+                "target_class_id": "workflow",
+                "constraints": [{"enum_values": ["draft", "published"], "path_id": "status"}],
+            },
+        ),
+        _item(
+            "workflow-priority-shape",
+            command_kind="create_shape",
+            depends_on=["workflow-class", "workflow-priority"],
+            payload={
+                "shape_id": "workflow-priority-shape",
+                "target_class_id": "workflow",
+                "constraints": [{"enum_values": ["low", "high"], "path_id": "priority"}],
+            },
+        ),
+    ]
+    applied = service.submit(
+        session_id,
+        _request(
+            version,
+            schema_items,
+            batch="enum-schema",
+            key="enum-schema-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert applied["attempt_status"] == "applied"
+    next_version = applied["workspace"]["after_version"]
+    properties = {
+        "https://r004.test/resource/property/status": "published",
+        "https://r004.test/resource/property/priority": "high",
+    }
+    allowed = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _item(
+                    "allowed-workflow",
+                    command_kind="create_entity",
+                    payload={
+                        "class_iri_or_legacy_id": "workflow",
+                        "entity_id": "allowed-workflow",
+                        "label": "Allowed workflow",
+                        "properties": properties,
+                    },
+                )
+            ],
+            batch="enum-abox-allowed",
+            key="enum-abox-allowed",
+        ),
+    )
+    disallowed = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _item(
+                    "disallowed-workflow",
+                    command_kind="create_entity",
+                    payload={
+                        "class_iri_or_legacy_id": "workflow",
+                        "entity_id": "disallowed-workflow",
+                        "label": "Disallowed workflow",
+                        "properties": {**properties, "https://r004.test/resource/property/status": "other"},
+                    },
+                )
+            ],
+            batch="enum-abox-disallowed",
+            key="enum-abox-disallowed",
+        ),
+    )
+
+    assert allowed["attempt_status"] == "validated"
+    assert not [finding for finding in allowed["findings"] if finding["blocking"]]
+    assert disallowed["attempt_status"] == "validation_failed"
+    assert "shacl_violation" in {finding["code"] for finding in disallowed["findings"]}
+
+
+def test_bare_entity_property_key_is_absolute_after_dry_run_and_unchanged_apply(modeling):
+    service, _db, rdf, session_id, lease, version = modeling
+    schema = service.submit(
+        session_id,
+        _request(
+            version,
+            [
+                _item(
+                    "workflow-class",
+                    command_kind="create_class",
+                    payload={"class_id": "workflow", "name": "Workflow"},
+                ),
+                _item(
+                    "workflow-is-latest",
+                    command_kind="create_property",
+                    depends_on=["workflow-class"],
+                    payload={
+                        "class_id": "workflow",
+                        "datatype": "boolean",
+                        "name": "is latest",
+                        "property_id": "is_latest",
+                    },
+                ),
+            ],
+            batch="bare-property-schema",
+            key="bare-property-schema-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    entity_items = [
+        _item(
+            "workflow-entity",
+            command_kind="create_entity",
+            payload={
+                "class_iri_or_legacy_id": "workflow",
+                "entity_id": "workflow-entity",
+                "label": "Workflow entity",
+                "properties": {"is_latest": True},
+            },
+        )
+    ]
+    entity_version = schema["workspace"]["after_version"]
+    dry_run = service.submit(
+        session_id,
+        _request(
+            entity_version,
+            entity_items,
+            batch="bare-property-entity",
+            key="bare-property-entity-dry",
+        ),
+    )
+    applied = service.submit(
+        session_id,
+        _request(
+            entity_version,
+            entity_items,
+            batch="bare-property-entity",
+            key="bare-property-entity-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert schema["attempt_status"] == "applied"
+    assert dry_run["attempt_status"] == "validated"
+    assert applied["attempt_status"] == "applied"
+    predicates = {predicate for _subject, predicate, _object, _graph in rdf.deltas[-1].inserts}
+    assert "<https://r004.test/resource/property/is_latest>" in predicates
+    assert "<is_latest>" not in predicates
 
 
 def test_apply_marks_projection_manifest_stale_immediately(modeling):

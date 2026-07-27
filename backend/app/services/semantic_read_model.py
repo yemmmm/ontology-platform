@@ -389,6 +389,20 @@ class SemanticReadModelService:
             value = self._cell(row, key)
             if value is not None:
                 fields[_READ_MODEL_FIELD_ALIASES.get(key, key)] = value
+        for key in ("subject", "predicate", "object"):
+            value = self._cell(row, key)
+            if value is not None:
+                fields[key] = value
+        if "object" in fields:
+            object_is_iri = self._cell_is_uri(row, "object")
+            fields["object_kind"] = "iri" if object_is_iri else "literal"
+            if not object_is_iri:
+                object_datatype = self._cell_datatype(row, "object")
+                object_language = self._cell_lang(row, "object")
+                if object_datatype is not None:
+                    fields["object_datatype"] = object_datatype
+                if object_language is not None:
+                    fields["object_language"] = object_language
         return fields
 
     @staticmethod

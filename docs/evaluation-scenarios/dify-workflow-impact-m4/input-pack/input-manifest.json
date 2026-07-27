@@ -1,0 +1,49 @@
+{
+  "manifest_version": 1,
+  "mount_policy": "copy each listed file to its mounted_path; never mount a source directory",
+  "files": [
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/m4-contract.md",
+      "mounted_path": "m4-contract.md",
+      "purpose": "sanitized M4 responsibility boundary",
+      "sha256": "63628f18667d5558b1a1d5615f84e42cc9406687ac9639301d6cabcae31c40d6"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/modeling-agent-prompt.md",
+      "mounted_path": "modeling-agent-prompt.md",
+      "purpose": "fresh Agent task and clarification protocol",
+      "sha256": "205317f072979babcdc2f3b1c76f8137f440cf17ba9035e715f0c229225f9b6b"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/business-brief.md",
+      "mounted_path": "business-brief.md",
+      "purpose": "sanitized visible business facts and material ambiguities",
+      "sha256": "70cc86d7466cf4930aad9e371e94e6dbc0bc42cbf477a7ea28d2f01012214c1e"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/platform-modeling-command-contract.md",
+      "mounted_path": "platform/modeling-command-contract.md",
+      "purpose": "generic public Modeling Batch instructions",
+      "sha256": "213c177467c135ce8374cb3916c8ced56babdb1a12a9aa37ab00b922d6deb2cc"
+    }
+  ],
+  "live_inputs": [
+    {
+      "transport": "M4 API file spool",
+      "path": "/openapi.json",
+      "purpose": "isolated public platform schema"
+    },
+    {
+      "transport": "M4 clarification file spool",
+      "response_for": "the Agent's matching eligible request only",
+      "purpose": "one user-confirmed business decision or explicit uncertainty"
+    }
+  ],
+  "forbidden": [
+    "complete requirements-v2.1.md",
+    "M1-M3 answer artifacts, runtime records, runners and acceptance specifications",
+    "baseline or variant hidden answer contracts",
+    "host responder source, host audit, host response directory or credentials",
+    "Codex histories, memories, plugins and prior project state"
+  ]
+}

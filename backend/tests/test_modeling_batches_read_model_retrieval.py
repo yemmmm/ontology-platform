@@ -25,6 +25,17 @@ class _Store:
     def query_read_model(self, query, graph_iris, timeout_seconds, limit):  # noqa: ARG002
         if "# template: entity-list" in query:
             return _Result([])
+        if "# template: statement-list" in query:
+            return _Result(
+                [
+                    {
+                        "subject": {"type": "uri", "value": "https://example.test/WorkflowB"},
+                        "predicate": {"type": "uri", "value": "https://example.test/hasContract"},
+                        "object": {"type": "uri", "value": "https://example.test/ContractV2"},
+                        "graph": {"type": "uri", "value": graph_iris[0]},
+                    }
+                ]
+            )
         if "# template: schema-summary" in query:
             # The q adapter must discard these non-matching topology rows.
             return _Result(
@@ -186,3 +197,22 @@ def test_public_entity_and_class_read_models_filter_q_and_merge_scoped_recall(
         "https://example.test/CustomerSupportWorkflow"
     ]
     assert class_body["items"][0]["label"] == "客户支持工作流"
+
+
+def test_public_ontology_facts_read_model_preserves_statement_bindings(in_memory_session) -> None:
+    settings = Settings(semantic_graph_iri_prefix="https://public-search.test/graphs")
+    ontology_id = _seed_ready_workspace(in_memory_session, settings)
+
+    response = _client(in_memory_session, settings).get(
+        f"/api/ontologies/{ontology_id}/semantic-read-models/facts"
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["model_name"] == "statement-list"
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["subject"] == "https://example.test/WorkflowB"
+    assert item["predicate"] == "https://example.test/hasContract"
+    assert item["object"] == "https://example.test/ContractV2"
+    assert item["object_kind"] == "iri"

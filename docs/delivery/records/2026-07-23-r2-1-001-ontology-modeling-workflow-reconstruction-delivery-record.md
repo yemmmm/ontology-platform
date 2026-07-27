@@ -1123,3 +1123,565 @@
 - Main-agent disposition: Accept the PASS. No plan revision or re-review is required. Stage-specific
   design and shared test plans remain mandatory when each milestone enters implementation; they are
   intentionally not created by this roadmap-only change.
+### 2026-07-27T10:00:00+08:00 — M4 delivery opened and source/current-state audit — main agent + user
+
+- User authorization: The user approved the previously presented minimal M4 route and requested that
+  implementation begin. That route reuses the M3 isolated formal Modeling Batch/validation path and adds
+  a local, auditable one-question-at-a-time clarification coordinator; it does not authorize a generic
+  platform interview API, productized workflow management, or M5/M6 work.
+- Current state: M3 is independently accepted. Its scenario package supplies a fresh-Agent launcher,
+  manifest staging and OS isolation, file-spool public API transport, response-consumption receipts,
+  Build Session closure, formal Modeling Batch application and a separate read-only consumer.
+- Target state: M4 must prove that a fresh modeling Agent can distinguish documented facts, consequential
+  ambiguities and explicit unknowns; ask only necessary single questions; and turn answers into verifiable
+  model/semantic-behavior changes without reading the hidden answer contract or prior answer artifacts.
+- Dependencies: `docs/requirements/requirements-v2.1.md` R2.1-001 M4; the accepted M3 scenario package;
+  existing generic Modeling Batch, validation, reasoning, Context Query/SPARQL and Build Session contracts.
+- Non-goals: a backend/MCP interview API, new persistent interview storage, Dify-specific platform behavior,
+  Coverage/Work Unit/review/shared-directory restoration, Pi Runtime reproduction and module expansion.
+- Worktree baseline: clean at `8df72b1` (`Plan modeling milestones M4 through M6`).
+- Known artifact paths: delivery record (this file); M4 design and shared test plan pending; expected new
+  scenario root `docs/evaluation-scenarios/dify-workflow-impact-m4/` pending functional refinement.
+- Outcome/next step: Begin one-question-at-a-time functional refinement. The first decision is whether M4
+  remains in the accepted Dify Workflow-as-Tool C -> B -> A slice or changes to another bounded domain.
+
+### 2026-07-27T10:02:00+08:00 — M4 fixed business slice — user + main agent
+
+- Decision: Reuse the accepted Dify Workflow-as-Tool `C -> B -> A` business slice for M4; do not switch
+  to a new domain.
+- Consequence: M4 can reuse the M3 source boundary, formal application path, isolation baseline and M1–M3
+  semantic regressions. New material is limited to deliberately ambiguous decisions and their withheld
+  answer contract; it must not expose existing answer-model artifacts to the modeling Agent.
+- Outcome/next step: Confirm whether the test's user role is an automated hidden-contract responder or
+  a manual operator, because that changes the repeatability and independent-acceptance contract.
+
+### 2026-07-27T10:04:00+08:00 — M4 automated user-role contract — user + main agent
+
+- Decision: Implement the user role as a deterministic automated responder backed by a host-owned hidden
+  answer contract. It returns one answer, an explicit unknown or a refusal only after the Agent submits
+  one admissible clarification request.
+- Consequence: A real human is not required during the repeatable acceptance run. The responder and hidden
+  contract remain outside the Agent mount and transcript inputs; independent tests can compare behavior
+  across answer/unknown variants without making question wording or RDF graph identity the oracle.
+- Outcome/next step: Select the small set of consequential business ambiguities to encode in the reused
+  Dify slice.
+
+### 2026-07-27T10:06:00+08:00 — M4 remaining functional refinement waived — user + main agent
+
+- User decision: The user approved the proposed first ambiguity (whether B's invocation follows C's
+  Latest Version or a pinned published Version) and explicitly delegated the remaining M4 scenario
+  decisions to the implementation team.
+- Assumed minimal contract: The hidden-answer baseline will use a dynamic Latest-Version target; independent
+  variants will exercise a pinned target. The scenario will also contain a consequential Output-contract
+  continuity decision and one necessary business decision whose answer is explicit unknown/refusal. The
+  Agent must ask only one question at a time, explain its business impact without answer/model leakage,
+  and retain an answer-to-hypothesis-to-model-to-verification chain.
+- Scope guard: Question wording, IRIs, RDF structure and model-equivalence are not acceptance oracles. The
+  responder is local to the isolated M4 experiment and no persistent platform interview feature is added
+  unless a recorded probe proves the existing formal path cannot express the contract.
+- Outcome/next step: Freeze the functional contract in the M4 design/test plan after targeted M3 reuse and
+  isolation probes.
+
+### 2026-07-27T10:09:00+08:00 — M4 reuse and isolation probes — main agent
+
+- Probe 1 — local reply isolation: A real `bubblewrap` probe bind-mounted an Agent-writable
+  `/mnt/clarification/requests` directory and then overlaid its sibling responses directory with a
+  host-owned read-only bind. Inside the namespace, requests were writable, responses were not writable,
+  and the host repository was absent. Result: PASS; M4 can add a file-spool clarification channel without
+  granting the Agent host access or credentials.
+- Probe 2 — existing platform options: `ModelingWorkflowService.record_event(...)` already supports
+  `question_asked` / `answer_recorded` state transitions, and project Interview endpoints persist answers.
+  Result: deliberately not reused. M4 only needs an isolated experiment and must not make persistent
+  interview/product workflow machinery a prerequisite; the local responder remains the current minimal
+  scope.
+- Design consequence: Create an M4-specific launcher/responder/test harness that preserves M3 formal
+  Modeling Batch and API-spool controls while adding a separate host-owned clarification spool. Do not
+  change backend, MCP, database or the accepted M3 scenario during this milestone.
+- Evidence: `docs/evaluation-scenarios/dify-workflow-impact-m3/run_autonomous_modeling.py` isolation
+  contract; `backend/app/services/modeling_workflow.py` question-event validation; successful local
+  bubblewrap overlay probe on 2026-07-27.
+
+### 2026-07-27T10:14:00+08:00 — M4 contract, design and shared test plan frozen — main agent
+
+- Functional contract: The user confirmed the Dify C -> B -> A slice and deterministic hidden responder,
+  then waived further scenario-detail decisions. Contract v1 fixes a Latest-versus-pinned target decision,
+  an Output-successor decision and one explicit-unknown missing-score decision; wording and graph identity
+  are not oracles.
+- Design: Created `docs/delivery/designs/2026-07-27-r2-1-001-m4-proactive-semantic-clarification-design.md`.
+  It keeps the responder local and host-owned, preserves API-spool/formal Modeling Batch controls, and
+  excludes backend, MCP, database, UI and M1–M3 modifications.
+- Shared test plan: Created
+  `docs/delivery/test-plans/2026-07-27-r2-1-001-m4-proactive-semantic-clarification-test-plan.md`.
+  It requires answer-variant behavior proof, explicit unknown preservation, isolation, formal application,
+  blind consumer, mutation and M1–M3 regression gates.
+- Outcome/next step: Run the mandatory plan review against the frozen contract before delegating code.
+
+### 2026-07-27T10:19:00+08:00 — M4 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two evidence-backed High findings.
+- Accepted High 1: The pinned-Version and non-successor alternatives originally passed by omitting a
+  baseline relation. Under open-world semantics that cannot distinguish an answered alternative from a
+  missing model fact. Revision: variants must return positive facts — a concrete prior C Version/current
+  target and contract, and explicit old-contract removal plus distinct new-contract addition/discontinuity.
+  Blind-consumer and mutation assertions inherit those positive gates.
+- Accepted High 2: The Agent-visible three-value category enum and three-category test made the hidden
+  decision count/checklist mechanically enumerable. Revision: remove the enum and expected count from
+  the protocol; accept only `id`, `affected_terms`, question and impact; independently match the business
+  meaning of each question to a visible-input gap and reject decoys/ineligible questions.
+- Evidence: Reviewer inspected the frozen M4 design/test plan, `AGENTS.md`, M3 launcher and shared test
+  plan. It confirmed M3's isolated staging/API-spool/receipt/Build-Session baseline and reported a local
+  M3 scenario regression of `27 passed`; it found no platform-boundary High issue with the local responder.
+- Plan impact: Revised the M4 design and shared test plan. A second plan-review round is required before
+  development handoff.
+
+### 2026-07-27T10:22:00+08:00 — M4 plan review Round 2 — plan reviewer + main agent
+
+- Result: `PASS`; no remaining evidence-backed Critical or High finding.
+- Disposition: Accept the PASS. Round 1's two accepted High revisions are verified: alternative answers
+  now require positive old-target/discontinuity facts rather than omission, and Agent-visible protocol no
+  longer enumerates hidden decision categories or count. Independent semantic-gap matching and decoy
+  rejection are explicit in the test plan.
+- Evidence: Reviewer rechecked the revised M4 design and test plan against M3's actual frozen staging,
+  temporary Codex home, external isolation, host-read-only responses, receipts, Build Session completion
+  and blind consumer. M3 regression evidence is `27 passed`. It found the M4 scenario-local responder and
+  backend/frontend/migration exclusion consistent with the platform boundary.
+- Development handoff: Freeze design
+  `docs/delivery/designs/2026-07-27-r2-1-001-m4-proactive-semantic-clarification-design.md`, shared test
+  plan `docs/delivery/test-plans/2026-07-27-r2-1-001-m4-proactive-semantic-clarification-test-plan.md`,
+  this delivery record and worktree baseline `8df72b1` plus the documented M4 design/test-plan/record
+  changes. Required developer checks are the focused M4 tests, M1/M2/M3 regressions, focused generic
+  backend tests, M4 Ruff and `git diff --check`.
+
+### 2026-07-27T10:46:00+08:00 — M4 development handoff — requirement developer
+
+- Development state: `DEVELOPMENT_READY` for a stable scenario-only implementation. New files are confined
+  to `docs/evaluation-scenarios/dify-workflow-impact-m4/`; no backend, frontend, migration or M1–M3 file
+  was changed. The package contains a host-owned fail-closed clarification responder, separate API
+  file-spool gateway, frozen manifest/preflight namespace builder, Agent prompt/contract/brief and focused
+  protocol plus positive-semantic tests.
+- Consequential implementation choices: The Agent-visible request has only ID, affected terms, question
+  and impact; no hidden area/count enum. The baseline and pinned/non-successor semantic gates require
+  positive current-target and discontinuity observations, and the missing-score branch requires unknown.
+- Developer verification: M4 focused tests `8 passed`; M1 `13 passed`; M2 `5 passed`; M3 `27 passed`;
+  focused generic backend tests `69 passed` with pre-existing deprecation warnings; M4 Ruff and
+  `git diff --check` passed. M4 `--prepare-only` returned `PREPARED` and verified that the hidden contract
+  is outside Agent mounts. Regular service and 8001/5173 health were reported healthy without restart.
+- Stable-state limitation for independent testing: The launcher currently proves preparation and protocol
+  isolation but does not itself constitute a fresh external-Agent baseline/variant formal application run.
+  The independent tester must treat this as unexecuted M4-04 through M4-12 behavior, not as a PASS, and
+  verify whether the reviewed requirement is fully implemented before acceptance.
+- Outcome/next step: Freeze the worktree and start independent testing against this state.
+
+### 2026-07-27T10:55:00+08:00 — M4 independent test Round 1 — requirement tester + main agent
+
+- Result: `FAIL`. The tester appended Round 1 to the shared M4 plan; passed protocol/regression checks
+  remain preserved there and do not satisfy the missing behavior gates.
+- Confirmed Critical M4-R1-02: `run_m4_clarification.py` accepts only `--prepare-only` and otherwise
+  exits with status 2. No formal fresh-Agent execution path starts Codex, responder/API gateway, formal
+  Modeling Batch, validation/reasoning/query, read-only consumer or baseline/variant/mutation acceptance.
+  Therefore M4-04 through M4-12 are unimplemented and unexecuted; a prepared namespace, mocked protocol
+  test or hard-coded semantic dictionary cannot prove M4 behavior. Disposition: accepted-critical.
+- Confirmed High M4-R1-01: The host responder requires every hidden-contract token, so ordinary natural
+  business questions that express the same ambiguity are returned as `not_eligible`. This contradicts the
+  frozen non-wording-oracle contract and fails M4-03. Disposition: accepted-high.
+- Low M4-R1-03: README documents unavailable `python`; `python3` works. Disposition: accepted-low and
+  include in the same repair.
+- Passed evidence: focused M4 `8`, M1 `13`, M2 `5`, M3 `27`, focused backend `69`, Ruff, diff check,
+  actual bubblewrap mount preflight and regular 8001/5173 health passed. Evidence and unexecuted gates are
+  in the shared test plan Round 1.
+- Outcome/next step: Return the two confirmed defects to the requirement developer. Reuse this test plan;
+  after a new stable development-ready handoff, retest M4-03 through M4-12 before any closure claim.
+
+### 2026-07-27T11:08:00+08:00 — M4 Round 1 repair handoff — requirement developer
+
+- Repair result: `DEVELOPMENT_READY`. The M4-only launcher now has a non-prepare formal path: verify the
+  isolated `rdf_primary` backend, start host clarification and API-spool watch services, create a temporary
+  Codex home, execute a fresh Codex process under audited bubblewrap, and retain transcript, spool hashes,
+  decision/runtime hashes and final audit. A new isolated bodyless-GET read-only consumer launcher was
+  added. The responder now accepts ordinary equivalent business questions based on terms plus question and
+  impact, with natural-language and documented-fact decoy tests. README uses `python3`.
+- Repair verification: focused M4 `10 passed`; M1 `13`; M2 `5`; M3 `27`; focused backend `69` with five
+  existing deprecation warnings; M4 Ruff, diff check and regular 8001/5173 health passed.
+- Remaining execution evidence: No external Agent baseline/variant run was performed because no isolated
+  `rdf_primary` backend was listening. The repaired launcher now reaches that preflight and returns a
+  structured `BLOCKED` response for the missing/invalid canonical-mode endpoint instead of the old
+  prepare-only hard stop. This is not an acceptance substitute.
+- Outcome/next step: Send the stable repair to the same independent tester. It must retest M4-R1-01/02,
+  append Round 2, and use the documented M3 isolated-backend procedure if available to attempt formal
+  M4-04 through M4-12.
+
+### 2026-07-27T11:18:00+08:00 — M4 independent test Round 2 — requirement tester + main agent
+
+- Result: `BLOCKED`; the tester appended Round 2 to the shared plan.
+- Confirmed fixes: M4-R1-01 is fixed — all 10 focused tests passed and three natural equivalent questions
+  received `answered`, `answered` and `uncertain` without an Agent-visible category/count checklist. M4-R1-02
+  is structurally fixed — a non-prepare invocation reaches the real isolated-backend canonical-mode
+  preflight rather than a hard-coded prepare-only stop. README uses `python3`.
+- Regression evidence: M1 `13`, M2 `5`, M3 `27`, focused backend `69`, Ruff, diff check and regular
+  8001/5173 health all passed.
+- New confirmed Critical blocker M4-R2-01: A fresh dedicated PostgreSQL database cannot migrate to head.
+  Migration `0001` creates `uq_relation_types_ontology_name_source_target`, then `0002` attempts to drop
+  nonexistent `uq_relation_types_ontology_name`, producing Alembic/PostgreSQL `UndefinedObject`. The
+  isolated `rdf_primary` backend cannot start, so real M4 baseline/variant Agent, Modeling Batch,
+  validation/reasoning/query, blind-consumer and mutation M4-04 through M4-12 remain BLOCKED and were not
+  reported as PASS.
+- Cleanup: The tester removed its uniquely owned temporary database and stopped its Oxigraph container and
+  8012/7879 listeners. The regular service was not changed.
+- Scope disposition: This is a pre-existing generic migration-chain defect outside M4's scenario-only
+  boundary. Per the reviewed design and repository guidance, do not silently patch backend/migrations in
+  M4. Obtain explicit authority for a separate generic platform migration repair, then return to this same
+  M4 shared test plan for a new formal acceptance round.
+
+### 2026-07-27T15:42:27+08:00 — M4 correction repair resumed with core-scope constraint — user + main agent
+
+- User priority: Resume M4 around the actual product goal — the modeling Agent must use its clarification
+  answers to complete the model. Do not turn the one-time ABox correction into a broad security or
+  productization project.
+- Stable starting evidence: Round 10 remains the latest independent result. Principal TBox/Shape apply
+  and the intentional invalid-instance SHACL rejection passed; the first candidate ABox failed SHACL.
+  The paused correction branch revalidated at focused M4 `66 passed`; isolated PostgreSQL migration tests
+  revalidated at `4 passed`; M4 Ruff, `git diff --check`, regular service and 8001/5173 health passed.
+- Minimal repair contract: After one qualified 2xx SHACL failure, allow one finding-driven instance-only
+  correction, require unchanged item identities/kinds/dependencies outside the corrected content, then
+  require a validated correction dry-run and exact atomic apply. Do not change Shape/schema, add retries,
+  introduce a generic audit framework, start a live Agent before offline stability, or touch M5-P0.
+- Impact evidence: GitNexus cannot resolve the untracked M4 scenario symbols and reports `UNKNOWN`; local
+  callers are narrow: `_completion_gate` is called only by `_final_audit`, and
+  `audit_request_summary` only by the M4 gateway forwarding loop. No platform/backend execution symbol is
+  in the repair scope.
+- Development handoff: A requirement developer owns only the named M4 runner, gateway, Agent contract,
+  manifest/README if required, and focused tests. The shared test plan and this record remain
+  append-only/main-agent-owned; no live Agent or isolated service is authorized in this handoff.
+
+### 2026-07-27T15:51:43+08:00 — M4 one-time ABox correction development-ready — requirement developer + main agent
+
+- Repair result: `DEVELOPMENT_READY`. The host final gate now compares the failed and corrected ABox
+  through the gateway's existing item summaries. Item IDs, command kinds and `depends_on` remain fixed;
+  at least one item must change; changed items must be named by a blocking SHACL finding; unaffected
+  items remain byte-identical; correction dry-run and apply are exact matches.
+- Agent execution contract: One fixed `runtime-record.json.instance_correction` object and one matching
+  canonical decision-log event bind the original/correction request and response hashes, sorted finding
+  fingerprints, and per-item before/after hashes. The prompt explicitly defines those item hashes as the
+  full canonical Modeling Batch item SHA-256 and defines both recorded batch IDs as request
+  `client_batch_id` values. No reusable audit framework or platform API was added.
+- Focused regressions: Added positive correction coverage and minimal negatives for changed non-finding
+  items, item ID set changes, command/dependency changes, no-op correction, missing/wrong fingerprint
+  evidence, reused batch/idempotency identity, original-candidate apply, second correction and schema
+  operations. The existing closed sequence remains authoritative.
+- Verification: Developer reproduced `66 passed`, then reported M4 `80 passed`, Ruff PASS and
+  `git diff --check` PASS. The main agent independently reran the stable state: M4 `80 passed in 0.65s`,
+  Ruff PASS and `git diff --check` PASS.
+- Scope: Changed only the M4 runner, focused tests, Agent prompt/command contract and frozen input
+  manifest. The existing gateway summary was sufficient and its bytes did not change. No M5-P0,
+  backend, frontend, migration, requirements, M1–M3 or shared-test-plan change was made by the developer.
+- Stable hashes: runner `c03f63e16efd1b7abfaa526013d77a2bb19d496cf9ed8bd06f1cd6a0e49dce34`;
+  tests `80bdefcc154950bbfe010861691646b54ab6455be1dae6a47a8f36f23cf554f6`;
+  prompt `39425830a2797d35ca5b7c4068004d3a12d20c2d12287c1ea421c6f06b1b5afc`;
+  command contract `07a30a41b2b821e893588220bc5fd872a09597f5d32a61c427056d761273171e`;
+  input manifest `e697e1268cce44e776bf1307f0f5591415ad2dfa6cbf25914bb6a8094dc22607`.
+- Outcome/next step: Freeze this state for the independent tester. Retest the correction branch offline
+  first; only a clean stable handoff may proceed to a fresh formal baseline Agent run.
+
+### 2026-07-27T15:56:00+08:00 — M4 independent offline correction test Round 11 — requirement tester + main agent
+
+- Result: `PASS for repair scope`; the tester appended Round 11 to the existing shared M4 test plan.
+  Stable hashes matched the development handoff and no implementation defect was found.
+- Independent evidence: M4 `80 passed`, correction-focused `16 passed`, M1 `13`, M2 `5`, M3 `27`,
+  focused generic semantic regressions `69`, isolated PostgreSQL migration tests `4`, M4 Ruff and
+  `git diff --check` all passed. The regular service and 8001/5173 health remained good.
+- Scope evidence: No live Agent, isolated RDF-primary runtime, variant, consumer or mutation case ran in
+  this offline round. The tester changed only the append-only M4 shared test plan and did not touch
+  product code or M5-P0.
+- Main-agent disposition: The tester's suggestion to provide a fixed valid instance payload is not
+  adopted. M4's product goal is for the autonomous Agent to produce its own ABox and use the new
+  finding-driven branch when that candidate fails; injecting a prebuilt valid answer payload would
+  weaken that acceptance. The historical Round-10 payload failure is the live case this repair must now
+  resolve.
+- Outcome/next step: Run one fresh isolated baseline with the stable correction snapshot. Do not start
+  the pinned/non-successor variant, blind consumer or mutation cases unless the baseline host final audit
+  reaches `COMPLETED`.
+
+### 2026-07-27T16:05:00+08:00 — M4 independent live baseline Round 12 and platform-blocker disposition — requirement tester + main agent
+
+- Result: `FAIL`; the tester appended Round 12. A fresh isolated database, Oxigraph and authenticated
+  RDF-primary backend were healthy. The autonomous Agent completed all three serial clarifications,
+  created its Project/Ontology/Build Session and acquired its lease without a fixed ABox or semantic
+  intervention.
+- Failure: At `+220.454s`, the first principal Shape-containing schema dry-run returned HTTP 500.
+  The Agent correctly stopped `BLOCKED`; no invalid-instance, ABox candidate/correction, validation,
+  reasoning, query, consumer or mutation step ran. The tester removed all owned resources and verified
+  regular 8001/5173 health.
+- Root cause reproduction: The exact protected request compiles URN-shaped Shape and property IDs into
+  blank-node terms such as `_:...__urn:m4:workflowKey`. RDFLib rejects the colon in that Turtle blank-node
+  label with `BadSyntax`. An isolated compiler replay found the failing Shape quads directly. It also
+  showed that bare product datatype `string` currently becomes relative `<string>` rather than the XSD
+  string IRI, which would make the applied Shape semantically wrong even after the syntax fix.
+- Scope decision: Accept M4-R12-01 as a High blocker and amend the M4 design with one minimal generic
+  platform exception. Repair only deterministic valid Shape blank-node generation and bare XSD datatype
+  normalization, with one focused Modeling Batch regression. Do not inject a fixed model, relax Shape,
+  add retries, change APIs/storage or expand security/governance.
+- Impact evidence: GitNexus reports LOW risk for `_compile_shape_node` (two direct create/update Shape
+  callers), LOW risk for `_datatype_iri` (three direct compiler callers), and LOW risk for
+  `_validate_candidate` (one direct caller and one canonical product-write API process). The preferred
+  repair stays in the compiler and does not change the canonical service contract.
+- Outcome/next step: Review this narrow platform exception against the real compiler and test plan before
+  backend implementation, then return a stable focused repair to independent testing and a new single
+  live baseline.
+
+### 2026-07-27T16:15:00+08:00 — M4 Round-12 platform-repair plan review Round 1 — plan reviewer + main agent
+
+- Review result: `REVISE`; one evidence-backed High finding, accepted-high.
+- Finding: The proposed focused regression allowed the representative principal schema dry-run to return
+  either `validated` or `validation_failed`. That could remove RDFLib `BadSyntax` while leaving M4
+  blocked, because both the Agent command contract and host final gate require this principal dry-run to
+  be `validated`.
+- Disposition and revision: Require `mode=dry_run`, `attempt_status=validated` and no blocking finding.
+  Also make explicit that deterministic blank-node mapping must not merge distinct Shape/constraint
+  identities, and bare datatype normalization is limited to recognized XSD local names while preserving
+  `xsd:*` and arbitrary absolute IRIs.
+- Scope impact: No additional API, storage, retry, runtime or canonical-service change is introduced.
+  Compiler-only repair remains the reviewed direction. A second plan-review round is required before
+  development.
+
+### 2026-07-27T16:18:00+08:00 — M4 Round-12 platform-repair plan review Round 2 — plan reviewer + main agent
+
+- Review result: `PASS`; no remaining evidence-backed Critical or High finding.
+- Verified gate: The representative principal schema regression must be fully `validated` with no
+  blocking finding; `validation_failed` is not accepted. Deterministic BNode identities must remain
+  distinct, recognized bare XSD names normalize correctly, and prefixed/absolute datatype IRIs retain
+  their meaning.
+- Development handoff: Implement only `_compile_shape_node`, `_datatype_iri` and their focused backend
+  regressions. Do not modify the canonical validation service, public APIs, storage, retry behavior,
+  Shape constraints, M4 answer semantics or M5-P0.
+
+### 2026-07-27T16:24:27+08:00 — M4-R12 compiler repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY` for the reviewed repair scope. Shape constraint property nodes now use a
+  deterministic SHA-256 blank-node identity over Shape IRI, constraint index and path ID. Accepted URN
+  values cannot inject an illegal Turtle colon, and repeated paths at distinct constraint positions do
+  not merge.
+- Datatype behavior: A fixed recognized XML Schema local-name set maps bare `string` and peers to the XSD
+  namespace. Existing `xsd:*`, arbitrary absolute IRIs and unknown bare compatibility values retain
+  their previous behavior.
+- Regression: A Modeling Batch service test submits URN class/property/Shape IDs plus bare `string` in one
+  principal dry-run and requires `mode=dry_run`, `attempt_status=validated` and no blocking finding.
+  Focused compiler tests cover valid/deterministic/distinct BNodes and datatype variants.
+- Verification: Developer and main agent independently ran the repair suite: `54 passed`; M4 remained
+  `80 passed`; changed-file Ruff and `git diff --check` passed. The service was restarted and is active;
+  8001 health returned `{"status":"ok"}` and 5173 succeeded.
+- Full-suite evidence: `cd backend && uv run pytest` was executed but has one unrelated local-environment
+  failure in `tests/test_mcp_auth.py::test_mcp_startup_requires_environment_key`. `backend/.env` contains
+  the runtime MCP key, so deleting only the process environment variable still lets `Settings()` reload
+  the key from `.env`; isolated reproduction is `1 failed, 5 passed`. No MCP/auth file is modified in
+  this repair. This remains a final full-suite blocker to report separately rather than expanding M4.
+- Stable hashes: compiler `0be7a5f375ec504dde48fea62c17348357a10c4378e3aa881da696db4443b361`;
+  Modeling Batch tests `c5073ce0d0858cc6aedb7265eadceec5fb1aefb4e0890e1b54e90cd9dca3b5ce`;
+  focused compiler tests `fad0851d1f60f0d73283a18360ca1735a28cb2798c6a3f0dc0b68f6398ce78dc`.
+- Outcome/next step: Independently verify the compiler repair and the known full-suite environment
+  failure. If the repair gate passes, run one new fresh autonomous baseline without a fixed model.
+
+### 2026-07-27T16:40:00+08:00 — M4 Round-14 baseline failure and narrow repair scope — tester + main agent
+
+- Result: Round 13 offline repair gate passed, then one fresh unsupplemented Round-14 baseline was run.
+  The Agent autonomously completed the accepted lifecycle clarification, created and applied its
+  TBox/Shapes, and obtained the expected blocking SHACL finding for the intentional invalid instance.
+- Failure: The first candidate ABox dry-run returned HTTP 500. The Agent correctly stopped `BLOCKED`
+  without retrying. Backend evidence is
+  `pyshacl.errors.ConstraintLoadError: InConstraintComponent must have at most one sh:in predicate`.
+  Thus the ABox correction branch was not reached and no later variant/consumer/mutation case started.
+- Root cause: `_compile_shape_node` serializes each `enum_values` member as a separate direct `sh:in`
+  object. SHACL requires one `sh:in` object containing an RDF list. This is a generic compiler defect on
+  the autonomous modeling path, not a clarification-transport failure.
+- Clarification defect: The exact Agent-authored output-continuity question was answerable from the
+  hidden business contract, but the recognizer also classified its impact sentence as lifecycle because
+  it contained broad B/C/published tokens. Multiple matches produced `not_eligible`. The Agent then
+  skipped both a revised continuity question and the remaining visible missing-score ambiguity before
+  modeling.
+- Scope decision: Repair enum-list compilation with deterministic, valid, constraint-distinct RDF
+  collection nodes; narrowly disambiguate the clarification recognizer; and require every ambiguity
+  literally listed in the visible brief to have an eligible consumed response before principal schema.
+  Add compiler/service and exact-request/timeline regressions. Do not inject a fixed ABox, relax Shapes,
+  add retries, reveal hidden answers, change public APIs/storage/canonical validation, touch M5, or
+  expand MCP/auth work.
+- Next gate: Obtain mandatory plan-review PASS for this narrow exception, implement it, independently
+  rerun offline gates, then permit exactly one new fresh autonomous baseline.
+
+### 2026-07-27T16:51:00+08:00 — M4 Round-14 repair plan review — plan reviewer + main agent
+
+- Review result: `PASS`; no evidence-backed Critical or High finding remains.
+- Confirmed Shape gate: Encode each multi-member enum as one `sh:in` RDF list, and prove both allowed
+  validation and structured disallowed-value rejection through the Modeling Batch service. The fixture
+  must contain at least one enum with two or more members.
+- Confirmed clarification gate: The exact Round-14 continuity question must become eligible while a
+  genuinely combined question stays fail-closed. All three visible-brief ambiguities must have unique,
+  consumed, hash-bound eligible responses in host-observed order before principal schema.
+- Scope guard: `create_shape` is the frozen live write path. General `update_shape`/`delete_shape`
+  subgraph cleanup, API/storage changes, hidden-answer disclosure, M5 and MCP/auth remain outside this
+  repair.
+- Impact evidence: GitNexus retains LOW risk for `_compile_shape_node` with only create/update Shape
+  compiler callers. The untracked M4 responder is not yet indexed; direct source inspection shows
+  `_decision_for` has one local caller in `_response_for`. No High/Critical blast radius was found.
+
+### 2026-07-27T17:02:00+08:00 — M4 Round-14 repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY` for the reviewed narrow repair. `enum_values` now compiles to exactly one
+  `sh:in` whose deterministic RDF collection is isolated by Shape, constraint and list position.
+- Behavioral regression: An Agent-equivalent schema with two multi-member enum Shapes is applied, an
+  allowed ABox dry-run is `validated`, and a disallowed enum value returns governed
+  `validation_failed`/`shacl_violation` rather than `ConstraintLoadError` or HTTP 500.
+- Clarification repair: Lifecycle recognition now requires actual invocation/current-target language.
+  The exact Round-14 output-continuity request is eligible; a truly combined lifecycle-plus-continuity
+  request remains `not_eligible`.
+- Completion gate: The prompt requires all three visible-brief ambiguities before principal schema.
+  Host audit requires one unique eligible decision fingerprint each, host-observed response ordering
+  before principal schema, exact request/response hashes and matching canonical consumption receipts.
+  An initial `not_eligible` may be revised under a new ID; duplicate eligible decisions still fail.
+- Verification: Developer and main agent independently ran the backend Shape/Modeling Batch suite
+  (**56 passed**) and M4 suite (**86 passed**). Changed-file Ruff, M4 Ruff, manifest source hashes and
+  `git diff --check` passed. No live Agent, full suite or service restart was run at this development
+  stage.
+- Frozen input hashes: manifest
+  `d1482134037c6f95928e53556680085293ea3d29c0513cff40374c53d74bc0e1`;
+  modeling prompt `b428b9a23c29ef42bd5cfa0c70610715c07403a63f4a526b43af1953df3a4de7`.
+- Next step: Independent tester reruns the complete offline repair gate. Only on PASS may one fresh,
+  unsupplemented autonomous baseline run; variant/consumer/mutation remain gated on `COMPLETED`.
+
+### 2026-07-27T17:09:00+08:00 — M4 Round-15 PASS and Round-16 resource-ID failure — tester + main agent
+
+- Round 15: Independent offline repair gate passed: compiler/Modeling Batch/R12/stage2 **87**, M4 **86**,
+  M1/M2/M3 **13/5/27**, focused semantic **18**, and migrations **4** all passed. Ruff, manifest, diff,
+  service restart and regular 8001/5173 health passed. The unrelated MCP `.env` test remains the known
+  full-suite environment failure and was not changed.
+- Round 16 clarification result: `PASS`. The Agent asked and consumed all three visible business
+  ambiguities serially (`answered`, `answered`, `uncertain`) before platform setup. The Round-14
+  continuity misclassification and missing-question behavior did not recur.
+- Round 16 terminal result: `BLOCKED` before Modeling Batch. Project, Ontology and Build Session creation
+  succeeded, but the lease request path used the workspace-context response hash as `{session_id}` and
+  returned 404 `build_session_not_found`. A host-side GET of the actual created session returned 200.
+- Root cause: The Agent's Bash receipt helper assigned response SHA to global variable `s`, overwriting
+  the outer session-ID variable. This is local helper state corruption, not database loss or platform
+  lease failure. No schema/ABox Batch, variant, consumer or mutation ran.
+- Scope decision: Add only visible input rules to persist returned resource IDs, rebuild scoped paths
+  from runtime record just in time, use Bash `local` scratch variables and assert ID equality before
+  atomic publication. Add prompt/manifest regressions; do not add retries, change APIs/database/lease,
+  inject a model, touch M5 or expand security work.
+- Cleanup: All Round-16 owned resources were removed; 8012/7879 had no listener and regular 8001/5173
+  remained healthy.
+
+### 2026-07-27T17:14:00+08:00 — M4 Round-16 resource-ID repair plan review — plan reviewer + main agent
+
+- Review result: `PASS`; no evidence-backed Critical or High finding remains.
+- Confirmed root cause and scope: The repair makes persisted runtime IDs the authoritative source for
+  every scoped path, adds just-in-time reconstruction and pre-publication equality checks, and localizes
+  helper scratch variables. It is not limited to the accidental name `s`.
+- Acceptance evidence: The next baseline must compare the lease path ID against the host-owned
+  create-session response body's `id`, not merely against Agent-authored runtime state.
+- Test requirement: Freeze the complete Project/Ontology/Build Session scoped-path rule plus manifest
+  hashes; a test that only searches for the keyword `local` is insufficient.
+- Scope guard: No platform/API/database/lease retry, generalized security framework, fixed model or M5
+  work is introduced.
+
+### 2026-07-27T17:19:00+08:00 — M4 Round-16 resource-ID repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. Prompt and generic command contract now require immediate atomic
+  persistence of Project/Ontology/Build Session IDs under runtime resource state; every scoped path is
+  rebuilt from that state immediately before publication.
+- Execution guard: Bash helper scratch variables must be function-local. Before atomic publication the
+  Agent compares every scoped path ID with the persisted resource ID; mismatch is corrected locally or
+  terminates `BLOCKED` and is never forwarded.
+- Regression: The M4 suite freezes the full set of Project child-create, Ontology context/lease/batch,
+  and Build Session GET/checkpoint/complete/final scoped-path rules plus all Agent-visible manifest
+  source hashes. The runner change is only the necessary frozen-manifest constant synchronization.
+- Verification: Developer and main agent independently ran M4 **88 passed**; M4 Ruff, manifest source
+  hashes and `git diff --check` passed. No live Agent ran during development.
+- Frozen hashes: prompt
+  `205317f072979babcdc2f3b1c76f8137f440cf17ba9035e715f0c229225f9b6b`; contract
+  `dfdb112ca977bcaf0da69396206bd1860271e41cd460c607a165ae703247ca48`; manifest
+  `a71c13b7ae360e04c79a5f147cc0aa9a2500ed3d570274ab9737fc3468185aa4`.
+- Next step: Independent offline verification, then one new fresh autonomous baseline only on PASS.
+
+### 2026-07-27T17:27:00+08:00 — M4 Round-17 PASS and Round-18 Unicode request rejection — tester + main agent
+
+- Round 17: Independent resource-ID offline gate passed. M4 **88**, core compiler/Modeling Batch **87**,
+  M1/M2/M3 **13/5/27**, focused semantic **18**, and migrations **4** passed with Ruff, manifest, diff
+  and regular health checks.
+- Round 18: The Agent published only the first lifecycle clarification and correctly did not create
+  platform resources while waiting. The responder rejected the request as non-canonical and therefore
+  produced no response.
+- Root cause: The sorted compact request contained a typographic apostrophe encoded by standard Python
+  `json.dumps` as `\u2019` (`ensure_ascii=True`). The responder recomputed equivalent JSON with the
+  direct UTF-8 character (`ensure_ascii=False`) and rejected the raw-byte mismatch. The Agent's own
+  standard-Python canonical check passed, confirming a serialization-style interoperability gap rather
+  than malformed business content.
+- Scope decision: Accept both sorted compact direct-UTF-8 and JSON-escaped Unicode request renderings,
+  normalize them to one canonical byte form/hash, and retain all other strict parsing checks. Add paired
+  positive and boundary-negative tests. Do not change semantic eligibility, answers, platform APIs,
+  retries, credentials, ontology payloads, M5 or surrounding security.
+
+### 2026-07-27T17:33:00+08:00 — M4 Round-18 Unicode repair plan review — plan reviewer + main agent
+
+- Review result: `PASS`; no evidence-backed Critical or High finding remains.
+- Exact boundary: After stripping only the existing optional single line ending, raw bytes must equal
+  one of two precise sorted/compact re-encodings of the parsed object (`ensure_ascii=False` or `True`).
+  Arbitrary parseable JSON is not accepted.
+- Normalization: Both accepted forms return the direct-UTF-8 canonical bytes and canonical hash while
+  retaining distinct raw hashes in host audit.
+- Failure behavior: Unsorted/whitespace/duplicate/envelope/trailing/malformed inputs remain rejected.
+  An unmatched Unicode surrogate must become fail-closed `PolicyError`, not crash the responder.
+- Scope guard: Parser/tests only; no matcher, hidden answer, response, platform API, retry, ontology,
+  M5 or surrounding security expansion.
+
+### 2026-07-27T17:37:00+08:00 — M4 Round-18 Unicode repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. The clarification parser accepts only the two reviewed sorted/compact
+  Unicode encodings after the existing optional line-ending strip and returns direct-UTF8 canonical
+  bytes for both.
+- Evidence behavior: Direct and escaped U+2019 requests parse identically and share the canonical hash,
+  while their distinct raw request hashes remain in the responder audit.
+- Failure behavior: Duplicate keys, non-canonical ordering/whitespace, malformed JSON/UTF-8, unsupported
+  suffixes and unmatched surrogates remain fail-closed; Unicode encoding failure becomes `PolicyError`.
+- Verification: Developer and main agent independently ran M4 **92 passed**; M4 Ruff and
+  `git diff --check` passed. No live Agent ran during development.
+- Stable hashes: responder
+  `83801a1f83a2cae53b6fd02baf45ea567b76d4de4965f7595ea90ce989c74b8b`;
+  tests `fd66f31f197ad6a982e65286766678e92dd5afa071b7241093bfe1ad1df86edc`.
+- Next step: Independent offline verification, then one fresh baseline only on PASS.
+
+### 2026-07-27T20:06:03+08:00 — M4 proactive semantic clarification accepted — independent tester + main agent
+
+- Result: `PASS`. R2.1-001 M4 is complete and independently accepted. The modeling Agent discovered and
+  serially asked all three consequential business questions, retained the unconfirmed missing-score
+  behavior as an explicit gap, and used the formal Modeling Batch, SHACL validation, apply, reasoning,
+  query, checkpoint and Build Session path.
+- Correction behavior: The host permits at most one ABox-only correction after a SHACL-attributed
+  candidate failure. The correction cannot change Shape/schema, item identity, command kind, dependency
+  topology or non-finding items. Round 24 exercised the real correction branch through successful
+  corrected dry-run; the platform compiler repairs for deterministic Shape nodes, SHACL lists,
+  datatypes and bare entity-property IRIs are covered at compiler and Modeling Batch service levels.
+- Applied semantic result: The fresh withheld Round-26 model completed server-side and independently
+  returned the concrete pinned target `C Published Version 1`, B contract `quality_score:number`,
+  explicit removal of that contract, distinct addition of `quality_rating:number`, discontinuity, and
+  the unresolved missing-score gap. These are positive modeled facts, not absence or decision-log-only
+  assertions.
+- Public consumption repair: The generic `statement-list`/Ontology `facts` projection now preserves
+  `subject`, `predicate`, `object`, object IRI/literal kind and literal datatype/language metadata.
+  The blind consumer discovers the exact scoped facts URL from `modeling-context` and submits an exact
+  three-observation record whose receipts bind the host-audited semantic response.
+- Independent Rounds 29–30: Public facts returned 214 complete statements. The one fresh read-only
+  consumer finished `COMPLETED` / `CONSUMER_READY` with no validation errors and independently reported
+  the pinned target/contract, discontinuity and explicit unknown gap. Its gateway forwarded only
+  `GET` modeling-context and the returned entities/facts URLs; no model write or retry occurred.
+- Verification: M4 focused **121 passed**; public facts plus M4 **146 passed**; M1 **13**, M2 **5**,
+  M3 **27**, relevant compiler/Modeling Batch/semantic suites and Ruff/diff checks passed. Full backend
+  collected 818 tests and had one pre-existing environment failure,
+  `tests/test_mcp_auth.py::test_mcp_startup_requires_environment_key`, because the checked-out `.env`
+  reloads the removed process key; the precise exclusion run passed **807**, skipped **10** and
+  deselected **1**.
+- Scope disposition: The original test plan's extra remove/sentinel/decoy mutation-hardening case was
+  not promoted into the current completion gate. The requirement's behavior-change condition is already
+  established by positive baseline/withheld semantic differences, independent tester queries and the
+  fresh blind consumer. Per the user-directed core scope, no additional anti-cheating mutation harness,
+  generalized security framework or M5 change was added.
+- Runtime closure: Round 31 removed only the owned `8013` backend, Round-26 Oxigraph container and
+  `m4_r26_20260727_184806` database. Evidence roots remain retained. The normal service is active;
+  `:8001/api/health` and `:5173/` are healthy, with no owned `8013`/`7879` listener remaining.

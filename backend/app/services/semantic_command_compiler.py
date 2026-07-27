@@ -9,6 +9,7 @@ pipeline.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -74,6 +75,13 @@ def _iri_term(iri: str) -> str:
     return f"<{iri}>"
 
 
+def _property_iri(property_key: object, ns: SemanticNamespace) -> str:
+    """Resolve a property payload key without emitting a relative RDF predicate."""
+    if not isinstance(property_key, str) or not property_key:
+        raise InvalidCommandPayload("properties keys must be non-empty strings")
+    return property_key if ":" in property_key else str(ns.resource("property", property_key))
+
+
 def _literal_term(value: Any) -> str:
     if isinstance(value, bool):
         return f'"{str(value).lower()}"^^<http://www.w3.org/2001/XMLSchema#boolean>'
@@ -92,15 +100,46 @@ def _object_term(value: Any, *, is_iri: bool = False) -> str:
 
 
 _XSD_PREFIX = "http://www.w3.org/2001/XMLSchema#"
+_XSD_BARE_LOCAL_NAMES = frozenset(
+    {
+        "anyURI",
+        "base64Binary",
+        "boolean",
+        "byte",
+        "date",
+        "dateTime",
+        "decimal",
+        "double",
+        "float",
+        "hexBinary",
+        "int",
+        "integer",
+        "long",
+        "negativeInteger",
+        "nonNegativeInteger",
+        "nonPositiveInteger",
+        "positiveInteger",
+        "short",
+        "string",
+        "time",
+        "unsignedByte",
+        "unsignedInt",
+        "unsignedLong",
+        "unsignedShort",
+    }
+)
 
 
 def _datatype_iri(value: str) -> str:
     """Normalize a datatype value to a full IRI string (without angle brackets).
 
-    Accepts ``xsd:string`` style prefixes or full IRIs.
+    Accepts ``xsd:string`` style prefixes, recognized bare XML Schema local
+    names, or full IRIs. Unknown bare values remain unchanged for compatibility.
     """
     if value.startswith("xsd:"):
         return f"{_XSD_PREFIX}{value[4:]}"
+    if value in _XSD_BARE_LOCAL_NAMES:
+        return f"{_XSD_PREFIX}{value}"
     return value
 
 
@@ -809,12 +848,14 @@ def _compile_shape_node(
         ),
         (shape_term, "<http://www.w3.org/ns/shacl#targetClass>", f"<{class_iri}>", graph_iri),
     ]
-    for constraint in constraints:
+    for index, constraint in enumerate(constraints):
         path_id = _required(constraint, "path_id")
-        property_term = "?b"  # placeholder, replaced below per constraint
-        # Use a stable BNode-style label by index for readability of inspection;
-        # the canonical-write service persists these as blank nodes.
-        property_term = f"_:{shape_iri.split('/')[-1]}__{path_id}"
+        identity = json.dumps(
+            {"constraint_index": index, "path_id": path_id, "shape_iri": shape_iri},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        property_term = f"_:shape_{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
         quads.append(
             (shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri)
         )
@@ -872,14 +913,40 @@ def _compile_shape_node(
                 )
             )
         if "enum_values" in constraint:
-            for value in constraint["enum_values"]:
-                quads.append(
-                    (
-                        property_term,
-                        "<http://www.w3.org/ns/shacl#in>",
-                        _literal_term(value),
-                        graph_iri,
-                    )
+            enum_values = constraint["enum_values"]
+            list_nodes = [
+                f"_:list_{hashlib.sha256(f'{identity}:enum:{position}'.encode('utf-8')).hexdigest()}"
+                for position in range(len(enum_values))
+            ]
+            quads.append(
+                (
+                    property_term,
+                    "<http://www.w3.org/ns/shacl#in>",
+                    list_nodes[0] if list_nodes else "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>",
+                    graph_iri,
+                )
+            )
+            for position, value in enumerate(enum_values):
+                next_node = (
+                    list_nodes[position + 1]
+                    if position + 1 < len(list_nodes)
+                    else "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>"
+                )
+                quads.extend(
+                    [
+                        (
+                            list_nodes[position],
+                            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>",
+                            _literal_term(value),
+                            graph_iri,
+                        ),
+                        (
+                            list_nodes[position],
+                            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>",
+                            next_node,
+                            graph_iri,
+                        ),
+                    ]
                 )
     return quads
 
@@ -1214,7 +1281,8 @@ def compile_create_entity(
                 graph_iri,
             )
         )
-    for prop_iri, value in properties.items():
+    for property_key, value in properties.items():
+        prop_iri = _property_iri(property_key, ns)
         if value is None:
             continue
         insert_quads.append((f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri))
@@ -1285,7 +1353,8 @@ def compile_update_entity(
                 )
             )
     if properties is not None:
-        for prop_iri, value in properties.items():
+        for property_key, value in properties.items():
+            prop_iri = _property_iri(property_key, ns)
             deletes.append((entity_term, f"<{prop_iri}>", "?o", graph_iri))
             if value is None:
                 continue

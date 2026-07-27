@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import Settings
-from app.services.semantic_command_compiler import compile_command
+from app.services.semantic_command_compiler import InvalidCommandPayload, compile_command
 from app.services.semantic_export import namespace_from_settings
 
 
@@ -345,6 +345,74 @@ def test_update_entity_replaces_label_aliases_and_properties():
     prop_pred = "<http://op.local/ns/property/email>"
     assert (entity_term, prop_pred, "?o", graph_iri) in compiled.delta.deletes
     assert (entity_term, prop_pred, '"alice2@example.com"', graph_iri) in compiled.delta.inserts
+
+
+def test_entity_property_keys_expand_bare_ids_and_preserve_explicit_iris():
+    create = compile_command(
+        "create_entity",
+        {
+            "ontology_id": "ont-1",
+            "entity_id": "entity-1",
+            "class_iri_or_legacy_id": "class-1",
+            "label": "Alice",
+            "properties": {
+                "is_latest": True,
+                "http://op.local/ns/property/email": "alice@example.com",
+            },
+        },
+        _settings(),
+    )
+    update = compile_command(
+        "update_entity",
+        {
+            "ontology_id": "ont-1",
+            "entity_id": "entity-1",
+            "properties": {
+                "is_latest": False,
+                "http://op.local/ns/property/email": None,
+            },
+        },
+        _settings(),
+    )
+    graph_iri = _data_graph_iri("ont-1")
+    entity_term = f"<{_entity_iri('entity-1')}>"
+    bare_predicate = "<http://op.local/ns/property/is_latest>"
+    explicit_predicate = "<http://op.local/ns/property/email>"
+
+    assert (entity_term, bare_predicate, '"true"^^<http://www.w3.org/2001/XMLSchema#boolean>', graph_iri) in create.delta.inserts
+    assert (entity_term, explicit_predicate, '"alice@example.com"', graph_iri) in create.delta.inserts
+    assert (entity_term, bare_predicate, "?o", graph_iri) in update.delta.deletes
+    assert (entity_term, bare_predicate, '"false"^^<http://www.w3.org/2001/XMLSchema#boolean>', graph_iri) in update.delta.inserts
+    assert (entity_term, explicit_predicate, "?o", graph_iri) in update.delta.deletes
+    assert all(predicate != "<is_latest>" for _, predicate, _, _ in create.delta.inserts)
+    assert all(predicate != "<is_latest>" for _, predicate, _, _ in update.delta.deletes)
+
+
+@pytest.mark.parametrize(
+    ("command_kind", "payload"),
+    [
+        (
+            "create_entity",
+            {
+                "ontology_id": "ont-1",
+                "class_iri_or_legacy_id": "class-1",
+                "label": "Alice",
+                "properties": {"": None},
+            },
+        ),
+        (
+            "update_entity",
+            {
+                "ontology_id": "ont-1",
+                "entity_id": "entity-1",
+                "properties": {1: "invalid"},
+            },
+        ),
+    ],
+)
+def test_entity_property_keys_must_be_non_empty_strings(command_kind, payload):
+    with pytest.raises(InvalidCommandPayload, match="properties keys must be non-empty strings"):
+        compile_command(command_kind, payload, _settings())
 
 
 def test_delete_entity_cascades_to_relations():

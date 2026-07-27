@@ -235,6 +235,46 @@ def test_class_topology_without_source_graphs_returns_empty_without_invalid_spar
     assert store.last_query is None
 
 
+def test_statement_list_preserves_predicate_object_and_literal_metadata(in_memory_session) -> None:
+    _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
+    store = FakeStore(
+        rows_by_marker={
+            "statement-list": [
+                {
+                    "subject": {"type": "uri", "value": f"{PREFIX}ns/workflow/B"},
+                    "predicate": {"type": "uri", "value": f"{PREFIX}ns/property/hasVersion"},
+                    "object": {
+                        "type": "literal",
+                        "value": "2.0",
+                        "datatype": "http://www.w3.org/2001/XMLSchema#string",
+                        "xml:lang": "en",
+                    },
+                    "graph": {"type": "uri", "value": DATA_GRAPH},
+                },
+                {
+                    "subject": {"type": "uri", "value": f"{PREFIX}ns/workflow/B"},
+                    "predicate": {"type": "uri", "value": f"{PREFIX}ns/property/invokes"},
+                    "object": {"type": "uri", "value": f"{PREFIX}ns/workflow/C"},
+                    "graph": {"type": "uri", "value": DATA_GRAPH},
+                },
+            ]
+        }
+    )
+    body = _read_model(_client(store, in_memory_session), "statement-list")
+
+    literal, iri = body["items"]
+    assert literal["subject"] == f"{PREFIX}ns/workflow/B"
+    assert literal["predicate"] == f"{PREFIX}ns/property/hasVersion"
+    assert literal["object"] == "2.0"
+    assert literal["object_kind"] == "literal"
+    assert literal["object_datatype"] == "http://www.w3.org/2001/XMLSchema#string"
+    assert literal["object_language"] == "en"
+    assert iri["object"] == f"{PREFIX}ns/workflow/C"
+    assert iri["object_kind"] == "iri"
+    assert "object_datatype" not in iri
+    assert "object_language" not in iri
+
+
 def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None:
     _seed_graph_set(in_memory_session, [(ONTOLOGY_GRAPH, "asserted_ontology")])
     store = FakeStore(
