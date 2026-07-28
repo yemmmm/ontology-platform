@@ -2,7 +2,7 @@
 
 ## 当前定位
 
-Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + ontology-builder Skill 负责读取
+Ontology Platform 是面向外部 Agent 的本地语义平台。外部 Agent + ontology-modeling Skill 负责读取
 资料、澄清需求、提取知识和做领域建模判断；平台负责：
 
 - Project、Ontology 和默认语义工作区；

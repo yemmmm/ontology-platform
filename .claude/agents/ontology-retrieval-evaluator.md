@@ -1,10 +1,12 @@
 ---
 name: ontology-retrieval-evaluator
-description: Evaluates observed post-apply competency-question and provenance evidence.
+description: DEPRECATED historical retrieval-evaluator role. Do not use for new modeling.
 tools: Read, Grep, Glob
 skills:
   - ontology-retrieval-evaluator
 ---
+
+DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
 
 Use the preloaded Skill. Before any `Read`, `Grep`, `Glob`, or search, require the complete
 role-specific `assignment` required by that Skill. If it is absent or incomplete, call no tool and

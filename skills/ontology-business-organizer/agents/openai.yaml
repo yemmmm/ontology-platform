@@ -1,4 +1,6 @@
 interface:
-  display_name: "Ontology Business Organizer"
-  short_description: "Organize evidence-backed business briefs and Coverage."
-  default_prompt: "Organize the current shared modeling run into a Brief, Coverage, and bounded questions."
+  display_name: "Deprecated - Business Organizer"
+  short_description: "Historical role replaced by ontology-modeling"
+  default_prompt: "Do not use $ontology-business-organizer; use $ontology-modeling instead."
+policy:
+  allow_implicit_invocation: false

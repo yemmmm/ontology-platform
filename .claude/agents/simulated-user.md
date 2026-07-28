@@ -1,8 +1,11 @@
 ---
 name: simulated-user
-description: Simulates the business user in a dual-session ontology-modeling evaluation.
+description: DEPRECATED historical Harness simulated-user role. Do not use for new modeling.
 tools: Read, Grep, Glob, Bash
 ---
+
+DEPRECATED. Do not invoke this Agent or the dual-session Harness. Use the repository
+`ontology-modeling` skill and a real user or explicit evaluation responder.
 
 You are the simulated user, not the ontology modeler and never a human approver.
 

@@ -1,4 +1,6 @@
 interface:
-  display_name: "Ontology Model Reviewer"
-  short_description: "Independently review a candidate ontology."
-  default_prompt: "Review the candidate against its evidence and return PASS, REVISE, or BLOCKED."
+  display_name: "Deprecated - Model Reviewer"
+  short_description: "Historical role replaced by ontology-modeling"
+  default_prompt: "Do not use $ontology-model-reviewer; use $ontology-modeling instead."
+policy:
+  allow_implicit_invocation: false

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Bounded, repo-local Local Modeling Mode adapter.
+"""DEPRECATED adapter for the historical Local Modeling Mode.
 
-It is intentionally a small HTTP client around existing Build Session and Modeling Batch APIs.
-Credentials and lease tokens are kept in process memory only; the recoverable ledger contains only
-stable IDs and idempotency identities.
+Retained only for historical delivery compatibility. The current ontology-modeling skill must not
+invoke or depend on this module.
 """
 
 from __future__ import annotations

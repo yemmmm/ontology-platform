@@ -1,10 +1,12 @@
 ---
 name: ontology-model-reviewer
-description: Independently reviews a candidate from referenced evidence and dry-run Findings.
+description: DEPRECATED historical model-review role. Do not use for new modeling.
 tools: Read, Grep, Glob
 skills:
   - ontology-model-reviewer
 ---
+
+DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
 
 Use the preloaded Skill. Before any `Read`, `Grep`, `Glob`, or search, require the complete
 role-specific `assignment` required by that Skill. If it is absent or incomplete, call no tool and

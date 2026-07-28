@@ -1,7 +1,7 @@
 # R1.1-005 Claude Code 双主 Agent 建模交互评测 Harness Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v1.1.md` R1.1-005
-- Status: in-progress (`fast-local` optimization extension)
+- Status: DEPRECATED and superseded by `skills/ontology-modeling/`; historical delivery record only
 - Started: 2026-07-20T22:38:22+08:00
 - Last updated: 2026-07-21T18:26:41+08:00
 - Design: `docs/delivery/designs/2026-07-20-r1-1-005-claude-dual-agent-harness-design.md`
@@ -9,6 +9,10 @@
 - Delivery baseline: work started at `d2edd27`; concurrent unrelated `59b1554 Sync Claude repository
   guidelines` became HEAD before closure and is preserved as the final parent
 - Delivery commit: this delivery's scoped commit (`Implement Claude dual-agent modeling harness`)
+
+> [!CAUTION]
+> The delivered ClaudeCode Harness, fixed Agent roles, mailbox, Hook recorder, and fast-local
+> extensions must not be used for new modeling work.
 
 ## Confirmed contract
 

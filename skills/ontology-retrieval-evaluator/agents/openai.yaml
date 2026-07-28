@@ -1,4 +1,6 @@
 interface:
-  display_name: "Ontology Retrieval Evaluator"
-  short_description: "Evaluate applied ontology retrieval evidence."
-  default_prompt: "Evaluate the accepted questions from observed platform results and return structured gaps."
+  display_name: "Deprecated - Retrieval Evaluator"
+  short_description: "Historical role replaced by ontology-modeling"
+  default_prompt: "Do not use $ontology-retrieval-evaluator; use $ontology-modeling instead."
+policy:
+  allow_implicit_invocation: false

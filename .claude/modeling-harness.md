@@ -1,5 +1,10 @@
 # Claude Code dual-session modeling Harness
 
+> [!CAUTION]
+> **DEPRECATED.** The two-top-level-session Harness, mailbox, fixed Agent roles, Hook recorder, and
+> fast-local launcher are historical only. Do not run them for new modeling work. Use
+> [`skills/ontology-modeling`](../skills/ontology-modeling/SKILL.md).
+
 This runbook launches two independent top-level Claude Code sessions: one simulated user and one
 ontology modeling lead. They share a repo-local run and exchange visible messages through an
 append-only mailbox. The modeler may start fresh extraction, analysis, and review subagents inside

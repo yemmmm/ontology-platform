@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Reliable, bounded handoff for ontology-builder modeler output.
+"""DEPRECATED handoff for historical ontology-builder modeler output.
 
-The platform remains authoritative after persistence.  This module only owns the
-credential-free, pre-persistence spool described by R1.1-003.
+Retained only for historical delivery compatibility. The current ontology-modeling skill must not
+invoke or depend on this module.
 """
 
 from __future__ import annotations

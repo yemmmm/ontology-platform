@@ -2,13 +2,18 @@
 
 - Requirement: `docs/requirements/requirements-v1.1.md` R1.1-005
 - Contract frozen: 2026-07-20
-- Status: implemented; plan review Round 2 PASS; independent test Round 2 PASS
+- Status: DEPRECATED and superseded by `skills/ontology-modeling/`; historical implementation
+  evidence only
 - Delivery record:
   `docs/delivery/records/2026-07-20-r1-1-005-claude-dual-agent-harness-delivery-record.md`
 - Shared test plan:
   `docs/delivery/test-plans/2026-07-20-r1-1-005-claude-dual-agent-harness-test-plan.md`
 
 ## Goal and non-goals
+
+> [!CAUTION]
+> This design no longer defines the current modeling workflow. Do not reactivate its ClaudeCode
+> dual-session Harness, mailbox, Hook recorder, or fixed role topology.
 
 Provide a repo-local experiment Harness in which two independently launched Claude Code top-level
 sessions simulate the user and ontology modeler. The modeler can invoke fresh extraction, analysis,

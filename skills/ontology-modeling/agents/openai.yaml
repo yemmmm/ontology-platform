@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ontology Modeling"
+  short_description: "Discover semantic gaps and build validated ontologies"
+  default_prompt: "Use $ontology-modeling to analyze the source material, clarify consequential semantic gaps, and build a validated ontology through the platform."

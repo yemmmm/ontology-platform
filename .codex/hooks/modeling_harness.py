@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Repo-local Codex lifecycle recorder for ontology-builder sessions.
+"""DEPRECATED repo-local recorder for the historical ontology-builder Harness.
 
-The runner deliberately uses only the Python standard library. Hook failures never
-block modeling, while activation and summary isolation fail closed.
+Retained only to preserve historical deliveries. The current ontology-modeling skill
+must not activate or depend on this module.
 """
 
 from __future__ import annotations

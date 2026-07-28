@@ -1,5 +1,9 @@
 # Local/Formal modeling Profiles
 
+> [!CAUTION]
+> **DEPRECATED.** These profiles, adapters, shared-directory roles, and launcher instructions are
+> historical only. Use [`skills/ontology-modeling`](../skills/ontology-modeling/SKILL.md).
+
 At the start, the main Agent reports `execution_profile=local` for ordinary modeling or
 `execution_profile=formal` for formal delivery/full-chain acceptance. `strict_eval` composes with
 Formal; `fast_local` remains a separate simulated-user evaluation mechanism.

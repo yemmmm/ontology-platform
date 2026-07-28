@@ -1,4 +1,6 @@
 interface:
-  display_name: "Ontology Builder"
-  short_description: "Run staged, evidence-backed ontology modeling"
-  default_prompt: "Use $ontology-builder to recover durable workflow state, organize business knowledge, model and independently review a vertical slice, then apply and verify it safely."
+  display_name: "Deprecated - Ontology Builder"
+  short_description: "Historical skill replaced by ontology-modeling"
+  default_prompt: "$ontology-builder is deprecated. Use $ontology-modeling for all new ontology work."
+policy:
+  allow_implicit_invocation: false

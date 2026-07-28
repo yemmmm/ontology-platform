@@ -38,12 +38,6 @@ jobs:
       - name: Test documentation contracts
         working-directory: backend
         run: uv run pytest tests/test_documentation_sync.py -q
-      - name: Validate ontology-builder structure
+      - name: Validate current ontology-modeling skill
         working-directory: backend
-        run: uv run python ../skills/ontology-builder/evals/validate_skill.py
-      - name: Validate ontology-builder evals and registry dependencies
-        working-directory: backend
-        run: >-
-          uv run python ../skills/ontology-builder/evals/run_evals.py
-          --traces ../skills/ontology-builder/evals/example-traces.json
-          --check-registry
+        run: uv run python ../skills/ontology-modeling/evals/validate_skill.py

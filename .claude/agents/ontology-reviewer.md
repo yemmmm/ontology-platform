@@ -1,8 +1,10 @@
 ---
 name: ontology-reviewer
-description: Independently reviews a versioned ontology proposal and returns a quality verdict.
+description: DEPRECATED historical Harness review role. Do not use for new modeling.
 tools: Read, Grep, Glob
 ---
+
+DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
 
 Review only the explicit source/extraction version, competency questions, proposal version, and
 validation evidence supplied by the modeling lead. Do not reuse the analyst's conversational

@@ -15,7 +15,7 @@ backend/app/mcp/          # FastMCP server and current tools
 backend/app/repositories/ # PostgreSQL and RDF/Oxigraph persistence
 backend/app/services/     # validation, modeling, query, and lineage workflows
 frontend/src/             # React/Vite operational UI
-skills/ontology-builder/  # installable external-agent workflow
+skills/ontology-modeling/ # current installable external-agent workflow
 scripts/                  # local startup and documentation synchronization
 docs/                     # requirements, contracts, architecture, and operations
 ```
@@ -136,18 +136,21 @@ backend 从进程工作目录的 `.env` 读取配置；仓库命令以 `backend/
 `BACKEND_HOST/PORT` 和 `FRONTEND_HOST/PORT`。这些变量控制启动脚本，不会自动替换已有
 `backend/.env` 的 `DATABASE_URL`。
 
-## Install ontology-builder in Codex
+## Install ontology-modeling in Codex
 
-仓库 Skill 已按当前 R-001 至 R-007 协议维护。用 symlink 安装可让仓库更新立即生效：
+仓库 Skill 已按当前建模质量流程维护。用 symlink 安装可让仓库更新立即生效：
 
 ```bash
 mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-ln -sfn "$PWD/skills/ontology-builder" "${CODEX_HOME:-$HOME/.codex}/skills/ontology-builder"
+ln -sfn "$PWD/skills/ontology-modeling" "${CODEX_HOME:-$HOME/.codex}/skills/ontology-modeling"
 ```
 
-按 [MCP 文档](docs/reference/mcp.md) 配置并重启 Codex 后调用 `$ontology-builder`。Skill 使用 Build
-Context、Build Session、Evidence Reference、Modeling Batch、Context Query 和 lineage；不会调用已
-删除的文件上传、Proposal/Review/Publish 或 Catalog/Connector 工具。
+按 [MCP 文档](docs/reference/mcp.md) 配置并重启 Codex 后调用 `$ontology-modeling`。Skill 由一个
+建模 Agent 负责资料理解、语义缺口发现、逐问澄清和模型 payload；平台负责 Build Session、
+Modeling Batch、Shape、validation、reasoning、Context Query 和 lineage。
+
+旧 `ontology-builder`、四个固定角色 Skill，以及 `.codex`/`.claude` 下的双 Claude session
+Harness 已整体过期，仅保留为历史证据，不得用于新的建模任务。
 
 ## Documentation synchronization
 
@@ -159,7 +162,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 uv run python ../scripts/sync-interface-docs.py --check
 ```
 
-CI 会校验生成清单、关键文档现状和 ontology-builder 的 registry 依赖。
+CI 会校验生成清单、关键文档现状、新 `ontology-modeling` Skill 和旧资产的过期边界。
 
 ## Documentation
 

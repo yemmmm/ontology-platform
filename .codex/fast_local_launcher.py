@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Prepare and optionally launch a local two-session Claude modeling experiment."""
+"""DEPRECATED launcher for the historical two-session Claude modeling Harness.
+
+Retained only to preserve historical deliveries. Do not use for new ontology-modeling runs.
+"""
 
 from __future__ import annotations
 

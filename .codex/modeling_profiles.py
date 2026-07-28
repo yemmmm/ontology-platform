@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Small, deterministic routing rules for R1.1-007 execution Profiles.
+"""DEPRECATED routing rules for historical R1.1-007 execution Profiles.
 
-This module deliberately contains no ontology rules, quality thresholds, or platform protocol.
-Those remain in ``skills/ontology-builder/references`` and the shared modeling directory.
+Retained only for historical delivery compatibility. New ontology-modeling runs have no
+Local/Formal profile dependency.
 """
 
 from __future__ import annotations

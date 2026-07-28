@@ -5,7 +5,11 @@
   `docs/delivery/designs/2026-07-20-r1-1-005-claude-dual-agent-harness-design.md`
 - Delivery record:
   `docs/delivery/records/2026-07-20-r1-1-005-claude-dual-agent-harness-delivery-record.md`
-- Status: completed; plan review Round 2 PASS; independent test Round 2 PASS
+- Status: DEPRECATED and superseded by `skills/ontology-modeling/`; historical PASS evidence only
+
+> [!CAUTION]
+> These tests describe the retired ClaudeCode Harness and are not completion gates for new modeling
+> work.
 
 ## Completion gates
 

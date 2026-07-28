@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Deterministic local primitives for an R1.1-006 Shared Modeling Directory.
+"""DEPRECATED primitives for the historical R1.1-006 Shared Modeling Directory.
 
-This module deliberately stops at the filesystem/integration boundary.  It does not load
-credentials, choose an execution profile, acquire leases, or submit platform requests.
+Retained only for historical delivery compatibility. The current ontology-modeling skill must not
+invoke or depend on this module.
 """
 
 from __future__ import annotations
