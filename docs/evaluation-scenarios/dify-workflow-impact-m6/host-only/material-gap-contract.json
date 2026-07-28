@@ -1,0 +1,32 @@
+{
+  "contract_version": 1,
+  "decisions": [
+    {
+      "id": "invocation-target",
+      "answer": "B invokes C through C's Latest published Version.",
+      "evidence_files": [
+        "sources/workflow-landscape.md",
+        "sources/release-register.md"
+      ],
+      "consumer_impact": "Determines which published output contract B currently consumes."
+    },
+    {
+      "id": "output-continuity",
+      "answer": "quality_rating:number is the documented successor of quality_score:number.",
+      "evidence_files": [
+        "sources/release-register.md",
+        "sources/interface-notes.md"
+      ],
+      "consumer_impact": "Determines whether historical and current evaluations share one business meaning."
+    },
+    {
+      "id": "missing-score-behavior",
+      "uncertain": "The business owner cannot confirm B's behavior when scoring is absent.",
+      "evidence_files": [
+        "sources/exception-handling.md",
+        "consumer-questions.md"
+      ],
+      "consumer_impact": "Determines whether A can safely publish when C omits the scoring value."
+    }
+  ]
+}

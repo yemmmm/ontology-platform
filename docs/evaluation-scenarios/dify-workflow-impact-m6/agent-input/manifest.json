@@ -1,0 +1,29 @@
+{
+  "manifest_version": 1,
+  "files": [
+    {
+      "path": "consumer-questions.md",
+      "sha256": "d4b3af2fb2262d9914a0f03af6e6ce0ea75f65d9dc30c55e5d38fc5c0336ace9"
+    },
+    {
+      "path": "sources/exception-handling.md",
+      "sha256": "d6d661a7dd27e7517c3cdefeddf1bd838208e929a6ace885a12a94f4aad96706"
+    },
+    {
+      "path": "sources/interface-notes.md",
+      "sha256": "f87fd94ef9871adad3e421c214061b31068076aeb427a22ab53d896d5964cef5"
+    },
+    {
+      "path": "sources/release-register.md",
+      "sha256": "f3f974a4ee2c68861d35d56f81074219571e0879da31a6d6cf2a7a1dfb9df085"
+    },
+    {
+      "path": "sources/workflow-landscape.md",
+      "sha256": "ba951cdd3d2d5f04ce6244fc7600ad4b84e7004ed1af3d781be2cdff2c8a8402"
+    },
+    {
+      "path": "task.md",
+      "sha256": "728235a7eade27704f94189e526a971df92b8d7c2cd79f90d88eb4ce3248291c"
+    }
+  ]
+}

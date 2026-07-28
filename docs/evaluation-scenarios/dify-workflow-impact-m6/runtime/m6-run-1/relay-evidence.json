@@ -1,0 +1,54 @@
+{
+  "run_id": "m6-run-1",
+  "adapter": "host_credential_exact_request_relay",
+  "host_mutation_policy": {
+    "allowed": [
+      "attach Authorization header",
+      "prepend http://127.0.0.1:8012 to the Agent-selected path"
+    ],
+    "forbidden": [
+      "rewrite method, path or body",
+      "synthesize semantic payload",
+      "repair or retry a rejected Agent request"
+    ]
+  },
+  "preserved_request_hashes": [
+    {
+      "purpose": "read lifecycle schemas",
+      "sha256": "a152441fa1c5c35b145b51dbeb498435c4addc8201a8b2b5c557f9fc37c308cc",
+      "status": 200
+    },
+    {
+      "purpose": "verification checkpoint",
+      "sha256": "06c3640c08f14512560e43fa503c3252e08a128a1f5519a7ed2e975b8feff83f",
+      "status": 200
+    },
+    {
+      "purpose": "Build Session completion",
+      "sha256": "3e262d41975c1c1724e2c839c516d97d2b486432aec2b444b8d78661200ede4a",
+      "status": 200
+    }
+  ],
+  "final_request_artifact": {
+    "path": "next-request.json",
+    "sha256": "3e262d41975c1c1724e2c839c516d97d2b486432aec2b444b8d78661200ede4a",
+    "method": "POST",
+    "request_path": "/api/build-sessions/89b67fef-e82a-470c-9eb9-928078a8b206:complete",
+    "expected_revision": 2,
+    "response_status": 200,
+    "response_session_status": "completed",
+    "response_revision": 3
+  },
+  "semantic_results": {
+    "schema_batch_id": "ac96ecb3-6b65-4c8b-862c-d18760a44e91",
+    "rejected_negative_batch_id": "93410be3-6404-4f18-9b86-5fd5351152fe",
+    "applied_instance_batch_id": "849a6350-14cc-48c0-9252-1ac8ef41d725",
+    "validation_run_id": "d548889a-67de-465e-a1f1-d4064408cc8a",
+    "reasoning_run_id": "219c3361-c674-4fbc-9d80-76065c3a1002",
+    "build_session_id": "89b67fef-e82a-470c-9eb9-928078a8b206"
+  },
+  "retry_summary": {
+    "host_initiated_retries": 0,
+    "note": "Rejected Agent requests were returned to the same Agent for a new explicit decision; the Host never changed and resubmitted a body."
+  }
+}

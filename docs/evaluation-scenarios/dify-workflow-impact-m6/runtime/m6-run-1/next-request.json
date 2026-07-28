@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/api/build-sessions/89b67fef-e82a-470c-9eb9-928078a8b206:complete",
+  "body": {
+    "client_request_id": "m6-run-1-complete-v1",
+    "expected_revision": 2,
+    "summary": "Completed the Workflow-as-Tool semantic model in Ontology 27b9c681-f39a-43ba-9a69-16b4f3c69c5e. The applied public facts establish that B consumes C Version 2 through the Latest published Version rule, quality_rating is the continuous documented successor of quality_score under one business measure, and B's behavior when scoring is absent is explicitly unknown. The applied Shape rejected an invalid output field; the final graph conforms, reasoning is consistent, and the governed ontology-scoped query returned the required single positive binding.",
+    "unresolved_items": [
+      "Business owner cannot confirm whether B blocks, continues, retries, or marks for review when C succeeds without a numeric scoring field; no fallback or default is asserted."
+    ]
+  }
+}

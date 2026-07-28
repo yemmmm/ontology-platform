@@ -5,8 +5,8 @@
   `docs/delivery/records/2026-07-23-r2-1-001-ontology-modeling-workflow-reconstruction-delivery-record.md`
 - Shared test plan:
   `docs/delivery/test-plans/2026-07-28-r2-1-001-m6-autonomous-semantic-gap-discovery-test-plan.md`
-- Status: reviewed — plan review PASS; implementation remains gated on M5
-- Scope version: M6 contract v1
+- Status: implemented — one modeling attempt completed; independent test PASS
+- Scope version: M6 contract v3
 
 ## Goal
 
@@ -20,8 +20,11 @@ completeness and consistency analysis.
 
 ## Current minimal scope
 
-M6 reuses the bounded Dify Workflow-as-Tool `C -> B -> A` slice and the accepted M4 Host Workflow. It
-changes only the Agent-visible source pack and discovery acceptance:
+M6 reuses the bounded Dify Workflow-as-Tool `C -> B -> A` slice and M4's accepted semantic contract.
+It does not invoke or import M4's `run_m4_clarification.py`: that runner freezes the explicit-gap M4
+manifest/prompt and launches a separate bwrap Codex process, which conflicts with this collaboration
+subagent experiment. M6 changes only the Agent-visible source pack, collaboration transport and
+discovery acceptance:
 
 - replace the explicit ambiguity list with separate realistic business documents;
 - preserve discoverable evidence tensions around invocation version binding, output-contract identity
@@ -29,7 +32,51 @@ changes only the Agent-visible source pack and discovery acceptance:
 - provide business modeling objectives and consumer outcomes, not an uncertainty checklist;
 - retain the generic instruction to check whether source material uniquely determines the model;
 - use one fresh discovery Producer and one fresh blind read-only Consumer;
-- reuse M4's serial clarification, explicit-unknown, Modeling Batch, SHACL, reasoning and query gates.
+- preserve M4's serial clarification, explicit-unknown, Modeling Batch, SHACL, reasoning and query gates.
+
+The modeling Runtime is a fresh Codex subagent started without parent-turn context. M6 does not require
+Pi and may run in parallel with M5 because it validates the modeling method rather than Pi compatibility.
+At most three modeling-subagent attempts may be launched. Each attempt uses a new run root and fresh
+platform resources; after the third attempt, execution stops and the current evidence is reported even
+when M6 has not passed.
+
+## Minimal collaboration adapter
+
+The M6 scenario package contains only:
+
+- separate raw business documents and generic modeling/consumer objectives;
+- a frozen manifest plus a deterministic checker for the declared Agent-visible file set and hashes;
+- a host-only material-gap/answer contract and discoverability mapping;
+- an append-only attempt ledger and focused static/acceptance tests.
+
+There is no M6 model proxy, bwrap launcher, new Runtime or new backend API. The main agent launches the
+modeling subagent with `fork_turns=none`; the initial handoff contains only the declared Agent-visible
+files, empty scope IDs, the prohibition on reading outside the input pack, the generic requirement to
+ask one material business question at a time, and the public platform-call contract. Platform
+credentials are not present in the handoff or staged files.
+
+When the subagent sends one source-grounded question, the main agent evaluates it against the host-only
+contract, appends request/response hashes and eligibility to the attempt ledger, and sends back only that
+question's business answer or explicit uncertainty. A follow-up turn resumes the same subagent. The next
+question is not answered until the prior one is bound to a changed assumption or named explicit gap.
+Question evaluation never returns category names, remaining count, expected wording or ontology design.
+
+Before launch, the Host uses the existing public HTTP API to create one empty fresh Project and one
+empty fresh Ontology because the current MCP surface does not expose Project/Ontology creation. The
+Host records and passes only their IDs; it creates no class, property, relation, Shape, entity, fact or
+decision.
+
+Live preflight found that the collaboration subagent's connected MCP inventory contained only
+read-only tools and could not mutate the fresh scope. M6 therefore uses the smallest credential
+adapter: the subagent writes exactly one `{method, path, body}` public HTTP request at a time to its
+run-owned request file; the Host attaches only the API credential, forwards that request unchanged and
+returns the exact status/result. The subagent still creates its own Build Session and chooses every
+lease, Modeling Batch, validation, reasoning, query, checkpoint and completion call and payload. The
+Host may not synthesize, alter, retry or repair semantic content. This adapter is a collaboration
+transport, not the M4 runner, a model proxy or platform feature.
+
+The main agent/tester may inspect public results and run read-only acceptance queries but must not
+repair or complete the model on the subagent's behalf.
 
 This stage does not introduce a second business module, generalized interview product, persistent
 question store, Coverage/Work Unit framework, new backend API, or new platform security system.
@@ -78,14 +125,15 @@ Acceptance is semantic:
   design do not satisfy discovery;
 - an unanswered material question becomes an explicit named gap rather than a default.
 
-The existing host responder may match natural questions to the hidden business-answer contract, but the
-Agent-visible prompt and files cannot expose matcher tokens, category names or expected count.
+The host may match natural questions to the hidden business-answer contract, but the Agent-visible
+handoff and files cannot expose matcher tokens, category names or expected count.
 
 ## Formal modeling and consumption
 
 After the required decisions are answered or explicitly uncertain, the Agent follows the M4 formal path:
 
-1. create fresh Project, Ontology and Build Session resources;
+1. receive the IDs of the Host-created empty fresh Project/Ontology and create its own Build Session
+   through the exact credential relay;
 2. dry-run and atomically apply the Shape-containing schema;
 3. demonstrate rejection of an invalid instance;
 4. dry-run and apply its candidate ABox, using at most one SHACL-finding-driven ABox correction;
@@ -94,7 +142,7 @@ After the required decisions are answered or explicitly uncertain, the Agent fol
 7. let a fresh blind Consumer discover the public semantic read models and report the target contract,
    continuity/discontinuity and explicit unknown gap.
 
-The host/tester chooses neither the ontology nor the Batch payload.
+The host/tester chooses neither the ontology structure nor any Batch or lifecycle payload.
 
 ## Isolation
 
@@ -102,6 +150,16 @@ The M6 Agent cannot access M4/M5 source packs, prompts containing explicit gaps,
 final ontology, Batch payloads, run roots, transcripts, decision logs or acceptance query results. Each
 live run uses fresh platform resources, Agent state and a new run root. Failed runs remain evidence and
 are never retried in the same workspace.
+
+The subagent is launched with no inherited conversation turns. Its handoff names only the isolated
+Agent-visible directory and permitted platform/clarification interfaces. The host records the exact
+handoff and the declared files. The subagent must not search or read outside that directory. This is a
+contract-level isolation check rather than a new OS sandbox: acceptance requires review of its reported
+inputs and actions, and any use of repository paths or undeclared facts fails that attempt.
+
+Plan review, scenario implementation and independent testing subagents do not consume the three-attempt
+budget unless they themselves perform the business modeling operation. A blind read-only Consumer also
+does not consume it because it cannot mutate the model.
 
 ## Acceptance
 
