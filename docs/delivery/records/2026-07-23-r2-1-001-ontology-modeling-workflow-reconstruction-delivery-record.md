@@ -1685,3 +1685,39 @@
 - Runtime closure: Round 31 removed only the owned `8013` backend, Round-26 Oxigraph container and
   `m4_r26_20260727_184806` database. Evidence roots remain retained. The normal service is active;
   `:8001/api/health` and `:5173/` are healthy, with no owned `8013`/`7879` listener remaining.
+
+### 2026-07-28T09:07:33+08:00 — autonomous semantic-gap discovery added as M6 — user + main agent
+
+- User decision: Add a new M6 test for whether a modeling Agent can discover which consequential
+  business questions must be asked without receiving a problem list, count or categories. Renumber the
+  former M6 module-expansion milestone to M7.
+- Functional contract: Reuse the bounded `C -> B -> A` slice but replace the explicit ambiguity brief
+  with realistic separate source documents. Required gaps must be discoverable from visible evidence
+  tensions or an underdetermined required consumer outcome; arbitrary hidden-fact guessing is invalid.
+- Discovery boundary: The Agent receives business modeling objectives, consumer questions and a generic
+  source-completeness method, but no M4 ambiguity list, expected count/category, hidden answer, final
+  ontology, Batch payload or answer query. Question wording/order and reasonable material extras are not
+  fixed; generic question barrages and requests for ontology design fail.
+- Reused closure: After autonomous discovery, M6 reuses M4's serial clarification, explicit unknown,
+  formal Modeling Batch, SHACL correction boundary, validation, reasoning, governed query and blind
+  consumer path. No new platform API, productized interview mechanism or module business is introduced.
+- Roadmap consequence: M5 remains the prerequisite for M6. The former slice-to-module expansion is now
+  M7 and requires M4–M6 to pass.
+- Artifacts: Added the M6 execution design and shared planned test plan. No live Agent, runtime mutation
+  or M7 implementation is authorized by this documentation change.
+
+### 2026-07-28T09:14:00+08:00 — M6 autonomous-gap discovery plan review — plan reviewer + main agent
+
+- Review result: `PASS`; no evidence-backed Critical or High finding.
+- Confirmed boundaries: Agent-visible input excludes gap list/count/categories and answer artifacts;
+  source discoverability is independently proven before launch; generic question barrages, repeated
+  explicit facts and ontology-design delegation cannot satisfy discovery.
+- Reuse finding: The current M4 prompt cannot be staged for M6 because it explicitly names the three
+  ambiguities. M6 must replace that visible input, while the M4 Host isolation, serial responder,
+  Modeling Batch and final-audit mechanisms may be reused.
+- Roadmap finding: The authoritative requirement consistently orders M5 -> new M6 -> M7. Historical
+  delivery entries retain their original “M6 module expansion” wording as history; the latest decision
+  records its renumbering to M7.
+- Gate: The raw multi-document source pack is intentionally not implemented in this planning change.
+  Its independent discoverability review and no-leak staging checks are mandatory before any live M6
+  Agent is authorized.
