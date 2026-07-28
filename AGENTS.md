@@ -52,6 +52,60 @@ the simplest implementation and operating workflow that preserves or improves th
 - Existing platform capabilities may be reused, but do not require every available governance,
   recovery, lineage, event, or audit mechanism in each local iteration merely because it exists.
 
+## External Modeling Agent Experiment Rules
+
+When debugging or evaluating an external modeling Agent, optimize first for evidence about modeling
+quality. Do not turn the initial experiment into delivery of a production-grade Agent Runtime,
+security boundary, or generalized evaluation platform.
+
+- Start the first real modeling attempt within 20 minutes unless the user explicitly authorizes a
+  longer preparation phase. If no real attempt has started by then, stop preparation, report what
+  is consuming time, and reduce the setup to the smallest executable path.
+- The initial completion gate should normally be one bounded corpus or scenario, one Agent, one
+  fresh ontology scope, one deterministic dry-run/application path, validation, and one governed
+  query. Independent consumers, mutation suites, repeated-success measurement, recovery matrices,
+  and production security checks belong to later gates unless the user explicitly requests them or
+  the first run proves they are necessary.
+- Use staged acceptance:
+  - `L0 Runtime`: the Agent can reach its model and required tools.
+  - `L1 Modeling quality`: the Agent understands the source, finds consequential semantic gaps,
+    models explicit unknowns, and passes validation/query checks.
+  - `L2 Repeatability`: independent consumption, repeated runs, and mutation checks.
+  - `L3 Productization`: strict isolation, credential brokering, recovery, immutable audit, and
+    generalized orchestration.
+  Do not make L2 or L3 prerequisites for L1.
+- Reuse one Runtime-neutral Host Workflow for Project/Ontology preparation, Build Session, lease,
+  Modeling Batch, validation, reasoning, query, cleanup, and acceptance. A new Agent Runtime such
+  as Codex or Pi should normally add only a thin adapter for launch, prompt/input assembly, tool
+  bridging, event normalization, and terminal-state detection.
+- Keep mechanical protocol work out of the model. Deterministic tools must own UUIDs, canonical
+  JSON, filenames, atomic file publication, request schemas, lease refresh/retry, checkpoint
+  bodies, and response parsing. The Agent should spend its reasoning on business semantics, Class,
+  Property, Shape, relation, evidence, and explicit-unknown decisions.
+- For a local modeling-quality experiment, prefer direct model-provider access with an ephemeral
+  credential when that is the shortest safe path. Add a Host model proxy, network sandbox, or
+  stronger credential isolation only when explicitly required or when a demonstrated risk makes it
+  necessary.
+- Make live failures observable and fail fast. Preserve the real failure category across adapters,
+  expose progress milestones, bound first-response and terminal waits separately, and terminate
+  promptly after a provider or Agent terminal error. Do not wait for a large global timeout when
+  the underlying call has already failed.
+- Keep design, review, documentation, and regression work proportional to the current gate. A
+  modeling-quality smoke run must not be delayed by exhaustive negative matrices or full delivery
+  ceremony unless platform code is changing or a concrete high-risk condition requires it.
+- Parallel execution is an explicit user requirement and should be preserved. Run independent work
+  in parallel with subagents when requested; do not treat parallelism itself as a failure cause.
+  Before starting parallel tasks, freeze each task's contract and assign non-overlapping ownership
+  of files, ports, Project/Ontology IDs, runtime directories, and cleanup responsibility. Shared
+  requirements and delivery records need a designated writer or append-only coordination rule.
+- Separate failures into `modeling-quality`, `platform-contract`, and `runtime/infrastructure`
+  categories. A runtime or transport failure must not trigger additional ontology workflow,
+  Consumer, mutation, or governance scope. First repair or bypass the narrow failing layer, then
+  resume the original modeling goal.
+- Track the time spent on actual semantic modeling versus infrastructure, harness, review, and
+  documentation. If actual modeling is less than half of the active effort, pause and propose a
+  smaller path before expanding the harness.
+
 ## Platform and Reference-Ontology Boundary
 
 Treat concepts that appear in a customer ontology, evaluation corpus, or reference scenario as
