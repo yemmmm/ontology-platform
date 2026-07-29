@@ -1,0 +1,13 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "capability_questions": ["cq1-complete-flow", "cq2-branch-state", "cq3-change-impact"],
+  "required_regressions": ["m1-publication-isolation", "m1-c-b-a-reachability", "m1-invalid-structure"],
+  "query_policy": {"two_stream_proof": "bounded_ontology_sparql", "forbid_dual_cursor": true},
+  "proof_kinds": {"cq1": ["connected_typed_path"], "cq2": ["certain_available", "certain_unavailable", "explicit_unknown"], "cq3": ["dependency_path"]},
+  "claim_binding_policy": {"identity_proof_required": true, "positive_edges_only": true, "exact_host_mapping": true},
+  "judge_verdict_schema": {
+    "answer_exact_keys": ["cq_id", "status", "conclusion", "missing_or_contradictory_evidence", "failure_classification", "citations"],
+    "failure_classifications": ["modeling-quality", "platform-contract", "runtime-infrastructure", "evidence-insufficient"],
+    "pass_failure_classification": null
+  }
+}

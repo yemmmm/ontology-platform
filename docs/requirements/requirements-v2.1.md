@@ -3,13 +3,14 @@
 ## 文档信息
 
 - 文档状态：M1–M4、M6 已实现并通过独立验收；M5 新增授权执行已收尾但未通过；
-  M5-P0 已阶段收尾并转入 v2.2；M7 推进策略已确认，业务模块阶段合同待细化
+  M5-P0 已阶段收尾并转入 v2.2；M7 已按用户决定暂停，未通过 L1
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
 - 总体目标：重构 Ontology 建模流程，使其以可解释、可验证、可复用和可演进的业务语义模型为中心
-- 当前实施需求：R2.1-001 当前 M4、M6 已完成；M5 未通过并保留最小问题清单；M7 已确认以
-  业务模块扩展为主线、最小 Host spine 为支线，具体模块和验收合同待细化
+- 当前实施需求：R2.1-001 当前 M4、M6 已完成；M5 未通过并保留最小问题清单；M7 的 Workflow
+  编排与类型化变量流转实验已暂停，三次建模均未进入 principal apply，v4 离线门仍有一个 High
+  ledger 授权缺陷，恢复入口见 M7 暂停收尾记录
 - 目标用户：需要将业务知识沉淀为可复用本体的建模人员、建模 Agent 工作流开发者和语义质量调优人员
 - 更新日期：2026-07-29
 
@@ -634,7 +635,11 @@ validation `conforms=true`、reasoning `consistent=true`，Build Session 已完�
 
 ### M7：从业务切片扩展到模块业务
 
-当前状态（2026-07-29）：`推进策略已确认，具体业务模块阶段合同待细化`。
+当前状态（2026-07-29）：`PAUSED / 未通过 L1`。三次 fresh Producer 尝试均在 principal apply
+前因 Runtime 或场景 Host/Agent 协议缺口终止；v4 已修复 governed Evidence/CQ 引用合同，但独立
+Test Round 11 仍发现 `l1_pass_authorized` ledger 事件可被伪造的 High 缺陷。用户已要求暂停本次
+需求开发。当前状态、实施时间线、保留证据、已知缺陷和恢复条件记录于
+`docs/delivery/records/2026-07-29-r2-1-001-m7-paused-closeout.md`。
 
 M7 以 M4、M6 均通过为建模质量前置条件，把已验证的单一业务语义切片扩展为边界清晰的模块业务，
 重点验证跨切片术语一致性、概念和身份复用、模块内及模块间关系、约束组合、推理、查询，以及后续
@@ -655,6 +660,99 @@ M7 同步推进业务模块扩展和 Runtime-neutral Host 稳定化，但两者�
 4. 首轮先完成 `L1 Modeling quality`；独立 Consumer、重复运行和 mutation 属于后续
    `L2 Repeatability`，不得成为首轮 L1 的启动前置；产品级安全隔离、常驻运行和通用治理属于
    `L3 Productization`，不进入当前范围。
+
+#### 已确认的首轮业务模块
+
+首轮选择 `Workflow 编排与类型化变量流转` 模块。该模块复用 M1–M6 已验收切片中的 Workflow、
+Workflow Version、Tool Invocation、Variable、Variable Binding 和 Variable Use 等公开业务语义，
+进一步建模 Workflow 内部 Node 编排、控制分支、变量产生与消费、作用域、类型兼容和 Output
+形成过程。它必须证明已有跨 Workflow 调用切片可以被复用或明确演进，而不是仅增加更多同类实例。
+
+首轮 Agent-visible 官方资料限定为以下已冻结英文页面：
+
+- M1 source pack 的 Workflow-as-Tool `tools.mdx`；
+- Dify foundations 快照中的 Orchestration Logic、Start Node、LLM、IF/ELSE、Template、Output
+  和 Version Control。
+
+此外提供一份明确标记为 `synthetic-fixture` 的业务说明，用于定义 B 的内部节点图及其与 C、A
+的衔接，并保留需要 Agent 主动发现和逐项澄清的实质缺口。中文对应页面只用于人工核对，不进入
+Agent 输入；不得把完整 Dify corpus、隐藏验收合同或历史答案型模型一并暴露给 Agent。官方产品
+语义、合成业务事实和 Agent 推断必须保持可区分。
+
+首轮采用同一 Ontology 扩展：Host 在全新的 Project/Ontology/Build Session 中先确定性装载冻结
+的已验收基础切片，Agent 再在该 Ontology 内复用或明确演进已有身份。不得续写历史运行 Ontology，
+也不在首轮引入跨 Ontology import、IRI 映射或组合查询合同。
+
+首轮合成业务 Fixture 固定 B `Content Generation Workflow` 的以下内部链：
+
+```text
+Start(topic:string, channel:string)
+  -> LLM(draft_content:string)
+  -> Tool Invocation(C Version 2, quality_rating:number)
+  -> IF/ELSE
+      -> 合格分支 -> Template(publishable_content:string)
+      -> 不合格分支 -> 人工审核路径
+  -> Output(approved_content:string)
+  -> A 的 publish_content 绑定
+```
+
+Fixture 复用基础切片已确认的 `quality_score -> quality_rating` 连续性、缺少评分时的
+`explicit_unknown`，以及 B→C、A→B 调用和变量身份。资料有意不预先回答不合格分支是否产生对外
+Output、Template 输出与 Workflow Output 是同一身份还是显式绑定、缺少评分时进入人工审核还是
+终止等会改变消费结论的问题；Agent 必须从可见资料发现并逐项澄清，不能采用默认值。
+
+业务答案由主 Agent 作为可验证假设决定，允许根据真实证据在后续尝试之间调整，但每次正式尝试
+启动前必须冻结版本，运行中不得改写。首版隐藏答案合同为：
+
+- 不合格分支不产生 `approved_content`，只进入人工审核；A 的 `publish_content` 仅在合格分支
+  可达；
+- Template 的 `publishable_content` 与 Workflow Output 的 `approved_content` 是不同变量身份，
+  二者通过显式绑定连接；
+- 缺少评分时进入人工审核，路由依据保留为 `explicit_unknown`，且不产生 `approved_content`。
+
+调整这些假设必须记录证据、产生新合同版本，并在全新作用域中启动新尝试；不得倒改已运行合同
+或为迁就已有模型修改答案。
+
+首轮固定三个消费者能力问题：
+
+1. 从 A 的 `publish_content` 恢复 B Start、LLM、C Tool Invocation、IF/ELSE、Template、
+   B Output 到 A Binding 的完整变量产生、类型、绑定和消费路径；
+2. 在合格、不合格和缺少评分三种情况下，区分实际产生的 Output、分支局部变量，以及
+   `确定可用`、`确定不可用` 和 `explicit_unknown`；
+3. 当 C 的输出名称、类型或可用性变化时，返回真正受影响的 B 内部节点、分支条件、Template、
+   B Output 和 A Binding，同时排除不存在真实变量路径的节点。
+
+原 M1 的发布版/草稿隔离、C→B→A 调用路径和不完整结构拒绝继续作为回归门，不计入这三个新
+能力问题。能力问题冻结消费者必须获得的结果，不冻结 Agent 的 Class、Property、Relation、Shape
+或查询实现。
+
+首轮 L1 规模上限如下：
+
+- 只展开一个 B Workflow Version；A、C 只保留已验收的调用端点和契约；
+- 最多六个核心 Node、两条控制分支、一次外部 Workflow 调用，以及约十个业务变量、绑定或使用
+  关系；
+- 一个错误结构反例和至少一个 `explicit_unknown`；
+- 最多五个具实质影响且逐项提出的问题，不要求凑满；
+- 建模尝试上限默认三次；若已消费尝试全部在 principal apply 前因已复现的 Runtime 或场景
+  Host/Agent 协议缺口失败、尚未产生一次建模质量样本，主 Agent 可在保留原 ledger、修复协议并
+  重新通过计划审查和独立离线测试后，把本场景上限一次性提高到五次。第 4 次仅用于 L1，第 5 次
+  仅在 L1 PASS 后用于 L2 independent repeat；失败尝试保留且不得在原作用域重试；
+- 不包含 A/C 内部建模、其他 Node 类型、真实业务数据批量导入或完整 Dify Workflow 本体。
+
+这些限制约束场景规模，不规定 Agent 的 schema 元素数量；如果可见证据证明必须突破边界才能回答
+能力问题，应暂停并重新细化，不得自动扩大。Node、Variable、Workflow 等 Dify 业务概念继续作为
+本体数据，不进入平台产品域。
+
+#### 平台优化中断规则
+
+M7 验证过程中发现平台缺口时，主 Agent 可以评估其重要性。只有通过最小复现证明该缺口属于通用
+平台能力，并会阻断或实质损害建模质量、语义检索质量或已应用模型完整性，且不存在不扭曲验收
+语义的场景内替代路径时，才可中断 M7。Dify 专属适配、便利性优化、产品化能力或可安全绕开的
+问题只记录为后续项，不中断本轮。
+
+重要平台缺口必须作为独立需求冻结范围，完成设计、共享测试计划、计划审查、实现、独立测试、
+运行重启验证和提交后，才能回到原先冻结的 M7 Host、输入、基础切片和验收合同继续执行。中断
+不得被用来让平台生成业务答案、补全未知或引入 Dify 专属解释逻辑。
 
 #### 首轮业务模块扩展方式
 
@@ -691,6 +789,29 @@ ID、workspace/lease、Modeling Batch dry-run/apply、validation、reasoning、g
 Checkpoint、完成状态、运行证据和清理。Codex Adapter 只负责启动新鲜 subagent、装配允许输入、
 传递逐轮回答和收集 semantic package；不得复制平台业务流程。
 
+Host 的固定程序只判断可确定复现的协议事实：输入/候选/hash 是否一致、dry-run/apply 是否相同、
+workspace/lease/scope 是否漂移、validation/reasoning 是否成功、查询是否完整、证据是否来自当前
+公开作用域、是否发生重复提交以及清理是否完成。它不得通过预设固定本体角色、路径或 case 映射
+充当开放式业务语义的最终判卷者。
+
+L1 的业务语义由一个全新、只读、无父会话历史的独立 Judge subagent 判断。Judge 获得冻结的隐藏
+答案/验收合同、三个 CQ、Host 生成的公开查询证据包和必要的公开只读查询能力；不得获得 Producer
+的隐藏推理、历史答案型模型或主 Agent 的结论。Judge 必须逐 CQ 给出 `PASS/FAIL/INCONCLUSIVE`、
+引用实际公开事实，并判断完整类型路径、分支状态、explicit unknown 和影响集合。主 Agent负责
+最终裁决；固定程序只校验证据引用、scope/completeness/hash 等机械完整性。Judge 与 L2 的盲
+Consumer 不同：Judge 可以看到隐藏验收合同，盲 Consumer 只能看到公开平台事实。
+
+Judge 不持有平台写凭据或写工具；必要的补充查询只能经 Host 所有的同作用域只读路径执行并追加
+到已封存证据。Host 在语义包应用和证据封存后进入 `AWAITING_JUDGE`，由配对 verdict 完成
+`finalize`；Judge 崩溃、超时或无合法 verdict 时必须通过幂等的配对终止路径记录
+`INCONCLUSIVE`、保留原始失败并在 `finally` 清理，不能让作用域无限期停留在可读状态。清理
+失败必须稳定报告为 `CLEANUP_FAILED`，同时保留 Judge 原始失败原因。
+
+只有 Judge 对全部必需 CQ 判定 `PASS` 时，Host 才可进入临时只读
+`AWAITING_L2_CONSUMER`，保留该作用域供配对盲 Consumer 通过公开平台查询取证；此状态禁止任何
+建模写入。Consumer 成功、失败、超时或无合法结果后都必须经配对幂等终止路径封存证据并清理。
+Judge 的 `FAIL/INCONCLUSIVE`、非法 verdict 或 Judge 终止路径仍立即清理。
+
 当前复用已经迁移完成的本地开发存储，通过新 Project/Ontology/Build Session 实现逻辑和语义
 隔离。独立数据库、容器、`bwrap`、网络沙箱、Provider proxy、跨机器协调和凭据代理产品化均不
 作为首轮前置；只有真实证据证明越权读取、凭据暴露或运行相互污染时，才增加对应隔离机制。
@@ -705,6 +826,8 @@ Checkpoint、完成状态、运行证据和清理。Codex Adapter 只负责启�
   并以一个错误实例证明约束会阻断无效结构；
 - 最终 validation、reasoning 和新旧核心能力问题的 governed query 同时成立，且平台没有新增
   业务专属逻辑；
+- 独立 Judge subagent 基于当前公开平台事实和隐藏验收合同逐项判定三个 CQ，给出可追溯证据；
+  Host 固定程序不得仅凭 Agent 自报 claim kind 或固定角色模板代替该语义判断；
 - Agent 未读取隐藏答案或历史答案型产物，Host 未代做本体判断，Runtime、平台合同和建模质量
   失败能够分开报告。
 
@@ -716,24 +839,39 @@ M7 不因扩大业务范围自动引入 Coverage、Work Unit、独立 review 或
 只有 M7 的规模或实际失败证明某项机制直接保护建模质量、来源忠实度或检索完整性时，才把该机制
 纳入当轮设计和验收。
 
+#### L2 Repeatability 与 M7 总完成门
+
+L1 通过后执行以下最小 L2：
+
+1. 一个全新、只读且无历史上下文的独立 Consumer，只通过公开平台查询回答三个 M7 CQ 和 M1
+   回归问题；
+2. 使用相同冻结输入和基础切片、但全新 Project/Ontology/Build Session/Agent 的一次独立重复
+   建模；要求业务结论、身份复用和显式未知语义等价，不要求 Class、IRI 或 Batch 字节相同；
+3. 四个由确定性测试在隔离作用域执行且不消耗建模 Agent 次数的 mutation：
+   - 删除 C→B 的评分变量绑定；
+   - 把 `quality_rating` 从 number 改为不兼容类型；
+   - 让分支局部变量在不可用路径中被 Output 引用；
+   - 添加同名但没有真实绑定路径的干扰变量或 Node。
+
+前三个 mutation 必须改变 validation 或 CQ 结果；无关干扰项不得产生虚假影响路径。独立重复运行
+使用第二次建模额度，只有失败后仍有明确修复价值时才可使用最后一次全新尝试。
+
+M7 只有在 L1、盲 Consumer、独立重复建模、四项 mutation、M1 回归和独立测试全部 PASS 后才可
+标记完成。L3 产品化能力和 M3 的完整二十环境 mutation 矩阵不在本需求完成门内。
+
 ### 待后续细化
 
-以下内容尚未形成合同，不在本次记录中提前决定：
+以下内容不属于当前已冻结的 M7 合同：
 
-- M4 的固定歧义、隐藏答案合同、逐轮交互协议和独立验收场景；
-- M5 在 M4 通过后复用或调整 M5-P0 的 Pi/模型版本、Prompt/Skill 装配方式和 Runtime 隔离方案；
-- M7 的业务模块选择、资料范围、基础切片快照、同一 Ontology 扩展或独立 Ontology 组合方式、
-  模块复用与演进合同、能力问题和规模上限；
-- 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
-- M4–M7 是否因实际失败引入 Brief、Coverage、Work Unit、独立 review 或 Shared Modeling
+- M5 后续是否以新的 Pi/模型版本、Prompt/Skill 装配方式和 Runtime 隔离方案重新立项；
+- M7 是否因实际失败引入 Brief、Coverage、Work Unit、独立 review 或 Shared Modeling
   Directory；
-- 与知识实例、知识图谱写入及后续消费检索的关系；
-- M7 之后的长期质量指标、迁移方式和旧流程退役条件。
+- M7 之后与大规模知识实例、完整知识图谱写入及其他业务模块的组合方式；
+- 长期质量指标、跨 Ontology 组合、迁移方式和旧流程退役条件。
 
 R2.1-001 的 M1 在第一版本体候选、Fixture 和查询断言形成后即可进入逐轮验证，不设置独立正式
 设计评审或共享测试计划文档门槛。第一版结构是可验证假设，不是最终方案；每轮必须保留建模假设
 和调整记录，也不得以首轮通过宣称长期建模流程或最终本体结构已经确定。M2 受控建模流程演练已
 完成；M3 自主建模 Agent 复现和 M4 主动语义澄清均已通过独立验收。当前 M1–M4 切片关闭；
-M5 已关闭未通过，M6 已完成，M7 推进策略已确认但具体模块合同尚未冻结。M7 实施前仍需冻结该
-阶段的场景、输入、基础切片、角色边界和验收合同，不以本次路线决定代替阶段级设计、计划审查与
-独立测试。
+M5 已关闭未通过，M6 已完成，M7 阶段合同已经冻结。M7 仍须通过阶段设计、共享测试计划、强制
+计划审查、实现和独立测试，不以需求合同冻结代替交付门禁。

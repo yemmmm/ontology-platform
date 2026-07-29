@@ -1,0 +1,1 @@
+{"command":"./seal_semantic_package.py --runtime-check --agent-visible .","contract_version":"m7-l0-runtime-v1","nonce":"m7-l0-runtime-nonce-v1","required_interpreter":"/usr/bin/python3"}

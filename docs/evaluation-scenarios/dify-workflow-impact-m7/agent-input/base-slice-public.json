@@ -1,0 +1,13 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "kind": "public-base-slice-template",
+  "roles": [
+    "workflow_class",
+    "variable_class",
+    "binding_relation_type",
+    "workflow_b_entity",
+    "workflow_c_v2_entity",
+    "quality_rating_entity"
+  ],
+  "note": "The Host replaces this template only in the run manifest with exact fresh resource_id/resource_iri pairs."
+}

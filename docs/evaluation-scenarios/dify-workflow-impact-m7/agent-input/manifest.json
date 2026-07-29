@@ -1,0 +1,18 @@
+{
+  "manifest_version": 1,
+  "files": [
+    {"path": "authoring-contract.json", "sha256": "6d7a584e8dd79e94b795bbd4e9a19775447bf14c698f57d0c1403603d9d91a25"},
+    {"path": "base-slice-public.json", "sha256": "b6e353230a8fd80aa23675fa42882ccd473966ada726d1b7d614dad453516713"},
+    {"path": "business-fixture.md", "sha256": "8ab80c95125ce2c70c09b4c57ef3293da214c2f7e1957069b3fa970bc3d47b67"},
+    {"path": "official/ifelse.mdx", "sha256": "fc17432a323bba8f35851f3e35ebd135515601ce5c80128c545bfe9087439131"},
+    {"path": "official/llm.mdx", "sha256": "9e1d7730915606d704ee27bbb504fa1f2b8147b6a1aa9ff72dd4dbeed406826e"},
+    {"path": "official/orchestration-logic.mdx", "sha256": "d49d51a0243dfcf60f5d8201fa6aa5b32cac3084ad6b3e8e08dc4a24015b9130"},
+    {"path": "official/output.mdx", "sha256": "456021c18efdfcafa51750e44053199f5a5c037a55db338b8935533225cfc2ba"},
+    {"path": "official/start.mdx", "sha256": "74f738073b722288dc39d355156ad0eee0cd9ee97fdd07b2254db2657a667b15"},
+    {"path": "official/template.mdx", "sha256": "eda580ca7301991c873dcd2f5e0cfa4827dc05349b760cde8ab88086974e33c6"},
+    {"path": "official/tools.mdx", "sha256": "8033c8d3efd0f8fe52f4de90fc6a905d1fcafcff6ac3dc802aae966122a552ae"},
+    {"path": "official/version-control.mdx", "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b"},
+    {"path": "seal_semantic_package.py", "sha256": "90659ccec60b36c245193164919cd88bc60645ba97ab62e3da697fa4737d8319"},
+    {"path": "task.md", "sha256": "a8c9735cfe921eb10f964c36360b33b060d98deed5a36d9d9a592243f87bdd5f"}
+  ]
+}

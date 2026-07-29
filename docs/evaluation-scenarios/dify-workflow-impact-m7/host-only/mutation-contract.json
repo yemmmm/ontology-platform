@@ -1,0 +1,5 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "mutations": ["remove_score_binding", "incompatible_quality_type", "unavailable_branch_output", "same_name_decoy"],
+  "agent_launch_permitted": false
+}

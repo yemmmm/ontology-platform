@@ -1,0 +1,6 @@
+{
+  "manifest_version": 1,
+  "files": [
+    {"path": "semantic-package.json", "sha256": "90a6b130d0fdf0e35d1b5cc4d0e8aad4b025b37246416bee605f06819a1bdad6"}
+  ]
+}

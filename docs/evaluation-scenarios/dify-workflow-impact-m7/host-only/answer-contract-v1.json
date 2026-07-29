@@ -1,0 +1,35 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "identity_predicate_iris": ["http://www.w3.org/2000/01/rdf-schema#label"],
+  "semantic_keys": {
+    "start_topic": ["Start topic"], "start_channel": ["Start channel"], "llm": ["LLM"],
+    "draft": ["Draft"], "c_input": ["C input"], "c_invocation": ["C invocation"],
+    "quality": ["Quality"], "if_else": ["IF-ELSE"], "passing": ["Passing"],
+    "template": ["Template"], "publishable": ["publishable_content"], "approved": ["approved_content"],
+    "a_binding": ["A binding"], "failing": ["Failing"], "missing_score": ["Missing score"],
+    "manual_review": ["Manual review"], "explicit_unknown_basis": ["Explicit unknown"],
+    "quality_contract": ["quality contract"], "affected_binding": ["affected binding"],
+    "affected_output": ["affected output"]
+  },
+  "cq1_paths": [
+    ["start_topic", "llm", "draft", "c_input", "c_invocation", "quality", "if_else", "passing", "template", "publishable", "approved", "a_binding"],
+    ["start_channel", "llm", "draft", "c_input", "c_invocation", "quality", "if_else", "passing", "template", "publishable", "approved", "a_binding"]
+  ],
+  "cq2": {
+    "available": {"case": "passing", "output": "approved", "route": "template"},
+    "unavailable": [
+      {"case": "failing", "output": "approved", "route": "manual_review"},
+      {"case": "missing_score", "output": "approved", "route": "manual_review"}
+    ],
+    "explicit_unknown": {"case": "missing_score", "basis": "explicit_unknown_basis"},
+    "distinct_binding": ["publishable", "approved"]
+  },
+  "cq3": {
+    "changed": "quality_contract",
+    "affected": ["affected_binding", "affected_output"],
+    "paths": [
+      ["quality_contract", "affected_binding"],
+      ["quality_contract", "affected_binding", "affected_output"]
+    ]
+  }
+}

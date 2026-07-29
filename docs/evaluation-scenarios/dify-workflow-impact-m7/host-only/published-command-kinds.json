@@ -1,0 +1,12 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "command_kinds": [
+    "create_class", "create_entity", "create_mapping", "create_operation", "create_property",
+    "create_relation", "create_relation_type", "create_rule_definition", "create_shape",
+    "delete_class", "delete_entity", "delete_fact", "delete_mapping", "delete_operation",
+    "delete_property", "delete_relation", "delete_relation_type", "delete_rule_definition",
+    "delete_shape", "update_class", "update_entity", "update_fact", "update_mapping",
+    "update_operation", "update_property", "update_relation_type", "update_rule_definition",
+    "update_shape"
+  ]
+}

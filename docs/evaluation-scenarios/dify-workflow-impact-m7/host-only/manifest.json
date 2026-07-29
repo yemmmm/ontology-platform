@@ -1,0 +1,9 @@
+{
+  "manifest_version": 1,
+  "files": [
+    {"path": "acceptance-contract.json", "sha256": "0b744285888a5306acca183ac9a2e8f434dae0e5aa138157bd939bcd894f1b1e"},
+    {"path": "answer-contract-v1.json", "sha256": "6bd9ee4a239632a4441a920265524e8c95d41d497c79f20e1386f33304eb96bf"},
+    {"path": "mutation-contract.json", "sha256": "23eadc33b1d245a028aca91289de1a4641d077a00a9d2791be694e7b2b81e1c5"},
+    {"path": "published-command-kinds.json", "sha256": "72737d5eb559e358fa4a2dd9747e4c9a4e26a5b9954dc839b6a32d966fdfb059"}
+  ]
+}

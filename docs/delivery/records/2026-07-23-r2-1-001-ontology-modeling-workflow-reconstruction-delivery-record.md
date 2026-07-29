@@ -3971,3 +3971,763 @@
 - Next step: Refine one consequential M7 decision at a time, beginning with the business module and its
   frozen source/capability-question boundary; then create the stage design and shared test plan and run
   the mandatory plan-review gate before implementation.
+
+### 2026-07-29T11:21:35+08:00 — M7 source and current-state audit — main agent
+
+- Request: Before implementation, decompose M7 into concrete delivery tasks. This phase does not
+  authorize product code changes, a modeling Agent launch, or platform mutation.
+- Baseline: `HEAD=4dba980`; the worktree was clean before the local GitNexus index refresh. The refresh
+  changed only generated symbol-count text in `AGENTS.md` and `CLAUDE.md`; those tool-side changes were
+  reverted.
+- Source state: `docs/requirements/requirements-v2.1.md` fixes the M7 sequencing, first-Runtime choice,
+  Host/Agent boundary, fresh-scope isolation and L1 gate, but intentionally leaves the business module,
+  selected sources, base-slice snapshot, ontology composition, capability questions and size ceiling
+  unresolved.
+- Reusable evidence: M1 provides the accepted Workflow-as-Tool base model and C-to-B-to-A fixture; M6
+  proves fresh Codex-subagent gap discovery and formal semantic application; M3 contains reusable
+  manifest staging, canonical request relay, run audit and read-only Consumer helpers. M7 must extract
+  only the execution pieces needed by the selected first module.
+- Current gap: No M7 scenario directory, stage design, shared test plan or frozen input manifest exists.
+  The first consequential refinement decision remains selection of the business module and its source
+  boundary.
+- Outcome/next step: Present a staged work breakdown now, then ask the user to confirm one recommended
+  first module before freezing design and acceptance artifacts.
+
+### 2026-07-29T11:35:08+08:00 — M7 first business module confirmed — user + main agent
+
+- User decision: Accept `Workflow 编排与类型化变量流转` as the first M7 business module.
+- Boundary: Reuse the accepted Workflow/Workflow Version/Tool Invocation/Variable Binding/Variable Use
+  slice, then extend it with internal Node orchestration, control branches, variable production and
+  consumption, scope, type compatibility and Output formation. Merely adding more same-shaped nodes or
+  instances does not satisfy module expansion.
+- Documentation sync: Updated the M7 requirement status and recorded the selected module. The source
+  set, synthetic Fixture, base-slice composition, capability questions, size ceiling and full
+  acceptance contract remain intentionally unresolved.
+- Outcome/next step: Confirm the frozen source boundary before defining the module Fixture or CQ set.
+
+### 2026-07-29T11:40:04+08:00 — M7 source boundary confirmed — user + main agent
+
+- User decision: Accept a selected authoritative-English source set plus one explicitly synthetic
+  business Fixture.
+- Agent-visible official sources: the M1 Workflow-as-Tool `tools.mdx` plus the frozen Dify foundations
+  pages for Orchestration Logic, Start Node, LLM, IF/ELSE, Template, Output and Version Control.
+- Truth boundary: The synthetic brief defines B's internal node graph and its C/B/A connection while
+  retaining consequential gaps for autonomous discovery. Official product semantics, synthetic
+  business facts and Agent inference remain distinguishable.
+- Exclusions: Chinese counterparts are human-review aids only; the full corpus, hidden acceptance
+  contract, prior answer model, Batch payload and historical run evidence are not Agent-visible.
+- Outcome/next step: Confirm whether the frozen base slice is loaded into the same fresh Ontology for
+  extension or composed as a separate Ontology.
+
+### 2026-07-29T11:45:37+08:00 — M7 same-Ontology extension confirmed — user + main agent
+
+- User decision: Use one fresh Ontology containing the deterministically loaded frozen base slice and
+  the Agent-authored module extension.
+- Identity boundary: The Agent must reuse or explicitly evolve accepted Workflow, Workflow Version,
+  Tool Invocation and variable identities inside that scope; it cannot satisfy M7 by creating an
+  unrelated duplicate module.
+- Isolation boundary: The Host creates a new Project/Ontology/Build Session and never continues a
+  historical run. Cross-Ontology imports, IRI mapping and composed-query semantics are excluded from
+  the first L1 attempt.
+- Outcome/next step: Freeze the synthetic B-internal orchestration Fixture before defining capability
+  questions and the size ceiling.
+
+### 2026-07-29T11:47:51+08:00 — M7 synthetic module Fixture confirmed — user + main agent
+
+- User decision: Accept the bounded B-internal chain `Start -> LLM -> C Tool Invocation -> IF/ELSE ->
+  Template/manual review -> Output -> A binding`.
+- Frozen facts: Start receives `topic:string` and `channel:string`; LLM produces
+  `draft_content:string`; C Version 2 returns `quality_rating:number`; the passing branch creates
+  `publishable_content:string`; B exposes `approved_content:string` to A's `publish_content` binding.
+- Base reuse: The Fixture carries forward the accepted score-field continuity, missing-score
+  `explicit_unknown`, B-to-C/A-to-B calls and variable identities.
+- Intentional gaps: The visible source does not settle low-branch Output availability,
+  Template-to-Workflow-Output identity/binding or missing-score routing. These require autonomous,
+  source-grounded, one-at-a-time clarification and cannot be defaulted by Agent or Host.
+- Outcome/next step: Confirm three consumer-facing capability questions, then freeze the size ceiling.
+
+### 2026-07-29T11:50:01+08:00 — M7 capability questions confirmed — user + main agent
+
+- CQ1 complete flow: Starting at A's `publish_content`, recover the complete typed production,
+  binding and consumption path through B's internal nodes and C invocation.
+- CQ2 branch state: Distinguish passing, failing and missing-score behavior, branch-local variable
+  availability, and certain-available/certain-unavailable/`explicit_unknown` outcomes.
+- CQ3 evolution impact: For a C output name, type or availability change, return only B internal nodes,
+  branch conditions, Template, B Output and A Binding connected by a real variable path.
+- Regression boundary: M1 published/draft isolation, C-to-B-to-A call reachability and incomplete
+  structure rejection remain mandatory but do not consume the three new CQs.
+- Structure boundary: These are consumer-result contracts, not a prescribed ontology or query shape.
+- Outcome/next step: Freeze a scenario-level size ceiling without predetermining schema structure.
+
+### 2026-07-29T11:58:11+08:00 — M7 size ceiling and platform-gap interruption confirmed — user + main agent
+
+- Size ceiling: Expand one B version only, with at most six core nodes, two branches, one external
+  Workflow call, about ten business variable/binding/use relations, one invalid structure and at least
+  one explicit unknown. A/C internals, additional node families, bulk real data and a complete Dify
+  ontology remain out of scope.
+- Interaction/run ceiling: At most five material one-at-a-time questions and three fresh modeling
+  attempts; failed scopes are retained and never reused. The ceiling constrains the scenario, not a
+  prescribed schema count.
+- User authorization: During M7, the main agent may classify discovered platform optimization needs
+  and interrupt the run for an important platform change before resuming M7.
+- Importance rule: Interruption requires a minimal reproduction showing a generic platform defect or
+  missing capability that blocks or materially degrades modeling quality, semantic retrieval quality
+  or applied-model integrity, with no acceptance-preserving scenario-local path. Dify-specific,
+  convenience, productization or safely avoidable issues remain follow-ups.
+- Delivery boundary: An interrupting platform change is handled as a separate requirement through
+  design, shared plan, mandatory review, implementation, independent PASS, restart/health and commit.
+  M7 then resumes its frozen Host/input/base/acceptance contract; the platform cannot supply business
+  answers or repair Agent semantics.
+- Outcome/next step: Define the L2 repeatability gate and M7 total completion boundary.
+
+### 2026-07-29T12:20:04+08:00 — M7 L2 and total completion gate confirmed — user + main agent
+
+- Blind consumption: One fresh read-only Consumer must answer all three M7 CQs and M1 regressions using
+  only public platform reads.
+- Independent repetition: A second fresh modeling Agent receives the same frozen input/base contract in
+  a new scope. Semantic business conclusions, identity reuse and explicit-unknown handling must be
+  equivalent; byte-identical schema, IRIs and Batches are not required.
+- Deterministic mutations: Delete the C-to-B score binding, make `quality_rating` type-incompatible,
+  reference a branch-local variable from an unavailable Output path, and add an unrelated same-name
+  decoy. The first three must change validation/CQ results; the decoy must not create a false path.
+- Attempt accounting: Mutation tests consume no modeling call. The repeat uses attempt two; attempt
+  three is available only after a failure with clear repair value.
+- Total gate: M7 requires L1, blind Consumer, repeat, four mutations, M1 regression and independent PASS.
+  L3 productization and M3's twenty-environment matrix remain out of scope.
+- Outcome/next step: Probe base-package, formal-write and complete-query assumptions, then freeze the
+  M7 design and shared test plan.
+
+### 2026-07-29T12:20:04+08:00 — M7 high-risk assumption probes — main agent
+
+- Base package: Repository inspection found accepted M1 TTL and M6 run evidence but no replayable,
+  repository-local canonical base semantic package. M7 must create and hash its own scenario-local base
+  package; historical runtime IDs and database state cannot be inputs.
+- Formal write: The current generic Modeling Batch registry supports Class, Property, Relation Type,
+  Shape, Entity and Relation commands, deterministic resource outputs, same-Batch item references,
+  dry-run/apply and SHACL validation. No Dify-specific command is required.
+- Complete read: The current Semantic Context Query supports ontology scoping, related Shape/fact
+  context, independent match/context pagination and explicit truncation/completeness metadata. M7
+  acceptance must exhaust cursors or use bounded scoped SPARQL rather than accepting a truncated page.
+- Evidence: `PYTHONDONTWRITEBYTECODE=1 uv run --directory backend pytest -p no:cacheprovider
+  tests/test_modeling_batches_service.py tests/test_semantic_context_query.py
+  ../docs/evaluation-scenarios/dify-workflow-impact-m6/tests -q` completed `94 passed` in `5.37s`.
+- Design consequence: Build a scenario-local deterministic base loader and generic query executor; do
+  not modify backend/platform code unless later live evidence triggers the confirmed interruption rule.
+
+### 2026-07-29T12:25:22+08:00 — M7 business-answer hypothesis delegated — user + main agent
+
+- User decision: The main agent may decide and later adjust the business answers; they need not become
+  immutable for all M7 iterations at the start.
+- Per-attempt stability: Each live attempt still freezes one version before launch and cannot change it
+  mid-run. Evidence-driven adjustment creates a new version and a fresh scope; historical contracts and
+  outcomes remain unchanged.
+- Initial hypothesis v1: A failing score produces no `approved_content` and routes to manual review;
+  Template `publishable_content` and Workflow Output `approved_content` are distinct identities joined
+  by an explicit binding; a missing score routes to review with an `explicit_unknown` basis and no
+  `approved_content`.
+- Outcome/next step: Write the design and shared test plan against hypothesis v1, while preserving the
+  versioned-adjustment rule.
+
+### 2026-07-29T12:27:56+08:00 — M7 design and shared test plan frozen for review — main agent
+
+- Design:
+  `docs/delivery/designs/2026-07-29-r2-1-001-m7-workflow-orchestration-variable-flow-design.md`.
+- Historical shared test-plan path (removed during the user-requested M7 pause closeout):
+  `docs/delivery/test-plans/2026-07-29-r2-1-001-m7-workflow-orchestration-variable-flow-test-plan.md`.
+- Scope: Scenario-local selected sources, deterministic base package, fresh-scope Host spine, isolated
+  Codex modeling, immutable semantic package, L1 application/CQ validation, blind Consumer, one
+  independent repeat and four deterministic mutations. No backend change is planned.
+- Risk-probe consequence: Same-Batch platform `item_ref` is used for candidate-local resources; the
+  Host exposes exact applied base IRIs and performs no semantic placeholder rewrite. CQ evaluation must
+  exhaust context cursors or use bounded ontology-scoped SPARQL.
+- Contract version: `m7-contract-v1`; the provisional business answers can change only between attempts
+  through a recorded new version and fresh scope.
+- Outcome/next step: Run the mandatory plan-review gate. No live M7 Agent is authorized before PASS.
+
+### 2026-07-29T12:37:49+08:00 — M7 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two evidence-backed High findings were accepted.
+- M7-REV-001 (`accepted-high`): The design incorrectly required exact base IRIs across Batches, while
+  Property/Shape/Relation-Type compiler fields require resource IDs. Supplying an IRI there creates a
+  newly encoded wrong IRI and can make Shapes miss their focus nodes. Revision publishes both ID and
+  IRI per base role, freezes command/path representation rules and adds cross-Batch positive/negative
+  tests. The Host validates but never converts semantic values.
+- M7-REV-002 (`accepted-high`): A lease acquired before Agent reasoning can exceed the default
+  five-minute TTL and an expired lease cannot be renewed. Revision acquires just in time before every
+  apply, permits one precise pre-attempt `lease_expired` re-acquire with identical batch/items/hash and
+  fails closed on second expiry, drift, uncertain commit or other errors. Dedicated no-duplicate-apply
+  tests were added.
+- Additional review assumptions accepted into the plan: the modeling-attempt ledger is global across
+  run roots and appends before launch; bounded scoped SPARQL is authoritative when both Context Query
+  streams could paginate because the API rejects simultaneous match/context cursors.
+- Evidence: Reviewer ran four focused ID/IRI and lease tests successfully and cited
+  `semantic_command_compiler.py`, `modeling_handlers.py`, `build_sessions.py`,
+  `modeling_batches.py` and the prior M5 lease-expiry record.
+- Outcome/next step: Re-review the revised design and shared test plan. Implementation remains blocked
+  until PASS.
+
+### 2026-07-29T12:41:02+08:00 — M7 plan review Round 2 PASS and development handoff freeze — main agent
+
+- Review result: `PASS`; the reviewer found no remaining Critical/High issue and no unconfirmed core
+  assumption. Round 1 ID/IRI and lease findings are closed; global pre-launch attempt accounting and
+  bounded-SPARQL/no-dual-cursor rules are explicit.
+- Historical frozen artifacts: requirement `docs/requirements/requirements-v2.1.md`; reviewed design
+  `docs/delivery/designs/2026-07-29-r2-1-001-m7-workflow-orchestration-variable-flow-design.md`;
+  reviewed shared plan (removed during the user-requested M7 pause closeout)
+  `docs/delivery/test-plans/2026-07-29-r2-1-001-m7-workflow-orchestration-variable-flow-test-plan.md`.
+- Development baseline: `HEAD=4dba980` plus the main-agent-owned M7 requirement/design/plan/record
+  changes listed above. No unrelated worktree change exists.
+- Planned implementation surface: one new
+  `docs/evaluation-scenarios/dify-workflow-impact-m7/` package and focused tests. No backend/API,
+  migration, frontend or service change is authorized by default.
+- Required development checks: M7 focused tests; M1 and M6 regressions; M7 Ruff; `git diff --check`.
+  A live modeling Agent remains unauthorized until a stable development-ready state and independent
+  offline PASS.
+- Escalation: A reproduced important generic platform gap must return to the main agent under the
+  platform-interruption rule; the developer must not silently edit platform code or add Dify-specific
+  behavior.
+
+### 2026-07-29 — M7 offline development-ready — requirement developer + main agent
+
+- Stable state: `HEAD=4dba980` plus the reviewed M7 requirement/design/plan/record changes and new
+  `docs/evaluation-scenarios/dify-workflow-impact-m7/`; scenario tree SHA-256
+  `de8187cefa15ba071a5affd0d4199e8dbe7eb4ebf6c37435b59f7340cce723ad`.
+- Changed surface: Frozen selected-English input and manifest, synthetic Fixture, deterministic base
+  package, hidden answer/acceptance/mutation contracts, global attempt ledger, Host contract helpers
+  for ID/IRI fields, candidate immutability, just-in-time lease recovery and query completeness, plus
+  focused contract/Host/mutation tests.
+- Scope: No backend, frontend, API, migration or service file changed. No live Agent or platform write
+  ran, no runtime resource was created and no commit was made.
+- Verification: M7 `16 passed`; M1/M6 regressions `18 passed`; M7 Ruff passed; `git diff --check`
+  passed. GitNexus reported no affected indexed process and no modified existing platform symbol.
+- Main-agent inspection: The scenario files and key Host/contract tests match the reported tree hash.
+  The current Host module is intentionally an offline contract seam and does not yet contain a live
+  platform launcher; independent testing must judge whether this satisfies the reviewed implementation
+  handoff or is a blocking gap before live L1.
+- Outcome/next step: Freeze this state for independent offline test Round 1. The developer has stopped
+  writing and reported `DEVELOPMENT_READY`.
+
+### 2026-07-29T12:55:44+08:00 — M7 independent offline Test Round 1 — requirement tester + main agent
+
+- Result: `FAIL`; the shared test plan preserves the full round. No modeling Agent or platform mutation
+  was authorized or executed.
+- Passing evidence: M7 `16 passed`; M1/M6 `18 passed`; real compiler no-write preflight accepted all
+  seven base items; Ruff and `git diff --check` passed.
+- M7-R1-01 (`confirmed-critical`): The implemented Host is a FakeApi/offline seam and has no executable
+  prepare/base apply/staging/principal+invalid apply/validation/reasoning/query/checkpoint/cleanup path.
+  It cannot safely start L1.
+- M7-R1-02 (`confirmed-high`): Pre-admission accepts unpublished command kinds and neither validates nor
+  freezes the invalid candidate.
+- M7-R1-03 (`confirmed-high`): Host-only answer/acceptance/mutation contracts lack exact manifest and
+  SHA-256 verification.
+- M7-R1-04 (`confirmed-high`): The seven-item base package omits declared accepted base identities and
+  facts including A/bindings, Workflow Version, Tool Invocation, Variable Binding/Use, score
+  continuity and the missing-score explicit unknown.
+- M7-R1-05 (`confirmed-high`): CQ and mutation tests only transform or validate supplied dictionaries;
+  they do not execute query/validation behavior or prove required result changes and decoy exclusion.
+- Main-agent disposition: All five findings are requirement-relevant and evidence-backed. Repair the
+  real guarded Host path, package admission, Host-only manifest, complete deterministic base and
+  result-level CQ/mutation machinery before Round 2. Do not launch a live Agent or write platform state
+  during repair.
+
+### 2026-07-29 — M7 Round 1 repair development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256:
+  `57304931060dbb8851ab1b17220ce06535b8d4200fe9d14b39e6e28e31e7ebca`.
+- Reported fixes: Explicit guarded REST Host path, published-command inventory checked against the real
+  compiler, separately frozen principal/invalid candidates, exact Host-only manifest, a 49-item
+  accepted base package and RDF/SPARQL result-level CQ/mutation evaluation.
+- Scope: No backend/frontend/product code, live Agent, platform resource or commit.
+- Verification: M7 `19 passed`; M1/M6 `18 passed`; compiler preflight `49` items; Ruff and
+  `git diff --check` passed; GitNexus reported no indexed process impact.
+- Main-agent review focus for Round 2: Verify the live Host can actually split pre-Agent base
+  preparation/staging from post-Agent package execution without a circular public-map dependency,
+  treats the platform's `validation_failed` invalid dry-run status correctly, and guarantees owned
+  cleanup on every failure path rather than success only.
+- Outcome/next step: Return the stable repair to the same independent tester for Round 2. Real L1
+  remains unauthorized.
+
+### 2026-07-29T13:13:44+08:00 — M7 independent offline Test Round 2 — requirement tester + main agent
+
+- Result: `FAIL`; Round 1 artifact/base fixes are real, but the live Host is still unsafe. No live
+  resource or Agent was started.
+- Fixed: Host-only manifest and 28-command inventory; separately frozen candidates and unpublished
+  command rejection; 49-item accepted base compiler preflight; result-level offline RDF mutation proof.
+  M7 `19 passed`, M1/M6 `18 passed`, request payload schemas, Ruff and diff check all passed.
+- M7-R2-01 (`confirmed-critical`): Build Session status/revision are nested under `session` in the real
+  detail envelope; the Host reads top-level fields and cannot reach first base apply.
+- M7-R2-02 (`confirmed-critical`): Project cleanup occurs only on success, not in `finally`; a failure
+  after Project creation leaks the owned scope.
+- M7-R2-03 (`confirmed-critical`): The Host requires a semantic package before creating/applying the
+  base/public map and only returns an in-memory run manifest. A real Agent cannot receive staged public
+  identities and later submit a package into the same scope.
+- M7-R2-04 (`confirmed-high`): Invalid dry-run must accept `validation_failed` plus a blocking finding;
+  the Host only accepts non-real `failed/rejected`.
+- M7-R2-05 (`confirmed-high`): Successful HTTP is not enough—base/principal dry-run must require
+  `attempt_status=validated`, freeze its workspace version and reject drift before exact apply.
+- Main-agent disposition: All findings reproduce current public envelopes or required fail-closed
+  sequencing. Implement a two-phase prepare/stage and same-scope continuation with persisted state,
+  nested Build Session parsing, failure-finally cleanup, real invalid status and frozen dry-run version.
+  Real L1 remains unauthorized pending Round 3.
+
+### 2026-07-29 — M7 Round 2 repair development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256:
+  `1f5848ecdee6fb2e52ccb0e2e72e107aeec19dfc8a74eb9395a3d6ff14550dbc`.
+- Reported fixes: The guarded Host is now a persisted `prepare` / `continue` / `cleanup` state
+  machine. `prepare` owns fresh scope and base publication before exposing the exact staged input and
+  public map; `continue` consumes the package from that same staging area and same scope; explicit
+  cleanup covers Agent/provider failure between phases.
+- Contract corrections: Build Session detail reads `body.session`; base and principal dry-runs
+  require `attempt_status=validated`; apply reuses the frozen Batch content and rejects workspace
+  drift; the invalid candidate accepts only `validation_failed` with a blocking finding and is never
+  applied.
+- Failure integrity: Project ownership is persisted outside the Agent-visible directory, and
+  prepare/continue failure paths execute cleanup while preserving the primary failure and cleanup
+  evidence.
+- Scope: No backend/frontend/product code, live Agent, platform resource or commit.
+- Verification: M7 `24 passed`, including `test_m7_host.py` `16 passed`; M1/M6 regressions
+  `18 passed`; the real compiler preflight accepted all `49` base items; M7 Ruff,
+  `git diff --check` and CLI phase help passed. GitNexus reported no indexed process impact for the
+  untracked scenario tree.
+- Outcome/next step: Freeze this state for independent offline Test Round 3. Real L1 remains
+  unauthorized until the independent tester returns PASS.
+
+### 2026-07-29 — M7 independent offline Test Round 3 — requirement tester + main agent
+
+- Result: `FAIL`; the two-phase execution and all Round 2 fixes passed, but terminal cleanup
+  integrity is not yet fail-closed. No live resource or Agent was started.
+- Passing evidence: M7 `24 passed`; M1/M6 `18 passed`; real compiler preflight accepted all `49`
+  base items; Ruff, diff check and GitNexus change inspection passed. The tester independently
+  verified same-scope prepare/continue, staged visibility, nested session parsing, validated
+  dry-runs, workspace freezing, invalid-candidate rejection, ordinary failure cleanup and CLI
+  guards.
+- M7-R3-01 (`confirmed-high`): If semantic execution and CQs succeed but owned Project deletion
+  fails, `continue_guarded` still returns and records `COMPLETED`. Direct `cleanup_guarded` likewise
+  records `CLEANED` when deletion failed.
+- Main-agent disposition: Cleanup is part of the M7 terminal integrity contract. A cleanup-only
+  failure must produce a failing terminal state and caller error; when a primary execution failure
+  already exists, preserve that primary error while also recording cleanup failure. Add explicit
+  regressions for both continue and direct cleanup, then return to independent Round 4. Real L1
+  remains unauthorized.
+
+### 2026-07-29 — M7 Round 3 repair development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256:
+  `106cf3693934a49742a6015af7a80e1a3051ca64bb33301807d0b8043d06b043`.
+- Fix: A cleanup-only failure after successful continuation now persists `CLEANUP_FAILED` and raises
+  `HostError`; direct cleanup failure behaves the same and never records `CLEANED`. If execution and
+  cleanup both fail, the state remains `FAILED`, cleanup evidence is retained and the original
+  execution error is re-raised.
+- Verification: M7 `26 passed`; M1/M6 `18 passed`; compiler preflight accepted `49` base items;
+  Ruff and `git diff --check` passed. GitNexus reported low risk and no affected indexed process.
+- Scope: Only M7 scenario Host, tests and README changed; no live write or platform product change.
+- Outcome/next step: Return the stable repair to independent offline Test Round 4. Real L1 remains
+  unauthorized pending PASS.
+
+### 2026-07-29 — M7 independent offline Test Round 4 — requirement tester + main agent
+
+- Result: `PASS`; the independent offline gate authorizes exactly one bounded, frozen-contract live
+  M7 L1 attempt.
+- Focused evidence: Cleanup terminal-state regressions `3 passed`; cleanup-only failure is
+  `CLEANUP_FAILED` plus caller error, execution-plus-cleanup failure preserves the execution error
+  and cleanup evidence, and direct cleanup failure never records `CLEANED`.
+- Full evidence: M7 `26 passed`; M1/M6 `18 passed`; real compiler preflight accepted all `49` base
+  items; Ruff, `git diff --check` and GitNexus inspection passed.
+- Scope: No live Agent or platform write ran during Round 4.
+- Live authorization boundary: Use one fresh scope and run ID, execute `prepare` first, launch one
+  fresh isolated modeling Agent against only the staged visible directory, then use the persisted
+  state for exactly one `continue` or `cleanup`. Do not launch a repeat, mutation suite, L2 Consumer
+  or change the frozen contract during this attempt.
+
+### 2026-07-29 — M7 L1 attempt 1 preflight and runtime-mode correction — main agent
+
+- Initial `prepare` failed before Agent launch with base dry-run
+  `attempt_status=validation_failed` and blocking `candidate_validation_failed`: the active service
+  used `SEMANTIC_PRODUCT_WRITE_MODE=legacy_only`, which disables the canonical writer. Both the
+  initial scope and a bounded diagnostic scope were deleted successfully; neither consumed the
+  modeling-attempt ledger.
+- Classification: Established runtime-profile prerequisite, not a model or platform-code defect.
+  The systemd user-manager environment was originally unset, was temporarily set to
+  `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`, and the service was restarted and verified healthy.
+- A new formal `prepare` then succeeded for run `m7-l1-v1-a1-20260729b`, loaded the frozen `49`-item
+  base, staged the exact public map and persisted fresh Project/Ontology/Build Session state.
+- The scenario-global ledger appended `modeling_started` before launching the fresh isolated Agent:
+  attempt `1/3`, `fork_turns=none`, input manifest
+  `8ecc797124b73c06891b054eb1627854142e5714045f382733660e96346fc5e7`, base manifest
+  `82a8556ab09162f52ae03e358c77172cab6a8de5997c7f48a94afa6b980f6be5`,
+  contract `m7-contract-v1`.
+
+### 2026-07-29 — M7 L1 attempt 1 package pre-admission FAIL — modeling Agent + main agent
+
+- Clarification behavior: The fresh Agent asked five material questions one at a time and recorded
+  all question/answer pairs append-only. It captured the three v1 hypotheses, preserved the unknown
+  pass operator/threshold rather than inventing a value, and established typed Start-to-LLM and
+  draft-to-C bindings.
+- Package: The Agent produced one immutable semantic package with `60` proposed principal commands
+  and an agent-authored failing-branch invalid candidate. Package SHA-256
+  `a5a07bd92666cf336d72fc8fbc9ed283d5d6a6cbbbf63b6200ef98deb1eca26d`;
+  clarifications SHA-256
+  `d59e08094a8ecc631a5ba0cbcfa0550bf45c772c8e42ff40eaddb6630926fa3e`.
+- Result: `FAIL` before principal dry-run or apply. The Agent-visible task demanded an exact package
+  but did not expose the required envelope, candidate hashes or published Modeling Item schema.
+  The Agent therefore used `principal_items` and `command_type` while the Host requires
+  `schema_version`, exact manifest/public-map bindings, frozen `principal.items` /
+  `invalid_candidate.items` and `command_kind`.
+- Integrity: `continue_guarded` rejected the immutable package with
+  `semantic package schema or contract version drift`, recorded no principal dry-run and deleted the
+  owned Project successfully. The temporary RDF-primary manager override was removed, the service
+  restarted, and backend/frontend health checks passed.
+- Classification/disposition: `platform-contract` at the scenario Host/Agent boundary, High because
+  a conforming isolated Agent cannot discover the unpublished envelope from authorized inputs.
+  Attempt `1/3` is consumed. Add a machine-readable Agent-visible package/command authoring contract,
+  prove generated packages against the same validator/compiler, complete independent offline review,
+  then use a new contract version and fresh scope for attempt 2. Do not repair the frozen attempt-1
+  package or reuse its scope.
+
+### 2026-07-29 — M7 L1 attempt 1 contract-gap repair development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256:
+  `33330bf0591a509f988f9a9903b67567e8ae85f3e468f3a0ef7b6dafba5cb935`.
+- Contract: The active scenario contract is now `m7-contract-v2`; attempt-1 runtime evidence and the
+  append-only attempt ledger remain unchanged.
+- Agent-visible mechanism: `authoring-contract.json` defines the exact authoring input, sealed
+  envelope, Modeling Item fields, five allowed command payloads, `item_ref` and cross-Batch
+  `resource_id` / `resource_iri` rules, without exposing hidden business answers.
+  `seal_semantic_package.py` is a deterministic, directory-confined helper that atomically seals the
+  sole package output with run metadata and candidate hashes.
+- Host behavior: Admission accepts only a helper-sealed v2 package. The attempt-1
+  `principal_items` / `command_type` shape, unsealed content, hash tampering and directory escape are
+  rejected before principal dry-run; cleanup remains mandatory. Dry-run errors now preserve a
+  bounded summary of attempt status and blocking finding code/message.
+- Verification: M7 `29 passed`; M1/M6 `18 passed`; manifests and real compiler preflight accepted the
+  frozen `49`-item base; Ruff and `git diff --check` passed. GitNexus reported low risk and no
+  affected indexed process.
+- Scope: No backend/frontend/product code, runtime history, ledger rewrite or live platform write.
+- Outcome/next step: Return v2 to the independent tester. Attempt 2 remains unauthorized until the
+  offline gate passes.
+
+### 2026-07-29 — M7 independent offline Test Round 5 — requirement tester + main agent
+
+- Result: `PASS`; the tester authorizes one new fresh-scope `m7-contract-v2` L1 attempt and forbids
+  reuse of any v1 runtime state.
+- Evidence: M7 v2 `29 passed`; M1/M6 `18 passed`; real compiler preflight accepted all `49` base
+  items; Ruff, diff and GitNexus checks passed.
+- Contract proof: A visible-only authored package can be sealed and admitted; the attempt-1 legacy
+  envelope, unsealed package, candidate-hash or seal tampering and directory escape all fail before
+  principal dry-run and preserve cleanup.
+- Scope: No ledger/runtime history or live platform resource was changed during independent testing.
+- Outcome/next step: Temporarily enter the established RDF-primary runtime profile, create a fresh v2
+  scope, record attempt `2/3` before launching a new no-history Agent, and use only that persisted
+  state's `continue` or `cleanup`.
+
+### 2026-07-29 — M7 L1 attempt 2 runtime/infrastructure FAIL — modeling Agent + main agent
+
+- Run: Fresh `m7-contract-v2` scope `m7-l1-v2-a2-20260729`; attempt `2/3` was appended to the
+  scenario-global ledger before launching a new `fork_turns=none` Agent.
+- Modeling progress: The Agent completed five one-at-a-time clarifications, including a distinct
+  C Version 2 input `candidate_content:string` bound from B's `draft_content:string`, authored the
+  principal and invalid candidates, and did not call the platform.
+- First failure: The exact frozen visible command
+  `python seal_semantic_package.py --agent-visible .` exited `127` because the clean Agent shell has
+  no `python` command; `/usr/bin/python3` exists, but using an uncontracted alternative would change
+  the attempt mid-run.
+- Integrity: The Agent stopped without sealing or modifying the package after failure. No principal
+  dry-run or apply occurred. `cleanup_guarded` deleted the owned Project and persisted `CLEANED`.
+  The temporary RDF-primary override was removed and the restarted backend/frontend were healthy.
+- Classification/disposition: `runtime/infrastructure` plus visible Host-command contract, High for
+  the final attempt because the documented exact command is not executable in the actual isolated
+  shell. Attempt `2/3` is consumed. Upgrade the contract, use an executable portable helper command,
+  add a clean-shell preflight before `prepare` returns, and re-audit the frozen live CQ/evaluation
+  path before independently authorizing the single remaining attempt. Do not alter attempt-2
+  package, ledger entry or scope.
+
+### 2026-07-29 — M7 attempt-3 v3 focused plan review Round 3 — plan reviewer + main agent
+
+- Result: `REVISE`; the clean-shell executable-sealer direction passed review, while three L1
+  Critical/High blockers must be resolved before the final modeling attempt.
+- High 1: The current Host uses non-existent `/api/validation-runs`, `/api/reasoning-runs` and
+  `/api/sparql:query` paths instead of the real `/api/semantic/...` routes, and defaults a missing
+  `scope.complete` field to true instead of requiring the actual complete-status/staleness contract.
+- High 2: A missing RDF edge cannot prove `certain-unavailable` under open-world semantics. Failing
+  and missing-score no-output conclusions require positive public closure/status/route/constraint
+  facts; negative assertions are only supplemental bounded-snapshot checks.
+- High 3: `create_relation` produces no `resource_id` / `resource_iri` outputs. Resource proof roles
+  must bind only output-capable commands or public resources; relation edges and typed literals need
+  a non-reified assertion grammar, and role resolution must complete from principal dry-run before
+  apply.
+- User sequencing decision: Finish L0 before modeling. The main agent split L0 into a no-platform,
+  no-ledger, non-business probe and marked it as the only authorized implementation slice. The L1
+  plan remains paused and must be revised/re-reviewed after L0 PASS.
+
+### 2026-07-29 — M7 L0 local runtime probe development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256:
+  `a15ad78de2762321777a23d72794969866ca8b7b8f02d92f920631ba50d5be6a`.
+- Implementation: Added local-only `m7_l0.py`, immutable L0 source contract and an executable
+  Python-3 `--runtime-check` mode on the actual visible sealer. The probe has no HTTP/API, platform
+  resource, modeling ledger or L1 CQ path.
+- Preflight: `prepare_l0` first runs the exact executable command in a temporary clean-shell copy and
+  verifies its canonical receipt. Only then may it create `runtime/l0/<run-id>/agent-visible`.
+  Missing Python 3 fails before formal staging exists.
+- Handoff verifier: Exact membership, immutable hashes, nonce/run manifest/helper identity,
+  interpreter and canonical receipt hash are checked; missing/tampered/extra/escaping content fails.
+  The only mutable output is `l0-runtime-receipt.json`.
+- Verification: M7 `37 passed`; M1/M6 `18 passed`; manifests plus real `49`-item compiler preflight,
+  Ruff, `git diff --check` and L0 CLI surface passed. The actual runtime and global attempt ledger
+  remained unchanged.
+- Outcome/next step: Independent offline test is required before creating a real L0 staging or
+  launching a fresh L0 Agent. L1 remains paused.
+
+### 2026-07-29 — M7 independent offline Test Round 6 — requirement tester + main agent
+
+- Result: `PASS` for the L0-only gate. This authorizes one real fresh-Agent L0 probe and does not
+  authorize L1, modeling, platform writes or a third modeling-attempt ledger event.
+- Evidence: L0 focused `8 passed`; full M7 `37 passed`; M1/M6 `18 passed`; compiler, Ruff, diff and
+  GitNexus checks passed.
+- Runtime proof: The real helper succeeded in a temporary clean production PATH. Missing Python 3,
+  non-executable helper and bad shebang failed before formal staging and left no residue.
+- Isolation proof: Formal staging has exactly five expected members, one mutable receipt and no
+  business corpus, semantic package or hidden contract. Input/helper/receipt/hash/nonce/interpreter,
+  extra-file and symlink-escape mutations all fail verification.
+- Integrity: The global attempt ledger and pre-existing runtime tree were byte/member-hash identical
+  before and after independent testing.
+- Outcome/next step: Create one local L0 staging, launch one fresh `fork_turns=none` Agent to execute
+  only the exact runtime-check command, then run Host verification. L1 remains paused regardless of
+  the L0 outcome.
+
+### 2026-07-29 — M7 real fresh-Agent L0 Runtime PASS — L0 Agent + main agent
+
+- Run: `m7-l0-agent-20260729`, contract `m7-l0-runtime-v1`. The Host created local-only staging after
+  its clean-shell preflight; no platform scope or runtime-mode change occurred.
+- Fresh-Agent evidence: A `fork_turns=none` Agent read only the five staged L0 files and executed
+  exactly `./seal_semantic_package.py --runtime-check --agent-visible .` once. Exit status was `0`;
+  interpreter `/usr/bin/python3`; Python `3.12.3`; receipt SHA-256
+  `6383c6ca101a3202596fd88d26e96fe6fbe4932655cb56eb916c5b5dbcc2c0be`.
+- Host handoff: Independent `m7_l0.py verify` accepted exact membership, immutable hashes, helper
+  identity, run-manifest hash, nonce, interpreter and canonical receipt.
+- Integrity: The Agent performed no modeling and no platform call. The modeling ledger remains at two
+  consumed attempts; `SEMANTIC_PRODUCT_WRITE_MODE` remains unset; service active, backend health
+  `status=ok`, frontend HTTP `200`.
+- Result: `L0 Runtime PASS`. Per user decision, this is now a satisfied hard prerequisite. L1 is
+  still paused until the three focused plan-review High findings are resolved and the revised plan
+  independently passes; the final modeling attempt has not started.
+
+### 2026-07-29 — M7 L1 v3 focused plan reviews Round 4–5 — plan reviewer + main agent
+
+- Round 4 result: `REVISE`. The previous three mechanical High findings were closed, but two new High
+  issues remained: Agent-visible required roles leaked failing/missing-score answers and promoted the
+  L2 decoy into L1; typed-literal assertions had no executable predicate-binding path.
+- Revision: Agent-visible input now contains only generic role/assertion/CQ-claim grammar and state
+  categories, never required role names, case mappings, manual-review expectation or decoy. The
+  Host-only evaluator maps Agent-authored post-clarification claims to the hidden contract. Decoy
+  remains an offline fixture and L2 mutation.
+- Literal path: An assertion predicate may be a resource role or canonical absolute/builtin IRI.
+  An absolute predicate is admitted only when the exact predicate occurs in the real principal
+  dry-run normalized delta. A non-business principal fixture must prove resource-object and
+  typed-literal paths through the real compiler/Batch envelope.
+- Round 5 result: `PASS`; no remaining Critical/High or assumption requiring confirmation.
+- Closed full surface: Pre-Agent base-only live probes use the real graph-set reasoning/validation,
+  detail GET and scoped SPARQL routes; positive public facts prove business negatives; resource roles
+  resolve from output-capable dry-run items; `create_relation` remains an edge, not a resource; query
+  text is Host-owned and apply-output identity is checked.
+- Outcome/next step: Implement the reviewed v3 scenario-only contract and obtain independent offline
+  PASS. The third modeling attempt remains unauthorized during implementation.
+
+### 2026-07-29 — M7 L1 v3 development-ready — requirement developer + main agent
+
+- Stable scenario tree SHA-256, excluding runtime, ledger and caches:
+  `b08af086d25830490c1a485fa892084c0bf457e08ab908f06908e3b67248cfd8`.
+- Contract: Active package is `m7-contract-v3` with executable sealing, generic
+  resource-role/edge/literal/CQ-claim grammar and frozen proof hashes. `create_relation` cannot be a
+  resource role, and visible input contains no hidden case mapping or decoy requirement.
+- Pre-Agent gate: After base apply, the Host uses the real graph-set reasoning/validation/detail and
+  semantic scoped-SPARQL route contracts. Partial/stale/truncated or workspace/source-signature
+  mismatch fails before Agent launch or ledger mutation.
+- Pre-apply gate: Principal dry-run outputs resolve all roles; absolute predicates must exist in the
+  normalized delta; Host queries are generated, parsed and frozen before apply; apply-output drift
+  fails. External query text is removed from Host and CLI entry points.
+- Result proof: Host-only CQ proof-kind evaluation requires connected typed flow, positive
+  available/unavailable/explicit-unknown facts and a real dependency path. Edge absence cannot prove
+  a negative.
+- Verification: M7 `28 passed`; M1/M6 `18 passed`; real `49`-item compiler preflight, Ruff and
+  `git diff --check` passed. GitNexus reported low risk and no affected indexed process for the
+  untracked M7 scenario.
+- Scope: No Agent, live platform write, runtime/ledger change, backend/frontend edit or service
+  restart.
+- Outcome/next step: Independent offline Test Round 7 must validate the complete reviewed v3 gate.
+  The final modeling attempt remains unauthorized pending PASS.
+
+### 2026-07-29 — M7 independent offline Test Round 7 — requirement tester + main agent
+
+- Result: `FAIL`; all v3 mechanical gates passed, but Host-only business-proof evaluation is too
+  permissive. No live resource, Agent or ledger/runtime mutation occurred.
+- Passing evidence: Generic v3 sealer/compiler/dry-run; legacy/unsealed/tampered rejection;
+  pre-apply blocking; real FastAPI/Pydantic semantic routes; L0; M7 `28 passed`; M1/M6 `18 passed`;
+  real `49`-item compiler; Ruff, diff and GitNexus. Runtime/attempt hashes were unchanged.
+- M7-V3-001 (`confirmed-high`): `_evaluate_claims` does not load or map the Host-only answer contract.
+  It checks only claim kind and the existence of arbitrary positive assertions. Two unrelated
+  mechanical facts can be mislabeled as CQ1, all three CQ2 states and CQ3 and still pass.
+- Main-agent disposition: Result-level acceptance must prove the hidden contract without exposing it
+  to the Agent. Bind Agent-authored claims to public semantic subjects/paths and compare them with the
+  Host-only expected workflow cases, typed endpoints, route/state mappings and impact endpoints.
+  Add sparse and mislabeled-positive failures plus complete CQ1/CQ2/CQ3 passes. Final attempt remains
+  unauthorized until independent retest passes.
+
+### 2026-07-29 — M7 semantic Judge focused plan review Round 6 — plan reviewer + main agent
+
+- Result: `REVISE`. The reviewer accepted the Host-mechanical/Judge-semantic boundary, public RDF
+  evidence approach and separation among L1 Judge, L2 blind Consumer and requirement tester.
+- High finding 1: `AWAITING_JUDGE` had no terminal transition when the Judge crashed or produced no
+  verdict, so the final applied scope could remain readable indefinitely.
+- High finding 2: The shared test plan still described the obsolete fixed Host evaluator and could
+  authorize the last attempt without testing snapshot, staging, citation, finalization and cleanup.
+- Revision: Added paired idempotent `abort-judge`, which preserves the original Judge failure, records
+  `INCONCLUSIVE`, seals available evidence and cleans in `finally`; cleanup failure is stable
+  `CLEANUP_FAILED`. Malformed/mismatched verdicts also fail closed and clean.
+- Revision: Froze the exact Judge public-source selection before Producer launch, required the
+  scenario snapshot ceiling to remain below the semantic SPARQL 10,000-row limit, and made additional
+  queries Host-owned, allowlisted, read-only, same-scope/signature and append-only.
+- Revision: Updated the shared plan to `m7-contract-v3-judge` and added snapshot completeness,
+  Producer/Judge isolation, semantic-fixture, citation, additional-query, all terminal paths and
+  L1-before-L2 coverage.
+- Outcome/next step: Repeat the focused mandatory plan review. No implementation or third modeling
+  attempt is authorized until it returns `PASS`.
+
+### 2026-07-29 — M7 semantic Judge focused plan review Round 7 — plan reviewer + main agent
+
+- Result: `REVISE`. Both Round 6 High findings were closed; one new High sequencing conflict remained.
+- Finding: The design cleaned the Project after a Judge PASS, while the next required L2 blind
+  Consumer must answer from public platform queries. Immediate cleanup made M7-20 impossible.
+- Revision: A valid all-PASS verdict now enters read-only `AWAITING_L2_CONSUMER`. It preserves the
+  paired public scope only for Consumer queries and rejects further modeling writes. Consumer
+  success, failure, timeout or invalid result uses paired idempotent complete/abort and cleans in
+  `finally`.
+- Unchanged failure behavior: Judge FAIL/INCONCLUSIVE, malformed/mismatched verdict and
+  `abort-judge` still terminate and clean immediately; cleanup failure remains `CLEANUP_FAILED` with
+  the original cause preserved.
+- Outcome/next step: Repeat focused review of the corrected Judge-to-Consumer lifecycle. The third
+  modeling attempt remains unauthorized.
+
+### 2026-07-29 — M7 semantic Judge focused plan review Round 8 — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding and no assumption requiring user confirmation.
+- Accepted lifecycle: `continue -> AWAITING_JUDGE`; valid all-PASS verdict enters read-only
+  `AWAITING_L2_CONSUMER`; paired Consumer complete/abort seals evidence and cleans. Every non-PASS,
+  invalid-verdict or Judge-abort path cleans immediately and preserves its primary cause.
+- Accepted boundaries: Host checks protocol/evidence mechanics, fresh Judge decides L1 semantics,
+  blind Consumer independently proves L2 public consumption, and the requirement tester verifies the
+  delivery chain.
+- Outcome/next step: Implement the scenario-only Judge/evidence/lifecycle contract and obtain a fresh
+  independent offline PASS. The final modeling attempt remains unauthorized until then.
+
+### 2026-07-29 — M7 independent offline Test Round 8 — requirement tester + main agent
+
+- Result: `FAIL`; no live API, Agent, service, ledger or runtime mutation occurred. M7 `43 passed`,
+  focused Judge `15 passed`, M1/M6 `18 passed`, 49-item compiler, Ruff and diff checks were green.
+- `M7-JUDGE-001` (`High`): A snapshot could omit the expected graph-set ID and still pass exact-scope
+  checks.
+- `M7-JUDGE-002` (`Medium`): Internal Judge staging accepted `PREPARED`, allowing lifecycle bypass.
+- `M7-JUDGE-003` (`High`): Valid Judge FAIL/INCONCLUSIVE verdicts and citations were not persisted
+  before terminal cleanup.
+- `M7-JUDGE-004` (`Medium`): Repeating `complete-consumer` did not return the existing terminal
+  receipt, although cleanup itself ran only once.
+- Main-agent additional disposition: The verdict schema must preserve each CQ's interpreted
+  conclusion, missing/contradictory evidence and non-PASS failure classification, while Host validates
+  only their shape. A canonical documented scenario-hash command is also required so developer and
+  tester freeze the same tree.
+- Outcome/next step: Repair all four findings plus the verdict-evidence/schema and hash-contract gaps,
+  then run an independent Round 9. The final modeling attempt remains unauthorized.
+
+### 2026-07-29 — M7 independent offline Test Round 9 — requirement tester + main agent
+
+- Result: `PASS`; this authorizes the main agent to start the final fresh-scope L1 modeling attempt
+  after live runtime preflight succeeds.
+- Closed findings: Missing/mismatched graph-set snapshots fail; Judge staging requires the paired
+  `PRODUCER_EVIDENCE_SEALED` boundary; FAIL/INCONCLUSIVE verdict evidence and no-verdict receipts are
+  preserved; repeated Consumer completion returns the exact terminal receipt without repeated
+  cleanup.
+- Verdict contract: Every CQ mechanically carries a non-empty conclusion, missing/contradictory
+  evidence list and valid PASS/non-PASS failure classification. Malformed variants fail closed while
+  Host remains semantically non-authoritative.
+- Verification: M7 `52 passed`; M1/M6 `18 passed`; 49-item compiler preflight, Ruff and diff checks
+  passed. Canonical scenario hash matched exactly:
+  `04a103e7e24059129e0739f0941344235c351421f59d1da72fe60061f0305d05`.
+- Safety: Attempts ledger and runtime tree hashes were unchanged; no live API, Agent, service or
+  platform write occurred in the round.
+- Outcome/next step: Run live service/mode/preflight, prepare one new scope, then consume the third
+  and final modeling attempt immediately before launching a fresh Producer.
+
+### 2026-07-29 — M7 L1 attempt 3 platform-contract FAIL before principal apply — Producer + main agent
+
+- Preflight repair: Two operator-only prepare starts failed before resource creation because the Host
+  was first launched outside the backend environment and then with a duplicated `/api` base prefix.
+  A third prepare loaded/cleaned base but exposed a real scenario route mismatch: the Host read
+  `default_graph_set_id` from modeling context instead of the existing public workspace-context route.
+- Route correction: GitNexus/source tracing confirmed the platform already exposes
+  `/api/ontologies/{id}/workspace-context`; no product code change was needed. The scenario Host
+  switched to that route, independent Test Round 10 passed, and a new fresh prepare succeeded.
+- Producer: Attempt `3/3`, run `m7-l1-v3-judge-a3-20260729d`, asked five material questions serially,
+  preserved both explicit unknowns, produced the intended typed Start-to-A path and ran the exact
+  executable sealer. Envelope SHA-256:
+  `253228c92bc263ba5d432113e987ed0f80b0472655975ce8dda3675885e39d85`.
+- Failure: Principal dry-run returned `validation_failed` with one `evidence_not_found` and two
+  `competency_question_not_found` blocking categories. No principal apply occurred; the owned Project
+  was deleted successfully.
+- Root cause/classification: `platform-contract` in the scenario Host/Agent authoring boundary. The
+  visible contract allowed non-empty governed reference arrays but the fresh Project/run manifest
+  contained no governed Evidence or CQ IDs. Inline evidence and scenario `cq_claims` already carry
+  the needed source/CQ semantics.
+- Runtime restoration: The temporary RDF-primary manager override was removed; restarted backend
+  health was `ok` and frontend returned `200`.
+- Adaptive decision: All three starts failed before principal apply on reproduced Runtime/scenario
+  contract defects, so they do not provide an L1 modeling-quality sample. Per the user's prior
+  authorization to adjust the ceiling from evidence, the immutable ledger is retained and the
+  one-time ceiling is proposed as five: attempt 4 for L1 and attempt 5 only after L1 PASS for the
+  required independent repeat.
+- Outcome/next step: Freeze v4 so governed reference arrays are empty unless exact IDs are published,
+  then obtain mandatory plan-review and independent offline PASS before attempt 4.
+
+### 2026-07-29 — M7 v4 recovery focused plan review Round 9 — plan reviewer + main agent
+
+- Result: `PASS`; no Critical/High finding and no additional scope assumption.
+- Accepted cause/boundary: The platform correctly enforced governed Evidence/CQ foreign references;
+  the defect is the scenario's supposedly complete visible authoring contract. Inline evidence and
+  `cq_claims` preserve source fidelity and semantic CQ intent without fabricating platform records.
+- Accepted v4: With no exact governed IDs in the run manifest, both reference arrays must be empty and
+  the sealer rejects non-empty values before submission; compiler/dry-run admission is independently
+  tested.
+- Accepted ceiling: Existing three ledger events remain immutable. Attempt 4 is fresh L1, attempt 5 is
+  conditional on L1 PASS and reserved for the independent repeat, and a sixth start is rejected.
+- Outcome/next step: Implement scenario-only v4 and obtain independent offline PASS before attempt 4.
+
+### 2026-07-29 — M7 independent offline Test Round 11 — requirement tester + main agent
+
+- Result: `FAIL`; no live Agent, platform write, ledger mutation or runtime mutation occurred.
+- Passing scope: v4 empty governed-reference arrays, sealer/Host pre-dry rejection, real compiler
+  seam, normal Judge authorization path, Judge/Consumer/workspace/L0 regressions, M7 `57 passed`,
+  M1/M6 `18 passed`, Ruff, diff and canonical hash.
+- `M7-V4-001` (`High`): A forged `l1_pass_authorized` JSONL line in a temporary ledger incorrectly
+  unlocked attempt 5. The read side checked only event name, v4 run ID, version and a non-empty digest;
+  it did not prove that the authorization came from the paired Host Judge all-PASS + main-Agent
+  accept transition.
+- Outcome: Attempt 4 remained unauthorized pending a repair and independent Round 12.
+
+### 2026-07-29 — M7 paused and closed out by user decision — main agent
+
+- User decision: Pause this requirement, organize the current state and implementation history,
+  remove the M7 test documentation and finish operational cleanup.
+- Delivery status: `PAUSED / L1 not passed`. L0 passed; all three Producer starts ended before
+  principal apply; no applied M7 ontology reached the fresh semantic Judge.
+- Preserved engineering state: v4 scenario source and executable regressions, immutable three-event
+  attempt ledger, ignored runtime evidence, reviewed design and this append-only delivery history.
+- Removed documentation: The M7-specific shared test-plan document and generated pytest-cache
+  documents. Its material results and recovery criteria are consolidated in
+  `docs/delivery/records/2026-07-29-r2-1-001-m7-paused-closeout.md`.
+- Known resume blocker: `M7-V4-001` forged ledger authorization. No repair, Round 12 or attempt 4 was
+  started after the pause request.
+- Product scope: No backend/frontend product code or migration changed.
+- Final verification: All three attempt-owned Project GETs returned `404`; manager environment had no
+  `SEMANTIC_PRODUCT_WRITE_MODE` override; service was active, backend health `ok`, frontend `200`.
+  M7 `57 passed`, M1/M6 `18 passed`, Ruff and diff checks passed. Pause-state scenario hash:
+  `12f3b630b81b496c3d20cd504d607a9702cddd826a578457a9f9d056a793f1dd`.

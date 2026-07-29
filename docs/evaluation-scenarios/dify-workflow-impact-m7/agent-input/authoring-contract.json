@@ -1,0 +1,38 @@
+{
+  "contract_version": "m7-contract-v4-recovery",
+  "purpose": "Write only semantic-package.json in this directory. The executable sealer supplies canonical hashes and the mechanical envelope.",
+  "sealing_command": "Run from this directory exactly: ./seal_semantic_package.py --agent-visible .",
+  "authoring_input": {
+    "exact_top_level_keys": ["principal", "invalid_candidate", "resource_roles", "edge_assertions", "closed_snapshot_absence_assertions", "cq_claims"],
+    "candidate": {"exact_keys": ["items"], "items_min": 1},
+    "item_metadata": {
+      "evidence_reference_ids": "exact empty array: this run manifest publishes no governed Evidence IDs",
+      "competency_question_ids": "exact empty array: this run manifest publishes no governed CompetencyQuestion IDs",
+      "evidence": "inline source excerpts only; each entry has document_name and excerpt",
+      "cq_claims": "the scenario-level CQ semantics and role bindings; do not put CQ IDs on Modeling Items"
+    },
+    "resource_role": {
+      "exact_keys": ["role", "semantic_key", "source"],
+      "semantic_key": "unique lower_snake_case business identity chosen from visible or clarified evidence",
+      "source": "exactly one of public_role or client_item_id; public_role names a run-manifest public map entry, client_item_id names a principal create item that produces a resource"
+    },
+    "edge_assertion": {
+      "exact_keys": ["id", "subject_role", "predicate", "object"],
+      "predicate": "exactly one of role or iri; iri must be absolute http(s) IRI",
+      "object": "exactly one of role or literal",
+      "literal": "object with value string and optional datatype absolute IRI or language BCP47-style tag; datatype and language are mutually exclusive"
+    },
+    "cq_claim": {"exact_keys": ["id", "kind", "assertion_ids", "bindings"], "kind": ["connected_typed_path", "certain_available", "certain_unavailable", "explicit_unknown", "dependency_path"], "bindings": {"connected_typed_path": {"paths": "one or more ordered role sequences"}, "certain_available_or_unavailable": {"case_role": "role", "output_role": "role", "route_role": "optional role"}, "explicit_unknown": {"case_role": "role", "basis_role": "role"}, "dependency_path": {"changed_role": "role", "affected_roles": "non-empty unique roles", "paths": "ordered role sequences"}}, "rules": ["assertion_ids are non-empty unique positive edge assertion IDs", "bindings contain only roles declared in this package", "do not include raw SPARQL text"]},
+    "rules": [
+      "Roles, assertions and claims are Agent-authored from visible evidence; no fixed business role list or case answer is supplied.",
+      "create_relation has no resource output and must never be a resource role; represent its modeled triple with an edge assertion.",
+      "closed_snapshot_absence_assertions are optional supplemental guards only and never prove a business negative.",
+      "For each required negative conclusion, cite a positive public state, closure, typed fact or constraint result; missing edges are not proof."
+    ]
+  },
+  "item_ref": {
+    "form": {"item_ref": {"client_item_id": "an-earlier-item", "output": "resource_id or resource_iri"}},
+    "rules": ["An item_ref may point only to an earlier item in the same candidate.", "Use resource_id in _id fields and resource_iri in _iri fields.", "Across batches use the exact public_base_resource_map value in run-manifest.json."]
+  },
+  "allowed_command_kinds": ["create_class", "create_relation_type", "create_entity", "create_relation", "create_shape"]
+}
