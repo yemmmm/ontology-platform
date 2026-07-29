@@ -1,125 +1,226 @@
-# v2.2 建模执行架构复用需求
+# v2.2 本体建模团队协作需求
 
 ## 文档信息
 
-- 文档状态：规划中
+- 文档状态：L0 已实现并通过独立验收；L1–L3 待细化
 - 基础版本：`docs/requirements/requirements-v2.1.md`
 - 关联版本：`docs/requirements/requirements-v1.0.md`、`docs/requirements/requirements-v1.1.md`、
   `docs/requirements/requirements-v2.0.md`
-- 当前需求：R2.2-001 建模 Host Workflow 与 Agent Runtime Adapter 解耦
-- 更新日期：2026-07-27
+- 当前需求：R2.2-001 本体建模团队三 Agent 协作
+- 更新日期：2026-07-30
 
 ## 背景
 
-R2.1-001 M3 已通过一套完整的自主建模流程，覆盖输入隔离、Project/Ontology/Build Session、
-Evidence、Modeling Batch dry-run/apply、validation、reasoning、行为查询、独立只读消费和二十环境
-mutation 验收。
+R2.1-001 M3 已证明一个隔离的自主建模 Agent 可以通过正式平台入口完成建模闭环。后续 M5-P0
+尝试把底层 Runtime 从 Codex 替换为 Pi 时，又为 Pi 重复实现了平台文件队列、Runtime 生命周期、
+Producer 准入、lease recovery、Consumer 和 mutation 编排。v2.2 最初据此计划提取一套公共 Host
+Workflow，并让每个 Runtime 只实现薄 Runtime Adapter。
 
-M5-P0 原计划只把底层 Agent Runtime 从 Codex 替换为 Pi，并复现同一份 M3 静态合同。实际实施中，
-Pi 专属场景重新实现了模型代理、平台文件队列、8012 生命周期、Producer 准入、lease recovery，
-并准备再次实现 Consumer 和 mutation 编排。由此产生的 JSONL 读取、RPC 背压、长运行 lease 过期
-等问题主要属于 Runtime 适配和重复 Host 编排，而不是建模质量问题。
+进一步分析表明，这个方案仍然把过多职责固化在 Host：平台协议转换、运行编排、测试准入、
+Consumer、mutation 和最终验收被放入同一个公共工作流，建模流程每次演进都需要修改 Host。
+Runtime Adapter 同时把 Codex、Pi 的启动和事件差异提升成正式架构概念，但这些只是执行环境细节。
 
-本轮结论是：后续不得继续为每个 Agent Runtime 复制一套完整建模流程。M3 已验证的确定性 Host
-Workflow 应成为公共执行层，Codex、Pi 或其他 Runtime 只提供薄 Agent Adapter。
+v2.2 因此不再以公共 Host Workflow 或 Runtime Adapter 为目标。当前目标是建立一个由三个专职
+Agent 组成的 **本体建模团队（Ontology Modeling Team）**：建模协调 Agent 负责调度和关键决策，
+建模 Agent 负责业务语义与本体判断，平台协议 Agent 负责把日常建模描述转换为严格平台协议并
+调用平台建模 MCP。
+
+当前交付 Session 不兼任团队内部的建模协调 Agent。它作为团队外部的交付 Agent，负责需求实现、
+测试环境、用户消息转发、运行观测和收尾；正式建模由一个不继承交付 Session 历史的全新 Codex
+Session 承担。
 
 ## 需求列表
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.2-001 | 建模 Host Workflow 与 Agent Runtime Adapter 解耦 | P0 | 待细化 | R2.1-001 M3、M5-P0 证据；R2.0-001 |
+| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0 已实现；L1–L3 待细化 | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
 
-## R2.2-001 建模 Host Workflow 与 Agent Runtime Adapter 解耦
+## R2.2-001 本体建模团队三 Agent 协作
 
 ### 现状是什么，需要改成什么
 
 当前：
 
-- M3 的 Codex 场景已经拥有完整 Producer、Consumer、mutation 和平台验收流程；
-- M5-P0 的 Pi 场景又单独实现同类 Host 编排，导致底层 Runtime 变化扩大为整套流程重写；
-- Runtime-specific launcher、平台编排、验收逻辑和安全门禁混在同一 runner 中，难以判断问题来自
-  Agent 能力、建模方法还是 Harness 自身；
-- 相同 M3 语义合同在不同 Runtime 下不能直接横向比较。
+- 当前交付 Session 同时负责需求实现、测试调度、平台机械操作和部分建模决策，职责容易混淆；
+- 已验证的 Codex 路线主要是“主 Agent + 一个隔离建模 subagent”，没有独立的平台协议 Agent；
+- 当前 Codex 配置只向 Agent 暴露平台只读 MCP；Build Session、Lease 和 Modeling Batch 写工具
+  虽然已在平台实现，但未形成面向专职协议 Agent 的工具边界；
+- M3/M5/M7 的 Host 同时承担平台协议、安全门、评测编排和运行收尾，流程过于固定；
+- Pi 已有多角色 Runtime 证据，但其现有 coordinator、organizer、modeler、reviewer 角色并不是
+  本需求确认的三 Agent 协作合同。
 
 目标：
 
-- 提取一套 Runtime 无关的公共 Host Workflow，复用 M3 已通过的正式建模和验收路径；
-- Codex、Pi 等 Runtime 只通过稳定的 Agent Adapter 接入；
-- 更换 Agent Runtime 时，只替换启动、输入装配、事件解析、工具桥接和终态判断，不重新实现
-  Producer、Consumer、mutation 或平台业务流程；
-- 相同输入、平台反馈、语义门禁和独立验收可在不同 Adapter 下重复执行和比较。
+- 当前交付 Session 只作为交付 Agent，不进入本体建模团队，也不代做团队内关键建模决策；
+- 启动一个全新、非 fork/resume、看不到交付 Session 历史的 Codex Session 作为建模协调 Agent；
+- 建模协调 Agent 在自己的 Session 内调度建模 Agent 和平台协议 Agent；
+- 建模 Agent 使用业务和建模语言形成候选，不需要编排 Build Session、Lease、版本或 Batch；
+- 平台协议 Agent 把建模描述转换为严格 Modeling Items 和平台 MCP 调用；
+- 机械格式问题由协议 Agent 自行修复；状态、范围、版本或内容冲突返回建模协调 Agent，由其决定
+  询问协议 Agent、要求建模 Agent 修复，或追问用户；
+- Host Workflow、Runtime Adapter、Consumer、mutation 和 Judge 不成为生产建模架构的一部分。
 
-### 责任边界
+### 系统与角色
 
-#### 公共 Host Workflow
+#### 本体建模团队
 
-公共层负责：
+本体建模团队是完成一次本体建模任务的三 Agent 协作系统，不等同于其中的建模 Agent，也不是
+Semantic Platform Core 或某个特定 Runtime。
 
-- 净化输入 staging、manifest/hash 和禁止答案材料检查；
-- 隔离 backend 生命周期和运行健康检查；
-- 本轮 Project、Ontology、Build Session、Evidence 和资源归属；
-- 受限平台 gateway、请求/响应/receipt 绑定和凭据注入；
-- Modeling Batch dry-run/apply、fresh workspace/lease、validation、reasoning 和行为查询门禁；
-- 独立只读 Consumer 的平台响应准备；
-- tester-owned mutation specification、二十环境执行和清理；
-- 追加式运行证据、失败门定位、准入和最终验收。
+```text
+用户
+  ↕
+交付 Agent（当前交付 Session，团队外）
+  ↕ 任务、原始用户回答、环境状态、暂停/继续/终止
+建模协调 Agent（全新 Codex Session）
+  ├─ 建模 Agent
+  └─ 平台协议 Agent
+       ↕
+  Semantic Platform MCP
+```
 
-公共层不得替 Agent 选择本体结构、生成答案型 Modeling Items 或把测试期望反馈给 Agent。
+#### 交付 Agent
 
-#### Agent Runtime Adapter
+- 负责 v2.2 的实现、测试准备、运行监控、用户消息转发和资源收尾；
+- 启动、继续或终止建模协调 Session；
+- 只向建模协调 Agent 传递已冻结任务、用户原始回答、环境状态和控制指令；
+- 不提供隐藏验收答案、预期本体、答案型 Batch/Query，且不替团队选择本体结构。
 
-每个 Adapter 只负责：
+交付 Agent 是交付流程中的角色，不是本体建模团队的第四个 Agent。
 
-- 创建新鲜 Runtime/Session 并装配固定 Prompt、输入和公共工具合同；
-- 建立 Runtime 所需的模型调用通道，但不暴露 provider credential；
-- 把公共文件队列或结构化工具映射为 Runtime 可调用工具；
-- 把 Runtime 原生事件规范化为公共事件：启动、消息、工具调用、终态、失败和 settled；
-- 提交用户/Host 后续输入并执行有界停止与进程回收；
-- 输出 Runtime、模型、参数、Prompt/配置哈希和安全运行元数据。
+#### 建模协调 Agent
 
-Adapter 不得复制 Modeling Batch、validation、reasoning、Consumer、mutation 或业务验收逻辑。
+- 是本体建模团队的唯一调度中心和用户问题出口；
+- 分配建模 Agent 和平台协议 Agent 的任务，并综合两者反馈；
+- 决定平台冲突应交由协议 Agent 重新读取状态、交由建模 Agent 修改候选，还是追问用户；
+- 决定建模目标、范围和关键语义取舍，但不亲自拼装 Modeling Batch；
+- 只有需要用户事实、范围变更、不可逆操作确认或无法消除的阻塞才返回交付 Agent。
 
-### 当前最小范围
+#### 建模 Agent
 
-1. 以 M3 已通过的 Host 侧流程和测试合同为基线，识别并提取 Runtime 无关部分；
-2. 定义一个最小 Agent Adapter 合同，首批实现 Codex Adapter 和 Pi Adapter；
-3. 先保证 Producer、Consumer 和 mutation 复用同一公共 Host Workflow，不追求通用插件框架；
-4. 复用 M5-P0 已验证的 Pi 二进制 JSONL reader、settled 证据和必要模型通道，但不把当前
-   Pi 专属 runner 整体提升为公共架构；
-5. lease freshness/recovery 属于公共 Host Workflow，不能仅写入 Agent Prompt，也不能由每个
-   Adapter 分别实现；
-6. 保留 M3 历史运行证据及 M5-P0 的逐轮状态记录作为迁移对照，不重写既有失败轮次。
+- 读取允许的业务资料，识别语义缺口，形成和修正本体候选；
+- 使用面向业务和本体的描述表达 Class、Property、Relation、Shape、规则和实例意图；
+- 将业务歧义、证据不足和关键建模取舍反馈给建模协调 Agent；
+- 不负责 canonical JSON、UUID、Build Session revision、workspace version、Lease 或 Batch 重试。
 
-### 未来产品化
+#### 平台协议 Agent
 
-以下内容可以预留扩展点，但不属于当前完成门槛：
+- 只负责理解并遵循公开平台建模协议；
+- 把建模描述转换为严格 Modeling Items 和 MCP 参数；
+- 调用 Build Session、Lease、Modeling Batch、validation、reasoning 和 query 等平台 MCP；
+- 可以自行修复 JSON、Schema、必填字段、IRI、参数和操作顺序等不改变语义的机械问题；
+- 遇到 workspace revision、Batch 内容、作用域、并发状态或需要改变语义内容的冲突时停止自行
+  修复，并把完整错误和可选处理路径反馈建模协调 Agent；
+- 不擅自补造业务事实、改变候选含义或绕过平台验证。
 
-- backend 内嵌或常驻 Agent Runtime；
-- 远程执行、分布式调度、并发租户和自动崩溃恢复；
-- 通用多供应商模型代理或密钥管理产品；
-- Runtime/Adapter 管理 UI、动态插件市场或版本治理平台；
-- 生产级 sandbox、危险工具策略和跨机器协调。
+Semantic Platform Core 继续强制权限、范围、版本、Lease、Batch 一致性、确定性校验和原子写入；
+协议 Agent 的自我纠错不能替代平台约束。
 
-### 验收标准
+### 协作与错误路由
 
-1. 公共 Host Workflow 的 Producer、Consumer、mutation 和平台验收逻辑只有一份权威实现；
-2. Codex Adapter 能在公共 Workflow 下保持 M3 已通过的核心行为和隔离合同；
-3. Pi Adapter 能在同一公共 Workflow 下完成至少一轮完整 Producer、独立 Consumer 和既有
-   二十环境 mutation 验收；
-4. 两个 Adapter 使用相同的净化输入、平台反馈、语义完成门和 tester-owned 断言，不复制或注入
-   M3 答案型本体、查询或 Batch payload；
-5. Runtime-specific 失败能够被定位在 Adapter 层；平台、建模语义和 Harness 错误可以分开报告；
-6. fresh workspace/lease、同-items retry、receipt、准入和清理由 Host 强制，不能依赖 Agent
-   自觉遵守 Prompt；
-7. 迁移后删除或归档重复的 Runtime-specific Host 编排入口，并保留历史证据链接；
-8. 独立测试记录 PASS，且常驻服务、8001/5173 和隔离资源清理健康。
+1. 交付 Agent 向建模协调 Agent 提交冻结任务和允许资料；
+2. 建模协调 Agent 向建模 Agent 分配语义建模工作；
+3. 建模 Agent 返回业务描述、候选和问题，不直接执行平台写入；
+4. 建模协调 Agent 把获准执行的候选交给平台协议 Agent；
+5. 平台协议 Agent 转换并调用平台 MCP：
+   - 格式、Schema、必填字段、IRI 或调用顺序错误：自行修复并重试；
+   - 平台状态可以无语义变化地重新读取：重新读取后继续；
+   - workspace、Batch 内容、作用域、并发或语义冲突：停止并反馈建模协调 Agent；
+6. 建模协调 Agent 判断冲突属于机械协议、建模候选还是用户事实：
+   - 机械协议问题退回平台协议 Agent；
+   - 建模问题退回建模 Agent；
+   - 业务事实或范围问题通过交付 Agent 一次提出一个问题；
+7. 用户回答由交付 Agent 原样转发，不追加隐藏验收提示；
+8. 只有平台成功写入、验证、查询和治理记录构成平台事实。
+
+### 资料与运行隔离
+
+每次正式尝试必须使用全新的建模协调 Session、子 Agent Session、运行目录、Project、Ontology 和
+Build Session。建模协调 Session 不从交付 Session fork/resume，也不继承其聊天历史、Memory、
+历史 rollout 或项目级答案材料。
+
+测试资料至少分为：
+
+- `agent-visible`：冻结业务资料、建模目标、公开平台合同和已释放用户回答，三 Agent 可按职责读取；
+- `team-work`：团队本轮产生的候选和允许交接结果；
+- `tester-only`：隐藏答案、预期缺口、历史正确模型、答案型 Batch/Query、Judge 合同和 mutation
+  规范，只供测试方使用；
+- `audit`：manifest、Session ID、事件、平台 receipt 和隔离检查结果，只供交付与测试使用。
+
+`tester-only` 是测试资料分类，不是产品架构概念。正式可信测试必须使用 `bubblewrap` 或等价 OS
+隔离，使宿主仓库、交付 Session 状态、历史运行目录和 tester-only 资料在建模团队进程中不可见；
+不能只依赖 Prompt 禁止读取。
+
+三个团队 Agent 可以共享同一隔离运行根，但权限不同：
+
+| 角色 | 允许资料 | 平台写 MCP |
+| --- | --- | --- |
+| 建模协调 Agent | agent-visible、team-work、两个 Agent 的反馈 | 不直接调用 |
+| 建模 Agent | agent-visible 中的业务资料、当前任务和已公开回答 | 无 |
+| 平台协议 Agent | 当前候选描述、公开平台合同、平台响应 | 有 |
+
+### 当前最小范围：L0 三 Agent 协作与隔离探针
+
+L0 只验证架构可运行，不执行真实本体写入，也不证明建模质量：
+
+1. 交付 Agent 启动一个全新、受限且可继续的 Codex 建模协调 Session；
+2. 建模协调 Agent 启动一个建模 Agent 和一个平台协议 Agent；
+3. 建模 Agent 返回一个固定的非答案型建模描述；
+4. 平台协议 Agent 调用一次允许的只读平台 health 或 modeling-context MCP，并返回规范结果；
+5. 建模协调 Agent 向交付 Agent 提出一个固定测试问题，当前 Session 转交用户或测试回答后继续
+   同一个建模协调 Session；
+6. 建模协调 Agent 根据回答完成一次路由并正常结束；
+7. 隔离探针证明团队可以读取 agent-visible、写 team-work，但看不到宿主仓库、交付 Session 状态
+   和 tester-only；
+8. 事件记录能够区分建模协调、建模和协议三个 Agent，并保留 MCP 调用及问答恢复证据。
+
+首版优先使用 Codex 已有多 Agent 能力和可继续 Session；Pi 不是 L0 前置。只有 Codex L0 暴露
+无法通过最小配置解决的能力缺口，或后续需要更强的常驻生命周期控制时，才以同一合同评估 Pi。
+
+### 当前非目标
+
+- 真实 Modeling Batch dry-run/apply 或完整本体建模；
+- Consumer、Judge、mutation、重复成功率或 Runtime 横向对比；
+- 将 Runtime Adapter、Host Workflow 或测试 launcher 提升为平台产品概念；
+- backend 常驻 Agent Runtime、远程调度、跨机器协调或管理 UI；
+- 生产级凭据代理、通用 sandbox 产品或自动崩溃恢复；
+- 退役现有 Codex、Claude 或 Pi 历史路径。
+
+### L0 验收标准
+
+1. 建模协调 Session 是新鲜非 fork/resume Session，不含交付 Session 历史；
+2. 三个团队角色均实际运行，职责和事件可区分；
+3. 建模 Agent 无平台写 MCP，平台协议 Agent 使用受限平台 MCP，协调 Agent 不直接拼装调用；
+4. 一次协议 Agent 平台只读调用成功，返回结果可追溯；
+5. 一次问题、外部回答和同 Session 继续闭环成功；
+6. agent-visible/team-work 访问符合预期，宿主仓库、交付状态和 tester-only 的隔离探针通过；
+7. 未使用 Host 代做建模或协议选择，未引入 Runtime Adapter 正式概念；
+8. L0 自动化测试、真实 Codex 冒烟和独立测试记录 PASS；本轮资源清理后常驻服务健康。
+
+实现结果（2026-07-30）：
+
+- fresh run `l0-r22-real-20260730o` 完成建模协调 Agent、建模 Agent、平台协议 Agent 三方协作；
+- 平台协议 Agent 唯一调用 `check_platform_health` 并取得 PostgreSQL `status=ok`，其他角色无平台调用；
+- 建模协调 Agent 提问后以同一 Session 恢复并完成；
+- 临时 Project-scoped `read` key 已撤销，隔离与审计门通过；
+- 21 项自动化测试和独立测试 Round 4 PASS。
+
+### 后续阶段
+
+L0 通过后另行细化：
+
+- L1：平台协议 Agent 使用 Build Session、Lease 和 Modeling Batch 完成一次真实 dry-run/apply；
+- L2：建模协调 Agent 在格式错误、平台状态冲突和语义冲突之间完成正确路由；
+- L3：使用真实业务切片验证三 Agent 协作是否提升建模质量；
+- Runtime 复现：仅在需要时用 Pi 或其他 Runtime 重放同一团队合同。
+
+后续阶段不得在 L0 尚未证明基本协作与隔离前扩大实现。
 
 ### 与既有需求的关系
 
 - v1.0 R-003/R-004/R-008 继续提供 Build Session、Modeling Batch、认证和 Project 隔离；
-- v1.1 Harness 继续定位为 repo-local 流程/评测证据，不成为平台事实或正式 API；
-- v2.0 R2.0-001 提供 Pi Runtime 能力证据，R2.0-002 的旧完整编排不直接恢复；
-- v2.1 M3 提供公共 Host Workflow 的行为基线；
-- v2.1 M5-P0 作为问题状态和 Adapter 迁移输入阶段关闭，不要求先完成其重复的 Pi 专属
-  Consumer/mutation 实现；逐轮状态见
-  `docs/delivery/records/2026-07-29-r2-1-001-m5-test-round-status.md`。
+- v1.1 的建模方法、Coverage、Work Unit 和评审机制可作为后续团队任务，不是 L0 前置；
+- v2.0 Pi Runtime 保留为候选实现，不决定本体建模团队的角色合同；
+- v2.1 M3/M6 提供 Codex fresh-session、输入隔离和自主建模证据；
+- v2.1 M5-P0 和原 v2.2 Host/Adapter 方案作为历史问题证据保留，不再作为目标架构；
+- Consumer、Judge 和 mutation 仍属于独立评测设施，不进入本体建模团队生产职责。

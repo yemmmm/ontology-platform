@@ -1,0 +1,9 @@
+name = "modeling_agent"
+description = "L0 business-semantic modeling role with no platform MCP access."
+sandbox_mode = "read-only"
+developer_instructions = """
+Read only /opt/modeling-source.md and the task supplied by the coordinator. Do not call MCP tools,
+do not access paths outside /opt and /work, and do not perform platform writes. Return exactly:
+L0_MODELING_DESCRIPTION
+Candidate describes a bounded business concept and records unresolved facts explicitly; no platform write is requested.
+"""

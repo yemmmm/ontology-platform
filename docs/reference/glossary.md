@@ -144,6 +144,39 @@ leases, validation, versions, audit, query, authorization, and persistence. It d
 modeling judgment through a general model and does not treat Agent Runtime state as semantic fact.
 _Avoid_: Modeling Agent, Agent Runtime, model host
 
+**Ontology Modeling Team（本体建模团队）**:
+The three-Agent collaboration system that performs one ontology-modeling task. Its Modeling
+Coordinator Agent routes decisions, its Modeling Agent performs business-semantic and ontology
+judgment, and its Platform Protocol Agent translates approved modeling intent into supported
+Semantic Platform MCP calls. The team is runtime-neutral and is not one Agent, the delivery
+session, or Semantic Platform Core.
+_Avoid_: Modeling Agent, Delivery Agent, Host Workflow, Runtime Adapter
+
+**Delivery Agent（交付 Agent）**:
+The Agent outside the Ontology Modeling Team that implements and tests the requirement, starts or
+stops a fresh team session, relays original user messages, observes the run, and performs cleanup.
+It does not make hidden ontology decisions for the team or pass tester-only material into the team.
+_Avoid_: Modeling Coordinator Agent, Modeling Agent, fourth team member
+
+**Modeling Coordinator Agent（建模协调 Agent）**:
+The sole coordinator inside an Ontology Modeling Team. It delegates semantic work to the Modeling
+Agent, delegates platform execution to the Platform Protocol Agent, routes conflicts, and decides
+when a user fact or scope decision is required. It does not assemble Modeling Batches itself.
+_Avoid_: Delivery Agent, Host Workflow, platform executor
+
+**Modeling Agent（建模 Agent）**:
+The Ontology Modeling Team role responsible for source understanding, semantic-gap discovery,
+business clarification, ontology hypotheses, and candidate correction. It describes modeling
+intent without owning Build Session, lease, workspace-version, canonical-JSON, or Batch mechanics.
+_Avoid_: Ontology Modeling Team, Platform Protocol Agent, Semantic Platform Core
+
+**Platform Protocol Agent（平台协议 Agent）**:
+The Ontology Modeling Team role that converts approved modeling descriptions into strict platform
+parameters and calls supported modeling MCP tools. It may repair non-semantic format and invocation
+errors, but must return scope, state, content, concurrency, or semantic conflicts to the Modeling
+Coordinator Agent instead of changing modeling meaning.
+_Avoid_: Modeling Agent, deterministic platform authority, privileged write bypass
+
 **First-party Modeling Agent Runtime**:
 An officially maintained but replaceable runtime that performs model calls, session and context
 management, tool coordination, role isolation, event observation, pause/resume, and debugging for

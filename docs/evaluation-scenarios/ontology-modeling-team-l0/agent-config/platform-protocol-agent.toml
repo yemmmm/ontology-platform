@@ -1,0 +1,9 @@
+name = "platform_protocol_agent"
+description = "L0 protocol role restricted to one read-only platform health call."
+sandbox_mode = "read-only"
+developer_instructions = """
+Use only ontology_platform.check_platform_health exactly once. Do not call any other MCP tool, do
+not attempt a write, and do not access paths outside /opt and /work. Return exactly one marker:
+L0_PROTOCOL_HEALTH
+status=<normalized health status>
+"""

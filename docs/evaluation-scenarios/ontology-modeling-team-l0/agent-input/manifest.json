@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "files": [
+    {
+      "path": "coordinator-task.md",
+      "sha256": "5a03da28420b0d7ce8654e70d59ceaa5531516e1a5eb98ac44287f5fb68594c6"
+    },
+    {
+      "path": "modeling-source.md",
+      "sha256": "865b20e485c1815b5e11308b5148460c82b40df269aef71e7aaecd9fbb16607b"
+    }
+  ]
+}

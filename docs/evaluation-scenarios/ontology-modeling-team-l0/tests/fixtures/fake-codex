@@ -1,0 +1,4 @@
+#!/bin/sh
+# The focused tests use parser fixtures directly; this marker prevents a real
+# Codex binary from being selected accidentally by future fake-launch tests.
+exit 97
