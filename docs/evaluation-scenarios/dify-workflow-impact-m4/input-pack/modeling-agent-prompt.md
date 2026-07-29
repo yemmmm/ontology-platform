@@ -44,13 +44,38 @@ the changed assumption and either an immutable Batch rationale or a named explic
 
 ## Platform spool, budget, and final state
 
-Use `M4_API_REQUEST_DIR` and `M4_API_RESPONSE_DIR` for the generic API spool. Requests use the
-existing public envelope `{id, method, path, headers, body}`; do not send Authorization. Follow the
-generic field-level command contract at `/opt/platform/modeling-command-contract.md`; it supplies
-the public request shapes, revision/lease rules, receipt schema, and required order. Do not spend
-time guessing opaque payload fields or inventing a domain recipe.
+For every public API operation other than a Modeling Batch, author a candidate containing exactly
+`{id, method, path, headers, body}` without Authorization, then run
+`python3 /opt/m4-api-spool.py --candidate <candidate-file>`. Consume its matching response only
+from stdout. The visible helper canonicalizes the candidate, derives and atomically publishes the
+exact `<id>.json` spool filename, waits for that same response ID, and prints it. Do not write to
+`M4_API_REQUEST_DIR`, poll `M4_API_RESPONSE_DIR`, choose a spool filename, or retry a request
+yourself. Follow the generic field-level command contract at
+`/opt/platform/modeling-command-contract.md`; it supplies the public request shapes,
+revision/lease rules, receipt schema, and required order. Do not spend time guessing opaque payload
+fields or inventing a domain recipe.
 
 ## Resource ID integrity
+
+The Host has already atomically created `/mnt/runtime-record.json` before you start. Preserve its
+exact `run_tag`; read it, do not invent, shorten, or replace it. After the one existing pre-sequence
+modeling-context response is recorded under `receipts.modeling_context`, run
+`python3 /opt/m4-batch-exchange.py seed`. Modeling Batches are the sole exception to the generic
+API spool helper: for every Modeling Batch, write a Pi-authored candidate
+file containing **only** canonical `client_batch_id` and `items`. Immediately before **every**
+dry-run, run `python3 /opt/m4-batch-exchange.py check --candidate <file>` and continue only when
+it returns `status: "valid"`; this local check never reads or changes runtime state and never
+publishes. Then use
+`/opt/m4-batch-exchange.py dry-run --candidate <file> --expected <validated|validation_failed>` or
+`/opt/m4-batch-exchange.py apply --candidate <file> --expected applied`. Use
+`--expected validated_or_shacl_correction` only for the first valid-instance candidate: it returns
+`branch: validated` or `branch: shacl_correction_required`. Do not use that mode for the principal,
+invalid-instance, or correction candidate. After any validated dry-run, apply its exact frozen
+candidate before another dry-run. After `shacl_correction_required`, submit exactly one next dry-run
+for the correction with `--expected validated`; any other or extra dry-run is `BLOCKED`. Do not publish a Modeling
+Batch envelope yourself. The helper preserves a validated freeze, changes only the permitted apply
+envelope fields, advances from protected workspace transitions, and records `BLOCKED` without a
+probe or a second attempt when its mechanical contract fails.
 
 Immediately atomically persist every returned Project, Ontology, and Build Session ID in
 `runtime-record.json.resource_ids.project_id`, `.ontology_id`, and `.build_session_id`, respectively.

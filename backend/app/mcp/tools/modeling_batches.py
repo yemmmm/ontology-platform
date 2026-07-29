@@ -3,16 +3,43 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from app.api.modeling_batches import get_ontology_read_model as read_model_adapter
-from app.api.schemas import ModelingBatchSubmit
+from app.api.schemas import ModelingBatchSubmit, ModelingItemInput
 from app.core.config import Settings
 from app.mcp.runtime import _run_tool, runtime_actor
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
+from app.services.modeling_handlers import ModelingCommandHandlerRegistry
+
+
+# The MCP schema must reflect the commands the Modeling Batch Handler accepts,
+# rather than the wider semantic compiler vocabulary.
+MODELING_BATCH_COMMAND_KINDS = tuple(ModelingCommandHandlerRegistry(Settings()).command_kinds)
+ModelingBatchCommandKind = Literal[*MODELING_BATCH_COMMAND_KINDS]
+
+MODELING_BATCH_PAYLOAD_GUIDANCE = (
+    "Use the Modeling Batch Handler contract. Required create payload fields: "
+    "create_class: name; create_property: class_id, name, plus datatype or object_class_id; "
+    "create_relation_type: name, source_class_id, target_class_id; "
+    "create_shape: target_class_id, constraints; "
+    "create_entity: class_iri_or_legacy_id, label; its optional properties must be a JSON object "
+    "mapping property IRI keys to values, and lists are invalid; update_entity uses the same "
+    "properties form. "
+    "create_relation: source_entity_iri, relation_type_iri, target_entity_iri. "
+    "Only published command_kind values are permitted; add_* aliases are forbidden."
+)
+
+
+class McpModelingItemInput(ModelingItemInput):
+    """MCP-facing Modeling Item with the handler's finite command inventory."""
+
+    command_kind: ModelingBatchCommandKind
+    payload: dict[str, Any] = Field(description=MODELING_BATCH_PAYLOAD_GUIDANCE)
 
 
 def _service(session) -> ModelingBatchService:
@@ -28,7 +55,7 @@ def register_modeling_batches(server: FastMCP) -> None:
         ontology_id: str,
         idempotency_key: str,
         expected_workspace_version: str,
-        items: list[dict[str, Any]],
+        items: list[McpModelingItemInput],
         mode: str = "apply_atomic",
         lease_token: str | None = None,
     ) -> dict[str, Any]:

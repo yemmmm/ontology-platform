@@ -354,6 +354,13 @@ class ModelingCommandHandlerRegistry:
         unknown = sorted(set(payload) - ALLOWED_FIELDS[command_kind])
         if unknown:
             raise InvalidCommandPayload(f"Unknown payload field(s): {', '.join(unknown)}")
+        if command_kind in {"create_entity", "update_entity"} and "properties" in payload:
+            properties = payload["properties"]
+            if properties is not None and not isinstance(properties, dict):
+                raise InvalidCommandPayload(
+                    f"{command_kind}.properties must be a JSON object mapping property IRI keys "
+                    "to values; lists are invalid"
+                )
         if command_kind.endswith("mapping") and ({"source_id", "run_id"} & set(payload)):
             raise InvalidCommandPayload(
                 "unsupported_batch_variant: import-run Mapping commands are not accepted"

@@ -12,7 +12,19 @@
       "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/modeling-agent-prompt.md",
       "mounted_path": "modeling-agent-prompt.md",
       "purpose": "fresh Agent task and clarification protocol",
-      "sha256": "205317f072979babcdc2f3b1c76f8137f440cf17ba9035e715f0c229225f9b6b"
+      "sha256": "0003b4a0ae4e4226d352a86231c6ab0687ee7525d291b777c21d6f8f1f33e9f3"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/m4-batch-exchange.py",
+      "mounted_path": "m4-batch-exchange.py",
+      "purpose": "deterministic answer-free Modeling Batch exchange helper",
+      "sha256": "9aa4b4bf5cd922a1d58ee086a61b77935c528141c92c149f667220e07af819c2"
+    },
+    {
+      "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/m4-api-spool.py",
+      "mounted_path": "m4-api-spool.py",
+      "purpose": "deterministic generic API spool publication helper",
+      "sha256": "5568ae4248085cee397dbcbe43769321ba244a5042867398260abe54d0b7c710"
     },
     {
       "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/business-brief.md",
@@ -23,8 +35,8 @@
     {
       "source_path": "docs/evaluation-scenarios/dify-workflow-impact-m4/input-pack/platform-modeling-command-contract.md",
       "mounted_path": "platform/modeling-command-contract.md",
-      "purpose": "generic public Modeling Batch instructions",
-      "sha256": "213c177467c135ce8374cb3916c8ced56babdb1a12a9aa37ab00b922d6deb2cc"
+      "purpose": "generic public API and Modeling Batch instructions",
+      "sha256": "fd047bca371ac73abb4f5ca9bc78d933e1f1414bfff8691ce52158d0e3f3bc41"
     }
   ],
   "live_inputs": [

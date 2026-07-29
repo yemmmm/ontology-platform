@@ -84,6 +84,44 @@ def test_eligible_request_is_answered_without_disclosing_hidden_protocol_shape(t
     assert json.loads((responses / f"{second_id}.json").read_bytes())["status"] == "uncertain"
 
 
+def test_missing_score_selector_rejects_round6_lifecycle_when_collision(tmp_path: Path) -> None:
+    instance, _requests, _responses, _audit = make_responder(tmp_path)
+    lifecycle = {
+        "id": "lifecycle-when-score",
+        "affected_terms": ["B", "C", "version", "score"],
+        "question": "When does B invoke C's published version?",
+        "business_impact": "The selected C version controls the downstream score contract.",
+    }
+    assert instance._decision_for(lifecycle) == instance.hidden_contract[0]
+    missing = {
+        "id": "missing-positive",
+        "affected_terms": ["score", "missing", "fallback"],
+        "question": "What fallback applies when score is unavailable?",
+        "business_impact": "An absent score changes the consumer conclusion.",
+    }
+    assert instance._decision_for(missing) == instance.hidden_contract[2]
+
+
+def test_missing_score_selector_keeps_real_ambiguity_and_unrelated_requests_ineligible(
+    tmp_path: Path,
+) -> None:
+    instance, _requests, _responses, _audit = make_responder(tmp_path)
+    ambiguous = {
+        "id": "ambiguous",
+        "affected_terms": ["B", "C", "version", "score", "missing"],
+        "question": "Does B invoke C's latest version when score is missing?",
+        "business_impact": "Both target selection and fallback affect the outcome.",
+    }
+    assert instance._decision_for(ambiguous) is None
+    unrelated = {
+        "id": "unrelated",
+        "affected_terms": ["score"],
+        "question": "When is the unrelated deployment window?",
+        "business_impact": "Scheduling does not change any visible input contract.",
+    }
+    assert instance._decision_for(unrelated) is None
+
+
 def test_noncanonical_or_malformed_requests_fail_closed(tmp_path: Path) -> None:
     instance, requests, responses, audit = make_responder(tmp_path)
     request_id = "malformed-001"

@@ -1,9 +1,9 @@
 # R2.1-001 本体建模流程重构 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.1.md` R2.1-001
-- Status: M1/M2 已交付；M3 实施中；R2.1-001 长期迭代继续
+- Status: M1–M3 已交付；M4 实施中；M5-P0 阶段收尾（部分验证，不构成 PASS），后续架构改造转入 v2.2 R2.2-001
 - Started: 2026-07-23T17:11:19+08:00
-- Last updated: 2026-07-26T18:06:35+08:00
+- Last updated: 2026-07-27T17:45:00+08:00
 - Worktree baseline: `1dc5d54` (Pause R2.0-002 and record ontology workflow rethink)
 - Design: M1 uses its candidate artifacts; M2 execution contract is
   `docs/delivery/designs/2026-07-24-r2-1-001-m2-controlled-modeling-rehearsal-design.md`
@@ -1123,6 +1123,7 @@
 - Main-agent disposition: Accept the PASS. No plan revision or re-review is required. Stage-specific
   design and shared test plans remain mandatory when each milestone enters implementation; they are
   intentionally not created by this roadmap-only change.
+
 ### 2026-07-27T10:00:00+08:00 — M4 delivery opened and source/current-state audit — main agent + user
 
 - User authorization: The user approved the previously presented minimal M4 route and requested that
@@ -1331,6 +1332,335 @@
   boundary. Per the reviewed design and repository guidance, do not silently patch backend/migrations in
   M4. Obtain explicit authority for a separate generic platform migration repair, then return to this same
   M4 shared test plan for a new formal acceptance round.
+
+### 2026-07-27T11:15:00+08:00 — M5-P0 Pi M3 compatibility rehearsal opened — user + main agent
+
+- User decision: While M4 remains under implementation and has not passed, run a parallel `M5-P0` Pi
+  compatibility rehearsal that reproduces the already accepted M3 static modeling flow with
+  `deepseek-v4-pro`.
+- Status boundary: M5-P0 is preparation evidence only. It neither consumes M4's hidden clarification
+  contract nor changes the ordered gate that formal M5 starts only after M4 passes and freezes that
+  interactive contract.
+- Current evidence: the pinned local Pi runtime is available as
+  `@earendil-works/pi-coding-agent@0.81.1`, but the existing gitignored Pi configuration selects
+  `deepseek-v4-flash`. The older R2.0 Pi multi-role orchestrator remains paused at its Work-Unit merge
+  checkpoint and has a different workflow contract, so it is not an admissible direct continuation of
+  M3.
+- Target: a new isolated Pi launcher and test package will use the accepted M3 sanitized inputs,
+  fresh Project/Ontology/Build Session, host-owned file-spool API gateway, immutable dry-run/apply,
+  validation, reasoning, query, receipt/audit checks, and no answer-model inputs. A separate
+  `deepseek-v4-pro` configuration must be scoped to this rehearsal and must not modify the existing
+  local Pi configuration.
+- Non-goals: no M4 file or hidden answer access, no M5 completion claim, no revival of R2.0-002's
+  multi-role orchestration, no backend/frontend/MCP/migration change, and no Pi-specific platform path.
+- Outcome/next step: freeze whether the M3 independent read-only consumer is also reproduced as an
+  isolated Pi + `deepseek-v4-pro` process before writing the M5-P0 design and test plan.
+
+### 2026-07-27T11:18:00+08:00 — M5-P0 Pi consumer boundary confirmed — user + main agent
+
+- User decision: Reproduce the full M3 flow. Both the autonomous modeling producer and the independent
+  read-only consumer must be separate Pi Agent processes using `deepseek-v4-pro`.
+- Consequence: M5-P0 acceptance must retain M3's no-prior-model consumer boundary and assess the
+  consumer's fact-grounded interpretation separately from the producer's modeling outcome. A single
+  Pi producer-only run is insufficient.
+- Outcome/next step: probe Pi startup/model configuration and a credential-safe M3-style isolation
+  arrangement before freezing the M5-P0 design and shared test plan.
+
+### 2026-07-27T11:27:00+08:00 — M5-P0 Pi/credential probes — main agent
+
+- Probe 1 — pinned Pi startup: The repo-local
+  `@earendil-works/pi-coding-agent@0.81.1` binary entered and cleanly exited RPC mode with
+  `provider=deepseek`, `model=deepseek-v4-pro`, `--no-session`, and the modeling extension loaded.
+  Result: PASS; no model prompt or platform operation was sent.
+- Probe 2 — live model round trip: A no-tool, no-platform single-turn prompt produced a normal Pi
+  assistant message stream, `agent_settled`, and exit code `0` with `deepseek-v4-pro`. The first probe
+  harness incorrectly treated Pi's array-valued assistant `content` as a string and therefore failed
+  its exact-marker assertion despite normal settlement; an event-shape rerun confirmed the 0.81.1
+  `message_update` / `message_end` contract. Result: model reachability PASS; the marker-parser defect
+  must be covered by the new launcher tests before a production rehearsal is accepted.
+- Probe 3 — credential isolation: Existing Pi authentication is a mode-`0600` local `auth.json`; mounting
+  it or passing its key via CLI/environment would make the provider secret reachable by Agent tools.
+  Pi 0.81.1 supports a custom OpenAI-compatible provider with a configurable local `baseUrl` and an
+  opaque API key. Result: PASS for a host-owned localhost model proxy design: the proxy alone reads the
+  actual provider credential, while a per-run opaque capability mounted to Pi may only invoke the fixed
+  `deepseek-v4-pro` route and cannot authorize platform calls.
+- Probe 4 — platform runtime: The regular systemd service is active and healthy on `8001`, but remains
+  `legacy_only`; accepted M3 runs instead used a fresh temporary backend on `8012` in `rdf_primary` mode.
+  Result: M5-P0 must retain that isolated-backend procedure and must not mutate the regular runtime.
+- Design consequence: Build a new M5-P0-only Pi launcher rather than adapting the paused R2.0 orchestrator.
+  It needs an ephemeral Pi Agent directory/custom-provider extension, host-only model proxy, the existing
+  M3-style file-spool platform gateway, and separate producer/consumer namespaces. No credential value,
+  host Pi auth directory, M4 artifact, or M3 answer artifact may be mounted or recorded.
+
+### 2026-07-27T11:35:00+08:00 — M5-P0 full mutation scope confirmed and plan frozen — user + main agent
+
+- User decision: Include M3's complete nine-role propagation mutation suite. The user confirmed that it
+  consists of one baseline, one orthogonal decoy and remove/unrelated-sentinel variants for nine roles,
+  rather than twenty DeepSeek model runs.
+- Frozen contract: A fresh Pi producer and a separate fresh Pi consumer both use `deepseek-v4-pro`.
+  The producer must meet M3 static semantic and formal-application gates; the consumer must be blind and
+  fact-grounded. The tester owns the 20-environment Modeling Batch suite outside Agent mounts. M4 files,
+  hidden answers and formal M5 interaction remain excluded.
+- Requirement sync: Added M5-P0 and its non-advancement boundary to
+  `docs/requirements/requirements-v2.1.md`.
+- Design: Added
+  `docs/delivery/designs/2026-07-27-r2-1-001-m5-p0-pi-m3-compatibility-design.md`.
+- Shared test plan: Added
+  `docs/delivery/test-plans/2026-07-27-r2-1-001-m5-p0-pi-m3-compatibility-test-plan.md`.
+- Outcome/next step: Perform the mandatory plan review. Serious findings must be disposed and the plan
+  re-reviewed before any M5-P0 implementation starts.
+
+### 2026-07-27T11:42:00+08:00 — M5-P0 plan review Round 1 disposition — plan reviewer + main agent
+
+- Review result: `REVISE`. The reviewer found four confirmed High risks; all are accepted. No M5-P0
+  implementation began before their disposition.
+- H1 — empty isolated database migration is not viable: the existing migration chain fails on a fresh
+  database because migration `0002` drops a relation-type constraint that `0001` did not create. The
+  revised plan explicitly forbids empty-database migration. Its separate `rdf_primary` process uses the
+  already migrated local development stores, first runs read-only compatibility checks, creates only
+  fresh ownership-labelled resources, and leaves the normal service configuration untouched.
+- H2 — a one-shot model capability would prevent normal multi-turn Pi execution: the revised proxy
+  capability is bound to one Pi process, permits that process's multiple sequential completions, expires
+  on process exit, and rejects a different process, separate client or after-exit replay. A two-completion
+  proof is now mandatory.
+- H3 — `bwrap --share-net` would allow arbitrary host/network egress: the revised design forbids it.
+  Pi runs in an unshared network namespace with only an in-namespace localhost sidecar; that sidecar
+  reaches a host-only Unix-socket model forwarder. Direct DNS/internet, normal/isolated platform ports,
+  unrelated loopback ports and host socket access are now explicit negative probes.
+- H4 — `git diff --check` cannot protect concurrent M4 work: before developer/tester work, the main
+  agent must capture exact path/SHA-256 snapshots of M4 scenario/design/test-plan plus the current
+  requirement and delivery record. Every handoff must demonstrate the M4 protected bytes are unchanged,
+  and M5-P0 work is limited to its named paths.
+- Revised artifacts:
+  `docs/delivery/designs/2026-07-27-r2-1-001-m5-p0-pi-m3-compatibility-design.md` and
+  `docs/delivery/test-plans/2026-07-27-r2-1-001-m5-p0-pi-m3-compatibility-test-plan.md`.
+- Outcome/next step: Request mandatory review Round 2. Implementation remains blocked until it returns
+  PASS or only non-serious findings.
+
+### 2026-07-27T11:50:00+08:00 — M5-P0 plan review Round 2 — plan reviewer + main agent
+
+- Review result: `PASS`. No remaining evidence-backed Critical or High finding was reported.
+- Verified disposition: The already migrated development-store path avoids the confirmed fresh-database
+  migration defect while retaining a separate `8012` process, read-only compatibility checks, fresh
+  ownership-labelled resources and normal-runtime health gates. The process-bound model capability
+  permits multiple completions by one Pi process and rejects cross-process/direct/after-exit use.
+  The M4 scenario/design/test-plan and the current requirement/record have an implementation-time
+  byte-level snapshot gate.
+- Network clarification: A Unix socket is not itself isolated by a network namespace. The design now
+  requires a private pre-connected sidecar channel (or equivalent authenticated sidecar-only mechanism),
+  does not mount the host socket pathname into Pi, and makes a direct host-socket client a mandatory
+  failure probe. `--unshare-net` remains mandatory for all other direct egress.
+- Development handoff: The frozen M5-P0 design and shared test plan are now implementation-ready. Before
+  any developer/tester changes, capture the specified protected SHA-256 snapshot; M5-P0 code remains
+  confined to `docs/evaluation-scenarios/dify-workflow-impact-m5-p0/` and must not modify M4, backend,
+  frontend, MCP or migrations.
+
+### 2026-07-27T12:35:00+08:00 — M5-P0 concurrent-scope rule revised — user + main agent
+
+- Observed conflict: M4 remains in active parallel implementation and legitimately appends its shared test
+  plan. A strict byte-identical M4 snapshot therefore stopped every M5-P0 launch before Pi/model work,
+  despite M5-P0 not mounting or writing M4.
+- User decision: Preserve M5-P0's prohibition on all M4 writes/access, but change the M4 hash manifest
+  from a global worktree lock to an evidence trace. M4 divergence is recorded as concurrent work rather
+  than treated as a reason to block a correctly isolated M5-P0 runtime.
+- Revised gate: Every M5-P0 run records before/after M4/requirement/record manifests and all divergence.
+  It must reject M4 paths in its mounts, staged inputs, writable roots and cleanup targets; prove writes
+  remain in the M5-P0 root or uniquely owned temporary resources; and never claim M4 remained unchanged.
+  This does not authorize M5-P0 to edit M4, backend, frontend, MCP, migrations, requirements or this
+  record.
+- Outcome/next step: Re-run mandatory plan review for this High-risk scope-control revision before changing
+  the M5-P0 launcher and resuming the real model probe.
+
+### 2026-07-27T12:42:00+08:00 — M5-P0 concurrent-scope review Round 1 disposition — plan reviewer + main agent
+
+- Review result: `REVISE`; two confirmed High gaps are accepted. M5-P0 remains stopped before the pending
+  real-model probe.
+- H1 — filesystem-only scope control did not protect M4 platform resources: the existing producer gateway
+  injected an administrator API key and generically forwarded `/api/*`, allowing Project enumeration and
+  read/write of a concurrent M4 Project. Revision: the host creates one uniquely labelled empty M5-P0
+  Project before Pi starts; producer/consumer gateways are stateful and Project-bound, record only IDs
+  returned for that Project, reject listing/unscoped cross-Project query and foreign IDs/PATCH/DELETE before
+  upstream, and add M4/foreign-resource negative tests.
+- H2 — the no-M4-path rule was not fail-closed: unrestricted run tags and mount/cleanup inputs allowed
+  parent traversal, direct M4 mounts or symlink redirection. Revision: freeze a simple run-tag syntax;
+  resolve-and-contain all create/mount/write/cleanup paths below registered M5-P0/unique-temp roots;
+  reject symlinked ancestors/targets, M4 paths and caller-supplied cleanup targets; remove only a recorded
+  launcher-created root. Add traversal, direct-M4, symlink and cleanup negative tests.
+- Revised artifacts: M5-P0 design and shared test plan now contain both no-access layers. The prior
+  concurrent-manifest decision remains: M4 drift is evidence rather than a block only after these platform
+  and filesystem gates pass.
+- Outcome/next step: Request concurrent-scope review Round 2. Only after PASS may the developer modify
+  the M5-P0 launcher/gateway and resume real `deepseek-v4-pro` probing.
+
+### 2026-07-27T12:48:00+08:00 — M5-P0 concurrent-scope review Round 2 — plan reviewer + main agent
+
+- Review result: `PASS`. No remaining evidence-backed Critical or High finding was reported.
+- Verified closure: The stateful Project-bound gateway closes the shared-development-store exposure by
+  precreating one uniquely owned M5-P0 Project, denying Project enumeration/unscoped or cross-Project
+  query/foreign ID operations, and rejecting external PATCH/DELETE before upstream. The filesystem gate
+  now requires a frozen safe run tag, resolved containment and non-symlinked launcher-owned create/mount/
+  write/cleanup roots, with traversal/direct-M4/symlink/arbitrary-cleanup negative tests.
+- Concurrent outcome: M4 before/after manifests are evidence only after both no-access gates pass. M5-P0
+  may record concurrent M4 drift but can never describe M4 as unchanged or treat a no-access failure as
+  external drift.
+- Development handoff: Return the stable M5-P0-only package to the developer. It must implement the
+  reviewed Project-bound gateway and path controls, run their focused negative tests, then resume the
+  real `deepseek-v4-pro` two-completion probe. M4/backend/frontend/MCP/migrations remain out of scope.
+
+### 2026-07-27T13:20:00+08:00 — M5-P0 development handoff for independent testing — requirement developer + main agent
+
+- Implementation scope: only `docs/evaluation-scenarios/dify-workflow-impact-m5-p0/` changed. The package
+  now records before/after concurrent-scope manifests without claiming M4 unchanged; fail-closes path/run
+  tag/mount/cleanup traversal and symlink escape; binds the host API gateway to a host-created uniquely
+  owned Project; and adds a host-only fixed-DeepSeek proxy with constrained HTTPS-proxy CONNECT and SSE
+  forwarding. M4/backend/frontend/MCP/migrations were not touched by the developer.
+- Static verification: M5-P0 focused suite `15/15`, Ruff check/format and `git diff --check` passed.
+  Regression evidence is M1 `13`, M2 `5`, M3 `27`, and applicable backend `69` passed. GitNexus impact
+  was run before changing reused M5-P0 symbols; the new scenario symbols were not indexed and returned
+  `UNKNOWN`, with no High/Critical caller result.
+- Real model evidence is deliberately not a PASS: host-only `deepseek-v4-pro` probe `h` reached first
+  `agent_end(willRetry=false, stop)` and `agent_settled=1`, accepted the second regular RPC prompt and
+  made two proxy completions, but did not receive the second settled event before its bounded timeout.
+  Probe `i` accepted the first prompt and made one proxy completion but did not finish within the bounded
+  turn timeout. Both were recorded `BLOCKED`, had no credential/body exposure, recorded concurrent M4
+  drift as evidence only, and cleaned up all Pi/sidecar/proxy processes.
+- Outcome/next step: Independent tester must independently run focused/negative/regression checks and
+  reproduce the real two-completion gate. It must record PASS only if the strict two-settled/two-completion
+  evidence and all remaining M3-static gates actually pass; otherwise append FAIL/BLOCKED with the precise
+  external/runtime evidence.
+
+### 2026-07-27T13:30:00+08:00 — M5-P0 independent test Round 1 — requirement tester + main agent
+
+- Result: `BLOCKED`; the tester appended Round 1 to the M5-P0 shared test plan. It did not begin producer,
+  consumer or the 20-environment suite because M5P0-02 did not pass.
+- Passed independently: M5-P0 focused `15/15`, including Project enumeration/cross-Project SPARQL/
+  M4-or-foreign-ID/PATCH/DELETE upstream-before rejection, path traversal/direct-M4/symlink/arbitrary
+  cleanup, proxy wrong model/path/replay/no-secret; M1 `13`, M2 `5`, M3 `27`, backend `69`, Ruff/format,
+  diff check and normal `8001`/`5173` health. No M5 Pi/sidecar/proxy/8012 process remained. M4 manifest
+  drift was retained only as concurrent evidence.
+- Confirmed blocker M5P0-R1-01: independent real host-only `deepseek-v4-pro` run
+  `m5-p0-independent-20260727b` made two proxy completions and accepted the second prompt but reached only
+  one `agent_settled` before its bounded timeout. The tester preserved the strict two-settled/two-completion
+  condition, did not substitute `agent_end`, and recorded no HTTP/proxy failure, provider secret or response
+  body.
+- Confirmed P2 M5P0-R1-02: Pi package paths were cwd-relative; a `uv run --directory backend` invocation
+  resolved a nonexistent `backend/backend/.local/...` source for bwrap. Repair must derive the repository
+  root absolutely and add a cwd-override focused test.
+- Outcome/next step: Return both findings to the requirement developer. It may fix the cwd defect and
+  investigate the second-settlement instability without relaxing model, isolation or terminal-evidence
+  gates; then the same independent tester must run Round 2.
+
+### 2026-07-27T13:38:00+08:00 — M5-P0 Round 1 repair handoff — requirement developer
+
+- P2 fixed: `PI_PACKAGE`, `PI_NODE_MODULES` and host Pi auth paths now derive absolutely from the scenario
+  module/repository root instead of the caller cwd. New focused coverage starts from `uv run --directory
+  backend` and proves the bwrap source paths remain valid.
+- Repair verification: M5-P0 focused `16/16`; M1 `13` (21 subtests), M2 `5` (17 subtests), M3 `27`, backend
+  `69` with five existing warnings, Ruff/format and diff check passed. GitNexus impact found an old M3
+  same-name `bwrap_command` at Low risk but it was not modified; M5 symbols were unindexed/UNKNOWN with no
+  High/Critical caller. No probe process remained.
+- M5P0-R1-01 remains `BLOCKED`, not repaired by assumption: Pi 0.81.1 OpenAI-completions receives the
+  fixed streamed DeepSeek response through the host-only proxy and unchanged sidecar. Evidence still shows
+  one run with a first settled then two proxy completions/second regular prompt but no second settled, and
+  another with only one completion/no settled despite bounded no-tool/max-token probe settings. No evidence
+  permits treating `agent_end` as settled or weakening the model/isolation contract.
+- Outcome/next step: Same independent tester must execute Round 2, independently verify the cwd repair and
+  strict probe. Producer/consumer/mutation work remains prohibited unless it observes the real two-settled/
+  two-completion gate.
+
+### 2026-07-27T13:48:00+08:00 — M5-P0 independent test Round 2 — requirement tester + main agent
+
+- Result: `BLOCKED`; tester appended Round 2. The cwd P2 repair is independently verified: M5-P0 focused
+  `16/16`, absolute Pi package/auth paths and actual `uv run --directory backend` bwrap launch passed.
+  M1 `13`, M2 `5`, M3 `27`, backend `69`, Ruff/format/diff and normal health passed. M4 no-access coverage
+  remains passing; `changed_during_run=[]` and existing M4 drift was recorded only as concurrent evidence.
+- M5P0-R1-01 remains confirmed: new independent run `m5-p0-independent-20260727c` accepted two regular
+  RPC prompts in one Pi process, made `proxy_completions=2` and received two successful RPC responses, but
+  emitted only `agent_settled=1` before the strict bounded timeout. `agent_end=1` was not substituted.
+  There was no proxy HTTP failure, secret/Authorization/response body record or residual M5 process. The
+  concurrent M4 `8012` process was observed but untouched.
+- Scope disposition: Do not start producer, consumer, formal Batch or mutation work. Return only the
+  second-turn Pi/OpenAI-stream settlement lifecycle to the developer for diagnostic repair; retain all
+  model/isolation/terminal-evidence gates and use a new independent run tag after repair.
+
+### 2026-07-27T14:00:00+08:00 — M5-P0 settlement-lifecycle diagnostic handoff — requirement developer
+
+- Added safe lifecycle evidence only: host/sidecar/run audit records response status/content type, EOF,
+  bytes/chunk count, `[DONE]`, sidecar forward/close, Pi `agent_end` retry/stop and RPC command success;
+  it never records completion body, key or headers. A deterministic two-round fake SSE UDS test passed with
+  one capability/process and completion counters `1`/`2`, including the terminal `[DONE]\n\n` sequence.
+- Real diagnostic `m5-p0-lifecycle-20260727a` remains `BLOCKED` but excludes proxy truncation: first host
+  response was `200` / `text/event-stream`, EOF and `[DONE]` both observed, sidecar forwarded then closed
+  it, and Pi emitted `agent_end(stop, willRetry=false)` but no `agent_settled`. It therefore made only one
+  completion and did not send a second prompt. No terminal-evidence relaxation was made.
+- Verification: M5-P0 focused `17/17`, M1 `13`, M2 `5`, M3 `27`, backend `69` with existing warnings,
+  Ruff/format/diff passed; no probe process remained. Same independent tester must now independently
+  confirm the lifecycle evidence and strict real gate in Round 3.
+
+### 2026-07-27T14:10:00+08:00 — M5-P0 independent test Round 3 — requirement tester + main agent
+
+- Result: `BLOCKED`; tester appended Round 3. Focused `17/17`, including the deterministic two-round UDS
+  fake SSE lifecycle; M1 `13`, M2 `5`, M3 `27`, backend `69`, Ruff/format/diff, normal health and M4
+  filesystem/API no-access all passed. Concurrent drift remains evidence only.
+- Stable blocker evidence: real run `m5-p0-independent-20260727d` made two host-only fixed-model SSE
+  completions, each with HTTP 200, EOF, `[DONE]`, sidecar forward and sidecar close; Pi accepted the
+  second regular prompt, made `proxy_completions=2`, and emitted two `agent_end(stop, willRetry=false)`
+  events. It emitted only one `agent_settled` before the bounded two-completion timeout. No upstream HTTP
+  failure, credential/body record or residual M5 process was observed.
+- Disposition: The evidence now excludes host proxy truncation, missing SSE terminal, sidecar close and
+  API/filesystem scope as the cause. Do not substitute `agent_end` for settlement. Developer may add only
+  safe event-time/turn-deadline evidence and a bounded post-second-turn settlement grace to distinguish a
+  late normal settlement from a reproducible Pi/DeepSeek lifecycle omission, then tester must run Round 4
+  with a new tag. Producer/consumer/Batch/mutation remain blocked.
+
+### 2026-07-27T14:20:00+08:00 — M5-P0 SSE structure diagnostic — requirement developer
+
+- Real run tag `m5-p0-sse-schema-20260727a` safely confirms one complete upstream SSE stream: HTTP `200`,
+  `text/event-stream`, EOF and `[DONE]`; its structure summary records `event_count=28`, `done_count=1`,
+  `json_parse_errors=0`, `choices_total=28`, `usage_present=true`, top-level keys
+  `choices/created/id/model/object/system_fingerprint/usage`, delta keys
+  `content/reasoning_content/role`, and finish reasons `null/stop`. The audit contains no credential,
+  header, completion body or completion text.
+- Pi source compatibility is confirmed without host-side normalization: the installed Pi OpenAI-completions
+  source explicitly accepts DeepSeek-style `reasoning_content` (alongside `reasoning` and
+  `reasoning_text`), so the observed schema does not justify altering the fixed-model stream.
+- Strict blocker remains: the first regular prompt was accepted and produced one complete proxy SSE
+  completion, but Pi emitted neither `agent_end` nor `agent_settled` before the first-turn deadline;
+  therefore no second prompt was sent and the required two-settled/two-completion gate did not pass. This
+  record does not substitute any weaker lifecycle signal for settlement.
+- Development verification: `python3 -m unittest
+  docs/evaluation-scenarios/dify-workflow-impact-m5-p0/tests/test_m5_p0.py -q` passed `18/18`; `uv run
+  --directory backend ruff check ../docs/evaluation-scenarios/dify-workflow-impact-m5-p0` passed. No
+  producer, consumer, formal Batch or 20-environment mutation run was started while the strict gate is
+  blocked.
+
+### 2026-07-27T14:30:00+08:00 — M5-P0 independent test Round 4 — requirement tester + main agent
+
+- Result: `BLOCKED`. Real run tag `m5-p0-sse-schema-20260727b` recorded a complete, safely summarized SSE
+  stream with `event_count=37`, `done_count=1`, `json_parse_errors=0`, `choices_total=37`, and
+  `usage_present=true`; no credential, header, response body or completion text was recorded.
+- Strict terminal gate remains unmet: `agent_settled=0`; Pi emitted only
+  `agent_end(stop, willRetry=false)`, which is not substituted for settlement. The second regular prompt
+  was not sent, so the required second completion/settlement evidence cannot be claimed.
+- No residual M5 probe process remained. Producer, consumer, formal Batch and mutation work were not
+  started while this strict blocker remains.
+
+### 2026-07-27T15:26:46+08:00 — M5-P0 temporary pause and session handoff — main agent
+
+- Status changed from active `BLOCKED` diagnosis to `PAUSED (BLOCKED)` so work can resume in a separate
+  session after the Pi Runtime issue is fixed. M4 remains independently in progress; formal M5 has not
+  started.
+- The pause preserves independent test Rounds 1–4 and their failure evidence. Completed scope is limited
+  to the isolated Pi/model proxy/gateway harness, focused `18/18` protection checks, and safely summarized
+  real-stream diagnostics. Producer, consumer, formal Modeling Batch and twenty-environment mutation were
+  not started and are not accepted.
+- Resume point: rerun M5P0-02 with a new run tag after a verified Pi fix or explicitly accepted Pi version
+  change. The same Pi process must complete two sequential regular prompts with two provider completions
+  and two `agent_settled` events before any downstream work begins. Continue with the existing design and
+  shared test plan, append a new independent test round, and never rewrite Rounds 1–4.
+- Current evidence localizes the blocker to Pi 0.81.1 RPC settlement lifecycle after a complete real
+  `deepseek-v4-pro` SSE. It does not justify a platform business-logic change or substituting `agent_end`
+  for `agent_settled`.
 
 ### 2026-07-27T15:42:27+08:00 — M4 correction repair resumed with core-scope constraint — user + main agent
 
@@ -1618,6 +1948,84 @@
   positive and boundary-negative tests. Do not change semantic eligibility, answers, platform APIs,
   retries, credentials, ontology payloads, M5 or surrounding security.
 
+### 2026-07-27T16:17:15+08:00 — M5-P0 Pi fix resume verification — user + main agent
+
+- The first fresh probe, `m5-p0-resume-20260727a`, still used the unchanged 2026-07-22 pinned Pi
+  `0.81.1` distribution. It received one complete provider stream (`HTTP 200`, EOF, one `[DONE]`,
+  valid usage) but emitted no `agent_end` or `agent_settled`; the second prompt was not sent.
+- The user-authored Pi source fix was found in `/tmp/pi-coding-agent-debug.TIgvqZ`. Its targeted RPC
+  test passed `4/4`, but the source initially retained one removed `unsubscribeBackpressure` cleanup
+  reference; that compile error was corrected in the temporary checkout. The full upstream offline build
+  remains independently blocked by stale generated model catalog data, not by the RPC source change.
+- The same mechanical RPC fix was applied only to the gitignored Pi distribution actually bound by
+  M5-P0. Its patched `dist/modes/rpc/rpc-mode.js` SHA-256 is
+  `aaa3f44adda101508cd750a8fc021be3137f51eadc211f0649e46cc6ea313251`;
+  `node --check`, the targeted Pi RPC test `4/4`, and M5-P0 focused checks `18/18` passed.
+- Fresh real probe `m5-p0-resume-20260727b` still returned `BLOCKED`: one complete provider stream
+  (`HTTP 200`, EOF, one `[DONE]`, usage present), one accepted RPC prompt, one proxy completion,
+  `message_end=1`, `agent_end=0`, `agent_settled=0`, and no second prompt. No host-proxy failure,
+  credential exposure or residual M5 process was observed.
+- Disposition: The current fix's isolated test passes but it does not repair the real
+  `deepseek-v4-pro` RPC lifecycle. Keep M5-P0 `PAUSED (BLOCKED)` and do not start producer, consumer,
+  formal Modeling Batch or mutation work. The next Pi repair must first reproduce the real
+  post-SSE state where the assistant `message_end`/`agent_end` path does not complete, then rerun
+  M5P0-02 with a new run tag and require two completions plus two `agent_settled` events.
+
+### 2026-07-27T17:08:49+08:00 — M5-P0 Pi blocker fixed and independently resumed — sub-agents + main agent
+
+- Root cause: A read-only diagnostic agent reproduced that M5-P0 combined a selector with one
+  `TextIOWrapper.readline()` per readiness notification. One kernel read could prefetch several Pi
+  JSONL records into Python's user-space buffer; the fd then stopped reporting readable while terminal
+  events remained buffered. Pi core still generated the lifecycle events.
+- Repair: The requirement developer changed the M5-P0 production reader to binary unbuffered stdout,
+  `os.read(fd, 64 * 1024)`, all-complete-record drain with an incomplete byte tail, explicit stdin
+  encoding and stderr decoding. A deterministic child-process regression writes four terminal JSONL
+  records atomically while keeping stdout open and proves all are delivered before child exit.
+- Pi scope: Speculative message/thinking payload truncation was rejected and removed. The local
+  gitignored Pi distribution retains only the user-authored direct backpressure-subscriber fix; the
+  Pi RPC event contract remains intact.
+- Development verification: M5-P0 focused `19/19`, Pi RPC target `4/4`, Ruff check/format,
+  `node --check` and `git diff --check` passed. GitNexus could not index the untracked M5-P0 scenario
+  symbols and returned `UNKNOWN`; local callers are limited to the runner main path and focused tests.
+- Independent Round 5: The strict real probe
+  `m5-p0-independent-20260727-round5` passed with two provider completions, two `agent_settled`,
+  accepted second prompt, two non-retrying `agent_end(stop)`, complete HTTP 200/SSE `[DONE]`/EOF and
+  no host failure. The round remained `FAIL` only for one Ruff formatting defect.
+- Defect loop and Round 6: The developer formatted only the affected assertion. Independent Round 6
+  passed focused `19/19`, Ruff check/format and diff checks, and verified the Round-5 audit hash and
+  cleanup without another paid probe. Rounds 1–4 remain preserved as historical BLOCKED evidence.
+- Disposition: M5P0-02 is fixed and independently PASS. M5-P0 returns to `ACTIVE`; continue the already
+  reviewed M5P0-03–M5P0-13 producer, consumer, formal Modeling Batch and twenty-environment plan.
+  M5-P0 as a whole is not yet complete.
+
+### 2026-07-27T17:45:00+08:00 — M5-P0 session conclusion and v2.2 handoff — user + main agent
+
+- User decision: Stop expanding the Pi-specific M5-P0 harness and close the current session quickly.
+  Record the architectural conclusion as a v2.2 requirement instead of continuing duplicate Producer,
+  Consumer and mutation orchestration in this session.
+- Verified Pi evidence retained: Independent Rounds 5–6 fixed and passed the two-completion/two-settled
+  Runtime gate. The binary JSONL reader fix preserves the Pi RPC event contract.
+- Producer evidence retained: One fresh real Producer created owned Project/Ontology/Build Session and
+  Evidence, then autonomously reached a validated 54-item baseline dry-run. Its first atomic apply failed
+  with `lease_expired`; the final terminal marker/runtime record, validation, reasoning, behavior query
+  and Build Session completion gates did not pass.
+- Repair evidence retained: A host-enforced, exact-items, at-most-once `lease_expired` recovery state
+  machine passed focused `31/31`, related backend `80/80`, Ruff/format/diff, prepare isolation and
+  independent Round 8. No second paid Producer was run, so this is not a real Producer PASS.
+- Unexecuted scope: A completed real Producer, independent Pi Consumer, tester-owned twenty-environment
+  mutation suite, final resource cleanup and complete M5P0-03–15 acceptance remain unexecuted. They must
+  not be described as passed.
+- Architectural conclusion: M3 already contains the accepted Host-side Producer, Consumer, mutation and
+  platform workflow. Reimplementing those responsibilities per Runtime made a nominal Agent replacement
+  become a new orchestration system and obscured whether failures came from the Agent, the platform or
+  the harness.
+- Requirement handoff: Added `docs/requirements/requirements-v2.2.md` R2.2-001, “建模 Host Workflow 与
+  Agent Runtime Adapter 解耦”. v2.2 will extract one M3-derived Runtime-neutral Host Workflow and keep
+  Codex/Pi-specific work in thin adapters. The current M5-P0 code and append-only test rounds remain
+  historical evidence; they are not promoted wholesale into the target architecture.
+- Status: M5-P0 is `CLOSED PARTIAL`, not PASS. R2.1-001 continues through M4; further cross-Runtime
+  execution architecture work moves to v2.2.
+
 ### 2026-07-27T17:33:00+08:00 — M4 Round-18 Unicode repair plan review — plan reviewer + main agent
 
 - Review result: `PASS`; no evidence-backed Critical or High finding remains.
@@ -1721,3 +2129,1845 @@
 - Gate: The raw multi-document source pack is intentionally not implemented in this planning change.
   Its independent discoverability review and no-leak staging checks are mandatory before any live M6
   Agent is authorized.
+
+### 2026-07-28T08:47:42+08:00 — M5-P1 single-round Pi reproduction opened — user + main agent
+
+- User authorization: Read the next Pi reproduction requirement and run the accepted M4 workflow once
+  with Pi Agent. Do not repeat M4's multi-round testing.
+- Source resolution: The repository has no literal `M5-P1` heading. The matching authoritative contract
+  is `requirements-v2.1.md` R2.1-001 M5, “Pi Agent 交互式建模合同复现”. `M5-P0` is a separate,
+  closed static-M3 rehearsal and is not continued. `M5-P1` is used only as this delivery slice label.
+- Current state: M4 is accepted. Its Host responder, API spool and semantic final audit are complete.
+  M5-P0 retains proven Pi 0.81.1 binary JSONL settlement and host-only `deepseek-v4-pro` channel
+  primitives, but no M5 interactive runner exists.
+- Target: Add a thin scenario-only Pi adapter around the unchanged M4 baseline Host workflow and execute
+  exactly one fresh `baseline` formal run. A failed, blocked or inconclusive live run is recorded without
+  a second formal attempt.
+- Scope: no M4 variant/mutation reruns, blind-consumer expansion, backend/frontend/migration/MCP change,
+  M5-P0 Host orchestration continuation, v2.2 generic framework or R2.0-002 revival.
+- Worktree baseline: `HEAD=2b3d9b6efd5f71917722b00585c227d5ce276392`; pre-existing modified
+  migration/tests/requirements/record and untracked M5-P0/v2.2 artifacts belong to prior work and must be
+  preserved.
+- Design:
+  `docs/delivery/designs/2026-07-28-r2-1-001-m5-p1-pi-m4-single-round-design.md`.
+  Shared test plan:
+  `docs/delivery/test-plans/2026-07-28-r2-1-001-m5-p1-pi-m4-single-round-test-plan.md`.
+- Risk disposition: GitNexus reported CRITICAL upstream impact for editing M4 `run_formal`, with visibly
+  contaminated cross-module matches. The delivery still treats it as high risk and will not edit M4,
+  backend or any existing symbol; M5-P1 adds new adapter files and calls existing gates unchanged.
+- Outcome/next step: mandatory plan review of the frozen single-round contract before implementation.
+
+### 2026-07-28T09:04:00+08:00 — M5-P1 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding, accepted.
+- Finding: Reusing the unchanged M4 generic API policy plus `_final_audit` would not prove that the
+  Project, Ontology and Build Session were freshly created and exclusively bound to this run. M4 permits
+  generic `/api/*` access, does not reject project enumeration, and its completion gate does not bind
+  those three creation responses. A Pi run could read or reuse existing answer-bearing resources and
+  still satisfy the later M4 sequence.
+- Main-agent disposition: `accepted-high`. The current development store contains existing projects, so
+  the failure is credible and would invalidate the sole live result.
+- Revision: The M5-P1 adapter now owns a stateful API admission gate around M4's transport/parser. It
+  permits and binds exactly one Project, child Ontology and child Build Session creation sequence,
+  restricts all later requests/responses to those IDs and learned graph scope, rejects enumeration,
+  foreign IDs and bypass writes before upstream, and adds an independent creation-receipt/binding audit
+  to the M5-P1 final result.
+- Preserved boundary: M4 and backend files remain unchanged. The review accepted the user-authorized
+  single baseline as an M5-P1 slice only and found no High blocker in reusing the proven Pi
+  0.81.1/DeepSeek private model channel.
+- Outcome/next step: plan review Round 2 against the revised design and test plan; implementation remains
+  blocked until PASS.
+
+### 2026-07-28T09:08:00+08:00 — M5-P1 plan review Round 2 — plan reviewer + main agent
+
+- Result: `PASS`; no evidence-backed Critical or High issue and no unresolved key assumption.
+- Verified disposition: The M5-P1 admission gate binds Project, Ontology and Build Session from this
+  run's successful creation responses, rejects pre-binding/enumeration/foreign/bypass traffic before
+  upstream, and requires the creation receipts, transitions, runtime IDs and subsequent scoped requests
+  to agree before PASS.
+- Test sufficiency: The shared plan requires positive transitions and fake-upstream negative tests, so
+  the gate cannot be accepted through post-run string scanning alone.
+- Scope verification: M4 remains unchanged; the stronger policy lives only in the new Pi adapter.
+- Development handoff: Freeze the reviewed design and test plan. Implementation is confined to a new
+  `docs/evaluation-scenarios/dify-workflow-impact-m5-p1/` package and focused tests. Do not run the sole
+  live formal Pi workflow during development.
+
+### 2026-07-28T09:30:00+08:00 — M5-P1 development-ready and main-agent pre-test review — developer + main agent
+
+- Initial development result: `DEVELOPMENT_READY`. New files are confined to
+  `docs/evaluation-scenarios/dify-workflow-impact-m5-p1/`; M4, M5-P0, backend, frontend and migrations
+  were not edited. Focused M5-P1 tests passed 12, M4 passed 121, Ruff/diff/no-model namespace preflight
+  and regular runtime health passed. No real model prompt was sent.
+- Confirmed pre-test defects:
+  1. server Project/Ontology/Build Session/Graph Set IDs were validated with M4's spool request-ID regex,
+     which rejects valid digit-leading UUIDs;
+  2. the nested bwrap command bound `/lib64` to `/lib`, so the formal inner Pi namespace could fail even
+     though the outer-only preflight passed;
+  3. `_final_audit` received a timestamp captured after Pi settlement rather than the true runner start,
+     which could invalidate the complete M4 timeline.
+- Disposition: All three are accepted implementation defects found before independent testing. Return
+  them to the requirement developer for focused repair and regression tests. Also verify that the
+  reviewed host-only argv/artifact credential audit is materially implemented.
+- Live-run budget: unchanged at `0/1`; no Pi M4 prompt or paid formal attempt has occurred.
+
+### 2026-07-28T09:42:00+08:00 — M5-P1 repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. All confirmed pre-test defects are fixed within the M5-P1 scenario only.
+- Fixes: Server resource IDs now require canonical UUIDs and accept digit-leading values; nested bwrap
+  binds `/lib64` to `/lib64`; the real runner-start timestamp is captured before the sole formal prompt
+  and passed unchanged to M4 `_final_audit`; host-only argv and retained-artifact secret audits were
+  added without persisting secret values.
+- Verification: M5-P1 focused **15 passed**; M4 **121 passed**; M5-P1 Ruff, `git diff --check`,
+  no-model `PREPARED` namespace preflight and regular service/8001/5173 health passed.
+- Stable M5-P1 hashes: adapter
+  `3f0453b5b711fdbf8f1a2688b925ae7725a7b730819c6c9310e0320bfcc350dd`;
+  runner `00712bf4692df4bc97aa3eb1ba7684a8fc6a593e86b2f8de882c61b8c1068c53`;
+  tests `f360599a4665d63fa76cd22a3e53a18138fab9d831bf2c5f3fffaf28ace9a890`.
+- Independent-test handoff: Stable state is the three hashes above plus the reviewed design/test plan.
+  The independent tester must run all offline gates first, then may send exactly one fresh M4 baseline
+  prompt to Pi. No developer or main-agent live run has occurred; budget remains `0/1`.
+
+### 2026-07-28T10:14:00+08:00 — M5-P1 independent test Round 1 — requirement tester + main agent
+
+- Result: `FAIL`; the shared M5-P1 test plan preserves the complete Round 1 result.
+- Offline evidence: Frozen hashes, M5-P1 **15 passed**, M4 **121 passed**, Ruff, diff/source checks,
+  Alembic head, no-model preflight and regular 8001/5173 health all passed.
+- Live evidence: Exactly one prompt was sent for `m5-p1-independent-20260728a`. Pi 0.81.1 with
+  `deepseek-v4-pro` settled once and exited 0 after seven proxy completions. Argv/artifact secret audits
+  passed. No retry was performed in Round 1.
+- Confirmed High/P1 defect: The real M4 Agent writes `GET /openapi.json` with the canonical empty object
+  `body:{}`. M5-P1 admission accepted only `body:null`, so it rejected the first request before upstream.
+  Runtime remained `IN_PROGRESS`; zero Project/Ontology/Build Session resources were created and every
+  clarification/modeling/validation/reasoning/query/completion gate remained unexecuted.
+- Cleanup: The tester stopped only its owned 8012 process group. No run-owned platform resource existed;
+  regular 8001/5173 remained healthy. Evidence root
+  `runtime/m5-p1-independent-20260728a` is retained.
+- Main-agent disposition: Accept the defect. The user's requested outcome is one completed baseline, not
+  merely one pre-binding harness failure. Preserve Round 1, repair empty-object GET compatibility and
+  authorize one defect retest of the same baseline only. Do not add semantic variants, mutation or
+  comparative quality rounds.
+
+### 2026-07-28T10:24:00+08:00 — M5-P1 Round-1 defect repair ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. M5-P1 now treats only `null` or the exact empty object `{}` as a bodyless
+  GET across pre-binding, active admission and final scope audit; non-empty object/list bodies remain
+  rejected before upstream.
+- Regression coverage: real M4-style `GET /openapi.json` with `{}`, active modeling-context,
+  workspace-context and Build Session GET with `{}`, plus non-empty GET rejection.
+- Verification: M5-P1 **19 passed**, M4 **121 passed**, Ruff, diff, no-model preflight and normal runtime
+  health passed. No live Pi prompt was sent during repair.
+- Stable hashes: adapter
+  `0576652efbc2adb4244cd4d19788eb42131c2454b519a10f69c721ba23c8a8c5`;
+  runner `00712bf4692df4bc97aa3eb1ba7684a8fc6a593e86b2f8de882c61b8c1068c53`;
+  tests `1008d9d33aacb24fb1ab0c244cbe4172dcb26a5e9f53927866cd5bcdbd87c937`.
+- Outcome/next step: Return this stable state to the same independent tester for Round 2. Retest the
+  failed admission first, then run the same single baseline without adding variants.
+
+### 2026-07-28T10:48:00+08:00 — M5-P1 independent test Round 2 — requirement tester + main agent
+
+- Result: `FAIL`; no further live run is authorized. The same shared plan preserves both failed rounds.
+- Round-1 repair verification: M5-P1 **19 passed**, M4 **121 passed**, Ruff/diff/source hashes, no-model
+  preflight and normal health passed. The real M4 `GET /openapi.json` with `body:{}` was admitted and
+  forwarded 200, proving the admission repair in live traffic.
+- Pi interaction evidence: The fresh Pi 0.81.1 / `deepseek-v4-pro` process naturally settled once and
+  exited 0 after about 13.5 minutes and 80 completed proxy streams. It independently asked all three M4
+  business clarification questions and received all three host responses.
+- Confirmed High/P1 interoperability failure: Pi never formed a valid Project creation spool request.
+  Its first file had a request-ID/filename mismatch; its second had non-canonical JSON. Both were
+  correctly rejected by the unchanged M4 transport before upstream, no third valid request followed,
+  and zero Project/Ontology/Build Session resources were created.
+- Confirmed High/P1 isolation failure: The M4 audit reports `transcript_forbidden_host_path=true`.
+  Independent inspection shows Pi guessed and attempted to use the repository's absolute host path while
+  troubleshooting. The namespace returned no host content and provider/platform credential scans passed,
+  but the attempt itself violates the frozen transcript boundary.
+- Unexecuted acceptance: No Modeling Batch dry-run/apply, invalid-instance rejection, validation,
+  reasoning, governed query, checkpoint or Build Session completion occurred. M5-P1 and full M5 therefore
+  remain not passed.
+- Evidence: run root
+  `docs/evaluation-scenarios/dify-workflow-impact-m5-p1/runtime/m5-p1-independent-r2-20260728a`;
+  M5-P1 audit
+  `6a8e96d7516f029ed7f93ca22377b543aa6fd067e4c4315b0c72281edfa85d51`;
+  M4 final audit
+  `13391352e2f921383ee88a5fb2edcab115436855b61d85866a624cb85849549e`;
+  admission audit
+  `da5bef26d1eeaab9f8235d23879a6704ed03d1ed834845a71a09cb57faf50396`;
+  transcript
+  `d1383b9207355b1ac5f96960c6507bab1302eb81ba31fcc6c854bf9d6e0e2ce9`.
+- Cleanup/runtime: The tester stopped only the owned 8012 process group; no run-owned platform resource
+  existed. Pi/proxy/gateway/responder and ephemeral Pi configuration were removed. Only 8001 and 5173
+  remain listening; the normal service is active and both endpoints are healthy.
+- Closure decision: Stop after this baseline defect retest. Do not relax M4 canonical transport, hide the
+  transcript violation, inject corrected requests or run a third model attempt. Preserve the result as a
+  concrete Pi Runtime/Prompt interoperability problem list.
+
+### 2026-07-28T11:00:00+08:00 — M5-P1 MCP transport revision confirmed — user + main agent
+
+- User decision: Replace Pi's freehand platform spool with a controlled platform MCP integration and
+  implement it now. The accepted boundary is Host-created Project/Ontology, Pi-owned Build Session and
+  modeling calls through an exact MCP allowlist, with credentials retained Host-side.
+- Current behavior: Pi 0.81.1 has no built-in MCP client. The failed M5-P1 runner exposes only
+  `read,bash,write,edit`, so Round 2 could not call platform MCP and failed before Project creation on
+  strict filename/canonical-JSON mechanics.
+- Target behavior: Add a scenario-local Pi extension plus Host MCP stdio/Unix-socket bridge. Expose the
+  real `create_build_session`, context/workspace, lease, Modeling Batch, validation, reasoning, query,
+  checkpoint/completion, lineage and bounded execution-event tools; expose no generic dispatcher.
+- Scope revision: Project/Ontology creation moves to deterministic Host setup. Platform backend/MCP
+  implementations, M4 source and M4 semantic quality gates remain unchanged. Round 3 is one new
+  MCP-backed baseline; Rounds 1–2 remain immutable failed history.
+- Worktree baseline: `HEAD=314a1a705b0ccb537c3c18d94e10d74d780cdea4`. Existing unrelated dirty
+  migration/tests/top-level instruction and M5-P0/v2.2 files remain out of scope. Stable pre-revision
+  M5-P1 hashes are adapter `0576652e...8c5`, runner `00712bf4...c53`, tests
+  `1008d9d3...937`.
+- Artifacts revised:
+  `docs/delivery/designs/2026-07-28-r2-1-001-m5-p1-pi-m4-single-round-design.md` and
+  `docs/delivery/test-plans/2026-07-28-r2-1-001-m5-p1-pi-m4-single-round-test-plan.md`.
+
+### 2026-07-28T11:05:00+08:00 — M5-P1 MCP high-risk probes — main agent
+
+- Probe 1: Started the real authenticated platform MCP over stdio with the official Python client,
+  initialized it, listed tools and called only `check_platform_health`. Result: `64` tools, every one of
+  the `17` reviewed success/diagnostic tools present, health call not an error. No platform write ran.
+- Probe 2: Bound a run-owned Unix-domain socket read-only through a fresh network-unshared `bwrap`
+  namespace and verified it remained a socket. Result: exit `0`; the temporary listener/socket directory
+  was removed after the check.
+- Design consequence: A Host-side authenticated MCP subprocess and run-owned socket are viable without
+  putting platform credentials or network access in Pi. The implementation must still test the complete
+  nested M5-P1 namespace and Pi extension call path before any formal prompt.
+- Next step: mandatory plan review of the revised design/test plan. Implementation remains blocked until
+  the reviewer reports PASS or all accepted High findings are resolved.
+
+### 2026-07-28T11:20:00+08:00 — M5-P1 MCP plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; three evidence-backed High findings, all accepted.
+- Finding 1: Disabling `bash/write/edit` while retaining the M4 file-spool prompt left Pi unable to ask
+  clarifications, receive Host-bound scope IDs or avoid obsolete Project/API-spool instructions.
+  Disposition: `accepted-high`.
+- Finding 2: Hash-only bridge receipts could not independently prove Batch findings, validation,
+  reasoning pointers, query scope/warnings and completion. Disposition: `accepted-high`.
+- Finding 3: A tool allowlist plus selected ordered receipts did not enforce M4's no-extra-call,
+  cardinality and strict closed-sequence contract. Disposition: `accepted-high`.
+- Plan revision: Add an answer-neutral M5 transport prompt and read-only bound-scope manifest; add one
+  structured clarification extension tool around the unchanged responder; retain complete canonical
+  arguments/results Host-side and recompute acceptance from them; enforce every setup/semantic call with
+  a Host phase/cardinality state machine and remove optional diagnostic tools from the formal allowlist.
+- Next step: return the revised design and shared plan to the same mandatory reviewer. No runtime code or
+  formal model prompt is authorized before PASS.
+
+### 2026-07-28T11:40:00+08:00 — M5-P1 MCP plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding, accepted. The three Round-1 findings were confirmed
+  resolved and no Critical issue was found.
+- Finding: The revised plan separately proved clarification consumption and later MCP Batch results but
+  did not bind each answer to the exact changed assumption and Batch item/rationale, or an uncertain
+  answer to the explicit unknown. A coincidentally correct model could therefore false-PASS M5's
+  traceability requirement. Disposition: `accepted-high`.
+- Plan revision: Every clarification now returns one opaque single-use receipt handle. A second structured
+  Host-audit tool binds each handle before modeling to either planned immutable Batch/item IDs whose
+  rationales carry the same handle, or one named explicit gap for an uncertain answer. The final audit
+  recomputes the full hash/handle/decision/item-or-gap/semantic-result chain from protected evidence.
+- Test revision: Add missing, duplicate, reused, cross-run, wrong-item, missing-rationale,
+  answered-as-gap, uncertain-as-modeled-fact and semantic-contradiction negatives.
+- Next step: mandatory plan review Round 3. Implementation remains blocked until PASS.
+
+### 2026-07-28T11:50:00+08:00 — M5-P1 MCP plan review Round 3 and development freeze — plan reviewer + main agent
+
+- Review result: `PASS`; no remaining Critical/High finding. The reviewer verified the single-use
+  clarification handle, mutually exclusive modeled-change/explicit-gap binding, Batch item/rationale
+  fields, Host evidence recomputation and negative coverage against the real schemas.
+- Finding disposition summary: Round 1's three High and Round 2's one High are all
+  `accepted-high`, revised and independently confirmed resolved. No finding was downgraded or rejected.
+- Risk checks: After repairing a corrupt local GitNexus FTS index by rebuilding only the derived index,
+  upstream impact is LOW for `run_formal`, `bwrap_command`, `create_ephemeral_pi_dir` and
+  `final_binding_audit`; `ResourceAdmissionPolicy` is MEDIUM because M5-P1 tests and runner depend on it.
+  No platform/M4 process has a High/Critical blast radius.
+- Frozen implementation scope: only
+  `docs/evaluation-scenarios/dify-workflow-impact-m5-p1/`, this reviewed design/shared test plan and
+  requirement/delivery status documentation. Do not modify backend, frontend, migrations, M4 or M5-P0.
+- Required developer checks: focused M5-P1, M4 regression, M5-P1 Ruff, extension load/type/preflight,
+  authenticated read-only MCP inventory, nested socket namespace, `git diff --check`, regular service
+  and 8001/5173 health. No formal model prompt during development.
+- Stable baseline: `HEAD=314a1a705b0ccb537c3c18d94e10d74d780cdea4`; prior M5-P1 adapter
+  `0576652e...8c5`, runner `00712bf4...c53`, tests `1008d9d3...937`.
+- Next step: frozen handoff to `requirement_developer`; the main agent remains sole delivery-record
+  writer.
+
+### 2026-07-28T13:00:00+08:00 — M5-P1 MCP initial development-ready rejected before test — developer + main agent
+
+- Developer result: Initial implementation stayed within the M5-P1 package and passed its authored
+  `8` tests, M4 `121`, Ruff, authenticated MCP inventory/schema handshake and prepare-only. No model
+  prompt ran.
+- Main-agent disposition: Not development-ready. Static review found acceptance-blocking implementation
+  gaps before independent testing:
+  1. official MCP `CallToolResult` remains encoded in content/text envelopes, while FSM binding expects
+     direct service data, so Session/Graph Set binding fails against real MCP;
+  2. clarification decision binding marks only a boolean and discards changed assumption, Batch/item,
+     rationale and explicit-gap data, so the reviewed answer-to-model chain cannot be recomputed;
+  3. FSM hard-codes five Batch calls, omits the conditional correction branch, validates almost no
+     response semantics, revision/lease transitions or item/rationale bindings, and permits a renewal
+     without proving expiry;
+  4. final audit verifies hashes and a seven-call suffix only; it does not reload complete protected
+     evidence and recompute SHACL, validation, reasoning pointer, query scope/warning, checkpoint,
+     completion or explicit-unknown assertions;
+  5. staging includes neither the frozen M4 visible business input pack nor a complete MCP transport
+     contract, so Pi lacks the information needed to model the scenario;
+  6. the runner waits without binary stdout drain or exact `agent_settled` proof, risking the already
+     known Pi JSONL deadlock/missed-settlement failure;
+  7. setup occurs before the cleanup `try`, and cleanup omits provider proxy close, capability revoke,
+     Pi directory/capability removal and thread/process convergence;
+  8. prepare-only touches ordinary files instead of running the real nested socket/extension preflight;
+     the eight tests do not cover the reviewed tamper, ordering, correction, semantic or lifecycle cases.
+- Live budget: unchanged. No Round-3 prompt, model call or platform resource was authorized by this
+  development pass.
+- Next step: repair all confirmed gaps in the M5-P1 package, add requirement-level regressions and return
+  a new explicit development-ready state.
+
+### 2026-07-28T12:56:58+08:00 — M6 Codex-subagent execution contract confirmed — user + main agent
+
+- User decision: M6 validates Runtime-neutral autonomous semantic-gap discovery and may use Codex
+  subagents in parallel with M5; Pi is not required for M6.
+- Refinement: Keep environment preparation minimal. Prove only that the modeling subagent receives no
+  inherited conversation or undeclared answer material and can traverse the M6 discovery-to-model flow.
+- Attempt budget: At most three subagent modeling operations. Each attempt must use a fresh subagent,
+  Agent-visible input directory and platform resources. After the third attempt, pause regardless of
+  outcome and report the accumulated state; no fourth attempt is authorized.
+- Scope consequence: Revise the M6 requirement, design and shared plan to remove the M5 gate, freeze the
+  Codex-subagent isolation contract and add an append-only attempt ledger. Review/development/testing
+  agents and a read-only Consumer do not consume the modeling-attempt budget unless they mutate the
+  business model.
+- Worktree baseline: `HEAD=314a1a705b0ccb537c3c18d94e10d74d780cdea4`; existing M5, v2.2,
+  migration and top-level instruction changes remain user-owned and outside M6.
+
+### 2026-07-28T13:10:00+08:00 — M6 Codex-subagent plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding, accepted.
+- Finding: The revised design required the subagent to create Project/Ontology through existing MCP,
+  but the real MCP registry exposes Build Session, lease and Modeling Batch operations without
+  Project/Ontology creation. With no M4 gateway or new API, the run could not start.
+- Disposition: `accepted-high`. Authorize Host preflight to create only an empty fresh Project and
+  Ontology through the existing public HTTP API and pass their IDs. The subagent still creates the
+  Build Session and owns every semantic mutation; Host setup contains no domain model or hidden answer.
+- Plan impact: Align design, formal step and test gate with this minimal split, then re-review. Modeling
+  attempt budget remains `0/3`.
+
+### 2026-07-28T13:18:00+08:00 — M6 Codex-subagent plan review Round 2 and development freeze — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding. Round 1's High finding is confirmed resolved.
+- Frozen boundary: Add only an M6 scenario package, raw Agent-visible documents, manifest/static
+  isolation checker, Host-only discoverability/answer contract, attempt ledger and focused tests. Do
+  not change backend/frontend or reuse M4's explicit-gap runner/prompt.
+- Resource split: Host REST creates empty fresh Project/Ontology and passes only IDs. A
+  `fork_turns=none` modeling subagent creates Build Session and owns lease, Modeling Batch, validation,
+  reasoning and query via existing MCP.
+- Isolation assumption: Contract-level declared-input isolation is sufficient for this experiment; no
+  OS sandbox is required. Host credentials stay outside the handoff and Agent-visible directory.
+- Development handoff: Implement the reviewed package and offline gates without launching a modeling
+  subagent. Required checks include focused M6 tests, M4 regression, Ruff where Python is added,
+  `git diff --check` and normal service health. Modeling attempt budget remains `0/3`.
+
+### 2026-07-28T13:29:55+08:00 — M5-P1 MCP implementation, formal Round 4 and offline Round 5 — developer + tester + main agent
+
+- Development result before formal testing: The scenario-local implementation added an authenticated
+  official MCP stdio client, a Host-owned Unix bridge, an exact twelve-tool Pi allowlist, structured
+  clarification and decision-binding tools, Host-created Project/Ontology setup, the M4 semantic FSM,
+  protected call evidence and owned cleanup. No backend, frontend, M4 or M5-P0 source was changed.
+- Independent Round 3 stopped before a formal prompt because the documented TypeScript command was not
+  reproducible and the restricted client could not perform the plan's health probe. The developer added
+  a repository-pinned strict TypeScript/runtime gate and a Host-only authenticated health probe; the Pi
+  allowlist remained twelve tools. Formal prompt count stayed `0`.
+- Independent Round 4 passed all offline gates, started one isolated `rdf_primary` backend and executed
+  exactly one formal run, `m5-p1-independent-r4-20260728a`. The run ended `INCONCLUSIVE/RuntimeError`
+  after `2400` seconds and did not create a Build Session. Runner cleanup deleted the owned Project and
+  closed Pi, MCP, bridge, provider, sockets and capabilities; the tester stopped only its owned 8012
+  process group. Regular 8001/5173 remained healthy and no owned process/resource was retained.
+- Initial Round-4 diagnosis said the first typed call did not reach the Unix bridge. Post-run protected
+  transcript and sidecar review corrected that diagnosis: typed executions did reach the bridge.
+  `create_build_session` had been registered with an empty generic object schema, so Pi could not see
+  required `project_id` and `client_session_id` arguments. It repeatedly guessed empty or malformed
+  arguments; correctly scoped IDs without `client_session_id` reached official MCP and were rejected,
+  followed by provider `502` and timeout retries. The platform MCP transport itself was available.
+- Defect correction: Host now freezes the complete raw input schemas for exactly the authenticated
+  twelve-tool inventory, records per-tool and aggregate hashes, and exposes that read-only manifest to
+  the Pi extension before registration. The real pinned Pi loader regression proves
+  `create_build_session.required` includes `project_id` and `client_session_id` and completes one
+  no-model Unix-bridge round trip. Empty or hash-drifted manifests fail before tool registration.
+  Every rejected bridge call is now protected evidence; the first rejection permanently makes PASS
+  impossible and is recomputed by the final audit.
+- Input correction: Pi no longer sees the M4 file-spool transport contract or the provider sidecar.
+  Staging supplies a transport-neutral M4 semantic-quality contract that preserves immutable Batch
+  dry-run/apply, validation, evidence and clarification semantics while requiring registered typed MCP.
+  Tests reject any Pi-visible API-spool, Project/Ontology-creation or Host-path instruction.
+- Independent Round 5 result: `OFFLINE_READY`, not M5 completion. Stable checks passed: M5-P1
+  `57`, M4 regression `121`, Ruff check/format, strict pinned Pi TypeScript/runtime, real official MCP
+  `64`-tool inventory with the exact twelve-tool schema subset, Host-only health, no-model nested-bwrap
+  preflight, typed extension-to-bridge round trip, `git diff --check`, normal service health and no
+  8012/relay/provider residue.
+- Live-budget status: Round 4 consumed the one authorized MCP-backed formal attempt and failed before
+  semantic modeling. No second formal command was issued. The repaired state requires a new explicit
+  one-run authorization before independent formal retest; until then M5-P1 remains incomplete.
+
+### 2026-07-28T14:28:50+08:00 — M5-P1 independent Round 6 and clarification repair review opened — tester + main agent
+
+- Authorization: The user explicitly said `继续执行`, authorizing one new formal run from the
+  Round-5 `OFFLINE_READY` state. Independent Round 6 re-ran every offline/real-dependency gate and
+  started exactly one fresh formal command, `m5-p1-independent-r6-20260728a`, against one owned
+  isolated `rdf_primary` backend. No tester retry or semantic variant ran.
+- Live progress: The Round-4 schema correction is confirmed fixed. Official MCP successfully handled
+  `create_build_session`, `get_modeling_context`, `get_ontology_workspace_context` and
+  `acquire_ontology_lease`; Pi then sent clarification requests through the structured Host responder.
+- Round result: `FAIL`. Before three valid clarification decisions were bound, Pi called
+  `submit_modeling_batch`; Host rejected it with
+  `three clarification decisions must bind before principal batch`, recorded the first rejection and
+  permanently locked PASS. No valid Batch, validation, reasoning, governed query, checkpoint or
+  completion followed.
+- Cleanup: The runner naturally reached its timeout and removed its owned Project, Pi, MCP client,
+  bridges, provider, capabilities and relay. The tester stopped only owned 8012 PGID `3473082`.
+  Port 8012 and run-owned process/socket scans were empty; regular 8001/5173 stayed healthy.
+- Main-agent post-run diagnosis: replay shows the first and third natural visible-gap questions were
+  `not_eligible`, not successful receipts. M4's missing-score recognizer accepted `when`/`if` plus
+  `score`/`scoring`; lifecycle impact language such as “when generating content” therefore collided
+  with both lifecycle and missing-score decisions and was rejected. The one answered receipt's first
+  binding also omitted `client_batch_id`/`client_item_ids` because the Pi schema represented the two
+  binding dispositions as one object with optional conditional fields.
+- Proposed minimal correction: require an explicit absence/fallback term for missing-score recognition;
+  make `bind_clarification_decision` a discriminated typed union; and state the pre-Batch order
+  explicitly without supplying answers: plan immutable Batch/item IDs, bind every eligible receipt,
+  then submit the first Batch. Hidden decisions, platform MCP, Batch semantics and the fail-closed FSM
+  remain unchanged.
+- Risk: GitNexus reports `_decision_for` as CRITICAL with two direct callers and 194 third-depth
+  dependents. The two direct callers are the real M4 responder path; the broad backend/UI/M3 fan-out is
+  an index over-attribution similar to earlier same-name/corrupt-index results. Because this changes the
+  frozen M4 responder, the revised design/test plan returns to mandatory plan review before code.
+- Formal budget: consumed. The repair and its offline verification authorize no further model call.
+
+### 2026-07-28T14:41:33+08:00 — M5-P1 post-Round-6 plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two evidence-backed High findings, both `accepted-high`; no Critical finding.
+- High 1: Round 6 asked lifecycle, identity and duplicate lifecycle, not missing-score. Merely fixing
+  the recognizer would allow three bound records without proving the three distinct hidden decisions
+  because the ledger retained no decision fingerprint and counted `not_eligible` toward its three-slot
+  limit. Revision: Host derives the exact three hidden decision fingerprints, stores them only in
+  protected receipts, requires exact distinct coverage plus binding for readiness, treats duplicates
+  and `not_eligible` as non-consuming bounded attempts, and caps total attempts at six.
+- High 2: The proposed matcher fix contradicted the still-active absolute no-M4-source-change gate.
+  Revision: Declare one controlled exception limited to removing `when`/`if` from the missing-score
+  selector in `m4_clarification_responder.py`; preserve hidden contracts, answers, all other matcher
+  branches, semantic expectations and every other M4 file. The diff gate now verifies exactly that
+  narrow exception.
+- Additional clarification: Binding IDs may point to any future Batch item where the answer is
+  actually modeled; they are not forced into the first schema Batch. Pi must plan those stable client
+  IDs, bind all three distinct receipts, then submit the first Batch and later reuse the exact IDs and
+  rationales.
+- Next step: return the revised design/shared plan to the same reviewer. No code change or model call
+  is authorized before PASS.
+
+### 2026-07-28T14:53:32+08:00 — M5-P1 post-Round-6 plan review Round 2 and repair freeze — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding and no unresolved core assumption.
+- The reviewer confirmed Host-only exact fingerprint coverage, duplicate/`not_eligible` non-consumption
+  with a six-attempt bound, the corrected Round-6 question sequence, the sole controlled M4 matcher
+  exception, discriminated binding branches and future Batch/item ID planning.
+- Risk evidence: GitNexus reports `ClarificationLedger.request` as CRITICAL with one direct caller and
+  359 transitive dependents. The one direct caller is the real Unix clarification handler; the broad
+  cross-backend/UI/M3 transitive fan-out is the same index over-attribution already disclosed. Repair is
+  frozen to the approved M4 matcher line and M5-P1 ledger/extension/prompt/tests.
+- Required repair checks: focused M5-P1, full focused M4, exact approved-M4-diff assertion, Ruff,
+  strict pinned Pi TypeScript/runtime, real loader binding-union schema, natural three-decision
+  responder replay, MCP inventory/health, no-model nested preflight, staging isolation,
+  `git diff --check`, normal health and no owned residue. No formal prompt or 8012 runtime.
+- Next step: frozen repair handoff to the requirement developer; main agent remains the delivery-record
+  owner.
+
+### 2026-07-28T16:09:32+08:00 — M6 isolated Codex-subagent modeling attempt 1 completed — modeling Agent + main agent
+
+- Attempt budget: `1/3`. Exactly one business-modeling subagent was launched with `fork_turns=none`.
+  The plan reviewer, interrupted implementation helper, read-only blind Consumer and independent tester
+  are not modeling attempts. No second or third modeling attempt was launched.
+- Isolation: The frozen Agent-visible manifest remained hash-valid and did not disclose a problem list,
+  count, category names, hidden answers, expected model or acceptance result. The modeling Agent was
+  instructed not to read repository files outside the declared input pack or prior conversation.
+- Autonomous discovery: The Agent independently asked three serial, source-grounded questions about
+  B's C-version binding, `quality_score`/`quality_rating` continuity and B's behavior when scoring is
+  absent. The Host answered latest published C, documented successor continuity, and unable to confirm
+  missing-score behavior respectively; the last answer became a named `explicit_unknown`, with no
+  fallback/default.
+- Minimal adapter correction: The connected collaboration MCP inventory was read-only for this fresh
+  scope. Rather than prepare another Runtime, the same attempt switched to a run-owned exact-request
+  relay. The Agent chose one `{method,path,body}` public call at a time; the Host only attached the API
+  credential, forwarded it unchanged and returned the status/result. Host REST created only the empty
+  Project `1874b5df-16b8-41fa-bad8-95e886ba70d4` and Ontology
+  `27b9c681-f39a-43ba-9a69-16b4f3c69c5e`.
+- Formal application: Agent-created Build Session
+  `89b67fef-e82a-470c-9eb9-928078a8b206` completed at revision `3`. Schema Batch
+  `ac96ecb3-6b65-4c8b-862c-d18760a44e91` and instance Batch
+  `849a6350-14cc-48c0-9252-1ac8ef41d725` applied atomically. Negative Batch
+  `93410be3-6404-4f18-9b86-5fd5351152fe` was rejected with a SHACL violation for invalid
+  `quality_total` and was not applied.
+- Semantic closure: validation `d548889a-67de-465e-a1f1-d4064408cc8a` succeeded with
+  `conforms=true` and zero findings. Reasoning `219c3361-c674-4fbc-9d80-76065c3a1002` succeeded with
+  `consistent=true`. The ontology-scoped query returned a complete, non-truncated result for C Version
+  2 / `quality_rating`, documented `quality_score` -> `quality_rating` continuity and the explicit
+  missing-score unknown.
+- Blind consumption: A separate `fork_turns=none` read-only Consumer received only the fresh scope IDs,
+  the generic query contract and the public query response. It returned `PASS` and recovered all three
+  conclusions while preserving evidence/rule warnings and refusing to infer missing behavior.
+- Stable checks before independent test: focused M6 `5 passed`, M4 regression `123 passed`, M6 Ruff
+  `All checks passed`, and `git diff --check` passed. No backend, frontend, migration or Dify-specific
+  platform code was added for M6.
+
+### 2026-07-28T16:11:14+08:00 — M6 independent test Rounds 1–2 — requirement tester + main agent
+
+- Round 1 result: `FAIL` only for M6-DOC-001. The live semantic path, isolation, autonomous discovery,
+  attempt budget, negative SHACL proof, application, validation, reasoning, completion, blind Consumer,
+  M4 regression and normal service health all passed. The remaining defect was that the shared test
+  plan still required connector-side MCP mutations after the live capability probe had selected the
+  exact-request credential relay.
+- Repair: The shared plan now matches design contract v3. The Host may only attach credentials and
+  relay one Agent-selected `{method,path,body}` request unchanged when the connected MCP inventory
+  cannot mutate the fresh scope. `runtime/m6-run-1/relay-evidence.json` records the allowed and
+  forbidden transformations, `host_initiated_retries=0`, semantic IDs and preserved lifecycle-request
+  hashes. The frozen historical Agent input remains unchanged and manifest-valid.
+- Round 2 result: `PASS`. Focused M6 `5 passed`, Ruff and `git diff --check` passed; final request hash
+  `3e262d41975c1c1724e2c839c516d97d2b486432aec2b444b8d78661200ede4a` matches the preserved
+  completion request. No Agent, semantic mutation or additional modeling attempt was used for repair
+  or retest.
+- Final M6 status: `PASS`, modeling attempt budget consumed `1/3`. No second or third modeling attempt
+  is needed.
+
+### 2026-07-28T16:11:06+08:00 — M5-P1 post-Round-6 repair independently accepted — requirement developer + tester + main agent
+
+- Implementation result: `DEVELOPMENT_READY`. The sole production change in the frozen M4 surface
+  removes `when`/`if` from the missing-score selector. Two focused regressions retain the true
+  missing-score positive and ambiguity negatives while proving the exact Round-6 lifecycle wording no
+  longer collides.
+- M5-P1 Host result: clarification receipts now carry an internal decision fingerprint derived from
+  the unchanged hidden contract. Readiness and final audit require the exact three distinct expected
+  fingerprints; duplicate and `not_eligible` attempts issue no usable handle or readiness credit, and
+  the clarification loop fails closed after six attempts.
+- Pi contract result: `bind_clarification_decision` is a real two-branch TypeBox union.
+  `modeled_change` requires stable future Batch/item IDs and `explicit_gap` requires a gap key. The
+  answer-neutral prompt requires all three distinct receipts to be bound before the first principal
+  Batch and requires the exact IDs/rationales to be reused where each decision is modeled.
+- Independent Round 7 result: `PASS`, strictly offline. Focused M5-P1 reported `62 passed`; complete
+  focused M4 reported `123 passed`; Ruff, `git diff --check`, strict pinned Pi TypeScript/runtime and
+  real-loader union checks passed. Official MCP probing confirmed the exact 12-tool allowlist with
+  manifest SHA-256 `0f6006e83bc81568cfc6a7e1959a7747f901783c9be7b3297e17dba4ea7ec257`
+  and Host health `postgres=ok`.
+- No-model nested Pi preflight
+  `runtime/m5-p1-preflight-independent-r7-20260728a` passed with
+  `formal_prompt_sent=false`; regular `8001` and `5173` remained healthy.
+- Isolation note: port `8012` was already occupied by PID `153334`, owned by another Codex app-server
+  session. Developer, tester and main agent only identified it read-only and did not start, call or
+  stop it; it is not M5-P1 test residue.
+- Formal budget: no new model call was used. The offline repair gate is closed; a new formal single
+  round still requires explicit user authorization.
+
+### 2026-07-28T17:04:42+08:00 — M5-P1 Formal Round 8 upstream failure — user + main agent + independent tester
+
+- Authorization: the user explicitly approved exactly one new formal attempt. The main agent used the
+  single-use tag `m5-p1-independent-r8-20260728a` and an owned isolated backend on port `8013`; the
+  unrelated prior `8012` listener was not used or stopped.
+- Result: `INCONCLUSIVE`. The runner sent one formal prompt, then reached its 40-minute total timeout
+  with `Pi did not exit before formal timeout`. Official MCP health, the exact 12-tool manifest and the
+  15-tool Pi namespace probe passed, but Pi produced no model content or platform tool call.
+- Reconstructed timing: the sidecar accepted the HTTP completion and connected to the Host Unix socket
+  at `16:20:48+08:00`; about `0.968` seconds later it recorded
+  `host_proxy_upstream_unavailable`. Pi's retained assistant event has `stopReason=error`, zero tokens,
+  no content and a generic HTTP `403`. The terminal events were not flushed until runner timeout.
+- Root-cause boundary: the displayed `403` was synthesized by the sidecar, not proven to be the real
+  upstream status. `UpstreamCompletionError(category,status)` exists inside the Host proxy, but the
+  Unix relay collapses it to `upstream_unavailable`, the sidecar maps that to `403`, and the run audit
+  does not persist the sanitized proxy classification. Existing evidence therefore cannot distinguish
+  authentication, rate limiting, upstream `5xx`/HTTP, credential configuration or transport failure.
+- Modeling result: zero clarification records and zero protected MCP evidence; no Build Session,
+  lease, Batch, validation, reasoning, query, checkpoint or completion was attempted. The empty
+  run-owned Project `33628843-5d7a-4357-a0a1-334af7099fb3` was deleted.
+- Cleanup: Pi terminated; bridge/clarification servers, MCP client and provider proxy closed; provider
+  thread joined; capabilities revoked/removed; temporary Pi/provider/relay directories removed; owned
+  `8013` stopped. Normal `8001` health and `5173` HTTP checks passed.
+- Independent read-only audit preserved the hashes and detailed result in the shared test plan. It
+  classifies the observability/fast-fail defect as High: persist Host-only sanitized
+  category/status/stage/elapsed evidence, keep Pi-visible errors generic, and end promptly on a
+  terminal provider/agent failure.
+- Formal budget: consumed once. No automatic retry is authorized.
+
+### 2026-07-28T17:16:49+08:00 — M5-P1 post-Round-8 repair plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two evidence-backed High findings, both `accepted-high`; no Critical finding.
+- High 1: the proposed shared Host-proxy snapshot contradicted the still-active M5-P0 zero-change and
+  historical proxy-hash gates. Revision: authorize only `m5_p0_model_proxy.py` as a controlled shared
+  source exception, keep every other M5-P0 file frozen, retain the old hash only as historical evidence,
+  freeze a new hash after independent PASS and require the complete M5-P0 proxy regressions.
+- High 2: the initial fast-fail text omitted a thread-safe publication contract and the successful
+  settled-but-resident RPC lifecycle. Revision: publish one immutable first-write-wins failure snapshot
+  with lock/event; start one non-resettable two-second failure drain; define the error/agent-end/settled
+  sequence; and treat successful `agent_end(willRetry=false)` plus one `agent_settled` as graceful
+  terminal by closing stdin, waiting five seconds and terminating only the owned resident wrapper when
+  needed. The 40-minute deadline remains only the no-evidence last resort.
+- Test revision: add fixed-clock and poison/fake-upstream cases for cross-thread publication, Round-8
+  failure order, non-resettable drain, successful resident RPC closure, active-run timeout, cleanup and
+  zero real provider/model calls.
+- Next step: return the revised design/shared plan to the same reviewer. No product code or model call
+  is authorized before PASS.
+
+### 2026-07-28T17:18:51+08:00 — M5-P1 post-Round-8 repair plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding, `accepted-high`; no Critical finding.
+- Finding: a complete Pi/extension/policy error terminal sequence could occur without any
+  `UpstreamCompletionError` snapshot. The prior revision defined it only as evidence drained after a
+  provider failure, so a resident RPC wrapper could still wait until 40 minutes.
+- Revision: assistant/turn `stopReason=error` followed by `agent_end` and exactly one
+  `agent_settled` is independently terminal. A provider snapshot, when present, remains primary;
+  otherwise the audit records only stable `agent_terminal_error` and never copies the Pi-visible error
+  text. The runner closes stdin, waits five seconds, then terminates only its owned resident wrapper.
+  The 40-minute deadline now applies only without provider failure and without any complete success or
+  error terminal sequence.
+- Test revision: add a poison/fake-upstream fixture with no provider snapshot that proves bounded
+  shutdown, stable redacted classification, full cleanup, no real provider/model call and no 40-minute
+  timeout.
+- Next step: re-review the complete revised state before implementation.
+
+### 2026-07-28T17:19:35+08:00 — M5-P1 post-Round-8 repair plan review Round 3 and freeze — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding and no unresolved core assumption.
+- Frozen scope: controlled `m5_p0_model_proxy.py` Host-only snapshot, M5-P1 terminal state machine and
+  focused tests/docs only. Provider details remain hidden from Pi; all other M5-P0 files, platform MCP,
+  backend/frontend and ontology semantics remain unchanged.
+- Required gates: M5-P0 proxy regressions; focused M5-P1 and complete focused M4; thread-safe
+  first-write-wins snapshot; fixed-clock provider failure, independent Agent error and resident-success
+  terminal fixtures; strict TypeScript/runtime; Ruff; diff/hash boundaries; no-model preflight; cleanup
+  and normal-service health.
+- Formal/model budget: none. The implementation handoff must use poison/fake upstreams only.
+
+### 2026-07-28T17:31:36+08:00 — M5-P1 direct-DeepSeek boundary confirmed — user + main agent
+
+- User decision: Pi will access DeepSeek directly for this local single-round experiment. The Host model
+  proxy was an isolation choice, not a Pi requirement; its reviewed-but-unimplemented observability
+  repair is superseded and the in-progress developer was paused before changing code.
+- Verified paused baseline: `m5_p0_model_proxy.py` retained historical SHA-256
+  `8cdbc2b0a5763fc002065fd0f2c34e7e6a9a251782beb91fcd735a4e29a70dc4`;
+  M5-P1 runner/tests retained their pre-handoff hashes. No partial proxy repair must be retained.
+- Direct contract: the Host writes the existing key only to a `0700` run-owned Pi configuration with
+  `0600` files; M5-P1 fixes the direct URL/model; formal bwrap shares Host networking and removes all
+  provider-proxy/socket/sidecar machinery. Pi can read the temporary key and has local-run network
+  egress; the user accepts that trade-off. The platform key and platform access remain isolated behind
+  the fixed Unix MCP bridge.
+- Cleanup/observability: the credential directory is removed on every exit, retained artifacts are
+  secret-scanned, and complete success/error Agent terminal sequences close stdin and bound resident RPC
+  shutdown instead of waiting 40 minutes.
+- Verification boundary: only no-key DNS/TLS/proxy reachability is permitted before a future formal
+  authorization. No completion, model prompt or provider request is authorized by this decision.
+- Next step: mandatory plan re-review for the changed credential/network boundary before implementation.
+
+### 2026-07-28T17:35:12+08:00 — M5-P1 direct-DeepSeek plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; one evidence-backed High finding, `accepted-high`; no Critical finding.
+- Finding: the current case table still required an opaque capability/Host-proxy lifecycle even though
+  the direct gate forbids those assets, and the new M5-P1-local provider identity was not exact.
+- Revision: freeze provider ID `m5-p1-deepseek-direct` across CLI `--provider`, `auth.json` and
+  `models.json`; require the fixed DeepSeek URL/model/API/max-token parameters and direct ephemeral
+  config hashes; require all M5-P0 files unchanged and all proxy/capability/sidecar evidence absent.
+- Credential wording correction: Pi may read the DeepSeek key only from its run-owned ephemeral config,
+  as explicitly accepted by the user. Platform credentials and the key outside that directory remain
+  invisible, and no retained artifact may contain the key.
+- Acceptance wording now supersedes the original proxy-evidence and provider-credential-invisibility
+  clauses with exact direct-provider configuration and secret-lifecycle evidence.
+- Next step: return the revised direct plan to the same reviewer. No implementation or model call before
+  PASS.
+
+### 2026-07-28T17:36:01+08:00 — M5-P1 direct-DeepSeek plan review Round 2 and freeze — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding and no unresolved core assumption.
+- Frozen identity/boundary: provider `m5-p1-deepseek-direct`, URL
+  `https://api.deepseek.com/v1`, model `deepseek-v4-pro`, OpenAI-compatible API; key only in
+  run-owned Pi config; all M5-P0 and platform MCP surfaces unchanged; no provider proxy/sidecar assets.
+- Required offline gates: exact direct config and modes; retained-artifact secret scan; shared-network
+  TLS/DNS and credential-free proxy construction; no-key reachability only; poison completion guard;
+  platform Unix MCP isolation; resident success/error terminal handling; M5-P1/M4 regressions; all
+  M5-P0 hashes; TypeScript, Ruff, diff, cleanup and normal health.
+- Formal/model budget: none. A future direct formal run still requires separate explicit authorization.
+
+### 2026-07-28T17:47:13+08:00 — M5-P1 direct-DeepSeek development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`; no formal/model call and no `8012`/`8013` runtime.
+- Implementation: M5-P1 now fixes provider `m5-p1-deepseek-direct`, DeepSeek URL/model/API/token
+  parameters, writes the existing key only to `0700` run-owned Pi state with `0600` files, shares Host
+  networking with TLS/DNS mounts and accepts only a validated credential-free HTTP proxy address.
+- Removed M5-P1 runtime surfaces: provider capability registry, Unix model proxy, provider
+  socket/capability, sidecar, provider thread and related cleanup. All M5-P0 files remain unchanged;
+  proxy SHA-256 remains `8cdbc2b0a5763fc002065fd0f2c34e7e6a9a251782beb91fcd735a4e29a70dc4`.
+- Terminal handling: a complete success or error Agent terminal sequence closes stdin, allows five
+  seconds for natural exit and terminates only the owned resident wrapper if necessary; an active run
+  without a complete terminal still retains the last-resort timeout.
+- Developer verification: M5-P1 `64 passed`; M5-P0 `31 passed` plus `6` subtests; M4 `123 passed`;
+  Ruff, strict pinned Pi TypeScript/runtime and `git diff --check` passed. A no-model preflight reported
+  `PREPARED`; the no-authorization namespace `HEAD /` probe reached DeepSeek and returned `401` without
+  sending a prompt or completion. Normal systemd/backend/frontend health passed.
+- Stable hashes: `m5_p1_pi_m4.py` =
+  `44b1827a6eb6b7315c358fb504abc6ead6e859912fe66f201ccef80952671d69`;
+  `run_pi_m4_single_round.py` =
+  `d3cef2b9830468fec9e080e1c503fc461489aa655914e661d9223663ee68489d`.
+- Next step: independent Round 9 against the same shared test plan, strictly without a model call.
+
+### 2026-07-28T17:53:26+08:00 — M5-P1 direct-DeepSeek Independent Round 9 — requirement tester + main agent
+
+- Result: `PASS`; no product defect and no formal/model budget used.
+- Independent commands: M5-P1 `64 passed`; M5-P0 `31 passed` plus `6` subtests; M4 `123 passed`;
+  strict pinned Pi TypeScript/runtime, Ruff and `git diff --check` passed.
+- Direct evidence: provider identity is exact across CLI/auth/models; fixed URL/model/API/max tokens are
+  correct; the key lifecycle is restricted to the `0700`/`0600` run-owned Pi config; provider
+  proxy/socket/capability/sidecar/thread and localhost model endpoints are absent; cleanup and retained
+  artifact secret scans pass.
+- No-model preflight `m5-p1-preflight-independent-r9-20260728a` reported `PREPARED`,
+  `formal_prompt_sent=false` and a passing namespace probe. The only network request was a no-key,
+  no-Authorization `HEAD /`, which returned `401`; no `/chat/completions`, task prompt or model request
+  occurred.
+- Platform boundary: exact official MCP 12-tool manifest
+  `0f6006e83bc81568cfc6a7e1959a7747f901783c9be7b3297e17dba4ea7ec257`,
+  PostgreSQL health `ok`, no platform key and no shell/write/edit/generic dispatch in Pi. Normal
+  systemd/`8001`/`5173` health passed.
+- Accepted risk: Direct Pi intentionally shares Host network egress for this local experiment. The
+  no-key `401` proves routing only, not credential acceptance or completion behavior.
+- Next step: a new Direct formal single round requires explicit user authorization.
+
+### 2026-07-28T17:59:23+08:00 — M5-P1 Direct Formal Round 10 — user + main agent + independent tester
+
+- Authorization/execution: the user approved exactly one Direct formal attempt and required the latest
+  `AGENTS.md` workflow. The attempt started immediately with tag
+  `m5-p1-independent-r10-direct-20260728a` on owned backend `8013`.
+- Result: `FAIL` for acceptance (`run-audit.status=INCONCLUSIVE`). Direct provider reachability worked,
+  but DeepSeek rejected the tool definition before emitting model content or allowing any MCP call.
+- Exact error: HTTP `400`, `bind_clarification_decision` function parameters had root schema
+  `type:null`; DeepSeek requires root `type:"object"`. The assistant stopped with error, zero tokens and
+  no content; one `agent_end(willRetry=false)` and one `agent_settled` ended promptly.
+- Evidence: zero protected MCP and clarification evidence; no Build Session, Batch, validation,
+  reasoning or query. Audit SHA-256
+  `54e83dbbb64de3c1c20fb8f1b796c7ed18cc9b7800e5126f4eaef8252a7452f0`;
+  transcript SHA-256
+  `23d8fe4317fcd431bbf45ff26e92f81da66980288cae78760ddca1e114068262`.
+- Classification: P1/High `runtime/platform-contract`, not modeling quality. The Direct credential,
+  networking and fast terminal path behaved as intended.
+- Cleanup: run-owned Project deleted; Pi/MCP/bridge/relay/credential directory removed; owned `8013`
+  stopped; normal `8001`/`5173` remained healthy.
+- Minimal repair: retain the two typed binding branches but wrap them in a provider-compatible root
+  `type:"object"` plus nested `anyOf`; require all Pi tool schemas to have object roots and verify the
+  captured outbound tools payload with no real completion.
+- Formal budget: consumed once; no automatic retry authorized.
+
+### 2026-07-28T18:00:42+08:00 — M5-P1 Direct schema repair review — plan reviewer + main agent
+
+- Result: `PASS`; no Critical/High finding and no unresolved assumption.
+- Frozen repair: one existing tool, unchanged name and two unchanged required-field branches, wrapped
+  only with root `type:"object"` plus nested `anyOf`. Host binding policy remains unchanged.
+- Required regression: every Pi-visible tool schema has an object root; real pinned loader/TypeBox keeps
+  valid/invalid branch behavior; captured outbound tools payload is provider-compatible; poison
+  transport proves zero real completion/model calls.
+- Evidence basis: DeepSeek's official Tool Calls contract uses an object parameter root and lists
+  `anyOf` as supported.
+
+### 2026-07-28T18:05:16+08:00 — M5-P1 Direct schema repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`; only the Pi extension and focused tests changed.
+- Implementation: `bind_clarification_decision` now serializes as root `type:"object"` with nested
+  `anyOf` over the unchanged modeled-change/explicit-gap object branches. Tool identity, descriptions,
+  required fields and Host policy are unchanged.
+- Developer verification: M5-P1 `65 passed`; M4 `123 passed`; M5-P0 `31 passed` plus `6` subtests;
+  strict pinned Pi TypeScript/runtime, Ruff and `git diff --check` passed. Pinned Pi plus poison local
+  transport captured the provider-visible tools payload and proved every root is an object without a
+  real completion.
+- Extension SHA-256:
+  `5fbe9a1632166d46f2b0339ba76855a27321e642c7020b8c1e9b940851afd837`;
+  M5-P0 proxy remains unchanged.
+- No-model preflight and normal service health passed; no formal/model call or `8012`/`8013` action.
+
+### 2026-07-28T18:06:16+08:00 — M5-P1 Direct schema repair Independent Round 11 — requirement tester + main agent
+
+- Result: `PASS`; no new defect.
+- Independent verification: M5-P1 `65 passed`; M4 `123 passed`; strict TypeScript/runtime, Ruff and
+  `git diff --check` passed.
+- Provider contract: binding schema root is `type:"object"`; both nested `anyOf` required-field
+  branches remain valid; pinned TypeBox rejects missing branch fields. Poison provider captured the real
+  tools payload, confirmed every root schema is an object and prevented any real completion.
+- Stable hashes: extension
+  `5fbe9a1632166d46f2b0339ba76855a27321e642c7020b8c1e9b940851afd837`;
+  tests `6213b5…4680a`. M5-P0 and the Direct no-model/health boundary remain unchanged.
+- Remaining gate: actual provider acceptance can only be proven by another separately authorized formal
+  round. Round 10 consumed the prior single-round budget.
+
+### 2026-07-28T18:13:50+08:00 — M5-P1 Direct Formal Round 12 — user + main agent
+
+- Authorization: the user allowed two Direct executions for this cycle; Round 12 consumed the first.
+- Result: acceptance `FAIL` with internal status `INCONCLUSIVE`, not a timeout. Pi reached actual
+  modeling, completed the four setup MCP calls, exactly three clarification requests/bindings and lease
+  acquisition, then its first schema dry-run was rejected.
+- Classification: confirmed `runtime/platform-contract`, not modeling quality. The official schema
+  exposed Batch items as unstructured objects, so Pi used a flat resource shape instead of the required
+  `client_item_id`/`command_kind`/`payload` command envelope. The bridge then hid the platform
+  `validation_error` behind a generic success-envelope complaint.
+- Evidence: audit SHA-256
+  `06582e9e24523d2ca45b6c27959093999f430556ab27e82d130e21667a19e791`;
+  transcript `50d0ea72d86f8ddd2fa80b990b82042a931a9985ad0ce3b1f454bdd2172e3a4e`;
+  clarification audit
+  `bd3609bb237317083b58900e3a48f407066d2a334f5f22f3333bfd9722ab057c`;
+  rejection ledger
+  `f28c1c2785aee2b6e91deb8d3cce9aff14b46716cda9dbac02d599ea9b1a6665`.
+- Cleanup: run Project/ontology, Pi, bridge, MCP client, relay and credential directory were removed;
+  owned backend `8013` was stopped.
+
+### 2026-07-28T18:21:00+08:00 — Round-12 root-cause probe and repair review — plan reviewer + main agent
+
+- A no-model, disposable official-MCP replay proved `dry_run` is valid and returned the exact platform
+  `validation_error`; all probe Projects were deleted and the probe backend stopped.
+- Plan review result: `PASS`; no Critical/High finding. Frozen repair is limited to typing the MCP
+  `items` parameter with existing `ModelingItemInput` and faithfully surfacing canonical platform
+  failure envelopes without recording them as successful FSM calls.
+- Required tests: real FastMCP nested-schema resolution; no `fsm.record` on platform rejection; first
+  rejection audit and permanent PASS lock; full backend and M5-P1/M5-P0/M4 regression and runtime gates.
+- GitNexus reported a broad/CRITICAL indexed blast radius for the shared MCP registration and result
+  unwrapping paths. The disposition is `accepted-high` for verification breadth, not scope expansion:
+  success envelopes, FSM order, Batch semantics and storage remain unchanged, and full regression plus
+  independent testing is mandatory before the remaining formal attempt.
+
+### 2026-07-28T18:27:00+08:00 — Round-12 repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. The official MCP parameter now uses `list[ModelingItemInput]`; its real
+  FastMCP schema exposes `$defs`/`$ref` with required `client_item_id`, `command_kind` and `payload`.
+  Canonical platform failure envelopes retain their `error_code` and message in the rejected dispatch;
+  they never reach `fsm.record`, are written as the first rejection and permanently lock that attempt.
+- Changed surfaces are limited to the MCP tool type signature, one backend schema regression, M5-P1
+  result unwrapping and focused M5-P1 rejection tests. Success envelopes, FSM sequence, service/storage
+  behavior and M4 modeling semantics are unchanged.
+- Verification passed: focused backend MCP `4 passed`; M5-P1 `67 passed`; M4 `123 passed`; M5-P0
+  `31 passed` plus `6` subtests; Ruff and `git diff --check`. The required service restart completed:
+  unit `active`, `8001/api/health={"status":"ok"}`, frontend HTTP `200`.
+- Full backend collection found `819` tests but stopped at 22% on the existing local-environment test
+  `test_mcp_startup_requires_environment_key`: deleting the process environment variable did not raise
+  because the repo-local `backend/.env` still supplies the key. Main independently reproduced the same
+  isolated failure. No credential/config file was moved or edited and no unrelated auth change was made;
+  independent testing must run the remaining suite excluding only this environment-conflicted case.
+- No formal/model call was made. The second user-authorized Direct attempt remains unused.
+
+### 2026-07-28T18:32:00+08:00 — Round-12 repair Independent Round 13 — requirement tester + main agent
+
+- Result: `PASS`; all four frozen file hashes matched and no in-scope defect was found.
+- Real FastMCP schema checks `4 passed`; M5-P1 `67 passed`; M5-P0 `31 passed` plus `6` subtests;
+  M4 `123 passed`; Ruff and `git diff --check` passed.
+- Backend coverage excluding only the local `.env`-conflicted auth assertion completed with
+  `808 passed, 10 skipped, 1 deselected` in 69.32 seconds. The excluded test remains a test-environment
+  isolation issue unrelated to this repair; no credential or config file was modified.
+- Runtime remained healthy: service `active`, backend health OK, frontend HTTP `200`; ports `8012` and
+  `8013` were unused. No model/formal call occurred.
+- Disposition: offline repair gate accepted. The remaining user-authorized Direct formal attempt may
+  proceed after a fresh owned `rdf_primary` backend and no-model preflight.
+
+### 2026-07-28T18:36:00+08:00 — M5-P1 Direct Formal Round 14 — user + main agent
+
+- Authorization/execution: this consumed the second and final Direct attempt authorized for this cycle.
+  No-model preflight `m5-p1-preflight-independent-r14-20260728a` first returned `PREPARED`,
+  `formal_prompt_sent=false`, Pi `0.81.1`, passing namespace/extension probes and no-key HTTPS `401`.
+- Formal result: `FAIL` (`run-audit.status=INCONCLUSIVE`) with one formal prompt and a normal successful
+  terminal sequence. Setup reached Build Session creation, both contexts and lease acquisition.
+- Pi asked exactly the three eligible clarifications and successfully bound the first two. For the
+  third `uncertain` result it changed one character in the opaque receipt handle (`...XL...` became
+  `...TT...`), so every explicit-gap binding attempt was correctly rejected as an invalid handle.
+- The first schema dry-run was therefore correctly rejected before dispatch with
+  `three clarification decisions must bind before principal batch`; the bridge permanently locked the
+  attempt. No Modeling Batch reached the platform.
+- The Round-12 nested schema defect did not recur: Pi emitted items containing
+  `client_item_id`, `command_kind` and `payload`. A second independent defect is visible in that
+  unexecuted payload: Pi used unsupported `add_class`, `add_property`, `add_relation` and later
+  `add_gap` instead of the documented supported `create_*` command family.
+- Cleanup was complete: run-owned Project/ontology deleted; Pi, credential directory, relay, bridges
+  and MCP client removed/closed; owned `8013` backend stopped. Normal service remained `active`,
+  backend health OK and frontend HTTP `200`.
+- Evidence hashes: audit
+  `7bcf64dee69957e28b922049f3de43a05d0d0ed0d48afb0b80f7cf242b85d006`;
+  transcript `7745f3ea6257b1b76fed3eae4283d76238e49912b4f9b05eb4aea8c7678f2df7`;
+  clarification audit
+  `695311a848ef75b322c68560b67ae5143f8869d8bba0e6887dbbd439868b9b6c`;
+  rejection ledger
+  `94233bcc9422ef4de05c62523f7437632707b6c7ee2a10b5119b65bdf41031c9`.
+
+### 2026-07-28T18:38:00+08:00 — Direct Formal Round 14 Independent Round 15 — requirement tester + main agent
+
+- Result: `FAIL`, classified as modeling execution rather than runtime/platform failure.
+- Independent evidence confirmed one prompt, the four setup calls, three eligible clarifications, the
+  one-character third-handle drift, correct pre-Batch policy rejection and permanent lock, complete
+  cleanup and no platform Batch dispatch.
+- The tester also confirmed that nested item fields are now present and that the unsupported `add_*`
+  command kinds would deterministically block the next stage even if the receipt were copied exactly.
+- Closure: the user-authorized two-run budget is exhausted. M5-P1 is not complete and no third formal
+  run is authorized. A future repair must address opaque receipt fidelity and canonical command-kind
+  selection, pass a new offline/independent gate, and receive new formal-run authorization.
+
+### 2026-07-28 — Post-Round-15 one-run authorization and repair contract — user + main agent
+
+- The user authorized exactly one additional Direct formal attempt. It may run only after offline
+  development and independent PASS; a failed offline gate consumes no model budget.
+- Frozen repair: Pi binds stable `clarification_request_id`; Host alone resolves and audits the opaque
+  receipt. Official Modeling Batch schema exposes the canonical handler command enum plus the public
+  payload requirements already enforced by the compiler. No business answer, target ontology recipe,
+  Dify-specific platform behavior or relaxed M4 gate is added.
+- GitNexus impact: `ClarificationLedger` is exact `LOW` with three direct dependents;
+  `ModelingItemInput` reports `LOW` but with a lower-bound warning for interface/dynamic binding.
+  Disposition: preserve the full backend/M5-P1/M4 regression and runtime restart gates despite the
+  small source diff.
+- Artifacts remain the existing M5-P1 design and shared test plan; the next step is mandatory plan
+  review before implementation.
+
+### 2026-07-28 — Post-Round-15 repair plan review — requirement plan reviewer + main agent
+
+- Result: `PASS`; no Critical/High issue blocks the two frozen mechanical repairs.
+- The reviewer confirmed that Host-side `request_id` lookup can preserve response-kind validation,
+  one-time consumption, duplicate rejection and the protected opaque-receipt evidence chain.
+- The canonical enum source is the Modeling Batch Handler inventory, not the broader semantic
+  compiler inventory. The existing public M4 command table is sufficient payload guidance for this
+  scenario; a full discriminated union is not required.
+- Development gate: remove every provider-visible opaque-receipt instruction and prove the public
+  schema/prompt covers `create_class`, `create_property`, `create_relation_type`, `create_shape`,
+  `create_entity` and `create_relation` with their required payload fields.
+
+### 2026-07-28 — Post-Round-15 repair implementation — requirement developer + main agent
+
+- Implemented only the reviewed protocol corrections: provider-visible clarification binding now
+  uses `clarification_request_id`; the Host retains the opaque receipt evidence. The official MCP
+  Modeling Item schema exposes the exact Modeling Batch Handler command inventory and the six public
+  create-command payload minima, with `add_*` explicitly forbidden.
+- Focused results: Backend MCP `4 passed`; M5-P1 `67 passed`. Stability results: M4 `123 passed`;
+  M5-P0 `31 passed` plus `6` shell subtests; Ruff and `git diff --check` passed.
+- Full Backend result excluding the known local environment-contract conflict:
+  `808 passed, 10 skipped, 1 deselected`. The unfiltered run's sole failure remains
+  `test_mcp_startup_requires_environment_key`, because the local `.env` supplies the key after the
+  test deletes the process variable; no credential/configuration behavior was changed in this scope.
+- The service was restarted per repository policy and verified `active`; Backend `8001` health and
+  Frontend `5173` both passed. No formal/model call was made.
+- Next gate: independent offline Round 16. A formal Direct prompt remains forbidden until that gate
+  returns `PASS`.
+
+### 2026-07-28 — Post-Round-15 independent offline Round 16 — requirement tester + main agent
+
+- Result: `PASS`; the tester independently confirmed the stable clarification request ID, Host-only
+  opaque receipt hash, exact Handler command enum, six-command payload guidance, `add_*` rejection
+  and staging-prompt contract.
+- The focused, M4, M5-P0 and Backend regression results were reproduced; service health passed and no
+  formal/model call occurred. The user-authorized one Direct attempt was therefore eligible to start.
+
+### 2026-07-28 — M5-P1 Direct Formal Round 17 — main agent
+
+- Exactly one Direct prompt was sent using fresh isolated run tag
+  `m5-p1-independent-r17-direct-formal-20260728a`. A preceding no-model preflight used a different
+  tag after the runner correctly rejected reuse of the preflight tag before sending any prompt.
+- Pi completed the four setup calls, asked the three eligible clarifications and successfully bound
+  all three with stable `clarification_request_id` values. The Round-14 opaque-handle failure did not
+  recur, and Pi's planned command kinds used the canonical `create_*` family.
+- First rejection: Pi included `lease_token` in the principal `dry_run`; the platform correctly
+  returned `invalid_lease_token: dry_run must omit lease_token`. The M5-P1 bridge then permanently
+  locked PASS, as required after the first rejected dispatch. No Modeling Batch reached the platform
+  and validation/reasoning/query/completion did not execute.
+- Runner outcome: final audit `passed=false`, formal prompt count `1`, Pi terminal `success`, project
+  cleanup complete. Preliminary classification is modeling/protocol execution failure, not provider,
+  Host, platform, or application runtime failure; independent Round 18 must confirm.
+- Cleanup: run-owned Project/ontology deleted; Pi, relay, bridges and MCP client closed; owned `8013`
+  backend stopped. Normal service remains `active`, Backend health OK and Frontend HTTP `200`.
+- Evidence hashes: audit
+  `fe289be243d6345996b7bb56c43a1f73708cc87ec504fccef816d1c396d4a0c0`;
+  transcript `06d3a91e52f26f3b1e72da6b59ab93c65296932f5f77f8e46628615b09d5075b`;
+  clarification audit
+  `fd75e98997459322fe71c8ba4e332dfc140f09e8f49d404157ef7b7c38345f96`;
+  rejection ledger
+  `8c6cfb0bffb47273767e586265846330430f592f9686fea5529ed1ba81a67f9c`.
+
+### 2026-07-28 — Direct Formal Round 17 Independent Round 18 — requirement tester + main agent
+
+- Result: `FAIL` for M5-P1, classified as modeling/protocol execution rather than platform contract
+  or runtime failure.
+- Independent evidence confirmed exactly one Direct prompt using
+  `m5-p1-deepseek-direct/deepseek-v4-pro`, correct setup, three request-ID clarification bindings,
+  canonical `create_*` commands and object payloads.
+- The first ten-item dry-run incorrectly carried `lease_token`; the platform correctly rejected it
+  under the published contract and the bridge correctly locked every subsequent dispatch. No Batch
+  reached the platform.
+- Cleanup and isolation passed: Project deleted, `8013` stopped, and the normal service remained
+  healthy.
+- Closure: the authorized one-run budget is exhausted and M5-P1 remains incomplete. The smallest
+  future change is deterministic agent-visible enforcement that dry-run omits `lease_token` while
+  `apply_atomic` supplies it; any new formal attempt requires new authorization and a fresh isolated
+  run.
+
+### 2026-07-28 — Post-Round-18 retry authorization and contract — user + main agent
+
+- The user authorized Pi one retry and one new Direct formal round. Refinement is explicit in the
+  accepted context: the retry is limited to the observed dry-run token-placement error, not a general
+  relaxation of M4 failure handling.
+- Frozen recovery: one exact platform `invalid_lease_token: dry_run must omit lease_token` may be
+  followed by the same request with only `lease_token` removed. Argument drift, another tool, another
+  rejection or retry failure locks the run. The Host records but does not perform the correction.
+- Current minimal scope also makes the dry-run/apply token rule agent-visible. General recovery,
+  multiple retries, automatic normalization and product orchestration remain non-goals.
+- GitNexus impact: `McpBridge.dispatch` is exact `LOW`; `McpFsm.authorize` is exact `CRITICAL`
+  because it gates the whole M5-P1 sequence. Disposition: keep the change inside the task-local bridge,
+  preserve all existing sequence checks and require focused plus full M5/M4/Backend regression before
+  any formal prompt.
+
+### 2026-07-28 — Exact retry plan review Round 1 — requirement plan reviewer + main agent
+
+- Result: `REVISE`; one High finding was accepted.
+- Finding: ordinary error strings cannot prove canonical platform origin, two unrelated hashes cannot
+  prove the only argument change, and the current final audit rejects every rejection ledger even
+  after a successful corrected call.
+- Revision: preserve a structured platform error; retain the original arguments only in protected
+  evidence; independently recompute the original-without-token hash and match it to the corrected
+  successful MCP evidence at the same FSM step. Ordinary rejection evidence remains disqualifying.
+- The revised design and shared offline gate return to mandatory plan review before development.
+
+### 2026-07-28 — Exact retry plan review Round 2 — requirement plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding or unresolved assumption.
+- The reviewer confirmed the structured error boundary, run-wide single retry, exact argument
+  transformation, same-step continuation, protected replay evidence and final-audit treatment.
+- Development may begin in the task-local M5-P1 bridge and tests; platform services and the frozen
+  M4/M5-P0 behavior remain out of scope.
+
+### 2026-07-28 — Exact retry implementation — requirement developer + main agent
+
+- Implemented only in the M5-P1 scenario: structured canonical platform error, one pending exact
+  dry-run token-removal retry, Host-only `dry-run-lease-recovery.json`, independent audit replay and
+  explicit Pi-visible dry-run/apply token guidance.
+- Focused M5-P1 result: `82 passed`, including exact recovery, equal local string, missing token,
+  other platform error, tool/Batch/token drift, second error, failed retry and tampered audit evidence.
+- Stability results: M4 `123 passed`; M5-P0 `31 passed` plus `6` shell subtests; Backend
+  `808 passed, 10 skipped, 1 deselected` after excluding the unchanged local `.env` auth-isolation
+  conflict. Ruff and `git diff --check` passed.
+- No Backend code changed, so no restart was required. The existing service remained `active`;
+  Backend health and Frontend HTTP checks passed. No formal/model call or commit occurred.
+- Stable state is ready for independent offline Round 19.
+
+### 2026-07-28 — Exact retry independent offline Round 19 — requirement tester + main agent
+
+- Result: `PASS`; no in-scope defect.
+- Independent evidence confirmed structured platform/local error separation, one run-wide exact
+  token-removal retry, terminal lock for every drift/failure/second attempt, protected artifact replay
+  and final-audit treatment.
+- Focused M5-P1, MCP, M4, M5-P0, Ruff/diff and service-health gates passed; `8012` and `8013` were
+  unused and no model prompt was sent.
+- One fresh isolated Direct formal Round 20 is now eligible under the user's authorization.
+
+### 2026-07-28 — M5-P1 Direct Formal Round 20 — main agent
+
+- Exactly one Direct prompt was sent with fresh tag
+  `m5-p1-independent-r20-direct-formal-20260728a`; the separate preflight sent no authorization or
+  model prompt.
+- Pi completed Build Session creation and both context reads. It obtained two eligible answered
+  clarifications; its third question was correctly returned `not_eligible`, so only two decisions
+  were bound.
+- First rejection: Pi submitted the first dry-run before the required `acquire_ontology_lease`.
+  The Host correctly rejected `expected acquire_ontology_lease, got submit_modeling_batch` and locked
+  the run. The newly authorized retry did not apply because this was a local sequence-policy error,
+  not the exact platform dry-run token error.
+- Preliminary outcome: final audit `passed=false`; only three setup calls were recorded, no Modeling
+  Batch reached the platform and no recovery artifact exists. Independent Round 21 must confirm the
+  modeling-execution classification.
+- Cleanup passed: run-owned Project deleted, Pi/bridges/MCP/relay closed, owned `8013` stopped, normal
+  service active, Backend health OK and Frontend HTTP `200`.
+- Evidence hashes: audit
+  `0d655edaf55968f35df7cdebff8b61efc77e723f5685e908e107a3ffc0ad48f5`;
+  transcript `66fc3ef927710cf75601301915dfc16045ad41ebb216c489ca8f857a937ab72c`;
+  clarification audit
+  `341b38562f478c690664f7f5243bbcfc5d6c96db88d1e4f8f1f913da4329239c`;
+  rejection ledger
+  `cb3242994a80c55b9014b28acc0be2ab2da9d82a8b7100f5da084bf1bcbc0022`.
+
+### 2026-07-28 — Direct Formal Round 20 Independent Round 21 — requirement tester + main agent
+
+- Result: `FAIL` for M5-P1, classified as modeling execution rather than platform contract or runtime.
+- Independent evidence confirmed one Direct prompt and the correct provider/model. Only two eligible
+  clarifications were bound; the third request was correctly `not_eligible`.
+- Pi submitted a canonical dry-run before acquiring the required ontology lease. The local FSM
+  correctly rejected the wrong order, so the exact platform token retry correctly remained unused.
+- No recovery artifact or Modeling Batch write exists. Project and all run-owned resources were
+  cleaned, `8013` stopped, and the normal service stayed healthy.
+- Closure: the sole authorized Round-20 formal budget is exhausted. M5-P1 remains incomplete; a new
+  formal attempt requires explicit user authorization after deciding whether to address Pi's eligible
+  question selection and deterministic tool-order adherence.
+
+### 2026-07-28 — M5-P1 M4 answer-free material reuse — requirement developer + main agent
+
+- Reused the four frozen M4 answer-free inputs byte-for-byte in M5-P1 staging: responsibility
+  contract, modeling prompt, business brief and public Modeling Batch command contract. Their source
+  paths and hashes plus the M4 input-manifest hash are retained in the visible-input manifest.
+- The current task explicitly replaces only M4's historical file-spool transport with typed MCP and
+  clarification tools. Prior ontology answers, Batch payloads, results, transcripts and runtime
+  evidence remain excluded.
+- Scope stayed inside the M5-P1 runner, focused tests and scenario README. Focused M5-P1 verification
+  passed `82`; Ruff and `git diff --check` passed. No Backend code, migration, normal service setting
+  or formal/model call was changed by this preparation.
+- Fresh no-model preflight
+  `m5-p1-independent-r22-reuse-preflight-20260728a` returned `PREPARED`, Pi `0.81.1`,
+  `deepseek-v4-pro`, the expected restricted tool surface, successful namespace/socket checks and an
+  unauthenticated HTTPS `401`; it sent neither Authorization nor a completion.
+
+### 2026-07-28 — M5-P1 Direct Formal Round 22 and Independent Round 23
+
+- Exactly one Direct prompt used tag
+  `m5-p1-independent-r22-reuse-direct-formal-20260728a`, provider
+  `m5-p1-deepseek-direct` and model `deepseek-v4-pro`. The approximately 241-second transcript has
+  one `agent_end(willRetry=false)` and one `agent_settled`; no second formal round was started.
+- Material reuse fixed the preceding execution gaps: Pi obtained three eligible clarifications
+  serially, bound both answered decisions and the uncertain explicit gap, and acquired the ontology
+  lease before its first Batch.
+- The first principal Batch attempt failed Pi's typed-tool validation because `depends_on` contained
+  object references instead of client-item ID strings. Pi corrected that local schema error and sent a
+  second 15-item dry-run to Host/platform.
+- The corrected request still placed literal client-item strings in payload resource fields such as
+  `class_id`, relation endpoints and Shape paths instead of documented `item_ref` output references.
+  The principal schema dry-run therefore did not validate. Host recorded
+  `M5P1_POLICY: principal schema dry-run did not validate`, locked PASS, and permitted no apply/write.
+- Independent Round 23 result: `FAIL`, classified as P1/High modeling-quality/execution rather than a
+  platform-contract or runtime/infrastructure defect. Unexecuted gates are schema apply, invalid/valid
+  instances, semantic validation, reasoning, governed query and completion.
+- Cleanup passed: owned Project deleted and returns `404`; Pi credentials, bridge capability, sockets,
+  MCP and relay were removed; `8013` is unbound. The normal service remains active with Backend health
+  OK and Frontend HTTP `200`.
+- Evidence hashes: run audit
+  `1a88761d27b75f562e44652070822fb61d9a8f5578f3e8a017f606a253e4a16e`; transcript
+  `2044c3c6acf6015ac8cb7a1e881aea51e1d902587e832de36956969c0aee4ad7`; clarification audit
+  `459295b376131ce42f35a2c33ef05087197d5a10c733b6ad177c657d17a0b96a`; rejection ledger
+  `a6baba891bd5144ddbddf8573202ef904806ca764e0d7926e187b48c7b6b7c40`; responder audit
+  `c7f48b8afeb4c4469d08f285599a45ab85fc57abeb9717303107c0d51144c00c`.
+- Residual evidence risk: a rejected principal dry-run retains the non-validation outcome and request
+  payload but not the platform's complete validation findings as a successful protected receipt.
+  Before another authorized formal round, make the Pi-visible contract distinguish string
+  `depends_on` topology from payload `item_ref` output substitution and verify that distinction
+  offline.
+
+### 2026-07-28 — Round-23 item-reference repair and Independent Round 24
+
+- Added answer-free mechanical guidance to the M5-P1 task and transport-neutral contract:
+  `depends_on` contains prerequisite client-item ID strings only, while payload resource fields use
+  `item_ref` with `resource_id` or `resource_iri`. A generic positive example and explicit invalid
+  forms prevent putting `item_ref` in dependency topology or literal client-item IDs in resource
+  fields.
+- Scope stayed within the M5-P1 runner and focused tests. Main and developer verification passed
+  `82`; Ruff and `git diff --check` passed. Fresh no-model preflight
+  `m5-p1-independent-r24-itemref-preflight-20260728a` returned `PREPARED` with no Authorization or
+  completion request.
+- Independent Round 24 result: `PASS` offline. It confirmed the positive/negative staging contract,
+  no answer/history leakage, and no regression in transport, clarification, lease or token rules.
+
+### 2026-07-28 — M5-P1 Direct Formal Round 25 and Independent Round 26
+
+- Exactly one Direct prompt used tag
+  `m5-p1-independent-r25-itemref-direct-formal-20260728a`, provider
+  `m5-p1-deepseek-direct` and model `deepseek-v4-pro`; it retained one
+  `agent_end(willRetry=false)` and one `agent_settled`.
+- Pi correctly completed three eligible clarifications and bindings, acquired the lease before the
+  Batch, omitted the dry-run lease token, used string dependency topology, and used `item_ref`
+  `resource_id` values for class, property, relation and Shape payload references. The Round-23
+  modeling-quality defect is fixed.
+- The principal 12-item schema dry-run still returned non-validated and Host correctly locked PASS.
+  No Batch apply/write or downstream validation, reasoning, governed query, checkpoint or completion
+  occurred.
+- Root cause was recovered through exact no-model replay of the Round-25 Batch and independent source
+  inspection. `AuthenticatedMcpClient._serve` starts the official MCP stdio child with only `PATH`
+  and `ONTOLOGY_MCP_API_KEY`; it does not propagate the run-owned
+  `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`. The child therefore uses the Settings default
+  `legacy_only`, and `CanonicalSemanticWriteService._require_writer_enabled` correctly blocks
+  candidate validation. The exact replay returned `attempt_status=validation_failed` with the sole
+  finding `candidate_validation_failed: Canonical writer is not enabled in this mode;
+  SEMANTIC_PRODUCT_WRITE_MODE=legacy_only`.
+- Independent Round 26 result: `FAIL`, reclassified as P1/High runtime/infrastructure configuration
+  propagation rather than Pi modeling quality or incorrect platform validation.
+- Formal and diagnostic Projects were deleted and return `404`; Pi credentials, bridge, MCP and relay
+  resources were removed; `8013` is unbound. Normal Backend health is OK, Frontend returns HTTP
+  `200`, and the service remains active.
+- Evidence hashes: run audit
+  `c2c60918af01206980cd9408ace8fffe70fceed59cac06d08ec7a56e794b820d`; transcript
+  `883ec735b9d489deecbef4b1dcf5c5c5d2d06b4f1164cd60195a158f9ba885a4`; clarification audit
+  `b0f9bf22be8d908f8c1032b1f1636ec2a85377c02e494e1fc5a118715ba29493`; rejection ledger
+  `328ae9653a866f57338c1deb9e70b0021c1d6a3dd332e47eccfc73a5d629e31f`; responder audit
+  `793e0d5acf15efe15144e41a86d979e5a2ee487c8c5c4f8c017643ef2683f9c6`.
+- Minimal next step is to explicitly pass the run-owned canonical writer mode to the official MCP
+  child and add a no-model child-settings regression before seeking another formal authorization.
+
+### 2026-07-28T22:18:23+08:00 — Round-26 canonical-writer child repair opened — user + main agent
+
+- User direction: Continue from the confirmed Round-26 failure. This authorizes the narrow
+  runtime/infrastructure repair and offline verification; it does not authorize another paid/model
+  formal prompt.
+- Frozen scope: keep changes inside the M5-P1 scenario. Explicitly pass the run-owned
+  `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary` value through `AuthenticatedMcpClient` into the official
+  MCP stdio child's allowlisted environment, and add a no-model regression. Do not add generalized
+  resume/recovery, inherit the full Host environment, or modify Backend, Frontend, migrations,
+  platform APIs or modeling semantics.
+- GitNexus impact: `AuthenticatedMcpClient._serve` is `LOW` with one direct caller and no affected
+  process; its constructor is `LOW`; `run_formal` is `LOW` with two direct callers and no affected
+  process. No High/Critical warning applies.
+- Design amendment:
+  `docs/delivery/designs/2026-07-28-r2-1-001-m5-p1-pi-m4-single-round-design.md`,
+  “Formal Round 25 canonical-writer child configuration correction”. Existing shared test plan is
+  reused; the requirement developer owns only the M5-P1 MCP client, runner and focused tests, while
+  the main agent remains the sole delivery-record writer.
+
+### 2026-07-28T22:22:00+08:00 — Round-26 canonical-writer child repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. Changes are limited to
+  `docs/evaluation-scenarios/dify-workflow-impact-m5-p1/m5_p1_mcp.py`,
+  `run_pi_m4_single_round.py` and the existing focused test module.
+- Implementation: `AuthenticatedMcpClient` now requires the explicit run-owned writer mode and
+  rejects anything except `rdf_primary`; the official MCP stdio child environment remains an
+  allowlist containing exactly `PATH`, `ONTOLOGY_MCP_API_KEY` and
+  `SEMANTIC_PRODUCT_WRITE_MODE`. The formal runner passes `rdf_primary` explicitly.
+- Regression: a no-model fake-official-stdio launch captures the real
+  `StdioServerParameters`, proves the exact child command/cwd/environment, proves unrelated Host
+  configuration is not inherited, and rejects `legacy_only`.
+- Developer verification: focused M5-P1 **84 passed**; Ruff and `git diff --check` passed. No
+  Backend/Frontend/migration change, restart, formal/model prompt or commit occurred.
+- Stable-state residual risk: the focused launch regression proves process parameters but does not
+  yet execute an actual official MCP child against an isolated canonical writer. Independent
+  testing should exercise the no-model real child/backend path if it can do so without changing the
+  formal/model budget.
+
+### 2026-07-28T22:29:00+08:00 — Round-26 canonical-writer child repair Independent Round 27 — requirement tester + main agent
+
+- Result: `PASS`. Round 27 is appended to the existing shared M5-P1 test plan; no product, runner or
+  focused-test code was changed by the tester.
+- Static/offline verification: focused M5-P1 **84 passed**; Ruff and `git diff --check` passed.
+- Real no-model proof: the tester started the actual official MCP stdio child with the explicit
+  `rdf_primary` setting, created one fresh owned Project/Ontology/Build Session, and submitted a
+  minimal canonical `create_class` dry-run. The platform returned `attempt_status=validated` and
+  `mode=dry_run`, proving candidate validation no longer falls back to `legacy_only`.
+- Cleanup/runtime: the official MCP child was closed, the owned Project was deleted, the normal
+  service remained active, Backend health returned OK, Frontend returned HTTP `200`, and `8013`
+  was unbound. No Pi, DeepSeek, formal prompt or preflight was started.
+- Residual observation: `workspace_version` is available in `get_modeling_context`; the current FSM
+  also opportunistically reads it from workspace-context when present. This did not block the real
+  Batch validation and is not a writer-mode repair defect.
+- Conclusion: the narrow Round-26 runtime/infrastructure defect is fixed and independently proven.
+  A fresh Direct formal M5 round is now technically eligible but still requires explicit user
+  authorization; this repair did not consume a formal/model attempt.
+- Main-agent final verification: focused M5-P1 **84 passed in 3.45s**; Ruff and
+  `git diff --check` passed; `ontology-platform.service=active`, Backend health is OK, Frontend
+  returned HTTP `200`, and `8013` is unbound. Scenario-only changes require no normal-service
+  restart.
+
+### 2026-07-28T22:35:00+08:00 — Two-round Direct formal budget authorized — user + main agent
+
+- User authorization: grant the modeling subagent a maximum budget of two fresh Direct formal
+  rounds after the independently accepted canonical-writer repair.
+- Budget policy: execute Round 1 now and audit it independently. If it passes M5-P1, stop without
+  spending the second round. If it fails, preserve the actual failure category and use Round 2 only
+  after the main agent confirms that a narrow in-scope repair or exact eligible retry exists.
+- Isolation freeze for the first attempt: run tag
+  `m5-p1-independent-r28-writermode-direct-formal-20260728a`, owned isolated backend port `8013`,
+  one fresh Project/Ontology/Build Session, and tester-owned cleanup. The main agent remains the
+  sole delivery-record writer; the requirement tester may append only the next round to the shared
+  test plan.
+
+### 2026-07-28T22:47:00+08:00 — Direct Formal Round 28 and independent audit — requirement tester + main agent
+
+- Result: `FAIL`; the second authorized formal round was not started. One Direct prompt used
+  `m5-p1-deepseek-direct` / `deepseek-v4-pro`, produced one settled successful Pi terminal and
+  exit `0`; runner final audit failed as required.
+- Successful path: fresh Build Session and contexts, lease-before-Batch, three serial eligible
+  clarifications and bindings, principal 17-item schema dry-run `validated`, byte-identical
+  `apply_atomic` applied to RDF, and the intentional invalid-instance dry-run returned the expected
+  blocking SHACL violation. This formally confirms the canonical-writer child repair.
+- Failure: the first valid-instance dry-run supplied `create_entity.payload.properties` as a JSON
+  list of `{property_iri,value}` rows. The compiler attempted `.items()` and the official MCP
+  returned `platform internal_error: 'list' object has no attribute 'items'`. Pi immediately
+  proposed the corrected map form, but the ordinary first-rejection policy correctly locked all
+  later calls; valid-instance apply, final validation, reasoning, governed query, checkpoint,
+  completion and final session read were not reached.
+- Classification: `P1/High platform-contract validation boundary`, triggered by a
+  modeling-protocol shape error. A malformed public payload must not escape as an internal error;
+  the public contract also needs to state the required map shape. Do not use the remaining formal
+  authorization until a narrow repair is independently proven offline.
+- Cleanup passed: the owned Project and run resources were removed, owned `8013` stopped, normal
+  service stayed active, Backend health was OK and Frontend returned HTTP `200`.
+- Evidence SHA-256: run audit
+  `7e889b07dffc782ea9f010a15f4672dda9fdb73dac7dfe1fb7675a95e7c695c5`; transcript
+  `a8cb2d324910f7015eaa13a2dae75369251aff1bda6e42e2482263896772da99`; rejection ledger
+  `726f196f2f2fc6a80ee2aed217caecfd95039e7489b0266a3994869fdb0de0b2`.
+
+### 2026-07-28T22:56:00+08:00 — Round-28 properties validation diagnosis and plan review — developer + plan reviewer + main agent
+
+- Exact no-model reproduction: `validate_payload_shape=accepted`, followed by
+  `ModelingBatchService._compile` raising
+  `AttributeError: 'list' object has no attribute 'items'`. The four malformed entity items all
+  used a row array; Pi's immediately following proposal used the correct map.
+- Root cause: the nested public payload permits arbitrary JSON; handler admission checked only
+  allowed field names; both entity compilers call `properties.items()`; `_compile` converts
+  `InvalidCommandPayload`, `KeyError`, `TypeError` and `ValueError` but not `AttributeError`, so this
+  implementation exception escaped to MCP `internal_error`.
+- Design/test revision: add pre-compiler map validation for `create_entity` and `update_entity`,
+  clarify the official MCP/M5-P1 mechanical contract, and prove a malformed dry-run yields
+  `validation_failed + invalid_command_payload` with no write. Broad `AttributeError` catching,
+  normalization, new retries and answer material remain forbidden.
+- GitNexus: `validate_payload_shape` is `LOW`, with one direct caller (`prepare`) and no affected
+  execution process. The developer must run impact before editing any additional symbol.
+- Mandatory plan review: `PASS`; no Critical/High finding and no remaining assumption. The reviewer
+  confirmed the admission guard runs before compiler execution, existing `_compile` converts
+  `InvalidCommandPayload`, blocking findings stop before writes, and `update_entity` has the same
+  `.items()` risk. Development may proceed; the remaining formal authorization stays unused until
+  independent offline PASS.
+
+### 2026-07-28T23:15:00+08:00 — Minimal M4 Host + Pi test strategy confirmed — user + main agent
+
+- User decision: stop spending time on the dedicated M5-P1 isolation/FSM harness. Reuse the accepted
+  M4 isolated Host workflow, replace only the bottom Agent with Pi, and accept a run-owned
+  data-directory boundary without production-grade filesystem isolation.
+- Frozen implementation: one new scenario-local Pi launcher reuses M4 preparation, clarification
+  responder, API spool gateway and final audit; uses the proven Direct Pi provider; mechanically
+  adapts `/opt`/`/mnt` paths; stages no answer material; and audits transcript paths.
+- Acceptance: one fresh live run only. The unchanged M4 final audit must reach `COMPLETED`; otherwise
+  report the real modeling/platform/runtime failure without another harness repair loop.
+- User test override: do not run a full Backend suite for this one scenario adapter. Run only focused
+  adapter/M4 checks, Ruff/diff, runtime health and cleanup. The previously restarted Backend and
+  focused properties regressions remain the platform baseline.
+
+### 2026-07-28T23:22:00+08:00 — Minimal M4 Host + Pi plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two High findings were accepted and repaired. M4 Host responses previously
+  reached `/mnt` through separate read-only bwrap mounts, so plain root path replacement would leave
+  Pi polling empty workspace directories. The adapter now directs the existing responder/gateway
+  into the workspace response directories and must prove both channels with a no-model round-trip.
+- Accepted High: resident Pi RPC terminal mapping was underspecified. The adapter now uses
+  non-interactive `--mode json --print`; only its natural exit `0` is passed to M4 audit, while
+  timeout/signal/nonzero exit fails.
+- Downgraded to accepted residual risk: Pi can technically read its own Direct provider credential.
+  The user explicitly approved relaxed isolation and the repository rule prefers ephemeral direct
+  provider access for this local modeling experiment. The credential remains run-owned and is
+  deleted; exact secret bytes are forbidden in transcript/workspace. A Host proxy is intentionally
+  not reintroduced.
+- Revised design and shared gate return to plan review before development. No model prompt has been
+  sent.
+### 2026-07-28T23:28:00+08:00 — Minimal M4 Host + Pi plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; one High finding accepted. Pi JSON print mode may exit `0` even when the final
+  assistant stop reason is `error` or `aborted`, while M4 audit interprets only the supplied integer
+  exit code.
+- Revision: adapter success now requires process exit `0`, a complete final non-retrying
+  `agent_end`, and a final assistant stop reason outside `error/aborted`. Missing, truncated,
+  retrying or failed terminal evidence maps to failure even when the OS exit is zero. Focused tests
+  must prove both success and exit-zero terminal failure.
+### 2026-07-28T23:53:00+08:00 — Minimal M4 Host + Pi formal Round 29 — requirement tester + main agent
+
+- Exactly one direct Pi/DeepSeek model call ran with tag
+  `m5-p1-m4-host-pi-r29-20260728a`; no retry round was started.
+- L0 passed: isolated backend `8013` reported `rdf_primary`; the real clarification and API spool
+  preflight passed; Pi reached DeepSeek and both Host channels; exact-secret and forbidden-path
+  leak checks passed.
+- L1 was `TEST_BLOCKED / INCONCLUSIVE`. Pi obtained all three business clarifications, created a
+  fresh Project/Ontology/Build Session, acquired the lease, and successfully dry-ran/applied the
+  principal schema. It then used a stale workspace version for the invalid-instance dry-run,
+  retried despite the closed-sequence contract, changed immutable valid-instance Batch content
+  between dry-run and apply, retried after `batch_content_conflict`, let the lease expire, reacquired
+  it, and applied on a third attempt instead of recording `BLOCKED`.
+- The main agent terminated the sole Pi process with `SIGTERM` after the demonstrated terminal
+  contract violation. Pi exited `143`; the JSON stream had no final `agent_end`, and M4 final audit
+  correctly returned `INCONCLUSIVE`. Validation, reasoning and governed query were not reached.
+- Pi also persisted `runtime-record.run_tag=m4-r29` instead of the fixed formal tag. This prevented
+  the first adapter cleanup implementation from acting, but the tester used the sole protected
+  Project-create receipt for exact supplemental cleanup: DELETE `204`, authenticated GET `404`.
+  Backend `8013` remained healthy. The adapter cleanup gate was then narrowed to the Host-protected
+  create receipt so an Agent-authored tag error remains evidence without leaking owned resources.
+
+### 2026-07-29T00:07:46+08:00 — M5 minimal re-execution contract — user + main agent
+
+- User direction: re-execute V2.1-M5 by the fastest, lowest-cost route; do not build another complex
+  isolation environment. Imperfections may be reported at closure.
+- Confirmed budget: at most two fresh Pi/DeepSeek live attempts. After the first failure, one narrow
+  evidence-driven change may touch the thin adapter, prompt, command contract or visible source
+  material. It must remain answer-free and may not relax M4 acceptance.
+- Frozen path: reuse the accepted M4 Host and its unchanged final audit through
+  `run_pi_on_m4_host.py`; do not resume M5-P0/M5-P1 proxy, namespace, MCP-bridge, FSM, consumer or
+  mutation harness work.
+- Acceptance: PASS requires M4 final audit `COMPLETED`; otherwise retain the actual failure,
+  cleanup owned resources and stop no later than attempt 2.
+- Worktree baseline: `2b025286e48da1335c990459b30eaaf4c56d7de5` with pre-existing uncommitted
+  M4, M5-P0, M5-P1, Backend, migration, requirement and delivery artifacts from prior rounds.
+  The main agent will preserve them and isolate this re-execution in the existing append-only
+  artifacts.
+- GitNexus could not resolve the untracked scenario-local `run_formal` symbol in the current index,
+  so its reported risk is `UNKNOWN`; the actual direct scope is the standalone adapter entrypoint
+  plus focused tests and the reused M4 Host functions. No indexed shared symbol will be edited
+  without a separate impact check.
+
+### 2026-07-29T00:16:00+08:00 — M5 minimal re-execution plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; two High findings accepted.
+- Accepted High 1: the amendment incorrectly described the whole dry-run request as byte-identical
+  for apply. The corrected immutable projection is canonical `client_batch_id + items`; apply must
+  change mode and idempotency key, add the lease token and use the refreshed workspace version.
+- Accepted High 2: prompt-only reminders do not deterministically own the four Round-29 mechanical
+  failures and would contradict the repository rule that tools own protocol mechanics.
+- Plan change: add one small answer-free M4-spool Batch exchange helper for just-in-time version
+  refresh, candidate freezing, apply construction and fail-stop locking; initialize the exact run
+  tag in the Host adapter. This does not restore the dedicated proxy, MCP bridge, namespace, FSM,
+  consumer or mutation harness.
+- Evidence: M4 command contract immutable-envelope section; Round-29 retained audit; plan reviewer
+  inspection of `run_pi_on_m4_host.py` and `test_pi_on_m4_host.py`.
+
+### 2026-07-29T00:24:00+08:00 — M5 minimal re-execution plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; the two Round-1 High findings are resolved. One new High finding accepted.
+- Accepted High: a modeling-context GET before every Batch would add forbidden post-principal
+  gateway events and make unchanged M4 final audit fail even on a correct run.
+- Plan change: no new platform reads are added. The helper seeds from the existing pre-sequence
+  context, uses a validated dry-run response's `workspace.before_version` for its apply, and
+  advances only from successful apply `workspace.after_version`. Missing or inconsistent protected
+  transitions fail closed without refresh or retry.
+- Test change: replay the complete Batch sequence through existing audit logic and prove there is no
+  added post-principal context call and the unchanged completion gate remains reachable.
+- Evidence: `run_m4_clarification.py` closed-sequence audit and M4 command contract required order;
+  Round-29 protected responses confirm apply returns `workspace.after_version`.
+
+### 2026-07-29T00:30:00+08:00 — M5 minimal re-execution plan review Round 3 — plan reviewer + main agent
+
+- Result: `PASS`; no remaining Critical/High finding.
+- The reviewer confirmed the helper can preserve the unchanged M4 timeline by using the existing
+  context plus protected `before_version`/`expected_version`/`after_version` transitions, and that
+  missing transitions fail closed without a probe or retry.
+- The reviewed handoff retains the two-attempt ceiling, exact run tag, immutable
+  `client_batch_id + items`, deterministic fail-stop, complete no-model audit replay and relaxed
+  directory isolation. It does not reintroduce the prior proxy, namespace, MCP bridge, generalized
+  FSM, consumer or mutation harness.
+
+### 2026-07-29T00:25:16+08:00 — M5 minimal helper development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. Scope is limited to one visible answer-free M4 Batch helper, M4
+  visible prompt/contract/manifest, thin Pi Host initialization and focused tests.
+- Implementation: `m4-batch-exchange.py` seeds from the existing pre-sequence context, freezes
+  canonical `client_batch_id + items`, constructs the permitted apply envelope, advances only from
+  protected workspace transitions and atomically records `BLOCKED` on an unexpected result without
+  probe, retry or recovery. The Host initializes the exact supplied run tag before Pi starts.
+- Developer verification: focused M4/M5-P1 tests `216 passed`; Ruff and `git diff --check` passed.
+  No Pi/model call, isolated backend, normal-service restart or commit occurred.
+- Stable state hashes: helper
+  `7236e021ea172fa25270a629a19ceb54cfa0dc246af4695df1759e8bb0653c26`;
+  visible prompt `b71ef3455f7212fadf6431c8af56ca46fc3414399d0eb7b34942aef241b15dd0`;
+  command contract `0be344f856804c6a64d5dc15480253b254a8b6c2e60321aa4e33b1c6d3608b3b`;
+  thin adapter `175047c6d6c2f4945b2c7d21f385fcfc23f95fcebb05b7a86a03829b3b63fa53`.
+- GitNexus could not resolve the previously untracked thin adapter/helper symbols, so index risk
+  remains `UNKNOWN`; no indexed shared execution symbol was changed by this development cycle.
+
+### 2026-07-29T00:28:36+08:00 — M5 minimal Independent Round 30 — requirement tester + main agent
+
+- Result: `FAIL` before a live attempt; the two-attempt model budget remains untouched.
+- Offline baseline passed `216` tests, Ruff and `git diff --check`, but independent counterexample
+  M5-minimal-01 confirmed a P1/High platform-contract defect.
+- Confirmed defect: after an unexpected response writes `terminal_status=BLOCKED`, a later
+  `dry_run` still reaches `_publish`. Expected behavior is zero further Batch publication for both
+  dry-run and apply after the persisted lock.
+- Disposition: `accepted-high`. Root cause is the missing terminal-status admission check at helper
+  operation entry; it is in scope and directly contradicts the reviewed fail-stop contract.
+- No `8013` backend, Project, Ontology, Build Session, Pi process or provider prompt was started, so
+  no cleanup was required. Repair is limited to the helper admission check and focused second-call
+  dry-run/apply regressions.
+
+### 2026-07-29T00:30:22+08:00 — M5-minimal-01 repair development-ready — requirement developer + main agent
+
+- Result: `DEVELOPMENT_READY`. The helper now rejects a persisted `terminal_status=BLOCKED` before
+  any later dry-run or apply can publish.
+- Regression proves both later operation kinds cause zero additional publication after the first
+  unexpected result; the expected intentional `validation_failed` path remains permitted.
+- Verification: focused suite `217 passed`; Ruff and `git diff --check` passed. No model, backend,
+  service restart or commit occurred.
+- Stable hashes: helper
+  `b1af2be225db6377232023fa68de0021eaa58011d0800735e5d34e1985764626`;
+  manifest `cabda07fcb67cc8614a0d6a6ce2c3217e3b1dd6dced2f5afdb4ec3a97a71d1a6`;
+  helper tests `7edaeba7ec3385d5c7f1d6f569a4f94478e9921b1300f5041a64029ea23ae83a`.
+
+### 2026-07-29T00:54:39+08:00 — M5 minimal Independent Round 31 interrupted by host reboot — tester + main agent
+
+- Offline retest passed and the first live attempt ran as
+  `m5-minimal-r31-20260729a`; this consumed attempt 1.
+- Confirmed successful milestones before the first failure: all three clarification responses,
+  fresh Project/Ontology/Build Session, modeling context, lease, principal schema dry-run/apply and
+  intentional invalid-instance SHACL dry-run.
+- First causal failure: the first valid-instance dry-run legitimately returned
+  `validation_failed` with warnings plus one blocking `shacl_violation` carrying a fingerprint and
+  client item IDs. This is the original M4 contract's allowed single-correction branch, but the
+  helper invocation required one preselected exact result (`validated`) and therefore recorded
+  `BLOCKED` instead of returning the allowed branch to Pi.
+- Classification: P1/High platform/helper-contract defect, not a modeling-quality or Runtime
+  failure. Disposition: `accepted-high`; repair only the first-valid-candidate expected-result
+  contract so it accepts either validated or SHACL-only validation-failed and rejects every other
+  failure.
+- The host reboot terminated the owned Pi/8013 processes and removed `/tmp` evidence before the
+  tester could append Round 31 or compute final hashes. The retained conversation/runtime
+  observation is therefore incomplete evidence and cannot be presented as a normal finished test
+  round.
+- Post-reboot cleanup used the protected Project ID
+  `d7504f1c-7eb2-4e37-ab2f-94861e2c1827`: DELETE returned `204`, authenticated GET returned `404`.
+  Normal service is active, Backend health is OK, Frontend returns `200`, and `8013` is unbound.
+- One live attempt remains. It may run only after the narrow helper/prompt correction and
+  independent offline PASS.
+
+### 2026-07-29T01:01:03+08:00 — Round-31 SHACL correction-branch repair development-ready — developer + main agent
+
+- Result: `DEVELOPMENT_READY`.
+- The helper adds one first-valid-candidate mode,
+  `validated_or_shacl_correction`: `validated` freezes the candidate; an otherwise valid 2xx
+  `validation_failed` returns `shacl_correction_required` only when every blocking finding is
+  `shacl_violation` with non-empty fingerprint and client item IDs. Every other result persists
+  `BLOCKED`.
+- Visible prompt/command contract and manifest are synchronized. The only runner change is its
+  frozen manifest hash; GitNexus reports LOW risk with no direct caller/process for that constant.
+- Verification: the three prior manifest failures now pass; focused M4/helper/adapter suite
+  `140 passed`; Ruff, manifest hash validation and `git diff --check` passed.
+- Stable hashes: helper
+  `ca13a0ccb2b6368d8a083cdc7124dba70ff4db9a4fff6af6ae35eda21433d3f0`;
+  helper tests `a4b2f6bac95019a278a7f31e295f854dadb9e2a0e743d3fafefbd69c172c3789`;
+  prompt `1db2eebbcbd6f130aa0bf6ea1fd903f608c51630aaf4c36d03a813ad7ffc0ddf`;
+  command contract `ac8bbe0efe2c0bb0dc30dd130e62129dd59f2e988fc77360d5f4e826a93e40c9`;
+  manifest `7b35c2d26f524d7c9b3898cbcfe6095dbc3a33a754301dfcfeeb320ac5450c95`.
+- No model, backend or service was started. Attempt 2 remains available pending independent offline
+  PASS.
+
+### 2026-07-29T01:06:03+08:00 — M5 minimal Independent Round 32 — requirement tester + main agent
+
+- Result: `FAIL` before attempt 2; the final live attempt remains unconsumed.
+- Stable hashes matched; focused suite `224 passed`; Ruff and `git diff --check` passed.
+- Confirmed P1/High defect: after a qualifying SHACL-only first-valid-candidate response, the helper
+  correctly permits one correction dry-run, but a third candidate can still publish before the
+  correction is applied and can overwrite the validated freeze.
+- Disposition: `accepted-high`. The helper must persist the correction phase/budget: after the
+  SHACL branch, exactly one correction dry-run is permitted; after any validated dry-run, the next
+  Batch operation must be apply of that exact freeze. Any extra dry-run locks locally with zero
+  publication.
+- Negative branches already behave correctly: non-2xx, missing fingerprint or a non-SHACL blocking
+  finding locks and prevents later publication.
+- No backend, Project, Pi process or provider prompt was started. Normal service is healthy and
+  `8013` is unbound.
+
+### 2026-07-29T01:09:31+08:00 — Round-32 correction-budget repair development-ready — developer + main agent
+
+- Result: `DEVELOPMENT_READY`.
+- Any validated freeze now requires its exact apply before another dry-run. The SHACL correction
+  branch permits exactly one next correction dry-run expecting validated, then requires apply;
+  failed, extra or wrong-phase dry-runs lock before publication.
+- Intentional invalid-instance `validation_failed` and persisted `BLOCKED` admission remain intact.
+- Verification: manifest regressions `3 passed`; focused M4/helper/adapter suite `144 passed`; Ruff,
+  manifest hash validation and `git diff --check` passed.
+- Stable hashes: helper
+  `11abed5bd273be55712abb84b9a22b25b986e260f7e3b69103648263c40d237e`;
+  tests `bccad78f6704c891f8155116dfd9fbe0ea37bde4234310031346494b75aac57d`;
+  prompt `faa14c845fa555ccdc8f68616f442c9263505257013d837fe310b71c66f72b5c`;
+  contract `6e1617665a98344482cff7e9cd7d60c7c8815c25e9332d3443ece63b9c1cb9e4`;
+  manifest `37785b85e3a28502e935f89209c1834997f56a2ea7e6317f2a81afe8917e05f3`.
+- No model/backend/service/commit. Frozen manifest constant impact remains LOW with no direct
+  callers/processes.
+
+### 2026-07-29T01:13:50+08:00 — M5 live-attempt budget exception — user + main agent
+
+- User authorizes three additional model executions after the currently running attempt 2
+  completes.
+- The current attempt continues unchanged. Additional attempts are sequential only and may start
+  only after the preceding run's evidence, cleanup, first causal failure classification, narrow
+  in-scope repair when needed and offline verification.
+- The extra budget does not authorize parallel model runs, relaxed M4 acceptance, answer injection,
+  production isolation work or restoration of the dedicated M5-P0/M5-P1 harnesses.
+
+### 2026-07-29T01:21:38+08:00 — M5 minimal Independent Round 33 — requirement tester + main agent
+
+- Result: `FAIL`; original attempt 2 consumed. The user's later exception leaves three additional
+  attempts available.
+- Offline gate passed `228` tests, Ruff and `git diff --check`; correction-budget counterexamples
+  were fixed.
+- Runtime reached all three clarifications, fresh Project/Ontology/Build Session, context and lease.
+  The principal schema dry-run then returned HTTP `422` because Pi put `item_ref` objects in
+  `depends_on`, which accepts prerequisite client item ID strings only.
+- Classification: P1/High modeling-quality/protocol failure. The helper correctly persisted
+  `BLOCKED`; later Pi self-repair attempts were rejected, and the tester terminated only the owned
+  Pi after the causal failure.
+- Cleanup: Project `26b72d3f-cb29-4c0e-bb85-282e6f248d7d` DELETE succeeded and GET returned `404`;
+  owned `8013` stopped; normal Backend/Frontend remain healthy; leak audit passed.
+- Evidence SHA-256: result
+  `bd0974a7cceb1ee45f195ad924a31cc4b0862a320c2058d9c714135c57d8c691`;
+  final audit `b23721d68f3e88b2c9fb8a26798faf0393dc032adc42ec70312d4d0f471e622e`;
+  transcript `bcf3374f3b4584ecf5862fbfbc82d66a5de86b74ad7c2f528b4f07c7821e9670`;
+  API audit `2458b9b1bba845d7d7528968d9d48d046842c001a3abc500d289500ed14a1d3a`.
+- Next narrow action under the exceptional budget: add an answer-free, no-network candidate check
+  before formal dry-run. It must verify string-only ordered `depends_on`, unique client item IDs and
+  payload-only well-formed `item_ref`; formal dry-run revalidates the same rules.
+
+### 2026-07-29T01:29:19+08:00 — Round-33 candidate preflight repair development-ready — developer + main agent
+
+- Result: `DEVELOPMENT_READY`; exceptional live-attempt budget remains 3/3.
+- The visible helper adds repeatable `check --candidate` with no network, runtime mutation or spool
+  publication. It validates unique ordered client item IDs, string-only prior-item `depends_on`,
+  payload-only well-formed `item_ref`, allowed output kind and declared dependency topology.
+- Formal dry-run reuses the same validator before publication. Visible prompt/contract require
+  check before each dry-run and include one generic non-domain example contrasting string
+  dependencies with payload `item_ref`.
+- Verification: helper `24 passed`; M4 `123 passed`; M5-P1 focused `84 passed`; Ruff and
+  `git diff --check` passed. Frozen manifest constant impact is LOW with zero callers/processes.
+- Stable hashes: prompt
+  `3669b0d0ad90813d4f70ea1b6bfa015c7611734f11f14f06123270a1a9b8f51f`;
+  helper `9aa4b4bf5cd922a1d58ee086a61b77935c528141c92c149f667220e07af819c2`;
+  contract `716756a34e2d33d2aed60e4c77f3b622aaa2a4272cbc010d56c3164f4536ced5`;
+  manifest `a247545d9c8fca9d2a18577cad438af1fca50c7d4bc2c68a898f594aa9262712`.
+- No model/backend/service/commit.
+
+### 2026-07-29 — M5 minimal Independent Round 34 — requirement tester + main agent
+
+- Result: `FAIL`; exceptional attempt 1/3 consumed, leaving 2/3.
+- Offline gate passed `236` focused tests, Ruff and `git diff --check`; stable visible-input hashes
+  matched the Round-33 handoff.
+- No platform resource was created. The API spool rejected `openapi-request.json` because its
+  envelope ID did not match the strict filename, so the request was never forwarded.
+- Classification: P0/Critical runtime/infrastructure failure. Pi read its run-owned Direct provider
+  configuration and emitted the exact provider credential into the transcript. The tester
+  terminated only the owned Pi process and did not retry.
+- Security cleanup deleted the contaminated transcript and every exact-key matching file. A retained
+  run-root rescan found zero exact-key matches; the ephemeral Pi directory was removed. Owned `8013`
+  stopped, regular Backend/Frontend remained healthy, and no Project required cleanup.
+- Retained non-secret SHA-256 values: result
+  `e0fe22154b5830e199094ab8415aaf9799925653a1961bda7ae7d801c93ad38f`;
+  final audit `690b74045c8510f7e2d13a1a8de083e8f95ebb467dd26778ce32c8d28d268137`;
+  API audit `da4ea089237d35cd8cf622077f4d38130d3d074875427f933e12760dc821da15`;
+  clarification audit
+  `a018355e9d47397b9d38092784043599700831f6d602ae5887507730d910f72c`.
+- Accepted correction: replace Pi-visible provider credentials with a minimal run-owned loopback
+  credential broker, keep the unchanged M4 Host workflow, and make filename=`request.id`.json
+  explicit in visible material. No further live attempt is allowed before mandatory plan review and
+  independent offline PASS.
+
+### 2026-07-29 — M5 Round 35 security correction offline PASS — reviewer + developer + tester
+
+- The first mandatory plan review returned `REVISE / Critical`: a loopback proxy alone left the
+  same-UID Host credential file readable. The design was narrowed to one single-layer bwrap mount
+  allowlist plus the loopback broker; the second review returned `PASS` with no Critical/High.
+- The thin runner now keeps the real DeepSeek key in the Host proxy only. Pi receives a random
+  run capability and `127.0.0.1` model URL. The proxy accepts only the fixed completion route,
+  method, capability, bounded JSON body and model, and retains metadata only.
+- One bwrap layer exposes only system runtime, pinned Pi package/node_modules, identity-copied
+  `/opt`, writable `/mnt` and placeholder `/pi-agent`; it clears the environment and provides
+  private user/PID/IPC/UTS/proc/dev/tmp views. No repository root or Host credential is mounted.
+- The actual pinned Pi `0.81.1 --version` boundary probe passed with Host auth path and parent
+  `/proc` absent, `/opt` readable and `/mnt` writable. The proxy startup self-test proved zero
+  upstream forwards. No provider/model call was made.
+- Independent verification passed **243 tests in 6.20s**, Ruff, manifest recomputation and
+  `git diff --check`. Controlled success/exception lifecycle checks proved proxy shutdown and
+  ephemeral Pi-directory cleanup.
+- Stable SHA-256: runner
+  `26ddda41e89f44988f407aead3d618a6c6c965b51d02bb7342aa18eaf006b2c6`;
+  prompt `b2d3f0b5b32f8c650035166a2465e5413f6533a8c90949a737d03d5ddb9950ae`;
+  command contract `b444df0d5103591f8c526b40c1bd27718e72980c3e51eb6a75bee9523cda9cb9`;
+  Batch helper `9aa4b4bf5cd922a1d58ee086a61b77935c528141c92c149f667220e07af819c2`;
+  manifest `1b4008dfd209d0343e27387a26fa8c3219918f47346e19550fcf58846ab5a568`.
+- Exceptional live attempt 2/3 remains available; no backend or platform product code changed in
+  this correction.
+
+### 2026-07-29 — M5 minimal Independent Round 36 — requirement tester + main agent
+
+- Result: `FAIL`; exceptional attempt 2/3 consumed, leaving 1/3.
+- Boundary probe, loopback proxy startup self-test, real spool preflight and all three ordered
+  clarifications passed. The third clarification remained `uncertain` as intended for explicit-gap
+  modeling.
+- First causal failure occurred before Project creation: Pi published correctly named
+  `create-project.json`, but its otherwise valid JSON contained a trailing newline and was not
+  canonical. The Host rejected it and forwarded no Project request. The owned Pi was stopped rather
+  than waiting on a permanently rejected filename.
+- No Project/Ontology/Build Session existed. Exact provider-key scan over the retained run root had
+  zero matches, transcript Host-path audit passed, the proxy stopped and the ephemeral Pi directory
+  was removed. The runner's forbidden-path finding against Host-owned `mount-audit.json` is a
+  classification false positive, not a credential leak.
+- Owned `8013` was stopped; normal Backend health and Frontend HTTP `200` remained healthy.
+- Evidence SHA-256: result
+  `6987ec02d16969f9a5a0f62d29e2d94bbdc57abf8d138ee54aec71d7eeb8fefd`;
+  final audit `6522ec3e84c1d24318e6589aedb7aaeb608a2d6b61052e85957bf3f6b57ea134`;
+  API audit `6118be7fa344bcde4ac2fda289db1278918d2a2bf18a6c30b40cb94acea6bab2`;
+  clarification audit
+  `6c7feb0abd7a18ba597277ceab9e93138170a714122f95bfccead41b4f7a01fd`;
+  runtime record
+  `4f202263a14cf59125dbd84c3dc608f8953f608945b68d33337ba0d5797dbba9`.
+- Reviewed final correction: a visible deterministic generic API spool helper owns canonical
+  encoding, exact ID-derived filename, one atomic publication and matching response consumption;
+  Pi retains endpoint, payload and semantic ownership. The last attempt requires another
+  independent offline PASS.
+
+### 2026-07-29 — M5 Round 37 final-attempt offline PASS — developer + tester
+
+- Added visible `m4-api-spool.py` for all non-Batch API operations. It validates a Pi-authored
+  five-field envelope, rejects credentials and malformed/duplicate state, canonicalizes it, derives
+  `<id>.json`, publishes atomically once, waits boundedly for only the matching response and
+  validates its ID. It contains no endpoint, payload, ontology, retry or receipt decision.
+- The exact Round-36 trailing-newline candidate now publishes as canonical bytes. Direct API spool
+  writes are forbidden in the visible prompt/contract; Modeling Batch publication remains owned by
+  the unchanged Batch helper.
+- Leak scan now checks exact provider-key bytes across the complete run root while applying
+  forbidden Host-path checks only to Pi-controlled transcript/workspace evidence.
+- Independent verification passed all five focused modules: **252 tests in 6.63s**, plus Ruff,
+  manifest recomputation and `git diff --check`. No Critical/High remained and no model/backend run
+  occurred.
+- Stable SHA-256: generic helper
+  `5568ae4248085cee397dbcbe43769321ba244a5042867398260abe54d0b7c710`;
+  prompt `0003b4a0ae4e4226d352a86231c6ab0687ee7525d291b777c21d6f8f1f33e9f3`;
+  command contract `fd047bca371ac73abb4f5ca9bc78d933e1f1414bfff8691ce52158d0e3f3bc41`;
+  manifest `0338d2075068bb11d3716895cbce3eb1ac6174142022854a4e2ab2344f0d8d19`;
+  thin runner `8ad6b13483cede560c68e2cd3e589dee7a523636f02ed5d531b022bcde43eca5`.
+- Exceptional attempt 3/3 is the single remaining live execution.
+
+### 2026-07-29 — M5 minimal Independent Round 38 final result — requirement tester + main agent
+
+- Result: `FAIL`; exceptional attempt 3/3 consumed. Remaining model budget: `0/3`.
+- The run passed boundary/proxy/spool preflights, all three clarifications, fresh
+  Project/Ontology/Build Session creation, context/lease acquisition and principal schema dry-run.
+  The principal dry-run returned HTTP `200` with `attempt_status=validated`.
+- First causal defect: the visible contract says to retain the lease token but does not freeze its
+  runtime-record shape; Pi stored top-level `lease_token`, while Batch helper apply required nested
+  `lease.token` and persisted `BLOCKED`.
+- Retained evidence then shows unsafe post-failure drift: Pi later supplied the nested lease form,
+  issued/bypassed into a second Batch `apply_atomic`, and the platform returned
+  `batch_status=applied`, `attempt_status=applied`. Runtime ended `INCONCLUSIVE`; no validation,
+  reasoning, governed query, checkpoint, Build Session completion or final GET followed.
+- Classification: P1/High helper/visible-contract integration and terminal-integrity defect. M5
+  remains not passed; no additional model execution is authorized.
+- Security/cleanup passed: exact-key leak audit had no findings; boundary probe passed; loopback
+  proxy stopped; Pi directory was removed. Project
+  `ea40e3df-71a5-4024-bfad-cd94ebb5e18a` was deleted and authenticated GET returned `404`. Owned
+  `8013` stopped; normal Backend/Frontend remained healthy.
+- Evidence SHA-256: result
+  `a59df59e0b04aa95332308fd938b7203cc78eb5360267e2d20c378e38ca789ff`;
+  final audit `3dc07b09ab92b19bfb0db7ffc6f2df13de8daf55ee9e7961f3d3dcba4a8e118c`;
+  API audit `df63d350029e730965aedf3505fba30445e562d812921becfc222d334c951c28`;
+  clarification audit
+  `10ce162ec17e8aa3e4060f658bc8713f6845ad31c92026db0ca14af2db86214d`;
+  runtime record
+  `aee70063d7d4f408914e38f786f3f9766d457e84dca2e998efc347cf8bf5082a`.
+
+### 2026-07-29 — M5 semantic-package rerun authorized — user + main agent
+
+- The user explicitly authorized one additional Pi execution after the previous 3/3 exceptional
+  budget was exhausted.
+- Responsibility is now split by cognition rather than transport: Pi owns business clarification and
+  the immutable semantic package; the main Agent owns every platform resource, state, protocol, write,
+  validation/query/completion operation and cleanup.
+- The current implementation is limited to a scenario-local semantic-package runner and deterministic
+  Host executor. It reuses the proven one-layer credential boundary and existing platform APIs; it does
+  not build another MCP bridge, nested isolation environment, backend service or generalized Agent
+  Runtime.
+- Live execution remains blocked until written design/test amendments pass mandatory plan review and
+  independent offline verification. The authorization permits one Pi call only and does not permit an
+  automatic retry.
+
+### 2026-07-29 — M5 semantic-package plan review Round 1 — plan reviewer + main agent
+
+- Result: `REVISE`; three High gaps were accepted.
+- The initial amendment did not bind protected clarification responses to exact model items and
+  M4-equivalent observable behavior; a structurally valid but irrelevant ontology could pass.
+- A generic query intent would have required the main Agent to invent SPARQL, and allowing Host
+  cross-Batch reference replacement contradicted the envelope-only candidate hash rule.
+- The revised contract binds every response to exact items or one explicit gap, forbids cross-Batch
+  candidate substitution by requiring Pi-owned stable semantic IDs, and requires three Pi-authored
+  read-only SPARQL templates. Host query substitution is limited to protected apply-output IRI
+  placeholders and is recorded leaf by leaf; the existing M4 baseline semantic assertions remain the
+  acceptance authority.
+
+### 2026-07-29 — M5 semantic-package plan review Round 2 — plan reviewer + main agent
+
+- Result: `REVISE`; three additional High bypasses were accepted.
+- Pi-authored queries could project answer constants, decision bindings could point at unrelated items,
+  and bare relation IDs do not satisfy `create_relation.relation_type_iri`.
+- The corrected minimal contract removes all query text from the Pi package. Three Host tester-query
+  builders are frozen and tested before the live call, compile only graph patterns over role-bound
+  protected outputs, and require those outputs in each returned proof chain.
+- Pi now chooses absolute schema IRIs and reuses them byte-for-byte across candidates.
+  `create_relation` uses the exact principal `relation_type_id` as `relation_type_iri` and only
+  same-candidate backward item refs for entity endpoints. Candidate bytes remain unchanged.
+
+### 2026-07-29 — M5 semantic-package plan review Round 3 — plan reviewer + main agent
+
+- Result: `REVISE`; one High mapping defect remained. The platform namespaces even absolute-looking
+  schema IDs, so they are not valid final IRIs for later ABox fields.
+- The final correction permits only one explicit principal-`resource_iri` placeholder grammar in
+  later IRI leaves/property keys. The Host resolves it exclusively from protected principal apply
+  outputs, records every JSON-path/key replacement and raw/resolved hash, and submits the exact same
+  resolved projection for dry-run and apply. No other semantic rewrite is permitted.
+
+### 2026-07-29 — M5 semantic-package plan review Round 4 — plan reviewer
+
+- Result: `PASS`; no Critical/High blocker and no unresolved assumption remained.
+- The reviewer confirmed that protected principal `resource_outputs.resource_iri` substitution,
+  leaf/key manifest evidence and exact resolved dry-run/apply equality match the platform's actual
+  schema-IRI creation and ABox-consumption boundary.
+
+### 2026-07-29 — M5 semantic-package implementation and offline acceptance — developer + tester
+
+- Added only `docs/evaluation-scenarios/dify-workflow-impact-m5-semantic/`; no backend, API, migration
+  or service change was required.
+- The final minimal runner uses the existing one-layer filesystem allowlist and Host loopback model
+  broker. Pi sees only the business brief, complete semantic-package contract, clarification files and
+  writable package directory. The main Host executor is guarded by explicit `--execute`.
+- Two independent FAIL rounds found and drove fixes for a Pi-visible direct key, real OpenAPI/response
+  envelope mismatches, workspace/lease/resource-output state, query/checkpoint shape, clarification
+  evidence, candidate hashes and role proof queries.
+- Independent offline Round 4 passed: 18 focused tests, Ruff, diff check, no-formal preflight and
+  read-only real-envelope checks. No model or platform mutation occurred in that gate.
+
+### 2026-07-29 — M5 semantic-package live Round 39 — main agent + requirement tester
+
+- Result: `FAIL`; the newly authorized single Pi execution is consumed.
+- One Pi session and one formal prompt were used. Pi authored all three consequential questions, but
+  each file was noncanonical and q2/q3 were emitted without waiting for q1. The Host preserved the
+  exact question bodies, canonicalized them and produced serial baseline responses under the user's
+  explicit failure-material repair authorization.
+- After the responses became visible, the provider returned `502` on three bounded Pi internal retries
+  (2/4/8-second retry delays). Pi ended without a successful terminal event and without
+  `semantic-package.json`.
+- Classification: primary P1/High `runtime/infrastructure` provider failure; secondary P1/High
+  `modeling-quality/protocol` noncanonical/nonserial clarification behavior. No platform-contract
+  failure was observed because the Host executor correctly did not start without a validated package.
+- No Project, Ontology, Build Session, lease or platform write existed. Exact provider-key scan across
+  `/tmp/m5-semantic-m5-semantic-r39-20260729a-218qlpgi` found zero matches; temporary Pi configuration,
+  proxy and processes were removed; normal backend/frontend remained healthy.
+
+### 2026-07-29 — M5 user-directed closure — user + main agent
+
+- The user explicitly stopped this requirement-development round.
+- M5 is closed as `CLOSED / FAIL`; Round 39 remains the final live result. No further source repair,
+  provider/model execution, semantic-package attempt, Host executor run or platform write is
+  authorized.
+- The scenario implementation, failed test rounds and retained `/tmp` evidence remain unchanged for
+  retrospective use. They are not a completion claim and cannot be resumed implicitly.
+- Cleanup state at closure: no owned platform resource existed; no matching Pi/proxy/responder process
+  remained; exact provider-key scan was clean; `ontology-platform.service`, backend health and frontend
+  health were all successful.
+- No commit was created because the worktree contains mixed pre-existing requirement changes and the
+  requirement did not pass; committing a partial subset would not produce a self-contained verified
+  delivery.
+
+### 2026-07-29T11:02:49+08:00 — M7 advancement strategy confirmed — user + main agent
+
+- User decision: Record the approved next-stage strategy as M7. Business-module expansion is the
+  primary workstream; a minimal Runtime-neutral Host spine proceeds as supporting work, without making
+  a complete generalized Host framework a prerequisite for the first real module-modeling attempt.
+- Runtime decision: Because M5 is `CLOSED / FAIL`, the first M7 attempt uses a fresh isolated Codex
+  subagent and does not wait for Pi. Pi may become a later Runtime candidate only under a new M5 scope
+  and model-call authorization.
+- Modeling boundary: M7 extends a frozen accepted base slice inside a fresh
+  Project/Ontology/Build Session rather than merely extracting a standalone Class/Property draft.
+  The Agent must assess cross-slice terms, identity reuse/evolution, relationships, constraints,
+  consequential gaps, Evidence/rationale and explicit unknowns, then publish a Runtime-neutral semantic
+  package for deterministic Host application.
+- Isolation decision: Fresh session with no inherited conversation, an allowlisted and hashed input
+  pack, a fresh logical platform scope and no hidden-answer/prior-run access are mandatory. The already
+  migrated local stores remain reusable; a separate database, container, bwrap/network sandbox or
+  provider-proxy product is not a first-round prerequisite unless a demonstrated leak or contamination
+  risk requires it.
+- Staged acceptance: The first attempt targets L1 modeling quality through formal dry-run/apply, an
+  executable Shape and rejected negative instance, validation, reasoning and governed queries.
+  Independent Consumer, repeated runs and mutation remain L2; production-grade isolation and generalized
+  orchestration remain L3.
+- Host boundary: The current spine is limited to `prepare_scope -> stage_inputs ->
+  apply_semantic_package -> validate_and_query -> record_and_cleanup`. Mechanical protocol, credentials,
+  IDs, workspace/lease, Batch envelopes, receipts and cleanup remain Host-owned; semantic choices remain
+  Agent-owned.
+- Documentation sync: Updated `docs/requirements/requirements-v2.1.md` M7 with the confirmed sequencing,
+  isolation boundary, Host/Agent responsibilities, first L1 gate and remaining stage-contract decisions.
+  No M7 design, shared test plan, implementation, model call or platform mutation starts in this
+  documentation-only step.
+- Next step: Refine one consequential M7 decision at a time, beginning with the business module and its
+  frozen source/capability-question boundary; then create the stage design and shared test plan and run
+  the mandatory plan-review gate before implementation.

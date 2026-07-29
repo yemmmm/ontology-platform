@@ -260,7 +260,7 @@ class ClarificationResponder:
             tokens & {"quality_score", "score"}
         ) and bool(tokens & {"successor", "separate", "continuity", "change", "replacement"})
         missing_score = bool(tokens & {"score", "scoring", "rating"}) and bool(
-            tokens & {"missing", "unavailable", "absent", "fallback", "when", "if"}
+            tokens & {"missing", "unavailable", "absent", "fallback"}
         )
         matches = [
             decision

@@ -30,7 +30,7 @@ from m4_clarification_responder import (
 SCENARIO_ROOT: Final = Path(__file__).resolve().parent
 REPOSITORY_ROOT: Final = SCENARIO_ROOT.parents[2]
 MANIFEST_PATH: Final = SCENARIO_ROOT / "input-pack" / "input-manifest.json"
-FROZEN_MANIFEST_SHA256: Final = "e55c3f9071c624321594be3750c8871d5ed3cf3db61a2f15a72e958718501dd1"
+FROZEN_MANIFEST_SHA256: Final = "0338d2075068bb11d3716895cbce3eb1ac6174142022854a4e2ab2344f0d8d19"
 RUN_TAG_RE: Final = re.compile(r"^[a-z0-9][a-z0-9-]{2,80}$")
 CODEX_BINARY: Final = Path("/home/yangxiang/.local/bin/codex")
 HOST_CODEX_AUTH: Final = Path("/home/yangxiang/.codex/auth.json")

@@ -2,14 +2,16 @@
 
 ## 文档信息
 
-- 文档状态：M1–M4 已实现并通过独立验收；长期迭代继续
+- 文档状态：M1–M4、M6 已实现并通过独立验收；M5 新增授权执行已收尾但未通过；
+  M5-P0 已阶段收尾并转入 v2.2；M7 推进策略已确认，业务模块阶段合同待细化
 - 基础版本：`docs/requirements/requirements-v1.0.md`
 - 关联版本：`docs/requirements/requirements-v1.1.md`、`docs/requirements/requirements-v1.2.md`、
   `docs/requirements/requirements-v2.0.md`
 - 总体目标：重构 Ontology 建模流程，使其以可解释、可验证、可复用和可演进的业务语义模型为中心
-- 当前实施需求：R2.1-001 当前 M4、M6 已完成；M7 待根据 M4–M6 结果细化
+- 当前实施需求：R2.1-001 当前 M4、M6 已完成；M5 未通过并保留最小问题清单；M7 已确认以
+  业务模块扩展为主线、最小 Host spine 为支线，具体模块和验收合同待细化
 - 目标用户：需要将业务知识沉淀为可复用本体的建模人员、建模 Agent 工作流开发者和语义质量调优人员
-- 更新日期：2026-07-28
+- 更新日期：2026-07-29
 
 ## 背景
 
@@ -454,7 +456,92 @@ M4 完成门槛：
 M4 的固定歧义、用户回答合同、Agent 提问接口、测试隔离方式和独立验收用例在 M4 开始实施时
 细化；本阶段不预先固定问题的自然语言措辞，也不要求不同模型生成完全相同的问题文本。
 
+### M5-P0：Pi Agent M3 静态建模流程兼容性预演
+
+M5-P0 是 M4 实施期间可并行进行的准备性实验，不是 M5 的提前验收，也不改变 M4 通过和冻结
+交互式业务语义澄清合同之后才启动正式 M5 的顺序。它在新的隔离
+Project/Ontology/Build Session 中，以 Pi Agent 和固定的 `deepseek-v4-pro`，重演已通过的 M3
+**静态**输入建模流程：自主建模、正式 Modeling Batch dry-run/apply、validation、reasoning、
+查询，以及第二个独立只读消费 Agent。
+
+当前预演状态（2026-07-27）：`阶段收尾（部分验证，不构成 M5-P0 PASS）`。独立测试 Round 6
+已确认 M5P0-02 恢复：同一 Pi 进程
+完成两次真实 `deepseek-v4-pro` 调用并发出两次 `agent_settled`。根因是 M5-P0 harness 将
+`selectors` 与 `TextIOWrapper.readline()` 组合后漏读已预取到用户态缓冲的 JSONL 终态事件；
+生产 reader 已改为二进制批量 drain，并保留 Pi RPC 事件合同。
+
+后续 Producer 预演自主形成了 validated 的 54-item baseline，但首次 apply 因 lease 过期失败，
+未完成 validation、reasoning、行为查询或 Build Session completion。Host-side lease recovery
+状态机已通过独立 Round 8 离线测试，但未再次执行真实 Producer。Consumer 和二十环境 mutation
+未启动。因此不得将 M5-P0 或 M5 标记为通过。
+
+本轮确认继续为 Pi 复制 Producer、Consumer、mutation 和平台编排偏离了“只替换底层 Agent”的
+目标。M5-P0 在此阶段关闭，现有代码和运行证据保留为问题清单；公共 M3 Host Workflow 与
+Agent Runtime Adapter 解耦转入 `docs/requirements/requirements-v2.2.md` R2.2-001。
+
+M5-P0 的逐轮状态仅保留于
+`docs/delivery/records/2026-07-29-r2-1-001-m5-test-round-status.md`；已关闭的测试实现、输入包、
+设计和详细测试计划不再保留。
+
+Pi 生产者和 Pi 消费者均只能获得 M3 已允许的净化输入、各自本轮平台反馈和所需的公共工具合同；
+不得读取 M4 的隐藏答案、澄清请求/回答、最终本体、Batch payload、运行记录或任何答案型材料。
+也不得读取 M1–M3 的答案型本体、Shape、Fixture、查询、成功 Project 或运行记录。现有已暂停的
+R2.0-002 多角色 Pi 编排只是 Runtime 历史证据，不是本阶段可直接续跑的流程。
+
+M5-P0 至少证明：
+
+1. 固定并记录 Pi 版本、`deepseek-v4-pro`、模型参数、Pi 启动参数、Prompt/输入 manifest 和公共
+   平台工具合同；现有普通 Pi 本地配置不被改写；
+2. 新鲜 Pi 生产者在没有答案模型或主 Agent 语义决策的情况下完成 M3 正式建模闭环，保留 M3 的
+   来源、正式写入、Shape 负例、推理、发布/草稿边界、显式未知、Build Session 和回执审计门槛；
+3. 新鲜 Pi 消费者在不读取生产者工作目录、业务 Brief、rationale 或 transcript 的情况下，仅以
+   受限公共查询结果给出事实归因的 B/A 调用方解释；
+4. 测试方在 Pi Agent 挂载之外，执行 M3 已通过的九个传播角色的 `baseline + decoy + remove +
+   unrelated-sentinel` 二十环境正式 Modeling Batch 变异套件。该套件验证验收查询不会因笛卡尔
+   偶然命中、无关诱饵或缺失关键事实而通过；它不是二十次 Pi 模型运行；
+5. 平台 bearer credential 与真实模型 provider credential 都不进入 Pi prompt、挂载、argv、工作
+   目录、transcript 或运行记录。Pi 只可使用本轮短期模型代理能力；该能力不能调用平台或任意模型。
+
+M5-P0 的完成结论仅可写为“Pi 对 M3 静态合同的兼容性证据”。即使独立 PASS，也不得宣称 Pi 已
+通过 M4 的提问/暂停/回答/继续合同、M5 或 R2.0-002；若 Pi Runtime 或隔离模型代理失败，必须形成
+最小可复现问题清单，不得放宽 M3 语义、正式写入或隔离门槛。
+
 ### M5：Pi Agent 交互式建模合同复现
+
+当前结果（2026-07-29）：`未通过（新增授权 1 次已用尽）`。新的职责边界已实现并通过离线门禁：
+Pi 只负责业务澄清与语义建模包，主 Agent 负责 Project/Ontology/Build Session、lease、版本、
+Modeling Batch dry-run/apply、validation、reasoning、governed query、checkpoint、completion 和
+cleanup。离线计划审查最终 PASS，独立修复门禁达到 18 tests PASS。
+
+正式 Round 39 使用单一 Pi session 和一次正式 prompt。Pi 提出了三项必要业务问题，但三个请求都
+不是 canonical JSON，且第二、第三项没有等待第一项响应；Host 按用户允许的失败资料修复权限只做了
+逐文件 canonical 化与串行响应，没有改变问题或答案。随后真实 provider 连续返回三次 `502`，
+Pi 自动重试耗尽并以失败终止，未发布语义包。由于不存在可验证的 Agent 语义包，主 Agent 没有代做
+语义、没有创建平台资源，也没有启动任何平台写入。独立审查将主因分类为
+`runtime/infrastructure`，并把非 canonical、非串行澄清分类为
+`modeling-quality/protocol`；未观察到新的 `platform-contract` 故障。凭据扫描零命中，临时配置和
+进程已清理，正常服务健康。该新增授权已用尽，不得自动重试。
+
+用户随后明确要求停止本轮需求开发。M5 因此以 `CLOSED / FAIL` 收尾：不再继续修改 Runtime、
+clarification helper、语义包或 Host executor，不再启动 Pi/provider 调用，也不再创建平台资源。
+现有实现、失败轮次与 `/tmp` 保留证据只用于复盘，不构成 M5 已实现或可继续执行的授权。未来若要
+恢复，必须建立新的执行范围和模型调用授权，并从 provider 可达性与 Host-owned canonical
+one-at-a-time clarification helper 两个最小前置条件重新开始。
+
+M5 的逐轮状态仅保留于
+`docs/delivery/records/2026-07-29-r2-1-001-m5-test-round-status.md`；已关闭的测试实现、输入包、
+设计和详细测试计划不再保留。
+
+此前最小 M4 Host 复用路线已证明 Pi `0.81.1`
+可以使用真实 `deepseek-v4-pro` 完成三项澄清、创建新鲜 Project/Ontology/Build Session，并使
+principal schema dry-run 达到 `validated`；单层文件视图与 Host loopback credential broker 的
+凭据扫描通过。最终失败发生在 dry-run→apply 的机械状态合同：可见合同只要求保留 lease token，
+Batch helper 却要求未显式公开的 `runtime-record.json.lease.token`；首次 `BLOCKED` 后又发生
+Agent 绕过/状态漂移，平台实际接受了一次 `apply_atomic`，但没有继续完成 validation、reasoning、
+governed query、checkpoint、Build Session completion 和 final GET。Host 已删除本轮 Project 并
+验证 `404`。该历史执行不满足正式闭环和 fail-closed 门槛。新的职责边界通过把 lease 与终态合同
+完全收回主 Agent 确定性执行路径来消除该机械失败面；若新增授权执行仍未完成闭环，M5 继续保持
+未通过，且不得自动增加模型调用。
 
 M5 以 M4 通过并冻结交互式业务语义澄清合同为前置条件，在全新的隔离
 Project/Ontology/Build Session 中使用真实 Pi Agent 重放同一场景。M5 验证建模方法、用户
@@ -547,12 +634,83 @@ validation `conforms=true`、reasoning `consistent=true`，Build Session 已完�
 
 ### M7：从业务切片扩展到模块业务
 
-M7 以 M4、M6 均通过为建模质量前置条件；Pi 是否作为 M7 Runtime 另由 M5 结果决定。M7 把已验证
-的单一业务语义切片扩展为边界清晰的模块业务，重点
-验证跨切片术语一致性、概念和身份复用、模块内及模块间关系、约束组合、推理、查询，以及后续
-演进时的影响范围。M7 的具体业务模块、资料范围、复用和演进合同、能力问题、规模上限与完成
-门槛尚未细化；这些内容必须在 M6 结束后根据 M4–M6 的真实结果形成独立阶段合同，不能在当前
-路线确认中预设。
+当前状态（2026-07-29）：`推进策略已确认，具体业务模块阶段合同待细化`。
+
+M7 以 M4、M6 均通过为建模质量前置条件，把已验证的单一业务语义切片扩展为边界清晰的模块业务，
+重点验证跨切片术语一致性、概念和身份复用、模块内及模块间关系、约束组合、推理、查询，以及后续
+演进时的影响范围。M5 已以 `CLOSED / FAIL` 收尾，因此首轮 M7 使用全新的隔离 Codex subagent，
+不等待 Pi Runtime；Pi 只有在未来新的 M5 范围和模型调用授权下通过对应门禁后，才可作为后续
+Runtime 候选。
+
+#### 已确认的推进顺序
+
+M7 同步推进业务模块扩展和 Runtime-neutral Host 稳定化，但两者不是同等权重，也不以完整 Host
+框架先行为前提：
+
+1. 业务模块扩展是主线，应尽快启动一个有边界的真实建模尝试，以实际语义结果暴露跨切片问题；
+2. Host 工作是支线，只提取和稳定当前尝试直接需要的最小执行 spine，不先建设通用 Runtime
+   插件框架、完整 Producer/Consumer/mutation 编排或生产级 Agent Runtime；
+3. 每次正式建模尝试必须冻结所用 Host 版本、输入 manifest、基础切片和验收合同；Host 重构可在
+   独立工作树中继续，但不得在一次运行中途替换 Harness 或改变验收语义；
+4. 首轮先完成 `L1 Modeling quality`；独立 Consumer、重复运行和 mutation 属于后续
+   `L2 Repeatability`，不得成为首轮 L1 的启动前置；产品级安全隔离、常驻运行和通用治理属于
+   `L3 Productization`，不进入当前范围。
+
+#### 首轮业务模块扩展方式
+
+首轮 M7 应复用 M6 已通过的隔离 Codex subagent 路线，但从“空本体建模”调整为“在冻结基础切片
+之上扩展模块”：
+
+1. 阶段开始前选择一个边界清晰的业务模块，冻结原始资料、三个左右的核心能力问题、规模上限、
+   基础切片快照以及同一 Ontology 扩展或独立 Ontology 组合方式；
+2. Host 为每次尝试准备全新的 Project、Ontology、Build Session、Agent 进程和运行目录，并在
+   新鲜作用域中装载阶段合同指定的已验收基础切片；不得直接续写历史运行作用域；
+3. Codex subagent 必须以不继承当前会话历史的方式启动，只能读取本轮冻结的 Agent-visible
+   输入包、公开的基础切片、本轮逐轮回答和本轮平台结果；隐藏验收合同、历史答案型模型、Batch
+   payload、测试计划和其他运行记录不得进入输入；
+4. Agent 的任务不是只列出 Class/Property 草案，而是判断术语、身份、生命周期、跨切片关系和
+   约束能否唯一确定，主动澄清会改变消费结论的缺口，并输出包含 schema、实例、Shape、关系、
+   Evidence/rationale 和 explicit unknown 的 Runtime-neutral semantic package；
+5. Host 只把 Agent 决定的语义包确定性地提交、验证和查询，不替 Agent 选择概念、补全未知、
+   修复答案型语义或生成验收答案。
+
+#### 当前最小 Host spine
+
+首轮 M7 的 Host 只需形成一条可冻结、可复用的最小执行路径：
+
+```text
+prepare_scope
+  -> stage_inputs
+  -> apply_semantic_package
+  -> validate_and_query
+  -> record_and_cleanup
+```
+
+Host 负责输入 manifest/hash、基础切片装载、新鲜作用域和资源归属、凭据注入、canonical JSON、
+ID、workspace/lease、Modeling Batch dry-run/apply、validation、reasoning、governed query、
+Checkpoint、完成状态、运行证据和清理。Codex Adapter 只负责启动新鲜 subagent、装配允许输入、
+传递逐轮回答和收集 semantic package；不得复制平台业务流程。
+
+当前复用已经迁移完成的本地开发存储，通过新 Project/Ontology/Build Session 实现逻辑和语义
+隔离。独立数据库、容器、`bwrap`、网络沙箱、Provider proxy、跨机器协调和凭据代理产品化均不
+作为首轮前置；只有真实证据证明越权读取、凭据暴露或运行相互污染时，才增加对应隔离机制。
+
+#### 首轮 L1 完成门
+
+首轮建模尝试至少证明：
+
+- Agent 能在基础切片上复用或明确演进既有概念和身份，不因模块扩展无依据地复制同义资源；
+- 会改变模型或消费结论的资料缺口被主动澄清，无法确认的内容成为可查询的 explicit unknown；
+- Agent 产生的 semantic package 能由 Host 原样进入正式 dry-run/apply，包含可执行 Shape，
+  并以一个错误实例证明约束会阻断无效结构；
+- 最终 validation、reasoning 和新旧核心能力问题的 governed query 同时成立，且平台没有新增
+  业务专属逻辑；
+- Agent 未读取隐藏答案或历史答案型产物，Host 未代做本体判断，Runtime、平台合同和建模质量
+  失败能够分开报告。
+
+该 L1 门只决定首轮模块建模是否形成有效语义闭环，不等同于 M7 整体完成。M7 的具体业务模块、
+资料范围、基础切片组合方式、最终能力问题、独立 Consumer、重复运行、mutation 范围和总完成
+门槛仍必须在实施前形成独立设计和共享测试计划，并通过计划审查后执行。
 
 M7 不因扩大业务范围自动引入 Coverage、Work Unit、独立 review 或 Shared Modeling Directory。
 只有 M7 的规模或实际失败证明某项机制直接保护建模质量、来源忠实度或检索完整性时，才把该机制
@@ -563,8 +721,9 @@ M7 不因扩大业务范围自动引入 Coverage、Work Unit、独立 review 或
 以下内容尚未形成合同，不在本次记录中提前决定：
 
 - M4 的固定歧义、隐藏答案合同、逐轮交互协议和独立验收场景；
-- M5 的固定 Pi/模型版本、Prompt/Skill 装配方式和 Runtime 隔离方案；
-- M7 的业务模块选择、资料范围、模块复用与演进合同；
+- M5 在 M4 通过后复用或调整 M5-P0 的 Pi/模型版本、Prompt/Skill 装配方式和 Runtime 隔离方案；
+- M7 的业务模块选择、资料范围、基础切片快照、同一 Ontology 扩展或独立 Ontology 组合方式、
+  模块复用与演进合同、能力问题和规模上限；
 - 基于现有通用查询能力的查询组合、字段选择、分页和完整性验收方式；
 - M4–M7 是否因实际失败引入 Brief、Coverage、Work Unit、独立 review 或 Shared Modeling
   Directory；
@@ -575,5 +734,6 @@ R2.1-001 的 M1 在第一版本体候选、Fixture 和查询断言形成后即�
 设计评审或共享测试计划文档门槛。第一版结构是可验证假设，不是最终方案；每轮必须保留建模假设
 和调整记录，也不得以首轮通过宣称长期建模流程或最终本体结构已经确定。M2 受控建模流程演练已
 完成；M3 自主建模 Agent 复现和 M4 主动语义澄清均已通过独立验收。当前 M1–M4 切片关闭；
-M5 与使用 Codex subagent 的 M6 可以并行实施；M6 通过后才细化并实施 M7。每个阶段开始前
-仍需冻结该阶段的场景、输入、角色边界和验收合同，不以本次路线排期代替阶段级设计与独立测试。
+M5 已关闭未通过，M6 已完成，M7 推进策略已确认但具体模块合同尚未冻结。M7 实施前仍需冻结该
+阶段的场景、输入、基础切片、角色边界和验收合同，不以本次路线决定代替阶段级设计、计划审查与
+独立测试。

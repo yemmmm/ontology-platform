@@ -7,17 +7,29 @@ judgement. Do not request a host-supplied ontology or domain answer.
 
 ## Common transport and receipts
 
-Every request is canonical JSON in the existing spool envelope:
+For every public API operation other than a Modeling Batch, author a candidate envelope with exactly
+these keys:
 
 ```json
 {"body":{},"headers":{"content-type":"application/json"},"id":"unique-request-id","method":"POST","path":"/api/..."}
 ```
 
-Use a new request ID for every call. Immediately after every response, atomically replace
+Use a new request ID for every call. Invoke
+`python3 /opt/m4-api-spool.py --candidate <candidate-file>` for each non-Batch candidate. It rejects
+malformed/duplicate/Authorization-bearing candidates, canonicalizes the envelope, derives the exact
+`<id>.json` request filename, atomically publishes it once, waits only for that response ID, validates
+the response ID, and prints the response. It does not select endpoints, payloads, domain semantics,
+receipts, or retries. Do not write to `M4_API_REQUEST_DIR`, poll `M4_API_RESPONSE_DIR`, or choose
+request/response filenames yourself. Immediately after every printed response, atomically replace
 `/mnt/runtime-record.json`, append one canonical JSON line to `/mnt/api-consumption-receipts.jsonl`,
 and append the corresponding decision/evidence line to `/mnt/decision-log.jsonl`. Do not retain
 credentials or raw response bodies in either log. A receipt records at least `request_id`, actual
 `status`, `canonical_request_sha256`, `raw_response_sha256`, and the semantic result fields below.
+
+For example, a candidate `{"id":"create-project",...}` passed to the helper is published as
+`create-project.json` and matched only to `create-project.json`; the candidate's own filename does
+not control the spool name. Modeling Batches remain exclusively owned by
+`/opt/m4-batch-exchange.py`, not this generic helper.
 
 `runtime-record.json` must always be valid JSON and include `run_tag`, `terminal_status`, `receipts`,
 `checkpoint`, and `build_session_completion`. Its terminal status is exactly
@@ -51,8 +63,12 @@ runtime record or atomically record `BLOCKED`; never forward a mismatched path.
    `POST /api/projects/{project_id}/build-sessions`. Its body includes at least a unique
    `client_session_id`; include any required title/summary fields from OpenAPI. Retain session ID and
    returned session revision.
-4. Read `GET /api/ontologies/{ontology_id}/modeling-context` and use its
-   `workspace.workspace_version` string, not guesses, for the Batch version. Read
+4. Read `GET /api/ontologies/{ontology_id}/modeling-context` once before the principal Batch and
+   persist its receipt as `receipts.modeling_context`. Then run the visible
+   `/opt/m4-batch-exchange.py seed` command. For all later Modeling Batches, use the visible helper
+   rather than publishing an envelope: it seeds the initial version from this response, keeps it
+   through dry-runs, and advances only from a successful apply's protected `after_version`. It does
+   not fetch context, probe, retry, or recover a lease. Read
    `GET /api/ontologies/{ontology_id}/workspace-context` for the `default_graph_set_id` and members
    when a graph-set semantic operation needs them.
 
@@ -93,10 +109,27 @@ Submit `POST /api/build-sessions/{session_id}/modeling-batches` with this generi
 ```
 
 `mode` is one of `dry_run`, `apply_atomic`, or `apply_partial`; use only `dry_run` and
-`apply_atomic` here. Omit `lease_token` for a dry-run; an apply repeats the unchanged validated
-`client_batch_id` and `items`, supplies the current workspace version and `lease_token`, changes
-`mode` to `apply_atomic`, and uses a new
-idempotency key. Do not apply a changed candidate without a new dry-run. Use `depends_on` plus
+`apply_atomic` here. The visible Batch helper owns the envelope: it freezes exactly canonical
+`client_batch_id` plus `items` after a validated dry-run; an apply reuses that frozen projection,
+changes `mode` to `apply_atomic`, supplies the persisted lease token and current protected workspace
+version, and uses a new idempotency key. Do not apply a changed candidate without a new dry-run.
+For the first valid-instance candidate only, invoke its dry-run with
+`--expected validated_or_shacl_correction`: it returns `validated` or
+`shacl_correction_required`, freezes only the former, and accepts the latter only for 2xx
+`validation_failed` with at least one blocking `shacl_violation`, each with non-empty
+`finding_fingerprint` and `client_item_ids`. Every other result is `BLOCKED`; correction and all
+other Batches use their exact expected result. A validated freeze admits only its exact apply until
+that apply succeeds. After `shacl_correction_required`, exactly one next correction dry-run is
+admitted with expected `validated`; any other or extra dry-run is `BLOCKED`.
+Immediately before every dry-run, run
+`python3 /opt/m4-batch-exchange.py check --candidate <file>` and continue only when it returns
+`status: "valid"`. This answer-free local check never reads or changes runtime state and never
+publishes. Every item has a unique non-empty `client_item_id`, and its `depends_on` is a list of
+earlier item-ID strings only. For a generic two-item candidate, the later item may use
+`"depends_on":["make-resource"]` while its payload contains
+`{"item_ref":{"client_item_id":"make-resource","output":"resource_id"}}`: the former is a
+string dependency declaration, and the latter is the generated-value reference inside `payload`.
+Use `depends_on` plus
 `{"item_ref":{"client_item_id":"...","output":"resource_id"}}` or `resource_iri` where a
 later command needs an earlier generated value.
 

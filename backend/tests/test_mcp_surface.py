@@ -1,7 +1,9 @@
 import asyncio
 
+from app.core.config import Settings
 from app.mcp.server import mcp
 from app.mcp.tools import register_all
+from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 
 
 # Stage 3 B2 hard-cut: the only surviving MCP tool families are
@@ -156,3 +158,29 @@ def test_check_platform_health_takes_no_arguments() -> None:
     schema = tools["check_platform_health"].inputSchema
     assert schema.get("properties", {}) == {}
     assert schema.get("required", []) == []
+
+
+def test_submit_modeling_batch_schema_exposes_nested_modeling_items() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    schema = tools["submit_modeling_batch"].inputSchema or {}
+    items = schema["properties"]["items"]
+    item_ref = items["items"]["$ref"]
+    assert item_ref.startswith("#/$defs/")
+    item = schema["$defs"][item_ref.removeprefix("#/$defs/")]
+    assert {"client_item_id", "command_kind", "payload"} <= set(item["required"])
+    assert item["properties"]["payload"]["type"] == "object"
+    assert item["properties"]["command_kind"]["enum"] == ModelingCommandHandlerRegistry(
+        Settings()
+    ).command_kinds
+    guidance = item["properties"]["payload"]["description"]
+    for required_phrase in (
+        "create_class: name",
+        "create_property: class_id, name, plus datatype or object_class_id",
+        "create_relation_type: name, source_class_id, target_class_id",
+        "create_shape: target_class_id, constraints",
+        "create_entity: class_iri_or_legacy_id, label",
+        "properties must be a JSON object mapping property IRI keys to values, and lists are invalid",
+        "create_relation: source_entity_iri, relation_type_iri, target_entity_iri",
+        "add_* aliases are forbidden",
+    ):
+        assert required_phrase in guidance

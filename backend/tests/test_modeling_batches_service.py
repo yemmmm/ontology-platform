@@ -33,6 +33,7 @@ from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchError, ModelingBatchService
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
+from app.services.semantic_command_compiler import InvalidCommandPayload
 from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.ontology_lineage import OntologyLineageService
@@ -457,6 +458,87 @@ def test_atomic_validation_failure_does_not_apply_any_item(modeling):
     assert result["attempt_status"] == "validation_failed"
     assert status == {"bad": "failed", "good": "not_applied"}
     assert rdf.deltas == []
+
+
+@pytest.mark.parametrize(
+    ("command_kind", "payload"),
+    [
+        (
+            "create_entity",
+            {
+                "class_iri_or_legacy_id": "customer",
+                "label": "Alice",
+                "properties": [{"property_iri": "https://r004.test/property/name", "value": "Alice"}],
+            },
+        ),
+        (
+            "update_entity",
+            {
+                "entity_id": "customer-1",
+                "properties": [{"property_iri": "https://r004.test/property/name", "value": "Alice"}],
+            },
+        ),
+    ],
+)
+def test_entity_property_lists_are_structured_batch_validation_failures(
+    modeling, command_kind, payload
+):
+    service, _db, rdf, session_id, _lease, version = modeling
+
+    result = service.submit(
+        session_id,
+        _request(
+            version,
+            [_item("entity", command_kind=command_kind, payload=payload)],
+            batch=f"{command_kind}-properties-list",
+            key=f"{command_kind}-properties-list",
+        ),
+    )
+
+    assert result["attempt_status"] == "validation_failed"
+    finding = next(finding for finding in result["findings"] if finding["blocking"])
+    assert finding["code"] == "invalid_command_payload"
+    assert finding["client_item_ids"] == ["entity"]
+    assert "must be a JSON object mapping property IRI keys to values" in finding["message"]
+    assert rdf.deltas == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"class_iri_or_legacy_id": "customer", "label": "Alice"},
+        {"class_iri_or_legacy_id": "customer", "label": "Alice", "properties": None},
+        {"class_iri_or_legacy_id": "customer", "label": "Alice", "properties": {}},
+        {
+            "class_iri_or_legacy_id": "customer",
+            "label": "Alice",
+            "properties": {"https://r004.test/property/is_latest": True},
+        },
+    ],
+)
+def test_entity_property_maps_remain_valid_handler_inputs(payload):
+
+    prepared = ModelingCommandHandlerRegistry(_settings()).prepare(
+        batch_id="entity-properties-map",
+        ontology_id=ONTOLOGY_ID,
+        client_item_id="entity",
+        command_kind="create_entity",
+        payload=payload,
+    )
+
+    assert prepared.compiled is not None
+
+
+@pytest.mark.parametrize("command_kind", ["create_entity", "update_entity"])
+def test_entity_property_lists_are_rejected_by_handler_before_compiler(command_kind):
+    payload = {"properties": [{"property_iri": "https://r004.test/property/name", "value": "Alice"}]}
+    if command_kind == "create_entity":
+        payload.update({"class_iri_or_legacy_id": "customer", "label": "Alice"})
+    else:
+        payload["entity_id"] = "customer-1"
+
+    with pytest.raises(InvalidCommandPayload, match="must be a JSON object mapping property IRI"):
+        ModelingCommandHandlerRegistry(_settings()).validate_payload_shape(command_kind, payload)
 
 
 def test_partial_applies_stable_subset_and_only_its_evidence(modeling):
