@@ -61,6 +61,14 @@ security boundary, or generalized evaluation platform.
 - Start the first real modeling attempt within 20 minutes unless the user explicitly authorizes a
   longer preparation phase. If no real attempt has started by then, stop preparation, report what
   is consuming time, and reduce the setup to the smallest executable path.
+- Treat a limited modeling-attempt budget, including a three-attempt limit, as a checkpoint against
+  repeatedly modeling in the wrong direction, not as a scarce resource that must be protected with
+  broad pre-modeling tests. Do only the minimum L0 checks needed to start a real attempt; do not
+  delay modeling with speculative runtime, infrastructure, mutation, repeatability, or acceptance
+  testing merely to avoid consuming an attempt. The user expects early attempts to make the current
+  direction observable and accepts that an attempt may be spent learning. When the budget is
+  exhausted, stop, summarize the direction and evidence from the attempts, and ask the user to
+  authorize more attempts instead of expanding preflight work.
 - The initial completion gate should normally be one bounded corpus or scenario, one Agent, one
   fresh ontology scope, one deterministic dry-run/application path, validation, and one governed
   query. Independent consumers, mutation suites, repeated-success measurement, recovery matrices,
