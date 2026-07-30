@@ -1,0 +1,8 @@
+{
+  "contract_version": 1,
+  "answers": [
+    {"id": "invocation-target", "answer": "B invokes C through C's Latest published Version."},
+    {"id": "output-continuity", "answer": "quality_rating:number is the documented successor of quality_score:number."},
+    {"id": "missing-score-behavior", "answer": "The business owner cannot confirm B's behavior when scoring is absent."}
+  ]
+}

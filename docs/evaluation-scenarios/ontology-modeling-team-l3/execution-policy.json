@@ -1,0 +1,18 @@
+{
+  "policy_version": 1,
+  "live_execution_authorized": false,
+  "state": "PAUSED",
+  "outcome": "NOT_PASSED",
+  "category": "collaboration/routing",
+  "starts_consumed": 3,
+  "run_ids": [
+    "l3-real-20260730g",
+    "l3-real-20260730h",
+    "l3-real-20260730i"
+  ],
+  "recovery_requirements": [
+    "prove the isolated coordinator emits one verified Modeling Agent child Session/delegation",
+    "complete plan re-review for the narrowed child-startup repair",
+    "obtain explicit user authorization for a new fresh-start budget"
+  ]
+}

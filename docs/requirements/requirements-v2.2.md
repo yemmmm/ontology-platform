@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：L0、L1 已实现并通过独立验收；独立 L2 已取消并合并到 L3；L3 合同已细化、待设计实施
+- 文档状态：L0、L1 已实现并通过独立验收；独立 L2 已取消并合并到 L3；L3 已实施但三次启动均未形成真实建模 Agent，当前暂停、未通过
 - 基础版本：`docs/requirements/requirements-v2.1.md`
 - 关联版本：`docs/requirements/requirements-v1.0.md`、`docs/requirements/requirements-v1.1.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -33,7 +33,7 @@ Session 承担。
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0、L1 已实现；L3 合同已细化、待设计实施 | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
+| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0、L1 已实现；L3 已实施，`PAUSED / NOT PASSED` | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
 
 ## R2.2-001 本体建模团队三 Agent 协作
 
@@ -305,8 +305,9 @@ L1 通过后直接细化 L3，不再单独设计、实施或验收 L2：
   用基础设施或协议故障替代建模质量结论；
 - Runtime 复现仅在需要时用 Pi 或其他 Runtime 重放同一团队合同。
 
-L3 合同已经细化，待设计和实施。L3 只要求一轮三 Agent 真实业务切片成功证据，不要求重复
-成功率、统计显著性或 Runtime 横向比较。
+L3 合同已经细化并完成首轮实施。L3 只要求一轮三 Agent 真实业务切片成功证据，不要求重复
+成功率、统计显著性或 Runtime 横向比较。当前三次授权启动均未形成可验证的建模 Agent child，
+因此 L3 为 `PAUSED / NOT PASSED`，不构成建模质量结论。
 
 #### L3 业务答案释放
 
@@ -346,6 +347,27 @@ L3 合同已经细化，待设计和实施。L3 只要求一轮三 Agent 真实�
   不得通过暴露隐藏答案、修改 Prompt 后重复尝试或放宽验收标准来刷过；
 - 三次启动耗尽仍无 PASS 时，L3 以未通过暂停并报告；只有一轮同时满足全部最小完成门的真实
   运行可以作为 L3 PASS 证据，之前的失败记录必须保留。
+
+#### L3 当前实施结果（2026-07-30）
+
+- 新增 repo-local `ontology-modeling-team-l3` 场景，包含冻结输入、角色分包、tester-only 答案
+  合同、隔离 managed-reasoning 预检、Protocol-only 确定性机械 helper、全局启动账本、历史
+  分类更正账本和 21 项离线测试；未修改 backend/frontend 产品代码；
+- `l3-real-20260730g/h/i` 三次启动的业务空 reasoning 预检均成功并完成精确 Project/key/runtime
+  清理，但 coordinator 原始事件均只有空 `receiver_thread_ids` 的 `wait`，没有真实
+  `spawn_agent` child Session；
+- 三次均在业务 Project、Protocol Agent、model key、Modeling Batch 或业务语义写入之前停止。
+  原始 state 的 `runtime/infrastructure / INCONCLUSIVE` 保留不改，append-only 分类账以原始
+  state/transcript SHA-256 绑定并权威更正为
+  `collaboration/routing / PAUSED / NOT_PASSED`；
+- 全局账本已记录三次启动并在任何新 run root、探针或凭据创建前拒绝第四次；真实
+  `first_modeling_started_at` 只有验证到 Modeling Agent child 后才会记录，本轮从未满足，因此
+  20 分钟首次真实建模门也未通过；
+- 独立测试 Round 3 仅判定稳定暂停状态可信。真实三 Agent 协作、问答恢复、Protocol 写入、
+  Batch、业务 validation/reasoning、`C -> B -> A` 查询、Draft 排除和 explicit unknown 均未
+  执行，L3 不能标记完成；
+- 恢复条件：先证明隔离 coordinator 能创建并返回可验证的 Modeling Agent child identity，
+  更新并复审执行计划，再由用户明确授权新的启动预算；不得直接启动第四次。
 
 ### 与既有需求的关系
 

@@ -1,17 +1,19 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: completed through L1; standalone L2 merged into L3; L3 contract refined, design pending
+- Status: completed through L1; standalone L2 merged into L3; L3 implemented and `PAUSED / NOT PASSED`
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:58:29+08:00
+- Last updated: 2026-07-30T13:14:56+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
-  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
+  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`;
+  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l3-design.md`
 - Shared test plans:
   `docs/delivery/test-plans/2026-07-29-r2-2-001-ontology-modeling-team-l0-test-plan.md`;
-  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l1-test-plan.md`
+  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l1-test-plan.md`;
+  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l3-test-plan.md`
 - Delivery baseline: `373b9f0`; clean worktree
-- Delivery commit: `Complete ontology modeling team L1` (resolve hash from git history)
+- Delivery commit: pending `Pause ontology modeling team L3`
 
 ## Confirmed contract
 
@@ -661,3 +663,217 @@
   minimum completion gate and retry boundary.
 - Outcome/next step: L3 is ready for risk probes, design and shared test-plan review when the user
   authorizes implementation work.
+
+### 2026-07-30T12:23:53+08:00 — L3 source/current-state audit and risk probes — Delivery Agent
+
+- Authorization: the user requested L3 implementation. Functional refinement remains frozen by the
+  11:36–11:58 decisions above; no material user-visible choice remains unresolved.
+- Baseline: clean commit `640dee9` before tooling. GitNexus indexing generated transient root
+  instruction statistic changes; Delivery restored those unrelated files before authoring L3
+  artifacts.
+- Current/target delta: L1 proves isolated protocol-only write for a small version-state slice. L3
+  must combine that write boundary with M6's source-grounded question/answer and explicit-unknown
+  behavior, then apply and retrieve the complete M1/M6 `C -> B -> A` slice.
+- Risk probe 1 — platform path: current MCP policy grants Project-scoped `model` access to Modeling
+  Batch, validation and reasoning, while M4 proves workspace graph-set validation/reasoning/query
+  and L1 proves the isolated temporary-key write lifecycle. Design consequence: reuse existing
+  generic tools; no backend or new Dify API.
+- Risk probe 2 — input/answer separation: M6 already separates hashed `agent-input/` from the
+  tester-only three-decision material-gap contract; M1 keeps official sources separate from
+  answer-type TTL/Shapes/queries. Design consequence: copy only pinned official and synthetic
+  business sources into a new L3 Agent-visible manifest; keep every historical answer artifact out.
+- Risk probe 3 — interaction: L0 proves same-coordinator-session resume and M6 proves one-question
+  source-grounded clarification, verbatim known answers and an unconfirmable explicit unknown.
+  Design consequence: pause on one question, let Delivery manually match only the corresponding
+  frozen answer, then resume the same fresh coordinator; do not add a Judge or interview framework.
+- Verification: M1 offline acceptance `13/13`, L1 focused regression `15/15`, backend health and
+  frontend health PASS.
+- Outcome/next step: freeze L3 design/shared plan, then run mandatory plan review.
+
+### 2026-07-30T12:23:53+08:00 — L3 design and shared test-plan freeze — Delivery Agent
+
+- Design:
+  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l3-design.md`.
+- Shared test plan:
+  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l3-test-plan.md`.
+- Frozen implementation surface: new
+  `docs/evaluation-scenarios/ontology-modeling-team-l3/` only, plus requirement/design/test/record
+  documentation sync. L0/L1 scenarios and backend/frontend product code remain unchanged.
+- Contract version: one real three-Agent C→B→A attempt; conditional answer release; direct manual
+  Delivery/Requirement Tester acceptance; at most three fresh starts; completed semantic failure is
+  terminal; no Judge/Consumer/mutation/acceptance program.
+- Required checks: L3 focused unittest and Ruff, L1 and M1 regression, `git diff --check`, real
+  isolated run evidence, independent test round, service status, backend/frontend health and
+  GitNexus `detect_changes()` before commit.
+- Outcome/next step: mandatory plan reviewer must report only evidence-backed Critical/High issues.
+
+### 2026-07-30T12:40:00+08:00 — L3 plan review Round 1 REVISE — Plan Reviewer + Delivery Agent
+
+- Result: `REVISE`; three evidence-backed High findings, no Critical finding.
+- Finding 1: the L1-derived isolated runtime does not mount/configure the local OWL reasoner, so
+  managed reasoning would raise `OwlReasonerUnavailable`. Disposition: `accepted-high`. The design
+  now read-only mounts only `dev_owl_reasoner.py`, sets its namespace command, and requires a real
+  business-empty managed-reasoning preflight in a separately cleaned probe scope.
+- Finding 2: the draft left stable IDs, canonical requests, exact Batch replay, revisions, lease
+  renewal, checkpoint bodies and response parsing to the Protocol LLM. Disposition:
+  `accepted-high`. A minimal Protocol-only deterministic mechanics helper now owns those mechanics;
+  it cannot synthesize or change semantic Items, queries or ontology decisions.
+- Finding 3: the plan omitted the mandatory first-real-modeling-attempt clock. Disposition:
+  `accepted-high`. The execution phase now records preparation/modeling timestamps and must start
+  real Modeling Agent work within 20 minutes or stop, report and shrink the path.
+- Plan impact: design and shared test plan revised in place; no implementation is authorized until
+  focused re-review passes.
+- Outcome/next step: return the exact revisions to the plan reviewer.
+
+### 2026-07-30T12:37:43+08:00 — L3 timestamp correction and plan review Round 2 PASS — Delivery Agent + Plan Reviewer
+
+- Correction: the preceding Round 1 heading used a forward-rounded `12:40:00` timestamp. The
+  review/revision occurred before this `12:37:43` re-review completion entry; the content and
+  disposition are unchanged.
+- Result: focused re-review `PASS`; no remaining Critical/High finding or unresolved core
+  assumption.
+- Verified closure: isolated managed reasoner plus real cleaned probe scope; Protocol-only
+  deterministic mechanics without semantic synthesis; recorded 20-minute first-modeling gate and
+  forced stop/shrink behavior.
+- Development baseline: commit `640dee9` plus reviewed L3 design, shared test plan and this record.
+  Existing product and L0/L1 symbols are not authorized for edits, so no existing-symbol blast
+  radius is introduced. Any need to edit one requires prior GitNexus upstream impact analysis,
+  user warning for High/Critical risk, and plan revision.
+- Execution timer: `preparation_started_at=2026-07-30T12:37:43+08:00`; the first real Modeling
+  Agent delegation must occur by `2026-07-30T12:57:43+08:00`, otherwise implementation preparation
+  stops and shrinks before further harness work.
+- Developer handoff: implement only
+  `docs/evaluation-scenarios/ontology-modeling-team-l3/`, keep the main-agent-owned delivery record
+  unchanged, add focused tests, run L3/L1/M1/Ruff/diff/health checks, and return an explicit
+  development-ready state with attempt timing and cleanup evidence.
+
+### 2026-07-30T13:00:00+08:00 — L3 development-ready, three starts exhausted — Requirement Developer + Delivery Agent
+
+- Result: `DEVELOPMENT-READY` for a stable `PAUSED / NOT PASSED` state, not L3 acceptance.
+- Changed surface: new `docs/evaluation-scenarios/ontology-modeling-team-l3/` only. It contains the
+  frozen Agent-visible manifest/sources, tester-only answer contract, role config, scenario README,
+  launcher, Protocol-only deterministic mechanics helper and 14 focused tests. No backend,
+  frontend, migration or existing L0/L1/M1/M6 file changed.
+- Preparation gate: first real coordinator/modeling path started at
+  `2026-07-30T12:47:34.107963+08:00`, within the `12:57:43` deadline. Later starts were
+  `12:50:03` and `12:54:05`; all remained within the frozen execution window.
+- Real preflight: each accepted start used the isolated `rdf_primary` namespace for a managed
+  reasoning run with `succeeded`, `consistent=true` and current derived pointer, then deleted its
+  exact business-empty probe Project, revoked the host-admin key and exited the isolated runtime.
+- Attempt 1 (`l3-real-20260730g`): `collaboration/routing / INCONCLUSIVE`. The coordinator produced
+  one grounded output-continuity question, but raw JSONL showed `collab_tool_call wait` with empty
+  `receiver_thread_ids`; no Modeling Agent child identity existed.
+- Attempt 2 (`l3-real-20260730h`): same failure category and evidence after a focused task/config
+  correction; one grounded question, no actual Modeling Agent child.
+- Attempt 3 (`l3-real-20260730i`): same terminal failure after requiring `spawn_agent` as the first
+  action and copying explicit `modeling_agent` configuration. One grounded invocation-target
+  question was written, but the raw coordinator event again had no child Session identity.
+- Scope safety: no attempt created the business Project/Ontology/model key, launched the Protocol
+  Agent, submitted a Modeling Batch or wrote business semantics. No fourth start is permitted by
+  the frozen budget.
+- Developer verification: L3 unittest `14/14`, L3 Ruff, L1 unittest `15/15`, M1 scenario `13/13`,
+  `git diff --check`, active systemd service, backend `8001/api/health` and frontend `5173` all
+  PASS.
+- Stable evidence: ignored run roots `runtime/runs/l3-real-20260730g`,
+  `l3-real-20260730h`, and `l3-real-20260730i`; repository worktree contains only reviewed L3
+  artifacts and this Delivery-owned record.
+- Outcome/next step: independent Requirement Tester must review implementation and retained raw
+  evidence, append a shared-plan round, verify cleanup/attempt accounting, and confirm whether the
+  state is correctly paused. Resuming real L3 requires a corrected child-start contract, fresh plan
+  review and explicit user authorization for a new start budget.
+
+### 2026-07-30T13:05:00+08:00 — L3 independent test Round 1 FAIL — Requirement Tester + Delivery Agent
+
+- Result: `FAIL`; the shared test plan retains Independent Round 1. L3 `14/14`, L1 `15/15`, M1
+  `13/13`, Ruff, diff check, systemd and resident health all passed.
+- Confirmed evidence: all three business-empty managed-reasoning probes succeeded and cleaned their
+  exact Project/key/runtime. All three coordinator transcripts contain only `collab_tool_call wait`
+  with empty `receiver_thread_ids`; no Modeling Agent child, Protocol Agent, business Project/key,
+  MCP write or Batch exists.
+- High `L3-terminal-classification`: run state incorrectly records `runtime/infrastructure /
+  INCONCLUSIVE` instead of the evidenced `collaboration/routing` failure and has no authoritative
+  `PAUSED / NOT PASSED` terminal state. Disposition: `accepted-high`.
+- High `L3-global-budget-and-clock`: start accounting is local to each run root, so a new run ID
+  could bypass the three-start limit. It also records `modeling_started` before a real Modeling
+  Agent child identity exists. Disposition: `accepted-high`; the prior claim that the 20-minute
+  first-modeling gate passed is corrected below.
+- High `L3-protocol-handoff-incomplete`: reviewed Protocol handoff is not implemented: no
+  mechanics-contract input, Protocol Agent/key/no-key/write lifecycle, and the coordinator-visible
+  pack includes the platform protocol. Disposition: `accepted-high`.
+- Correction: no real Modeling Agent delegation occurred by the 20-minute deadline. The three
+  timestamps prove coordinator starts, not `first_modeling_started_at`. L3 therefore also reached
+  the mandatory preparation stop condition.
+- Repair boundary: fix classification, global budget/clock, role-visible input separation and
+  Protocol handoff scaffolding offline; add regressions; do not launch another team. A future live
+  attempt requires plan re-review and explicit user authorization for a new budget.
+
+### 2026-07-30T13:08:14+08:00 — L3 independent test Round 2 FAIL — Requirement Tester + Delivery Agent
+
+- Closed: global locked/append-only three-start ledger, pre-root/probe fourth-start rejection,
+  child-evidenced `first_modeling_started_at`, missed-deadline halt, and role-specific coordinator
+  versus Protocol packs.
+- Verification: L3 `19/19`, L1 `15/15`, M1 `13/13`, Ruff, diff and runtime health PASS; no new live
+  execution occurred.
+- Remaining High `L3-historical-classification`: preserved raw state still says
+  `runtime/infrastructure / INCONCLUSIVE`, while the new global state did not bind an authoritative
+  `collaboration/routing` correction to immutable raw evidence. Disposition: `accepted-high`.
+- Repair: add an append-only canonical classification ledger for exact g/h/i coverage, preserve the
+  old observation, bind state/transcript hashes, and make status fail closed on evidence drift.
+
+### 2026-07-30T13:12:38+08:00 — L3 independent test Round 3 PASS for paused state — Requirement Tester + Delivery Agent
+
+- Result: `PASS` for trustworthy `PAUSED / NOT_PASSED / collaboration/routing`; this is explicitly
+  not L3 semantic-completion PASS.
+- Evidence: classification ledger contains exactly g/h/i, preserves original and corrected
+  categories/outcomes, and matches every raw state/transcript SHA-256. Drift fails closed and
+  repeated status is byte-idempotent.
+- Status: `team_starts=3`, `classification_count=3`; a fourth start is rejected before run root,
+  probe or credential creation. No new execution or resource was created during repairs/retests.
+- Verification: L3 `21/21`, L1 `15/15`, M1 `13/13`, Ruff, `git diff --check`, active systemd,
+  backend `8001/api/health`, and frontend `5173` PASS.
+- Unexecuted: all real semantic/platform acceptance cases, including three actual Agent roles,
+  answer/resume, Protocol key/write lifecycle, Batch application, business validation/reasoning,
+  C→B→A retrieval, Draft exclusion and explicit unknown.
+- Outcome/next step: synchronize requirement/design/test status, run final repository checks and
+  GitNexus change detection, then commit the stable paused implementation. Future live recovery
+  requires plan re-review and explicit user authorization for a new start budget.
+
+### 2026-07-30T13:14:56+08:00 — L3 pre-commit verification — Delivery Agent
+
+- Final state: `PAUSED / NOT_PASSED / collaboration/routing`; L3 completion criteria are not met.
+  Independent Round 3 passes only the trustworthiness of this exhausted-start terminal state.
+- Required checks at this point: L3 unittest `21/21`, L1 unittest `15/15`, M1 scenario `13/13`, L3 Ruff and
+  `git diff --check` PASS.
+- Runtime/status: `run_l3.py status` reports `team_starts=3` and
+  `classification_count=3`; `ontology-platform.service` is active; backend `8001/api/health` and
+  frontend `5173` PASS. No backend/frontend code changed, so no service restart was required.
+- Cleanup: all three business-empty probe Projects were deleted, their host-admin keys revoked and
+  isolated runtimes exited. No business Project/Ontology/model key/Batch existed. Raw evidence is
+  retained under ignored g/h/i run roots and bound by the append-only classification ledger.
+- Documentation sync: v2.2 requirement, L3 design, shared test plan and this record all state the
+  same paused outcome, unexecuted semantic gates and recovery condition.
+- GitNexus staged change detection: 21 files, 9 indexed documentation symbols, zero affected
+  execution processes, `risk_level=low`. New scenario code is test-only and introduces no indexed
+  product caller.
+- Residual blocker: isolated coordinator emitted no verified Modeling Agent `spawn_agent` child.
+  Recovery requires proof of that Runtime contract, plan re-review, and explicit user authorization
+  for a new start budget; a fourth start remains forbidden.
+- Delivery commit subject: `Pause ontology modeling team L3`; resolve the immutable hash with
+  `git log -- docs/delivery/records/2026-07-29-r2-2-001-ontology-modeling-team-delivery-record.md`.
+
+### 2026-07-30T13:20:00+08:00 — durable pause policy and Independent Rounds 4–5 — Requirement Tester + Delivery Agent
+
+- Main-agent pre-commit finding: the global budget/classification ledgers are intentionally
+  gitignored runtime evidence, so a fresh clone could lose the local fourth-start guard.
+- Repair: add version-controlled `execution-policy.json` with live execution disabled, exact g/h/i
+  starts consumed, authoritative paused category/outcome and recovery requirements. The launcher
+  checks it before run-root/probe/key creation; status fails closed on policy/local-ledger mismatch.
+  README no longer advertises a live command.
+- Independent Round 4: `FAIL` only because the new policy file had not yet entered the Git index;
+  all behavior and 23 focused tests passed.
+- Packaging repair: stage the policy as mode `100644`, blob
+  `3658fca86afa7c423d82e91afb1f912b12657797`.
+- Independent Round 5: `PASS` for durable paused delivery. Cached diff contains both the committed
+  policy and pre-root launcher enforcement; no live resource was created.
+- Final checks: L3 `23/23`, L1 `15/15`, M1 `13/13`, Ruff, staged/working diff checks, active
+  systemd, backend and frontend health PASS. L3 remains `NOT_PASSED`; Round 5 grants no new run.
