@@ -22,15 +22,18 @@ This repository contains a FastAPI backend and a Vite/React frontend for an onto
 
 ## Project Target Guidance
 
-`docs/requirements/requirements-v1.0.md` is the authoritative global reference for the project's target state.
-Read it before architecture, API, storage, semantic modeling, MCP, or UI work, and use its delivery
-scope, priority, status, and acceptance criteria to guide designs, code, tests, and documentation.
+`docs/requirements/` contains the project's versioned authoritative requirement sources. Before
+architecture, API, storage, semantic modeling, MCP, or UI work, identify the requirement and version
+that own the current task, read that entry first, then follow its declared base and related-version
+links where necessary. No older version file, including `requirements-v1.0.md`, is the default
+global core for every task.
 
-Treat differences between the current implementation and this requirements list as implementation
-gaps, not as reasons to silently redefine the target. Surface conflicts explicitly, and update the
-requirements list when the target or delivery decision changes. `docs/reference/glossary.md` remains the
-reference for canonical terminology only; ADRs record architectural decisions. Neither the current
-code nor older planning documents override the requirements list.
+Treat differences between the current implementation and the applicable requirement set as
+implementation gaps, not as reasons to silently redefine the target. Surface conflicts explicitly,
+and update the owning requirement when the target or delivery decision changes.
+`docs/reference/glossary.md` remains the reference for canonical terminology only; ADRs record
+architectural decisions. Neither current code nor older planning documents override the applicable
+versioned requirements.
 
 ## Current Development Priority
 
