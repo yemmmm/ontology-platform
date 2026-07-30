@@ -1,0 +1,16 @@
+schema_version: 1
+package_id: protocol
+role: protocol
+description: Strict platform-contract owner and only configured platform writer.
+instructions: instructions.md
+required_skills:
+  - skills/ontology-modeling/SKILL.md
+references: []
+permissions:
+  team_transport: true
+  platform: write
+runtime:
+  codex:
+    sandbox: workspace-write
+task_input:
+  required: [task, allowed_sources, roster]

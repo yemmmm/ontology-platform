@@ -1,0 +1,16 @@
+schema_version: 1
+package_id: modeling
+role: modeling
+description: Business-semantic modeling owner.
+instructions: instructions.md
+required_skills:
+  - skills/ontology-modeling/SKILL.md
+references: []
+permissions:
+  team_transport: true
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]

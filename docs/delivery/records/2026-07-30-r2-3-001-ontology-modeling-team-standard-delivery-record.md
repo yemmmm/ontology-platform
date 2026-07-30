@@ -1,13 +1,15 @@
 # R2.3-001 Team Runner and Codex Adapter Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`, R2.3-001
-- Status: in-progress
+- Status: delivered; independent acceptance PASS
 - Started: 2026-07-30T18:55:53+08:00
-- Last updated: 2026-07-31T00:55:37+08:00
-- Design: pending
-- Shared test plan: pending
+- Last updated: 2026-07-31T04:55:00+08:00
+- Design:
+  `docs/delivery/designs/2026-07-31-r2-3-001-team-runner-codex-adapter-design.md`
+- Shared test plan:
+  `docs/delivery/test-plans/2026-07-31-r2-3-001-team-runner-codex-adapter-test-plan.md`
 - Delivery baseline: clean worktree at `2e3b3b933ee6035b11d855d70ca1bdcffb013aeb`
-- Delivery commit: pending
+- Delivery commit: the final implementation commit containing this record
 
 ## Confirmed contract
 
@@ -397,32 +399,192 @@
 - Outcome/next step: requirement writing is complete. R2.3-001 design and shared-test planning are
   the next delivery stage and have not started.
 
+### 2026-07-31T01:01:35+08:00 — implementation baseline and risk probes — Delivery Agent
+
+- Context: the requirements commit was published as `5c0e61c`; R2.3-001 needed a reusable Runtime
+  path rather than another blocking `codex exec` scenario launcher.
+- Action/decision: audited L0/L1/L3 and the current `ontology-modeling` Skill, refreshed the
+  GitNexus index, and probed local Codex `0.146.0` app-server schemas. Selected app-server
+  `thread/start`, `turn/start`, `turn/steer`, and `turn/interrupt` as the Codex lifecycle surface.
+  Because separate Threads have no stable Runtime-neutral peer address, selected a narrow
+  run-local Team Transport MCP that carries only recipient and exact free-form text; Adapter
+  mechanically delivers it without semantic routing.
+- Evidence: `codex --version`; `codex app-server generate-json-schema`; R2.2 L0/L1/L3 launchers and
+  designs; GitNexus query for modeling-team launcher and platform lifecycle flows.
+- Outcome/next step: use one isolated app-server process/Thread per Agent for mechanical permission
+  separation; reuse existing platform HTTP lifecycle and narrow admin bootstrap without backend
+  changes.
+
+### 2026-07-31T01:01:35+08:00 — design and shared test plan drafted — Delivery Agent
+
+- Context: functional refinement was already complete and the risk probes resolved the Runtime,
+  communication, and platform-lifecycle assumptions that could otherwise force redesign.
+- Action/decision: drafted the design and one shared test plan. The frozen current-minimal target is
+  an additive `modeling_team/` package, foreground one-run process, two committed Profiles, four
+  real Agent Packages, Codex-only Adapter, exact empty-scope lifecycle, and no Modeling Batch.
+- Evidence:
+  `docs/delivery/designs/2026-07-31-r2-3-001-team-runner-codex-adapter-design.md`;
+  `docs/delivery/test-plans/2026-07-31-r2-3-001-team-runner-codex-adapter-test-plan.md`.
+- Outcome/next step: run mandatory `plan_reviewer`; implementation remains blocked until every
+  evidence-backed Critical/High finding is disposed.
+
+### 2026-07-31T01:14:41+08:00 — plan review Round 1 and accepted revisions — Plan Reviewer and Delivery Agent
+
+- Context: mandatory review checked Codex app-server, Skill loading, same-UID isolation, platform
+  lifecycle, and acceptance coverage against the real repository and Codex `0.146.0`.
+- Action/decision: result `REVISE`. Accepted both High findings: Codex inner `read-only` plus
+  separate homes does not hide sibling same-UID files, and a structured Skill input does not prove
+  a top-level repository Skill was discovered or injected. Revised the design to require one outer
+  allowlisted mount/PID namespace per Agent, distinct broker endpoints, no sibling/host-run mounts,
+  per-Agent Skill staging, `skills/extraRoots/set`, forced exact-path `skills/list`, and direct
+  model-visible injection evidence. Expanded tests with real adversarial sibling-secret,
+  `/proc`, broker-impersonation, unauthenticated-write, and Skill discovery/injection cases.
+- Evidence: Plan Reviewer Round 1; local app-server schemas
+  `SkillsExtraRootsSetParams`, `SkillsListParams`, and `SkillsListResponse`; revised design and
+  shared test plan.
+- Outcome/next step: return the revised plan to the same reviewer for Round 2. No implementation
+  starts until PASS or all further serious findings are disposed.
+
+### 2026-07-31T01:18:54+08:00 — plan review Round 2 and Skill-contract amendment — Plan Reviewer and Delivery Agent
+
+- Context: Round 2 returned `PASS` with both Round 1 High findings closed and no remaining critical
+  assumption. Before freezing development, the main agent rechecked the Package's declared
+  `ontology-modeling` Skill and found its current single-Agent platform-execution wording would
+  contradict Protocol-only writes when reused by R2.3-002.
+- Action/decision: accepted Round 2 PASS, then added one narrow shared-Skill amendment: retain the
+  standalone single-Agent fallback, but when a Profile has a distinct Protocol role, Modeling owns
+  semantics/payloads and Protocol alone calls the platform. Added an automated contradiction check.
+- Evidence: Plan Reviewer Round 2 PASS; `skills/ontology-modeling/SKILL.md`; amended design A19 test.
+- Outcome/next step: obtain a narrow Round 3 confirmation for this post-PASS plan amendment, then
+  freeze the developer handoff.
+
+### 2026-07-31T01:20:36+08:00 — plan review Round 3 PASS and development handoff freeze — Plan Reviewer and Delivery Agent
+
+- Context: Round 3 reviewed only the post-PASS `ontology-modeling` Skill amendment and A19.
+- Action/decision: result `PASS`; no Critical/High issue or remaining key assumption. Froze the
+  reviewed design, shared test plan, implementation baseline `5c0e61c`, current three-document
+  design worktree, planned additive `modeling_team/` surface, existing Skill amendment, and required
+  verification commands for the Requirement Developer.
+- Evidence: Plan Reviewer Round 3 PASS; reviewed design and shared test plan; `git status`.
+- Outcome/next step: Requirement Developer may implement the frozen scope but must not edit the
+  delivery record, design, or shared test plan and must not commit.
+
+### 2026-07-31T01:34:55+08:00 — development-ready handoff — Requirement Developer and Delivery Agent
+
+- Context: the Requirement Developer implemented the frozen additive surface without changing
+  backend/frontend or accepted R2.2 scenarios.
+- Action/decision: added `modeling_team/` contracts, Runner, Codex Adapter, transport broker/MCP,
+  platform scope manager, Profiles, Agent Packages, Tasks, and nine focused tests; amended the
+  existing `ontology-modeling` Skill for Profile-aware Protocol ownership. Developer and main-agent
+  reruns passed the focused unit, Ruff, Profile validation, and diff checks. The developer also
+  reported no-side-effect app-server/Skill/bwrap probes and backend/frontend health.
+- Evidence: `modeling_team/`; `skills/ontology-modeling/SKILL.md`;
+  `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`
+  (`9 tests`, PASS); `uv run --project backend ruff check modeling_team` (PASS); both shared-plan
+  `modeling_team validate` commands (PASS); `git diff --check` (PASS).
+- Outcome/next step: stable worktree is development-ready for independent Round 1. Real three/four
+  Agent runs and real `create`/`existing` scope lifecycles remain unexecuted and are mandatory
+  independent gates, not accepted residual risks.
+
+### 2026-07-31T01:35:29+08:00 — correction: independent live-run ownership — Delivery Agent
+
+- Context: the development-ready report correctly disclosed that no real team/scope run existed,
+  but the shared plan incorrectly assigned creation of the existing-mode run to the independent
+  Tester. Repository rules prohibit independent testing from creating or continuing the run it
+  evaluates.
+- Action/decision: correct the handoff sequence. Requirement Developer must produce, settle, and
+  freeze all real base/specialist/create/existing run evidence and clean its owned fixture.
+  Requirement Tester may execute offline and read-only verification but must not create, steer,
+  mutate, stop, or clean those runs. The earlier development-ready signal now means code-ready
+  only; independent handoff remains pending stable live evidence.
+- Evidence: repository `AGENTS.md`, External Modeling Agent Experiment Rules; corrected shared test
+  plan.
+- Outcome/next step: narrow plan review of the correction, then return to the developer for the
+  missing real runs before independent Round 1.
+
+### 2026-07-31T01:36:28+08:00 — plan review Round 4 PASS — Plan Reviewer and Delivery Agent
+
+- Context: Round 4 reviewed only the corrected live-run producer and independent-evidence boundary.
+- Action/decision: result `PASS`; Requirement Developer owns real-run creation/settlement and
+  fixture cleanup, while Requirement Tester remains non-mutating and independent.
+- Evidence: Plan Reviewer Round 4 PASS; corrected shared test plan; repository `AGENTS.md`.
+- Outcome/next step: return the code-ready worktree to Requirement Developer for all missing real
+  runs and repairs exposed by them; freeze evidence before independent handoff.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
 | --- | --- | --- | --- | --- |
+| 1 | Same-UID Codex read-only homes do not enforce Protocol secret isolation | accepted-high | Codex 0.146.0 sandbox behavior and missing adversarial test | Add per-Agent outer mount/PID namespaces and real access-abuse tests |
+| 1 | Top-level Skill path input does not prove Codex discovery/injection | accepted-high | app-server Skill discovery contract and current top-level `skills/` layout | Add private Skill staging root, discovery preflight, and model-visible injection evidence |
+| 2 | No Critical/High finding; Round 1 findings closed | accepted-pass | revised design and shared test plan | Freeze except for the separately recorded Skill-contract amendment |
+| 3 | No Critical/High finding in Skill-contract amendment | accepted-pass | existing Skill, R2.3-001 role boundary, A19 | Development plan frozen |
+| 4 | No Critical/High finding in corrected independent-run boundary | accepted-pass | AGENTS.md and corrected test plan | Developer must produce runs before independent handoff |
 
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
+| Dev 1 | Worktree after reviewed design/test documents plus `modeling_team/` and Skill amendment | Initial R2.3-001 implementation | 9 unit tests, Ruff, two Profile validations, diff check; developer-reported no-side-effect Runtime probes and service health | development-ready; real acceptance still pending |
+| Dev 2 | Fresh base, specialist, and existing-scope runs | Closed dynamic source traversal; aggregated real app-server message deltas; made terminal reporting idempotent; added hashes, fixed abuse probes, fixture cleanup, and raw evidence | Focused tests and fresh producer runs | ready for independent Round 1 |
+| Dev 3 | Fresh producer evidence after Round 1 | Added a distinct post-settlement Coordinator reporting phase and retained `coordinator-final.jsonl` | Focused regression plus all three real runs | Round 1 lifecycle defect closed |
+| Dev 4 | Fresh producer evidence after Round 2 | Added mechanical Runtime Delivery envelopes with sender, recipient, kind, and exact text; explicitly distinguished `outer-forward`; prohibited specialist re-forwarding | 33 focused tests including Unicode/multiline exact-preservation and fresh base/specialist/existing runs | Round 2 and Round 3 role-contract defects closed |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
+| 1 | First frozen real-run evidence | FAIL | Source traversal could escape the staged Skill boundary; Coordinator output parsing missed `item/agentMessage/delta`; Modeling terminal path could duplicate; adversarial/hash/fixture evidence incomplete | Shared test plan Round 1 |
+| 2 | Fresh evidence after isolation, message, terminal, and evidence repairs | FAIL | Coordinator had no user-facing final summary after session settlement | Shared test plan Round 2 |
+| 3 | Fresh evidence with post-settlement Coordinator final | FAIL | Modeling attempted to re-forward an already delivered outer supplement; broker rejection prevented duplication but did not satisfy the Agent contract | Shared test plan Round 3 |
+| 4 | Frozen `r23001-round4-*` evidence after explicit delivery-envelope repair | PASS | None | Shared test plan Round 4; exact raw deliveries, terminal reports, isolation probes, scope cleanup, zero platform writes, and health checks all passed |
 
 ## Final verification
 
-- Required checks: pending
-- Runtime/restart health: pending
-- Documentation/status sync: pending
-- Cleanup: pending
-- Residual risks and follow-ups: pending
+- Required checks: `33 passed, 7 subtests passed`; Ruff PASS; base and specialist Profile
+  validations PASS; `git diff --check` PASS.
+- Runtime/restart health: no backend or frontend source changed, so no restart was required.
+  The managed service remained active; backend `/api/health` and frontend `/` returned healthy
+  responses during independent acceptance and final closeout.
+- Documentation/status sync: the reviewed design, shared test plan with four chronological rounds,
+  this append-only record, and the authoritative R2.3 requirement status are synchronized.
+- Cleanup: all three accepted runs are `CLEANED`; all 10 Agent PIDs are gone; private Runtime
+  credentials and sockets were destroyed; exact run keys were revoked; producer-owned Projects and
+  the existing-mode fixture were deleted and verified absent.
+- Accepted retained evidence:
+  `workspaces/modeling-runs/r23001-round4-base-envelope`,
+  `workspaces/modeling-runs/r23001-round4-specialist-envelope`, and
+  `workspaces/modeling-runs/r23001-round4-existing-envelope`.
+- Residual risks and follow-ups: R2.3-001 proves Runtime mechanics and interoperability without
+  actual ontology modeling. Modeling and semantic retrieval quality remain the explicit acceptance
+  target of R2.3-002 and must not be inferred from this delivery.
 
 ## Retrospective
 
-- Scope or design deviations: pending
-- Rework and root causes: pending
-- What shortened or delayed delivery: pending
-- Reusable lessons: pending
+- Scope or design deviations: none from the final reviewed current-minimal design. The implementation
+  remained repository-local and did not add backend tables, APIs, frontend UI, or a semantic state
+  machine.
+- Rework and root causes: four independent rounds were required because real Codex app-server event
+  shapes, post-settlement reporting, and Agent interpretation of forwarded user context could not be
+  accepted from unit tests or broker rejection alone.
+- What shortened or delayed delivery: reusing platform scope/auth helpers, the existing
+  `ontology-modeling` Skill, and deterministic producer/tester ownership shortened implementation.
+  Real raw-rollout inspection delayed closeout but exposed three acceptance-relevant defects before
+  publication.
+- Reusable lessons: make Runtime Delivery metadata model-visible while preserving text exactly;
+  distinguish delivery kinds mechanically; require the Coordinator final only after settlement;
+  and test forbidden Agent attempts in raw Runtime events, not only successful broker deliveries.
+
+### 2026-07-31T04:55:00+08:00 — independent Round 4 PASS and delivery closeout — Requirement Tester and Delivery Agent
+
+- Context: three prior independent rounds found and retained distinct isolation, lifecycle, and
+  role-contract defects. The developer produced fresh evidence after each narrow repair.
+- Action/decision: accepted Round 4 PASS for the final frozen base, specialist, and existing-mode
+  runs. Marked R2.3-001 delivered without extending it into ontology modeling or R2.3-002 quality
+  acceptance.
+- Evidence: shared test plan Round 4; the three retained `r23001-round4-*` run directories; 33
+  focused tests plus 7 subtests; Ruff and Profile validations; exact delivery envelopes; one
+  settlement and one later Coordinator final per run; fixed isolation probes; zero platform writes;
+  producer-owned cleanup; backend and frontend health.
+- Outcome/next step: commit and publish the accepted R2.3-001 implementation and documentation.
+  R2.3-002 remains the next separately refined requirement.

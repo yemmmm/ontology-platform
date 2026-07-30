@@ -1,0 +1,18 @@
+schema_version: 1
+profile_id: base-three-agent
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+communication:
+  - from: coordinator
+    to: [modeling, protocol]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+parameters: {}

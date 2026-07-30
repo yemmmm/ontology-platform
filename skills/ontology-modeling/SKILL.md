@@ -5,9 +5,21 @@ description: Build or update an evidence-grounded ontology by discovering conseq
 
 # Ontology Modeling
 
-Use one modeling Agent to own source interpretation, clarification, semantic design, and every
+Use one Modeling Agent to own source interpretation, clarification, semantic design, and every
 modeling payload. Use the platform for deterministic validation, persistence, provenance,
 governance, and retrieval. Do not insert a role Harness between them.
+
+## Team Profile execution boundary
+
+This Skill has one semantic method, but the selected Profile determines who executes platform
+requests. When the frozen Profile has a distinct Protocol Agent, the Modeling Agent owns all
+business interpretation and the complete semantic payload, then sends that payload unchanged to
+Protocol. Protocol alone performs public platform/MCP calls and returns exact platform results.
+The Modeling Agent must not call platform tools in that Profile.
+
+When one Agent legitimately holds both Modeling and Protocol responsibilities, it may follow the
+standalone end-to-end flow below. This boundary does not add Runner, roster, dispatch, Runtime, or
+candidate-approval mechanics to the Skill.
 
 ## Establish the contract
 

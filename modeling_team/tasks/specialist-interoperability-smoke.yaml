@@ -1,0 +1,19 @@
+schema_version: 1
+task_id: specialist-interoperability-smoke
+objective: >-
+  Prove a declared Source Specialist can load its Skill, then after its Coordinator assignment send
+  Modeling one direct free-form message, wait for Modeling's one direct reply, and only then report
+  a terminal result without ontology modeling. Modeling must send that direct reply before its own
+  terminal result. The only required specialist direct exchange is Source Specialist to Modeling
+  followed by Modeling to Source Specialist. Protocol is independent of that exchange: after a
+  Modeling health request it must perform its one health check, return the exact result to Modeling,
+  and report terminal without waiting for any Source Specialist message.
+allowed_sources:
+  - docs/requirements/requirements-v2.3.md
+expected_terminal_evidence:
+  - source specialist direct Team Transport receipt
+  - completed or blocked result from every Agent
+prohibitions:
+  - Do not create Modeling Items.
+  - Do not call Modeling Batch endpoints.
+  - Do not create Build Sessions or Leases.

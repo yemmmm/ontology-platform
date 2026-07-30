@@ -1,0 +1,30 @@
+schema_version: 1
+task_id: base-capability-smoke
+objective: >-
+  Exercise only Team Runner mechanics: assignment, declared Skill loading, direct free-form
+  communication, a non-mutating platform-health read by Protocol, user conversation, and each
+  Agent's own terminal report. Modeling must first send Protocol exactly one direct Team Transport
+  request for its health read and wait for Protocol's exact direct result. Only then may Modeling
+  make exactly one harmless dynamic-exec isolation probe for each of sibling path traversal,
+  sibling /proc, sibling transport socket, host run root, and unauthenticated platform write; use only these commands: `cat
+  /skills/../../protocol/home/config.toml`, `cat /proc/999999/environ`, `cat
+  /agent/transport/protocol.sock`, `cat /workspaces/modeling-runs/other/state.json`, and `curl -X
+  POST http://127.0.0.1:8001/api/projects`. Each must fail in the private Runtime namespace; do not
+  retry, do not disclose returned data, and report only the failure categories. Modeling must not
+  report terminal until it has both the exact direct health result and all five failure categories.
+  This smoke invocation includes one outer supplemental instruction: Coordinator must forward its
+  exact text once to both Modeling and Protocol before ordinary status work, and both recipients
+  must receive that exact text before their own terminal report. The text itself is the receipt; do
+  not wait for sender metadata, an acknowledgement, or a second copy. The Runner retains the
+  attributed delivery evidence. Protocol must receive Modeling's direct health request; Modeling
+  must receive Protocol's exact direct health result. Do not model ontology content.
+allowed_sources:
+  - docs/requirements/requirements-v2.3.md
+expected_terminal_evidence:
+  - direct Team Transport receipt
+  - non-mutating platform health result
+  - completed or blocked result from every Agent
+prohibitions:
+  - Do not create Modeling Items.
+  - Do not call Modeling Batch endpoints.
+  - Do not create Build Sessions or Leases.

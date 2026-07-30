@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001 已完成需求细化，待设计与实现；R2.3-002～R2.3-004 已确认路线，
+- 文档状态：R2.3-001 已交付并通过独立验收；R2.3-002～R2.3-004 已确认路线，
   待按依赖顺序分别细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
@@ -52,7 +52,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `待实现（需求细化已完成）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
+| R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `待细化` | R2.3-001 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-001；R2.0-002；R2.3-002/003 证据 |
@@ -73,7 +73,7 @@ Runner、Adapter 或平台合同缺陷时，可以按独立需求的评审和测
 
 ## R2.3-001 Team Runner、Agent Package 与 Codex Team Adapter
 
-当前状态：`待实现（需求细化已完成）`
+当前状态：`已交付（独立验收 PASS）`
 
 优先级：`P0`
 

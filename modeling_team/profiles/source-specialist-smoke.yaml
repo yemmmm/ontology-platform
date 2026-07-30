@@ -1,0 +1,22 @@
+schema_version: 1
+profile_id: source-specialist-smoke
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+  - agent_id: source-specialist
+    package: source-specialist
+communication:
+  - from: coordinator
+    to: [modeling, protocol, source-specialist]
+  - from: modeling
+    to: [coordinator, protocol, source-specialist]
+  - from: protocol
+    to: [coordinator, modeling, source-specialist]
+  - from: source-specialist
+    to: [coordinator, modeling, protocol]
+parameters: {}
