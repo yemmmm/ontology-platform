@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
 - Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:41:05+08:00
+- Last updated: 2026-07-30T11:44:45+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -598,3 +598,18 @@
   typed-variable-flow module.
 - Outcome/next step: define the comparison baseline required to support an L3 modeling-quality
   improvement claim.
+
+### 2026-07-30T11:44:45+08:00 — L3 comparison claim removed — User + Delivery Agent
+
+- Correction to the previous next step: the user does not require a single-Agent comparison or a
+  claim that the three-Agent architecture improves modeling quality.
+- Frozen target: run the complete `C -> B -> A` business slice through the three-Agent architecture
+  once and produce a real, reviewable end-to-end modeling result.
+- Non-goals: no fresh single-Agent control, paired A/B run, repeated-success measurement,
+  statistical uplift claim or Runtime comparison.
+- Quality boundary retained: “run through” still requires the resulting model to support the
+  frozen business outcome through platform validation and governed semantic retrieval; a merely
+  completed Agent transcript or successful Batch transport is insufficient.
+- Historical evidence role: M1/M6 remain source and acceptance references, not a comparison group
+  used to claim architectural superiority.
+- Outcome/next step: define the minimum end-to-end L3 completion gate.
