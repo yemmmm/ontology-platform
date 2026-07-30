@@ -308,6 +308,24 @@ L1 通过后直接细化 L3，不再单独设计、实施或验收 L2：
 L3 的端到端完成门和评测设施范围仍需逐项细化，不能因合并 L2 而自动扩大。L3 只要求一轮
 三 Agent 真实业务切片成功证据，不要求重复成功率、统计显著性或 Runtime 横向比较。
 
+#### L3 最小完成门
+
+1. 使用全新的建模协调、建模和平台协议 Agent Session 以及全新的运行目录、Project、Ontology
+   和 Build Session；团队看不到历史答案型产物或 `tester-only`；
+2. 三个 Agent 按确认的职责完成协作，只有平台协议 Agent 调用平台写 MCP，Host 不代做本体或
+   协议语义决策；
+3. 候选通过正式 Modeling Batch `dry_run -> apply_atomic` 写入，workspace version 前进，
+   validation `conforms=true` 且 reasoning `consistent=true`；
+4. 通过现有通用查询能力从平台事实取得完整 `C -> B -> A` 已发布影响路径，Current Draft 不混入
+   当前发布链，资料无法确定的关键事实保留为可查询的显式未知而不是由 Agent 补造；
+5. 运行中自然出现的机械、平台状态或语义错误按三 Agent 职责正确路由；没有自然出现的错误不要求
+   为 L3 单独建设验收程序或完整故障注入矩阵；
+6. Agent 事件、平台 MCP 调用、Batch receipt、Session/Lease、输入哈希、临时凭据撤销、资源清理
+   和常驻服务健康证据可直接复核；
+7. 不编写新的自动 Judge、Consumer、mutation 或专用验收程序。交付 Agent 或独立验收 subagent
+   使用保留的原始事件、平台 receipt、现有查询结果和清理证据直接完成验收，并把结果追加到共享
+   测试计划与交付记录。
+
 ### 与既有需求的关系
 
 - v1.0 R-003/R-004/R-008 继续提供 Build Session、Modeling Batch、认证和 Project 隔离；

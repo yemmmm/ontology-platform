@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
 - Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:44:45+08:00
+- Last updated: 2026-07-30T11:46:55+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -613,3 +613,21 @@
 - Historical evidence role: M1/M6 remain source and acceptance references, not a comparison group
   used to claim architectural superiority.
 - Outcome/next step: define the minimum end-to-end L3 completion gate.
+
+### 2026-07-30T11:46:55+08:00 — L3 completion and acceptance mode confirmed — User + Delivery Agent
+
+- User decision: accept the proposed minimum semantic completion gate and do not build an automated
+  acceptance program; the Delivery Agent or an acceptance subagent may inspect and decide the run.
+- Completion gate: fresh isolated three-Agent execution; role-correct collaboration; formal Batch
+  write; conforming validation; consistent reasoning; governed query recovery of the published
+  `C -> B -> A` impact path; draft exclusion; explicit unknown preservation; auditable cleanup and
+  healthy resident services.
+- Acceptance evidence: retain raw Agent events, MCP calls, platform receipts, Session/Lease state,
+  workspace transitions, existing generic query output, key revocation and resource cleanup.
+- Non-goals: no new Judge executable, Consumer program, mutation suite, comparison harness or
+  dedicated acceptance engine. Existing platform APIs/MCP and direct evidence inspection remain
+  allowed.
+- Delivery-process interpretation: an independent requirement-tester subagent can perform the
+  manual evidence review and append its round to the shared test plan without creating new
+  acceptance code.
+- Outcome/next step: confirm how hidden business-gap answers are released during the fresh L3 run.
