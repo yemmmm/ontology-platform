@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：L0 已实现并通过独立验收；L1–L3 待细化
+- 文档状态：L0、L1 已实现并通过独立验收；L2–L3 待细化
 - 基础版本：`docs/requirements/requirements-v2.1.md`
 - 关联版本：`docs/requirements/requirements-v1.0.md`、`docs/requirements/requirements-v1.1.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -33,7 +33,7 @@ Session 承担。
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0 已实现；L1–L3 待细化 | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
+| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0、L1 已实现；L2–L3 待细化 | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
 
 ## R2.2-001 本体建模团队三 Agent 协作
 
@@ -205,11 +205,88 @@ L0 只验证架构可运行，不执行真实本体写入，也不证明建模�
 - 临时 Project-scoped `read` key 已撤销，隔离与审计门通过；
 - 21 项自动化测试和独立测试 Round 4 PASS。
 
+### L1：版本状态简单业务切片的真实写入
+
+L1 复用 v2.1 的 Dify 固定资料，但不直接建模完整的 Workflow-as-Tool `C -> B -> A`
+影响传播切片。当前选择其中更小的 **Workflow 版本状态** 切片，只回答：
+
+- 一个 Workflow 的工作版本和当前线上版本如何区分；
+- 发布前的 Current Draft 为什么不能与 Latest Version 混为同一状态；
+- 一个具体 Workflow 可以同时保留一个合成 Current Draft 和一个合成 Latest Version，且查询能够
+  明确返回两者不同的业务含义。
+
+Agent 可见资料只包含 v2.1 固定快照中的 Version Control 官方页面、对应 manifest/来源信息、
+上述业务问题、合成 Workflow 名称和公开平台建模合同。M1–M6 已有 Ontology、Shapes、Batch、
+查询、历史正确模型和隐藏断言均不可见。
+
+L1 分两步执行：
+
+1. `L1-S0 模拟`：在不开放写 MCP、不创建平台资源的条件下，用上述资料重放 L0 的三角色职责。
+   建模 Agent 形成业务/本体候选描述，平台协议 Agent 只把获准候选转换成拟执行的公开命令计划，
+   建模协调 Agent 完成派工和结果路由。该步骤验证 L0 角色边界对真实资料仍然成立，不声明平台
+   写入成功。
+2. `L1-S1 真实写入`：使用全新的协调、建模和协议 Agent Session、运行目录、Project、Ontology
+   与 Build Session。建模 Agent 独立形成候选，建模协调 Agent 发出协议任务；只有单独隔离的
+   平台协议 Agent 获得临时 Project-scoped `model` key，并通过公开 MCP 完成 Build Session、
+   Lease、Modeling Batch `dry_run`/`apply_atomic`、应用后读取与 Session 收尾。
+
+当前 Codex 不支持已验证的 child-only MCP 配置，因此不得把写 MCP 和 `model` key 放入协调 Agent
+及其建模子 Agent 的共享配置。允许测试 launcher 根据协调 Agent 的显式派工机械启动单独隔离的
+平台协议 Agent；launcher 只准备空 Project/Ontology、传递候选、托管临时 key 和清理资源，不得
+构造 Modeling Items、选择本体结构、修复语义或提供隐藏答案。
+
+L1 不改动常驻 `8001` 的 product write mode。测试 launcher 必须启动独立、唯一端口的
+`rdf_primary` REST 环境，并让协议 Agent 的 stdio MCP 使用相同 PostgreSQL、Oxigraph 和
+`rdf_primary` 配置；团队启动前先验证该配置，否则 fail-fast。宿主可通过受审计的本地 bootstrap
+创建一把不进入任何 Agent namespace 的临时 org-admin key，仅用于空 Project/Ontology 准备、
+Project-scoped `model` key 创建/撤销、Project 删除和清理验证。两把 key 必须分别追踪并在所有
+终态撤销。
+
+协议 Agent namespace 不得挂载 `backend/.env` 或包含长期平台 key 的宿主配置。stdio MCP 只挂载
+净化后的应用代码和运行依赖，通过本轮进程环境取得临时 `model` key、数据库/图存储连接和
+`rdf_primary` 模式；缺少本轮 key 时必须认证失败，不能回退到宿主 `.env`。
+
+L1 最小验收：
+
+1. L1-S0 使用真实版本资料完成三角色模拟，且没有平台写入；
+2. L1-S1 的建模协调 Agent 与建模 Agent 看不到写 MCP、临时 key、宿主仓库和 tester-only；
+3. 平台协议 Agent 只看到获准候选、公开协议和当前平台响应，且是唯一执行平台写调用的 Agent；
+4. 协议 Agent 创建 Build Session、取得 Lease，并对同一不可变候选先完成 `dry_run`，再完成
+   `apply_atomic`；workspace version 确实前进；
+5. 应用结果至少表达 Workflow、Workflow Version、Current Draft 与 Latest Version 的可区分
+   语义，并能通过一个通用 read model 或 scoped query 读取；
+6. 至少一个与版本状态有关的最小约束由平台确定性验证，不能只写入无约束标签；
+7. Agent 事件、MCP 调用、Batch receipt、Session/Lease 状态、输入哈希、凭据撤销和资源清理均可
+   追溯，且无现有答案材料泄漏；
+8. host-admin 与 protocol-model 两把临时 key 隔离、分别撤销，协议 namespace 看不到
+   `backend/.env` 或其他平台凭据；
+9. 自动化回归、真实 Codex 建模证据和独立测试 PASS；真实运行的最终验收可以由交付 Agent 与
+   独立测试 Agent 直接复核平台 receipt、语义读取和清理证据，不要求再实现一套自动 Judge；
+   独立 `rdf_primary` 环境退出、清理后常驻服务健康。
+
+L1 不要求建模 Tool Invocation、Binding、变量使用、Change Set、传递影响路径、Consumer/Judge、
+mutation、重复成功率或证明团队已提升完整业务切片的建模质量。这些仍属于后续 L2/L3。
+
+实现结果（2026-07-30）：
+
+- 使用 v2.1 固定 Version Control 页面完成 Workflow 版本状态简单切片，未建模完整
+  Workflow-as-Tool 影响链；
+- `L1-S0` 在平台资源创建前完成 Coordinator、Modeling Agent、Protocol Planning Agent
+  三角色无写入模拟；
+- `L1-S1` 中只有隔离的 Platform Protocol Agent 调用平台 MCP，真实完成 Build Session、
+  Lease、不可变 Batch `dry_run -> apply_atomic`、负向约束验证、读取和 Session 收尾；
+- 平台读取返回独立的 Workflow、Current Draft、Latest Version 以及分别连接到两种状态的两个
+  Workflow Version；Shape 要求每个 Version 恰有一个所属 Workflow 和一个版本状态；
+- 运行 `l1-i` 的自动 rollout 统计把同一运行目录中的 S0 children 混入 S1，因而误报
+  `INCONCLUSIVE`。交付 Agent 和独立测试 Agent 直接复核原始 rollout、MCP receipt、Batch、
+  workspace、语义读取及清理证据后判定 L1 `PASS`；该统计问题仅作为非阻断测试工具维护项；
+- 15 项 L1 回归、21 项 L0 回归、Ruff、常驻服务健康检查和独立测试 Round 2 PASS；临时 Project
+  已删除，host-admin 与 protocol-model key 均已撤销。
+
 ### 后续阶段
 
-L0 通过后另行细化：
+L1 通过后另行细化：
 
-- L1：平台协议 Agent 使用 Build Session、Lease 和 Modeling Batch 完成一次真实 dry-run/apply；
 - L2：建模协调 Agent 在格式错误、平台状态冲突和语义冲突之间完成正确路由；
 - L3：使用真实业务切片验证三 Agent 协作是否提升建模质量；
 - Runtime 复现：仅在需要时用 Pi 或其他 Runtime 重放同一团队合同。

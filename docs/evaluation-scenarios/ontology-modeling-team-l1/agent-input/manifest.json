@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "source": {
+    "snapshot": "dify-foundations-2026-07-18-5396c1a",
+    "path": "official/en/cloud/use-dify/build/version-control.mdx",
+    "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b"
+  },
+  "files": [
+    {"path": "coordinator-task.md", "sha256": "de0b2992cfb3989931c3b1a51c83485c654aac2e479e42aaab9e78de4e7f7930"},
+    {"path": "official/version-control.mdx", "sha256": "dc7b5b77a134458051cd62652e271d9aa2cd6951b73a65425519f7201a23166b"},
+    {"path": "public-protocol.md", "sha256": "9c407b2d4293a7f0eceab6015659321352e633df6a238abd5389cfba8bfeaa6d"}
+  ]
+}

@@ -1,14 +1,17 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: in-progress
+- Status: completed through L1; L2-L3 pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T01:46:00+08:00
-- Design: `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`
-- Shared test plan:
-  `docs/delivery/test-plans/2026-07-29-r2-2-001-ontology-modeling-team-l0-test-plan.md`
+- Last updated: 2026-07-30T10:40:00+08:00
+- Designs:
+  `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
+  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
+- Shared test plans:
+  `docs/delivery/test-plans/2026-07-29-r2-2-001-ontology-modeling-team-l0-test-plan.md`;
+  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l1-test-plan.md`
 - Delivery baseline: `373b9f0`; clean worktree
-- Delivery commit: pending
+- Delivery commit: `Complete ontology modeling team L1` (resolve hash from git history)
 
 ## Confirmed contract
 
@@ -319,3 +322,246 @@
   current Codex child-tool behavior and failure-safe evidence handling extended runtime validation.
 - Reusable lessons: keep delivery orchestration, semantic modeling, and platform protocol execution
   as distinct responsibilities; do not promote Runtime startup details into domain architecture.
+
+### 2026-07-30T08:50:05+08:00 — L1 source and current-state audit — Delivery Agent
+
+- Context: the user requested completion of v2.2 L1 in two stages: first use a simple scenario to
+  verify that the implemented L0 collaboration contract remains correct, then attempt modeling with
+  the v2.1 business-slice material.
+- Baseline: commit `816a2b0` (`Implement ontology modeling team L0`), clean worktree. The
+  authoritative v2.2 requirement marks L0 implemented and defines L1 only as one real Build
+  Session/Lease/Modeling Batch dry-run/apply. The existing L0 design and test plan explicitly block
+  shared write MCP because current Codex has not proven per-Agent MCP provisioning.
+- Reusable business input: v2.1 R2.1-001 M1 freezes the Workflow-as-Tool impact slice, immutable
+  source package, synthetic C -> B -> A fixture, semantic questions, constraints, inference and
+  query acceptance. Existing M1-M4/M6 answer artifacts and tester-only expectations must remain
+  hidden from the fresh modeling team.
+- Current/target delta: L0 proves role separation, isolation, one read-only MCP call and
+  same-session continuation. L1 must prove that only the Platform Protocol Agent performs real
+  project-scoped write operations while the coordinator and Modeling Agent retain their semantic
+  roles, first on a non-answer-bearing simple scenario and then against the authorized v2.1 slice.
+- Non-goals retained: no backend Agent Runtime, management UI, Consumer/Judge/mutation as production
+  roles, Dify-specific platform code, Pi parity, generalized credential brokering, L2 conflict
+  routing matrix or L3 repeated modeling-quality claim.
+- Outcome/next step: resolve whether business-slice success is an L1 completion gate or only a
+  best-effort follow-up, then freeze the L1 contract, design and shared test plan.
+
+### 2026-07-30T09:20:00+08:00 — L1 refinement and plan freeze — Delivery Agent + user
+
+- User decision: use the v2.1 material but select a simpler modeling slice instead of treating the
+  full C -> B -> A impact model as the first L1 target.
+- Frozen slice: Dify Workflow version state, limited to the distinction between Current Draft and
+  Latest Version for one explicitly synthetic Workflow. Tool Invocation, Binding, Change Set,
+  variable-use propagation and impact analysis remain out of scope.
+- Two-stage contract: first run a no-write L1-S0 simulation on the real source to verify L0 role
+  boundaries; then run a fresh L1-S1 team in which only an independently isolated protocol Agent
+  can execute Build Session, Lease and Modeling Batch dry-run/apply.
+- Risk disposition: L0 proved current Codex child-only MCP configuration ineffective. L1 therefore
+  must not share write MCP with coordinator/modeler. A deterministic launcher may start the
+  coordinator-authorized protocol task in a separate OS namespace and own only credentials,
+  resource preparation, process state, audit and cleanup.
+- Evidence:
+  `docs/requirements/requirements-v2.2.md`;
+  `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`;
+  `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l1-test-plan.md`;
+  pinned v2.1 source
+  `docs/evaluation-corpora/dify-foundations/snapshots/dify-foundations-2026-07-18-5396c1a/official/en/cloud/use-dify/build/version-control.mdx`.
+- Outcome/next step: mandatory plan review before scenario implementation.
+
+### 2026-07-30T10:00:00+08:00 — L1 plan review Round 1 REVISE — Plan Reviewer + Delivery Agent
+
+- Result: `REVISE`; three evidence-backed High findings, no Critical finding.
+- Finding 1 disposition: `accepted-high`. Resident `8001` and default stdio MCP resolve
+  `legacy_only`, while canonical Modeling Batch rejects that mode. The plan now requires a unique
+  isolated `rdf_primary` REST runtime and matching sanitized MCP environment, with a pre-credential
+  fail-fast mode probe; resident `8001` is not modified.
+- Finding 2 disposition: `accepted-high`. The current long-term MCP principal is Project-scoped
+  `read` and no bootstrap admin identity is configured. The plan now defines a host-only ephemeral
+  org-admin bootstrap, separated from the protocol Project-scoped model key, with formal REST scope
+  preparation/deletion and exact dual-key revocation.
+- Finding 3 disposition: `accepted-high`. L0 mounts the whole backend and current `backend/.env`
+  contains another platform key. L1 now binds only sanitized application code/runtime, leaves
+  `/backend/.env` absent, injects only the run key and required platform settings, and requires MCP
+  authentication failure without the run key.
+- Additional freeze: every applied candidate uses identical Items/client batch for dry-run then
+  apply; a negative dry-run proves Shape rejection; post-apply acceptance uses generic read model
+  or scoped SPARQL.
+- Outcome/next step: focused plan re-review of the corrected runtime, bootstrap and secret-mount
+  boundaries.
+
+### 2026-07-30T10:20:00+08:00 — L1 plan review Round 2 PASS — Plan Reviewer + Delivery Agent
+
+- Result: `PASS`; no remaining Critical/High finding and no unresolved key assumption.
+- Verified closures: unique isolated `rdf_primary` REST plus matching sanitized MCP configuration;
+  pre-credential mode probe and resident `8001` protection; host-only ephemeral org-admin separated
+  from Project-scoped protocol model key with dual revocation; absent `/backend/.env` and no
+  credential fallback; immutable dry-run/apply pairs, negative dry-run and generic read acceptance.
+- Additional live probe: a bubblewrap namespace mounting only `backend/app` and the existing
+  venv/runtime, with no `.env`, resolved `Settings.semantic_product_write_mode` to `rdf_primary`.
+- Development baseline: commit `816a2b0` plus reviewed requirement/design/test-plan/record changes.
+  Implementation ownership is limited to a new
+  `docs/evaluation-scenarios/ontology-modeling-team-l1/` surface and focused tests; backend/frontend
+  product symbols are not authorized for modification.
+- Required developer checks: L1 focused unittest, L0 regression unittest, scenario Ruff,
+  `git diff --check`, sanitized config/auth probes, real S0/S1 when dependencies are available, and
+  pre/post resident `8001`/`5173` health.
+- Outcome/next step: requirement developer implements the reviewed scenario without editing this
+  record or committing.
+
+### 2026-07-30T11:10:00+08:00 — L1 development probes and bounded repairs — Developer + Delivery Agent
+
+- First real attempt `l1-live-20260730c`: rejected as non-authoritative before acceptance because
+  the coordinator bwrap inherited PostgreSQL, Oxigraph and product-write environment values despite
+  having no backend/MCP. The defect was classified as launcher role-environment leakage; the run was
+  marked `INCONCLUSIVE` and cleaned. The launcher now uses separate coordinator-minimal and
+  protocol-platform environment allow-lists with a focused regression.
+- Second real attempt `l1-live-20260730d`: `INCONCLUSIVE` runtime/infrastructure defect. The
+  protocol Codex config omitted `default_tools_approval_mode="approve"`, so MCP calls were cancelled
+  before any Build Session or Batch write. The Agent reported `not_attempted`; no semantic result
+  was accepted.
+- Cleanup evidence for run d: owned Project
+  `8dcf00d2-8525-4e7c-b416-75022a5c9a07` deleted; host-admin key
+  `4f9c9d22-160a-4217-b14e-7d33d934b1c0` revoked. Post-delete model-key verification exposed that
+  deletion cascaded the key record before the launcher could prove exact revocation.
+- Repair: set the valid MCP approval mode, explicitly revoke and verify the protocol model key
+  before Project deletion, then delete the Project and self-revoke the host-admin key. Start a
+  completely fresh run; neither c nor d is acceptance evidence.
+- Outcome/next step: continue the bounded fresh run and retain all failed-attempt evidence without
+  expanding the ontology slice.
+
+### 2026-07-30T11:35:00+08:00 — L1 dispatch hash repair — Developer + Delivery Agent
+
+- Attempt `l1-live-20260730e` ended `INCONCLUSIVE` before protocol key creation or any Batch because
+  the coordinator recorded an ordinary JSON file hash while the launcher contract requires the
+  canonical JSON hash.
+- Classification: runtime/infrastructure launcher protocol defect. The launcher rejected the
+  dispatch rather than weakening its integrity check.
+- Cleanup: owned Project `e6131205-7472-4ef5-b05f-19012326a733` deleted; host-admin key
+  `b81bd01f-f121-4747-a438-7d6594d6c4c9` revoked; no protocol key existed.
+- Repair: the launcher mechanically replaces only the dispatch's candidate hash with the
+  independently computed canonical hash. It does not alter the candidate, task ID or requested
+  outcome. A fresh run is required.
+
+### 2026-07-30T12:05:00+08:00 — L1 development-ready, real run inconclusive — Developer + Delivery Agent
+
+- Result: `DEVELOPMENT-READY`, not acceptance PASS. New implementation is confined to
+  `docs/evaluation-scenarios/ontology-modeling-team-l1/`: launcher, fixed manifest/source,
+  S0/S1 role prompts/config, README and 11 focused tests.
+- Implemented boundaries: separate coordinator/protocol OS namespaces; coordinator has no platform
+  env/MCP; protocol has sanitized `/backend/app` plus venv; isolated `rdf_primary` REST/MCP mode
+  probe; host-only ephemeral admin; canonical dispatch; protocol scope descriptor; explicit model
+  key revoke before Project deletion; bounded timeout evidence normalization.
+- Checks: L1 unittest `11/11`, L0 regression `21/21`, scenario Ruff, `git diff --check`, resident
+  backend `8001` and frontend `5173` pre/post health all PASS.
+- Attempt `l1-live-20260730f`: `INCONCLUSIVE` runtime/infrastructure. Protocol Codex reached its
+  bounded 300-second terminal timeout and produced no Modeling Batch. Cleanup succeeded: Project
+  `2a5c32a6-7de7-4244-85e4-f8c370cf0ad8` deleted; model key
+  `a9371ce7-9cdd-4b60-be9a-6180c9f391eb` revoked; host-admin key
+  `29f4ad16-0d68-47b7-9715-f4033df9f396` revoked.
+- Stable handoff: uncommitted reviewed worktree after f cleanup. No backend/frontend/L0 product
+  files changed. Independent testing must review the protocol prompt/runtime evidence and may not
+  call L1 complete without a fresh real S1 PASS.
+
+### 2026-07-30T12:30:00+08:00 — L1 independent test Round 1 FAIL — Requirement Tester + Delivery Agent
+
+- Result: `FAIL`; shared test plan now contains Independent Round 1. L1 tests `11/11`, L0
+  regressions `21/21`, Ruff, `git diff --check`, resident backend/frontend and systemd health PASS.
+- Confirmed P1 `L1-S0-resource-order`: launcher created isolated REST, admin key, Project and
+  Ontology before S0. This violates the explicit no-resource S0 contract. Disposition:
+  `accepted-high`; S0 must complete and be audited before any platform credential/resource setup.
+- Confirmed P1 `L1-coordinator-closure`: protocol result was never returned to the same S1
+  coordinator Session; launcher would validate and mark PASS directly. Disposition:
+  `accepted-high`; preserve the S1 coordinator thread ID, resume it with the normalized result and
+  require an explicit closure marker.
+- Confirmed P1 `L1-terminal-observability`: protocol execution used one blocking 300-second wait
+  and f retained no trustworthy first-response/progress/terminal evidence. Disposition:
+  `accepted-high`; stream JSONL, bound first response separately from terminal completion, retain
+  partial evidence and terminate promptly on provider/Agent terminal error.
+- Additional main-agent defect `L1-self-report-trust`: current PASS path validates only the
+  protocol Agent's normalized JSON claims. It does not independently reconcile rollout MCP calls,
+  Build Session/Lease/Batch receipts, workspace versions, negative validation and post-apply read
+  against platform state. Disposition: `accepted-high` under L1-06/L1-08–15; launcher/tester must
+  derive acceptance from actual Agent events and platform facts, not self-report.
+- Blocked real cases: Batch dry-run/apply, workspace advance, generic read, negative constraint,
+  Build Session/Lease terminal state, protocol-only MCP caller and remaining failure injections.
+- Outcome/next step: repair the four confirmed defects, add focused regressions, then hand a fresh
+  stable state to Independent Round 2. Round 1 evidence remains unchanged.
+
+### 2026-07-30T14:10:00+08:00 — L1 Round 1 repair and real attempt h — Developer + Delivery Agent
+
+- Repairs implemented in the scenario surface: S0 now precedes all platform setup and audits three
+  distinct no-MCP rollouts; S1 preserves/resumes the coordinator thread for explicit closure;
+  execution streams JSONL with separate first-response/terminal waits; platform facts reconcile
+  Session/Lease, immutable Batch attempts, negative dry-run and generic read instead of trusting
+  only Agent claims.
+- Offline checks after repair: L1 focused tests `14/14`, L0 regression `21/21`, Ruff and
+  `git diff --check` PASS; resident `8001`/`5173` healthy.
+- Attempt `l1-g`: `INCONCLUSIVE` before platform resource creation because the new S0 rollout audit
+  misclassified its evidence. The audit logic was repaired; g is not acceptance evidence.
+- Attempt `l1-h`: `INCONCLUSIVE` runtime/infrastructure terminal timeout after 300 seconds. It
+  passed S0, S1 coordinator dispatch, isolated `rdf_primary` setup, Project/Ontology creation,
+  no-key MCP rejection, Build Session creation, Lease acquisition and real protocol MCP calls.
+- h exposed public mechanical-contract gaps rather than a new business-model decision: an invalid
+  initial checkpoint was retried without it; subsequent structural dry-runs used incorrect
+  same-Batch reference wrappers and Shape fields not supported by the current compiler. No Batch
+  applied before timeout.
+- h cleanup succeeded: Project `48cc5069-08f8-4048-885a-831bfe35f6a0` deleted; protocol model key
+  `9d2e04cb-f326-4934-b58a-769b51109d4a` and host-admin key
+  `596636c0-93e0-4179-9a18-632721303084` revoked.
+- Remaining repair: publish the exact generic `item_ref`, `create_property`/Shape constraint and
+  allowed query-tool mechanics already enforced by the platform; independently prove distinct
+  draft/latest resources and their links from the actual read model. Do not prescribe a complete
+  answer ontology.
+
+### 2026-07-30T10:31:00+08:00 — L1 independent manual acceptance Round 2 PASS — Requirement Tester
+
+- User decision: do not add or use a new automated acceptance program; manually inspect the retained
+  `l1-i` evidence and do not rerun the full modeling task.
+- S0/L0 boundary: `s0-audit.json` records a coordinator with two distinct child rollouts and no
+  platform write. Retained session metadata identifies the children as `modeling_agent` and
+  `protocol_planning_agent`; the S0 transcript contains no ontology MCP event. S0 completed before
+  isolated REST/admin/Project/Ontology setup.
+- Real L1 write: the protocol Agent alone produced 33 ontology MCP events, created Build Session
+  `87d07624-94d1-4a3e-b282-d2708a222a62`, acquired/renewed its Lease, and completed the Session with
+  the Lease released. Coordinator/S1-modeler transcripts contain zero ontology MCP events.
+- Platform receipts: structural Batch `0d89b822-34dc-4e4d-b100-1444a4444f5f` performed immutable
+  `dry_run: validated` then `apply_atomic: applied` under the same client batch/hash and advanced the
+  workspace. The two Version instances performed the same transition in their own immutable Batch.
+  Negative Batch `87f8fcf6-8fbe-4d7d-b69d-01d14bc6e4cd` is dry-run-only, `validation_failed`, and
+  carries a `shacl_violation`.
+- Semantic read: generic asserted entity output contains separate `SyntheticReleaseWorkflow`,
+  `Current Draft`, `Latest Version`, `SyntheticReleaseWorkflow Current Draft`, and
+  `SyntheticReleaseWorkflow Latest Version` resources. The applied Shape requires exactly one
+  Workflow relation and exactly one version-state relation for each Version.
+- Isolation/cleanup: isolated runtime resolves `rdf_primary`; no-key MCP is rejected; protocol model
+  key `8718f0bf-d75d-4423-bafc-36046aa30028` and host-admin key
+  `fdf80384-7504-494b-b0d8-69fffa84d1ee` are separately revoked; owned Project
+  `0eed24b8-7e7e-4b40-8e97-6f13c0a10a69` is deleted; resident backend/frontend and systemd service
+  are healthy.
+- Non-blocking test-tool issue: launcher state remains `INCONCLUSIVE` only because its S1 rollout
+  auditor counted prior S0 rollouts in the shared coordinator home and falsely rejected the single
+  S1 modeling-child identity. Manual metadata proves S1 child
+  `019fb0cc-24cb-7b60-a8d2-b610cdc5b865` under coordinator
+  `019fb0cb-faad-7903-ae75-d3ad4fb4cd55`. Classify this as P2 test-tool accounting maintenance, not a
+  business-modeling failure and not a reason to rerun L1.
+- Outcome: `PASS` for user-requested independent manual L1 acceptance. Shared test plan contains
+  Independent Round 2; l1-i is sufficient evidence for the bounded L1 completion gate. Failure
+  injection/publication-failure/resident legacy-mode cases were not rerun in this manual round.
+
+### 2026-07-30T10:40:00+08:00 — L1 delivery closure — Delivery Agent
+
+- User decision: stop expanding the rollout identity checker and accept the real run through direct
+  Delivery Agent review plus an independent Requirement Tester review.
+- Delivery Agent verification: immutable structural Batch
+  `0d89b822-34dc-4e4d-b100-1444a4444f5f` is `validated -> applied`; negative Batch
+  `87f8fcf6-8fbe-4d7d-b69d-01d14bc6e4cd` is `validation_failed` and not applied; workspace advanced;
+  the generic model distinguishes Workflow, Current Draft and Latest Version. The Build Session
+  completed, its Lease was released, the owned Project was deleted and both temporary keys were
+  revoked.
+- Independent result: Round 2 `PASS (manual acceptance)`. The rollout-count false negative is P2
+  test-tool maintenance and does not reopen the accepted business slice.
+- Final regression baseline: L1 unittest `15/15`, L0 regression `21/21`, scenario Ruff, diff check,
+  backend health, frontend health and `ontology-platform.service` active.
+- Product impact: documentation and the repo-local evaluation scenario only; no backend/frontend
+  product code, migration or service restart is required.
+- Delivery commit subject: `Complete ontology modeling team L1`.
