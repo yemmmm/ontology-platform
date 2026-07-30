@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
 - Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:46:55+08:00
+- Last updated: 2026-07-30T11:56:24+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -631,3 +631,16 @@
   manual evidence review and append its round to the shared test plan without creating new
   acceptance code.
 - Outcome/next step: confirm how hidden business-gap answers are released during the fresh L3 run.
+
+### 2026-07-30T11:56:24+08:00 — L3 conditional answer release confirmed — User + Delivery Agent
+
+- User decision: freeze business-gap answers on the tester side and release an answer only after
+  the Modeling Coordinator Agent identifies the corresponding gap and asks a grounded question.
+- Interaction contract: one question at a time; the Delivery Agent forwards the frozen answer
+  verbatim and does not add a hint, expected ontology shape, hidden acceptance condition or
+  unrequested answer.
+- Unknown handling: a frozen “business cannot confirm” answer is returned unchanged so the team
+  must preserve an explicit unknown instead of receiving a default.
+- Evidence: retain the grounded question, exact answer, resumed coordinator Session identity and
+  resulting model effect for direct acceptance review.
+- Outcome/next step: confirm the bounded retry policy for runtime, protocol and modeling failures.
