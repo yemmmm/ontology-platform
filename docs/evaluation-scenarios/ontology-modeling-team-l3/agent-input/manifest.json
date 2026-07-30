@@ -4,7 +4,7 @@
     {"path": "consumer-questions.md", "sha256": "6318b3a6a4d910168e5c187d1ebc8cbe4df7a85882f69247219e077d65f7d64d"},
     {"path": "coordinator-task.md", "sha256": "1d41dd52b93a75169c5e3dfe65ef785961c933580bf210d9fe221967dca326a3"},
     {"path": "official/tools.mdx", "sha256": "92a97c639fb8d4782e95207cb84ede79b1739ff3abdb9bc1fe384f0741c2c96b"},
-    {"path": "public-protocol.md", "sha256": "bf0a4a7b1e90fe6e44f3b54d08c94e1996ef4953801cd346a74afc3355212ea3"},
+    {"path": "public-protocol.md", "sha256": "c2aa1ddb64c18a1a2bff6f6c2dc1d12a983d43cc99c6ee3449a27c3a629d4e4e"},
     {"path": "sources/exception-handling.md", "sha256": "cc0c69ef7428bd63ed7432ee0a9cae6d9acbca8cb267528a23fbaf0602638d9f"},
     {"path": "sources/interface-notes.md", "sha256": "9cc479c365404cf8230aeb87e609ce164fb2680a87a5c16f45476d8260870e37"},
     {"path": "sources/release-register.md", "sha256": "f5386a00a2a048831ce524ef605aed14c1124a6ac74fb8dc99c5b0a0f777caae"},

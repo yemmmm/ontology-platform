@@ -30,6 +30,7 @@ from app.services.operation_semantics import (
     operation_vocabulary,
     validate_operation_payload,
 )
+from app.services.semantic_lineage_identity import InvalidLineageStatement, canonical_iri
 
 
 class CommandCompilerError(RuntimeError):
@@ -69,6 +70,16 @@ def _required(payload: dict[str, Any], key: str) -> Any:
     if key not in payload:
         raise InvalidCommandPayload(f"Missing required field: {key}")
     return payload[key]
+
+
+def _required_absolute_iri(payload: dict[str, Any], key: str) -> str:
+    value = _required(payload, key)
+    if not isinstance(value, str):
+        raise InvalidCommandPayload(f"{key} must be an absolute RDF IRI")
+    try:
+        return canonical_iri(value)
+    except InvalidLineageStatement as exc:
+        raise InvalidCommandPayload(f"{key} must be an absolute RDF IRI") from exc
 
 
 def _iri_term(iri: str) -> str:
@@ -1428,9 +1439,9 @@ def compile_create_relation(
     ObjectProperties (defined on the ontology graph).
     """
     ontology_id = _required(payload, "ontology_id")
-    source_iri = _required(payload, "source_entity_iri")
-    relation_type_iri = _required(payload, "relation_type_iri")
-    target_iri = _required(payload, "target_entity_iri")
+    source_iri = _required_absolute_iri(payload, "source_entity_iri")
+    relation_type_iri = _required_absolute_iri(payload, "relation_type_iri")
+    target_iri = _required_absolute_iri(payload, "target_entity_iri")
 
     graph_iri = _data_graph_iri(ns, ontology_id)
     insert_quads: list[tuple[str, str, str, str]] = [
@@ -1459,9 +1470,9 @@ def compile_delete_relation(
 ) -> CompiledCommand:
     """Stage 2 §5.4 — remove the specific ``(source, predicate, target)`` triple."""
     ontology_id = _required(payload, "ontology_id")
-    source_iri = _required(payload, "source_entity_iri")
-    relation_type_iri = _required(payload, "relation_type_iri")
-    target_iri = _required(payload, "target_entity_iri")
+    source_iri = _required_absolute_iri(payload, "source_entity_iri")
+    relation_type_iri = _required_absolute_iri(payload, "relation_type_iri")
+    target_iri = _required_absolute_iri(payload, "target_entity_iri")
 
     graph_iri = _data_graph_iri(ns, ontology_id)
     deletes = [

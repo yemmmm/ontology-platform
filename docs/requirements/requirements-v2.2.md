@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 文档状态：L0、L1 已实现并通过独立验收；独立 L2 已取消并合并到 L3；L3 已实施但三次启动均未形成真实建模 Agent，当前暂停、未通过
+- 文档状态：R2.2-001 L0、L1、L3 已实现并通过独立验收；独立 L2 已取消并合并到 L3
 - 基础版本：`docs/requirements/requirements-v2.1.md`
 - 关联版本：`docs/requirements/requirements-v1.0.md`、`docs/requirements/requirements-v1.1.md`、
   `docs/requirements/requirements-v2.0.md`
@@ -33,7 +33,7 @@ Session 承担。
 
 | ID | 需求 | 优先级 | 当前状态 | 主要依赖 |
 | --- | --- | --- | --- | --- |
-| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | L0、L1 已实现；L3 已实施，`PAUSED / NOT PASSED` | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
+| R2.2-001 | 本体建模团队三 Agent 协作 | P0 | `已实现`（L0、L1、L3 独立验收 PASS） | R2.1-001 M3/M6 隔离证据；R-003、R-004 MCP |
 
 ## R2.2-001 本体建模团队三 Agent 协作
 
@@ -306,8 +306,13 @@ L1 通过后直接细化 L3，不再单独设计、实施或验收 L2：
 - Runtime 复现仅在需要时用 Pi 或其他 Runtime 重放同一团队合同。
 
 L3 合同已经细化并完成首轮实施。L3 只要求一轮三 Agent 真实业务切片成功证据，不要求重复
-成功率、统计显著性或 Runtime 横向比较。当前三次授权启动均未形成可验证的建模 Agent child，
-因此 L3 为 `PAUSED / NOT PASSED`，不构成建模质量结论。
+成功率、统计显著性或 Runtime 横向比较。对前三次启动的复核确认：协调 Agent 的原始 Codex
+rollout 均包含 `spawn_agent`，且对应 child rollout 和 `pending-question.json` 均存在；但 `g`
+没有设置 `agent_type=modeling_agent`，仍属于真实的角色边界 `collaboration/routing` 失败，
+`h/i` 才满足 L0 的角色与 `fork_turns=none` 合同。此前把三次全部判成“没有 child”并汇总为
+`PAUSED / NOT PASSED`，是 L3 启动器误读外层 `codex exec --json` transcript 所致；该汇总结论
+不是 Codex collaboration 的准确事实，也不是建模质量结论。用户已额外授权两次全新启动，L3
+该历史误判已由 append-only 更正证据取代；最终真实运行结果见下文。
 
 #### L3 业务答案释放
 
@@ -323,8 +328,8 @@ L3 合同已经细化并完成首轮实施。L3 只要求一轮三 Agent 真实�
 
 1. 使用全新的建模协调、建模和平台协议 Agent Session 以及全新的运行目录、Project、Ontology
    和 Build Session；团队看不到历史答案型产物或 `tester-only`；
-2. 三个 Agent 按确认的职责完成协作，只有平台协议 Agent 调用平台写 MCP，Host 不代做本体或
-   协议语义决策；
+2. 三个 Agent 按确认的职责完成协作，只有平台协议 Agent 调用平台写 MCP；交付 Agent 可调用
+   repo-local 确定性脚本完成隔离执行、机械留证与清理，但不代做本体或协议语义决策；
 3. 候选通过正式 Modeling Batch `dry_run -> apply_atomic` 写入，workspace version 前进，
    validation `conforms=true` 且 reasoning `consistent=true`；
 4. 通过现有通用查询能力从平台事实取得完整 `C -> B -> A` 已发布影响路径，Current Draft 不混入
@@ -339,13 +344,14 @@ L3 合同已经细化并完成首轮实施。L3 只要求一轮三 Agent 真实�
 
 #### L3 启动与失败策略
 
-- 最多允许三个全新的 L3 团队启动；每次都使用新的 Agent Session、运行目录和平台资源，失败
+- 本轮总计最多允许五个全新的 L3 团队启动；前三次原始证据保留，用户于 2026-07-30 明确增加
+  两次全新启动机会；每次都使用新的 Agent Session、运行目录和平台资源，失败
   作用域不得原地重试或复用；
 - `runtime/infrastructure` 或不改变业务语义的机械 `platform-contract` 失败可以保留证据、完成
   清理、修复窄层问题后重新启动；
 - 如果一次运行已经形成完整建模结果但未通过业务语义完成门，则以 `modeling-quality` 失败停止，
   不得通过暴露隐藏答案、修改 Prompt 后重复尝试或放宽验收标准来刷过；
-- 三次启动耗尽仍无 PASS 时，L3 以未通过暂停并报告；只有一轮同时满足全部最小完成门的真实
+- 五次启动耗尽仍无 PASS 时，L3 以未通过暂停并报告；只有一轮同时满足全部最小完成门的真实
   运行可以作为 L3 PASS 证据，之前的失败记录必须保留。
 
 #### L3 当前实施结果（2026-07-30）
@@ -354,20 +360,49 @@ L3 合同已经细化并完成首轮实施。L3 只要求一轮三 Agent 真实�
   合同、隔离 managed-reasoning 预检、Protocol-only 确定性机械 helper、全局启动账本、历史
   分类更正账本和 21 项离线测试；未修改 backend/frontend 产品代码；
 - `l3-real-20260730g/h/i` 三次启动的业务空 reasoning 预检均成功并完成精确 Project/key/runtime
-  清理，但 coordinator 原始事件均只有空 `receiver_thread_ids` 的 `wait`，没有真实
-  `spawn_agent` child Session；
-- 三次均在业务 Project、Protocol Agent、model key、Modeling Batch 或业务语义写入之前停止。
-  原始 state 的 `runtime/infrastructure / INCONCLUSIVE` 保留不改，append-only 分类账以原始
-  state/transcript SHA-256 绑定并权威更正为
-  `collaboration/routing / PAUSED / NOT_PASSED`；
-- 全局账本已记录三次启动并在任何新 run root、探针或凭据创建前拒绝第四次；真实
-  `first_modeling_started_at` 只有验证到 Modeling Agent child 后才会记录，本轮从未满足，因此
-  20 分钟首次真实建模门也未通过；
+  清理；原始 coordinator rollout 均包含 `spawn_agent`，对应 child rollout 存在，三个
+  `team-work/pending-question.json` 证明建模 Agent 已执行来源分析并提出业务问题；
+- 外层 `audit/coordinator.jsonl` 只汇总出空 `wait.receiver_thread_ids`，L3 特有的
+  `verified_modeling_child()` 错把这个摘要当成权威 child 证据源。L0/L1 已验收路径读取的是
+  `CODEX_HOME/sessions/**/rollout-*.jsonl`；因此既有历史分类更正账本的
+  `collaboration/routing / PAUSED / NOT_PASSED` 结论不再作为当前事实；
+- 修复必须直接复用 L0/L1 的原始 rollout 合同：由 coordinator `spawn_agent` function call、
+  `sub_agent_activity.agent_thread_id` 和 child `session_meta.parent_thread_id` 交叉验证角色、
+  `fork_turns=none` 与父子身份；以 `h/i` 作为正向回归，以 `g` 作为“父子链存在但角色缺失”
+  的负向回归，禁止把 `task_name` 当作 `agent_type`；
+- 全局账本保留前三次启动；版本化执行策略把总上限扩到五次，仅允许两个新 run ID。任何一次
+  已形成完整模型后的 `modeling-quality` 失败仍立即终止后续启动；
 - 独立测试 Round 3 仅判定稳定暂停状态可信。真实三 Agent 协作、问答恢复、Protocol 写入、
   Batch、业务 validation/reasoning、`C -> B -> A` 查询、Draft 排除和 explicit unknown 均未
   执行，L3 不能标记完成；
-- 恢复条件：先证明隔离 coordinator 能创建并返回可验证的 Modeling Agent child identity，
-  更新并复审执行计划，再由用户明确授权新的启动预算；不得直接启动第四次。
+- 恢复执行前必须完成该窄层修复、方案复审和独立离线回归；随后按顺序使用最多两个全新启动，
+  不复用前三次失败作用域，也不修改业务来源、冻结答案或语义完成门。
+
+#### L3 最终真实运行结果（2026-07-30）
+
+- 全局五次建模团队启动额度已用完；最终运行 `l3-real-20260730k` 复用同一个已验证的
+  Coordinator Session `019fb1e6-161e-7692-8ead-26e7b918a64c`、Modeling Agent Session
+  `019fb1e6-3107-70a1-83b0-053f323f44ca`、冻结来源、三个逐次业务答案、批准候选和 Protocol
+  提示词完成，不存在第六次建模启动；
+- 三个业务问题分别确认 B 调用 C 的 Latest published Version、`quality_rating:number` 是
+  `quality_score:number` 的后继表达，以及缺失数值评分时 B 的行为无法由业务方确认；最终模型
+  将最后一项保留为可查询的显式未知；
+- Protocol 最终应用三个不可变 Batch，独立负例 Batch 在 dry-run 被 Shape 拒绝且未改变
+  workspace；Build Session 完成并释放 lease，validation `conforms=true`，reasoning
+  `succeeded / consistent=true`；
+- 通用 read model 证据取得已发布 `C -> B -> A` 路径、两个发布版本、独立 Current Draft、
+  两代输出字段和显式未知；Current Draft 未混入当前发布路径；
+- 实际运行暴露并修复了一个平台 dry-run 缺口：relation 的 source/predicate/target 现在必须在
+  dry-run 阶段即为绝对 RDF IRI，非法输入零 RDF delta、零 workspace 副作用且不触发写入围栏；
+- Protocol 的前五次执行失败均保留原始 transcript、清理日志和哈希绑定 retry receipt；
+  它们分别属于运行时挂载、重复凭据探针、平台 IRI dry-run、Protocol 超时和交付脚本旧单
+  Batch receipt 假设。修复只作用于窄层，并始终复用 k 的建模结果；
+- 交付 Agent 执行所得终态为 `PASS / PASSED / passed`；三项 applied Batch 均逐项回读
+  核验，负例未 applied，临时模型密钥和管理员凭据已撤销，临时 Project 已删除，隔离进程
+  退出，`protocol-home` 已销毁且未检出临时密钥。
+- 独立 Requirement Tester Round 22 只读复核真实 k、v9→v8/最终状态哈希链、全局五次启动、
+  attempt-5 归档和最终 Protocol/平台事实；L3 `68/68`、L1 `15/15`、M1 `13/13`、受影响后端
+  `101/101`、focused Ruff、diff、服务与前后端健康均通过，最终结论 `PASS`。
 
 ### 与既有需求的关系
 

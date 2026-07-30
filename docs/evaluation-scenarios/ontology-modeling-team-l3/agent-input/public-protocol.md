@@ -18,3 +18,10 @@ IDs, workspace revisions, lease renewal/checkpoint bodies, and receipt parsing. 
 never supplies ontology semantics. Correct only JSON/schema/IRI/reference/call-order
 mechanics. Return workspace, scope, Batch-content, concurrency, or semantic conflicts
 to the coordinator without changing semantics. Never write plaintext keys into files.
+
+Every `create_relation`/`delete_relation` source, predicate, and target must be an
+absolute RDF IRI. A `client_item_id` is never an RDF IRI. When relations refer to
+entities created in the same modeling plan, first dry-run/apply the entity Batch, bind
+the platform-returned entity IRIs, then submit the relation Batch with those absolute
+IRIs. A dry-run `invalid_command_payload` is a mechanical correction signal and must
+never be followed by applying the rejected payload.

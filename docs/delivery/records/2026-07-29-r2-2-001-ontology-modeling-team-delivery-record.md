@@ -1,9 +1,9 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: completed through L1; standalone L2 merged into L3; L3 implemented and `PAUSED / NOT PASSED`
+- Status: completed; standalone L2 merged into L3; L0, L1 and L3 independently accepted
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T13:14:56+08:00
+- Last updated: 2026-07-30T17:35:04+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`;
@@ -13,7 +13,7 @@
   `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l1-test-plan.md`;
   `docs/delivery/test-plans/2026-07-30-r2-2-001-ontology-modeling-team-l3-test-plan.md`
 - Delivery baseline: `373b9f0`; clean worktree
-- Delivery commit: pending `Pause ontology modeling team L3`
+- Delivery commit: pending `Complete ontology modeling team L3`
 
 ## Confirmed contract
 
@@ -877,3 +877,354 @@
   policy and pre-root launcher enforcement; no live resource was created.
 - Final checks: L3 `23/23`, L1 `15/15`, M1 `13/13`, Ruff, staged/working diff checks, active
   systemd, backend and frontend health PASS. L3 remains `NOT_PASSED`; Round 5 grants no new run.
+
+### 2026-07-30 — L3 recovery authorization and root-cause correction — Delivery Agent
+
+- User decision: add exactly two fresh modeling opportunities and continue L3. The total budget is
+  five starts, with g/h/i retained as consumed history. A fifth start is allowed only if start 4
+  ends in a repairable non-semantic failure; a completed-model `modeling-quality` failure remains
+  terminal.
+- User-required repository rule: before each requirement, inventory and directly reuse the nearest
+  accepted requirement, scenario, launcher, prompts, role configuration, protocol helpers, audit
+  logic, and tests. A replacement requires concrete incompatibility evidence, plan review, and the
+  accepted path as a regression oracle. This rule was added to root `AGENTS.md` before recovery
+  implementation.
+- Corrected root cause: g/h/i raw coordinator rollouts under each isolated
+  `coordinator-home/sessions` contain real `spawn_agent` calls; child rollouts are parent-linked,
+  and each run produced `team-work/pending-question.json`. L3's
+  `verified_modeling_child()` looked only at the outer CLI transcript, where
+  `wait.receiver_thread_ids` was empty. L0/L1 instead inspect raw Codex rollouts. Therefore
+  the L3 acceptance harness read the wrong evidence source.
+- Plan Review Round 1: `REVISE`, one accepted High. Run g used
+  `task_name=modeling_agent` and `fork_turns=none` but omitted `agent_type=modeling_agent`; its child
+  `agent_role` is `null`. Disposition: `accepted-high`. The plan now treats h/i as positive
+  role/fork fixtures and g as a negative “linked child, missing configured role” fixture. Run g
+  retains a role-boundary `collaboration/routing` result; `task_name` will not be accepted as a
+  role substitute.
+- Plan Review Round 2: `PASS`; no Critical/High findings. Reviewer confirmed h/i have the complete
+  `agent_type=modeling_agent` + `fork_turns=none` + `sub_agent_activity` + parent-linked
+  `session_meta` chain, the five-start policy remains pre-resource/global, append-only evidence is
+  preserved, and no semantic completion gate is relaxed.
+- Development handoff is frozen to the reviewed recovery amendment and shared test plan. Required
+  checks before independent testing: L3 focused unittest, L1 regression, M1 scenario, L3 Ruff,
+  `git diff --check`, policy/status behavior, and no live start.
+- Development result: `DEVELOPMENT-READY`. Only the reviewed L3 scenario surfaces changed:
+  `run_l3.py`, `tests/test_run_l3.py`, `execution-policy.json`, and `README.md`; raw historical
+  state/rollouts remain unchanged and the ignored classification ledger received append-only v2
+  corrections.
+- Implementation evidence: child verification now requires outer coordinator `thread.started`,
+  raw coordinator `spawn_agent(agent_type=modeling_agent, fork_turns=none)`, its matching
+  `sub_agent_activity`, and a parent/role-linked child `session_meta`. h/i pass; g and
+  transcript-only evidence fail closed. Policy v2 records three consumed starts, `max_starts=5`,
+  and two user-authorized starts; start 5 requires a repairable start-4 terminal record and is
+  forbidden after `modeling-quality`.
+- Developer checks: L3 `27/27`, L1 `15/15`, M1 `13/13`, L3 Ruff, `git diff --check`,
+  `git diff --cached --check`, and offline status all PASS. Status reports
+  `READY / PENDING`, historical starts 3, maximum starts 5, and three historical classifications.
+  No live attempt was launched.
+- Independent Round 6: `FAIL`, one confirmed High. Raw-role audit, policy budget/category rules,
+  all focused/regression checks, and runtime health passed, but `run_l3.py` still used the original
+  fixed `PREPARATION_STARTED_AT=2026-07-30T12:37:43+08:00`. A start-4 reservation would therefore
+  append `preparation_halted` immediately and block both newly authorized starts before resource
+  creation. Disposition: `accepted-high`.
+- Repair handoff: move the recovery execution-phase timestamp into policy v2, validate it
+  fail-closed, derive the 20-minute deadline from it, and add a current start-4 regression proving
+  no stale halt is written. Preserve the five-start budget and do not launch live during repair.
+- Round 6 repair result: `DEVELOPMENT-READY`. Policy v2 now records
+  `recovery_preparation_started_at=2026-07-30T14:42:13+08:00`; the launcher validates an aware
+  timestamp and derives reservation/delegation/state deadlines from it. Current start 4 no longer
+  writes a stale halt, while expired or timezone-less policy values fail closed.
+- Repair verification: L3 `30/30`, L1 `15/15`, M1 `13/13`, Ruff, offline status and diff checks
+  PASS; no live attempt was launched. The active first-delegation window ends at
+  `2026-07-30T15:02:13+08:00`.
+- Independent Round 7: `PASS`. It retested the Round 6 stale-clock defect, raw role audit,
+  five-start/modeling-quality gates, all focused/regression suites, diff/status and resident health.
+  At `14:45:26+08:00`, policy reported `READY / PENDING`, three historical starts and two remaining
+  opportunities; no live resource existed.
+- Live start 4: `l3-real-20260730j` was reserved at `14:46:14+08:00`. Its isolated business-empty
+  reasoning preflight passed and cleaned its exact probe scope. A fresh coordinator
+  `019fb1c6-2260-7a13-999d-e7666931d08b` spawned configured Modeling Agent
+  `019fb1c6-3b84-7652-87f6-e81f4022a187`; raw parent/role/fork audit passed. First modeling was
+  recorded at `14:47:26+08:00`, within the reviewed window.
+- The team asked: “Which published C version does B currently use when it invokes C?”, citing
+  `workflow-landscape.md` and `release-register.md`. Delivery mechanically released only frozen
+  answer `invocation-target`: “B invokes C through C's Latest published Version.” Start 4 remains
+  `WAITING_FOR_ANSWER`; it is not terminal and no fifth start is authorized.
+- Live-exposed High: the launcher contains tested primitives for answer release, protocol handoff,
+  credentials and mechanics, but its CLI stops after the first coordinator output. It has no
+  implemented same-session resume, Protocol Agent launch, owned business Project/Ontology/key
+  lifecycle, Batch execution, acceptance evidence collection or cleanup path. Offline Round 7 did
+  not exercise these L3-19--L3-43 gates. Disposition: `accepted-high`.
+- Repair boundary: resume the existing j coordinator; do not consume a new start. Reuse the
+  accepted L1 same-session/isolated Protocol/platform lifecycle implementation and the already
+  reviewed L3 prompt, staged packs, deterministic mechanics, scope, semantic gates and cleanup.
+  Add focused lifecycle tests and return a stable handoff before resuming live.
+- Live-continuation repair result: `DEVELOPMENT-READY`. A new fail-closed
+  `continue --run-id ... --execute` path accepts only the retained WAITING run, verifies the exact
+  released answer and recorded coordinator identity, and resumes that Session. A new grounded
+  question stays non-terminal; only a valid candidate/canonical-dispatch pair enters Protocol.
+- The Protocol phase reuses L1's isolated execution pattern: sanitized REST, no-key MCP probe,
+  ephemeral admin/Project/Ontology/model key, fresh Protocol Agent, MCP allowlist, platform
+  Build Session/Batch fact audit, and ordered key/Project/admin/runtime cleanup. Continuation never
+  calls start reservation and therefore cannot create start 5.
+- Repair checks: L3 `35/35`, L1 `15/15`, M1 `13/13`, Ruff, status and both diff checks PASS. The j
+  live scope was not modified and remains waiting; no new live resource was created.
+- Independent Round 8: `FAIL`; j remained byte-stable and all requested offline suites/checks
+  passed, but two confirmed High defects block live continuation.
+- High `L3-protocol-local-secret-cleanup`: Protocol configuration writes the temporary model key to
+  `protocol-home/config.toml` and copies Codex `auth.json`; finally revoked remote credentials and
+  deleted the Project but did not remove the local protocol home. Disposition: `accepted-high`.
+- High `L3-continuation-category-fidelity`: coordinator runtime errors were mapped to
+  `collaboration/routing` and Protocol runtime errors to `platform-contract`, losing the original
+  `runtime/infrastructure` category. Disposition: `accepted-high`.
+- Repair handoff: remove the run-local Protocol credential/home material in finally after process
+  termination while retaining only redacted cleanup evidence; add a direct no-secret postcondition.
+  Preserve runtime/infrastructure errors end-to-end and add targeted category regressions. Do not
+  resume j during repair.
+- Round 8 repair result: `DEVELOPMENT-READY`. After Protocol termination the launcher overwrites
+  and deletes the uniquely owned `protocol-home`, scans retained run artifacts for the exact model
+  key, and retains only a redacted cleanup receipt; any leak fails closed. Runtime/provider/process/
+  timeout failures now remain `runtime/infrastructure`, Session/question defects remain
+  `collaboration/routing`, and dispatch/public-protocol/platform-state defects remain
+  `platform-contract`.
+- Repair verification: L3 `39/39`, L1 `15/15`, M1 `13/13`, Ruff, status and diff checks PASS. j
+  remains untouched; no live continuation or fifth start occurred.
+- Independent Round 9: `FAIL`. Protocol-home destruction, exact secret scan, leak fail-closed and
+  redacted receipt are fixed; all requested suites/runtime checks passed and j remained stable.
+  One High remains: the real error text `isolated application REST exited before health` falls
+  through to `platform-contract` because the category matcher omits the `exited/process` form.
+  Disposition: `accepted-high`.
+- Repair handoff: classify real isolated-process exit-before-health errors as
+  `runtime/infrastructure` and add that exact production message as a regression; no other
+  continuation behavior changes and j remains paused.
+- Round 9 repair result: `DEVELOPMENT-READY`. The exact production error and related isolated
+  process exit/startup-health variants now map to `runtime/infrastructure`, while dispatch/public
+  protocol/platform format-state errors remain `platform-contract`. L3 `40/40`, L1 `15/15`, M1
+  `13/13`, Ruff/status/diff checks PASS; j remains unchanged.
+- Independent Round 10: `PASS`. Exact process/provider/timeout category injections have zero
+  mismatches; prior Protocol credential destruction and no-secret scan remain PASS; continuation
+  still cannot reserve a new start. L3 `40/40`, L1 `15/15`, M1 `13/13`, Ruff/diff/status and
+  resident service health PASS. j stayed byte-stable and is approved for live resume.
+- Live start-4 resume: coordinator `019fb1c6-2260-7a13-999d-e7666931d08b` resumed and read the
+  exact released answer, then output `L3_WAITING_FOR_ANSWER` without creating the required next
+  `pending-question.json` and without publishing candidate/dispatch. No Protocol Agent, business
+  Project/key, Batch or platform write was created.
+- Start-4 terminal disposition: a genuine `collaboration/routing / NOT_PASSED` role-protocol
+  failure, not `modeling-quality`. The raw launcher state currently records
+  `platform-contract`; preserve it and append an authoritative correction rather than rewriting
+  raw evidence. This repairable non-semantic terminal permits the fifth and final authorized start.
+- Additional gate defect: `reserve_coordinator_start()` reapplies the original 20-minute recovery
+  deadline to every fresh start. The gate's purpose is first real modeling delegation, already
+  satisfied by j at `14:47:26+08:00`; applying it to start 5 would incorrectly halt the final
+  authorized recovery. Repair must skip the deadline only when the ledger already proves a valid
+  `modeling_started` event in the reviewed recovery phase.
+- Start-4 correction repair: `DEVELOPMENT-READY`. Raw j state/transcript/terminal event are
+  unchanged; an append-only, SHA-bound terminal correction records the authoritative
+  `collaboration/routing` result. Status and start-5 repairability consume the correction and fail
+  closed on drift.
+- First-modeling gate repair: the deadline blocks only while no valid recovery-phase
+  `modeling_started` event exists. j already satisfies that event; max-five and terminal
+  modeling-quality gates remain unchanged. Verification: L3 `44/44`, L1 `15/15`, M1 `13/13`
+  (21 subtests), Ruff, status and diff check PASS; start 5 was not launched.
+- Independent Round 11: `PASS`. Raw j evidence and non-secret inventory remain stable; the sole
+  correction is SHA-bound, idempotent and drift-failing. Status/start-5 authorization use the
+  corrected category. Valid first-modeling evidence bypasses only the expired first-start clock;
+  missing/mismatched evidence still halts. L3 `44/44`, L1 `15/15`, M1 `13/13`, Ruff/diff/status,
+  secret-cleanup regression and resident health PASS. The final start is approved for execution.
+- Live start 5 `l3-real-20260730k`: reservation, isolated reasoning preflight, fresh coordinator
+  `019fb1e6-161e-7692-8ead-26e7b918a64c` and configured Modeling Agent
+  `019fb1e6-3107-70a1-83b0-053f323f44ca` all executed. The team wrote a grounded
+  `pending-question.json` asking which published C Version B uses.
+- Start-5 harness failure: `reserve_coordinator_start()` correctly allowed k because j already
+  satisfied the first-modeling clock, but `record_modeling_delegation()` independently reapplied
+  the stale deadline after the real child completed. It appended `preparation_halted` and raw
+  `runtime/infrastructure / PAUSED` despite authoritative raw child and question evidence.
+  This is an acceptance-harness defect, not an Agent/modeling result.
+- Recovery boundary: no sixth start. Preserve raw k state, transcript, halt and terminal event;
+  append a SHA-bound recovery correction proving the raw coordinator/child chain and pending
+  question, record the real k modeling delegation, supersede only this duplicated-gate halt, and
+  let continuation accept the authoritative WAITING state. Add idempotency/drift/negative tests
+  before releasing the frozen answer.
+- Start-5 recovery repair: `DEVELOPMENT-READY`. A SHA-bound append-only correction covers raw k
+  state, outer transcript, coordinator/child rollouts, pending question and the original halt/
+  terminal ledger events. Raw files remain unchanged. Status now reports k
+  `WAITING_FOR_ANSWER / PENDING`, `halted=false`; continuation recognizes that authoritative state.
+- The duplicated delegation deadline is removed only after a valid recovery first-modeling event;
+  a truly late first delegation still appends halt and fails. Verification: L3 `48/48`, L1
+  `15/15`, M1 `13/13` (21 subtests), Ruff, status and diff check PASS. No live continuation,
+  answer release or sixth start occurred.
+- Independent Round 12: `FAIL`. Raw k/correction evidence, unresolved-pending no-op continuation,
+  all focused/regression/runtime checks and max-five gate pass. One High blocks answer release:
+  `release_answer()` correctly deletes `pending-question.json`, but correction revalidation
+  requires that mutable workflow file on every continuation, so an answered recovered run fails
+  before same-Session resume. Disposition: `accepted-high`.
+- Repair handoff: before deletion, retain a non-secret immutable audit snapshot of the grounded
+  question and bind it in an append-only correction revision. After answer release, validate the
+  state transition through that snapshot, the exact frozen released answer and the recorded
+  coordinator ID; do not retain the mutable pending file or relax answer matching. Add an exact
+  answer-then-same-ID-resume regression.
+- Round 12 repair result: `DEVELOPMENT-READY`. Recovery answer release now creates a read-only
+  grounded-question snapshot bound to the coordinator and original question hash, then appends a
+  v2 correction while preserving v1. After normal pending deletion, continuation revalidates the
+  snapshot, exact frozen answer and coordinator identity before same-Session resume; any drift
+  fails closed.
+- Verification: L3 `51/51`, L1 `15/15`, M1 `13/13` (21 subtests), Ruff, status and diff check
+  PASS. The real k answer was not released and no live process/start 6 occurred.
+- Independent Round 13: `PASS`. An exact temporary k copy proves snapshot creation, v1-preserving
+  v2 correction, normal pending deletion, exact frozen-answer validation and same recorded
+  coordinator resume; snapshot/answer/missing-snapshot drift all fail closed. Real k and its
+  inventory remained unchanged. L3 `51/51`, L1 `15/15`, M1 `13/13`, Ruff/diff/status, max-five,
+  secret cleanup and resident health PASS. Real k is approved for mechanical answer release.
+- Real k answer release created the bound immutable question snapshot, deleted mutable pending and
+  wrote the exact frozen `invocation-target` answer. Same coordinator resume then failed before
+  candidate work: its transcript explicitly reports that the resumed Session is read-only and
+  therefore `/work/pending-question.json` could not be written atomically.
+- Confirmed root cause: L3 reused L1's resume command, which puts neither
+  `--sandbox workspace-write` nor `-C /work` on the parent `codex exec` invocation. L1's resumed
+  role did not require this L3 question/candidate file-write contract. This is a narrow Runtime
+  adapter compatibility gap, not an Agent semantic or collaboration result.
+- Repair boundary: place workspace-write and `/work` cwd options at the `codex exec` layer before
+  the `resume` subcommand; add a real command-shape/write probe. Append a v3 recovery correction
+  binding the immutable snapshot, exact answer and read-only resume transcript, then permit another
+  resume of the same k coordinator. Preserve all raw evidence and do not create start 6.
+- Resume-write repair result: `DEVELOPMENT-READY`. The `codex exec` parent now receives
+  `--sandbox workspace-write -C /work` before the `resume` subcommand. A k v3 correction binds the
+  immutable question snapshot, exact released answer, read-only resume transcript/stderr, prior v2
+  correction and original coordinator/child rollouts; raw evidence remains unchanged.
+- Status reports k as repairable `WAITING_FOR_ANSWER`; the next continuation is
+  `coordinator-resume-2.jsonl` using the same coordinator and cannot reserve a new start.
+  Verification: L3 `54/54`, L1 `15/15`, M1 `13/13` (21 subtests), Ruff, status and diff check
+  PASS. No live resume or sixth start occurred.
+- Independent Round 14: `PASS`. The parent-exec option order is correct; an isolated bwrap probe
+  proves resumed `/work` is writable, `/opt` remains read-only, and repository/tester-only paths
+  remain absent. The v1/v2/v3 correction chain is complete, idempotent and drift-failing. An exact
+  k copy selects the same coordinator and `coordinator-resume-2.jsonl` without start reservation.
+  L3 `54/54`, L1 `15/15`, M1 `13/13`, Ruff/diff/status, secret cleanup, max-five and resident
+  health PASS. Real k is approved for resume-2.
+- Live k resume-2: same coordinator Session resumed successfully with writable `/work` and wrote a
+  second grounded question atomically. It asks whether `quality_score` and `quality_rating`
+  represent the same business measure across published C Versions, matching frozen answer
+  `output-continuity`.
+- The second answer was not released. `release_answer()` failed closed because the recovery
+  snapshot implementation uses one fixed snapshot and treats the second legitimate pending
+  question as drift against question 1. k remains waiting with the second pending file intact.
+- Repair boundary: make grounded-question snapshots append-only and cycle-indexed/hash-addressed;
+  each question/answer transition must bind its own question hash, exact frozen answer and the same
+  coordinator while preserving every earlier cycle. Add at least a three-question sequence,
+  duplicate/idempotency and cross-cycle-drift regressions before releasing answer 2.
+- Multi-question repair result: `DEVELOPMENT-READY`. Recovery questions now use append-only cycle
+  records; each current pending question creates its own record bound to its frozen answer,
+  coordinator and originating resume transcript, while all earlier cycles remain immutable.
+- Verification: an ordered three-question regression preserves cycles 1/2/3 and their distinct
+  frozen answers. L3 `55/55`, L1 `15/15`, M1 `13/13` (21 subtests), Ruff, status and diff check
+  PASS. Real k still has question 2 pending; answer 2 was not released and no live/start 6 occurred.
+- Independent Round 15: `FAIL`; real k remains unchanged with question 2 pending. Two confirmed
+  High defects block release/resume:
+  1. Exact question-2 release changes the recomputed v3 correction and collides with immutable v3,
+     producing `recovery waiting classification evidence hash drift` before same-Session resume.
+  2. Historical cycle records are not fully revalidated; replacing cycle 2's question hash with
+     cycle 1's still leaves status `WAITING_FOR_ANSWER`.
+- Disposition: both `accepted-high`. Repair must treat every answer/resume transition as a new,
+  monotonically increasing append-only correction revision and never recompute an older revision.
+  Every status/continue must validate every cycle's schema, index/order, canonical question hash,
+  exact frozen answer id/value/hash, coordinator, origin transcript path/hash and prior-revision
+  link. Cross-cycle substitution must fail closed.
+- Round 15 checks: L3 `55/55`, L1 `15/15`, M1 `13/13`, focused Ruff/diff, service health, frontend
+  build and Playwright `38/38` PASS. Full backend pytest had one unrelated MCP-auth failure
+  (`181 passed, 2 skipped`); repo-wide Ruff reported 47 unrelated pre-existing findings.
+- Requirement Developer attempted the Round 15 repair in three bounded turns but did not reach
+  `DEVELOPMENT-READY`; it reported no external blocker and preserved real k/Q2. Delivery then
+  assumed ownership of this isolated L3 recovery implementation rather than releasing an
+  unvalidated answer.
+- Delivery repair: cycle records now validate exact frozen answers, canonical question hashes,
+  same coordinator, expected origin transcript path/hash, prior-cycle link and a valid prior
+  correction hash. Answer release first binds the current pending transition, writes the immutable
+  cycle, then appends a new correction revision; revisions 5+ link the exact previous correction
+  hash and cycle head. Older revisions are never recomputed.
+- Added focused regressions for exact Q1→resume2→Q2 release→resume3 same-Session/no-start flow,
+  cycle-hash substitution and previous-correction tampering. Verification: L3 `57/57`, L1
+  `15/15`, M1 `13/13`, focused Ruff, diff check and real status
+  `WAITING_FOR_ANSWER / PENDING`, five starts, no active halt. Real k/Q2 remains unchanged.
+- Independent Round 16: `PASS`. Exact k copy creates v5 linked to v4 and cycle-2 head, leaves all
+  earlier revisions/cycles byte-stable, and selects same-coordinator resume3 without reserving a
+  start. Eight corruption cases covering question/answer/coordinator/origin/prior-cycle/
+  prior-revision/latest-correction links fail both status and continuation. Real k/Q2 remains
+  unchanged. L3 `57/57`, L1 `15/15`, M1 `13/13`, focused Ruff/diff and service health PASS.
+- Historical disposition: raw run state, rollout, and earlier test rounds remain unchanged. Their
+  no-child pause conclusion is explicitly superseded, while cleanup and “no Protocol/platform
+  application occurred” remain valid.
+- Scope freeze for review: reuse the existing L3 inputs/prompts/roles/protocol/platform/cleanup
+  implementation unchanged; replace only the child audit with the L0/L1 raw-rollout contract,
+  add g/h/i-shaped regression coverage, version the policy to `starts_consumed=3` and
+  `max_starts=5`, and append classification correction evidence. No product code or semantic gate
+  change.
+- Risk probe: GitNexus incremental analysis failed on its own inconsistent FTS index. The existing
+  index does not contain the new `verified_modeling_child` symbol, so graph risk is `UNKNOWN`.
+  Static repository inspection finds exactly one caller, L3 `launch_coordinator()`, and no
+  backend/frontend/shared-runtime consumer. This tool failure is recorded separately and does not
+  justify widening the implementation.
+
+### 2026-07-30T17:35:04+08:00 — retained k Protocol completion — Delivery Agent
+
+- Context: independent Rounds 17–21 had accepted the append-only multi-question recovery chain,
+  isolated Protocol runtime mount, launcher-owned credential proof, relation-IRI dry-run guard and
+  Protocol-only 900-second timeout. The global modeling-team ledger remained exactly five starts;
+  no sixth Coordinator or Modeling Agent was authorized or created.
+- Action/decision: continue only retained run `l3-real-20260730k`, reusing coordinator
+  `019fb1e6-161e-7692-8ead-26e7b918a64c`, Modeling Agent
+  `019fb1e6-3107-70a1-83b0-053f323f44ca`, all frozen sources, three exact business answers,
+  approved candidate, dispatch and Protocol prompt.
+- Protocol attempt 1: MCP initialization failed before Agent startup because the Delivery Agent's
+  script mounted the backend source parent instead of the L1-proven interpreter runtime root. Cleanup revoked the
+  temporary model key, deleted the owned Project and removed the Protocol credential home. The fix
+  reused the L1 runtime mount; no repository root or `.env` was exposed.
+- Protocol attempt 2: the Agent repeated the already completed no-key authentication probe after
+  temporary-key injection and canceled its Build Session. The fix reused the L1 credential-proof
+  pattern: the Delivery Agent's script performs the no-key probe, stages only a redacted proof,
+  then injects the key.
+- Protocol attempt 3: platform dry-run admitted relative relation IRIs, so atomic apply reached RDF
+  persistence and fenced the Ontology after `Expected RDF IRI`. The generic compiler now validates
+  source, predicate and target as absolute RDF IRIs before delta creation. Regression evidence
+  proves invalid dry-run creates no RDF delta, workspace change or write fence.
+- Protocol attempt 4: valid schema/Shape progress exceeded the inherited 300-second terminal
+  timeout. Coordinator/resume remains 300 seconds and first response remains 60 seconds; only
+  Protocol receives a 900-second terminal timeout.
+- Protocol attempt 5: the Agent applied four valid Batches, rejected the separate negative dry-run,
+  completed the Build Session and wrote a valid result. Final mechanical audit still expected the
+  old singular `applied` receipt and rejected the list. Its transcript and result were hash-archived
+  with exact cleanup evidence as a `platform-contract` execution-script defect.
+- Protocol attempt 6: the corrected audit required a non-empty applied list and reread every Batch.
+  Three immutable Batches were applied; negative Batch
+  `3cc3627d-f7d5-4a84-a641-e90d193ff054` remained unapplied. Build Session
+  `6ff1fa6f-4489-46ff-b71b-0c8a2b5a41b7` completed with its lease released.
+- Semantic evidence: executable Shape validation conforms; reasoning succeeded and is consistent;
+  generic read models recover both published C Versions, the separate Current Draft, the published
+  `C -> B -> A` path, both output-field generations and the explicit unknown. Current Draft is
+  excluded from the current published path.
+- Cleanup evidence: Project `ff626c04-016e-40d2-899c-1a6fcbc2cec4` deleted; model and ephemeral
+  admin keys revoked; isolated runtime exited; 66 Protocol credential files destroyed; exact
+  temporary key absent from retained evidence.
+- Verification before independent Round 22: L3 execution-script tests `68/68`; full backend
+  `820 passed, 10 skipped`; affected modeling-batch service `65 passed`; L1 `15/15`; M1 `13/13`;
+  focused Ruff/diff checks pass. The backend/frontend resident service was restarted after the
+  backend fix and both health endpoints passed.
+- Outcome/next step: the Delivery Agent's terminal snapshot and append-only correction report
+  `PASS / PASSED / passed`. Independent Requirement Tester Round 22 must directly inspect the real
+  k evidence and append its result before final requirement completion is recorded.
+
+### 2026-07-30T17:42:00+08:00 — independent L3 Round 22 acceptance — Requirement Tester
+
+- Scope: read-only inspection of real `l3-real-20260730k`; the tester owned only the append-only
+  Round 22 section in the shared L3 test plan and did not start/continue any live run.
+- Evidence: recovery-final-state is `PASS / PASSED`; v9 links both v8 and the final-state SHA-256;
+  global coordinator starts equal five. Protocol-6 result, rollout and platform fact audit agree on
+  completed Build Session `6ff1fa6f-4489-46ff-b71b-0c8a2b5a41b7`, three applied schema/entity/
+  relation Batches, one rejected SHACL dry-run, conforming validation, consistent reasoning,
+  complete published path, Draft exclusion and explicit unknown.
+- Historical retry evidence: attempt 5 is correctly retained as a `platform-contract` execution-
+  script defect; its archived result contains four applied Batches and its retry receipt proves
+  exact cleanup before the final attempt.
+- Regression evidence: L3 `68/68`, L1 `15/15`, M1 `13/13`, affected backend `101/101`, focused
+  Ruff, diff check, service/backend/frontend health all PASS.
+- Outcome: independent `PASS`; no finding and no repair/retest round required. R2.2-001 L3 is
+  complete.

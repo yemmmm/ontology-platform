@@ -1124,6 +1124,34 @@ def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
     assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
 
 
+@pytest.mark.parametrize("invalid_field", ["source_entity_iri", "relation_type_iri", "target_entity_iri"])
+def test_relation_dry_run_rejects_relative_iri_without_side_effects(modeling, invalid_field):
+    service, db, rdf, session_id, _lease, version = modeling
+    payload = {
+        "source_entity_iri": "https://r004.test/resource/entity/source",
+        "relation_type_iri": "https://r004.test/resource/relation/depends-on",
+        "target_entity_iri": "https://r004.test/resource/entity/target",
+    }
+    payload[invalid_field] = "same-batch-client-id"
+    relation = ModelingItemInput(
+        client_item_id="invalid-relative-relation",
+        command_kind="create_relation",
+        payload=payload,
+    )
+
+    result = service.submit(session_id, _request(version, [relation]))
+
+    assert result["attempt_status"] == "validation_failed"
+    assert len(result["findings"]) == 1
+    finding = result["findings"][0]
+    assert finding["code"] == "invalid_command_payload"
+    assert finding["message"] == f"{invalid_field} must be an absolute RDF IRI"
+    assert finding["client_item_ids"] == ["invalid-relative-relation"]
+    assert finding["blocking"] is True
+    assert rdf.deltas == []
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+
+
 def test_multiple_relation_targets_for_same_subject_and_type_are_valid(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     source = "https://r004.test/resource/entity/workflow-definition"

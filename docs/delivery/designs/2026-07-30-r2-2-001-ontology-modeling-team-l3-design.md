@@ -2,7 +2,7 @@
 
 ## Status and sources
 
-- Status: implemented; `PAUSED / NOT PASSED` after three collaboration/routing starts
+- Status: implemented; real L3 run and independent Requirement Tester Round 22 passed
 - Requirement: `docs/requirements/requirements-v2.2.md`, R2.2-001 L3
 - Baseline: commit `640dee9`
 - Prior implementation reused: L0 role/isolation proof and L1 isolated write workflow
@@ -35,10 +35,10 @@ The scenario owns:
 
 - a frozen and hashed Agent-visible input pack;
 - a tester-only answer and acceptance contract;
-- a launcher for fresh OS namespaces, Codex Sessions, platform scope, ephemeral credentials,
-  question/answer continuation, protocol execution, evidence retention, cleanup, and failure
-  classification;
-- focused offline tests for the launcher contract; and
+- a deterministic script used by the Delivery Agent for fresh OS namespaces, Codex Sessions,
+  platform scope, ephemeral credentials, question/answer continuation, protocol execution,
+  evidence retention, cleanup, and failure classification;
+- focused offline tests for that mechanical execution contract; and
 - a README with bounded live-run and evidence-review commands.
 
 It also includes one scenario-local, Protocol-only deterministic mechanics helper. The helper owns
@@ -48,7 +48,9 @@ preparation, checkpoint bodies, and response parsing. The Protocol Agent supplie
 accountable for every semantic Modeling Item, evidence/rationale, query and decision to call or
 route an error. The helper cannot invent, add, remove, reorder, or semantically repair Items.
 
-No backend, frontend, migration, platform schema, or domain-specific API change is planned.
+No frontend, migration, platform schema, or domain-specific API change is planned. A generic
+backend dry-run correctness defect discovered by the live run may be fixed only if it directly
+protects atomic Modeling Batch application.
 
 ## Non-goals and future productization
 
@@ -68,7 +70,7 @@ These may be future productization only after a demonstrated need. They are not 
 
 ### Agent-visible
 
-The launcher stages only a new manifest and copied immutable sources:
+The Delivery Agent's script stages only a new manifest and copied immutable sources:
 
 - the pinned Dify Workflow-as-Tool, Output, Version Control, User Input, and IF/ELSE pages already
   committed in the M1 source pack or Dify foundations snapshot;
@@ -135,8 +137,9 @@ It then emits `L3_WAITING_FOR_ANSWER` and stops cleanly with its Session identit
 
 The Delivery Agent inspects the one question and selects only the corresponding frozen tester-side
 answer. This selection is a manual mechanical match, not semantic scoring and not an automated Judge.
-The launcher records the exact question, selected answer-contract entry, verbatim answer, hashes,
-and coordinator Session ID, then resumes that same coordinator Session.
+The Delivery Agent records the exact question, selected answer-contract entry, verbatim answer,
+hashes, and coordinator Session ID through the deterministic script, then resumes that same
+coordinator Session.
 
 If the question does not match a frozen business gap, Delivery does not invent an answer. It either
 returns an already explicit visible fact, records an unsupported question as a collaboration defect,
@@ -152,8 +155,8 @@ The coordinator writes an approved business/ontology candidate and a minimal dis
 the task identity, canonical candidate hash, and requested outcome. It does not include credentials,
 platform IDs, Modeling Items, Batch IDs, queries, or hidden acceptance material.
 
-The launcher mechanically canonicalizes and verifies the dispatch, then starts the separate
-Platform Protocol Agent. Only that Agent receives:
+The Delivery Agent's script mechanically canonicalizes and verifies the dispatch, then starts the
+separate Platform Protocol Agent. Only that Agent receives:
 
 - the approved candidate;
 - the public protocol;
@@ -183,8 +186,8 @@ state without semantic change. Workspace, Batch content, scope, concurrency, or 
 must be returned to the coordinator; they must not be blindly retried or semantically altered by
 the launcher.
 
-The launcher/helper never creates Modeling Items, chooses ontology structure, writes SPARQL,
-repairs semantic content, or supplies an answer model.
+The Delivery Agent and its mechanical helper never create Modeling Items, choose ontology
+structure, write SPARQL, repair semantic content, or supply an answer model.
 
 ## Platform tools and credential boundary
 
@@ -198,10 +201,10 @@ The protocol namespace allowlists only the existing tools needed for:
 - checkpoint/completion.
 
 The existing Project-scoped `model` policy covers the mutating operations and implies read scope.
-The launcher creates the temporary model key under a host-only ephemeral admin identity, verifies
-no-key rejection before Agent launch, revokes and verifies the model key before deleting the owned
-Project, then revokes the host-admin key. Neither plaintext key is written to repository/runtime
-evidence.
+The Delivery Agent's script creates the temporary model key under an ephemeral admin identity,
+verifies no-key rejection before Agent launch, revokes and verifies the model key before deleting
+the owned Project, then revokes that admin key. Neither plaintext key is written to
+repository/runtime evidence.
 
 The live scenario uses the L1 pattern of a unique loopback `rdf_primary` REST environment plus a
 sanitized stdio MCP pointed at the same PostgreSQL/Oxigraph and write mode. Resident `8001` remains
@@ -235,9 +238,9 @@ The scenario retains raw or normalized evidence for:
 - complete, non-truncated governed query/read-model responses;
 - key revocation, Project deletion, isolated-runtime exit, and resident health.
 
-The launcher validates mechanical integrity and scope ownership only. The Delivery Agent and a fresh
-independent Requirement Tester directly inspect the retained evidence against the shared test plan.
-They do not add or run a Judge/Consumer/acceptance executable.
+The deterministic script validates mechanical integrity and scope ownership only. The Delivery
+Agent and a fresh independent Requirement Tester directly inspect the retained evidence against the
+shared test plan. They do not add or run a Judge/Consumer/acceptance executable.
 
 ## Failure categories and start budget
 
@@ -250,7 +253,8 @@ Every terminal attempt is classified as:
 - `collaboration/routing`: role boundary, question/answer continuation, or error-routing failure;
 - `modeling-quality`: a completed applied model fails one or more semantic completion gates.
 
-At most three fresh starts are allowed. A runtime/infrastructure or non-semantic mechanical
+At most five fresh starts are allowed after the user's 2026-07-30 authorization added two starts
+to the original three-start budget. A runtime/infrastructure or non-semantic mechanical
 platform-contract failure may be repaired narrowly after evidence retention and cleanup, followed
 by a wholly fresh start. A completed model that fails semantic acceptance is terminal
 `modeling-quality`; no further modeling start, prompt tuning, hidden-answer release, or acceptance
@@ -296,3 +300,72 @@ L3 passes only when one fresh attempt satisfies all of the following:
 This is a test-only local scenario. No service restart is required unless implementation unexpectedly
 changes backend/frontend code, dependencies, migrations, or shared runtime configuration. Any such
 need is a scope change requiring impact analysis and plan revision before coding.
+
+## Recovery amendment — raw rollout reuse and two added starts
+
+The earlier aggregate terminal diagnosis is invalidated by the retained raw evidence. Runs `g`,
+`h`, and `i` each have a coordinator rollout under `coordinator-home/sessions`, a real
+`spawn_agent` call, a child rollout linked to that coordinator, and a produced
+`pending-question.json`. However, `g` omitted `agent_type=modeling_agent` and its child metadata has
+`agent_role=null`; it remains a real role-boundary `collaboration/routing` negative case. Runs
+`h/i` satisfy the configured-role and `fork_turns=none` contract. The outer `codex exec --json`
+transcript is a CLI summary and is not authoritative for child identity.
+
+The recovery is deliberately smaller than a new L3 implementation:
+
+1. Keep the accepted L3 input pack, prompts, role TOML, isolation, deterministic Protocol helper,
+   answer contract, platform lifecycle, acceptance gates, and cleanup path unchanged.
+2. Reuse the L0/L1 raw-rollout audit contract and helper behavior as the regression oracle.
+   Coordinator identity comes from the outer `thread.started`; delegation comes from the raw
+   coordinator `spawn_agent` call plus `sub_agent_activity`; child identity and parentage come
+   from the raw child `session_meta`. The role must be `modeling_agent` with
+   `fork_turns="none"`.
+3. Use retained `h/i` as positive role/fork fixtures, retained `g` as a negative fixture proving
+   that a valid parent-child chain without `agent_type` is rejected, and add a negative
+   transcript-only case. `task_name` must never substitute for `agent_type`, and the old
+   transcript-only verifier must not remain as an alternate path.
+4. Version the execution policy so it records `starts_consumed=3`, `max_starts=5`, the exact three
+   consumed run IDs, and the user's two-start authorization. Budget enforcement remains global
+   and happens before run-root, probe, Project, key, or Agent creation.
+5. Append per-run corrections to historical classification evidence; never rewrite raw state or
+   raw rollouts. For `g`, retain `collaboration/routing` but correct the reason from “no child” to
+   “child role not configured”. For `h/i`, supersede the false no-child classification with the
+   acceptance-harness finding. The fact that all three scopes stopped before Protocol/platform
+   application remains historical evidence.
+6. After offline developer and independent-test PASS, execute one fresh start. Use the fifth only
+   if the fourth ends in a repairable `runtime/infrastructure`, `platform-contract`, or
+   collaboration transport failure. A completed-model `modeling-quality` failure remains terminal.
+
+No backend/frontend/platform code, new Host workflow, new prompt, new role, new Judge, or relaxed
+semantic gate is authorized by this amendment.
+
+## Implemented outcome
+
+The recovery retained and reused run `l3-real-20260730k`; it did not create a sixth modeling-team
+start. The same coordinator and Modeling Agent identified three consequential business gaps,
+consumed the three exact frozen answers one at a time, and published one approved candidate and
+dispatch.
+
+Protocol application exposed four narrow non-modeling defects before the terminal success:
+
+1. the Protocol namespace mounted the wrong Python path;
+2. the Protocol prompt repeated the launcher-owned no-key probe;
+3. platform dry-run admitted relative relation IRIs that could fail only during atomic apply; and
+4. the original generic 300-second terminal budget was too short for the valid Protocol workload.
+
+Each failure retained its transcript and exact cleanup evidence. The fixes reused the L1 runtime
+mount and credential-proof pattern, validated all relation IRIs before delta creation, and assigned
+the 900-second budget only to Protocol. A fifth Protocol execution completed successfully but the
+Delivery Agent's deterministic execution script still expected one applied Batch receipt; that
+result was hash-archived and the mechanical audit was corrected to require and verify every receipt
+in a non-empty applied list.
+
+The terminal Protocol execution applied three immutable Batches and left the separate invalid
+dry-run Batch unapplied. Platform rereads prove a completed Build Session, released lease,
+conforming validation, consistent reasoning, complete published path, Current Draft exclusion and
+the explicit unknown. Cleanup proves model-key revocation, Project deletion, admin revocation,
+isolated-process exit, Protocol credential-home destruction and absence of the exact temporary
+secret. The Delivery Agent's execution record reports `PASS / PASSED / passed`; semantic acceptance
+remains the independent Requirement Tester's responsibility, not an automatic Judge in the script.
+Round 22 directly inspected those retained facts and returned `PASS` without starting or continuing
+any live run.

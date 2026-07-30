@@ -74,9 +74,19 @@ security boundary, or generalized evaluation platform.
   - `L3 Productization`: strict isolation, credential brokering, recovery, immutable audit, and
     generalized orchestration.
   Do not make L2 or L3 prerequisites for L1.
-- Reuse one Runtime-neutral Host Workflow for Project/Ontology preparation, Build Session, lease,
-  Modeling Batch, validation, reasoning, query, cleanup, and acceptance. A new Agent Runtime such
-  as Codex or Pi should normally add only a thin adapter for launch, prompt/input assembly, tool
+- Before designing or implementing a requirement, inventory the closest previously accepted
+  requirement, scenario, launcher, prompts, role configuration, protocol helpers, audit logic, and
+  tests. Reuse those verified assets directly and extend them with the smallest necessary delta;
+  do not rebuild an already validated execution path from scratch. If reuse is impossible, record
+  the concrete incompatibility and evidence in the design and delivery record, preserve the old
+  path as a regression oracle, and obtain plan review before introducing a replacement. New
+  acceptance logic must compare against the prior raw evidence source and include a regression that
+  would fail if the previously verified behavior were misread or dropped.
+- The Delivery Agent owns Project/Ontology preparation, Build Session, lease, Modeling Batch,
+  validation, reasoning, query, cleanup, and evidence handoff. Reuse one previously validated
+  deterministic repo-local execution workflow as the Delivery Agent's tool; do not promote that
+  script into a separate Host layer or autonomous acceptance role. A new Agent Runtime such as
+  Codex or Pi should normally add only a thin adapter for launch, prompt/input assembly, tool
   bridging, event normalization, and terminal-state detection.
 - Keep mechanical protocol work out of the model. Deterministic tools must own UUIDs, canonical
   JSON, filenames, atomic file publication, request schemas, lease refresh/retry, checkpoint

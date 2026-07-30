@@ -1,15 +1,21 @@
 {
-  "policy_version": 1,
-  "live_execution_authorized": false,
-  "state": "PAUSED",
-  "outcome": "NOT_PASSED",
-  "category": "collaboration/routing",
+  "policy_version": 2,
+  "live_execution_authorized": true,
+  "state": "READY",
+  "outcome": "PENDING",
+  "category": "pending",
   "starts_consumed": 3,
+  "max_starts": 5,
+  "recovery_preparation_started_at": "2026-07-30T14:42:13+08:00",
   "run_ids": [
     "l3-real-20260730g",
     "l3-real-20260730h",
     "l3-real-20260730i"
   ],
+  "user_authorization": {
+    "authorized_at": "2026-07-30",
+    "additional_starts": 2
+  },
   "recovery_requirements": [
     "prove the isolated coordinator emits one verified Modeling Agent child Session/delegation",
     "complete plan re-review for the narrowed child-startup repair",

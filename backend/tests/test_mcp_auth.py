@@ -76,7 +76,8 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
 
 
 def test_mcp_startup_requires_environment_key(monkeypatch):
-    monkeypatch.delenv("ONTOLOGY_MCP_API_KEY", raising=False)
+    # An explicit empty value must override any developer-local backend/.env key.
+    monkeypatch.setenv("ONTOLOGY_MCP_API_KEY", "")
     with pytest.raises(RuntimeError, match="ONTOLOGY_MCP_API_KEY is required"):
         authenticate_runtime()
 
