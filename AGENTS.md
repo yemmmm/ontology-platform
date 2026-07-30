@@ -54,134 +54,43 @@ the simplest implementation and operating workflow that preserves or improves th
 
 ## External Modeling Agent Experiment Rules
 
-When debugging or evaluating an external modeling Agent, optimize first for evidence about modeling
-quality. Do not turn the initial experiment into delivery of a production-grade Agent Runtime,
-security boundary, or generalized evaluation platform.
+The rules in this section are mandatory unless the user or an authoritative requirement explicitly
+changes them. Detailed tactics, examples, and historical lessons are reference-only in
+`docs/reference/modeling-agent-experiment-lessons.md`; that document cannot override these rules.
 
+- Prioritize evidence about modeling and semantic retrieval quality. Keep the current experiment
+  bounded, proportional to its acceptance stage, and separate from future productization.
 - Start the first real modeling attempt within 20 minutes unless the user explicitly authorizes a
-  longer preparation phase. If no real attempt has started by then, stop preparation, report what
-  is consuming time, and reduce the setup to the smallest executable path.
-- Treat a limited modeling-attempt budget, including a three-attempt limit, as a checkpoint against
-  repeatedly modeling in the wrong direction, not as a scarce resource that must be protected with
-  broad pre-modeling tests. Do only the minimum L0 checks needed to start a real attempt; do not
-  delay modeling with speculative runtime, infrastructure, mutation, repeatability, or acceptance
-  testing merely to avoid consuming an attempt. The user expects early attempts to make the current
-  direction observable and accepts that an attempt may be spent learning. When the budget is
-  exhausted, stop, summarize the direction and evidence from the attempts, and ask the user to
-  authorize more attempts instead of expanding preflight work.
-- The initial completion gate should normally be one bounded corpus or scenario, one Agent, one
-  fresh ontology scope, one deterministic dry-run/application path, validation, and one governed
-  query. Independent consumers, mutation suites, repeated-success measurement, recovery matrices,
-  and production security checks belong to later gates unless the user explicitly requests them or
-  the first run proves they are necessary.
-- Use staged acceptance:
-  - `L0 Runtime`: the Agent can reach its model and required tools.
-  - `L1 Modeling quality`: the Agent understands the source, finds consequential semantic gaps,
-    models explicit unknowns, and passes validation/query checks.
-  - `L2 Repeatability`: independent consumption, repeated runs, and mutation checks.
-  - `L3 Productization`: strict isolation, credential brokering, recovery, immutable audit, and
-    generalized orchestration.
-  Do not make L2 or L3 prerequisites for L1.
-- Before designing or implementing a requirement, inventory the closest previously accepted
-  requirement, scenario, launcher, prompts, role configuration, protocol helpers, audit logic, and
-  tests. Reuse those verified assets directly and extend them with the smallest necessary delta;
-  do not rebuild an already validated execution path from scratch. If reuse is impossible, record
-  the concrete incompatibility and evidence in the design and delivery record, preserve the old
-  path as a regression oracle, and obtain plan review before introducing a replacement. New
-  acceptance logic must compare against the prior raw evidence source and include a regression that
-  would fail if the previously verified behavior were misread or dropped.
-- The Delivery Agent owns Project/Ontology preparation, Build Session, lease, Modeling Batch,
-  validation, reasoning, query, cleanup, and evidence handoff. Reuse one previously validated
-  deterministic repo-local execution workflow as the Delivery Agent's tool; do not promote that
-  script into a separate Host layer or autonomous acceptance role. A new Agent Runtime such as
-  Codex or Pi should normally add only a thin adapter for launch, prompt/input assembly, tool
-  bridging, event normalization, and terminal-state detection.
-- Keep mechanical protocol work out of the model. Deterministic tools must own UUIDs, canonical
-  JSON, filenames, atomic file publication, request schemas, lease refresh/retry, checkpoint
-  bodies, and response parsing. The Agent should spend its reasoning on business semantics, Class,
-  Property, Shape, relation, evidence, and explicit-unknown decisions.
-- For a local modeling-quality experiment, prefer direct model-provider access with an ephemeral
-  credential when that is the shortest safe path. Add a Host model proxy, network sandbox, or
-  stronger credential isolation only when explicitly required or when a demonstrated risk makes it
-  necessary.
-- Make live failures observable and fail fast. Preserve the real failure category across adapters,
-  expose progress milestones, bound first-response and terminal waits separately, and terminate
-  promptly after a provider or Agent terminal error. Do not wait for a large global timeout when
-  the underlying call has already failed.
-- Keep design, review, documentation, and regression work proportional to the current gate. A
-  modeling-quality smoke run must not be delayed by exhaustive negative matrices or full delivery
-  ceremony unless platform code is changing or a concrete high-risk condition requires it.
-- Parallel execution is an explicit user requirement and should be preserved. Run independent work
-  in parallel with subagents when requested; do not treat parallelism itself as a failure cause.
-  Before starting parallel tasks, freeze each task's contract and assign non-overlapping ownership
-  of files, ports, Project/Ontology IDs, runtime directories, and cleanup responsibility. Shared
-  requirements and delivery records need a designated writer or append-only coordination rule.
-- Separate failures into `modeling-quality`, `platform-contract`, and `runtime/infrastructure`
-  categories. A runtime or transport failure must not trigger additional ontology workflow,
-  Consumer, mutation, or governance scope. First repair or bypass the narrow failing layer, then
-  resume the original modeling goal.
-- Track the time spent on actual semantic modeling versus infrastructure, harness, review, and
-  documentation. If actual modeling is less than half of the active effort, pause and propose a
-  smaller path before expanding the harness.
-
-### Lessons from the R2.2 L3 modeling-team evaluation
-
-Apply these rules to later multi-Agent modeling experiments. They summarize the failed attempts and
-accepted recovery path from R2.2-001 L3:
-
-- Treat raw Agent rollouts as the authority for collaboration evidence. An outer
-  `codex exec --json` summary can omit child activity and must not be used to conclude that a
-  coordinator failed to create a Modeling Agent. Prove the chain with the coordinator
-  `spawn_agent` call, `agent_type`, `fork_turns`, matching `sub_agent_activity`, and the child
-  `session_meta` parent/role fields. Reuse the already accepted L0/L1 reader and fixtures.
-- Count only a fresh Coordinator/Modeling Agent team as a modeling start. A Protocol retry that
-  reuses the same approved candidate, answers, coordinator, and Modeling Agent is not a new
-  modeling opportunity. Every retry must still have an exact transcript, failure category,
-  cleanup proof, and hash-bound receipt; never use this distinction to obtain another semantic
-  modeling attempt.
-- Preserve recovered question/answer sessions as an append-only state machine. Each question cycle
-  must bind its canonical question hash, exact frozen answer, coordinator Session, originating
-  resume transcript, previous cycle, and previous correction. Never recompute or overwrite an
-  earlier correction after releasing a later answer, and test cross-cycle substitution and
-  previous-link tampering.
-- When a resumed Agent must publish files, put sandbox and working-directory options on the parent
-  `codex exec` command before `resume`, and probe the real boundary: `/work` writable, `/opt`
-  read-only, repository and tester-only paths absent. Do not assume an L1 resume command is writable
-  enough for an L3 multi-question workflow.
-- Reuse the previously verified interpreter runtime mount. Mounting the backend source parent can
-  miss the virtual-environment interpreter and can expose `.env`; mount only the resolved runtime
-  root and the explicitly required script files. A failed MCP startup before Agent creation must
-  remain `runtime/infrastructure`, with credentials and owned resources still cleaned.
-- Make credential lifecycle a Delivery-Agent responsibility. Perform the no-key authentication
-  rejection before creating/injecting the temporary key, stage only a redacted proof, and tell the
-  keyed Protocol Agent not to repeat the probe. Repeating the probe after injection can cancel an
-  otherwise valid Build Session and is not modeling evidence.
-- Dry-run must reject every value that would fail at the persistence sink. In particular, validate
-  relation source, predicate, and target as absolute RDF IRIs before producing any RDF delta.
-  Negative tests must prove zero workspace change, zero RDF delta, and no write fence; a dry-run
-  that merely postpones an IRI error until atomic apply is a platform defect.
-- Prefer bounded schema, entity, and relation Batches when relations require platform-issued IRIs.
-  Apply entity Batches first, reread their absolute IRIs, then build relation Batches. The result
-  contract must represent applied Batches as a non-empty list, and mechanical evidence checks must
-  reread every listed Batch rather than assuming exactly one Batch.
-- Use role-specific timeouts. Keep first-response and terminal waits separate; retain the normal
-  coordinator/resume timeout, and extend only a Protocol execution that has demonstrated valid
-  progress. A generic timeout must not turn a healthy long-running application into a false
-  modeling failure.
-- Keep evidence inspection genuinely read-only. Do not call a `status` command from an independent
-  test if it can append a recovery correction or otherwise mutate the evidence ledger. Independent
-  testers should read the final snapshot, correction chain, transcripts, receipts, and cleanup
-  artifacts directly and append only their round to the shared test plan.
-- The Delivery Agent may use a deterministic repo-local script for isolation, resource lifecycle,
-  mechanical integrity, and cleanup, but that script is not a Host layer and must not judge semantic
-  quality. The independent Requirement Tester owns final semantic acceptance; it must not create or
-  continue the live run whose evidence it evaluates.
-- Classify the failing layer before changing scope. Collaboration-summary misreads and resume-write
-  failures are `collaboration/routing` or runtime-adapter defects; interpreter mount, provider, and
-  timeout failures are `runtime/infrastructure`; dry-run and receipt-shape defects are
-  `platform-contract`; only a completed model that fails semantic gates is `modeling-quality`.
-  Repair the narrow layer, reuse the approved modeling work, and do not add Consumer, mutation,
-  governance, or orchestration scope in response.
+  longer preparation phase. If the gate is missed, stop, report the time consumers, and reduce the
+  setup before continuing.
+- Treat the user-authorized modeling-attempt budget as a hard boundary. Count only fresh semantic
+  modeling starts, preserve every attempt, and request new authorization after exhaustion.
+- Use staged acceptance: `L0 Runtime`, `L1 Modeling quality`, `L2 Repeatability`, and
+  `L3 Productization`. Never make a later stage a prerequisite for an earlier one.
+- Before implementation, inventory and reuse the closest accepted requirement, scenario, code,
+  prompts, role configuration, protocol helpers, raw evidence readers, and tests. Extend them with
+  the smallest necessary delta; document and review any proven incompatibility before replacement.
+- The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
+  handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
+  semantic acceptance authority.
+- Keep deterministic mechanics out of model reasoning. Tools own protocol formatting, stable
+  identities, immutable publication, retries, and parsing; modeling Agents own business semantics,
+  ontology structure, evidence, Shapes, relations, and explicit unknowns.
+- Require dry-run/application integrity, source fidelity, bounded scope, validation/reasoning, and
+  governed retrieval evidence before accepting a model. Do not add unrelated governance,
+  Consumer, mutation, recovery, or orchestration scope to repair a narrow failure.
+- Make live progress and terminal failures observable, fail fast, and preserve the failing layer as
+  `modeling-quality`, `platform-contract`, `collaboration/routing`, or
+  `runtime/infrastructure`. Repair only the narrow layer and resume the original modeling goal.
+- Preserve requested parallel execution. Freeze contracts and assign non-overlapping ownership of
+  files, ports, Project/Ontology IDs, runtime directories, shared records, and cleanup before work
+  begins.
+- Final semantic acceptance must be independent from the process that produced the live evidence.
+  Independent testing must not create or continue the run it evaluates and must not mutate retained
+  evidence.
+- Track time spent on semantic modeling versus infrastructure, harness, review, and documentation.
+  If semantic modeling is less than half of active effort, pause and propose a smaller path before
+  expanding the harness.
 
 ## Platform and Reference-Ontology Boundary
 
