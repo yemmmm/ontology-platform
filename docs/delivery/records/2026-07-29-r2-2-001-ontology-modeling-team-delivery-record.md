@@ -1,9 +1,9 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
+- Status: completed through L1; standalone L2 merged into L3; L3 contract refined, design pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:56:24+08:00
+- Last updated: 2026-07-30T11:58:29+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -644,3 +644,20 @@
 - Evidence: retain the grounded question, exact answer, resumed coordinator Session identity and
   resulting model effect for direct acceptance review.
 - Outcome/next step: confirm the bounded retry policy for runtime, protocol and modeling failures.
+
+### 2026-07-30T11:58:29+08:00 — L3 retry policy and contract freeze — User + Delivery Agent
+
+- User decision: allow at most three fresh L3 starts under the proposed failure policy.
+- Retryable: retain evidence and clean up after `runtime/infrastructure` or non-semantic mechanical
+  `platform-contract` failure, repair only the narrow failing layer, then start with fresh Sessions,
+  runtime directory and platform scope.
+- Terminal modeling result: when a completed model fails the semantic completion gate, classify it
+  as `modeling-quality` and stop without hidden-answer disclosure, prompt tuning, acceptance
+  relaxation or another modeling attempt.
+- Exhaustion: three starts without a complete PASS pauses L3 as not passed; all failed attempts
+  remain in the record.
+- Contract status: functional refinement is complete. The authoritative requirement now freezes
+  the business slice, non-comparative goal, conditional answer release, manual/subagent acceptance,
+  minimum completion gate and retry boundary.
+- Outcome/next step: L3 is ready for risk probes, design and shared test-plan review when the user
+  authorizes implementation work.
