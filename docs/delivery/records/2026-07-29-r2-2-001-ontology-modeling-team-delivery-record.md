@@ -1,9 +1,9 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: completed through L1; L2-L3 pending
+- Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T10:40:00+08:00
+- Last updated: 2026-07-30T11:36:20+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -565,3 +565,22 @@
 - Product impact: documentation and the repo-local evaluation scenario only; no backend/frontend
   product code, migration or service restart is required.
 - Delivery commit subject: `Complete ontology modeling team L1`.
+
+### 2026-07-30T11:36:20+08:00 — L2 merged into L3 — User + Delivery Agent
+
+- Context: after L1 PASS, the requirement still proposed a standalone L2 conflict-routing phase
+  before the L3 real business slice.
+- User decision: a separate L2 task is not worth its own implementation and validation campaign;
+  validate the necessary routing behavior together with the L3 business slice.
+- Scope change: cancel standalone L2 design, scenario and completion gate. L3 now owns both the
+  modeling-quality outcome and minimum evidence that mechanical, platform-state and semantic
+  failures are routed to the correct team role.
+- Proportionality rule: prefer naturally occurring L3 failure evidence. If a critical routing
+  boundary does not occur, add only a small deterministic probe inside the same L3 scope; do not
+  build a generalized fault matrix, injection framework or separate L2 harness.
+- Failure attribution: L3 evidence must distinguish `modeling-quality`,
+  `collaboration/routing` and `runtime/infrastructure` so a transport or platform failure cannot be
+  reported as a modeling-quality conclusion.
+- Outcome/next step: update the authoritative v2.2 requirement now, then continue
+  one-question-at-a-time refinement of the L3 business slice, quality gate and external evaluation
+  boundary before design or implementation.
