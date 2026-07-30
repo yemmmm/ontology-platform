@@ -124,6 +124,65 @@ security boundary, or generalized evaluation platform.
   documentation. If actual modeling is less than half of the active effort, pause and propose a
   smaller path before expanding the harness.
 
+### Lessons from the R2.2 L3 modeling-team evaluation
+
+Apply these rules to later multi-Agent modeling experiments. They summarize the failed attempts and
+accepted recovery path from R2.2-001 L3:
+
+- Treat raw Agent rollouts as the authority for collaboration evidence. An outer
+  `codex exec --json` summary can omit child activity and must not be used to conclude that a
+  coordinator failed to create a Modeling Agent. Prove the chain with the coordinator
+  `spawn_agent` call, `agent_type`, `fork_turns`, matching `sub_agent_activity`, and the child
+  `session_meta` parent/role fields. Reuse the already accepted L0/L1 reader and fixtures.
+- Count only a fresh Coordinator/Modeling Agent team as a modeling start. A Protocol retry that
+  reuses the same approved candidate, answers, coordinator, and Modeling Agent is not a new
+  modeling opportunity. Every retry must still have an exact transcript, failure category,
+  cleanup proof, and hash-bound receipt; never use this distinction to obtain another semantic
+  modeling attempt.
+- Preserve recovered question/answer sessions as an append-only state machine. Each question cycle
+  must bind its canonical question hash, exact frozen answer, coordinator Session, originating
+  resume transcript, previous cycle, and previous correction. Never recompute or overwrite an
+  earlier correction after releasing a later answer, and test cross-cycle substitution and
+  previous-link tampering.
+- When a resumed Agent must publish files, put sandbox and working-directory options on the parent
+  `codex exec` command before `resume`, and probe the real boundary: `/work` writable, `/opt`
+  read-only, repository and tester-only paths absent. Do not assume an L1 resume command is writable
+  enough for an L3 multi-question workflow.
+- Reuse the previously verified interpreter runtime mount. Mounting the backend source parent can
+  miss the virtual-environment interpreter and can expose `.env`; mount only the resolved runtime
+  root and the explicitly required script files. A failed MCP startup before Agent creation must
+  remain `runtime/infrastructure`, with credentials and owned resources still cleaned.
+- Make credential lifecycle a Delivery-Agent responsibility. Perform the no-key authentication
+  rejection before creating/injecting the temporary key, stage only a redacted proof, and tell the
+  keyed Protocol Agent not to repeat the probe. Repeating the probe after injection can cancel an
+  otherwise valid Build Session and is not modeling evidence.
+- Dry-run must reject every value that would fail at the persistence sink. In particular, validate
+  relation source, predicate, and target as absolute RDF IRIs before producing any RDF delta.
+  Negative tests must prove zero workspace change, zero RDF delta, and no write fence; a dry-run
+  that merely postpones an IRI error until atomic apply is a platform defect.
+- Prefer bounded schema, entity, and relation Batches when relations require platform-issued IRIs.
+  Apply entity Batches first, reread their absolute IRIs, then build relation Batches. The result
+  contract must represent applied Batches as a non-empty list, and mechanical evidence checks must
+  reread every listed Batch rather than assuming exactly one Batch.
+- Use role-specific timeouts. Keep first-response and terminal waits separate; retain the normal
+  coordinator/resume timeout, and extend only a Protocol execution that has demonstrated valid
+  progress. A generic timeout must not turn a healthy long-running application into a false
+  modeling failure.
+- Keep evidence inspection genuinely read-only. Do not call a `status` command from an independent
+  test if it can append a recovery correction or otherwise mutate the evidence ledger. Independent
+  testers should read the final snapshot, correction chain, transcripts, receipts, and cleanup
+  artifacts directly and append only their round to the shared test plan.
+- The Delivery Agent may use a deterministic repo-local script for isolation, resource lifecycle,
+  mechanical integrity, and cleanup, but that script is not a Host layer and must not judge semantic
+  quality. The independent Requirement Tester owns final semantic acceptance; it must not create or
+  continue the live run whose evidence it evaluates.
+- Classify the failing layer before changing scope. Collaboration-summary misreads and resume-write
+  failures are `collaboration/routing` or runtime-adapter defects; interpreter mount, provider, and
+  timeout failures are `runtime/infrastructure`; dry-run and receipt-shape defects are
+  `platform-contract`; only a completed model that fails semantic gates is `modeling-quality`.
+  Repair the narrow layer, reuse the approved modeling work, and do not add Consumer, mutation,
+  governance, or orchestration scope in response.
+
 ## Platform and Reference-Ontology Boundary
 
 Treat concepts that appear in a customer ontology, evaluation corpus, or reference scenario as
