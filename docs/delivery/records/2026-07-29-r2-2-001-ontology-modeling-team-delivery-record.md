@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
 - Status: completed through L1; standalone L2 merged into L3; L3 refinement pending
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T11:36:20+08:00
+- Last updated: 2026-07-30T11:41:05+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`
@@ -584,3 +584,17 @@
 - Outcome/next step: update the authoritative v2.2 requirement now, then continue
   one-question-at-a-time refinement of the L3 business slice, quality gate and external evaluation
   boundary before design or implementation.
+
+### 2026-07-30T11:41:05+08:00 — L3 business slice selected — User + Delivery Agent
+
+- User decision: use the complete Dify Workflow-as-Tool `C -> B -> A` business slice for L3.
+- Comparison purpose: reuse the same frozen source domain as v2.1 M1/M6 so differences can be
+  attributed to the three-Agent collaboration more credibly than if the corpus also changed.
+- Isolation boundary: L3 must use fresh team Sessions and platform resources. Historical M1–M6
+  answer ontologies, Batch payloads, expected queries, run evidence and hidden acceptance contracts
+  remain tester-only and unavailable to the team.
+- Scope boundary: this decision restores the complete M1/M6 impact-chain slice after L1's smaller
+  version-state slice; it does not automatically include M7's wider Workflow orchestration and
+  typed-variable-flow module.
+- Outcome/next step: define the comparison baseline required to support an L3 modeling-quality
+  improvement claim.
