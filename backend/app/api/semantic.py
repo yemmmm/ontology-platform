@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_rdf_store, get_settings
+from app.api.deps import (
+    get_context_cursor_codec,
+    get_db_session,
+    get_rdf_store,
+    get_settings,
+)
 from app.api.schemas import (
     ReasoningRunListResponse,
     RuleRunListResponse,
@@ -88,6 +93,7 @@ from app.services.semantic_context_query import (
     SemanticContextQueryError,
     SemanticContextQueryService,
 )
+from app.services.semantic_context_cursor import ContextCursorCodec
 from app.services.authorized_scope_discovery import (
     AuthorizedScopeDiscoveryService,
     ScopeDiscoveryError,
@@ -391,10 +397,16 @@ def query_semantic_context(
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
+    cursor_codec: ContextCursorCodec = Depends(get_context_cursor_codec),
 ) -> SemanticContextQueryResponse:
     try:
         resolver = SemanticQueryScopeResolver(session, settings)
-        result = SemanticContextQueryService(session, rdf_store, resolver).query_multi(
+        result = SemanticContextQueryService(
+            session,
+            rdf_store,
+            resolver,
+            cursor_codec=cursor_codec,
+        ).query_multi(
             project_id=request.project_id,
             scope_mode=request.scope_mode,
             ontology_ids=request.ontology_ids,

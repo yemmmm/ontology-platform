@@ -196,6 +196,115 @@ def test_context_mcp_keeps_bilingual_asserted_label_exactness(scoped_mcp, monkey
     assert body["primary_matches"][0]["match"]["reasons"] == ["exact_label"]
 
 
+def test_context_mcp_strips_unknown_shape_lineage_marker(scoped_mcp, monkeypatch):
+    settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
+    graph = "https://mcp.test/graph/ontology/o"
+
+    class CandidateStore:
+        def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+            return SparqlResult(
+                result={
+                    "head": {"vars": []},
+                    "results": {
+                        "bindings": [
+                            {
+                                "graph": {"type": "uri", "value": graph},
+                                "subject": {
+                                    "type": "uri",
+                                    "value": "https://example.test/Workflow",
+                                },
+                                "predicate": {
+                                    "type": "uri",
+                                    "value": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                                },
+                                "object": {
+                                    "type": "uri",
+                                    "value": "http://www.w3.org/2002/07/owl#Class",
+                                },
+                                "subjectLabel": {
+                                    "type": "literal",
+                                    "value": "Workflow",
+                                },
+                                "subjectTypes": {
+                                    "type": "literal",
+                                    "value": "http://www.w3.org/2002/07/owl#Class",
+                                },
+                            }
+                        ]
+                    },
+                },
+                result_format="application/sparql-results+json",
+            )
+
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._context_query_service",
+        lambda session: SemanticContextQueryService(
+            session,
+            CandidateStore(),
+            SemanticQueryScopeResolver(session, settings),
+        ),
+    )
+
+    def invalid_shape_items(self, primary, scope, *, limit):  # noqa: ARG001
+        return [
+            {
+                "id": "shape-hash",
+                "kind": "fact",
+                "ontology_id": "o",
+                "iri": None,
+                "label": "custom property",
+                "aliases": [],
+                "description": None,
+                "data": {
+                    "target_class": "https://example.test/Workflow",
+                    "constraint": {"path": "relative/property", "provenance": "custom"},
+                },
+                "distance": 1,
+                "assertion_kind": "asserted",
+                "match": {
+                    "score": 275,
+                    "matched_terms": [],
+                    "matched_fields": ["constraint"],
+                    "reasons": ["shape_constraint"],
+                },
+                "_lineage_target": {
+                    "target_type": "synthetic",
+                    "target_id": "shape-hash",
+                },
+            }
+        ][:limit]
+
+    monkeypatch.setattr(SemanticContextQueryService, "_shape_constraint_items", invalid_shape_items)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[]],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    scoped_mcp(EmptyStore())
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        query="workflow",
+        resource_types=["concept", "fact"],
+        depth=1,
+        context_limit=1,
+    )
+
+    assert result["ok"] is True
+    related = result["data"]["related_context"]
+    assert len(related) == 1
+    shape_item = related[0]
+    assert "_lineage_target" not in shape_item
+    assert "target_kind" not in shape_item
+    assert shape_item["lineage"] == {"status": "missing"}
+    assert "synthetic" not in str(shape_item["lineage"])
+
+
 # ---------------------------------------------------------------------------
 # R1.2-004 MCP-level multi-expression Context Query validation and parity.
 # ---------------------------------------------------------------------------

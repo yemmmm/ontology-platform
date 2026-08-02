@@ -16,7 +16,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.schemas import ModelingBatchSubmit
+from app.api.schemas import (
+    ModelingBatchSubmit,
+    ModelingOperationPlanEvidenceRead,
+)
 from app.core.config import Settings
 from app.repositories.models import (
     BuildSessionModel,
@@ -1983,7 +1986,7 @@ class ModelingBatchService:
 
     def _attempt_response(self, attempt, created_batch, created_attempt):
         batch = attempt.batch
-        return {
+        response = {
             "batch_id": batch.id,
             "client_batch_id": batch.client_batch_id,
             "batch_status": batch.status,
@@ -2018,6 +2021,56 @@ class ModelingBatchService:
             "created_at": attempt.created_at,
             "completed_at": attempt.completed_at,
         }
+        # The operation plan is an internal persisted structure.  Expose only
+        # its source-minimal Evidence projection on dry-run receipts so the
+        # Protocol can compare its candidate-local map without receiving
+        # locators, owner identities, or any raw source beyond submitted
+        # inline excerpts.  Apply/recovery receipts retain their existing
+        # shape and semantics.
+        if attempt.mode == "dry_run":
+            response["operation_plan"] = {
+                "evidence": self._safe_operation_plan_evidence(attempt)
+            }
+        return response
+
+    def _safe_operation_plan_evidence(self, attempt) -> list[dict[str, str]]:
+        """Project persisted Evidence plan rows into a safe dry-run shape.
+
+        ``_evidence_plan`` remains the single source of deduplication and
+        deterministic reference allocation.  This method only reads those
+        planned rows and resolves metadata for existing references; it never
+        creates or mutates Evidence rows.
+        """
+
+        planned = (attempt.operation_plan or {}).get("evidence") or {}
+        if not planned:
+            return []
+        service = EvidenceReferenceService(self.session)
+        rows: list[dict[str, str]] = []
+        for client_item_id in sorted(planned):
+            for entry in planned.get(client_item_id) or []:
+                reference_id = str(entry.get("reference_id") or "")
+                document_name = entry.get("document_name")
+                excerpt_hash = entry.get("excerpt_hash")
+                if document_name is None or excerpt_hash is None:
+                    # Existing references are represented in the internal
+                    # plan by their stable reference ID.  Resolve only the
+                    # safe metadata needed for map comparison; do not copy
+                    # the stored excerpt into the receipt.
+                    reference = service.get(
+                        reference_id,
+                        project_id=attempt.batch.project_id,
+                    )
+                    document_name = reference.normalized_document_name
+                    excerpt_hash = reference.excerpt_hash
+                projection = ModelingOperationPlanEvidenceRead(
+                    client_item_id=client_item_id,
+                    document_name=str(document_name),
+                    normalized_excerpt_sha256=str(excerpt_hash),
+                    dedupe_identity=reference_id,
+                )
+                rows.append(projection.model_dump(mode="json"))
+        return rows
 
     def _batch_detail(self, batch):
         return {

@@ -31,7 +31,11 @@ from app.services.semantic_context_cursor import (
     binding_digest,
     make_binding,
 )
-from app.services.semantic_lineage_identity import statement_id_for_quad
+from app.services.semantic_lineage_identity import (
+    InvalidLineageStatement,
+    canonical_iri,
+    statement_id_for_quad,
+)
 from app.services.semantic_query_scope import SemanticQueryScope, SemanticQueryScopeResolver
 from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointService
 from app.services.semantic_retrieval import (
@@ -105,6 +109,7 @@ class SemanticContextQueryService:
         scope_resolver: SemanticQueryScopeResolver,
         lineage_service: OntologyLineageService | None = None,
         shape_endpoint: SemanticShapeEndpointService | None = None,
+        cursor_codec: ContextCursorCodec | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
@@ -117,6 +122,7 @@ class SemanticContextQueryService:
         self.operation_predicates = operation_predicates(scope_resolver.settings)
         self.operation_type = self.operation_vocab["type"]
         self.settings = scope_resolver.settings
+        self.cursor_codec = cursor_codec
 
     def query(
         self,
@@ -207,7 +213,10 @@ class SemanticContextQueryService:
             scope_mode=scope_mode,
             ontology_ids=ontology_ids,
         )
-        cursor_codec = ContextCursorCodec.from_settings(self.settings)
+        # REST injects one codec per application so ephemeral cursors survive
+        # across requests.  Direct/MCP callers without an injected codec keep
+        # the historical per-query construction semantics.
+        cursor_codec = self.cursor_codec or ContextCursorCodec.from_settings(self.settings)
         workspace_versions = tuple(
             (entry.ontology_id, entry.workspace_version) for entry in scope.ontologies
         )
@@ -800,6 +809,12 @@ class SemanticContextQueryService:
                     {
                         "id": subject,
                         "kind": "instance",
+                        # A property/resource can be classified as a
+                        # relation by RDF type, but it is still a resource
+                        # lineage target.  Keep this target kind explicit so
+                        # decoration never infers statement lineage from the
+                        # presentation ``kind`` alone.
+                        "target_kind": "resource",
                         "ontology_id": ontology_id,
                         "iri": subject,
                         "label": None,
@@ -1071,6 +1086,16 @@ LIMIT 5000
                     if not isinstance(field, dict):
                         continue
                     path = str(field.get("path") or field.get("name") or "constraint")
+                    canonical_path: str | None = None
+                    if field.get("provenance") == "generated":
+                        try:
+                            canonical_path = canonical_iri(path)
+                        except (InvalidLineageStatement, ValueError):
+                            # Shape guidance may contain a blank-node,
+                            # relative, or otherwise non-RDF path.  Keep the
+                            # visible constraint, but never turn its
+                            # synthetic identity into a statement target.
+                            canonical_path = None
                     item_id = hashlib.sha256(
                         f"{match['ontology_id']}:{target_class}:{path}".encode("utf-8")
                     ).hexdigest()
@@ -1096,33 +1121,41 @@ LIMIT 5000
                             "provenance",
                         }
                     }
-                    items.append(
-                        {
-                            "id": item_id,
-                            "kind": "fact",
-                            "ontology_id": match["ontology_id"],
-                            "iri": path
+                    item = {
+                        "id": item_id,
+                        "kind": "fact",
+                        "ontology_id": match["ontology_id"],
+                        "iri": canonical_path
+                        or (
+                            path
                             if path.startswith(("http://", "https://", "urn:"))
-                            else None,
-                            "label": str(
-                                field.get("label") or field.get("name") or _local_name(path)
-                            ),
-                            "aliases": [],
-                            "description": field.get("description"),
-                            "data": {
-                                "target_class": target_class,
-                                "constraint": public_constraint,
-                            },
-                            "distance": 1,
-                            "assertion_kind": "asserted",
-                            "match": {
-                                "score": 275,
-                                "matched_terms": [],
-                                "matched_fields": ["constraint"],
-                                "reasons": ["shape_constraint"],
-                            },
+                            else None
+                        ),
+                        "label": str(
+                            field.get("label") or field.get("name") or _local_name(path)
+                        ),
+                        "aliases": [],
+                        "description": field.get("description"),
+                        "data": {
+                            "target_class": target_class,
+                            "constraint": public_constraint,
+                        },
+                        "distance": 1,
+                        "assertion_kind": "asserted",
+                        "match": {
+                            "score": 275,
+                            "matched_terms": [],
+                            "matched_fields": ["constraint"],
+                            "reasons": ["shape_constraint"],
+                        },
+                    }
+                    if canonical_path is not None:
+                        item["target_kind"] = "resource"
+                        item["_lineage_target"] = {
+                            "target_type": "resource",
+                            "target_id": canonical_path,
                         }
-                    )
+                    items.append(item)
                     if len(items) >= limit:
                         return items
         return items
@@ -1272,6 +1305,7 @@ LIMIT 5000
         return {
             "id": statement_id,
             "kind": "relation" if is_relation else "fact",
+            "target_kind": "statement",
             "ontology_id": scope.graph_to_ontology[graph],
             "iri": predicate,
             "label": f"{subject_label} {predicate_label}".strip(),
@@ -1292,33 +1326,115 @@ LIMIT 5000
     def _decorate(self, item: dict[str, Any], scope: SemanticQueryScope) -> dict[str, Any]:
         item = dict(item)
         item.pop("_target_label", None)
-        target_type = "statement" if item["kind"] in {"fact", "relation"} else item["kind"]
-        if target_type not in {"statement", "rule"}:
-            target_type = "resource"
-        try:
-            lineage = self.lineage_service.get_lineage(
-                ontology_id=item["ontology_id"],
-                target_type=target_type,
-                target_id=item["id"],
-                include_history=False,
-                max_depth=1,
-                limit=50,
+        is_shape_constraint = item.get("match", {}).get("reasons") == ["shape_constraint"]
+        constraint = (item.get("data") or {}).get("constraint")
+        is_generated_shape_constraint = (
+            is_shape_constraint
+            and isinstance(constraint, dict)
+            and constraint.get("provenance") == "generated"
+        )
+        # ``_lineage_target`` is an internal hand-off from generated shape
+        # guidance.  Only the resource/property projection emitted by this
+        # service is trusted; all other markers fail closed and must never
+        # become a public (or OntologyLineageService) target.
+        raw_lineage_target = item.pop("_lineage_target", None)
+        lineage_target: dict[str, str] | None = None
+        expected_lineage_id: str | None = None
+        if is_generated_shape_constraint:
+            raw_constraint_path = constraint.get("path") or item.get("iri")
+            if isinstance(raw_constraint_path, str):
+                try:
+                    expected_lineage_id = canonical_iri(raw_constraint_path)
+                except (InvalidLineageStatement, ValueError):
+                    expected_lineage_id = None
+        if is_generated_shape_constraint and isinstance(raw_lineage_target, dict):
+            candidate_type = raw_lineage_target.get("target_type")
+            candidate_id = raw_lineage_target.get("target_id")
+            if candidate_type == "resource" and isinstance(candidate_id, str):
+                try:
+                    canonical_target_id = canonical_iri(candidate_id)
+                except (InvalidLineageStatement, ValueError):
+                    canonical_target_id = None
+                if (
+                    canonical_target_id is not None
+                    and expected_lineage_id is not None
+                    and canonical_target_id == expected_lineage_id
+                ):
+                    lineage_target = {
+                        "target_type": "resource",
+                        "target_id": canonical_target_id,
+                    }
+        target_kind = item.get("target_kind")
+        if is_shape_constraint:
+            # Shape constraints are target-less projections unless the
+            # generated property marker above validated successfully.
+            target_kind = "resource" if lineage_target is not None else None
+        elif target_kind not in {"resource", "statement"}:
+            # Keep compatibility with semantic-retrieval candidates that
+            # predate explicit target metadata.  A statement has the generic
+            # subject/predicate/object shape; a relation-typed RDF resource
+            # does not, even though its public ``kind`` is also ``relation``.
+            data = item.get("data") or {}
+            target_kind = (
+                "statement"
+                if item["kind"] == "fact"
+                or (
+                    item["kind"] == "relation"
+                    and {"subject", "predicate", "object"}.issubset(data)
+                )
+                else "resource"
             )
-            evidence_ids = sorted(set(_collect_evidence_ids(lineage.get("items", []))))
-            lineage_status = lineage.get("lineage_status", "missing")
-            evidence_status = lineage.get("evidence_status", "missing")
-            dependency_status = lineage.get("dependency_evidence_status")
-            proof_level = _find_first(lineage.get("items", []), "proof_level")
-            lineage_warnings = lineage.get("warnings", [])
-        except LineageTargetNotFound:
+        if target_kind is not None:
+            item["target_kind"] = target_kind
+        if lineage_target is not None:
+            target_type = lineage_target["target_type"]
+            target_id = lineage_target["target_id"]
+        elif item["kind"] == "rule":
+            target_type = "rule"
+            target_id = item["id"]
+        elif is_shape_constraint:
+            # A shape constraint without a valid generated property IRI is a
+            # read-model projection only.  Do not ask lineage to interpret its
+            # synthetic hash as a persisted statement or resource.  The
+            # synthetic marker remains internal and is omitted from the public
+            # lineage envelope below.
+            target_type = None
+            target_id = None
+        else:
+            target_type = target_kind
+            target_id = item["id"]
+        if is_shape_constraint and lineage_target is None:
             evidence_ids = []
             lineage_status = "missing"
-            evidence_status = (
-                "not_applicable" if item["assertion_kind"] != "asserted" else "missing"
-            )
-            dependency_status = "missing" if item["assertion_kind"] != "asserted" else None
+            evidence_status = "missing" if item["assertion_kind"] == "asserted" else "not_applicable"
+            dependency_status = None
             proof_level = None
             lineage_warnings = []
+        else:
+            try:
+                lineage = self.lineage_service.get_lineage(
+                    ontology_id=item["ontology_id"],
+                    target_type=target_type,
+                    target_id=target_id,
+                    include_history=False,
+                    max_depth=1,
+                    limit=50,
+                )
+                evidence_ids = sorted(set(_collect_evidence_ids(lineage.get("items", []))))
+                lineage_status = lineage.get("lineage_status", "missing")
+                evidence_status = lineage.get("evidence_status", "missing")
+                dependency_status = lineage.get("dependency_evidence_status")
+                proof_level = _find_first(lineage.get("items", []), "proof_level")
+                lineage_warnings = lineage.get("warnings", [])
+            except LineageTargetNotFound:
+                evidence_ids = []
+                lineage_status = "missing"
+                evidence_status = (
+                    "not_applicable" if item["assertion_kind"] != "asserted" else "missing"
+                )
+                dependency_status = "missing" if item["assertion_kind"] != "asserted" else None
+                proof_level = None
+                lineage_warnings = []
 
         derived_state = None
         if item["assertion_kind"] != "asserted":
@@ -1356,16 +1472,15 @@ LIMIT 5000
             for code in lineage_warnings
             if code in {"lineage_truncated", "legacy_lineage_unavailable"}
         )
+        lineage_public: dict[str, Any] = {"status": lineage_status}
+        if target_type is not None and target_id is not None:
+            lineage_public.update(target_type=target_type, target_id=target_id)
         return {
             **item,
             "assertion_type": _assertion_filter_value(item["assertion_kind"]),
             "evidence_reference_ids": evidence_ids,
             "evidence_status": evidence_status,
-            "lineage": {
-                "target_type": target_type,
-                "target_id": item["id"],
-                "status": lineage_status,
-            },
+            "lineage": lineage_public,
             "derived_state": derived_state,
             "warnings": _dedupe_warnings(item_warnings),
         }

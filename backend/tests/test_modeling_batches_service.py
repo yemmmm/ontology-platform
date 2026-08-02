@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 
 import pytest
 from sqlalchemy import func, select
@@ -12,6 +13,7 @@ from app.api.schemas import (
     BuildSessionCreate,
     ModelingBatchSubmit,
     ModelingItemInput,
+    ModelingOperationPlanRead,
     OntologyLeaseAcquire,
 )
 from app.core.config import Settings
@@ -195,6 +197,66 @@ def test_dry_run_is_persistent_deterministic_and_has_zero_side_effects(modeling)
     assert db.scalar(select(func.count(ModelingBatchModel.id))) == 1
     assert db.scalar(select(func.count(ModelingBatchAttemptModel.id))) == 1
     assert "lease" not in json.dumps(first, default=str).lower()
+
+
+def test_dry_run_operation_plan_projects_inline_evidence_safely_and_dedupes(modeling):
+    service, db, _rdf, session_id, _lease, version = modeling
+    excerpt = "Customer is a domain term."
+    item = _item(
+        "customer",
+        evidence=[
+            {"document_name": "domain.md", "excerpt": excerpt},
+            # Equivalent after normalization; _evidence_plan must keep one
+            # deterministic reference and the response must project it once.
+            {"document_name": " domain.md ", "excerpt": "\n" + excerpt + "\r\n"},
+            # Same excerpt under another document remains a distinct citation.
+            {"document_name": "glossary.md", "excerpt": excerpt},
+        ],
+    )
+
+    result = service.submit(session_id, _request(version, [item]))
+
+    rows = result["operation_plan"]["evidence"]
+    assert len(rows) == 2
+    assert all(
+        set(row) == {
+            "client_item_id",
+            "document_name",
+            "normalized_excerpt_sha256",
+            "dedupe_identity",
+        }
+        for row in rows
+    )
+    assert {row["document_name"] for row in rows} == {"domain.md", "glossary.md"}
+    assert {
+        row["normalized_excerpt_sha256"] for row in rows
+    } == {sha256(excerpt.encode("utf-8")).hexdigest()}
+    assert len({row["dedupe_identity"] for row in rows}) == 2
+    assert excerpt not in json.dumps(result["operation_plan"])
+    # Response validation uses the same Pydantic contract exposed to API
+    # consumers; this is still a dry-run and must not create Evidence rows.
+    assert ModelingOperationPlanRead.model_validate(result["operation_plan"])
+    assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
+
+
+def test_dry_run_without_evidence_keeps_warning_and_empty_safe_plan(modeling):
+    service, db, _rdf, session_id, _lease, version = modeling
+    result = service.submit(
+        session_id,
+        _request(
+            version,
+            [_item("customer", evidence=[])],
+            batch="missing-evidence-plan",
+            key="missing-evidence-plan",
+        ),
+    )
+
+    warning = next(
+        finding for finding in result["findings"] if finding["code"] == "missing_evidence"
+    )
+    assert warning["severity"] == "warning"
+    assert result["operation_plan"]["evidence"] == []
+    assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
 
 
 def test_operation_secret_is_rejected_before_batch_persistence(modeling):
@@ -556,6 +618,7 @@ def test_partial_applies_stable_subset_and_only_its_evidence(modeling):
     )
     status = {item["client_item_id"]: item["status"] for item in result["items"]}
     assert result["attempt_status"] == "partially_applied"
+    assert "operation_plan" not in result
     assert status == {"bad": "failed", "dependent": "blocked", "good": "applied"}
     assert len(rdf.deltas) == 1
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
@@ -1212,9 +1275,11 @@ def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling)
 
     first = service.submit(session_id, payload)
     assert first["attempt_status"] == "recovering"
+    assert "operation_plan" not in first
     retry = service.submit(session_id, payload)
 
     assert retry["attempt_status"] == "applied"
+    assert "operation_plan" not in retry
     assert uncertain.failures == 1
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
     occurrence_count = db.scalar(select(func.count(SemanticStatementOccurrenceModel.id)))

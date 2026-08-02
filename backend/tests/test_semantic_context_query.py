@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
 import pytest
 from rdflib import Dataset, Literal, URIRef
-from rdflib.namespace import RDFS
+from rdflib.namespace import OWL, RDFS
 
 from app.core.config import Settings
 from app.repositories.models import (
@@ -109,6 +110,20 @@ class FakeLineage:
                     }
                 }
             ],
+            "warnings": [],
+        }
+
+
+class RecordingLineage:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def get_lineage(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "lineage_status": "complete",
+            "evidence_status": "supported",
+            "items": [],
             "warnings": [],
         }
 
@@ -307,6 +322,194 @@ def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_s
     assert "https://graphs.test" not in serialized
     assert "https://secret.test/shapes" not in serialized
     assert all("semantic-context" in query for query in store.queries)
+
+
+def test_generated_shape_constraint_projects_property_lineage_target(
+    in_memory_session,
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    lineage_result = {
+        "lineage_status": "complete",
+        "evidence_status": "supported",
+        "items": [
+            {
+                "supporting_context": {
+                    "evidence_references": [{"id": "property-evidence"}]
+                }
+            }
+        ],
+        "warnings": [],
+    }
+
+    class EvidenceLineage(RecordingLineage):
+        def get_lineage(self, **kwargs):
+            self.calls.append(kwargs)
+            return lineage_result
+
+    evidence_lineage = EvidenceLineage()
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=evidence_lineage,
+        shape_endpoint=FakeShapes(),
+    )
+    scope = service.scope_resolver.resolve(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+    )
+    primary = [
+        {
+            "id": "https://example.test/Workflow",
+            "kind": "concept",
+            "ontology_id": "ontology-1",
+            "iri": "https://example.test/Workflow",
+            "data": {},
+        }
+    ]
+
+    items = service._shape_constraint_items(primary, scope, limit=10)
+    assert len(items) == 1
+    shape_item = items[0]
+    property_iri = "https://example.test/datasetId"
+    expected_id = hashlib.sha256(
+        f"ontology-1:https://example.test/Workflow:{property_iri}".encode("utf-8")
+    ).hexdigest()
+    assert shape_item["id"] == expected_id
+    assert shape_item["kind"] == "fact"
+    assert shape_item["data"]["constraint"]["provenance"] == "generated"
+    assert shape_item["target_kind"] == "resource"
+    assert shape_item["_lineage_target"] == {
+        "target_type": "resource",
+        "target_id": property_iri,
+    }
+
+    decorated = service._decorate(shape_item, scope)
+    assert "_lineage_target" not in decorated
+    assert decorated["lineage"] == {
+        "target_type": "resource",
+        "target_id": property_iri,
+        "status": "complete",
+    }
+    assert decorated["evidence_reference_ids"] == ["property-evidence"]
+    assert decorated["warnings"] == []
+    assert evidence_lineage.calls[0]["target_type"] == "resource"
+    assert evidence_lineage.calls[0]["target_id"] == property_iri
+    assert evidence_lineage.calls[0]["target_id"] != shape_item["id"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"path": "https://example.test/custom", "provenance": "custom"},
+        {"path": "https://example.test/merged", "provenance": "merged"},
+        {"path": "_:blank", "provenance": "generated"},
+        {"path": "relative/property", "provenance": "generated"},
+    ],
+)
+def test_shape_constraint_without_generated_canonical_property_fails_closed(
+    in_memory_session, field
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+
+    class ShapeEndpoint:
+        def read_merged_guidance(self, graph_set_id, class_iri):  # noqa: ARG002
+            return {"fields": [field]}
+
+    lineage = RecordingLineage()
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=lineage,
+        shape_endpoint=ShapeEndpoint(),
+    )
+    scope = service.scope_resolver.resolve(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+    )
+    primary = [
+        {
+            "id": "https://example.test/Workflow",
+            "kind": "concept",
+            "ontology_id": "ontology-1",
+            "iri": "https://example.test/Workflow",
+            "data": {},
+        }
+    ]
+
+    shape_item = service._shape_constraint_items(primary, scope, limit=10)[0]
+    assert "_lineage_target" not in shape_item
+    assert "target_kind" not in shape_item
+    decorated = service._decorate(shape_item, scope)
+    assert "_lineage_target" not in decorated
+    assert decorated["lineage"] == {"status": "missing"}
+    assert {warning["code"] for warning in decorated["warnings"]} == {
+        "evidence_missing",
+        "lineage_missing",
+    }
+    assert lineage.calls == []
+
+
+def test_shape_constraint_unknown_internal_lineage_marker_is_stripped(
+    in_memory_session,
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    lineage = RecordingLineage()
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=lineage,
+        shape_endpoint=FakeShapes(),
+    )
+    scope = service.scope_resolver.resolve(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+    )
+    shape_item = {
+        "id": "synthetic-shape-id",
+        "kind": "fact",
+        "ontology_id": "ontology-1",
+        "iri": None,
+        "label": "custom",
+        "aliases": [],
+        "description": None,
+        "data": {
+            "target_class": "https://example.test/Workflow",
+            "constraint": {"path": "relative/property", "provenance": "custom"},
+        },
+        "distance": 1,
+        "assertion_kind": "asserted",
+        "match": {
+            "score": 275,
+            "matched_terms": [],
+            "matched_fields": ["constraint"],
+            "reasons": ["shape_constraint"],
+        },
+        "_lineage_target": {
+            "target_type": "synthetic",
+            "target_id": "synthetic-shape-id",
+        },
+    }
+
+    decorated = service._decorate(shape_item, scope)
+
+    assert "_lineage_target" not in decorated
+    assert "target_kind" not in decorated
+    assert decorated["lineage"] == {"status": "missing"}
+    assert "synthetic" not in str(decorated["lineage"])
+    assert {warning["code"] for warning in decorated["warnings"]} == {
+        "evidence_missing",
+        "lineage_missing",
+    }
+    assert lineage.calls == []
 
 
 def test_no_match_is_not_reported_as_unsupported(in_memory_session):
@@ -730,6 +933,65 @@ def test_candidate_query_filters_terms_before_limit(in_memory_session):
     assert "FILTER(" in candidate_query
     assert candidate_query.index("FILTER(") < candidate_query.index("LIMIT")
     assert 'LCASE("发布工作流")' in candidate_query
+
+
+def test_object_property_resource_and_relation_fact_use_distinct_lineage_targets(
+    in_memory_session,
+):
+    settings = Settings(semantic_graph_iri_prefix="urn:scope:graph/")
+    _ready_ontology(in_memory_session, settings, ontology_id="ontology-1")
+    graph = "urn:scope:graph/ontology/ontology-1"
+    property_iri = "urn:property:owns"
+    rows = [
+        {
+            "graph": _binding(graph),
+            "subject": _binding(property_iri),
+            "predicate": _binding(str(RDFS.label)),
+            "object": _binding("owns", "literal"),
+            "subjectLabel": _binding("owns", "literal"),
+            "subjectTypes": _binding(str(OWL.ObjectProperty), "literal"),
+        },
+        {
+            "graph": _binding(graph),
+            "subject": _binding("urn:entity:alice"),
+            "predicate": _binding(property_iri),
+            "object": _binding("urn:entity:bob"),
+            "subjectLabel": _binding("Alice", "literal"),
+            "predicateLabel": _binding("owns", "literal"),
+        },
+    ]
+    lineage = RecordingLineage()
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=lineage,
+        shape_endpoint=FakeShapes(),
+    )
+    scope = service.scope_resolver.resolve(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+    )
+
+    candidates = service._rdf_candidates(rows, scope, "owns", ["owns"])
+    property_resource = next(item for item in candidates if item["id"] == property_iri)
+    relation_fact = next(
+        item
+        for item in candidates
+        if item["kind"] == "relation" and item["target_kind"] == "statement"
+    )
+    assert property_resource["kind"] == "relation"
+    assert property_resource["target_kind"] == "resource"
+    assert relation_fact["data"]["subject"] == "urn:entity:alice"
+
+    decorated_property = service._decorate(property_resource, scope)
+    decorated_fact = service._decorate(relation_fact, scope)
+    calls_by_id = {call["target_id"]: call["target_type"] for call in lineage.calls}
+    assert decorated_property["lineage"]["target_type"] == "resource"
+    assert decorated_fact["lineage"]["target_type"] == "statement"
+    assert calls_by_id[property_iri] == "resource"
+    assert calls_by_id[relation_fact["id"]] == "statement"
 
 
 def test_property_label_matches_facts_only_within_the_same_ontology(in_memory_session):

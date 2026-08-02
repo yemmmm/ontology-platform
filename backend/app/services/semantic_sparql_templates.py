@@ -114,6 +114,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         primary_iri_variable="subject",
         body="""# template: statement-list
         SELECT DISTINCT ?subject ?predicate ?object ?graph WHERE {
+          VALUES ?graph { {graph_iris} }
           GRAPH ?graph { ?subject ?predicate ?object . }
         }
         LIMIT {limit}

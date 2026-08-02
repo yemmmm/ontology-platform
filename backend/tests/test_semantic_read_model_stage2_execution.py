@@ -44,6 +44,7 @@ DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-1"
 CUSTOM_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1/custom"
 REASONING_RESULT_GRAPH = f"{GRAPH_PREFIX}reasoning-result/run-7"
 RULE_RESULT_GRAPH = f"{GRAPH_PREFIX}rule-result/run-9"
+FOREIGN_DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-foreign"
 
 
 class _Result:
@@ -273,6 +274,43 @@ def test_statement_list_preserves_predicate_object_and_literal_metadata(in_memor
     assert iri["object_kind"] == "iri"
     assert "object_datatype" not in iri
     assert "object_language" not in iri
+
+
+def test_statement_list_binds_exact_asserted_data_member_and_excludes_bounded_leaks(
+    in_memory_session,
+) -> None:
+    _seed_graph_set(
+        in_memory_session,
+        [(ONTOLOGY_GRAPH, "asserted_ontology"), (DATA_GRAPH, "asserted_data")],
+    )
+    target = {
+        "subject": {"type": "uri", "value": f"{PREFIX}ns/workflow/B"},
+        "predicate": {"type": "uri", "value": f"{PREFIX}ns/property/invokes"},
+        "object": {"type": "uri", "value": f"{PREFIX}ns/workflow/C"},
+        "graph": {"type": "uri", "value": DATA_GRAPH},
+    }
+    schema_leak = {**target, "graph": {"type": "uri", "value": ONTOLOGY_GRAPH}}
+    foreign_leak = {**target, "graph": {"type": "uri", "value": FOREIGN_DATA_GRAPH}}
+
+    class BoundedStatementStore(FakeStore):
+        def query_read_model(self, query, graph_iris, timeout_seconds, limit):  # noqa: ANN001, ARG002
+            self.last_query = query
+            self.last_graph_iris = list(graph_iris)
+            required_values = f"VALUES ?graph {{ <{DATA_GRAPH}> }}"
+            if required_values not in query:
+                return _Result([schema_leak, foreign_leak])
+            return _Result([target])
+
+    store = BoundedStatementStore()
+    body = _read_model(_client(store, in_memory_session), "statement-list", limit=1)
+
+    assert [item["source_graph_iri"] for item in body["items"]] == [DATA_GRAPH]
+    assert store.last_graph_iris == [DATA_GRAPH]
+    assert store.last_query is not None
+    assert f"VALUES ?graph {{ <{DATA_GRAPH}> }}" in store.last_query
+    assert ONTOLOGY_GRAPH not in store.last_query
+    assert FOREIGN_DATA_GRAPH not in store.last_query
+    assert "LIMIT 1" in store.last_query
 
 
 def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None:

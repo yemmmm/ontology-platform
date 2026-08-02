@@ -526,6 +526,27 @@ class ModelingBatchSubmit(ModelingBatchSchema):
     items: list[ModelingItemInput] = Field(min_length=1)
 
 
+class ModelingOperationPlanEvidenceRead(ModelingBatchSchema):
+    """Safe, source-minimal Evidence projection for a dry-run Attempt.
+
+    The persisted Attempt plan contains internal reference and association IDs
+    (and, for inline Evidence, the submitted excerpt).  The public dry-run
+    receipt exposes only the fields needed to compare a candidate-local map;
+    locators, owner identities, and raw source text never cross this boundary.
+    """
+
+    client_item_id: str = Field(min_length=1, max_length=255)
+    document_name: str = Field(min_length=1, max_length=255)
+    normalized_excerpt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dedupe_identity: str = Field(min_length=1, max_length=255)
+
+
+class ModelingOperationPlanRead(ModelingBatchSchema):
+    """Additive safe operation-plan fields returned for dry-run Attempts."""
+
+    evidence: list[ModelingOperationPlanEvidenceRead] = Field(default_factory=list)
+
+
 class ValidationFindingRead(BaseModel):
     finding_fingerprint: str | None = None
     code: str

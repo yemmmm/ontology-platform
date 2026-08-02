@@ -1,6 +1,7 @@
 """REST contract coverage for R-004 Modeling Batches."""
 
 from collections.abc import Generator
+from hashlib import sha256
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -70,6 +71,12 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
                     "client_item_id": "class",
                     "command_kind": "create_class",
                     "payload": {"name": "Customer"},
+                    "evidence": [
+                        {
+                            "document_name": "domain.md",
+                            "excerpt": "Customer is a domain term.",
+                        }
+                    ],
                 }
             ],
         },
@@ -77,6 +84,20 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     assert response.status_code == 200, response.text
     submitted = response.json()
     assert submitted["attempt_status"] == "validated"
+    plan_rows = submitted["operation_plan"]["evidence"]
+    assert len(plan_rows) == 1
+    assert set(plan_rows[0]) == {
+        "client_item_id",
+        "document_name",
+        "normalized_excerpt_sha256",
+        "dedupe_identity",
+    }
+    assert plan_rows[0]["client_item_id"] == "class"
+    assert plan_rows[0]["document_name"] == "domain.md"
+    assert plan_rows[0]["normalized_excerpt_sha256"] == sha256(
+        "Customer is a domain term.".encode("utf-8")
+    ).hexdigest()
+    assert "Customer is a domain term." not in str(submitted["operation_plan"])
     detail = client.get(f"/api/modeling-batches/{submitted['batch_id']}")
     listed = client.get(f"/api/build-sessions/{build['id']}/modeling-batches")
     context = client.get("/api/ontologies/o/modeling-context")

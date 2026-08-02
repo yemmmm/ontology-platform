@@ -315,6 +315,8 @@ class SemanticReadModelService:
     def _graph_iris_for_scope(
         self, scope: ScopeResolution, template: ReadModelTemplate
     ) -> list[str]:
+        if template.name == "statement-list":
+            return [member.graph_iri for member in scope.members if member.role == "asserted_data"]
         iris = list(scope.source_graph_iris)
         if (
             scope.include in {"asserted-plus-reasoning", "full-working-view"}
