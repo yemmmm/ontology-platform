@@ -1,14 +1,19 @@
 # R2.3-002 New-Scope Business Slice Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`, R2.3-002
-- Status: in-progress (requirement refined; design and delivery not started)
+- Status: delivered (independent Acceptance PASS)
 - Started: 2026-07-31T14:01:44+08:00
-- Last updated: 2026-07-31T15:51:00+08:00
+- Last updated: 2026-08-03T00:58:56+08:00
 - Design: `docs/delivery/designs/2026-07-31-r2-3-002-new-scope-business-slice-design.md`
 - Shared test plan:
   `docs/delivery/test-plans/2026-07-31-r2-3-002-new-scope-business-slice-test-plan.md`
 - Delivery baseline: clean worktree at `f441682`
-- Delivery commit: pending
+- Delivery commit: `2bb27103eb4b588e07b747b54655768002af7417`
+- Closeout commit: `286da60c0680cd46b49e9f69e91572ba6e9c6b51`
+- Runtime reproducibility note: Round78 proves the retained model and independent semantic
+  Acceptance result. Its mixed, uncommitted `modeling_team` runtime baseline was deliberately
+  excluded from delivery commits, so clean-checkout Producer Runner reproducibility remains the
+  explicit target of R2.3-005.
 
 ## Confirmed contract
 
@@ -4263,3 +4268,141 @@
   monitor, proof and historical diagnostic experiments were deliberately excluded and left untouched in
   the local worktree. They are not the final R2.3-002 completion baseline and were not used as the final
   independent semantic acceptance authority.
+
+### 2026-08-03T00:42:06+08:00 — Post-delivery retrospective and next-target correction — Project management Agent
+
+- Context: R2.3-002 had reached independent PASS, but the record header still described an unstarted
+  requirement and the repository did not yet distinguish the accepted retained model from a reusable
+  clean-checkout Producer Runner. The user requested a full retrospective after repeated route drift and
+  approved Runner formalization as the next target.
+- Action/decision: corrected the current metadata without removing the initial baseline or any failed
+  round; classified the execution history below; and routed clean-checkout Producer Runner formalization
+  to R2.3-005. R2.3-005 must extract only the necessary Producer assets from the mixed worktree into a
+  named committed baseline. It must not reintroduce P2/P2a/monitor/native-verifier semantic gates.
+- Evidence: this record and the shared test plan; final Acceptance result
+  `workspaces/modeling-acceptance/r23002-acceptance-r78-20260802T143944Z/output/acceptance-result.json`;
+  final cleanup summary in the same round; commits `2bb2710`, `1791297`, and `286da60`; independent
+  retrospective plan-review PASS after four High findings were accepted and closed.
+- Outcome/next step: R2.3-002 remains delivered. R2.3-005 is the next requirement to refine before
+  R2.3-003; no new semantic start, product code, Runner task, or Acceptance framework was created by this
+  retrospective update.
+
+## Post-delivery retrospective
+
+### Evidence-backed metrics
+
+| Measure | Result | Interpretation and evidence boundary |
+| --- | --- | --- |
+| Calendar span | `56:58:16`, from 2026-07-31T14:01:44+08:00 to the 2026-08-02T23:00 delivery conclusion | Wall-clock span only. The repository has no reliable ledger of active hours by modeling, infrastructure, review, or documentation. |
+| Semantic modeling starts | `18` | Counted only from StartLedger `semantic_start` events. Round78 candidate r1/r2/r3 are three revisions inside the eighteenth start, not three starts. Presemantic reservations, P2a, platform repair, and Acceptance rounds do not count. |
+| Numbered requirement-route revisions | `10` | R59, R60, R61, R62, R63, R71, R75, R76, R77, and R78. This measures material route changes, not Agent attempts or independent test runs. |
+| P2a failed rounds | `10` | R64-R70 and R72-R74 all failed. They did not invoke TeamRunner or consume semantic starts and never became the completion authority. |
+| Accepted business models | `1` | Only the retained Round78 model passed fresh independent Acceptance. Earlier retained `s` and disposable diagnostic scopes remain failed/BLOCKED history. |
+| Final retained proof | 12 Modeling Items, 15 Evidence associations, 5 Evidence references, 9 complete requested lineage chains, and 8 semantic gates PASS | Final Acceptance consumed 40 frozen reads plus one live cursor continuation. These figures describe the accepted retained state, not Runner repeatability. |
+
+The test plan contains many planned, repeated, corrective, and independent headings. Their count cannot
+be used as a test-run, prompt, turn, retry, or modeling-attempt count. The same evidence also cannot
+support an active-effort percentage by category; only the qualitative imbalance is justified.
+
+### Stage review and task deviations
+
+1. **Initial contract and harness hardening.** Early rounds correctly froze source, scope, budget,
+   Protocol-only writes, cleanup, and independent evidence. They also spent substantial effort repairing
+   launcher assumptions: nested Session parsing, workspace versions, freeze ordering, PID/isolation
+   probes, and command construction. These were mechanical readiness defects, not modeling-quality
+   evidence. A smaller L0/L1 path should have been used to reach the first real slice sooner.
+2. **Attempts 1-4 exposed Agent-visible contract and collaboration gaps.** Protocol lacked an exact
+   Modeling Item contract; Coordinator and Protocol ended before required replies; one Protocol reversed
+   its responsibility back to Modeling; another treated a revisable expressibility conflict as terminal.
+   The common cause was incomplete delivery/reply/terminal lifecycle, not platform persistence.
+3. **Attempts 5-10 exposed isolation and envelope propagation gaps.** Canonical RDF mode, Protocol MCP
+   mounts, dynamic callback visibility, Build Session checkpoint shape, outer message encoding, and the
+   reasoner command were not proven in the actual isolated child. These should have been covered by one
+   Protocol-only runtime smoke before repeatedly launching the full team.
+4. **Attempts 11-14 mixed normal model iteration with expanding verification machinery.** Cross-Batch
+   dependency ordering and unsupported Protocol parameters were contract-use errors; retained writer,
+   manifest, event capture, fallback, and terminal-gate failures were harness errors. One genuine platform
+   data defect was found and fixed: ontology statement-list reads had not bound `GRAPH ?graph` to the
+   requested asserted-data graph.
+5. **P2/P2a became the main route instead of a narrow diagnostic tool.** R47-R75 accumulated monitor,
+   driver, overlay, proof-matrix, observer, timeout, callback, and handoff logic. Ten P2a rounds failed
+   without consuming a semantic start. The route encoded completion in deterministic proof machinery and
+   drifted from the intended Agent self-correction and Agent-owned acceptance model.
+6. **The retained `s` run revealed the decisive source-fidelity gap.** Its model was usable, but its
+   applied items contained no inline platform Evidence associations and its retrieval chain was
+   incomplete. Business resources named Evidence could not substitute for EvidenceReference/Association.
+   The model could not be post-hoc reclassified as PASS.
+7. **Round76-R77 reset the completion authority.** P2a/native verifier/Driver/Producer self-report were
+   removed as semantic authorities. A proposed productized Acceptance sidecar was also reduced after
+   review showed it would add credential, carrier, ownership, and runtime infrastructure before one real
+   operational acceptance. A fresh, read-only Acceptance Agent outside the Producer roster became the
+   authority.
+8. **Round78 completed the smallest viable slice.** The final authorized semantic start produced three
+   bounded candidate revisions; Protocol rejected r1/r2 before platform writes and applied r3 once with
+   complete inline Evidence. Three Acceptance preflight corrections exposed stale helper assumptions,
+   then two fresh Acceptance rounds found real platform defects: per-request random REST cursor codecs and
+   generated SHACL projections looking up lineage by synthetic statement hash. After both narrow platform
+   repairs, a final fresh Acceptance Agent passed all eight gates against the unchanged model.
+
+### Root-cause classification
+
+- **Confirmed platform implementation defects:** ontology statement-list graph scoping; REST Context
+  Query cursor codec lifetime; generated SHACL constraint lineage target selection.
+- **Platform or public-contract boundaries:** exact Agent-visible Modeling Item schema, canonical mode and
+  reasoner environment, and the absent datatype/language-tagged literal write envelope. The last item was
+  explicitly deferred to R2.4-001 rather than added to this requirement.
+- **Protocol/Agent behavior and collaboration:** premature terminal reports, responsibility reversal,
+  missing revision loop, unsupported request fields, failure to consume pagination, and treating optional
+  fallback as terminal.
+- **Runtime/harness/acceptance-contract defects:** response-shape assumptions, wrong message envelope,
+  missing mounts and allowlists, observer placement, stale aliases, incorrect Evidence-layer joins,
+  timeout/idle inference, and deterministic proof construction taking over semantic completion.
+
+### Reusable execution rules
+
+- Freeze one small slice, completion authority, attempt budget, resource ownership, tool surface, and
+  cleanup owner before the first run. Start semantic modeling early; if harness/review dominates active
+  effort, stop and reduce the path.
+- Validate Protocol independently through the real private Runtime, MCP surface, platform errors, and
+  correlated Modeling reply before launching the full roster. A completed Agent turn or idle app-server
+  state is not a task-completion verdict.
+- Let tools own canonical payloads, identities, receipts, parsing, publication, and cleanup. Let Agents
+  own business meaning, ontology structure, revision decisions, explicit unknowns, and semantic verdicts.
+- Treat `settled`, terminal handoff, and helper success as mechanical facts only. Freeze the model and use
+  a fresh independent read-only Acceptance Agent against approved sources and live platform state.
+- Inspect live response schemas and authoritative identifiers before writing helper joins. Modeling Item
+  EvidenceReference/Association and FactEvidenceBinding are distinct layers and must not be conflated.
+- Classify failures at the narrow layer, repair only that layer, and resume the original modeling goal.
+  A missing platform capability should be explicitly deferred or accepted as scope, not repaired through
+  broader orchestration.
+- Preserve every failed round, but keep experimental drivers, monitors, proof builders, and their tests
+  separate from the committable core from the beginning. No historical diagnostic path becomes a future
+  completion gate merely because it was expensive to build.
+
+### 2026-08-03T00:50:00+08:00 — Retrospective plan review — Rounds 1-2 — PASS
+
+- Round 1 result was `REVISE` with four accepted-High findings: a clean checkout did not contain the
+  mixed Producer runtime assets; the v2.3 current target/order/dependency fields would contradict an
+  appended R2.3-005; this record's current metadata still said delivery had not started; and unqualified
+  round-heading counts could be misreported as attempts or active effort.
+- All four findings were accepted without downgrade. The plan was revised to make tracked clean-checkout
+  Producer assets an explicit R2.3-005 target, synchronize the requirement route, correct current metadata
+  while preserving history, and define every metric and its evidence boundary.
+- Round 2 result was `PASS` with no remaining Critical/High finding. The review retained three hard
+  boundaries: P2/P2a/monitor/native verifier are not prerequisites, Runner mechanics never decide semantic
+  verdict, and the fresh independent Acceptance Agent remains outside Runner.
+
+### 2026-08-03T00:58:56+08:00 — Documentation implementation and independent audit — PASS
+
+- A delegated documentation developer updated the authoritative v2.3 target/order and added the
+  R2.3-005 future contract; it also extended the reference-only modeling experiment lessons with the
+  evidence-backed R2.3-002 retrospective. The project-management Agent alone updated this delivery record.
+- Independent Requirement Tester Round79 verified the requirement route, R2.3-005 boundaries, Round78
+  evidence boundary, current metadata, metrics, defect classification, reference authority, and four-file
+  docs diff. It independently counted 18 StartLedger semantic starts and all 10 P2a FAIL headings. Result:
+  `PASS (docs-only)`.
+- The tester identified one residual ambiguity: the shared test-plan header still described historical
+  Round52. Project management corrected only that current metadata. Independent Round80 rechecked the
+  header against Round78/Round79 history and returned `PASS` without modifying Round79.
+- Verification: `git diff --check -- docs` PASS. No backend/frontend source changed, so no product tests,
+  platform writes, service restart, or runtime health claim was required for this documentation-only task.

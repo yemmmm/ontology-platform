@@ -2,18 +2,18 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-003～R2.3-004
-  已确认路线、待按依赖顺序分别细化
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 为当前下一项
+  P0 目标、待细化；R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前待细化需求：R2.3-003 已有 Project/Ontology 增量建模
+- 当前下一目标：R2.3-005 Producer Runner 正式化收口与可重复调用
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-02
+- 更新日期：2026-08-03
 
 ## 背景
 
@@ -55,8 +55,9 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002 |
-| R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-001；R2.0-002；R2.3-002/003 证据 |
+| R2.3-005 | Producer Runner 正式化收口与可重复调用 | P0 | `待细化` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
+| R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
 
@@ -64,9 +65,14 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 R2.3-001 Runner、Package、Codex Adapter
   -> 真实 Agent 能力与互操作冒烟，不实际建模
   -> R2.3-002 从新作用域完成一轮真实业务切片
+  -> R2.3-005 Producer Runner 正式化收口与可重复调用
   -> R2.3-003 用全新团队继续 002 的已有非空 Project/Ontology
   -> R2.3-004 整体切换到 Pi Team Adapter
 ```
+
+R2.3-003 仍然以 R2.3-002 的语义结果和非空 Project/Ontology 作为依赖，但只有在
+R2.3-005 完成其强制运营前置后才可进入实现和真实运行。R2.3-004 必须排在
+R2.3-005、R2.3-003 之后；Pi Adapter 的证据不能替代 Producer Runner 的可重复调用证据。
 
 后续需求不得仅为了刷过业务语义验收而静默修改已经在 R2.3-001 接受的 Team Runner 核心语义。
 R2.3-002 的预检或真实运行暴露 Runner、Adapter、Profile、Package、Skill 或平台合同缺陷，
@@ -1359,6 +1365,39 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 - 只有本次严格有界的同 Agent/thread/run 自纠正仍不能完成原生证明，且用户另行授权后，才可重新
   评估 builder；该未来评估不能追溯性改变本轮结果或把部分证据记为 PASS。
 
+## R2.3-005 Producer Runner 正式化收口与可重复调用
+
+当前状态：`待细化`
+
+优先级：`P0`
+
+### 权威目标与最小结果
+
+从一个干净 checkout 且 git status 干净的仓库开始，稳定的 Runner invocation 必须使用一套正式
+跟踪的最小 Producer `Task`、`Profile`、`Runner`、`Adapter` 基线，完成 **一次**真实、简单的
+Producer 业务切片。该次调用按平台合同完成所需的 `dry-run`、`apply`、readback、validation 和
+reasoning；三 Agent（Coordinator、Modeling、Protocol）各自登记 terminal，Runner 记录团队
+settlement；随后生成不可变的 acceptance handoff，精确清理本轮凭据、Runtime、Session、Build
+Session/Lease 及其他本轮拥有的资源，并保留可复核证据。一个全新的、独立的、只读的 Acceptance
+Agent 必须在 Runner 之外读取该 handoff 和平台事实并独立判断语义 `PASS`。
+
+Runner 只负责确定性机械能力（基线装载、启动、传输、终态/settlement、证据交接和所有权清理），
+不是第四个 Agent，也不是语义权威；Producer Agent 负责业务语义，Acceptance Agent 负责独立
+语义裁决。
+
+### 明确边界
+
+以下内容不是 R2.3-005 的前置条件，也不得为了本需求重新引入为完成门：P2、P2a、monitor、native
+verifier、proof matrix、通用 acceptance framework/orchestrator、delivery-recovered/context resume、
+R2.3-003 非空增量建模、Pi Runtime，以及 explicit datatype 或 language-tagged literal 写入。
+R2.3-005 只记录上述未来目标；本轮不创建其 design、test plan 或 delivery record，也不宣称已经实现
+或通过该目标。
+
+### 现有证据边界
+
+Round78 证明了保留模型及其独立 Acceptance 结果，但**没有**证明从干净 checkout、干净状态出发
+的 Runner 可重复调用；该可重复性仍是 R2.3-005 的待细化、待实现和待验收内容。
+
 ## R2.3-003 已有 Project/Ontology 增量建模
 
 当前状态：`待细化`
@@ -1379,6 +1418,9 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 - 不继承 R2.3-002 Agent 对话、历史 Prompt、隐藏答案或本地运行目录；
 - 完成一个新的增量建模目标，并证明已有模型保持正确。
 
+R2.3-003 的语义依赖仍是 R2.3-002 的真实业务切片和非空模型；其运营启动前置则必须先满足
+R2.3-005 的 Producer Runner 正式化收口与可重复调用完成门。
+
 ### 已确认范围
 
 - R2.3-003 直接使用 R2.3-002 的 Project/Ontology 和非敏感 scope handoff，不另造独立业务 fixture；
@@ -1389,6 +1431,9 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 - 增量业务目标、来源、用户问题和尝试预算在 R2.3-003 开始前单独细化。
 
 ### R2.3-003 最小完成门
+
+进入真实运行前，必须已经有 R2.3-005 的独立验收证据；该证据只证明 Runner 运营基线，不替代
+本需求自身的增量语义验收。
 
 1. 使用全新的 Team Runner run、Coordinator、Modeling、Protocol Sessions、Build Session 和 Lease。
 2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff。
@@ -1430,9 +1475,14 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 - 复用 R2.3-001 的 Team Runner、Profile、Agent Package、通信、用户对话、权限和终态合同；
 - 不修改 Semantic Platform Core 或增加 Pi 专属平台接口。
 
+R2.3-004 只有在 R2.3-005 的 Producer Runner 运营基线和 R2.3-003 的已有模型增量证据均完成后
+才可开始；Pi Runtime 的替换不能倒置或绕过该顺序。
+
 ### 已确认范围
 
 - R2.3 不支持 Codex/Pi 混合团队；
+- 本需求排在 R2.3-005、R2.3-003 之后；R2.3-005 的可重复 Producer invocation 是进入本需求的
+  运营前置，不由 Pi Adapter 的首次实现反向补足；
 - Pi 可以使用 Runtime-native Session、RPC、事件和 Workflow Package 装载，但角色语义与 Skill
   内容必须继续共享；
 - Pi Adapter 至少复现 R2.3-001 的基础角色能力和额外真实 Agent 互操作冒烟；

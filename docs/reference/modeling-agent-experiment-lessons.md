@@ -215,3 +215,76 @@ using it in an independent evidence review.
   the live run.
 - Preserve failed rounds and failed attempts. A later PASS supersedes their conclusion but does not
   erase the evidence or lesson.
+
+## R2.3-002 retrospective (reference-only)
+
+This section records evidence-backed patterns from the R2.3-002 route revisions and retained rounds. It
+is guidance for later experiments, not a new requirement or completion gate.
+
+### Reusable guidance from the rounds
+
+- Use one deliberately small semantic slice first. A bounded question and a short candidate make source
+  fidelity, dry-run/apply/readback, and independent retrieval evidence inspectable before the harness grows.
+- Start real modeling early after only the narrow preflight needed for safety. Track semantic-modeling
+  effort separately from harness, infrastructure, review, and documentation effort; if the latter dominates,
+  reduce the path before adding controls.
+- Isolate the Protocol path before starting the full three-Agent team. A minimal live Protocol probe can
+  expose authentication, write-mode, response-shape, and readback contract defects without confusing them
+  with collaboration or modeling-quality failures.
+- Keep deterministic mechanics and Agent semantics separate. Runner/Delivery code owns identities, envelopes,
+  retries, leases, receipts, cleanup, and evidence handoff; Agents own business meaning, ontology structure,
+  evidence selection, Shapes, relations, and explicit unknowns.
+- Freeze completion authority before a run. The owner of each Agent terminal, team settlement, cleanup, and
+  semantic verdict must be explicit; a Driver, timeout, or summary stream must not infer a completion that the
+  owning lifecycle did not record.
+- Use a fresh, read-only Acceptance Agent outside the Producer. It must not create or continue the producer
+  run, repair the model, or write retained source/evidence; it may write only its own acceptance evidence.
+
+### Evidence-backed failure patterns and boundaries
+
+- An idle Agent turn is not the same as a completed task. A runtime can report no current turn while the
+  Session still has an active task, pending delivery, or required terminal transition. Observe task and
+  Session lifecycle evidence rather than treating `idle` as `completed`.
+- Persistent Agent self-correction requires a correlated reply/turn lifecycle, not Driver inference. A
+  correction must be tied to the delivery that expects a reply, the replying turn, and the same task/session;
+  a Driver cannot manufacture progress from an idle event, a late message, or a generic result write.
+- Inspect live response schemas and authoritative joins before writing helpers. Read the running API/MCP
+  responses, their scope identities, and the authoritative joins between IDs first; guessed field names or
+  locally convenient joins can silently bind the wrong Project, Ontology, graph set, or run.
+- Inline `ModelingItem` Evidence is a different layer from `FactEvidenceBinding`. Batch inline evidence is
+  persisted through EvidenceReference plus a `target_type=modeling_item` EvidenceAssociation and then
+  connected through applied-resource/statement origin lineage. A missing FactEvidenceBinding projection is
+  not by itself proof that inline ModelingItem Evidence is missing.
+- Keep a missing literal-write interface scoped to R2.4. Do not expand an R2.3 experiment to add a generic
+  explicit-datatype or language-tagged-literal write surface merely because the current slice does not have
+  one; record the boundary and preserve the modeling evidence.
+- Classify real platform defects separately from semantic failures. The observed ontology-scoped statement
+  read issue, REST cursor codec issue, and generated SHACL lineage issue belong to the platform-contract
+  defect stream; they should be repaired and re-tested without relabeling the failed modeling attempt.
+- Preserve failed rounds, their raw evidence, and their first blocking layer, but never promote P2, P2a,
+  monitor, or native-verifier work into prerequisites or semantic completion gates for a smaller slice.
+- Separate experiments from committable core early. Keep route-specific probes, matrices, monitors, and
+  acceptance helpers isolated until a requirement adopts them; a useful experiment is not automatically a
+  product surface.
+
+### Honest R2.3-002 metrics
+
+The following are the counts that can be supported by the retained headings and StartLedger records. The
+calendar span is elapsed wall-clock time, not active effort. For a stable, human-locatable trail, cross-check
+the R2.3-002 requirement sections in [`requirements-v2.3.md`](../requirements/requirements-v2.3.md), route
+outcomes in the [R2.3-002 delivery record](../delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md),
+round headings and verdict history in the [shared R2.3-002 test plan](../delivery/test-plans/2026-07-31-r2-3-002-new-scope-business-slice-test-plan.md),
+and start counts in the [shared StartLedger evidence](../../workspaces/modeling-runs/.r2-3-002-start-ledger.jsonl)
+plus per-run `workspaces/modeling-runs/r23002-real-*/evidence/{semantic-start,start-ledger}.jsonl` records.
+
+| Metric | Evidence-backed value | Interpretation and limit |
+| --- | --- | --- |
+| Calendar span | `2026-07-31T14:01:44+08:00` → `2026-08-02T23:00+08:00` = `56:58:16` | Elapsed span only; it is not active effort. |
+| StartLedger semantic starts | `18` | Fresh semantic starts, not retries or route revisions. |
+| Numbered route revisions | `10`: R59, R60, R61, R62, R63, R71, R75, R76, R77, R78 | Revisions, not additional semantic starts. |
+| P2a FAIL rounds | `10`: R64–R70 and R72–R74; no semantic starts | Side-round failures do not increase the semantic-start count. |
+| Accepted retained model | Only Round78 retained model accepted | This does not imply that every route revision or side round passed. |
+| Candidate revisions | `r1`/`r2`/`r3` are candidate revisions within the one 18th start | They are not three starts. |
+
+No reliable per-category active hours or percentages, prompt/turn count, or test count can be derived from
+these headings. Those metrics must not be inferred or reported as if they were measured.

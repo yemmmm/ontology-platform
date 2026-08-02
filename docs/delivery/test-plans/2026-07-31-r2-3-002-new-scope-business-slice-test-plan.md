@@ -5,9 +5,9 @@
 - Requirement: `docs/requirements/requirements-v2.3.md`, R2.3-002
 - Design:
   `docs/delivery/designs/2026-07-31-r2-3-002-new-scope-business-slice-design.md`
-- Status: Round 52 plan revision appended; ready for plan re-review (no development handoff)
-- Producer: Requirement Developer after reviewed-plan handoff
-- Independent test owner: Requirement Tester after a stable producer state
+- Status: R2.3-002 delivered; Round78 independent Acceptance PASS and Round79 docs-only audit PASS
+- Producer: Round78 retained Producer model (completed)
+- Independent test owner: fresh Round78 Acceptance Agent; Round79 documentation audit by Requirement Tester
 
 ## Completion rule
 
@@ -5575,3 +5575,37 @@ with SHA-256 `280fff95c39e85629c417ff5fb3b72d5eb0ba54f6da1cb147b69f14c18dbb7b6`;
 SHA-256 `9cdacd58ccb13584c27049a3ef54a779d754c090b177e918167a224a26a671bc`. The Agent sent no
 semantic/model/admin/write request, made no validation/reasoning rerun, and did not mutate the model,
 workspace, ledger, or retained evidence. The read key remains active for Delivery cleanup.
+
+### Round 79 — 2026-08-03 post-delivery documentation audit — PASS (docs-only)
+
+Scope: independently read `AGENTS.md`, the v2.3 requirement, R2.3-002 design, delivery record,
+reference lessons, this shared plan, and retained StartLedger evidence. No product code, runtime,
+backend/frontend test, platform write, or service restart was performed.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Current target/order/dependencies | PASS | Requirement table and order are `001 → 002 → 005 → 003 → 004`; 003 keeps 002 as semantic dependency and 005 as operational prerequisite. |
+| R2.3-005 target/boundary | PASS (static contract only) | Future/`待细化`; clean checkout/status, tracked `Task`/`Profile`/`Runner`/`Adapter`, one simple Producer dry-run/apply/readback/validation/reasoning slice, three terminals + settlement, immutable handoff/cleanup, and fresh read-only Acceptance outside Runner are explicit. Runner is not semantic authority; Driver/Producer self-report is not a verdict. P2/P2a/monitor/native-verifier/proof-matrix/orchestrator/recovery/Pi/literal gates are excluded; no target implementation or 005 acceptance is claimed. |
+| Round78 evidence boundary | PASS | Record header/retrospective and requirement state that Round78 proves only the retained model and independent Acceptance PASS, not clean-checkout Runner reproducibility. |
+| Record metadata/history | PASS | `Status: delivered (independent Acceptance PASS)`, `Last updated: 2026-08-03T00:42:06+08:00`, conclusion/closeout, and append-only retrospective agree; no historical round was removed. |
+| Metrics | PASS | Calendar arithmetic = `56:58:16`; ledger has 18 `semantic_start` events; requirement/design/record retain the 10 route labels (R59/60/61/62/63/71/75/76/77/78), the shared plan retains its relevant planned/executed round history and all 10 P2a FAIL headings (R64–70/R72–74), only Round78 is accepted, and final run evidence binds r1/r2/r3 inside start 18. |
+| Lessons and defect boundary | PASS | Lessons are explicitly reference-only/non-normative; exactly three confirmed platform defects are separated from Protocol/runtime/harness issues, and the literal-write gap is deferred to R2.4-001. |
+| Docs diff/format | PASS | `git diff --check -- docs` passed; docs diff contains only the expected requirement, record, lessons, and this shared plan (no unrelated docs). |
+
+Conclusion: **PASS for this documentation audit**. The shared-plan status line still preserves its
+historical “Round 52 … no development handoff” wording; it is not evidence that R2.3-005 started or
+that Round78 lacked its appended PASS. R2.3-005 remains future/unimplemented and requires a later
+clean-checkout implementation and independent test round.
+
+### Round 80 — 2026-08-03 metadata-correction audit — PASS (docs-only)
+
+Re-read the corrected header against the retained append-only history. The status now identifies
+R2.3-002 as delivered with Round78 independent Acceptance PASS and Round79 documentation-audit PASS;
+the Producer owner points to the completed retained Round78 model; and the independent-test owner
+names the fresh Round78 Acceptance Agent plus the Round79 Requirement Tester audit. These statements
+match the Round78 final PASS and Round79 headings/results below, while Round79 itself remains unchanged.
+
+`git diff --check -- docs` passed. No product tests, runtime actions, or other file edits were made.
+
+Conclusion: **PASS**. The prior historical-header ambiguity is resolved; R2.3-005 remains future and
+unimplemented.
