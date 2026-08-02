@@ -4251,3 +4251,15 @@
 - This delivery makes no real-write claim for datatype literals or language-tagged literals. That API
   envelope gap remains reserved in the next-version requirement rather than being silently added to this
   acceptance scope.
+
+### 2026-08-02T23:10:00+08:00 — Git closeout
+
+- Commit `2bb27103eb4b588e07b747b54655768002af7417` records the accepted R2.3-002 platform fixes,
+  backend regression coverage, authoritative v2.3 status, design, shared test plan and this append-only
+  delivery record.
+- Commit `1791297838cb3846b58a93035ba70fa6515342ff` separately records the future
+  `R2.4-001` generic RDF Literal Envelope requirement; it is not part of the R2.3-002 acceptance claim.
+- Neither commit was pushed. Existing `AGENTS.md`/`CLAUDE.md` changes and mixed `modeling_team` P2/P2a,
+  monitor, proof and historical diagnostic experiments were deliberately excluded and left untouched in
+  the local worktree. They are not the final R2.3-002 completion baseline and were not used as the final
+  independent semantic acceptance authority.
