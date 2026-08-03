@@ -3,14 +3,15 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 为当前下一项
-  P0 目标、细化中；R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
+  P0 目标、设计完成（待实现）；R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：R2.3-005 Producer Runner 正式化收口与可重复调用
+- 当前下一目标：R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
-  `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`
+  `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
+  `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
 - 更新日期：2026-08-03
@@ -55,7 +56,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Producer Runner 正式化收口与可重复调用 | P0 | `细化中` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `设计完成（待实现）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -65,14 +66,14 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 R2.3-001 Runner、Package、Codex Adapter
   -> 真实 Agent 能力与互操作冒烟，不实际建模
   -> R2.3-002 从新作用域完成一轮真实业务切片
-  -> R2.3-005 Producer Runner 正式化收口与可重复调用
+  -> R2.3-005 Modeling Team Runner 正式化收口与可重复调用
   -> R2.3-003 用全新团队继续 002 的已有非空 Project/Ontology
   -> R2.3-004 整体切换到 Pi Team Adapter
 ```
 
 R2.3-003 仍然以 R2.3-002 的语义结果和非空 Project/Ontology 作为依赖，但只有在
 R2.3-005 完成其强制运营前置后才可进入实现和真实运行。R2.3-004 必须排在
-R2.3-005、R2.3-003 之后；Pi Adapter 的证据不能替代 Producer Runner 的可重复调用证据。
+R2.3-005、R2.3-003 之后；Pi Adapter 的证据不能替代 Modeling Team Runner 的可重复调用证据。
 
 后续需求不得仅为了刷过业务语义验收而静默修改已经在 R2.3-001 接受的 Team Runner 核心语义。
 R2.3-002 的预检或真实运行暴露 Runner、Adapter、Profile、Package、Skill 或平台合同缺陷，
@@ -1365,38 +1366,150 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 - 只有本次严格有界的同 Agent/thread/run 自纠正仍不能完成原生证明，且用户另行授权后，才可重新
   评估 builder；该未来评估不能追溯性改变本轮结果或把部分证据记为 PASS。
 
-## R2.3-005 Producer Runner 正式化收口与可重复调用
+## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`细化中`
+当前状态：`设计完成（待实现）`
 
 优先级：`P0`
 
 ### 权威目标与最小结果
 
-从一个干净 checkout 且 git status 干净的仓库开始，稳定的 Runner invocation 必须使用一套正式
-跟踪的最小 Producer `Task`、`Profile`、`Runner`、`Adapter` 基线，完成 **一次**真实、简单的
-Producer 业务切片。该次调用按平台合同完成所需的 `dry-run`、`apply`、readback、validation 和
-reasoning；三 Agent（Coordinator、Modeling、Protocol）各自登记 terminal，Runner 记录团队
-settlement；随后生成不可变的 acceptance handoff，精确清理本轮凭据、Runtime、Session、Build
-Session/Lease 及其他本轮拥有的资源，并保留可复核证据。一个全新的、独立的、只读的 Acceptance
-Agent 必须在 Runner 之外读取该 handoff 和平台事实并独立判断语义 `PASS`。
+从一个干净 checkout 且 git status 干净的仓库开始，一次稳定的 Modeling Team 任务（即 Runner 启动
+并管理这一组固定 Agent 直到任务终态）必须使用一套正式
+跟踪的最小 Modeling Team `Task`、`Profile`、`Runner`、`Adapter` 基线，完成 **一次**真实、简单的
+业务切片及其验收。Coordinator、Modeling、Protocol 按平台合同完成所需的 `dry-run`、`apply`、
+readback、validation 和 reasoning；Modeling、Protocol 完成建模收尾并分别向 Coordinator 返回就绪
+消息后保持静默，不再操作平台。Coordinator 随后向 Team 内固定的只读 Acceptance 角色下发验收
+任务；Acceptance 读取不可变 acceptance handoff，并通过两个本轮全新的隔离子 Agent 分别读取批准
+资料和平台事实，独立判断语义结果。任务取得最终结果后，四个固定 Agent 各自登记 terminal，Runner
+记录团队 settlement，精确清理本任务拥有的凭据、Runtime、Session、Build Session/Lease 及其他资源，
+并保留可复核证据。
 
 Runner 只负责确定性机械能力（基线装载、启动、传输、终态/settlement、证据交接和所有权清理），
-不是第四个 Agent，也不是语义权威；Producer Agent 负责业务语义，Acceptance Agent 负责独立
-语义裁决。
+本身不是 Agent，也不是语义权威；Coordinator 负责整体业务调度，Modeling、Protocol 负责建模，
+Acceptance 负责独立语义裁决。`Producer` 只可作为 Coordinator、Modeling、Protocol 的解释性统称，
+不新增角色、运行时对象、接口或状态机，也不把 Team 抽象成两个独立侧。
+
+正式 Modeling Team Profile 的 roster 必须且只包含 Coordinator、Modeling、Protocol、Acceptance 四个
+固定角色；现有三角色 Task/Profile 和对应运行测试不保留兼容路径，必须升级为四角色合同或删除。
+Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整建模任务启动。既有历史需求、交付
+记录和运行证据仅作为事实档案保留，不因此保留三角色运行能力。
+
+### 已确认的 Acceptance 角色与子 Agent 生命周期
+
+- Acceptance 是 Modeling Team 的固定角色，由 Runner 启动；在同一次建模任务中允许保留多轮上下文，
+  不随单个业务切片的验收轮结束而回收；
+- Acceptance 的固定存活范围仅限一次 Modeling Team 任务；本任务 terminal 与
+  settlement 后，它与 Coordinator、Modeling、Protocol 一起结束。下一次任务必须创建全新的
+  Acceptance，不继承上一任务的对话、结论或隐藏上下文；确需复用的信息只能通过明确的版本化任务
+  输入重新提供；
+- 验收目标由用户或版本化需求拥有，包括业务切片目标、批准资料、验收问题、通用质量门和未知信息
+  处理规则；Coordinator 只把这些内容与切片 revision、资料 digest、平台状态标识和允许的只读边界
+  冻结成当前验收任务，不得自行新增、删除或修改验收标准；
+- 每个业务切片开始验收时，Acceptance 通过 Runner 提供的受限接口请求创建两个全新的子 Agent：
+  `Source Examiner` 仅访问问题与批准资料，`Platform Examiner` 仅访问问题与冻结的平台只读接口；
+- 两个 Examiner 不接收预期语义答案、Modeling/Protocol 对话、既有裁决或对方结果，不得互相通信、继续创建
+  子 Agent 或获得模型写权限；Acceptance 接收两份不可变结果，负责比较和裁决；
+- 验收任务本身也不得携带预期语义答案、Modeling/Protocol 对话或预设 `PASS` 结论；Source Examiner
+  从批准资料独立推导来源结论，Platform Examiner 从平台只读结果独立推导平台结论，Acceptance 依据
+  冻结标准比较两者；
+- Acceptance 自身不直接读取原始批准资料，也不调用平台查询接口；它只接收冻结的验收问题/标准、
+  Source Examiner 的答案与资料引用/覆盖范围/缺失说明、Platform Examiner 的答案与平台证据/查询范围/
+  完整性说明，以及自身允许保留的历史轮次摘要。Acceptance 只负责检查报告证据充分性、比较结论和
+  裁决，不得绕过 Examiner 重新取证；
+- 两个 Examiner 的终态报告必须同时声明结论的可回答性并绑定实际证据。批准资料缺少相关证据时，
+  Source Examiner 必须明确报告“因缺少相关证据无法回答”并指出缺口，不得猜测答案；只有 Platform
+  Examiner 也没有生成无依据的确定答案、且其查询覆盖足以证明平台保留了未知时，本题才可能 `PASS`。
+  任一 Examiner 给出无法由其允许证据支持的确定答案时，即使两份答案文本相同也绝不能 `PASS`；
+- 对批准资料本可回答的问题，Platform Examiner 无法从平台事实形成有证据的答案，或给出无法由
+  平台证据支持的确定答案，均属于 `FAIL/modeling-quality`；Coordinator 将差异交回 Modeling、Protocol
+  优化本体结构、建模内容或通用语义表达后重新验收，不得归为 `BLOCKED`；
+- 批准资料实际包含可用证据、但 Source Examiner 自身给出无资料证据的确定答案时，属于
+  `BLOCKED/acceptance-evidence` 而不是建模质量问题；本轮结束并回收两个 Examiner，Coordinator 使用
+  相同冻结任务或只增加资料定位提示的新 revision，重新创建一对全新 Examiner，且不得把上一轮错误
+  答案传给它们；该情况不得要求 Modeling、Protocol 修改本体；
+- 本轮裁决及其证据保存后，Acceptance 通过 Runner 接口回收两个 Examiner 的进程、Session、临时凭据
+  和私有输入；下一切片创建新的两个 Examiner，不复用其身份或上下文；
+- Runner 校验创建/回收范围、执行强制超时清理并维护资源账；Acceptance 只能操作自己当前验收轮的
+  子 Agent，不能直接创建或销毁任意 Agent；
+- 同一个 Acceptance 同一时刻只允许一个活动验收轮；当前两个 Examiner 完成结果交付并被回收后，
+  才能为下一业务切片创建新的 Examiner；
+- Acceptance 可跨轮保留切片问题与验收标准、两个 Examiner 的最终报告、自身裁决、差异原因、
+  修改建议以及轮次/证据摘要；不得保留 Examiner 内部对话、临时凭据、底层工具日志或未形成终态
+  报告的中间运行上下文；
+- Examiner 因超时、进程崩溃、凭据准备失败或接口不可用等基础设施原因未形成终态报告时，Runner
+  使用完全相同的冻结输入，只重建失败的 Examiner；每个 Examiner 每轮最多重试一次，第二次仍失败
+  则本轮返回 `BLOCKED` 并清理资源。语义不一致属于 `FAIL`，不得通过重试改变结果；
+- `Platform Examiner` 必须预置一个在本轮开始前已冻结版本的只读平台召回 Skill，用于改善通用
+  查询策略、召回完整性和证据组织；该 Skill 不得包含切片答案、Modeling/Protocol 对话或验收裁决；
+- R2.3-005 只要求该 Skill 具备基础通用能力：正确使用批准的平台只读查询接口、处理分页与结果
+  完整性、保留 Evidence/lineage/查询依据，并区分“平台未建模”与“当前查询未召回”；Skill 版本写入
+  验收轮证据。高级召回策略、业务专项知识和后续效果调优不属于当前完成门；
+- Coordinator 负责建模与验收的串行调度：先下发建模收尾/静默指令，等待 Modeling、Protocol 各自
+  确认已完成在途操作，再下发 Acceptance 任务；验收期间不下发其他建模任务，Modeling、Protocol
+  保留会话但不得操作平台；
+- Acceptance 的 `PASS|FAIL|BLOCKED` 结果只返回 Coordinator，不直接向 Modeling、Protocol 下发
+  指令。`PASS` 后 Coordinator 下发下一切片或结束任务；`FAIL` 后 Coordinator 转发差异与修改建议，
+  等待建模修复和新的收尾/静默确认，再启动使用全新 Examiner 的验收轮；`BLOCKED` 不触发建模修复；
+- 每个 `BLOCKED` 只结束当前验收轮：Acceptance 保存明确的 `blocked_reason` 与证据并回收两个
+  Examiner；Coordinator、Acceptance、Modeling、Protocol 均保留，不自动登记任务 terminal，也不由
+  Runner 强制结束或重启整个 Team。Runtime/平台不可用时，Coordinator 可在环境恢复后用相同冻结任务
+  和全新 Examiner 重验；批准资料缺失时，Coordinator 先判断是资料包确实不完整还是 Examiner 未找到
+  已有资料，随后等待用户/版本化需求补齐资料，或提供不含预期答案的资料定位提示，形成新 ticket
+  revision 后重验；后续是否继续重验、等待或结束任务由 Coordinator 根据阻塞原因决定；
+- 资料定位提示只可包含批准资料的文件名/路径/文档范围、章节标题、业务术语别名或搜索关键词，以及
+  资料格式和读取方法；不得包含预期答案、具体业务结论、Platform Examiner 结果或上一轮错误答案。
+  每次新增提示都必须进入新 ticket revision，并对 Acceptance 可见；
+- Runner 不对验收轮设置统一数字上限；Coordinator 只有在环境恢复、批准资料/ticket 修正、增加合规
+  定位提示或模型 revision 变化后，才可创建新的验收轮，不得对完全相同的失败条件无变化重复运行。
+  每轮必须记录启动原因、ticket revision、模型状态和结果；单个 Examiner 的一次基础设施自动重试
+  规则保持不变；
+- 新的真实语义建模 start 使用独立的用户授权预算；R2.3-005 当前只允许一个真实建模切片，Coordinator
+  不得因验收失败自行开启第二个全新建模任务；
+- 当前最小范围依赖上述 Agent 协作协议，不增加 Runner 阶段门、写入冻结、Lease 撤销、pause/resume
+  状态或“Producer 侧”抽象。Runner 强制隔离可作为未来加固项，但不是 R2.3-005 完成门。
+
+### 当前真实验收深度（已确认）
+
+- R2.3-005 只完成一个真实、简单的建模切片，不为证明验收生命周期增加第二个建模切片或新的语义
+  建模 start；
+- 真实切片复用 R2.3-002 已批准的 Dify Workflow-as-Tool `C -> B -> A` 资料和简单建模目标，但必须
+  使用全新的四角色 Modeling Team 任务以及全新的 Project/Ontology；不得连接或续写 R2.3-002 的保留
+  模型，也不得把该运行变成 R2.3-003 existing-scope 增量场景；
+- 批准资料从 R2.3-002 已版本化输入中选择，不引入新的业务数据集；两个验收问题必须分别具有直接
+  来源依据并覆盖一个可回答关系问题和一个显式未知问题；
+- `CQ1` 固定为：“在 B 调用 C 作为 Tool 的关系中，当前能够确认的最新发布版本是什么，B 消费的是
+  哪个输出？”批准来源为 R2.3-002 的 `official/tools.mdx`、`release-register.md` 和
+  `workflow-landscape.md`；
+- `CQ2` 固定为：“当 C 因 classifier dependency 不可用而没有返回 numeric score 时，B 会采取什么
+  处理动作？”批准来源为 R2.3-002 的 `exception-handling.md`；Source Examiner 必须只依据资料判断
+  可回答性，ticket 不携带预期答案或本需求中的验收分析；
+- 该切片必须提供两个独立验收问题，并由同一个固定 Acceptance 串行执行两个真实验收轮；每一轮都
+  创建一对全新的 Source/Platform Examiner，并在保存终态报告和裁决后真实回收该对 Examiner；
+- 第二轮必须发生在第一轮 Examiner 已回收之后，从而直接证明固定 Acceptance 的跨轮上下文以及
+  子 Agent 的回收后重建；不得只用 mock 或单元测试宣称真实 Runtime 生命周期成立；
+- 当前真实运行不故意制造 `FAIL`、`BLOCKED` 或第二个业务切片；其路由、重试、停止和清理分支由
+  确定性测试覆盖。每个验收结果必须绑定 question、slice revision 和完整模型状态标识；
+- 任一问题 `PASS` 后发生新的平台写入或 slice/model revision 变化时，旧模型状态上的全部既有 `PASS`
+  自动失效，不得与新状态的结果拼接。Coordinator 必须在最终模型状态上重新串行验收两个问题，且
+  每个问题使用全新的 Examiner 对；两个 `PASS` 都绑定同一个最终模型 revision 才满足语义完成门。
 
 ### 明确边界
 
 以下内容不是 R2.3-005 的前置条件，也不得为了本需求重新引入为完成门：P2、P2a、monitor、native
-verifier、proof matrix、通用 acceptance framework/orchestrator、delivery-recovered/context resume、
+verifier、proof matrix、Acceptance 之外的通用 acceptance framework/orchestrator、
+delivery-recovered/context resume、
 R2.3-003 非空增量建模、Pi Runtime，以及 explicit datatype 或 language-tagged literal 写入。
-R2.3-005 只记录上述未来目标；本轮不创建其 design、test plan 或 delivery record，也不宣称已经实现
-或通过该目标。
+Platform Examiner Skill 的高级召回调优同样后移，不得扩张为当前验收前置条件。
+Runner 强制写入冻结、验收阶段门和通用 Producer/Acceptance 双侧状态机同样后移。
+R2.3-005 当前已进入设计阶段：允许创建与本需求一致的 design、test plan 和 delivery record；这些文档
+只定义实现与验收合同，不宣称本需求已经实现或通过。实现仍必须经过独立 plan review、确定性测试和
+一次真实四角色 Modeling Team 运行后才能改变需求状态。
 
 ### 现有证据边界
 
 Round78 证明了保留模型及其独立 Acceptance 结果，但**没有**证明从干净 checkout、干净状态出发
-的 Runner 可重复调用；该可重复性仍是 R2.3-005 的待细化、待实现和待验收内容。
+的 Runner 可重复调用；R2.3-005 已完成业务功能细化并通过 plan review 形成设计，该可重复性仍待实现和独立验收。
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
@@ -1419,12 +1532,12 @@ Round78 证明了保留模型及其独立 Acceptance 结果，但**没有**证�
 - 完成一个新的增量建模目标，并证明已有模型保持正确。
 
 R2.3-003 的语义依赖仍是 R2.3-002 的真实业务切片和非空模型；其运营启动前置则必须先满足
-R2.3-005 的 Producer Runner 正式化收口与可重复调用完成门。
+R2.3-005 的 Modeling Team Runner 正式化收口与可重复调用完成门。
 
 ### 已确认范围
 
 - R2.3-003 直接使用 R2.3-002 的 Project/Ontology 和非敏感 scope handoff，不另造独立业务 fixture；
-- Team Runner、Codex Adapter 和基础三 Agent Profile 不因 existing 场景修改核心语义；
+- Team Runner、Codex Adapter 和基础四 Agent Profile 不因 existing 场景修改核心语义；
 - Protocol 在写入前读取当前平台事实和 workspace context，并创建新的 Build Session/Lease；
 - 本轮只通过新的 Modeling Batch 表达增量变化；
 - existing 模式不删除 Project/Ontology，不抢占历史 Lease，不恢复历史 Agent Session；
@@ -1435,7 +1548,8 @@ R2.3-005 的 Producer Runner 正式化收口与可重复调用完成门。
 进入真实运行前，必须已经有 R2.3-005 的独立验收证据；该证据只证明 Runner 运营基线，不替代
 本需求自身的增量语义验收。
 
-1. 使用全新的 Team Runner run、Coordinator、Modeling、Protocol Sessions、Build Session 和 Lease。
+1. 使用全新的 Team Runner run、Coordinator、Modeling、Protocol、Acceptance Sessions、Build Session
+   和 Lease。
 2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff。
 3. 当前 workspace version 和既有模型在变更前被正确读取；没有历史 Agent 对话泄漏。
 4. 增量 Modeling Batch 完成 dry-run/apply，workspace 前进，既有模型未被错误覆盖或重建。
@@ -1471,17 +1585,17 @@ R2.3-005 的 Producer Runner 正式化收口与可重复调用完成门。
 目标：
 
 - 实现完整 Pi Team Adapter；
-- 单次运行中的 Coordinator、Modeling、Protocol 和其他 Profile Agent 全部使用 Pi；
+- 单次运行中的 Coordinator、Modeling、Protocol、Acceptance 和其他临时子 Agent 全部使用 Pi；
 - 复用 R2.3-001 的 Team Runner、Profile、Agent Package、通信、用户对话、权限和终态合同；
 - 不修改 Semantic Platform Core 或增加 Pi 专属平台接口。
 
-R2.3-004 只有在 R2.3-005 的 Producer Runner 运营基线和 R2.3-003 的已有模型增量证据均完成后
+R2.3-004 只有在 R2.3-005 的 Modeling Team Runner 运营基线和 R2.3-003 的已有模型增量证据均完成后
 才可开始；Pi Runtime 的替换不能倒置或绕过该顺序。
 
 ### 已确认范围
 
 - R2.3 不支持 Codex/Pi 混合团队；
-- 本需求排在 R2.3-005、R2.3-003 之后；R2.3-005 的可重复 Producer invocation 是进入本需求的
+- 本需求排在 R2.3-005、R2.3-003 之后；R2.3-005 的可重复 Modeling Team invocation 是进入本需求的
   运营前置，不由 Pi Adapter 的首次实现反向补足；
 - Pi 可以使用 Runtime-native Session、RPC、事件和 Workflow Package 装载，但角色语义与 Skill
   内容必须继续共享；
