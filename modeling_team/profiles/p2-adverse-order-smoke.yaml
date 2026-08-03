@@ -1,5 +1,6 @@
+# Archival mechanics fixture: no current launcher may execute this profile.
 schema_version: 1
-profile_id: p2-adverse-order-smoke
+profile_id: p2-adverse-order-smoke-formal
 runtime: codex
 agents:
   - agent_id: coordinator
@@ -8,11 +9,15 @@ agents:
     package: modeling
   - agent_id: protocol
     package: protocol
+  - agent_id: acceptance
+    package: acceptance
 communication:
   - from: coordinator
-    to: [modeling, protocol]
+    to: [modeling, protocol, acceptance]
   - from: modeling
     to: [coordinator, protocol]
   - from: protocol
     to: [coordinator, modeling]
+  - from: acceptance
+    to: [coordinator]
 parameters: {}

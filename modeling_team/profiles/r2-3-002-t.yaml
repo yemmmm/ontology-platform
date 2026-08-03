@@ -1,5 +1,6 @@
+# Archival R2.3-002 fixture; retained for evidence/history only.
 schema_version: 1
-profile_id: r2-3-002-t
+profile_id: r2-3-002-t-formal-archival
 runtime: codex
 agents:
   - agent_id: coordinator
@@ -8,13 +9,17 @@ agents:
     package: modeling
   - agent_id: protocol
     package: protocol
+  - agent_id: acceptance
+    package: acceptance
 communication:
   - from: coordinator
-    to: [modeling, protocol]
+    to: [modeling, protocol, acceptance]
   - from: modeling
     to: [coordinator, protocol]
   - from: protocol
     to: [coordinator, modeling]
+  - from: acceptance
+    to: [coordinator]
 parameters: {}
 expected_matrix_binding:
   proof_matrix_path: modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json

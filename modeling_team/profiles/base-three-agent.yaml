@@ -1,5 +1,7 @@
+# Historical path retained at this location for fixture compatibility; its
+# contract is now formalized to the exact four-role roster.
 schema_version: 1
-profile_id: base-three-agent
+profile_id: base-formal-team
 runtime: codex
 agents:
   - agent_id: coordinator
@@ -8,11 +10,15 @@ agents:
     package: modeling
   - agent_id: protocol
     package: protocol
+  - agent_id: acceptance
+    package: acceptance
 communication:
   - from: coordinator
-    to: [modeling, protocol]
+    to: [modeling, protocol, acceptance]
   - from: modeling
     to: [coordinator, protocol]
   - from: protocol
     to: [coordinator, modeling]
+  - from: acceptance
+    to: [coordinator]
 parameters: {}

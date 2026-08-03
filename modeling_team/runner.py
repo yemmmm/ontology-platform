@@ -17,8 +17,14 @@ from .contracts import (
     TeamConfiguration,
     TeamConfigurationError,
     digest_file,
-    load_team_configuration,
+    load_formal_team_configuration,
 )
+from .acceptance import (
+    AcceptanceContractError,
+    CoordinatorPhaseController,
+    RunnerAcceptanceCarrier,
+)
+from .preflight import normalize_formal_scope, run_prestart_preflight
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
@@ -51,6 +57,7 @@ class TeamRun:
     terminal_results: dict[str, dict[str, Any]] | None = None
     protocol_context: dict[str, str] | None = None
     gate_binding: dict[str, str] | None = None
+    acceptance: RunnerAcceptanceCarrier | None = None
 
 
 class TeamRunner:
@@ -63,6 +70,9 @@ class TeamRunner:
         ledger_root: Path | None = None,
         freeze_started_at: str | None = None,
         ledger_now: Callable[[], datetime] | None = None,
+        prestart_preflight: Callable[..., dict[str, Any]] | None = None,
+        canonical_base_url: str = "http://127.0.0.1:8001",
+        canonical_admin_key: str | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -72,6 +82,9 @@ class TeamRunner:
             freeze_started_at,
             ledger_now,
         )
+        self.prestart_preflight = prestart_preflight
+        self.canonical_base_url = canonical_base_url
+        self.canonical_admin_key = canonical_admin_key
         self.run: TeamRun | None = None
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
@@ -86,6 +99,8 @@ class TeamRunner:
         self._owner_answer_failures: set[tuple[str, str]] = set()
         self._outer_answer_sequence = 0
         self._ledger: StartLedger | None = None
+        self.acceptance: RunnerAcceptanceCarrier | None = None
+        self.coordinator_phase: CoordinatorPhaseController | None = None
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -98,11 +113,25 @@ class TeamRunner:
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
-        config = load_team_configuration(
+        # R2.3-005 is the formal Runner entrypoint.  It must fail closed on a
+        # legacy three-role/source-specialist Profile before a scope or Agent
+        # starts.  Historical callers now migrate their fixtures to the same
+        # exact four-role contract.
+        config = load_formal_team_configuration(
             profile_path, task_path, root=self.repository_root
         )
         if config.task.schema_version == 2 and not self.freeze_started_at:
             raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
+        formal_acceptance = (
+            config.task.schema_version == 2
+            and (
+                config.task.task_id == "r2-3-005-formal-acceptance"
+                or config.profile.profile_id == "r2-3-005-modeling-team"
+            )
+        )
+        normalized_scope: dict[str, str] = dict(scope)
+        if formal_acceptance:
+            normalized_scope = normalize_formal_scope(scope)
         root = self.repository_root / "workspaces" / "modeling-runs" / run_id
         if root.exists():
             raise TeamConfigurationError("run directory already exists")
@@ -113,8 +142,27 @@ class TeamRunner:
             task_path=task_path,
         )
         baseline_hash = StartLedger.baseline_hash(baseline)
+        preflight_evidence: dict[str, Any] | None = None
+        if formal_acceptance:
+            # This is deliberately before ledger reservation, run-root creation,
+            # scope construction, or any Agent start.  A second baseline read
+            # closes the TOCTOU gap between inventory and reservation.
+            preflight_evidence = run_prestart_preflight(
+                repository_root=self.repository_root,
+                base_url=self.canonical_base_url,
+                admin_key=self.canonical_admin_key,
+                probe=self.prestart_preflight,
+            )
+            baseline_after_preflight = self._baseline_manifest(
+                run_id=run_id,
+                configuration=config,
+                profile_path=profile_path,
+                task_path=task_path,
+            )
+            if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
+                raise TeamConfigurationError("baseline manifest drifted during preflight")
         gate_binding = None
-        if config.task.schema_version == 2:
+        if formal_acceptance:
             profile_binding = config.profile.expected_matrix_binding
             task_binding = config.task.expected_matrix_binding
             if profile_binding is not None and task_binding is not None and profile_binding != task_binding:
@@ -136,7 +184,38 @@ class TeamRunner:
             )
         root.mkdir(parents=True, mode=0o700)
         (root / "evidence").mkdir(mode=0o700)
-        self.run = TeamRun(run_id, root, config, scope, gate_binding=gate_binding)
+        self.run = TeamRun(run_id, root, config, normalized_scope, gate_binding=gate_binding)
+        acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
+        source_materials: dict[str, Path] = {}
+        ticket_policy: dict[str, Any] | None = None
+        examiner_descriptors: dict[str, dict[str, Any]] | None = None
+        if formal_acceptance:
+            for source in config.task.role_sources:
+                if source.classification in {"business-source", "consumer-question"}:
+                    # Resolve policy digests and Source-child bytes from the
+                    # immutable run-local staging copy, not a mutable checkout
+                    # path after prepare.
+                    source_materials[source.relative_path.as_posix()] = (
+                        root / "sources" / "modeling" / source.relative_path
+                    )
+            ticket_policy = self._acceptance_ticket_policy(config)
+            examiner_descriptors = {}
+            for kind in ("source", "platform"):
+                package_path = self.repository_root / "modeling_team" / "agent-packages" / f"{kind}-examiner" / "package.yaml"
+                descriptor = RunnerAcceptanceCarrier.default_descriptor(kind)
+                descriptor["package_digest"] = digest_file(package_path)
+                examiner_descriptors[kind] = descriptor
+        self.acceptance = RunnerAcceptanceCarrier(
+            root / "acceptance-carrier",
+            task_id=config.task.task_id,
+            acceptance_id="acceptance",
+            child_factory=acceptance_child_factory if callable(acceptance_child_factory) else None,
+            descriptors=examiner_descriptors,
+            source_materials=source_materials,
+            ticket_policy=ticket_policy,
+        )
+        self.coordinator_phase = CoordinatorPhaseController()
+        self.run.acceptance = self.acceptance
         self._atomic_json(
             root / "state.json",
             {
@@ -144,6 +223,8 @@ class TeamRunner:
                 "run_id": run_id,
                 "profile_id": config.profile.profile_id,
                 "task_id": config.task.task_id,
+                "formal_roles": [agent.package.role for agent in config.profile.agents],
+                "acceptance_carrier": "acceptance-carrier",
             },
         )
         shutil.copyfile(profile_path, root / "profile.snapshot.yaml")
@@ -151,10 +232,54 @@ class TeamRunner:
         self._stage_sources()
         self._record_runtime_core_hashes("before_start")
         self._atomic_json(root / "baseline-manifest.json", baseline)
+        if preflight_evidence is not None:
+            self._atomic_json(root / "evidence" / "prestart-preflight.json", preflight_evidence)
         self.run.baseline_hash = baseline_hash
         if config.task.schema_version == 2:
             self._append_evidence("start-ledger", {"event": "reservation", "baseline_hash": self.run.baseline_hash})
         return self.run
+
+    def _acceptance_ticket_policy(self, configuration: TeamConfiguration) -> dict[str, Any]:
+        """Load the requirement-owned CQ/source standard without any answers."""
+
+        parameter = configuration.profile.parameters.get("acceptance_standard")
+        if not isinstance(parameter, str) or not parameter:
+            raise TeamConfigurationError("formal profile omits acceptance standard")
+        standard_path = (self.repository_root / parameter).resolve()
+        if self.repository_root.resolve() not in standard_path.parents:
+            raise TeamConfigurationError("acceptance standard escapes repository")
+        try:
+            standard = json.loads(standard_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise TeamConfigurationError("acceptance standard is unreadable") from exc
+        if not isinstance(standard, dict):
+            raise TeamConfigurationError("acceptance standard is not an object")
+        questions = standard.get("competency_questions")
+        if not isinstance(questions, list) or len(questions) != 2:
+            raise TeamConfigurationError("acceptance standard must freeze two competency questions")
+        normalized_questions: list[dict[str, str]] = []
+        source_paths_by_question: dict[str, list[str]] = {}
+        for item in questions:
+            if not isinstance(item, dict) or set(item) != {"id", "question", "approved_source_paths"}:
+                raise TeamConfigurationError("acceptance standard competency question fields drift")
+            if not isinstance(item["id"], str) or not isinstance(item["question"], str) or not item["id"] or not item["question"]:
+                raise TeamConfigurationError("acceptance standard competency question is invalid")
+            paths = item["approved_source_paths"]
+            if not isinstance(paths, list) or not paths or any(not isinstance(path, str) for path in paths):
+                raise TeamConfigurationError("acceptance standard source paths are invalid")
+            normalized_questions.append({"id": item["id"], "question": item["question"]})
+            source_paths_by_question[item["id"]] = sorted(paths)
+        if [item["id"] for item in normalized_questions] != ["cq-001", "cq-002"]:
+            raise TeamConfigurationError("acceptance standard CQ ordering is invalid")
+        artifact = {"path": parameter, "digest": digest_file(standard_path)}
+        return {
+            "quality_standard_ref": str(standard.get("requirement_ref", "")),
+            "quality_standard_digest": artifact["digest"],
+            "quality_standard_artifact": artifact,
+            "unknown_policy": standard.get("unknown_policy"),
+            "competency_questions": normalized_questions,
+            "approved_source_paths_by_question": source_paths_by_question,
+        }
 
     def _stage_sources(self) -> None:
         assert self.run
@@ -169,6 +294,8 @@ class TeamRunner:
                 os.chmod(target, 0o444)
                 manifest.append({"path": source.name, "sha256": digest_file(source), "roles": ["all"]})
         else:
+            for agent in self.run.configuration.profile.agents:
+                (sources / agent.package.role).mkdir(mode=0o700, parents=True, exist_ok=True)
             for source in task.role_sources:
                 for role in source.roles:
                     target = sources / role / source.relative_path
@@ -195,6 +322,12 @@ class TeamRunner:
     ) -> dict[str, Any]:
         files = {
             "runner": self.repository_root / "modeling_team/runner.py",
+            "acceptance_contract": self.repository_root / "modeling_team/acceptance.py",
+            "acceptance_runtime": self.repository_root / "modeling_team/acceptance_runtime.py",
+            "capability_mcp": self.repository_root / "modeling_team/capability_mcp.py",
+            "read_proxy_mcp": self.repository_root / "modeling_team/read_proxy_mcp.py",
+            "report_sink_mcp": self.repository_root / "modeling_team/report_sink_mcp.py",
+            "preflight": self.repository_root / "modeling_team/preflight.py",
             "codex_adapter": self.repository_root / "modeling_team/runtimes/codex.py",
             "team_transport": self.repository_root / "modeling_team/transport_mcp.py",
             "platform_scope": self.repository_root / "modeling_team/platform_scope.py",
@@ -225,14 +358,25 @@ class TeamRunner:
             "start_ledger": self.repository_root / "modeling_team/start_ledger.py",
             "profile": profile_path,
             "task": task_path,
+            "examiner_source_package": self.repository_root / "modeling_team/agent-packages/source-examiner/package.yaml",
+            "examiner_source_instructions": self.repository_root / "modeling_team/agent-packages/source-examiner/instructions.md",
+            "examiner_platform_package": self.repository_root / "modeling_team/agent-packages/platform-examiner/package.yaml",
+            "examiner_platform_instructions": self.repository_root / "modeling_team/agent-packages/platform-examiner/instructions.md",
+            "examiner_source_skill": self.repository_root / "skills/source-examiner/SKILL.md",
+            "examiner_platform_skill": self.repository_root / "skills/platform-examiner/SKILL.md",
         }
         for agent in configuration.profile.agents:
             files[f"package:{agent.package.package_id}"] = self.repository_root / "modeling_team/agent-packages" / agent.package.package_id / "package.yaml"
             files[f"instructions:{agent.package.package_id}"] = agent.package.instructions_path
+            for reference in agent.package.references:
+                files[f"reference:{agent.package.package_id}:{reference.relative_to(self.repository_root).as_posix()}"] = reference
             for skill in agent.package.required_skills:
                 files[f"skill:{agent.package.package_id}:{skill.name}"] = skill
         for source in configuration.task.allowed_sources:
             files[f"source:{source.relative_to(self.repository_root).as_posix()}"] = source
+        if configuration.task.schema_version == 2:
+            for source in configuration.task.role_sources:
+                files[f"source:{source.path.relative_to(self.repository_root).as_posix()}"] = source.path
         platform = self.repository_root / "backend/app/mcp"
         if platform.is_dir():
             for source in sorted(platform.rglob("*.py")):
@@ -278,10 +422,74 @@ class TeamRunner:
                 "runner.proof_v2_preflight": digests["runner"],
                 "runner.proof_v2_matrix_generator": digests["proof_matrix_generator"],
                 "runner.outer_answer_fsync_delivery": digests["runner"],
+                "runner.acceptance_carrier": digests["runner"],
+                "runner.capability_broker": digests["capability_mcp"],
+                "runner.acceptance_child_runtime": digests["acceptance_runtime"],
+                "runner.acceptance_read_proxy": digests["read_proxy_mcp"],
+                "runner.acceptance_report_sink": digests["report_sink_mcp"],
+                "runner.coordination_phase_callback": digests["runner"],
                 "p2_protocol_driver.main": digests["p2_protocol_driver"],
                 "p2a_protocol_driver.main": digests["p2a_protocol_driver"],
             },
             "runtime_contract": {
+                "runner_capability_mcp": {
+                    "server": "runner_capability",
+                    "source_path": "modeling_team/capability_mcp.py",
+                    "sha256": digests["capability_mcp"],
+                    "roles": {
+                        "coordinator": [
+                            "coordinator_publish_acceptance_ticket",
+                            "coordinator_get_verdict",
+                        ],
+                        "acceptance": [
+                            "acceptance_get_ticket",
+                            "acceptance_child_start",
+                            "acceptance_child_get_report",
+                            "acceptance_child_recycle",
+                            "acceptance_get_failure_record",
+                            "submit_acceptance_result",
+                            "acceptance_get_verdict",
+                        ],
+                    },
+                    "socket_mode": "0600",
+                    "token_file_mode": "0400",
+                },
+                "examiner_children": {
+                    "kinds": ["source_examiner", "platform_examiner"],
+                    "source_package": {
+                        "path": "modeling_team/agent-packages/source-examiner/package.yaml",
+                        "sha256": digests["examiner_source_package"],
+                        "instructions_sha256": digests["examiner_source_instructions"],
+                        "skill_sha256": digests["examiner_source_skill"],
+                        "platform_mode": "none",
+                    },
+                    "platform_package": {
+                        "path": "modeling_team/agent-packages/platform-examiner/package.yaml",
+                        "sha256": digests["examiner_platform_package"],
+                        "instructions_sha256": digests["examiner_platform_instructions"],
+                        "skill_sha256": digests["examiner_platform_skill"],
+                        "platform_mode": "read",
+                    },
+                    "read_proxy": {
+                        "source_path": "modeling_team/read_proxy_mcp.py",
+                        "sha256": digests["read_proxy_mcp"],
+                        "socket_mode": "0600",
+                        "token_file_mode": "0400",
+                    },
+                    "report_sink": {
+                        "source_path": "modeling_team/report_sink_mcp.py",
+                        "sha256": digests["report_sink_mcp"],
+                        "socket_mode": "0600",
+                        "token_file_mode": "0400",
+                    },
+                    "private_runtime": {
+                        "home_mode": "0700",
+                        "auth_mode": "0600",
+                        "env": ["CODEX_HOME", "HOME", "PATH", "TERM", "LANG", "LC_ALL"],
+                        "team_transport": False,
+                        "generic_spawn": False,
+                    },
+                },
                 "protocol_mcp_mode_env": canonical_protocol_mcp_mode_contract(),
                 "protocol_mcp_reasoner_env": protocol_mcp_reasoner_contract(),
                 "protocol_retrieval_mcp": {
@@ -358,8 +566,8 @@ class TeamRunner:
                         "modeling_terminal_handoff_delivered",
                         "terminal_handoff_ack_accepted",
                         "protocol_report_retry_accepted",
-                        "all_three_terminal_results_completed",
-                        "all_three_settled",
+                        "all_four_terminal_results_completed",
+                        "all_four_settled",
                     ],
                     "handoff_contract": "modeling_team/references/p2-monitor-handoff-contract.json",
                     "handoff_environment": "ONTOLOGY_P2_MONITOR_HANDOFF",
@@ -386,7 +594,9 @@ class TeamRunner:
         """Compute the prepare-time binding without creating any run or ledger state."""
         if not cls._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
-        configuration = load_team_configuration(profile_path, task_path, root=repository_root)
+        configuration = load_formal_team_configuration(
+            profile_path, task_path, root=repository_root
+        )
         probe = object.__new__(cls)
         probe.repository_root = repository_root
         manifest = probe._baseline_manifest(
@@ -397,15 +607,139 @@ class TeamRunner:
         )
         return manifest, StartLedger.baseline_hash(manifest)
 
+    def _formal_coordination_enabled(self) -> bool:
+        if not self.run:
+            return False
+        configuration = self.run.configuration
+        return (
+            configuration.task.schema_version == 2
+            and (
+                configuration.task.task_id == "r2-3-005-formal-acceptance"
+                or configuration.profile.profile_id == "r2-3-005-modeling-team"
+            )
+        )
+
+    def _coordination_phase_callback(
+        self,
+        sender_id: str,
+        recipient_id: str,
+        message_kind: str,
+        text: str,
+        generation: int,
+    ) -> dict[str, Any]:
+        """Validate model-visible coordination before Broker evidence is accepted."""
+
+        if not self.coordinator_phase:
+            raise TeamConfigurationError("Coordinator phase controller is unavailable")
+        if message_kind == "ready_for_acceptance":
+            return self.coordinator_phase.readiness(
+                sender_id=sender_id,
+                message_kind=message_kind,
+                text=text,
+                generation=generation,
+            )
+        if message_kind == "silent_for_acceptance":
+            return self.coordinator_phase.readiness(
+                sender_id=sender_id,
+                message_kind=message_kind,
+                text=text,
+                generation=generation,
+            )
+        if message_kind == "acceptance_start":
+            return self.coordinator_phase.start_acceptance_round(
+                sender_id=sender_id,
+                round_id=text,
+                generation=generation,
+            )
+        if message_kind == "acceptance_verdict_route":
+            try:
+                verdict = json.loads(text)
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise TeamConfigurationError("Acceptance verdict route is not canonical JSON") from exc
+            if not isinstance(verdict, dict):
+                raise TeamConfigurationError("Acceptance verdict route is not an object")
+            return self.coordinator_phase.route_verdict(
+                sender_id=sender_id,
+                verdict=verdict,
+                generation=generation,
+            )
+        raise TeamConfigurationError("coordination kind is not fixed by the formal Profile")
+
+    def _terminal_report_guard(
+        self, agent_id: str, already_synchronized: bool = False
+    ) -> bool:
+        """Compose the existing Runtime guard with the formal Coordinator terminal gate.
+
+        The Runtime guard still owns protocol retrieval safety.  For the formal four-role
+        run, Acceptance and Coordinator are additionally blocked until Acceptance has
+        persisted two same-state PASS verdicts, reclaimed both child pairs, and committed
+        settlement CAS/readback.  No model/SSE/``agent_end`` semantics are changed here.
+        """
+
+        adapter_guard = getattr(self.adapter, "terminal_report_blocked", None)
+        if callable(adapter_guard):
+            try:
+                if adapter_guard(agent_id, already_synchronized):
+                    return True
+            except Exception:
+                return True
+        if self._formal_coordination_enabled() and self.run is not None:
+            role_ids = {
+                agent.package.role: agent.agent_id
+                for agent in self.run.configuration.profile.agents
+            }
+            coordinator_id = role_ids.get("coordinator", "coordinator")
+            if agent_id == coordinator_id:
+                return self.acceptance is None or not self.acceptance.is_settled
+            acceptance_id = role_ids.get("acceptance", "acceptance")
+            if agent_id == acceptance_id:
+                # Acceptance itself cannot terminate after merely producing a
+                # verdict.  The Delivery/Runner path must first perform the
+                # complete cleanup + CAS/readback settlement transition.
+                return self.acceptance is None or not self.acceptance.is_settled
+        return False
+
+    def _finalize_acceptance_if_ready(self) -> None:
+        """Commit explicit Acceptance settlement before Coordinator may report terminal."""
+
+        if not self._formal_coordination_enabled() or self.acceptance is None:
+            return
+        if self.acceptance.is_settled or not self.acceptance.settlement_ready():
+            return
+        try:
+            receipt = self.acceptance.settle()
+        except AcceptanceContractError:
+            # A state reader may have observed drift.  The carrier records the
+            # invalidation and remains non-settled; Coordinator cannot pass its guard.
+            return
+        self._append_evidence(
+            "acceptance-settlement",
+            {
+                "status": receipt.get("status"),
+                "settlement_cas": receipt.get("settlement_cas"),
+                "final_readback": receipt.get("final_readback"),
+            },
+        )
+
     def start(self) -> None:
         if not self.run:
             raise RuntimeError("Runner is not prepared")
         self._state("STARTING")
         try:
+            formal_coordination = self._formal_coordination_enabled()
             if self.scope_factory:
                 self.scope = self.scope_factory(self.run)
                 self.scope.retain_nonempty = self.run.configuration.task.retain_nonempty
                 self.scope.prepare(self.run.scope)
+                if formal_coordination and self.acceptance is not None:
+                    # Bind formal Acceptance read keys only after PlatformScope has
+                    # authenticated and prepared the owned Project/Ontology.  The
+                    # carrier then replaces its explicit offline test double with
+                    # the API-backed lifecycle and host MCP forwarder.
+                    self.acceptance.bind_platform_scope(
+                        self.scope,
+                        repository_root=self.repository_root,
+                    )
                 self.run.protocol_key = self.scope.protocol_key
                 if self.run.configuration.task.schema_version == 2:
                     self.run.protocol_context = self.scope.read_protocol_context()
@@ -426,11 +760,18 @@ class TeamRunner:
                     role_agents["coordinator"]: {
                         role_agents["modeling"],
                         role_agents["protocol"],
+                        role_agents["acceptance"],
                     }
                 },
                 modeling_agent_id=role_agents["modeling"],
-                terminal_report_guard=getattr(self.adapter, "terminal_report_blocked", None),
+                terminal_report_guard=self._terminal_report_guard,
                 transport_event_observer=transport_event_observer,
+                coordination_phase_callback=(
+                    self._coordination_phase_callback if formal_coordination else None
+                ),
+                coordination_event_observer=(
+                    self._append_coordination_transport_event if formal_coordination else None
+                ),
             )
             self.transport.start(
                 [agent.agent_id for agent in self.run.configuration.profile.agents]
@@ -439,6 +780,20 @@ class TeamRunner:
             (self.run.root / "transport-root").write_text(
                 str(self.transport.root), encoding="utf-8"
             )
+            if (
+                self.acceptance is not None
+                and formal_coordination
+            ):
+                # Runner-private capability endpoints are live before any
+                # Coordinator/Acceptance process is launched.
+                self.acceptance.start_capability_endpoints()
+            if formal_coordination and self.coordinator_phase is not None:
+                self.coordinator_phase.start()
+                assignment = self.coordinator_phase.assign_slice(
+                    sender_id=role_agents["coordinator"],
+                    objective=self.run.configuration.task.objective,
+                )
+                self._append_evidence("coordination-phase", assignment)
             identities = self.adapter.start_roster(
                 self.run, self.run.configuration.profile.agents
             )
@@ -796,6 +1151,11 @@ class TeamRunner:
         assert self.run
         task = self.run.configuration.task
         if task.schema_version == 2:
+            generation = (
+                self.coordinator_phase.generation
+                if self._formal_coordination_enabled() and self.coordinator_phase
+                else None
+            )
             staged_sources = sorted(
                 f"/agent/home/sources/{source.relative_path.as_posix()}"
                 for source in task.role_sources
@@ -810,6 +1170,31 @@ class TeamRunner:
                 + "Use Team Transport for direct messages and call report_task_result exactly once before ending. "
                 + "Protocol may use only its configured ontology-platform MCP tools."
             )
+            if generation is not None:
+                text += (
+                    f"\nCurrent coordination generation: {generation}. "
+                    "Include this non-secret generation unchanged in the role's fixed "
+                    "send_coordination call."
+                )
+            if role == "acceptance":
+                return (
+                    task.objective
+                    + (
+                        f"\nCurrent coordination generation: {generation}. "
+                        if generation is not None
+                        else ""
+                    )
+                    + "\nYou are the persistent Acceptance role. The Runner supplies an immutable ticket, "
+                    "a versioned standard, and exactly two terminal Examiner reports per round. Do not "
+                    "read staged source paths, call platform tools, spawn Agents, or use generic multi-agent "
+                    "features. Use only the Runner-owned Acceptance capability to acknowledge the ticket, "
+                    "retrieve child reports, and submit one canonical PASS/FAIL/BLOCKED verdict to Coordinator. "
+                    "Keep the Acceptance session alive across rounds; never send child terminal state through "
+                    "Team Transport. Bind question, acceptance_round_id, slice revision, ticket digest, typed "
+                    "evidence, and complete model-state identity in every verdict. Route only "
+                    "acceptance_verdict_route to coordinator with the current generation and canonical "
+                    "verdict JSON as text."
+                )
             if role == "protocol":
                 text += (
                     "\nYou must read the enumerated modeling-batch-item-contract.json source. "
@@ -830,7 +1215,9 @@ class TeamRunner:
                     "evidence_citations field byte-for-byte; do not read/guess source locators or owner answers. "
                     "Before the first submit_modeling_batch call, validate assertion IDs/scope/citations and the "
                     "frozen matrix binding, write the run-local candidate-item-evidence-map, and compare the "
-                    "group-projected safe dry-run Evidence plan before apply."
+                    "group-projected safe dry-run Evidence plan before apply. Emit only "
+                    "silent_for_acceptance to coordinator through send_coordination with the current "
+                    "generation after the ordered protocol work is quiet."
                 )
                 context = self.run.protocol_context
                 if context:
@@ -839,15 +1226,24 @@ class TeamRunner:
                     )
             if role == "coordinator":
                 return text + (
+                    "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
+                    "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
+                    "read the Acceptance verdict; do not redefine CQs, approved-source paths, or the "
+                    "quality standard. After Modeling-ready and Protocol-silent, emit only "
+                    "acceptance_start to acceptance through send_coordination with the current "
+                    "generation and acceptance_round_id as text."
                     "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
-                    "\nreport_task_result is recorded exactly once only after Modeling and Protocol have each "
-                    "reported completed or blocked. A dependency rejection is not recorded; wait for their "
-                    "terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
+                    "\nreport_task_result is recorded exactly once only after Modeling, Protocol, and Acceptance "
+                    "have each reported completed or blocked. A dependency rejection is not recorded; wait for "
+                    "their terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
                 )
             if role == "modeling":
                 return text + (
+                    "\nEmit only ready_for_acceptance to coordinator through send_coordination with "
+                    "the current generation once the semantic slice is ready; never emit "
+                    "silent_for_acceptance or acceptance_start."
                     "\nSend each platform-neutral candidate or revision with expects_reply=true and retain the "
                     "returned delivery_id. Wait for Protocol's delivered receipt or conflict whose "
                     "reply_to_delivery_id matches it. On conflict, send a revision as a new expects_reply request; "
@@ -1084,6 +1480,7 @@ class TeamRunner:
             output.append(envelope)
             self._append_evidence("deliveries", envelope)
         results = self.transport.results
+        self._finalize_acceptance_if_ready()
         for source_id, result in results.items():
             for recipient_id, dependencies in self.transport.terminal_dependencies.items():
                 pair = (recipient_id, source_id)
@@ -1180,7 +1577,11 @@ class TeamRunner:
                 envelope = {"type": "coordinator", "text": message.text}
                 output.append(envelope)
                 self._append_evidence("coordinator", envelope)
-        if not self._terminal_emitted and len(self.transport.results) == len(
+        formal_settlement_ready = (
+            not self._formal_coordination_enabled()
+            or (self.acceptance is not None and self.acceptance.is_settled)
+        )
+        if formal_settlement_ready and not self._terminal_emitted and len(self.transport.results) == len(
             self.run.configuration.profile.agents
         ) and self.adapter.wait_settled(
             [agent.agent_id for agent in self.run.configuration.profile.agents], 1
@@ -1210,6 +1611,51 @@ class TeamRunner:
             )
         return output
 
+    def send_coordination(
+        self,
+        *,
+        sender_id: str,
+        recipient_id: str,
+        message_kind: str,
+        text: str = "",
+        generation: int,
+    ) -> dict[str, Any]:
+        """Publish a non-terminal readiness/silence phase event.
+
+        This is intentionally separate from ``report_task_result``.  It allows
+        Coordinator to serialize Modeling/Protocol quiet acknowledgements while
+        preserving the existing Agent settlement semantics.
+        """
+        if not self.run or not self.transport or not self.coordinator_phase:
+            raise RuntimeError("Runner is not started")
+        if not self._formal_coordination_enabled():
+            raise TeamConfigurationError("coordination phase is unavailable for this run")
+        delivery = self.transport.send_coordination(
+            sender_id,
+            recipient_id,
+            message_kind,
+            text,
+            generation,
+        )
+        envelope = {
+            "type": "coordination",
+            "sender_id": delivery.sender_id,
+            "recipient_id": delivery.recipient_id,
+            "message_kind": delivery.message_kind,
+            "message_id": delivery.message_id,
+            "timestamp": delivery.timestamp,
+            "terminal": False,
+            "settles": False,
+            "text_sha256": hashlib.sha256(delivery.text.encode("utf-8")).hexdigest(),
+            "phase_event": {
+                key: value
+                for key, value in (delivery.phase_event or {}).items()
+                if key not in {"text", "objective"}
+            },
+        }
+        self._append_evidence("coordination", envelope)
+        return envelope
+
     @staticmethod
     def _post_settlement_prompt(results: dict[str, Any]) -> str:
         return (
@@ -1237,9 +1683,28 @@ class TeamRunner:
     def cleanup(self) -> dict[str, Any]:
         evidence: dict[str, Any] = {}
         self._state("CLEANING") if self.run else None
+        formal = self._formal_coordination_enabled()
+        acceptance_settled = bool(self.acceptance and self.acceptance.is_settled)
+        if formal and not acceptance_settled:
+            self._state("ABORTING") if self.run else None
         try:
             self.adapter.stop()
             evidence["runtime"] = self.adapter.cleanup_identifiers()
+            if self.acceptance:
+                if formal and not acceptance_settled:
+                    evidence["acceptance"] = self.acceptance.abort_cleanup(
+                        "runner-abort-before-settlement"
+                    )
+                    self._append_evidence(
+                        "aborted",
+                        {
+                            "status": "aborted",
+                            "reason": evidence["acceptance"].get("aborted_reason"),
+                            "settled": False,
+                        },
+                    )
+                else:
+                    evidence["acceptance"] = self.acceptance.cleanup()
         finally:
             if self.scope:
                 if self.run and self.run.terminal_results:
@@ -1279,6 +1744,9 @@ class TeamRunner:
                 "runner_sha256": digest_file(self.repository_root / "modeling_team/runner.py"),
                 "codex_adapter_sha256": digest_file(
                     self.repository_root / "modeling_team/runtimes/codex.py"
+                ),
+                "capability_mcp_sha256": digest_file(
+                    self.repository_root / "modeling_team/capability_mcp.py"
                 ),
                 "transport_mcp_sha256": digest_file(
                     self.repository_root / "modeling_team/transport_mcp.py"
@@ -1328,13 +1796,13 @@ class TeamRunner:
 
     @staticmethod
     def _completed_terminal_statuses(results: Any) -> dict[str, str]:
-        roles = {"coordinator", "modeling", "protocol"}
+        roles = {"coordinator", "modeling", "protocol", "acceptance"}
         if (
             not isinstance(results, dict)
             or set(results) != roles
             or any(not isinstance(value, dict) or value.get("status") != "completed" for value in results.values())
         ):
-            raise TeamConfigurationError("retained scope requires exactly three completed Agent statuses")
+            raise TeamConfigurationError("retained scope requires exactly four completed Agent statuses")
         return {role: "completed" for role in sorted(roles)}
 
     def _append_evidence(self, name: str, value: dict[str, Any]) -> None:
@@ -1390,6 +1858,64 @@ class TeamRunner:
         finally:
             os.close(descriptor)
         os.chmod(path, 0o600)
+
+    def _append_coordination_transport_event(self, event: dict[str, object]) -> None:
+        """Persist only fixed coordination metadata after phase validation."""
+
+        if not self.run:
+            return
+        expected = {
+            "sender_id",
+            "recipient_id",
+            "message_kind",
+            "text",
+            "timestamp",
+            "message_id",
+            "terminal",
+            "settles",
+            "phase_event",
+        }
+        if not isinstance(event, dict) or set(event) != expected:
+            return
+        sender = event["sender_id"]
+        recipient = event["recipient_id"]
+        kind = event["message_kind"]
+        text = event["text"]
+        phase_event = event["phase_event"]
+        if (
+            not isinstance(sender, str)
+            or not isinstance(recipient, str)
+            or not isinstance(kind, str)
+            or kind
+            not in {
+                "ready_for_acceptance",
+                "silent_for_acceptance",
+                "acceptance_start",
+                "acceptance_verdict_route",
+            }
+            or not isinstance(text, str)
+            or not isinstance(phase_event, dict)
+        ):
+            return
+        safe_phase = {
+            key: value
+            for key, value in phase_event.items()
+            if key not in {"text", "objective"}
+        }
+        self._append_evidence(
+            "coordination",
+            {
+                "sender_id": sender,
+                "recipient_id": recipient,
+                "message_kind": kind,
+                "message_id": event["message_id"],
+                "timestamp": event["timestamp"],
+                "terminal": False,
+                "settles": False,
+                "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "phase_event": safe_phase,
+            },
+        )
 
     @staticmethod
     def _atomic_json(path: Path, value: dict[str, Any]) -> None:

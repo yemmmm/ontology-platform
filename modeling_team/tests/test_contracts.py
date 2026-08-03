@@ -21,7 +21,7 @@ class ContractTests(unittest.TestCase):
         config = load_team_configuration(self.base, self.task, root=self.root)
         self.assertEqual(
             [agent.agent_id for agent in config.profile.agents],
-            ["coordinator", "modeling", "protocol"],
+            ["coordinator", "modeling", "protocol", "acceptance"],
         )
         self.assertIn(("modeling", "protocol"), config.profile.communication)
 

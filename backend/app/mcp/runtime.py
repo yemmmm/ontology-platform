@@ -94,6 +94,18 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "inspect_semantic_statement_provenance": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
+    "list_semantic_validation_runs": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "get_semantic_validation_run": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "list_semantic_reasoning_runs": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "get_semantic_reasoning_run": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
     "get_project_build_context": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),

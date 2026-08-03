@@ -22,7 +22,11 @@ FORBIDDEN_KEYS = {
     "pid",
 }
 PLATFORM_VALUES = {"none", "read", "write"}
-ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist"}
+# ``source-specialist`` remains readable for archived R2.3-001/R2.3-002 evidence
+# and deterministic legacy fixtures.  Formal R2.3-005 loading uses
+# ``FORMAL_ROLE_VALUES`` below and rejects it before scope or Agent startup.
+ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist", "acceptance"}
+FORMAL_ROLE_VALUES = {"coordinator", "modeling", "protocol", "acceptance"}
 # The v2 Task may narrow this set, but never broaden it.  Keep lifecycle/key/project
 # mechanics outside the Agent-visible platform surface.
 SAFE_PROTOCOL_TOOLS = frozenset(
@@ -236,7 +240,7 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
             f"Package {package_id} schema or identifier is invalid"
         )
     role = data.get("role")
-    if role not in {"coordinator", "modeling", "protocol", "source-specialist"}:
+    if role not in ROLE_VALUES:
         raise TeamConfigurationError(f"Package {package_id} has unknown role")
     permissions = data.get("permissions")
     if (
@@ -253,10 +257,17 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
         raise TeamConfigurationError(
             "Protocol Package must have platform write permission"
         )
-    if role != "protocol" and platform != "none":
+    if role not in {"protocol"} and platform != "none":
         raise TeamConfigurationError(
             "only Protocol may have platform permission in R2.3-001"
         )
+    if role == "acceptance":
+        if permissions.get("source") not in {None, "none"}:
+            raise TeamConfigurationError("Acceptance Package cannot read source material")
+        if permissions.get("spawn") not in {None, False}:
+            raise TeamConfigurationError("Acceptance Package cannot spawn Agents")
+        if permissions.get("write") not in {None, False}:
+            raise TeamConfigurationError("Acceptance Package cannot write the platform")
     instructions = data.get("instructions")
     if (
         not isinstance(instructions, str)
@@ -318,7 +329,9 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
     )
 
 
-def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
+def load_profile(
+    path: Path, *, root: Path | None = None, strict: bool = False
+) -> TeamProfile:
     root = root or repository_root()
     data = _yaml(path)
     _reject_forbidden(data, location="Profile")
@@ -353,7 +366,15 @@ def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
         ids.add(agent_id)
         roles.append(package.role)
         agents.append(ProfileAgent(agent_id, package))
-    if roles.count("coordinator") != 1 or roles.count("protocol") != 1:
+    if strict:
+        if len(agents) != 4 or set(roles) != FORMAL_ROLE_VALUES or len(set(roles)) != 4:
+            raise TeamConfigurationError(
+                "formal Profile requires exactly Coordinator, Modeling, Protocol, and Acceptance"
+            )
+        expected_ids = set(FORMAL_ROLE_VALUES)
+        if ids != expected_ids:
+            raise TeamConfigurationError("formal Profile Agent IDs must match the four role IDs")
+    elif roles.count("coordinator") != 1 or roles.count("protocol") != 1:
         raise TeamConfigurationError(
             "Profile requires exactly one Coordinator and Protocol"
         )
@@ -383,6 +404,19 @@ def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
             edges.add((sender, recipient))
     if not isinstance(data["parameters"], dict):
         raise TeamConfigurationError("parameters must be an object")
+    if strict:
+        required_edges = {
+            ("coordinator", "modeling"),
+            ("coordinator", "protocol"),
+            ("coordinator", "acceptance"),
+            ("modeling", "coordinator"),
+            ("modeling", "protocol"),
+            ("protocol", "coordinator"),
+            ("protocol", "modeling"),
+            ("acceptance", "coordinator"),
+        }
+        if edges != required_edges:
+            raise TeamConfigurationError("formal Profile communication graph drift")
     parameter_binding = data["parameters"].get("expected_matrix_binding")
     top_level_binding = data.get("expected_matrix_binding")
     if parameter_binding is not None and top_level_binding is not None and parameter_binding != top_level_binding:
@@ -536,9 +570,13 @@ def load_task(
 
 
 def load_team_configuration(
-    profile_path: Path, task_path: Path, *, root: Path | None = None
+    profile_path: Path,
+    task_path: Path,
+    *,
+    root: Path | None = None,
+    strict: bool = False,
 ) -> TeamConfiguration:
-    profile = load_profile(profile_path, root=root)
+    profile = load_profile(profile_path, root=root, strict=strict)
     task = load_task(
         task_path,
         root=root,
@@ -554,6 +592,18 @@ def load_team_configuration(
         profile,
         task,
     )
+
+
+def load_formal_team_configuration(
+    profile_path: Path, task_path: Path, *, root: Path | None = None
+) -> TeamConfiguration:
+    """Load only the exact four-role R2.3-005 formal workflow.
+
+    Keeping this explicit avoids accidentally widening every historical P2/P2a
+    fixture while making the new Runner entrypoint fail closed before any scope
+    or Agent startup.
+    """
+    return load_team_configuration(profile_path, task_path, root=root, strict=True)
 
 
 def digest_file(path: Path) -> str:

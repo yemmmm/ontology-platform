@@ -27,7 +27,7 @@ from modeling_team.protocol_mechanics import (
     verify_scoped_retrieval_fallback,
 )
 from modeling_team.runner import TeamRunner
-from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
+from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.start_ledger import StartLedger
 
 
@@ -1271,7 +1271,7 @@ class R23002Tests(unittest.TestCase):
                     scope={"mode": "create"},
                 )
                 runner.start()
-                self.assertEqual(adapter.started, ["coordinator", "modeling", "protocol"])
+                self.assertEqual(adapter.started, ["coordinator", "modeling", "protocol", "acceptance"])
                 self.assertTrue((run_root / "evidence/runtime-visibility-probe.jsonl").exists())
                 self.assertTrue((run_root / "evidence/semantic-start.jsonl").exists())
             finally:
@@ -1663,7 +1663,7 @@ class R23002Tests(unittest.TestCase):
                 list(executor.map(rebind, ("baseline-three", "baseline-four")))
             self.assertEqual(sorted(rebind_outcomes), ["authorized", "rejected"])
 
-    def test_cli_host_auth_preflight_precedes_prepare_and_has_no_run_side_effect(self) -> None:
+    def test_cli_host_auth_preflight_waits_for_runner_prepare_and_has_no_run_side_effect(self) -> None:
         root = repository_root()
         run_id = f"r23002-auth-{uuid4().hex}"
         run_root = root / "workspaces" / "modeling-runs" / run_id
@@ -1686,9 +1686,9 @@ class R23002Tests(unittest.TestCase):
             ]
             with (
                 patch.object(sys, "argv", argv),
-                patch.object(CodexRuntimeAdapter, "preflight_host_auth", side_effect=CodexRuntimeError("missing auth")),
-                patch.object(TeamRunner, "prepare", side_effect=AssertionError("prepare must not run")),
-                patch.object(team_main, "_bootstrap_helpers", side_effect=AssertionError("bootstrap must not run")),
+                patch.object(CodexRuntimeAdapter, "preflight_host_auth", side_effect=AssertionError("auth must wait for prepare")),
+                patch.object(TeamRunner, "prepare", side_effect=TeamConfigurationError("clean/canonical preflight failed")),
+                patch.object(team_main, "_bootstrap_helpers", return_value=(lambda: ("key", "id"), lambda _id: True)),
             ):
                 self.assertEqual(team_main.main(), 2)
             self.assertFalse(run_root.exists())
@@ -1709,6 +1709,7 @@ class R23002Tests(unittest.TestCase):
                 "coordinator": {"status": "completed"},
                 "modeling": {"status": "completed"},
                 "protocol": {"status": "completed"},
+                "acceptance": {"status": "completed"},
             },
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -1735,7 +1736,7 @@ class R23002Tests(unittest.TestCase):
 
         run = SimpleNamespace(
             run_id="r23002-concurrent",
-            terminal_results={role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol")},
+            terminal_results={role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol", "acceptance")},
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "handoff.json"
@@ -1892,7 +1893,7 @@ class R23002Tests(unittest.TestCase):
             (run_root / "evidence").mkdir(parents=True)
             runner.run = SimpleNamespace(
                 run_id="r23002-retained", root=run_root,
-                terminal_results={role: {"status": "completed", "summary": "credential-canary-should-not-persist"} for role in ("coordinator", "modeling", "protocol")},
+                terminal_results={role: {"status": "completed", "summary": "credential-canary-should-not-persist"} for role in ("coordinator", "modeling", "protocol", "acceptance")},
             )
             scope = {
                 "mode": "create", "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
@@ -1918,7 +1919,7 @@ class R23002Tests(unittest.TestCase):
             )
             self.assertEqual(
                 payload["terminal_statuses"],
-                {role: "completed" for role in ("coordinator", "modeling", "protocol")},
+                {role: "completed" for role in ("coordinator", "modeling", "protocol", "acceptance")},
             )
             with self.assertRaisesRegex(TeamConfigurationError, "immutable"):
                 runner._write_retained_handoff_evidence(scope)
@@ -1930,7 +1931,7 @@ class R23002Tests(unittest.TestCase):
             (run_root / "evidence").mkdir(parents=True)
             runner.run = SimpleNamespace(
                 run_id="r23002-deleted", root=run_root,
-                terminal_results={role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol")},
+                terminal_results={role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol", "acceptance")},
             )
             deleted = {
                 "mode": "create", "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
@@ -1952,7 +1953,7 @@ class R23002Tests(unittest.TestCase):
                 root=run_root,
                 terminal_results={
                     role: {"status": "completed"}
-                    for role in ("coordinator", "modeling", "protocol")
+                    for role in ("coordinator", "modeling", "protocol", "acceptance")
                 },
             )
             successful_cleanup = {
@@ -2005,7 +2006,7 @@ class R23002Tests(unittest.TestCase):
             return {
                 "state": "CLEANED",
                 "run_id": "r23002-offline",
-                "terminal_results": results or {role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol")},
+                "terminal_results": results or {role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol", "acceptance")},
                 "cleanup": {"scope": {
                     "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
                     "workspace_version": "version-1", "completed_session_id": "session-1",
@@ -2023,7 +2024,7 @@ class R23002Tests(unittest.TestCase):
                 json.dumps(
                     {
                         "run_id": "r23002-offline",
-                        "terminal_statuses": {role: "completed" for role in ("coordinator", "modeling", "protocol")},
+                        "terminal_statuses": {role: "completed" for role in ("coordinator", "modeling", "protocol", "acceptance")},
                         "scope": state()["cleanup"]["scope"],
                     }
                 ),
@@ -2067,7 +2068,7 @@ class R23002Tests(unittest.TestCase):
                 )
             client.version = "version-1"
             (run_root / "state.json").write_text(
-                json.dumps(state({"coordinator": {"status": "completed"}, "modeling": {"status": "completed"}, "protocol": {"status": "blocked"}})),
+                json.dumps(state({"coordinator": {"status": "completed"}, "modeling": {"status": "completed"}, "protocol": {"status": "blocked"}, "acceptance": {"status": "completed"}})),
                 encoding="utf-8",
             )
             (run_root / "evidence" / "retained-handoff-input.json").write_text(
@@ -2091,7 +2092,7 @@ class R23002Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "run"
             (run_root / "evidence").mkdir(parents=True)
-            statuses = {role: {"status": "completed", "summary": "state may retain details"} for role in ("coordinator", "modeling", "protocol")}
+            statuses = {role: {"status": "completed", "summary": "state may retain details"} for role in ("coordinator", "modeling", "protocol", "acceptance")}
             scope = {
                 "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
                 "workspace_version": "version-1", "completed_session_id": "session-1",
@@ -2104,7 +2105,7 @@ class R23002Tests(unittest.TestCase):
             (run_root / "evidence" / "retained-handoff-input.json").write_text(
                 json.dumps({
                     "run_id": "r23002-mismatch",
-                    "terminal_statuses": {role: "completed" for role in ("coordinator", "modeling", "protocol")},
+                    "terminal_statuses": {role: "completed" for role in ("coordinator", "modeling", "protocol", "acceptance")},
                     "scope": {**scope, "scope_disposition": "retained-pending-acceptance"},
                 }),
                 encoding="utf-8",

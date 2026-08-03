@@ -143,6 +143,29 @@ def _lineage_service(session) -> OntologyLineageService:
     return OntologyLineageService(session, _rdf_store())
 
 
+def _list_scoped_run_records(
+    result: tuple[list[dict[str, Any]], int], *, graph_set_id: str
+) -> dict[str, Any]:
+    """Normalize a read-service list result and enforce the requested scope."""
+    if not isinstance(graph_set_id, str) or not graph_set_id:
+        raise ValueError("graph_set_id is required for semantic run reads")
+    items, total = result
+    if any(item.get("graph_set_id") != graph_set_id for item in items):
+        raise PermissionError("semantic run is outside the requested graph set")
+    return {"graph_set_id": graph_set_id, "items": items, "total": int(total)}
+
+
+def _get_scoped_run_record(
+    item: dict[str, Any], *, graph_set_id: str, run_kind: str
+) -> dict[str, Any]:
+    """Bind a read-by-id result to the graph set supplied by the caller."""
+    if not isinstance(graph_set_id, str) or not graph_set_id:
+        raise ValueError("graph_set_id is required for semantic run reads")
+    if item.get("graph_set_id") != graph_set_id:
+        raise PermissionError(f"{run_kind} run is outside the requested graph set")
+    return item
+
+
 def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def discover_semantic_scopes(
@@ -354,6 +377,77 @@ def register_semantic(server: FastMCP) -> None:
                 graph_set_id=graph_set_id,
                 engine_version=engine_version,
                 shape_version=shape_version,
+            )
+        )
+
+    @server.tool()
+    def list_semantic_validation_runs(
+        graph_set_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        kind: str | None = None,
+    ) -> dict[str, Any]:
+        """List existing validation runs for one authorized graph set.
+
+        This is deliberately read-only: it never starts validation or reruns a
+        report.  The graph-set argument is required so the MCP authorization
+        layer can bind the child request to its ticket-owned Project scope.
+        """
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _list_scoped_run_records(
+                _validation_service(session).list_validation_runs(
+                    limit=limit,
+                    offset=offset,
+                    graph_set_id=graph_set_id,
+                    kind=kind,
+                ),
+                graph_set_id=graph_set_id,
+            )
+        )
+
+    @server.tool()
+    def get_semantic_validation_run(
+        validation_run_id: str, graph_set_id: str
+    ) -> dict[str, Any]:
+        """Read one existing validation run, bound to an authorized graph set."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _get_scoped_run_record(
+                _validation_service(session).get_validation_run(validation_run_id),
+                graph_set_id=graph_set_id,
+                run_kind="validation",
+            )
+        )
+
+    @server.tool()
+    def list_semantic_reasoning_runs(
+        graph_set_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        kind: str | None = None,
+    ) -> dict[str, Any]:
+        """List existing reasoning runs for one authorized graph set without rerunning them."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _list_scoped_run_records(
+                _reasoning_service(session).list_reasoning_runs(
+                    limit=limit,
+                    offset=offset,
+                    graph_set_id=graph_set_id,
+                    kind=kind,
+                ),
+                graph_set_id=graph_set_id,
+            )
+        )
+
+    @server.tool()
+    def get_semantic_reasoning_run(
+        reasoning_run_id: str, graph_set_id: str
+    ) -> dict[str, Any]:
+        """Read one existing reasoning run, bound to an authorized graph set."""
+        return _run_tool(
+            lambda session, _driver, _embedding_client: _get_scoped_run_record(
+                _reasoning_service(session).get_reasoning_run(reasoning_run_id),
+                graph_set_id=graph_set_id,
+                run_kind="reasoning",
             )
         )
 

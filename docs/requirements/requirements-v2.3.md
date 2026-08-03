@@ -1468,6 +1468,10 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   不得因验收失败自行开启第二个全新建模任务；
 - 当前最小范围依赖上述 Agent 协作协议，不增加 Runner 阶段门、写入冻结、Lease 撤销、pause/resume
   状态或“Producer 侧”抽象。Runner 强制隔离可作为未来加固项，但不是 R2.3-005 完成门。
+- 本条后移的“Runner 阶段门/强制隔离”特指由 Runner 机械允许或阻止 Agent 平台操作、冻结写入、撤销
+  Lease，或引入通用 Producer/Acceptance 双侧状态机；它不后移本需求已经确认的只读模型状态重验、旧
+  `PASS` 作废与 settlement 完整性校验。后者只决定验收证据能否被消费以及团队能否声明 settled，
+  不阻止 Agent 发起平台操作，也不替代 Coordinator 的协作调度，仍属于 R2.3-005 当前完成门。
 
 ### 当前真实验收深度（已确认）
 
@@ -1502,6 +1506,9 @@ delivery-recovered/context resume、
 R2.3-003 非空增量建模、Pi Runtime，以及 explicit datatype 或 language-tagged literal 写入。
 Platform Examiner Skill 的高级召回调优同样后移，不得扩张为当前验收前置条件。
 Runner 强制写入冻结、验收阶段门和通用 Producer/Acceptance 双侧状态机同样后移。
+这里的“验收阶段门”仍采用上文限定含义：后移的是平台操作的机械阶段执法，不是模型状态只读重验、
+旧 `PASS` 失效和 settlement CAS/一致性 readback；这些被动完整性检查不得自行冻结写入、撤销 Lease
+或分配语义任务。
 R2.3-005 当前已进入设计阶段：允许创建与本需求一致的 design、test plan 和 delivery record；这些文档
 只定义实现与验收合同，不宣称本需求已经实现或通过。实现仍必须经过独立 plan review、确定性测试和
 一次真实四角色 Modeling Team 运行后才能改变需求状态。

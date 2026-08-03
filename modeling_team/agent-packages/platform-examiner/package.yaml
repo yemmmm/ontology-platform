@@ -1,0 +1,22 @@
+schema_version: 1
+package_id: platform-examiner
+role: source-specialist
+description: Fresh read-only Platform Examiner; receives only the frozen question and ticket-bound proxy.
+instructions: instructions.md
+required_skills:
+  - skills/platform-examiner/SKILL.md
+references: []
+permissions:
+  team_transport: false
+  platform: read
+  source: none
+  spawn: false
+  write: false
+runtime:
+  codex:
+    sandbox: read-only
+    multi_agent: false
+    multi_agent_v2: false
+    spawn_agent: false
+task_input:
+  required: [question, model_state, platform_read_scope, allowed_read_tools]

@@ -70,6 +70,10 @@ from .transport_mcp import Delivery, TeamTransportBroker
 
 
 CONTRACT_RELATIVE_PATH = Path("modeling_team/references/p2a-protocol-driver-contract.json")
+# Historical P2a is retained as a diagnostic/helper surface only.  The
+# current checkout has one runnable formal path (the exact four-role
+# TeamRunner); fail before matrix/scope/ledger/Agent side effects here.
+ARCHIVAL_ONLY = True
 SYNTHETIC_MODELING_ID = "p2a-synthetic-modeling"
 RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,80}$")
 P2A_SCHEMA = "p2a-protocol-driver/v1"
@@ -1135,6 +1139,10 @@ def run_driver(
     evidence_path: Path | None = None,
     timeout: float | None = None,
 ) -> dict[str, Any]:
+    if ARCHIVAL_ONLY:
+        raise P2AProtocolDriverError(
+            "P2a Protocol driver is archival-only; it is disabled before scope, ledger, or Agent startup"
+        )
     contract = load_contract(contract_path)
     repository = (root or repository_root()).resolve()
     if not RUN_ID_RE.fullmatch(run_id):
@@ -1698,4 +1706,10 @@ if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["CONTRACT_RELATIVE_PATH", "P2AProtocolDriverError", "load_contract", "run_driver"]
+__all__ = [
+    "ARCHIVAL_ONLY",
+    "CONTRACT_RELATIVE_PATH",
+    "P2AProtocolDriverError",
+    "load_contract",
+    "run_driver",
+]

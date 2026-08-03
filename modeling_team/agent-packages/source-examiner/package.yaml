@@ -1,0 +1,22 @@
+schema_version: 1
+package_id: source-examiner
+role: source-specialist
+description: Fresh read-only Source Examiner; receives only the frozen question and approved source projection.
+instructions: instructions.md
+required_skills:
+  - skills/source-examiner/SKILL.md
+references: []
+permissions:
+  team_transport: false
+  platform: none
+  source: read
+  spawn: false
+  write: false
+runtime:
+  codex:
+    sandbox: read-only
+    multi_agent: false
+    multi_agent_v2: false
+    spawn_agent: false
+task_input:
+  required: [question, approved_sources, source_bundle_digest]

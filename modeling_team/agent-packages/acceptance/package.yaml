@@ -1,0 +1,23 @@
+schema_version: 1
+package_id: acceptance
+role: acceptance
+description: Persistent read-only semantic Acceptance owner; uses only the Runner-scoped carrier.
+instructions: instructions.md
+required_skills:
+  - skills/acceptance/SKILL.md
+references:
+  - modeling_team/references/r2-3-005-acceptance-standard.json
+permissions:
+  team_transport: true
+  platform: none
+  source: none
+  spawn: false
+  write: false
+runtime:
+  codex:
+    sandbox: read-only
+    multi_agent: false
+    multi_agent_v2: false
+    spawn_agent: false
+task_input:
+  required: [task, acceptance_ticket, examiner_reports, roster]

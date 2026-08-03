@@ -187,7 +187,7 @@ class RunnerTests(unittest.TestCase):
                     )
                     runner.start()
                     assert runner.transport is not None
-                    with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling, protocol"):
+                    with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance, modeling, protocol"):
                         runner.transport.report("coordinator", "completed", "premature")
                     self.assertNotIn("coordinator", runner.transport.results)
                     runner.transport.report("modeling", "blocked", "modeling handoff")
@@ -202,6 +202,8 @@ class RunnerTests(unittest.TestCase):
                     self.assertEqual(
                         [item["type"] for item in handoffs].count("terminal-result-handoff"), 1
                     )
+                    runner.transport.report("acceptance", "blocked", "acceptance handoff")
+                    runner.drain()
                     runner.transport.report("coordinator", "completed", "retry")
                     settled = runner.drain()
                     self.assertIn("settled", [item["type"] for item in settled])
@@ -295,7 +297,7 @@ class RunnerTests(unittest.TestCase):
             ]
             with (
                 patch.object(team_main, "repository_root", return_value=root),
-                patch.object(team_main, "load_team_configuration", return_value=SimpleNamespace()),
+                patch.object(team_main, "load_formal_team_configuration", return_value=SimpleNamespace()),
                 patch.object(team_main, "_bootstrap_helpers", return_value=(lambda: ("key", "id"), lambda _id: True)),
                 patch.object(team_main, "CodexRuntimeAdapter", return_value=SimpleNamespace()),
                 patch.object(team_main, "TeamRunner", side_effect=InterruptingRunner),
@@ -393,6 +395,8 @@ class RunnerTests(unittest.TestCase):
             runner.transport.report("modeling", "blocked", "modeling complete")
             runner.drain()
             runner.transport.report("protocol", "completed", "protocol complete")
+            runner.drain()
+            runner.transport.report("acceptance", "blocked", "acceptance complete")
             runner.drain()
             runner.transport.report("coordinator", "completed", "coordinator complete")
 
@@ -621,6 +625,8 @@ class RunnerTests(unittest.TestCase):
             runner.transport.report("modeling", "blocked", "modeling complete")
             runner.drain()
             runner.transport.report("protocol", "completed", "protocol complete")
+            runner.drain()
+            runner.transport.report("acceptance", "blocked", "acceptance complete")
             runner.drain()
             runner.transport.report("coordinator", "completed", "coordinator complete")
 

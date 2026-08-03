@@ -15,7 +15,7 @@ from .platform_scope import PlatformScope, PlatformScopeError
 
 
 HANDOFF_FIELDS = ("run_id", "project_id", "ontology_id", "workspace_version", "scope_disposition")
-_REQUIRED_ROLES = {"coordinator", "modeling", "protocol"}
+_REQUIRED_ROLES = {"coordinator", "modeling", "protocol", "acceptance"}
 
 
 def publish_scope_handoff(scope: Any, run: Any, phase_a_verdict: str, destination: Path) -> Path:
@@ -35,13 +35,13 @@ def publish_scope_handoff(scope: Any, run: Any, phase_a_verdict: str, destinatio
             if terminal.get("scope_disposition") != "retained-pending-acceptance":
                 raise TeamConfigurationError("producer scope is not pending acceptance")
             results = getattr(run, "terminal_results", None)
-            required = {"coordinator", "modeling", "protocol"}
+            required = {"coordinator", "modeling", "protocol", "acceptance"}
             if (
                 not isinstance(results, dict)
                 or set(results) != required
                 or any(not isinstance(value, dict) or value.get("status") != "completed" for value in results.values())
             ):
-                raise TeamConfigurationError("all producer Agents must be completed")
+                raise TeamConfigurationError("all four producer Agents must be completed")
             payload = {
                 "run_id": run.run_id,
                 "project_id": terminal["project_id"],
@@ -105,7 +105,7 @@ def publish_offline_scope_handoff(
     ):
         raise TeamConfigurationError("offline handoff producer state is not retained pending acceptance")
     if statuses != {role: "completed" for role in sorted(_REQUIRED_ROLES)}:
-        raise TeamConfigurationError("retained handoff evidence requires exactly three completed Agent statuses")
+        raise TeamConfigurationError("retained handoff evidence requires exactly four completed Agent statuses")
     if state_statuses != statuses:
         raise TeamConfigurationError("offline handoff terminal statuses drifted from retained evidence")
     if any(state_scope.get(key) != scope_data.get(key) for key in scope_keys):

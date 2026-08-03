@@ -41,6 +41,11 @@ from .transport_mcp import Delivery, TeamTransportBroker
 
 
 CONTRACT_RELATIVE_PATH = Path("modeling_team/references/p2-protocol-driver-contract.json")
+# R2.3-005 formalizes the only runnable modeling-team entrypoint as the exact
+# four-role TeamRunner.  This historical protocol-only driver remains useful
+# for deterministic helper tests and retained evidence, but must not create a
+# scope, reserve a ledger slot, or start an Agent from a current checkout.
+ARCHIVAL_ONLY = True
 SYNTHETIC_MODELING_ID = "p2-synthetic-modeling"
 PROTOCOL_ID = "protocol"
 RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,80}$")
@@ -481,6 +486,10 @@ def run_driver(
     ``adapter_factory`` and ``scope_factory`` are dependency seams for unit tests only; the CLI
     supplies neither and therefore always uses the production Codex/bwrap and PlatformScope path.
     """
+    if ARCHIVAL_ONLY:
+        raise P2ProtocolDriverError(
+            "P2 Protocol driver is archival-only; it is disabled before scope, ledger, or Agent startup"
+        )
     contract = load_contract(contract_path)
     repository = (root or repository_root()).resolve()
     run_id = _safe_run_id(run_id)

@@ -18,6 +18,7 @@ _TERMINAL_ROLE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 TERMINAL_REPORT_GUARD_ERROR = (
     "Protocol retrieval evidence is incomplete; retry the required query or verifier before terminal report"
 )
+COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
 
 
 class RoutingError(ValueError):
@@ -44,6 +45,27 @@ class TaskResult:
     timestamp: float
 
 
+@dataclass(frozen=True)
+class CoordinationMessage:
+    sender_id: str
+    recipient_id: str
+    message_kind: str
+    text: str
+    timestamp: float
+    message_id: str
+    terminal: bool = False
+    settles: bool = False
+    phase_event: dict[str, object] | None = None
+
+
+_COORDINATION_ROLE_KINDS: dict[str, tuple[str, str]] = {
+    "modeling": ("ready_for_acceptance", "coordinator"),
+    "protocol": ("silent_for_acceptance", "coordinator"),
+    "coordinator": ("acceptance_start", "acceptance"),
+    "acceptance": ("acceptance_verdict_route", "coordinator"),
+}
+
+
 class TeamTransportBroker:
     def __init__(
         self,
@@ -53,6 +75,8 @@ class TeamTransportBroker:
         modeling_agent_id: str | None = None,
         terminal_report_guard: Callable[[str, bool], object] | None = None,
         transport_event_observer: Callable[[dict[str, object]], None] | None = None,
+        coordination_phase_callback: Callable[[str, str, str, str, int], object] | None = None,
+        coordination_event_observer: Callable[[dict[str, object]], None] | None = None,
     ):
         self.evidence_root = root
         # Linux Unix sockets have a short pathname limit. The run-local requested path is
@@ -67,6 +91,8 @@ class TeamTransportBroker:
         self.modeling_agent_id = modeling_agent_id
         self.terminal_report_guard = terminal_report_guard
         self.transport_event_observer = transport_event_observer
+        self.coordination_phase_callback = coordination_phase_callback
+        self.coordination_event_observer = coordination_event_observer
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self._deliveries: list[Delivery] = []
         self._delivery_sequence = 0
@@ -75,8 +101,12 @@ class TeamTransportBroker:
         self._reply_delivery_ids: dict[str, str] = {}
         self._acknowledged_deliveries: set[str] = set()
         self._results: dict[str, TaskResult] = {}
+        self._coordination: list[CoordinationMessage] = []
+        self._coordination_sequence = 0
+        self._coordination_failure: dict[str, object] | None = None
         self._terminal_handoff_acks: set[tuple[str, str]] = set()
         self._lock = threading.Lock()
+        self._coordination_emit_lock = threading.Lock()
         self._servers: list[socket.socket] = []
 
     def endpoint(self, agent_id: str) -> Path:
@@ -169,6 +199,111 @@ class TeamTransportBroker:
                 self._pending_replies[reply_to_delivery_id] = delivery.delivery_id
                 self._reply_delivery_ids[delivery.delivery_id] = reply_to_delivery_id
             return delivery
+
+    def send_coordination(
+        self,
+        sender_id: str,
+        recipient_id: str,
+        message_kind: str,
+        text: str = "",
+        generation: int | None = None,
+    ) -> CoordinationMessage:
+        """Record a non-terminal phase message outside TaskResult settlement.
+
+        ``ready_for_acceptance`` and ``silent_for_acceptance`` are intentionally
+        ordinary coordination state.  They never enter ``results`` and cannot
+        satisfy terminal dependencies.  The Coordinator can also emit the
+        ``acceptance_start`` event after both acknowledgements are present.
+        """
+        allowed_kinds = {kind for kind, _ in _COORDINATION_ROLE_KINDS.values()}
+        if (
+            message_kind not in allowed_kinds
+            or not isinstance(text, str)
+            or not isinstance(sender_id, str)
+            or not isinstance(recipient_id, str)
+            or (sender_id, recipient_id) not in self.permissions
+            or isinstance(generation, bool)
+            or not isinstance(generation, int)
+            or generation <= 0
+        ):
+            raise RoutingError("coordination message is not allowed by frozen Profile")
+        role_kind = _COORDINATION_ROLE_KINDS.get(sender_id)
+        if role_kind != (message_kind, recipient_id):
+            raise RoutingError("coordination role/kind/recipient is not allowed")
+        phase_event: dict[str, object] | None = None
+        with self._coordination_emit_lock:
+            with self._lock:
+                if self._coordination_failure is not None:
+                    raise RoutingError(COORDINATION_OBSERVER_ERROR)
+                if self.coordination_phase_callback is not None:
+                    try:
+                        observed = self.coordination_phase_callback(
+                            sender_id,
+                            recipient_id,
+                            message_kind,
+                            text,
+                            generation,
+                        )
+                    except Exception as exc:
+                        raise RoutingError("coordination phase rejected") from exc
+                    if observed is not None and not isinstance(observed, dict):
+                        raise RoutingError("coordination phase callback returned invalid evidence")
+                    phase_event = observed
+                self._coordination_sequence += 1
+                message = CoordinationMessage(
+                    sender_id,
+                    recipient_id,
+                    message_kind,
+                    text,
+                    time.time(),
+                    f"coordination-{self._coordination_sequence}",
+                    phase_event=phase_event,
+                )
+                self._coordination.append(message)
+            if self.coordination_event_observer is not None:
+                try:
+                    self.coordination_event_observer(message.__dict__.copy())
+                except Exception:
+                    # The phase callback has already advanced its in-memory state, so
+                    # a failed authoritative evidence write must permanently poison
+                    # this broker.  The fixed metadata below is the only failure
+                    # surface; the observer's exception text is never model-visible.
+                    failure = {
+                        "status": "fatal",
+                        "code": "coordination_evidence_observer_failed",
+                        "message": COORDINATION_OBSERVER_ERROR,
+                        "sender_id": message.sender_id,
+                        "recipient_id": message.recipient_id,
+                        "message_kind": message.message_kind,
+                        "message_id": message.message_id,
+                        "generation": (
+                            message.phase_event.get("generation")
+                            if isinstance(message.phase_event, dict)
+                            else None
+                        ),
+                    }
+                    with self._lock:
+                        self._coordination_failure = failure
+                        if isinstance(message.phase_event, dict):
+                            message.phase_event.update(
+                                {
+                                    "fatal": True,
+                                    "failure_code": failure["code"],
+                                }
+                            )
+                    raise RoutingError(COORDINATION_OBSERVER_ERROR) from None
+            return message
+
+    @property
+    def coordination_failure(self) -> dict[str, object] | None:
+        with self._lock:
+            return dict(self._coordination_failure) if self._coordination_failure else None
+
+    def drain_coordination(self) -> list[CoordinationMessage]:
+        """Claim non-terminal coordination state without touching TaskResult state."""
+        with self._lock:
+            values, self._coordination = self._coordination[:], []
+            return values
 
     def ack_delivery(self, delivery_id: str) -> None:
         with self._lock:
@@ -344,8 +479,7 @@ def mcp_response(
     """Small stdio-MCP-compatible handler used by an Agent-private transport process."""
     method, params = request.get("method"), request.get("params", {})
     if method == "tools/list":
-        return {
-            "tools": [
+        tools = [
                 {
                     "name": "send_team_message",
                     "description": "Deliver exact text to one Profile-authorized teammate.",
@@ -375,7 +509,26 @@ def mcp_response(
                     },
                 },
             ]
-        }
+        if broker.coordination_phase_callback is not None and agent_id in _COORDINATION_ROLE_KINDS:
+            message_kind, recipient_id = _COORDINATION_ROLE_KINDS[agent_id]
+            tools.append(
+                {
+                    "name": "send_coordination",
+                    "description": "Submit this role's fixed coordination phase signal.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "recipient_id": {"type": "string", "enum": [recipient_id]},
+                            "message_kind": {"type": "string", "enum": [message_kind]},
+                            "text": {"type": "string"},
+                            "generation": {"type": "integer", "minimum": 1},
+                        },
+                        "required": ["recipient_id", "message_kind", "text", "generation"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+        return {"tools": tools}
     if method != "tools/call" or not isinstance(params, dict):
         raise RoutingError("unsupported Team Transport request")
     name, args = params.get("name"), params.get("arguments", {})
@@ -422,6 +575,23 @@ def mcp_response(
             status="accepted",
             category="terminal_report_accepted",
             already_synchronized=already_synchronized,
+        )
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(value.__dict__, ensure_ascii=False)}
+            ]
+        }
+    if name == "send_coordination":
+        if broker.coordination_phase_callback is None:
+            raise RoutingError("coordination capability is unavailable")
+        if set(args) != {"recipient_id", "message_kind", "text", "generation"}:
+            raise RoutingError("invalid coordination arguments")
+        value = broker.send_coordination(
+            agent_id,
+            args.get("recipient_id"),
+            args.get("message_kind"),
+            args.get("text"),
+            args.get("generation"),
         )
         return {
             "content": [

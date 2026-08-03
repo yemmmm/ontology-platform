@@ -13,13 +13,21 @@ import socket
 import shutil
 import subprocess
 import stat
+import secrets
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ..contracts import AgentPackage, digest_file
+from ..acceptance_runtime import (
+    ReportSinkServer,
+    ScopedReadProxy,
+    child_config_digest,
+    prepare_child_tree,
+)
+from ..capability_mcp import ROLE_OPERATIONS
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
 from ..transport_mcp import TERMINAL_REPORT_GUARD_ERROR
@@ -74,6 +82,203 @@ class _Agent:
     state_lock: threading.RLock = field(default_factory=threading.RLock)
 
 
+class _CodexChildResource:
+    """Runner-owned private Examiner process/session resource.
+
+    The adapter's explicit ``acceptance_child_factory`` remains a deterministic test seam.
+    Production calls construct this resource with a real private Codex process, a private
+    report sink, and (for Platform) a ticket-bound read proxy.  No child identifier or
+    credential is exposed through the Acceptance carrier's opaque handle.
+    """
+
+    def __init__(
+        self,
+        spec: dict[str, Any],
+        process: Any | None = None,
+        *,
+        proxy: ScopedReadProxy | None = None,
+        report_sink: ReportSinkServer | None = None,
+        thread_id: str | None = None,
+        first_turn_input: list[dict[str, Any]] | None = None,
+        startup_complete: bool = True,
+    ):
+        self.spec = dict(spec)
+        self.process = process
+        self.proxy = proxy
+        self.report_sink = report_sink
+        self.thread_id = thread_id
+        self.first_turn_input = list(first_turn_input or [])
+        self.submitted_reports: list[Mapping[str, Any]] = []
+        self.stopped = False
+        self.destroyed = False
+        self.failure_category: str | None = None
+        self.failure_reason: str | None = None
+        self.infrastructure_failure: Any | None = None
+        self._failure_recorded = False
+        self.startup_complete = startup_complete
+        self._watchdog_stop = threading.Event()
+        self._read_key_revoked = False
+        if process is not None:
+            self._start_watchdog()
+
+    def _start_watchdog(self) -> None:
+        timeout_value = self.spec.get("timeout_seconds", 60)
+        try:
+            timeout = float(timeout_value)
+        except (TypeError, ValueError):
+            timeout = 60.0
+        timeout = max(0.01, min(timeout, 24 * 60 * 60))
+
+        def watch() -> None:
+            deadline = time.monotonic() + timeout
+            while not self._watchdog_stop.wait(0.05):
+                process = self.process
+                poll = getattr(process, "poll", None)
+                if callable(poll):
+                    try:
+                        returncode = poll()
+                    except Exception:
+                        returncode = None
+                    if returncode is not None:
+                        if not self.stopped and not self.destroyed and returncode != 0:
+                            self._record_failure(
+                                "runtime",
+                                "child-crash" if self.startup_complete else "child-start-failed",
+                            )
+                        return
+                if time.monotonic() >= deadline:
+                    self._record_failure(
+                        "runtime",
+                        "child-timeout" if self.startup_complete else "child-start-failed",
+                    )
+                    self._terminate_process(grace_seconds=0.5)
+                    return
+
+        threading.Thread(target=watch, name="acceptance-child-watchdog", daemon=True).start()
+
+    def failure_evidence(self) -> dict[str, str] | None:
+        """Return only fixed sanitized infrastructure codes for the carrier."""
+        if not self.failure_category or not self.failure_reason:
+            return None
+        return {
+            "failure_category": self.failure_category,
+            "reason_code": self.failure_reason,
+        }
+
+    def _record_failure(self, category: str, reason: str) -> None:
+        if self._failure_recorded or self.stopped or self.destroyed:
+            return
+        self.failure_category = category
+        self.failure_reason = reason
+        self._failure_recorded = True
+        callback = self.spec.get("record_infrastructure_failure")
+        if callable(callback):
+            try:
+                self.infrastructure_failure = callback(category, reason)
+            except Exception:
+                # The fixed local codes remain available to Acceptance even if a
+                # crashing process races carrier teardown; no raw exception text is
+                # retained in child evidence.
+                self.infrastructure_failure = None
+
+    def _terminate_process(self, *, grace_seconds: float = 5.0) -> None:
+        process = self.process
+        if process is None:
+            return
+        try:
+            running = getattr(process, "poll", lambda: None)() is None
+        except Exception:
+            running = True
+        if not running:
+            return
+        pid = getattr(process, "pid", None)
+        try:
+            if isinstance(pid, int) and pid > 0:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                terminate = getattr(process, "terminate", None)
+                if callable(terminate):
+                    terminate()
+        except (ProcessLookupError, PermissionError, OSError):
+            terminate = getattr(process, "terminate", None)
+            if callable(terminate):
+                terminate()
+        wait = getattr(process, "wait", None)
+        if callable(wait):
+            try:
+                wait(timeout=grace_seconds)
+                return
+            except (subprocess.TimeoutExpired, TypeError):
+                pass
+        try:
+            if isinstance(pid, int) and pid > 0:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+            else:
+                kill = getattr(process, "kill", None)
+                if callable(kill):
+                    kill()
+        except (ProcessLookupError, PermissionError, OSError):
+            kill = getattr(process, "kill", None)
+            if callable(kill):
+                kill()
+        if callable(wait):
+            try:
+                wait(timeout=grace_seconds)
+            except (subprocess.TimeoutExpired, TypeError):
+                pass
+
+    def stop(self) -> None:
+        self._watchdog_stop.set()
+        self._terminate_process()
+        if self.proxy is not None:
+            self.proxy.revoke()
+            self.proxy.stop()
+        if self.report_sink is not None:
+            self.report_sink.stop()
+        revoke = self.spec.get("read_key_revoke")
+        key_id = self.spec.get("read_key_id")
+        if callable(revoke) and isinstance(key_id, str) and not self._read_key_revoked:
+            try:
+                revoke(key_id)
+            finally:
+                self._read_key_revoked = True
+        self.spec.pop("read_key_plaintext", None)
+        self.spec.pop("report_submit", None)
+        self.spec.pop("platform_forwarder", None)
+        self.spec.pop("_runtime_proxy", None)
+        self.spec.pop("_runtime_report_sink", None)
+        self.stopped = True
+
+    def destroy(self) -> None:
+        self.stop()
+        private_root = self.spec.get("private_root")
+        if isinstance(private_root, str) and private_root:
+            path = Path(private_root)
+            if path.is_symlink():
+                raise CodexRuntimeError("child private input tree is a symlink")
+            if path.exists() and path.is_dir():
+                shutil.rmtree(path)
+        socket_root = self.spec.get("_runtime_socket_root")
+        if isinstance(socket_root, str) and socket_root:
+            path = Path(socket_root)
+            if not path.is_symlink() and path.exists() and path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+        # Do not retain key plaintext or untrusted child output in the adapter object.
+        self.spec.pop("read_key_plaintext", None)
+        self.spec.pop("read_key_revoke", None)
+        self.spec.pop("report_submit", None)
+        self.spec.pop("record_infrastructure_failure", None)
+        self.spec.pop("platform_forwarder", None)
+        self.spec.pop("_runtime_socket_root", None)
+        self.submitted_reports.clear()
+        registry_remove = self.spec.get("_registry_remove")
+        handle_digest = self.spec.get("child_handle_digest")
+        if callable(registry_remove) and isinstance(handle_digest, str):
+            registry_remove(handle_digest)
+        self.spec.pop("_registry_remove", None)
+        self.destroyed = True
+
+
 class CodexRuntimeAdapter(RuntimeAdapter):
     """One app-server process and persistent Codex Thread per frozen Agent."""
 
@@ -84,6 +289,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         codex_binary: str = "codex",
         use_bwrap: bool = True,
         process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
+        acceptance_child_factory: Callable[[dict[str, Any]], Any] | None = None,
     ):
         self.root, self.codex_binary, self.use_bwrap, self.process_factory = (
             repository_root,
@@ -91,11 +297,548 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             use_bwrap,
             process_factory,
         )
+        self._acceptance_child_factory = acceptance_child_factory
+        self._acceptance_children: dict[str, Any] = {}
         self.agents: dict[str, _Agent] = {}
         self._messages: list[RuntimeMessage] = []
         self._run_root: Path | None = None
         self._run_id: str | None = None
+        self._acceptance: Any | None = None
+        self._coordination_enabled = False
         self._private_credentials_destroyed: dict[str, bool] = {}
+
+    def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
+        """Create one private Source/Platform Examiner child.
+
+        An explicitly supplied factory is retained as a deterministic unit-test seam.  All
+        normal formal Acceptance calls use ``_launch_acceptance_child`` and therefore create
+        a private process/session/thread with a bounded first turn.
+        """
+        if not isinstance(spec, dict) or not isinstance(spec.get("child_handle_digest"), str):
+            raise CodexRuntimeError("acceptance child descriptor is invalid")
+        if spec["child_handle_digest"] in self._acceptance_children:
+            raise CodexRuntimeError("acceptance child handle is already active")
+        # The resource itself removes this handle during destroy/recycle.  Adapter.stop
+        # remains an idempotent final sweep, but Acceptance can now prove registry zero
+        # residue immediately after a direct recycle.
+        spec.setdefault(
+            "_registry_remove",
+            lambda handle: self._acceptance_children.pop(handle, None),
+        )
+        if self._acceptance_child_factory is not None:
+            resource = self._acceptance_child_factory(spec)
+        elif all(
+            isinstance(spec.get(field), str) and spec.get(field)
+            for field in ("private_root", "private_input", "ticket_digest", "input_digest", "session_id")
+        ):
+            resource = self._launch_acceptance_child(spec)
+        else:
+            # A tiny legacy/preflight descriptor has no enough frozen input to launch a
+            # child.  Keep it as a private cleanup record; formal Runner specs always
+            # include the fields above and take the real path.
+            resource = _CodexChildResource(spec)
+        if not getattr(resource, "destroyed", False):
+            self._acceptance_children[spec["child_handle_digest"]] = resource
+        return resource
+
+    @staticmethod
+    def _child_package_assets(kind: str, root: Path) -> tuple[Path, Path, Path]:
+        if kind not in {"source", "platform"}:
+            raise CodexRuntimeError("Examiner child kind is invalid")
+        package = root / "modeling_team" / "agent-packages" / f"{kind}-examiner"
+        instructions = package / "instructions.md"
+        skill = (
+            root
+            / "skills"
+            / ("source-examiner" if kind == "source" else "platform-examiner")
+            / "SKILL.md"
+        )
+        for path in (instructions, skill):
+            try:
+                metadata = os.lstat(path)
+            except OSError as exc:
+                raise CodexRuntimeError("Examiner package asset is unavailable") from exc
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                raise CodexRuntimeError("Examiner package asset is invalid")
+        return package / "package.yaml", instructions, skill
+
+    def _acceptance_namespace_command(
+        self,
+        *,
+        home: Path,
+        work: Path,
+        skills: Path,
+        proxy_socket: Path | None,
+        report_socket: Path,
+    ) -> list[str]:
+        binary = shutil.which(self.codex_binary) or self.codex_binary
+        if not self.use_bwrap:
+            return [binary, "app-server"]
+        bwrap = shutil.which("bwrap")
+        if not bwrap:
+            raise CodexRuntimeError("bubblewrap is required for private Examiner isolation")
+        command = [
+            bwrap,
+            "--die-with-parent",
+            "--clearenv",
+            "--unshare-pid",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+        ]
+        for source in (
+            "/usr",
+            "/bin",
+            "/lib",
+            "/lib64",
+            "/etc/ld.so.cache",
+            "/etc/resolv.conf",
+            "/etc/hosts",
+            "/etc/nsswitch.conf",
+            "/etc/ssl/certs",
+        ):
+            if Path(source).exists():
+                command.extend(["--ro-bind", source, source])
+        command += [
+            "--dir",
+            "/agent",
+            "--bind",
+            str(home),
+            "/agent/home",
+            "--bind",
+            str(work),
+            "/agent/work",
+            "--ro-bind",
+            str(skills),
+            "/skills",
+            "--bind",
+            str(report_socket),
+            "/agent/home/report.sock",
+        ]
+        if proxy_socket is not None:
+            command.extend(["--bind", str(proxy_socket), "/agent/home/platform-proxy.sock"])
+        command += [
+            "--chdir",
+            "/agent/work",
+            "--setenv",
+            "CODEX_HOME",
+            "/agent/home",
+            "--setenv",
+            "HOME",
+            "/agent/home",
+            "--setenv",
+            "PATH",
+            "/usr/local/bin:/usr/bin:/bin",
+            "--setenv",
+            "TERM",
+            "xterm-256color",
+            "--setenv",
+            "LANG",
+            "C.UTF-8",
+            "--setenv",
+            "LC_ALL",
+            "C.UTF-8",
+            "--dir",
+            "/agent/bin",
+            "--ro-bind",
+            binary,
+            "/agent/bin/codex",
+            "--",
+            "/agent/bin/codex",
+            "--config",
+            'web_search="disabled"',
+            "--disable",
+            "apps",
+            "--disable",
+            "plugins",
+            "--disable",
+            "multi_agent",
+            "--disable",
+            "multi_agent_v2",
+            "--disable",
+            "browser_use",
+            "--disable",
+            "computer_use",
+            "--disable",
+            "image_generation",
+            "--disable",
+            "memories",
+            "--disable",
+            "hooks",
+            "app-server",
+        ]
+        return command
+
+    def _launch_acceptance_child(self, spec: dict[str, Any]) -> _CodexChildResource:
+        """Launch one child, converting startup failures into typed retry readiness."""
+        try:
+            return self._launch_acceptance_child_impl(spec)
+        except Exception:
+            # Keep startup failures in the same bounded attempt contract as watchdog
+            # crash/timeout.  ``start_child`` has already published the provisional
+            # opaque handle, so the callback can durably bind the failure before this
+            # placeholder resource is returned for Acceptance get-report/recycle.
+            callback = spec.get("record_infrastructure_failure")
+            failure = None
+            if callable(callback):
+                try:
+                    failure = callback("runtime", "child-start-failed")
+                except Exception:
+                    failure = None
+            for name in ("_runtime_proxy", "_runtime_report_sink"):
+                runtime = spec.pop(name, None)
+                stopper = getattr(runtime, "destroy", None) or getattr(runtime, "stop", None)
+                if callable(stopper):
+                    try:
+                        stopper()
+                    except Exception:
+                        pass
+            revoke = spec.get("read_key_revoke")
+            key_id = spec.get("read_key_id")
+            if callable(revoke) and isinstance(key_id, str):
+                try:
+                    revoke(key_id)
+                except Exception:
+                    pass
+            private_root = spec.get("private_root")
+            if isinstance(private_root, str) and private_root:
+                path = Path(private_root)
+                if not path.is_symlink():
+                    shutil.rmtree(path, ignore_errors=True)
+            socket_root = spec.pop("_runtime_socket_root", None)
+            if isinstance(socket_root, str) and socket_root:
+                path = Path(socket_root)
+                if not path.is_symlink():
+                    shutil.rmtree(path, ignore_errors=True)
+            spec.pop("read_key_plaintext", None)
+            spec.pop("platform_forwarder", None)
+            resource = _CodexChildResource(spec)
+            resource.failure_category = "runtime"
+            resource.failure_reason = "child-start-failed"
+            resource.infrastructure_failure = failure
+            resource._failure_recorded = True
+            # All process/proxy/socket state has already been torn down.  Acceptance
+            # retains only this typed failure placeholder for get-report/recycle; the
+            # adapter registry must not retain a dead child handle.
+            resource.destroyed = True
+            return resource
+
+    def _launch_acceptance_child_impl(self, spec: dict[str, Any]) -> _CodexChildResource:
+        """Stage and launch a real private child; no platform call is made here."""
+        kind = spec.get("kind")
+        if kind not in {"source", "platform"}:
+            raise CodexRuntimeError("Examiner child kind is invalid")
+        private_root = Path(str(spec["private_root"]))
+        try:
+            root_metadata = os.lstat(private_root)
+        except OSError as exc:
+            raise CodexRuntimeError("Examiner private root is unavailable") from exc
+        if (
+            stat.S_ISLNK(root_metadata.st_mode)
+            or not stat.S_ISDIR(root_metadata.st_mode)
+            or stat.S_IMODE(root_metadata.st_mode) != 0o700
+            or root_metadata.st_uid != os.getuid()
+        ):
+            raise CodexRuntimeError("Examiner private root is not 0700")
+        _package_file, instructions, skill = self._child_package_assets(kind, self.root)
+        paths = prepare_child_tree(
+            private_root=private_root,
+            host_auth=self.preflight_host_auth(),
+            instructions=instructions.read_bytes(),
+            skill_name=skill.parent.name,
+            skill_bytes=skill.read_bytes(),
+        )
+        home, work, skills = paths["home"], paths["work"], paths["skills"]
+        # Carrier input/source bytes are staged before the adapter is invoked.  Copy only
+        # the projected input into the child home; the Platform child never receives the
+        # source directory, while the Source child receives exact approved bytes.
+        input_path = Path(str(spec["private_input"]))
+        if input_path.is_symlink() or not input_path.is_file():
+            raise CodexRuntimeError("Examiner projected input is unavailable")
+        self._write_child_private(home / "input.json", input_path.read_bytes(), 0o400)
+        staged_sources = private_root / "sources"
+        if kind == "source" and staged_sources.exists():
+            if staged_sources.is_symlink() or not staged_sources.is_dir():
+                raise CodexRuntimeError("Source Examiner material tree is invalid")
+            shutil.copytree(staged_sources, home / "sources", symlinks=False, dirs_exist_ok=False)
+            for item in (home / "sources").rglob("*"):
+                if item.is_symlink():
+                    raise CodexRuntimeError("Source Examiner material tree contains a symlink")
+                if item.is_dir():
+                    os.chmod(item, 0o700)
+                if item.is_file():
+                    os.chmod(item, 0o400)
+        report_token = secrets.token_urlsafe(24)
+        report_token_path = home / "report-sink.token"
+        descriptor_path = home / "examiner-descriptor.json"
+        socket_root = home
+        if any(len(str(home / name)) >= 100 for name in ("report.sock", "platform-proxy.sock")):
+            socket_root = Path("/tmp") / f"mt-ex-{str(spec['child_handle_digest'])[:24]}"
+            if socket_root.exists() or socket_root.is_symlink():
+                raise CodexRuntimeError("Examiner runtime socket root already exists")
+            socket_root.mkdir(mode=0o700, parents=False)
+            spec["_runtime_socket_root"] = str(socket_root)
+        report_socket = socket_root / "report.sock"
+        # The resource owns this callback; the carrier remains the only report validator.
+        submitted_reports: list[Mapping[str, Any]] = []
+        report_submit = spec.get("report_submit")
+        report_callback = report_submit if callable(report_submit) else submitted_reports.append
+        report_sink = ReportSinkServer(report_socket, report_token, report_callback)
+        spec["_runtime_report_sink"] = report_sink
+        report_sink.start()
+        def _write_private(path: Path, payload: bytes, mode: int) -> None:
+            self._write_child_private(path, payload, mode)
+        _write_private(report_token_path, report_token.encode("utf-8"), 0o400)
+        proxy: ScopedReadProxy | None = None
+        proxy_socket: Path | None = None
+        proxy_token_path: Path | None = None
+        if kind == "platform":
+            read_key = spec.get("read_key_plaintext")
+            scope = spec.get("platform_read_scope")
+            if not isinstance(read_key, str) or not isinstance(scope, dict):
+                report_sink.stop()
+                raise CodexRuntimeError("Platform Examiner read proxy input is incomplete")
+            forward = spec.get("platform_forwarder")
+            if spec.get("formal_platform") is True and not callable(forward):
+                report_sink.stop()
+                raise CodexRuntimeError("formal Platform Examiner forwarder is unavailable")
+            proxy_token = secrets.token_urlsafe(24)
+            proxy_socket = home / "platform-proxy.sock"
+            proxy_token_path = home / "platform-proxy.token"
+            proxy = ScopedReadProxy(
+                socket_path=proxy_socket,
+                token=proxy_token,
+                read_key=read_key,
+                project_id=str(scope.get("project_id")),
+                ontology_id=str(scope.get("ontology_id")),
+                graph_set_id=str(scope.get("graph_set_id")),
+                ticket_digest=str(spec["ticket_digest"]),
+                model_state_digest=str(spec["model_state_digest"]),
+                allowed_tools=list(spec.get("allowed_read_tools") or ()),
+                forward=forward if callable(forward) else None,
+                acceptance_round_id=str(spec["acceptance_round_id"]),
+                child_handle_digest=str(spec["child_handle_digest"]),
+            )
+            spec["_runtime_proxy"] = proxy
+            proxy.start()
+            # The proxy is the sole active holder of the temporary platform key.  Do not
+            # retain the plaintext in the adapter/resource spec after proxy creation.
+            spec.pop("read_key_plaintext", None)
+            _write_private(proxy_token_path, proxy_token.encode("utf-8"), 0o400)
+        config = {
+            "kind": kind,
+            "platform_proxy": proxy.receipt.__dict__ if proxy is not None else None,
+            "report_sink": {"server": "examiner_report", "socket": "/agent/home/report.sock"},
+            "descriptor": spec.get("descriptor"),
+            "skill": {"name": skill.parent.name, "sha256": digest_file(skill)},
+        }
+        config_lines = [
+            'sandbox_mode = "read-only"',
+            'web_search = "disabled"',
+            "[features]",
+            "apps = false",
+            "plugins = false",
+            "multi_agent = false",
+            "multi_agent_v2 = false",
+            "browser_use = false",
+            "computer_use = false",
+            "image_generation = false",
+            "memories = false",
+            "hooks = false",
+            "skill_search = false",
+            "tool_suggest = false",
+        ]
+        if proxy is not None and proxy_socket is not None and proxy_token_path is not None:
+            config_lines.extend(
+                [
+                    "[mcp_servers.platform_read_proxy]",
+                    'command = "/usr/bin/python3"',
+                    'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/platform-proxy.sock", "--token-file", "/agent/home/platform-proxy.token"]',
+                    "required = true",
+                    "[mcp_servers.platform_read_proxy.env]",
+                    f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(str(spec["platform_read_scope"]["project_id"]))}',
+                    f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(str(spec["platform_read_scope"]["ontology_id"]))}',
+                    f'PLATFORM_PROXY_GRAPH_SET_ID = {json.dumps(str(spec["platform_read_scope"]["graph_set_id"]))}',
+                    f'PLATFORM_PROXY_TICKET_DIGEST = {json.dumps(str(spec["ticket_digest"]))}',
+                    f'PLATFORM_PROXY_MODEL_STATE_DIGEST = {json.dumps(str(spec["model_state_digest"]))}',
+                ]
+            )
+        config_lines.extend(
+            [
+                "[mcp_servers.examiner_report]",
+                'command = "/usr/bin/python3"',
+                'args = ["/agent/home/report_sink_mcp.py", "--stdio", "--socket", "/agent/home/report.sock", "--token-file", "/agent/home/report-sink.token"]',
+                "required = true",
+            ]
+        )
+        config_path = home / "config.toml"
+        _write_private(config_path, ("\n".join(config_lines) + "\n").encode("utf-8"), 0o600)
+        _write_private(home / "child-config.json", json.dumps(config, sort_keys=True, ensure_ascii=False).encode("utf-8"), 0o400)
+        credential_manifest = {
+            "key_id": spec.get("read_key_id") if kind == "platform" else None,
+            "key_digest": spec.get("read_key_digest") if kind == "platform" else None,
+            "project_id": spec.get("platform_read_scope", {}).get("project_id") if kind == "platform" else None,
+            "ontology_id": spec.get("platform_read_scope", {}).get("ontology_id") if kind == "platform" else None,
+            "ticket_digest": spec.get("ticket_digest"),
+            "acceptance_round_id": spec.get("acceptance_round_id"),
+            "child_input_digest": spec.get("input_digest"),
+            "config_digest": child_config_digest(
+                {
+                    "kind": kind,
+                    "allowlist": list(spec.get("allowed_read_tools", ())),
+                    "scope": spec.get("platform_read_scope"),
+                }
+            ) if kind == "platform" else None,
+            "proxy": proxy.receipt.__dict__ if proxy is not None else None,
+        }
+        _write_private(home / "child-credential-manifest.json", json.dumps(credential_manifest, sort_keys=True, ensure_ascii=False).encode("utf-8"), 0o400)
+        descriptor_payload = {
+            "kind": str(spec.get("descriptor", {}).get("kind", f"{kind}_examiner")),
+            "package_digest": str(spec.get("descriptor", {}).get("package_digest", "")),
+            "platform_mode": "read" if kind == "platform" else "none",
+            "can_team_transport": False,
+            "can_spawn": False,
+            "can_write": False,
+            "max_children": 0,
+        }
+        _write_private(descriptor_path, json.dumps(descriptor_payload, sort_keys=True).encode("utf-8"), 0o400)
+        _write_private(home / "read_proxy_mcp.py", (self.root / "modeling_team" / "read_proxy_mcp.py").read_bytes(), 0o444)
+        _write_private(home / "report_sink_mcp.py", (self.root / "modeling_team" / "report_sink_mcp.py").read_bytes(), 0o444)
+        command = self._acceptance_namespace_command(
+            home=home,
+            work=work,
+            skills=skills,
+            proxy_socket=proxy_socket,
+            report_socket=report_socket,
+        )
+        env = {
+            "CODEX_HOME": str(home),
+            "HOME": str(home),
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "LC_ALL": "C.UTF-8",
+        }
+        process = self.process_factory(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            start_new_session=True,
+            cwd=str(work),
+            env=env,
+        )
+        resource = _CodexChildResource(
+            spec,
+            process,
+            proxy=proxy,
+            report_sink=report_sink,
+            startup_complete=False,
+        )
+        spec.pop("_runtime_proxy", None)
+        spec.pop("_runtime_report_sink", None)
+        child_package = AgentPackage(
+            package_id=f"{kind}-examiner",
+            role="source-specialist",
+            description=f"Private {kind} Examiner",
+            instructions_path=home / "instructions.md",
+            required_skills=(skills / skill.parent.name / "SKILL.md",),
+            references=(),
+            permissions={"team_transport": False, "platform": "read" if kind == "platform" else "none", "source": "read" if kind == "source" else "none", "spawn": False, "write": False},
+            runtime={"codex": {"sandbox": "read-only"}},
+            task_input={},
+        )
+        child_agent = _Agent(
+            f"{kind}-examiner-{str(spec['child_handle_digest'])[:8]}",
+            child_package,
+            home,
+            work,
+            skills,
+            process=process,
+            platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
+        )
+        try:
+            self._rpc(child_agent, "initialize", {"clientInfo": {"name": "modeling-team-examiner", "version": "1"}})
+            thread_result = self._rpc(
+                child_agent,
+                "thread/start",
+                {
+                    "cwd": "/agent/work",
+                    "baseInstructions": "",
+                    "developerInstructions": instructions.read_text(encoding="utf-8"),
+                    "config": {"web_search": "disabled", "default_tools_enabled": False},
+                    "sandbox": "read-only",
+                },
+            )
+            thread = thread_result.get("thread", thread_result) if isinstance(thread_result, dict) else {}
+            thread_id = thread.get("id") if isinstance(thread, dict) else None
+            if not isinstance(thread_id, str) or not thread_id:
+                raise CodexRuntimeError("Examiner thread/start lacked Thread identity")
+            # The child must discover the exact local MCP inventory before any model
+            # turn.  This makes a missing/extra wrapper a startup contract failure,
+            # rather than an ambiguous semantic report.
+            child_agent.thread_id = thread_id
+            self._require_expected_mcp_servers(child_agent)
+            first_turn_input = [
+                {
+                    "type": "text",
+                    "text": (
+                        "Read only /agent/home/input.json. Call the MCP tool "
+                        "submit_examiner_report exactly once with one bounded terminal "
+                        "report. Do not use raw sockets or any other capability."
+                    ),
+                }
+            ]
+            turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
+            resource.thread_id = thread_id
+            resource.first_turn_input = first_turn_input
+            resource.spec["turn_id"] = self._turn_id(turn_result)
+            resource.spec["proxy_receipt"] = proxy.receipt.__dict__ if proxy is not None else None
+            resource.spec["config_digest"] = child_config_digest(
+                {
+                    "kind": kind,
+                    "allowlist": list(spec.get("allowed_read_tools", ())),
+                    "scope": spec.get("platform_read_scope"),
+                }
+            )
+            resource.spec["runtime_config_digest"] = child_config_digest(config)
+            resource.submitted_reports = submitted_reports
+            resource.startup_complete = True
+            return resource
+        except Exception as exc:
+            resource.failure_category = "runtime"
+            resource.failure_reason = "child-start-failed"
+            resource.destroy()
+            raise CodexRuntimeError("Examiner child startup failed") from exc
+
+    @staticmethod
+    def _write_child_private(path: Path, payload: bytes, mode: int) -> None:
+        if path.is_symlink() or path.exists():
+            raise CodexRuntimeError("Examiner private artifact already exists")
+        path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    @staticmethod
+    def _is_formal_acceptance_run(run: Any) -> bool:
+        configuration = getattr(run, "configuration", None)
+        task = getattr(configuration, "task", None)
+        profile = getattr(configuration, "profile", None)
+        return bool(
+            getattr(task, "schema_version", 1) == 2
+            and (
+                getattr(task, "task_id", None) == "r2-3-005-formal-acceptance"
+                or getattr(profile, "profile_id", None) == "r2-3-005-modeling-team"
+            )
+        )
 
     @staticmethod
     def preflight_host_auth() -> Path:
@@ -113,6 +856,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def start_roster(self, run: Any, agents: Any) -> list[AgentRuntimeIdentity]:
         self._run_root = run.root
         self._run_id = run.run_id
+        self._acceptance = getattr(run, "acceptance", None)
+        self._coordination_enabled = self._is_formal_acceptance_run(run)
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
@@ -125,6 +870,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             tools = (
                 frozenset(run.configuration.task.protocol_tools)
                 if package.role == "protocol" and run.configuration.task.schema_version == 2
+                else frozenset()
+                if package.role == "acceptance"
                 else frozenset({"check_platform_health"})
             )
             agent = _Agent(
@@ -275,6 +1022,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if agent.package.role in source.roles
             ]
             checks = " ".join(shlex.quote(path) for path in allowed)
+            allowed_check = (
+                f"for path in {checks}; do test -r \"$path\"; done"
+                if checks
+                else ":"
+            )
             sibling_socket = next(
                 f"/agent/transport/{candidate.agent_id}.sock"
                 for candidate in self.agents.values()
@@ -287,7 +1039,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             script = (
                 "set -eu; "
                 "test -e /proc/self/environ; "
-                f"for path in {checks}; do test -r \"$path\"; done; "
+                f"{allowed_check}; "
                 f"for path in {denied}; do test ! -e \"$path\"; done"
             )
             command = self.namespace_command(agent)
@@ -330,6 +1082,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)
+        formal_capability = (
+            self._is_formal_acceptance_run(run)
+            and agent.package.role in {"coordinator", "acceptance"}
+            and self._acceptance is not None
+        )
         if agent.package.role == "protocol" and getattr(task, "schema_version", 1) == 2:
             run_id = getattr(run, "run_id", None)
             if not isinstance(run_id, str) or not run_id:
@@ -340,10 +1097,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
-        # Only the Protocol receives its key/config; no secret is persisted outside its private home.
-        host_auth = self.preflight_host_auth()
-        shutil.copyfile(host_auth, agent.home / "auth.json")
-        os.chmod(agent.home / "auth.json", 0o600)
+        # Only the Protocol receives its platform key/config.  Acceptance gets no
+        # host authentication material and no source bundle; its sole model-visible
+        # capability is the Runner-owned local carrier.
+        if agent.package.role != "acceptance":
+            host_auth = self.preflight_host_auth()
+            shutil.copyfile(host_auth, agent.home / "auth.json")
+            os.chmod(agent.home / "auth.json", 0o600)
         shutil.copyfile(
             self.root / "modeling_team" / "transport_mcp.py",
             agent.home / "transport_mcp.py",
@@ -351,7 +1111,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         source_root = run.root / "sources"
         if getattr(task, "schema_version", 1) == 2:
             source_root = source_root / agent.package.role
-        shutil.copytree(source_root, agent.home / "sources")
+        if agent.package.role == "acceptance":
+            # Keep the mount point for the Runtime namespace, but never stage
+            # approved source bytes or source-manifest paths into Acceptance.
+            (agent.home / "sources").mkdir(mode=0o700)
+        else:
+            shutil.copytree(source_root, agent.home / "sources")
         os.chmod(agent.home / "transport_mcp.py", 0o444)
         # This private config deliberately does not inherit the user's Codex config.  The
         # CLI flags below are a second, command-line enforced layer because several of
@@ -404,6 +1169,53 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         f'PROTOCOL_RUNTIME_RUN_ID = {json.dumps(run_id)}',
                     ]
                 )
+        if formal_capability:
+            capability_script = agent.home / "runner_capability_mcp.py"
+            shutil.copyfile(self.root / "modeling_team" / "capability_mcp.py", capability_script)
+            os.chmod(capability_script, 0o444)
+            token_source = self._acceptance.capability_token_path(agent.package.role)
+            token_target = agent.home / "runner-capability.token"
+            token_target.write_text(token_source.read_text(encoding="utf-8"), encoding="utf-8")
+            os.chmod(token_target, 0o400)
+            lines.extend(
+                [
+                    "[mcp_servers.runner_capability]",
+                    'command = "/usr/bin/python3"',
+                    'args = ["/agent/home/runner_capability_mcp.py", "--stdio", "--socket", "/agent/home/runner-capability.sock", "--token-file", "/agent/home/runner-capability.token"]',
+                    "required = true",
+                ]
+            )
+        capability_names = {
+            role: list(operations) for role, operations in ROLE_OPERATIONS.items()
+        }.get(agent.package.role, [])
+        capability_manifest = agent.home / "runner-capabilities.json"
+        carrier = getattr(run, "acceptance", None)
+        capability_descriptors = None
+        if (
+            formal_capability
+            and carrier is not None
+            and hasattr(carrier, "capability_descriptors")
+        ):
+            descriptors = carrier.capability_descriptors
+            if isinstance(descriptors, dict) and agent.package.role in descriptors:
+                capability_descriptors = {agent.package.role: descriptors[agent.package.role]}
+        capability_manifest.write_text(
+            json.dumps(
+                {
+                    "agent_id": agent.agent_id,
+                    "role": agent.package.role,
+                    "capabilities": capability_names,
+                    "team_transport_terminal_state": False,
+                    "opaque_handles_only": agent.package.role == "acceptance",
+                    **({"capability_descriptors": capability_descriptors} if capability_descriptors else {}),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.chmod(capability_manifest, 0o400)
         (agent.home / "config.toml").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
@@ -467,6 +1279,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "TERM",
             "xterm-256color",
         ]
+        if (
+            self._coordination_enabled
+            and agent.package.role in {"coordinator", "acceptance"}
+            and self._acceptance is not None
+        ):
+            command[command.index("--chdir") : command.index("--chdir")] = [
+                "--bind",
+                str(self._acceptance.capability_socket_path(agent.package.role)),
+                "/agent/home/runner-capability.sock",
+            ]
         app_server_command = [
             "--config",
             'web_search="disabled"',
@@ -873,7 +1695,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _require_expected_mcp_servers(self, agent: _Agent) -> None:
         """Fail before the first turn unless the frozen per-role MCP surface is live."""
+        if agent.package.package_id in {"source-examiner", "platform-examiner"}:
+            expected = {"examiner_report": {"submit_examiner_report"}}
+            if agent.package.package_id == "platform-examiner":
+                expected["platform_read_proxy"] = set(agent.platform_tools)
+            self._require_mcp_surface(agent, expected)
+            return
         expected = {"team_transport": {"send_team_message", "report_task_result"}}
+        if self._coordination_enabled:
+            expected["team_transport"].add("send_coordination")
         if agent.package.role == "protocol":
             expected["ontology_platform"] = set(agent.platform_tools)
             if agent.schema_version == 2:
@@ -882,6 +1712,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "verify_scoped_retrieval_fallback",
                     "write_candidate_item_evidence_map",
                 }
+        if (
+            self._coordination_enabled
+            and agent.package.role in ROLE_OPERATIONS
+            and self._acceptance is not None
+        ):
+            expected["runner_capability"] = set(ROLE_OPERATIONS[agent.package.role])
+        self._require_mcp_surface(agent, expected)
+
+    def _require_mcp_surface(self, agent: _Agent, expected: dict[str, set[str]]) -> None:
+        """Wait for exactly the MCP servers configured for one child or persistent role."""
         deadline = time.monotonic() + 25
         observed: dict[str, set[str]] = {}
         while time.monotonic() < deadline:
@@ -1766,6 +2606,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return None
 
     def stop(self) -> None:
+        # Temporary Examiner resources are Runner-owned and must be stopped before
+        # persistent Agent shutdown.  This path is idempotent and uses only the
+        # injected resource seam; it does not create or discover arbitrary children.
+        for handle_digest, resource in list(self._acceptance_children.items()):
+            try:
+                stop = getattr(resource, "stop", None)
+                if callable(stop):
+                    stop()
+                destroy = getattr(resource, "destroy", None)
+                if callable(destroy):
+                    destroy()
+            finally:
+                self._acceptance_children.pop(handle_digest, None)
         for agent in self.agents.values():
             self._close_retrieval_asset_fds(agent)
             if agent.process and agent.process.poll() is None:
@@ -1781,7 +2634,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     except (ProcessLookupError, PermissionError):
                         agent.process.kill()
                     agent.process.wait(timeout=5)
-            for name in ("auth.json", "config.toml"):
+            for name in ("auth.json", "config.toml", "runner-capabilities.json"):
                 credential = agent.home / name
                 credential.unlink(missing_ok=True)
             self._private_credentials_destroyed[agent.agent_id] = True
@@ -1797,4 +2650,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 ),
             }
             for key, value in self.agents.items()
+        } | {
+            "acceptance_children": {
+                "active": len(self._acceptance_children),
+                "zero_residue": not self._acceptance_children,
+            }
         }

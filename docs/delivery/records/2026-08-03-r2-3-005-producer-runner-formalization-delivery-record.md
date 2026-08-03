@@ -620,11 +620,357 @@
 - Outcome: design and shared test plan are approved for implementation handoff. No implementation, service
   restart, semantic start, or real platform write occurred in this design phase.
 
+### 2026-08-03T16:29:40+08:00 — Implementation baseline and developer handoff frozen — Main agent
+
+- Timestamp note: this continuation used the live local clock; the preceding plan-review entries were already
+  recorded with later wall-clock values. Their historical ordering is preserved and not rewritten.
+- Context: the user requested coordinated implementation while keeping the main agent out of product-code
+  development and test execution. The reviewed design and shared test plan remain the frozen authority.
+- Baseline: repository root `/home/yangxiang/projects/ontology-platform`; branch `main`; commit
+  `962be25792aedff183a5647e29dc467e1d10b25d` (`Design R2.3-005 modeling team acceptance`);
+  `git status --porcelain=v1` was empty; local `main` was one commit ahead of `origin/main`.
+- Task decomposition: (1) exact four-role Profile/Package/Skill migration, (2) non-terminal readiness/silence
+  coordination, (3) Runner-owned Acceptance carrier and bounded Examiner lifecycle, (4) four-role
+  terminal/handoff/cleanup migration, (5) read wrappers plus ticket/report/verdict/model-state contracts, and
+  (6) clean-baseline/no-start repeatability preparation and repository verification.
+- Scope guards: no three-role compatibility path, generic Agent pool, Runner semantic authority, Dify-specific
+  platform behavior, backend/frontend expansion without evidence, P2/P2a/monitor/native verifier/proof matrix,
+  advanced retrieval tuning, or second business slice. GitNexus impact analysis is mandatory before each
+  symbol edit and `detect_changes()` is mandatory before any commit-ready signal.
+- Semantic-start budget: the sole R2.3-005 real semantic modeling start is reserved for the later independent
+  acceptance handoff. Development may run deterministic tests and no-semantic-start preflights only; it must
+  not create the real Project/Ontology, apply the real slice, or consume that budget.
+- Outcome/next step: hand the full reviewed implementation sequence to one Requirement Developer, require an
+  explicit stable development-ready signal, then inspect the diff and affected GitNexus flows before starting
+  independent testing.
+
+### 2026-08-03T16:32:51+08:00 — Critical package-loader impact disposition — Main agent
+
+- Context: pre-edit GitNexus upstream impact classified `load_profile` as LOW (23 affected symbols, four
+  direct callers) and `_load_package` as CRITICAL (48 affected symbols, 41 direct callers), including Codex
+  runtime, protocol drivers, and modeling-team tests. The developer paused before editing the critical symbol.
+- Disposition: modifying the shared `_load_package` entrypoint is authorized because the reviewed exact
+  four-role migration requires all formal Package callers to move together. Introducing a parallel legacy
+  loader was rejected because it would retain the forbidden three-role compatibility path.
+- Guardrails: use a minimal in-place contract migration; enumerate affected process/caller classes; adapt
+  shared callers without expanding deferred P2/P2a behavior; run focused regressions followed by the complete
+  `modeling_team/tests` suite. Any required backend/frontend, platform-write, or substantive P2/P2a behavior
+  change requires a new pause and main-agent disposition.
+- Outcome/next step: development may continue on `_load_package` under these constraints.
+
+### 2026-08-03T16:42:53+08:00 — High TeamRunner lifecycle impact disposition — Main agent
+
+- Context: GitNexus classified `TeamRunner.prepare` as HIGH (20 direct callers across CLI,
+  R2.3-002, P2/P2a tests, and startup), `TeamRunner.cleanup` as HIGH (19 direct callers across CLI
+  and exception paths), `TeamRunner.start` as MEDIUM, and `_baseline_manifest` as LOW. The developer
+  again paused before editing and proposed a separate `FormalTeamRunner` to avoid the shared lifecycle.
+- Disposition: the wrapper proposal was rejected because it would preserve the old TeamRunner as a runnable
+  three-role formal path, contradicting the reviewed contract-replacement migration. In-place modification of
+  `prepare`, `start`, `cleanup`, and necessary shared lifecycle helpers is authorized.
+- Guardrails: adapt every shared caller, keep P2/P2a changes limited to lifecycle-contract compatibility,
+  preserve historical evidence, and add focused exception/cleanup-idempotency regressions. A newly discovered
+  HIGH/CRITICAL symbol or backend/platform-write expansion still requires a fresh pause and disposition.
+- Outcome/next step: begin the smallest T1 in-place edit, then report concrete asset and test evidence.
+
+### 2026-08-03T16:51:44+08:00 — Legacy runtime and Acceptance Skill scope correction — Main agent
+
+- Context: static scope review found that the first Acceptance Package draft loaded the modeling and Platform
+  Examiner Skills, while P2/P2a drivers still used the legacy three-role loader. The former leaked duties into
+  the persistent verdict role; the latter could preserve a forbidden runnable compatibility path.
+- Correction: Acceptance now requires only a dedicated read-only `skills/acceptance/SKILL.md`; the Platform
+  Examiner retrieval Skill remains child-only. P2/P2a and other three-role runtime entries must either migrate
+  to the exact four-role shared contract or become archival/non-runnable with a hard failure before ledger,
+  scope, Agent, Session, Lease, or start side effects. Pure deterministic helper tests may remain.
+- Outcome/next step: complete the asset/entrypoint inventory and prove that no CLI, Runner, driver, or launcher
+  can start a formal three-role workflow.
+
+### 2026-08-03T16:53:55+08:00 — High foreground-monitor archival disposition — Main agent
+
+- Context: GitNexus classified the excluded P2 monitor entrypoint `foreground_monitor.run_foreground` as HIGH
+  with 143 affected symbols. Leaving it callable would retain a legacy three-role launcher; rebuilding its
+  internals would expand deferred monitor scope.
+- Disposition: authorize only a fixed archival guard as the function's first operation, before contract reads,
+  target-root creation, ledger, scope, Session, or Agent effects. Preserve internal helpers and historical
+  evidence; retain only helper tests plus a fail-before-side-effect entrypoint regression.
+- Outcome/next step: close this runnable path without making monitor behavior an R2.3-005 completion gate.
+
+### 2026-08-03T17:00:03+08:00 — Backend read-wrapper impact and sequencing correction — Main agent
+
+- Context: the developer entered T5 before completing the T1/T2 evidence checkpoint and added four read-only
+  validation/reasoning MCP wrappers plus policies. GitNexus could not resolve nested `register_semantic` in the
+  index; the index was four commits behind HEAD. The authoritative `MCP_TOOL_POLICIES` data-symbol candidate
+  was CRITICAL (209 affected symbols, 136 direct callers); a zero-impact Property candidate was parser noise.
+- Scope evidence: existing service-layer list/get operations can read persisted validation/reasoning runs, while
+  current MCP only exposed mutating `run_*` operations. The reviewed design explicitly requires four generic
+  read wrappers, so a modeling-team-only shim cannot replace MCP registration.
+- Disposition: retain but freeze the current additive backend diff while T1/T2 are completed. Later T5 work is
+  limited to the four `read`/Project-resource/non-mutating policies and graph-set-bound list/get wrappers.
+  Required evidence includes registry/auth/scope/list/get/pagination regressions, full backend pytest, interface
+  documentation synchronization where required, service restart/status, and backend/frontend health. No
+  `run_*`, API/frontend, or domain-specific expansion is authorized.
+- Process correction: unresolved or ambiguous GitNexus risk must be reported before editing; the functional
+  necessity of a change does not waive the impact gate.
+
+### 2026-08-03T17:07:48+08:00 — T1/T2 and shared migration stable checkpoint — Main agent
+
+- Changed surfaces: exact four-role Profile/Package/Acceptance Skill assets; formal loader/CLI/Runner path;
+  non-terminal readiness/silence transport; four-role handoff/settlement expectations; archival guards for
+  P2/P2a/foreground monitor; targeted current-contract fixture migrations. Historical evidence artifacts were
+  not rewritten, and the persistent Acceptance no longer receives modeling or child retrieval Skills.
+- Focused results: Runner tests 15/15 PASS; R2.3-002 shared handoff/retained/runtime-probe tests 8/8 PASS;
+  foreground-monitor tests 7/7 PASS with no child process or target/evidence side effects on archival failure.
+- Full deterministic result: `cd backend && PYTHONPATH=..:. uv run python -m unittest discover -s
+  ../modeling_team/tests` ran 182 tests and passed. The unadjusted command from `backend/` produced 21 loader
+  errors because the repository root was absent from `sys.path`; this was an invocation-path issue, not counted
+  as PASS or a product defect. `git diff --check` passed.
+- Budget/scope: no real semantic start, Project/Ontology creation, real child Agent, service restart, or T5
+  backend verification occurred. The existing T5 diff remains frozen pending T3/T4 completion.
+- Outcome/next step: implement and test the deterministic Acceptance child lifecycle and four-role cleanup /
+  settlement contracts using fake runtime seams only.
+
+### 2026-08-03T17:22:49+08:00 — T3/T4 Acceptance lifecycle stable checkpoint — Main agent
+
+- T3 evidence: focused Acceptance carrier tests passed 7/7 for separated Coordinator/Acceptance capability
+  tokens, unauthorized callers, projected child inputs, opaque/idempotent start, immutable single-submit report
+  sink, terminal/infrastructure recycle receipts, identical-input attempt 0 to 1, third-attempt rejection,
+  BLOCKED keeping the persistent Team live, round ordering, and idempotent child cleanup.
+- T4 evidence: the expanded focused suite passed 11/11; existing Codex isolation plus Runner tests passed 55/55.
+  Coverage includes no Acceptance host auth/source staging, private capability cleanup, fake Platform child read
+  key/private-input destruction, four-role terminal dependencies and Coordinator-last ordering, Acceptance
+  Package/Skill/call-site baseline digests, retained handoff statuses, adapter stop/destroy, and zero residue.
+- Full deterministic result: `cd backend && PYTHONPATH=..:. uv run python -m unittest discover -s
+  ../modeling_team/tests` ran 190 tests and passed. Relevant Python compilation and `git diff --check` passed;
+  only pre-existing ResourceWarning/RuntimeWarning noise remained.
+- Budget/scope: tests used fake child/runtime/platform seams; no real Agent, Project/Ontology, semantic start, or
+  platform mutation occurred. The previously reviewed backend T5 diff remained frozen during this checkpoint.
+- Outcome/next step: resume the bounded T5 read wrappers, canonical schemas/evidence, model-state revalidation,
+  invalidation, settlement CAS, and recovery routing; then complete T6 no-start preparation and required runtime
+  verification without consuming the independent real semantic-start budget.
+
+### 2026-08-03T17:33:02+08:00 — Critical authorization-helper change avoided — Main agent
+
+- Context: T5a tests showed get-run MCP calls were denied because the generic auth collector interpreted
+  `run_id` as a rule/projection resource even when a valid owned `graph_set_id` was present. GitNexus classified
+  shared `_project_for_resource` as CRITICAL (169 affected, 113 direct), and the developer paused.
+- Disposition: do not modify the central resource resolver. Use wrapper-specific validation/reasoning run-ID
+  parameter names that the generic collector does not treat as independent owner resources; keep required
+  `graph_set_id` as the Project-ownership input, then require the fetched record's graph set to match inside the
+  read-only handler. This preserves both credential ownership and ticket-bound record scope.
+- Required regressions: owned graph set and record succeeds; foreign graph set is denied by authorization;
+  owned graph set plus foreign record is rejected by the handler; graph set is required; no mutating `run_*`
+  service is called.
+- Outcome/next step: complete T5a without changing the CRITICAL shared authorization helper.
+
+### 2026-08-03T17:55:04+08:00 — T5 contract checkpoint rejected as integration-complete — Main agent
+
+- Deterministic evidence: the four backend read-wrapper tests passed 4/4 after using required graph-set
+  ownership plus wrapper-specific validation/reasoning run IDs; the shared CRITICAL resource resolver remained
+  unchanged. Focused Acceptance contract tests reached 25/25 for exact ticket/report/verdict schemas, typed
+  source/platform/infrastructure evidence, cursor chains, modeling receipts, standard/digest bindings, verdict
+  recovery, retry/recycle, scope checks, and standalone model-state/CAS helpers.
+- Main-agent audit: this evidence was not accepted as T5 completion. The capability manifest was not a callable
+  MCP endpoint; the default Codex child factory launched no Examiner process; state/CAS helpers were not wired
+  into TeamRunner; clean/canonical preflight was not connected; and Carrier cleanup could auto-settle without
+  two final PASS verdicts.
+- Focused review Round 2 result: `REVISE`. Confirmed High findings covered (1) missing clean/canonical no-start
+  gate and incomplete runtime manifest, (2) Coordinator raw-source leakage plus missing Source child bytes,
+  (3) missing real read-key/receipt/full-state supply and ticket-bound proxy, (4) absent terminal/CAS integration,
+  (5) unreachable readiness/silence/Acceptance operations and unstarted phase tracker, and (6) unbound child
+  Package/Skill digests plus child-registry residue after recycle.
+- Requirement conflict disposition: the reviewer also identified ambiguous wording between the authoritative
+  deferral of Runner phase enforcement and the confirmed state-invalidation/CAS contract. The owning R2.3-005
+  requirement now clarifies that deferred gates are mechanical platform-operation blocking, write freeze,
+  Lease revocation, and a generic two-sided state machine. Passive read-only revalidation, old-PASS invalidation,
+  and settlement integrity checks remain current without enforcing platform writes or assigning semantics.
+- Outcome/next step: re-review the revised A/B/C/D integration plan. Product edits remain paused until no
+  Critical/High plan blocker remains.
+
+### 2026-08-03T18:06:27+08:00 — Focused integration plan re-review PASS — Main agent and plan reviewer
+
+- Revision scope: D added a secret-safe clean-HEAD/status/manifest, authenticated canonical-mode and fresh-create
+  no-start gate before ledger/scope; A added callable private per-role capability transport, revision-bound
+  coordination operations, fixed requirement-owned CQ/source templates and Source-only byte projection; B added
+  bounded real Codex child runtime, child Package/Skill digest binding, clear-env/private model auth, scoped read
+  proxy/key lifecycle, watchdog/retry, sanitization and registry cleanup; C wired live state/receipts, two-PASS
+  completion, passive invalidation/CAS/readback, terminal guard, and distinct success versus abort cleanup; T6
+  remained a no-resource/no-semantic-start repeatability preflight.
+- Requirement clarification: passive state revalidation and settlement integrity are current evidence gates but
+  do not mechanically block platform writes, revoke Leases, or create a generic Runner phase state machine.
+  Agent cooperation remains responsible for semantic scheduling.
+- Security/failure additions: no raw environment, credential, source bundle, prompt, tool log or child error is
+  persisted; child processes use allowlisted environments and private auth; timeouts are killed/reaped and use
+  fixed failure receipts; preflight/prepare/start/no-start failures use abort cleanup without false settlement.
+- Review result: PASS. The plan reviewer found no remaining evidence-backed Critical or High issue. The PASS
+  authorizes implementation only; callable runtime, tests, clean preflight, live proxy/key revoke, terminal/CAS,
+  full cleanup and the sole independent real semantic run remain unproven.
+- Outcome/next step: issue the revised fixed handoff to the Requirement Developer, then require new focused/full
+  verification and an explicit development-ready signal before independent testing.
+
+### 2026-08-03 — D prestart checkpoint review REVISE — Main agent
+
+- Accepted ordering: the formal scope is normalized to the exact `{mode: create}` shape, the baseline is read
+  twice around preflight, and the checkout/canonical gate runs before StartLedger reservation, run-root creation,
+  PlatformScope construction, bootstrap credential creation, or an Agent start.
+- Rejected security evidence: the default probe requested the complete systemd Environment plus full
+  `systemctl status` and unit text before reducing them to digests, and retained repository/process/unit paths.
+  The frozen plan permits only safe scalar service identity/state/PID/start-time, explicit health results,
+  allowlisted canonical semantic values or digests, and fixed sanitized failures.
+- Rejected completeness/order: independent backend and frontend health probes were absent, credential discovery
+  fell back to bootstrap/Protocol key names rather than one Delivery-only pre-existing input, and Codex host-auth
+  preflight still ran before TeamRunner's clean/canonical prestart gate.
+- Narrow correction issued: remove broad systemd/environment reads and local paths, add explicit read-only
+  backend/frontend health checks, restrict credential selection, sanitize command failures, move host-auth
+  inspection after successful prepare, and add focused no-side-effect/ordering/security tests.
+- Outcome/next step: D remains open and A is not authorized until the corrected checkpoint passes main-agent
+  read-only review. No semantic modeling start was consumed.
+
+### 2026-08-03 — D prestart checkpoint accepted — Main agent
+
+- Corrected implementation now queries only explicit safe systemd scalar properties, emits fixed command
+  failures, retains no raw repository/process/unit path or credential, and uses only an explicit key or the
+  single Delivery-only `ONTOLOGY_PLATFORM_ADMIN_API_KEY` fallback for the authenticated GET.
+- Separate backend `/api/health`, frontend `/`, and semantic canonical-mode GET probes fail closed; the formal
+  CLI performs Codex host-auth inspection only after TeamRunner prepare succeeds and before any Agent start.
+- Developer verification: R2.3-005 contracts plus Runner and R2.3-002 focused regressions passed 85/85;
+  `git diff --check` passed. Main-agent read-only audit confirmed the ordering and safe evidence shape.
+- Carried condition: A/B must add every new capability, child, proxy, Package, Skill and runtime config asset to
+  the immutable baseline manifest before the implementation-ready checkpoint.
+- Outcome/next step: authorize A capability/coordination/source wiring only. No live canonical credential check
+  and no semantic modeling start has yet been executed.
+
+### 2026-08-03 — A TeamRunner.start HIGH-risk disposition — Main agent
+
+- GitNexus reported `TeamRunner.start` as HIGH risk with 128 upstream-affected symbols and 14 direct callers;
+  `_write_config` and `namespace_command` were MEDIUM, `start_roster` LOW, and new Acceptance symbols remained
+  unindexed/UNKNOWN.
+- Disposition: authorize the HIGH symbol only to start the Runner-private capability broker, start the
+  Coordinator phase controller, stage/register role-specific capability configuration, and preserve the exact
+  four-role launch order required by reviewed checkpoint A.
+- Explicit exclusions: no platform write/Lease gate, settlement/CAS/cleanup behavior, real child/proxy/watchdog
+  implementation, or archival P2 semantic change may enter this edit. Legacy direct callers require focused
+  regression coverage.
+- Outcome/next step: A continues within the bounded blast radius; no semantic start is authorized.
+
+### 2026-08-03 — A capability/coordination checkpoint review REVISE — Main agent
+
+- Accepted partial evidence: the Runner now creates separate Coordinator/Acceptance AF_UNIX capability
+  endpoints and opaque tokens, stages the stdio MCP client into formal Codex configs, keeps Coordinator source
+  staging empty, projects Source-child bytes from the run-local immutable copy, binds the fixed CQ/source
+  standard, and includes the new capability asset in the baseline. Reported focused suites passed 72/72 and
+  the prior Runner/R2.3-002 group passed 85/85; diff check was clean.
+- High functional gap: non-terminal coordination remained reachable only through Python methods.
+  Team Transport exposed no model-visible ready/silent/Acceptance-start/verdict-route operation, so real Agents
+  could not exercise the phase controller despite deterministic direct-call tests.
+- State-machine deviations: the controller required both Modeling and Protocol to each emit ready and silent
+  instead of exact Modeling-ready plus Protocol-silent; generation was optional; FAIL did not advance the
+  generation or clear old acknowledgements; and PASS/BLOCKED same-state reuse was not distinguished from model
+  or slice change.
+- Loop-control gap: a failed round could be republished with new IDs without proving an allowed environment,
+  source, ticket/hint, or model-state change. This violated the no-unchanged-failure-rerun rule while the
+  per-Examiner 0/1 infrastructure retry budget remained a separate concern.
+- Evidence gap: socket/token/config behavior was manually checked but lacked an automated AF_UNIX plus stdio MCP
+  chain test. Capability tool schemas accepted generic objects and get-ticket allowed caller-controlled
+  `ack=false`, weakening the exact operation contract.
+- Narrow correction issued: wire role-specific coordination into the real private runtime with phase validation,
+  require generation and exact acknowledgement roles, implement reset/reuse and rerun eligibility, add exact
+  schemas and deterministic get+ack, and automate endpoint/config/cleanup negatives. B remains unauthorized and
+  no semantic start was consumed.
+
+### 2026-08-03 — A mcp_response HIGH-risk disposition — Main agent
+
+- GitNexus classified central Team Transport `mcp_response` as HIGH with 156 upstream-affected symbols and
+  three direct callers; `TeamTransportBroker` and `TeamRunner` were LOW/zero direct, while the new coordination
+  symbol was not yet indexed.
+- Disposition: authorize only an exact role-aware coordination tool schema and dispatch whose Runner-owned
+  callback validates phase/generation before evidence acceptance. Existing `send_team_message` and
+  `report_task_result` names and behavior, terminal semantics, and archival P2 paths must remain unchanged.
+- Required regression: positive and negative role/generation cases, the existing complete transport suite, and
+  Runner/R2.3-002 focused suites. No platform gate or productization behavior is authorized.
+- Outcome/next step: A correction resumes inside the narrow HIGH blast radius; B remains blocked.
+
+### 2026-08-03 — A second checkpoint review REVISE — Main agent
+
+- Accepted correction: role-specific `send_coordination` is now model-visible through Team Transport, reaches
+  the Runner-owned phase callback before broker acceptance, requires the exact role/kind/recipient/generation,
+  and the formal task supplies the current generation. Initial assignment, exact Modeling-ready plus
+  Protocol-silent, PASS/BLOCKED same-generation reuse, FAIL/reset advancement, formal-only capability config,
+  strict capability schemas and an actual AF_UNIX plus stdio test are present. Combined focused regressions
+  passed 145/145 and GitNexus change detection reported LOW/no affected process.
+- Remaining rerun loophole: the semantic fingerprint still included `ticket_revision`, so an unchanged failed
+  ticket could bypass the rule by incrementing only that counter. Identity-only revisions must not count as a
+  semantic/environment/source/model-state correction.
+- Remaining automated evidence: the endpoint test did not assert 0700/0600/0400 modes, cross-role operation
+  rejection, or socket/token/temp-root zero residue after cleanup.
+- Remaining durability gap: `coordination_event_observer` exceptions were swallowed as best effort after phase
+  mutation. An accepted readiness/start/verdict transition without durable evidence violates fail-fast
+  observability; persistence failure must produce a fixed fatal state and cannot be retried as a clean event.
+- Outcome/next step: issue one final narrow A correction for the fingerprint, endpoint cleanup/mode negatives,
+  and fail-closed coordination evidence. B remains unauthorized; semantic starts remain zero.
+
+### 2026-08-03 — A capability/coordination/source checkpoint accepted — Main agent
+
+- The final correction ignores identity-only `ticket_revision` in the semantic rerun fingerprint, rejects an
+  IDs/digests/revision-only retry after FAIL/BLOCKED, and accepts a test case with a real slice revision change.
+- Automated AF_UNIX plus stdio coverage now asserts 0700/0600/0400 ownership modes, wrong token, cross-role
+  operation rejection, exact schemas, notification silence, run-local Source bytes, and complete capability
+  socket/token/temp-root cleanup.
+- Coordination evidence is serialized and authoritative. Observer failure produces only the fixed
+  `coordination_evidence_observer_failed` fatal record, poisons the broker, marks the accepted phase event fatal,
+  and rejects later retries without exposing the original exception.
+- Final A verification: the combined A/Transport/R2.3-005/Runner/R2.3-002/Codex group passed 146/146;
+  `git diff --check` passed; GitNexus detect_changes reported 91 changed symbols in 21 shared-worktree files,
+  LOW risk and zero affected execution processes. Main-agent read-only review confirmed real model reachability,
+  exact roles/generation/reset/reuse, fixed CQ/source policy, no unchanged-failure rerun, source isolation, and
+  capability residue cleanup.
+- Outcome/next step: A is accepted and B real private Examiner/proxy/key lifecycle is authorized. No live child,
+  temporary platform key, Project/Ontology, or semantic modeling start has yet been created.
+
+### 2026-08-03 — B real child/proxy checkpoint review REVISE — Main agent
+
+- Accepted partial implementation: the default formal Codex path now stages private Examiner Package/Skill,
+  0700 child roots and 0600 model auth, clear allowlisted environment, no Team Transport, Source-only approved
+  bytes, Platform-only AF_UNIX proxy, one-shot report sink, App Server initialize/thread/first turn, watchdog,
+  process-group termination/reaping and private-tree cleanup. B-focused/R2.3-005/Codex tests passed 74/74 and
+  the full modeling-team discovery passed 219/219.
+- Formal key/forward blocker: `ReadOnlyKeyLifecycle` still generated an in-memory random plaintext unknown to the
+  platform, and the formal `ScopedReadProxy` had no forward callback. A live Platform Examiner would therefore
+  receive only `platform-forwarding-unconfigured`, not independent governed reads. The offline lifecycle may
+  remain only as an explicit test double.
+- Child readiness blocker: App Server initialize/thread/turn occurred without an exact MCP status check for
+  Source `{examiner_report}` or Platform `{platform_read_proxy allowlist, examiner_report}`; the first-turn text
+  also referred to a raw socket instead of the report MCP operation.
+- Failure/retry blocker: watchdog/crash only set fields on the resource object. No carrier-bound sanitized
+  InfrastructureFailure receipt, Acceptance-visible failure digest, attempt-zero fresh retry, or attempt-one
+  canonical runtime BLOCKED path was wired.
+- Cleanup/security blocker: per-child destroy did not remove the adapter registry entry until whole-adapter stop,
+  and the child-visible proxy config included a host socket path. The formal contract requires immediate
+  per-child zero residue and virtual-path/digest-only retained configuration.
+- Narrow correction issued: reuse the actual PlatformScope/admin API for project-read key create/revoke/status and
+  post-revoke denial, add a proxy-owned canonical MCP forwarder, exact child MCP preflight, carrier failure/retry
+  integration, per-child registry removal, and path/secret negative assertions. Developer tests remain offline;
+  no live key, Project/Ontology or semantic start is authorized.
+
+### 2026-08-03 — B PlatformScope cleanup HIGH-risk avoidance — Main agent
+
+- GitNexus classified existing `PlatformScope.cleanup` as HIGH with 141 upstream-affected symbols. The method is
+  not authorized for modification: temporary Acceptance read keys must not be folded into established Producer
+  cleanup semantics.
+- Approved alternative: add a Delivery-owned real read-key lifecycle wrapper around the already prepared
+  PlatformScope's authenticated request/admin key. It owns create, safe receipts, revoke, status readback and a
+  harmless post-revoke denied request, and must independently close every key on recycle, startup failure,
+  timeout, Runner abort and adapter stop.
+- The already-known HIGH `TeamRunner.start` is authorized only for a minimal post-`scope.prepare` injection of
+  this lifecycle and host-side forwarder into the formal Acceptance carrier. Ledger, semantic-start marking,
+  terminal behavior and Producer scope cleanup are excluded.
+- Outcome/next step: B resumes through the no-PlatformScope-cleanup path; live calls remain prohibited during
+  developer verification.
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
 | --- | --- | --- | --- | --- |
 | Plan review 1 | Six High blockers plus follow-up schema/lifecycle gaps | Revised directly; all findings closed | plan reviewer final PASS; design/test plan revisions | Design approved; implementation may begin |
+| Focused integration review 2 | Missing real capability/child/state/preflight/phase/source/key/terminal/security connections and requirement wording ambiguity | All findings accepted; owning requirement clarified; D/A/B/C/T6 handoff revised and re-reviewed | direct code audit plus plan reviewer final PASS | Implementation resumed only on the revised connected-runtime plan |
 
 ## Development and defect history
 
@@ -653,3 +999,158 @@
 - Rework and root causes: pending.
 - What shortened or delayed delivery: pending.
 - Reusable lessons: pending.
+
+### 2026-08-03 — B failure-readiness and startup-failure review REVISE — Main agent
+
+- Accepted corrections from the prior B review: formal Platform Examiner keys are now created through the
+  prepared PlatformScope API, a host-side canonical MCP forwarder owns the key, revoke/status/post-denial are
+  checked, exact child MCP inventory is checked before the first turn, child-visible configuration uses virtual
+  paths, and direct child destruction removes its adapter-registry entry. Focused tests also cover fixed watchdog
+  codes and private configuration/secret/path assertions.
+- Model-visible failure-readiness blocker: the watchdog records an `InfrastructureFailure`, but
+  `acceptance_child_get_report` still dispatches only to terminal-report lookup. On a crash or timeout the
+  Acceptance role therefore cannot obtain the failure digest required by `acceptance_get_failure_record` and
+  `acceptance_child_recycle`, so the intended attempt-0 identical-input retry and attempt-1 BLOCKED transition
+  are not operable through the frozen capability surface.
+- Startup-failure blocker: process, initialize, thread, MCP-inventory or first-turn startup exceptions destroy the
+  provisional resource and remove its opaque handle without persisting a carrier-bound
+  `runtime/child-start-failed` record. The failed attempt cannot be queried, typed-cleaned or charged to the same
+  bounded retry budget.
+- Narrow correction issued: make the existing get-report capability return a strict typed readiness result for
+  either a terminal report or a handle/attempt-bound infrastructure failure; bring startup failures through the
+  same attempt-0/attempt-1 evidence, cleanup and retry path; add carrier-level tests for crash/timeout, exact-input
+  retry, second-failure BLOCKED, third-start rejection and MCP-inventory startup failure. No new model-visible
+  operation, raw exception text, PlatformScope cleanup change, real platform call or semantic modeling start is
+  authorized.
+- Outcome/next step: B remains in REVISE and C is withheld until these two failure paths are independently
+  reachable through the frozen Acceptance capability contract.
+
+### 2026-08-03 — B Acceptance instruction-contract review REVISE — Main agent
+
+- The frozen design assigns ticket acknowledgement, opaque child lifecycle, report retrieval and verdict
+  submission to the Acceptance-only Runner capability. The staged Acceptance Skill instead prohibited starting
+  or controlling Examiner children, while its Package instructions omitted start, typed failure readiness,
+  recycle and the single identical-input retry. A real Acceptance model would therefore be instructed not to use
+  the capability needed to complete its round.
+- Correction issued: distinguish requesting Runner-owned opaque lifecycle from direct Agent/process control;
+  document the exact terminal-report-or-infrastructure-failure readiness, typed recycle, attempt-0/attempt-1
+  rule and second-failure BLOCKED behavior in both Skill and instructions without granting spawn, messaging,
+  platform, source or arbitrary retry authority. B remains withheld pending a consistency test and read-only
+  review.
+
+### 2026-08-03 — B real Examiner/runtime integration accepted — Main agent
+
+- The existing `acceptance_child_get_report` capability now returns exactly one terminal report, one typed
+  handle/attempt-bound infrastructure-failure readiness object, or a fixed not-ready object. Acceptance can use
+  the returned digest to retrieve the immutable failure record, recycle with typed evidence, repeat the exact
+  frozen input once in a fresh session, and obtain a round BLOCKED state after the second infrastructure failure.
+- Process, initialize, thread, exact-MCP-inventory and first-turn startup failures now retain the provisional
+  opaque handle as a sanitized `runtime/child-start-failed` readiness resource. Process/proxy/report socket,
+  private tree, temporary read key and adapter registry cleanup occurs before the failure is exposed; the typed
+  placeholder remains only until evidence-bound recycle.
+- The Acceptance Package and Skill now permit only the Runner-owned opaque start/report/recycle/failure-record
+  contract. They continue to prohibit direct spawn, child process/socket/message access, source or platform
+  access, writes and arbitrary retries.
+- Developer verification passed: B-focused 9/9, full `modeling_team` discovery 226/226, Ruff on changed runtime,
+  Runner, Codex and B-test files, `git diff --check`, and GitNexus `detect_changes` with LOW risk and zero affected
+  processes. Main-agent read-only review confirmed startup retry-marker preservation, fixed readiness data,
+  typed cleanup, exact instruction alignment and no raw exception or credential in retained evidence.
+- Residual evidence is intentionally deferred: no real platform key/forwarder, Codex Examiner semantic turn or
+  live end-to-end slice has run. B is accepted as the deterministic implementation gate only; C terminal/state
+  integration may begin and the sole real semantic start remains reserved for independent testing.
+
+### 2026-08-03 — User confirms reuse of the R2.3-002 minimal slice — Main agent
+
+- The user chose the already accepted R2.3-002 minimal business slice to shorten R2.3-005 modeling time. This is
+  the same bounded Dify Workflow-as-Tool `C -> B -> A` slice and L3 Agent-visible source bundle already frozen in
+  the R2.3-005 Task and acceptance standard, including the two sequential competency questions.
+- No target redesign is required. Development and independent acceptance will reuse only the semantic slice,
+  approved sources and generic platform contracts; they will not reuse the archived R2.3-002 Profile/Runner,
+  proof-v2/P2/P2a harness, old Project/Ontology, prior model/results, expected answers or tester-only evidence.
+- The real R2.3-005 run still requires a fresh Project/Ontology and fresh four-role Sessions, and still consumes
+  the single authorized semantic start. No new business question, comparison run or second modeling attempt is
+  introduced by this choice.
+
+### 2026-08-03 — C terminal integration HIGH-risk disposition — Main agent
+
+- GitNexus upstream impact classified existing `TeamRunner.cleanup` as HIGH (21 direct callers / 19 processes),
+  `TeamRunner.start` as HIGH (152 upstream affected symbols), `TeamRunner.drain` as MEDIUM (11/10), and
+  `TeamTransportBroker.report` as HIGH (199). The user was warned through the live progress update.
+- Authorized scope is narrow: add Acceptance-owned state/revalidation/settlement/abort contracts first, then
+  connect only the minimum success/abort cleanup and terminal guard in Runner. Direct modification of
+  `TeamTransportBroker.report` is withheld; `PlatformScope.cleanup` remains prohibited. Existing `agent_end`,
+  session-level `agent_settled`, SSE and model semantics must remain unchanged.
+- C verification remains deterministic and offline. No Project/Ontology, platform credential, Examiner process or
+  semantic start is authorized while these HIGH-risk paths are being changed.
+
+### 2026-08-03 — C state, evidence and settlement integration accepted — Main agent
+
+- The Runner-owned carrier now canonicalizes the complete model-state digest, re-reads the live formal Project,
+  Ontology, workspace, source signature, graph set and Build Session at the required boundaries, invalidates all
+  prior PASS evidence on drift, and requires two fresh sequential CQ verdicts on one final state before settlement.
+- Source and Platform Examiner reports are no longer accepted from model-declared digests alone. Approved-source
+  references are matched to staged manifest bytes and a Runner-retained metadata artifact; Platform references are
+  matched one-to-one to immutable sanitized receipts emitted by the actual ticket-scoped read proxy, including
+  request, response, tool, scope, ticket, state and Runner-relative artifact path. Modeling receipts are also
+  recomputed from their canonical envelope.
+- A real child may submit its first report before its factory returns. The carrier queues at most one such report
+  without persistence, validates it only after the resource and proxy-receipt provider are bound, and rolls back the
+  provisional handle, resource, attempt and lineage if validation fails. This closes the startup race without adding
+  a new model-visible operation or changing Agent/SSE settlement semantics.
+- Main-agent read-only review confirmed exact Examiner instructions, no key/raw platform result/host path in the
+  retained receipt, rejection before report persistence, valid retained source metadata, foreign-scope rejection,
+  one-to-one receipt use and ghost-child rollback. `PlatformScope.cleanup`, `TeamTransportBroker.report`, the
+  authorized one-start budget and the minimal `C -> B -> A` semantic scope remain unchanged.
+- Developer verification passed: C49-focused 10/10, A/B/contracts 47/47, complete `modeling_team` discovery
+  236/236 (existing warnings only), Ruff, `git diff --check`, and GitNexus `detect_changes` with LOW risk and zero
+  affected processes. No real Project/Ontology, platform call, Examiner semantic turn or modeling start was used.
+- Outcome/next step: C is accepted. T6 may now exercise a second clean runtime root through preflight, staging,
+  deterministic start ordering and abort cleanup only; it must withhold semantic sources and consume zero real
+  modeling starts.
+
+### 2026-08-03 — T6 no-semantic-start repeatability accepted — Main agent
+
+- T6 is implemented as a test-only deterministic seam and does not modify `TeamRunner.prepare`, `start`,
+  `cleanup`, or any product helper. It loads the frozen four-role Profile/Task/Package/Skill inventory and uses
+  two independent temporary clean Git checkouts, runtime roots and run IDs.
+- Each root proves clean preflight before manifest/capability staging, fixed fail-closed ordering, an exact
+  source-free manifest, distinct capability token contents and paths, distinct sockets and adapter registries,
+  and clean checkout status before and after cleanup. It never calls Runner prepare/start, starts a persistent
+  Codex or Examiner semantic turn, creates a platform scope/key/resource, stages business bytes or candidates,
+  or creates/reserves/marks a StartLedger entry; the shared ledger is byte-for-byte unchanged.
+- The no-start seam rejects any attempted semantic transition with the fixed
+  `preflight/no-semantic-start` reason. The carrier cannot create reports, verdicts, PASS or settlement; abort
+  cleanup is idempotent and leaves no socket, token, registry, handle, resource, pending report or credential
+  residue before the temporary root is removed.
+- Developer verification passed: T6-focused 1/1, all R2.3-005 focused tests 58/58, complete `modeling_team`
+  discovery 237/237 (existing warnings only), Ruff, `git diff --check`, and GitNexus `detect_changes` with LOW
+  risk and zero affected processes. Main-agent read-only review confirmed the test remains independent of the
+  real semantic entrypoint and consumes zero of the one authorized starts.
+- Outcome/next step: T6 is accepted. The implementation may enter stable-commit preparation: full backend and
+  modeling regression, required local service restart/health verification, final scope review and
+  `detect_changes`, followed by an independent test Agent using the single real minimal `C -> B -> A` slice.
+
+### 2026-08-03 — Stable-commit verification passed — Main agent
+
+- Complete backend verification passed with 838 tests, 10 skipped and 188 existing dependency/plugin warnings;
+  complete `modeling_team` discovery passed 237 tests. R2.3-005 focused tests passed 58 tests and the T6 focused
+  proof passed separately. All changed and new Python files pass Ruff and `git diff --check` is clean.
+- The initial backend run correctly exposed five requirement-owned synchronization gaps: the four implemented
+  validation/reasoning read wrappers were absent from generated MCP documentation and the exact test surface.
+  The correction changed only `docs/reference/mcp.md` and added those four existing names to the fixed
+  `ALLOWED_TOOLS` test set; documentation/surface tests then passed 14/14 and the backend suite passed in full.
+- GitNexus marked the shared test constant `ALLOWED_TOOLS` CRITICAL (76 affected / 45 direct) and the CLI `main`
+  symbol HIGH (100 affected / 1 direct / zero processes). The user was warned before each change. The accepted
+  edits were mechanical and bounded: four exact already-registered read-tool names, and a lint-only local
+  lambda-to-function rewrite with identical closure, argument and return behavior. Targeted CLI/foreground/Runner
+  tests passed 60/60; final `detect_changes` reports LOW risk, zero affected symbols/processes for the worktree.
+- `ontology-platform.service` was restarted after all tests and is active/running with MainPID 2311629. Backend
+  `http://127.0.0.1:8001/api/health` returned `{"status":"ok"}` and frontend
+  `http://127.0.0.1:5173/` returned HTTP 200. No semantic/modeling run was launched during restart verification.
+- Final scope review found only R2.3-005 requirement, delivery, generic MCP-read, four-role Runner/Adapter,
+  Examiner/Acceptance capability, migrated formal fixture and test files. Credential/generated-file scans are
+  empty; T6 temporary roots are deleted; existing shared StartLedger bytes are unchanged; no real semantic start
+  or Project/Ontology was created.
+- Outcome/next step: the implementation is ready for one stable commit. Independent acceptance must start from
+  that clean commit in a dedicated clean checkout and is the only step allowed to consume the one authorized
+  minimal semantic start.

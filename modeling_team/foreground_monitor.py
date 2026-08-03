@@ -45,6 +45,11 @@ REQUIRED_CONTRACT_FIELDS = (
     "adverse_order_evidence",
 )
 
+# Historical P2 monitor launcher. Keep its evidence extractor and pure
+# lifecycle helpers for archival verification, but do not execute a foreground
+# command from a current checkout after the formal four-role Runner cutover.
+ARCHIVAL_ONLY = True
+
 
 def _monotonic() -> float:
     return time.monotonic()
@@ -393,6 +398,10 @@ def run_foreground(
     not synthesize a command from a run ID or fixture.  Omitting it is useful for descriptor and
     lifecycle smoke checks and performs no platform work.
     """
+    if ARCHIVAL_ONLY:
+        raise ValueError(
+            "P2 foreground monitor is archival-only; it is disabled before target/process startup"
+        )
     contract = load_contract(contract_path)
     repository = repository_root().resolve()
     requested_root = run_root or contract_path.parent.parent.parent

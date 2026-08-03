@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from .contracts import TeamConfigurationError, load_team_configuration, repository_root
+from .contracts import TeamConfigurationError, load_formal_team_configuration, repository_root
 from .handoff import publish_offline_scope_handoff
 from .monitor_handoff import (
     HANDOFF_CONTRACT_RELATIVE_PATH,
@@ -21,6 +21,7 @@ from .monitor_handoff import (
     write_runner_phase,
 )
 from .platform_scope import PlatformScope
+from .preflight import normalize_formal_scope
 from .runner import TeamRunner
 from .runtimes.codex import CodexRuntimeAdapter
 from .start_ledger import StartLedger
@@ -231,7 +232,7 @@ def main() -> int:
             return 2
         return 0
     try:
-        configuration = load_team_configuration(args.profile, args.task, root=root)
+        configuration = load_formal_team_configuration(args.profile, args.task, root=root)
     except TeamConfigurationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 2
@@ -258,20 +259,36 @@ def main() -> int:
 
     try:
         adapter = CodexRuntimeAdapter(repository_root=root)
-        # RuntimeAdapter doubles used by the foreground loop do not stage private Codex files.
-        # The production Codex adapter always exposes this defensive preflight.
-        getattr(adapter, "preflight_host_auth", lambda: None)()
         scope = yaml.safe_load(args.scope.read_text(encoding="utf-8"))
         if not isinstance(scope, dict):
             raise TeamConfigurationError("scope must be a YAML object")
-        create, revoke = _bootstrap_helpers(root)
+        schema_version = getattr(getattr(configuration, "task", None), "schema_version", 1)
+        formal_acceptance = (
+            schema_version == 2
+            and (
+                getattr(getattr(configuration, "task", None), "task_id", None)
+                == "r2-3-005-formal-acceptance"
+                or getattr(getattr(configuration, "profile", None), "profile_id", None)
+                == "r2-3-005-modeling-team"
+            )
+        )
+        if formal_acceptance:
+            # Reject existing identifiers before constructing the scope owner or
+            # touching the bootstrap credential path.  TeamRunner repeats this
+            # check so non-CLI callers cannot bypass the boundary.
+            scope = normalize_formal_scope(scope)
+            scope_factory = None
+        else:
+            create, revoke = _bootstrap_helpers(root)
+
+            def scope_factory(item):
+                return PlatformScope(args.base_url, item.run_id, create, revoke)
         runner = TeamRunner(
             repository_root=root,
             adapter=adapter,
-            scope_factory=lambda item: PlatformScope(
-                args.base_url, item.run_id, create, revoke
-            ),
+            scope_factory=scope_factory,
             freeze_started_at=args.freeze_started_at,
+            canonical_base_url=args.base_url,
         )
         runner.prepare(
             run_id=args.run_id,
@@ -279,6 +296,17 @@ def main() -> int:
             task_path=args.task,
             scope=scope,
         )
+        # Host Codex auth is inspected only after TeamRunner has completed its
+        # clean-checkout/canonical/health gate.  No Agent is started until this
+        # defensive source check succeeds.
+        getattr(adapter, "preflight_host_auth", lambda: None)()
+        if formal_acceptance:
+            # Bootstrap is intentionally reachable only after the no-start
+            # checkout/canonical-mode gate has passed and the run root exists.
+            create, revoke = _bootstrap_helpers(root)
+            runner.scope_factory = lambda item: PlatformScope(
+                args.base_url, item.run_id, create, revoke
+            )
         if handoff_root is not None:
             write_runner_phase(handoff_root, "prepared", run_root=runner.run.root)
         runner.start()
