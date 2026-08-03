@@ -95,6 +95,73 @@ class CodexIsolationTests(unittest.TestCase):
         self.assertNotIn("41001", json.dumps(evidence))
         self.assertEqual(evidence["coordinator"]["forbidden_path_categories"][-2], "sibling-process")
 
+    def test_formal_acceptance_visibility_probe_keeps_source_tree_empty(self) -> None:
+        root = repository_root()
+        configuration = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        adapter = CodexRuntimeAdapter(repository_root=root)
+        agents = {}
+        for index, profile_agent in enumerate(configuration.profile.agents, start=1):
+            agents[profile_agent.agent_id] = _Agent(
+                profile_agent.agent_id,
+                profile_agent.package,
+                Path(f"/tmp/{profile_agent.agent_id}-home"),
+                Path(f"/tmp/{profile_agent.agent_id}-work"),
+                Path(f"/tmp/{profile_agent.agent_id}-skills"),
+                app_server_host_pid=43000 + index,
+            )
+        adapter.agents = agents
+        adapter.namespace_command = lambda agent: [
+            "bwrap",
+            "--proc",
+            "/proc",
+            "--",
+            "/agent/bin/codex",
+            "app-server",
+        ]  # type: ignore[method-assign]
+        commands: list[list[str]] = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            return SimpleNamespace(returncode=0)
+
+        with patch("modeling_team.runtimes.codex.subprocess.run", side_effect=fake_run):
+            evidence = adapter.probe_role_visibility(
+                SimpleNamespace(configuration=configuration)
+            )
+
+        scripts = {
+            agent_id: command
+            for agent_id, command in zip(adapter.agents, commands, strict=True)
+        }
+        self.assertEqual(set(scripts), {"coordinator", "modeling", "protocol", "acceptance"})
+        acceptance_script = scripts["acceptance"][-1]
+        self.assertIn("test -z \"$(find /agent/home/sources -type f -print -quit)\"", acceptance_script)
+        self.assertNotIn(
+            "/agent/home/sources/modeling_team/references/r2-3-005-acceptance-standard.json",
+            acceptance_script,
+        )
+        self.assertIn("/agent/home/sources/../../protocol/home", acceptance_script)
+        self.assertIn("/proc/43001/environ", acceptance_script)
+        self.assertIn("test ! -e", acceptance_script)
+        self.assertEqual(evidence["acceptance"]["allowed_path_count"], 0)
+
+        for role in ("modeling", "protocol"):
+            script = scripts[role][-1]
+            expected_sources = [
+                "/agent/home/sources/" + source.relative_path.as_posix()
+                for source in configuration.task.role_sources
+                if role in source.roles
+            ]
+            self.assertTrue(expected_sources)
+            for path in expected_sources:
+                self.assertIn(path, script)
+            self.assertNotIn("find /agent/home/sources -type f", script)
+            self.assertEqual(evidence[role]["allowed_path_count"], len(expected_sources))
+
     def test_visibility_probe_requires_each_sibling_app_server_pid(self) -> None:
         root = repository_root()
         adapter = CodexRuntimeAdapter(repository_root=root)

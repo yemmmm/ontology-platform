@@ -1018,6 +1018,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "/agent/home/history",
             "/agent/home/secrets",
         )
+        formal_acceptance_run = self._is_formal_acceptance_run(run)
         for agent in self.agents.values():
             sibling_process_paths = []
             for candidate in self.agents.values():
@@ -1027,7 +1028,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if not isinstance(pid, int) or pid <= 0:
                     raise CodexRuntimeError("sibling app-server host PID is unavailable for visibility probe")
                 sibling_process_paths.append(f"/proc/{pid}/environ")
-            allowed = [
+            formal_acceptance_without_sources = (
+                formal_acceptance_run and agent.package.role == "acceptance"
+            )
+            allowed = [] if formal_acceptance_without_sources else [
                 "/agent/home/sources/" + source.relative_path.as_posix()
                 for source in run.configuration.task.role_sources
                 if agent.package.role in source.roles
@@ -1037,6 +1041,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 f"for path in {checks}; do test -r \"$path\"; done"
                 if checks
                 else ":"
+            )
+            source_tree_check = (
+                'test -z "$(find /agent/home/sources -type f -print -quit)"; '
+                if formal_acceptance_without_sources
+                else ""
             )
             sibling_socket = next(
                 f"/agent/transport/{candidate.agent_id}.sock"
@@ -1050,6 +1059,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             script = (
                 "set -eu; "
                 "test -e /proc/self/environ; "
+                f"{source_tree_check}"
                 f"{allowed_check}; "
                 f"for path in {denied}; do test ! -e \"$path\"; done"
             )

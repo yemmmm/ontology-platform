@@ -1280,3 +1280,29 @@
 - Outcome/next step: form a clean repair commit and repeat the formal CLI with a fresh run ID and freeze time.
   Because the failed invocation released its reservation before semantic start, the same sole R2.3-005 semantic
   budget remains available; a retry is not a second modeling start.
+
+### 2026-08-03 — Second CLI invocation failed presemantic; Acceptance visibility contract repaired — Main agent
+
+- Stable commit `92624b5a10b04505877faa96b976444c278758ac` was invoked once as run
+  `r23005-real-20260803t141058z` in retained PTY `19622`. It exited code 2 with the exact fixed console error
+  `run failed: role Runtime visibility probe failed for acceptance` before any semantic task turn.
+- The isolated R2.3-005 ledger again contains a reservation followed by `presemantic_release`: semantic starts
+  remain zero of the one-start cap and active reservations are zero. The legacy R2.3-002 ledger remains unchanged.
+  Cleanup deleted the fresh Project/Ontology, left zero Sessions/Leases, revoked all run keys and removed all
+  process, socket and private-capability residue. Retained evidence and the sanitized Operator summary contain no
+  bootstrap-secret match. This was `runtime/infrastructure`, not a modeling or Acceptance verdict.
+- The precise mismatch was between two existing formal contracts. `_write_config` intentionally gives Acceptance
+  an empty `/agent/home/sources` because its approved standard and tickets arrive only through the Runner carrier;
+  the Adapter visibility probe nevertheless derived a readable source allowlist from the generic Task role-source
+  declaration and demanded the staged acceptance-standard path inside that empty Agent projection.
+- GitNexus classified `CodexRuntimeAdapter.probe_role_visibility` LOW (four direct test callers, no affected
+  process). The repair changes only formal R2.3-005 Acceptance: its readable source allowlist is empty and the
+  probe explicitly requires that its source tree contain no files. Existing denied-path and sibling-process checks
+  remain active, while Modeling and Protocol retain their exact role-source readability checks. Source staging,
+  carrier delivery, Task declarations, Runner host probes, Adapter configuration and Platform cleanup are unchanged.
+- Developer verification passed: Codex isolation 45/45, combined R2.3/Codex/Runner 130/130, complete
+  `modeling_team` discovery 254/254, Ruff, `git diff --check`, and GitNexus `detect_changes` with LOW worktree risk
+  and zero affected processes. No real run or ledger mutation was made during this repair.
+- Outcome/next step: form a new clean stable commit and authorize the same independent Delivery Operator to repeat
+  the formal CLI with a fresh run ID. Because both CLI failures released their reservations before semantic start,
+  this remains the original sole authorized modeling start, not a second semantic attempt.
