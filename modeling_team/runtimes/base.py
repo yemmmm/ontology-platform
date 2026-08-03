@@ -31,6 +31,8 @@ class RuntimeDelivery:
     delivery_id: str | None = None
     expects_reply: bool = False
     reply_to_delivery_id: str | None = None
+    owner_answer_id: str | None = None
+    release_id: str | None = None
 
 
 @dataclass(frozen=True)

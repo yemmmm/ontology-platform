@@ -1342,3 +1342,38 @@
 - Outcome/next step: repair the requirement/implementation routing mismatch offline and add a true schema-v2
   JSONL stdin-to-correlated-release regression. That work cannot retroactively accept this run. Any later real
   semantic validation requires a new explicit user-authorized start budget after the repair is independently tested.
+
+### 2026-08-04 — D1 schema-v2 outer-answer routing repaired and independently tested offline — Main agent
+
+- The reviewed repair plan is
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`, frozen by
+  commit `8c5c38c62d448ae90fe5f2ddfff63ba10fedb547`. Mandatory review required four revisions before PASS:
+  question consumption/failure had to be keyed by `question_delivery_id`, strict JSON object and duplicate-key
+  rejection had to retain `cleanup_once`, Modeling had to receive the exact owner ID/release/text rather than a
+  lossy Coordinator re-forward, and the direct answer had to close the Broker's original pending-reply state.
+- GitNexus classified `TeamRunner.receive_outer` MEDIUM and the CLI `main` entry HIGH (67 affected / 15 direct).
+  The user was warned before the HIGH edit. The permitted `main` delta is only the strict decoder call; prepare,
+  start, semantic ledger, bootstrap, scope and cleanup ordering are unchanged. Broker send/ack/report,
+  RuntimeDelivery, Codex serialization and the other focused symbols were LOW, with no new Critical/High finding.
+- Formal schema-v2 Runner now observes only an acknowledged Modeling-to-Coordinator `expects_reply` request and
+  registers it as outer-visible only when Coordinator emits the exact question text. The authoritative user input
+  remains exactly `{"action":"user","text":"<verbatim answer>"}`. Runner resolves it to exactly one visible,
+  unanswered question; zero, multiple, unshown, extra-field and replay cases fail closed without trusting an outer
+  delivery ID.
+- The question is consumed once by delivery ID before persistence/publication. Success and open/write/fsync,
+  Broker-publish or Runtime-delivery failures all prohibit same-text and different-text reuse. The exact nine-field
+  owner-user record is fsynced before Broker mutation. A narrow typed Broker reply then carries the same
+  `owner_answer_id`, `release_id` and exact text directly to the originating Modeling role, with
+  `delivery_id=release_id` and `reply_to_delivery_id` bound to the question. Normal drain/ack removes the original
+  pending request; Coordinator receives no duplicate. Ordinary schema-v1/supplement routing remains unchanged.
+- Foreground JSON decoding now accepts only a JSON object and rejects malformed input, arrays/scalars/null and
+  duplicate keys with a caught fixed error. Real `main` boundary tests prove each rejected line invokes cleanup
+  exactly once. Modeling instructions now preserve the delivered owner ID for candidate citation use.
+- Developer verification passed: focused D1, related Runner/CLI, R2.3-005 and complete `modeling_team` suites;
+  final complete discovery was 266/266. Ruff, `git diff --check` and GitNexus `detect_changes` passed. A fresh
+  independent Tester reran focused 12/12, related 88/88, R2.3-005 67/67 and repository-environment discovery
+  266/266, plus Ruff/diff/side-effect checks, and recorded independent round 2 PASS in the shared test plan.
+- No backend/frontend file changed, so backend pytest, service restart and endpoint checks were not required. No
+  Producer, platform write, Project/Ontology, credential, run-root or ledger mutation occurred. D1 PASS proves
+  deterministic routing only: the retained real run remains `BLOCKED/collaboration/routing`, its consumed one-start
+  budget remains closed, and no new semantic start is authorized.

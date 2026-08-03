@@ -1828,19 +1828,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     @staticmethod
     def _delivery_input(delivery: RuntimeDelivery) -> list[dict[str, str]]:
         """Render the stable Runner delivery envelope without changing its text field."""
+        payload: dict[str, object] = {
+            "sender_id": delivery.sender_id,
+            "recipient_id": delivery.recipient_id,
+            "kind": delivery.kind,
+            "text": delivery.text,
+            "delivery_id": delivery.delivery_id,
+            "expects_reply": delivery.expects_reply,
+            "reply_to_delivery_id": delivery.reply_to_delivery_id,
+        }
+        if delivery.kind == "owner-answer":
+            if not isinstance(delivery.owner_answer_id, str) or not delivery.owner_answer_id:
+                raise CodexRuntimeError("owner-answer delivery is missing owner_answer_id")
+            if not isinstance(delivery.release_id, str) or not delivery.release_id:
+                raise CodexRuntimeError("owner-answer delivery is missing release_id")
+            payload.update(
+                {
+                    "owner_answer_id": delivery.owner_answer_id,
+                    "release_id": delivery.release_id,
+                }
+            )
         return [
             {
                 "type": "text",
                 "text": json.dumps(
-                    {
-                        "sender_id": delivery.sender_id,
-                        "recipient_id": delivery.recipient_id,
-                        "kind": delivery.kind,
-                        "text": delivery.text,
-                        "delivery_id": delivery.delivery_id,
-                        "expects_reply": delivery.expects_reply,
-                        "reply_to_delivery_id": delivery.reply_to_delivery_id,
-                    },
+                    payload,
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),

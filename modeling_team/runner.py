@@ -95,9 +95,11 @@ class TeamRunner:
         self._post_settlement_reporting_requested = False
         self._coordinator_final_captured = False
         self._outer_user_texts: set[str] = set()
-        self._outer_questions: dict[str, dict[str, str]] = {}
+        self._outer_questions: dict[str, dict[str, Any]] = {}
         self._owner_answers: dict[tuple[str, str], dict[str, str]] = {}
         self._owner_answer_failures: set[tuple[str, str]] = set()
+        self._owner_answer_consumed: set[str] = set()
+        self._owner_answer_attempts: dict[str, dict[str, str]] = {}
         self._outer_answer_sequence = 0
         self._ledger: StartLedger | None = None
         self.acceptance: RunnerAcceptanceCarrier | None = None
@@ -630,10 +632,11 @@ class TeamRunner:
             return False
         configuration = self.run.configuration
         return (
-            configuration.task.schema_version == 2
+            getattr(configuration.task, "schema_version", 1) == 2
             and (
-                configuration.task.task_id == "r2-3-005-formal-acceptance"
-                or configuration.profile.profile_id == "r2-3-005-modeling-team"
+                getattr(configuration.task, "task_id", None) == "r2-3-005-formal-acceptance"
+                or getattr(configuration.profile, "profile_id", None)
+                == "r2-3-005-modeling-team"
             )
         )
 
@@ -782,6 +785,7 @@ class TeamRunner:
                     }
                 },
                 modeling_agent_id=role_agents["modeling"],
+                coordinator_agent_id=role_agents["coordinator"],
                 terminal_report_guard=self._terminal_report_guard,
                 transport_event_observer=transport_event_observer,
                 coordination_phase_callback=(
@@ -1291,10 +1295,16 @@ class TeamRunner:
     def receive_outer(self, message: dict[str, Any]) -> list[dict[str, Any]]:
         if not self.run:
             raise RuntimeError("Runner is not prepared")
+        if not isinstance(message, dict):
+            raise TeamConfigurationError("outer message must be a JSON object")
         action = message.get("action")
         if action == "question":
+            if self._formal_coordination_enabled():
+                raise TeamConfigurationError("schema-v2 outer questions are Runner-owned")
             self._record_outer_question(message)
         elif action == "user":
+            if self._formal_coordination_enabled() and set(message) != {"action", "text"}:
+                raise TeamConfigurationError("schema-v2 owner answer envelope has invalid fields")
             text = message.get("text")
             if not isinstance(text, str):
                 raise TeamConfigurationError("outer user text must be a string")
@@ -1304,10 +1314,15 @@ class TeamRunner:
                 if agent.package.role == "coordinator"
             )
             if self.run.configuration.task.schema_version == 2:
+                question_delivery_id: object
+                if self._formal_coordination_enabled():
+                    question_delivery_id = self._resolve_formal_owner_question(text)
+                else:
+                    question_delivery_id = message.get("question_delivery_id")
                 self._release_owner_answer(
                     coordinator,
                     text,
-                    message.get("question_delivery_id"),
+                    question_delivery_id,
                 )
             else:
                 self.adapter.send_message(
@@ -1336,6 +1351,109 @@ class TeamRunner:
             raise TeamConfigurationError("unknown outer Runner action")
         return self.drain()
 
+    def _observe_modeling_question(self, delivery: Any) -> None:
+        """Register only a formal Modeling->Coordinator reply request internally."""
+        if not self._formal_coordination_enabled() or not self.run or not self.transport:
+            return
+        modeling = next(
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "modeling"
+        )
+        coordinator = next(
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "coordinator"
+        )
+        if (
+            delivery.sender_id != modeling
+            or delivery.recipient_id != coordinator
+            or not delivery.expects_reply
+            or delivery.reply_to_delivery_id is not None
+            or not isinstance(delivery.text, str)
+            or not delivery.text
+        ):
+            return
+        delivery_id = delivery.delivery_id
+        project_id = self.run.scope.get("project_id")
+        if not isinstance(project_id, str) or not project_id:
+            raise TeamConfigurationError("outer question project binding is missing")
+        existing = self._outer_questions.get(delivery_id)
+        if existing is not None:
+            if (
+                existing.get("text") != delivery.text
+                or existing.get("run_id") != self.run.run_id
+                or existing.get("project_id") != project_id
+            ):
+                raise TeamConfigurationError("outer question delivery is immutable")
+            return
+        self._outer_questions[delivery_id] = {
+            "question_delivery_id": delivery_id,
+            "project_id": project_id,
+            "run_id": self.run.run_id,
+            "text": delivery.text,
+            "origin_agent_id": modeling,
+            "displayed": False,
+            "consumed": False,
+        }
+
+    def _observe_coordinator_message(self, message: Any) -> None:
+        """Mark one observed candidate displayed only when Coordinator carries its exact text."""
+        if not self._formal_coordination_enabled() or not self.run:
+            return
+        text = getattr(message, "text", None)
+        if not isinstance(text, str):
+            return
+        candidates = [
+            record
+            for record in self._outer_questions.values()
+            if record.get("displayed") is False and record.get("consumed") is False
+        ]
+        matches = [record for record in candidates if record.get("text") and record["text"] in text]
+        if len(matches) > 1:
+            raise TeamConfigurationError("multiple outer questions match Coordinator prompt")
+        if not matches:
+            return
+        record = matches[0]
+        record["displayed"] = True
+        record["coordinator_prompt"] = text
+        self._append_evidence(
+            "outer-question",
+            {
+                key: record[key]
+                for key in ("question_delivery_id", "project_id", "run_id", "text")
+            },
+        )
+
+    def _resolve_formal_owner_question(self, text: str) -> str:
+        """Resolve a text-only schema-v2 answer to exactly one displayed question."""
+        del text  # The answer text is intentionally not part of question ownership.
+        unresolved = [
+            record
+            for record in self._outer_questions.values()
+            if record.get("consumed") is not True
+        ]
+        eligible = [record for record in unresolved if record.get("displayed") is True]
+        if len(eligible) == 0:
+            if unresolved:
+                raise TeamConfigurationError("owner answer question has not been displayed")
+            raise TeamConfigurationError("owner answer has no unanswered displayed question")
+        if len(eligible) > 1:
+            raise TeamConfigurationError("owner answer matches multiple unanswered questions")
+        question = eligible[0]
+        if question.get("run_id") != self.run.run_id:
+            raise TeamConfigurationError("owner answer run binding drifts")
+        if question.get("project_id") != self.run.scope.get("project_id"):
+            raise TeamConfigurationError("owner answer project binding drifts")
+        modeling = next(
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "modeling"
+        )
+        if question.get("origin_agent_id") != modeling:
+            raise TeamConfigurationError("owner answer question origin drifts")
+        return question["question_delivery_id"]
+
     def _record_outer_question(self, message: dict[str, Any]) -> None:
         assert self.run
         delivery_id = message.get("delivery_id", message.get("question_delivery_id"))
@@ -1350,7 +1468,7 @@ class TeamRunner:
         project_id = self.run.scope.get("project_id")
         if not isinstance(project_id, str) or not project_id:
             raise TeamConfigurationError("outer question project binding is missing")
-        record = {
+        record: dict[str, Any] = {
             "question_delivery_id": delivery_id,
             "project_id": project_id,
             "run_id": self.run.run_id,
@@ -1371,12 +1489,32 @@ class TeamRunner:
         question = self._outer_questions.get(question_delivery_id)
         if question is None:
             raise TeamConfigurationError("owner answer question delivery is unknown")
+        formal = self._formal_coordination_enabled()
         if question.get("project_id") != self.run.scope.get("project_id"):
             raise TeamConfigurationError("owner answer project binding drifts")
+        if formal:
+            if question.get("run_id") != self.run.run_id:
+                raise TeamConfigurationError("owner answer run binding drifts")
+            if question.get("displayed") is not True:
+                raise TeamConfigurationError("owner answer question has not been displayed")
+            modeling = next(
+                agent.agent_id
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role == "modeling"
+            )
+            if question.get("origin_agent_id") != modeling:
+                raise TeamConfigurationError("owner answer question origin drifts")
         key = (question_delivery_id, text)
+        existing = self._owner_answers.get(key)
         if key in self._owner_answer_failures:
             raise TeamConfigurationError("owner answer delivery previously failed and cannot be reused")
-        existing = self._owner_answers.get(key)
+        if question.get("consumed") is True or question_delivery_id in self._owner_answer_consumed:
+            # Historical non-formal fixtures called this private helper directly and
+            # relied on same-key idempotence; the formal schema-v2 envelope is strict
+            # and rejects every replay, including identical text.
+            if existing is not None and not formal:
+                return
+            raise TeamConfigurationError("owner answer question delivery was already consumed")
         if existing is not None:
             return
         project_id = self.run.scope.get("project_id")
@@ -1407,22 +1545,38 @@ class TeamRunner:
             "text": text,
             "released_at": datetime.now(UTC).isoformat(),
         }
-        # The exact nine-field record is persisted and fsynced before the
-        # Runtime Adapter sees the answer.  A failed send leaves this record
-        # retained and permanently burns the generated ID.
+        # The question is consumed before any persistence or send attempt.  This lock is
+        # intentionally independent of answer text: persistence/send failures burn this
+        # question and its generated identifiers rather than permitting a retry.
+        question["consumed"] = True
+        self._owner_answer_consumed.add(question_delivery_id)
+        self._owner_answer_attempts[question_delivery_id] = record
+        # The exact nine-field record is persisted and fsynced before the Broker queues
+        # the direct Modeling answer.  A failed persistence/publication burns the IDs.
         try:
             self._append_exact_outer_user(record)
-            self.adapter.send_message(
-                coordinator,
-                RuntimeDelivery(
-                    sender_id="user/outer",
-                    recipient_id=coordinator,
-                    kind="outer-user",
+            if self.transport is not None and formal:
+                self.transport.publish_owner_answer(
+                    question_delivery_id=question_delivery_id,
+                    owner_answer_id=owner_answer_id,
+                    release_id=release_id,
                     text=text,
-                    delivery_id=release_id,
-                    reply_to_delivery_id=question_delivery_id,
-                ),
-            )
+                )
+            else:
+                # Compatibility for the historical direct helper used by schema-v2 unit
+                # fixtures that do not attach a Broker.  Formal started runs always use
+                # the narrowed Broker publication above.
+                self.adapter.send_message(
+                    coordinator,
+                    RuntimeDelivery(
+                        sender_id="user/outer",
+                        recipient_id=coordinator,
+                        kind="outer-user",
+                        text=text,
+                        delivery_id=release_id,
+                        reply_to_delivery_id=question_delivery_id,
+                    ),
+                )
         except Exception:
             self._owner_answer_failures.add(key)
             self._state("FAILED", owner_answer_id=owner_answer_id, release_id=release_id)
@@ -1462,6 +1616,27 @@ class TeamRunner:
         finally:
             os.close(descriptor)
 
+    def _mark_owner_answer_failure(self, delivery: Any, reason: str) -> None:
+        question_delivery_id = delivery.reply_to_delivery_id
+        record = self._owner_answer_attempts.get(question_delivery_id)
+        if record is None:
+            return
+        key = (question_delivery_id, record["text"])
+        self._owner_answer_failures.add(key)
+        self._state(
+            "FAILED",
+            owner_answer_id=record["owner_answer_id"],
+            release_id=record["release_id"],
+        )
+        self._append_evidence(
+            "owner-answer-failure",
+            {
+                "owner_answer_id": record["owner_answer_id"],
+                "release_id": record["release_id"],
+                "reason": reason,
+            },
+        )
+
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
@@ -1472,6 +1647,7 @@ class TeamRunner:
             if agent.package.role == "coordinator"
         )
         for delivery in self.transport.drain():
+            owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
                 self._append_evidence(
                     "terminal-delivery-blocked",
@@ -1481,10 +1657,23 @@ class TeamRunner:
                         "reason": "recipient already reported terminal result",
                     },
                 )
+                if owner_answer:
+                    self._mark_owner_answer_failure(delivery, "recipient already reported terminal result")
                 continue
-            self.adapter.send_message(
-                delivery.recipient_id,
-                RuntimeDelivery(
+            if owner_answer:
+                runtime_delivery = RuntimeDelivery(
+                    sender_id=delivery.sender_id,
+                    recipient_id=delivery.recipient_id,
+                    kind="owner-answer",
+                    text=delivery.text,
+                    delivery_id=delivery.delivery_id,
+                    expects_reply=delivery.expects_reply,
+                    reply_to_delivery_id=delivery.reply_to_delivery_id,
+                    owner_answer_id=delivery.owner_answer_id,
+                    release_id=delivery.release_id,
+                )
+            else:
+                runtime_delivery = RuntimeDelivery(
                     sender_id=delivery.sender_id,
                     recipient_id=delivery.recipient_id,
                     kind=(
@@ -1497,12 +1686,35 @@ class TeamRunner:
                     delivery_id=delivery.delivery_id,
                     expects_reply=delivery.expects_reply,
                     reply_to_delivery_id=delivery.reply_to_delivery_id,
-                ),
-            )
+                )
+            try:
+                self.adapter.send_message(delivery.recipient_id, runtime_delivery)
+            except Exception:
+                if owner_answer:
+                    self._mark_owner_answer_failure(delivery, "Runtime Adapter delivery failed")
+                raise
             self.transport.ack_delivery(delivery.delivery_id)
-            envelope = {"type": "delivery", **delivery.__dict__}
+            envelope = {
+                "type": "delivery",
+                "sequence": delivery.sequence,
+                "sender_id": delivery.sender_id,
+                "recipient_id": delivery.recipient_id,
+                "text": delivery.text,
+                "timestamp": delivery.timestamp,
+                "delivery_id": delivery.delivery_id,
+                "expects_reply": delivery.expects_reply,
+                "reply_to_delivery_id": delivery.reply_to_delivery_id,
+            }
+            if owner_answer:
+                envelope.update(
+                    {
+                        "owner_answer_id": delivery.owner_answer_id,
+                        "release_id": delivery.release_id,
+                    }
+                )
             output.append(envelope)
             self._append_evidence("deliveries", envelope)
+            self._observe_modeling_question(delivery)
         results = self.transport.results
         self._finalize_acceptance_if_ready()
         for source_id, result in results.items():
@@ -1595,6 +1807,7 @@ class TeamRunner:
                 self._terminal_handoffs_notified.add(pair)
         for message in self.adapter.receive_messages():
             if message.agent_id == coordinator:
+                self._observe_coordinator_message(message)
                 if self._post_settlement_reporting_requested:
                     self._capture_coordinator_final(message, output)
                     continue

@@ -35,6 +35,8 @@ class Delivery:
     delivery_id: str
     expects_reply: bool = False
     reply_to_delivery_id: str | None = None
+    owner_answer_id: str | None = None
+    release_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,7 @@ class TeamTransportBroker:
         transport_event_observer: Callable[[dict[str, object]], None] | None = None,
         coordination_phase_callback: Callable[[str, str, str, str, int], object] | None = None,
         coordination_event_observer: Callable[[dict[str, object]], None] | None = None,
+        coordinator_agent_id: str | None = None,
     ):
         self.evidence_root = root
         # Linux Unix sockets have a short pathname limit. The run-local requested path is
@@ -89,6 +92,7 @@ class TeamTransportBroker:
             for agent_id, dependencies in (terminal_dependencies or {}).items()
         }
         self.modeling_agent_id = modeling_agent_id
+        self.coordinator_agent_id = coordinator_agent_id
         self.terminal_report_guard = terminal_report_guard
         self.transport_event_observer = transport_event_observer
         self.coordination_phase_callback = coordination_phase_callback
@@ -99,6 +103,9 @@ class TeamTransportBroker:
         self._delivery_by_id: dict[str, Delivery] = {}
         self._pending_replies: dict[str, str | None] = {}
         self._reply_delivery_ids: dict[str, str] = {}
+        self._owner_answer_by_question: dict[str, str] = {}
+        self._owner_answer_by_release: dict[str, str] = {}
+        self._owner_answer_ids: dict[str, str] = {}
         self._acknowledged_deliveries: set[str] = set()
         self._results: dict[str, TaskResult] = {}
         self._coordination: list[CoordinationMessage] = []
@@ -198,6 +205,75 @@ class TeamTransportBroker:
             if reply_to_delivery_id is not None:
                 self._pending_replies[reply_to_delivery_id] = delivery.delivery_id
                 self._reply_delivery_ids[delivery.delivery_id] = reply_to_delivery_id
+            return delivery
+
+    def publish_owner_answer(
+        self,
+        *,
+        question_delivery_id: str,
+        owner_answer_id: str,
+        release_id: str,
+        text: str,
+    ) -> Delivery:
+        """Queue one Runner-owned answer for the Modeling question that spawned it.
+
+        This is intentionally narrower than ``send``.  The original request must be an
+        acknowledged Modeling-to-Coordinator request with an active, unanswered reply slot.
+        The special sender is created only after the Runner has persisted its immutable
+        outer-user record; ordinary Team Transport callers cannot invoke this path through MCP.
+        """
+        if any(
+            not isinstance(value, str) or not value
+            for value in (question_delivery_id, owner_answer_id, release_id, text)
+        ):
+            raise RoutingError("owner answer delivery is invalid")
+        with self._lock:
+            original = self._delivery_by_id.get(question_delivery_id)
+            if (
+                original is None
+                or self.modeling_agent_id is None
+                or original.sender_id != self.modeling_agent_id
+                or self.coordinator_agent_id is None
+                or original.recipient_id != self.coordinator_agent_id
+                or not original.expects_reply
+                or original.reply_to_delivery_id is not None
+                or question_delivery_id not in self._acknowledged_deliveries
+                or self._pending_replies.get(question_delivery_id) is not None
+                or question_delivery_id not in self._pending_replies
+                or question_delivery_id in self._owner_answer_by_question
+            ):
+                raise RoutingError(
+                    "owner answer request is not an active acknowledged Modeling question"
+                )
+            if (
+                release_id in self._delivery_by_id
+                or release_id in self._owner_answer_by_release
+                or release_id in self._owner_answer_ids
+                or owner_answer_id in self._delivery_by_id
+                or owner_answer_id in self._owner_answer_by_release
+                or owner_answer_id in self._owner_answer_ids
+            ):
+                raise RoutingError("owner answer delivery ID collision")
+            self._delivery_sequence += 1
+            delivery = Delivery(
+                self._delivery_sequence,
+                "user/outer",
+                original.sender_id,
+                text,
+                time.time(),
+                release_id,
+                False,
+                question_delivery_id,
+                owner_answer_id,
+                release_id,
+            )
+            self._deliveries.append(delivery)
+            self._delivery_by_id[release_id] = delivery
+            self._pending_replies[question_delivery_id] = release_id
+            self._reply_delivery_ids[release_id] = question_delivery_id
+            self._owner_answer_by_question[question_delivery_id] = release_id
+            self._owner_answer_by_release[release_id] = question_delivery_id
+            self._owner_answer_ids[owner_answer_id] = release_id
             return delivery
 
     def send_coordination(
@@ -431,6 +507,24 @@ class TeamTransportBroker:
         return dict(self._results)
 
 
+def _delivery_payload(delivery: Delivery) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "sequence": delivery.sequence,
+        "sender_id": delivery.sender_id,
+        "recipient_id": delivery.recipient_id,
+        "text": delivery.text,
+        "timestamp": delivery.timestamp,
+        "delivery_id": delivery.delivery_id,
+        "expects_reply": delivery.expects_reply,
+        "reply_to_delivery_id": delivery.reply_to_delivery_id,
+    }
+    if delivery.owner_answer_id is not None:
+        payload["owner_answer_id"] = delivery.owner_answer_id
+    if delivery.release_id is not None:
+        payload["release_id"] = delivery.release_id
+    return payload
+
+
 def _report_rejection_category(error: RoutingError) -> str:
     """Map a Broker rejection to the small, non-sensitive event vocabulary."""
     message = str(error)
@@ -546,7 +640,7 @@ def mcp_response(
         )
         return {
             "content": [
-                {"type": "text", "text": json.dumps(value.__dict__, ensure_ascii=False)}
+                {"type": "text", "text": json.dumps(_delivery_payload(value), ensure_ascii=False)}
             ]
         }
     if name == "report_task_result":

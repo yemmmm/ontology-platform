@@ -241,3 +241,59 @@ binding path; Protocol and Acceptance semantic acceptance never began, so no mod
 permitted. Require the requirement developer to repair D1 and add a real schema-v2 stdin regression
 test, then perform a new independent round only with explicit authorization for any new semantic
 start.
+
+## Independent test round 2 — 2026-08-04
+
+### Scope, baseline, and safety boundary
+
+- Tester: fresh independent read-only requirement Tester. This round validated only the offline D1
+  `collaboration/routing` repair. No Producer, semantic start, Project/Ontology, MCP producer call,
+  service restart, ledger write, run-root write, credential/key operation, or retained-run mutation
+  was performed. The retained round-1 run remains `BLOCKED`; this round does not authorize another
+  real start.
+- Authority: `requirements-v2.3.md:460-469,1197-1204,1257-1275`; repair plan
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`;
+  this shared test plan.
+- Code version: `git rev-parse HEAD` =
+  `8c5c38c62d448ae90fe5f2ddfff63ba10fedb547`; implementation is uncommitted in the six expected
+  `modeling_team/` runtime files plus the new focused test. The only test-plan change in this round
+  is this append; no commit was made.
+- Worktree/path check: `git status --short --branch` showed only those six implementation files and
+  `modeling_team/tests/test_runner_r23005_owner_answer.py`; no backend, ledger, or
+  `workspaces/modeling-runs` path changed. Recent-file scan found no run-root modifications. Added
+  lines contained no secret-like material; `git diff --check` passed.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| Foreground JSONL decoder and cleanup boundary | PASS | `python3 -m unittest modeling_team.tests.test_runner_r23005_owner_answer -v`: 12/12 passed. Covers text-only `{"action":"user","text":...}`, exact schema-v2 keys, object/non-object/null/scalar/malformed/duplicate-key rejection (including nested duplicate), caught `main` failures, and one `cleanup()` call per rejected line. |
+| Formal question observation and direct owner release | PASS | Focused suite proves only acknowledged Modeling→Coordinator `expects_reply` candidates are registered, exact Coordinator prompt matching marks visibility, zero/multiple/unshown candidates fail closed, and the text-only answer routes exactly once to originating Modeling with no Coordinator duplicate. |
+| Question-ID consumption and failure burn | PASS | Focused suite covers success replay plus open/write/fsync persistence failures, Broker publication failure, and Runtime Adapter send failure; same or different text cannot allocate a second owner ID/release, record, or send. |
+| Outer-user identity/order and typed payload | PASS | Focused tests plus a temporary fixture check verified the exact nine record keys, canonical `owner-answer-` SHA-256 preimage (`run_id, project_id, question_delivery_id, text`), exact Unicode/newline text, `delivery_id == release_id`, fsync-before-Broker ordering, direct Modeling recipient, and owner fields in Codex/Runtime envelopes. |
+| Broker atomic direction/collision/lifecycle/terminal gates | PASS | Focused Broker tests reject duplicate/colliding publication, wrong direction, non-question/reply requests, and inactive/unacknowledged requests without state mutation. Modeling terminal reporting is blocked until the owner reply is delivered and acknowledged; then normal terminal reporting proceeds. |
+| Legacy compatibility | PASS | Existing Runner/Transport/Codex/CLI regression command (`test_runner`, `test_runner_r63`, `test_transport`, `test_codex_isolation`, `test_foreground_monitor`) passed 88/88; schema-v1 outer-user and normal Delivery envelope tests remain green. |
+| R2.3-005 regression set | PASS | `python3 -m unittest -v` over `test_r23005_a_revision`, `test_r23005_b_runtime`, `test_r23005_c_settlement`, `test_r23005_contracts`, `test_r23005_ledger_isolation`, and `test_r23005_t6_repeatability`: 67/67 passed. |
+| Complete modeling_team discovery | PASS | Repository environment command `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`: 266/266 passed in 10.716s (exit 0). This supersedes an earlier system-Python attempt that collected a non-equivalent 267 and failed on unavailable/mismatched backend dependencies. |
+| Ruff and whitespace | PASS | `backend/.venv/bin/ruff check modeling_team`: all checks passed; `git diff --check`: passed. |
+| Secret/forbidden-path/side-effect review | PASS | Diff/status scans found no secret additions and only expected `modeling_team/` files; no backend, ledger, run-root, service, Producer, or retained evidence side effects were observed. |
+
+### Unexecuted or not claimable
+
+- No real Producer or semantic start was started, resumed, retried, or authorized. The retained
+  round-1 run therefore remains `BLOCKED/collaboration/routing`; this deterministic round cannot
+  prove Modeling quality, Protocol/Acceptance semantics, real source fidelity, or settlement.
+- Backend pytest, service restart, and endpoint health checks were not in scope because the repair
+  touched only `modeling_team/` and explicitly remained offline.
+
+### Defects and conclusion
+
+- No D1 product defect was reproduced. The focused, related, R2.3-005, and complete repository
+  suites all pass in the repository's `uv` environment. No repair follow-up is requested for D1;
+  preserve the prohibition on a real Producer rerun until separately authorized.
+
+### Round conclusion
+
+**Overall verdict: PASS for D1 deterministic schema-v2 outer-answer routing only.** This closes the
+offline routing defect and does not change the retained round-1 `BLOCKED` result or authorize a new
+semantic start.

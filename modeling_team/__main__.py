@@ -66,6 +66,27 @@ def _terminal_report_complete(runner) -> bool:
     return isinstance(state, dict) and state.get("state") == "TERMINAL_REPORT_COMPLETE"
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _decode_foreground_message(line: str) -> dict[str, object]:
+    if not isinstance(line, str):
+        raise TeamConfigurationError("outer JSON input is invalid")
+    try:
+        value = json.loads(line, object_pairs_hook=_reject_duplicate_json_keys)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise TeamConfigurationError("outer JSON input is invalid") from exc
+    if not isinstance(value, dict):
+        raise TeamConfigurationError("outer JSON input must be an object")
+    return value
+
+
 def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> None:
     """Pump App Server events even when an outer user sends no further input."""
     while True:
@@ -80,7 +101,7 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         line = stream.readline()
         if not line:
             return
-        output = runner.receive_outer(json.loads(line))
+        output = runner.receive_outer(_decode_foreground_message(line))
         if output:
             emit(output)
 

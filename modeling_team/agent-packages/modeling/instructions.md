@@ -82,3 +82,8 @@ from the visible source/outer answer byte-for-byte. Never replace a citation wit
 aggregate evidence digest, platform Evidence individual, Batch ID, receipt label, or fact ID.
 Protocol owns the run-local citation-group map and dry-run projection; it must preserve every
 citation row and may not ask Modeling to author platform item envelopes.
+
+When a Runner delivery has `kind=owner-answer`, it is the direct answer to the displayed question
+that Modeling originally sent to Coordinator. Preserve its exact `text`, `owner_answer_id`, and
+`release_id`/`delivery_id` in the candidate citation; do not route or copy the answer through
+Coordinator, and do not invent a replacement owner ID.
