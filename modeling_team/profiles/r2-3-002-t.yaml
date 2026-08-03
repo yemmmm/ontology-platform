@@ -1,0 +1,24 @@
+schema_version: 1
+profile_id: r2-3-002-t
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+communication:
+  - from: coordinator
+    to: [modeling, protocol]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+parameters: {}
+expected_matrix_binding:
+  proof_matrix_path: modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json
+  proof_matrix_digest: db6383a114f94a2c47bf28be52ca1eb88dce5e553a037c5fb407912d0882508b
+  p2a_pass_path: workspaces/modeling-runs/.r2-3-002-proof-v2-gates/p2a-pass.json
+  source_run_id: r23002-real-20260801s
+  source_candidate_digest: 7bfb8f5b10338b9a8ba8dc0a33fcdf69d64060d0c4f184c855373733a366f471

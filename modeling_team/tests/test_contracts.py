@@ -58,3 +58,58 @@ class ContractTests(unittest.TestCase):
             self.assertIn("`kind=outer-forward`", instructions)
             self.assertIn("never execute any “forward” wording", instructions)
             self.assertIn("`send_team_message` to re-forward its original text", instructions)
+
+    def test_expected_matrix_binding_is_optional_for_legacy_and_exact_when_present(self) -> None:
+        binding = {
+            "proof_matrix_path": "modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json",
+            "proof_matrix_digest": "a" * 64,
+            "p2a_pass_path": "workspaces/modeling-runs/.r2-3-002-proof-v2-gates/p2a-pass.json",
+            "p2a_pass_digest": "b" * 64,
+            "source_run_id": "r23002-real-20260801s",
+        }
+        self.assertIsNone(load_team_configuration(self.base, self.task, root=self.root).profile.expected_matrix_binding)
+        with tempfile.TemporaryDirectory() as directory:
+            bound = Path(directory) / "bound.yaml"
+            bound.write_text(
+                self.base.read_text(encoding="utf-8")
+                + "expected_matrix_binding:\n"
+                + "".join(f"  {key}: {value}\n" for key, value in binding.items()),
+                encoding="utf-8",
+            )
+            config = load_team_configuration(bound, self.task, root=self.root)
+            self.assertEqual(config.profile.expected_matrix_binding, binding)
+            bad = Path(directory) / "bad.yaml"
+            bad.write_text(
+                bound.read_text(encoding="utf-8").replace("proof_matrix_digest: " + "a" * 64, "proof_matrix_digest: wrong"),
+                encoding="utf-8",
+            )
+            with self.assertRaises(TeamConfigurationError):
+                load_team_configuration(bad, self.task, root=self.root)
+
+    def test_future_t_freezes_static_matrix_identity_without_tester_digest(self) -> None:
+        config = load_team_configuration(
+            self.root / "modeling_team/profiles/r2-3-002-t.yaml",
+            self.root / "modeling_team/tasks/r2-3-002-t.yaml",
+            root=self.root,
+        )
+        binding = config.task.expected_matrix_binding
+        self.assertIsNotNone(binding)
+        assert binding is not None
+        self.assertEqual(
+            set(binding),
+            {
+                "proof_matrix_path",
+                "proof_matrix_digest",
+                "p2a_pass_path",
+                "source_run_id",
+                "source_candidate_digest",
+            },
+        )
+        self.assertNotIn("p2a_pass_digest", binding)
+        legacy = load_team_configuration(
+            self.root / "modeling_team/profiles/base-three-agent.yaml",
+            self.root / "modeling_team/tasks/new-scope-business-slice.yaml",
+            root=self.root,
+        )
+        self.assertIsNone(legacy.profile.expected_matrix_binding)
+        self.assertIsNone(legacy.task.expected_matrix_binding)

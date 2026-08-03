@@ -22,6 +22,36 @@ FORBIDDEN_KEYS = {
     "pid",
 }
 PLATFORM_VALUES = {"none", "read", "write"}
+ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist"}
+# The v2 Task may narrow this set, but never broaden it.  Keep lifecycle/key/project
+# mechanics outside the Agent-visible platform surface.
+SAFE_PROTOCOL_TOOLS = frozenset(
+    {
+        "check_platform_health",
+        "get_project_build_context",
+        "get_ontology_workspace_context",
+        "create_build_session",
+        "get_build_session",
+        "save_build_checkpoint",
+        "complete_build_session",
+        "cancel_build_session",
+        "acquire_ontology_lease",
+        "renew_ontology_lease",
+        "release_ontology_lease",
+        "submit_modeling_batch",
+        "get_modeling_batch",
+        "list_session_modeling_batches",
+        "list_ontology_modeling_batches",
+        "get_modeling_context",
+        "get_ontology_read_model",
+        "query_semantic_context",
+        "run_semantic_validation",
+        "run_semantic_reasoning",
+        "get_ontology_lineage",
+        "inspect_semantic_statement_provenance",
+    }
+)
+SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
 
 
 class TeamConfigurationError(ValueError):
@@ -54,6 +84,7 @@ class TeamProfile:
     agents: tuple[ProfileAgent, ...]
     communication: frozenset[tuple[str, str]]
     parameters: dict[str, Any]
+    expected_matrix_binding: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +93,20 @@ class TeamTask:
     objective: str
     allowed_sources: tuple[Path, ...]
     expected_terminal_evidence: tuple[str, ...]
+    schema_version: int = 1
+    role_sources: tuple["TaskSource", ...] = ()
+    protocol_tools: tuple[str, ...] = ()
+    retain_nonempty: bool = False
+    semantic_start_evidence: tuple[str, ...] = ()
+    expected_matrix_binding: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class TaskSource:
+    path: Path
+    relative_path: Path
+    classification: str
+    roles: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -78,6 +123,55 @@ def _safe_id(value: object, field: str) -> str:
     if not isinstance(value, str) or not SAFE_ID.fullmatch(value):
         raise TeamConfigurationError(f"{field} must be a safe stable identifier")
     return value
+
+
+_MATRIX_BINDING_FIELDS = (
+    "proof_matrix_path",
+    "proof_matrix_digest",
+    "p2a_pass_path",
+    "p2a_pass_digest",
+    "source_run_id",
+)
+_STATIC_MATRIX_BINDING_FIELDS = {
+    "proof_matrix_path",
+    "proof_matrix_digest",
+    "p2a_pass_path",
+    "source_run_id",
+}
+_STATIC_MATRIX_BINDING_WITH_SOURCE_FIELDS = _STATIC_MATRIX_BINDING_FIELDS | {
+    "source_candidate_digest",
+}
+
+
+def _expected_matrix_binding(value: object, *, location: str) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) not in (
+        set(_MATRIX_BINDING_FIELDS),
+        _STATIC_MATRIX_BINDING_FIELDS,
+        _STATIC_MATRIX_BINDING_WITH_SOURCE_FIELDS,
+    ):
+        raise TeamConfigurationError(f"{location} expected_matrix_binding fields drift")
+    result: dict[str, str] = {}
+    for field in value:
+        raw = value.get(field)
+        if not isinstance(raw, str) or not raw:
+            raise TeamConfigurationError(f"{location} expected_matrix_binding {field} is invalid")
+        result[field] = raw
+    for field in ("proof_matrix_digest", "p2a_pass_digest", "source_candidate_digest"):
+        if field not in result:
+            continue
+        if len(result[field]) != 64:
+            raise TeamConfigurationError(f"{location} expected_matrix_binding {field} is invalid")
+        try:
+            int(result[field], 16)
+        except ValueError as exc:
+            raise TeamConfigurationError(
+                f"{location} expected_matrix_binding {field} is invalid"
+            ) from exc
+    if result["proof_matrix_path"].startswith("/") or result["p2a_pass_path"].startswith("/"):
+        raise TeamConfigurationError(f"{location} expected_matrix_binding path is invalid")
+    return result
 
 
 def _yaml(path: Path) -> dict[str, Any]:
@@ -111,7 +205,10 @@ def _repo_path(
     candidate = Path(value)
     if candidate.is_absolute() or ".." in candidate.parts:
         raise TeamConfigurationError(f"{field} escapes repository")
-    resolved = (root / candidate).resolve()
+    raw = root / candidate
+    if raw.is_symlink():
+        raise TeamConfigurationError(f"{field} is unavailable: {value}")
+    resolved = raw.resolve()
     if root not in resolved.parents and resolved != root:
         raise TeamConfigurationError(f"{field} escapes repository")
     if (
@@ -225,14 +322,15 @@ def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
     root = root or repository_root()
     data = _yaml(path)
     _reject_forbidden(data, location="Profile")
-    if set(data) != {
+    profile_fields = {
         "schema_version",
         "profile_id",
         "runtime",
         "agents",
         "communication",
         "parameters",
-    }:
+    }
+    if set(data) != profile_fields and set(data) != profile_fields | {"expected_matrix_binding"}:
         raise TeamConfigurationError("Profile fields drift from schema")
     if data["schema_version"] != 1 or data["runtime"] != "codex":
         raise TeamConfigurationError(
@@ -285,6 +383,14 @@ def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
             edges.add((sender, recipient))
     if not isinstance(data["parameters"], dict):
         raise TeamConfigurationError("parameters must be an object")
+    parameter_binding = data["parameters"].get("expected_matrix_binding")
+    top_level_binding = data.get("expected_matrix_binding")
+    if parameter_binding is not None and top_level_binding is not None and parameter_binding != top_level_binding:
+        raise TeamConfigurationError("Profile expected_matrix_binding is duplicated with drift")
+    expected_matrix_binding = _expected_matrix_binding(
+        top_level_binding if top_level_binding is not None else parameter_binding,
+        location="Profile",
+    )
     modeling = next(
         (agent.package for agent in agents if agent.package.role == "modeling"), None
     )
@@ -298,52 +404,155 @@ def load_profile(path: Path, *, root: Path | None = None) -> TeamProfile:
                 "Modeling role must explicitly defer platform calls to Protocol"
             )
     return TeamProfile(
-        profile_id, "codex", tuple(agents), frozenset(edges), data["parameters"]
+        profile_id,
+        "codex",
+        tuple(agents),
+        frozenset(edges),
+        data["parameters"],
+        expected_matrix_binding,
     )
 
 
-def load_task(path: Path, *, root: Path | None = None) -> TeamTask:
+def _load_v2_source(
+    root: Path, raw: object, seen_paths: set[Path], allowed_roles: set[str]
+) -> TaskSource:
+    if not isinstance(raw, dict) or set(raw) != {"path", "classification", "roles"}:
+        raise TeamConfigurationError("v2 source fields drift from schema")
+    source = _repo_path(root, raw["path"], field="role_sources.path")
+    relative = source.relative_to(root)
+    if source in seen_paths:
+        raise TeamConfigurationError("v2 Task duplicates a source path")
+    seen_paths.add(source)
+    classification = raw["classification"]
+    roles = raw["roles"]
+    if classification not in SOURCE_CLASSIFICATIONS:
+        raise TeamConfigurationError("v2 Task source classification is invalid")
+    if not isinstance(roles, list) or not roles or any(role not in allowed_roles for role in roles):
+        raise TeamConfigurationError("v2 Task source roles are invalid")
+    if len(set(roles)) != len(roles):
+        raise TeamConfigurationError("v2 Task source duplicates a role")
+    normalized = relative.as_posix().lower()
+    forbidden = (
+        "tester-only",
+        "runtime/",
+        "delivery/",
+        "workspaces/",
+        "requirements/",
+        "historical",
+        "secret",
+    )
+    if any(token in normalized for token in forbidden):
+        raise TeamConfigurationError("v2 Task source is not Agent-visible")
+    return TaskSource(source, relative, classification, frozenset(roles))
+
+
+def load_task(
+    path: Path, *, root: Path | None = None, allowed_roles: set[str] | None = None
+) -> TeamTask:
     root = root or repository_root()
     data = _yaml(path)
     _reject_forbidden(data, location="Task")
-    if set(data) != {
+    v1_fields = {
         "schema_version",
         "task_id",
         "objective",
         "allowed_sources",
         "expected_terminal_evidence",
         "prohibitions",
-    }:
-        raise TeamConfigurationError("Task fields drift from schema")
-    if data["schema_version"] != 1 or not isinstance(data["objective"], str):
+    }
+    v2_fields = {
+        "schema_version",
+        "task_id",
+        "objective",
+        "role_sources",
+        "protocol_tools",
+        "expected_terminal_evidence",
+        "retain_nonempty",
+        "semantic_start_evidence",
+    }
+    v2_fields_with_binding = v2_fields | {"expected_matrix_binding"}
+    version = data.get("schema_version")
+    if version not in {1, 2} or not isinstance(data.get("objective"), str):
         raise TeamConfigurationError("Task schema is invalid")
-    sources = data["allowed_sources"]
-    prohibited = data["prohibitions"]
-    evidence = data["expected_terminal_evidence"]
-    if (
-        not isinstance(sources, list)
-        or not isinstance(prohibited, list)
-        or not isinstance(evidence, list)
-    ):
-        raise TeamConfigurationError("Task lists are invalid")
-    blocked = " ".join(str(item).lower() for item in prohibited)
-    if "modeling batch" not in blocked or "modeling item" not in blocked:
-        raise TeamConfigurationError(
-            "R2.3-001 Task must prohibit Modeling Items and Modeling Batch"
+    if version == 1:
+        if set(data) != v1_fields:
+            raise TeamConfigurationError("Task fields drift from schema")
+        sources = data["allowed_sources"]
+        prohibited = data["prohibitions"]
+        evidence = data["expected_terminal_evidence"]
+        if (
+            not isinstance(sources, list)
+            or not isinstance(prohibited, list)
+            or not isinstance(evidence, list)
+        ):
+            raise TeamConfigurationError("Task lists are invalid")
+        blocked = " ".join(str(item).lower() for item in prohibited)
+        if "modeling batch" not in blocked or "modeling item" not in blocked:
+            raise TeamConfigurationError(
+                "R2.3-001 Task must prohibit Modeling Items and Modeling Batch"
+            )
+        return TeamTask(
+            _safe_id(data["task_id"], "task_id"),
+            data["objective"],
+            tuple(_repo_path(root, item, field="allowed_sources") for item in sources),
+            tuple(str(item) for item in evidence),
         )
+    if set(data) != v2_fields and set(data) != v2_fields_with_binding:
+        raise TeamConfigurationError("v2 Task fields drift from schema")
+    raw_sources = data["role_sources"]
+    tools = data["protocol_tools"]
+    evidence = data["expected_terminal_evidence"]
+    start_evidence = data["semantic_start_evidence"]
+    if not all(isinstance(value, list) for value in (raw_sources, tools, evidence, start_evidence)):
+        raise TeamConfigurationError("v2 Task lists are invalid")
+    seen_paths: set[Path] = set()
+    permitted_roles = allowed_roles or ROLE_VALUES
+    sources = tuple(
+        _load_v2_source(root, value, seen_paths, permitted_roles) for value in raw_sources
+    )
+    if not sources:
+        raise TeamConfigurationError("v2 Task requires role-private sources")
+    if not all(isinstance(tool, str) and tool in SAFE_PROTOCOL_TOOLS for tool in tools):
+        raise TeamConfigurationError("v2 Task Protocol tool is not permitted")
+    if len(set(tools)) != len(tools) or not tools:
+        raise TeamConfigurationError("v2 Task Protocol tools must be unique and non-empty")
+    if not isinstance(data["retain_nonempty"], bool):
+        raise TeamConfigurationError("v2 Task retention policy is invalid")
+    expected_matrix_binding = _expected_matrix_binding(
+        data.get("expected_matrix_binding"), location="Task"
+    )
     return TeamTask(
         _safe_id(data["task_id"], "task_id"),
         data["objective"],
-        tuple(_repo_path(root, item, field="allowed_sources") for item in sources),
+        tuple(source.path for source in sources),
         tuple(str(item) for item in evidence),
+        schema_version=2,
+        role_sources=sources,
+        protocol_tools=tuple(tools),
+        retain_nonempty=data["retain_nonempty"],
+        semantic_start_evidence=tuple(str(item) for item in start_evidence),
+        expected_matrix_binding=expected_matrix_binding,
     )
 
 
 def load_team_configuration(
     profile_path: Path, task_path: Path, *, root: Path | None = None
 ) -> TeamConfiguration:
+    profile = load_profile(profile_path, root=root)
+    task = load_task(
+        task_path,
+        root=root,
+        allowed_roles={agent.package.role for agent in profile.agents},
+    )
+    if (
+        profile.expected_matrix_binding is not None
+        and task.expected_matrix_binding is not None
+        and profile.expected_matrix_binding != task.expected_matrix_binding
+    ):
+        raise TeamConfigurationError("Profile and Task expected_matrix_binding drift")
     return TeamConfiguration(
-        load_profile(profile_path, root=root), load_task(task_path, root=root)
+        profile,
+        task,
     )
 
 

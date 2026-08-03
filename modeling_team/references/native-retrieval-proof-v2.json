@@ -1,0 +1,64 @@
+{
+  "schema_version": "native-retrieval-proof/v2",
+  "top_level_fields": [
+    "mode",
+    "initial_modeling_context",
+    "final_modeling_context",
+    "workspace_context",
+    "batch_inventory",
+    "batch_details",
+    "entities_read",
+    "statements_read",
+    "candidate_required_assertions",
+    "term_bindings",
+    "materialized_quads",
+    "materialized_digest",
+    "evidence_bindings",
+    "statement_lineage",
+    "pagination"
+  ],
+  "term_binding_fields": [
+    "assertion_id",
+    "term_position",
+    "candidate_term",
+    "binding_kind",
+    "client_item_id",
+    "batch_id",
+    "applied_attempt_id",
+    "quad_digest",
+    "delta_index",
+    "resource_output_iri"
+  ],
+  "term_binding_kinds": [
+    "literal_delta",
+    "resource_output",
+    "relation_delta",
+    "vocabulary"
+  ],
+  "evidence_binding_fields": [
+    "assertion_id",
+    "citation_digest",
+    "evidence_reference_id",
+    "client_item_id",
+    "batch_id",
+    "fact_id",
+    "inline_evidence_identity",
+    "citation_group_digest"
+  ],
+  "pagination_page_fields": [
+    "stream_kind",
+    "request_fingerprint_sha256",
+    "page_index",
+    "request_cursor",
+    "next_cursor",
+    "response_digest",
+    "root_match_ids_digest",
+    "response"
+  ],
+  "materialized_digest_payload": {
+    "candidate_digest": "candidate_digest",
+    "term_bindings_digest": "sha256(sorted_term_bindings)",
+    "evidence_bindings_digest": "sha256(sorted_evidence_bindings)",
+    "materialized_quads": "sorted_materialized_quads"
+  }
+}

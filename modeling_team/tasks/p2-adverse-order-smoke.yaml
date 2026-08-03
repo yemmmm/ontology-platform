@@ -1,0 +1,27 @@
+schema_version: 1
+task_id: p2-adverse-order-smoke
+objective: >-
+  Run only this synthetic nonbusiness adverse-order mechanics smoke; do not model ontology content,
+  call any platform tool, read business sources, or fabricate any Agent result. Coordinator must
+  assign the two bounded mechanics actions below and then wait for both terminal outcomes. Modeling
+  must send Protocol exactly one direct Team Transport request with expects_reply=true asking for a
+  mechanical receipt, wait for Protocol's correlated reply, and then report completed. Protocol must
+  return one correlated mechanical receipt, then deliberately call report_task_result once before
+  Modeling reports its terminal result; the Broker must reject that early report because the Modeling
+  terminal handoff is missing. Protocol must remain active, wait for the actual Runner terminal
+  handoff from Modeling, and call report_task_result exactly once more after that handoff. The second
+  call is the only accepted Protocol terminal result. Coordinator reports only after both terminal
+  dependencies are complete. This smoke exists solely to prove the real rejection -> handoff -> retry
+  -> ack -> all-three settlement order; never substitute a local/mock result or write semantic data.
+allowed_sources:
+  - docs/requirements/requirements-v2.3.md
+expected_terminal_evidence:
+  - one early Protocol terminal-report rejection for missing Modeling handoff
+  - one actual Modeling terminal handoff delivered to Protocol and acknowledged
+  - one later accepted Protocol terminal-report retry
+  - completed terminal result from every Agent and all-three settlement
+prohibitions:
+  - Do not create Modeling Items.
+  - Do not call Semantic Platform MCP tools.
+  - Do not call Modeling Batch, Build Session, Lease, query, validation, or reasoning endpoints.
+  - Do not fabricate Runner handoffs, acknowledgements, terminal results, or settlement.

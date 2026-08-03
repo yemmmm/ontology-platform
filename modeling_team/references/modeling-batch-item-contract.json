@@ -1,0 +1,248 @@
+{
+  "schema": "modeling-batch-item-contract-v2",
+  "purpose": "Protocol-only, platform-generic construction contract for immutable Modeling Batches. This reference contains no domain model, scenario target, or acceptance answer.",
+  "batch_envelope": {
+    "additional_properties": false,
+    "fields": {
+      "session_id": {"type": "string", "required": true, "description": "MCP tool argument; identifies the Build Session."},
+      "client_batch_id": {"type": "string", "required": true, "min_length": 1},
+      "ontology_id": {"type": "string", "required": true, "min_length": 1},
+      "idempotency_key": {"type": "string", "required": true, "min_length": 1},
+      "expected_workspace_version": {"type": "string", "required": true, "min_length": 1, "invariant": "Required in every mode and must equal the current workspace version at Service submission."},
+      "items": {"type": "array", "required": true, "min_items": 1, "items": "item_envelope"},
+      "mode": {"type": "string", "required": false, "default": "apply_atomic", "enum": ["dry_run", "apply_atomic", "apply_partial"]},
+      "lease_token": {"type": ["string", "null"], "required": false, "default": null, "invariants": {"dry_run": "MUST be omitted or null", "apply_atomic": "MUST be a non-empty string", "apply_partial": "MUST be a non-empty string"}}
+    }
+  },
+  "item_envelope": {
+    "additional_properties": false,
+    "fields": {
+      "client_item_id": {"type": "string", "required": true, "min_length": 1},
+      "command_kind": {"type": "string", "required": true, "min_length": 1},
+      "payload": {"type": "object", "required": true},
+      "depends_on": {"type": "array", "items": "string", "required": false, "default": []},
+      "evidence_reference_ids": {"type": "array", "items": "string", "required": false, "default": []},
+      "evidence": {"type": "array", "items": "inline_evidence", "required": false, "default": []},
+      "rationale": {"type": ["string", "null"], "required": false, "default": null},
+      "competency_question_ids": {"type": "array", "items": "string", "required": false, "default": []}
+    }
+  },
+  "inline_evidence": {
+    "additional_properties": false,
+    "fields": {
+      "document_name": {"type": "string", "required": true, "min_length": 1},
+      "excerpt": {"type": "string", "required": true, "min_length": 1}
+    }
+  },
+  "create_payloads": {
+    "create_class": {
+      "additional_properties": false,
+      "required": ["name"],
+      "fields": {
+        "class_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
+        "description": {"type": "string", "required": false},
+        "aliases": {"type": "array", "items": "string", "required": false, "default": []},
+        "parent_class_ids": {"type": "array", "items": "string", "required": false, "default": []},
+        "external_mappings": {"type": "object", "required": false, "default": {}}
+      }
+    },
+    "create_property": {
+      "additional_properties": false,
+      "required": ["class_id", "name"],
+      "one_or_more_required": ["datatype", "object_class_id"],
+      "fields": {
+        "property_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "class_id": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type; Protocol MUST send a string"},
+        "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
+        "description": {"type": "string", "required": false},
+        "datatype": {"type": "string", "required": false, "branch": "DatatypeProperty when object_class_id is absent"},
+        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty when present; if both fields are supplied, this branch wins and datatype is ignored"}
+      }
+    },
+    "create_relation_type": {
+      "additional_properties": false,
+      "required": ["name", "source_class_id", "target_class_id"],
+      "fields": {
+        "relation_type_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "name": {"type": "string", "required": true},
+        "source_class_id": {"type": "string", "required": true},
+        "target_class_id": {"type": "string", "required": true},
+        "description": {"type": "string", "required": false},
+        "symmetric": {"type": "boolean", "required": false, "default": false},
+        "transitive": {"type": "boolean", "required": false, "default": false},
+        "scope_policy": {"type": "string", "required": false, "default": "both"},
+        "status": {"type": "string", "required": false, "default": "active"}
+      }
+    },
+    "create_shape": {
+      "additional_properties": false,
+      "required": ["target_class_id"],
+      "fields": {
+        "shape_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "target_class_id": {"type": "string", "required": true},
+        "constraints": {"type": "array", "required": false, "default": [], "items": "shape_constraint"}
+      }
+    },
+    "create_entity": {
+      "additional_properties": false,
+      "required": ["class_iri_or_legacy_id", "label"],
+      "fields": {
+        "entity_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "class_iri_or_legacy_id": {"type": "string", "required": true},
+        "label": {"type": "string", "required": true},
+        "aliases": {"type": "array", "items": "string", "required": false, "default": []},
+        "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."}
+      }
+    },
+    "create_relation": {
+      "additional_properties": false,
+      "required": ["source_entity_iri", "relation_type_iri", "target_entity_iri"],
+      "fields": {
+        "source_entity_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true},
+        "relation_type_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true},
+        "target_entity_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true}
+      }
+    }
+  },
+  "cross_batch_application_contract": {
+    "purpose": "Platform-generic, create-only topological schedule for applying one immutable semantic candidate across Modeling Batches. It adds no business semantics and does not change candidate meaning.",
+    "ordered_schedule": "class -> property/relation type -> entity -> receipt/read bind generated IDs/IRIs -> relation -> only dependency-safe Shape",
+    "stage_order": [
+      "class",
+      "property_or_relation_type",
+      "entity",
+      "receipt_or_read_bind_generated_identifiers",
+      "relation",
+      "dependency_safe_shape"
+    ],
+    "applied_stages": {
+      "class": {"command_kinds": ["create_class"], "execution": "independent dry_run then apply_atomic"},
+      "property_or_relation_type": {"command_kinds": ["create_property", "create_relation_type"], "execution": "independent dry_run then apply_atomic"},
+      "entity": {"command_kinds": ["create_entity"], "execution": "independent dry_run then apply_atomic"},
+      "relation": {"command_kinds": ["create_relation"], "execution": "independent dry_run then apply_atomic"},
+      "dependency_safe_shape": {"command_kinds": ["create_shape"], "execution": "independent dry_run then apply_atomic"}
+    },
+    "formal_binding": {
+      "workspace_version": "For every next Batch, use the current workspace version only from the immediately prior formal apply receipt or required platform read.",
+      "generated_identifiers": "Before the relation stage, bind generated resource IDs and absolute resource IRIs only from formal create receipts or required platform reads; never guess, synthesize, or forward-reference them."
+    },
+    "object_property_shape_relation_binding": {
+      "purpose": "Platform-mechanical binding for one object predicate used both by a relation and a Shape path; it adds no business semantics.",
+      "object_predicate_rule": "Any object predicate constrained by create_shape.constraints[].path_id MUST be created with create_property and object_class_id.",
+      "relation_binding": "create_relation.relation_type_iri for that predicate MUST be the formal create_property resource_iri, whose resource kind is /property/{id}.",
+      "shape_path_resolution": "The matching create_shape constraint MUST use that formal create_property resource_id as path_id; the compiler resolves it to /property/{id}.",
+      "forbidden": [
+        "Do not create_relation_type for the same predicate and then use a Shape path_id that resolves to /property/{same-id}.",
+        "Do not bind create_relation.relation_type_iri to a /relation-type/{id} IRI when the matching Shape path resolves to /property/{id}."
+      ],
+      "binding_conflict": "If the candidate requires the forbidden relation-type/Shape-path combination or the required formal property receipt is absent, return a concrete translation conflict before the write."
+    },
+    "shape_activation": "An applied active Shape immediately validates later Batches. Apply a Shape only after its target instances and every required property or relation path already exist.",
+    "candidate_invariant": "Protocol treats the Modeling candidate and its dependencies as immutable semantic input. It may schedule platform application across Batches, but must not mutate candidate meaning or reorder candidate semantics.",
+    "forbidden": [
+      "Shape-first application",
+      "unbound forward reference",
+      "semantic candidate mutation or reordering",
+      "delete or deactivate an applied Shape",
+      "weaken validation",
+      "delegate exact Batch Items to Modeling"
+    ],
+    "binding_conflict": "If a required dependency cannot be bound from a formal receipt or platform read, return a concrete translation conflict before the dangerous write."
+  },
+  "semantic_validation_invocation_contract": {
+    "purpose": "Platform-generic invocation contract for semantic validation scope selection. It contains no business semantics, scenario target, or acceptance answer.",
+    "validation_scope": {
+      "allowed": ["asserted_only", "asserted_plus_reasoning"],
+      "other_scope_conflict": "Any validation scope other than an allowed value is a concrete pre-call translation conflict; do not invoke validation."
+    },
+    "separated_validation_and_reasoning_flow": {
+      "validation_scope": "asserted_only",
+      "rule": "The R2.3-002 separated validation and reasoning flow explicitly invokes validation with asserted_only."
+    },
+    "asserted_plus_reasoning": {
+      "permitted_only_when": "The intended validation includes the reasoning result graph and a formal reasoning receipt binds its reasoning_result_graph_iri.",
+      "reasoning_result_graph_iri": "Use reasoning_result_graph_iri only when the formal reasoning receipt binds it; never guess, synthesize, or use an unbound graph IRI.",
+      "missing_graph_conflict": "If asserted_plus_reasoning is intended but the formal reasoning receipt does not bind reasoning_result_graph_iri, return a concrete pre-call translation conflict; do not invoke validation."
+    }
+  },
+  "semantic_retrieval_completion_contract": {
+    "purpose": "Platform-generic, fail-closed completion proof for ontology-scoped retrieval. It contains no business semantics, tester answer, answer count, scenario target, or expected ontology structure.",
+    "successful_receipt_requires": [
+      "ontology-scoped generic query",
+      "no truncation",
+      "required Evidence and lineage",
+      "no cross-ontology fact",
+      "successful continuation whenever paging is required"
+    ],
+    "incomplete_conditions": [
+      "truncation",
+      "missing Evidence or lineage",
+      "cross-ontology fact",
+      "invalid or failed continuation",
+      "unknown or insufficient response capacity",
+      "receipt/read count, identity, workspace, delta, or ownership drift"
+    ],
+    "fallback": {
+      "allowed": "For an eligible fresh-create scope only, an incomplete, degraded, or truncated generic query MUST use this generic ontology-scoped fallback in the ordered sequence below; it must not directly return a terminal retrieval-completeness conflict. Absence of warnings is never proof of completeness.",
+      "mandatory_sequence": [
+        "A generic query result with complete=true is successful retrieval evidence.",
+        "For an eligible fresh-create incomplete, degraded, or truncated generic query, collect every formal proof response below unmodified.",
+        "Call the native Protocol-only MCP verifier verify_scoped_retrieval_fallback with that formal proof before deciding terminal conflict.",
+        "A native verifier result with complete=true is successful retrieval evidence.",
+        "Only after a native verifier tool/protocol error or incomplete result, fail closed with a terminal retrieval-completeness conflict."
+      ],
+      "formal_response_envelopes": "Supply every MCP result unmodified as its full {ok,data} envelope. ok must be true and data must be an object; the verifier reads only data.*. Never project plausible response fields to the envelope root.",
+      "fresh_create_precondition": "Bind selected Ontology identity at data.ontology.id and authoritative counts from initial/final get_modeling_context responses. The final stable workspace context must bind ontology_id, default_graph_set_id, source_signature, and exact asserted_ontology/asserted_data/shapes members/owners; it is read evidence, not a workspace mutation. Prove the initial authoritative counts are zero.",
+      "batch_inventory_and_details": "After Session writes are stable, supply one unfiltered no-cursor Session Batch inventory whose requested limit exceeds returned count and whose IDs exactly equal get_modeling_batch detail IDs. A write Batch has exactly one applied apply_atomic Attempt; a non-write validation Batch has only dry_run Attempts in validated or validation_failed state. Rejected dry-run probes remain in inventory but never contribute applied state.",
+      "normalized_deltas": "Read commands/resource outputs from immutable Batch detail Items and normalized_delta, delta_hash, and workspace versions from the applied Attempt. Require canonical delta-hash equality, a contiguous applied workspace chain, create-only inserts, and exact command-to-graph roles: schema to asserted_ontology, entities/relations to asserted_data, Shapes to the exact shapes member.",
+      "facts_read": "The unmodified statement-list envelope must bind the final workspace graph_set_id/source_signature, model_name=statement-list, include=asserted, and exact asserted-data source_graph_iri on every row. Reconstruct canonical platform fact IDs from applied delta quads and raw statement metadata, then require exact set equality. The generic row may omit fact_id; if it supplies one, it must equal the computed ID and never replaces it. The effective capacity min(requested_limit,1000) must be strictly greater than expected count; expected count at or above 1000 blocks. Missing and extra same-subject facts both block.",
+      "relation_and_entity_counts": "Compute distinct relation sources from exact relation Item payload triples and equal the authoritative relation count. The unmodified entity-list envelope must bind the final workspace graph_set_id/source_signature, model_name=entity-list, include=asserted, and exact asserted-data source_graph_iri on every row; its iri set equals formal entity output IRIs and the authoritative entity count.",
+      "candidate_assertions": "Every candidate-required assertion is an exact current asserted-data quad/computed fact ID. Its lineage request record retains that computed ID, and its full statement lineage response must bind the Ontology, statement target and ID, matching quad, data-graph technical trace, origins, and supporting Evidence without truncation.",
+      "candidate_required_assertions_contract": {
+        "schema_version": "candidate-required-assertions/v1",
+        "item_fields": ["graph_role", "subject", "predicate", "object", "object_kind", "object_datatype", "object_language"],
+        "graph_role": "asserted_data",
+        "platform_neutral": true,
+        "forbidden_item_fields": ["source_graph_iri", "fact_id", "workspace_version", "receipt", "platform_id", "platform_iri"],
+        "canonical_json": "UTF-8 json.dumps(ensure_ascii=False, sort_keys=True, separators=(\",\", \":\"))",
+        "semantic_digest_payload": {"schema_version": "candidate-required-assertions/v1", "statements": "sorted_items"},
+        "candidate_digest_fields": ["schema_version", "candidate_revision", "delivery_id", "reply_chain", "semantic_digest"],
+        "materialized_quad_fields": ["graph_role", "source_graph_iri", "subject", "predicate", "object", "object_kind", "object_datatype", "object_language"],
+        "materialized_digest_payload": {"candidate_digest": "candidate_digest", "quads": "sorted_materialized_quads"},
+        "fact_id_owner": "Protocol"
+      },
+      "native_proof_nested_contract": {
+        "top_level_fields": ["mode", "initial_modeling_context", "final_modeling_context", "workspace_context", "batch_inventory", "batch_details", "entities_read", "statements_read", "candidate_required_assertions", "statement_lineage"],
+        "candidate_required_assertions_fields": ["schema_version", "candidate_revision", "delivery_id", "reply_chain", "semantic_digest", "candidate_digest", "items", "materialized_digest", "materialized_quads"],
+        "statement_lineage_fields": ["schema_version", "candidate_revision", "delivery_id", "reply_chain", "semantic_digest", "candidate_digest", "materialized_digest", "max_depth", "records"],
+        "lineage_record_fields": ["fact_id", "quad", "response"],
+        "max_depth": "integer 0..5",
+        "vacuous_create": "reject"
+      },
+      "cursor": "The stable unfiltered Session Batch inventory must have no next_cursor. A non-null inventory cursor is a blocker; statement-list is a bounded read-model envelope and supplies no synthetic cursor/truncation receipt.",
+      "deterministic_helper": {
+        "mcp_server": "protocol_mechanics",
+        "tool": "verify_scoped_retrieval_fallback",
+        "command": "/usr/bin/python3 /opt/protocol-retrieval-mcp.py",
+        "rule": "Call this native Protocol-only MCP tool with the ten mechanical proof fields as direct arguments, never under a proof wrapper and with no missing or extra field, before deciding terminal conflict. The mode field MUST equal the exact string create; fresh_create is not accepted. The wrapper rejects malformed arguments with -32602. A complete=true result is successful retrieval evidence; only a tool/protocol error or incomplete result fails closed as a retrieval-completeness conflict."
+      }
+    },
+    "conflict": "An eligible fresh-create incomplete, degraded, or truncated generic query must not directly return this conflict: collect the formal proof and call the native verifier first. A generic query or native verifier complete=true result is successful retrieval evidence. Only a native verifier tool/protocol error or incomplete result returns a concrete retrieval-completeness conflict; do not return a successful receipt otherwise."
+  },
+  "shape_constraint": {
+    "type": "object",
+    "required": ["path_id"],
+    "additional_properties": "accepted-and-ignored-by-current-compiler",
+    "fields": {
+      "path_id": {"type": "string", "required": true, "server_current_acceptance": "compiler requires presence but does not prevalidate scalar type; Protocol MUST send a string"},
+      "min_count": {"type": "integer", "required": false, "compiler_behavior": "integer coercion; numeric strings are currently accepted, but Protocol MUST send an integer"},
+      "max_count": {"type": "integer", "required": false, "compiler_behavior": "integer coercion; numeric strings are currently accepted, but Protocol MUST send an integer"},
+      "datatype": {"type": "string", "required": false},
+      "pattern": {"type": "string", "required": false},
+      "description": {"type": "string", "required": false},
+      "enum_values": {"type": "array", "required": false, "items": "json-scalar"}
+    }
+  },
+  "forbidden_target_fields": ["actor", "graph_iri", "graph_set_id", "ontology_id", "shape_graph_iris", "target_graph_iri"]
+}

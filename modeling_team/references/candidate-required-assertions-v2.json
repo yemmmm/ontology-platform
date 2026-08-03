@@ -1,0 +1,54 @@
+{
+  "schema_version": "candidate-required-assertions/v2",
+  "candidate_fields": [
+    "schema_version",
+    "candidate_revision",
+    "delivery_id",
+    "reply_chain",
+    "semantic_digest",
+    "candidate_digest",
+    "items"
+  ],
+  "item_fields": [
+    "assertion_id",
+    "graph_role",
+    "subject",
+    "predicate",
+    "object",
+    "object_kind",
+    "object_datatype",
+    "object_language",
+    "evidence_citations"
+  ],
+  "citation_fields": [
+    "document_name",
+    "excerpt",
+    "source_artifact_sha256",
+    "source_locator",
+    "excerpt_sha256",
+    "owner_answer_id"
+  ],
+  "semantic_digest_payload": {
+    "schema_version": "candidate-required-assertions/v2",
+    "statements": "sorted_items"
+  },
+  "candidate_digest_payload": {
+    "schema_version": "schema_version",
+    "candidate_revision": "candidate_revision",
+    "delivery_id": "delivery_id",
+    "reply_chain": "reply_chain",
+    "semantic_digest": "semantic_digest"
+  },
+  "evidence_map": {
+    "schema_version": "r2-3-002-candidate-item-evidence-map/v1",
+    "row_fields": [
+      "assertion_id",
+      "citation_digest",
+      "client_item_id",
+      "document_name",
+      "excerpt_sha256",
+      "inline_evidence_identity",
+      "citation_group_digest"
+    ]
+  }
+}

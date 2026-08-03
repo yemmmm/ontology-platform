@@ -1,0 +1,42 @@
+{
+  "schema_version": "native-retrieval-proof/v1",
+  "top_level_fields": [
+    "mode",
+    "initial_modeling_context",
+    "final_modeling_context",
+    "workspace_context",
+    "batch_inventory",
+    "batch_details",
+    "entities_read",
+    "statements_read",
+    "candidate_required_assertions",
+    "statement_lineage"
+  ],
+  "candidate_required_assertions_fields": [
+    "schema_version",
+    "candidate_revision",
+    "delivery_id",
+    "reply_chain",
+    "semantic_digest",
+    "candidate_digest",
+    "items",
+    "materialized_digest",
+    "materialized_quads"
+  ],
+  "statement_lineage_fields": [
+    "schema_version",
+    "candidate_revision",
+    "delivery_id",
+    "reply_chain",
+    "semantic_digest",
+    "candidate_digest",
+    "materialized_digest",
+    "max_depth",
+    "records"
+  ],
+  "lineage_record_fields": ["fact_id", "quad", "response"],
+  "max_depth": {"minimum": 0, "maximum": 5},
+  "envelope": {"required": ["ok", "data"], "ok": true, "data_type": "object"},
+  "proof_wrapper": false,
+  "vacuous_create": false
+}

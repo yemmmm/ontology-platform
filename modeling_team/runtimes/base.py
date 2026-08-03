@@ -28,6 +28,9 @@ class RuntimeDelivery:
     recipient_id: str
     kind: str
     text: str
+    delivery_id: str | None = None
+    expects_reply: bool = False
+    reply_to_delivery_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,8 +40,17 @@ class AgentState:
 
 
 class RuntimeAdapter(ABC):
+    def terminal_report_blocked(
+        self, agent_id: str, already_synchronized: bool = False
+    ) -> bool:
+        """Return whether a terminal report must be rejected before broker mutation."""
+        del agent_id, already_synchronized
+        return False
+
     @abstractmethod
     def start_roster(self, run: Any, agents: Any) -> list[AgentRuntimeIdentity]: ...
+    @abstractmethod
+    def probe_role_visibility(self, run: Any) -> dict[str, Any]: ...
     @abstractmethod
     def start_task(
         self, agent_id: str, task_text: str, skill_paths: list[str], roster: list[str]

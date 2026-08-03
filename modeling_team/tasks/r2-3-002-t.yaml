@@ -1,0 +1,77 @@
+schema_version: 2
+task_id: r2-3-002-t
+objective: >-
+  Execute the bounded published Dify Workflow-as-Tool C -> B -> A slice from the frozen
+  role-private sources. Coordinator assigns work and asks one grounded question at a time;
+  Modeling owns ontology semantics and sends candidates to Protocol. Protocol alone performs
+  immutable dry_run then apply_atomic, records inline Evidence, reads receipts, lineage and all
+  pagination, runs validation/reasoning, and completes the native v2 retrieval verifier. Do not
+  invent unavailable facts or infer a concrete Tool version without a grounded owner answer.
+  Preserve explicit unknowns and retain every rejected Shape dry-run receipt without workspace
+  movement. The candidate must use the frozen 48-row assertion matrix IDs and citations exactly.
+role_sources:
+  - path: modeling_team/references/modeling-batch-item-contract.json
+    classification: protocol
+    roles: [protocol]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
+    classification: consumer-question
+    roles: [coordinator, modeling]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/public-protocol.md
+    classification: protocol
+    roles: [protocol]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx
+    classification: business-source
+    roles: [coordinator, modeling]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/exception-handling.md
+    classification: business-source
+    roles: [coordinator, modeling]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/interface-notes.md
+    classification: business-source
+    roles: [coordinator, modeling]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/release-register.md
+    classification: business-source
+    roles: [coordinator, modeling]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/workflow-landscape.md
+    classification: business-source
+    roles: [coordinator, modeling]
+protocol_tools:
+  - check_platform_health
+  - get_project_build_context
+  - get_ontology_workspace_context
+  - create_build_session
+  - get_build_session
+  - save_build_checkpoint
+  - complete_build_session
+  - cancel_build_session
+  - acquire_ontology_lease
+  - renew_ontology_lease
+  - release_ontology_lease
+  - submit_modeling_batch
+  - get_modeling_batch
+  - list_session_modeling_batches
+  - list_ontology_modeling_batches
+  - get_modeling_context
+  - get_ontology_read_model
+  - query_semantic_context
+  - run_semantic_validation
+  - run_semantic_reasoning
+  - get_ontology_lineage
+  - inspect_semantic_statement_provenance
+expected_terminal_evidence:
+  - direct Modeling-to-Protocol semantic delivery and Protocol receipt or conflict feedback
+  - immutable Modeling Batch dry_run and apply_atomic receipts
+  - rejected Shape-negative dry_run receipt with unchanged workspace
+  - completed or blocked result from every Agent
+  - complete native v2 retrieval verifier proof
+retain_nonempty: true
+semantic_start_evidence:
+  - role-visible source manifest
+  - passed role visibility probes
+  - frozen runtime baseline manifest
+  - fixed matrix and independent P2a gate binding
+expected_matrix_binding:
+  proof_matrix_path: modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json
+  proof_matrix_digest: db6383a114f94a2c47bf28be52ca1eb88dce5e553a037c5fb407912d0882508b
+  p2a_pass_path: workspaces/modeling-runs/.r2-3-002-proof-v2-gates/p2a-pass.json
+  source_run_id: r23002-real-20260801s
+  source_candidate_digest: 7bfb8f5b10338b9a8ba8dc0a33fcdf69d64060d0c4f184c855373733a366f471

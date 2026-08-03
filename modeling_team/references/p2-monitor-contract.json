@@ -1,0 +1,30 @@
+{
+  "schema_version": "p2-monitor-contract/v1",
+  "command": "uv",
+  "argv": [
+    "run",
+    "--project",
+    "backend",
+    "python",
+    "-m",
+    "modeling_team.foreground_monitor",
+    "--contract",
+    "modeling_team/references/p2-monitor-contract.json"
+  ],
+  "required_stages": [
+    "monitor_started",
+    "foreground_started",
+    "parent_pm_boundary",
+    "agent_terminal_settled",
+    "secret_absent",
+    "monitor_stopped"
+  ],
+  "parent_pm_boundary_count": 1,
+  "evidence_mode": "append_only_run_local",
+  "secret_targets": ["auth.json", "config.toml", "temporary_credentials"],
+  "resource_policy": "at_most_one_owned_ephemeral_scope",
+  "adverse_order_profile": "modeling_team/profiles/p2-adverse-order-smoke.yaml",
+  "adverse_order_task": "modeling_team/tasks/p2-adverse-order-smoke.yaml",
+  "adverse_order_extractor": "modeling_team.foreground_monitor.extract_adverse_order",
+  "adverse_order_evidence": "evidence/p2-adverse-order.jsonl"
+}

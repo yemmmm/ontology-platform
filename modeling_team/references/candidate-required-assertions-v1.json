@@ -1,0 +1,46 @@
+{
+  "schema_version": "candidate-required-assertions/v1",
+  "item_fields": [
+    "graph_role",
+    "subject",
+    "predicate",
+    "object",
+    "object_kind",
+    "object_datatype",
+    "object_language"
+  ],
+  "graph_role": "asserted_data",
+  "optional_term_types": ["string", "null"],
+  "canonical_json": {
+    "encoding": "utf-8",
+    "ensure_ascii": false,
+    "sort_keys": true,
+    "separators": [",", ":"]
+  },
+  "semantic_digest_payload": {
+    "schema_version": "candidate-required-assertions/v1",
+    "statements": "sorted_items"
+  },
+  "candidate_digest_fields": [
+    "schema_version",
+    "candidate_revision",
+    "delivery_id",
+    "reply_chain",
+    "semantic_digest"
+  ],
+  "materialized_quad_fields": [
+    "graph_role",
+    "source_graph_iri",
+    "subject",
+    "predicate",
+    "object",
+    "object_kind",
+    "object_datatype",
+    "object_language"
+  ],
+  "materialized_digest_payload": {
+    "candidate_digest": "candidate_digest",
+    "quads": "sorted_materialized_quads"
+  },
+  "fact_id_owner": "Protocol"
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "p2-monitor-handoff/v1",
+  "environment": "ONTOLOGY_P2_MONITOR_HANDOFF",
+  "runner_phases": ["prepared", "cleanup_pending", "failed"],
+  "monitor_phases": ["extraction_complete", "extraction_failed"],
+  "phase_deadlines_seconds": {
+    "prepared": 30.0,
+    "foreground_run": 120.0,
+    "extraction_complete": 30.0
+  },
+  "handoff_root_mode": 448,
+  "handoff_file_mode": 384,
+  "nonce_bytes": 16,
+  "runner_to_monitor_directory": "runner-to-monitor",
+  "monitor_to_runner_directory": "monitor-to-runner",
+  "environment_payload": "handoff-root-directory"
+}
