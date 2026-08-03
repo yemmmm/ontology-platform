@@ -48,6 +48,17 @@ _RETRIEVAL_BLOCKING_WARNINGS = frozenset(
     }
 )
 
+_PRIVATE_AGENT_BASE_ARTIFACT_NAMES = (
+    "auth.json",
+    "config.toml",
+    "runner-capabilities.json",
+)
+_PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES = (
+    "runner-capability.token",
+    "runner-capability.sock",
+    "runner_capability_mcp.py",
+)
+
 
 @dataclass
 class _Agent:
@@ -2634,23 +2645,41 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     except (ProcessLookupError, PermissionError):
                         agent.process.kill()
                     agent.process.wait(timeout=5)
-            for name in ("auth.json", "config.toml", "runner-capabilities.json"):
+            artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
+            if self._coordination_enabled:
+                artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
+            cleanup_ok = True
+            for name in artifact_names:
                 credential = agent.home / name
-                credential.unlink(missing_ok=True)
-            self._private_credentials_destroyed[agent.agent_id] = True
+                try:
+                    credential.unlink(missing_ok=True)
+                except OSError:
+                    cleanup_ok = False
+            residual = any(
+                (agent.home / name).exists() or (agent.home / name).is_symlink()
+                for name in artifact_names
+            )
+            self._private_credentials_destroyed[agent.agent_id] = cleanup_ok and not residual
             agent.state = "stopped"
 
     def cleanup_identifiers(self) -> dict[str, Any]:
-        return {
-            key: {
+        identifiers = {}
+        artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
+        if self._coordination_enabled:
+            artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
+        for key, value in self.agents.items():
+            private_credentials_destroyed = self._private_credentials_destroyed.get(key, False)
+            if private_credentials_destroyed:
+                private_credentials_destroyed = not any(
+                    (value.home / name).exists() or (value.home / name).is_symlink()
+                    for name in artifact_names
+                )
+            identifiers[key] = {
                 "thread_id": value.thread_id,
                 "pid": value.process.pid if value.process else None,
-                "private_credentials_destroyed": self._private_credentials_destroyed.get(
-                    key, False
-                ),
+                "private_credentials_destroyed": private_credentials_destroyed,
             }
-            for key, value in self.agents.items()
-        } | {
+        return identifiers | {
             "acceptance_children": {
                 "active": len(self._acceptance_children),
                 "zero_residue": not self._acceptance_children,

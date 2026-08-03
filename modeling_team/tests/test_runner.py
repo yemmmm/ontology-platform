@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from shutil import rmtree
 from pathlib import Path
 from io import StringIO
@@ -90,6 +91,178 @@ class GuardingAdapter(CapturingAdapter):
 
 
 class RunnerTests(unittest.TestCase):
+    def test_cleanup_caches_success_evidence_and_short_circuits_side_effects(self) -> None:
+        class CountingAdapter:
+            def __init__(self) -> None:
+                self.stop_calls = 0
+                self.identifier_calls = 0
+
+            def stop(self) -> None:
+                self.stop_calls += 1
+
+            def cleanup_identifiers(self) -> dict[str, object]:
+                self.identifier_calls += 1
+                return {"runtime": {"nested": {"preserved": True}}}
+
+        class CountingAcceptance:
+            is_settled = False
+
+            def __init__(self) -> None:
+                self.abort_calls = 0
+
+            def abort_cleanup(self, _reason: str) -> dict[str, object]:
+                self.abort_calls += 1
+                return {
+                    "status": "aborted",
+                    "aborted_reason": "runner-abort-before-settlement",
+                }
+
+        class CountingScope:
+            def __init__(self) -> None:
+                self.cleanup_calls = 0
+
+            def cleanup(self) -> dict[str, object]:
+                self.cleanup_calls += 1
+                return {
+                    "scope_disposition": "deleted",
+                    "aggregate_keys_non_active": self.cleanup_calls == 1,
+                }
+
+        class CountingTransport:
+            def __init__(self) -> None:
+                self.stop_calls = 0
+
+            def stop(self) -> None:
+                self.stop_calls += 1
+
+        class CountingLedger:
+            requirement_id = "R2.3-005"
+            identity = {"reservation_id": "cleanup-cache-reservation"}
+
+            def __init__(self) -> None:
+                self.release_calls = 0
+
+            def release_presemantic(self, _run_id: str, _reason: str) -> None:
+                self.release_calls += 1
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = repository_root()
+            run_root = Path(directory) / "run"
+            (run_root / "evidence").mkdir(parents=True)
+            (run_root / "secrets").mkdir()
+            runner = TeamRunner(repository_root=root, adapter=CountingAdapter())
+            runner.run = SimpleNamespace(
+                run_id="cleanup-cache-run",
+                root=run_root,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        schema_version=2,
+                        task_id="r2-3-005-formal-acceptance",
+                    ),
+                    profile=SimpleNamespace(profile_id="r2-3-005-modeling-team"),
+                ),
+                terminal_results=None,
+            )
+            runner.acceptance = CountingAcceptance()
+            runner.scope = CountingScope()
+            runner.transport = CountingTransport()
+            runner._ledger = CountingLedger()
+
+            first = runner.cleanup()
+            expected = deepcopy(first)
+            snapshots = {
+                name: (run_root / name).read_bytes()
+                for name in (
+                    "state.json",
+                    "evidence/aborted.jsonl",
+                    "evidence/start-ledger.jsonl",
+                    "evidence/runtime-core-hashes.jsonl",
+                )
+            }
+            first["scope"]["aggregate_keys_non_active"] = False
+            first["runtime"]["runtime"] = "mutated"
+            second = runner.cleanup()
+            self.assertEqual(second, expected)
+            second["scope"]["aggregate_keys_non_active"] = False
+            third = runner.cleanup()
+            self.assertEqual(third, expected)
+
+            adapter = runner.adapter
+            self.assertEqual(adapter.stop_calls, 1)
+            self.assertEqual(adapter.identifier_calls, 1)
+            self.assertEqual(runner.acceptance.abort_calls, 1)
+            self.assertEqual(runner.scope.cleanup_calls, 1)
+            self.assertEqual(runner.transport.stop_calls, 1)
+            self.assertEqual(runner._ledger.release_calls, 1)
+            for name, snapshot in snapshots.items():
+                self.assertEqual(snapshot, (run_root / name).read_bytes())
+
+    def test_cleanup_failure_does_not_cache_and_explicit_retry_runs(self) -> None:
+        class RetryAdapter:
+            def __init__(self) -> None:
+                self.stop_calls = 0
+                self.identifier_calls = 0
+
+            def stop(self) -> None:
+                self.stop_calls += 1
+                if self.stop_calls == 1:
+                    raise RuntimeError("first cleanup stop failed")
+
+            def cleanup_identifiers(self) -> dict[str, object]:
+                self.identifier_calls += 1
+                return {"runtime": {"private_credentials_destroyed": True}}
+
+        adapter = RetryAdapter()
+        runner = TeamRunner(repository_root=repository_root(), adapter=adapter)
+        with self.assertRaisesRegex(RuntimeError, "first cleanup stop failed"):
+            runner.cleanup()
+        self.assertIsNone(runner._cleanup_evidence_cache)
+        result = runner.cleanup()
+        self.assertEqual(
+            result,
+            {"runtime": {"runtime": {"private_credentials_destroyed": True}}},
+        )
+        self.assertEqual(adapter.stop_calls, 2)
+        self.assertEqual(adapter.identifier_calls, 1)
+
+    def test_cleanup_without_run_does_not_poison_later_prepared_run(self) -> None:
+        class CountingAdapter:
+            def __init__(self) -> None:
+                self.stop_calls = 0
+                self.identifier_calls = 0
+
+            def stop(self) -> None:
+                self.stop_calls += 1
+
+            def cleanup_identifiers(self) -> dict[str, object]:
+                self.identifier_calls += 1
+                return {"runtime": {"private_credentials_destroyed": True}}
+
+        root = repository_root()
+        run_id = f"cleanup-cache-no-run-{__import__('uuid').uuid4().hex}"
+        run_root = root / "workspaces" / "modeling-runs" / run_id
+        adapter = CountingAdapter()
+        runner = TeamRunner(repository_root=root, adapter=adapter)
+        try:
+            self.assertEqual(
+                runner.cleanup(),
+                {"runtime": {"runtime": {"private_credentials_destroyed": True}}},
+            )
+            self.assertIsNone(runner._cleanup_evidence_cache)
+            runner.prepare(
+                run_id=run_id,
+                profile_path=root / "modeling_team/profiles/base-three-agent.yaml",
+                task_path=root / "modeling_team/tasks/base-capability-smoke.yaml",
+                scope={"mode": "create"},
+            )
+            runner.cleanup()
+            self.assertEqual(adapter.stop_calls, 2)
+            self.assertEqual(adapter.identifier_calls, 2)
+            self.assertIsNotNone(runner._cleanup_evidence_cache)
+        finally:
+            if run_root.exists():
+                rmtree(run_root)
+
     def test_runner_transport_observer_writes_exact_events_for_extractor(self) -> None:
         root = repository_root()
         run_id = f"transport-events-{__import__('uuid').uuid4().hex}"

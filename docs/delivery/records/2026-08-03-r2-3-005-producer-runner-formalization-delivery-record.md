@@ -1235,3 +1235,48 @@
 - Outcome/next step: create a new clean stable commit. The Delivery Operator may then load the existing
   permission-600 bootstrap `api_key` into the single formal CLI environment without disclosure; successful
   prepare must scrub it before the one authorized semantic start.
+
+### 2026-08-03 — First CLI invocation failed presemantic — Main agent
+
+- Stable commit `0f9c1fbab902f3137475d9480629ddf8237cdcab` passed a third read-only preflight using the existing
+  permission-600 bootstrap artifact. Authenticated canonical mode returned HTTP 200 with canonical RDF,
+  `rdf_primary` product writes and canonical reads; backend/frontend health and service/PID/process environment
+  binding passed. The key was not logged or persisted and the formal CLI ordering test proved it would be scrubbed.
+- Delivery invoked run `r23005-real-20260803t133845z` once in one retained PTY. It reserved the new R2.3-005
+  ledger, created the fresh empty scope and started runtime initialization, then exited code 2 with the fixed
+  console error `Skill discovery reported an error` before `mark_semantic_start` or any Agent task turn.
+- Cleanup appended `reservation` then `presemantic_release`; the new ledger remained at zero semantic starts,
+  cap one and zero active reservations. The old R2.3-002 ledger hash and 18/18 history were unchanged. The fresh
+  Project/Ontology were deleted, Session/Lease inventories returned to baseline and the new admin key was revoked;
+  no second invocation was attempted.
+- Raw failure evidence is retained under
+  `workspaces/modeling-runs/r23005-real-20260803t133845z/`. The Operator summary records the exact run/session,
+  ledger and cleanup facts without bootstrap-secret matches. This is `runtime/infrastructure`, not a modeling or
+  Acceptance verdict, and it consumed zero of the one authorized semantic starts.
+
+### 2026-08-03 — Skill discovery, capability residue and duplicate-cleanup defects closed — Main agent
+
+- The Acceptance Skill lacked the YAML frontmatter required by Codex discovery. It now has only the standard
+  `name: acceptance` and generic description metadata; its semantic instructions are unchanged. Deterministic
+  tests require every formal role's sole Skill to have parseable frontmatter whose name matches its staged
+  directory, and exercise the exact `skills/list` discovery shape without relaxing runtime errors.
+- Live cleanup also retained two mode-0400 `runner-capability.token` files while reporting private credentials
+  destroyed. Formal Adapter stop now removes the token, empty socket mount point and capability MCP copy after
+  process termination, remains idempotent, and computes `private_credentials_destroyed` from actual absence.
+  Unlink failure or later residue reports false; raw SQLite runtime evidence remains retained and non-formal
+  cleanup keeps its previous artifact contract.
+- Database inspection proved both protocol/admin keys were revoked. The false final
+  `aggregate_keys_non_active=false` came from two Runner cleanup calls: the start exception cleaned correctly,
+  then CLI cleanup reran PlatformScope after its key fields were cleared and overwrote state. `PlatformScope` was
+  not changed. Runner now caches a deep copy of the first successful cleanup evidence for an actual run; later
+  calls return independent copies without repeating Adapter/Acceptance/scope/transport/ledger/state effects.
+  A failed first cleanup is not cached, and cleanup before any run does not poison a later prepare.
+- GitNexus classified Adapter stop MEDIUM (8 affected / five direct / zero processes), cleanup identifiers LOW,
+  Runner cleanup HIGH (21 / 19 / zero) and Runner start HIGH (135 / 14 / zero). The user was warned before the
+  HIGH change; `start`, CLI and PlatformScope remained untouched. Skill/token focused tests passed 5/5,
+  `test_codex_isolation` 44/44, Runner focused 3/3, combined R2.3/Codex/Runner 129/129 and complete
+  `modeling_team` discovery 253/253. Ruff, `git diff --check` and final `detect_changes` passed with LOW worktree
+  risk and zero affected processes.
+- Outcome/next step: form a clean repair commit and repeat the formal CLI with a fresh run ID and freeze time.
+  Because the failed invocation released its reservation before semantic start, the same sole R2.3-005 semantic
+  budget remains available; a retry is not a second modeling start.

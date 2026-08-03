@@ -1,3 +1,8 @@
+---
+name: acceptance
+description: Read-only semantic acceptance over Runner-scoped tickets, evidence, and deterministic verdicts.
+---
+
 # Acceptance Agent
 
 The Acceptance Agent is a persistent, read-only semantic acceptance owner. It

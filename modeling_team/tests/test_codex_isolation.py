@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 from modeling_team.contracts import _load_package, load_team_configuration, repository_root
 from modeling_team.protocol_mcp_launch import canonical_protocol_mcp_mode_contract, protocol_mcp_launch_spec
 from modeling_team.protocol_mechanics import protocol_mechanics_contract, protocol_mechanics_contract_bytes
@@ -701,6 +703,186 @@ class CodexIsolationTests(unittest.TestCase):
             adapter.stop()
             self.assertFalse((agent.home / "auth.json").exists())
             self.assertFalse((agent.home / "config.toml").exists())
+            self.assertTrue(adapter.cleanup_identifiers()["modeling"]["private_credentials_destroyed"])
+
+    def test_formal_required_skills_have_frontmatter_and_pass_discovery_preflight(self) -> None:
+        root = repository_root()
+        configuration = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        self.assertEqual(
+            [agent.package.role for agent in configuration.profile.agents],
+            ["coordinator", "modeling", "protocol", "acceptance"],
+        )
+        for profile_agent in configuration.profile.agents:
+            self.assertEqual(len(profile_agent.package.required_skills), 1)
+            skill_path = profile_agent.package.required_skills[0]
+            text = skill_path.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("---\n"), skill_path)
+            _, raw_frontmatter, _ = text.split("---", 2)
+            metadata = yaml.safe_load(raw_frontmatter)
+            self.assertIsInstance(metadata, dict)
+            self.assertEqual(metadata.get("name"), skill_path.parent.name)
+            self.assertIsInstance(metadata.get("description"), str)
+            self.assertTrue(metadata["description"].strip())
+
+        for profile_agent in configuration.profile.agents:
+            agent = _Agent(
+                profile_agent.agent_id,
+                profile_agent.package,
+                root / "tmp-home",
+                root / "tmp-work",
+                root / "tmp-skills",
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+
+            def fake_rpc(_agent, method, _params):
+                if method == "skills/list":
+                    return {
+                        "data": [
+                            {
+                                "skills": [
+                                    {
+                                        "name": path.parent.name,
+                                        "path": f"/skills/{path.parent.name}/SKILL.md",
+                                        "enabled": True,
+                                    }
+                                    for path in profile_agent.package.required_skills
+                                ]
+                            }
+                        ]
+                    }
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-skill-preflight"}}
+                return {}
+
+            adapter._rpc = fake_rpc  # type: ignore[method-assign]
+            adapter._require_expected_mcp_servers = lambda _agent: None  # type: ignore[method-assign]
+            adapter._initialize(agent)
+            self.assertEqual(agent.thread_id, "thread-skill-preflight")
+
+    def test_formal_stop_destroys_capability_material_and_is_idempotent(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            agents = {}
+            private_names = (
+                "auth.json",
+                "config.toml",
+                "runner-capabilities.json",
+                "runner-capability.token",
+                "runner-capability.sock",
+                "runner_capability_mcp.py",
+            )
+            for role in ("coordinator", "acceptance"):
+                home = base / role / "home"
+                home.mkdir(parents=True)
+                for name in private_names:
+                    path = home / name
+                    path.write_text("private", encoding="utf-8")
+                    if name == "runner-capability.token":
+                        path.chmod(0o400)
+                    elif name == "runner_capability_mcp.py":
+                        path.chmod(0o444)
+                evidence = home / "goals_1.sqlite"
+                evidence.write_text("raw-runtime-evidence", encoding="utf-8")
+                agents[role] = _Agent(
+                    role,
+                    _load_package(root, role),
+                    home,
+                    base / role / "work",
+                    base / role / "skills",
+                )
+
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._coordination_enabled = True
+            adapter.agents = agents
+            adapter.stop()
+            first = adapter.cleanup_identifiers()
+            for agent in agents.values():
+                for name in private_names:
+                    self.assertFalse((agent.home / name).exists())
+                    self.assertFalse((agent.home / name).is_symlink())
+                self.assertTrue((agent.home / "goals_1.sqlite").exists())
+                self.assertTrue(first[agent.agent_id]["private_credentials_destroyed"])
+
+            adapter.stop()
+            second = adapter.cleanup_identifiers()
+            self.assertEqual(first, second)
+
+    def test_formal_stop_reports_residual_capability_material(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            home.mkdir()
+            for name in (
+                "auth.json",
+                "config.toml",
+                "runner-capabilities.json",
+                "runner-capability.token",
+                "runner-capability.sock",
+                "runner_capability_mcp.py",
+            ):
+                (home / name).write_text("private", encoding="utf-8")
+            agent = _Agent(
+                "coordinator",
+                _load_package(root, "coordinator"),
+                home,
+                Path(directory) / "work",
+                Path(directory) / "skills",
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._coordination_enabled = True
+            adapter.agents[agent.agent_id] = agent
+            original_unlink = Path.unlink
+
+            def fail_token_unlink(path: Path, *, missing_ok: bool = False) -> None:
+                if path.name == "runner-capability.token":
+                    raise PermissionError("token is retained")
+                original_unlink(path, missing_ok=missing_ok)
+
+            with patch.object(Path, "unlink", new=fail_token_unlink):
+                adapter.stop()
+            self.assertTrue((home / "runner-capability.token").exists())
+            self.assertFalse(
+                adapter.cleanup_identifiers()["coordinator"]["private_credentials_destroyed"]
+            )
+
+    def test_nonformal_stop_preserves_formal_capability_material(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            home.mkdir()
+            for name in (
+                "auth.json",
+                "config.toml",
+                "runner-capabilities.json",
+                "runner-capability.token",
+                "runner-capability.sock",
+                "runner_capability_mcp.py",
+            ):
+                (home / name).write_text("private", encoding="utf-8")
+            agent = _Agent(
+                "modeling",
+                _load_package(root, "modeling"),
+                home,
+                Path(directory) / "work",
+                Path(directory) / "skills",
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter.agents[agent.agent_id] = agent
+            adapter.stop()
+            self.assertFalse((home / "auth.json").exists())
+            self.assertFalse((home / "config.toml").exists())
+            self.assertFalse((home / "runner-capabilities.json").exists())
+            for name in (
+                "runner-capability.token",
+                "runner-capability.sock",
+                "runner_capability_mcp.py",
+            ):
+                self.assertTrue((home / name).exists())
             self.assertTrue(adapter.cleanup_identifiers()["modeling"]["private_credentials_destroyed"])
 
     def test_mcp_tool_names_accepts_status_object_and_array_forms(self) -> None:

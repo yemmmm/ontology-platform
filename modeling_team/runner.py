@@ -7,6 +7,7 @@ import hashlib
 import os
 import shutil
 import threading
+from copy import deepcopy
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,7 @@ class TeamRunner:
         self._ledger: StartLedger | None = None
         self.acceptance: RunnerAcceptanceCarrier | None = None
         self.coordinator_phase: CoordinatorPhaseController | None = None
+        self._cleanup_evidence_cache: dict[str, Any] | None = None
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -1703,6 +1705,8 @@ class TeamRunner:
         self._state("TERMINAL_REPORT_COMPLETE")
 
     def cleanup(self) -> dict[str, Any]:
+        if self._cleanup_evidence_cache is not None:
+            return deepcopy(self._cleanup_evidence_cache)
         evidence: dict[str, Any] = {}
         self._state("CLEANING") if self.run else None
         formal = self._formal_coordination_enabled()
@@ -1762,7 +1766,10 @@ class TeamRunner:
                     cleanup=evidence,
                     terminal_results=self.run.terminal_results,
                 )
-        return evidence
+        if self.run is None:
+            return evidence
+        self._cleanup_evidence_cache = deepcopy(evidence)
+        return deepcopy(self._cleanup_evidence_cache)
 
     def _record_runtime_core_hashes(self, phase: str) -> None:
         self._append_evidence(
