@@ -83,10 +83,11 @@ def capture_clean_checkout(root: Path) -> dict[str, str]:
     }
 
 
-def _digest_text(value: str) -> str:
+def _digest_text(value: str | bytes) -> str:
     import hashlib
 
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    payload = value if isinstance(value, bytes) else value.encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _service_properties(text: str) -> dict[str, str]:

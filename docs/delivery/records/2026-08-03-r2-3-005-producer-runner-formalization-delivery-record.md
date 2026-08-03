@@ -1191,3 +1191,25 @@
 - Outcome/next step: form a replacement stable commit, then have the same independent Delivery Operator restart
   preflight from zero against the new R2.3-005 ledger. The missing Delivery-only credential remains an external
   preflight input; it must be sourced from existing authoritative local configuration without disclosure or creation.
+
+### 2026-08-03 — Second real-run preflight BLOCKED before start — Main agent
+
+- Replacement stable commit `e6811a78e6fe83ca10f27e13e943bb460fda2e89` was clean. The new R2.3-005 ledger
+  was absent and therefore at zero of its one-start cap; the historical R2.3-002 ledger hash, 18 starts, cap 18
+  and zero active reservations matched the first preflight baseline exactly.
+- Four-role validation and baseline inventory passed, and service/process/public backend/frontend evidence was
+  read only. The Operator again created no reservation, run root, scope, key, Session, Lease or Agent; semantic
+  start delta remained zero and a second immutable blocked-preflight evidence directory was retained.
+- Real HTTP health returned response bytes. `_health_probe` passed those bytes to `_digest_text`, which accepted
+  only strings and raised `AttributeError` before the authenticated canonical-mode check. This deterministic
+  contract bug was not exercised by the earlier mocked health tests and made live preflight impossible.
+- The fix expands `_digest_text` only to `str | bytes`: strings retain UTF-8 hashing and bytes are hashed without
+  decoding. Raw response bodies remain absent from evidence and fixed HTTP failure messages do not expose them.
+  Tests now use byte bodies for both backend and frontend, prove exact hashes and continuation to the canonical
+  gate, and prove a private error body is not returned.
+- Developer verification passed: preflight-focused 33/33, R2.3-005 focused 64/64, complete `modeling_team`
+  discovery 243/243 (existing warnings only), Ruff, `git diff --check`, and GitNexus LOW/zero affected processes.
+  No backend file, platform state or semantic-start ledger was changed.
+- Outcome/next step: form another clean stable commit and repeat no-start preflight. The Operator may use only the
+  existing permission-600 bootstrap credential artifact as the single-process Delivery admin source, without
+  logging, copying, modifying or persisting its plaintext; an authentication failure remains BLOCKED at zero start.

@@ -486,6 +486,66 @@ class R23005ContractTests(unittest.TestCase):
         self.assertNotIn("delivery-secret", encoded)
         self.assertNotIn("repository_root", encoded)
 
+    def test_health_probe_hashes_raw_bytes_before_canonical_gate_and_hides_errors(self) -> None:
+        service = {
+            "unit": "ontology-platform.service",
+            "active_state": "active",
+            "sub_state": "running",
+            "main_pid": 4242,
+            "active_enter_timestamp": "started",
+        }
+        process = {
+            "unit": "ontology-platform.service",
+            "pid": 4242,
+            "started_at": "started",
+            "cwd_digest": "a" * 64,
+            "command_digest": "b" * 64,
+            "cgroup_digest": "c" * 64,
+            "process_env": {
+                "SEMANTIC_CANONICAL_STORE": "rdf",
+                "SEMANTIC_PRODUCT_WRITE_MODE": "rdf_primary",
+                "SEMANTIC_READ_MODE": "canonical",
+            },
+        }
+        backend_body = b'{"status":"ok"}'
+        frontend_body = b"<html>ready</html>"
+        with patch.object(preflight_module, "_service_probe", return_value=service), patch.object(
+            preflight_module, "_process_probe", return_value=process
+        ), patch.object(
+            preflight_module,
+            "_public_http_get",
+            side_effect=[(200, backend_body), (200, frontend_body)],
+        ) as public_get, patch.object(
+            preflight_module,
+            "_canonical_http_get",
+            return_value=(200, {"product_write_mode": "rdf_primary"}),
+        ) as canonical_get:
+            evidence = preflight_module.canonical_platform_preflight(
+                base_url="http://127.0.0.1:8001",
+                admin_key="delivery-secret",
+            )
+        self.assertEqual(public_get.call_count, 2)
+        self.assertEqual(canonical_get.call_count, 1)
+        self.assertEqual(
+            evidence["health"]["backend"]["body_digest"],
+            hashlib.sha256(backend_body).hexdigest(),
+        )
+        self.assertEqual(
+            evidence["health"]["frontend"]["body_digest"],
+            hashlib.sha256(frontend_body).hexdigest(),
+        )
+        with patch.object(
+            preflight_module,
+            "_public_http_get",
+            return_value=(503, b"private-health-response"),
+        ), self.assertRaisesRegex(TeamConfigurationError, "backend-health health") as caught:
+            preflight_module._health_probe(
+                "http://127.0.0.1:8001",
+                path="/api/health",
+                endpoint_role="backend-health",
+            )
+        self.assertNotIn("private-health-response", str(caught.exception))
+
     def test_runner_health_failure_consumes_no_ledger_or_run_root(self) -> None:
         root = repository_root()
         run_id = f"r23005-health-block-{__import__('uuid').uuid4().hex}"
