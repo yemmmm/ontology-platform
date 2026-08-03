@@ -1213,3 +1213,25 @@
 - Outcome/next step: form another clean stable commit and repeat no-start preflight. The Operator may use only the
   existing permission-600 bootstrap credential artifact as the single-process Delivery admin source, without
   logging, copying, modifying or persisting its plaintext; an authentication failure remains BLOCKED at zero start.
+
+### 2026-08-03 — Delivery canonical credential isolation accepted — Main agent
+
+- Read-only launch review found that the canonical preflight obtains `ONTOLOGY_PLATFORM_ADMIN_API_KEY` from the
+  CLI environment, while persistent Codex processes would otherwise inherit that host environment. Starting the
+  real run without an explicit boundary could therefore expose the Delivery-only admin key to four model-visible
+  runtimes even though the key was intended only for the no-start gate.
+- The formal CLI now removes that one environment variable and clears the Runner's canonical-admin field
+  immediately after `runner.prepare()` succeeds and before host Codex auth inspection, bootstrap-scope creation,
+  `runner.start()` or any process factory. It does not change Adapter environment behavior, CLI arguments,
+  non-formal execution, bootstrap helpers or platform credential lifecycle.
+- Fixed-secret tests prove exact ordering: Runner initialization and formal prepare/preflight can read the key;
+  Adapter auth, bootstrap, Runner start, process creation and cleanup all observe no key. Run evidence, config,
+  manifest and stderr contain no secret. A failed prepare reaches only cleanup and never starts; the non-formal
+  path continues to preserve its existing environment behavior.
+- GitNexus classified the shared CLI `main` entry HIGH (195 affected / one direct / zero processes) and the
+  unmodified bootstrap helper HIGH (115 / one / zero). The user was warned before proceeding. CLI-focused tests
+  passed 4/4, contracts 36/36, R2.3-005 focused 67/67 and complete `modeling_team` discovery 246/246. Ruff,
+  `git diff --check` and final `detect_changes` passed with LOW worktree risk and zero affected processes.
+- Outcome/next step: create a new clean stable commit. The Delivery Operator may then load the existing
+  permission-600 bootstrap `api_key` into the single formal CLI environment without disclosure; successful
+  prepare must scrub it before the one authorized semantic start.

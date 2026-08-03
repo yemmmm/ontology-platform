@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -631,6 +634,294 @@ class R23005ContractTests(unittest.TestCase):
             ):
                 self.assertEqual(team_main.main(), 130)
         self.assertEqual(events, ["runner-init", "prepare", "auth", "start", "cleanup"])
+
+    def test_formal_cli_scrubs_admin_env_before_auth_bootstrap_and_process(self) -> None:
+        from modeling_team import __main__ as team_main
+
+        secret = "r23005-fixed-formal-admin-secret"
+        env_name = "ONTOLOGY_PLATFORM_ADMIN_API_KEY"
+        events: list[tuple[str, str | None, str | None]] = []
+        runner_holder: list[object] = []
+
+        def observe(label: str, runner_key: str | None = None) -> None:
+            events.append((label, os.environ.get(env_name), runner_key))
+
+        class Adapter:
+            def preflight_host_auth(self) -> None:
+                observe("adapter-auth")
+
+            def process_factory(self, *_args, **_kwargs) -> SimpleNamespace:
+                observe("process-factory")
+                return SimpleNamespace()
+
+        class Runner:
+            def __init__(self, **kwargs):
+                self.adapter = kwargs["adapter"]
+                self.canonical_admin_key = os.environ.get(env_name)
+                self.run = None
+                self.scope_factory = kwargs.get("scope_factory")
+                runner_holder.append(self)
+                observe("runner-init", self.canonical_admin_key)
+
+            def prepare(self, **_kwargs) -> None:
+                observe("prepare", self.canonical_admin_key)
+
+                def probe(**probe_kwargs):
+                    observe("preflight-seam", probe_kwargs.get("admin_key"))
+                    return {"status_code": 200, "product_write_mode": "rdf_primary"}
+
+                with patch.object(
+                    preflight_module,
+                    "capture_clean_checkout",
+                    return_value={"head": "a" * 40, "status_porcelain": "", "status_digest": "b" * 64},
+                ):
+                    evidence = preflight_module.run_prestart_preflight(
+                        repository_root=base,
+                        admin_key=self.canonical_admin_key,
+                        probe=probe,
+                    )
+                run_root = base / "run"
+                (run_root / "evidence").mkdir(parents=True)
+                safe_payload = json.dumps(evidence, sort_keys=True)
+                for relative in (
+                    "evidence/prestart-preflight.json",
+                    "config.json",
+                    "manifest.json",
+                ):
+                    path = run_root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(safe_payload, encoding="utf-8")
+                self.run = SimpleNamespace(root=run_root)
+
+            def start(self) -> None:
+                observe("runner-start", self.canonical_admin_key)
+                self.adapter.process_factory(["synthetic"])
+                raise TeamConfigurationError("formal start blocked")
+
+            def cleanup(self) -> None:
+                observe("cleanup", self.canonical_admin_key)
+
+        def bootstrap(_root: Path):
+            observe("bootstrap")
+            return (lambda: ("key", "id"), lambda _key_id: True)
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scope = base / "scope.yaml"
+            scope.write_text("mode: create\n", encoding="utf-8")
+            configuration = SimpleNamespace(
+                profile=SimpleNamespace(profile_id="r2-3-005-modeling-team"),
+                task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+            )
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(base / "profile.yaml"),
+                "--task",
+                str(base / "task.yaml"),
+                "--run-id",
+                "r23005-formal-env-scrub",
+                "--scope",
+                str(scope),
+                "--freeze-started-at",
+                "2026-08-03T00:00:00+00:00",
+            ]
+            stderr = io.StringIO()
+            with (
+                patch.dict(os.environ, {env_name: secret}, clear=False),
+                redirect_stderr(stderr),
+                patch.object(team_main, "repository_root", return_value=base),
+                patch.object(team_main, "load_formal_team_configuration", return_value=configuration),
+                patch.object(team_main, "_bootstrap_helpers", side_effect=bootstrap),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=Adapter()),
+                patch.object(team_main, "TeamRunner", side_effect=Runner),
+                patch.object(team_main.sys, "argv", argv),
+            ):
+                self.assertEqual(team_main.main(), 2)
+
+            self.assertEqual(
+                [label for label, _env_value, _runner_key in events],
+                [
+                    "runner-init",
+                    "prepare",
+                    "preflight-seam",
+                    "adapter-auth",
+                    "bootstrap",
+                    "runner-start",
+                    "process-factory",
+                    "cleanup",
+                ],
+            )
+            self.assertEqual(events[1], ("prepare", secret, secret))
+            self.assertEqual(events[2], ("preflight-seam", secret, secret))
+            for event in events[3:]:
+                self.assertIsNone(event[1], event)
+                self.assertIsNone(event[2], event)
+            self.assertIsNone(getattr(runner_holder[0], "canonical_admin_key"))
+            self.assertNotIn(secret, stderr.getvalue())
+            run_root = base / "run"
+            for path in run_root.rglob("*"):
+                if path.is_file():
+                    self.assertNotIn(secret, path.read_text(encoding="utf-8"))
+
+    def test_formal_cli_prepare_failure_never_reaches_auth_bootstrap_or_start(self) -> None:
+        from modeling_team import __main__ as team_main
+
+        secret = "r23005-fixed-formal-admin-secret"
+        env_name = "ONTOLOGY_PLATFORM_ADMIN_API_KEY"
+        events: list[tuple[str, str | None]] = []
+
+        class Adapter:
+            def preflight_host_auth(self) -> None:
+                raise AssertionError("formal prepare failure must stop before adapter auth")
+
+        class Runner:
+            def __init__(self, **_kwargs):
+                self.canonical_admin_key = os.environ.get(env_name)
+                self.run = None
+                events.append(("runner-init", os.environ.get(env_name)))
+
+            def prepare(self, **_kwargs) -> None:
+                events.append(("prepare", os.environ.get(env_name)))
+                raise TeamConfigurationError("formal preflight blocked")
+
+            def start(self) -> None:
+                raise AssertionError("formal prepare failure must stop before runner start")
+
+            def cleanup(self) -> None:
+                events.append(("cleanup", os.environ.get(env_name)))
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scope = base / "scope.yaml"
+            scope.write_text("mode: create\n", encoding="utf-8")
+            configuration = SimpleNamespace(
+                profile=SimpleNamespace(profile_id="r2-3-005-modeling-team"),
+                task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+            )
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(base / "profile.yaml"),
+                "--task",
+                str(base / "task.yaml"),
+                "--run-id",
+                "r23005-formal-env-failure",
+                "--scope",
+                str(scope),
+                "--freeze-started-at",
+                "2026-08-03T00:00:00+00:00",
+            ]
+            stderr = io.StringIO()
+            with (
+                patch.dict(os.environ, {env_name: secret}, clear=False),
+                redirect_stderr(stderr),
+                patch.object(team_main, "repository_root", return_value=base),
+                patch.object(team_main, "load_formal_team_configuration", return_value=configuration),
+                patch.object(
+                    team_main,
+                    "_bootstrap_helpers",
+                    side_effect=AssertionError("formal prepare failure must stop before bootstrap"),
+                ),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=Adapter()),
+                patch.object(team_main, "TeamRunner", side_effect=Runner),
+                patch.object(team_main.sys, "argv", argv),
+            ):
+                self.assertEqual(team_main.main(), 2)
+            self.assertEqual(
+                events,
+                [("runner-init", secret), ("prepare", secret), ("cleanup", secret)],
+            )
+            self.assertIn("formal preflight blocked", stderr.getvalue())
+            self.assertNotIn(secret, stderr.getvalue())
+
+    def test_nonformal_cli_preserves_admin_env_for_existing_path(self) -> None:
+        from modeling_team import __main__ as team_main
+
+        secret = "r23005-fixed-nonformal-admin-secret"
+        env_name = "ONTOLOGY_PLATFORM_ADMIN_API_KEY"
+        events: list[tuple[str, str | None]] = []
+
+        class Adapter:
+            def preflight_host_auth(self) -> None:
+                events.append(("adapter-auth", os.environ.get(env_name)))
+
+            def process_factory(self, *_args, **_kwargs) -> SimpleNamespace:
+                events.append(("process-factory", os.environ.get(env_name)))
+                return SimpleNamespace()
+
+        class Runner:
+            def __init__(self, **kwargs):
+                self.adapter = kwargs["adapter"]
+                self.canonical_admin_key = os.environ.get(env_name)
+                self.run = None
+                events.append(("runner-init", os.environ.get(env_name)))
+
+            def prepare(self, **_kwargs) -> None:
+                events.append(("prepare", os.environ.get(env_name)))
+
+            def start(self) -> None:
+                events.append(("runner-start", os.environ.get(env_name)))
+                self.adapter.process_factory(["synthetic"])
+                raise TeamConfigurationError("nonformal start blocked")
+
+            def cleanup(self) -> None:
+                events.append(("cleanup", os.environ.get(env_name)))
+
+        def bootstrap(_root: Path):
+            events.append(("bootstrap", os.environ.get(env_name)))
+            return (lambda: ("key", "id"), lambda _key_id: True)
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scope = base / "scope.yaml"
+            scope.write_text("mode: create\n", encoding="utf-8")
+            configuration = SimpleNamespace(
+                profile=SimpleNamespace(profile_id="legacy-test"),
+                task=SimpleNamespace(schema_version=1, task_id="legacy-test"),
+            )
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(base / "profile.yaml"),
+                "--task",
+                str(base / "task.yaml"),
+                "--run-id",
+                "r23005-nonformal-env-preserve",
+                "--scope",
+                str(scope),
+            ]
+            stderr = io.StringIO()
+            with (
+                patch.dict(os.environ, {env_name: secret}, clear=False),
+                redirect_stderr(stderr),
+                patch.object(team_main, "repository_root", return_value=base),
+                patch.object(team_main, "load_formal_team_configuration", return_value=configuration),
+                patch.object(team_main, "_bootstrap_helpers", side_effect=bootstrap),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=Adapter()),
+                patch.object(team_main, "TeamRunner", side_effect=Runner),
+                patch.object(team_main.sys, "argv", argv),
+            ):
+                self.assertEqual(team_main.main(), 2)
+            self.assertEqual(
+                [label for label, _value in events],
+                [
+                    "bootstrap",
+                    "runner-init",
+                    "prepare",
+                    "adapter-auth",
+                    "runner-start",
+                    "process-factory",
+                    "cleanup",
+                ],
+            )
+            self.assertTrue(all(value == secret for _label, value in events))
+            self.assertIn("nonformal start blocked", stderr.getvalue())
+            self.assertNotIn(secret, stderr.getvalue())
+
     def test_ticket_schema_location_hints_and_explicit_unknown_policy(self) -> None:
         ticket = _ticket()
         self.assertEqual(validate_ticket(ticket)["acceptance_round_id"], "round-r23005-1")

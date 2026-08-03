@@ -296,6 +296,15 @@ def main() -> int:
             task_path=args.task,
             scope=scope,
         )
+        if formal_acceptance:
+            # The Delivery-only key is needed by the no-start canonical gate,
+            # but must not remain available to any later adapter/bootstrap or
+            # persistent Agent process.  Formal callers read it from the
+            # environment during prepare; scrub both process and runner state
+            # immediately after that gate succeeds.
+            os.environ.pop("ONTOLOGY_PLATFORM_ADMIN_API_KEY", None)
+            if getattr(runner, "canonical_admin_key", None) is not None:
+                runner.canonical_admin_key = None
         # Host Codex auth is inspected only after TeamRunner has completed its
         # clean-checkout/canonical/health gate.  No Agent is started until this
         # defensive source check succeeds.
