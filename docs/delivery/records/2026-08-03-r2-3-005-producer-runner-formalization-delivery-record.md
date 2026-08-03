@@ -1306,3 +1306,39 @@
 - Outcome/next step: form a new clean stable commit and authorize the same independent Delivery Operator to repeat
   the formal CLI with a fresh run ID. Because both CLI failures released their reservations before semantic start,
   this remains the original sole authorized modeling start, not a second semantic attempt.
+
+### 2026-08-04 — Sole semantic start BLOCKED by schema-v2 outer-answer routing — Main agent
+
+- Stable commit `2f0bb1eee733c07b795621c6b773a4c0e003c4ff` passed the complete no-start gate and was invoked
+  exactly once as `r23005-real-20260803t141820z`. The isolated ledger records one reservation and one
+  `semantic_start`; its cap is one, semantic-start count is one and active reservations are zero. The historical
+  R2.3-002 ledger remained byte-for-byte unchanged at 18 starts. No further CLI or semantic retry is authorized.
+- Modeling sent grounded `delivery-1` to Coordinator asking whether B dynamically resolves C's latest published
+  Version 2 or whether release selection remains unconfirmed. Coordinator surfaced the same question to the outer
+  user. The user subsequently answered verbatim `未知`, authorizing explicit unknown rather than an invented
+  Version-2 binding; Delivery did not rewrite or infer a stronger answer.
+- Pre-send review stopped the answer before stdin. The authoritative requirement fixes user input to the text-only
+  envelope `{"action":"user","text":"<verbatim answer>"}`. The live schema-v2 implementation passes
+  `message.get("question_delivery_id")` to `_release_owner_answer`, which rejects a missing ID, while the required
+  outer-question state is created only by a separate implementation-only `action=question` branch. The actual run
+  had `delivery-1` and the Coordinator prompt but no `outer-question.jsonl` or `outer-user.jsonl`. Existing tests
+  cover schema v1 or directly pre-seed the private question map; they do not cover the real schema-v2 stdin path.
+- Adding an undefined field, synthesizing a separate envelope, or hot-patching after semantic start would violate
+  the frozen input and baseline contracts. The answer was therefore never sent and the run was classified
+  `BLOCKED/collaboration/routing`; Protocol had not created a Build Session, Lease, Batch or semantic receipt, and
+  Acceptance had not created a ticket, round, Examiner child or verdict. No modeling-quality PASS/FAIL is claimed.
+- The first process-level SIGINT did not end the foreground task. One Ctrl-C was then sent through the retained PTY;
+  the CLI exited according to the Operator summary with code 130 and Runner reached `CLEANED`. The raw PTY exit is
+  not independently retained, so exit 130 remains summary-only evidence corroborated by `aborted.jsonl` and the
+  cleaned state. Project/Ontology, Sessions/Leases, active keys, processes, sockets and private capability residue
+  were independently observed at zero; the six known pre-fix historical artifacts retained identical modes and
+  hashes. The sanitized terminal summary is
+  `workspaces/modeling-runs/r23005-real-20260803t141820z/operator/terminal-summary.json`, SHA-256
+  `8f1d0d1641571b2b3910b617aa0cf9df3ab3eacd8ce5100626ca0003a3040de2`, with zero bootstrap-secret matches.
+- A fresh independent Tester inspected retained evidence without starting, continuing or mutating the run and
+  recorded round 1 in the shared test plan. Its overall verdict is `BLOCKED`: one-start accounting, source/question
+  fidelity, hashes and cleanup pass; the routing contract is P1 blocking; PTY exit receipt completeness is a P2
+  observation; Protocol and Acceptance semantics are not evaluable.
+- Outcome/next step: repair the requirement/implementation routing mismatch offline and add a true schema-v2
+  JSONL stdin-to-correlated-release regression. That work cannot retroactively accept this run. Any later real
+  semantic validation requires a new explicit user-authorized start budget after the repair is independently tested.

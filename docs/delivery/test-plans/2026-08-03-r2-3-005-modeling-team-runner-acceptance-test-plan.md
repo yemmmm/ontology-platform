@@ -170,3 +170,74 @@ current design itself is documentation-only and requires no service restart.
 Passing this plan does not prove a generic product scheduler, automatic crash recovery, permanent
 Acceptance memory across tasks, a mechanical platform write freeze, or advanced retrieval quality.
 Those remain future productization items.
+
+## Independent test round 1 — 2026-08-04
+
+### Scope, baseline, and safety boundary
+
+- Tester: fresh independent read-only Tester. The retained run `r23005-real-20260803t141820z`
+  was not started, resumed, retried, messaged, or otherwise mutated. No producer command, MCP
+  producer call, service restart, platform write, key operation, or evidence rewrite was performed.
+- Requirement/design revision: `requirements-v2.3.md` R2.3-005, the design and this shared plan at
+  the reviewed baseline `2f0bb1eee733c07b795621c6b773a4c0e003c4ff`.
+- Worktree check: `git rev-parse --show-toplevel`, `git status --short --branch`, and
+  `git rev-parse HEAD` reported the repository root, clean status, and the baseline commit.
+- Retained evidence under
+  `workspaces/modeling-runs/r23005-real-20260803t141820z/` and its
+  `operator/terminal-summary.json` were inspected read-only. The only modified file in this
+  round is this test-plan append; no commit was made.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| One semantic start, cap 1, no second start | PASS | `evidence/semantic-start.jsonl` has one record; the formal ledger has 6 lines with exactly one `semantic_start` and no second start; summary reports cap `1`, `semantic_start_count: 1`, and `active_reservation_count: 0`. The historical R2.3-002 ledger remains 92 lines/18 starts. Actual SHA-256 values match summary (`formal=1f79eb...`, `old=4750fa...`). |
+| Grounded question and Coordinator prompt | PASS | `evidence/deliveries.jsonl` contains exactly one `delivery-1` with the original grounded question text; `evidence/coordinator.jsonl` contains the same question in the Coordinator prompt. The Coordinator and Modeling session JSONL records corroborate the same delivery and no answer. |
+| Required outer records and exact answer input | BLOCKED | No `outer-question.jsonl` or `outer-user.jsonl` exists in the retained run. A run-root scan finds `未知` only in the operator summary; no role session `user_message`, transport delivery, or app-server event contains that answer. Summary says `user_answer_released: false` and `user_answer_injected: false`. |
+| Text-only envelope versus schema-v2 owner-answer path | FAIL (P1, `collaboration/routing`) | Requirement `requirements-v2.3.md:460-469` fixes stdin to `{"action":"user","text":"<verbatim answer>"}`. The live path in `modeling_team/__main__.py:80-83` passes that decoded object unchanged to `TeamRunner.receive_outer`; `runner.py:1297-1311` then sends schema-v2 through `_release_owner_answer(..., message.get("question_delivery_id"))`, and `runner.py:1369-1373` rejects a missing/unknown question ID before delivery. `runner.py:1339-1360` only creates the needed question record for a separate `action=question`, which the fixed text-only envelope cannot carry. Existing tests only call schema-1 `receive_outer` (`modeling_team/tests/test_runner.py:526-533, 743-750`) or directly pre-seed an ID and call the private release helper (`modeling_team/tests/test_runner_r63.py:95-101`); no test proves the real v2 stdin path. This is the observed reason the sole start could not receive `未知` and is a real contract mismatch, not a modeling verdict. |
+| Protocol/Acceptance semantic gate | BLOCKED (not evaluated) | Protocol session ended awaiting a Modeling request after reading only its private contract/tool inventory; no Build Session, Lease, Modeling Batch, dry-run/apply, readback, validation, reasoning, or semantic receipt exists. Acceptance has no ticket/round/child/report/verdict artifacts. `acceptance-carrier` contains only `evidence/cleanup.json`. Therefore no Modeling PASS/FAIL and no Acceptance PASS/FAIL/BLOCKED can be assigned. |
+| PTY termination and lifecycle state | PASS with evidence limitation | `operator/terminal-summary.json` records PTY `90198`, escalation `write_stdin Ctrl-C`, CLI exit `130`, and `answer_envelope_sent: false`; `evidence/aborted.jsonl` records `runner-abort-before-settlement`, `settled: false`, and `state.json` is `CLEANED`. No independent raw PTY transcript or exit record is retained, so exit 130 is summary-only corroborated by the abort/CLEANED records. |
+| Scope/resource/credential cleanup | PASS | `state.json` post-delete residual counts are all zero for Project, Ontology, Session, Lease, and project-scoped key; scope is `deleted-empty`, protocol/admin keys are non-active/revoked, and child `active_handles`/residue are zero. Service journal directly records creation, key revocation, DELETE 204, then Project/Ontology GET 404 for the run IDs. Read-only GETs without credentials returned 401 and did not mutate state. |
+| Process/socket/private capability residue | PASS | Read-only `ps`, `find -type s`, token/capability searches, and `ss -xl` found no run process, socket, private token, or capability residue (the only `ps` matches were the inspection shell/search itself). Summary reports all corresponding counts as zero. |
+| Retained hashes and historical six-item residue | PASS | `source-manifest.json` hashes match every staged source and current source; `runtime-core-hashes.jsonl` before/after hashes match current Runner/Transport/Capability/Codex files; summary formal/old ledger hashes match actual files; all six historical residue artifacts exist with the recorded mode, size, and SHA-256. Run-root file count is 622, equal to the summary secret-scan count, with `bootstrap_secret_occurrences_in_run_root: 0`. |
+
+### Unexecuted or not claimable
+
+- C01-C60 deterministic contract cases and the required full backend/modeling test suites were not
+  run in this independent evidence round; the tester did not run producer or mutate test fixtures.
+- I01-I14 real modeling-to-acceptance cases were not reached. In particular, no acceptance ticket,
+  examiner pair, two sequential CQs, modeling receipt chain, verdict, state invalidation, or four-role
+  settlement exists. These remain `BLOCKED`, not PASS.
+- No semantic `PASS`, `FAIL`, or `BLOCKED` verdict is asserted for the model. The only stable run
+  classification is `BLOCKED/collaboration/routing` before Acceptance and before any modeling-quality
+  result.
+
+### Defect and next action
+
+**D1 — P1, collaboration/routing (STILL BLOCKING).** Reproduction: with the real schema-v2 task,
+  decode the requirement-mandated stdin line `{"action":"user","text":"未知"}` and pass it through
+  `_foreground_event_loop` to `receive_outer`; `question_delivery_id` is absent, so
+  `_release_owner_answer` raises `owner answer requires a question delivery ID`. Supplying an ID is
+  not a compliant recovery because no outer-question record is created by the text-only envelope and
+  an unknown ID is rejected. Expected: the Delivery controller must retain the grounded `delivery-1`
+  binding while delivering the exact text-only answer envelope once, producing an immutable outer-user
+  record and correlated Coordinator forward. Actual: no outer records or release occurred, and the
+  run had to abort before settlement. Smallest repair layer: `collaboration/routing` envelope/driver
+  binding (plus a real schema-v2 stdin-to-release regression test); do not rerun the producer until
+  that repair is independently verified.
+
+**D2 — P2, evidence completeness (observation).** PTY exit 130 is present only in the operator
+  summary; no retained raw PTY transcript or machine-readable exit artifact was found. The abort
+  record, CLEANED state, cleanup counts, and direct service journal corroborate termination/cleanup,
+  but a future run should retain a sanitized PTY exit receipt so this fact does not rely on operator
+  self-report alone.
+
+### Round conclusion
+
+**Overall verdict: BLOCKED.** Resource cleanup, one-start accounting, source/question fidelity,
+hash integrity, and zero-residue checks pass. The one real run cannot be accepted because the
+requirement-mandated text-only answer envelope has no working schema-v2 `question_delivery_id`
+binding path; Protocol and Acceptance semantic acceptance never began, so no modeling PASS/FAIL is
+permitted. Require the requirement developer to repair D1 and add a real schema-v2 stdin regression
+test, then perform a new independent round only with explicit authorization for any new semantic
+start.
