@@ -1154,3 +1154,40 @@
 - Outcome/next step: the implementation is ready for one stable commit. Independent acceptance must start from
   that clean commit in a dedicated clean checkout and is the only step allowed to consume the one authorized
   minimal semantic start.
+
+### 2026-08-03 — First real-run preflight BLOCKED before start — Main agent
+
+- Stable commit `818b7e042e2514074b9d838b5c3862fe655aba69` was clean and the frozen four-role Profile/Task validated. The
+  Delivery Operator performed read-only command discovery and baseline inventory only; it did not invoke Runner,
+  reserve a run, create a scope/key/Session/Lease, or start an Agent.
+- The active service and public health checks passed, but the Delivery-only admin credential was not present in
+  the Operator shell, so authenticated canonical-mode preflight could not yet pass. No credential was printed,
+  created or copied and no configuration was changed.
+- More importantly, the implementation still selected the historical R2.3-002 ledger for the R2.3-005 formal
+  run. That ledger contained 18 semantic starts at its cap of 18 with zero active reservations. R2.3-005 therefore
+  would fail after canonical preflight even though its authoritative requirement grants a separate one-start
+  budget. Appending authorization to the old ledger was rejected because it would conflate the two requirement
+  budgets and mutate R2.3-002 history.
+- Outcome/next step: the Operator is held at `BLOCKED` with semantic-start delta zero. Development reopened only
+  to give R2.3-005 an independent ledger identity and cap of one while preserving the old ledger bytes, cap, CLI
+  and behavior. The real run may resume only after a new clean stable commit and a fresh preflight.
+
+### 2026-08-03 — Independent R2.3-005 start ledger defect closed — Main agent
+
+- `StartLedger` now accepts validated basename-only ledger/lock filenames, an initial cap and a requirement ID.
+  The historical defaults remain `.r2-3-002-start-ledger.{jsonl,lock}`, cap two and requirement R2.3-002;
+  existing callers and CLI therefore keep their prior path, history and authorization behavior.
+- Only the formal R2.3-005 Runner selects `.r2-3-005-start-ledger.{jsonl,lock}`, initial cap one and requirement
+  ID R2.3-005. Reservation, semantic-start and presemantic-release evidence now carry the non-secret ledger
+  identity, and exhaustion errors name the owning requirement rather than incorrectly naming R2.3-002.
+- Focused isolation tests prove that an exhausted 18/18 legacy ledger remains byte-for-byte unchanged and cannot
+  block the new ledger; the first R2.3-005 start is allowed, a second is rejected, presemantic release preserves
+  the sole start, non-formal schema-v2 tasks retain the old ledger/cap, preflight failure writes neither namespace,
+  filenames cannot escape their root, and T6 touches neither ledger or lock.
+- Developer verification passed: ledger/R2.3-005/R63 focused 39/39, complete `modeling_team` discovery 242/242
+  (existing warnings only), Ruff, `git diff --check`, and GitNexus `detect_changes` with LOW risk and zero affected
+  symbols/processes. No backend file changed, so the previously passed 838-test backend and healthy restarted
+  service remain the applicable backend/runtime evidence. No platform or semantic start was executed.
+- Outcome/next step: form a replacement stable commit, then have the same independent Delivery Operator restart
+  preflight from zero against the new R2.3-005 ledger. The missing Delivery-only credential remains an external
+  preflight input; it must be sourced from existing authoritative local configuration without disclosure or creation.

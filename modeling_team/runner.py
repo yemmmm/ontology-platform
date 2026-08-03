@@ -171,9 +171,18 @@ class TeamRunner:
             if expected_binding:
                 gate_binding = self._resolve_expected_matrix_binding(expected_binding)
         if config.task.schema_version == 2:
+            ledger_kwargs: dict[str, Any] = {}
+            if formal_acceptance:
+                ledger_kwargs = {
+                    "ledger_filename": ".r2-3-005-start-ledger.jsonl",
+                    "lock_filename": ".r2-3-005-start-ledger.lock",
+                    "initial_start_cap": 1,
+                    "requirement_id": "R2.3-005",
+                }
             self._ledger = StartLedger(
                 self.ledger_root or self.repository_root / "workspaces" / "modeling-runs",
                 now=self.ledger_now,
+                **ledger_kwargs,
             )
             # The reservation is the freeze gate: no mutable run state exists before it succeeds.
             self._ledger.reserve(
@@ -236,7 +245,14 @@ class TeamRunner:
             self._atomic_json(root / "evidence" / "prestart-preflight.json", preflight_evidence)
         self.run.baseline_hash = baseline_hash
         if config.task.schema_version == 2:
-            self._append_evidence("start-ledger", {"event": "reservation", "baseline_hash": self.run.baseline_hash})
+            self._append_evidence(
+                "start-ledger",
+                {
+                    "event": "reservation",
+                    "baseline_hash": self.run.baseline_hash,
+                    **self._formal_ledger_identity(),
+                },
+            )
         return self.run
 
     def _acceptance_ticket_policy(self, configuration: TeamConfiguration) -> dict[str, Any]:
@@ -808,7 +824,13 @@ class TeamRunner:
                     self.run.run_id,
                     gate_binding=self.run.gate_binding,
                 )
-                self._append_evidence("semantic-start", {"baseline_hash": self.run.baseline_hash})
+                self._append_evidence(
+                    "semantic-start",
+                    {
+                        "baseline_hash": self.run.baseline_hash,
+                        **self._formal_ledger_identity(),
+                    },
+                )
             for agent in self.run.configuration.profile.agents:
                 self.adapter.start_task(
                     agent.agent_id,
@@ -1720,7 +1742,13 @@ class TeamRunner:
                         self._ledger.release_presemantic(
                             self.run.run_id, "Runner cleanup before semantic start"
                         )
-                        self._append_evidence("start-ledger", {"event": "presemantic_release"})
+                        self._append_evidence(
+                            "start-ledger",
+                            {
+                                "event": "presemantic_release",
+                                **self._formal_ledger_identity(),
+                            },
+                        )
                     except TeamConfigurationError:
                         # Startup failure may already have recorded the same immutable correction.
                         pass
@@ -1816,6 +1844,11 @@ class TeamRunner:
             )
             stream.flush()
             os.fsync(stream.fileno())
+
+    def _formal_ledger_identity(self) -> dict[str, dict[str, str]]:
+        if self._ledger and self._ledger.requirement_id == "R2.3-005":
+            return {"ledger_identity": self._ledger.identity}
+        return {}
 
     def _append_team_transport_event(self, event: dict[str, object]) -> None:
         """Append one fixed-shape, sanitized report event in authoritative call order."""

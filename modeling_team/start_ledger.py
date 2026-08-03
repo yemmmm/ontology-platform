@@ -1,4 +1,4 @@
-"""Append-only, cross-run authorization ledger for R2.3-002 semantic starts."""
+"""Append-only, cross-run authorization ledger for semantic starts."""
 
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ _MAX_FREEZE_AGE = timedelta(minutes=20)
 _MAX_FUTURE_FREEZE_SKEW = timedelta(minutes=1)
 _INITIAL_START_CAP = 2
 _MAX_ADDITIONAL_STARTS = 2
+_DEFAULT_LEDGER_FILENAME = ".r2-3-002-start-ledger.jsonl"
+_DEFAULT_LOCK_FILENAME = ".r2-3-002-start-ledger.lock"
+_DEFAULT_REQUIREMENT_ID = "R2.3-002"
 _GATE_BINDING_FIELDS = (
     "proof_matrix_path",
     "proof_matrix_digest",
@@ -30,10 +33,51 @@ _GATE_BINDING_FIELDS = (
 class StartLedger:
     """A deliberately small local ledger; records are never rewritten or removed."""
 
-    def __init__(self, root: Path, now: Callable[[], datetime] | None = None):
-        self.path = root / ".r2-3-002-start-ledger.jsonl"
-        self.lock_path = root / ".r2-3-002-start-ledger.lock"
+    def __init__(
+        self,
+        root: Path,
+        now: Callable[[], datetime] | None = None,
+        *,
+        ledger_filename: str = _DEFAULT_LEDGER_FILENAME,
+        lock_filename: str = _DEFAULT_LOCK_FILENAME,
+        initial_start_cap: int = _INITIAL_START_CAP,
+        requirement_id: str = _DEFAULT_REQUIREMENT_ID,
+    ):
+        ledger_filename = self._validate_filename(ledger_filename, "ledger filename")
+        lock_filename = self._validate_filename(lock_filename, "lock filename")
+        if ledger_filename == lock_filename:
+            raise TeamConfigurationError("ledger and lock filenames must differ")
+        if (
+            not isinstance(initial_start_cap, int)
+            or isinstance(initial_start_cap, bool)
+            or initial_start_cap < 1
+        ):
+            raise TeamConfigurationError("initial start cap is invalid")
+        if not isinstance(requirement_id, str) or not requirement_id.strip():
+            raise TeamConfigurationError("requirement ID is invalid")
+        self.path = root / ledger_filename
+        self.lock_path = root / lock_filename
+        self._initial_start_cap = initial_start_cap
+        self.requirement_id = requirement_id
         self._now = now or (lambda: datetime.now(UTC))
+
+    @staticmethod
+    def _validate_filename(value: str, field: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not value
+            or value in {".", ".."}
+            or Path(value).is_absolute()
+            or Path(value).name != value
+            or "/" in value
+            or "\\" in value
+        ):
+            raise TeamConfigurationError(f"{field} is invalid")
+        return value
+
+    @property
+    def identity(self) -> dict[str, str]:
+        return {"filename": self.path.name, "requirement_id": self.requirement_id}
 
     @staticmethod
     def baseline_hash(manifest: dict[str, Any]) -> str:
@@ -100,7 +144,9 @@ class StartLedger:
         def write(records: list[dict[str, Any]]) -> None:
             cap = self._start_cap(records)
             if self._semantic_start_count(records) >= cap:
-                raise TeamConfigurationError("R2.3-002 semantic-start budget is exhausted")
+                raise TeamConfigurationError(
+                    f"{self.requirement_id} semantic-start budget is exhausted"
+                )
             reservation = self._latest(records, run_id, "reservation")
             if (
                 not reservation
@@ -258,11 +304,15 @@ class StartLedger:
         started = {record.get("run_id") for record in records if record.get("event") == "semantic_start"}
         active = [record for record in active if record.get("run_id") not in released and record.get("run_id") not in started]
         if active:
-            raise TeamConfigurationError("another R2.3-002 start reservation is active")
+            raise TeamConfigurationError(
+                f"another {self.requirement_id} start reservation is active"
+            )
         consumed = [record for record in records if record.get("event") == "semantic_start"]
         cap = self._start_cap(records)
         if len(consumed) >= cap:
-            raise TeamConfigurationError("R2.3-002 semantic-start budget is exhausted")
+            raise TeamConfigurationError(
+                f"{self.requirement_id} semantic-start budget is exhausted"
+            )
         if consumed:
             previous = consumed[-1]
             previous_index = records.index(previous)
@@ -290,12 +340,11 @@ class StartLedger:
             record["gate_binding"] = gate_binding
         self._append(record)
 
-    @staticmethod
-    def _start_cap(records: list[dict[str, Any]]) -> int:
+    def _start_cap(self, records: list[dict[str, Any]]) -> int:
         """Replay the earned cap, rejecting authorizations before the prior tranche is consumed."""
         authorization_ids: set[str] = set()
         references: set[str] = set()
-        cap = _INITIAL_START_CAP
+        cap = self._initial_start_cap
         semantic_start_count = 0
         for record in records:
             event = record.get("event")
@@ -376,7 +425,9 @@ class StartLedger:
             raise TeamConfigurationError(invalid_message) from exc
         delta = self._now() - frozen_at
         if delta > _MAX_FREEZE_AGE:
-            raise TeamConfigurationError("R2.3-002 20-minute freeze-to-start gate expired")
+            raise TeamConfigurationError(
+                f"{self.requirement_id} 20-minute freeze-to-start gate expired"
+            )
         if delta < -_MAX_FUTURE_FREEZE_SKEW:
             raise TeamConfigurationError("freeze time is unreasonably in the future")
         return str(value)

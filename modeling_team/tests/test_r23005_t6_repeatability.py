@@ -268,8 +268,16 @@ class R23005T6RepeatabilityTests(unittest.TestCase):
                 self.assertNotIn("semantic_start", sequence.events)
                 self.assertNotIn("sources", {path.name for path in runtime_root.iterdir()})
                 self.assertFalse((runtime_root / "candidate.json").exists())
-                self.assertFalse((runtime_root / ".r2-3-002-start-ledger.jsonl").exists())
-                self.assertFalse((runtime_root / ".r2-3-002-start-ledger.lock").exists())
+                for ledger_name in (
+                    ".r2-3-002-start-ledger.jsonl",
+                    ".r2-3-005-start-ledger.jsonl",
+                ):
+                    self.assertFalse((runtime_root / ledger_name).exists())
+                for lock_name in (
+                    ".r2-3-002-start-ledger.lock",
+                    ".r2-3-005-start-ledger.lock",
+                ):
+                    self.assertFalse((runtime_root / lock_name).exists())
                 self.assertFalse(carrier._handles)
                 self.assertFalse(carrier._resources)
                 self.assertFalse(carrier._pending_reports)
