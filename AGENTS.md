@@ -66,6 +66,11 @@ changes them. Detailed tactics, examples, and historical lessons are reference-o
 - Start the first real modeling attempt within 20 minutes unless the user explicitly authorizes a
   longer preparation phase. If the gate is missed, stop, report the time consumers, and reduce the
   setup before continuing.
+- Before the first real modeling attempt, perform only the minimum checks needed to start safely.
+  Do not front-load extensive audits, repeated reviews, mock runs, smoke harnesses, or speculative
+  verification; they can consume most of the attempt time while leaving the first real semantic
+  error undiscovered. Move quickly to live modeling, then repair the narrow failing layer from real
+  evidence.
 - Treat the user-authorized modeling-attempt budget as a hard boundary. Count only fresh semantic
   modeling starts, preserve every attempt, and request new authorization after exhaustion.
 - Use staged acceptance: `L0 Runtime`, `L1 Modeling quality`, `L2 Repeatability`, and
@@ -73,9 +78,19 @@ changes them. Detailed tactics, examples, and historical lessons are reference-o
 - Before implementation, inventory and reuse the closest accepted requirement, scenario, code,
   prompts, role configuration, protocol helpers, raw evidence readers, and tests. Extend them with
   the smallest necessary delta; document and review any proven incompatibility before replacement.
+- A new requirement must not rebuild an already proven workflow from scratch. Carry forward the
+  prior requirement's accepted artifacts, contracts, prompts, fixtures, evidence patterns, and
+  recorded lessons wherever they remain compatible, and make only the requirement-specific delta.
+  Treat rediscovering a previously documented failure as a process defect.
 - The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
   handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
   semantic acceptance authority.
+- Do not create hard-coded programs that inspect one temporary requirement's or one stage's output
+  merely to support that implementation run. Such one-off checkers are slow to build, brittle, and
+  prone to validating the script's assumptions instead of the real result. Prefer direct evidence
+  inspection and existing generic validators. This restriction does not apply to validation that
+  protects a stable, reusable requirement or platform contract; temporary implementation scripts
+  must remain small, disposable, and non-authoritative.
 - Keep deterministic mechanics out of model reasoning. Tools own protocol formatting, stable
   identities, immutable publication, retries, and parsing; modeling Agents own business semantics,
   ontology structure, evidence, Shapes, relations, and explicit unknowns.
