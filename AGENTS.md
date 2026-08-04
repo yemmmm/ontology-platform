@@ -60,28 +60,32 @@ the simplest implementation and operating workflow that preserves or improves th
 The rules in this section are mandatory unless the user or an authoritative requirement explicitly
 changes them. Detailed tactics, examples, and historical lessons are reference-only in
 `docs/reference/modeling-agent-experiment-lessons.md`; that document cannot override these rules.
+`Priority L0` below means the highest operating priority and is distinct from the `L0 Runtime`
+acceptance stage.
 
 - Prioritize evidence about modeling and semantic retrieval quality. Keep the current experiment
   bounded, proportional to its acceptance stage, and separate from future productization.
-- Start the first real modeling attempt within 20 minutes unless the user explicitly authorizes a
-  longer preparation phase. If the gate is missed, stop, report the time consumers, and reduce the
-  setup before continuing.
-- Before the first real modeling attempt, perform only the minimum checks needed to start safely.
-  Do not front-load extensive audits, repeated reviews, mock runs, smoke harnesses, or speculative
-  verification; they can consume most of the attempt time while leaving the first real semantic
-  error undiscovered. Move quickly to live modeling, then repair the narrow failing layer from real
-  evidence.
-- Treat the user-authorized modeling-attempt budget as a hard boundary. Count only fresh semantic
-  modeling starts, preserve every attempt, and request new authorization after exhaustion.
+- **Priority L0 — enter real modeling early.** Start the first real modeling attempt within 20
+  minutes unless the user explicitly authorizes a longer preparation phase. Before it, perform only
+  the minimum checks needed to start safely. Do not front-load extensive audits, repeated reviews,
+  mock runs, smoke harnesses, or speculative verification; they can consume most of the attempt
+  time while leaving the first real semantic error undiscovered. If the gate is missed, stop,
+  report the time consumers, reduce the setup, and move to live modeling. Repair the narrow failing
+  layer from real evidence.
+- **Priority L0 — reuse the closest accepted baseline.** A new requirement must not rebuild an
+  already proven workflow from scratch. Before implementation, inventory the closest accepted
+  requirement, scenario, code, prompts, role configuration, protocol helpers, fixtures, evidence
+  readers and patterns, tests, and recorded lessons. Carry them forward wherever compatible and
+  implement only the requirement-specific delta. Document and review any proven incompatibility
+  before replacement; treat rediscovering a previously documented failure as a process defect.
+- **Priority L0 — use the three authorized modeling attempts.** Each authorization grants three
+  fresh semantic modeling starts unless the user explicitly sets a different amount. The budget is
+  a boundary against unapproved runs, not a scarce asset to protect by delaying real modeling or
+  adding speculative preparation. Use attempts promptly when they can produce semantic evidence,
+  preserve each attempt, and request the next authorization after all three are consumed. Never
+  start an additional attempt until that authorization is granted.
 - Use staged acceptance: `L0 Runtime`, `L1 Modeling quality`, `L2 Repeatability`, and
   `L3 Productization`. Never make a later stage a prerequisite for an earlier one.
-- Before implementation, inventory and reuse the closest accepted requirement, scenario, code,
-  prompts, role configuration, protocol helpers, raw evidence readers, and tests. Extend them with
-  the smallest necessary delta; document and review any proven incompatibility before replacement.
-- A new requirement must not rebuild an already proven workflow from scratch. Carry forward the
-  prior requirement's accepted artifacts, contracts, prompts, fixtures, evidence patterns, and
-  recorded lessons wherever they remain compatible, and make only the requirement-specific delta.
-  Treat rediscovering a previously documented failure as a process defect.
 - The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
   handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
   semantic acceptance authority.
