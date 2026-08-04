@@ -37,11 +37,66 @@ class R23005BudgetExtensionTests(unittest.TestCase):
         ledger.authorize_budget(3, "authorization-one", "user-reference-one")
         ledger.authorize_repair("run-one", "repair-one", "baseline-two")
 
+    def _retained_like_10_8_0_prefix(self, ledger: StartLedger) -> None:
+        """Build a temporary formal ledger matching the retained 10/8/0 shape."""
+        self._begin(ledger, "run-1", "baseline-1")
+        ledger.terminal_failure("run-1", "collaboration/routing", False)
+        ledger.authorize_budget(3, "authorization-1", "reference-1")
+        ledger.authorize_repair("run-1", "repair-2", "baseline-2")
+
+        for index, baseline, next_baseline in (
+            (2, "baseline-2", "baseline-3"),
+            (3, "baseline-3", "baseline-4"),
+        ):
+            run_id = f"run-{index}"
+            self._begin(ledger, run_id, baseline)
+            ledger.terminal_failure(run_id, "collaboration/routing", False)
+            ledger.authorize_repair(run_id, f"repair-{index + 1}", next_baseline)
+
+        self._begin(ledger, "run-4", "baseline-4")
+        ledger.terminal_failure("run-4", "collaboration/routing", False)
+        ledger.authorize_budget(3, "authorization-2", "reference-2")
+        ledger.authorize_repair("run-4", "repair-5", "baseline-5")
+
+        for index, baseline, next_baseline in (
+            (5, "baseline-5", "baseline-6"),
+            (6, "baseline-6", "baseline-7"),
+        ):
+            run_id = f"run-{index}"
+            self._begin(ledger, run_id, baseline)
+            ledger.terminal_failure(run_id, "collaboration/routing", False)
+            ledger.authorize_repair(run_id, f"repair-{index + 1}", next_baseline)
+
+        self._begin(ledger, "run-7", "baseline-7")
+        ledger.terminal_failure("run-7", "collaboration/routing", False)
+        ledger.authorize_budget(3, "authorization-3", "reference-3")
+        ledger.authorize_repair("run-7", "repair-8", "baseline-8")
+
+        self._begin(ledger, "run-8", "baseline-8")
+        ledger.terminal_failure("run-8", "modeling-quality", False)
+        self.assertEqual(ledger._start_cap(ledger._records()), 10)
+        self.assertEqual(ledger._semantic_start_count(ledger._records()), 8)
+        self.assertEqual(
+            {
+                record.get("run_id")
+                for record in ledger._records()
+                if record.get("event") == "reservation"
+            }
+            - {
+                record.get("run_id")
+                for record in ledger._records()
+                if record.get("event") in {"semantic_start", "presemantic_release"}
+            },
+            set(),
+        )
+
     def test_c61_resolver_has_only_two_fixed_policies_and_rejects_drift_before_access(self) -> None:
         legacy = resolve_ledger_config()
         formal = resolve_ledger_config("R2.3-005")
         self.assertEqual((legacy.initial_start_cap, legacy.authorization_increment), (2, 2))
         self.assertEqual((formal.initial_start_cap, formal.authorization_increment), (1, 3))
+        self.assertFalse(legacy.allow_incomplete_modeling_quality_repair)
+        self.assertTrue(formal.allow_incomplete_modeling_quality_repair)
         self.assertEqual(legacy.ledger_filename, ".r2-3-002-start-ledger.jsonl")
         self.assertEqual(formal.ledger_filename, ".r2-3-005-start-ledger.jsonl")
         with tempfile.TemporaryDirectory() as directory:
@@ -443,10 +498,135 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             ledger.terminal_failure("run-one", "modeling-quality", True)
             before = ledger.path.read_bytes()
             with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_repair("run-one", "repair-one", "baseline-two")
+            with self.assertRaises(TeamConfigurationError):
                 ledger.authorize_budget(3, "authorization-one", "reference-one")
             with self.assertRaises(TeamConfigurationError):
                 ledger.reserve("run-two", "baseline-two", self.now.isoformat())
             self.assertEqual(ledger.path.read_bytes(), before)
+
+    def test_c68_incomplete_modeling_quality_direct_repair_replays_and_reserves_without_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            self._retained_like_10_8_0_prefix(ledger)
+            before = ledger.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_budget(3, "authorization-four", "reference-four")
+            self.assertEqual(ledger.path.read_bytes(), before)
+
+            gate = {
+                "proof_matrix_path": "proof-matrix.json",
+                "proof_matrix_digest": "a" * 64,
+                "p2a_pass_path": "p2a-pass.json",
+                "p2a_pass_digest": "b" * 64,
+                "source_run_id": "run-8",
+            }
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_repair("run-8", "repair-invalid", "baseline-8")
+            self.assertEqual(ledger.path.read_bytes(), before)
+            ledger.authorize_repair("run-8", "repair-9", "baseline-9", gate_binding=gate)
+            records = ledger._records()
+            self.assertEqual(
+                len([record for record in records if record.get("event") == "budget_authorization"]),
+                3,
+            )
+
+            replay = self._ledger(Path(directory))
+            replay._validate_strict_replay(replay._records())
+            before_gate_mismatch = ledger.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                ledger.reserve("run-9", "baseline-9", self.now.isoformat())
+            self.assertEqual(ledger.path.read_bytes(), before_gate_mismatch)
+            ledger.reserve("run-9", "baseline-9", self.now.isoformat(), gate_binding=gate)
+            self.assertEqual(ledger._start_cap(ledger._records()), 10)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 8)
+
+    def test_c68_incomplete_modeling_quality_repair_is_serialized_and_r23002_stays_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = self._ledger(root / "formal")
+            self._retained_like_10_8_0_prefix(formal)
+            outcomes: list[str] = []
+
+            def repair(baseline: str) -> None:
+                try:
+                    formal.authorize_repair("run-8", f"repair-{baseline}", baseline)
+                    outcomes.append("accepted")
+                except TeamConfigurationError:
+                    outcomes.append("rejected")
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                list(executor.map(repair, ("baseline-9", "baseline-10")))
+            self.assertEqual(sorted(outcomes), ["accepted", "rejected"])
+            accepted_baseline = [
+                record["baseline_hash"]
+                for record in formal._records()
+                if record.get("event") == "repair_authorization"
+                and record.get("run_id") == "run-8"
+            ][0]
+            formal.reserve("run-9", accepted_baseline, self.now.isoformat())
+
+            legacy = self._ledger(root / "legacy", requirement_id="R2.3-002")
+            self._begin(legacy, "legacy-one", "legacy-baseline-one")
+            legacy.terminal_failure("legacy-one", "modeling-quality", False)
+            before = legacy.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                legacy.authorize_repair("legacy-one", "legacy-repair", "legacy-baseline-two")
+            self.assertEqual(legacy.path.read_bytes(), before)
+
+    def test_c68_cli_selector_allows_formal_incomplete_repair_only(self) -> None:
+        def invoke(root: Path, argv: list[str]) -> int:
+            with patch.object(team_main, "repository_root", return_value=root), patch.object(
+                sys, "argv", ["modeling-team", *argv]
+            ):
+                return team_main.main()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = self._ledger(root / "workspaces" / "modeling-runs")
+            self._retained_like_10_8_0_prefix(formal)
+            self.assertEqual(
+                invoke(
+                    root,
+                    [
+                        "authorize-repair",
+                        "--requirement-id",
+                        "R2.3-005",
+                        "--failed-run-id",
+                        "run-8",
+                        "--baseline-hash",
+                        "baseline-9",
+                        "--repair-reference",
+                        "formal-cli-repair",
+                    ],
+                ),
+                0,
+            )
+            self.assertEqual(formal._records()[-1]["event"], "repair_authorization")
+            self.assertEqual(formal._records()[-1]["baseline_hash"], "baseline-9")
+
+            legacy = self._ledger(root / "workspaces" / "modeling-runs", requirement_id="R2.3-002")
+            self._begin(legacy, "legacy-one", "legacy-baseline-one")
+            legacy.terminal_failure("legacy-one", "modeling-quality", False)
+            before = legacy.path.read_bytes()
+            self.assertEqual(
+                invoke(
+                    root,
+                    [
+                        "authorize-repair",
+                        "--requirement-id",
+                        "R2.3-002",
+                        "--failed-run-id",
+                        "legacy-one",
+                        "--baseline-hash",
+                        "legacy-baseline-two",
+                        "--repair-reference",
+                        "legacy-cli-repair",
+                    ],
+                ),
+                2,
+            )
+            self.assertEqual(legacy.path.read_bytes(), before)
 
     def test_c69_c73_rebind_requires_one_released_fresh_reservation_per_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

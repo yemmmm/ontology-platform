@@ -2119,3 +2119,42 @@
   diff checks. Read-only start8 audit matched delivery-7/9, replayed ledger `10/8/0`, confirmed CLEANED/deleted-empty
   cleanup and preserved all 17 evidence hashes unchanged. Outcome: focused repair PASS; next action is clean commit,
   fresh start8 repair baseline and start9.
+
+### 2026-08-04 — Start9 pre-reservation exposed requirement-scoped retry-policy gap — Main agent
+
+- Clean label-closure commit `88f1691` produced fresh baseline
+  `edfdf9b5a1541a90e2206759afb3edd1b5a777953b7d40714316e5157e17249b`, but canonical start8
+  `authorize-repair` rejected before mutation because the shared ledger treated every `modeling-quality` terminal as
+  permanently non-retryable. No reservation, semantic start, run directory, platform call or evidence mutation
+  occurred; ledger remained 38 lines/8,726 bytes and SHA
+  `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`.
+- Focused plan review returned REVISE with two High findings: the current requirement/C68 explicitly forbade the
+  transition, and the shared `_RETRYABLE` policy also protects R2.3-002. Directly adding modeling-quality would either
+  remain unreplayable or regress the accepted legacy contract.
+- Main-agent disposition: both findings are accepted-high. R2.3-005 now explicitly opts into repair only for
+  `modeling-quality,false`; complete results remain terminal, R2.3-002 remains unchanged, and budget authorization
+  remains mechanical-only. All replay/next-start/repair paths must use one requirement-owned eligibility policy; no
+  historical event rewrite, cap bypass, alternate ledger or start8 special case is allowed. Implementation and start9
+  remain blocked until focused re-review, delegated fix and independent PASS.
+- Focused re-review found one further High contradiction: old ordering text required a new budget event before every
+  first repair even while cap remained. The finding is accepted. Exhausted-cap mechanical failures retain
+  failure-to-budget-to-repair ordering; retained start8 at `10/8/0` uses direct failure-to-repair-to-reservation, with
+  no budget mutation. Requirement, design and C65 now require a retained-prefix replay test for that exact generic
+  state shape before implementation may proceed.
+
+### 2026-08-04 — Incomplete modeling-quality ledger policy Round 7 PASS — Reviewer, Developer and Tester
+
+- After the remaining-cap ordering correction, final focused Plan Reviewer result was PASS with no Critical/High.
+  The reviewed policy is R2.3-005-only opt-in, `modeling-quality,false` only, complete results terminal, R2.3-002
+  unchanged and budget authorization mechanical-only.
+- Developer added one fixed config opt-in and one central repair-eligibility predicate, then used it across
+  `authorize_repair`, strict replay, next-start and reservation. Only `modeling_team/start_ledger.py` and the existing
+  R2.3-005 budget-extension test changed; no history rewrite, alternate ledger or start-specific branch was added.
+- Independent Round 7 passed 43/43 focused ledger/CLI tests: retained-like `10/8/0` direct repair without budget,
+  complete/legacy/budget rejection, baseline/order/gate/active/concurrency/serialization, CLI selection and byte
+  stability. Ruff, targeted compile and diff checks passed.
+- Formal ledger remained 38 lines/8,726 bytes, SHA
+  `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`, replay `10/8/0`; all 17 start8 evidence
+  hashes remained unchanged. GitNexus reported CRITICAL/noisy shared-ledger impact and its refresh failed on invalid
+  UTF-8; the limitation was surfaced and bounded by direct-source review plus focused compatibility tests. Outcome:
+  policy repair PASS; next action is clean commit, direct start8 repair authorization and start9.

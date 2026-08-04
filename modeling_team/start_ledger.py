@@ -49,6 +49,7 @@ class StartLedgerConfig:
     initial_start_cap: int
     authorization_increment: int
     strict_sequence: bool = False
+    allow_incomplete_modeling_quality_repair: bool = False
 
 
 _LEDGER_CONFIGS = MappingProxyType(
@@ -67,6 +68,7 @@ _LEDGER_CONFIGS = MappingProxyType(
             initial_start_cap=_FORMAL_INITIAL_START_CAP,
             authorization_increment=_FORMAL_ADDITIONAL_STARTS,
             strict_sequence=True,
+            allow_incomplete_modeling_quality_repair=True,
         ),
     }
 )
@@ -365,11 +367,7 @@ class StartLedger:
             if self.config.strict_sequence:
                 self._validate_strict_replay(records)
             failure = self._latest(records, failed_run_id, "terminal_failure")
-            if (
-                not failure
-                or failure.get("classification") not in _RETRYABLE
-                or failure.get("complete_modeling_quality_result") is not False
-            ):
+            if not self._repair_failure_eligible(failure):
                 raise TeamConfigurationError("failed run cannot authorize a second start")
             repairs = [
                 record
@@ -398,6 +396,21 @@ class StartLedger:
             )
 
         self._locked(write)
+
+    def _repair_failure_eligible(self, failure: dict[str, Any] | None) -> bool:
+        """Return whether one terminal failure may receive a repair authorization."""
+        if (
+            not isinstance(failure, dict)
+            or failure.get("complete_modeling_quality_result") is not False
+        ):
+            return False
+        classification = failure.get("classification")
+        if classification in _RETRYABLE:
+            return True
+        return (
+            classification == "modeling-quality"
+            and self.config.allow_incomplete_modeling_quality_repair
+        )
 
     def _validate_strict_replay(self, records: list[dict[str, Any]]) -> None:
         """Replay the formal R2.3-005 state machine without mutating the file."""
@@ -459,8 +472,7 @@ class StartLedger:
                     repair_list = repairs.get(previous_run_id, [])
                     if (
                         failure is None
-                        or failure[1].get("classification") not in _RETRYABLE
-                        or failure[1].get("complete_modeling_quality_result") is not False
+                        or not self._repair_failure_eligible(failure[1])
                         or not repair_list
                         or repair_list[-1].get("baseline_hash") != baseline
                     ):
@@ -573,8 +585,7 @@ class StartLedger:
                 or not isinstance(repair_reference, str)
                 or not repair_reference.strip()
                 or run_id not in failures
-                or failures[run_id][1].get("classification") not in _RETRYABLE
-                or failures[run_id][1].get("complete_modeling_quality_result") is not False
+                or not self._repair_failure_eligible(failures[run_id][1])
             ):
                 raise TeamConfigurationError("start ledger replay is invalid")
             prior_repairs = repairs.setdefault(run_id, [])
@@ -710,8 +721,7 @@ class StartLedger:
         if (
             not failure
             or records.index(failure) <= previous_index
-            or failure.get("classification") not in _RETRYABLE
-            or failure.get("complete_modeling_quality_result") is not False
+            or not self._repair_failure_eligible(failure)
             or not repair
             or records.index(repair) <= records.index(failure)
             or repair.get("baseline_hash") != baseline_hash
@@ -844,8 +854,7 @@ class StartLedger:
             elif (
                 not failure
                 or records.index(failure) <= previous_index
-                or failure.get("classification") not in _RETRYABLE
-                or failure.get("complete_modeling_quality_result") is not False
+                or not self._repair_failure_eligible(failure)
                 or not repair
                 or records.index(repair) <= records.index(failure)
                 or repair.get("baseline_hash") != baseline_hash

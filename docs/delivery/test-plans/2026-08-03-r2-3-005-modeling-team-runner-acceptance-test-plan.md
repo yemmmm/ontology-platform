@@ -88,10 +88,10 @@ FAIL/BLOCKED run is required.
 | C62 | R2.3-005 exact +3 authorization | exhausted cap 1 appends one immutable authorization and replays cap 4 with one consumed/three remaining |
 | C63 | R2.3-005 malformed authorization | +1, +2, +4, bool, blank ID/reference and forged ledger records fail without changing bytes |
 | C64 | Legacy R2.3-002 budget compatibility | initial cap and exact +2 authorization behavior remain unchanged; historical ledger bytes are untouched |
-| C65 | Authorization ordering | under one lock, latest real semantic start -> retryable incomplete terminal failure -> exhausted-cap +3 budget -> first exact repair baseline is enforced; wrong order or run leaves bytes unchanged |
+| C65 | Authorization ordering | under one lock, exhausted-cap mechanical failure requires failure -> +3 budget -> repair, while a repairable failure with remaining cap requires direct failure -> repair with no budget event; retained `10/8/0`, wrong order, wrong run and mutation-free rejection are covered |
 | C66 | Authorization identity/concurrency | duplicate ID/reference and concurrent contenders at each management event yield exactly one valid append and deterministic replay |
 | C67 | Retry gate remains mandatory | cap 4 or an interrupted failure/budget prefix cannot reserve; the complete ordered chain and exact tested repair baseline are required |
-| C68 | Complete modeling-quality stop | modeling-quality or complete semantic result cannot authorize the next reservation despite remaining cap |
+| C68 | Requirement-scoped incomplete modeling-quality repair | R2.3-005 alone permits `modeling-quality,false` to authorize a fresh-baseline repair and next reservation within existing cap; `complete=true`, budget expansion from modeling-quality, and all R2.3-002 modeling-quality retries remain rejected |
 | C69 | Presemantic release accounting/rebind | after exactly one fresh reservation consumes the prior repair, never starts semantically, is released, and leaves no active reservation, one non-empty different baseline repair for the same failed run succeeds without new budget; fresh run ID remains required |
 | C70 | Ledger mutation isolation | tests use temporary ledgers; implementation/test runs never mutate either live ledger or retained run evidence |
 | C71 | Interrupted authorization resume | stopping after failure or budget leaves a valid prefix that cannot reserve; the exact next event resumes once without rewrite or duplicate append |
@@ -1188,3 +1188,51 @@ complete R2.3-005 live requirement because start9 remains unexecuted.** The labe
 non-derivation/rejection behavior, exact-current neutral closure, ledger, cleanup, and retained
 evidence immutability all pass; next safe action is clean commit followed by separately authorized
 start9.
+
+## 2026-08-04 incomplete-modeling repair policy — Independent round 7
+
+### Scope and safety boundary
+
+- This round reuses the existing R2.3-005 budget-extension/ledger-isolation, R2.3-002 ledger
+  compatibility, and r63 tests. It validates only the policy-scoped `start_ledger.py` change and
+  its existing tests; all main-agent requirement/design/delivery-record edits and prior rounds are
+  preserved.
+- The Tester edited only this appended round. No code fix, commit, live start9, direct repair,
+  ledger/evidence/platform mutation, full suite, or new checker/harness was performed.
+
+### Focused policy checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Requirement-scoped policy | PASS | Existing C61/C68 checks show `R2.3-005` alone has `allow_incomplete_modeling_quality_repair=True`, while the default/`R2.3-002` policy remains `False`, with legacy filenames/caps/increments unchanged. |
+| One central eligibility predicate | PASS | `_repair_failure_eligible` is used by `authorize_repair`, strict replay repair/reservation validation, strict next-start validation, and nonstrict reserve; C68 plus existing sequence/rebind tests pass. `complete_modeling_quality_result=True` remains rejected. |
+| Mechanical budget boundary and retained-like direct repair | PASS | C68 builds a temporary retained-like cap/count/active `10/8/0` prefix, rejects a direct budget authorization, accepts `modeling-quality,false` repair with a fresh baseline, rejects stale/equal baseline and wrong gate binding byte-stably, then accepts the matching reservation without a budget event. Cap remains 10 and semantic count 8. |
+| Invalid order/run/gate/active/concurrency paths | PASS | C65/C67/C69/C73 and C68 cover wrong order/run, stale/equal baselines, released/active reservations, gate mismatch, rebind generations, and concurrent repair serialization; all pass with failed operations leaving temporary ledger bytes unchanged. |
+| CLI and legacy rejection | PASS | C61 formal selector authorizes the incomplete repair; unknown/legacy selectors and `R2.3-002` `modeling-quality,false` repair are rejected without append. Complete failures and budget-predecessor violations remain rejected. |
+| Focused existing test set | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_budget_extension modeling_team.tests.test_r23005_ledger_isolation modeling_team.tests.test_start_ledger_r63 modeling_team.tests.test_runner_r63` plus the 13 relevant R2.3-002 ledger compatibility methods: **43/43 passed**. |
+| Targeted static checks | PASS | Ruff on `modeling_team/start_ledger.py` and `modeling_team/tests/test_r23005_budget_extension.py`, targeted `py_compile` (temporary external cache), and `git diff --check` all passed. |
+
+### Retained formal ledger and start8 evidence
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Formal ledger strict replay | PASS | Read-only replay remains **38 lines**, cap/count/active **10/8/0**; mode `664`, size `8,726` bytes, SHA-256 `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`. No event was appended. |
+| Start8 retained cleanup | PASS | `state.json` remains `CLEANED`; Acceptance is aborted/unsettled with zero active handles/child residue and destroyed credentials; scope is `deleted-empty`, project/ontology absent, FK cascade true, residual counts zero. |
+| Start8 evidence immutability | PASS | Before/after snapshots match exactly: **17 files / 163,599 bytes**, all per-file SHA-256 values unchanged (including `deliveries.jsonl` `0ff1d6cbca1695ff8d4f75bdd18ed15bdc25b16edbfcdcd031d22c1a9fa3fa99`). |
+
+### Known tooling limitation and disposition
+
+- Developer-provided GitNexus review raised a **CRITICAL impact warning** for the shared ledger
+  path. The stale index refresh also failed on invalid UTF-8; no graph result was treated as a
+  clean-commit gate, and this round did not expand into a refresh or broad audit. Direct source
+  inspection and the focused tests above are the authoritative evidence for this policy.
+- No functional defect was reproduced. The policy is ready for a clean repair commit and, after
+  the required clean-baseline and explicit authorization gates, direct repair authorization of the
+  retained incomplete start8 followed by start9. Neither direct repair nor start9 was performed.
+
+### Round conclusion
+
+**Overall verdict: PASS for the focused incomplete-modeling ledger policy; BLOCKED for the complete
+R2.3-005 live requirement because direct start8 repair/start9 remains unexecuted.** Formal/legacy
+eligibility separation, central predicate coverage, mechanical budget behavior, invalid-path
+closure, 43 focused tests, static checks, and retained ledger/evidence immutability all pass.

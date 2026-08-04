@@ -1510,23 +1510,25 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
 - 用户于 2026-08-04 明确新增授权三次语义建模启动。R2.3-005 累计 cap 从 `1` 提高到 `4`，当前
   `semantic_start` 已消耗 `1`、剩余 `3`。这三次是失败修复后的串行重试预算，不是三个新业务切片；
   当前目标仍只接受一个成功的简单 `C -> B -> A` 切片。
-- 新启动严格串行。首次取得满足本需求完成门的真实 PASS 后立即停止，不为耗尽预算继续启动。只有
-  `runtime/infrastructure`、`platform-contract` 或 `collaboration/routing` 且
-  `complete_modeling_quality_result=false` 的失败，在记录独立修复证据和新冻结 baseline 后才允许下一次
-  start；完整 `modeling-quality` 失败不得自动使用下一次预算。
+- 新启动严格串行。首次取得满足本需求完成门的真实 PASS 后立即停止，不为耗尽预算继续启动。机械失败
+  且 `complete_modeling_quality_result=false` 时，在记录独立修复证据和新冻结 baseline 后允许下一次
+  start；本段最初将所有 `modeling-quality` failure 视为终态，但该规则已由下文 start8 后的
+  R2.3-005-specific incomplete-modeling repair policy 正式 supersede。
 - 仅 `semantic_start` 事件消耗预算。reservation 后在业务语义开始前失败并合法
   `presemantic_release` 不扣减 cap，但必须保留失败证据，且不得并发启动另一个 run。
 - 授权必须追加到独立的 `.r2-3-005-start-ledger.jsonl`，不得重写既有六条记录，也不得修改或借用
   R2.3-002 历史账本。R2.3-005 的本次授权 tranche 精确为 `+3`；旧 R2.3-002 的 `+2` 合同保持不变。
-  预算扩容不替代失败分类或 repair gate：下一 reservation 之前仍必须按顺序追加当前失败的
-  `terminal_failure`、本次 `budget_authorization` 和绑定修复后 baseline 的 `repair_authorization`。
+  预算扩容不替代失败分类或 repair gate：本次 cap 已耗尽的初始扩容路径在下一 reservation 前必须按
+  顺序追加当前失败的 `terminal_failure`、本次 `budget_authorization` 和绑定修复后 baseline 的
+  `repair_authorization`；cap 尚有余额时不得伪造额外 budget event，而是 failure 后直接追加 repair。
 - 三个账本管理命令使用固定的 `--requirement-id` 选择器：省略时只保持既有 R2.3-002 行为，操作
   R2.3-005 必须显式传入 `R2.3-005`。未知 requirement、任意 filename/root 或 requirement/config
   错配必须在创建/打开文件前拒绝；正式 Runner 只使用仓库 canonical
   `workspaces/modeling-runs`，不得通过 caller-supplied `ledger_root` 绕过共享 cap。
 - R2.3-005 的追加顺序由账本状态机强制而不是依赖人工操作：`terminal_failure` 只接受最新真实
   `semantic_start`；`budget_authorization` 必须看到该 run 的 retryable/incomplete failure 且当前 cap
-  已耗尽；首次 `repair_authorization` 必须看到在该 failure 之后追加的本次 budget event。唯一例外继承
+  已耗尽。首次 `repair_authorization` 在 cap 已耗尽时必须看到紧随 failure 的本次 budget event；cap
+  尚有余额时必须直接紧随可修复 failure，且不得追加 budget。后续唯一 rebind 例外继承
   上文 presemantic rebind 合同：如果该 repair 已被恰好一个 fresh reservation 使用、该 reservation
   从未 `semantic_start` 且已有 `presemantic_release`、当前没有 active reservation，则可为同一 semantic
   failed run 追加非空且不同的新 baseline repair，不得新增 budget；并发 rebind 只能一个成功。每一步
@@ -1573,10 +1575,10 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
 - start5 之前必须先通过一个不计入 `semantic_start` 的真实 Runtime 交接 smoke：使用冻结、无业务推理
   的平台无关 candidate，证明 Protocol 在当前 Task/Profile/隔离 Runtime 中自行构造并校验 v2 envelope，
   正确绑定 fresh-create scope，形成相关机械 receipt；不得创建/应用业务模型或把 smoke 宣称为语义 PASS。
-- 三次新启动严格串行，首次完整 PASS 后立即停止。只有 retryable mechanical failure 且
-  `complete_modeling_quality_result=false`、独立修复 PASS 和 fresh baseline 齐备时才能使用下一次；完整
-  modeling-quality 失败仍停止，不得用剩余额度掩盖。若累计 start 达到 `7` 仍未 PASS，必须再次找用户
-  申请，不得自行增加 cap。
+- 三次新启动严格串行，首次完整 PASS 后立即停止。当时只允许 retryable mechanical failure 且
+  `complete_modeling_quality_result=false`、独立修复 PASS 和 fresh baseline 齐备时使用下一次；该限制现由
+  start8 后的 R2.3-005-specific incomplete-modeling repair policy 扩展，但完整 modeling-quality 结果仍
+  永久停止。若累计 start 达到 `7` 仍未 PASS，必须再次找用户申请，不得自行增加 cap。
 
 ### 2026-08-04 start5 完整 candidate revision 修复
 
@@ -1646,6 +1648,13 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   生成业务 label。不得改 platform mechanics 或增加 start8 专用 checker。
 - 独立 Round 6 聚焦 14 PASS、1 个明确 opt-in skip；C104-C105、task/profile、Ruff/diff、ledger replay 和
   17 个 retained evidence hashes 均 PASS/unchanged。clean commit 与 fresh repair baseline 后直接运行 start9。
+- start9 pre-reservation 随后证明旧 ledger policy 把所有 `modeling-quality` failure 永久封死：canonical
+  `authorize-repair` 在零 mutation 前返回 `failed run cannot authorize a second start`。本需求现正式
+  supersede 旧规则：仅 R2.3-005 且 `classification=modeling-quality`、
+  `complete_modeling_quality_result=false` 时，可在独立修复 PASS、fresh baseline、剩余 cap 和正常串行门
+  下追加 repair authorization；`complete=true` 或已有完整语义结果仍永久停止。R2.3-002/R2.2 的历史
+  modeling-quality 禁止重试合同保持不变；budget authorization 仍只接受 retryable mechanical failure，
+  不得因 modeling-quality 扩 cap、改写 terminal event 或绕过用户授权。
 
 ### 明确边界
 

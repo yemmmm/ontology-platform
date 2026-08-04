@@ -614,8 +614,10 @@ The append-only budget boundary is requirement-specific:
 
 For R2.3-005, management events form a strict append-only state transition under the same lock. A
 `terminal_failure` must classify the latest real semantic start; `budget_authorization` must follow
-that exact retryable, incomplete-modeling-result failure at an exhausted cap; and the first
-`repair_authorization` must follow the newly appended budget event and bind the exact next baseline.
+that exact retryable, incomplete-modeling-result failure at an exhausted cap. The first
+`repair_authorization` follows the newly appended budget event only on that exhausted-cap path; while
+cap remains, it follows the repairable failure directly and no budget event is valid. Both paths bind
+the exact next baseline.
 The sole later exception is the existing presemantic rebind contract: when that repair was consumed
 by exactly one fresh reservation, the reservation never reached `semantic_start`, it has an immutable
 `presemantic_release`, and there is no active reservation, one new non-empty, different baseline
@@ -625,10 +627,36 @@ can resume only with its exact next event, but cannot reserve a new start. Wrong
 unused repair, unreleased or started reservation, equal baseline, replay and losing concurrent
 contenders leave ledger bytes unchanged.
 
-No live ledger is mutated during implementation or deterministic testing. After a reviewed commit and
-independent PASS, Delivery uses `--requirement-id R2.3-005` to append, in the state-machine-enforced
-order, the prior run's `collaboration/routing` terminal failure, the user's exact `+3` budget
-authorization, and the routing-repair authorization bound to a fresh run baseline.
+### 2026-08-04 R2.3-005 incomplete modeling-quality repair policy
+
+Start8 exposed a candidate-authoring omission and recorded `modeling-quality` with
+`complete_modeling_quality_result=false`. That state means no complete semantic result exists; it is
+not the completed modeling-quality stop described above. R2.3-005 therefore opts into one additional
+repair-eligibility branch while R2.3-002 remains byte- and behavior-compatible.
+
+- `StartLedgerConfig` carries a fixed requirement-owned opt-in, default `false`; only the canonical
+  R2.3-005 config enables incomplete modeling-quality repair.
+- One shared failure-eligibility predicate accepts the existing mechanical classifications with
+  `complete=false`, plus `modeling-quality` with `complete=false` only when that config opt-in is on.
+  `authorize_repair`, strict replay, next-start validation and reservation use that same predicate.
+- `modeling-quality` with `complete=true`, any complete semantic result, missing independent repair,
+  stale/equal baseline, exhausted cap, active reservation, wrong gate binding or wrong event order
+  remains terminal and fails without mutation.
+- Budget authorization does not use the new predicate. It remains restricted to the existing
+  retryable mechanical classifications at an exhausted cap, so incomplete modeling quality cannot
+  expand cap or substitute for explicit user authorization.
+- Existing tests cover R2.3-005 incomplete-modeling repair/replay/reservation and complete=true
+  rejection, fresh-baseline/order/gate/serialization failures, CLI selection, and unchanged
+  R2.3-002 modeling-quality rejection. One test replays the retained `10/8/0` event shape and proves
+  direct failure-to-repair-to-reservation without a budget event. No start8-specific branch or
+  alternate ledger is introduced.
+
+No live ledger is mutated during implementation or deterministic testing. On the historical initial
+exhausted-cap authorization, Delivery used `--requirement-id R2.3-005` to append, in the
+state-machine-enforced order, the prior run's `collaboration/routing` terminal failure, the user's
+exact `+3` budget authorization, and the routing-repair authorization bound to a fresh run baseline.
+For the retained start8 state at cap/count `10/8`, Delivery instead appends direct
+failure-to-repair authorization with no new budget event.
 Every new run still creates fresh scope/roles/credentials and executes the full no-start preflight.
 
 ## Implementation sequence
@@ -650,10 +678,10 @@ Every new run still creates fresh scope/roles/credentials and executes the full 
 6. From a clean checkout/status-clean worktree run the authenticated canonical-mode no-start preflight
    (including HTTP 200 `product_write_mode=rdf_primary` and unit/PID/env binding), then the deterministic suite, then execute the one real
    four-role task and two real sequential acceptance rounds from the shared test plan.
-7. For the 2026-08-04 retry authorization, first land and independently test the requirement-specific
-   ledger/CLI configuration, then append failure, `+3` budget and repair-baseline records through the
-   reviewed CLI before any fresh reservation. Stop at the first accepted PASS or a complete
-   modeling-quality failure.
+7. For the historical exhausted-cap 2026-08-04 retry authorization, first land and independently test
+   the requirement-specific ledger/CLI configuration, then append failure, `+3` budget and repair
+   through the reviewed CLI. For any later repair while cap remains, append failure then repair with
+   no budget event. Stop at the first accepted PASS or a complete modeling-quality result.
 
 No frontend UI, database migration, or domain-specific Dify route is required. The four generic
 read-only validation/reasoning MCP wrappers are in current scope because the authoritative acceptance
