@@ -3,13 +3,13 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  但真实验收因协作路由失败而 `BLOCKED`，四次授权启动已耗尽；R2.3-003～R2.3-004 已确认路线，
-  须按依赖顺序细化
+  start4 因协作路由失败而 `BLOCKED`，用户已追加授权三次，当前进入 Producer 合同最小修复；
+  R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：修复 R2.3-005 fresh-scope/candidate-envelope 协作路由，并在获得新的明确启动授权后
-  完成一次真实 Modeling Team PASS
+- 当前下一目标：复用 R2.3-002 已验收 Producer 合同，修复 R2.3-005 fresh-scope/candidate-envelope
+  协作路由；通过离线与 no-semantic-start Runtime smoke 后，在新增三次授权内完成一次真实 PASS
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -58,7 +58,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `BLOCKED（四次启动已耗尽；协作路由待修复）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（新增三次启动授权；尚未写账本/启动）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1370,7 +1370,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`BLOCKED（实现与离线验收完成；真实启动预算已耗尽，协作路由待修复）`
+当前状态：`修复中（start4 BLOCKED；新增三次启动授权尚未写账本/使用）`
 
 优先级：`P0`
 
@@ -1556,6 +1556,26 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   Modeling-to-Protocol candidate-envelope 责任路由，并通过独立确定性验收；任何新的真实
   `semantic_start` 都需要用户另行明确授权。不得追加 budget/repair/reservation 或启动第五次运行来
   绕过当前 `BLOCKED`。
+
+### 2026-08-04 再追加三次语义建模启动授权
+
+- 用户在看清 start4 未进入 Acceptance 的原因后，明确要求按修正方向继续，并再授权三次真实语义
+  建模；三次用完必须停止并向用户重新申请。该授权是新的精确 `+3` tranche：正式累计 cap 计划从
+  `4` 增至 `7`，当前已消耗 `4`、计划剩余 `3`，仍只接受同一个简单业务切片的首次完整 PASS。
+- 该授权不允许立即启动 start5。必须先证明当前账本状态机能安全表示第二个独立 `+3` tranche，补齐
+  重复 tranche 的正向、错序、重复、并发和中断恢复覆盖，并由独立 Tester PASS 后，才能把本次授权
+  追加到 canonical R2.3-005 账本；不得修改或借用 R2.3-002 账本。
+- Producer 修复必须复用 R2.3-002 Round78 已验收边界：Modeling 只拥有平台无关业务语义，Protocol
+  独占 deterministic candidate-to-v2-envelope、Batch、dry-run/apply/readback/validation/reasoning；
+  Acceptance 合同不得成为 Producer ready 之前的新前置条件。四角色 roster 和同一 Runner 任务保持，
+  Acceptance 只在 Modeling、Protocol ready/silent 后接收冻结 ticket。
+- start5 之前必须先通过一个不计入 `semantic_start` 的真实 Runtime 交接 smoke：使用冻结、无业务推理
+  的平台无关 candidate，证明 Protocol 在当前 Task/Profile/隔离 Runtime 中自行构造并校验 v2 envelope，
+  正确绑定 fresh-create scope，形成相关机械 receipt；不得创建/应用业务模型或把 smoke 宣称为语义 PASS。
+- 三次新启动严格串行，首次完整 PASS 后立即停止。只有 retryable mechanical failure 且
+  `complete_modeling_quality_result=false`、独立修复 PASS 和 fresh baseline 齐备时才能使用下一次；完整
+  modeling-quality 失败仍停止，不得用剩余额度掩盖。若累计 start 达到 `7` 仍未 PASS，必须再次找用户
+  申请，不得自行增加 cap。
 
 ### 明确边界
 

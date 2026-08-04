@@ -107,6 +107,117 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 ledger._start_cap(ledger._records())
             self.assertEqual(ledger.path.read_bytes(), before)
 
+    def test_c84_second_exact_plus_three_tranche_progresses_to_cap_seven(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            # Consume the first authorized tranche: four starts, with the fourth
+            # ending in a retryable failure so the next authorization has the
+            # exact predecessor required by the strict sequence.
+            self._first_failure(ledger, "run-one")
+            ledger.authorize_budget(3, "authorization-one", "reference-one")
+            ledger.authorize_repair("run-one", "repair-one", "baseline-two")
+            sequence = (
+                (2, "baseline-two", "baseline-three"),
+                (3, "baseline-three", "baseline-four"),
+                (4, "baseline-four", "baseline-five"),
+            )
+            for index, baseline, next_baseline in sequence:
+                run_id = f"run-{index}"
+                ledger.reserve(run_id, baseline, self.now.isoformat())
+                ledger.mark_semantic_start(run_id)
+                ledger.terminal_failure(run_id, "collaboration/routing", False)
+                if index < 4:
+                    ledger.authorize_repair(run_id, f"repair-{index}", next_baseline)
+            self.assertEqual(ledger._start_cap(ledger._records()), 4)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 4)
+            self.assertEqual(
+                {record["event"] for record in ledger._records() if record["event"] == "reservation"},
+                {"reservation"},
+            )
+
+            before = ledger.path.read_bytes()
+            ledger.authorize_budget(3, "authorization-two", "reference-two")
+            self.assertNotEqual(before, ledger.path.read_bytes())
+            self.assertEqual(ledger._start_cap(ledger._records()), 7)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 4)
+            self.assertEqual(
+                len(
+                    {
+                        record["run_id"]
+                        for record in ledger._records()
+                        if record["event"] == "reservation"
+                        and not any(
+                            prior.get("event") in {"semantic_start", "presemantic_release"}
+                            and prior.get("run_id") == record.get("run_id")
+                            for prior in ledger._records()
+                        )
+                    }
+                ),
+                0,
+            )
+
+            # The resumed fifth reservation is authorized by a fresh repair
+            # baseline and consumes exactly one new semantic start.
+            ledger.authorize_repair("run-4", "repair-five", "baseline-five")
+            ledger.reserve("run-five", "baseline-five", self.now.isoformat())
+            ledger.mark_semantic_start("run-five")
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 5)
+
+    def test_c85_second_tranche_invalid_duplicate_concurrent_and_interrupted_paths_are_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            self._first_failure(ledger)
+            ledger.authorize_budget(3, "authorization-one", "reference-one")
+            before = ledger.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_budget(2, "authorization-two", "reference-two")
+            self.assertEqual(ledger.path.read_bytes(), before)
+            ledger.authorize_repair("run-one", "repair-one", "baseline-two")
+            # Consume starts two through four without a second authorization yet.
+            sequence = (
+                (2, "baseline-two", "baseline-three"),
+                (3, "baseline-three", "baseline-four"),
+                (4, "baseline-four", "baseline-five"),
+            )
+            for index, baseline, next_baseline in sequence:
+                run_id = f"run-{index}"
+                ledger.reserve(run_id, baseline, self.now.isoformat())
+                ledger.mark_semantic_start(run_id)
+                ledger.terminal_failure(run_id, "runtime/infrastructure", False)
+                if index < 4:
+                    ledger.authorize_repair(run_id, f"repair-{index}", next_baseline)
+            ledger.authorize_budget(3, "authorization-two", "reference-two")
+            stable = ledger.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_budget(3, "authorization-two", "reference-three")
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_budget(3, "authorization-three", "reference-two")
+            self.assertEqual(ledger.path.read_bytes(), stable)
+
+            outcomes: list[str] = []
+
+            def contend(authorization_id: str) -> None:
+                try:
+                    ledger.authorize_budget(3, authorization_id, f"concurrent-{authorization_id}")
+                    outcomes.append("accepted")
+                except TeamConfigurationError:
+                    outcomes.append("rejected")
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                list(executor.map(contend, ("authorization-three", "authorization-four")))
+            self.assertEqual(sorted(outcomes), ["rejected", "rejected"])
+
+            # A presemantic interruption is idempotent; no second release or
+            # semantic-start count can be manufactured while resuming.
+            ledger.authorize_repair("run-4", "repair-five", "baseline-five")
+            ledger.reserve("run-five", "baseline-five", self.now.isoformat())
+            self.assertTrue(ledger.release_presemantic("run-five", "interrupted"))
+            interrupted = ledger.path.read_bytes()
+            self.assertFalse(ledger.release_presemantic("run-five", "interrupted-again"))
+            self.assertEqual(ledger.path.read_bytes(), interrupted)
+            with self.assertRaises(TeamConfigurationError):
+                ledger.mark_semantic_start("run-five")
+
     def test_c64_legacy_default_keeps_exact_plus_two_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger = self._ledger(Path(directory), requirement_id="R2.3-002")
@@ -173,6 +284,43 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 0,
             )
             self.assertEqual(formal._start_cap(formal._records()), 4)
+            formal.authorize_repair("run-one", "formal-repair-two", "formal-baseline-two")
+            for index, baseline, next_baseline in (
+                (2, "formal-baseline-two", "formal-baseline-three"),
+                (3, "formal-baseline-three", "formal-baseline-four"),
+                (4, "formal-baseline-four", "formal-baseline-five"),
+            ):
+                run_id = f"formal-run-{index}"
+                formal.reserve(run_id, baseline, self.now.isoformat())
+                formal.mark_semantic_start(run_id)
+                formal.terminal_failure(run_id, "collaboration/routing", False)
+                if index < 4:
+                    formal.authorize_repair(run_id, f"formal-repair-{index + 1}", next_baseline)
+            legacy_bytes_before_second_formal_auth = (
+                root / "workspaces" / "modeling-runs" / ".r2-3-002-start-ledger.jsonl"
+            ).read_bytes()
+            self.assertEqual(
+                invoke(
+                    root,
+                    [
+                        "authorize-budget",
+                        "--requirement-id",
+                        "R2.3-005",
+                        "--additional-starts",
+                        "3",
+                        "--authorization-id",
+                        "formal-cli-second",
+                        "--reference",
+                        "formal-cli-second-reference",
+                    ],
+                ),
+                0,
+            )
+            self.assertEqual(formal._start_cap(formal._records()), 7)
+            self.assertEqual(
+                (root / "workspaces" / "modeling-runs" / ".r2-3-002-start-ledger.jsonl").read_bytes(),
+                legacy_bytes_before_second_formal_auth,
+            )
             before = (root / "workspaces" / "modeling-runs" / ".r2-3-002-start-ledger.jsonl").read_bytes()
             self.assertEqual(
                 invoke(

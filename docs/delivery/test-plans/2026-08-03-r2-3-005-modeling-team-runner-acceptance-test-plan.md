@@ -107,6 +107,16 @@ FAIL/BLOCKED run is required.
 | C81 | Production-shaped display path | formal normalize/prepare/start/live-scope/drain/emit plus Coordinator paraphrase and `未知` release succeeds without model/network calls and cleans all test-double residue |
 | C82 | Receive-outer display path | a formal question first returned by `receive_outer()` is marked only after that output's successful emit; failure and success behavior matches top-of-loop `drain()` |
 | C83 | Display evidence failure atomicity | validate the whole emitted batch before mutation; mixed valid/contradictory input changes nothing, and open/write/fsync failure cannot leave displayed state without durable evidence or allow owner input |
+| C84 | Second exact +3 tranche | a temporary valid cap/count/active `4/4/0` ledger accepts one distinct exact +3 event, replays `7/4/0`, and can continue through repair, start5 reservation and semantic start |
+| C85 | Repeated-tranche safety | early/wrong-order/count-below-cap, malformed/blank/forged events, IDs or references duplicated across either tranche, and concurrent contenders fail without byte drift; interruption after authorization resumes exactly once |
+| C86 | Second-tranche CLI and isolation | explicit `--requirement-id R2.3-005` performs the valid temporary transition; omitted/default selection remains R2.3-002 and rejects the R2.3-005 transition; both live ledgers remain byte-identical |
+| C87 | Fresh-scope Producer contract | R2.3-005 task requires only the run-created Project/Ontology, forbids prior-scope reuse and a second start, adds `public-protocol.md` only to Protocol, and keeps raw business sources away from Coordinator |
+| C88 | Runner proof-gate projection | a run without `expected_matrix_binding` receives neutral candidate/Protocol ownership text and excludes proof matrix, evidence-map and native-verifier prerequisites; a bound R2.3-002 proof task retains them |
+| C89 | Runtime proof-gate projection | non-proof R2.3-005 does not stage/mount proof assets, configure proof-only MCP, or require proof-only tools, while retaining generic mechanics and platform tools; bound R2.3-002 behavior is unchanged |
+| C90 | Neutral candidate translation | a source-grounded, platform-neutral candidate shaped like retained start4 delivery-10 reaches Protocol deterministic candidate-v2/Batch translation and a mechanical receipt/conflict instead of a missing-envelope rejection |
+| C91 | Acceptance readiness invariant | Acceptance cannot start before distinct Modeling and Protocol ready/silent signals and continues to use the existing independent ticket/verdict path; Producer repair creates no semantic verdict shortcut |
+| C92 | No-start smoke safety and scope binding | production-shaped Runtime smoke binds its receipt only to a Runtime-generated run-owned synthetic fresh-create Project/Ontology identity, rejects caller/prior identities, and retains prompt/config/tool/delivery/scope evidence while performing no business modeling, platform call, ledger mutation, real Project/Ontology/Session/Lease/key creation, Acceptance start or semantic PASS claim |
+| C93 | Producer and full regression | accepted R2.3-002 proof-v2 behavior, settlement/Acceptance, display binding, budget/ledger isolation and complete managed `modeling_team` discovery remain PASS |
 
 ## Service-level and integration cases
 
@@ -128,6 +138,9 @@ FAIL/BLOCKED run is required.
 | I14 | Authenticated canonical writer gate | exact active service unit/PID/start time and authenticated `rdf_primary` response are bound before any fresh write scope; stale/legacy-only process blocks without semantic start |
 | I15 | Three-start authorization gate | before any new Producer, append-only evidence shows R2.3-005 cap 4/start count 1/active 0 plus prior retryable failure and repair authorization bound to the fresh baseline; R2.3-002 ledger hash is unchanged |
 | I16 | Retry3 display repair and final-start gate | retry3 is recorded as incomplete collaboration/routing only after offline repair PASS; a fresh start4 baseline receives the sole repair authorization with no budget event, then the exact emitted question can accept one grounded `未知` response |
+| I17 | Second-tranche live append gate | after reviewed deterministic and smoke PASS, exactly one new +3 authorization and one start4 repair are appended under the R2.3-005 lock, yielding cap/count/active `7/4/0` before reservation; no duplicate terminal event and no R2.3-002 ledger drift |
+| I18 | Real Runtime Producer handoff smoke | current non-proof R2.3-005 package/profile projects a frozen neutral candidate plus Runtime-generated run-owned synthetic fresh scope to Protocol candidate-v2/Batch mechanics, retains the scope-bound receipt, rejects prior/caller scope identities and leaves zero platform/resource/ledger mutation; independent Tester audits the retained smoke |
+| I19 | Start5 Producer-to-Acceptance path | one fresh serialized start5 uses only its run-owned Project/Ontology, reaches Modeling+Protocol ready/silent after required platform stages, then and only then starts independent Acceptance; first full PASS stops further starts |
 
 ## Real acceptance run
 
@@ -736,3 +749,65 @@ post-commit retry3 terminal-failure -> fresh start4 baseline/repair gate.
 
 **Overall verdict: BLOCKED for R2.3-005 live semantic acceptance; PASS for this round's retained
 evidence integrity, cleanup, source/display binding, and failure-classification audit.**
+
+## 2026-08-04 Producer reuse and second +3 tranche — Independent round 1
+
+### Scope, baseline, and safety boundary
+
+- Tester: fresh independent Requirement Tester, reusing this shared plan and the reviewed
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`.
+  Authority was R2.3-005 (including the second exact `+3` section), accepted R2.3-002
+  `r2-3-002-t` Task/Profile and Protocol source, and cases C84-C93/I17-I19.
+- Code baseline was `HEAD=efc55eafefab13edba3070f95af9d70f1e066cdf`; the implementation was
+  intentionally uncommitted. The worktree contained only the expected documentation, package,
+  Runner/Runtime/Protocol, task and test changes plus the new producer smoke/plan files. No
+  backend/frontend/UI/live-state path was changed. `git diff --check` passed.
+- This round was read-only against live state. I did not reserve or start a semantic run, append
+  either ledger, call the ontology platform, create Project/Ontology/Session/Lease/key, restart
+  services, invoke the opt-in Runtime smoke, or mutate retained evidence. Temporary test fixtures
+  were self-cleaned. The single skipped test below is the explicit `R23005_RUN_REAL_SMOKE=1`
+  opt-in test; the retained smoke evidence, rather than a skip, is the I18 evidence audited here.
+- Before and after all checks, the live snapshots were unchanged: R2.3-002 ledger
+  `21723` bytes/mtime epoch `1785665875`, SHA-256
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; R2.3-005 ledger
+  `4535` bytes/mtime epoch `1785817337`, SHA-256
+  `c44fb191e7298452dc99a6f01cc008a4a8db6eb7f0b9f3066cfd4fdc6b341cb8`. The retained
+  no-start smoke remained `workspaces/.r2-3-005-producer-smoke/r23005-neutral-runtime-probe/evidence.json`,
+  regular mode `0400`, `4453` bytes, SHA-256
+  `aa4c44f6af9c66445461e2273548d50b1542b3080c41dcb9d2bda2b2e43c0d06`.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| C84-C86 second exact `+3`, malformed/order/duplicate/concurrency/interruption, CLI/default and legacy isolation | PASS | `uv run --project backend python -m unittest modeling_team.tests.test_r23005_budget_extension modeling_team.tests.test_r23005_ledger_isolation modeling_team.tests.test_r23005_a_revision`: **29/29**. Temporary ledgers progressed `4/4/0 -> 7/4/0`, then a synthetic start5 reservation/semantic start; invalid events and concurrent contenders stayed byte-stable. R2.3-002 default/explicit-selector and both live ledgers were isolated. |
+| C87-C91 loaded Producer contract and gate projection | PASS | `uv run --project backend python -m unittest modeling_team.tests.test_codex_isolation modeling_team.tests.test_protocol_retrieval_mcp modeling_team.tests.test_r23005_producer_smoke`: **61 tests, 60 PASS, 1 expected opt-in skip**. Loaded R2.3-005 Task/Profile prove fresh run-owned scope, no second start, Protocol-only `public-protocol.md`, and no Coordinator business-source bytes; loaded R2.3-002 `expected_matrix_binding` enables proof gate; unbound R2.3-005 exposes only generic mechanics, while proof-gated raw MCP rejects a neutral candidate; readiness requires distinct Modeling ready and Protocol silent signals. |
+| C90 neutral candidate translation and strict Batch contract | PASS | The unbound receipt tests accept the source-grounded neutral candidate and return exactly `status`, `candidate_revision`, `semantic_digest`, `candidate_digest`. The retained smoke Batch is `dry_run`, `lease_token=null`, run-owned client/session/idempotency IDs, current synthetic Ontology, one deterministic `create_class` item, and satisfies every required field in `modeling-batch-item-contract.json`. |
+| I18/C92 retained no-start Runtime evidence audit | PASS | Read-only JSON audit independently recomputed the neutral candidate/receipt, candidate and semantic digests, exact protocol-tool and synthetic-scope digests, smoke prompt digest, loaded task projection digest, platform-guard script digest, and verified the exact Batch contract. Evidence records `semantic_start=false`, `platform_calls=0`, `ledger_mutations=0`, `acceptance_started=false`, guard attempted/accepted calls `0/0`, no real key/server, unchanged before/after platform-resource snapshots, no residual process, and caller/prior scope both `rejected`. Evidence is a regular non-symlink `0400` file with forbidden-token scan clear and atomic-retention code path reviewed. Runtime identity, guarded TOML and reply-text preimages are not retained; no undocumented digest algorithm was guessed. |
+| Bound-vs-unbound raw MCP tool surface | PASS | Read-only `PROTOCOL_PROOF_GATE=0` lists exactly `build_candidate_receipt` and `verify_scoped_retrieval_fallback`; `PROTOCOL_PROOF_GATE=1` adds only `write_candidate_item_evidence_map`, and a neutral candidate is rejected with `-32602`/`candidate-required-assertions/v2`. |
+| Accepted R2.3-002/proof-v2 and P2a frozen surfaces | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23002 modeling_team.tests.test_runner_r63 modeling_team.tests.test_protocol_retrieval_mcp modeling_team.tests.test_proof_v2_runtime_asset`: **54/54**. `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests/test_p2a_codex_runtime.py`: **29 passed**; `test_proof_v2_runtime_asset.py`: **3 passed**. Frozen hash assertions and proof asset staging remained green. |
+| C93 focused/all/full regression | PASS | All R2.3-005 discovery: `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: **87 tests, OK, 1 expected skip**. Complete managed unittest discovery: **303/303 OK, 1 expected skip**. Complete pytest discovery: `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests`: **352 passed, 1 skipped, 163 subtests passed**. `uv run --project backend ruff check modeling_team`: all checks passed; compile with a temporary `PYTHONPYCACHEPREFIX` and `git diff --check`: pass. |
+| GitNexus change/risk review | PASS with limitation | Read-only `detect_changes(scope=compare, base_ref=main, repo=ontology-platform)` returned changed_files `17`, changed symbols `55`, affected_count `0`, risk `low`, affected_processes `[]`. Untracked smoke/plan files are outside the indexed diff. Upstream impact inspection of changed `TeamRunner.prepare` reports aggregate **HIGH** (151 impacted, 20 direct callers); changed MCP `handle` reports aggregate **HIGH** (122 impacted, one direct caller; depth-1 view LOW). Direct callers include `__main__.py`, `TeamRunner.start`, and covered Runner/protocol tests; full suites above pass. GitNexus index is 20 commits behind `HEAD` (`lastCommit=286da60`), so graph evidence is supplemental, not a clean-commit proof. |
+| Excluded-path and side-effect review | PASS | `git diff --name-only`/status scans show no `backend/`, `frontend/`, `workspaces/modeling-runs/`, Project/Ontology/Session/Lease/key, service, Acceptance/PlatformScope/Broker/lifecycle or UI file changes. Final live ledger/evidence mode, size, mtime and hashes equal the before snapshot. |
+
+### Defects and unexecuted scope
+
+- No D1 Critical or D2 Major implementation defect was reproduced in C84-C93/I18. The high
+  GitNexus aggregate impact is a review warning, not a failing behavior; direct call coverage and
+  all regression suites are green. No Requirement Developer repair is requested for this scope.
+- I17 (live second-tranche append) is intentionally **BLOCKED/NOT EXECUTED** for this independent
+  Tester: the required `terminal_failure -> exact +3 budget_authorization -> fresh repair` append
+  and start5 gate belong to Delivery after commit and authorization. No live event was fabricated
+  or appended, so the live R2.3-005 ledger remains at 20 records/cap `4` and I19 remains unclaimed.
+- I19 (real start5 Modeling-to-Acceptance, semantic quality, two CQs, settlement and cleanup) is
+  likewise **BLOCKED/NOT EXECUTED** by design. The retained no-start Runtime smoke is a mechanical
+  handoff gate only and is not a semantic PASS; the explicit opt-in test skip does not weaken I18
+  because the retained real Runtime evidence was independently checked above.
+
+### Round conclusion
+
+**Overall verdict: BLOCKED for the full R2.3-005 live gate; PASS for the current deterministic
+Producer-reuse/second-tranche implementation and retained I18 smoke evidence.** No developer fix is
+requested before commit. Delivery may proceed only with the reviewed post-commit I17 append-only
+sequence and then the separately authorized, serial I19 start; stop on the first complete semantic
+PASS and preserve all live/retained evidence.

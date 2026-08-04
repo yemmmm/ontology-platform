@@ -120,6 +120,15 @@ class TeamRunner:
 
         return bool(re.fullmatch(r"[a-z0-9][a-z0-9-]{2,80}", value))
 
+    @staticmethod
+    def _expected_matrix_binding(configuration: TeamConfiguration) -> dict[str, str] | None:
+        """Project one proof marker from the loaded Task/Profile contract."""
+        profile_binding = configuration.profile.expected_matrix_binding
+        task_binding = configuration.task.expected_matrix_binding
+        if profile_binding is not None and task_binding is not None and profile_binding != task_binding:
+            raise TeamConfigurationError("Profile and Task expected_matrix_binding drift")
+        return task_binding or profile_binding
+
     def _canonical_ledger_root(self) -> Path:
         return self.repository_root / "workspaces" / "modeling-runs"
 
@@ -242,15 +251,16 @@ class TeamRunner:
             )
             if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
                 raise TeamConfigurationError("baseline manifest drifted during preflight")
-        gate_binding = None
-        if formal_acceptance:
-            profile_binding = config.profile.expected_matrix_binding
-            task_binding = config.task.expected_matrix_binding
-            if profile_binding is not None and task_binding is not None and profile_binding != task_binding:
-                raise TeamConfigurationError("Profile and Task expected_matrix_binding drift")
-            expected_binding = task_binding or profile_binding
-            if expected_binding:
-                gate_binding = self._resolve_expected_matrix_binding(expected_binding)
+        # The proof gate belongs to the loaded Task/Profile contract, not to the
+        # formal R2.3-005 workflow flag.  Archived R2.3-002 runs still carry the
+        # expected matrix binding and must project that same gate into TeamRun;
+        # an unbound R2.3-005 run remains ordinary/non-proof.
+        expected_binding = self._expected_matrix_binding(config)
+        gate_binding = (
+            self._resolve_expected_matrix_binding(expected_binding)
+            if expected_binding
+            else None
+        )
         if config.task.schema_version == 2:
             ledger_config = resolve_ledger_config(
                 R2_3_005_REQUIREMENT_ID if formal_acceptance else R2_3_002_REQUIREMENT_ID
@@ -1156,15 +1166,18 @@ class TeamRunner:
         if not self.run or self.run.configuration.task.schema_version != 2:
             raise TeamConfigurationError("candidate-before-submit gate requires a v2 run")
         expected_gate = self.run.gate_binding
-        if expected_gate is not None:
-            if not isinstance(matrix_binding, dict) or set(matrix_binding) != {"proof_matrix_path", "proof_matrix_digest"}:
-                raise TeamConfigurationError("candidate matrix_binding is missing or invalid")
-            if (
-                matrix_binding.get("proof_matrix_path") != expected_gate["proof_matrix_path"]
-                or matrix_binding.get("proof_matrix_digest") != expected_gate["proof_matrix_digest"]
-            ):
-                raise TeamConfigurationError("candidate matrix_binding drifts from frozen gate")
-            self._validate_candidate_matrix(candidate, expected_gate)
+        if expected_gate is None:
+            raise TeamConfigurationError(
+                "candidate evidence-map gate is disabled without expected_matrix_binding"
+            )
+        if not isinstance(matrix_binding, dict) or set(matrix_binding) != {"proof_matrix_path", "proof_matrix_digest"}:
+            raise TeamConfigurationError("candidate matrix_binding is missing or invalid")
+        if (
+            matrix_binding.get("proof_matrix_path") != expected_gate["proof_matrix_path"]
+            or matrix_binding.get("proof_matrix_digest") != expected_gate["proof_matrix_digest"]
+        ):
+            raise TeamConfigurationError("candidate matrix_binding drifts from frozen gate")
+        self._validate_candidate_matrix(candidate, expected_gate)
         candidate_value = dict(candidate)
         if "matrix_binding" in candidate_value:
             # matrix_binding is proof metadata, not a candidate envelope field.
@@ -1269,6 +1282,10 @@ class TeamRunner:
         assert self.run
         task = self.run.configuration.task
         if task.schema_version == 2:
+            proof_gate = (
+                getattr(self.run, "gate_binding", None) is not None
+                or self._expected_matrix_binding(self.run.configuration) is not None
+            )
             generation = (
                 self.coordinator_phase.generation
                 if self._formal_coordination_enabled() and self.coordinator_phase
@@ -1328,15 +1345,20 @@ class TeamRunner:
                     "semantic candidate; Protocol alone translates it into the envelope and must not require Modeling "
                     "to author exact items. The public tool remains the final execution and validation authority."
                     " Reply to every Modeling candidate or revision with reply_to_delivery_id set to that candidate's "
-                    "delivery_id and send a mechanical receipt or conflict. Remain active for revisions, and report "
-                    "terminal only after the Runner delivers Modeling's terminal-handoff. Preserve every candidate "
-                    "evidence_citations field byte-for-byte; do not read/guess source locators or owner answers. "
-                    "Before the first submit_modeling_batch call, validate assertion IDs/scope/citations and the "
-                    "frozen matrix binding, write the run-local candidate-item-evidence-map, and compare the "
-                    "group-projected safe dry-run Evidence plan before apply. Emit only "
-                    "silent_for_acceptance to coordinator through send_coordination with the current "
-                    "generation after the ordered protocol work is quiet."
+                    "delivery_id and send a mechanical receipt or concrete translation conflict. Remain active for "
+                    "revisions, and report terminal only after the Runner delivers Modeling's terminal-handoff. "
+                    "Preserve source-grounded evidence_citations when present; do not read/guess source locators or "
+                    "owner answers. Use the generic mechanics contract and configured retrieval fallback for ordinary "
+                    "candidates. Emit only silent_for_acceptance to coordinator through "
+                    "send_coordination with the current generation after the ordered protocol work is quiet."
                 )
+                if proof_gate:
+                    text += (
+                        " For this proof-gated task, before the first submit_modeling_batch call, validate assertion "
+                        "IDs/scope/citations against the frozen proof matrix, write the run-local "
+                        "candidate-item-evidence-map, compare the group-projected safe dry-run Evidence plan, and "
+                        "complete the native proof-v2 verifier."
+                    )
                 context = self.run.protocol_context
                 if context:
                     return text + "\nMechanical platform scope (no credential): " + json.dumps(
@@ -1349,7 +1371,9 @@ class TeamRunner:
                     "read the Acceptance verdict; do not redefine CQs, approved-source paths, or the "
                     "quality standard. After Modeling-ready and Protocol-silent, emit only "
                     "acceptance_start to acceptance through send_coordination with the current "
-                    "generation and acceptance_round_id as text."
+                    "generation and acceptance_round_id as text. Use only the Project/Ontology created for this "
+                    "run; never reuse or bind a prior/caller-supplied scope and never initiate a second semantic "
+                    "start."
                     "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
@@ -1358,7 +1382,7 @@ class TeamRunner:
                     "their terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
                 )
             if role == "modeling":
-                return text + (
+                modeling_text = text + (
                     "\nEmit only ready_for_acceptance to coordinator through send_coordination with "
                     "the current generation once the semantic slice is ready; never emit "
                     "silent_for_acceptance or acceptance_start."
@@ -1367,10 +1391,16 @@ class TeamRunner:
                     "reply_to_delivery_id matches it. On conflict, send a revision as a new expects_reply request; "
                     "if you cannot revise, send no further candidate and report blocked. Without an established "
                     "reply request, Modeling may report only blocked, never completed. Every candidate item must "
-                    "carry non-empty evidence_citations with the exact document_name, excerpt, source artifact/"
-                    "locator/hash, and owner_answer_id fields; do not put platform IDs, Batch IDs, receipt labels, "
-                    "or matrix answers into the platform-neutral candidate."
+                    "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
+                    "or receipt labels into the platform-neutral candidate."
                 )
+                if proof_gate:
+                    modeling_text += (
+                        " For this proof-gated task, every item must carry non-empty evidence_citations with the "
+                        "exact document_name, excerpt, source artifact/locator/hash, and owner_answer_id fields, "
+                        "and the candidate must satisfy the frozen assertion matrix."
+                    )
+                return modeling_text
             return text
         return (
             self.run.configuration.task.objective

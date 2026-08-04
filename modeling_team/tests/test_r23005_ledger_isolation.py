@@ -209,6 +209,7 @@ class R23005LedgerIsolationTests(unittest.TestCase):
             runner = self._runner(ledger_root)
             try:
                 run = self._prepare_formal(runner, run_id)
+                self.assertIsNone(run.gate_binding)
                 old_path = ledger_root / ".r2-3-002-start-ledger.jsonl"
                 new_path = ledger_root / ".r2-3-005-start-ledger.jsonl"
                 new_lock = ledger_root / ".r2-3-005-start-ledger.lock"

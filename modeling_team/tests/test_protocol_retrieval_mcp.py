@@ -187,6 +187,62 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         _validate_candidate_receipt(delivery, candidate, "delivery-1")
 
+    def test_proof_gate_rejects_neutral_candidate_at_raw_mcp_boundary(self) -> None:
+        wrapper = self._wrapper()
+        neutral = {
+            "candidate_kind": "semantic-candidate",
+            "candidate_revision": 1,
+            "scope": {"project_id": "project-smoke", "ontology_id": "ontology-smoke"},
+            "constraints": [],
+            "items": [{"item_id": "item-1", "item_kind": "class", "semantic": {"label": "Tool"}}],
+        }
+        with patch.dict(os.environ, {wrapper.PROOF_GATE_ENV: "1"}, clear=False), patch.object(
+            wrapper, "build_candidate_receipt"
+        ) as builder:
+            response = wrapper.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 32,
+                    "method": "tools/call",
+                    "params": {
+                        "name": wrapper.CANDIDATE_RECEIPT_TOOL_NAME,
+                        "arguments": {"candidate": neutral},
+                    },
+                }
+            )
+        assert response is not None
+        self.assertEqual(response["error"]["code"], -32602)
+        self.assertIn("candidate-required-assertions/v2", response["error"]["message"])
+        builder.assert_not_called()
+
+    def test_unbound_runtime_accepts_neutral_candidate_receipt(self) -> None:
+        wrapper = self._wrapper()
+        neutral = {
+            "candidate_kind": "semantic-candidate",
+            "candidate_revision": 1,
+            "scope": {"project_id": "project-smoke", "ontology_id": "ontology-smoke"},
+            "constraints": [],
+            "items": [{"item_id": "item-1", "item_kind": "class", "semantic": {"label": "Tool"}}],
+        }
+        with patch.dict(os.environ, {wrapper.PROOF_GATE_ENV: "0"}, clear=False):
+            response = wrapper.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 33,
+                    "method": "tools/call",
+                    "params": {
+                        "name": wrapper.CANDIDATE_RECEIPT_TOOL_NAME,
+                        "arguments": {"candidate": neutral},
+                    },
+                }
+            )
+        assert response is not None
+        self.assertNotIn("error", response)
+        self.assertEqual(
+            set(response["result"]["structuredContent"]),
+            {"status", "candidate_revision", "semantic_digest", "candidate_digest"},
+        )
+
     def test_candidate_receipt_tool_fails_closed_for_spoof_missing_extra_tamper_and_cross_candidate(self) -> None:
         wrapper = self._wrapper()
         candidate = self._valid_candidate()
@@ -564,6 +620,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 base / "skills",
                 platform_tools=frozenset({"check_platform_health"}),
                 schema_version=2,
+                proof_gate=True,
             )
             observed = [
                 {"name": "team_transport", "tools": [{"name": "send_team_message"}, {"name": "report_task_result"}]},

@@ -25,6 +25,7 @@ EVIDENCE_MAP_TOOL_NAME = "write_candidate_item_evidence_map"
 CANDIDATE_RECEIPT_TOOL_NAME = "build_candidate_receipt"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
+PROOF_GATE_ENV = "PROTOCOL_PROOF_GATE"
 RUNTIME_CONTEXT_PATH = Path("/opt/mechanics-contract.json")
 REQUIRED_PROOF_ARGUMENTS = (
     "mode",
@@ -805,23 +806,65 @@ def _evidence_map_tool() -> dict[str, Any]:
 
 def _candidate_receipt_schema() -> dict[str, Any]:
     """Advertise the candidate-only deterministic receipt producer contract."""
-    candidate_schema = json.loads(
-        json.dumps(_candidate_item_evidence_map_schema()["properties"]["candidate"])
-    )
-    candidate_schema["description"] = (
-        "The complete immutable candidate-required-assertions/v2 envelope delivered by Modeling; "
-        "receipt fields must not be supplied separately."
-    )
-    return {
-        "type": "object",
-        "description": (
+    if _proof_gate_enabled():
+        candidate_schema = json.loads(
+            json.dumps(_candidate_item_evidence_map_schema()["properties"]["candidate"])
+        )
+        candidate_schema["description"] = (
+            "The complete immutable candidate-required-assertions/v2 envelope delivered by Modeling; "
+            "receipt fields must not be supplied separately."
+        )
+        description = (
             "Validate one complete frozen candidate-required-assertions/v2 envelope and return "
             "the exact four-field receipt for Team Transport. Receipt fields are computed by "
             "Protocol mechanics and are not caller arguments."
-        ),
+        )
+    else:
+        candidate_schema = _neutral_candidate_schema()
+        description = (
+            "Validate one source-grounded, platform-neutral semantic candidate and return a "
+            "deterministic four-field Protocol receipt. Protocol owns candidate-v2/Batch "
+            "translation; callers do not provide platform IDs, Batch fields, or proof metadata."
+        )
+    return {
+        "type": "object",
+        "description": description,
         "required": ["candidate"],
         "additionalProperties": False,
         "properties": {"candidate": candidate_schema},
+    }
+
+
+def _neutral_candidate_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "description": (
+            "Platform-neutral semantic candidate from Modeling. Protocol translates this "
+            "candidate into deterministic candidate-v2/Batch requests."
+        ),
+        "required": ["candidate_kind", "candidate_revision", "scope", "constraints", "items"],
+        "additionalProperties": True,
+        "properties": {
+            "candidate_kind": {"type": "string", "minLength": 1},
+            "candidate_revision": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "minLength": 1}]},
+            "scope": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+            "constraints": {"type": "array", "items": {"type": "string"}},
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["item_id", "item_kind", "semantic"],
+                    "additionalProperties": True,
+                    "properties": {
+                        "item_id": {"type": "string", "minLength": 1},
+                        "item_kind": {"type": "string", "minLength": 1},
+                        "semantic": {},
+                        "evidence_citations": {"type": "array", "items": {"type": "object"}},
+                    },
+                },
+            },
+        },
     }
 
 
@@ -829,11 +872,16 @@ def _candidate_receipt_tool() -> dict[str, Any]:
     return {
         "name": CANDIDATE_RECEIPT_TOOL_NAME,
         "description": (
-            "Build a deterministic accepted receipt from the complete immutable v2 candidate; "
-            "the caller must send the returned exact payload through Team Transport."
+            "Build a deterministic accepted receipt from the Modeling candidate; the caller "
+            "must send the returned exact payload through Team Transport."
         ),
         "inputSchema": _candidate_receipt_schema(),
     }
+
+
+def _proof_gate_enabled() -> bool:
+    """Keep direct/local invocations proof-compatible unless Runtime sets the gate explicitly."""
+    return os.environ.get(PROOF_GATE_ENV, "1") == "1"
 
 
 def _validate_candidate_receipt_arguments(arguments: object) -> str | None:
@@ -1009,9 +1057,12 @@ def handle(request: object) -> dict[str, Any] | None:
             {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "protocol_mechanics", "version": "1"}},
         )
     if method == "tools/list":
+        tools = [_candidate_receipt_tool(), _tool()]
+        if _proof_gate_enabled():
+            tools.insert(1, _evidence_map_tool())
         return _result(
             request_id,
-            {"tools": [_candidate_receipt_tool(), _evidence_map_tool(), _tool()]},
+            {"tools": tools},
         )
     if method != "tools/call" or not isinstance(params, dict):
         return _error(request_id, -32601, "method or tool is unavailable")
@@ -1023,6 +1074,12 @@ def handle(request: object) -> dict[str, Any] | None:
         assert isinstance(arguments, dict)
         candidate = arguments["candidate"]
         assert isinstance(candidate, dict)
+        if _proof_gate_enabled() and candidate.get("schema_version") != "candidate-required-assertions/v2":
+            return _error(
+                request_id,
+                -32602,
+                "candidate receipt requires candidate-required-assertions/v2 under the proof gate",
+            )
         try:
             receipt = build_candidate_receipt(candidate)
         except ProtocolRetrievalFallbackError as exc:
@@ -1036,6 +1093,8 @@ def handle(request: object) -> dict[str, Any] | None:
             },
         )
     if params.get("name") == EVIDENCE_MAP_TOOL_NAME:
+        if not _proof_gate_enabled():
+            return _error(request_id, -32601, "method or tool is unavailable")
         error = _validate_evidence_map_arguments(arguments)
         if error is not None:
             return _error(request_id, -32602, error)

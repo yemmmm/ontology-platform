@@ -22,6 +22,29 @@ from modeling_team.transport_mcp import RoutingError, TeamTransportBroker, mcp_r
 
 
 class R23005ARevisionTests(unittest.TestCase):
+    def test_c91_acceptance_start_requires_distinct_modeling_and_protocol_phase_signals(self) -> None:
+        phases = CoordinatorPhaseController()
+        phases.start()
+        phases.assign_slice(sender_id="coordinator", objective="fresh producer slice")
+        generation = phases.generation
+        with self.assertRaises(AcceptanceContractError):
+            phases.start_acceptance_round(
+                sender_id="coordinator", round_id="round-before-ready", generation=generation
+            )
+        phases.readiness(
+            sender_id="modeling", message_kind="ready_for_acceptance", generation=generation
+        )
+        with self.assertRaises(AcceptanceContractError):
+            phases.start_acceptance_round(
+                sender_id="coordinator", round_id="round-before-silent", generation=generation
+            )
+        phases.readiness(
+            sender_id="protocol", message_kind="silent_for_acceptance", generation=generation
+        )
+        phases.start_acceptance_round(
+            sender_id="coordinator", round_id="round-after-both", generation=generation
+        )
+
     def test_phase_controller_enforces_role_generation_and_round_reuse(self) -> None:
         phases = CoordinatorPhaseController()
         phases.start()

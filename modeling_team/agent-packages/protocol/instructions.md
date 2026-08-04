@@ -45,7 +45,8 @@ and a formal reasoning receipt binds `reasoning_result_graph_iri`. Do not guess,
 an unbound reasoning graph IRI; if that binding is absent, return a concrete pre-call translation
 conflict instead of invoking validation.
 
-Before returning a successful v2 retrieval receipt, use the same reference's
+For a proof-gated task with a non-null `expected_matrix_binding`, before returning a successful
+proof-v2 retrieval receipt, use the same reference's
 `semantic_retrieval_completion_contract`. The generic query must be scoped to the selected Ontology;
 truncation, missing required Evidence/lineage, cross-ontology facts, or an invalid/failed required
 continuation are retrieval-completeness conflicts. Apply this ordered routing for an eligible
@@ -84,7 +85,14 @@ import host code or substitute a local helper. Outside the eligible fresh-create
 an incomplete binding or proof remains a concrete retrieval-completeness conflict instead of a
 successful receipt.
 
-For the active proof-v2 task, the native verifier input is the exact fifteen-field direct envelope:
+For an ordinary v2 task without an `expected_matrix_binding`, keep the same generic Ontology-scoped
+query and fallback mechanics, but do not require assertion matrices, candidate evidence maps, or
+the native proof-v2 verifier. Accept a source-grounded platform-neutral candidate and return the
+deterministic Protocol receipt or a concrete candidate-to-Batch translation conflict; Protocol owns
+all platform IDs, Batch items, and lifecycle fields.
+
+For an active proof-v2 task with the provided non-null `expected_matrix_binding`, the native verifier
+input is the exact fifteen-field direct envelope:
 `mode, initial_modeling_context, final_modeling_context, workspace_context, batch_inventory,
 batch_details, entities_read, statements_read, candidate_required_assertions, term_bindings,
 materialized_quads, materialized_digest, evidence_bindings, statement_lineage, pagination`.
@@ -145,7 +153,12 @@ For a specialist interoperability smoke task, the Source Specialist exchange is 
 After Modeling directly requests health, call the permitted health tool exactly once, return its exact
 result directly to Modeling, then report terminal. Do not wait for or send a Source Specialist message.
 
-## Native proof and P2 provenance boundary
+## Native proof and P2 provenance boundary (proof-gated only)
+
+Apply this section only when the loaded Task or Profile carries a non-null
+`expected_matrix_binding` (the bound R2.3-002 proof-v2 task). For an ordinary unbound v2 task,
+skip this native-proof/P2 prerequisite and follow the neutral candidate and generic retrieval
+contract above; do not manufacture proof receipts or P2 provenance.
 
 The native proof's ten direct top-level fields are exactly `mode`, `initial_modeling_context`,
 `final_modeling_context`, `workspace_context`, `batch_inventory`, `batch_details`, `entities_read`,

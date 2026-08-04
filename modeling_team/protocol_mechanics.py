@@ -917,50 +917,112 @@ def _fact_triple(value: Any, ontology_id: str) -> tuple[str, str, str, str]:
     )
 
 
-# Public v2 mechanics are re-exported here because Protocol's staged runtime
-# asset historically exposed one ``protocol_mechanics`` module.  The concrete
-# implementation remains isolated in ``proof_v2`` to preserve v1 behavior.
-try:  # pragma: no cover - direct stdio execution imports the sibling module
-    from .proof_v2 import (
-        ProofV2Error as _ProofV2Error,
-        build_candidate_item_evidence_map as _build_candidate_item_evidence_map,
-        canonical_bytes as proof_v2_canonical_bytes,
-        canonical_digest as proof_v2_canonical_digest,
-        citation_digest as proof_v2_citation_digest,
-        citation_group_digest as _citation_group_digest,
-        compare_dry_run_group_projection as _compare_dry_run_group_projection,
-        inline_evidence_identity as _inline_evidence_identity,
-        _validate_candidate as _validate_v2_candidate,
-        validate_candidate_item_evidence_map as _validate_candidate_item_evidence_map,
-        verify_postapply_evidence_bindings as _verify_postapply_evidence_bindings,
-        verify_proof_v2 as _verify_proof_v2,
-    )
-except ImportError:  # pragma: no cover
-    from proof_v2 import (
-        ProofV2Error as _ProofV2Error,
-        build_candidate_item_evidence_map as _build_candidate_item_evidence_map,
-        canonical_bytes as proof_v2_canonical_bytes,
-        canonical_digest as proof_v2_canonical_digest,
-        citation_digest as proof_v2_citation_digest,
-        citation_group_digest as _citation_group_digest,
-        compare_dry_run_group_projection as _compare_dry_run_group_projection,
-        inline_evidence_identity as _inline_evidence_identity,
-        _validate_candidate as _validate_v2_candidate,
-        validate_candidate_item_evidence_map as _validate_candidate_item_evidence_map,
-        verify_postapply_evidence_bindings as _verify_postapply_evidence_bindings,
-        verify_proof_v2 as _verify_proof_v2,
-    )
+def _proof_v2_module() -> Any:
+    """Load proof-v2 only when a proof-gated operation actually needs it.
+
+    The generic R2.3-005 Protocol asset deliberately does not mount ``proof_v2.py``.
+    Keeping this import lazy lets the same mechanics wrapper provide the ordinary
+    candidate receipt and retrieval fallback surface without making proof-v2 an
+    unconditional runtime dependency.  Direct stdio execution still imports the
+    sibling module from ``/opt`` through the fallback branch.
+    """
+    try:  # pragma: no cover - direct stdio execution imports the sibling module
+        from . import proof_v2
+    except ImportError:  # pragma: no cover
+        try:
+            from modeling_team import proof_v2
+        except ImportError:
+            import proof_v2
+
+    return proof_v2
+
+
+def _proof_v2_attr(name: str) -> Any:
+    return getattr(_proof_v2_module(), name)
 
 
 def _v2_call(function: Any, *args: Any, **kwargs: Any) -> Any:
     try:
         return function(*args, **kwargs)
-    except _ProofV2Error as exc:
-        raise ProtocolRetrievalFallbackError(str(exc)) from exc
+    except Exception as exc:
+        proof_error = None
+        try:
+            proof_error = _proof_v2_attr("ProofV2Error")
+        except ImportError:
+            pass
+        if proof_error is not None and isinstance(exc, proof_error):
+            raise ProtocolRetrievalFallbackError(str(exc)) from exc
+        raise
 
 
 def build_candidate_item_evidence_map(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return _v2_call(_build_candidate_item_evidence_map, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("build_candidate_item_evidence_map"), *args, **kwargs)
+
+
+def _neutral_candidate_receipt(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Validate the source-grounded, platform-neutral candidate used by R2.3-005.
+
+    This is intentionally a small semantic envelope.  It proves that Protocol can
+    consume the Modeling handoff and produce deterministic receipt material without
+    requiring proof-v2 assertion IDs, matrix rows, platform IDs, or evidence-map
+    files.  Batch/Item construction remains downstream Protocol work and never gets
+    delegated back to Modeling.
+    """
+    required = {"candidate_kind", "candidate_revision", "scope", "constraints", "items"}
+    if not required.issubset(candidate):
+        missing = sorted(required - set(candidate))
+        raise ProtocolRetrievalFallbackError(
+            f"neutral candidate is missing required fields: {', '.join(missing)}"
+        )
+    if not _is_nonempty_string(candidate.get("candidate_kind")):
+        raise ProtocolRetrievalFallbackError("neutral candidate kind is not bound")
+    revision = candidate.get("candidate_revision")
+    if isinstance(revision, bool) or not (
+        (isinstance(revision, int) and revision > 0)
+        or _is_nonempty_string(revision)
+    ):
+        raise ProtocolRetrievalFallbackError("neutral candidate revision is invalid")
+    scope = candidate.get("scope")
+    if not (_is_nonempty_string(scope) or (isinstance(scope, dict) and bool(scope))):
+        raise ProtocolRetrievalFallbackError("neutral candidate scope is not bound")
+    constraints = candidate.get("constraints")
+    if not isinstance(constraints, list) or any(not _is_nonempty_string(value) for value in constraints):
+        raise ProtocolRetrievalFallbackError("neutral candidate constraints are invalid")
+    items = candidate.get("items")
+    if not isinstance(items, list) or not items:
+        raise ProtocolRetrievalFallbackError("neutral candidate items are empty")
+    item_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ProtocolRetrievalFallbackError("neutral candidate item is invalid")
+        for field in ("item_id", "item_kind"):
+            if not _is_nonempty_string(item.get(field)):
+                raise ProtocolRetrievalFallbackError(f"neutral candidate {field} is not bound")
+        if item["item_id"] in item_ids:
+            raise ProtocolRetrievalFallbackError("neutral candidate item IDs are duplicated")
+        item_ids.add(item["item_id"])
+        if "semantic" not in item or item["semantic"] is None:
+            raise ProtocolRetrievalFallbackError("neutral candidate semantic payload is missing")
+        citations = item.get("evidence_citations")
+        if citations is not None and (
+            not isinstance(citations, list)
+            or any(not isinstance(citation, dict) for citation in citations)
+        ):
+            raise ProtocolRetrievalFallbackError("neutral candidate evidence citations are invalid")
+
+    semantic_value = {
+        "candidate_kind": candidate["candidate_kind"],
+        "candidate_revision": revision,
+        "scope": scope,
+        "constraints": constraints,
+        "items": items,
+    }
+    return {
+        "status": "accepted",
+        "candidate_revision": revision,
+        "semantic_digest": _canonical_digest(semantic_value),
+        "candidate_digest": _canonical_digest(candidate),
+    }
 
 
 def build_candidate_receipt(candidate: Any) -> dict[str, Any]:
@@ -978,46 +1040,48 @@ def build_candidate_receipt(candidate: Any) -> dict[str, Any]:
         candidate_value = json.loads(json.dumps(candidate, ensure_ascii=False))
     except (TypeError, ValueError) as exc:
         raise ProtocolRetrievalFallbackError("candidate receipt candidate is not JSON") from exc
-    validated = _v2_call(_validate_v2_candidate, candidate_value)
-    return {
-        "status": "accepted",
-        "candidate_revision": validated["candidate_revision"],
-        "semantic_digest": validated["semantic_digest"],
-        "candidate_digest": validated["candidate_digest"],
-    }
+    if candidate_value.get("schema_version") == "candidate-required-assertions/v2":
+        validated = _v2_call(_proof_v2_attr("_validate_candidate"), candidate_value)
+        return {
+            "status": "accepted",
+            "candidate_revision": validated["candidate_revision"],
+            "semantic_digest": validated["semantic_digest"],
+            "candidate_digest": validated["candidate_digest"],
+        }
+    return _neutral_candidate_receipt(candidate_value)
 
 
 def validate_candidate_item_evidence_map(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return _v2_call(_validate_candidate_item_evidence_map, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("validate_candidate_item_evidence_map"), *args, **kwargs)
 
 
 def compare_dry_run_group_projection(*args: Any, **kwargs: Any) -> list[dict[str, str]]:
-    return _v2_call(_compare_dry_run_group_projection, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("compare_dry_run_group_projection"), *args, **kwargs)
 
 
 def verify_postapply_evidence_bindings(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-    return _v2_call(_verify_postapply_evidence_bindings, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("verify_postapply_evidence_bindings"), *args, **kwargs)
 
 
 def verify_proof_v2(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return _v2_call(_verify_proof_v2, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("verify_proof_v2"), *args, **kwargs)
 
 
 def citation_digest(*args: Any, **kwargs: Any) -> str:
-    return _v2_call(proof_v2_citation_digest, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("citation_digest"), *args, **kwargs)
 
 
 def citation_group_digest(*args: Any, **kwargs: Any) -> str:
-    return _v2_call(_citation_group_digest, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("citation_group_digest"), *args, **kwargs)
 
 
 def inline_evidence_identity(*args: Any, **kwargs: Any) -> str:
-    return _v2_call(_inline_evidence_identity, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("inline_evidence_identity"), *args, **kwargs)
 
 
 def canonical_bytes(*args: Any, **kwargs: Any) -> bytes:
-    return _v2_call(proof_v2_canonical_bytes, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("canonical_bytes"), *args, **kwargs)
 
 
 def canonical_digest(*args: Any, **kwargs: Any) -> str:
-    return _v2_call(proof_v2_canonical_digest, *args, **kwargs)
+    return _v2_call(_proof_v2_attr("canonical_digest"), *args, **kwargs)

@@ -19,6 +19,7 @@ import yaml
 from modeling_team.contracts import _load_package, load_team_configuration, repository_root
 from modeling_team.protocol_mcp_launch import canonical_protocol_mcp_mode_contract, protocol_mcp_launch_spec
 from modeling_team.protocol_mechanics import protocol_mechanics_contract, protocol_mechanics_contract_bytes
+from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeMessage
 from modeling_team.runtimes.codex import (
     CodexRuntimeAdapter,
@@ -472,6 +473,7 @@ class CodexIsolationTests(unittest.TestCase):
             run = SimpleNamespace(
                 root=base,
                 run_id="r23002-retrieval-mcp",
+                gate_binding={"proof_matrix_path": "matrix", "proof_matrix_digest": "0" * 64},
                 configuration=SimpleNamespace(task=SimpleNamespace(schema_version=2)),
             )
             protocol = _Agent(
@@ -542,6 +544,7 @@ class CodexIsolationTests(unittest.TestCase):
             Path("/tmp/protocol-skills"),
             platform_tools=frozenset({"check_platform_health"}),
             schema_version=2,
+            proof_gate=True,
         )
         expected_protocol = [
             {"name": "team_transport", "tools": [{"name": "send_team_message"}, {"name": "report_task_result"}]},
@@ -1877,6 +1880,126 @@ class CodexIsolationTests(unittest.TestCase):
                     ):
                         adapter.start_roster(run, [profile_agent])
                     self.assertEqual(adapter.agents[case].fallback_eligible, expected)
+
+    def test_runtime_proof_gate_projects_loaded_task_profile_binding_without_manual_marker(self) -> None:
+        root = repository_root()
+        bound = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-002-t.yaml",
+            root / "modeling_team/tasks/r2-3-002-t.yaml",
+            root=root,
+            strict=True,
+        )
+        ordinary = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+            strict=True,
+        )
+        self.assertTrue(
+            CodexRuntimeAdapter._proof_gate_enabled(
+                SimpleNamespace(configuration=bound, gate_binding=None)
+            )
+        )
+        self.assertFalse(
+            CodexRuntimeAdapter._proof_gate_enabled(
+                SimpleNamespace(configuration=ordinary, gate_binding=None)
+            )
+        )
+
+    def test_c87_loaded_producer_contract_freezes_fresh_scope_and_role_private_protocol_source(self) -> None:
+        root = repository_root()
+        configuration = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+            strict=True,
+        )
+        objective = configuration.task.objective
+        self.assertIn("fresh Project/Ontology", objective)
+        self.assertIn("Never reuse", objective)
+        self.assertIn("never create a second semantic start", objective)
+        public_protocol = next(
+            source
+            for source in configuration.task.role_sources
+            if source.relative_path.as_posix().endswith("public-protocol.md")
+        )
+        self.assertEqual(public_protocol.classification, "protocol")
+        self.assertEqual(public_protocol.roles, frozenset({"protocol"}))
+        self.assertFalse(
+            any("business-source" == source.classification and "coordinator" in source.roles
+                for source in configuration.task.role_sources)
+        )
+
+    def test_c89_unbound_loaded_producer_stages_generic_mechanics_without_proof_asset(self) -> None:
+        root = repository_root()
+        configuration = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+            strict=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            run = SimpleNamespace(
+                root=base,
+                run_id="r23005-generic-asset-test",
+                configuration=configuration,
+                gate_binding=None,
+            )
+            agent = _Agent(
+                "protocol",
+                _load_package(root, "protocol"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                schema_version=2,
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._stage_protocol_retrieval_mcp(run, agent)
+            self.assertFalse(agent.proof_gate)
+            self.assertIsNone(agent.proof_v2_path)
+            self.assertEqual(
+                sorted(
+                    item["name"]
+                    for item in json.loads(
+                        subprocess.run(
+                            [str(__import__("sys").executable), str(agent.retrieval_mcp_path)],
+                            cwd=agent.retrieval_mcp_path.parent,
+                            env={**os.environ, "PROTOCOL_PROOF_GATE": "0"},
+                            input='{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n',
+                            text=True,
+                            capture_output=True,
+                            check=True,
+                        ).stdout
+                    )["result"]["tools"]
+                ),
+                ["build_candidate_receipt", "verify_scoped_retrieval_fallback"],
+            )
+
+    def test_c88_runner_prompt_projects_loaded_002_proof_and_loaded_005_neutral_contract(self) -> None:
+        root = repository_root()
+        bound = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-002-t.yaml",
+            root / "modeling_team/tasks/r2-3-002-t.yaml",
+            root=root,
+            strict=True,
+        )
+        ordinary = load_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+            strict=True,
+        )
+        runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
+        runner.run = SimpleNamespace(configuration=bound, protocol_context=None)
+        proof_prompt = runner._task_text("protocol")
+        self.assertIn("frozen proof matrix", proof_prompt)
+        self.assertIn("candidate-item-evidence-map", proof_prompt)
+        runner.run = SimpleNamespace(configuration=ordinary, protocol_context=None)
+        neutral_prompt = runner._task_text("protocol")
+        self.assertNotIn("frozen proof matrix", neutral_prompt)
+        self.assertNotIn("candidate-item-evidence-map", neutral_prompt)
+        self.assertIn("generic mechanics contract", neutral_prompt)
 
     def test_terminal_guard_drains_pending_stdout_and_fails_closed_when_io_is_busy(self) -> None:
         root = repository_root()

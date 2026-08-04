@@ -1,13 +1,16 @@
 schema_version: 2
 task_id: r2-3-005-formal-acceptance
 objective: >-
-  Run one bounded Dify Workflow-as-Tool C -> B -> A modeling slice and hand it to the
-  persistent Acceptance role. Coordinator serializes modeling ready/silence acknowledgements,
-  then publishes an immutable ticket for each of two competency questions. Acceptance uses only
-  two fresh, isolated Examiner pairs per round and preserves explicit unknowns. Modeling owns
-  semantics; Protocol alone performs dry-run, apply_atomic, readback, validation, and reasoning.
-  Do not create a second semantic start, reuse a prior Project/Ontology, expose expected answers,
-  or invoke generic multi-agent/spawn capabilities.
+  Run one bounded Dify Workflow-as-Tool C -> B -> A modeling slice in the fresh Project/Ontology
+  created and owned by this run, then hand it to the persistent Acceptance role. Never reuse or
+  bind a caller-supplied or prior-run Project/Ontology, and never create a second semantic start
+  inside this task. Coordinator receives no raw business-source bytes and only serializes the
+  separate Modeling-ready and Protocol-silent signals before publishing an immutable ticket for
+  each of two competency questions. Acceptance uses only two fresh, isolated Examiner pairs per
+  round and preserves explicit unknowns. Modeling owns source-grounded semantics; Protocol alone
+  performs deterministic candidate-v2/Batch translation, dry-run, apply_atomic, readback,
+  validation, reasoning, and governed retrieval. Do not expose expected answers or invoke generic
+  multi-agent/spawn capabilities.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question
@@ -25,6 +28,9 @@ role_sources:
     classification: business-source
     roles: [modeling]
   - path: modeling_team/references/modeling-batch-item-contract.json
+    classification: protocol
+    roles: [protocol]
+  - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/public-protocol.md
     classification: protocol
     roles: [protocol]
   - path: modeling_team/references/r2-3-005-acceptance-standard.json

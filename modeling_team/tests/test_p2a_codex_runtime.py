@@ -19,10 +19,13 @@ from modeling_team.runtimes.p2a_codex import P2ACodexRuntimeAdapter
 
 ROOT = Path(__file__).resolve().parents[2]
 FROZEN_GLOBAL_SURFACES = {
-    "modeling_team/runner.py": "d6a2f1bce9ecf52c0c4e087f419f8e84c588c35dc6fd3e0197b08b2f1e2ee806",
-    "modeling_team/protocol_mechanics.py": "f8e8aff440136b652d093ff6b040168d692193ef91ef1e6df1203613f05f49ea",
-    "modeling_team/protocol_retrieval_mcp.py": "dbf1d7f376c227ada0a711288a95507a729eab58768298cc36f0a4f0a9560742",
-    "modeling_team/runtimes/codex.py": "036430d806f5972b31c082b51bbe46c04d02e5bcc70f4edd3ceb49f03ff0bf18",
+    # R2.3-005 intentionally updates these four shared surfaces for explicit
+    # proof-gate projection and neutral Producer reuse; keep all other frozen
+    # platform/P2a surfaces byte-bound below.
+    "modeling_team/runner.py": "8e5057f740d2a8c8548f947b7d7e0999d2070fdc1ab4d440da55c99007eda454",
+    "modeling_team/protocol_mechanics.py": "1aa81771de8a1ab7d45e7d87b9f2d788a3e989d252afd5cd8468947ecf0fb800",
+    "modeling_team/protocol_retrieval_mcp.py": "cacc947ca7f1eb02050b1de30d54f4ba471f4eee1eea37195253d5bdb1b73be9",
+    "modeling_team/runtimes/codex.py": "2693888903c7b9e0537cccec5e6bbf0bcbfb1e697b9c0efc087f6a772eda61b5",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
 

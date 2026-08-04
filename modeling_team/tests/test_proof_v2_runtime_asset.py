@@ -31,6 +31,7 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
         run = SimpleNamespace(
             root=base,
             run_id="r23002-proof-v2-asset-test",
+            gate_binding={"proof_matrix_path": "matrix", "proof_matrix_digest": "0" * 64},
             configuration=SimpleNamespace(task=SimpleNamespace(schema_version=2)),
         )
         adapter._run_root = base

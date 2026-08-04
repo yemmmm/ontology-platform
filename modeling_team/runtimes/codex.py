@@ -85,6 +85,7 @@ class _Agent:
     proof_v2_path: Path | None = None
     retrieval_asset_fds: tuple[int, ...] = ()
     schema_version: int = 1
+    proof_gate: bool = False
     fallback_eligible: bool = False
     retrieval_episode: int = 0
     retrieval_state: str = "idle"
@@ -852,6 +853,27 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     @staticmethod
+    def _proof_gate_enabled(run: Any) -> bool:
+        """Resolve proof-v2 assets from an explicit gate, not schema version alone.
+
+        A missing or null binding is non-proof.  Real TeamRun instances carry the
+        marker, so a non-null binding is the only normal proof gate; the archived
+        P2a production task remains an explicit proof-gated overlay.
+        """
+        gate_binding = getattr(run, "gate_binding", None)
+        configuration = getattr(run, "configuration", None)
+        task = getattr(configuration, "task", None)
+        profile = getattr(configuration, "profile", None)
+        expected_binding = getattr(task, "expected_matrix_binding", None) or getattr(
+            profile, "expected_matrix_binding", None
+        )
+        return (
+            gate_binding is not None
+            or expected_binding is not None
+            or getattr(task, "task_id", None) == "p2a-protocol-production"
+        )
+
+    @staticmethod
     def preflight_host_auth() -> Path:
         """Validate the host auth source without opening or emitting its contents."""
         host_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
@@ -893,6 +915,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 skills,
                 platform_tools=tools,
                 schema_version=run.configuration.task.schema_version,
+                proof_gate=self._proof_gate_enabled(run),
                 fallback_eligible=(
                     package.role == "protocol"
                     and run.configuration.task.schema_version == 2
@@ -943,6 +966,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         task = getattr(getattr(run, "configuration", None), "task", None)
         if agent.package.role != "protocol" or getattr(task, "schema_version", 1) != 2:
             return
+        agent.proof_gate = self._proof_gate_enabled(run)
         assets = run.root / "runtime-assets" / "protocol"
         assets.mkdir(parents=True, mode=0o700, exist_ok=True)
         os.chmod(assets.parent, 0o700)
@@ -959,11 +983,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         wrapper = assets / "protocol-retrieval-mcp.py"
         verifier = assets / "protocol_mechanics.py"
         proof_v2 = assets / "proof_v2.py"
-        source_specs = (
+        source_specs = [
             (wrapper, self.root / "modeling_team" / "protocol_retrieval_mcp.py", "protocol_retrieval_mcp", 0o444),
             (verifier, self.root / "modeling_team" / "protocol_mechanics.py", "protocol_retrieval_verifier", 0o444),
-            (proof_v2, self.root / "modeling_team" / "proof_v2.py", "proof_v2", 0o600),
-        )
+        ]
+        if agent.proof_gate:
+            source_specs.append(
+                (proof_v2, self.root / "modeling_team" / "proof_v2.py", "proof_v2", 0o600)
+            )
         baseline_path = run.root / "baseline-manifest.json"
         baseline = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
         expected_digests = baseline.get("files", {}) if isinstance(baseline, dict) else {}
@@ -1001,7 +1028,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 or staged.st_uid != os.getuid()
             ):
                 raise CodexRuntimeError("Protocol retrieval MCP staged asset metadata is invalid")
-        agent.retrieval_mcp_path, agent.retrieval_verifier_path, agent.proof_v2_path = wrapper, verifier, proof_v2
+        agent.retrieval_mcp_path = wrapper
+        agent.retrieval_verifier_path = verifier
+        agent.proof_v2_path = proof_v2 if agent.proof_gate else None
 
     def probe_role_visibility(self, run: Any) -> dict[str, Any]:
         """Run only path-readability probes inside each Agent's own bwrap namespace."""
@@ -1188,6 +1217,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "required = true",
                         "[mcp_servers.protocol_mechanics.env]",
                         f'PROTOCOL_RUNTIME_RUN_ID = {json.dumps(run_id)}',
+                        f'PROTOCOL_PROOF_GATE = {json.dumps("1" if agent.proof_gate else "0")}',
                     ]
                 )
         if formal_capability:
@@ -1370,7 +1400,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 or agent.proof_v2_path is not None
             ):
                 descriptors = self._open_protocol_retrieval_assets(agent)
-                command[command.index("--chdir") : command.index("--chdir")] = [
+                mounts = [
                     "--dir",
                     "/opt",
                     "--ro-bind",
@@ -1379,10 +1409,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "--ro-bind",
                     f"/proc/self/fd/{descriptors[1]}",
                     "/opt/protocol_mechanics.py",
-                    "--ro-bind",
-                    f"/proc/self/fd/{descriptors[2]}",
-                    "/opt/proof_v2.py",
                 ]
+                if len(descriptors) == 3:
+                    mounts.extend(
+                        [
+                            "--ro-bind",
+                            f"/proc/self/fd/{descriptors[2]}",
+                            "/opt/proof_v2.py",
+                        ]
+                    )
+                command[command.index("--chdir") : command.index("--chdir")] = mounts
             if agent.schema_version == 2:
                 reasoner = self._protocol_reasoner_script()
                 command[command.index("--chdir") : command.index("--chdir")] = [
@@ -1439,7 +1475,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _open_protocol_retrieval_assets(self, agent: _Agent) -> tuple[int, ...]:
         """Open immutable wrapper/verifier/proof descriptors for the Protocol-only bwrap mount."""
         if agent.retrieval_asset_fds:
-            if len(agent.retrieval_asset_fds) != 3:
+            expected_count = 3 if agent.proof_gate else 2
+            if len(agent.retrieval_asset_fds) != expected_count:
                 raise CodexRuntimeError("Protocol retrieval MCP descriptor state is invalid")
             return agent.retrieval_asset_fds
         if (
@@ -1450,11 +1487,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ):
             raise CodexRuntimeError("Protocol retrieval MCP Agent identity is invalid")
         expected_root = self._run_root / "runtime-assets" / "protocol"
-        expected = (
+        expected = [
             (agent.retrieval_mcp_path, expected_root / "protocol-retrieval-mcp.py", self.root / "modeling_team/protocol_retrieval_mcp.py", 0o444),
             (agent.retrieval_verifier_path, expected_root / "protocol_mechanics.py", self.root / "modeling_team/protocol_mechanics.py", 0o444),
-            (agent.proof_v2_path, expected_root / "proof_v2.py", self.root / "modeling_team/proof_v2.py", 0o600),
-        )
+        ]
+        if agent.proof_gate:
+            expected.append(
+                (agent.proof_v2_path, expected_root / "proof_v2.py", self.root / "modeling_team/proof_v2.py", 0o600)
+            )
         descriptors: list[int] = []
         try:
             for path, expected_path, source, mode in expected:
@@ -1731,8 +1771,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 expected["protocol_mechanics"] = {
                     "build_candidate_receipt",
                     "verify_scoped_retrieval_fallback",
-                    "write_candidate_item_evidence_map",
                 }
+                if agent.proof_gate:
+                    expected["protocol_mechanics"].add("write_candidate_item_evidence_map")
         if (
             self._coordination_enabled
             and agent.package.role in ROLE_OPERATIONS

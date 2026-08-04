@@ -1810,3 +1810,114 @@
 - Final disposition: requirement/status documentation is synchronized to BLOCKED and no further live action is
   authorized. The deterministic next-step proposal is recorded but is not implemented in this exhausted-budget
   closeout.
+
+### 2026-08-04 — User authorizes three additional semantic starts and directs Producer reuse — Main agent
+
+- User decision: continue through the identified correction direction and authorize exactly three additional real
+  semantic modeling starts. The tranche is additive: planned cumulative cap `4 -> 7`, currently consumed `4`, with
+  at most three future starts. Stop at first complete PASS; if all three are consumed, return to the user for any
+  further authorization.
+- Functional correction: preserve the four-role Runner but restore the already accepted R2.3-002 Producer boundary
+  before Acceptance. Modeling owns platform-neutral business semantics; Protocol owns deterministic v2 candidate/
+  Batch translation and all platform operations. Acceptance becomes active only after Modeling and Protocol are
+  ready/silent; proof-v2/Acceptance fields cannot be prerequisites for reaching that handoff.
+- Mandatory no-start gate: inventory the exact accepted R2.3-002 artifacts and current R2.3-005 prompt deltas; prove
+  a no-semantic-start real Runtime candidate handoff; plan review, delegated implementation and independent testing
+  must PASS before start5. No new business dataset, orchestration framework, P2/P2a expansion or platform product
+  concept is authorized.
+- Budget safety: the live formal ledger is still the retained 20-line cap/count/active `4/4/0` state. The new tranche
+  has not yet been appended. First verify the existing strict state machine safely supports a second distinct `+3`
+  authorization and add missing repeat-tranche regressions; no live ledger mutation, repair, reservation or start is
+  allowed during this audit/design phase.
+
+### 2026-08-04 — Second-tranche preparation exceeds the first-attempt timing gate — Main agent
+
+- From the user's second-tranche authorization through Producer reuse audit, repeat-tranche audit, plan/test
+  refinement and mandatory plan review, no semantic modeling start occurred. Therefore this preparation crossed the
+  repository's first-real-attempt timing gate and semantic modeling represented 0% of this tranche's active work.
+- The time consumers were retained start4 contract comparison, isolating unconditional proof-v2 prompt/Runtime
+  projection, proving the existing ledger can represent a second +3 tranche, and mandatory plan review. No Agent
+  Runtime, platform operation, resource creation or live-ledger mutation occurred during that interval.
+- Required reduction: stop all further scope expansion. Implement only conditional proof-v2 projection, explicit
+  fresh-create wording/binding, the missing second-tranche regressions and one no-semantic-start Runtime handoff
+  smoke. After those already-required gates PASS, proceed directly to start5; any new prerequisite pauses and is
+  reported instead of growing the harness. Continue per-run semantic-versus-overhead accounting.
+
+### 2026-08-04 — Producer reuse and second-tranche plan review PASS — Plan Reviewer and Main agent
+
+- Reviewed plan:
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`;
+  shared acceptance additions are C84-C93 and I17-I19 in the existing R2.3-005 test plan.
+- The first review finding was High: the no-start smoke proved candidate translation but did not require the receipt
+  to bind a run-owned fresh-create scope, so the start4 prior-scope defect could recur. Main corrected the plan and
+  C92/I18 to use a Runtime-generated synthetic fresh Project/Ontology identity, require receipt-only binding to it,
+  reject caller/prior identities and prove zero real platform/resource mutation.
+- The second review finding was the missing 20-minute/semantic-effort operating response. Main recorded the gate
+  miss, froze the minimal path and prohibited further harness/design expansion before start5. Delivery, not the
+  Developer, retains formal smoke execution, cleanup and evidence-handoff ownership.
+- Final Plan Reviewer verdict: PASS; no remaining Critical/High blocker against R2.3-005 second +3, accepted
+  R2.3-002 proof bindings, or C84-C93/I17-I19. This PASS authorizes delegated implementation only; it does not write
+  the live budget event or authorize a semantic start by itself.
+
+### 2026-08-04 — Producer implementation deviation audit requests changes — Read-only Auditor and Main agent
+
+- The first Developer round reported 343 managed tests PASS, Ruff/compile/diff PASS, low GitNexus risk and unchanged
+  live ledgers/start4 evidence. Main did not accept those counts alone and commissioned a read-only plan-deviation
+  audit before Requirement Tester handoff.
+- REQUEST CHANGES blocker 1: production gate derivation inspected only `run.gate_binding`, while the real accepted
+  R2.3-002 Task/Profile carries `expected_matrix_binding`; tests manually injected the missing field. Raw proof-mode
+  Protocol MCP also allowed a neutral candidate path instead of enforcing the strict proof-v2 schema server-side.
+- REQUEST CHANGES blocker 2: the proposed smoke called private Runtime methods and Python mechanics directly,
+  fabricated a non-contract Batch, did not use a real Runtime/Team Transport/MCP handoff, did not bind scope into the
+  receipt and merely listed rather than exercised prior/caller-scope rejection. Its hard-coded zero counters were not
+  sufficient C92/I18 evidence.
+- REQUEST CHANGES blocker 3: later Modeling/Protocol package sections still exposed unconditional native proof/P2
+  instructions to non-proof R2.3-005, leaving the same model-visible prerequisite pollution that blocked start4.
+- REQUEST CHANGES blocker 4: reviewed C84-C91 coverage was absent; the first round had not added repeat-tranche
+  ledger/CLI/concurrency/interruption cases, real Task/Profile projection, source/scope contract or Acceptance
+  readiness regression.
+- Aligned boundaries: task fresh-scope wording and Protocol-only public source were correct; Coordinator received no
+  raw business sources; Acceptance, PlatformScope, Broker/SSE/lifecycle, ledger product code and live state were
+  untouched. Main returned only the four narrow blockers to the same Developer. No commit, budget append, repair,
+  reservation, smoke execution or semantic start is authorized while this round remains open.
+
+### 2026-08-04 — Producer correction deviation audit final PASS — Read-only Auditor and Main agent
+
+- Developer round 2 fixed the four rejected areas: production-loaded R2.3-002
+  `expected_matrix_binding` now activates the canonical proof gate; proof-mode raw MCP rejects neutral candidates;
+  all model-visible native-proof/P2 instructions are conditional; and C84-C91 cover repeat tranche, CLI/isolation,
+  real Task/Profile projection, fresh scope/source, neutral receipt and Acceptance readiness.
+- The first smoke revision was rejected because it called private methods, fabricated Batch/scope evidence and later
+  exposed a real platform surface while hard-coding zero calls. The accepted revision uses a smoke-local fail-closed
+  platform MCP guard with the exact ordinary tool surface, records/rejects all attempts before mutation, and executes
+  a real isolated Codex Runtime -> Broker/Team Transport -> Protocol MCP handoff. Guard attempts/accepts are `0/0`;
+  resource and ledger snapshots are unchanged; semantic start, platform call, ledger mutation and Acceptance start
+  are zero; no probe process remains.
+- The final evidence-binding correction hashes the exact prompt passed to `adapter.start_task`, keeps task projection
+  separate, and independently binds tools and synthetic scope preimages. Retained evidence is mode `0400`, 4,453
+  bytes, SHA-256 `aa4c44f6af9c66445461e2273548d50b1542b3080c41dcb9d2bda2b2e43c0d06` at
+  `workspaces/.r2-3-005-producer-smoke/r23005-neutral-runtime-probe/evidence.json`.
+- Final read-only deviation verdict: PASS. The evidence contains a complete dry-run Batch contract, synthetic
+  run-owned scope plus active prior/caller rejection, proof-mode `-32602`, ordinary generic tools, Broker reply
+  binding, recomputable prompt/task/tools/scope digests, no real endpoint/key and no secret/host-path leak. No prior
+  blocker regressed.
+
+### 2026-08-04 — Producer reuse and second-tranche independent test round 1 PASS — Requirement Tester
+
+- The Tester appended its complete round to the existing shared plan and did not create/continue a run, rerun the
+  opt-in smoke, call the platform, append a ledger, mutate retained evidence or edit product code.
+- C84-C86/C91 focused set: 29/29 PASS. Loaded Producer/Protocol/smoke set: 60 PASS plus one deliberate opt-in skip.
+  Accepted R2.3-002/proof/P2a checks: 54/54 unittest, 29 pytest and 3 proof-asset tests PASS. All R2.3-005 discovery:
+  87 tests PASS with one deliberate skip. Complete managed pytest: 352 PASS, one deliberate skip and 163 subtests;
+  complete unittest: 303/303 PASS with one skip. Ruff, compile, `git diff --check` and frozen-byte surfaces PASS.
+- Tester independently recomputed the final smoke candidate/receipt, prompt/task/tools/scope/script digests and Batch
+  contract; guard attempts/accepts, real endpoint/key, resources, ledgers, residual process and all semantic/platform/
+  Acceptance mutation counters satisfied I18. The skip is only the explicit `R23005_RUN_REAL_SMOKE=1` re-execution;
+  retained real Runtime evidence, not the skip, satisfies I18.
+- Live state remained unchanged: R2.3-002 ledger 92 lines/21,723 bytes with SHA
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; R2.3-005 ledger 20 lines/4,535 bytes with
+  SHA `c44fb191e7298452dc99a6f01cc008a4a8db6eb7f0b9f3066cfd4fdc6b341cb8`; start4 remains 650 files/38,148,384
+  bytes. No D1/D2 defect was found.
+- Verdict: PASS for the deterministic Producer-reuse/second-tranche implementation and retained I18 evidence;
+  BLOCKED/NOT EXECUTED for full live acceptance only because I17 append and I19 start5 belong to post-commit Delivery.
+  No Developer fix is requested before commit.

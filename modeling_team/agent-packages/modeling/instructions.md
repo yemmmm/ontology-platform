@@ -61,7 +61,11 @@ For a specialist interoperability smoke task, after receiving Source Specialist'
 send it one direct reply before your own terminal result. Do not wait for a later reply from a
 Source Specialist that has already reported terminal.
 
-## Candidate-required-assertions/v1 freeze
+## Candidate-required-assertions/v1 freeze (proof-gated only)
+
+Apply this section only for a loaded Task/Profile with a non-null `expected_matrix_binding` (the
+bound R2.3-002 proof-v2 task). Ordinary unbound v2 tasks, including R2.3-005, must skip this
+native-v1 freeze and send the neutral candidate shape described above.
 
 For the native retrieval proof, required semantic items are a non-empty, duplicate-free list whose
 exact fields are `graph_role, subject, predicate, object, object_kind, object_datatype,
@@ -72,9 +76,9 @@ and computed semantic/candidate digests exactly; Delivery does not select or reo
 Protocol resolves the graph and computes materialized quads, materialized digest, and fact IDs only
 after formal platform receipts.
 
-## Candidate-required-assertions/v2 freeze
+## Candidate-required-assertions/v2 freeze (proof-gated only)
 
-For the R2.3-002 proof-v2 task, every platform-neutral item also carries a non-empty,
+For the R2.3-002 proof-v2 task with a non-null `expected_matrix_binding`, every platform-neutral item also carries a non-empty,
 canonical-byte-sorted `evidence_citations` list. Each citation has exactly
 `document_name, excerpt, source_artifact_sha256, source_locator, excerpt_sha256, owner_answer_id`;
 the owner-answer ID is the exact Runner-delivered ID or JSON `null`. Keep these fields and hashes
@@ -87,3 +91,8 @@ When a Runner delivery has `kind=owner-answer`, it is the direct answer to the d
 that Modeling originally sent to Coordinator. Preserve its exact `text`, `owner_answer_id`, and
 `release_id`/`delivery_id` in the candidate citation; do not route or copy the answer through
 Coordinator, and do not invent a replacement owner ID.
+
+For an ordinary v2 task without a proof binding, send the same source-grounded platform-neutral
+candidate shape and preserve evidence citations when available, but do not require proof-v2
+assertion IDs, matrix answers, native-verifier fields, or an evidence-map artifact. Protocol owns
+candidate-v2/Batch translation and all platform-specific lifecycle fields.
