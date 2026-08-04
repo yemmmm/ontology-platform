@@ -4,14 +4,17 @@ import tempfile
 import unittest
 import os
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from shutil import rmtree
 from types import SimpleNamespace
 from io import StringIO
+from uuid import uuid4
 from unittest.mock import patch
 
 from modeling_team import __main__ as team_main
 from modeling_team.__main__ import _decode_foreground_message, _foreground_event_loop
-from modeling_team.contracts import TeamConfigurationError
+from modeling_team.contracts import TeamConfigurationError, repository_root
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeMessage
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
@@ -44,6 +47,86 @@ class _OwnerAnswerAdapter:
         return False
 
 
+class _LiveProjectScope:
+    """No-network PlatformScope test double that creates one owned binding."""
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        self.project_id: str | None = None
+        self.ontology_id: str | None = None
+        self.protocol_key: str | None = None
+        self.retain_nonempty = False
+        self.active_resources: set[str] = set()
+        self.prepare_inputs: list[dict[str, str]] = []
+        self.cleanup_calls = 0
+        self.terminal_results = None
+
+    def prepare(self, scope: dict[str, str]) -> None:
+        self.prepare_inputs.append(dict(scope))
+        if scope != {"mode": "create"}:
+            raise AssertionError("formal scope must be normalized before live preparation")
+        self.project_id = f"live-project-{self.run_id}"
+        self.ontology_id = f"live-ontology-{self.run_id}"
+        self.protocol_key = f"live-protocol-key-{self.run_id}"
+        self.active_resources.update({self.project_id, self.ontology_id, self.protocol_key})
+
+    def read_protocol_context(self) -> dict[str, str]:
+        assert self.project_id is not None
+        assert self.ontology_id is not None
+        return {"project_id": self.project_id, "ontology_id": self.ontology_id}
+
+    def cleanup(self) -> dict[str, object]:
+        self.cleanup_calls += 1
+        residue = sorted(self.active_resources)
+        self.active_resources.clear()
+        return {
+            "project_id": self.project_id,
+            "ontology_id": self.ontology_id,
+            "scope_disposition": "deleted-empty",
+            "released_test_double_resources": residue,
+            "test_double_residue": sorted(self.active_resources),
+        }
+
+
+class _StartAdapter(_OwnerAnswerAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started_tasks: list[str] = []
+        self.model_calls = 0
+
+    def start_roster(self, _run: object, agents: list[object]) -> list[SimpleNamespace]:
+        return [SimpleNamespace(agent_id=agent.agent_id) for agent in agents]
+
+    def probe_role_visibility(self, run: object) -> dict[str, dict[str, str]]:
+        configuration = run.configuration
+        return {
+            agent.agent_id: {"probe": "passed"}
+            for agent in configuration.profile.agents
+        }
+
+    def start_task(
+        self,
+        agent_id: str,
+        _task_text: str,
+        _skill_paths: list[str],
+        _roster: list[str],
+    ) -> None:
+        self.started_tasks.append(agent_id)
+
+    def cleanup_identifiers(self) -> dict[str, object]:
+        return {"private_credentials_destroyed": True}
+
+    def send_message(self, recipient: str, delivery: object) -> None:
+        self.sent.append((recipient, delivery))
+        if self.fail_owner and getattr(delivery, "kind", None) == "owner-answer":
+            raise RuntimeError("adapter delivery failed")
+        if recipient == "coordinator" and getattr(delivery, "kind", None) == "peer":
+            self.inbox.append(RuntimeMessage("coordinator", f"Prompt: {delivery.text}"))
+
+    def stop(self) -> None:
+        return None
+
+
 def _formal_runner(root: Path) -> tuple[TeamRunner, _OwnerAnswerAdapter]:
     run_root = root / "run"
     (run_root / "evidence").mkdir(parents=True)
@@ -60,8 +143,11 @@ def _formal_runner(root: Path) -> tuple[TeamRunner, _OwnerAnswerAdapter]:
     adapter = _OwnerAnswerAdapter()
     runner = TeamRunner(repository_root=root, adapter=adapter)
     runner.run = SimpleNamespace(
-        run_id="run-1", root=run_root, scope={"project_id": "project-1"}, configuration=configuration
+        run_id="run-1", root=run_root, scope={"mode": "create"}, configuration=configuration
     )
+    # Formal production shape: normalized TeamRun.scope is mode-only and the
+    # generated Project identity lives on the separately prepared live scope.
+    runner.scope = SimpleNamespace(project_id="project-1")
     runner.transport = TeamTransportBroker(
         run_root / "broker",
         {
@@ -227,6 +313,138 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
                 runner.receive_outer({"action": "user", "text": "release again"})
+
+    def test_formal_live_binding_prepare_start_drain_and_owner_release_without_model(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            ledger_root = base / "ledger"
+            adapter = _StartAdapter()
+            scopes: list[_LiveProjectScope] = []
+
+            def scope_factory(run: object) -> _LiveProjectScope:
+                scope = _LiveProjectScope(run.run_id)
+                scopes.append(scope)
+                return scope
+
+            runner = TeamRunner(
+                repository_root=root,
+                adapter=adapter,
+                scope_factory=scope_factory,
+                freeze_started_at=datetime.now(UTC).isoformat(),
+                prestart_preflight=lambda **_kwargs: {
+                    "status_code": 200,
+                    "product_write_mode": "rdf_primary",
+                },
+            )
+            # Keep this deterministic integration isolated from both live ledgers.
+            runner._canonical_ledger_root = lambda: ledger_root
+            profile_path = root / "modeling_team/profiles/r2-3-005-modeling-team.yaml"
+            task_path = root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml"
+            run_id = f"r23005-live-binding-{uuid4().hex}"
+
+            def remove_run_root() -> None:
+                if runner.run is not None:
+                    runner.cleanup()
+                run_root = root / "workspaces" / "modeling-runs" / run_id
+                if run_root.exists():
+                    rmtree(run_root)
+
+            self.addCleanup(remove_run_root)
+            with self.assertRaisesRegex(TeamConfigurationError, "unsupported fields"):
+                runner.prepare(
+                    run_id="r23005-live-binding-smuggle",
+                    profile_path=profile_path,
+                    task_path=task_path,
+                    scope={"mode": "create", "project_id": "caller-project"},
+                )
+            with patch(
+                "modeling_team.preflight.capture_clean_checkout",
+                return_value={
+                    "repository_root": str(root),
+                    "head": "a" * 40,
+                    "status_porcelain": "",
+                    "status_digest": "b" * 64,
+                },
+            ):
+                run = runner.prepare(
+                    run_id=run_id,
+                    profile_path=profile_path,
+                    task_path=task_path,
+                    scope={"mode": "create"},
+                )
+            self.assertEqual(run.scope, {"mode": "create"})
+            runner.start()
+            self.assertEqual(len(scopes), 1)
+            live_scope = scopes[0]
+            assert live_scope.project_id is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate live binding", expects_reply=True
+            )
+            first = runner.drain()
+            self.assertEqual(first[0]["delivery_id"], question.delivery_id)
+            self.assertEqual(
+                runner._outer_questions[question.delivery_id]["project_id"],
+                live_scope.project_id,
+            )
+            self.assertTrue(runner._outer_questions[question.delivery_id]["displayed"])
+
+            owner_output = runner.receive_outer({"action": "user", "text": "captured answer"})
+            self.assertEqual(owner_output[0]["recipient_id"], "modeling")
+            owner = runner._owner_answers[(question.delivery_id, "captured answer")]
+            self.assertEqual(owner["project_id"], live_scope.project_id)
+            self.assertEqual(owner["run_id"], run.run_id)
+            self.assertEqual(owner["question_delivery_id"], question.delivery_id)
+            self.assertEqual(adapter.model_calls, 0)
+
+            outer_question_records = [
+                json.loads(line)
+                for line in (run.root / "evidence/outer-question.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertTrue(
+                any(record.get("project_id") == live_scope.project_id for record in outer_question_records)
+            )
+            outer_user = json.loads(
+                (run.root / "evidence/outer-user.jsonl").read_text(encoding="utf-8").strip()
+            )
+            self.assertEqual(outer_user["project_id"], live_scope.project_id)
+            self.assertEqual(outer_user["owner_answer_id"], owner["owner_answer_id"])
+
+            cleanup = runner.cleanup()
+            self.assertEqual(cleanup["scope"]["test_double_residue"], [])
+            self.assertEqual(live_scope.active_resources, set())
+            self.assertEqual(live_scope.cleanup_calls, 1)
+
+    def test_formal_missing_live_binding_fails_before_outer_question_or_owner_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.scope = SimpleNamespace(project_id="")
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate without live binding", expects_reply=True
+            )
+            with self.assertRaisesRegex(TeamConfigurationError, "outer question project binding is missing"):
+                runner.drain()
+            self.assertEqual(runner._outer_questions, {})
+            self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+            self.assertFalse((runner.run.root / "evidence/outer-user.jsonl").exists())
+            self.assertEqual(runner.run.scope, {"mode": "create"})
+            self.assertNotIn(question.delivery_id, runner._owner_answer_consumed)
+
+    def test_schema_v2_nonformal_owner_answer_keeps_run_scope_project_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.run.configuration.task.task_id = "r2-3-002-t"
+            runner.run.configuration.profile.profile_id = "r2-3-002-profile"
+            runner.run.scope = {"project_id": "legacy-project"}
+            runner.scope = SimpleNamespace(project_id="live-project-must-not-be-used")
+            runner._record_outer_question(
+                {"action": "question", "delivery_id": "legacy-question", "text": "legacy"}
+            )
+            runner._release_owner_answer("coordinator", "legacy answer", "legacy-question")
+            owner = runner._owner_answers[("legacy-question", "legacy answer")]
+            self.assertEqual(owner["project_id"], "legacy-project")
+            self.assertEqual(runner._outer_questions["legacy-question"]["project_id"], "legacy-project")
 
     def test_formal_owner_answer_publication_keeps_modeling_terminal_blocked_until_ack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

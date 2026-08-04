@@ -711,6 +711,25 @@ class TeamRunner:
             )
         )
 
+    def _project_binding(self) -> str | None:
+        """Resolve the Project identity owned by this run's coordination mode.
+
+        Formal R2.3-005 create-mode runs receive their Project from the live
+        ``PlatformScope`` after ``prepare``.  Their normalized ``TeamRun.scope``
+        intentionally contains only ``{"mode": "create"}``, so falling back to
+        that input would permit a caller-supplied identity to smuggle into outer
+        question/answer evidence.  Historical non-formal runs retain the legacy
+        ``TeamRun.scope`` binding, including schema-v2 R2.3-002 fixtures.
+        """
+
+        if self._formal_coordination_enabled():
+            project_id = getattr(self.scope, "project_id", None) if self.scope is not None else None
+        elif self.run is not None:
+            project_id = self.run.scope.get("project_id")
+        else:
+            project_id = None
+        return project_id if isinstance(project_id, str) and project_id else None
+
     def _coordination_phase_callback(
         self,
         sender_id: str,
@@ -1446,7 +1465,7 @@ class TeamRunner:
         ):
             return
         delivery_id = delivery.delivery_id
-        project_id = self.run.scope.get("project_id")
+        project_id = self._project_binding()
         if not isinstance(project_id, str) or not project_id:
             raise TeamConfigurationError("outer question project binding is missing")
         existing = self._outer_questions.get(delivery_id)
@@ -1514,7 +1533,7 @@ class TeamRunner:
         question = eligible[0]
         if question.get("run_id") != self.run.run_id:
             raise TeamConfigurationError("owner answer run binding drifts")
-        if question.get("project_id") != self.run.scope.get("project_id"):
+        if question.get("project_id") != self._project_binding():
             raise TeamConfigurationError("owner answer project binding drifts")
         modeling = next(
             agent.agent_id
@@ -1536,7 +1555,7 @@ class TeamRunner:
             if existing["text"] != text:
                 raise TeamConfigurationError("outer question delivery is immutable")
             return
-        project_id = self.run.scope.get("project_id")
+        project_id = self._project_binding()
         if not isinstance(project_id, str) or not project_id:
             raise TeamConfigurationError("outer question project binding is missing")
         record: dict[str, Any] = {
@@ -1561,7 +1580,7 @@ class TeamRunner:
         if question is None:
             raise TeamConfigurationError("owner answer question delivery is unknown")
         formal = self._formal_coordination_enabled()
-        if question.get("project_id") != self.run.scope.get("project_id"):
+        if question.get("project_id") != self._project_binding():
             raise TeamConfigurationError("owner answer project binding drifts")
         if formal:
             if question.get("run_id") != self.run.run_id:
@@ -1588,7 +1607,7 @@ class TeamRunner:
             raise TeamConfigurationError("owner answer question delivery was already consumed")
         if existing is not None:
             return
-        project_id = self.run.scope.get("project_id")
+        project_id = self._project_binding()
         if not isinstance(project_id, str) or not project_id:
             raise TeamConfigurationError("owner answer project binding is missing")
         authorization_id = self.run.configuration.profile.parameters.get(

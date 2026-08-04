@@ -490,3 +490,64 @@ real I15/semantic acceptance gate.
 **Round 3 conclusion: PASS — clean committed baseline confirmed with no drift.** This round closes
 the baseline-evidence discrepancy only; it does not claim live authorization or real semantic
 acceptance.
+
+## 2026-08-04 retry2 live project-binding repair — Independent round 1
+
+### Scope, baseline, and safety boundary
+
+- Tester: fresh independent Requirement Tester. This round validated only the uncommitted repair
+  in `modeling_team/runner.py` and
+  `modeling_team/tests/test_runner_r23005_owner_answer.py`; no product fix, commit, ledger append,
+  retained-evidence rewrite, Producer/Agent launch, platform write, service restart, or semantic
+  modeling was performed.
+- Authority: `docs/requirements/requirements-v2.3.md` R2.3-005,
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-live-project-binding-repair.md`, the
+  latest R2.3-005 delivery record, and this shared test plan. The checkout was at HEAD
+  `d8e31b2573d9888f5cd652877c1595694dc0db47` with exactly the two developer files modified.
+- Before testing, the live formal ledger was SHA-256
+  `b52f539e9a8a20b453ef382cef02d0a72404152ff715e994e533c7570f5338c9`, size `2427`, mtime
+  `2026-08-04 10:28:17.994219457 +0800`; the historical R2.3-002 ledger was SHA-256
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`, size `21723`, mtime
+  `2026-08-02 18:17:55.574240726 +0800`. The retry2 retained tree
+  `workspaces/modeling-runs/r23005-real-20260804t021921z-retry2/` had 45896 sorted filename bytes
+  and digest `b5f893826da25c66eafd04751cbc6a47fbe9ae11644d9ded55ed2156340d8788`.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| Formal binding helper/call-site review | PASS | `_project_binding()` branches on the existing `_formal_coordination_enabled()` predicate; formal mode reads only non-empty `self.scope.project_id`, non-formal mode reads only `self.run.scope["project_id"]`, and no branch writes `run.scope`. The four required owner-question paths (`_observe_modeling_question`, `_resolve_formal_owner_question`, `_record_outer_question`, `_release_owner_answer`) use the helper for project binding, while existing nine-field owner identity/hash, authorization/release IDs, display/consume gates, run/project/origin drift and duplicate/replay checks remain present. |
+| Focused owner-answer suite | PASS | `uv run --project backend python -m unittest modeling_team.tests.test_runner_r23005_owner_answer`: 15/15, exit 0. This includes exact text-only schema-v2 release, owner identity/evidence, replay/failure burn, direction/ack, and envelope rejection cases. |
+| Focused Runner and legacy R63 suite | PASS | `uv run --project backend python -m unittest modeling_team.tests.test_runner_r63 modeling_team.tests.test_runner`: 21/21, exit 0. |
+| Production-shape live Project binding | PASS | `uv run --project backend python -m unittest -v` on the three repair regressions: 3/3. The integration test executes `TeamRunner.prepare()` with formal `normalize_formal_scope`, `start()`, a no-network `scope_factory` whose `prepare({"mode":"create"})` creates a live ID, then `drain()` on the first Modeling `expects_reply`. It proves mode-only `run.scope`, generated live ID in outer-question/outer-user/owner records, caller Project smuggling rejection, zero model calls, and zero test-double residue after cleanup. |
+| Independent missing-live-scope reproduction | PASS | A separate temporary-ledger `prepare()` -> `start()` -> live-scope-ID removal -> Modeling question -> `drain()` probe failed exactly with `outer question project binding is missing` before creating `outer-question`/`outer-user` evidence; `run.scope` stayed `{"mode":"create"}`, question consumption stayed false, and cleanup residue was empty. The temporary run root was removed. |
+| Formal missing binding and legacy schema-v2 compatibility | PASS | The focused regression also proves missing live binding fails before outer evidence mutation, and a schema-v2 R2.3-002-shaped non-formal run continues to bind `run.scope.project_id` even when `self.scope.project_id` contains a different ID. |
+| All R2.3-005 tests | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: 82/82, exit 0. |
+| Canonical managed `modeling_team` discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`: 284/284, exit 0. Existing ResourceWarning/RuntimeWarning and expected negative-path stderr were non-failing diagnostics. A non-canonical system-Python discovery was not used as acceptance evidence; it collected 285 and had four `ModuleNotFoundError: app` errors because backend was not on the environment path. |
+| Ruff and whitespace | PASS | `uv run --project backend ruff check modeling_team`: all checks passed; `git diff --check`: exit 0. |
+| GitNexus change review | PASS with stale-index limitation | `detect_changes(scope=unstaged)` and `detect_changes(scope=compare, base_ref=main)` each reported changed_files=2, changed_count=3, affected_count=0, risk `low`, and no affected processes. `.gitnexus/meta.json` records indexed commit `286da60c0680cd46b49e9f69e91572ba6e9c6b51` at `2026-08-02T15:52:38Z`, while checkout HEAD is `d8e31b2`; therefore the graph result is stale and supplemental only. |
+
+### Side effects and unexecuted scope
+
+- After all commands, both live ledgers retained the exact pre-test SHA-256, size, and full mtime
+  values above; retry2 retained-tree digest and sorted filename-byte count remained exactly
+  `b5f893826da25c66eafd04751cbc6a47fbe9ae11644d9ded55ed2156340d8788` / `45896`. `git status`
+  still showed only the two developer files. No other run root, socket, credential, Project,
+  Ontology, Session, Lease, or evidence residue was created; the one independent temporary run
+  root was explicitly removed after cleanup.
+- No backend/frontend file changed, so backend pytest, service restart, and endpoint health checks
+  were not required by the repository gate. No real retry3 authorization sequence, terminal/repair
+  ledger mutation, Producer start, semantic model, Acceptance round, or terminal settlement was
+  executed. I15 and semantic acceptance remain unclaimed. The known clean-HEAD P2a frozen-hash
+  concern was not turned into a PASS claim or a requested hash change.
+
+### Defects and conclusion
+
+- No defect found in the reviewed live Project-binding repair. The prior retry2 failure is covered
+  by the production-shaped regression and is **FIXED** in this worktree. No STILL FAILING,
+  REGRESSION, or BLOCKED case remains within the authorized offline scope.
+
+**Round 1 conclusion: PASS for the deterministic live Project-binding repair and its adjacent
+  owner-answer/legacy regression scope.** This PASS authorizes the parent Delivery flow to commit
+  the two reviewed files and, only afterward, perform the exact retry2 terminal-failure -> fresh
+  retry3 baseline/repair authorization sequence. It is not an I15 or real semantic acceptance PASS.

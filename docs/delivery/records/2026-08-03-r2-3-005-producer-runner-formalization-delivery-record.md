@@ -1548,3 +1548,22 @@
   drift/replay gates, and exact retry2 terminal -> retry3 baseline -> retry2 repair ledger order.
 - Outcome/next step: hand the narrow Runner/test change to the Requirement Developer. Live ledger mutation and semantic
   start three remain paused until reviewed implementation and a new independent PASS.
+
+### 2026-08-04 — Retry2 live Project-binding repair delivered and independently PASS — Developer and Tester
+
+- Implementation: one centralized `_project_binding()` uses `_formal_coordination_enabled()`; formal coordination
+  reads only the live `PlatformScope.project_id`, while every non-formal path, including schema-v2 R2.3-002, keeps
+  the historical `TeamRun.scope` binding. Four owner-question/answer paths use the helper; formal static scope remains
+  exactly mode-only.
+- Production-shape coverage: deterministic `prepare()` normalization -> `start()` -> scope-factory
+  `prepare({"mode":"create"})` -> first Modeling reply-request through `drain()` passed without network/model use.
+  Live Project ID bound outer-question, outer-user and owner identity; caller ID smuggling failed, missing live binding
+  failed before outer evidence mutation, and cleanup left zero test-double residue.
+- Independent result: owner 15/15, Runner/R63 21/21, production-shape 3/3, R2.3-005 82/82, canonical managed full
+  discovery 284/284, Ruff and `git diff --check` PASS. Both live ledgers and retry2 retained-tree digest were unchanged.
+- Known unrelated baseline: optional P2a full-file frozen-hash assertion fails identically on clean HEAD before this
+  repair and current worktree. P2a is outside the authoritative completion gate; the failure was not counted as PASS
+  and its expected hash/test was not modified.
+- Outcome/next step: commit the two-file repair and shared test record. Only then may Delivery append retry2's
+  incomplete collaboration-routing terminal failure, freeze a fresh retry3 baseline, and append repair authorization;
+  no new budget event is permitted.
