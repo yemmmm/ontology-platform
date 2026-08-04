@@ -1497,3 +1497,54 @@
 - Residual operating risk: a failure after reservation but before `self.run` attachment can leave an active
   reservation; every nonzero exit must be followed by a read-only active check, and only a confirmed presemantic
   reservation may be released before any retry. No concurrent run or direct JSONL edit is permitted.
+
+### 2026-08-04 — Live retry2 consumed and CLEANED/BLOCKED — Delivery and Main agent
+
+- Authorization receipt: Delivery appended the prior run's retryable incomplete terminal failure, the user's exact
+  `+3` budget, and the D1 repair bound to new run `r23005-real-20260804t021921z-retry2` and baseline
+  `b183aab86f5bb94224a8719878a73d7dfc8e795f0503bba288b1b29e84c8810c`. Formal state became
+  cap/count/active `4/1/0`; the legacy ledger hash remained unchanged.
+- Real run: reservation recorded at `2026-08-04T02:28:11.985516+00:00` and `semantic_start` at
+  `2026-08-04T02:28:17.995678+00:00`. Modeling then delivered one reply-request question to Coordinator; before any
+  owner answer was sent, the CLI exited 2 with `outer question project binding is missing`.
+- Verdict: `BLOCKED/collaboration-routing`, `complete_modeling_quality_result=false`. This is not a business-question
+  choice or modeling-quality result. Formal state is now cap/count/active `4/2/0`, so two starts remain; no automatic
+  retry was made.
+- Cleanup: run state is `CLEANED`; terminal results and settlement are absent/aborted. Project/Ontology are absent,
+  residual Project/Ontology/Session/Lease/key counts are zero, sessions are terminal, Lease released, temporary keys
+  revoked, child handles zero and credentials destroyed. Legacy ledger remains 92 lines with SHA-256
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`.
+
+### 2026-08-04 — Retry2 project-binding diagnosis — Main agent and read-only explorer
+
+- Root cause: formal input scope is intentionally normalized to `{"mode":"create"}`; live IDs are created later on
+  `TeamRunner.scope`. `_observe_modeling_question()` read `self.run.scope["project_id"]`, so it failed immediately
+  after delivery evidence was recorded. `_resolve_formal_owner_question`, `_record_outer_question`, and
+  `_release_owner_answer` contain the same misplaced lookup.
+- D1 relation: commit `f2dd2ca` introduced the observation path, while its fixture manually put `project_id` into
+  `run.scope` and never reproduced formal normalization plus live PlatformScope creation. This is a same-domain D1
+  collaboration-routing regression, not transport/runtime or semantic failure.
+- Next step: plan-review the narrow live-binding helper and production-shaped deterministic regression. Do not append
+  retry2 terminal/repair records or use semantic start three until the repair is committed and independently passed.
+
+### 2026-08-04 — Retry2 project-binding repair plan review round 1 REVISE — Main agent and plan reviewer
+
+- Result: REVISE. Two High blockers and one delivery-parameter ambiguity were accepted.
+- High 1: merely reshaping the synthetic fixture could repeat D1's coverage gap. The revised plan requires a
+  deterministic `prepare()` normalization -> `start()` -> scope-factory `prepare(create)` chain, then drives the
+  first reply-request through `drain()` and proves static scope remains mode-only while live Project ID binds all
+  owner-question evidence.
+- High 2: formal/non-formal selection was underspecified. The helper must reuse
+  `_formal_coordination_enabled()`; historical schema-v2 but non-formal R2.3-002 stays on `TeamRun.scope` and gains a
+  regression.
+- Delivery clarification: the terminal and repair events both identify failed retry2; only the previewed baseline
+  belongs to fresh retry3. No new budget event is permitted. Re-review is required before implementation.
+
+### 2026-08-04 — Retry2 project-binding repair plan review round 2 PASS — Main agent and plan reviewer
+
+- Result: PASS. No evidence-backed Critical or High blocker remains.
+- Closed scope: exact `_formal_coordination_enabled()` branch, formal live-scope-only binding, schema-v2 legacy
+  compatibility, actual normalize/create/drain deterministic integration coverage, anti-smuggling and owner identity/
+  drift/replay gates, and exact retry2 terminal -> retry3 baseline -> retry2 repair ledger order.
+- Outcome/next step: hand the narrow Runner/test change to the Requirement Developer. Live ledger mutation and semantic
+  start three remain paused until reviewed implementation and a new independent PASS.
