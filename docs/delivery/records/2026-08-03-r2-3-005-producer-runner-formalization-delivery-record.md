@@ -1921,3 +1921,74 @@
 - Verdict: PASS for the deterministic Producer-reuse/second-tranche implementation and retained I18 evidence;
   BLOCKED/NOT EXECUTED for full live acceptance only because I17 append and I19 start5 belong to post-commit Delivery.
   No Developer fix is requested before commit.
+
+### 2026-08-04 — I17 PASS and start5 closed BLOCKED before platform calls — Delivery and Main agent
+
+- Commit `98b50b8a7aa2b0c1936c8312111be0a5e1a6d710` was clean and independently accepted. Delivery appended exactly
+  one second-tranche `+3`, one start4 repair bound to start5 baseline
+  `88559bf7eba2490d0d7b76dccc631931c9374bec8018175800334fa516346a06`, one start5 reservation and one semantic
+  start. No duplicate terminal event or start6 exists.
+- Run `r23005-real-20260804t065900z-start5` created fresh Project
+  `7c451805-a23e-4b4f-b21f-a94270b4c846` and Ontology
+  `c1596e5c-8409-42d6-b6b7-7745c41328f3`. Two grounded owner questions were displayed and answered once; current
+  B-to-C version binding and v1/v2 output continuity remained explicit unknowns.
+- Modeling revision 1 reached Protocol as a platform-neutral candidate. Revisions 1-5 progressively corrected the
+  public envelope, item wrapper, undeclared predicates, object range and Shape path. Revision 6 instead sent only
+  one replacement Shape and referred to revision 5 for the other 37 items/full metadata. Protocol correctly refused
+  cross-delivery reconstruction. Main bounded the loop to that one final revision and authorized one fail-fast
+  Ctrl-C; no platform API/MCP call, dry-run, apply, readback, validation, reasoning, Acceptance or settlement occurred.
+- Terminal classification is `BLOCKED/collaboration-routing`, `complete_modeling_quality_result=false`. The canonical
+  ledger is 25 lines/5,696 bytes, SHA
+  `9f141d19624bedf76b2fa9628e753895d7cf9602f53883de79b251492c3c7bac`, cap/count/active `7/5/0`; legacy remains
+  92 lines/21,723 bytes with SHA `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`.
+- Cleanup PASS: fresh Project/Ontology deleted empty; Project/Ontology/Session/Lease/fence/batch/artifact/project-key
+  residues zero; keys revoked; four role PIDs absent; handles zero; credentials destroyed; service/backend/frontend
+  and authenticated canonical mode healthy. Retained run has 648 files/40,699,105 bytes and content-list digest
+  `230ff342b8e862f09d170e65d82cf7379b7b9da7102542aaebaa88c06290c8f1`.
+- Time from ID selection through cleanup was about 719 seconds: semantic clarification/modeling 32.3%, Producer
+  translation/collaboration 51.0%, gates/cleanup 16.7%. Because semantic modeling was below half, no harness expansion
+  or automatic start6 is allowed. The next path is only the complete-revision prompt/contract repair, retained
+  r5/r6 regression, mandatory review and independent PASS.
+
+### 2026-08-04 — Start5 retained failure audit confirms narrow repair — Read-only Auditor and Main agent
+
+- Independent retained evidence confirmed state `CLEANED`, abort-before-settlement, zero child/resource residue,
+  canonical ledger line 25 `terminal_failure(collaboration/routing,false)`, and no ontology-platform business call.
+  Post-failure admin cleanup calls are not semantic platform work.
+- Exact revision 6 evidence contains only `shape:ExplicitUnknown`, five constraints and three citations plus patch
+  metadata; revision 5's other 37 items/full citations/queries are absent. Protocol's final conflict correctly requires
+  a complete frozen candidate and forbids reconstructing or mutating history.
+- Repair decision: instructions/task and focused tests only; Runner already projects the task objective and needs no behavior change. Modeling must resend a complete self-contained revision;
+  Protocol must not merge patches and must run the receipt against each entire revision. Mechanics, Runner, Runtime,
+  Acceptance, PlatformScope, lifecycle, backend/UI and another smoke are excluded. Start6 remains unauthorized until
+  this repair is reviewed, committed and independently accepted.
+
+### 2026-08-04 — Complete candidate revision repair plan review PASS — Plan Reviewer and Main agent
+
+- Reviewed `docs/delivery/implementation-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md` and
+  C94-C98/I20-I21 against the authoritative start5 evidence and R2.3-005. No Critical/High blocker was found.
+- Approved scope is Modeling/Protocol instructions, R2.3-005 task wording and focused offline retained r5/r6 tests
+  only. Runner already projects the task objective; mechanics, Runtime, Acceptance, PlatformScope, lifecycle, smoke,
+  platform and ledger product behavior remain unchanged.
+- C96 must attribute partial-patch rejection to the Modeling/Protocol complete-candidate/no-merge contract; neutral
+  `build_candidate_receipt` validates only the current candidate and must not gain cross-delivery history inference.
+- Plan PASS authorizes delegated implementation/testing only. Start5 repair, reservation and start6 remain forbidden
+  until reviewed code is committed and the independent Tester records PASS.
+
+### 2026-08-04 — Complete candidate revision repair independent round 2 PASS — Requirement Tester
+
+- Developer changed only Modeling/Protocol instructions, the R2.3-005 task and one focused test. Modeling now sends
+  every revision as a complete self-contained candidate with exact carry-forward; Protocol never merges history and
+  runs the receipt against the entire current candidate before each receipt/conflict response. No Runner, Runtime,
+  mechanics, MCP, Acceptance, PlatformScope, backend/frontend or ledger behavior changed.
+- C94-C98 focused: 5/5 PASS. All R2.3-005: 92 PASS plus one deliberate smoke skip. Complete unittest: 308 PASS plus
+  one skip. Complete pytest: 357 PASS, one skip and 163 subtests. Ruff, compile, `git diff --check` and GitNexus
+  compare PASS/LOW with zero changed symbols/affected processes; the graph index remains stale and supplemental.
+- I20 independent retained audit PASS: revision 6 has one item/five constraints/three citations plus patch fields;
+  delivery-19 rejects it pre-write with no cross-delivery merge. Only Team Transport/Protocol mechanics calls exist;
+  no business platform MCP call occurred. State is CLEANED, scope deleted empty and residue zero.
+- Live evidence remained unchanged before/after: R2.3-005 25 lines, cap/count/active `7/5/0`, SHA
+  `9f141d19624bedf76b2fa9628e753895d7cf9602f53883de79b251492c3c7bac`; R2.3-002 SHA
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; start5 648 files/40,699,105 bytes.
+- Verdict: deterministic complete-revision repair and I20 PASS with no D1/D2/ordinary defect. Full R2.3-005 remains
+  BLOCKED only because I21 is correctly NOT EXECUTED. No repair/reservation/start6 may occur before the clean commit.

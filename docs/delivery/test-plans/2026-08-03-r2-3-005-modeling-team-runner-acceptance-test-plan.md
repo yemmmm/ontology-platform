@@ -117,6 +117,11 @@ FAIL/BLOCKED run is required.
 | C91 | Acceptance readiness invariant | Acceptance cannot start before distinct Modeling and Protocol ready/silent signals and continues to use the existing independent ticket/verdict path; Producer repair creates no semantic verdict shortcut |
 | C92 | No-start smoke safety and scope binding | production-shaped Runtime smoke binds its receipt only to a Runtime-generated run-owned synthetic fresh-create Project/Ontology identity, rejects caller/prior identities, and retains prompt/config/tool/delivery/scope evidence while performing no business modeling, platform call, ledger mutation, real Project/Ontology/Session/Lease/key creation, Acceptance start or semantic PASS claim |
 | C93 | Producer and full regression | accepted R2.3-002 proof-v2 behavior, settlement/Acceptance, display binding, budget/ledger isolation and complete managed `modeling_team` discovery remain PASS |
+| C94 | Complete immutable revision contract | Modeling package and R2.3-005 task require every revision to be a complete self-contained candidate carrying all unchanged items/citations/constraints/queries; Runner projects that task objective without a behavior change, and patch-only fields cannot substitute for the full candidate |
+| C95 | Protocol no-merge contract | Protocol never reconstructs candidate history across deliveries and invokes the neutral/proof receipt against the entire current candidate before every receipt or conflict response |
+| C96 | Retained partial-revision rejection | a production-shaped start5 revision 6 containing only one replacement item is rejected as incomplete with no prior-delivery merge, platform call or evidence mutation |
+| C97 | Complete corrected revision path | the retained revision 5 content plus the explicit Shape correction remains a full 38-item candidate with complete metadata and reaches the ordinary neutral receipt path |
+| C98 | Revision repair regression boundary | accepted R2.3-002 proof behavior, non-proof R2.3-005 gate, Producer smoke evidence, Acceptance/lifecycle and complete managed tests remain unchanged; live ledgers/start5 evidence are byte-stable |
 
 ## Service-level and integration cases
 
@@ -141,6 +146,8 @@ FAIL/BLOCKED run is required.
 | I17 | Second-tranche live append gate | after reviewed deterministic and smoke PASS, exactly one new +3 authorization and one start4 repair are appended under the R2.3-005 lock, yielding cap/count/active `7/4/0` before reservation; no duplicate terminal event and no R2.3-002 ledger drift |
 | I18 | Real Runtime Producer handoff smoke | current non-proof R2.3-005 package/profile projects a frozen neutral candidate plus Runtime-generated run-owned synthetic fresh scope to Protocol candidate-v2/Batch mechanics, retains the scope-bound receipt, rejects prior/caller scope identities and leaves zero platform/resource/ledger mutation; independent Tester audits the retained smoke |
 | I19 | Start5 Producer-to-Acceptance path | one fresh serialized start5 uses only its run-owned Project/Ontology, reaches Modeling+Protocol ready/silent after required platform stages, then and only then starts independent Acceptance; first full PASS stops further starts |
+| I20 | Start5 retained failure audit | independent read-only evidence proves revisions 1-5 narrowed, revision 6 was a one-item cross-delivery patch, Protocol rejected it before platform calls, classification is `collaboration/routing,false`, and cleanup/ledger state is exact `7/5/0` |
+| I21 | Start6 complete-revision gate | after reviewed commit and independent C94-C98 PASS, exactly one start5 repair binds a fresh baseline; one serialized start6 must send only complete candidate revisions, reach dry-run before any further candidate-loop expansion, and stop at first full PASS |
 
 ## Real acceptance run
 
@@ -811,3 +818,69 @@ Producer-reuse/second-tranche implementation and retained I18 smoke evidence.** 
 requested before commit. Delivery may proceed only with the reviewed post-commit I17 append-only
 sequence and then the separately authorized, serial I19 start; stop on the first complete semantic
 PASS and preserve all live/retained evidence.
+
+## 2026-08-04 start5 complete candidate revision repair — Independent round 2
+
+### Scope, authority, and safety boundary
+
+- This is the second independent Requirement Tester round for the reviewed complete-candidate
+  repair. It reuses this shared plan (C94-C98/I20-I21), the authoritative R2.3-005 start5
+  subsection, and `docs/delivery/implementation-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md`.
+  The test document was the only file edited by this round.
+- The worktree baseline was `HEAD=98b50b8a7aa2b0c1936c8312111be0a5e1a6d710` (implementation still
+  uncommitted) with
+  the expected requirement/delivery/test-plan documentation changes, the Modeling and Protocol
+  instruction changes, the R2.3-005 task change, the focused
+  `modeling_team/tests/test_r23005_complete_revision.py`, and the repair plan. A status-path
+  allowlist check found no other changed path: no Runner, Runtime, mechanics, MCP, Acceptance,
+  PlatformScope, Broker, backend, frontend, UI, service, or live-state path changed.
+- This round was read-only against the live ledger and retained start5 evidence. It did not start
+  Agent Runtime or smoke, call the ontology platform, create or mutate Project/Ontology/
+  Session/Lease/key resources, append repair/reservation/semantic-start events, restart services,
+  or modify retained evidence. Temporary test fixtures self-cleaned.
+
+### I20 retained start5 audit and immutability snapshots
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Retained revision 6 (`delivery-18`) | PASS | `workspaces/modeling-runs/r23005-real-20260804t065900z-start5/evidence/deliveries.jsonl` shows Modeling -> Protocol, sequence 18, revision 6, one `shape:ExplicitUnknown` item, five constraints, three citation records, and `revision_basis`/`revision_operation` patch metadata; revision 5's other items/full metadata are not present in this delivery. |
+| Retained Protocol response (`delivery-19`) | PASS | Sequence 19 is Protocol -> Modeling and rejects revision 6 as a one-item patch, explicitly forbidding cross-delivery reconstruction/mutation and requesting all items/citations before deterministic translation. No later delivery, receipt, dry-run, apply, readback, validation, reasoning, Acceptance, or settlement evidence exists. |
+| No business platform call | PASS | The retained MCP-elicitations evidence has only `team_transport` (17) and `protocol_mechanics` (1); no ontology-platform MCP server appears. The delivery sequence stops at the pre-write conflict, matching the recorded `BLOCKED/collaboration-routing` terminal. |
+| Cleanup and terminal classification | PASS | Retained `state.json` is `CLEANED`; `scope_disposition=deleted-empty`, post-delete Project/Ontology/Session/Lease/project-key residual counts are all zero, child handles/residue are zero, and credentials are destroyed/revoked. The terminal ledger event is `terminal_failure`, `classification=collaboration/routing`, `complete_modeling_quality_result=false`. |
+| R2.3-005 ledger | PASS | Read-only `StartLedger(requirement_id='R2.3-005')` replay returned cap/count/active `7/5/0` over 25 records; no new event was appended. Before and after hashes are identical: 5,696 bytes, SHA-256 `9f141d19624bedf76b2fa9628e753895d7cf9602f53883de79b251492c3c7bac`. |
+| R2.3-002 ledger isolation | PASS | Before and after the exact same snapshot command returned 21,723 bytes and SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; no legacy ledger drift. |
+| Retained start5 tree | PASS | Before and after the exact same read-only command: 648 regular files and `du -sb=40,699,105` bytes. No tree digest algorithm was inferred; equality of the same count/size command is the retained-evidence immutability check. |
+
+### Executed checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| C94-C98 focused repair suite | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_complete_revision`: **5/5**. C94 confirms complete self-contained/no-patch wording is projected to Modeling and the task while Runner behavior is unchanged; C95 confirms Protocol no-merge and receipt-before-every-response wording; C96 rejects the retained partial candidate without mutation/history merge; C97 accepts the corrected complete 38-item candidate with unchanged constraints/citations/dependencies/queries; C98 keeps proof-bound R2.3-002 and neutral R2.3-005 gates distinct. |
+| All R2.3-005 tests | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: **92 OK, 1 expected skip**. |
+| Complete managed unittest regression | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests`: **308 OK, 1 expected skip**. |
+| Complete pytest regression | PASS | `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests`: **357 passed, 1 skipped, 163 subtests passed**. |
+| Ruff, compile, whitespace | PASS | `uv run --project backend ruff check modeling_team`, compileall with a temporary `PYTHONPYCACHEPREFIX`, and `git diff --check` all passed. |
+| GitNexus compare-main review | PASS with limitation | Read-only `detect_changes(scope=compare, base_ref=main, repo=ontology-platform)` returned `changed_files=6`, `changed_symbols=[]`, `affected_count=0`, `risk_level=low`, and no affected processes. The indexed graph is stale by 21 commits (`indexedAt=2026-08-02`, `lastCommit=286da60...`), so this result is supplemental rather than a fresh graph proof. |
+| Frozen-surface/path review | PASS | Current status contains only the expected docs, Modeling/Protocol instructions, R2.3-005 task, repair plan, and focused test; no forbidden Runner/Runtime/mechanics/MCP/Acceptance/PlatformScope/Broker/backend/frontend/live-state diff. |
+
+### Defects, non-claims, and next action
+
+- No D1 Critical, D2 Major, or ordinary product defect was reproduced in C94-C98 or I20. The
+  retained failure remains correctly classified as `collaboration/routing`; no Requirement
+  Developer follow-up is requested for this repair scope.
+- I21 is **NOT EXECUTED/BLOCKED by design** in this round. The implementation is not committed,
+  so no start5 repair authorization, fresh baseline binding, reservation, or semantic start6 was
+  appended or run. Real start6 dry-run/application/readback/validation/reasoning, Acceptance,
+  semantic quality, settlement, and final cleanup remain unclaimed. Delivery may perform that
+  sequence only after commit and this independent deterministic PASS; it must stop at the first
+  complete PASS and must not fabricate I21 evidence.
+- Backend pytest, service restart, and endpoint checks were not required because no backend or
+  frontend surface changed. No new runtime residue was created by this round.
+
+### Round conclusion
+
+**Overall verdict: BLOCKED for the full R2.3-005 live gate because I21 remains NOT EXECUTED;
+PASS for the complete-candidate deterministic repair (C94-C98) and retained start5 I20 audit.**
+No developer fix is requested. After commit, Delivery may proceed with exactly one reviewed
+start5 repair authorization and one serialized start6, preserving the live-ledger and retained-
+evidence boundaries above.

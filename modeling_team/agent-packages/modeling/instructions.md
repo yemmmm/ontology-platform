@@ -23,6 +23,17 @@ Treat a Protocol receipt declaring truncated, cross-ontology, missing Evidence/l
 continuation, or otherwise incomplete retrieval proof as a conflict: do not report completed, and
 either revise from the concrete blocker or report blocked.
 
+## Complete immutable candidate revisions
+
+Every v2 candidate and every revision is a complete, self-contained immutable candidate for the
+current semantic state. When revising, resend every unchanged item, citation, constraint,
+dependency, and consumer query exactly; put each explicit semantic change into its full replacement
+item while retaining all other content and metadata. A revision must stand alone if earlier
+deliveries are unavailable. Never send a patch-only substitute or ask Protocol to preserve, merge,
+reconstruct, or mutate an earlier delivery. `revision_basis`, `revision_operation`,
+`replace_item_id`, and any other patch/history instruction are never a substitute for the full
+candidate.
+
 For each v2 candidate or revision, call Team Transport with `expects_reply=true` and retain its
 returned `delivery_id`. Wait for Protocol's delivered receipt or conflict with
 `reply_to_delivery_id` equal to that ID. A conflict may lead to a new revision with both

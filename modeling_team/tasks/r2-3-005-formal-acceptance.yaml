@@ -9,8 +9,13 @@ objective: >-
   each of two competency questions. Acceptance uses only two fresh, isolated Examiner pairs per
   round and preserves explicit unknowns. Modeling owns source-grounded semantics; Protocol alone
   performs deterministic candidate-v2/Batch translation, dry-run, apply_atomic, readback,
-  validation, reasoning, and governed retrieval. Do not expose expected answers or invoke generic
-  multi-agent/spawn capabilities.
+  validation, reasoning, and governed retrieval. Every Modeling candidate revision is a complete,
+  self-contained immutable candidate: resend all unchanged items, citations, constraints,
+  dependencies, and consumer queries exactly, include explicit semantic changes in full, and never
+  use revision_basis, revision_operation, replace_item_id, or a patch-only substitute. Protocol
+  never merges prior deliveries and invokes build_candidate_receipt against the entire current
+  candidate before every receipt or conflict response. Do not expose expected answers or invoke
+  generic multi-agent/spawn capabilities.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question

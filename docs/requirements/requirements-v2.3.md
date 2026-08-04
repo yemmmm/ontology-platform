@@ -3,13 +3,13 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start4 因协作路由失败而 `BLOCKED`，用户已追加授权三次，当前进入 Producer 合同最小修复；
+  start5 因 candidate revision 非完整而 `BLOCKED`，新增三次授权已用一次，当前做最小修复；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：复用 R2.3-002 已验收 Producer 合同，修复 R2.3-005 fresh-scope/candidate-envelope
-  协作路由；通过离线与 no-semantic-start Runtime smoke 后，在新增三次授权内完成一次真实 PASS
+- 当前下一目标：要求 Modeling 每次 revision 完整重发 immutable candidate；离线独立 PASS 后使用一个
+  fresh start6，在剩余两次授权内完成首次真实 PASS
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -58,7 +58,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（新增三次启动授权；尚未写账本/启动）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（start5 BLOCKED；cap 7 已用 5，剩余 2）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1576,6 +1576,22 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   `complete_modeling_quality_result=false`、独立修复 PASS 和 fresh baseline 齐备时才能使用下一次；完整
   modeling-quality 失败仍停止，不得用剩余额度掩盖。若累计 start 达到 `7` 仍未 PASS，必须再次找用户
   申请，不得自行增加 cap。
+
+### 2026-08-04 start5 完整 candidate revision 修复
+
+- 第二个 `+3` tranche、start4 repair 和 start5 已按序写入。start5 使用 fresh Project/Ontology，
+  Modeling 已把平台无关 candidate 交给 Protocol；前五个 revision 的 pre-write conflict 持续收敛，
+  证明 Producer 职责修复生效。但 revision 6 只发送一个 Shape 的替换 patch，遗漏上一版其余 37 个
+  items 和完整 citations/queries，违反 immutable candidate 必须完整、自包含的合同。
+- Protocol 正确拒绝跨 delivery 重组或修改 candidate。全程没有业务平台 API/MCP 调用、dry-run、apply、
+  readback、validation、reasoning 或 Acceptance 结果；fresh 资源已删除空、零残留。终态记录为
+  `BLOCKED/collaboration-routing`、`complete_modeling_quality_result=false`，正式账本 cap/count/active
+  `7/5/0`，本批剩余两次，不得自动启动 start6。
+- 最小修复只允许在 Modeling package/task 明确每个 revision 必须完整重发所有未变
+  items/citations/constraints/queries（Runner 仅投影 task objective，不改行为），Protocol 不得合并历史 patch，
+  并以 retained revision 5/6 生产形状建立回归。不得增加 candidate-history/
+  patch-merge 状态机、修改 mechanics/platform/Acceptance 或重跑 Runtime smoke。独立 Tester PASS 和 fresh
+  baseline 之前不得追加 start5 repair、reservation 或 semantic start。
 
 ### 明确边界
 

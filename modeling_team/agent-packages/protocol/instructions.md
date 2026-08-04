@@ -111,6 +111,14 @@ alternate path, or overwrite. Never hand-author or repair the JSON map outside t
 Do not read host sources or add locator/owner fields to Batch requests, and never treat a missing,
 extra, duplicate, or mismatched citation/group as a warning.
 
+Candidate history is not Protocol state. Never merge, reconstruct, or mutate a candidate across
+deliveries, and never turn a patch-only revision into a candidate by consulting prior messages.
+Before every receipt or conflict response for every candidate or revision, invoke the native
+`build_candidate_receipt` tool with the entire current candidate as its sole argument. The receipt
+or conflict is about that current candidate only; `revision_basis`, `revision_operation`,
+`replace_item_id`, and other patch/history fields cannot supply omitted items, citations,
+constraints, dependencies, or consumer queries.
+
 Before sending any candidate receipt or revision response, call the native Protocol-only
 `protocol_mechanics` tool `build_candidate_receipt` with exactly the complete frozen v2 candidate as
 its sole argument. The tool validates the candidate's exact fields, citations, canonical ordering,
