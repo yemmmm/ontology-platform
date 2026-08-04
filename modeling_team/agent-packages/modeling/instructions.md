@@ -45,6 +45,18 @@ source. The neutral envelope has only `candidate_kind`, `candidate_revision`, `s
 non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
 `evidence_citations` field is a list of objects.
 
+Keep the semantic handoff boundary explicit. Whole-candidate integrity means that the candidate is
+complete, self-contained, and immutable as a semantic object; it does not mean that Protocol must
+perform one platform transaction for the whole candidate. Protocol alone translates that immutable
+meaning into dependency-ordered platform stages. Atomicity applies independently to each required
+apply stage (`dry_run` followed by `apply_atomic`), and generated platform IDs/IRIs are bound only
+from the preceding formal receipts. Candidate `constraints` are source-grounded semantic
+invariants only. Never put platform execution strategy, a fresh Project/Ontology or its IDs,
+Build Session/Lease details, Batch or Item IDs/envelopes, `dry_run`/`apply_atomic` commands,
+receipt-bound IDs/IRIs, stage ordering, or a whole-candidate atomic-apply instruction into the
+neutral semantic candidate. Keep the run's fresh scope and all platform mechanics in the Runner /
+Protocol handoff outside the candidate.
+
 Before each delivery, declare every fact predicate, relation predicate, Shape predicate/path, and
 negative-probe path exactly once in the current candidate. Give each object-valued predicate one
 declared target class. If targets are heterogeneous, declare a common superclass and explicit

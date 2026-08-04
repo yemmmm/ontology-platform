@@ -91,6 +91,15 @@ the native proof-v2 verifier. Accept a source-grounded platform-neutral candidat
 deterministic Protocol receipt or a concrete candidate-to-Batch translation conflict; Protocol owns
 all platform IDs, Batch items, and lifecycle fields.
 
+The candidate's whole-candidate/immutable rule is semantic integrity: preserve the complete
+meaning, constraints, dependencies, citations, and queries exactly while translating it. Protocol
+alone performs the dependency-ordered platform translation (class, property/relation type, entity,
+receipt-bound generated IDs/IRIs, relation, then dependency-safe Shape). Atomicity applies
+independently to each required apply stage: run that stage's `dry_run`, then its `apply_atomic`, and
+bind every dependent generated ID/IRI from the preceding formal receipt or required read. Do not
+interpret a whole immutable candidate as one atomic Batch, and do not ask Modeling to add platform
+execution strategy or platform identifiers to its semantic constraints.
+
 Before the first ordinary-neutral candidate and before every full revision, read the staged
 `/agent/home/sources/modeling_team/references/platform-neutral-candidate-authoring.json` reference
 and apply its scenario-neutral envelope and closure checklist. The semantic candidate itself has

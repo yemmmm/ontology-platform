@@ -2055,3 +2055,37 @@
 - I22 remained PASS: start6 CLEANED, no business platform call, resource cleanup zero and ledger `7/6/0`; both live
   ledgers and retained evidence hashes were identical before/after. D2 is fixed and no D1/D2/ordinary defect remains.
   Verdict: deterministic final-slot repair PASS; I23 BLOCKED/NOT EXECUTED until clean commit.
+
+### 2026-08-04 — Start7 reached Protocol and closed on staged atomicity — Delivery and Main agent
+
+- Clean neutral-authoring baseline `3671eeb` plus independent round 3.1 authorized the start6 repair and exactly one
+  start7, `r23005-real-20260804t102802z-start7`. Modeling preserved three owner answers as explicit unknowns and sent
+  one complete 24,210-character candidate in delivery-8; the start6 envelope/vocabulary/range/path failures did not
+  recur.
+- Protocol delivery-10 identified one concrete handoff conflict: candidate constraints required one whole-candidate
+  atomic apply, while the public Batch contract requires dependency-ordered stages and receipt-bound generated IRIs,
+  with atomicity scoped independently to each apply stage. No Build Session, platform dry-run/apply, readback,
+  validation/reasoning or Acceptance occurred. Terminal classification is `collaboration/routing`, false.
+- A single normal interrupt closed the persistent Modeling turn after the concrete conflict was retained. Runner
+  cleanup reached `CLEANED`; the fresh Project/Ontology were deleted empty, both keys revoked, active handles and
+  process/socket/temp residue were zero, and backend/frontend health returned 200.
+- The user explicitly authorized exactly three additional starts after start7 began. The immutable budget event was
+  appended only after terminal cleanup; formal ledger is 34 records/7,802 bytes, SHA
+  `ce51034d2eab182495c722dcc08a92c3dbf2009e51ac9eb1e4e681239408ea43`, cap/count/active `10/7/0`.
+
+### 2026-08-04 — Staged-atomicity repair Round 4 FAIL, Round 5 PASS — Developer and Requirement Tester
+
+- Root cause was an ownership leak across the task objective, Modeling instructions and reusable neutral smoke
+  example: runtime fresh-scope/dry-run/apply_atomic responsibilities were visible to Modeling without an explicit rule
+  forbidding them inside candidate constraints. The repair keeps whole-candidate completeness as a semantic property
+  and assigns dependency ordering, per-stage atomicity and receipt binding exclusively to Protocol.
+- Developer changed only shared Modeling/Protocol instructions, the platform-neutral authoring reference, R2.3-005
+  task, reusable neutral smoke example and the existing C104 test. No mechanics, MCP, Runner, Runtime, platform,
+  Acceptance or ledger behavior changed; no start-specific checker, new harness or live smoke was added.
+- Independent Round 4 recorded D2 Major because the neutral smoke example had been mistakenly excluded and still
+  contained fresh Project/Ontology and Batch mechanics. Developer restored that example to semantic-only constraints
+  and added it to the existing forbidden-mechanics assertion. Round 5 preserved Round 4 and passed the remediation.
+- Final focused result is 13 OK plus one expected opt-in skip; task/profile validation, exact-current
+  envelope/vocabulary/range/path closure, ledger replay and all 14 retained start7 evidence hashes passed unchanged.
+  No live start or platform mutation occurred. Outcome: focused repair PASS; next action is a clean repair commit,
+  fresh repair baseline and start8 using the first of the newly authorized three starts.

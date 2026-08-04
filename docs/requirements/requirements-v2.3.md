@@ -3,13 +3,14 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start6 因 candidate vocabulary/range 未闭合而 `BLOCKED`，新增三次授权已用两次，当前做最后一次最小修复；
+  start7 因 whole-candidate atomicity 与分阶段平台契约冲突而 `BLOCKED`；用户已追加三次授权，窄修复经
+  独立 Round 5 PASS，当前准备 start8；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：以场景无关 checklist 闭合 neutral candidate 的 envelope/vocabulary/range/path；离线独立
-  PASS 后使用最后一个 fresh start7，完成首次真实 PASS 或在 cap 7 停止申请
+- 当前下一目标：以已通过的场景无关职责边界建立 clean repair baseline，运行 fresh start8，继续完成首次
+  真实 PASS；正式账本 cap/count/active 为 `10/7/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -1609,6 +1610,25 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   不得缩减重写。不得把本业务候选/答案作为 Agent 输入，不改 mechanics/MCP/Runner/Runtime/platform/
   Acceptance，不增加自动 closure 或再跑 smoke。C99-C104 独立 PASS、clean commit、fresh baseline 前不得
   repair/start7；若 start7 未 PASS，cap 7 耗尽后必须向用户申请。
+
+### 2026-08-04 start7 staged-atomicity closure
+
+- start7 `r23005-real-20260804t102802z-start7` 证明前述 neutral authoring 修复生效：Modeling 交付完整
+  self-contained candidate，string-list constraints、谓词/range/Shape path 和显式未知均闭合。Protocol 不再因
+  envelope、缩减 candidate 或未声明 vocabulary 拒绝。
+- Protocol 的 concrete conflict 指出 candidate 把 whole-candidate semantic integrity 误写为一次
+  `apply_atomic`；公共平台契约实际要求按 class、property/relation type、entity、receipt-bound generated IRI、
+  relation、dependency-safe Shape 分阶段转换，每个 apply stage 独立原子化。运行未触达 Build Session、
+  platform dry-run/apply、readback、validation/reasoning 或 Acceptance，终态仍为
+  `BLOCKED/collaboration-routing`、`complete_modeling_quality_result=false`。
+- fresh Project/Ontology 已删除空、密钥撤销、进程和临时资源零残留，backend/frontend health 均为 200。
+  用户随后明确追加三次真实建模额度；正式账本 34 records，SHA
+  `ce51034d2eab182495c722dcc08a92c3dbf2009e51ac9eb1e4e681239408ea43`，cap/count/active `10/7/0`。
+- 最小修复只澄清 Modeling/Protocol 共享职责边界：candidate 的完整/不可变只指语义完整性；平台 stage
+  排序、每阶段 dry-run/apply_atomic 和 receipt-bound IDs/IRIs 仅由 Protocol 负责，禁止进入 Modeling
+  constraints。Round 4 因 neutral smoke 示例仍含 fresh scope/Batch mechanics 记录 D2 Major；修复同一既有
+  示例与 C104 后 Round 5 聚焦 PASS。不得新增 start7 专用 checker、审计 harness 或 mock/smoke 前置门；
+  clean commit 和 fresh repair baseline 后直接运行 start8。
 
 ### 明确边界
 

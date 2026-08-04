@@ -1027,3 +1027,110 @@ returns PASS.
 the complete R2.3-005 live requirement because I23 remains NOT EXECUTED.** The D2 Major from round
 3 is fixed. Delivery may separately follow the reviewed, authorized final-slot sequence only after
 the required clean commit/baseline gates; do not claim I23 from this round.
+
+## 2026-08-04 start7 atomicity boundary — Independent focused round 4
+
+### Scope, authority, and safety boundary
+
+- This round validates only the start7 atomicity-boundary repair against the existing focused
+  candidate-authoring, complete-revision, producer-smoke, task/profile, and retained-start7 checks.
+  It reuses this test plan and the applicable R2.3-005 requirement/design; no new test plan or
+  acceptance scheme was created.
+- The final developer handoff was checked before testing. The final worktree has seven modified
+  paths: the two pre-existing GitNexus instruction files plus the five R2.3-005 modeling/protocol,
+  neutral-reference, task, and focused-test paths. The Tester edited only this appended round;
+  no product implementation, prompt/reference/task rollback, ledger, retained evidence, service,
+  platform resource, reservation, semantic start, or commit was performed.
+- The intended boundary is explicit: Modeling owns whole-candidate semantic integrity; Protocol
+  translates the complete candidate through dependency-ordered class/property/entity/receipt-bound
+  IRI/relation/Shape stages, with each stage independently `dry_run`/`apply_atomic` and bound to
+  preceding receipts. Modeling-facing neutral candidates must not encode fresh scope/session/batch
+  mechanics, receipt IDs/IRIs, stage strategy, or whole-candidate atomic application.
+
+### Focused checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Existing focused suites | PASS (one expected opt-in skip) | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring modeling_team.tests.test_r23005_complete_revision modeling_team.tests.test_r23005_producer_smoke`: **13 tests OK**, with only `test_neutral_handoff_projects_generic_runtime_without_semantic_start` skipped because real Codex Runtime smoke is explicit opt-in. |
+| Task/profile validation | PASS | Direct validation from the absolute checkout root found the formal roles exactly (`coordinator`, `modeling`, `protocol`, `acceptance`), neutral-reference role source exactly Modeling+Protocol, no expected-matrix binding, and the task objective's semantic-integrity/per-stage-atomicity/receipt-binding language. |
+| Protocol contract and closure | PASS | Current focused C99-C104 and complete-revision assertions pass, retaining the exact-current candidate envelope plus vocabulary, range, dependency/path closure, and complete revision requirements while checking the new semantic-vs-Protocol atomicity handoff. |
+| Neutral reference/fixture boundary scan | PASS | Independent scan of the neutral reference and tracked structural fixtures found no fresh Project/Ontology, Session/Lease, Batch/Item, `dry_run`/`apply_atomic`, receipt ID/IRI, stage-order, whole-candidate-atomic, platform-execution, or platform identifier terms in candidate constraints/examples. |
+| Modeling producer smoke neutral candidate | **FAIL — D2 Major** | Independent scan of `modeling_team/r23005_producer_smoke.py:280-289` found prohibited mechanics in `neutral_candidate()` constraints: `fresh Project/Ontology only; no prior scope reuse` and `Protocol owns candidate-v2/Batch translation`; hits were `['fresh project', 'batch']`. |
+
+### Retained start7 audit and immutability
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Retained start7 terminal/cleanup | PASS | Read-only state audit remains `CLEANED`; Acceptance is aborted/unsettled with zero active handles and child residue, credentials destroyed, owned project/ontology absent, FK cascade complete, and all residual counts zero. Retained MCP evidence has no ontology-platform server or platform work. |
+| Formal live ledger replay | PASS | Read-only replay remains strict-valid with **cap/count/active = 10/7/0**; live ledger SHA-256 is `ce51034d2eab182495c722dcc08a92c3dbf2009e51ac9eb1e4e681239408ea43`. No event was appended. |
+| Start7 evidence before/after | PASS | The before and final read-only snapshots are identical: **14 files, 116,431 bytes**, and all 14 per-file SHA-256 values match (including `deliveries.jsonl` `38c41c488f2721a57ba31e4ba16db8ca7ff9ff92098ce9f6d0c9e7468f5d0649`). |
+
+### Defect and disposition
+
+- **D2 Major — the producer-smoke candidate is not neutral under the repaired boundary.** Reproduce
+  with `from modeling_team.r23005_producer_smoke import neutral_candidate; print(neutral_candidate()["constraints"])`
+  or scan its lower-cased constraints for the prohibited terms. Expected: no fresh
+  Project/Ontology, Session/Lease, Batch/Item, `dry_run`/`apply_atomic`, receipt IDs/IRIs, stage
+  strategy, or whole-candidate atomic-apply language. Actual: the exact fresh-scope and Batch
+  translation strings above remain in the reusable Modeling-facing smoke candidate. The focused
+  smoke test passed/skipped because the final scope-tightening reverted the helper/import
+  assertion; it does not establish the required neutrality gate.
+- This is a requirement-relevant failure, not an excluded fixture or a live-runtime artifact. A
+  Requirement Developer should remove the mechanics from the smoke candidate (and/or add the
+  requirement-scoped assertion to the existing focused test), then the Tester should rerun this
+  same focused round. Do not claim a clean repair commit or authorize/start8 on this evidence.
+- I23/start8 is **NOT EXECUTED/BLOCKED by design**: no reservation, live semantic start, Runtime or
+  platform call, dry-run/application/readback/validation/reasoning, Acceptance, settlement, or
+  cleanup was attempted. No full repository suite or broad audit was run.
+
+### Round conclusion
+
+**Overall verdict: FAIL — STOP for the focused start7 atomicity-boundary acceptance; BLOCKED for the
+complete R2.3-005 live requirement.** The semantic-vs-Protocol contract, current envelope/closure,
+neutral reference/fixtures, task/profile, focused suites, and retained start7 immutability checks
+pass, but D2 Major remains in the Modeling producer-smoke candidate. Requirement Developer repair
+and a new independent focused round are required before a clean commit or start8.
+
+## 2026-08-04 start7 atomicity boundary remediation retest — Independent round 5
+
+### Scope and safety boundary
+
+- This remediation retest reuses the same C99-C104/complete-revision/producer-smoke plan and
+  round-4 failure evidence. The developer's stopped change removes the producer-smoke mechanics
+  and restores C104 coverage for that neutral candidate. Round 4 is preserved unchanged.
+- The Tester edited only this appended round. No product fix, new checker, full suite, live start,
+  platform mutation, ledger append, retained-evidence mutation, service action, or commit was done.
+
+### D2 retest and focused checks
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| D2 `neutral_candidate()` constraints | **PASS — D2 FIXED** | Inline assertion over `neutral_candidate()["constraints"]` found no prohibited fresh Project/Ontology, Session/Lease, Batch/Item, `dry_run`/`apply_atomic`, receipt ID/IRI, platform-execution, atomic-apply, or stage-order terms. The constraints are exactly `the semantic candidate is complete, self-contained, and immutable` and `all semantic references close over this candidate`. |
+| C104 smoke coverage | PASS | Existing `R23005CandidateAuthoringTests.test_c104_corrected_candidate_receipt_projection_and_scope_boundaries` ran **1/1 OK** and now asserts the same prohibited-term set against the imported `neutral_candidate()` constraints. |
+| Existing focused suites | PASS (one expected opt-in skip) | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring modeling_team.tests.test_r23005_complete_revision modeling_team.tests.test_r23005_producer_smoke`: **13 tests OK**, `test_neutral_handoff_projects_generic_runtime_without_semantic_start` skipped because real Codex Runtime smoke requires explicit opt-in. C99-C104 and C94-C98 all pass. |
+| Task/profile validation | PASS | Absolute-root validation found roles exactly `coordinator`, `modeling`, `protocol`, `acceptance`; neutral reference source roles exactly Modeling+Protocol; both expected-matrix bindings are `None`; all semantic-integrity/per-stage-atomicity/receipt-binding objective phrases remain present. |
+
+### Retained start7 audit and immutability
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Formal ledger strict replay | PASS | Read-only `StartLedger(requirement_id='R2.3-005')` replay validated **34 records**, cap/count/active **10/7/0**. Live ledger SHA-256 remains `ce51034d2eab182495c722dcc08a92c3dbf2009e51ac9eb1e4e681239408ea43`; no event was appended. |
+| Start7 terminal/cleanup | PASS | Retained `state.json` remains `CLEANED`; Acceptance is aborted/unsettled with `active_handles=0`, `zero_child_residue=true`, credentials destroyed; owned scope is `deleted-empty`, project/ontology absent, FK cascade true, and all residual counts zero. Ten deliveries remain and MCP servers are only `team_transport`. |
+| Before/after evidence equality | PASS | Before and after retest snapshots are identical: ledger mode `664`, size `7,802`, same SHA and mtime; start7 evidence has **14 files / 116,431 bytes**, with all 14 per-file SHA-256 values unchanged, including `deliveries.jsonl` `38c41c488f2721a57ba31e4ba16db8ca7ff9ff92098ce9f6d0c9e7468f5d0649`. |
+
+### Disposition and readiness
+
+- The round-4 **D2 Major is FIXED**. The reusable Modeling-facing smoke candidate is now
+  semantic-only, and C104 directly protects this boundary. No focused defect remains.
+- I23/start8 remains **NOT EXECUTED/BLOCKED by design**. No live semantic start, Runtime or
+  platform call, dry-run/application/readback/validation/reasoning, Acceptance, settlement, or
+  cleanup was attempted in this retest. No full repository suite or broad audit was run.
+- The repaired state is ready for the developer's clean repair commit and the required clean
+  baseline/authorization gates for start8. This Tester does not authorize or launch start8.
+
+### Round conclusion
+
+**Overall verdict: PASS for the focused start7 atomicity-boundary remediation; BLOCKED for the
+complete R2.3-005 live requirement because I23/start8 remains unexecuted.** D2 is fixed, retained
+evidence is immutable, and the next safe action is a clean repair commit followed by the separately
+authorized start8 sequence.

@@ -18,8 +18,14 @@ objective: >-
   full revision, Modeling and Protocol must read and apply the staged
   modeling_team/references/platform-neutral-candidate-authoring.json scenario-neutral authoring
   checklist; keep Team Transport delivery/reply identities and Batch/platform IDs outside the
-  neutral semantic candidate. Do not expose expected answers or invoke generic multi-agent/spawn
-  capabilities.
+  neutral semantic candidate. The candidate's whole-candidate/immutable rule is semantic integrity,
+  not one platform transaction: Protocol alone translates it into dependency-ordered platform
+  stages, each required apply stage is independently atomic (`dry_run` then `apply_atomic`), and
+  generated IDs/IRIs come only from preceding formal receipts or required reads. The fresh
+  Project/Ontology, Build Session/Lease, Batch/Item envelopes, stage ordering, and all other
+  platform mechanics belong to Runner/Protocol and must never appear in Modeling's semantic
+  constraints. Modeling constraints must remain source-grounded semantic invariants only. Do not
+  expose expected answers or invoke generic multi-agent/spawn capabilities.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question

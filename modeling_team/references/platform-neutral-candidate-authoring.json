@@ -1,6 +1,22 @@
 {
   "schema_version": "platform-neutral-candidate-authoring/v1",
   "purpose": "Scenario-neutral authoring contract for an ordinary semantic candidate.",
+  "semantic_handoff": {
+    "candidate_integrity": "The candidate is one complete, self-contained, immutable semantic object; whole-candidate integrity applies to its meaning and content, not to one platform transaction.",
+    "protocol_translation": "Protocol alone translates that immutable candidate into dependency-ordered platform stages.",
+    "stage_atomicity": "Atomicity applies independently to each required apply stage: run dry_run, then apply_atomic for that stage.",
+    "receipt_binding": "Protocol binds generated platform IDs and IRIs only from preceding formal receipts or required reads before dependent stages.",
+    "modeling_exclusions": [
+      "Platform execution strategy",
+      "Fresh Project/Ontology scope or IDs",
+      "Build Session/Lease details",
+      "Batch or Item IDs and envelopes",
+      "dry_run/apply_atomic commands",
+      "Receipt-bound IDs or IRIs",
+      "Dependency stage ordering",
+      "A whole-candidate atomic-apply instruction"
+    ]
+  },
   "candidate_envelope": {
     "additional_properties": false,
     "fields": [
@@ -29,6 +45,8 @@
     }
   },
   "closure_checklist": [
+    "Keep semantic integrity whole-candidate and immutable; Protocol owns dependency-ordered platform translation, per-stage atomicity, and receipt-bound generated IDs/IRIs.",
+    "Keep candidate constraints semantic-only; do not put platform execution strategy, fresh Project/Ontology scope, Batch/Item envelopes, dry_run/apply_atomic commands, or a whole-candidate atomic-apply instruction into the candidate.",
     "Keep every item_id unique and every item_kind non-empty; semantic must be an object.",
     "Declare each fact predicate, relation predicate, Shape path, and negative-probe path once in the current candidate.",
     "Give every object-valued predicate exactly one declared target class.",

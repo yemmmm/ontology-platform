@@ -12,6 +12,7 @@ from modeling_team.protocol_mechanics import (
     ProtocolRetrievalFallbackError,
     build_candidate_receipt,
 )
+from modeling_team.r23005_producer_smoke import neutral_candidate
 from modeling_team.runner import TeamRunner
 
 
@@ -331,6 +332,38 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
     def test_c104_corrected_candidate_receipt_projection_and_scope_boundaries(self) -> None:
         root = repository_root()
         reference = json.loads((root / NEUTRAL_REFERENCE).read_text(encoding="utf-8"))
+        handoff = reference["semantic_handoff"]
+        self.assertEqual(
+            set(handoff),
+            {
+                "candidate_integrity",
+                "protocol_translation",
+                "stage_atomicity",
+                "receipt_binding",
+                "modeling_exclusions",
+            },
+        )
+        self.assertIn("complete, self-contained, immutable semantic object", handoff["candidate_integrity"])
+        self.assertIn("not to one platform transaction", handoff["candidate_integrity"])
+        self.assertIn("Protocol alone", handoff["protocol_translation"])
+        self.assertIn("dependency-ordered platform stages", handoff["protocol_translation"])
+        self.assertIn("independently", handoff["stage_atomicity"])
+        self.assertIn("dry_run", handoff["stage_atomicity"])
+        self.assertIn("apply_atomic", handoff["stage_atomicity"])
+        self.assertIn("preceding formal receipts", handoff["receipt_binding"])
+        self.assertEqual(
+            handoff["modeling_exclusions"],
+            [
+                "Platform execution strategy",
+                "Fresh Project/Ontology scope or IDs",
+                "Build Session/Lease details",
+                "Batch or Item IDs and envelopes",
+                "dry_run/apply_atomic commands",
+                "Receipt-bound IDs or IRIs",
+                "Dependency stage ordering",
+                "A whole-candidate atomic-apply instruction",
+            ],
+        )
         example = reference["example_candidate"]
         self.assertEqual(set(example), NEUTRAL_FIELDS)
         self.assertTrue(
@@ -378,6 +411,63 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             self.assertNotIn(forbidden, fixture_text)
         self.assertIsNone(re.search(r"\b[abc]\s*->\s*[abc]\b", reference_text))
 
+        # The boundary may describe excluded mechanics, but every neutral candidate example and
+        # fixture constraint remains semantic-only; no runtime/platform instruction is authored in
+        # the object that Modeling sends.
+        forbidden_constraint_terms = (
+            "fresh project",
+            "fresh ontology",
+            "project_id",
+            "ontology_id",
+            "batch",
+            "dry_run",
+            "apply_atomic",
+            "platform execution",
+            "atomic apply",
+            "stage ordering",
+        )
+        fixtures = json.loads((root / STRUCTURAL_FIXTURE).read_text(encoding="utf-8"))
+        for candidate in [example, *(value for value in fixtures.values() if isinstance(value, dict))]:
+            constraints_text = json.dumps(
+                candidate.get("constraints", []), ensure_ascii=False
+            ).lower()
+            for term in forbidden_constraint_terms:
+                self.assertNotIn(term, constraints_text)
+
+        smoke_candidate = neutral_candidate()
+        smoke_constraints = json.dumps(
+            smoke_candidate["constraints"], ensure_ascii=False
+        ).lower()
+        for term in forbidden_constraint_terms:
+            self.assertNotIn(term, smoke_constraints)
+
+        modeling_instructions = (
+            root / "modeling_team/agent-packages/modeling/instructions.md"
+        ).read_text(encoding="utf-8")
+        for phrase in (
+            "Whole-candidate integrity means",
+            "Protocol alone translates",
+            "Atomicity applies independently",
+            "Candidate `constraints` are source-grounded semantic",
+            "Never put platform execution strategy",
+            "whole-candidate atomic-apply instruction",
+        ):
+            self.assertIn(phrase, modeling_instructions)
+        protocol_instructions = (
+            root / "modeling_team/agent-packages/protocol/instructions.md"
+        ).read_text(encoding="utf-8")
+        for phrase in (
+            "candidate's whole-candidate/immutable rule is semantic integrity",
+            "dependency-ordered platform translation",
+            "preceding formal receipt or required read",
+        ):
+            self.assertIn(phrase, protocol_instructions)
+        self.assertRegex(protocol_instructions, r"Atomicity applies\s+independently")
+        self.assertRegex(
+            protocol_instructions,
+            r"Do not\s+interpret a whole immutable candidate as one atomic Batch",
+        )
+
         candidate = _mechanically_correct_r2(_fixture_candidate("cba-slice-r2"))
         _declare_r2_predicates(candidate)
         _declare_common_subject_range(candidate)
@@ -396,7 +486,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertEqual(example_receipt["status"], "accepted")
         self.assertEqual(example_calls, [example])
 
-        fixtures = json.loads((root / STRUCTURAL_FIXTURE).read_text(encoding="utf-8"))
         corrected_fixture = fixtures["corrected"]
         self.assertEqual(set(corrected_fixture), NEUTRAL_FIELDS)
         corrected_calls: list[dict[str, Any]] = []
@@ -409,6 +498,14 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
             root=root,
         )
+        for phrase in (
+            "candidate's whole-candidate/immutable rule is semantic integrity",
+            "each required apply stage is independently atomic",
+            "generated IDs/IRIs come only from preceding formal receipts",
+            "must never appear in Modeling's semantic constraints",
+            "source-grounded semantic invariants only",
+        ):
+            self.assertIn(phrase, configuration.task.objective)
         neutral_sources = [
             source
             for source in configuration.task.role_sources

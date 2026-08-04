@@ -284,9 +284,8 @@ def neutral_candidate(*, source_digest: str = "0" * 64) -> dict[str, Any]:
         "candidate_revision": 1,
         "scope": {},
         "constraints": [
-            "fresh Project/Ontology only; no prior scope reuse",
-            "one semantic start",
-            "Protocol owns candidate-v2/Batch translation",
+            "the semantic candidate is complete, self-contained, and immutable",
+            "all semantic references close over this candidate",
         ],
         "items": [
             {
