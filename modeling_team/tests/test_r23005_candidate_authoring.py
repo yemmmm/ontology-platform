@@ -261,6 +261,30 @@ def _validate_candidate_closure(candidate: dict[str, Any]) -> None:
                 raise CandidateAuthoringError(f"dependency reference is outside candidate: {field}")
 
 
+def _validate_create_entity_labels(candidate: dict[str, Any]) -> None:
+    """Require semantic labels for every neutral item Protocol materializes as an entity."""
+
+    for item in candidate.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        semantic = item.get("semantic", {})
+        item_kind = item.get("item_kind")
+        if item_kind in {"entity", "explicit_unknown"}:
+            values = semantic.get("values")
+            label = values.get("label") if isinstance(values, dict) else None
+            if not isinstance(label, str) or not label.strip():
+                raise CandidateAuthoringError(
+                    f"{item_kind} create_entity materialization requires semantic.values.label"
+                )
+        elif item_kind == "negative_probe" and "invalid_instance" in semantic:
+            invalid_instance = semantic["invalid_instance"]
+            label = invalid_instance.get("label") if isinstance(invalid_instance, dict) else None
+            if not isinstance(label, str) or not label.strip():
+                raise CandidateAuthoringError(
+                    "negative_probe invalid_instance create_entity materialization requires label"
+                )
+
+
 def _exact_protocol_receipt(
     candidate: dict[str, Any], calls: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -389,6 +413,13 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
                 for item in example["items"]
             )
         )
+        checklist_text = "\n".join(reference["closure_checklist"])
+        for phrase in (
+            "semantic.values.label",
+            "semantic.invalid_instance",
+            "never derives or invents",
+        ):
+            self.assertIn(phrase, checklist_text)
 
         reference_text = json.dumps(reference, ensure_ascii=False).lower()
         fixture_text = (root / STRUCTURAL_FIXTURE).read_text(encoding="utf-8").lower()
@@ -434,6 +465,8 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             for term in forbidden_constraint_terms:
                 self.assertNotIn(term, constraints_text)
 
+        _validate_create_entity_labels(example)
+
         smoke_candidate = neutral_candidate()
         smoke_constraints = json.dumps(
             smoke_candidate["constraints"], ensure_ascii=False
@@ -451,6 +484,9 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "Candidate `constraints` are source-grounded semantic",
             "Never put platform execution strategy",
             "whole-candidate atomic-apply instruction",
+            "semantic.values.label",
+            "semantic.invalid_instance",
+            "derive or invent labels",
         ):
             self.assertIn(phrase, modeling_instructions)
         protocol_instructions = (
@@ -460,6 +496,9 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "candidate's whole-candidate/immutable rule is semantic integrity",
             "dependency-ordered platform translation",
             "preceding formal receipt or required read",
+            "semantic.values.label",
+            "semantic.invalid_instance",
+            "derive or invent one",
         ):
             self.assertIn(phrase, protocol_instructions)
         self.assertRegex(protocol_instructions, r"Atomicity applies\s+independently")
@@ -488,6 +527,7 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
 
         corrected_fixture = fixtures["corrected"]
         self.assertEqual(set(corrected_fixture), NEUTRAL_FIELDS)
+        _validate_create_entity_labels(corrected_fixture)
         corrected_calls: list[dict[str, Any]] = []
         corrected_receipt = _exact_protocol_receipt(corrected_fixture, corrected_calls)
         self.assertEqual(corrected_receipt["status"], "accepted")
@@ -504,6 +544,9 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "generated IDs/IRIs come only from preceding formal receipts",
             "must never appear in Modeling's semantic constraints",
             "source-grounded semantic invariants only",
+            "semantic.values.label",
+            "semantic.invalid_instance",
+            "never derives or invents them",
         ):
             self.assertIn(phrase, configuration.task.objective)
         neutral_sources = [
@@ -539,6 +582,41 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertIsNotNone(proof.task.expected_matrix_binding)
         self.assertIsNone(configuration.profile.expected_matrix_binding)
         self.assertIsNone(configuration.task.expected_matrix_binding)
+
+    def test_c105_materialized_entity_labels_are_required_and_not_derived(self) -> None:
+        root = repository_root()
+        reference = json.loads((root / NEUTRAL_REFERENCE).read_text(encoding="utf-8"))
+        baseline = copy.deepcopy(reference["example_candidate"])
+        cases = (
+            ("entity", "semantic.values.label"),
+            ("explicit_unknown", "semantic.values.label"),
+            ("negative_probe", "semantic.invalid_instance.label"),
+        )
+        for item_kind, path in cases:
+            candidate = copy.deepcopy(baseline)
+            if item_kind == "entity":
+                item = next(item for item in candidate["items"] if item["item_kind"] == "entity")
+                item["semantic"]["values"].pop("label")
+            elif item_kind == "explicit_unknown":
+                candidate["items"].append(
+                    {
+                        "item_id": "unknown-neutral",
+                        "item_kind": "explicit_unknown",
+                        "semantic": {
+                            "entity_id": "unknown-neutral",
+                            "class": "NeutralSubject",
+                            "values": {"unknownQuestion": "Which subject is unknown?"},
+                        },
+                    }
+                )
+            else:
+                probe = next(
+                    item for item in candidate["items"] if item["item_kind"] == "negative_probe"
+                )
+                probe["semantic"]["invalid_instance"].pop("label")
+            with self.subTest(item_kind=item_kind, path=path):
+                with self.assertRaisesRegex(CandidateAuthoringError, "requires"):
+                    _validate_create_entity_labels(candidate)
 
 
 if __name__ == "__main__":

@@ -2089,3 +2089,33 @@
   envelope/vocabulary/range/path closure, ledger replay and all 14 retained start7 evidence hashes passed unchanged.
   No live start or platform mutation occurred. Outcome: focused repair PASS; next action is a clean repair commit,
   fresh repair baseline and start8 using the first of the newly authorized three starts.
+
+### 2026-08-04 — Start8 closed on entity label completeness — Delivery and Main agent
+
+- Clean repair commit `6d4fb27` and Round 5 authorized start7 repair plus exactly one start8,
+  `r23005-real-20260804t112405z-start8`. Modeling delivered complete r1 and r2 candidates without the start7
+  whole-candidate atomicity leak.
+- Protocol delivery-7 rejected the r1 negative probe because its materialized invalid instance omitted the non-empty
+  label required by public `create_entity`. Modeling r2 added that source-grounded probe label but preserved two
+  explicit_unknown entities without labels; delivery-9 rejected both and correctly refused to synthesize business
+  labels from IDs or question text. Modeling and Protocol then reported blocked terminal handoffs.
+- Classification is `modeling-quality`, false. No Build Session/Lease/Batch, platform dry-run/apply, readback,
+  validation/reasoning or Acceptance occurred. Cleanup reached `CLEANED`, deleted the fresh scope empty, revoked both
+  keys and left zero process/platform residue; backend/frontend health returned 200.
+- Formal ledger is 38 lines/8,726 bytes, SHA
+  `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`, cap/count/active `10/8/0`; two authorized
+  starts remain. Retained evidence is under `workspaces/modeling-runs/r23005-real-20260804t112405z-start8/`.
+
+### 2026-08-04 — Entity label closure independent Round 6 PASS — Developer and Requirement Tester
+
+- The shared neutral reference, Modeling/Protocol instructions, R2.3-005 task and tracked corrected fixture now require
+  a non-empty source-grounded label for every entity-producing item: entity and explicit_unknown at
+  `semantic.values.label`, materialized negative probe at `semantic.invalid_instance.label`. Protocol rejects missing
+  labels and never derives them from item/entity IDs or question text.
+- Existing focused authoring tests were extended in place; no start-specific checker, new harness, live smoke or
+  platform mechanic was added. Staged atomicity, exact-current receipt, envelope/vocabulary/range/path closure and
+  neutral-mechanics exclusions remain intact.
+- Independent Round 6 passed 14 focused tests with one expected opt-in skip, task/profile validation, targeted Ruff and
+  diff checks. Read-only start8 audit matched delivery-7/9, replayed ledger `10/8/0`, confirmed CLEANED/deleted-empty
+  cleanup and preserved all 17 evidence hashes unchanged. Outcome: focused repair PASS; next action is clean commit,
+  fresh start8 repair baseline and start9.

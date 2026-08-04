@@ -110,6 +110,13 @@ and reply identities (`delivery_id`, `reply_to_delivery_id`, `expects_reply`) pl
 IDs are outside that neutral object and are not extra candidate fields. This reference is a
 checklist/example only; do not copy its illustrative identifiers into a live candidate.
 
+Before translating any item to `create_entity`, require a non-empty source-grounded label in the
+candidate: `entity` and `explicit_unknown` items use `semantic.values.label`, while a
+`negative_probe` with `semantic.invalid_instance` uses that object's `label`. If the required
+label is missing or blank, return a concrete candidate-to-Batch translation conflict before any
+platform call. Labels are business semantic content; never derive or invent one from an item ID,
+entity ID, or question text.
+
 For an active proof-v2 task with the provided non-null `expected_matrix_binding`, the native verifier
 input is the exact fifteen-field direct envelope:
 `mode, initial_modeling_context, final_modeling_context, workspace_context, batch_inventory,

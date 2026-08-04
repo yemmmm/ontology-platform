@@ -3,14 +3,14 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start7 因 whole-candidate atomicity 与分阶段平台契约冲突而 `BLOCKED`；用户已追加三次授权，窄修复经
-  独立 Round 5 PASS，当前准备 start8；
+  start8 因 entity-producing items 缺少必填 label 而 `BLOCKED/modeling-quality`；用户追加三次授权已使用
+  一次，label closure 窄修复经独立 Round 6 PASS，当前准备 start9；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：以已通过的场景无关职责边界建立 clean repair baseline，运行 fresh start8，继续完成首次
-  真实 PASS；正式账本 cap/count/active 为 `10/7/0`
+- 当前下一目标：以已通过的场景无关 label closure 建立 clean repair baseline，运行 fresh start9，继续完成
+  首次真实 PASS；正式账本 cap/count/active 为 `10/8/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -1629,6 +1629,23 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   constraints。Round 4 因 neutral smoke 示例仍含 fresh scope/Batch mechanics 记录 D2 Major；修复同一既有
   示例与 C104 后 Round 5 聚焦 PASS。不得新增 start7 专用 checker、审计 harness 或 mock/smoke 前置门；
   clean commit 和 fresh repair baseline 后直接运行 start8。
+
+### 2026-08-04 start8 entity label closure
+
+- start8 `r23005-real-20260804t112405z-start8` 保持 staged-atomicity 修复：neutral candidate constraints 未
+  泄漏平台执行 mechanics。Protocol 对完整 r1 返回 concrete conflict，指出 materialized negative probe
+  缺少 `create_entity` 必填的非空 label；Modeling 的完整 r2 修复 probe label，但两个 explicit_unknown
+  entities 仍缺少 label，随后双方正确 BLOCKED。
+- 终态分类为 `modeling-quality`、`complete_modeling_quality_result=false`。未触达 Build Session、Lease、
+  Batch、dry-run/apply、readback、validation/reasoning 或 Acceptance；fresh scope 删除空、密钥撤销、进程
+  与平台残留为零，backend/frontend health 均为 200。正式账本 38 records，SHA
+  `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`，cap/count/active `10/8/0`。
+- 最小修复把非空 source-grounded label 定义为所有 entity-producing candidate items 的共享闭合规则：
+  entity/explicit_unknown 使用 `semantic.values.label`，materialized negative probe 使用
+  `semantic.invalid_instance.label`；Protocol 必须拒绝缺失值，且不得从 item/entity ID 或问题文本推导、
+  生成业务 label。不得改 platform mechanics 或增加 start8 专用 checker。
+- 独立 Round 6 聚焦 14 PASS、1 个明确 opt-in skip；C104-C105、task/profile、Ruff/diff、ledger replay 和
+  17 个 retained evidence hashes 均 PASS/unchanged。clean commit 与 fresh repair baseline 后直接运行 start9。
 
 ### 明确边界
 

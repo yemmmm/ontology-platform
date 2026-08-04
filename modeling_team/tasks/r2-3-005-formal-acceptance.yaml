@@ -24,8 +24,14 @@ objective: >-
   generated IDs/IRIs come only from preceding formal receipts or required reads. The fresh
   Project/Ontology, Build Session/Lease, Batch/Item envelopes, stage ordering, and all other
   platform mechanics belong to Runner/Protocol and must never appear in Modeling's semantic
-  constraints. Modeling constraints must remain source-grounded semantic invariants only. Do not
-  expose expected answers or invoke generic multi-agent/spawn capabilities.
+  constraints. Modeling constraints must remain source-grounded semantic invariants only. Every
+  entity or explicit_unknown item that Protocol materializes as create_entity must carry a
+  non-empty source-grounded semantic.values.label; when a negative_probe materializes a
+  semantic.invalid_instance for rejection, that object must carry its own non-empty source-grounded
+  label.
+  Protocol rejects missing or blank labels and never derives or invents them from item_id,
+  entity_id, or question text. Do not expose expected answers or invoke generic multi-agent/spawn
+  capabilities.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question

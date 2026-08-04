@@ -1134,3 +1134,57 @@ and a new independent focused round are required before a clean commit or start8
 complete R2.3-005 live requirement because I23/start8 remains unexecuted.** D2 is fixed, retained
 evidence is immutable, and the next safe action is a clean repair commit followed by the separately
 authorized start8 sequence.
+
+## 2026-08-04 start8 entity-label closure remediation — Independent round 6
+
+### Scope and safety boundary
+
+- This round reuses the shared candidate-authoring, complete-revision, producer-smoke, task/profile,
+  lint/diff, and retained-evidence scope. It validates the final entity-label closure repair without
+  changing any prior round. The Tester edited only this appended round; no code fix, new checker,
+  live start, platform/ledger mutation, service action, or commit was performed.
+- The target contract is narrow: every `create_entity` materialization has a non-empty
+  source-grounded label (`semantic.values.label` for `entity`/`explicit_unknown`, or
+  `semantic.invalid_instance.label` for a materialized `negative_probe`); Protocol rejects blank
+  labels and never derives them from IDs or question text. Existing exact-current envelope,
+  vocabulary/range/path closure, staged atomicity, and neutral-constraint exclusions remain in
+  scope.
+
+### Focused checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Existing focused offline suites | PASS (one expected opt-in skip) | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring modeling_team.tests.test_r23005_complete_revision modeling_team.tests.test_r23005_producer_smoke`: **14 tests OK**, with only `test_neutral_handoff_projects_generic_runtime_without_semantic_start` skipped because real Codex Runtime smoke is explicit opt-in. C99-C105 and C94-C98 pass. |
+| Label closure and non-derivation | PASS | Existing `test_c105_materialized_entity_labels_are_required_and_not_derived` rejects missing `semantic.values.label` for `entity` and `explicit_unknown`, and missing `semantic.invalid_instance.label` for `negative_probe`; C104 validates labels on the neutral example/corrected fixture and the required no-derivation phrases. |
+| Modeling/Protocol/reference/task contract | PASS | Existing C104 assertions find the label paths and “derive or invent” prohibitions in Modeling instructions, Protocol instructions, neutral-reference closure checklist, and task objective; neutral candidate constraints remain free of platform mechanics. |
+| Task/profile validation | PASS | Absolute-root validation found roles exactly `coordinator`, `modeling`, `protocol`, `acceptance`; neutral source roles exactly Modeling+Protocol; both expected-matrix bindings `None`; semantic-integrity, staged-atomicity, receipt-binding, label-path, and no-derivation objective phrases present. |
+| Lint and whitespace | PASS | `uv run --project backend ruff check modeling_team/tests/test_r23005_candidate_authoring.py` and `git diff --check` both passed. |
+
+### Retained start8 defect evidence and immutability
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Retained delivery-7/9 defect matches | PASS (historical evidence) | `deliveries.jsonl` sequence 7 reports `probe-published-release-missing-output` with `invalid_instance` missing a non-empty label; sequence 9 reports both `unknown-output-continuity` and `unknown-b-no-score-behavior` missing entity labels and states Protocol cannot synthesize from IDs/questions. Delivery 6 has the missing probe label; delivery 8 adds that probe label but still leaves both explicit-unknown labels absent. |
+| Formal ledger strict replay | PASS | Read-only `StartLedger(requirement_id='R2.3-005')` validated **38 records**, cap/count/active **10/8/0**. Live ledger SHA-256 is `9573a90741e36517f908ece47545c29d17cfa386ecd5e3b2c71300ad1b4ffde4`; no event was appended. |
+| Start8 cleanup | PASS | Retained `state.json` remains `CLEANED`; Acceptance is aborted/unsettled with `active_handles=0`, `zero_child_residue=true`, credentials destroyed; owned scope is `deleted-empty`, project/ontology absent, FK cascade true, all residual counts zero. Nine deliveries remain and retained MCP servers are only `team_transport`. |
+| Before/after retained evidence equality | PASS | Before and after snapshots match exactly: ledger mode `664`, size `8,726`, same mtime/SHA; start8 evidence has **17 files / 163,599 bytes**, and all 17 per-file SHA-256 values are unchanged, including `deliveries.jsonl` `0ff1d6cbca1695ff8d4f75bdd18ed15bdc25b16edbfcdcd031d22c1a9fa3fa99`. |
+
+### Disposition, residual risk, and readiness
+
+- The entity-label closure repair is **PASS** for the focused offline acceptance. No current-code
+  defect was reproduced. The retained start8 conflict is historical evidence of the defect that
+  the current neutral reference/fixtures/instructions/task and C105 guard now cover.
+- Residual risk is intentionally bounded: no live Protocol/platform translation was rerun, so the
+  repaired label contract still needs confirmation in a fresh authorized start. I23/start9 is
+  **NOT EXECUTED/BLOCKED by design**; this Tester did not reserve or launch it, and no full suite or
+  broad audit was run.
+- The repaired state is ready for a clean repair commit and the required clean-baseline and
+  authorization gates before start9. Do not treat retained start8's aborted run as a live PASS.
+
+### Round conclusion
+
+**Overall verdict: PASS for the focused start8 entity-label closure remediation; BLOCKED for the
+complete R2.3-005 live requirement because start9 remains unexecuted.** The label paths,
+non-derivation/rejection behavior, exact-current neutral closure, ledger, cleanup, and retained
+evidence immutability all pass; next safe action is clean commit followed by separately authorized
+start9.

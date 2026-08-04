@@ -48,6 +48,9 @@
     "Keep semantic integrity whole-candidate and immutable; Protocol owns dependency-ordered platform translation, per-stage atomicity, and receipt-bound generated IDs/IRIs.",
     "Keep candidate constraints semantic-only; do not put platform execution strategy, fresh Project/Ontology scope, Batch/Item envelopes, dry_run/apply_atomic commands, or a whole-candidate atomic-apply instruction into the candidate.",
     "Keep every item_id unique and every item_kind non-empty; semantic must be an object.",
+    "For every entity or explicit_unknown item materialized as create_entity, semantic.values.label must be non-empty source-grounded semantic text.",
+    "When a negative_probe materializes semantic.invalid_instance for rejection, that invalid instance must also carry a non-empty source-grounded label.",
+    "Treat labels as semantic content; Protocol rejects missing or blank labels and never derives or invents them from item_id, entity_id, or question text.",
     "Declare each fact predicate, relation predicate, Shape path, and negative-probe path once in the current candidate.",
     "Give every object-valued predicate exactly one declared target class.",
     "For heterogeneous object targets, declare one common superclass with subclass bindings or split the predicate; never use resource or an external placeholder as a range.",
@@ -132,6 +135,7 @@
           "entity_id": "neutral-left",
           "class": "NeutralLeftSubject",
           "values": {
+            "label": "Left neutral subject",
             "neutralLabel": "left"
           }
         }
@@ -143,7 +147,22 @@
           "entity_id": "neutral-right",
           "class": "NeutralRightSubject",
           "values": {
+            "label": "Right neutral subject",
             "neutralLabel": "right"
+          }
+        }
+      },
+      {
+        "item_id": "unknown-neutral-subject",
+        "item_kind": "explicit_unknown",
+        "semantic": {
+          "entity_id": "unknown-neutral-subject",
+          "class": "NeutralSubject",
+          "values": {
+            "label": "Unresolved neutral subject",
+            "unknownKind": "explicit_unknown",
+            "unknownQuestion": "Which neutral subject is missing?",
+            "unknownRationale": "The illustrative evidence does not identify one."
           }
         }
       },
@@ -164,7 +183,12 @@
           "probe_id": "neutral-shape-probe",
           "shape_id": "NeutralSubjectShape",
           "path": "path-neutral-label",
-          "expected_result": "rejected"
+          "expected_result": "rejected",
+          "invalid_instance": {
+            "class": "NeutralSubject",
+            "label": "Invalid neutral subject missing neutralLabel",
+            "values": {}
+          }
         }
       }
     ]

@@ -45,6 +45,13 @@ source. The neutral envelope has only `candidate_kind`, `candidate_revision`, `s
 non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
 `evidence_citations` field is a list of objects.
 
+Any item that Protocol will materialize as `create_entity` must carry its label as semantic
+content. For an ordinary `entity` or an `explicit_unknown`, provide a non-empty,
+source-grounded `semantic.values.label`; when a `negative_probe` includes a materialized
+`semantic.invalid_instance`, provide a non-empty, source-grounded label there as well. Do not
+derive or invent labels from `item_id`, `entity_id`, or an unknown question. A missing or blank
+label is a concrete Protocol conflict; do not send a candidate that relies on Protocol to fill it.
+
 Keep the semantic handoff boundary explicit. Whole-candidate integrity means that the candidate is
 complete, self-contained, and immutable as a semantic object; it does not mean that Protocol must
 perform one platform transaction for the whole candidate. Protocol alone translates that immutable

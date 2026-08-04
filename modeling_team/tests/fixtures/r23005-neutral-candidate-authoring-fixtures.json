@@ -303,6 +303,7 @@
           "entity_id": "neutral-left",
           "class": "NeutralLeft",
           "values": {
+            "label": "Left neutral subject",
             "neutralLabel": "left"
           }
         }
@@ -314,7 +315,22 @@
           "entity_id": "neutral-right",
           "class": "NeutralRight",
           "values": {
+            "label": "Right neutral subject",
             "neutralLabel": "right"
+          }
+        }
+      },
+      {
+        "item_id": "unknown-neutral-subject",
+        "item_kind": "explicit_unknown",
+        "semantic": {
+          "entity_id": "unknown-neutral-subject",
+          "class": "NeutralSubject",
+          "values": {
+            "label": "Unresolved neutral subject",
+            "unknownKind": "explicit_unknown",
+            "unknownQuestion": "Which neutral subject is missing?",
+            "unknownRationale": "The illustrative evidence does not identify one."
           }
         }
       },
@@ -335,7 +351,12 @@
           "probe_id": "neutral-shape-probe",
           "shape_id": "NeutralSubjectShape",
           "path": "path-neutral-label",
-          "expected_result": "rejected"
+          "expected_result": "rejected",
+          "invalid_instance": {
+            "class": "NeutralSubject",
+            "label": "Invalid neutral subject missing neutralLabel",
+            "values": {}
+          }
         }
       }
     ]
