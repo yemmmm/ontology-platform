@@ -1498,6 +1498,42 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   自动失效，不得与新状态的结果拼接。Coordinator 必须在最终模型状态上重新串行验收两个问题，且
   每个问题使用全新的 Examiner 对；两个 `PASS` 都绑定同一个最终模型 revision 才满足语义完成门。
 
+### 2026-08-04 追加三次语义建模启动授权
+
+- 初始唯一一次 R2.3-005 `semantic_start` 已由
+  `r23005-real-20260803t141820z` 消耗。该运行在用户答案进入 Modeling 前因
+  `collaboration/routing` 缺陷终止，没有形成完整 modeling-quality 结果；用户选择“未知”是来源忠实的
+  合法答案，不是该次 `BLOCKED` 的原因。
+- 用户于 2026-08-04 明确新增授权三次语义建模启动。R2.3-005 累计 cap 从 `1` 提高到 `4`，当前
+  `semantic_start` 已消耗 `1`、剩余 `3`。这三次是失败修复后的串行重试预算，不是三个新业务切片；
+  当前目标仍只接受一个成功的简单 `C -> B -> A` 切片。
+- 新启动严格串行。首次取得满足本需求完成门的真实 PASS 后立即停止，不为耗尽预算继续启动。只有
+  `runtime/infrastructure`、`platform-contract` 或 `collaboration/routing` 且
+  `complete_modeling_quality_result=false` 的失败，在记录独立修复证据和新冻结 baseline 后才允许下一次
+  start；完整 `modeling-quality` 失败不得自动使用下一次预算。
+- 仅 `semantic_start` 事件消耗预算。reservation 后在业务语义开始前失败并合法
+  `presemantic_release` 不扣减 cap，但必须保留失败证据，且不得并发启动另一个 run。
+- 授权必须追加到独立的 `.r2-3-005-start-ledger.jsonl`，不得重写既有六条记录，也不得修改或借用
+  R2.3-002 历史账本。R2.3-005 的本次授权 tranche 精确为 `+3`；旧 R2.3-002 的 `+2` 合同保持不变。
+  预算扩容不替代失败分类或 repair gate：下一 reservation 之前仍必须按顺序追加当前失败的
+  `terminal_failure`、本次 `budget_authorization` 和绑定修复后 baseline 的 `repair_authorization`。
+- 三个账本管理命令使用固定的 `--requirement-id` 选择器：省略时只保持既有 R2.3-002 行为，操作
+  R2.3-005 必须显式传入 `R2.3-005`。未知 requirement、任意 filename/root 或 requirement/config
+  错配必须在创建/打开文件前拒绝；正式 Runner 只使用仓库 canonical
+  `workspaces/modeling-runs`，不得通过 caller-supplied `ledger_root` 绕过共享 cap。
+- R2.3-005 的追加顺序由账本状态机强制而不是依赖人工操作：`terminal_failure` 只接受最新真实
+  `semantic_start`；`budget_authorization` 必须看到该 run 的 retryable/incomplete failure 且当前 cap
+  已耗尽；首次 `repair_authorization` 必须看到在该 failure 之后追加的本次 budget event。唯一例外继承
+  上文 presemantic rebind 合同：如果该 repair 已被恰好一个 fresh reservation 使用、该 reservation
+  从未 `semantic_start` 且已有 `presemantic_release`、当前没有 active reservation，则可为同一 semantic
+  failed run 追加非空且不同的新 baseline repair，不得新增 budget；并发 rebind 只能一个成功。每一步
+  在同一文件锁下先完整验证再 append；中断留下的合法前缀可安全续接，但 failure/budget 前缀不能
+  reserve，错序、错误 run、未使用 repair、未 release、已 start、相同 baseline、duplicate 或并发
+  contender 在失败时保持账本字节不变。
+- 每次 start 继续使用全新 Project/Ontology、四角色 Session、凭据和 run root。用户原文“未知”不得
+  预先注入；只有新运行再次提出同一 grounded question 后，Runner 才可按已修复的 owner-answer 合同
+  原样释放一次。
+
 ### 明确边界
 
 以下内容不是 R2.3-005 的前置条件，也不得为了本需求重新引入为完成门：P2、P2a、monitor、native

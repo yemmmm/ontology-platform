@@ -579,6 +579,58 @@ it may validate Profile/Task loading, capability staging, clean startup ordering
 not create a Project/Ontology, deliver business input, apply a model, or claim a second real task.
 Unrelated dirty files in the developer's main worktree are not silently treated as the clean baseline.
 
+## 2026-08-04 additional three-start authorization
+
+The first R2.3-005 semantic start ended `BLOCKED/collaboration-routing` before the user's grounded
+answer reached Modeling and before any complete modeling-quality result. The repaired routing baseline
+passed independent deterministic testing. The user now authorizes exactly three additional semantic
+starts: cumulative cap four, one consumed, three remaining.
+
+This is a retry budget, not permission to model three more slices. Runs are serialized and stop at the
+first accepted end-to-end PASS. A complete modeling-quality failure stops without spending another
+start. Only the existing retryable mechanical classifications with
+`complete_modeling_quality_result=false` can advance, and each requires an immutable terminal-failure
+record plus a tested repair authorization bound to the next clean baseline. A presemantic release does
+not consume a start.
+
+The append-only budget boundary is requirement-specific:
+
+- R2.3-005 keeps `.r2-3-005-start-ledger.jsonl`, initial cap one, and an exact `+3` authorization
+  tranche for this user decision;
+- R2.3-002 keeps its historical filenames, initial cap and exact `+2` tranche unchanged;
+- CLI failure classification, repair authorization and budget authorization must select the exact
+  requirement ledger through one shared ledger-configuration resolver; no arbitrary filename is
+  accepted;
+- those three CLI commands expose `--requirement-id`: omission remains the byte-compatible legacy
+  R2.3-002 path, while formal R2.3-005 operations must select `R2.3-005` explicitly. Unknown IDs,
+  filename/root overrides, and configuration mismatches fail before opening or creating a ledger;
+  the formal Runner uses the same canonical repository root and rejects a caller-supplied alternate
+  `ledger_root`, while deterministic tests inject a resolver/factory seam for temporary ledgers;
+- an authorization can append only when the current tranche is fully consumed, under the existing
+  file lock, with unique non-empty authorization ID/reference; forged value, duplicate identity,
+  wrong ledger, early authorization and concurrent contenders fail without a partial append;
+- budget authorization expands cap only. It cannot substitute for the retryable terminal-failure and
+  exact repair-baseline gates checked by the next reservation.
+
+For R2.3-005, management events form a strict append-only state transition under the same lock. A
+`terminal_failure` must classify the latest real semantic start; `budget_authorization` must follow
+that exact retryable, incomplete-modeling-result failure at an exhausted cap; and the first
+`repair_authorization` must follow the newly appended budget event and bind the exact next baseline.
+The sole later exception is the existing presemantic rebind contract: when that repair was consumed
+by exactly one fresh reservation, the reservation never reached `semantic_start`, it has an immutable
+`presemantic_release`, and there is no active reservation, one new non-empty, different baseline
+repair may be appended for the same semantic-failed run without another budget event. Concurrent
+rebind contenders allow one winner. An interrupted prefix after failure or budget remains valid and
+can resume only with its exact next event, but cannot reserve a new start. Wrong order, wrong run,
+unused repair, unreleased or started reservation, equal baseline, replay and losing concurrent
+contenders leave ledger bytes unchanged.
+
+No live ledger is mutated during implementation or deterministic testing. After a reviewed commit and
+independent PASS, Delivery uses `--requirement-id R2.3-005` to append, in the state-machine-enforced
+order, the prior run's `collaboration/routing` terminal failure, the user's exact `+3` budget
+authorization, and the routing-repair authorization bound to a fresh run baseline.
+Every new run still creates fresh scope/roles/credentials and executes the full no-start preflight.
+
 ## Implementation sequence
 
 1. Replace the three-role formal Profile/Package contract with the exact four-role contract and
@@ -598,6 +650,10 @@ Unrelated dirty files in the developer's main worktree are not silently treated 
 6. From a clean checkout/status-clean worktree run the authenticated canonical-mode no-start preflight
    (including HTTP 200 `product_write_mode=rdf_primary` and unit/PID/env binding), then the deterministic suite, then execute the one real
    four-role task and two real sequential acceptance rounds from the shared test plan.
+7. For the 2026-08-04 retry authorization, first land and independently test the requirement-specific
+   ledger/CLI configuration, then append failure, `+3` budget and repair-baseline records through the
+   reviewed CLI before any fresh reservation. Stop at the first accepted PASS or a complete
+   modeling-quality failure.
 
 No frontend UI, database migration, or domain-specific Dify route is required. The four generic
 read-only validation/reasoning MCP wrappers are in current scope because the authoritative acceptance

@@ -84,6 +84,19 @@ FAIL/BLOCKED run is required.
 | C58 | Coordinator verdict recovery | lost sanitized notification is recoverable by Coordinator round lookup when digest is unknown; zero/multiple receipts fail closed |
 | C59 | Canonical platform preflight | before reservation/scope/Session/Lease/start, authenticated `GET /api/semantic/canonical-mode` is HTTP 200 with `product_write_mode=rdf_primary`, cross-bound to unit/PID/start-time/process-env; mismatch consumes no semantic start |
 | C60 | Canonical digest preimage | ticket/verdict digest computation excludes only its self-digest fields and nested ticket-digest refs as specified; published digests verify without self-reference |
+| C61 | Requirement-specific ledger resolver | CLI `--requirement-id` resolves only fixed identities: omission is legacy R2.3-002 and formal R2.3-005 is explicit; unknown ID, filename/root override, and configuration mismatch fail before file creation |
+| C62 | R2.3-005 exact +3 authorization | exhausted cap 1 appends one immutable authorization and replays cap 4 with one consumed/three remaining |
+| C63 | R2.3-005 malformed authorization | +1, +2, +4, bool, blank ID/reference and forged ledger records fail without changing bytes |
+| C64 | Legacy R2.3-002 budget compatibility | initial cap and exact +2 authorization behavior remain unchanged; historical ledger bytes are untouched |
+| C65 | Authorization ordering | under one lock, latest real semantic start -> retryable incomplete terminal failure -> exhausted-cap +3 budget -> first exact repair baseline is enforced; wrong order or run leaves bytes unchanged |
+| C66 | Authorization identity/concurrency | duplicate ID/reference and concurrent contenders at each management event yield exactly one valid append and deterministic replay |
+| C67 | Retry gate remains mandatory | cap 4 or an interrupted failure/budget prefix cannot reserve; the complete ordered chain and exact tested repair baseline are required |
+| C68 | Complete modeling-quality stop | modeling-quality or complete semantic result cannot authorize the next reservation despite remaining cap |
+| C69 | Presemantic release accounting/rebind | after exactly one fresh reservation consumes the prior repair, never starts semantically, is released, and leaves no active reservation, one non-empty different baseline repair for the same failed run succeeds without new budget; fresh run ID remains required |
+| C70 | Ledger mutation isolation | tests use temporary ledgers; implementation/test runs never mutate either live ledger or retained run evidence |
+| C71 | Interrupted authorization resume | stopping after failure or budget leaves a valid prefix that cannot reserve; the exact next event resumes once without rewrite or duplicate append |
+| C72 | Formal canonical ledger root | production formal Runner rejects a noncanonical caller `ledger_root` before file access; temporary tests use only the resolver/factory seam |
+| C73 | Presemantic rebind fail-closed cases | unused repair, active/unreleased reservation, semantic-started reservation, different failed run, blank/equal baseline, duplicate/replay and concurrent rebind reject without byte changes except one valid concurrent winner |
 
 ## Service-level and integration cases
 
@@ -103,6 +116,7 @@ FAIL/BLOCKED run is required.
 | I12 | Clean-checkout and canonical preflight | clean clone/status and inherited canonical-platform preflight precede prepare; one complete invocation settles and cleans; any second check is no-semantic-start and cannot create/apply a model |
 | I13 | Real modeling-to-acceptance handoff | the same fresh four-role run records dry-run/apply/readback/validation/reasoning before ready/silence and binds those receipts into both CQ tickets and final verdicts |
 | I14 | Authenticated canonical writer gate | exact active service unit/PID/start time and authenticated `rdf_primary` response are bound before any fresh write scope; stale/legacy-only process blocks without semantic start |
+| I15 | Three-start authorization gate | before any new Producer, append-only evidence shows R2.3-005 cap 4/start count 1/active 0 plus prior retryable failure and repair authorization bound to the fresh baseline; R2.3-002 ledger hash is unchanged |
 
 ## Real acceptance run
 
@@ -136,7 +150,9 @@ The same evidence must show the first semantic start occurred only after the cle
 gate. After the real run, a repeatability preflight may use a fresh clean run root and run ID only
 for configuration/capability staging and cleanup ordering. It must not create a Project/Ontology,
 deliver business input, apply a model, or consume a semantic-start budget. A second real semantic
-modeling run requires explicit new user authorization and is outside this requirement.
+modeling run requires explicit new user authorization. The user supplied exactly three additional
+starts on 2026-08-04; they are serialized repair retries, stop at the first accepted PASS or complete
+modeling-quality failure, and do not expand the single successful-slice target.
 
 ## Evidence and reporting requirements
 

@@ -1377,3 +1377,61 @@
   Producer, platform write, Project/Ontology, credential, run-root or ledger mutation occurred. D1 PASS proves
   deterministic routing only: the retained real run remains `BLOCKED/collaboration/routing`, its consumed one-start
   budget remains closed, and no new semantic start is authorized.
+
+### 2026-08-04 — User authorizes three additional semantic starts — Main agent
+
+- Decision: the user's authorization is recorded as three additional starts, not a new total of three. R2.3-005
+  cumulative cap becomes four: one semantic start consumed by `r23005-real-20260803t141820z`, three remaining.
+- Clarification: the prior run was not blocked by choosing the wrong business answer. Its grounded clarification was
+  appropriate and the user's `未知` preserves source fidelity. The failure was the independently reproduced and now
+  repaired schema-v2 `collaboration/routing` defect, before the answer reached Modeling and before a complete
+  modeling-quality result.
+- Operating policy: runs are serialized; stop at the first full PASS; a complete modeling-quality failure stops
+  further starts; only a retryable mechanical failure with `complete_modeling_quality_result=false` and a tested,
+  newly frozen repair baseline can use the next start. Presemantic release does not consume budget.
+- Ledger audit: the live R2.3-005 ledger has six immutable records, one `semantic_start`, zero failure/repair/budget
+  records and no active reservation. Existing `authorize_budget` accepts only the legacy exact `+2` tranche and all
+  ledger-management CLI commands currently target R2.3-002, so the user's `+3` cannot be represented safely without
+  a narrow requirement-specific ledger/CLI repair. No ledger was mutated during this audit.
+- Scope frozen for design/review: introduce one shared exact ledger resolver, R2.3-005 initial cap 1 plus exact +3
+  authorization, and explicit CLI selection for budget/failure/repair operations while preserving R2.3-002 +2 and
+  bytes. After independent deterministic PASS, Delivery will append terminal failure, budget authorization and
+  repair authorization through the reviewed CLI; only then may a new no-start preflight begin.
+
+### 2026-08-04 — Three-start budget plan review round 1 REVISE — Main agent and plan reviewer
+
+- Result: REVISE. The reviewer reported two evidence-backed High blockers; both are accepted.
+- High 1, ledger selection/root: the first plan did not freeze the CLI selector/default or prevent a caller-controlled
+  formal `ledger_root` from bypassing the shared cap. The revision makes `--requirement-id` omission legacy
+  R2.3-002, requires explicit R2.3-005 selection, rejects unknown/mismatched/root-override input before file access,
+  and confines temporary roots to an injected test seam.
+- High 2, transition ordering: the first plan described failure -> budget -> repair operationally but did not require
+  the ledger API to enforce it. The revision makes every R2.3-005 event depend on the exact predecessor under the
+  lock; wrong order/run/replay cannot mutate bytes, and interrupted valid prefixes are resumable but cannot reserve.
+- Outcome/next step: re-review the revised design, implementation plan and shared C61-C72 cases. Implementation and
+  live-ledger mutation remain paused until no Critical/High blocker remains.
+
+### 2026-08-04 — Three-start budget plan review round 2 REVISE — Main agent and plan reviewer
+
+- Result: REVISE. One High remains and is accepted: the strict first-use failure -> budget -> repair chain conflicted
+  with the existing presemantic-release rebind contract.
+- Risk: after `repair(B1)`, one fresh reservation may fail before `semantic_start` and append
+  `presemantic_release`; requiring every later repair to immediately follow a new budget would make the authorized
+  remaining starts unreachable because cap is not exhausted again.
+- Revision: retain the strict first repair chain, then permit exactly one controlled rebind transition for the same
+  semantic-failed run only after the prior repair was used once, the reservation never started semantically, release
+  is present, no reservation is active, and the new baseline is non-empty and different. No new budget is appended;
+  all invalid, replayed and losing concurrent attempts leave bytes unchanged. C69/C73 now cover both paths.
+- Outcome/next step: one final plan re-review. Implementation and live-ledger mutation remain paused.
+
+### 2026-08-04 — Three-start budget plan review round 3 PASS — Main agent and plan reviewer
+
+- Result: PASS. No evidence-backed Critical or High blocker remains.
+- Closed scope: fixed legacy-default/explicit-R2.3-005 CLI selection, canonical formal ledger root,
+  caller-root rejection and temporary test seam; strict first failure -> +3 budget -> repair transition; the sole
+  qualified presemantic rebind exception; concurrency/replay byte invariants; and R2.3-002 compatibility.
+- Test contract: C61-C73 covers positive, negative, interruption and concurrent paths, including the presemantic
+  release rebind that closed round 2.
+- Outcome/next step: the deterministic implementation may be handed to the Requirement Developer. Product/runtime
+  code outside the fixed ledger/CLI/Runner scope, live ledger mutation and a real semantic start remain unauthorized
+  until implementation is independently tested and committed.
