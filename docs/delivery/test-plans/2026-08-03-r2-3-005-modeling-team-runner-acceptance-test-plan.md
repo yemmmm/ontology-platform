@@ -457,3 +457,36 @@ strict chain/rebind behavior, complete-modeling stop, concurrency, and side-effe
 pass. This PASS authorizes the Delivery Agent to follow the reviewed post-commit append-only
 authorization procedure, but does not itself authorize a Producer start or claim the unexecuted
 real I15/semantic acceptance gate.
+
+## 2026-08-04 — Independent round 3 clean-commit confirmation
+
+- Clean-commit baseline: `git status --porcelain=v1` was empty and `HEAD` was exactly
+  `6c9bf4a3083892d2bf579bb97009f2f582fd66dc` (`6c9bf4a`, `Add R2.3-005 retry budget`). This commit
+  contains the Round 2 implementation/test content with no drift. The six Round 2 SHA-256 values
+  matched exactly: `start_ledger.py` `fa5b558464efaf66379e84491433b0e5c831aa727fb3b016c304f981919860ad`,
+  `runner.py` `98d7c7bde5e75b39e0dc0e4df91b392025d3ed925acea2b14313e1ae33019a15`, `__main__.py`
+  `45665d17c7cbf1fa7708422203592ef9597730502d482788db19e6c44c48b269`,
+  `test_r23005_budget_extension.py` `4648ab8b9355636fc61ff1b197ae9c47b02e316f8570c339f39580774254e302`,
+  `test_r23005_contracts.py` `37a28f40e3b8e0de6bf1975366f805da92e816015987def6c7d9425b0cd39e7f`, and
+  `test_r23005_ledger_isolation.py` `97d710a1547be2114820180e1db4c145ccd14a03e52b09ab73ac9b5f88969713`.
+- Independent commands/results: managed R2.3-005 discovery (`-p 'test_r23005*.py'`) **82/82 PASS**;
+  independent malicious canonical factory redirect **REJECTED before access** with no attacker,
+  canonical, or run-root files; legal temporary canonical seam **PASS** with exact ledger/lock paths
+  and reservation-only state; R2.3-002/R63 focused **43/43 PASS**; full managed discovery **281/281
+  PASS**; Ruff and `git diff --check` **PASS**. GitNexus `detect_changes(scope=compare, base_ref=main)`
+  reported no changes (`changed_count=0`, `risk=none`); its index is stale by 15 commits and that
+  limitation remains recorded.
+- Side-effect audit: before/after, R2.3-002 ledger remained size/mtime `21723 /
+  2026-08-02 18:17:55.574240726 +0800`, SHA-256
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; R2.3-005 ledger remained
+  size/mtime `1225 / 2026-08-03 22:23:13.419389929 +0800`, SHA-256
+  `1f79ebd99de45de8cd2f78141e4ef25250203306c2638345aaf6e21b1968e079`; retained run digest remained
+  `0454c16f29e1011784692d2398b556c169c9de4b0ebb53666ca16373c2a38138`. No product code, ledger,
+  retained evidence, or runtime resource was modified; no Producer/Agent or semantic start ran.
+- I15/live append remains unexecuted: the Delivery Agent must still append the ordered
+  `terminal_failure`, exact `+3 budget_authorization`, and repair authorization after this clean
+  commit before any Producer retry.
+
+**Round 3 conclusion: PASS — clean committed baseline confirmed with no drift.** This round closes
+the baseline-evidence discrepancy only; it does not claim live authorization or real semantic
+acceptance.

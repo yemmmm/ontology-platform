@@ -1368,7 +1368,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`设计完成（待实现）`
+当前状态：`实现与离线验收完成（待真实重试验收）`
 
 优先级：`P0`
 
@@ -1545,14 +1545,17 @@ Runner 强制写入冻结、验收阶段门和通用 Producer/Acceptance 双侧�
 这里的“验收阶段门”仍采用上文限定含义：后移的是平台操作的机械阶段执法，不是模型状态只读重验、
 旧 `PASS` 失效和 settlement CAS/一致性 readback；这些被动完整性检查不得自行冻结写入、撤销 Lease
 或分配语义任务。
-R2.3-005 当前已进入设计阶段：允许创建与本需求一致的 design、test plan 和 delivery record；这些文档
-只定义实现与验收合同，不宣称本需求已经实现或通过。实现仍必须经过独立 plan review、确定性测试和
-一次真实四角色 Modeling Team 运行后才能改变需求状态。
+R2.3-005 的正式 Runner、四角色合同和追加重试预算机械能力已经实现，并通过 plan review、clean-commit
+确定性测试和独立离线验收；这只证明实现可进入受控真实重试，不宣称本需求已完成。仍须按已授权预算
+完成一次真实四角色 Modeling Team 运行、独立 Acceptance、settlement 与清理证据后，才能把本需求
+标记为完成。
 
 ### 现有证据边界
 
-Round78 证明了保留模型及其独立 Acceptance 结果，但**没有**证明从干净 checkout、干净状态出发
-的 Runner 可重复调用；R2.3-005 已完成业务功能细化并通过 plan review 形成设计，该可重复性仍待实现和独立验收。
+Round78 证明了保留模型及其独立 Acceptance 结果，但**没有**证明当前正式 Runner 的新一次真实调用。
+clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、旧合同兼容和 canonical ledger
+隔离；它没有执行 I15 live append、fresh Project/Ontology、四角色真实建模、Acceptance、settlement
+或清理，因此真实可重复调用仍待本次受控重试证明。
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 

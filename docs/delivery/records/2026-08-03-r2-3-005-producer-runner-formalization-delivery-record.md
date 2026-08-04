@@ -1469,3 +1469,31 @@
 - Boundary: I15, live authorization append, new reservation, Producer, semantic modeling, Acceptance and settlement
   remain unexecuted. This PASS authorizes a post-commit Delivery append in the reviewed order only; it is not a real
   modeling or R2.3-005 completion PASS.
+
+### 2026-08-04 — Three-start budget independent round 3 clean-commit PASS — Independent Tester
+
+- Stable baseline: clean HEAD `6c9bf4a3083892d2bf579bb97009f2f582fd66dc`; the six implementation/test
+  file hashes exactly matched independent round 2's reviewed worktree content.
+- Verification: R2.3-005 82/82, R2.3-002/R63 43/43, full managed discovery 281/281, malicious factory
+  rejection, legal canonical seam, Ruff and `git diff --check` all passed. Both live ledger hashes/mtimes and the
+  retained-run digest were unchanged. GitNexus was supplemental because its index was 15 commits stale.
+- Result: PASS for the committed deterministic implementation. I15 and every live append/run action remain
+  unexecuted.
+
+### 2026-08-04 — Live Delivery readiness audit — Main agent and read-only auditor
+
+- Fixed next inputs: Profile `modeling_team/profiles/r2-3-005-modeling-team.yaml`, Task
+  `modeling_team/tasks/r2-3-005-formal-acceptance.yaml`, Scope
+  `modeling_team/scopes/new-scope-create.yaml`; a new safe run ID and its exact previewed baseline must be frozen
+  only after clean-HEAD, host-auth, service/canonical and absent-run-root checks.
+- Current live state remains formal ledger cap/count/active `1/1/0` with six records; legacy ledger cap/count/active
+  `18/18/0`. Service, health, canonical mode and the existing mode-600 org-admin artifact are presently available.
+- Evidence condition before append: supplement the sanitized preflight with read-only listener PID/cgroup/cwd/command,
+  effective `Settings()` canonical values and process-environment binding; the run-root preflight artifact currently
+  removes `process_env` child keys and must not be overstated.
+- Authorized write order after those gates: prior-run `terminal_failure(collaboration/routing,false)`, exact `+3`
+  budget, then repair bound to the chosen run/baseline and independently passed D1/clean budget commit. Verify each
+  append, cap `4`, count `1`, active `0`, and unchanged legacy hash before launching.
+- Residual operating risk: a failure after reservation but before `self.run` attachment can leave an active
+  reservation; every nonzero exit must be followed by a read-only active check, and only a confirmed presemantic
+  reservation may be released before any retry. No concurrent run or direct JSONL edit is permitted.
