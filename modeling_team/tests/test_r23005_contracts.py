@@ -42,6 +42,7 @@ from modeling_team import preflight as preflight_module
 from modeling_team.runner import TeamRunner
 from modeling_team.preflight import normalize_formal_scope
 from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
+from modeling_team.start_ledger import StartLedger
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 
 
@@ -332,7 +333,6 @@ class R23005ContractTests(unittest.TestCase):
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
             scope_factory=scope_factory,
-            ledger_root=Path(tempfile.mkdtemp()) / "ledger",
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=failing_preflight,
         )
@@ -367,13 +367,16 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
-            ledger_root=ledger_root,
+            ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=lambda **_kwargs: {
                 "status_code": 200,
                 "product_write_mode": "rdf_primary",
             },
         )
+        # Temporary tests may redirect the canonical-root resolver, but the
+        # factory must still construct the ledger at the root Runner supplies.
+        runner._canonical_ledger_root = lambda: ledger_root
         try:
             with patch(
                 "modeling_team.preflight.capture_clean_checkout",
@@ -557,9 +560,10 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
-            ledger_root=ledger_root,
+            ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
             freeze_started_at=datetime.now(UTC).isoformat(),
         )
+        runner._canonical_ledger_root = lambda: ledger_root
         try:
             with patch.object(
                 preflight_module,

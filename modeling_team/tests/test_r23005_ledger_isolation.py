@@ -59,10 +59,22 @@ class R23005LedgerIsolationTests(unittest.TestCase):
         formal: bool = True,
         preflight=None,
     ) -> TeamRunner:
-        return TeamRunner(
+        ledger_factory = None
+        runner_ledger_root = ledger_root
+        if formal:
+            # Formal production runs are canonical-root bound.  Temporary
+            # ledgers are available only through this explicit deterministic
+            # factory seam; the seam honors the canonical root supplied by
+            # Runner rather than redirecting it to a caller-owned path.
+            def ledger_factory(*, root, config, now):
+                return StartLedger(root, config=config, now=now)
+
+            runner_ledger_root = None
+        runner = TeamRunner(
             repository_root=self.root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
-            ledger_root=ledger_root,
+            ledger_root=runner_ledger_root,
+            ledger_factory=ledger_factory,
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=(
                 preflight
@@ -72,6 +84,12 @@ class R23005LedgerIsolationTests(unittest.TestCase):
             if formal
             else None,
         )
+        if formal:
+            # The test's temporary repository-owned namespace is the canonical
+            # root for this deterministic seam; production keeps the default
+            # resolver bound to repository_root/workspaces/modeling-runs.
+            runner._canonical_ledger_root = lambda: ledger_root
+        return runner
 
     def _prepare_formal(self, runner: TeamRunner, run_id: str):
         with patch(
@@ -115,6 +133,73 @@ class R23005LedgerIsolationTests(unittest.TestCase):
                 {"filename": ".r2-3-005-start-ledger.jsonl", "requirement_id": "R2.3-005"},
             )
 
+    def test_formal_runner_rejects_alternate_ledger_root_before_file_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            alternate = Path(directory) / "alternate-ledger"
+            run_id = f"r23005-canonical-reject-{uuid4().hex}"
+            run_root = self.root / "workspaces/modeling-runs" / run_id
+            runner = TeamRunner(
+                repository_root=self.root,
+                adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                ledger_root=alternate,
+                freeze_started_at=datetime.now(UTC).isoformat(),
+                prestart_preflight=lambda **_kwargs: {"status_code": 200, "product_write_mode": "rdf_primary"},
+            )
+            try:
+                with patch(
+                    "modeling_team.preflight.capture_clean_checkout",
+                    return_value=self._clean_checkout(),
+                ), self.assertRaisesRegex(TeamConfigurationError, "alternate ledger_root"):
+                    runner.prepare(
+                        run_id=run_id,
+                        profile_path=self.root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+                        task_path=self.root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+                        scope={"mode": "create"},
+                    )
+                self.assertFalse(alternate.exists())
+                self.assertFalse(run_root.exists())
+            finally:
+                runner.cleanup()
+
+    def test_formal_factory_cannot_redirect_ledger_before_reservation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            canonical = base / "canonical"
+            attacker = base / "attacker"
+            run_id = f"r23005-factory-redirect-{uuid4().hex}"
+            run_root = self.root / "workspaces/modeling-runs" / run_id
+            runner = TeamRunner(
+                repository_root=self.root,
+                adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                ledger_factory=lambda *, root, config, now: StartLedger(
+                    attacker, config=config, now=now
+                ),
+                freeze_started_at=datetime.now(UTC).isoformat(),
+                prestart_preflight=lambda **_kwargs: {
+                    "status_code": 200,
+                    "product_write_mode": "rdf_primary",
+                },
+            )
+            # Keep all source/configuration reads on the real checkout while
+            # giving this test a temporary repository-owned canonical ledger
+            # namespace.  The malicious factory still receives (and ignores)
+            # that canonical root.
+            runner._canonical_ledger_root = lambda: canonical
+            try:
+                with patch(
+                    "modeling_team.preflight.capture_clean_checkout",
+                    return_value=self._clean_checkout(),
+                ), self.assertRaisesRegex(
+                    TeamConfigurationError, "outside the canonical ledger root"
+                ):
+                    self._prepare_formal(runner, run_id)
+                self.assertIsNone(runner._ledger)
+                self.assertFalse(attacker.exists())
+                self.assertFalse(canonical.exists())
+                self.assertFalse(run_root.exists())
+            finally:
+                runner.cleanup()
+
     def test_formal_ledger_is_independent_and_cap_one_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger_root = Path(directory) / "ledger"
@@ -132,6 +217,14 @@ class R23005LedgerIsolationTests(unittest.TestCase):
                 self.assertTrue(new_lock.is_file())
                 records = runner._ledger._records()
                 self.assertEqual(runner._ledger.identity["requirement_id"], "R2.3-005")
+                self.assertEqual(
+                    runner._ledger.path.resolve(),
+                    (ledger_root / ".r2-3-005-start-ledger.jsonl").resolve(),
+                )
+                self.assertEqual(
+                    runner._ledger.lock_path.resolve(),
+                    (ledger_root / ".r2-3-005-start-ledger.lock").resolve(),
+                )
                 self.assertEqual(runner._ledger._start_cap(records), 1)
                 self.assertEqual([item["event"] for item in records], ["reservation"])
                 reservation_evidence = json.loads(

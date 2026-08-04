@@ -313,3 +313,147 @@ start.
 **Overall verdict: PASS for D1 deterministic schema-v2 outer-answer routing only.** This closes the
 offline routing defect and does not change the retained round-1 `BLOCKED` result or authorize a new
 semantic start.
+
+## 2026-08-04 three-start budget extension — Independent round 1
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. Authority was `requirements-v2.3.md` R2.3-005's
+  2026-08-04 authorization section, the approved three-start implementation plan, this shared plan,
+  and shared cases C61-C73/I15. The checkout was at `HEAD=65e39931e5ea803533f0ae55d5354d854959595f`
+  (short `65e3993`), with the Developer's uncommitted changes limited to
+  `modeling_team/__main__.py`, `modeling_team/runner.py`, `modeling_team/start_ledger.py`,
+  `modeling_team/tests/test_r23005_budget_extension.py` (untracked),
+  `modeling_team/tests/test_r23005_contracts.py`, and
+  `modeling_team/tests/test_r23005_ledger_isolation.py`.
+- The six changed-file SHA-256 values at test time were: `start_ledger.py`
+  `fa5b558464efaf66379e84491433b0e5c831aa727fb3b016c304f981919860ad`, `runner.py`
+  `bff7789a91db7c7a25b0e3e581e1b7cc867061756beb75f62dad54fb073b2f59`, `__main__.py`
+  `45665d17c7cbf1fa7708422203592ef9597730502d482788db19e6c44c48b269`,
+  `test_r23005_budget_extension.py`
+  `4648ab8b9355636fc61ff1b197ae9c47b02e316f8570c339f39580774254e302`,
+  `test_r23005_contracts.py`
+  `a210c53a3f5c8e62fc680231373939cc9755b585d5f00fcffe9f49ac4bb7d535`, and
+  `test_r23005_ledger_isolation.py`
+  `6198fcce234b1e54f47b12c228481cf12a5a795d02a59d5b6f975d252f5c879c`.
+- No Producer/Agent, real semantic modeling, backend/frontend change, service restart, key/API
+  operation, live ledger append, or retained-run/evidence mutation was performed. Temporary ledger
+  fixtures and one temporary `prepare()` probe run root were cleaned after each check; no probe
+  reservation reached `semantic_start`.
+
+### Commands and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| R2.3-005 focused tests | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_budget_extension modeling_team.tests.test_r23005_contracts modeling_team.tests.test_r23005_ledger_isolation`: 55/55 passed. This covered resolver/default CLI, exact `+3`, strict ordering/replay, retry gate, presemantic rebind and fail-closed cases, temporary ledger isolation, and formal alternate `ledger_root` rejection. |
+| R2.3-002/R63 focused regression | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_start_ledger_r63 modeling_team.tests.test_r23002 modeling_team.tests.test_runner_r63`: 43/43 passed; legacy exact `+2` behavior and historical contracts remained green. |
+| Complete `modeling_team` discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`: 280/280 passed, exit 0 (10.939s). ResourceWarning/RuntimeWarning diagnostics were emitted by existing test/runtime paths but did not fail the suite. |
+| Ruff and whitespace | PASS | `backend/.venv/bin/ruff check` over the six changed files passed; `git diff --check` passed. |
+| GitNexus change review | PASS with limitation | `detect_changes(scope=compare, base_ref=main)` reported changed_files=5, changed_count=38, risk=low, affected_processes=[]; the untracked focused test is not indexed. `list_repos` reports the ontology-platform index at commit `286da60`, 14 commits behind HEAD, so this graph result is stale and not relied on to clear the canonical-root defect. |
+| Live ledger and retained evidence immutability | PASS | Before and after all tests: R2.3-002 ledger size/mtime `21723 / 2026-08-02 18:17:55.574240726 +0800`, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; R2.3-005 ledger size/mtime `1225 / 2026-08-03 22:23:13.419389929 +0800`, SHA-256 `1f79ebd99de45de8cd2f78141e4ef25250203306c2638345aaf6e21b1968e079`; retained run `workspaces/modeling-runs/r23005-real-20260803t141820z/` file-list digest `0454c16f29e1011784692d2398b556c169c9de4b0ebb53666ca16373c2a38138` unchanged. |
+
+### Canonical-root seam adversarial check
+
+**D3 — High, `platform-contract` (NEW, STILL FAILING).** The formal production Runner must reject
+any alternate ledger root before ledger access and use only the repository canonical
+`workspaces/modeling-runs` ledger. The implementation rejects a caller-supplied `ledger_root`, but
+`TeamRunner.__init__` also accepts `ledger_factory` and `_create_ledger()` validates only the returned
+`StartLedger.config`; it never verifies that `value.path` and `value.lock_path` are under the
+canonical root. A production caller can therefore supply the same factory seam used by temporary
+tests and bypass the shared formal cap.
+
+Minimal reproduction (executed with a temporary directory and no semantic start): instantiate a
+formal `TeamRunner` with `ledger_root=None` and
+`ledger_factory=lambda *, root, config, now: StartLedger(tmp / "attacker-ledger", config=config, now=now)`;
+stub the already-required clean/canonical preflight; call `prepare()` with the formal Profile/Task.
+Expected: fail closed before any alternate ledger file is opened or written. Actual:
+`prepare_status=accepted`, `runner._ledger.path=/tmp/.../attacker-ledger/.r2-3-005-start-ledger.jsonl`,
+and that alternate file was created with a `reservation` record. The canonical formal ledger hash
+remained `1f79ebd99de45de8cd2f78141e4ef25250203306c2638345aaf6e21b1968e079` before, during, and after
+the probe; the temporary ledger and run root were removed in cleanup. This is a production bypass of
+C72/I15's shared-budget isolation, not merely a test failure. The temporary factory seam must be
+made non-bypassable (or otherwise proven test-only) before an independent PASS or live authorization.
+
+### Unexecuted or not claimable
+
+- I15 cannot be claimed: the live formal ledger still contains only six historical records
+  (two presemantic-release pairs and the one consumed `semantic_start`), with no new
+  `terminal_failure`, `+3 budget_authorization`, or repair authorization. The Tester did not append
+  those records because live-ledger mutation and a new Producer start are outside this round.
+- No real four-role Producer, modeling-quality result, Acceptance round, or semantic settlement was
+  started. Backend pytest, service restart, and endpoint health checks were not in scope because no
+  backend/frontend surface changed. These remain unexecuted/BLOCKED, not PASS.
+
+### Round conclusion
+
+**Overall verdict: FAIL.** All deterministic budget/legacy/isolation suites and side-effect checks
+passed, but D3 is a High `platform-contract` defect: the public factory seam allows a formal Runner
+to reserve against an alternate ledger root. Require the requirement developer to close that seam,
+add a regression proving a formal factory cannot redirect the ledger path, and then perform a new
+independent round before any live `+3` authorization or Producer retry. No product code was modified
+by this Tester; only this append-only test-plan record was changed.
+
+## 2026-08-04 three-start budget extension — Independent round 2
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester, reusing the preceding round's cases and this same test
+  plan. The Developer's D3 repair baseline was ready before this round: formal factory results now
+  require exact canonical ledger and lock paths, the deterministic temporary seam constructs its
+  ledger at the Runner-supplied canonical root, and a malicious redirect regression was added.
+- Code/worktree baseline: `HEAD=65e39931e5ea803533f0ae55d5354d854959595f` (`65e3993`), with only
+  the expected implementation/tests plus this test-plan file changed. Changed-file SHA-256 values
+  were `start_ledger.py` `fa5b558464efaf66379e84491433b0e5c831aa727fb3b016c304f981919860ad`,
+  `runner.py` `98d7c7bde5e75b39e0dc0e4df91b392025d3ed925acea2b14313e1ae33019a15`, `__main__.py`
+  `45665d17c7cbf1fa7708422203592ef9597730502d482788db19e6c44c48b269`,
+  `test_r23005_budget_extension.py`
+  `4648ab8b9355636fc61ff1b197ae9c47b02e316f8570c339f39580774254e302`,
+  `test_r23005_contracts.py`
+  `37a28f40e3b8e0de6bf1975366f805da92e816015987def6c7d9425b0cd39e7f`, and
+  `test_r23005_ledger_isolation.py`
+  `97d710a1547be2114820180e1db4c145ccd14a03e52b09ab73ac9b5f88969713`.
+- No Producer/Agent, real semantic modeling, backend/frontend operation, service restart,
+  credential/key operation, live ledger append, or retained-run/evidence mutation was performed.
+  The adversarial and legal-seam probes used temporary roots and unique temporary run IDs; every
+  reservation was presemantic and all temporary run roots were removed.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| Repaired R2.3-005 focused set | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: 82/82 passed (8.751s). The direct modified-file subset also passed 56/56, including the new malicious redirect regression and all C61-C73 deterministic cases. |
+| R2.3-002/R63 focused regression | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_start_ledger_r63 modeling_team.tests.test_r23002 modeling_team.tests.test_runner_r63`: 43/43 passed (1.207s). Legacy `+2`/historical behavior remained unchanged. |
+| Full `modeling_team` discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`: 281/281 passed (10.860s, exit 0). Existing ResourceWarning/RuntimeWarning and expected negative-path stderr were non-failing diagnostics. |
+| Required chain at cap 4 | PASS | Independent temporary-ledger probe executed start 1, exact `terminal_failure`/`+3`/repair, then starts 2 and 3 with retryable failure→repair without another budget, and start 4. State ended `semantic_start_count=4`, `cap=4`; all event ordering was exact. A separate probe stopped at count 2/cap 4 after `complete_modeling_quality_result=true`; budget, repair, and next reserve were all rejected with bytes unchanged. |
+| Canonical factory seam (malicious redirect) | PASS / D3 FIXED | Independent formal `prepare()` with a factory returning `StartLedger(tmp/attacker, config=...)` was rejected before reservation with `ledger factory returned paths outside the canonical ledger root`; attacker and canonical files did not exist, `runner._ledger is None`, and no run root remained. |
+| Canonical factory seam (legal temporary root) | PASS | Independent resolver override set a temporary canonical root; a factory that honored the supplied `root` was accepted, and both ledger and lock resolved exactly under that canonical root with only a presemantic `reservation`. Cleanup removed the temporary run/root. |
+| Ruff and whitespace | PASS | `backend/.venv/bin/ruff check` over all six changed implementation/test files passed; `git diff --check` passed. |
+| GitNexus change review | PASS with limitation | `detect_changes(scope=compare, base_ref=main)` reported changed_files=6, changed_count=38, affected_count=0, risk=low, affected_processes=[]; the untracked budget-extension test remains outside the index. `list_repos` reports the ontology-platform index at commit `286da60`, 14 commits behind HEAD, so this graph result is stale and is only supplemental evidence. |
+| Live ledger and retained evidence immutability | PASS | Before/after: R2.3-002 ledger size/mtime `21723 / 2026-08-02 18:17:55.574240726 +0800`, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; R2.3-005 ledger size/mtime `1225 / 2026-08-03 22:23:13.419389929 +0800`, SHA-256 `1f79ebd99de45de8cd2f78141e4ef25250203306c2638345aaf6e21b1968e079`; retained run `workspaces/modeling-runs/r23005-real-20260803t141820z/` digest `0454c16f29e1011784692d2398b556c169c9de4b0ebb53666ca16373c2a38138` unchanged. |
+
+### Defect disposition
+
+- **D3 — FIXED.** The path/lock equality check rejects a factory redirect before `reserve()`, while
+  the legal test seam remains available only when it honors the canonical root supplied by Runner.
+  The independent malicious redirect and legal-seam probes both produced the required outcomes.
+- No Critical, High, or ordinary product defect remains in the tested offline scope.
+
+### Unexecuted or not claimable
+
+- I15 and the live authorization gate remain unexecuted by design: the live formal ledger still has
+  only six historical records (two presemantic-release pairs and one consumed `semantic_start`),
+  with no new `terminal_failure`, exact `+3 budget_authorization`, or repair authorization. The
+  Tester did not append or reserve against it. Delivery must perform that append-only sequence after
+  the implementation is committed and retain its receipt before any Producer retry.
+- No real four-role Producer, Modeling/Protocol quality result, Acceptance rounds, or settlement was
+  started. Backend pytest, service restart, and endpoint health checks remain out of scope because
+  no backend/frontend surface changed. These are not claimed as PASS.
+
+### Round conclusion
+
+**Overall verdict: PASS for the R2.3-005 three-start deterministic budget-extension and canonical
+ledger contract.** Round 1's High D3 is fixed and independently verified; legacy compatibility,
+strict chain/rebind behavior, complete-modeling stop, concurrency, and side-effect isolation all
+pass. This PASS authorizes the Delivery Agent to follow the reviewed post-commit append-only
+authorization procedure, but does not itself authorize a Producer start or claim the unexecuted
+real I15/semantic acceptance gate.

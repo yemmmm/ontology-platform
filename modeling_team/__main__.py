@@ -174,12 +174,24 @@ def main() -> int:
         required=True,
         choices=["modeling-quality", "platform-contract", "collaboration/routing", "runtime/infrastructure"],
     )
+    classify.add_argument("--requirement-id")
+    classify.add_argument("--ledger-root", type=Path)
+    classify.add_argument("--ledger-filename")
+    classify.add_argument("--lock-filename")
     classify.add_argument("--complete-modeling-quality-result", action="store_true")
     repair = subparsers.add_parser("authorize-repair")
+    repair.add_argument("--requirement-id")
+    repair.add_argument("--ledger-root", type=Path)
+    repair.add_argument("--ledger-filename")
+    repair.add_argument("--lock-filename")
     repair.add_argument("--failed-run-id", required=True)
     repair.add_argument("--baseline-hash", required=True)
     repair.add_argument("--repair-reference", required=True)
     budget = subparsers.add_parser("authorize-budget")
+    budget.add_argument("--requirement-id")
+    budget.add_argument("--ledger-root", type=Path)
+    budget.add_argument("--ledger-filename")
+    budget.add_argument("--lock-filename")
     budget.add_argument("--additional-starts", type=int, required=True)
     budget.add_argument("--authorization-id", required=True)
     budget.add_argument("--reference", required=True)
@@ -197,8 +209,13 @@ def main() -> int:
     cleaned = False
     root = repository_root()
     if args.command == "classify-failure":
+        if args.ledger_root is not None or args.ledger_filename is not None or args.lock_filename is not None:
+            print("classification failed: ledger identity overrides are not accepted", file=sys.stderr)
+            return 2
         try:
-            StartLedger(root / "workspaces" / "modeling-runs").terminal_failure(
+            StartLedger(
+                root / "workspaces" / "modeling-runs", requirement_id=args.requirement_id
+            ).terminal_failure(
                 args.run_id, args.classification, args.complete_modeling_quality_result
             )
         except TeamConfigurationError as exc:
@@ -206,8 +223,13 @@ def main() -> int:
             return 2
         return 0
     if args.command == "authorize-repair":
+        if args.ledger_root is not None or args.ledger_filename is not None or args.lock_filename is not None:
+            print("repair authorization failed: ledger identity overrides are not accepted", file=sys.stderr)
+            return 2
         try:
-            StartLedger(root / "workspaces" / "modeling-runs").authorize_repair(
+            StartLedger(
+                root / "workspaces" / "modeling-runs", requirement_id=args.requirement_id
+            ).authorize_repair(
                 args.failed_run_id, args.repair_reference, args.baseline_hash
             )
         except TeamConfigurationError as exc:
@@ -215,8 +237,13 @@ def main() -> int:
             return 2
         return 0
     if args.command == "authorize-budget":
+        if args.ledger_root is not None or args.ledger_filename is not None or args.lock_filename is not None:
+            print("budget authorization failed: ledger identity overrides are not accepted", file=sys.stderr)
+            return 2
         try:
-            StartLedger(root / "workspaces" / "modeling-runs").authorize_budget(
+            StartLedger(
+                root / "workspaces" / "modeling-runs", requirement_id=args.requirement_id
+            ).authorize_budget(
                 args.additional_starts, args.authorization_id, args.reference
             )
         except TeamConfigurationError as exc:

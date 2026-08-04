@@ -1435,3 +1435,37 @@
 - Outcome/next step: the deterministic implementation may be handed to the Requirement Developer. Product/runtime
   code outside the fixed ledger/CLI/Runner scope, live ledger mutation and a real semantic start remain unauthorized
   until implementation is independently tested and committed.
+
+### 2026-08-04 — Three-start budget implementation delivered — Requirement Developer
+
+- Implementation: added immutable R2.3-002/R2.3-005 ledger policies, legacy-default/explicit-formal CLI selection,
+  exact R2.3-005 `+3`, strict locked replay/order gates, repeated qualified presemantic rebind, formal canonical-root
+  enforcement, and C61-C73 tests. No backend/frontend, live ledger, retained evidence or Producer was changed.
+- Risk control: pre-edit GitNexus impact was High for shared ledger/Runner/CLI symbols, so formal sequencing remained
+  policy-scoped and existing R2.3-002 behavior/tests were not redefined. The index was 14 commits stale and was used
+  only as supplemental evidence.
+- Developer verification after the final repair: R2.3-005 82/82, legacy focused 8/8, full managed discovery 281/281,
+  Ruff and `git diff --check` PASS. Live ledger and retained-evidence snapshots were unchanged.
+
+### 2026-08-04 — Three-start budget independent round 1 FAIL and D3 repair — Tester and Developer
+
+- Round 1 deterministic suites passed, but the Tester reproduced High D3 `platform-contract`: a public
+  `ledger_factory` could return an alternate-root `StartLedger`, allowing formal `prepare()` to write a reservation
+  outside the canonical shared ledger while the canonical cap remained unchanged. The temporary probe was cleaned;
+  no `semantic_start` occurred.
+- Narrow repair: factory results must now be the exact `StartLedger` type with resolved ledger/lock paths exactly
+  matching Runner's canonical root and immutable config before `reserve()`. Temporary tests must honor a temporary
+  repository-owned canonical root. A malicious redirect regression was added; the rule was not relaxed to make the
+  old seam pass.
+
+### 2026-08-04 — Three-start budget independent round 2 PASS — Independent Tester
+
+- Result: PASS for the offline deterministic budget-extension and canonical-ledger scope. R2.3-005 82/82,
+  R2.3-002/R63 43/43, full managed discovery 281/281, Ruff and `git diff --check` passed. Independent cap-four
+  probes proved the initial failure -> `+3` -> repair chain, later within-cap failure -> repair without a new budget,
+  repeated released presemantic rebind generations, complete-modeling-quality stop, and malicious factory rejection.
+- Side effects: both live ledger size/mtime/hash values and retained-run digest remained unchanged. The current formal
+  ledger is still six historical records, cap one/count one, with no terminal-failure, budget or repair event.
+- Boundary: I15, live authorization append, new reservation, Producer, semantic modeling, Acceptance and settlement
+  remain unexecuted. This PASS authorizes a post-commit Delivery append in the reviewed order only; it is not a real
+  modeling or R2.3-005 completion PASS.

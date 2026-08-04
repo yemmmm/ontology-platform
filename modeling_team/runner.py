@@ -35,7 +35,13 @@ from .protocol_mechanics import (
     build_candidate_item_evidence_map,
 )
 from .matrix_artifact import MatrixArtifactError, verify_matrix as verify_proof_matrix
-from .start_ledger import StartLedger
+from .start_ledger import (
+    R2_3_002_REQUIREMENT_ID,
+    R2_3_005_REQUIREMENT_ID,
+    StartLedger,
+    StartLedgerConfig,
+    resolve_ledger_config,
+)
 from .transport_mcp import TeamTransportBroker
 
 
@@ -69,17 +75,19 @@ class TeamRunner:
         adapter: RuntimeAdapter,
         scope_factory: Any | None = None,
         ledger_root: Path | None = None,
+        ledger_factory: Callable[..., StartLedger] | None = None,
         freeze_started_at: str | None = None,
         ledger_now: Callable[[], datetime] | None = None,
         prestart_preflight: Callable[..., dict[str, Any]] | None = None,
         canonical_base_url: str = "http://127.0.0.1:8001",
         canonical_admin_key: str | None = None,
     ):
-        self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.freeze_started_at, self.ledger_now = (
+        self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
             adapter,
             scope_factory,
             ledger_root,
+            ledger_factory,
             freeze_started_at,
             ledger_now,
         )
@@ -112,6 +120,73 @@ class TeamRunner:
 
         return bool(re.fullmatch(r"[a-z0-9][a-z0-9-]{2,80}", value))
 
+    def _canonical_ledger_root(self) -> Path:
+        return self.repository_root / "workspaces" / "modeling-runs"
+
+    def _reject_formal_ledger_root_override(self) -> None:
+        """Keep formal runs on the shared repository-owned ledger namespace."""
+
+        if self.ledger_root is None:
+            return
+        supplied = Path(self.ledger_root).absolute()
+        canonical = self._canonical_ledger_root().absolute()
+        if supplied != canonical:
+            raise TeamConfigurationError(
+                "formal R2.3-005 Runner does not accept an alternate ledger_root"
+            )
+
+    def _create_ledger(
+        self,
+        *,
+        root: Path,
+        config: StartLedgerConfig,
+    ) -> StartLedger:
+        if self.ledger_factory is None:
+            return StartLedger(root, now=self.ledger_now, config=config)
+        factory = self.ledger_factory
+        # The seam is intentionally explicit for deterministic temporary-ledger
+        # tests.  Accept a small set of equivalent signatures so tests can keep
+        # the factory independent of the production root while still receiving
+        # the immutable requirement policy.
+        import inspect
+
+        try:
+            signature = inspect.signature(factory)
+        except (TypeError, ValueError) as exc:
+            raise TeamConfigurationError("ledger factory signature is unavailable") from exc
+        candidates = (
+            {"root": root, "config": config, "now": self.ledger_now},
+            {"ledger_root": root, "config": config, "ledger_now": self.ledger_now},
+            {"root": root, "config": config},
+            {"ledger_root": root, "config": config},
+            {"config": config},
+            {"root": root},
+            {},
+        )
+        for kwargs in candidates:
+            try:
+                signature.bind(**kwargs)
+            except TypeError:
+                continue
+            value = factory(**kwargs)
+            if type(value) is not StartLedger:
+                raise TeamConfigurationError("ledger factory returned an invalid ledger")
+            if value.config != config:
+                raise TeamConfigurationError("ledger factory configuration drifts")
+            try:
+                expected_path = (root / config.ledger_filename).resolve()
+                expected_lock_path = (root / config.lock_filename).resolve()
+                actual_path = Path(value.path).resolve()
+                actual_lock_path = Path(value.lock_path).resolve()
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                raise TeamConfigurationError("ledger factory returned invalid ledger paths") from exc
+            if actual_path != expected_path or actual_lock_path != expected_lock_path:
+                raise TeamConfigurationError(
+                    "ledger factory returned paths outside the canonical ledger root"
+                )
+            return value
+        raise TeamConfigurationError("ledger factory signature is invalid")
+
     def prepare(
         self, *, run_id: str, profile_path: Path, task_path: Path, scope: dict[str, str]
     ) -> TeamRun:
@@ -133,6 +208,8 @@ class TeamRunner:
                 or config.profile.profile_id == "r2-3-005-modeling-team"
             )
         )
+        if formal_acceptance:
+            self._reject_formal_ledger_root_override()
         normalized_scope: dict[str, str] = dict(scope)
         if formal_acceptance:
             normalized_scope = normalize_formal_scope(scope)
@@ -175,19 +252,13 @@ class TeamRunner:
             if expected_binding:
                 gate_binding = self._resolve_expected_matrix_binding(expected_binding)
         if config.task.schema_version == 2:
-            ledger_kwargs: dict[str, Any] = {}
-            if formal_acceptance:
-                ledger_kwargs = {
-                    "ledger_filename": ".r2-3-005-start-ledger.jsonl",
-                    "lock_filename": ".r2-3-005-start-ledger.lock",
-                    "initial_start_cap": 1,
-                    "requirement_id": "R2.3-005",
-                }
-            self._ledger = StartLedger(
-                self.ledger_root or self.repository_root / "workspaces" / "modeling-runs",
-                now=self.ledger_now,
-                **ledger_kwargs,
+            ledger_config = resolve_ledger_config(
+                R2_3_005_REQUIREMENT_ID if formal_acceptance else R2_3_002_REQUIREMENT_ID
             )
+            ledger_root = self._canonical_ledger_root()
+            if not formal_acceptance and self.ledger_root is not None:
+                ledger_root = self.ledger_root
+            self._ledger = self._create_ledger(root=ledger_root, config=ledger_config)
             # The reservation is the freeze gate: no mutable run state exists before it succeeds.
             self._ledger.reserve(
                 run_id,
@@ -2066,7 +2137,18 @@ class TeamRunner:
             os.fsync(stream.fileno())
 
     def _formal_ledger_identity(self) -> dict[str, dict[str, str]]:
-        if self._ledger and self._ledger.requirement_id == "R2.3-005":
+        if not self._ledger:
+            return {}
+        config = getattr(self._ledger, "config", None)
+        strict_sequence = bool(getattr(config, "strict_sequence", False))
+        # Keep cleanup compatible with lightweight legacy test doubles that
+        # predate the immutable config carrier while retaining the formal
+        # requirement-ID check used by the previous implementation.
+        if not strict_sequence:
+            strict_sequence = (
+                getattr(self._ledger, "requirement_id", None) == R2_3_005_REQUIREMENT_ID
+            )
+        if strict_sequence:
             return {"ledger_identity": self._ledger.identity}
         return {}
 
