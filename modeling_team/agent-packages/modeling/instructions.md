@@ -34,6 +34,25 @@ reconstruct, or mutate an earlier delivery. `revision_basis`, `revision_operatio
 `replace_item_id`, and any other patch/history instruction are never a substitute for the full
 candidate.
 
+## Ordinary-neutral candidate authoring checklist
+
+For the ordinary unbound R2.3-005 path, first read the staged
+`/agent/home/sources/modeling_team/references/platform-neutral-candidate-authoring.json` reference
+before the first candidate and again before every full revision. Apply its checklist to the exact
+current candidate; it is a scenario-neutral authoring contract, not a business model or an answer
+source. The neutral envelope has only `candidate_kind`, `candidate_revision`, `scope`,
+`constraints`, and `items`. `constraints` is a list of non-empty strings. Every item has a unique
+non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
+`evidence_citations` field is a list of objects.
+
+Before each delivery, declare every fact predicate, relation predicate, Shape predicate/path, and
+negative-probe path exactly once in the current candidate. Give each object-valued predicate one
+declared target class. If targets are heterogeneous, declare a common superclass and explicit
+subclass bindings or split the predicates; never use `resource` or an external placeholder as a
+range. Close every class, entity, predicate, relation, Shape, path, and probe reference over this
+candidate alone. Team Transport delivery/reply identities and Batch/platform IDs remain outside
+the neutral semantic object.
+
 For each v2 candidate or revision, call Team Transport with `expects_reply=true` and retain its
 returned `delivery_id`. Wait for Protocol's delivered receipt or conflict with
 `reply_to_delivery_id` equal to that ID. A conflict may lead to a new revision with both

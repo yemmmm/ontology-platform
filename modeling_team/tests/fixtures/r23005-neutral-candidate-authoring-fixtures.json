@@ -1,0 +1,343 @@
+{
+  "schema_version": "r23005-neutral-candidate-authoring-fixtures/v1",
+  "r1": {
+    "candidate_kind": "platform-neutral-candidate-v2",
+    "candidate_revision": "neutral-r1",
+    "scope": {
+      "name": "offline-neutral-scope"
+    },
+    "vocabulary": {
+      "classes": [
+        {
+          "id": "NeutralSubject"
+        },
+        {
+          "id": "NeutralDependency"
+        },
+        {
+          "id": "NeutralLeft"
+        },
+        {
+          "id": "NeutralRight"
+        }
+      ],
+      "properties": [
+        {
+          "id": "label",
+          "domain": "NeutralSubject",
+          "range": "string"
+        },
+        {
+          "id": "affectedSubject",
+          "domain": "NeutralSubject",
+          "range": "resource"
+        }
+      ]
+    },
+    "items": [
+      {
+        "id": "item-neutral-left",
+        "type": "NeutralLeft",
+        "facts": {
+          "label": "left"
+        },
+        "evidence_citations": []
+      },
+      {
+        "id": "item-neutral-right",
+        "type": "NeutralRight",
+        "facts": {
+          "label": "right"
+        },
+        "evidence_citations": []
+      },
+      {
+        "id": "item-neutral-dependency",
+        "type": "NeutralDependency",
+        "facts": {
+          "label": "dependency"
+        },
+        "evidence_citations": []
+      }
+    ],
+    "relations": [
+      {
+        "id": "relation-neutral-left-right",
+        "from": "item-neutral-left",
+        "predicate": "relatesTo",
+        "to": "item-neutral-right",
+        "evidence_item": "item-neutral-left"
+      },
+      {
+        "id": "relation-neutral-dependency-left",
+        "from": "item-neutral-dependency",
+        "predicate": "dependsOn",
+        "to": "item-neutral-left",
+        "evidence_item": "item-neutral-dependency"
+      }
+    ],
+    "constraints": [
+      {
+        "id": "shape-neutral",
+        "target_class": "NeutralSubject",
+        "requirements": [
+          "label is present"
+        ]
+      }
+    ],
+    "negative_validation_probe": {
+      "id": "probe-neutral",
+      "description": "A neutral invalid-value probe.",
+      "expected_result": "rejected"
+    },
+    "dependencies": [
+      {
+        "sequence": 1,
+        "from": "item-neutral-dependency",
+        "to": "item-neutral-left",
+        "semantics": "The dependency references a subject."
+      }
+    ],
+    "consumer_queries": [
+      {
+        "id": "query-neutral",
+        "question": "Which subject is referenced?",
+        "required_response": "Return only closed neutral facts."
+      }
+    ],
+    "protocol_requirements": {
+      "full_candidate_validation": true
+    }
+  },
+  "r2": {
+    "candidate_kind": "platform-neutral-candidate-v2",
+    "candidate_revision": "neutral-r2",
+    "delivery_id": "transport-neutral-r1",
+    "reply_chain": [
+      "transport-neutral-r1",
+      "transport-neutral-conflict"
+    ],
+    "scope": {
+      "name": "offline-neutral-scope"
+    },
+    "vocabulary": {
+      "classes": [
+        {
+          "id": "NeutralSubject"
+        },
+        {
+          "id": "NeutralDependency"
+        },
+        {
+          "id": "NeutralLeft"
+        },
+        {
+          "id": "NeutralRight"
+        }
+      ],
+      "properties": [
+        {
+          "id": "label",
+          "domain": "NeutralSubject",
+          "range": "string"
+        },
+        {
+          "id": "affectedSubject",
+          "domain": "NeutralSubject",
+          "range": "resource"
+        }
+      ]
+    },
+    "items": [
+      {
+        "item_id": "item-neutral-left",
+        "item_kind": "entity",
+        "semantic": {
+          "label": "left",
+          "affectedSubject": "item-neutral-dependency"
+        },
+        "evidence_citations": []
+      },
+      {
+        "item_id": "item-neutral-right",
+        "item_kind": "entity",
+        "semantic": {
+          "label": "right",
+          "affectedSubject": "item-neutral-left"
+        },
+        "evidence_citations": []
+      },
+      {
+        "item_id": "item-neutral-dependency",
+        "item_kind": "entity",
+        "semantic": {
+          "label": "dependency",
+          "affectedSubject": "item-neutral-right"
+        },
+        "evidence_citations": []
+      }
+    ],
+    "relations": [
+      {
+        "id": "relation-neutral-left-right",
+        "from": "item-neutral-left",
+        "predicate": "relatesTo",
+        "to": "item-neutral-right",
+        "evidence_item": "item-neutral-left"
+      },
+      {
+        "id": "relation-neutral-dependency-left",
+        "from": "item-neutral-dependency",
+        "predicate": "dependsOn",
+        "to": "item-neutral-left",
+        "evidence_item": "item-neutral-dependency"
+      }
+    ],
+    "constraints": [
+      {
+        "id": "shape-neutral",
+        "target_class": "NeutralSubject",
+        "requirements": [
+          "label is present"
+        ]
+      }
+    ],
+    "negative_validation_probe": {
+      "id": "probe-neutral",
+      "description": "A neutral invalid-value probe.",
+      "expected_result": "rejected"
+    },
+    "dependencies": [
+      {
+        "sequence": 1,
+        "from": "item-neutral-dependency",
+        "to": "item-neutral-left",
+        "semantics": "The dependency references a subject."
+      }
+    ],
+    "consumer_queries": [
+      {
+        "id": "query-neutral",
+        "question": "Which subject is referenced?",
+        "required_response": "Return only closed neutral facts."
+      }
+    ],
+    "protocol_requirements": {
+      "full_candidate_validation": true
+    }
+  },
+  "corrected": {
+    "candidate_kind": "platform-neutral-candidate-v2",
+    "candidate_revision": "neutral-corrected",
+    "scope": {
+      "name": "offline-neutral-scope",
+      "example_only": true
+    },
+    "constraints": [
+      "Every declared path is unique in this candidate.",
+      "Object targets resolve through the declared common superclass."
+    ],
+    "items": [
+      {
+        "item_id": "class-neutral-subject",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "class-neutral-left",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralLeft",
+          "superclass": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "class-neutral-right",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralRight",
+          "superclass": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "predicate-neutral-label",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "neutralLabel",
+          "predicate_kind": "fact",
+          "domain": "NeutralSubject",
+          "range": "string"
+        }
+      },
+      {
+        "item_id": "predicate-neutral-association",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "neutralAssociation",
+          "predicate_kind": "relation",
+          "domain": "NeutralSubject",
+          "range": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "shape-neutral-subject",
+        "item_kind": "shape",
+        "semantic": {
+          "shape_id": "NeutralSubjectShape",
+          "target_class": "NeutralSubject",
+          "paths": [
+            {
+              "path_id": "path-neutral-label",
+              "predicate": "neutralLabel",
+              "range": "string"
+            }
+          ]
+        }
+      },
+      {
+        "item_id": "entity-neutral-left",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "neutral-left",
+          "class": "NeutralLeft",
+          "values": {
+            "neutralLabel": "left"
+          }
+        }
+      },
+      {
+        "item_id": "entity-neutral-right",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "neutral-right",
+          "class": "NeutralRight",
+          "values": {
+            "neutralLabel": "right"
+          }
+        }
+      },
+      {
+        "item_id": "relation-neutral-association",
+        "item_kind": "relation",
+        "semantic": {
+          "relation_id": "neutral-association-1",
+          "predicate": "neutralAssociation",
+          "subject": "neutral-left",
+          "object": "neutral-right"
+        }
+      },
+      {
+        "item_id": "probe-neutral-shape",
+        "item_kind": "negative_probe",
+        "semantic": {
+          "probe_id": "neutral-shape-probe",
+          "shape_id": "NeutralSubjectShape",
+          "path": "path-neutral-label",
+          "expected_result": "rejected"
+        }
+      }
+    ]
+  }
+}

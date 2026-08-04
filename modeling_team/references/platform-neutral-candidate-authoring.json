@@ -1,0 +1,154 @@
+{
+  "schema_version": "platform-neutral-candidate-authoring/v1",
+  "purpose": "Scenario-neutral authoring contract for an ordinary semantic candidate.",
+  "candidate_envelope": {
+    "additional_properties": false,
+    "fields": [
+      "candidate_kind",
+      "candidate_revision",
+      "scope",
+      "constraints",
+      "items"
+    ],
+    "constraints": {
+      "type": "list",
+      "items": "non-empty string"
+    },
+    "item_required_fields": [
+      "item_id",
+      "item_kind",
+      "semantic"
+    ],
+    "item_optional_fields": [
+      "evidence_citations"
+    ],
+    "item_additional_properties": false,
+    "evidence_citations": {
+      "type": "list",
+      "items": "object"
+    }
+  },
+  "closure_checklist": [
+    "Keep every item_id unique and every item_kind non-empty; semantic must be an object.",
+    "Declare each fact predicate, relation predicate, Shape path, and negative-probe path once in the current candidate.",
+    "Give every object-valued predicate exactly one declared target class.",
+    "For heterogeneous object targets, declare one common superclass with subclass bindings or split the predicate; never use resource or an external placeholder as a range.",
+    "Resolve every class, entity, predicate, relation, Shape, path, and probe reference from the current candidate only.",
+    "Keep Team Transport delivery/reply identities and Batch/platform IDs outside the neutral semantic candidate."
+  ],
+  "example_candidate": {
+    "candidate_kind": "platform-neutral-candidate-v2",
+    "candidate_revision": "neutral-example-1",
+    "scope": {
+      "name": "small-neutral-example",
+      "example_only": true
+    },
+    "constraints": [
+      "Every declared path is unique in this candidate.",
+      "Object targets resolve through the declared common superclass."
+    ],
+    "items": [
+      {
+        "item_id": "class-neutral-subject",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralSubject",
+          "description": "Common superclass for the two illustrative subject classes."
+        }
+      },
+      {
+        "item_id": "class-neutral-left",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralLeftSubject",
+          "superclass": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "class-neutral-right",
+        "item_kind": "class",
+        "semantic": {
+          "class_id": "NeutralRightSubject",
+          "superclass": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "predicate-neutral-label",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "neutralLabel",
+          "predicate_kind": "fact",
+          "domain": "NeutralSubject",
+          "range": "string"
+        }
+      },
+      {
+        "item_id": "predicate-neutral-association",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "neutralAssociation",
+          "predicate_kind": "relation",
+          "domain": "NeutralSubject",
+          "range": "NeutralSubject"
+        }
+      },
+      {
+        "item_id": "shape-neutral-subject",
+        "item_kind": "shape",
+        "semantic": {
+          "shape_id": "NeutralSubjectShape",
+          "target_class": "NeutralSubject",
+          "paths": [
+            {
+              "path_id": "path-neutral-label",
+              "predicate": "neutralLabel",
+              "range": "string"
+            }
+          ]
+        }
+      },
+      {
+        "item_id": "entity-neutral-left",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "neutral-left",
+          "class": "NeutralLeftSubject",
+          "values": {
+            "neutralLabel": "left"
+          }
+        }
+      },
+      {
+        "item_id": "entity-neutral-right",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "neutral-right",
+          "class": "NeutralRightSubject",
+          "values": {
+            "neutralLabel": "right"
+          }
+        }
+      },
+      {
+        "item_id": "relation-neutral-association",
+        "item_kind": "relation",
+        "semantic": {
+          "relation_id": "neutral-association-1",
+          "predicate": "neutralAssociation",
+          "subject": "neutral-left",
+          "object": "neutral-right"
+        }
+      },
+      {
+        "item_id": "probe-neutral-shape",
+        "item_kind": "negative_probe",
+        "semantic": {
+          "probe_id": "neutral-shape-probe",
+          "shape_id": "NeutralSubjectShape",
+          "path": "path-neutral-label",
+          "expected_result": "rejected"
+        }
+      }
+    ]
+  }
+}

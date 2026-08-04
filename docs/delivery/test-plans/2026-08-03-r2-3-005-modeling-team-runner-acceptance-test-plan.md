@@ -122,6 +122,12 @@ FAIL/BLOCKED run is required.
 | C96 | Retained partial-revision rejection | a production-shaped start5 revision 6 containing only one replacement item is rejected as incomplete with no prior-delivery merge, platform call or evidence mutation |
 | C97 | Complete corrected revision path | the retained revision 5 content plus the explicit Shape correction remains a full 38-item candidate with complete metadata and reaches the ordinary neutral receipt path |
 | C98 | Revision repair regression boundary | accepted R2.3-002 proof behavior, non-proof R2.3-005 gate, Producer smoke evidence, Acceptance/lifecycle and complete managed tests remain unchanged; live ledgers/start5 evidence are byte-stable |
+| C99 | Ordinary neutral envelope checklist | one scenario-neutral immutable reference is staged to Modeling+Protocol only and freezes exact neutral envelope, string-list constraints, unique `item_id`, non-empty `item_kind`, object `semantic`, optional object-list `evidence_citations`; transport and Batch/platform IDs are outside |
+| C100 | Vocabulary closure | every fact, relation and Shape predicate/path used by the current candidate is declared exactly once; retained start6 r2 undeclared predicates are rejected before mechanics/platform work |
+| C101 | Object-range closure | every object predicate has one declared target class; heterogeneous targets require a declared common superclass/subclasses or split predicates, and `resource`/external placeholders fail |
+| C102 | Executable path closure | negative probes and executable Shapes reference only declared properties/paths and cannot imply an undeclared answer-value field |
+| C103 | Protocol exact-current candidate | Protocol passes the exact entire delivered candidate to the receipt before every response and never fabricates a reduced conflict candidate or adds transport fields to neutral semantics |
+| C104 | Start6 production-shape and regression | retained r1 wrapper fails; full r2 carry-forward passes revision completeness but exact-current receipt rejects object constraints before semantic closure; corrected full candidate reaches neutral receipt, immutable reference leaks no business answer/Batch contract, and full regressions PASS |
 
 ## Service-level and integration cases
 
@@ -148,6 +154,8 @@ FAIL/BLOCKED run is required.
 | I19 | Start5 Producer-to-Acceptance path | one fresh serialized start5 uses only its run-owned Project/Ontology, reaches Modeling+Protocol ready/silent after required platform stages, then and only then starts independent Acceptance; first full PASS stops further starts |
 | I20 | Start5 retained failure audit | independent read-only evidence proves revisions 1-5 narrowed, revision 6 was a one-item cross-delivery patch, Protocol rejected it before platform calls, classification is `collaboration/routing,false`, and cleanup/ledger state is exact `7/5/0` |
 | I21 | Start6 complete-revision gate | after reviewed commit and independent C94-C98 PASS, exactly one start5 repair binds a fresh baseline; one serialized start6 must send only complete candidate revisions, reach dry-run before any further candidate-loop expansion, and stop at first full PASS |
+| I22 | Start6 retained failure audit | read-only evidence proves full r2 carry-forward, repeated vocabulary/range closure conflict before platform calls, `collaboration/routing,false`, cleanup and exact ledger `7/6/0` |
+| I23 | Final start7 authoring-closure gate | after C99-C104 independent PASS and one fresh start6 repair, exactly one final serialized start7 applies the neutral checklist, reaches whole-candidate receipt and dry-run without another shaping loop, and stops at full PASS or cap exhaustion |
 
 ## Real acceptance run
 
@@ -884,3 +892,138 @@ PASS for the complete-candidate deterministic repair (C94-C98) and retained star
 No developer fix is requested. After commit, Delivery may proceed with exactly one reviewed
 start5 repair authorization and one serialized start6, preserving the live-ledger and retained-
 evidence boundaries above.
+
+## 2026-08-04 neutral candidate authoring closure — Independent round 3
+
+### Scope, authority, and safety boundary
+
+- This is the third independent Requirement Tester round. It reuses this shared plan's C99-C104
+  and I22-I23 cases, the R2.3-005 `start6 neutral candidate authoring closure` subsection in
+  `docs/requirements/requirements-v2.3.md`, and the reviewed
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md`.
+  The allowed implementation surface was limited to the scenario-neutral reference,
+  Modeling/Protocol instructions, the R2.3-005 task, and the focused test. No mechanics, MCP,
+  Runner, Runtime, platform, Acceptance/lifecycle, backend, frontend, or live-state path was
+  edited by this Tester.
+- The execution baseline was `HEAD=5c3be74584deb7487db268c0c0c0c7c518fa72ba`. Before checks,
+  `git status --porcelain` contained the parent requirement/delivery edits plus the expected
+  neutral plan/reference/instructions/task/focused-test paths; no retained run path was tracked.
+  The Tester did not request a repair, start7 reservation, semantic start, Runtime/smoke run,
+  platform call, service restart, resource mutation, or commit. Temporary clean-checkout and
+  compile caches were outside the repository and did not touch retained evidence.
+- The required C99-C104 clean-checkout portability gate was run explicitly. A temporary checkout
+  was produced with `git archive HEAD` and only the current neutral reference, instructions,
+  task, and focused test copied in; it contained no
+  `workspaces/modeling-runs/r23005-real-20260804t075359z-start6/evidence/deliveries.jsonl`.
+  This is the acceptance condition for a clean checkout and is distinct from the retained-evidence
+  audit in I22.
+
+### I22 retained start6 audit and immutability snapshots
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Start6 terminal and classification | PASS | Retained `state.json` is `CLEANED`; Acceptance is `aborted`, `settled=false`, `active_handles=0`, `zero_child_residue=true`, and `credentials_destroyed=true`. The final retained Protocol response is a pre-write conflict, and no Acceptance verdict or settlement is present. |
+| Start6 candidate failure path | PASS | `deliveries.jsonl` has 12 records. Retained r1 `cba-slice-r1` has 16 public `id/type/facts` items; full r2 `cba-slice-r2` has 16 `item_id/item_kind/semantic` items and object constraints with no patch fields. After the mechanical envelope correction, Protocol reports undeclared `upstreamOf`/`invokesAsPublishedTool` and `affectedSubject` range `resource`; it stops before platform work. |
+| No platform work | PASS | Retained MCP elicitations contain only `team_transport` and `protocol_mechanics`; no ontology-platform MCP server appears. No Build Session, dry-run/apply, readback, validation, reasoning, receipt success, Acceptance, or settlement evidence exists after the conflict. |
+| Cleanup | PASS | Retained cleanup is owned create-scope deletion with `scope_disposition=deleted-empty`, `owned_project_deleted=true`, `project_absent=true`, `ontology_absent=true`, `fk_cascade=true`, and residual counts zero for project, ontology, lease, session, and project-scoped key; the project key is revoked and child residue is zero. |
+| Formal ledger state | PASS | Read-only replay of `.r2-3-005-start-ledger.jsonl` returned 29 records, cap/count/active `7/6/0`, and valid strict replay. No event was appended. The legacy R2.3-002 ledger replay remained 92 records and was not opened for write. |
+| Before/after live-state equality | PASS | R2.3-005 ledger before/after: mode `664`, 6,622 bytes, SHA-256 `956a20aa027487af7e54c02edbd04bad2022d550f660eef75c5381706058ecdf`; R2.3-002 before/after: 21,723 bytes, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`. Start6 evidence before/after: 14 files, 151,772 bytes, and all 14 per-file SHA-256 values equal (including `deliveries.jsonl`, 56,705 bytes, `a5654d6652e5c2371f823ddf13a68472ef0f0a5a4375ca3326dae16f90fbb2ac`). |
+
+### Executed checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| C99-C104 focused suite in the current checkout | PASS (non-portable) | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring`: **6/6 OK**. The assertions pass only because this checkout has the ignored retained start6 deliveries. |
+| C99-C104 in a clean checkout without retained evidence | **FAIL — D2 Major** | The exact command `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring` ran all six tests in `/tmp/r23005-clean-checkout.8ymSJu` and every test errored with `FileNotFoundError` at `modeling_team/tests/test_r23005_candidate_authoring.py:39` (`_retained_candidate`) for the absent ignored `workspaces/.../start6/evidence/deliveries.jsonl`. No C99-C104 case was skipped, but none was executable. |
+| All R2.3-005 discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: **98 OK, 1 expected opt-in skip**. |
+| Complete managed `modeling_team` unittest discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests`: **314 OK, 1 expected opt-in skip**. Existing ResourceWarning/runtime diagnostic output did not fail the suite. |
+| Ruff, compile, whitespace | PASS | `uv run --project backend ruff check modeling_team`, compileall with a temporary `PYTHONPYCACHEPREFIX`, and `git diff --check` all passed. |
+| GitNexus compare-main review | PASS with scope limitation | `detect_changes(scope=compare, base_ref=main, repo=ontology-platform)` returned `changed_files=6`, `changed_symbols=[]`, `affected_count=0`, `risk_level=low`, and no affected processes. Untracked reference/focused-test/plan files are not represented in this indexed result. |
+
+### Defect, disposition, and unexecuted scope
+
+- **D2 Major — C99-C104 are not clean-checkout portable.** Reproduction: construct a clean
+  checkout without ignored `workspaces/`, copy the tracked/current neutral test inputs, and run
+  the focused unittest command above. Expected: all six C99-C104 tests execute against a tracked
+  structural fixture and pass. Actual: all six terminate in `FileNotFoundError` before their
+  assertions because `_retained_candidate()` hard-requires the ignored retained start6 delivery
+  file. The normal-checkout 6/6 result therefore cannot serve as independent acceptance evidence.
+  A Requirement Developer must add a tracked scenario-neutral structural fixture or an equivalent
+  fallback that preserves I22 as the only retained-evidence audit. Do not start7 until an
+  independent follow-up round reruns C99-C104 in a clean checkout and passes.
+- I23 is **NOT EXECUTED/BLOCKED by design**. No start6 repair authorization, start7 reservation or
+  semantic start, dry-run/application/readback/validation/reasoning, Acceptance, semantic quality,
+  settlement, or final cleanup was attempted by this Tester. The retained start6 audit is not a
+  live completion result.
+- No product code, test fixture, ledger, retained evidence, service, or platform resource was
+  modified by this round. The only Tester edit is this appended round record.
+
+### Round conclusion
+
+**Overall verdict: FAIL — STOP.** C99-C104's deterministic assertions are green only with the
+ignored retained artifact; the mandatory clean-checkout gate is a D2 Major failure. Requirement
+Developer follow-up is required to add the tracked structural fixture/fallback, followed by a new
+independent Tester round. Do not authorize or run start7, and do not claim I23, until that round
+returns PASS.
+
+## 2026-08-04 neutral candidate authoring closure remediation — Independent round 3.1
+
+### Scope, authority, and safety boundary
+
+- This is a separate remediation round for the D2 Major recorded in round 3. It reuses C99-C104
+  and I22-I23 in this shared plan, the authoritative R2.3-005 start6 closure subsection, and the
+  reviewed neutral-candidate authoring plan. The developer remediation adds only the tracked
+  structural fixture `modeling_team/tests/fixtures/r23005-neutral-candidate-authoring-fixtures.json`
+  and updates the focused test helper/assertions; no mechanics, MCP, Runner, Runtime, platform,
+  Acceptance/lifecycle, backend, frontend, or live-state path changed.
+- The final verification baseline remained `HEAD=5c3be74584deb7487db268c0c0c0c7c518fa72ba`.
+  The final current-workspace focused/full/static checks below were rerun after the latest helper
+  rename and fact-key closure assertion. The Tester edited only this appended test-plan round;
+  no code, fixture, ledger, retained evidence, service, platform resource, reservation, semantic
+  start, or commit was performed.
+
+### C99-C104 remediation and fixture integrity
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Independent clean-checkout C99-C104 | PASS | Fresh `git archive HEAD` checkout `/tmp/r23005-clean-remediation-final.HQMKv4` received only the current focused test, tracked fixture, neutral reference, instructions, and task; no `workspaces/` files were copied. `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring` ran **6/6 OK**. |
+| Fixture/reference leak scan | PASS | Independent read-only scan found no `dify`, `workflow`, business answer/expected-answer, `quality_score`, `quality_rating`, `project_id`, `ontology_id`, `batch_id`, `platform_id`, `object_id`, UUID, or C/B/A edge in either neutral reference or structural fixture. Generic “object”/“Batch” checklist wording is not an identifier leak. |
+| Structural fidelity | PASS | Neutral reference has the exact five-field example envelope, non-empty string constraints, unique non-empty item IDs/kinds, object `semantic`, and object-list citation shape. Fixture r1 retains the public `id/type/facts` wrapper; r2 retains complete item IDs/semantics, object constraints, and only intentional transport `delivery_id`/`reply_chain`; corrected has exactly the five neutral fields, string constraints, unique item IDs, declared fact/relation/Shape path keys, and no transport/platform IDs. Corrected fixture receipt is `accepted`; r1 and r2 reject at the constraints stage. |
+
+### I22 retained start6 audit and live immutability
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Retained start6 terminal/failure | PASS | `state.json` is `CLEANED`; Acceptance is aborted/unsettled with zero active handles/child residue and destroyed credentials. Twelve deliveries stop at Protocol's pre-write conflict: r1 wrapper failure, full r2 object constraints, then undeclared `relatesTo`/`dependsOn` vocabulary and `resource` object range after mechanical correction. |
+| No platform work and cleanup | PASS | Retained MCP servers are only `team_transport` and `protocol_mechanics`; no ontology-platform server, Build Session, receipt success, dry-run/apply, readback, validation, reasoning, Acceptance, or settlement result exists. Owned create scope is deleted-empty with project/ontology/lease/session/project-key residuals all zero and keys revoked. |
+| Formal ledger replay | PASS | Read-only strict replay of `.r2-3-005-start-ledger.jsonl` remains 29 records, cap/count/active `7/6/0`; the legacy R2.3-002 ledger remains 92 records. No event was appended. |
+| Before/after snapshots | PASS | Both snapshots match exactly: R2.3-005 ledger mode `664`, 6,622 bytes, SHA-256 `956a20aa027487af7e54c02edbd04bad2022d550f660eef75c5381706058ecdf`; R2.3-002 ledger 21,723 bytes, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; retained start6 evidence 14 files/151,772 bytes with all per-file SHA-256 values unchanged (including `deliveries.jsonl` 56,705 bytes, `a5654d6652e5c2371f823ddf13a68472ef0f0a5a4375ca3326dae16f90fbb2ac`). |
+
+### Final remediation checks
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Focused C99-C104 in current workspace | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_candidate_authoring`: **6/6 OK** after the final helper/fact-key edits. |
+| All R2.3-005 discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: **98 OK, 1 expected opt-in skip**. |
+| Complete managed modeling-team unittest | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests`: **314 OK, 1 expected opt-in skip**. |
+| Complete managed modeling-team pytest | PASS | `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests`: **363 passed, 1 skipped, 163 subtests passed**. |
+| Ruff, compile, whitespace | PASS | `uv run --project backend ruff check modeling_team`, compileall with temporary `PYTHONPYCACHEPREFIX`, and `git diff --check` all passed. |
+| GitNexus compare-main | PASS with scope limitation | `detect_changes(scope=compare, base_ref=main, repo=ontology-platform)` returned `changed_files=6`, `changed_symbols=[]`, `affected_count=0`, `risk_level=low`, and no affected processes. Untracked fixture/test/reference/plan files are outside this indexed comparison. |
+
+### Disposition and unexecuted scope
+
+- The round-3 D2 Major is **FIXED**: C99-C104 now execute and pass in a clean checkout without
+  ignored retained evidence, and the tracked fixture remains scenario-neutral and structurally
+  faithful. No remaining defect was reproduced in the remediation scope; no further Requirement
+  Developer fix is requested before the next gate.
+- I23 remains **NOT EXECUTED/BLOCKED by design**. This round did not perform start6 repair
+  authorization, start7 reservation/semantic start, Runtime or platform calls, dry-run/application,
+  readback/validation/reasoning, Acceptance, semantic quality, settlement, or final cleanup. The
+  retained start6 evidence is an I22 audit only and cannot claim the final start7 gate.
+
+### Round conclusion
+
+**Overall verdict: PASS for the C99-C104 remediation and I22 retained-evidence audit; BLOCKED for
+the complete R2.3-005 live requirement because I23 remains NOT EXECUTED.** The D2 Major from round
+3 is fixed. Delivery may separately follow the reviewed, authorized final-slot sequence only after
+the required clean commit/baseline gates; do not claim I23 from this round.

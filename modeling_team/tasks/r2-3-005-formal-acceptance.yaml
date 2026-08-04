@@ -14,8 +14,12 @@ objective: >-
   dependencies, and consumer queries exactly, include explicit semantic changes in full, and never
   use revision_basis, revision_operation, replace_item_id, or a patch-only substitute. Protocol
   never merges prior deliveries and invokes build_candidate_receipt against the entire current
-  candidate before every receipt or conflict response. Do not expose expected answers or invoke
-  generic multi-agent/spawn capabilities.
+  candidate before every receipt or conflict response. Before the first candidate and before every
+  full revision, Modeling and Protocol must read and apply the staged
+  modeling_team/references/platform-neutral-candidate-authoring.json scenario-neutral authoring
+  checklist; keep Team Transport delivery/reply identities and Batch/platform IDs outside the
+  neutral semantic candidate. Do not expose expected answers or invoke generic multi-agent/spawn
+  capabilities.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question
@@ -35,6 +39,9 @@ role_sources:
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
     roles: [protocol]
+  - path: modeling_team/references/platform-neutral-candidate-authoring.json
+    classification: protocol
+    roles: [modeling, protocol]
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/public-protocol.md
     classification: protocol
     roles: [protocol]

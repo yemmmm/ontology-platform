@@ -3,13 +3,13 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start5 因 candidate revision 非完整而 `BLOCKED`，新增三次授权已用一次，当前做最小修复；
+  start6 因 candidate vocabulary/range 未闭合而 `BLOCKED`，新增三次授权已用两次，当前做最后一次最小修复；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：要求 Modeling 每次 revision 完整重发 immutable candidate；离线独立 PASS 后使用一个
-  fresh start6，在剩余两次授权内完成首次真实 PASS
+- 当前下一目标：以场景无关 checklist 闭合 neutral candidate 的 envelope/vocabulary/range/path；离线独立
+  PASS 后使用最后一个 fresh start7，完成首次真实 PASS 或在 cap 7 停止申请
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -58,7 +58,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（start5 BLOCKED；cap 7 已用 5，剩余 2）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（start6 BLOCKED；cap 7 已用 6，剩余 1）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1592,6 +1592,23 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   并以 retained revision 5/6 生产形状建立回归。不得增加 candidate-history/
   patch-merge 状态机、修改 mechanics/platform/Acceptance 或重跑 Runtime smoke。独立 Tester PASS 和 fresh
   baseline 之前不得追加 start5 repair、reservation 或 semantic start。
+
+### 2026-08-04 start6 neutral candidate authoring closure
+
+- start6 的完整 revision 修复已生效：r2 完整携带所有语义、citations、constraints、dependencies 和
+  consumer queries，且无 patch 字段。但 r1 使用错误的 neutral item wrapper；r2 修复 wrapper 后仍使用
+  未声明的 `upstreamOf`/`invokesAsPublishedTool`、跨异构对象的 `affectedSubject: resource` range，并有
+  未声明的 fact/Shape path。Protocol 在第二个 pre-write conflict 后按 I21 fail-fast。
+- 全程无 Build Session、业务平台 MCP/API、receipt success、dry-run、apply、readback、validation、reasoning
+  或 Acceptance；fresh scope 删除空、零残留。终态 `BLOCKED/collaboration-routing`、
+  `complete_modeling_quality_result=false`，正式账本 `7/6/0`，最后一次 start7 不得自动使用。
+- 最后修复只允许增加一份只投影给 Modeling/Protocol 的场景无关 immutable ordinary-neutral authoring
+  reference，并在 package/task 引用：精确 envelope/item wrapper、string-list constraints、unique item IDs、
+  谓词/Shape path 全声明、对象 range 单一闭合、异构对象使用显式
+  common superclass/subclass 或拆分 predicate；Protocol 必须把 exact entire delivered candidate 交给 receipt，
+  不得缩减重写。不得把本业务候选/答案作为 Agent 输入，不改 mechanics/MCP/Runner/Runtime/platform/
+  Acceptance，不增加自动 closure 或再跑 smoke。C99-C104 独立 PASS、clean commit、fresh baseline 前不得
+  repair/start7；若 start7 未 PASS，cap 7 耗尽后必须向用户申请。
 
 ### 明确边界
 

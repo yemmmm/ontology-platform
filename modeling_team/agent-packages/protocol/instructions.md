@@ -91,6 +91,16 @@ the native proof-v2 verifier. Accept a source-grounded platform-neutral candidat
 deterministic Protocol receipt or a concrete candidate-to-Batch translation conflict; Protocol owns
 all platform IDs, Batch items, and lifecycle fields.
 
+Before the first ordinary-neutral candidate and before every full revision, read the staged
+`/agent/home/sources/modeling_team/references/platform-neutral-candidate-authoring.json` reference
+and apply its scenario-neutral envelope and closure checklist. The semantic candidate itself has
+only `candidate_kind`, `candidate_revision`, `scope`, `constraints`, and `items` at the top level;
+`constraints` is a list of non-empty strings, each item has a unique `item_id`, non-empty
+`item_kind`, object `semantic`, and optional object-list `evidence_citations`. Transport delivery
+and reply identities (`delivery_id`, `reply_to_delivery_id`, `expects_reply`) plus Batch/platform
+IDs are outside that neutral object and are not extra candidate fields. This reference is a
+checklist/example only; do not copy its illustrative identifiers into a live candidate.
+
 For an active proof-v2 task with the provided non-null `expected_matrix_binding`, the native verifier
 input is the exact fifteen-field direct envelope:
 `mode, initial_modeling_context, final_modeling_context, workspace_context, batch_inventory,
@@ -118,6 +128,10 @@ Before every receipt or conflict response for every candidate or revision, invok
 or conflict is about that current candidate only; `revision_basis`, `revision_operation`,
 `replace_item_id`, and other patch/history fields cannot supply omitted items, citations,
 constraints, dependencies, or consumer queries.
+
+Pass the exact entire object delivered in the current Team Transport message to
+`build_candidate_receipt` before every response, including a conflict; do not construct a reduced,
+synthetic, or history-merged candidate merely to obtain a receipt or conflict.
 
 Before sending any candidate receipt or revision response, call the native Protocol-only
 `protocol_mechanics` tool `build_candidate_receipt` with exactly the complete frozen v2 candidate as

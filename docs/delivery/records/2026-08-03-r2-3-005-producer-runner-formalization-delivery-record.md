@@ -1992,3 +1992,66 @@
   `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; start5 648 files/40,699,105 bytes.
 - Verdict: deterministic complete-revision repair and I20 PASS with no D1/D2/ordinary defect. Full R2.3-005 remains
   BLOCKED only because I21 is correctly NOT EXECUTED. No repair/reservation/start6 may occur before the clean commit.
+
+### 2026-08-04 — Start6 closed BLOCKED at authoring closure gate — Delivery and Main agent
+
+- Clean commit `5c3be74584deb7487db268c0c0c0c7c518fa72ba` and independent round 2 authorized exactly one start5
+  repair, one reservation and start6 `r23005-real-20260804t075359z-start6`; no budget event or start7 exists.
+- Complete-revision repair held: r2 was a full 22,440-character replacement carrying forward every semantic item,
+  citation, constraint, dependency and consumer query with no patch fields. Whole-candidate pre-write checks still
+  found the wrong initial neutral wrapper, then undeclared `upstreamOf`/`invokesAsPublishedTool` and an unbindable
+  heterogeneous `affectedSubject: resource` range. I21 stopped before r3.
+- Classification is `BLOCKED/collaboration-routing`, `complete_modeling_quality_result=false`. No Build Session,
+  platform tool/API, successful receipt, dry-run, apply, readback, validation, reasoning, Acceptance or settlement.
+  Ledger is 29 lines/6,622 bytes, SHA
+  `956a20aa027487af7e54c02edbd04bad2022d550f660eef75c5381706058ecdf`, cap/count/active `7/6/0`; legacy remains
+  SHA `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`.
+- Fresh Project `35dc23f2-95e0-4e62-89e4-a3fac9a236df` and Ontology
+  `79ea5e98-12e8-44d5-836a-a8a9e1556dbb` were deleted empty; database residue zero, keys revoked, role processes and
+  child handles absent, credentials destroyed, service/canonical health PASS. Retained tree is 648 files/35,478,231
+  bytes with digest `8e91bb9f68bfd430cfdd9bdea8ab1fe9251a3aea5142aea9223a02b6bc628db0`.
+- Time split: semantic clarification/modeling 50.5%, Producer collaboration/translation 34.4%, gates/cleanup 15.1%.
+  One authorized slot remains, but no repair/start7 is permitted before the scenario-neutral authoring-closure plan,
+  review, independent PASS and fresh baseline.
+
+### 2026-08-04 — Start6 retained audit freezes final-slot repair — Read-only Auditor and Main agent
+
+- Audit confirmed the terminal classification, no business platform calls, cleanup and ledger `7/6/0`. It also found
+  Protocol reconstructed reduced candidates for mechanics instead of passing delivery-9/11 verbatim; this is repaired
+  through the same prompt contract, not a mechanics/history change.
+- Exact-current inspection adds one missed envelope failure: start6 constraints were objects, while the ordinary
+  receipt requires a list of non-empty strings. The checklist/fixture therefore also freezes string constraints,
+  unique item IDs and optional object-list evidence citations; corrected tests call the receipt with the exact object.
+- Final-slot repair is limited to one immutable scenario-neutral Modeling+Protocol role reference, instructions,
+  task and offline start6 tests. It must cover envelope/item wrapper, complete vocabulary and
+  executable paths, formal object ranges/common superclass and exact-current receipt input. It may not expose the live
+  C/B/A candidate/answers or change mechanics, Runner, Runtime, platform, Acceptance, lifecycle or ledger behavior.
+
+### 2026-08-04 — Final-slot neutral authoring closure plan review PASS — Plan Reviewer and Main agent
+
+- Reviewed `docs/delivery/implementation-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md` and
+  C99-C104/I22-I23. No Critical/High blocker was found.
+- Approved scope is one immutable scenario-neutral reference staged to Modeling/Protocol only, their instructions,
+  R2.3-005 task and offline fixtures. It freezes string constraints, unique item IDs, object semantics/citations,
+  complete predicate/path declarations, formal common-superclass ranges and exact-current receipt input.
+- The reference/test must prove absence of C/B/A, expected answers and Batch/platform IDs. Exact-current tests first
+  reject start6 object constraints, then test vocabulary/range/path closure; mechanics may not infer or store history.
+- Mechanics/MCP/Runner/Runtime/platform/Acceptance/lifecycle remain unchanged. Plan PASS authorizes implementation
+  only; the final start7 remains forbidden until independent PASS, clean commit and a fresh repair baseline.
+
+### 2026-08-04 — Final-slot independent round 3 FAIL, remediation 3.1 PASS — Requirement Tester
+
+- Initial implementation changed only one scenario-neutral Modeling/Protocol reference, their instructions, the
+  R2.3-005 task and focused tests. C99-C104 and full local tests passed, but Tester reproduced D2 Major in a clean
+  git-archive checkout: all six focused tests raised `FileNotFoundError` because they read ignored start6 evidence.
+  Round 3 was recorded FAIL/STOP; I23 remained unexecuted.
+- Developer replaced the ignored dependency with tracked scenario-neutral structural fixtures for the r1 wrapper,
+  r2 object-constraints/full-carry-forward shape and corrected closure shape. The fixture contains no C/B/A/Dify
+  business answer/source content and the tests no longer read `workspaces/`.
+- Independent remediation round 3.1 used a fresh checkout with no `workspaces/` and passed C99-C104 6/6. Current
+  all-R2.3-005: 98 PASS plus one deliberate smoke skip; complete unittest: 314 PASS plus one skip; complete pytest:
+  363 PASS, one skip and 163 subtests. Ruff, compile, `git diff --check` and GitNexus compare PASS/LOW with zero
+  changed symbols/affected processes.
+- I22 remained PASS: start6 CLEANED, no business platform call, resource cleanup zero and ledger `7/6/0`; both live
+  ledgers and retained evidence hashes were identical before/after. D2 is fixed and no D1/D2/ordinary defect remains.
+  Verdict: deterministic final-slot repair PASS; I23 BLOCKED/NOT EXECUTED until clean commit.
