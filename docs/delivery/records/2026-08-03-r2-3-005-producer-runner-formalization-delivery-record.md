@@ -1715,3 +1715,98 @@
   endpoint checks are not required for this repair.
 - Outcome/next step: commit the reviewed implementation, tests, plan, shared test evidence and delivery record. Only
   a clean committed baseline can enter the I16 start4 ledger gate; no budget event is allowed.
+
+### 2026-08-04 — Retry3 display-binding repair committed — Main agent
+
+- Commit: `bc698a569d9bbaf9229f4b9a68e662fb9bb22ad0` (`Fix R2.3-005 foreground display binding`). It contains the
+  reviewed Runner/foreground implementation, focused regressions, repair plan, independent test-plan round and this
+  delivery history through the offline PASS.
+- Post-commit gate: checkout/status were clean; formal ledger remained cap/count/active `4/3/0`, 15 lines,
+  SHA-256 `405832f8ccb08b905cc1c9c8bb84ca34ed38b70864ff789ac13d23e0a1799d1c`; legacy remained unchanged.
+
+### 2026-08-04 — Final start4 authorization and semantic start — Delivery and Main agent
+
+- Fresh run: `r23005-real-20260804t040655z-start4`. Clean HEAD, absent run root, host auth, service/listener/process
+  binding, backend/frontend health and authenticated canonical `rdf/rdf_primary/canonical` all passed before write.
+- Ledger order: append retry3 terminal failure `collaboration/routing,false`; freeze start4 baseline
+  `22a888353cbbae973dbc8b5d45490f577168a6444dec0c780132311d80fd70b8`; append repair reference
+  `foreground-display-binding-fix-bc698a5-independent-round1-pass`; read back cap/count/active `4/3/0`; then append
+  exactly one reservation and semantic start. No budget event was added and the legacy ledger stayed byte-identical.
+- The final authorized start is consumed. No concurrent or follow-on run was created.
+
+### 2026-08-04 — Start4 owner clarification routing succeeded — Delivery and Main agent
+
+- delivery-1 asked whether B's workflow-identity reference resolves to Version 2 or remains Version 1. Approved
+  sources prove only that Version 2 is latest and B identifies C by workflow identity; they do not define resolution
+  or record a post-Version-2 B deployment. The main agent therefore preserved unknown rather than inventing B's
+  concrete version/output binding.
+- delivery-6 asked whether `quality_score` and `quality_rating` are semantically continuous. Sources state only the
+  two versioned field names, so the main agent preserved unknown and neither unified nor declared them distinct.
+- delivery-8 was the frozen missing-score clarification; exact literal `未知` was sent. All three questions were
+  foreground displayed and bound before input, each answer was sent exactly once, and owner deliveries 1/2/3 bound
+  respectively to question deliveries 1/6/8. This is direct live evidence that commit `bc698a5` fixed the retry3
+  display defect without making Coordinator prose authoritative.
+
+### 2026-08-04 — Start4 BLOCKED before platform modeling — Delivery and Main agent
+
+- Modeling delivery-10 produced a source-grounded semantic candidate with Workflow/Release/Output/ExplicitUnknown
+  concepts and the three owner-bound unknowns. Protocol delivery-11 rejected it before any platform call because it
+  was not the complete frozen `candidate-required-assertions/v2` envelope and treated run-owned fresh scope as a
+  conflict. Modeling delivery-12 requested the required fresh scope.
+- Coordinator delivery-13 misrouted the frozen objective by directing reuse of prior Project/Ontology. Modeling
+  refused to turn R2.3-005 into an existing-scope task and returned blocked; Protocol also returned blocked. The
+  deterministic candidate-envelope formatting/translation responsibility did not recover between Modeling and
+  Protocol.
+- Classification: `BLOCKED/collaboration-routing`, `complete_modeling_quality_result=false`. The requirement and task
+  objective both prohibit prior-scope reuse and no platform API/contract call occurred, so this is not
+  `platform-contract`. No dry-run, apply, readback, validation, reasoning, semantic write or Acceptance verdict was
+  produced, so it is not a complete `modeling-quality` result.
+- Acceptance received the blocked instruction but errored/completed its turn without a terminal handoff. After more
+  than 60 seconds without progress, the main agent authorized one fail-fast Ctrl-C. Runner exited 130 and the normal
+  finally cleanup path ran; no additional semantic input was sent.
+
+### 2026-08-04 — Start4 cleanup and exhausted-budget closeout — Delivery and Main agent
+
+- Run state is `CLEANED`; aborted evidence records `runner-abort-before-settlement`, `settled=false`. Project
+  `6c0eb439-192f-4f6f-9bbb-e75a86788c21` and Ontology
+  `e5205807-a02a-4e67-9975-b26f380d9d60` were deleted empty. Independent DB readback showed Project/Ontology/
+  Session/Lease/project-key residue zero, Lease released, Sessions terminal, keys revoked, runtime PIDs absent,
+  active handles zero, child residue zero and credentials destroyed. Service and canonical health remained PASS.
+- Delivery appended exactly one final start4 terminal failure. Formal ledger is 20 lines, SHA-256
+  `c44fb191e7298452dc99a6f01cc008a4a8db6eb7f0b9f3066cfd4fdc6b341cb8`, cap/count/active `4/4/0`; legacy remains
+  92 lines with SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`. No event follows the failure.
+- Retained core evidence hashes: `state.json`
+  `013c45cb967a92efe8be50e76dba9665f3775d2eafd7611dc8c67427f3a987d6`, deliveries
+  `ee7fb4fb29e3fe0a47d4fa765418b480eecd0817c2b21f32aaae893998c8544a`, outer-question
+  `a4d5ad17a1774e4593fcbdb133f824882b923663571f2d23e1054b327366d386`, outer-user
+  `60c7fc0239506bcbd56958003a5973b171b11fd1e66eab542a6f47e7b2e29a7c`, aborted
+  `142a86cf001510cf6103122a39d1d682e13c5451d9b93cf5dbe81257c93d20eb`.
+- Time accounting from ID selection to abort was about 644 seconds: semantic work about 274 seconds (42.5%),
+  preflight/routing/cleanup about 370 seconds (57.5%). Because semantic modeling was below half, current work pauses
+  rather than expanding the harness. The next minimal offline proposal is to make fresh-scope prohibition
+  unambiguous and prove Protocol-owned translation of a Modeling semantic candidate into the frozen v2 envelope in
+  one production-shaped deterministic handshake.
+- Outcome: R2.3-005 remains `BLOCKED`; the fourth and final authorized semantic start is exhausted. No fifth start,
+  budget, repair, reservation or real acceptance may occur without new explicit user authorization.
+
+### 2026-08-04 — Start4 retained failure independent audit PASS — Independent Tester and Main agent
+
+- The Tester did not create, continue or mutate the run. It appended
+  `2026-08-04 start4 retained failure audit — Independent round 1` to the existing shared plan and independently
+  checked the retained evidence, ledger, DB cleanup, process/runtime state and service health.
+- Result: audit assertions PASS; overall R2.3-005 verdict remains BLOCKED. The retained chronology supports
+  `collaboration/routing,false`: three owner questions/answers are unique and correctly bound, Modeling/Protocol
+  blocked handoffs and acks are durable, no Acceptance handoff/ticket/CQ/settlement exists, and no platform
+  call/write or complete modeling-quality/platform-contract result exists.
+- Before/after immutability: start4 tree remained 650 files/38,148,384 bytes with digest
+  `3c314f4919e392f1d66b58d6d5fbadd1660456edcbc89982efa5fdb419c51576`; formal ledger remained 20 lines/4535 bytes
+  with SHA-256 `c44fb191e7298452dc99a6f01cc008a4a8db6eb7f0b9f3066cfd4fdc6b341cb8`; legacy remained 92 lines/21723 bytes
+  with SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`.
+- Cleanup readback: state `CLEANED`, `runner-abort-before-settlement`, settled false, active handles zero, child residue
+  zero and credentials destroyed. Project/Ontology/Build Session/Session/Lease/fence/batch/artifact DB residue was
+  zero; only expected security audit rows remained, admin key was revoked and project key cascaded. Service stayed
+  active; backend/frontend returned 200. Current unauthenticated canonical-mode returned the expected 401, while the
+  retained authorized prestart evidence remains HTTP 200 `rdf_primary`.
+- Final disposition: requirement/status documentation is synchronized to BLOCKED and no further live action is
+  authorized. The deterministic next-step proposal is recorded but is not implemented in this exhausted-budget
+  closeout.

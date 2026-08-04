@@ -2,19 +2,21 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 为当前下一项
-  P0 目标、设计完成（待实现）；R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
+  但真实验收因协作路由失败而 `BLOCKED`，四次授权启动已耗尽；R2.3-003～R2.3-004 已确认路线，
+  须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：R2.3-005 Modeling Team Runner 正式化收口与可重复调用
+- 当前下一目标：修复 R2.3-005 fresh-scope/candidate-envelope 协作路由，并在获得新的明确启动授权后
+  完成一次真实 Modeling Team PASS
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
   `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-03
+- 更新日期：2026-08-04
 
 ## 背景
 
@@ -56,7 +58,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `设计完成（待实现）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `BLOCKED（四次启动已耗尽；协作路由待修复）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1368,7 +1370,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`实现与离线验收完成（待真实重试验收）`
+当前状态：`BLOCKED（实现与离线验收完成；真实启动预算已耗尽，协作路由待修复）`
 
 优先级：`P0`
 
@@ -1533,6 +1535,27 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
 - 每次 start 继续使用全新 Project/Ontology、四角色 Session、凭据和 run root。用户原文“未知”不得
   预先注入；只有新运行再次提出同一 grounded question 后，Runner 才可按已修复的 owner-answer 合同
   原样释放一次。
+
+### 2026-08-04 四次启动预算终态
+
+- 追加授权后的 retry2、retry3、start4 均按串行 gate 使用 fresh run/Project/Ontology；每次机械失败都
+  在下一次启动前完成窄修复、独立离线 PASS 和新 baseline 绑定。正式账本最终为 cap `4`、
+  `semantic_start_count=4`、active `0`，不再存在可用启动额度。
+- retry3 暴露的 foreground display-binding 缺陷已由 commit `bc698a5` 修复并通过独立 C74-C83 验收。
+  start4 中 Modeling 的三个真实澄清都成功显示、唯一绑定并原样直达 Modeling，证明该修复有效；
+  业务回答保留批准资料中的未知，没有把缺失证据变成确定事实。
+- start4 在任何平台 API 调用、dry-run 或写入前 `BLOCKED/collaboration-routing`：Protocol 把 run-owned
+  fresh scope 误判为需要复用 existing scope，Coordinator 随后把任务目标中的禁止复用误路由成复用
+  旧 Project/Ontology；同时 Modeling 的语义候选与 Protocol 负责的
+  `candidate-required-assertions/v2` 确定性 envelope 没有完成责任交接。没有形成完整
+  modeling-quality 结果，不能据此评价本体质量。
+- Modeling、Protocol 已形成 blocked terminal handoff；Acceptance 未形成 terminal，Runner 无法自然
+  settlement，故在无进展后 fail-fast 中断并由 finally cleanup 收口。fresh Project/Ontology 已删除，
+  Session/Lease/key/child/credential 零残留；该清理证据不替代缺失的语义与 Acceptance PASS。
+- R2.3-005 仍未达到最小完成门。继续工作必须先用最小离线路径修复 fresh-scope 指令和
+  Modeling-to-Protocol candidate-envelope 责任路由，并通过独立确定性验收；任何新的真实
+  `semantic_start` 都需要用户另行明确授权。不得追加 budget/repair/reservation 或启动第五次运行来
+  绕过当前 `BLOCKED`。
 
 ### 明确边界
 

@@ -625,3 +625,114 @@ acceptance.
 adjacent C74-C83 regression scope.** No developer fix is requested before commit. This PASS is not
 an I16 live authorization or real modeling-quality acceptance; proceed only through the reviewed
 post-commit retry3 terminal-failure -> fresh start4 baseline/repair gate.
+
+## 2026-08-04 start4 retained failure audit — Independent round 1
+
+### Scope, authority, and safety boundary
+
+- This round is an independent, read-only audit of the retained failed run
+  `r23005-real-20260804t040655z-start4`. It validates evidence integrity, the recorded failure
+  classification, cleanup, source/display binding, and current service health. It does not create
+  or continue a run, append a live ledger event, mutate a platform resource, use a credential, edit
+  product code, rewrite retained evidence, or edit the delivery record.
+- The reused authority is R2.3-005 in `docs/requirements/requirements-v2.3.md`, the retained run
+  root and formal start ledger, the task snapshot, and this shared test plan. At the read-only
+  baseline `HEAD` was `bc698a569d9bbaf9229f4b9a68e662fb9bb22ad0`; the worktree also contained
+  unrelated parent edits to the delivery record and requirement file, which this Tester did not
+  revert or modify.
+- The test-plan file itself was SHA-256
+  `821a1af2bd154adaf20c0c7d93e7306f7089649badbdd9b30b06d5d4734de205` and 65,655 bytes before
+  this append. No other file was edited by this round.
+
+### Retained run and ledger integrity
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Formal R2.3-005 ledger | PASS | `workspaces/modeling-runs/.r2-3-005-start-ledger.jsonl` has 20 lines, 4,535 bytes, SHA-256 `c44fb191e7298452dc99a6f01cc008a4a8db6eb7f0b9f3066cfd4fdc6b341cb8`. The last three events are start4 `reservation`, `semantic_start`, and one `terminal_failure` at `2026-08-04T04:22:17.830665+00:00`; the terminal event has `classification=collaboration/routing` and `complete_modeling_quality_result=false`. No later budget, repair, reservation, or semantic-start event is present. |
+| R2.3-002 legacy ledger isolation | PASS | `.r2-3-002-start-ledger.jsonl` remains 92 lines/21,723 bytes, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`. |
+| Retained evidence immutability | PASS | `workspaces/modeling-runs/r23005-real-20260804t040655z-start4/` remains 650 files, `du -sb=38,148,384`, and sorted filename/content digest `3c314f4919e392f1d66b58d6d5fbadd1660456edcbc89982efa5fdb419c51576` before and after the audit append. |
+| Runtime code freeze | PASS | `evidence/runtime-core-hashes.jsonl` has matching `before_start` and `after_cleanup` hashes for Runner (`2c64296e...f22382`), capability MCP (`4229850e...48cbe`), Codex adapter (`961bb7...8e12`), and transport MCP (`692ef7...a10a5`). |
+
+### Terminal failure, handoff, and classification
+
+- `state.json` is `CLEANED`. Its acceptance cleanup record is `status=aborted`,
+  `aborted_reason=runner-abort-before-settlement`, `settled=false`, `active_handles=0`,
+  `zero_child_residue=true`, and `credentials_destroyed=true`; `evidence/aborted.jsonl` contains
+  exactly one matching record. This is an authorized fail-fast terminal state, not a semantic PASS.
+- `evidence/terminal-result-handoff.jsonl` has exactly three blocked handoffs (Modeling to
+  Protocol, Modeling to Coordinator, and Protocol to Coordinator), and
+  `evidence/terminal-handoff-ack.jsonl` has exactly three corresponding acknowledgements.
+  `team-transport-events.jsonl` contains only the two accepted terminal reports from Modeling and
+  Protocol. There is no Acceptance terminal handoff, `acceptance_start`, immutable ticket, CQ
+  verdict, or settlement evidence.
+- The failure is correctly retained as `collaboration/routing`: the authoritative requirement
+  requires a fresh four-role task and fresh Project/Ontology for this slice
+  (`requirements-v2.3.md:1480-1484`, `1535-1537`), and the task objective also says not to reuse a
+  prior Project/Ontology (`modeling_team/tasks/r2-3-005-formal-acceptance.yaml:9`). However,
+  Coordinator delivery-3 instructed Protocol to “Reuse the prior Project/Ontology”, and delivery-13
+  repeated that stale direction as the governing instruction. The actual scope was
+  `modeling_team/scopes/new-scope-create.yaml` (`mode: create`), while Protocol was given no
+  authorized scope-creation operation. Modeling and Protocol therefore stopped before any
+  platform call/write. This is a role/task routing contradiction, not `modeling-quality` (no model
+  result was applied) and not `platform-contract` (no ontology-platform operation was invoked).
+- The Protocol reply (delivery-11) also correctly rejected delivery-10 before execution: the
+  candidate had only top-level keys `candidate_kind`, `candidate_revision`, `constraints`, `items`,
+  and `scope`, with an integer revision, rather than the complete frozen v2 envelope and canonical
+  asserted-data items required by the native receipt/evidence-map contract. No Batch Item was
+  authored.
+
+### Source fidelity, owner-answer display, and explicit unknowns
+
+- `evidence/role-visibility-probe.jsonl` reports `passed=true` and the frozen source hashes match
+  the current approved inputs: `workflow-landscape.md`
+  `9dde79c61d9849776c9140aa5c3be02c17aea7800efa56135fb8dfaa0be7011e`, `release-register.md`
+  `f5386a00a2a048831ce524ef605aed14c1124a6ac74fb8dc99c5b0a0f777caae`, `exception-handling.md`
+  `cc0c69ef7428bd63ed7432ee0a9cae6d9acbca8cb267528a23fbaf0602638d9f`, and `official/tools.mdx`
+  `92a97c639fb8d4782e95207cb84ede79b1739ff3abdb9bc1fe384f0741c2c96b`.
+- The first three grounded questions are preserved as `question_delivery_id` values
+  `delivery-1`, `delivery-6`, and `delivery-8`; the fourth `delivery-12` is the later scope-conflict
+  question and has no owner answer. `outer-user.jsonl` has exactly three unique owner answers
+  (`owner-answer-delivery-1`, `owner-answer-delivery-2`, `owner-answer-delivery-3`), each bound to
+  its corresponding question delivery and the same run/Project ID. The first two answers preserve
+  the grounded unknowns about current release binding and `quality_score`/`quality_rating`
+  continuity; the third is the literal `未知` for absent-score behavior.
+- The candidate in delivery-10 contains exactly three `explicit_unknown_entity` items
+  (`unknown-current-binding`, `unknown-output-continuity`, and `unknown-b-no-score-behavior`) and
+  zero `answerValue` properties, including nested objects. Its embedded owner/source artifact
+  hashes are retained and match the displayed owner answers and approved sources. This proves
+  source/display/unknown preservation only; because Protocol rejected the pre-call envelope, it is
+  not a model receipt or semantic acceptance result.
+
+### Cleanup and current runtime checks
+
+- `state.json.cleanup.scope` records `mode=create`, owned Project
+  `6c0eb439-192f-4f6f-9bbb-e75a86788c21` and Ontology
+  `e5205807-a02a-4e67-9975-b26f380d9d60`, `owned_project_deleted=true`,
+  `scope_disposition=deleted-empty`, and post-delete residual counts of zero for project, ontology,
+  lease, session, and project-scoped key; `project_absent=true`, `ontology_absent=true`, and
+  `fk_cascade=true`. A direct read-only PostgreSQL check independently returned zero for projects,
+  ontologies, build sessions, ontology leases, write fences, modeling batches, and modeling
+  workflow artifacts for those IDs. The project-scoped key is absent by cascade; the retained
+  organization admin key is revoked (`revoked_at=2026-08-04T04:17:39.156832+00:00`). The only two
+  project-linked database rows are the expected security audit create/revoke records.
+- `systemctl --user --no-pager --full status ontology-platform.service` reports active/running;
+  `curl --fail http://127.0.0.1:8001/api/health` returned `{"status":"ok"}` (HTTP 200), and
+  `curl --fail http://127.0.0.1:5173/` returned the frontend HTML (HTTP 200). An unauthenticated
+  current probe of `/api/semantic/canonical-mode` returned HTTP 401 (`invalid_authentication`),
+  so it is not claimed as an authenticated canonical-mode check. The retained prestart evidence
+  independently records HTTP 200 with `canonical_store=rdf`, `product_write_mode=rdf_primary`,
+  and `read_mode=canonical`.
+
+### Unexecuted scope and disposition
+
+- No real semantic modeling, Protocol dry-run/apply, readback, validation, reasoning, governed
+  retrieval, Acceptance Examiner rounds, CQ verdict, or settlement was executed or can be claimed
+  from start4. The R2.3-005 live attempt budget is exhausted; do not start another semantic run
+  without a new explicit authorization. This audit also did not request or perform a product fix.
+- No retained-evidence integrity defect was found. The known task/coordination contradiction is a
+  **collaboration/routing blocker** and should be corrected in the task/profile/Coordinator
+  contract before any future authorized retry; the narrow fix must preserve fresh-scope creation,
+  complete frozen-v2 candidate translation, and the existing display/unknown contracts.
+
+**Overall verdict: BLOCKED for R2.3-005 live semantic acceptance; PASS for this round's retained
+evidence integrity, cleanup, source/display binding, and failure-classification audit.**
