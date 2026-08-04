@@ -1472,6 +1472,8 @@ class TeamRunner:
         if existing is not None:
             if (
                 existing.get("text") != delivery.text
+                or existing.get("sequence") != delivery.sequence
+                or existing.get("timestamp") != delivery.timestamp
                 or existing.get("run_id") != self.run.run_id
                 or existing.get("project_id") != project_id
             ):
@@ -1482,38 +1484,116 @@ class TeamRunner:
             "project_id": project_id,
             "run_id": self.run.run_id,
             "text": delivery.text,
+            "sequence": delivery.sequence,
+            "timestamp": delivery.timestamp,
             "origin_agent_id": modeling,
             "displayed": False,
             "consumed": False,
         }
 
     def _observe_coordinator_message(self, message: Any) -> None:
-        """Mark one observed candidate displayed only when Coordinator carries its exact text."""
+        """Retain the coordinator hook without making prose a display authority.
+
+        Formal outer-question display is bound only by
+        :meth:`observe_foreground_output`, after the host successfully emits the
+        exact Runner delivery envelope.  Coordinator text can be a paraphrase,
+        can omit the question, or can contain unrelated text; none of those
+        cases may change the pending question state.
+        """
+        del message
+
+    def observe_foreground_output(self, output: list[dict[str, Any]]) -> None:
+        """Bind formal outer questions to exact, successfully emitted envelopes.
+
+        The foreground event loop calls this method only after ``emit`` returns.
+        Validation is intentionally completed for the entire batch before any
+        outer-question evidence is appended or any record is marked displayed.
+        """
         if not self._formal_coordination_enabled() or not self.run:
             return
-        text = getattr(message, "text", None)
-        if not isinstance(text, str):
-            return
-        candidates = [
-            record
-            for record in self._outer_questions.values()
-            if record.get("displayed") is False and record.get("consumed") is False
-        ]
-        matches = [record for record in candidates if record.get("text") and record["text"] in text]
-        if len(matches) > 1:
-            raise TeamConfigurationError("multiple outer questions match Coordinator prompt")
-        if not matches:
-            return
-        record = matches[0]
-        record["displayed"] = True
-        record["coordinator_prompt"] = text
-        self._append_evidence(
-            "outer-question",
-            {
-                key: record[key]
-                for key in ("question_delivery_id", "project_id", "run_id", "text")
-            },
+        if not isinstance(output, list):
+            raise TeamConfigurationError("foreground output must be a list")
+
+        modeling = next(
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "modeling"
         )
+        coordinator = next(
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "coordinator"
+        )
+        project_id = self._project_binding()
+        if not isinstance(project_id, str) or not project_id:
+            raise TeamConfigurationError("outer question project binding is missing")
+
+        expected_fields = {
+            "type",
+            "sequence",
+            "sender_id",
+            "recipient_id",
+            "text",
+            "timestamp",
+            "delivery_id",
+            "expects_reply",
+            "reply_to_delivery_id",
+        }
+        records_to_display: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for envelope in output:
+            if not isinstance(envelope, dict):
+                raise TeamConfigurationError("foreground output envelope is invalid")
+            delivery_id = envelope.get("delivery_id")
+            if not isinstance(delivery_id, str):
+                continue
+            record = self._outer_questions.get(delivery_id)
+            if record is None:
+                # Ordinary peer/owner deliveries and terminal envelopes have
+                # unrelated IDs.  They are not candidates for formal display.
+                continue
+            if set(envelope) != expected_fields:
+                raise TeamConfigurationError("outer question display envelope fields drift")
+            if (
+                envelope.get("type") != "delivery"
+                or not isinstance(envelope.get("sequence"), int)
+                or isinstance(envelope.get("sequence"), bool)
+                or not isinstance(envelope.get("timestamp"), (int, float))
+                or isinstance(envelope.get("timestamp"), bool)
+                or envelope.get("delivery_id") != record.get("question_delivery_id")
+                or envelope.get("sequence") != record.get("sequence")
+                or envelope.get("timestamp") != record.get("timestamp")
+                or envelope.get("sender_id") != modeling
+                or envelope.get("recipient_id") != coordinator
+                or envelope.get("text") != record.get("text")
+                or envelope.get("expects_reply") is not True
+                or envelope.get("reply_to_delivery_id") is not None
+            ):
+                raise TeamConfigurationError("outer question display envelope drifts")
+            if (
+                record.get("run_id") != self.run.run_id
+                or record.get("project_id") != project_id
+                or record.get("origin_agent_id") != modeling
+            ):
+                raise TeamConfigurationError("outer question display binding drifts")
+            if record.get("displayed") is True or record.get("consumed") is True:
+                continue
+            if delivery_id not in seen:
+                records_to_display.append(record)
+                seen.add(delivery_id)
+
+        # Persist each record before flipping its in-memory display bit.  If a
+        # later independent append fails, the already evidenced records remain
+        # valid while the caller aborts before it can consume another input.
+        for record in records_to_display:
+            self._append_evidence(
+                "outer-question",
+                {
+                    key: record[key]
+                    for key in ("question_delivery_id", "project_id", "run_id", "text")
+                },
+            )
+            record["displayed"] = True
 
     def _resolve_formal_owner_question(self, text: str) -> str:
         """Resolve a text-only schema-v2 answer to exactly one displayed question."""

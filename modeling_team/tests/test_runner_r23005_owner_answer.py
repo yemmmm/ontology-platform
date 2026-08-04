@@ -162,6 +162,13 @@ def _formal_runner(root: Path) -> tuple[TeamRunner, _OwnerAnswerAdapter]:
     return runner, adapter
 
 
+def _drain_and_observe(runner: TeamRunner) -> list[dict[str, object]]:
+    """Mirror the production foreground emit-success acknowledgement in tests."""
+    output = runner.drain()
+    runner.observe_foreground_output(output)
+    return output
+
+
 class RunnerR23005OwnerAnswerTests(unittest.TestCase):
     def test_foreground_decoder_rejects_nonobjects_malformed_and_duplicate_keys(self) -> None:
         self.assertEqual(_decode_foreground_message('{"action":"status"}'), {"action": "status"})
@@ -282,7 +289,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 "modeling", "coordinator", "candidate?", expects_reply=True
             )
 
-            stream = StringIO('{"action":"user","text":"release"}\n')
+            stream = StringIO('{"action":"user","text":"未知"}\n')
             polls = iter([([stream], [], []), ([stream], [], [])])
             emitted: list[list[dict[str, object]]] = []
             _foreground_event_loop(
@@ -312,7 +319,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
-                runner.receive_outer({"action": "user", "text": "release again"})
+                runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_formal_live_binding_prepare_start_drain_and_owner_release_without_model(self) -> None:
         root = repository_root()
@@ -381,7 +388,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             question = runner.transport.send(
                 "modeling", "coordinator", "candidate live binding", expects_reply=True
             )
-            first = runner.drain()
+            first = _drain_and_observe(runner)
             self.assertEqual(first[0]["delivery_id"], question.delivery_id)
             self.assertEqual(
                 runner._outer_questions[question.delivery_id]["project_id"],
@@ -414,6 +421,274 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             self.assertEqual(cleanup["scope"]["test_double_residue"], [])
             self.assertEqual(live_scope.active_resources, set())
             self.assertEqual(live_scope.cleanup_calls, 1)
+
+    def test_failed_foreground_emit_does_not_bind_or_evidence_question(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate emit failure", expects_reply=True
+            )
+
+            def fail_emit(_output: object) -> None:
+                raise OSError("foreground emit failed")
+
+            with self.assertRaisesRegex(OSError, "foreground emit failed"):
+                _foreground_event_loop(
+                    runner,
+                    StringIO(""),
+                    fail_emit,
+                    select_fn=lambda *_args: ([], [], []),
+                )
+            self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+            self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+                runner.receive_outer({"action": "user", "text": "未知"})
+
+    def test_display_envelope_integrity_rejects_unknown_and_all_binding_drift(self) -> None:
+        # An unknown delivery is ordinary foreground output and cannot create a
+        # formal question record.
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.observe_foreground_output(
+                [{"type": "delivery", "delivery_id": "unknown-delivery"}]
+            )
+            self.assertEqual(runner._outer_questions, {})
+
+        envelope_fields = {
+            "sequence": 999,
+            "timestamp": 0.0,
+            "sender_id": "spoofed-modeling",
+            "recipient_id": "spoofed-coordinator",
+            "text": "spoofed question",
+            "expects_reply": False,
+            "reply_to_delivery_id": "old-question",
+        }
+        for field, value in envelope_fields.items():
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                runner, _adapter = _formal_runner(Path(directory))
+                assert runner.transport is not None
+                question = runner.transport.send(
+                    "modeling", "coordinator", "candidate integrity", expects_reply=True
+                )
+                output = runner.drain()
+                candidate = next(item for item in output if item.get("delivery_id") == question.delivery_id)
+                candidate[field] = value
+                with self.assertRaisesRegex(TeamConfigurationError, "display envelope"):
+                    runner.observe_foreground_output(output)
+                self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+                self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+
+        for record_field, value in (("run_id", "other-run"), ("project_id", "other-project"), ("origin_agent_id", "protocol")):
+            with self.subTest(record_field=record_field), tempfile.TemporaryDirectory() as directory:
+                runner, _adapter = _formal_runner(Path(directory))
+                assert runner.transport is not None
+                question = runner.transport.send(
+                    "modeling", "coordinator", "candidate binding", expects_reply=True
+                )
+                output = runner.drain()
+                runner._outer_questions[question.delivery_id][record_field] = value
+                with self.assertRaisesRegex(TeamConfigurationError, "display binding"):
+                    runner.observe_foreground_output(output)
+                self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+                self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+
+    def test_display_replay_is_idempotent_and_multiple_questions_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate replay", expects_reply=True
+            )
+            output = runner.drain()
+            runner.observe_foreground_output(output)
+            runner.observe_foreground_output(output)
+            records = (runner.run.root / "evidence/outer-question.jsonl").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(records), 1)
+            runner._release_owner_answer("coordinator", "未知", question.delivery_id)
+            runner.observe_foreground_output(output)
+            self.assertTrue(runner._outer_questions[question.delivery_id]["consumed"])
+            self.assertEqual(
+                len((runner.run.root / "evidence/outer-question.jsonl").read_text(encoding="utf-8").splitlines()),
+                1,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            first = runner.transport.send("modeling", "coordinator", "first", expects_reply=True)
+            second = runner.transport.send("modeling", "coordinator", "second", expects_reply=True)
+            output = runner.drain()
+            runner.observe_foreground_output(output)
+            self.assertTrue(runner._outer_questions[first.delivery_id]["displayed"])
+            self.assertTrue(runner._outer_questions[second.delivery_id]["displayed"])
+            with self.assertRaisesRegex(TeamConfigurationError, "multiple unanswered"):
+                runner.receive_outer({"action": "user", "text": "未知"})
+
+    def test_mixed_valid_and_contradictory_display_batch_is_atomic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            first = runner.transport.send("modeling", "coordinator", "first atomic", expects_reply=True)
+            second = runner.transport.send("modeling", "coordinator", "second atomic", expects_reply=True)
+            output = runner.drain()
+            second_envelope = next(item for item in output if item.get("delivery_id") == second.delivery_id)
+            second_envelope["sender_id"] = "forged-modeling"
+            with self.assertRaisesRegex(TeamConfigurationError, "display envelope"):
+                runner.observe_foreground_output(output)
+            self.assertFalse(runner._outer_questions[first.delivery_id]["displayed"])
+            self.assertFalse(runner._outer_questions[second.delivery_id]["displayed"])
+            self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+
+    def test_receive_outer_emit_failure_does_not_bind_question(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate receive failure", expects_reply=True
+            )
+            original_drain = runner.drain
+            drain_calls = 0
+
+            def delayed_drain() -> list[dict[str, object]]:
+                nonlocal drain_calls
+                drain_calls += 1
+                if drain_calls == 1:
+                    return []
+                return original_drain()
+
+            runner.drain = delayed_drain  # type: ignore[method-assign]
+            receive_calls = 0
+            original_receive = runner.receive_outer
+
+            def count_receive(message: dict[str, object]) -> list[dict[str, object]]:
+                nonlocal receive_calls
+                receive_calls += 1
+                return original_receive(message)
+
+            runner.receive_outer = count_receive  # type: ignore[method-assign]
+
+            def fail_emit(_output: object) -> None:
+                raise OSError("receive-outer foreground emit failed")
+
+            stream = StringIO('{"action":"status"}\n')
+            with self.assertRaisesRegex(OSError, "receive-outer foreground emit failed"):
+                _foreground_event_loop(
+                    runner,
+                    stream,
+                    fail_emit,
+                    select_fn=lambda *_args: ([stream], [], []),
+                )
+            self.assertEqual(receive_calls, 1)
+            self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+            self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+
+    def test_foreground_evidence_failure_precedes_available_owner_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate evidence ordering", expects_reply=True
+            )
+            receive_calls = 0
+
+            def forbidden_receive(_message: dict[str, object]) -> list[dict[str, object]]:
+                nonlocal receive_calls
+                receive_calls += 1
+                raise AssertionError("owner input was read before evidence failure")
+
+            runner.receive_outer = forbidden_receive  # type: ignore[method-assign]
+            stream = StringIO('{"action":"user","text":"未知"}\n')
+            select_calls = 0
+
+            def available(_readers: object, _writers: object, _errors: object, _timeout: float):
+                nonlocal select_calls
+                select_calls += 1
+                return ([stream], [], [])
+
+            original_append = runner._append_evidence
+
+            def fail_outer_question_evidence(name: str, value: dict[str, object]) -> None:
+                if name == "outer-question":
+                    raise OSError("foreground outer-question evidence failed")
+                original_append(name, value)
+
+            with patch.object(runner, "_append_evidence", side_effect=fail_outer_question_evidence):
+                with self.assertRaisesRegex(OSError, "foreground outer-question evidence failed"):
+                    _foreground_event_loop(runner, stream, lambda _output: None, select_fn=available)
+            self.assertEqual(select_calls, 0)
+            self.assertEqual(receive_calls, 0)
+            self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+            self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
+
+    def test_receive_outer_output_uses_post_emit_display_hook(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate receive outer", expects_reply=True
+            )
+            original_drain = runner.drain
+            calls = 0
+
+            def delayed_drain() -> list[dict[str, object]]:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return []
+                return original_drain()
+
+            runner.drain = delayed_drain  # type: ignore[method-assign]
+            stream = StringIO('{"action":"status"}\n')
+            polls = iter([([stream], [], []), ([stream], [], [])])
+            emitted: list[list[dict[str, object]]] = []
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: next(polls),
+            )
+            self.assertEqual(emitted[0][0]["delivery_id"], question.delivery_id)
+            self.assertTrue(runner._outer_questions[question.delivery_id]["displayed"])
+
+    def test_display_evidence_failure_never_marks_question(self) -> None:
+        import modeling_team.runner as runner_module
+
+        for stage in ("open", "write", "fsync"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                runner, _adapter = _formal_runner(Path(directory))
+                assert runner.transport is not None
+                question = runner.transport.send(
+                    "modeling", "coordinator", f"candidate {stage}", expects_reply=True
+                )
+                output = runner.drain()
+                if stage == "open":
+                    failure = patch.object(Path, "open", side_effect=OSError("outer evidence open failed"))
+                elif stage == "write":
+                    class FailingStream:
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *_args):
+                            return False
+
+                        def write(self, _value):
+                            raise OSError("outer evidence write failed")
+
+                        def flush(self):
+                            return None
+
+                        def fileno(self):
+                            return 0
+
+                    failure = patch.object(Path, "open", return_value=FailingStream())
+                else:
+                    failure = patch.object(runner_module.os, "fsync", side_effect=OSError("outer evidence fsync failed"))
+                with failure, self.assertRaisesRegex(OSError, "outer evidence"):
+                    runner.observe_foreground_output(output)
+                self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
+                with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+                    runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_formal_missing_live_binding_fails_before_outer_question_or_owner_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -453,7 +728,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             question = runner.transport.send(
                 "modeling", "coordinator", "candidate?", expects_reply=True
             )
-            runner.drain()
+            _drain_and_observe(runner)
             runner._release_owner_answer("coordinator", "release", question.delivery_id)
             with self.assertRaisesRegex(RoutingError, "delivered reply"):
                 runner.transport.report("modeling", "completed", "too early")
@@ -470,7 +745,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 question = runner.transport.send(
                     "modeling", "coordinator", "candidate?", expects_reply=True
                 )
-                runner.drain()
+                _drain_and_observe(runner)
 
                 if stage == "open":
                     failure = patch.object(runner_module.os, "open", side_effect=OSError("open failed"))
@@ -504,7 +779,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             question = runner.transport.send(
                 "modeling", "coordinator", "candidate?", expects_reply=True
             )
-            runner.drain()
+            _drain_and_observe(runner)
             adapter.fail_owner = True
             runner._release_owner_answer("coordinator", "adapter answer", question.delivery_id)
             with self.assertRaisesRegex(RuntimeError, "adapter delivery failed"):
@@ -518,7 +793,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             question = runner.transport.send(
                 "modeling", "coordinator", "candidate?", expects_reply=True
             )
-            runner.drain()
+            _drain_and_observe(runner)
             with patch.object(
                 runner.transport,
                 "publish_owner_answer",
@@ -590,7 +865,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 runner.receive_outer({"action": "user", "text": "answer"})
             self.assertNotIn(question.delivery_id, runner._owner_answer_consumed)
 
-    def test_coordinator_prompt_mismatch_and_multiple_candidates_fail_closed(self) -> None:
+    def test_coordinator_prose_never_binds_formal_display(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner, adapter = _formal_runner(Path(directory))
             assert runner.transport is not None
@@ -608,10 +883,10 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 "modeling", "coordinator", "candidate two", expects_reply=True
             )
             runner.drain()
-            with self.assertRaisesRegex(TeamConfigurationError, "multiple outer questions"):
-                runner._observe_coordinator_message(
-                    RuntimeMessage("coordinator", "candidate one and candidate two")
-                )
+            runner._observe_coordinator_message(
+                RuntimeMessage("coordinator", "candidate one and candidate two")
+            )
+            self.assertFalse(runner._outer_questions[first.delivery_id]["displayed"])
             self.assertFalse(runner._outer_questions[second.delivery_id]["displayed"])
 
     def test_codex_owner_answer_payload_adds_only_owner_fields(self) -> None:

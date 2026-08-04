@@ -97,6 +97,16 @@ FAIL/BLOCKED run is required.
 | C71 | Interrupted authorization resume | stopping after failure or budget leaves a valid prefix that cannot reserve; the exact next event resumes once without rewrite or duplicate append |
 | C72 | Formal canonical ledger root | production formal Runner rejects a noncanonical caller `ledger_root` before file access; temporary tests use only the resolver/factory seam |
 | C73 | Presemantic rebind fail-closed cases | unused repair, active/unreleased reservation, semantic-started reservation, different failed run, blank/equal baseline, duplicate/replay and concurrent rebind reject without byte changes except one valid concurrent winner |
+| C74 | Foreground display binding | after successful foreground emit, only the exact Runner-generated formal question `delivery_id` is marked displayed and evidenced once |
+| C75 | Failed emit is not display | an emitter exception leaves the question undisplayed, writes no `outer-question` evidence, and a later owner answer fails closed |
+| C76 | Display envelope integrity | unknown ID or sender/recipient/text/reply/run/Project/origin drift cannot mark display; contradictory known-ID input fails without mutation |
+| C77 | Display replay and ambiguity | duplicate exact emit is idempotent, consumed/late emit cannot reopen, and two actually displayed pending questions make text-only input fail as ambiguous |
+| C78 | Coordinator prose is non-authoritative | verbatim, paraphrased, or absent Coordinator prose neither creates nor selects formal display binding; no fuzzy/ordered inference exists |
+| C79 | Explicit unknown owner release | after exact display binding, literal `未知` is durably recorded once and released directly to the originating Modeling question with existing IDs intact |
+| C80 | Legacy routing compatibility | schema-v1 and non-formal/schema-v2 paths preserve their historical Coordinator routing and do not require the new formal foreground-display contract |
+| C81 | Production-shaped display path | formal normalize/prepare/start/live-scope/drain/emit plus Coordinator paraphrase and `未知` release succeeds without model/network calls and cleans all test-double residue |
+| C82 | Receive-outer display path | a formal question first returned by `receive_outer()` is marked only after that output's successful emit; failure and success behavior matches top-of-loop `drain()` |
+| C83 | Display evidence failure atomicity | validate the whole emitted batch before mutation; mixed valid/contradictory input changes nothing, and open/write/fsync failure cannot leave displayed state without durable evidence or allow owner input |
 
 ## Service-level and integration cases
 
@@ -117,6 +127,7 @@ FAIL/BLOCKED run is required.
 | I13 | Real modeling-to-acceptance handoff | the same fresh four-role run records dry-run/apply/readback/validation/reasoning before ready/silence and binds those receipts into both CQ tickets and final verdicts |
 | I14 | Authenticated canonical writer gate | exact active service unit/PID/start time and authenticated `rdf_primary` response are bound before any fresh write scope; stale/legacy-only process blocks without semantic start |
 | I15 | Three-start authorization gate | before any new Producer, append-only evidence shows R2.3-005 cap 4/start count 1/active 0 plus prior retryable failure and repair authorization bound to the fresh baseline; R2.3-002 ledger hash is unchanged |
+| I16 | Retry3 display repair and final-start gate | retry3 is recorded as incomplete collaboration/routing only after offline repair PASS; a fresh start4 baseline receives the sole repair authorization with no budget event, then the exact emitted question can accept one grounded `未知` response |
 
 ## Real acceptance run
 
@@ -551,3 +562,66 @@ acceptance.
   owner-answer/legacy regression scope.** This PASS authorizes the parent Delivery flow to commit
   the two reviewed files and, only afterward, perform the exact retry2 terminal-failure -> fresh
   retry3 baseline/repair authorization sequence. It is not an I15 or real semantic acceptance PASS.
+
+## 2026-08-04 retry3 display-binding repair — Independent round 1
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. The reviewed repair is the uncommitted worktree at
+  `HEAD=15f3cd723994ea76aebf32732a4adde7ccbf3c78` (`Fix R2.3-005 live project binding`). The
+  implementation/test hashes matched the Developer handoff exactly: `modeling_team/__main__.py`
+  `c526569eca492e7f9b64d32ed03f17d784fa1d45cbe55ef86a6998b0a9d7cf69`,
+  `modeling_team/runner.py`
+  `2c64296e0f4ae438f8d3dbc6e86702e4b56d9c06f3341f50208ecf597ef22382`, and
+  `modeling_team/tests/test_runner_r23005_owner_answer.py`
+  `8fb6a23f27d5a4aaa4cd0933db2c9c3f920917875274645f3dd7376d61f3b352`.
+- Authority and reused plan: `docs/requirements/requirements-v2.3.md` R2.3-005,
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`,
+  and this shared test plan (C74-C83/I16). The approved missing-score business response remains
+  the literal `未知`; no business semantics were changed.
+- No Producer/Agent was launched. No semantic start, reservation, ledger append, platform write,
+  credential/key operation, retained-evidence rewrite, backend/frontend change, service restart,
+  or commit was performed. The only repository edit in this round is this append-only test-plan
+  section; the main agent retains ownership of the delivery record.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence and notes |
+| --- | --- | --- |
+| Review of implementation and exact display contract | PASS | `observe_foreground_output()` validates the entire emitted batch by exact Runner `delivery_id`, immutable sequence/timestamp/text/route/reply fields, and current run/Project/origin binding; the foreground loop invokes it after successful `emit()` on both `drain()` and `receive_outer()` paths. Coordinator prose is a no-op for formal display. |
+| C74-C79 focused owner-answer/display suite | PASS | `uv run --project backend python -m unittest modeling_team.tests.test_runner_r23005_owner_answer`: **23/23**, exit 0. Covers successful exact binding/evidence, failed emit, all envelope/binding drift cases, duplicate/consumed/multiple ambiguity, non-authoritative Coordinator paraphrase/absence, direct Modeling release, and the owner-answer schema/replay gates. |
+| C80 legacy routing regression | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_start_ledger_r63 modeling_team.tests.test_r23002 modeling_team.tests.test_runner_r63`: **43/43**, exit 0. Legacy schema-v1 and non-formal schema-v2 owner routing remain intact. |
+| C81 production-shaped live-scope path with literal unknown | PASS | Existing deterministic prepare/start/live-scope test passed within the focused suite. An additional no-network temporary-run probe performed formal normalize/prepare/start, sent one Modeling question, post-emit-bound it, released the literal `未知` directly to Modeling with the original `reply_to_delivery_id` and new owner/release IDs, and cleaned the test-double scope to zero residue. Model call count was zero. |
+| C82 receive-outer display path | PASS | `test_receive_outer_output_uses_post_emit_display_hook` proves success through `receive_outer()` uses the same post-success hook; `test_receive_outer_emit_failure_does_not_bind_question` proves an emitter exception leaves it undisplayed and no display evidence. |
+| C83 batch/evidence failure atomicity | PASS | Mixed valid-plus-contradictory batch is rejected before either record mutates. Open, write, and fsync injections leave `displayed=false` and fail the subsequent owner answer; foreground evidence failure is observed before `select()`/`receive_outer()`, so no owner input is consumed. Duplicate exact envelopes remain one evidence record. |
+| All R2.3-005 managed discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`: **82/82**, exit 0. |
+| Complete managed `modeling_team` discovery | PASS | `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`: **292/292**, exit 0. Existing ResourceWarning/RuntimeWarning and expected negative-path stderr were non-failing diagnostics. |
+| Ruff and whitespace | PASS | `uv run --project backend ruff check modeling_team` and `git diff --check`: exit 0; Ruff reported `All checks passed!`. |
+| GitNexus change review | PASS with limitation | `detect_changes(scope=unstaged, repo=ontology-platform)` and `detect_changes(scope=compare, base_ref=main, repo=ontology-platform)` both reported `changed_files=5`, `changed_count=3`, `affected_count=0`, risk `low`, and no affected processes. The index is stale (`.gitnexus/meta.json` lastCommit `286da60c0680cd46b49e9f69e91572ba6e9c6b51`, checkout `15f3cd7`), so this graph result is supplemental and did not independently model the new observer symbol. |
+| Live-ledger and retained retry3 immutability | PASS | Before/after R2.3-005 ledger stayed 15 lines/3355 bytes, SHA-256 `405832f8ccb08b905cc1c9c8bb84ca34ed38b70864ff789ac13d23e0a1799d1c`, mtime `2026-08-04 11:13:29.982439282 +0800`; R2.3-002 stayed 92 lines/21723 bytes, SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`, mtime `2026-08-02 18:17:55.574240726 +0800`. Retained retry3 tree `workspaces/modeling-runs/r23005-real-20260804t030823z-retry3/` stayed 645 files, 27,281,986 bytes by `du -sb`, with canonical file-content/name digest `aef3a98d236e5622e8033a640520ff2187961d12312de77fef946dea6c956421`. |
+
+### Defect disposition
+
+- No Critical, High, or ordinary product defect was found in C74-C83. The retry3 defect remains
+  correctly classified as `collaboration/routing`; the exact post-emission binding repair is
+  independently **FIXED** within the deterministic offline scope.
+- Residual limitation: GitNexus is stale by multiple commits and therefore cannot be treated as
+  complete graph evidence until re-indexed. This does not block the focused test verdict because
+  the direct suites and side-effect audit pass.
+
+### Unexecuted or not claimable
+
+- I16 live gate is not claimed: retry3 `terminal_failure`/repair ledger events, a fresh start4
+  baseline and reservation, real four-role modeling, semantic quality, Acceptance rounds, and
+  final settlement were intentionally not executed by the Tester. The Delivery Agent must perform
+  the exact append-only authorization sequence only after the committed repair and this PASS.
+- Backend pytest, service restart, and backend/frontend endpoint health were not required because
+  no backend/frontend surface changed. No new runtime residue was left; the additional temporary
+  production-shaped scope was cleaned and verified empty.
+
+### Round conclusion
+
+**Overall verdict: PASS for the R2.3-005 retry3 deterministic outer display-binding repair and
+adjacent C74-C83 regression scope.** No developer fix is requested before commit. This PASS is not
+an I16 live authorization or real modeling-quality acceptance; proceed only through the reviewed
+post-commit retry3 terminal-failure -> fresh start4 baseline/repair gate.

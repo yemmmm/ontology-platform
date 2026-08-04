@@ -1567,3 +1567,151 @@
 - Outcome/next step: commit the two-file repair and shared test record. Only then may Delivery append retry2's
   incomplete collaboration-routing terminal failure, freeze a fresh retry3 baseline, and append repair authorization;
   no new budget event is permitted.
+
+### 2026-08-04 — Live retry3 consumed and CLEANED/BLOCKED — Delivery and Main agent
+
+- Baseline: clean commit `15f3cd723994ea76aebf32732a4adde7ccbf3c78` launched fresh run
+  `r23005-real-20260804t030823z-retry3`. Reservation occurred at
+  `2026-08-04T03:13:23.369076+00:00` and semantic start at
+  `2026-08-04T03:13:29.983392+00:00`.
+- Failure sequence: Modeling sent reply-request `delivery-4`; Coordinator returned a faithful paraphrase that did
+  not contain the original question verbatim. The authorized literal `{"action":"user","text":"未知"}` was
+  sent exactly once, then Runner exited 2 with `owner answer question has not been displayed`. No `outer-question`,
+  `outer-user`, owner-answer, terminal result, settlement, or complete modeling-quality result was produced.
+- Verdict: `BLOCKED/collaboration-routing`, `complete_modeling_quality_result=false`. The business answer was not
+  the cause: `exception-handling.md` explicitly leaves B's missing-score action unstated, so `未知` is the
+  source-faithful answer. The answer never reached Modeling.
+- Cleanup: retry3 is `CLEANED`; Project/Ontology are deleted, Sessions terminal, Lease released, temporary keys
+  revoked, child handles/residue zero and credentials destroyed. The formal ledger is 15 lines with SHA-256
+  `405832f8ccb08b905cc1c9c8bb84ca34ed38b70864ff789ac13d23e0a1799d1c`, cap/count/active `4/3/0`.
+  R2.3-002 remains 92 lines with SHA-256
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`. One authorized semantic start remains.
+- Safety decision: do not append retry3 terminal/repair events and do not reserve start4 until the display-binding
+  defect has a reviewed plan, committed repair and independent PASS.
+
+### 2026-08-04 — Retry3 display-binding diagnosis and functional decision — Main agent and read-only explorer
+
+- Root cause: `_observe_coordinator_message()` uses exact substring matching between the original Modeling question
+  and Coordinator prose. A faithful paraphrase therefore left the registered question `displayed=false`, and
+  `_resolve_formal_owner_question()` correctly failed closed instead of guessing.
+- Existing deterministic boundary: `TeamRunner.drain()` already returns the acknowledged original delivery envelope
+  with exact `delivery_id`; `_foreground_event_loop()` emits that output before reading outer input, and the
+  production emitter flushes JSON. Successful foreground emit is therefore a stronger structured display receipt
+  than Coordinator prose and requires no Runtime/SSE/transport change.
+- User decision: the user explicitly authorized the main agent to adjust this slice into the business form best
+  suited to the task without asking further business questions. The main agent keeps the already approved
+  `C -> B -> A` slice and freezes the missing-score behavior as an explicit unknown; no new dataset or answer is
+  invented.
+- Reviewed-design candidate:
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`. It binds display only
+  after successful foreground emission by exact delivery identity, removes Coordinator prose as formal display
+  authority, preserves text-only owner input and ambiguity failure, and excludes fuzzy matching, Adapter/SSE/
+  transport changes and productization scope.
+- Shared acceptance plan adds C74-C81 and I16. Next step is mandatory plan review. Implementation, testing, ledger
+  mutation and the fourth semantic start remain paused.
+
+### 2026-08-04 — Retry3 display-binding repair plan review round 1 REVISE — Main agent and plan reviewer
+
+- Result: REVISE. One evidence-backed High blocker is accepted.
+- High: the first draft acknowledged only output from the top-of-loop `runner.drain()`, but
+  `_foreground_event_loop()` has a second emit for `runner.receive_outer()` output, and `receive_outer()` itself
+  returns `self.drain()`. A later Modeling question can therefore first become visible through the second path and
+  remain falsely `displayed=false`.
+- Revision: both emit sites must use one shared emit-then-observe ordering; no display mutation occurs unless the
+  corresponding emit returns successfully. C82 explicitly covers a question first returned through
+  `receive_outer()` in both success and failure paths.
+- Disposition: `accepted-high`; the credible failure reproduces retry3's blocked answer on a valid later interaction.
+  The revised plan requires re-review. Implementation, ledger mutation and start4 remain paused.
+
+### 2026-08-04 — Retry3 display-binding repair plan review round 1 additional High — Main agent and plan reviewer
+
+- High: the first revision did not freeze failure ordering between in-memory `displayed=true` and durable
+  `outer-question` evidence, nor prevent a later contradictory envelope in the same emitted batch from leaving an
+  earlier partial acknowledgement. Existing Coordinator observation mutates before `_append_evidence()`, whose
+  open/write/fsync operations can raise.
+- Disposition: `accepted-high`. The plan now requires whole-batch validation before mutation, durable evidence before
+  each displayed-state transition, immediate propagation on evidence failure, and no subsequent owner-input read.
+  A contradictory batch leaves all pending records/evidence unchanged; a persistence failure can never leave
+  displayed state without its durable record. C83 covers mixed batches and injected open/write/fsync failures.
+- Outcome/next step: re-review the combined revision. Implementation and live actions remain paused.
+
+### 2026-08-04 — Retry3 display-binding repair plan review round 2 PASS — Main agent and plan reviewer
+
+- Result: PASS. No evidence-backed Critical or High blocker remains and no core assumption is unresolved.
+- Closed findings: both foreground emit sites use the same post-success display observation (C82); whole-batch
+  prevalidation, evidence fsync before `displayed=true`, immediate abort/no owner input on persistence failure, and
+  contradictory-batch no-mutation are frozen in C83.
+- Compatibility and boundary: C74-C83/I16 preserve non-formal routing, text-only formal owner input, ambiguity
+  failure, direct Modeling release and final-start accounting. Runtime Adapter, Team Transport, SSE/model semantics,
+  backend/frontend and business-source scope remain excluded.
+- Development handoff freeze: reviewed plan
+  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`, shared test plan
+  `docs/delivery/test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md`, baseline clean product
+  commit `15f3cd723994ea76aebf32732a4adde7ccbf3c78` plus the main-agent documentation-only worktree changes. Expected
+  developer ownership is `modeling_team/runner.py`, `modeling_team/__main__.py`, and focused tests only. The developer
+  must first report GitNexus impact for every existing symbol it will edit and pause on HIGH/CRITICAL before changes.
+- Live gate: retry3 terminal/repair ledger mutation and semantic start4 remain paused through independent PASS and
+  commit. No new budget event is authorized.
+
+### 2026-08-04 — Retry3 display-binding pre-edit impact gate — Requirement Developer and Main agent
+
+- No file was edited during impact analysis. GitNexus is stale at `286da60` (18 commits behind HEAD `15f3cd7`), so
+  deep transitive results are supplemental rather than authoritative.
+- `_foreground_event_loop` is HIGH: 141 reported impacted symbols, three direct callers (CLI `main` and two focused
+  foreground-loop tests), no indexed process/module, and 137 noisy third-depth files. The main agent warned the user
+  before authorizing the narrow edit.
+- `TeamRunner.drain` is MEDIUM with 11 reported impacts/10 direct callers; `receive_outer` is LOW with two impacts and
+  is not expected to change. The current `_observe_coordinator_message` and `_observe_modeling_question` symbols are
+  absent from the stale index, so their graph risk is UNKNOWN and must be bounded by direct source/test inspection.
+- Authorized minimal edit remains `_foreground_event_loop`, the formal Runner display observer/prose-authority call
+  path, and `test_runner_r23005_owner_answer.py`. The developer may add a new narrow helper/observer but may not edit
+  transport, Runtime Adapter, SSE/model semantics, ledger, backend/frontend or live artifacts.
+
+### 2026-08-04 — Retry3 display-binding development-ready — Requirement Developer and Main agent
+
+- Implementation: `_foreground_event_loop` now applies one emit-then-observe hook to both output sites.
+  `TeamRunner.observe_foreground_output()` binds only exact registered formal delivery envelopes, prevalidates the
+  full batch, persists/fsyncs `outer-question` evidence before `displayed=true`, treats replay/consumed output
+  idempotently, and leaves Coordinator prose non-authoritative. Runtime/transport/SSE/model/ledger/backend/frontend
+  surfaces are unchanged.
+- First developer result passed focused 20/20, R2.3-005 82/82 and full 289/289. Main-agent scope review found no
+  product deviation but rejected the handoff as incompletely evidenced: C82/C83 lacked explicit mixed-batch,
+  receive-outer emit-failure, and evidence-failure-before-input tests.
+- Test-only repair added all three requested boundaries. Updated developer verification: focused owner-answer 23/23,
+  R2.3-005 82/82, complete managed `modeling_team` 292/292, Ruff and `git diff --check` PASS. GitNexus
+  `detect_changes(scope=unstaged)` reported low/zero affected processes with the previously recorded stale-index
+  limitation.
+- Stable owned file hashes: `modeling_team/__main__.py`
+  `c526569eca492e7f9b64d32ed03f17d784fa1d45cbe55ef86a6998b0a9d7cf69`, `modeling_team/runner.py`
+  `2c64296e0f4ae438f8d3dbc6e86702e4b56d9c06f3341f50208ecf597ef22382`, focused test
+  `8fb6a23f27d5a4aaa4cd0933db2c9c3f920917875274645f3dd7376d61f3b352`.
+- Side effects: no commit, Producer, platform write or live ledger mutation. Formal/legacy ledger hashes remain
+  `405832f8ccb08b905cc1c9c8bb84ca34ed38b70864ff789ac13d23e0a1799d1c` and
+  `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`.
+- Outcome/next step: development is stable and ready for a fresh independent Tester using the existing shared plan.
+  No live action is authorized by this developer result.
+
+### 2026-08-04 — Retry3 display-binding independent round 1 PASS — Independent Tester and Main agent
+
+- Stable hashes matched the developer handoff. The Tester reviewed the implementation and appended the single shared
+  test plan section `2026-08-04 retry3 display-binding repair — Independent round 1`; no competing test document was
+  created and no product code was modified.
+- Result: PASS for deterministic C74-C83 only. Exact results: owner-answer/display 23/23, R2.3-005 82/82,
+  R2.3-002/R63 compatibility 43/43, complete managed `modeling_team` 292/292, Ruff and `git diff --check` PASS.
+  An additional no-network production-shaped probe delivered literal `未知` directly to Modeling with the original
+  reply binding and new owner/release IDs, then cleaned the test-double scope to zero residue.
+- Failure/boundary evidence: both foreground output paths, emitter failure, known envelope/binding drift,
+  valid-plus-contradictory whole-batch rejection, open/write/fsync evidence failure before input, duplicate/consumed
+  replay, multiple-question ambiguity, Coordinator paraphrase non-authority and legacy paths all passed.
+- Side effects: formal ledger remained 15 lines/3355 bytes SHA-256
+  `405832f8ccb08b905cc1c9c8bb84ca34ed38b70864ff789ac13d23e0a1799d1c`; legacy remained 92 lines/21723 bytes
+  SHA-256 `4750fa251d3d2beb84b52d486864019c493f3db5c2bdd0e5e06f58ae6b171a2b`; retry3 retained tree remained
+  645 files/27,281,986 bytes with digest
+  `aef3a98d236e5622e8033a640520ff2187961d12312de77fef946dea6c956421`.
+- Pre-commit GitNexus `detect_changes(scope=unstaged)` reported low risk, three stale-index symbol attributions and
+  zero affected processes. Its 18-commit staleness remains an explicit limitation; direct tests are authoritative.
+- Boundary: retry3 terminal/repair events, fresh start4, Producer, semantic quality, real Acceptance and settlement
+  remain unexecuted and unclaimed. Because no backend/frontend surface changed, backend pytest, service restart and
+  endpoint checks are not required for this repair.
+- Outcome/next step: commit the reviewed implementation, tests, plan, shared test evidence and delivery record. Only
+  a clean committed baseline can enter the I16 start4 ledger gate; no budget event is allowed.

@@ -89,10 +89,21 @@ def _decode_foreground_message(line: str) -> dict[str, object]:
 
 def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> None:
     """Pump App Server events even when an outer user sends no further input."""
+
+    def emit_and_observe(output: list[dict[str, object]]) -> None:
+        # The successful emitter return is the deterministic foreground-display
+        # boundary.  A formal Runner binds pending Modeling questions only after
+        # this call succeeds; lightweight legacy test doubles may not expose the
+        # optional observer.
+        emit(output)
+        observer = getattr(runner, "observe_foreground_output", None)
+        if observer is not None:
+            observer(output)
+
     while True:
         output = runner.drain()
         if output:
-            emit(output)
+            emit_and_observe(output)
         if _terminal_report_complete(runner):
             return
         readable, _, _ = select_fn([stream], [], [], 0.1)
@@ -103,7 +114,7 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
             return
         output = runner.receive_outer(_decode_foreground_message(line))
         if output:
-            emit(output)
+            emit_and_observe(output)
 
 
 def _monitor_handoff_root() -> Path | None:
