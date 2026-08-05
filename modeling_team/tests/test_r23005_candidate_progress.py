@@ -15,7 +15,7 @@ from modeling_team.candidate_progress import (
 )
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
 from modeling_team.runner import TeamRunner
-from modeling_team.transport_mcp import TeamTransportBroker
+from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 from modeling_team.runtimes.base import AgentState, RuntimeDelivery, RuntimeDispatchReceipt
 
 
@@ -323,6 +323,125 @@ def test_formal_candidate_rejects_non_string_constraints() -> None:
         )
 
 
+def test_redrive_retains_exact_candidate_bytes_and_runtime_attribution() -> None:
+    original_text = (
+        '{"candidate_kind":"platform-neutral-candidate-v2",'
+        '"candidate_revision":1,"scope":"工作流-é",'
+        '"constraints":["preserve explicit unknowns"],'
+        '"items":[{"item_id":"workflow-1","item_kind":"entity",'
+        '"semantic":{"label":"工作流"},'
+        '"evidence_citations":[{"document":"tools.mdx"}]}]}\n  '
+    )
+    progress = FormalCandidateProgress(clock=lambda: 0.0)
+    delivery = _delivery("modeling", "protocol", original_text, "d1")
+    assert progress.observe_delivery(
+        delivery,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="run-1",
+        protocol_thread_id="thread-1",
+    ) == "candidate"
+    attribution = progress.original_runtime_attribution
+    assert attribution is not None
+    assert attribution.text == original_text
+    assert progress.redrive_text() == original_text
+    assert attribution.sender_id == delivery.sender_id
+    assert attribution.recipient_id == delivery.recipient_id
+    assert attribution.delivery_id == delivery.delivery_id
+    assert attribution.expects_reply == delivery.expects_reply
+    assert attribution.reply_to_delivery_id == delivery.reply_to_delivery_id
+
+
+def test_formal_broker_reopens_one_occupied_or_acknowledged_reply_slot(tmp_path: Path) -> None:
+    for acknowledged in (False, True):
+        broker = TeamTransportBroker(
+            tmp_path / ("acknowledged" if acknowledged else "occupied"),
+            {("modeling", "protocol"), ("protocol", "modeling")},
+            modeling_agent_id="modeling",
+        )
+        request = broker.send("modeling", "protocol", "candidate", expects_reply=True)
+        invalid = broker.send(
+            "protocol",
+            "modeling",
+            "not-json",
+            expects_reply=True,
+            reply_to_delivery_id=request.delivery_id,
+        )
+        if acknowledged:
+            broker.ack_delivery(invalid.delivery_id)
+        broker.reopen_formal_reply_slot(
+            original_delivery_id=request.delivery_id,
+            invalid_reply_delivery_id=invalid.delivery_id,
+            modeling_agent_id="modeling",
+            protocol_agent_id="protocol",
+            formal_candidate=True,
+        )
+        if not acknowledged:
+            broker.ack_delivery(invalid.delivery_id)
+        replacement = broker.send(
+            "protocol",
+            "modeling",
+            "valid-receipt",
+            expects_reply=True,
+            reply_to_delivery_id=request.delivery_id,
+        )
+        broker.ack_delivery(replacement.delivery_id)
+        with pytest.raises(RoutingError, match="active reversed"):
+            broker.send(
+                "protocol",
+                "modeling",
+                "duplicate",
+                reply_to_delivery_id=request.delivery_id,
+            )
+        assert len(broker._delivery_by_id) == 3
+        with pytest.raises(RoutingError, match="already consumed"):
+            broker.reopen_formal_reply_slot(
+                original_delivery_id=request.delivery_id,
+                invalid_reply_delivery_id=invalid.delivery_id,
+                modeling_agent_id="modeling",
+                protocol_agent_id="protocol",
+                formal_candidate=True,
+            )
+
+
+def test_runner_reopens_invalid_reply_then_accepts_exact_redrive_reply(tmp_path: Path) -> None:
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    candidate_text = json.dumps(_candidate(), ensure_ascii=False, separators=(",", ":"))
+    original = runner.transport.send("modeling", "protocol", candidate_text, expects_reply=True)
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        "Please resend the candidate",
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    redrives = [delivery for _, delivery in adapter.sent if delivery.kind == "candidate-redrive"]
+    assert len(redrives) == 1
+    assert redrives[0].text == candidate_text
+    assert redrives[0].delivery_id == original.delivery_id
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    receipt = {
+        "status": "accepted",
+        "candidate_revision": identity.candidate_revision,
+        "semantic_digest": identity.semantic_digest,
+        "candidate_digest": identity.candidate_digest,
+    }
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(receipt),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert runner._candidate_progress.state == "complete"
+    assert len([delivery for _, delivery in adapter.sent if delivery.kind == "candidate-redrive"]) == 1
+    assert len(runner.transport._delivery_by_id) == 3
+
+
 class _FormalProgressAdapter:
     def __init__(self, *, missing_receipt: bool = False) -> None:
         self.missing_receipt = missing_receipt
@@ -388,7 +507,14 @@ def test_runner_missing_formal_turn_id_fails_platform_contract(tmp_path: Path) -
 def test_runner_turn_barrier_sends_one_candidate_redrive(tmp_path: Path) -> None:
     adapter = _FormalProgressAdapter()
     runner = _formal_progress_runner(tmp_path, adapter)
-    runner.transport.send("modeling", "protocol", json.dumps(_candidate()), expects_reply=True)
+    candidate_text = json.dumps(_candidate())
+    original = runner.transport.send("modeling", "protocol", candidate_text, expects_reply=True)
     runner.drain()
     assert [delivery.kind for _, delivery in adapter.sent] == ["peer", "candidate-redrive"]
-    assert "build_candidate_receipt" in adapter.sent[-1][1].text
+    redrive = adapter.sent[-1][1]
+    assert redrive.text == candidate_text
+    assert redrive.sender_id == original.sender_id
+    assert redrive.recipient_id == original.recipient_id
+    assert redrive.delivery_id == original.delivery_id
+    assert redrive.expects_reply == original.expects_reply
+    assert redrive.reply_to_delivery_id == original.reply_to_delivery_id

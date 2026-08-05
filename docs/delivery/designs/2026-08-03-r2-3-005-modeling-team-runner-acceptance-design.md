@@ -689,6 +689,32 @@ silently create a budget event by omitting the amount.
 Implementation and tests use only injected temporary ledgers. Delivery may append the one formal `+1` event to the
 canonical ledger only after this narrow change has an independent PASS and a clean committed baseline.
 
+## 2026-08-05 start15 exact-candidate redrive repair
+
+Start14 proved that the bounded redrive terminates and cleans up, but its reminder-only payload did not let Protocol
+recover the immutable candidate. Protocol returned a free-text resend request, then the redrive turn made no
+mechanics or platform call. The next repair changes only the formal R2.3-005 redrive delivery:
+
+- retain the exact original candidate `text` and its original Runtime delivery metadata when the first formal
+  candidate is recognized;
+- after the bound candidate turn completes without a valid receipt or conflict, send one direct
+  `kind=candidate-redrive` Runtime delivery on the same Protocol thread whose `text`, `sender_id`, `recipient_id`,
+  `delivery_id`, `expects_reply`, and `reply_to_delivery_id` are byte/value-identical to the original candidate;
+- when Protocol has already occupied or acknowledged the original request's reply slot with a response that the
+  formal candidate validator rejects, Runner may ask the Broker for one formal-only compare-and-swap reopen. The
+  Broker must verify the original request, the exact invalid reply delivery, reversed participants, and the unused
+  replacement allowance before restoring that original reply binding; immutable delivery history is not removed;
+- treat that delivery as mechanical redelivery, not a second Team Transport record, candidate revision, semantic
+  start, or permission to merge history. Protocol must pass its `text` unchanged to `build_candidate_receipt` and
+  reply to the original `delivery_id`; a real translation problem uses the existing exact conflict builder;
+- keep the existing one-redrive limit, exact turn-start/completion barrier, deadlines, terminal latches, cleanup,
+  and formal-only gate. R2.3-002, schema-v1, ordinary schema-v2, and the Modeling candidate are unchanged.
+
+The user authorized exactly one additional semantic start and explicitly waived the normal plan-review and independent
+test gates for this exceptional retry. The canonical ledger remains `14/14/0` until luna-max delegated development,
+focused developer smoke checks, and a clean commit. Only then may Delivery append `+1`, authorize start14 repair
+against the new baseline, and launch start15 as the acceptance test.
+
 ## Implementation sequence
 
 1. Replace the three-role formal Profile/Package contract with the exact four-role contract and

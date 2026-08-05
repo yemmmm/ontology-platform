@@ -50,7 +50,7 @@ from .start_ledger import (
     StartLedgerConfig,
     resolve_ledger_config,
 )
-from .transport_mcp import TeamTransportBroker
+from .transport_mcp import RoutingError, TeamTransportBroker
 
 
 _PROOF_MATRIX_RELATIVE = "modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json"
@@ -1640,11 +1640,17 @@ class TeamRunner:
         _, protocol = roles
         if not self._candidate_progress.redrive_ready(now=self.monotonic_clock()):
             return
+        attribution = self._candidate_progress.original_runtime_attribution
+        if attribution is None:
+            raise FormalCandidateError("formal candidate redrive has no original Runtime attribution")
         delivery = RuntimeDelivery(
-            sender_id="runner/candidate-progress",
-            recipient_id=protocol,
+            sender_id=attribution.sender_id,
+            recipient_id=attribution.recipient_id,
             kind="candidate-redrive",
-            text=self._candidate_progress.redrive_text(),
+            text=attribution.text,
+            delivery_id=attribution.delivery_id,
+            expects_reply=attribution.expects_reply,
+            reply_to_delivery_id=attribution.reply_to_delivery_id,
         )
         receipt = self.adapter.send_message(protocol, delivery)
         self._candidate_progress.mark_redrive_dispatch(
@@ -1998,6 +2004,43 @@ class TeamRunner:
             except FormalCandidateError as exc:
                 self._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")
                 raise TeamConfigurationError(str(exc)) from exc
+            formal_invalid_response = False
+            formal_roles = self._formal_candidate_roles()
+            if formal_roles is not None and self._candidate_progress is not None:
+                modeling, protocol = formal_roles
+                formal_invalid_response = self._candidate_progress.is_invalid_response(
+                    delivery,
+                    modeling_agent_id=modeling,
+                    protocol_agent_id=protocol,
+                )
+                if formal_invalid_response:
+                    identity = self._candidate_progress.identity
+                    if identity is None:
+                        raise FormalCandidateError(
+                            "formal invalid response has no active candidate identity"
+                        )
+                    try:
+                        self.transport.reopen_formal_reply_slot(
+                            original_delivery_id=identity.original_delivery_id,
+                            invalid_reply_delivery_id=delivery.delivery_id,
+                            modeling_agent_id=modeling,
+                            protocol_agent_id=protocol,
+                            formal_candidate=True,
+                        )
+                    except RoutingError:
+                        self._latch_formal_candidate_failure(
+                            "collaboration/routing", "formal-reply-slot-reopen-rejected"
+                        )
+                        raise
+                    self._append_evidence(
+                        "formal-candidate-progress",
+                        {
+                            "event": "invalid-response-slot-reopened",
+                            "state": self._candidate_progress.state,
+                            "original_delivery_id": identity.original_delivery_id,
+                            "invalid_reply_delivery_id": delivery.delivery_id,
+                        },
+                    )
             owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
                 self._append_evidence(

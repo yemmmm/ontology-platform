@@ -2229,3 +2229,21 @@
 - No start15 authorization remains. The only next action is a narrow Runner redrive repair that carries the same
   complete candidate and requires Protocol to invoke the builder using the original delivery binding; the candidate
   must not be changed. This run is not Acceptance PASS and does not establish requirement PASS.
+
+### 2026-08-05 — One start15 opportunity authorized; repair planning
+
+- The user authorized exactly one additional real semantic start and required development to use the
+  `run-low-cost-subagent` protocol with a luna-max child Agent. The authorization is recorded here but is not yet a
+  canonical ledger event and must not be consumed before offline independent PASS and a clean commit.
+- The frozen repair scope is exact-candidate redelivery only: retain start14's original candidate bytes and Runtime
+  attribution, inject them once on the same Protocol thread as `kind=candidate-redrive`, preserve the original
+  delivery binding, and require the existing receipt/conflict tools. The candidate, platform semantics, Acceptance,
+  ledger state machine, and non-formal workflows are outside the implementation delta.
+- The user then explicitly waived the normal plan-review and independent-test gates and designated real start15 as
+  the test. The running reviewer was cancelled; before stopping it reported one accepted High: start14's invalid
+  delivery-11 had already occupied/closed delivery-10's Broker reply slot, so exact candidate redelivery alone would
+  still reject the later valid receipt. The narrow development scope therefore also includes one formal-only,
+  exact-binding CAS reopen for a validator-confirmed invalid response; immutable history and all non-formal behavior
+  remain unchanged.
+- Luna-max delegated development, focused developer smoke, commit, `+1` append, repair authorization, and start15
+  remain pending. Canonical state stays `cap=14`, `semantic_start_count=14`, `active_reservations=0` meanwhile.

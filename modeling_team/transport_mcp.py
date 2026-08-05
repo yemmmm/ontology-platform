@@ -103,6 +103,10 @@ class TeamTransportBroker:
         self._delivery_by_id: dict[str, Delivery] = {}
         self._pending_replies: dict[str, str | None] = {}
         self._reply_delivery_ids: dict[str, str] = {}
+        # Formal R2.3-005 may reopen one invalid response binding without deleting
+        # the immutable request/reply history.  The map records the exact invalid
+        # reply that consumed the one replacement allowance for each request.
+        self._formal_reply_reopens: dict[str, str] = {}
         self._owner_answer_by_question: dict[str, str] = {}
         self._owner_answer_by_release: dict[str, str] = {}
         self._owner_answer_ids: dict[str, str] = {}
@@ -276,6 +280,71 @@ class TeamTransportBroker:
             self._owner_answer_ids[owner_answer_id] = release_id
             return delivery
 
+    def reopen_formal_reply_slot(
+        self,
+        *,
+        original_delivery_id: str,
+        invalid_reply_delivery_id: str,
+        modeling_agent_id: str,
+        protocol_agent_id: str,
+        formal_candidate: bool = False,
+    ) -> None:
+        """Atomically restore one formal candidate reply slot after an invalid response.
+
+        This is a Runner-owned, formal-only escape hatch.  It never removes either
+        delivery from immutable history; it only restores the original request's
+        pending value to ``None`` so exactly one later reversed reply can be queued.
+        """
+
+        if (
+            formal_candidate is not True
+            or not all(
+                isinstance(value, str) and value
+                for value in (
+                    original_delivery_id,
+                    invalid_reply_delivery_id,
+                    modeling_agent_id,
+                    protocol_agent_id,
+                )
+            )
+        ):
+            raise RoutingError("formal reply slot reopen is not authorized")
+        with self._lock:
+            original = self._delivery_by_id.get(original_delivery_id)
+            invalid = self._delivery_by_id.get(invalid_reply_delivery_id)
+            if (
+                original is None
+                or invalid is None
+                or original.sender_id != modeling_agent_id
+                or original.recipient_id != protocol_agent_id
+                or not original.expects_reply
+                or original.reply_to_delivery_id is not None
+                or invalid.sender_id != protocol_agent_id
+                or invalid.recipient_id != modeling_agent_id
+                or invalid.reply_to_delivery_id != original_delivery_id
+                or invalid_reply_delivery_id not in self._reply_delivery_ids
+                or self._reply_delivery_ids[invalid_reply_delivery_id] != original_delivery_id
+            ):
+                raise RoutingError("formal reply slot reopen binding is invalid")
+            if original_delivery_id in self._formal_reply_reopens:
+                raise RoutingError("formal reply slot reopen was already consumed")
+
+            pending_marker = object()
+            current = self._pending_replies.get(original_delivery_id, pending_marker)
+            occupied = current == invalid_reply_delivery_id
+            acknowledged = (
+                current is pending_marker
+                and invalid_reply_delivery_id in self._acknowledged_deliveries
+            )
+            if not (occupied or acknowledged):
+                raise RoutingError("formal reply slot is not occupied by the exact invalid reply")
+
+            self._formal_reply_reopens[original_delivery_id] = invalid_reply_delivery_id
+            # ``None`` is the broker's active-but-unanswered marker.  A later
+            # reversed send is therefore accepted exactly once; duplicate sends
+            # remain rejected after that replacement occupies the slot.
+            self._pending_replies[original_delivery_id] = None
+
     def send_coordination(
         self,
         sender_id: str,
@@ -392,6 +461,16 @@ class TeamTransportBroker:
             self._acknowledged_deliveries.add(delivery_id)
             request_id = self._reply_delivery_ids.get(delivery_id)
             if request_id is not None:
+                reopened_reply = self._formal_reply_reopens.get(request_id)
+                if reopened_reply == delivery_id:
+                    current = self._pending_replies.get(request_id)
+                    # A formal reopen may happen while the invalid delivery is
+                    # occupied, before its normal acknowledgement.  Do not let
+                    # that acknowledgement close or invalidate the restored slot.
+                    if current != delivery_id:
+                        return
+                    del self._pending_replies[request_id]
+                    return
                 if self._pending_replies.get(request_id) != delivery_id:
                     raise RoutingError("Team Transport reply acknowledgement is invalid")
                 del self._pending_replies[request_id]

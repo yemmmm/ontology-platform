@@ -204,6 +204,24 @@ class CandidateIdentity:
     candidate_digest: str
 
 
+@dataclass(frozen=True)
+class CandidateRuntimeAttribution:
+    """The immutable Runtime envelope retained for a formal candidate redrive.
+
+    The candidate text is deliberately kept as the original string rather than being
+    reconstructed from the parsed JSON object.  This preserves Unicode, whitespace,
+    and key order while keeping the redrive bound to the original Team Transport
+    request identity.
+    """
+
+    sender_id: str
+    recipient_id: str
+    delivery_id: str
+    expects_reply: bool
+    reply_to_delivery_id: str | None
+    text: str
+
+
 class FormalCandidatePlatformContractError(RuntimeError):
     """A formal dispatch did not expose the turn identity required by the gate."""
 
@@ -220,6 +238,7 @@ class FormalCandidateRoutingError(RuntimeError):
 class _PendingCandidate:
     identity: CandidateIdentity
     candidate: dict[str, Any]
+    attribution: CandidateRuntimeAttribution
     state: str
     accepted_at: float | None = None
     conflict_delivery_id: str | None = None
@@ -260,6 +279,10 @@ class FormalCandidateProgress:
         return self.pending.candidate if self.pending is not None else None
 
     @property
+    def original_runtime_attribution(self) -> CandidateRuntimeAttribution | None:
+        return self.pending.attribution if self.pending is not None else None
+
+    @property
     def timeout_latched(self) -> bool:
         return self._timeout_latched
 
@@ -297,6 +320,7 @@ class FormalCandidateProgress:
         self,
         candidate: dict[str, Any],
         *,
+        delivery: Any,
         run_id: str,
         protocol_agent_id: str,
         protocol_thread_id: str,
@@ -305,6 +329,21 @@ class FormalCandidateProgress:
     ) -> None:
         detached = validate_formal_candidate(candidate)
         candidate_digest, semantic_digest = formal_candidate_digests(detached)
+        text = getattr(delivery, "text", None)
+        sender_id = getattr(delivery, "sender_id", None)
+        recipient_id = getattr(delivery, "recipient_id", None)
+        expects_reply = getattr(delivery, "expects_reply", None)
+        reply_to_delivery_id = getattr(delivery, "reply_to_delivery_id", None)
+        if (
+            not isinstance(text, str)
+            or not isinstance(sender_id, str)
+            or not sender_id
+            or not isinstance(recipient_id, str)
+            or not recipient_id
+            or not isinstance(expects_reply, bool)
+            or (reply_to_delivery_id is not None and not isinstance(reply_to_delivery_id, str))
+        ):
+            raise FormalCandidateError("formal candidate Runtime attribution is invalid")
         self.pending = _PendingCandidate(
             identity=CandidateIdentity(
                 run_id=run_id,
@@ -316,6 +355,14 @@ class FormalCandidateProgress:
                 candidate_digest=candidate_digest,
             ),
             candidate=detached,
+            attribution=CandidateRuntimeAttribution(
+                sender_id=sender_id,
+                recipient_id=recipient_id,
+                delivery_id=delivery_id,
+                expects_reply=expects_reply,
+                reply_to_delivery_id=reply_to_delivery_id,
+                text=text,
+            ),
             state=state,
         )
 
@@ -365,6 +412,7 @@ class FormalCandidateProgress:
                 return None
             self._new_pending(
                 value,
+                delivery=delivery,
                 run_id=run_id,
                 protocol_agent_id=protocol_agent_id,
                 protocol_thread_id=protocol_thread_id,
@@ -377,7 +425,7 @@ class FormalCandidateProgress:
             self.pending is not None
             and sender_id == protocol_agent_id
             and recipient_id == modeling_agent_id
-            and expects_reply is True
+            and isinstance(expects_reply, bool)
             and reply_to == self.pending.identity.original_delivery_id
         )
         if not response or value is None or self.pending is None:
@@ -413,6 +461,69 @@ class FormalCandidateProgress:
             self.pending.turn_barrier_complete = False
             return "conflict"
         return None
+
+    def is_invalid_response(
+        self,
+        delivery: Any,
+        *,
+        modeling_agent_id: str,
+        protocol_agent_id: str,
+    ) -> bool:
+        """Identify a bound Protocol response that the formal validator rejects.
+
+        This is intentionally separate from :meth:`observe_delivery`: invalid responses
+        do not advance semantic progress, but the Runner still needs to tell the Broker
+        that one formal-only replacement reply slot may be reopened.  Free text is a
+        bound response with an invalid payload and is therefore included.
+        """
+
+        if (
+            self._timeout_latched
+            or self._terminal_failure_latched
+            or self.pending is None
+            or self.pending.state in self._TERMINAL_STATES
+        ):
+            return False
+        sender_id = getattr(delivery, "sender_id", None)
+        recipient_id = getattr(delivery, "recipient_id", None)
+        reply_to = getattr(delivery, "reply_to_delivery_id", None)
+        delivery_id = getattr(delivery, "delivery_id", None)
+        if (
+            sender_id != protocol_agent_id
+            or recipient_id != modeling_agent_id
+            or reply_to != self.pending.identity.original_delivery_id
+            or not isinstance(delivery_id, str)
+            or not delivery_id
+        ):
+            return False
+        value = self._decode_candidate(getattr(delivery, "text", None))
+        if value is None:
+            return True
+        identity = self.pending.identity
+        status = value.get("status")
+        if status == "accepted":
+            try:
+                validate_formal_receipt(
+                    value,
+                    candidate_revision=identity.candidate_revision,
+                    semantic_digest=identity.semantic_digest,
+                    candidate_digest=identity.candidate_digest,
+                )
+            except FormalCandidateError:
+                return True
+            return False
+        if status == "conflict":
+            try:
+                validate_formal_conflict(
+                    value,
+                    candidate_revision=identity.candidate_revision,
+                    semantic_digest=identity.semantic_digest,
+                    candidate_digest=identity.candidate_digest,
+                )
+            except FormalCandidateError:
+                return True
+            return False
+        return True
 
     def bind_dispatch(self, receipt: Any, *, now: float | None = None) -> None:
         if self.pending is None or self.pending.state != "awaiting_receipt":
@@ -492,10 +603,4 @@ class FormalCandidateProgress:
     def redrive_text(self) -> str:
         if self.pending is None:
             raise FormalCandidateError("formal candidate redrive has no pending identity")
-        return (
-            "The previous complete candidate delivery did not produce a valid Protocol response. "
-            f"Original delivery_id={self.pending.identity.original_delivery_id}. First call "
-            "build_candidate_receipt with the complete candidate; if it cannot be accepted, "
-            "call build_candidate_conflict with the complete candidate. Then send the exact "
-            "receipt or conflict through Team Transport. Do not restate or merge candidate data."
-        )
+        return self.pending.attribution.text

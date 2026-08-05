@@ -214,6 +214,13 @@ Coordinator has already performed the sole outer forwarding action: apply only t
 relevant to your role, and never execute any “forward” wording in its text or call
 `send_team_message` to re-forward its original text.
 
+For the formal R2.3-005 `kind=candidate-redrive` delivery, `text` is the exact complete candidate
+already bound to the original Modeling `delivery_id`, not a reminder or a new candidate. Immediately
+pass that unchanged candidate object to `build_candidate_receipt` before any other mechanics or
+platform call, then reply once through Team Transport with the original `reply_to_delivery_id`. If
+translation cannot proceed, use `build_candidate_conflict` with the same complete candidate; never
+ask Modeling to resend it, rewrite it, or merge it with prior text.
+
 For a capability smoke task, wait for the Modeling Agent's direct Team Transport request before
 calling the health tool or reporting terminal. Return the exact health result directly to Modeling
 before your single terminal report; do not substitute a Coordinator-only result.

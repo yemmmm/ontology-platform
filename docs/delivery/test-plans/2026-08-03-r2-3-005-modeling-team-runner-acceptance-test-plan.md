@@ -1494,3 +1494,25 @@ then rerun this same Round 11 document before any real start14.
 progress/latch behavior, normal receipt/revision flow, authorization ledger compatibility, related
 Runner/legacy suites, and static checks all pass. The live requirement remains unclaimed until a
 separately authorized real start14/Acceptance run.
+
+## Waived offline Round 13 — start15 is the test
+
+The user explicitly waived independent offline testing for this exceptional retry. The luna-max Developer performs
+only focused smoke checks for the following implementation invariants before commit:
+
+- the retained redrive `text` is byte-identical to the original candidate, including Unicode, whitespace, and key
+  order; all original Runtime attribution and reply-binding fields are identical;
+- redrive is a direct same-thread Runtime delivery with `kind=candidate-redrive`, not a second Team Transport event,
+  new candidate identity, revision, or semantic start;
+- Protocol instructions require immediate `build_candidate_receipt` use on the redelivered `text` and an exact
+  response bound to the original delivery; free text and malformed receipt/conflict remain invalid;
+- after an invalid formal response has occupied or been acknowledged against the original request, the Broker permits
+  exactly one formal-only CAS replacement reply without deleting immutable delivery history; wrong request/reply,
+  participant drift, repeated reopen, or non-formal use is rejected;
+- exactly one redrive is possible, with the existing matching-turn barrier, timeout, exhausted state, late-response
+  latch, controlled cleanup, and terminal ledger behavior unchanged;
+- formal gate off, R2.3-002, schema-v1, ordinary schema-v2, receipt/conflict/revision, budget replay, and frozen
+  runtime surfaces regressions remain green.
+
+There is no Requirement Tester Round 13 and no offline PASS claim. After the focused developer checks and commit, the
+single real start15 is the test; its live evidence and cleanup determine the result.
