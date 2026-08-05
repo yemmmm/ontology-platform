@@ -183,23 +183,126 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             with self.assertRaises(TeamConfigurationError):
                 _decode_foreground_message(line)
 
-    def test_foreground_loop_surfaces_fixed_decoder_error(self) -> None:
+    def test_foreground_loop_rejects_decoder_error_and_continues(self) -> None:
+        class Runner:
+            def __init__(self) -> None:
+                self.received: list[dict[str, object]] = []
+                self.observed: list[list[dict[str, object]]] = []
+
+            def drain(self):
+                return []
+
+            def receive_outer(self, message):
+                self.received.append(message)
+                return [{"type": "accepted"}]
+
+            def observe_foreground_output(self, output):
+                self.observed.append(output)
+
+        runner = Runner()
+        emitted: list[list[dict[str, object]]] = []
+        stream = StringIO('{"action":"status","action":"pause"}\n{"action":"status"}\n')
+        _foreground_event_loop(
+            runner,
+            stream,
+            emitted.append,
+            select_fn=lambda *_args: ([stream], [], []),
+        )
+        self.assertEqual(
+            emitted,
+            [
+                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
+                [{"type": "accepted"}],
+            ],
+        )
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(runner.observed, [[{"type": "accepted"}]])
+
+    def test_foreground_loop_rejects_early_issue_resolution_then_retries_after_pause(self) -> None:
+        class Ledger:
+            state = "reported"
+
+        class Runner:
+            def __init__(self) -> None:
+                self.transport = SimpleNamespace(issue_ledger=Ledger())
+                self.drains = 0
+                self.received: list[dict[str, object]] = []
+
+            def drain(self):
+                self.drains += 1
+                if self.drains == 2:
+                    self.transport.issue_ledger.state = "waiting_owner"
+                return []
+
+            def receive_outer(self, message):
+                self.assert_resolution_gate()
+                self.received.append(message)
+                return [{"type": "resolution-accepted"}]
+
+            def assert_resolution_gate(self) -> None:
+                assert self.transport.issue_ledger.state == "waiting_owner"
+
+        resolution = {
+            "action": "issue_resolution",
+            "issue_id": "issue-1",
+            "reporter_id": "modeling",
+            "control_epoch": 1,
+            "resolution_type": "guidance",
+            "resolution_text": "Use the already retained protocol receipt.",
+        }
+        runner = Runner()
+        emitted: list[list[dict[str, object]]] = []
+        stream = StringIO(
+            json.dumps(resolution, ensure_ascii=False)
+            + "\n"
+            + json.dumps(resolution, ensure_ascii=False)
+            + "\n"
+        )
+        _foreground_event_loop(
+            runner,
+            stream,
+            emitted.append,
+            select_fn=lambda *_args: ([stream], [], []),
+        )
+        self.assertEqual(
+            emitted,
+            [
+                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
+                [{"type": "resolution-accepted"}],
+            ],
+        )
+        self.assertEqual(runner.received, [resolution])
+
+    def test_foreground_loop_keeps_internal_drain_configuration_errors_fatal(self) -> None:
+        class Runner:
+            def drain(self):
+                raise TeamConfigurationError("internal drain secret")
+
+        with self.assertRaisesRegex(TeamConfigurationError, "internal drain secret"):
+            _foreground_event_loop(
+                Runner(),
+                StringIO('{"action":"status"}\n'),
+                lambda _output: None,
+                select_fn=lambda *_args: (["readable"], [], []),
+            )
+
+    def test_foreground_loop_keeps_admitted_receive_outer_errors_fatal(self) -> None:
         class Runner:
             def drain(self):
                 return []
 
             def receive_outer(self, _message):
-                raise AssertionError("decoder must reject before Runner")
+                raise TeamConfigurationError("receive validation failed")
 
-        with self.assertRaisesRegex(TeamConfigurationError, "outer JSON input is invalid"):
+        with self.assertRaisesRegex(TeamConfigurationError, "receive validation failed"):
             _foreground_event_loop(
                 Runner(),
-                StringIO('{"action":"status","action":"pause"}\n'),
+                StringIO('{"action":"status"}\n'),
                 lambda _output: None,
                 select_fn=lambda *_args: (["readable"], [], []),
             )
 
-    def test_main_catches_every_invalid_foreground_shape_and_cleans_once(self) -> None:
+    def test_main_rejects_invalid_foreground_shape_without_killing_run(self) -> None:
         invalid_lines = (
             "[]\n",
             "1\n",
@@ -260,6 +363,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                     task=SimpleNamespace(schema_version=1),
                     profile=SimpleNamespace(profile_id="legacy"),
                 )
+                stdout = StringIO()
                 with (
                     patch.object(team_main, "repository_root", return_value=root),
                     patch.object(team_main, "load_formal_team_configuration", return_value=configuration),
@@ -272,14 +376,19 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                     patch.object(team_main, "TeamRunner", FakeRunner),
                     patch.object(team_main.sys, "argv", argv),
                     patch.object(team_main.sys, "stdin", stream),
+                    patch.object(team_main.sys, "stdout", stdout),
                 ):
-                    self.assertEqual(team_main.main(), 2)
+                    self.assertEqual(team_main.main(), 0)
                 stream.close()
                 self.assertEqual(len(created), 1)
                 self.assertEqual(created[0].prepared, 1)
                 self.assertEqual(created[0].started, 1)
                 self.assertEqual(created[0].received, 0)
                 self.assertEqual(created[0].cleaned, 1)
+                self.assertEqual(
+                    json.loads(stdout.getvalue()),
+                    [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
+                )
 
     def test_formal_question_display_and_owner_answer_go_directly_to_modeling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

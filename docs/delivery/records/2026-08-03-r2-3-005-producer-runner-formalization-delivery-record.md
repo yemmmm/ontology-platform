@@ -2467,3 +2467,31 @@ the formal builder, or starting another real run before authorization.
   and processes are absent; backend/frontend are healthy. One graph-set metadata row
   `b7d48da5-...` still points to the deleted Ontology because no generic delete route/service exists. It is retained as
   an explicit non-blocking cleanup residual rather than removed by one-off SQL. Two authorized starts remain.
+
+### 2026-08-05T21:34:28+08:00 — Start18 outer-resolution ordering failure and foreground repair
+
+- Clean repair baseline `d710841` produced start18 baseline
+  `f779966044368989e7904a935149c8d19ee8847de31044e7e8a5eb6fefead3c`. Delivery appended only the start17 repair
+  authorization and launched `r23005-real-20260805t131728z-start18`; semantic start moved the ledger to `19/18/0`.
+- Modeling preserved two release/version gaps as explicit unknowns and delivered full candidate
+  `dify-c-b-a-r1`. Protocol then used the new recovery path before any platform call because the exact delivery text
+  needed deterministic JSON decoding into `build_candidate_receipt`; the intended guidance was to parse without any
+  semantic reconstruction, omission, merge, or normalization.
+- The outer resolution arrived while the issue ledger was still `reported`, before Coordinator's pause established
+  `waiting_owner`. The state machine correctly rejected it, but the foreground CLI propagated that retryable input
+  error through `main`, terminating Runner and all four role processes with cleanup deferred. This is a
+  `platform-contract` failure and an orchestration timing error, not a candidate/modeling result.
+- The narrow repair keeps Runner's issue ordering unchanged. Foreground now decodes malformed/duplicate-key input to
+  fixed safe `{type: outer-input-rejected, code: invalid_outer_input, retryable: true}` output and continues. An issue
+  resolution is admitted only when the live ledger is `waiting_owner|waiting_repair`; earlier states return the same
+  envelope without invoking Runner. These control-plane errors bypass the formal delivery observer. Once admitted,
+  persistence, Runtime delivery and drain exceptions remain fatal and are not swallowed.
+- Developer verification passed focused owner/Runner **44 tests**, issue escalation **11 tests**, and complete
+  `modeling_team/tests` unittest discovery **338 tests, 1 skipped** under the backend uv environment; Ruff,
+  `py_compile`, and `git diff --check` passed. GitNexus direct impact for `_foreground_event_loop` and
+  `receive_outer` was LOW.
+- Delivery classified and cleaned start18. Canonical ledger is **89 lines**, SHA-256
+  `d750ab4bc5b46db558dba4a7094d2a63221ebd4bc376d24799308fef31be2814`, strict replay `19/18/0`.
+  Project/Ontology/Session are absent; Lease, Batch and active run-key residuals are zero; processes, secrets and
+  transport sockets are absent; backend/frontend are healthy. Fresh graph-set `e2094823-...` is a second explicit
+  dangling metadata residual with no generic delete path. One authorized start remains.

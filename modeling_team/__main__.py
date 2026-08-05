@@ -88,6 +88,29 @@ def _decode_foreground_message(line: str) -> dict[str, object]:
     return value
 
 
+_OUTER_INPUT_REJECTION = {
+    "type": "outer-input-rejected",
+    "code": "invalid_outer_input",
+    "retryable": True,
+}
+
+
+def _foreground_issue_resolution_is_ready(runner: object) -> bool:
+    """Check the cooperative issue gate without mutating Runner state.
+
+    An outer resolution can arrive while the Runner has only recorded the
+    Broker's ``reported`` callback.  Calling ``receive_outer`` in that window
+    would reject the resolution and, in the foreground CLI, tear down the
+    whole run.  The Coordinator pause is the boundary that makes the same
+    resolution actionable; all other receive paths remain unchanged and
+    retain their fatal-error behavior.
+    """
+
+    transport = getattr(runner, "transport", None)
+    issue_ledger = getattr(transport, "issue_ledger", None)
+    return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
+
+
 def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> None:
     """Pump App Server events even when an outer user sends no further input."""
 
@@ -101,6 +124,12 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         if observer is not None:
             observer(output)
 
+    def emit_outer_input_rejection() -> None:
+        # This is a control-plane error, not a Runner delivery.  Do not route
+        # it through ``observe_foreground_output``: formal display binding
+        # must only inspect Runner-generated delivery envelopes.
+        emit([dict(_OUTER_INPUT_REJECTION)])
+
     while True:
         output = runner.drain()
         if output:
@@ -113,7 +142,22 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         line = stream.readline()
         if not line:
             return
-        output = runner.receive_outer(_decode_foreground_message(line))
+        try:
+            message = _decode_foreground_message(line)
+        except TeamConfigurationError:
+            emit_outer_input_rejection()
+            continue
+        if (
+            message.get("action") == "issue_resolution"
+            and not _foreground_issue_resolution_is_ready(runner)
+        ):
+            emit_outer_input_rejection()
+            continue
+        # Once the input is admitted by the narrow cooperative issue gate,
+        # preserve the existing fatal boundary.  In particular, do not catch
+        # TeamConfigurationError raised by receive_outer's internal drain or
+        # by persistence/Runtime delivery failures.
+        output = runner.receive_outer(message)
         if output:
             emit_and_observe(output)
 
