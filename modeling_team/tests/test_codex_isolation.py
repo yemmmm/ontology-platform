@@ -2315,13 +2315,13 @@ class CodexIsolationTests(unittest.TestCase):
                 error={"code": -1},
             )
             self.assertEqual((agent.retrieval_episode, agent.retrieval_state), (1, "fallback_required"))
-            blocked = adapter._dynamic_tool_result(
+            completed_incomplete = adapter._dynamic_tool_result(
                 agent,
                 "mcp__team_transport__report_task_result",
                 {"status": "completed", "summary": "do not disclose retrieval-secret"},
             )
             self.assertEqual(
-                blocked["contentItems"][0]["text"],
+                completed_incomplete["contentItems"][0]["text"],
                 f"Team Transport rejected the request: {TERMINAL_REPORT_GUARD_ERROR}",
             )
             self.assertEqual(broker.results, {})
@@ -2503,13 +2503,13 @@ class CodexIsolationTests(unittest.TestCase):
             success = {"structuredContent": {"ok": True, "data": {}}}
             completed("submit_modeling_batch", arguments={"mode": "apply_atomic"}, result=success)
             self.assertEqual((agent.retrieval_episode, agent.retrieval_state), (0, "query_required"))
-            blocked_query_required = adapter._dynamic_tool_result(
+            completed_query_required = adapter._dynamic_tool_result(
                 agent,
                 "mcp__team_transport__report_task_result",
                 {"status": "completed", "summary": "semantic state changed"},
             )
             self.assertEqual(
-                blocked_query_required["contentItems"][0]["text"],
+                completed_query_required["contentItems"][0]["text"],
                 f"Team Transport rejected the request: {TERMINAL_REPORT_GUARD_ERROR}",
             )
             self.assertEqual(broker.results, {})
