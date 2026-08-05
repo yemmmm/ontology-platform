@@ -2536,7 +2536,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     def terminal_report_blocked(
-        self, agent_id: str, already_synchronized: bool = False
+        self,
+        agent_id: str,
+        already_synchronized: bool = False,
+        status: str = "completed",
     ) -> bool:
         """Synchronize pending Agent output before the Broker decides a terminal report."""
         agent = self.agents.get(agent_id)
@@ -2552,10 +2555,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             finally:
                 agent.io_lock.release()
         with agent.state_lock:
-            blocked = agent.fallback_eligible and agent.retrieval_state in {
-                "fallback_required",
-                "query_required",
-            }
+            blocked = (
+                status == "completed"
+                and agent.fallback_eligible
+                and agent.retrieval_state in {
+                    "fallback_required",
+                    "query_required",
+                }
+            )
             if blocked:
                 self._record_retrieval_transition(
                     agent,

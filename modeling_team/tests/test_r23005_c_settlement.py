@@ -643,6 +643,60 @@ class R23005CSettlementTests(unittest.TestCase):
                 broker.report("acceptance", "completed", "acceptance-again")
             broker.stop()
 
+    def test_terminal_guard_status_only_bypasses_protocol_retrieval_gate(self) -> None:
+        class RetrievalGuard:
+            def terminal_report_blocked(
+                self,
+                agent_id: str,
+                _already_synchronized: bool = False,
+                status: str = "completed",
+            ) -> bool:
+                return agent_id == "protocol" and status == "completed"
+
+        class AcceptanceState:
+            is_settled = False
+
+        roles = [
+            SimpleNamespace(agent_id=name, package=SimpleNamespace(role=name))
+            for name in ("coordinator", "modeling", "protocol", "acceptance")
+        ]
+        runner = TeamRunner(repository_root=Path.cwd(), adapter=RetrievalGuard())
+        runner.run = SimpleNamespace(
+            configuration=SimpleNamespace(
+                task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+                profile=SimpleNamespace(profile_id="r2-3-005-modeling-team", agents=roles),
+            )
+        )
+        runner.acceptance = AcceptanceState()
+        self.assertFalse(runner._terminal_report_guard("protocol", True, "blocked"))
+        self.assertTrue(runner._terminal_report_guard("acceptance", True, "blocked"))
+        self.assertTrue(runner._terminal_report_guard("coordinator", True, "blocked"))
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "transport",
+                set(),
+                terminal_dependencies={
+                    "protocol": {"modeling"},
+                    "coordinator": {"modeling", "protocol", "acceptance"},
+                },
+                modeling_agent_id="modeling",
+                terminal_report_guard=runner._terminal_report_guard,
+            )
+            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
+                broker.report("protocol", "completed", "retrieval incomplete")
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
+                broker.report("protocol", "blocked", "bounded recovery")
+
+            broker.report("modeling", "blocked", "modeling terminal handoff")
+            broker.ack_terminal_handoff("protocol", "modeling")
+            broker.report("protocol", "blocked", "bounded recovery")
+            self.assertEqual(broker.results["protocol"].status, "blocked")
+
+            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
+                broker.report("acceptance", "blocked", "acceptance is not settled")
+            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
+                broker.report("coordinator", "blocked", "coordinator is not settled")
+
     def test_c31_c47_infrastructure_abort_keeps_acceptance_live_until_explicit_abort_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             carrier = RunnerAcceptanceCarrier(Path(directory) / "carrier", task_id="task-r23005", acceptance_id="acceptance")

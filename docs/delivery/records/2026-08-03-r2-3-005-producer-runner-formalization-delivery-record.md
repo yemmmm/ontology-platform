@@ -2429,3 +2429,41 @@ the formal builder, or starting another real run before authorization.
   fresh run-id. The existing waiver remains: no plan-review or independent-test round; live Modeling/Protocol/
   Acceptance/settlement is the test. Any recoverable live issue must remain within the same run and use the new
   Coordinator escalation path. No fourth additional start is authorized.
+
+### 2026-08-05T21:14:25+08:00 — Start17 live result and status-aware terminal repair
+
+- Authorization baseline commit `07668f2` produced start17 baseline
+  `3278a28884ed7faf1b90d4f2c363a978404764285438e953f7c1af7043fc67f5`. Delivery appended exactly one `+3`
+  budget authorization and one start16 repair binding, then launched
+  `r23005-real-20260805t123211z-start17`; `semantic_start` raised strict replay to `cap=19/count=17`.
+- Modeling resolved two source gaps through exact owner-answer bindings and preserved both as explicit unknowns.
+  Candidate `dify-cba-r1` was accepted by Protocol. The run applied class/property/entity/relation/shape stages,
+  rejected the negative probe, and produced current conforming validation and consistent reasoning evidence.
+- The new cooperative recovery path succeeded twice without another semantic start. Issue 1 identified the public
+  entity-kind literal as `instance`, retained the same Protocol thread and resumed a new turn. Issue 2 reconciled an
+  uncertain write state through two identical authenticated API snapshots, immutable evidence
+  `evidence/issue-2-reconciliation.json`, and verified revocation of temporary Delivery credentials before resuming
+  the same run.
+- Governed retrieval still failed closed: both lexical competency-query chains were truncated with missing Evidence,
+  and required continuation returned `invalid_context_cursor`. Protocol correctly returned
+  `retrieval_completeness_conflict`; Modeling reported `blocked` because no source-grounded semantic revision could
+  repair the retrieval mechanics. Protocol then acknowledged Modeling's terminal handoff but its own `blocked`
+  `report_task_result` was rejected with retrieval-gate reason `terminal_blocked`.
+- Root cause was a platform-contract deadlock: `Broker.report` knew the requested status, but the composed Runtime
+  terminal guard received only agent identity/synchronization state and therefore blocked both false `completed` and
+  truthful `blocked` reports whenever retrieval was incomplete. The narrow repair propagates optional `status`
+  through Broker, Runner, RuntimeAdapter, Codex, P2 and P2a guards. Retrieval-incomplete `completed` remains rejected;
+  `blocked` proceeds only to the existing terminal dependency/handoff checks; Acceptance and Coordinator remain
+  settlement-gated. Legacy two-argument callbacks remain supported without retrying a callback after internal error.
+- Developer verification passed **117 tests plus 60 subtests** across transport, Runner, Codex isolation, C settlement,
+  P2, P2a and frozen hashes; the complete `modeling_team/tests` suite passed **399 tests, 1 skipped, plus 168
+  subtests**. Ruff, `py_compile`, and `git diff --check` passed. GitNexus aggregate change detection
+  reported HIGH because shared P2/P2a `run_driver` and Broker entrypoints are included, while direct per-symbol impact
+  analysis reported LOW; the diff remains restricted to terminal-status propagation and regressions.
+- Delivery classified start17 `platform-contract/false`, stopped the live Runner and completed deterministic cleanup.
+  Canonical ledger is **85 lines**, SHA-256
+  `66cff65cae64140a6c9650b31312a77e1e3a5708099a032f6f4fb40745c0e6dc`, strict replay `19/17/0`.
+  Project/Ontology/Session are 404; Lease, Batch and active Project-key residuals are zero; secrets, transport sockets
+  and processes are absent; backend/frontend are healthy. One graph-set metadata row
+  `b7d48da5-...` still points to the deleted Ontology because no generic delete route/service exists. It is retained as
+  an explicit non-blocking cleanup residual rather than removed by one-off SQL. Two authorized starts remain.

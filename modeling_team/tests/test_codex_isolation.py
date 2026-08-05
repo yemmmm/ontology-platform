@@ -2054,7 +2054,7 @@ class CodexIsolationTests(unittest.TestCase):
             )
             agent.retrieval_state = "complete"
             with self.assertRaisesRegex(RoutingError, f"^{TERMINAL_REPORT_GUARD_ERROR}$"):
-                broker.report("protocol", "blocked", "must observe pending invalidation")
+                broker.report("protocol", "completed", "must observe pending invalidation")
             self.assertEqual(agent.retrieval_state, "query_required")
             self.assertEqual(broker.results, {})
 
@@ -2109,7 +2109,7 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertTrue(locked.wait(timeout=1))
             try:
                 with self.assertRaisesRegex(RoutingError, f"^{TERMINAL_REPORT_GUARD_ERROR}$"):
-                    busy.report("protocol", "blocked", "retry after foreground reader")
+                    busy.report("protocol", "completed", "retry after foreground reader")
             finally:
                 release.set()
                 holder.join(timeout=1)
@@ -2145,13 +2145,13 @@ class CodexIsolationTests(unittest.TestCase):
                 (base / "transport-root").write_text(str(broker.root), encoding="utf-8")
                 return adapter, agent, broker, stream, write_fd
 
-            def dynamic_line(call_id: str) -> dict[str, object]:
+            def dynamic_line(call_id: str, status: str = "completed") -> dict[str, object]:
                 return {
                     "id": call_id,
                     "method": "item/tool/call",
                     "params": {
                         "tool": "mcp__team_transport__report_task_result",
-                        "arguments": {"status": "blocked", "summary": "legacy callback"},
+                        "arguments": {"status": status, "summary": "legacy callback"},
                     },
                 }
 
@@ -2318,7 +2318,7 @@ class CodexIsolationTests(unittest.TestCase):
             blocked = adapter._dynamic_tool_result(
                 agent,
                 "mcp__team_transport__report_task_result",
-                {"status": "blocked", "summary": "do not disclose retrieval-secret"},
+                {"status": "completed", "summary": "do not disclose retrieval-secret"},
             )
             self.assertEqual(
                 blocked["contentItems"][0]["text"],
@@ -2506,7 +2506,7 @@ class CodexIsolationTests(unittest.TestCase):
             blocked_query_required = adapter._dynamic_tool_result(
                 agent,
                 "mcp__team_transport__report_task_result",
-                {"status": "blocked", "summary": "semantic state changed"},
+                {"status": "completed", "summary": "semantic state changed"},
             )
             self.assertEqual(
                 blocked_query_required["contentItems"][0]["text"],
@@ -2585,3 +2585,38 @@ class CodexIsolationTests(unittest.TestCase):
                 },
             )
             self.assertEqual((noneligible.retrieval_episode, noneligible.retrieval_state), (0, "idle"))
+
+    def test_blocked_protocol_report_waits_for_handoff_not_retrieval_gate(self) -> None:
+        """Blocked recovery may settle only after the ordinary terminal handoff gate."""
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            agent = _Agent(
+                "protocol",
+                _load_package(root, "protocol"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                schema_version=2,
+                fallback_eligible=True,
+            )
+            agent.retrieval_state = "fallback_required"
+            adapter.agents[agent.agent_id] = agent
+            broker = TeamTransportBroker(
+                base / "broker",
+                set(),
+                terminal_dependencies={"protocol": {"modeling"}},
+                terminal_report_guard=adapter.terminal_report_blocked,
+            )
+
+            with self.assertRaisesRegex(RoutingError, f"^{TERMINAL_REPORT_GUARD_ERROR}$"):
+                broker.report("protocol", "completed", "retrieval is incomplete")
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
+                broker.report("protocol", "blocked", "recovery is bounded")
+            self.assertEqual(broker.results, {})
+
+            broker.report("modeling", "completed", "modeling terminal handoff")
+            broker.ack_terminal_handoff("protocol", "modeling")
+            broker.report("protocol", "blocked", "recovery is bounded")
+            self.assertEqual(broker.results["protocol"].status, "blocked")

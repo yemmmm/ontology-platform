@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`start16 的 platform-contract 失败已窄修复并清理，正式账本起点为 16/16/0；用户已新授权 3 次真实语义建模，待干净授权基线提交后向 canonical ledger 追加 +3，绑定 start16 的 Acceptance-start/thread-context 平台修复，并立即以 fresh run-id 恢复原业务切片。不重做方案审查或独立测试，真实建模为本轮验证。`
+当前状态：`用户授权的 +3 已入账；start17 已完成真实候选建模、分阶段应用、负例拒绝、校验和推理，两次同 run issue 暂停/恢复成功；但受治理检索分页/Evidence 不完整，Protocol 如实报 blocked 时又被只允许检索完成的 terminal guard 拒绝，形成 platform-contract 死锁。start17 已分类清理，账本 19/17/0；status-aware terminal guard 窄修复完成待提交，仍剩 start18/start19 两次授权。不重做方案审查或独立测试。`
 
 优先级：`P0`
 

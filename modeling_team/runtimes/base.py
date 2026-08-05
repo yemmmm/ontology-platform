@@ -64,10 +64,13 @@ class AgentState:
 
 class RuntimeAdapter(ABC):
     def terminal_report_blocked(
-        self, agent_id: str, already_synchronized: bool = False
+        self,
+        agent_id: str,
+        already_synchronized: bool = False,
+        status: str = "completed",
     ) -> bool:
         """Return whether a terminal report must be rejected before broker mutation."""
-        del agent_id, already_synchronized
+        del agent_id, already_synchronized, status
         return False
 
     @abstractmethod

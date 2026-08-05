@@ -55,7 +55,7 @@ from .start_ledger import (
     StartLedgerConfig,
     resolve_ledger_config,
 )
-from .transport_mcp import RoutingError, TeamTransportBroker
+from .transport_mcp import RoutingError, TeamTransportBroker, _call_terminal_report_guard
 
 
 _PROOF_MATRIX_RELATIVE = "modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json"
@@ -838,7 +838,10 @@ class TeamRunner:
         raise TeamConfigurationError("coordination kind is not fixed by the formal Profile")
 
     def _terminal_report_guard(
-        self, agent_id: str, already_synchronized: bool = False
+        self,
+        agent_id: str,
+        already_synchronized: bool = False,
+        status: str = "completed",
     ) -> bool:
         """Compose the existing Runtime guard with the formal Coordinator terminal gate.
 
@@ -854,7 +857,12 @@ class TeamRunner:
         adapter_guard = getattr(self.adapter, "terminal_report_blocked", None)
         if callable(adapter_guard):
             try:
-                if adapter_guard(agent_id, already_synchronized):
+                if _call_terminal_report_guard(
+                    adapter_guard,
+                    agent_id,
+                    already_synchronized,
+                    status,
+                ):
                     return True
             except Exception:
                 return True

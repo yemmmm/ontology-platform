@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import socket
@@ -40,6 +41,37 @@ TERMINAL_REPORT_GUARD_ERROR = (
     "Protocol retrieval evidence is incomplete; retry the required query or verifier before terminal report"
 )
 COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
+
+
+def _call_terminal_report_guard(
+    guard: Callable[..., object],
+    agent_id: str,
+    already_synchronized: bool,
+    status: str,
+) -> object:
+    """Invoke a status-aware guard while preserving the legacy two-argument contract.
+
+    A guard is a host callback, so an internal ``TypeError`` must remain a real
+    guard failure rather than triggering a second invocation with a different
+    argument shape.  Inspect the callable once to choose the compatible arity.
+    """
+
+    try:
+        signature = inspect.signature(guard)
+    except (TypeError, ValueError):
+        # Some extension/builtin callables do not expose a signature.  Keep
+        # their legacy two-argument contract rather than invoking an opaque
+        # callback twice and risking duplicate side effects.
+        return guard(agent_id, already_synchronized)
+    try:
+        signature.bind(agent_id, already_synchronized, status)
+    except TypeError:
+        try:
+            signature.bind(agent_id, already_synchronized)
+        except TypeError:
+            raise
+        return guard(agent_id, already_synchronized)
+    return guard(agent_id, already_synchronized, status)
 
 
 class RoutingError(ValueError):
@@ -96,7 +128,7 @@ class TeamTransportBroker:
         permissions: set[tuple[str, str]],
         terminal_dependencies: dict[str, set[str]] | None = None,
         modeling_agent_id: str | None = None,
-        terminal_report_guard: Callable[[str, bool], object] | None = None,
+        terminal_report_guard: Callable[..., object] | None = None,
         transport_event_observer: Callable[[dict[str, object]], None] | None = None,
         coordination_phase_callback: Callable[[str, str, str, str, int], object] | None = None,
         coordination_event_observer: Callable[[dict[str, object]], None] | None = None,
@@ -719,7 +751,12 @@ class TeamTransportBroker:
     ) -> TaskResult:
         if self.terminal_report_guard is not None:
             try:
-                allowed = self.terminal_report_guard(agent_id, already_synchronized)
+                allowed = _call_terminal_report_guard(
+                    self.terminal_report_guard,
+                    agent_id,
+                    already_synchronized,
+                    status,
+                )
             except Exception:
                 raise RoutingError(TERMINAL_REPORT_GUARD_ERROR) from None
             if allowed is not False:

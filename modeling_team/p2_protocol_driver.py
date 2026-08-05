@@ -37,7 +37,7 @@ from .contracts import (
 from .platform_scope import PlatformScope, PlatformScopeError
 from .runtimes.base import RuntimeDelivery
 from .runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
-from .transport_mcp import Delivery, TeamTransportBroker
+from .transport_mcp import Delivery, TeamTransportBroker, _call_terminal_report_guard
 
 
 CONTRACT_RELATIVE_PATH = Path("modeling_team/references/p2-protocol-driver-contract.json")
@@ -534,10 +534,19 @@ def run_driver(
         broker_root = run.root / "transport" / "broker"
         adapter = (adapter_factory or (lambda path: CodexRuntimeAdapter(repository_root=path)))(repository)
 
-        def terminal_guard(agent_id: str, already_synchronized: bool = False) -> bool:
+        def terminal_guard(
+            agent_id: str,
+            already_synchronized: bool = False,
+            status: str = "completed",
+        ) -> bool:
             if adapter is None:
                 return True
-            blocked = adapter.terminal_report_blocked(agent_id, already_synchronized)
+            blocked = _call_terminal_report_guard(
+                adapter.terminal_report_blocked,
+                agent_id,
+                already_synchronized,
+                status,
+            )
             guard_calls.append({"agent_id": agent_id, "blocked": blocked is True})
             return blocked
 
