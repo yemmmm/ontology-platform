@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户授权的 +3 已入账；start17 已暴露并修复 truthful blocked terminal guard 死锁。start18 复用原切片并到达 Protocol 候选绑定 issue，但 outer resolution 早于 Coordinator pause 到达时，状态机正确拒绝而 foreground 错误地将可重试输入错误升级为 run fatal。start18 在无平台建模写入前已分类清理，账本 19/18/0；foreground 现仅在 issue ledger 进入 waiting_owner/waiting_repair 后接收 resolution，过早/格式错误返回固定可重试 envelope 并保持同 run。待提交后使用最后一次 start19；不重做方案审查或独立测试。`
+当前状态：`用户授权的 +3 已全部使用。start17、start18 分别暴露 terminal guard 与 foreground issue 输入问题并已修复；start19 生成真实候选，但 Protocol issue 恢复期间 Runner 未及时锁存原候选回合完成状态，恢复回合覆盖该状态后 formal candidate redrive 未触发，最终 candidate-progress-timeout，未发生平台写入且未进入 Acceptance。start19 已分类、保留证据并完成清理，账本 19/19/0。通用 redrive 锁存缺陷已在 0531c62 修复并通过离线回归；R2.3-005 仍未完成，新的真实验证必须取得用户追加授权。`
 
 优先级：`P0`
 

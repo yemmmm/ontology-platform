@@ -2495,3 +2495,31 @@ the formal builder, or starting another real run before authorization.
   Project/Ontology/Session are absent; Lease, Batch and active run-key residuals are zero; processes, secrets and
   transport sockets are absent; backend/frontend are healthy. Fresh graph-set `e2094823-...` is a second explicit
   dangling metadata residual with no generic delete path. One authorized start remains.
+
+### 2026-08-05T22:10:00+08:00 — Start19 candidate redrive timeout and narrow repair
+
+- Clean foreground-repair baseline `90ffe51` produced start19 baseline
+  `3def1359d362cad4dc2900098ae6394b5122b5a6b44fd2b835d1bce8e80425df`. Delivery launched
+  `r23005-real-20260805t133703z-start19`; `semantic_start` consumed the final authorized start and moved strict
+  replay to `cap=19`, `semantic_start_count=19`.
+- Modeling preserved both source gaps as explicit unknowns and delivered candidate revision `cba-slice-r1`, digest
+  `ea63bcbb5d24656bc04710d2e7a004548896e14521b5dd489635e6ff471cbc51`. Protocol could not mechanically bind the
+  full candidate payload and raised two same-thread recovery issues. Both were paused and resumed; the second
+  guidance correctly required waiting for Runner's immutable `candidate-redrive` rather than reconstructing text.
+- Runner did not emit the redrive after the recovery turn completed and terminated at the 120-second
+  `candidate-progress-timeout`. Retained terminal evidence classifies the run `collaboration/routing` with
+  `complete_modeling_quality_result=false`. No candidate receipt, platform write, retrieval gate, Acceptance handoff
+  or Acceptance verdict occurred.
+- Root cause: while an issue was pending, `TeamRunner.drain` received Runtime messages and returned without observing
+  candidate turn state. The original dispatch completed during that freeze, then the recovery turn overwrote
+  `last_completed_turn_id`; after resume the formal progress gate could no longer recognize the original completion.
+  Commit `0531c62` now observes and latches that barrier during the issue freeze while continuing to defer redrive and
+  deadline checks until resolution. The regression proves one immutable redrive still occurs after a later recovery
+  turn overwrites adapter state. Focused tests passed **27/27**; full `modeling_team/tests` unittest discovery passed
+  **338 tests with 1 skipped**; Ruff, `py_compile` and `git diff --check` passed. GitNexus pre-change impact was MEDIUM
+  for `TeamRunner.drain`; final change detection reported LOW with no affected indexed execution process.
+- Cleanup reached `TERMINAL_FAILURE_CLEANED`. Start19-owned processes and transport paths are absent; both keys created
+  in its time window are revoked; no run-local active key remains. Canonical ledger is **93 lines**, SHA-256
+  `dafde7d0e5ce3a50e30f3f80e95e47f588d2f2f25feae5c3f7efc752e6ce3e1f`, strict replay `19/19/0`. A separately
+  active same-name admin key predates start19 and was deliberately left untouched. All three authorized starts are
+  consumed; no start20 is authorized, so the committed redrive repair has not received a fresh real-modeling check.
