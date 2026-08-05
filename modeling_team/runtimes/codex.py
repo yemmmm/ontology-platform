@@ -1783,7 +1783,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return
         expected = {"team_transport": {"send_team_message", "report_task_result"}}
         if self._coordination_enabled:
-            expected["team_transport"].add("send_coordination")
+            expected["team_transport"].update({"send_coordination", "report_issue"})
+            if agent.package.role == "coordinator":
+                expected["team_transport"].add("issue_control")
         if agent.package.role == "protocol":
             expected["ontology_platform"] = set(agent.platform_tools)
             if agent.schema_version == 2:
@@ -2123,7 +2125,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     ) -> dict[str, Any]:
         """Serve only the read-only files the frozen task exposes to the Agent."""
         transport_tool = str(tool).rsplit("__", 1)[-1]
-        if transport_tool in {"send_team_message", "report_task_result"}:
+        if transport_tool in {
+            "send_team_message",
+            "report_task_result",
+            "report_issue",
+            "issue_control",
+            "send_coordination",
+        }:
             if not isinstance(arguments, dict):
                 return self._dynamic_tool_error("Team Transport arguments are invalid")
             return self._team_transport_dynamic_result(agent, transport_tool, arguments)
@@ -2655,6 +2663,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "Team Transport delivery acknowledgement is invalid",
             "Team Transport reply acknowledgement is invalid",
             "terminal handoff acknowledgement is invalid",
+            "issue escalation capability is unavailable",
+            "issue reporter is not allowed by frozen Profile",
+            "issue control is Coordinator-only",
+            "an active issue already exists",
+            "terminal result is blocked by an active issue",
+            "issue callback enqueue failed",
+            "issue control epoch is stale",
+            "issue pause is not valid in current state",
+            "issue resume requires persisted resolution",
+            "issue resume resolution does not match persisted resolution",
+            "resume control cannot carry an abort resolution",
+            "issue abort requires a persisted outer abort resolution",
+            "issue abort reason does not match persisted resolution",
+            "issue is already terminal",
+            "issue resolution replay conflicts",
+            "issue resolution was already persisted",
+            "issue resolution is not valid in current state",
+            "unknown mutation state requires formal reconciliation",
         }
         if value in fixed:
             return value

@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`修复中（Runner 与离线机械能力已实现并独立测试 PASS；start12 已证明真实 Modeling、分阶段 apply、validation、reasoning 和负向探针，尚未证明独立 Acceptance。start10 provider-auth 修复 Round 8 PASS；start12 retrieval-focused 修复 Round 9 PASS；start13 因 Protocol 收到候选后连续两个 turn 只报告 pending、未调用平台且 Coordinator 未 redrive 而 collaboration/routing 失败。正式账本 cap/count/active=13/13/0，继续前必须获得新的用户授权）`
+当前状态：`暂停真实建模推进，优先实现可恢复问题升级；start15 在 Protocol 输入绑定处 collaboration/routing BLOCKED，正式账本 cap/count/active=15/15/0，未获新授权不得启动真实建模）`
 
 优先级：`P0`
 
@@ -1478,6 +1478,42 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   Lease，或引入通用 Producer/Acceptance 双侧状态机；它不后移本需求已经确认的只读模型状态重验、旧
   `PASS` 作废与 settlement 完整性校验。后者只决定验收证据能否被消费以及团队能否声明 settled，
   不阻止 Agent 发起平台操作，也不替代 Coordinator 的协作调度，仍属于 R2.3-005 当前完成门。
+
+### 2026-08-05 用户变更：可恢复问题升级与协作式暂停
+
+本节 supersede 上述把 pause/resume 完全后移的文字，但不引入 Runner 硬中断、自动修复或通用后台
+编排。用户暂停 R2.3-005 原有建模/验收目标推进，要求先实现 Team 成员发现问题后经 Coordinator
+升级、由外层用户/主协调者引导或修复、再在同一 Team run 中继续的最小恢复链；现有 Agent home、
+批准资料、runtime asset 和运行证据的文件隔离继续保留。
+
+- Modeling、Protocol、Acceptance 或 Coordinator 遇到不能自行安全处理的问题时，使用原生、严格
+  schema 的非终态 `report_issue`，不得用自由文本 terminal `blocked` 代替。问题分类固定为
+  `business_clarification|protocol_guidance|platform_repair|runtime_recovery`，并绑定 reporter、失败操作、
+  mutation state、请求动作和 Runner 分配的唯一 issue identity；不得包含凭据或任意平台写入指令。
+- Issue 首先交给 Coordinator。Coordinator 使用受约束的 issue-control 动作向相关成员下发 `pause`；
+  这是协作式指令，成员收到后停止新的工具调用、peer message 和 terminal report并结束当前 turn。
+  Runner 不调用 `turn/interrupt`，不撤销 Lease/凭据，不销毁进程或运行目录，也不把 paused/idle 当成
+  settled。已有手工 `action=pause` 不进入本恢复链。
+- Issue pending 后，Runner 只冻结该 run 的候选 deadline、自动 redrive、terminal settlement 和 cleanup
+  推进，并写 append-only issue/pause evidence；不新增 StartLedger event，不调用 prepare/start，也不
+  消耗新的 semantic start。一次 run 同时只允许一个 active issue，重复回答、重复 resume、错误 reporter、
+  错误 run/thread/candidate binding 均 fail closed。
+- Runner 以结构化 outer issue envelope 将 Coordinator 当前问题交给外层。外层对业务/协议问题可提供
+  grounded answer 或明确的机械指导；真实业务决策仍归用户，主协调者不得发明事实。Resolution 先交给
+  Coordinator，再由其用受约束 `resume` control 原样下发给 reporter；原 Agent 在仍存活的同一 Codex
+  thread 上开始新的 turn 继续，不声称恢复被停止的同一个 turn。
+- 平台问题进入 `WAITING_REPAIR`。主协调者在 Agent namespace 之外修复并验证平台，提供 repair
+  component、pre/post binding、verification reference 和 write-state reconciliation；Coordinator 随后
+  下发 resume。共享服务/数据修复可在健康与状态重读后原地继续。若修复要求替换 Runner、Transport、
+  Protocol mechanics、Skill、Agent instructions 或已退出的 App Server/thread，必须返回
+  `rebind-required` 或 terminal，不得假装 checkout 改动已进入隔离 Runtime。
+- 文件隔离保持：role source、Agent home/work、原 candidate、原 baseline 和每次 repair 前后快照都保留。
+  对可安全刷新的 `ontology_platform` MCP，只允许 Host 创建新的隔离版本、记录 digest、显式 reload 并
+  重验精确工具面；失败则保留 paused 并回滚，不覆盖原始快照。跨进程 crash recovery、跨 run 恢复、
+  多 issue 队列、自动平台修复和管理 UI 不在当前最小范围。
+- `mutation_state=unknown`、原子 apply 结果不确定或平台状态无法通过正式 receipt/readback 对账时，不得
+  resume 写入。完整 modeling-quality 结果、不可恢复 Runtime 死亡和外层明确 abort 仍走既有 terminal、
+  cleanup 和后续授权规则，不能用 issue pause 绕过。
 
 ### 当前真实验收深度（已确认）
 

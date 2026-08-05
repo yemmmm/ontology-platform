@@ -35,6 +35,11 @@ from .candidate_progress import (
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
 )
+from .interventions import (
+    IssueControl,
+    IssueError,
+    IssueResolution,
+)
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
     protocol_mcp_reasoner_contract,
@@ -125,6 +130,12 @@ class TeamRunner:
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
         self._formal_failure_latched = False
+        # Issue callbacks are invoked by the Broker/App-Server side.  They only
+        # append to this queue; Runtime dispatch and evidence writes happen in
+        # ``drain`` after all App-Server I/O locks have been released.
+        self._issue_event_queue: list[dict[str, Any]] = []
+        self._issue_event_lock = threading.Lock()
+        self._issue_abort_requested = False
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -815,6 +826,9 @@ class TeamRunner:
         settlement CAS/readback.  No model/SSE/``agent_end`` semantics are changed here.
         """
 
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending:
+            return True
         adapter_guard = getattr(self.adapter, "terminal_report_blocked", None)
         if callable(adapter_guard):
             try:
@@ -891,6 +905,12 @@ class TeamRunner:
                 with transport_event_lock:
                     self._append_team_transport_event(event)
 
+            def issue_event_callback(event: dict[str, object]) -> None:
+                if not isinstance(event, dict):
+                    return
+                with self._issue_event_lock:
+                    self._issue_event_queue.append(deepcopy(event))
+
             self.transport = TeamTransportBroker(
                 self.run.root / "transport" / "broker",
                 set(self.run.configuration.profile.communication),
@@ -912,6 +932,8 @@ class TeamRunner:
                 coordination_event_observer=(
                     self._append_coordination_transport_event if formal_coordination else None
                 ),
+                issue_escalation_enabled=formal_coordination,
+                issue_event_callback=issue_event_callback if formal_coordination else None,
             )
             self.transport.start(
                 [agent.agent_id for agent in self.run.configuration.profile.agents]
@@ -1443,6 +1465,29 @@ class TeamRunner:
             if self._formal_coordination_enabled():
                 raise TeamConfigurationError("schema-v2 outer questions are Runner-owned")
             self._record_outer_question(message)
+        elif action == "issue_resolution":
+            if not self._formal_coordination_enabled() or self.transport is None:
+                raise TeamConfigurationError("issue escalation capability is unavailable")
+            resolution = self._outer_issue_resolution(message)
+            try:
+                self.transport.persist_issue_resolution(resolution)
+            except RoutingError as exc:
+                raise TeamConfigurationError(str(exc)) from exc
+            # Persist first; only then make the resolution visible to Coordinator.
+            self._append_evidence("issue-resolution", resolution.as_dict())
+            coordinator = self._issue_coordinator_id()
+            try:
+                self.adapter.send_message(
+                    coordinator,
+                    RuntimeDelivery(
+                        sender_id="user/outer",
+                        recipient_id=coordinator,
+                        kind="issue-resolution",
+                        text=json.dumps(resolution.as_dict(), ensure_ascii=False, sort_keys=True),
+                    ),
+                )
+            except Exception as exc:
+                raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
         elif action == "user":
             if self._formal_coordination_enabled() and set(message) != {"action", "text"}:
                 raise TeamConfigurationError("schema-v2 owner answer envelope has invalid fields")
@@ -1491,6 +1536,55 @@ class TeamRunner:
         else:
             raise TeamConfigurationError("unknown outer Runner action")
         return self.drain()
+
+    def _outer_issue_resolution(self, message: dict[str, Any]) -> IssueResolution:
+        """Parse one strict outer resolution envelope; no opaque JSON payloads."""
+        base = {"action", "issue_id", "reporter_id", "control_epoch", "resolution_type"}
+        if set(message) - {
+            *base,
+            "resolution_text",
+            "repair_component",
+            "before_digest",
+            "after_digest",
+            "verification_reference",
+            "mutation_reconciliation",
+        }:
+            raise TeamConfigurationError("issue resolution envelope has invalid fields")
+        if not base.issubset(message):
+            raise TeamConfigurationError("issue resolution envelope is incomplete")
+        resolution_type = message.get("resolution_type")
+        if resolution_type in {"guidance", "abort"}:
+            expected = base | {"resolution_text"}
+            if set(message) != expected:
+                raise TeamConfigurationError("issue resolution guidance fields are invalid")
+        elif resolution_type == "repair_completed":
+            expected = base | {
+                "repair_component",
+                "before_digest",
+                "after_digest",
+                "verification_reference",
+                "mutation_reconciliation",
+            }
+            if set(message) != expected:
+                raise TeamConfigurationError("issue resolution repair fields are invalid")
+        else:
+            raise TeamConfigurationError("issue resolution type is invalid")
+        try:
+            return IssueResolution(
+                run_id=self.run.run_id if self.run else "",
+                issue_id=message["issue_id"],
+                reporter_id=message["reporter_id"],
+                resolution_type=resolution_type,
+                control_epoch=message["control_epoch"],
+                resolution_text=message.get("resolution_text"),
+                repair_component=message.get("repair_component"),
+                before_digest=message.get("before_digest"),
+                after_digest=message.get("after_digest"),
+                verification_reference=message.get("verification_reference"),
+                mutation_reconciliation=message.get("mutation_reconciliation"),
+            )
+        except (TypeError, IssueError) as exc:
+            raise TeamConfigurationError("issue resolution envelope is invalid") from exc
 
     def _observe_modeling_question(self, delivery: Any) -> None:
         """Register only a formal Modeling->Coordinator reply request internally."""
@@ -1631,11 +1725,17 @@ class TeamRunner:
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None:
             return
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending:
+            return
         self._candidate_progress.check_deadline(now=self.monotonic_clock())
 
     def _maybe_redrive_formal_candidate(self) -> None:
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None:
+            return
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending:
             return
         _, protocol = roles
         if not self._candidate_progress.redrive_ready(now=self.monotonic_clock()):
@@ -1667,6 +1767,261 @@ class TeamRunner:
                 "redrive_count": 1,
             },
         )
+
+    def _issue_coordinator_id(self) -> str:
+        if not self.run:
+            raise TeamConfigurationError("issue Coordinator is unavailable")
+        for agent in self.run.configuration.profile.agents:
+            if agent.package.role == "coordinator":
+                return agent.agent_id
+        raise TeamConfigurationError("issue Coordinator is unavailable")
+
+    def _issue_ledger(self) -> Any | None:
+        return getattr(self.transport, "issue_ledger", None)
+
+    def _issue_control_from_payload(self, value: Any) -> IssueControl:
+        if not isinstance(value, dict):
+            raise TeamConfigurationError("issue control payload is invalid")
+        resolution_value = value.get("resolution")
+        resolution: IssueResolution | None = None
+        if resolution_value is not None:
+            if not isinstance(resolution_value, dict):
+                raise TeamConfigurationError("issue control resolution is invalid")
+            try:
+                resolution = IssueResolution(**resolution_value)
+            except (TypeError, IssueError) as exc:
+                raise TeamConfigurationError("issue control resolution is invalid") from exc
+        try:
+            return IssueControl(
+                run_id=value.get("run_id"),
+                issue_id=value.get("issue_id"),
+                coordinator_id=value.get("coordinator_id"),
+                reporter_id=value.get("reporter_id"),
+                action=value.get("action"),
+                control_epoch=value.get("control_epoch"),
+                resolution=resolution,
+                reason=value.get("reason"),
+            )
+        except (TypeError, IssueError) as exc:
+            raise TeamConfigurationError("issue control payload is invalid") from exc
+
+    def _handle_issue_events(self, output: list[dict[str, Any]]) -> None:
+        """Process Broker issue callbacks in the Runner main loop only."""
+        if not self.transport or not self.transport.issue_escalation_enabled or not self.run:
+            return
+        with self._issue_event_lock:
+            events, self._issue_event_queue = self._issue_event_queue[:], []
+        if not events:
+            return
+        coordinator = self._issue_coordinator_id()
+        for event in events:
+            kind = event.get("kind") if isinstance(event, dict) else None
+            if kind == "issue_report":
+                issue = event.get("issue")
+                if not isinstance(issue, dict):
+                    raise TeamConfigurationError("issue report callback payload is invalid")
+                issue_id = issue.get("issue_id")
+                reporter_id = issue.get("reporter_id")
+                if isinstance(issue_id, str) and isinstance(reporter_id, str):
+                    identity = self._candidate_progress.identity if self._candidate_progress else None
+                    candidate_identity = identity.__dict__.copy() if identity is not None else None
+                    thread_id = self._formal_protocol_thread_id(reporter_id)
+                    try:
+                        issue = self.transport.bind_issue_context(
+                            issue_id=issue_id,
+                            reporter_id=reporter_id,
+                            thread_id=thread_id,
+                            candidate_identity=candidate_identity,
+                        )
+                    except RoutingError as exc:
+                        raise TeamConfigurationError("issue context binding failed") from exc
+                self._append_evidence("issue-report", issue)
+                try:
+                    self.adapter.send_message(
+                        coordinator,
+                        RuntimeDelivery(
+                            sender_id="runner/issue",
+                            recipient_id=coordinator,
+                            kind="issue",
+                            text=json.dumps(issue, ensure_ascii=False, sort_keys=True),
+                        ),
+                    )
+                except Exception as exc:
+                    issue_id = issue.get("issue_id")
+                    reporter_id = issue.get("reporter_id")
+                    if isinstance(issue_id, str) and isinstance(reporter_id, str):
+                        try:
+                            self.transport.fail_issue_rebind(
+                                issue_id=issue_id,
+                                reporter_id=reporter_id,
+                                reason="Coordinator delivery failed",
+                            )
+                        except RoutingError:
+                            pass
+                    raise TeamConfigurationError("issue Coordinator delivery failed") from exc
+                if self._candidate_progress is not None:
+                    self._candidate_progress.pause(now=self.monotonic_clock())
+                self._state(
+                    "WAITING_REPAIR"
+                    if issue.get("category") == "platform_repair"
+                    else "WAITING_OWNER",
+                    issue_id=issue.get("issue_id"),
+                )
+                self._append_evidence(
+                    "issue-pause",
+                    {
+                        "issue_id": issue.get("issue_id"),
+                        "reporter_id": issue.get("reporter_id"),
+                        "state": "reported",
+                        "candidate_paused": self._candidate_progress is not None,
+                    },
+                )
+                continue
+            if kind != "issue_control":
+                raise TeamConfigurationError("unknown issue callback event")
+            control = self._issue_control_from_payload(event.get("control"))
+            self._dispatch_issue_control(control, output)
+
+    def _dispatch_issue_control(self, control: IssueControl, output: list[dict[str, Any]]) -> None:
+        if not self.transport or not self.run:
+            raise TeamConfigurationError("issue transport is unavailable")
+        if control.run_id != self.run.run_id or control.coordinator_id != self._issue_coordinator_id():
+            raise TeamConfigurationError("issue control run binding is invalid")
+        active_issue = self._issue_ledger().active_issue if self._issue_ledger() is not None else None
+        if active_issue is None or active_issue.issue_id != control.issue_id:
+            raise TeamConfigurationError("issue control issue binding is invalid")
+        if control.action == "abort":
+            self._issue_abort_requested = True
+            self._append_evidence("issue-abort", control.as_dict())
+            self._state("ABORTING", issue_id=control.issue_id)
+            # Abort is explicit and terminal; no Runtime interrupt is used.
+            return
+        agent = getattr(self.adapter, "agents", {}).get(control.reporter_id)
+        if agent is not None:
+            process = getattr(agent, "process", None)
+            if process is not None and callable(getattr(process, "poll", None)):
+                try:
+                    if process.poll() is not None:
+                        self.transport.fail_issue_rebind(
+                            issue_id=control.issue_id,
+                            reporter_id=control.reporter_id,
+                            reason="reporter App Server is dead",
+                        )
+                        raise TeamConfigurationError("issue reporter App Server is dead")
+                except (IssueError, RoutingError) as exc:
+                    raise TeamConfigurationError("issue reporter cannot be rebound") from exc
+        if control.action == "resume" and control.resolution is not None:
+            if control.resolution.resolution_type == "repair_completed":
+                component = control.resolution.repair_component
+                if component not in {"shared_backend_service", "shared_backend_data"}:
+                    self.transport.fail_issue_rebind(
+                        issue_id=control.issue_id,
+                        reporter_id=control.reporter_id,
+                        reason="repair component requires rebind",
+                    )
+                    raise TeamConfigurationError("issue repair requires rebind")
+        before_thread = self._formal_protocol_thread_id(control.reporter_id)
+        if active_issue.thread_id is not None and active_issue.thread_id != before_thread:
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="issue control thread binding drift",
+            )
+            raise TeamConfigurationError("issue control thread binding drift")
+        current_identity = self._candidate_progress.identity if self._candidate_progress else None
+        current_candidate = current_identity.__dict__.copy() if current_identity is not None else None
+        if active_issue.candidate_identity != current_candidate:
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="issue control candidate binding drift",
+            )
+            raise TeamConfigurationError("issue control candidate binding drift")
+        before_turn = getattr(agent, "active_turn_id", None) if agent is not None else None
+        if control.action == "resume" and before_turn is not None:
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="reporter did not finish its paused turn",
+            )
+            raise TeamConfigurationError("issue resume requires an idle reporter")
+        try:
+            receipt = self.adapter.send_message(
+                control.reporter_id,
+                RuntimeDelivery(
+                    sender_id="runner/issue-control",
+                    recipient_id=control.reporter_id,
+                    kind="issue-control",
+                    text=json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True),
+                ),
+            )
+        except Exception as exc:
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="issue control Runtime delivery failed",
+            )
+            raise TeamConfigurationError("issue control Runtime delivery failed") from exc
+        after_thread = self._formal_protocol_thread_id(control.reporter_id)
+        after_turn = getattr(agent, "active_turn_id", None) if agent is not None else getattr(receipt, "turn_id", None)
+        if control.action == "resume" and getattr(receipt, "mode", None) != "start":
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="resume did not start a new turn",
+            )
+            raise TeamConfigurationError("issue resume did not start a new turn")
+        if before_thread != after_thread:
+            self.transport.fail_issue_rebind(
+                issue_id=control.issue_id,
+                reporter_id=control.reporter_id,
+                reason="issue control thread binding changed",
+            )
+            raise TeamConfigurationError("issue control thread binding changed")
+        try:
+            self.transport.mark_issue_dispatch(control)
+        except RoutingError as exc:
+            raise TeamConfigurationError("issue control CAS dispatch rejected") from exc
+        if control.action == "pause":
+            if self._candidate_progress is not None:
+                self._candidate_progress.pause(now=self.monotonic_clock())
+            self._state(
+                "WAITING_REPAIR"
+                if self._issue_ledger()
+                and self._issue_ledger().active_issue
+                and self._issue_ledger().active_issue.category == "platform_repair"
+                else "WAITING_OWNER",
+                issue_id=control.issue_id,
+            )
+            # Surface the issue only after Coordinator has reviewed it and
+            # issued the bound cooperative pause. This is the structured
+            # Coordinator-to-outer escalation boundary.
+            output.append(
+                {
+                    "type": "issue",
+                    "issue": active_issue.as_dict(state=self._issue_ledger().state),
+                }
+            )
+        elif control.action == "resume":
+            if self._candidate_progress is not None:
+                self._candidate_progress.resume(now=self.monotonic_clock())
+            self._state("RUNNING", issue_id=control.issue_id)
+        self._append_evidence(
+            "issue-control",
+            {
+                "issue_id": control.issue_id,
+                "reporter_id": control.reporter_id,
+                "action": control.action,
+                "control_epoch": control.control_epoch,
+                "before_thread_id": before_thread,
+                "after_thread_id": after_thread,
+                "before_turn_id": before_turn,
+                "after_turn_id": after_turn,
+                "turn_id": getattr(receipt, "turn_id", None),
+                "dispatch_mode": getattr(receipt, "mode", None),
+            },
+        )
+        output.append({"type": "issue-control", **control.as_dict()})
 
     def _observe_coordinator_message(self, message: Any) -> None:
         """Retain the coordinator hook without making prose a display authority.
@@ -1993,12 +2348,42 @@ class TeamRunner:
             self._latch_formal_candidate_failure("collaboration/routing", "candidate-progress-timeout")
             raise
         output: list[dict[str, Any]] = []
+        self._handle_issue_events(output)
+        if self._issue_abort_requested:
+            cleanup = self.cleanup()
+            issue = self._issue_ledger().active_issue if self._issue_ledger() is not None else None
+            output.append(
+                {
+                    "type": "issue-aborted",
+                    "issue_id": issue.issue_id if issue else None,
+                    "cleanup": cleanup,
+                }
+            )
+            self._state(
+                "TERMINAL_REPORT_COMPLETE",
+                issue_abort=True,
+                issue_id=issue.issue_id if issue else None,
+            )
+            return output
+        issue_ledger = self._issue_ledger()
+        issue_pending = bool(issue_ledger is not None and issue_ledger.pending)
         coordinator = next(
             agent.agent_id
             for agent in self.run.configuration.profile.agents
             if agent.package.role == "coordinator"
         )
-        for delivery in self.transport.drain():
+        deliveries = self.transport.drain()
+        if issue_pending:
+            # Preserve every ordinary delivery/reply slot while the cooperative
+            # issue is waiting.  The Broker history remains immutable and no
+            # candidate response can be accidentally consumed before guidance.
+            self.transport.requeue(deliveries)
+            # Pump App-Server notifications while the run is paused so the
+            # Coordinator's issue_control callback can enter the queue.  No
+            # ordinary peer/terminal Runtime message is delivered or consumed.
+            self.adapter.receive_messages()
+            return output
+        for delivery in deliveries:
             try:
                 formal_candidate_event = self._observe_formal_candidate_delivery(delivery)
             except FormalCandidateError as exc:
@@ -2239,7 +2624,14 @@ class TeamRunner:
                 self._append_evidence("coordinator", envelope)
         formal_settlement_ready = (
             not self._formal_coordination_enabled()
-            or (self.acceptance is not None and self.acceptance.is_settled)
+            or (
+                self.acceptance is not None
+                and self.acceptance.is_settled
+                and not (
+                    self._issue_ledger() is not None
+                    and self._issue_ledger().pending
+                )
+            )
         )
         if formal_settlement_ready and not self._terminal_emitted and len(self.transport.results) == len(
             self.run.configuration.profile.agents
@@ -2343,6 +2735,22 @@ class TeamRunner:
     def cleanup(self) -> dict[str, Any]:
         if self._cleanup_evidence_cache is not None:
             return deepcopy(self._cleanup_evidence_cache)
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending and not self._issue_abort_requested:
+            active = issue_ledger.active_issue
+            paused = {
+                "status": "paused",
+                "issue_id": active.issue_id if active else None,
+                "state": issue_ledger.state,
+                "cleanup_deferred": True,
+            }
+            self._state(
+                "WAITING_REPAIR"
+                if issue_ledger.state == "waiting_repair"
+                else "WAITING_OWNER",
+                issue_id=paused["issue_id"],
+            )
+            return paused
         evidence: dict[str, Any] = {}
         self._state("CLEANING") if self.run else None
         formal = self._formal_coordination_enabled()

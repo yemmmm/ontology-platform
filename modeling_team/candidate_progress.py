@@ -246,6 +246,8 @@ class _PendingCandidate:
     dispatch_turn_id: str | None = None
     turn_barrier_complete: bool = False
     redrive_count: int = 0
+    active_elapsed: float = 0.0
+    paused: bool = False
 
 
 class FormalCandidateProgress:
@@ -289,6 +291,39 @@ class FormalCandidateProgress:
     @property
     def terminal_failure_latched(self) -> bool:
         return self._terminal_failure_latched
+
+    @property
+    def paused(self) -> bool:
+        return self.pending is not None and self.pending.paused
+
+    @property
+    def active_elapsed(self) -> float:
+        if self.pending is None:
+            return 0.0
+        elapsed = self.pending.active_elapsed
+        if self.pending.accepted_at is not None and not self.pending.paused:
+            elapsed += max(0.0, self.clock() - self.pending.accepted_at)
+        return elapsed
+
+    def pause(self, *, now: float | None = None) -> None:
+        """Freeze active-time accounting without changing candidate identity/state."""
+        if self.pending is None or self.pending.paused:
+            return
+        current = self.clock() if now is None else now
+        if self.pending.accepted_at is not None:
+            self.pending.active_elapsed += max(0.0, current - self.pending.accepted_at)
+            self.pending.accepted_at = None
+        self.pending.paused = True
+
+    def resume(self, *, now: float | None = None) -> None:
+        """Resume one paused candidate using the same delivery/thread identity."""
+        if self.pending is None or not self.pending.paused:
+            return
+        current = self.clock() if now is None else now
+        # ``active_elapsed`` already contains the pre-pause interval. Start a
+        # fresh interval here so deadline checks do not count it twice.
+        self.pending.accepted_at = current
+        self.pending.paused = False
 
     def mark_terminal_failure(self) -> None:
         """Latch terminal failure without replacing the retained identity/state."""
@@ -538,6 +573,8 @@ class FormalCandidateProgress:
             raise FormalCandidatePlatformContractError("formal candidate dispatch mode is invalid")
         self.pending.dispatch_mode = mode
         self.pending.dispatch_turn_id = turn_id
+        self.pending.active_elapsed = 0.0
+        self.pending.paused = False
         self.pending.accepted_at = self.clock() if now is None else now
         self.pending.turn_barrier_complete = False
 
@@ -565,11 +602,13 @@ class FormalCandidateProgress:
             )
         if self.pending is None or self.pending.state in self._TERMINAL_STATES:
             return
+        if self.pending.paused:
+            return
         accepted_at = self.pending.accepted_at
         if accepted_at is None:
             return
         current = self.clock() if now is None else now
-        if current - accepted_at >= self.timeout_seconds:
+        if self.pending.active_elapsed + (current - accepted_at) >= self.timeout_seconds:
             self._timeout_latched = True
             raise FormalCandidateProgressTimeout(
                 f"formal candidate progress exceeded {self.timeout_seconds:.0f}s"

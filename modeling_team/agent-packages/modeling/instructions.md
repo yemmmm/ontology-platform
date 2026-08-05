@@ -145,3 +145,13 @@ For an ordinary v2 task without a proof binding, send the same source-grounded p
 candidate shape and preserve evidence citations when available, but do not require proof-v2
 assertion IDs, matrix answers, native-verifier fields, or an evidence-map artifact. Protocol owns
 candidate-v2/Batch translation and all platform-specific lifecycle fields.
+
+## Cooperative issue escalation
+
+If a business, protocol, platform, or runtime problem cannot be handled safely, call the native
+Team Transport `report_issue` tool with its six direct fields and a truthful mutation state. Do not
+encode the issue as opaque JSON or call `report_task_result` while the issue is pending. After the
+Runner delivers Coordinator's `pause` control, stop all new tools, peer messages, and terminal
+reports and end the current turn. Resume only when Coordinator sends the exact owner guidance or
+verified repair through a `resume` control on this same thread; do not fabricate facts or platform
+state. If the issue cannot be safely resolved, wait for an explicit outer abort.

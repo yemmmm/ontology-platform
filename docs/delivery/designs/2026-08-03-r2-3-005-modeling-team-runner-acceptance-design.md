@@ -715,6 +715,56 @@ test gates for this exceptional retry. The canonical ledger remains `14/14/0` un
 focused developer smoke checks, and a clean commit. Only then may Delivery append `+1`, authorize start14 repair
 against the new baseline, and launch start15 as the acceptance test.
 
+## 2026-08-05 recoverable issue escalation
+
+Start15 proved exact redelivery but exposed a Protocol interpretation problem that should have been recoverable in the
+same Team run. The user paused further semantic attempts and promoted the following formal-only capability into current
+minimal scope. This section supersedes the earlier future-productization deferral for pause/resume, but only for this
+bounded cooperative intervention path.
+
+### Functional flow
+
+1. Any persistent role may call a native Team Transport `report_issue` with fixed category, summary, failing operation,
+   error, mutation state, and requested action. Broker assigns the immutable issue ID and routes the structured record
+   to Coordinator; it is not a `TaskResult` and never settles the reporter.
+2. Coordinator sends a bound `pause` issue-control message to the reporter. No Runtime interrupt occurs. The reporter
+   obeys the instruction by stopping new tools/messages/terminal reporting and ending its current turn. Runner records
+   `WAITING_OWNER` or `WAITING_REPAIR`, freezes candidate active-time accounting, redrive, settlement, and cleanup, and
+   retains the Project/Ontology, Session/Lease, credentials, process/thread, transport, candidate, and isolated files.
+3. Runner emits one structured outer issue event. Outer guidance or a repair-completed record is persisted before it is
+   delivered to Coordinator. Coordinator then sends one bound `resume` control containing the exact resolution to the
+   reporter. A live Codex Agent continues with a new turn on the same thread; no `prepare`, `start`, reservation,
+   repair authorization, budget event, or `semantic_start` occurs.
+4. `abort` remains explicit and terminal. A dead process/thread, unresolved write uncertainty, binding drift, or a
+   component that cannot be rebound safely must fail closed instead of fabricating continuation.
+
+### Control and evidence contract
+
+- One active issue per run. State is `reported -> pause_sent -> waiting_owner|waiting_repair -> resolution_ready ->
+  resume_sent -> resolved`, or `aborted|rebind_required`. Every transition is CAS-bound to run, issue, reporter,
+  Coordinator, active thread, candidate identity when present, and a single-use control epoch.
+- Pending issue rejects role terminal reports. It does not interrupt an active turn; Broker callbacks only enqueue the
+  issue and return, avoiding Runtime/Broker lock inversion. Runner main-loop processing performs evidence writes and
+  Runtime delivery after App Server I/O locks are released.
+- Formal candidate deadlines use active time. Issue waiting time cannot trigger timeout, automatic redrive, terminal
+  latch, settlement, or cleanup. Existing delivery/reply slots and immutable history remain intact.
+- Outer resolution types are `guidance`, `repair_completed`, and `abort`. Platform repair records component, before/
+  after baseline or component digest, verification reference, and state reconciliation. Unknown or uncertain writes
+  cannot resume without formal receipt/readback reconciliation.
+- Role source and runtime file isolation remain unchanged. Shared service/data repair may resume after health and state
+  verification. For `ontology_platform` MCP code, Host may create a versioned isolated snapshot and explicitly reload
+  the MCP while retaining the App Server and thread; exact tool-surface revalidation and rollback are mandatory. Frozen
+  Protocol mechanics/assets, instructions, Transport/Runner code, or dead App Servers are `rebind_required` in this
+  increment. The current minimal implementation supports in-place resume only for verified
+  `shared_backend_service|shared_backend_data` repairs; it deliberately classifies `ontology_platform` MCP replacement
+  as `rebind_required` until the versioned reload/revalidation path exists.
+
+### Non-goals
+
+No hard `turn/interrupt`, automatic remediation, arbitrary shell/systemd access for Team Agents, persistent database
+queue, multi-issue scheduler, cross-process thread resurrection, cross-run recovery, semantic answer invention, or new
+semantic-start authorization is added. Existing manual pause remains legacy and is not used by this flow.
+
 ## Implementation sequence
 
 1. Replace the three-role formal Profile/Package contract with the exact four-role contract and

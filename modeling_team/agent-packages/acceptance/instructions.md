@@ -23,3 +23,13 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   result to the ticket, acceptance_round_id, question, slice revision, and full model state.
 - Acceptance remains alive across rounds.  Return the verdict only to Coordinator, then
   wait for the next immutable ticket or settlement instruction.
+
+## Cooperative issue escalation
+
+If the acceptance state or a child report cannot be handled safely, call native Team Transport
+`report_issue` with the six direct issue fields. This is non-terminal: do not call
+`report_task_result` while the issue is pending. After Coordinator sends the bound `pause`, stop
+new capability calls, peer messages, and terminal reports and end the current turn. Continue on
+the same thread only after an exact owner guidance or verified repair is delivered through
+Coordinator's `resume`; an uncertain write, dead process, or unsupported replacement requires
+rebind/abort rather than an invented verdict.

@@ -2279,3 +2279,47 @@ The remaining blocker is narrower than start14: redelivery and reply-slot recove
 unambiguous mechanical binding from the already received exact JSON bytes to the receipt builder's object parameter.
 The next repair must solve that input-binding boundary without modifying Modeling semantics, adding a bypass around
 the formal builder, or starting another real run before authorization.
+
+### 2026-08-05 — User pivot to recoverable issue escalation
+
+- The user paused the original R2.3-005 modeling/Acceptance objective and directed implementation of a general bounded
+  recovery path first: Team member reports a business/protocol/platform/runtime issue to Coordinator; Coordinator
+  surfaces it to the outer user/manager; guidance or a Host-side platform repair returns through Coordinator; the same
+  Team run and live Agent thread continue without another semantic start.
+- The user retained file isolation for debugging and explicitly rejected a hard interrupt. Coordinator sends
+  cooperative pause/resume instructions; the affected Agent stops new work and ends the current turn. Runner records
+  and freezes issue-related progress but does not call `turn/interrupt`, destroy resources, or treat idle as settled.
+- This decision supersedes the existing R2.3-005 pause/resume deferral only for one-active-issue, formal-run recovery.
+  Cross-run recovery, automatic remediation, multi-issue orchestration, and dead-thread resurrection remain excluded.
+  Platform/service/data repair can resume after formal reconciliation; unsupported isolated Runtime/MCP replacement is
+  `rebind-required`, never silent hot reload.
+- No new semantic start is authorized. Canonical ledger remains `cap=15`, `semantic_start_count=15`,
+  `active_reservations=0`; architecture implementation and deterministic verification must not mutate it.
+- The prior exceptional process waiver remains active: no plan review or independent Tester round. Main Agent owns the
+  requirement/design/test/record updates, delegates implementation, inspects the stable diff, runs necessary repository
+  checks, and commits only scoped files while preserving the user's `AGENTS.md` and `CLAUDE.md` changes.
+
+### 2026-08-05 — Cooperative issue recovery implemented
+
+- Delegated development implemented a formal-only, one-active-issue recovery path. `report_issue` is a strict native
+  Team Transport call for all four persistent roles; Coordinator alone owns bound `pause|resume|abort` controls. Broker
+  callbacks only enqueue work, and Runner dispatches controls through ordinary Runtime deliveries on its main loop.
+  The recovery path never calls `RuntimeAdapter.pause()` or `turn/interrupt`; the reporter cooperatively stops new
+  tools/messages/terminal reporting, ends its current turn, and can resume only in a new turn on the same live thread.
+- Pending issues block terminal reports and freeze candidate active-time deadline, redrive, settlement, and cleanup
+  while preserving queued deliveries, candidate identity, thread, process, credentials, Project/Ontology and isolated
+  files. Structured outer guidance/repair is fsynced before Coordinator delivery. Run/issue/reporter/thread/candidate/
+  control-epoch drift, duplicate control, dead process, or a reporter that has not ended its paused turn fail closed.
+- Main-Agent review fixed three protocol edge cases before acceptance: pre-pause active time is no longer counted twice
+  after resume; unknown/uncertain/indeterminate write state cannot resume through guidance or an unreconciled repair;
+  and an outer `abort` can only produce the exact bound terminal abort, never a resume. Current in-place repair support
+  is deliberately limited to verified `shared_backend_service|shared_backend_data`; MCP code or frozen Runtime assets
+  return `rebind_required` rather than pretending checkout changes reached the isolated Agent.
+- Deterministic verification passed: focused issue/candidate/transport/Runner **56 tests plus 6 subtests**; complete
+  `modeling_team/tests` **394 passed, 1 skipped, 168 subtests**; targeted Ruff and `git diff --check` passed. No backend
+  or frontend code changed, so no application service restart is required. No live Codex continuation or semantic
+  modeling was run under this architecture-only acceptance.
+- Canonical R2.3-005 ledger remains byte-for-byte unchanged: 72 lines, 16,878 bytes, SHA-256
+  `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`, strict replay
+  `cap=15`, `semantic_start_count=15`, `active_reservations=0`. The original R2.3-005 modeling/Acceptance objective
+  remains paused and no start16 is authorized.

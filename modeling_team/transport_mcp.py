@@ -13,6 +13,14 @@ from pathlib import Path
 import re
 from typing import Callable
 
+from .interventions import (
+    IssueControl,
+    IssueError,
+    IssueResolution,
+    RecoverableIssueLedger,
+    validate_issue_report_arguments,
+)
+
 
 _TERMINAL_ROLE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 TERMINAL_REPORT_GUARD_ERROR = (
@@ -80,8 +88,11 @@ class TeamTransportBroker:
         coordination_phase_callback: Callable[[str, str, str, str, int], object] | None = None,
         coordination_event_observer: Callable[[dict[str, object]], None] | None = None,
         coordinator_agent_id: str | None = None,
+        issue_escalation_enabled: bool = False,
+        issue_event_callback: Callable[[dict[str, object]], object] | None = None,
     ):
         self.evidence_root = root
+        requested_root = root
         # Linux Unix sockets have a short pathname limit. The run-local requested path is
         # retained as evidence; only the live private socket directory uses a hashed /tmp path.
         if len(str(root / "source-specialist.sock")) >= 100:
@@ -93,6 +104,17 @@ class TeamTransportBroker:
         }
         self.modeling_agent_id = modeling_agent_id
         self.coordinator_agent_id = coordinator_agent_id
+        self.issue_escalation_enabled = issue_escalation_enabled is True
+        self.issue_event_callback = issue_event_callback
+        self._issue_lock = threading.Lock()
+        self._issues: RecoverableIssueLedger | None = None
+        if self.issue_escalation_enabled:
+            if not isinstance(coordinator_agent_id, str) or not coordinator_agent_id:
+                raise RoutingError("issue escalation requires a Coordinator identity")
+            self._issues = RecoverableIssueLedger(
+                run_id=self._infer_run_id(requested_root),
+                coordinator_id=coordinator_agent_id,
+            )
         self.terminal_report_guard = terminal_report_guard
         self.transport_event_observer = transport_event_observer
         self.coordination_phase_callback = coordination_phase_callback
@@ -120,8 +142,174 @@ class TeamTransportBroker:
         self._coordination_emit_lock = threading.Lock()
         self._servers: list[socket.socket] = []
 
+    @staticmethod
+    def _infer_run_id(root: Path) -> str:
+        """Derive the run identity from the canonical run-local broker path."""
+        # ``root`` is normally ``<run-root>/transport/broker``.  Keep the fallback
+        # deterministic for focused Broker tests that use a temporary directory.
+        parts = root.parts
+        if "modeling-runs" in parts:
+            index = parts.index("modeling-runs")
+            if index + 1 < len(parts) and parts[index + 1]:
+                return parts[index + 1]
+        return f"transport-{sha256(str(root).encode()).hexdigest()[:24]}"
+
     def endpoint(self, agent_id: str) -> Path:
         return self.root / f"{agent_id}.sock"
+
+    @property
+    def issue_ledger(self) -> RecoverableIssueLedger | None:
+        return self._issues
+
+    def report_issue(
+        self,
+        reporter_id: str,
+        *,
+        category: str,
+        summary: str,
+        failing_operation: str,
+        error: str,
+        mutation_state: str,
+        requested_action: str,
+        thread_id: str | None = None,
+        candidate_identity: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Create one non-terminal issue and enqueue it for Runner main-loop handling.
+
+        The Broker callback is deliberately invoked after the ledger has released all
+        state locks (the ledger itself is run-local and synchronous).  It may only enqueue
+        work; Runtime delivery/evidence writes happen in ``TeamRunner.drain``.
+        """
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        if not isinstance(reporter_id, str) or (
+            reporter_id != self.coordinator_agent_id
+            and (reporter_id, self.coordinator_agent_id) not in self.permissions
+        ):
+            # Coordinator is the fixed recipient even though the issue is not a normal
+            # peer Delivery.  Require the Profile to contain the corresponding edge.
+            raise RoutingError("issue reporter is not allowed by frozen Profile")
+        try:
+            arguments = validate_issue_report_arguments(
+                {
+                    "category": category,
+                    "summary": summary,
+                    "failing_operation": failing_operation,
+                    "error": error,
+                    "mutation_state": mutation_state,
+                    "requested_action": requested_action,
+                }
+            )
+            with self._issue_lock:
+                report = self._issues.report(
+                    reporter_id=reporter_id,
+                    **arguments,
+                    thread_id=thread_id,
+                    candidate_identity=candidate_identity,
+                )
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+        payload = report.as_dict(state="reported")
+        callback = self.issue_event_callback
+        if callback is not None:
+            try:
+                callback({"kind": "issue_report", "issue": payload})
+            except Exception as exc:
+                # The issue remains in the immutable ledger; model-visible output is a
+                # fixed transport error and the Runner can recover through evidence.
+                raise RoutingError("issue callback enqueue failed") from exc
+        return payload
+
+    def issue_control(
+        self,
+        coordinator_id: str,
+        *,
+        issue_id: str,
+        reporter_id: str,
+        action: str,
+        control_epoch: int,
+        resolution: IssueResolution | None = None,
+        reason: str | None = None,
+    ) -> dict[str, object]:
+        """Queue one constrained Coordinator control for Runner main-loop dispatch."""
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        if coordinator_id != self.coordinator_agent_id:
+            raise RoutingError("issue control is Coordinator-only")
+        if reporter_id != coordinator_id and (coordinator_id, reporter_id) not in self.permissions:
+            raise RoutingError("issue control reporter is not allowed by frozen Profile")
+        try:
+            with self._issue_lock:
+                control = self._issues.control(
+                    issue_id=issue_id,
+                    coordinator_id=coordinator_id,
+                    reporter_id=reporter_id,
+                    action=action,
+                    control_epoch=control_epoch,
+                    resolution=resolution,
+                    reason=reason,
+                )
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+        payload = {"kind": "issue_control", "control": control.as_dict()}
+        callback = self.issue_event_callback
+        if callback is not None:
+            try:
+                callback(payload)
+            except Exception as exc:
+                raise RoutingError("issue callback enqueue failed") from exc
+        return control.as_dict()
+
+    def persist_issue_resolution(self, resolution: IssueResolution) -> dict[str, object]:
+        """Persist a Runner-owned outer resolution before Coordinator delivery."""
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        try:
+            with self._issue_lock:
+                value = self._issues.persist_resolution(resolution)
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+        return value.as_dict()
+
+    def bind_issue_context(
+        self,
+        *,
+        issue_id: str,
+        reporter_id: str,
+        thread_id: str | None,
+        candidate_identity: dict[str, object] | None,
+    ) -> dict[str, object]:
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        try:
+            with self._issue_lock:
+                report = self._issues.bind_context(
+                    issue_id=issue_id,
+                    reporter_id=reporter_id,
+                    thread_id=thread_id,
+                    candidate_identity=candidate_identity,
+                )
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+        return report.as_dict(state="reported")
+
+    def mark_issue_dispatch(self, control: IssueControl) -> None:
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        try:
+            with self._issue_lock:
+                self._issues.mark_dispatch(control)
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+
+    def fail_issue_rebind(self, *, issue_id: str, reporter_id: str, reason: str) -> None:
+        if not self.issue_escalation_enabled or self._issues is None:
+            raise RoutingError("issue escalation capability is unavailable")
+        try:
+            with self._issue_lock:
+                self._issues.fail_rebind(issue_id=issue_id, reporter_id=reporter_id, reason=reason)
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
 
     def start(self, agent_ids: list[str]) -> None:
         """Publish one Unix endpoint per Agent; endpoint identity is the sender identity."""
@@ -475,6 +663,28 @@ class TeamTransportBroker:
                     raise RoutingError("Team Transport reply acknowledgement is invalid")
                 del self._pending_replies[request_id]
 
+    def requeue(self, deliveries: list[Delivery]) -> None:
+        """Return claimed deliveries to the FIFO queue without changing history.
+
+        Cooperative issue pause uses this only for deliveries already claimed by the
+        Runner's main loop.  No acknowledgement/reply state is mutated, so the same
+        immutable delivery can be processed once after resume.
+        """
+        if not isinstance(deliveries, list):
+            raise RoutingError("Team Transport requeue payload is invalid")
+        with self._lock:
+            by_id = {delivery.delivery_id: delivery for delivery in deliveries}
+            if len(by_id) != len(deliveries) or any(
+                delivery_id not in self._delivery_by_id for delivery_id in by_id
+            ):
+                raise RoutingError("Team Transport requeue delivery is unknown")
+            queued_ids = {delivery.delivery_id for delivery in self._deliveries}
+            if queued_ids.intersection(by_id):
+                raise RoutingError("Team Transport requeue delivery is duplicated")
+            self._deliveries = sorted(
+                [*self._deliveries, *deliveries], key=lambda item: item.sequence
+            )
+
     def ack_terminal_handoff(self, recipient_id: str, source_id: str) -> None:
         with self._lock:
             pair = (recipient_id, source_id)
@@ -504,6 +714,8 @@ class TeamTransportBroker:
         if status not in {"completed", "blocked"} or not isinstance(summary, str):
             raise RoutingError("terminal result is invalid")
         with self._lock:
+            if self._issues is not None and self._issues.pending:
+                raise RoutingError("terminal result is blocked by an active issue")
             if agent_id in self._results:
                 raise RoutingError("Agent already reported a terminal result")
             if agent_id == self.modeling_agent_id:
@@ -701,6 +913,72 @@ def mcp_response(
                     },
                 }
             )
+        if broker.issue_escalation_enabled:
+            tools.append(
+                {
+                    "name": "report_issue",
+                    "description": (
+                        "Report one non-terminal typed issue to the Coordinator. "
+                        "Do not include credentials or platform write instructions."
+                    ),
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "category": {
+                                "type": "string",
+                                "enum": sorted(
+                                    (
+                                        "business_clarification",
+                                        "protocol_guidance",
+                                        "platform_repair",
+                                        "runtime_recovery",
+                                    )
+                                ),
+                            },
+                            "summary": {"type": "string"},
+                            "failing_operation": {"type": "string"},
+                            "error": {"type": "string"},
+                            "mutation_state": {"type": "string"},
+                            "requested_action": {"type": "string"},
+                        },
+                        "required": [
+                            "category",
+                            "summary",
+                            "failing_operation",
+                            "error",
+                            "mutation_state",
+                            "requested_action",
+                        ],
+                        "additionalProperties": False,
+                    },
+                }
+            )
+            if agent_id == broker.coordinator_agent_id:
+                tools.append(
+                    {
+                        "name": "issue_control",
+                        "description": "Coordinator-only cooperative pause/resume/abort control.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "issue_id": {"type": "string"},
+                                "reporter_id": {"type": "string"},
+                                "action": {"type": "string", "enum": ["pause", "resume", "abort"]},
+                                "control_epoch": {"type": "integer", "minimum": 1},
+                                "resolution_type": {"type": "string", "enum": ["guidance", "repair_completed", "abort"]},
+                                "resolution_text": {"type": ["string", "null"]},
+                                "repair_component": {"type": ["string", "null"]},
+                                "before_digest": {"type": ["string", "null"]},
+                                "after_digest": {"type": ["string", "null"]},
+                                "verification_reference": {"type": ["string", "null"]},
+                                "mutation_reconciliation": {"type": ["string", "null"]},
+                                "reason": {"type": ["string", "null"]},
+                            },
+                            "required": ["issue_id", "reporter_id", "action", "control_epoch"],
+                            "additionalProperties": False,
+                        },
+                    }
+                )
         return {"tools": tools}
     if method != "tools/call" or not isinstance(params, dict):
         raise RoutingError("unsupported Team Transport request")
@@ -769,6 +1047,96 @@ def mcp_response(
         return {
             "content": [
                 {"type": "text", "text": json.dumps(value.__dict__, ensure_ascii=False)}
+            ]
+        }
+    if name == "report_issue":
+        if not broker.issue_escalation_enabled:
+            raise RoutingError("issue escalation capability is unavailable")
+        try:
+            value = broker.report_issue(agent_id, **validate_issue_report_arguments(args))
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(value, ensure_ascii=False, sort_keys=True)}
+            ]
+        }
+    if name == "issue_control":
+        if not broker.issue_escalation_enabled or agent_id != broker.coordinator_agent_id:
+            raise RoutingError("issue control is Coordinator-only")
+        allowed = {
+            "issue_id",
+            "reporter_id",
+            "action",
+            "control_epoch",
+            "resolution_type",
+            "resolution_text",
+            "repair_component",
+            "before_digest",
+            "after_digest",
+            "verification_reference",
+            "mutation_reconciliation",
+            "reason",
+        }
+        if set(args) - allowed or not {"issue_id", "reporter_id", "action", "control_epoch"}.issubset(args):
+            raise RoutingError("issue_control arguments are invalid")
+        action = args.get("action")
+        resolution: IssueResolution | None = None
+        if action == "resume":
+            resolution_type = args.get("resolution_type")
+            common = {"issue_id", "reporter_id", "action", "control_epoch", "resolution_type"}
+            if resolution_type == "guidance" or resolution_type == "abort":
+                required = common | {"resolution_text"}
+                if set(args) != required:
+                    raise RoutingError("issue_control resolution fields are invalid")
+            elif resolution_type == "repair_completed":
+                required = common | {
+                    "repair_component",
+                    "before_digest",
+                    "after_digest",
+                    "verification_reference",
+                    "mutation_reconciliation",
+                }
+                if set(args) != required:
+                    raise RoutingError("issue_control repair fields are invalid")
+            else:
+                raise RoutingError("issue_control resolution type is invalid")
+            try:
+                resolution = IssueResolution(
+                    run_id=broker.issue_ledger.run_id if broker.issue_ledger else "",
+                    issue_id=args["issue_id"],
+                    reporter_id=args["reporter_id"],
+                    resolution_type=resolution_type,
+                    control_epoch=args["control_epoch"],
+                    resolution_text=args.get("resolution_text"),
+                    repair_component=args.get("repair_component"),
+                    before_digest=args.get("before_digest"),
+                    after_digest=args.get("after_digest"),
+                    verification_reference=args.get("verification_reference"),
+                    mutation_reconciliation=args.get("mutation_reconciliation"),
+                )
+            except IssueError as exc:
+                raise RoutingError(str(exc)) from None
+        elif action == "pause":
+            if set(args) != {"issue_id", "reporter_id", "action", "control_epoch"}:
+                raise RoutingError("issue_control pause fields are invalid")
+        elif action == "abort":
+            if set(args) != {"issue_id", "reporter_id", "action", "control_epoch", "reason"}:
+                raise RoutingError("issue_control abort fields are invalid")
+        else:
+            raise RoutingError("issue_control action is invalid")
+        value = broker.issue_control(
+            agent_id,
+            issue_id=args["issue_id"],
+            reporter_id=args["reporter_id"],
+            action=action,
+            control_epoch=args["control_epoch"],
+            resolution=resolution,
+            reason=args.get("reason"),
+        )
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(value, ensure_ascii=False, sort_keys=True)}
             ]
         }
     raise RoutingError("unknown Team Transport tool")

@@ -1544,3 +1544,49 @@ The newly exposed narrow defect is the Protocol input-binding boundary: exact JS
 Protocol lacks an explicit mechanical path that binds the already-delivered bytes to the builder's parsed candidate
 argument without asking the model to regard that conversion as semantic reconstruction. A future repair must address
 that boundary without changing the candidate, adding another semantic start, or bypassing the receipt builder.
+
+## Waived independent round — recoverable issue escalation
+
+The user paused the original semantic objective and requested the recovery architecture first, retained file isolation,
+and explicitly rejected hard Runtime interruption in favor of Coordinator-issued cooperative pause/resume instructions.
+The earlier exceptional waiver remains in force: no plan-review or independent Tester round is required. Developer
+verification must cover:
+
+- strict native issue schema, permissions, size/enums, immutable ID, one-active-issue CAS, exact Unicode preservation,
+  duplicate/replay rejection, and no secret/platform identity exposure;
+- member issue -> Coordinator -> structured outer event; Coordinator-bound pause/resume control; no call to
+  `RuntimeAdapter.pause`, no `turn/interrupt`, no terminal `TaskResult`, and no cleanup while pending;
+- pending issue freezes candidate deadline/redrive/latch and settlement, rejects reporter terminal, preserves reply
+  slots/candidate identity, then resumes active-time accounting exactly once;
+- guidance and repair resolutions are fsynced before Coordinator delivery; the reporter receives the exact resolution
+  in a new turn on the same live thread; ledger bytes/count and semantic-start evidence remain unchanged;
+- `mutation_state=unknown` and unreconciled apply refuse resume; dead thread/process and unsupported repair component
+  become `rebind_required`/terminal rather than fake continuation;
+- role sources, baseline and Agent runtime files remain isolated. The current minimal implementation must reject
+  `ontology_platform` MCP replacement as `rebind_required`; a later supported refresh would require a versioned
+  snapshot, exact reload/revalidation, and rollback while retaining pause;
+- existing formal owner-answer, ordinary Team Transport, terminal settlement, start ledger, R2.3-002, candidate
+  receipt/conflict/revision, cleanup and frozen Runtime regressions remain green.
+
+No real semantic start is authorized or required for this architecture implementation. Deterministic Runtime/Broker
+tests and a no-semantic-start real Codex continuation smoke, if available without platform mutation, are sufficient;
+they do not claim R2.3-005 modeling or Acceptance PASS.
+
+### Implementation verification result
+
+- Delegated development added the strict run-local issue state machine, formal Team Transport tools, Runner main-loop
+  dispatch, active-time candidate pause/resume, Codex tool-surface projection, four role instructions, and focused
+  regression coverage. Main-Agent review then corrected active-time double counting, made uncertain writes require
+  formal reconciliation, prevented an outer abort from being recast as resume, and required the reporter to finish the
+  paused turn before resume can start a new turn.
+- `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests` passed with **394 passed, 1 skipped, 168
+  subtests**. The focused issue/candidate/transport/Runner set passed **56 tests plus 6 subtests**; targeted Ruff passed.
+  Tests cover cooperative Runtime delivery without `RuntimeAdapter.pause`, terminal and cleanup deferral, exact
+  abort/reconciliation binding, active-time freeze, same-thread/new-turn guard, and existing Modeling Team regressions.
+- Read-only strict replay of the canonical ledger remains **72 lines / 16,878 bytes**, SHA-256
+  `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`, with
+  `cap=15`, `semantic_start_count=15`, `active_reservations=0`. No semantic start or live Agent continuation smoke was
+  run, so this result accepts only the deterministic recovery architecture, not the paused modeling/Acceptance goal.
+- Current in-place repair resume is fail-closed to `shared_backend_service|shared_backend_data`. MCP code, frozen role
+  assets/instructions, Runner/Transport mechanics, dead App Servers, thread drift, candidate drift, and unfinished
+  reporter turns become `rebind_required` or terminal; no hot replacement is claimed.

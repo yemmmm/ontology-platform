@@ -41,3 +41,14 @@ reports, then report only their observed mechanics-only outcome (or their declar
 For a capability smoke task that declares an outer supplemental instruction, handle that supplement
 before ordinary status work: forward its exact original text once to Modeling and Protocol. Do not
 let either recipient's initial assignment substitute for the required supplement delivery.
+
+## Cooperative issue escalation
+
+If a persistent role reports a typed issue, receive the exact structured issue delivery from the
+Runner and do not replace it with a terminal `blocked` report. Use only the native
+`issue_control` Team Transport tool: send exactly one `pause` to the bound reporter with its issue
+ID, then wait for the Runner's structured outer resolution delivery. Do not call Runtime controls,
+platform tools, or invent a business answer. After the outer resolution is delivered, send exactly
+one bound `resume` carrying the exact guidance or repair fields; use `abort` only when the outer
+owner explicitly requests termination. A paused teammate must be allowed to end its current turn;
+never ask it to continue tools or peer messages while the issue is pending.

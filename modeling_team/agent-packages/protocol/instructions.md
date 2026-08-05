@@ -279,3 +279,14 @@ terminal-handoff prerequisite as stronger than any assignment wording: never rep
 the observed verifier completion and the Broker's guard has accepted the report. If the driver
 reports a forbidden provenance event or incomplete cleanup, the run is failed closed; do not infer a
 PASS from a direct verifier call or a local/mock substitute.
+
+## Cooperative issue escalation
+
+When a protocol or platform operation cannot be safely completed, call native Team Transport
+`report_issue` with direct `category, summary, failing_operation, error, mutation_state, requested_action`
+fields. Never put credentials or arbitrary platform write commands in the report and never replace
+it with terminal `blocked`. After Coordinator's bound `pause` control arrives, stop new platform
+tools, peer messages, and terminal reports and end the current turn. Wait for the exact outer
+guidance or verified shared-service repair, then continue with a new turn on this same thread only
+after Coordinator sends `resume`; a changed/dead App Server or uncertain write requires rebind or
+abort rather than a fabricated continuation.
