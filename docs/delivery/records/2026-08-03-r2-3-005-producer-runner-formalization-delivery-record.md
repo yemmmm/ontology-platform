@@ -2396,3 +2396,20 @@ the formal builder, or starting another real run before authorization.
 - This is a `platform-contract` failure, not an Acceptance verdict or modeling-quality result. No start17 is
   authorized. Delivery must append the terminal classification, clean retained run-owned resources and credentials,
   and report final ledger/resource/service state before another authorization can be requested.
+
+### 2026-08-05T19:05:36+08:00 — Start16 terminal classification and cleanup
+
+- Delivery appended exactly one `terminal_failure` for
+  `r23005-real-20260805t103748z-start16-rebind` with `classification=platform-contract` and
+  `complete_modeling_quality_result=false`. Canonical ledger final state is **80 lines / 18,842 bytes**,
+  SHA-256 `20d1c4d23b9a2f43eaa275f50860c8d2d958ff3db098769ae23b9ed790412fde`, strict replay
+  `cap=16`, `semantic_start_count=16`, `active_reservations=0`.
+- Existing generic PlatformScope cleanup deleted the run-owned Project (DELETE 204; readback 404) and Ontology
+  (readback 404). Build Sessions and Leases are zero; active Project keys are zero. Protocol, run-admin and temporary
+  Delivery credentials are revoked, with `scope_disposition=deleted-empty` and aggregate non-active-key readback.
+- Delivery removed only the exact unoccupied run transport sockets and `/tmp/mt-5760916cd97ea45b96720cbb`; run
+  secrets and Runner/Agent/PTY/Team Transport processes are absent. The retained run/evidence root and
+  `evidence/cleanup.json` remain available for diagnosis.
+- Backend health is OK, frontend returns HTTP 200, and the repository is clean at repair commit `b2b04ac`. Post-commit
+  focused verification passed **75 tests plus 5 subtests**. No budget, repair authorization, or semantic start was
+  added during cleanup. R2.3-005 remains incomplete and requires explicit new authorization before another live run.
