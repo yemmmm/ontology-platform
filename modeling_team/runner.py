@@ -1522,7 +1522,11 @@ class TeamRunner:
             except Exception as exc:
                 raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
         elif action == "user":
-            if self._formal_coordination_enabled() and set(message) != {"action", "text"}:
+            if self._formal_coordination_enabled() and set(message) - {
+                "action",
+                "text",
+                "question_delivery_id",
+            }:
                 raise TeamConfigurationError("schema-v2 owner answer envelope has invalid fields")
             text = message.get("text")
             if not isinstance(text, str):
@@ -1535,7 +1539,15 @@ class TeamRunner:
             if self.run.configuration.task.schema_version == 2:
                 question_delivery_id: object
                 if self._formal_coordination_enabled():
-                    question_delivery_id = self._resolve_formal_owner_question(text)
+                    if "question_delivery_id" in message:
+                        # An explicit ID is a mechanical disambiguator only.  The
+                        # release path below remains the authority for displayed,
+                        # unconsumed, same-run/project and origin bindings.
+                        question_delivery_id = message["question_delivery_id"]
+                    else:
+                        # Preserve the text-only compatibility path when exactly
+                        # one currently displayed question is eligible.
+                        question_delivery_id = self._resolve_formal_owner_question(text)
                 else:
                     question_delivery_id = message.get("question_delivery_id")
                 self._release_owner_answer(

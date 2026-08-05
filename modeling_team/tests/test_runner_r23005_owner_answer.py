@@ -430,6 +430,124 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
                 runner.receive_outer({"action": "user", "text": "未知"})
 
+    def test_formal_explicit_question_id_selects_one_of_multiple_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            first = runner.transport.send(
+                "modeling", "coordinator", "candidate first", expects_reply=True
+            )
+            second = runner.transport.send(
+                "modeling", "coordinator", "candidate second", expects_reply=True
+            )
+            displayed = _drain_and_observe(runner)
+            self.assertEqual(
+                [
+                    envelope["delivery_id"]
+                    for envelope in displayed
+                    if envelope.get("type") == "delivery"
+                ],
+                [first.delivery_id, second.delivery_id],
+            )
+
+            # Text-only inference remains fail-closed when two questions are
+            # currently eligible; the explicit ID is the only disambiguator.
+            with self.assertRaisesRegex(TeamConfigurationError, "matches multiple"):
+                runner.receive_outer({"action": "user", "text": "ambiguous"})
+
+            selected_output = runner.receive_outer(
+                {
+                    "action": "user",
+                    "text": "answer for second",
+                    "question_delivery_id": second.delivery_id,
+                }
+            )
+            self.assertEqual(selected_output[0]["reply_to_delivery_id"], second.delivery_id)
+            self.assertTrue(runner._outer_questions[second.delivery_id]["consumed"])
+            self.assertFalse(runner._outer_questions[first.delivery_id]["consumed"])
+            owner = runner._owner_answers[(second.delivery_id, "answer for second")]
+            self.assertEqual(owner["question_delivery_id"], second.delivery_id)
+            outer_user = json.loads(
+                (runner.run.root / "evidence/outer-user.jsonl").read_text(encoding="utf-8").strip()
+            )
+            self.assertEqual(outer_user["question_delivery_id"], second.delivery_id)
+            self.assertEqual(outer_user["delivery_id"], outer_user["release_id"])
+
+            # Once only the first question remains eligible, the legacy
+            # text-only path still resolves it without an explicit ID.
+            fallback_output = runner.receive_outer({"action": "user", "text": "answer for first"})
+            self.assertEqual(fallback_output[0]["reply_to_delivery_id"], first.delivery_id)
+            self.assertTrue(runner._outer_questions[first.delivery_id]["consumed"])
+
+    def test_formal_explicit_question_id_rejects_forged_undisplayed_replay_and_wrong_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            undisplayed = runner.transport.send(
+                "modeling", "coordinator", "candidate not displayed", expects_reply=True
+            )
+            output = runner.drain()
+            with self.assertRaisesRegex(TeamConfigurationError, "requires a question delivery ID"):
+                runner.receive_outer(
+                    {"action": "user", "text": "null ID", "question_delivery_id": None}
+                )
+            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+                runner.receive_outer(
+                    {
+                        "action": "user",
+                        "text": "undisplayed answer",
+                        "question_delivery_id": undisplayed.delivery_id,
+                    }
+                )
+            runner.observe_foreground_output(output)
+
+            with self.assertRaisesRegex(TeamConfigurationError, "unknown"):
+                runner.receive_outer(
+                    {"action": "user", "text": "forged answer", "question_delivery_id": "delivery-forged"}
+                )
+
+            runner.receive_outer(
+                {
+                    "action": "user",
+                    "text": "first answer",
+                    "question_delivery_id": undisplayed.delivery_id,
+                }
+            )
+            with self.assertRaisesRegex(TeamConfigurationError, "already consumed"):
+                runner.receive_outer(
+                    {
+                        "action": "user",
+                        "text": "replayed answer",
+                        "question_delivery_id": undisplayed.delivery_id,
+                    }
+                )
+
+            wrong_binding = runner.transport.send(
+                "modeling", "coordinator", "candidate wrong binding", expects_reply=True
+            )
+            _drain_and_observe(runner)
+            record = runner._outer_questions[wrong_binding.delivery_id]
+            record["project_id"] = "project-forged"
+            with self.assertRaisesRegex(TeamConfigurationError, "project binding drifts"):
+                runner.receive_outer(
+                    {
+                        "action": "user",
+                        "text": "wrong project",
+                        "question_delivery_id": wrong_binding.delivery_id,
+                    }
+                )
+            record["project_id"] = runner.scope.project_id
+            record["run_id"] = "run-forged"
+            with self.assertRaisesRegex(TeamConfigurationError, "run binding drifts"):
+                runner.receive_outer(
+                    {
+                        "action": "user",
+                        "text": "wrong run",
+                        "question_delivery_id": wrong_binding.delivery_id,
+                    }
+                )
+            self.assertFalse(record["consumed"])
+
     def test_formal_live_binding_prepare_start_drain_and_owner_release_without_model(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
@@ -914,15 +1032,35 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 runner._release_owner_answer("coordinator", "different", question.delivery_id)
             self.assertEqual(runner.transport.drain(), [])
 
-    def test_formal_owner_envelope_rejects_question_id_and_unknown_action(self) -> None:
+    def test_formal_owner_envelope_allows_question_id_and_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner, _adapter = _formal_runner(Path(directory))
             with self.assertRaisesRegex(TeamConfigurationError, "invalid fields"):
                 runner.receive_outer(
-                    {"action": "user", "text": "answer", "question_delivery_id": "x"}
+                    {"action": "user", "text": "answer", "unexpected": "x"}
                 )
             with self.assertRaisesRegex(TeamConfigurationError, "unknown outer Runner action"):
                 runner.receive_outer({"action": "unexpected", "text": "answer"})
+
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate with explicit ID", expects_reply=True
+            )
+            _drain_and_observe(runner)
+            output = runner.receive_outer(
+                {
+                    "action": "user",
+                    "text": "answer bound by ID",
+                    "question_delivery_id": question.delivery_id,
+                }
+            )
+            self.assertEqual(output[0]["reply_to_delivery_id"], question.delivery_id)
+            self.assertEqual(
+                runner._owner_answers[(question.delivery_id, "answer bound by ID")][
+                    "question_delivery_id"
+                ],
+                question.delivery_id,
+            )
 
     def test_only_active_modeling_questions_can_be_observed_and_displayed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
