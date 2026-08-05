@@ -2413,3 +2413,19 @@ the formal builder, or starting another real run before authorization.
 - Backend health is OK, frontend returns HTTP 200, and the repository is clean at repair commit `b2b04ac`. Post-commit
   focused verification passed **75 tests plus 5 subtests**. No budget, repair authorization, or semantic start was
   added during cleanup. R2.3-005 remains incomplete and requires explicit new authorization before another live run.
+
+### 2026-08-05T20:30:47+08:00 — Three additional modeling starts authorized
+
+- The user explicitly authorized **three** additional real semantic modeling starts and resumed the original
+  R2.3-005 objective. This is the normal L0 `+3` authorization tranche. The canonical pre-authorization state remains
+  80 lines / 18,842 bytes / SHA-256
+  `20d1c4d23b9a2f43eaa275f50860c8d2d958ff3db098769ae23b9ed790412fde`, strict replay
+  `cap=16`, `semantic_start_count=16`, `active_reservations=0`.
+- The next run must reuse the same bounded business slice, formal Task/Profile and accepted start16 evidence. Its
+  only platform delta is the committed Acceptance-start and numeric Runtime-thread repair (`b2b04ac`); it must not
+  rebuild the workflow, add preliminary audit/mock gates, or consume a start on a different slice.
+- After this authorization record is committed in a clean baseline, Delivery may append exactly one `+3` budget
+  authorization and one repair authorization for the failed start16 bound to the fresh baseline, then launch one
+  fresh run-id. The existing waiver remains: no plan-review or independent-test round; live Modeling/Protocol/
+  Acceptance/settlement is the test. Any recoverable live issue must remain within the same run and use the new
+  Coordinator escalation path. No fourth additional start is authorized.

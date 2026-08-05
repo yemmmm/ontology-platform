@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户明确授权的 1 次 start16 已消耗，正式账本 16/16/0；真实 run 已进入 semantic_start，但 Acceptance 在验收轮启动前暴露 acceptance-start 载荷未投递及数字开头 Runtime thread ID 被错用 Agent-ID 规则拒绝的平台契约缺陷；本次未进入正式 Acceptance/Examiner，窄修复已提交，失败已分类为 platform-contract 且资源已清理。当前无剩余授权次数，不得启动新 run。`
+当前状态：`start16 的 platform-contract 失败已窄修复并清理，正式账本起点为 16/16/0；用户已新授权 3 次真实语义建模，待干净授权基线提交后向 canonical ledger 追加 +3，绑定 start16 的 Acceptance-start/thread-context 平台修复，并立即以 fresh run-id 恢复原业务切片。不重做方案审查或独立测试，真实建模为本轮验证。`
 
 优先级：`P0`
 
