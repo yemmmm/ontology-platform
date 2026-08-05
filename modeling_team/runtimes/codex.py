@@ -1176,6 +1176,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self.root / "modeling_team" / "transport_mcp.py",
             agent.home / "transport_mcp.py",
         )
+        # The transport is launched as an isolated standalone script.  Stage
+        # its one local import beside it instead of relying on the checkout or
+        # an inherited PYTHONPATH, which the private Runtime namespace must not
+        # expose.
+        shutil.copyfile(
+            self.root / "modeling_team" / "interventions.py",
+            agent.home / "interventions.py",
+        )
         source_root = run.root / "sources"
         if getattr(task, "schema_version", 1) == 2:
             source_root = source_root / agent.package.role
@@ -1186,6 +1194,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         else:
             shutil.copytree(source_root, agent.home / "sources")
         os.chmod(agent.home / "transport_mcp.py", 0o444)
+        os.chmod(agent.home / "interventions.py", 0o444)
         # This private config deliberately does not inherit the user's Codex config.  The
         # CLI flags below are a second, command-line enforced layer because several of
         # these are stable features enabled by default in interactive Codex installations.

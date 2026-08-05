@@ -2342,3 +2342,28 @@ the formal builder, or starting another real run before authorization.
 - Pre-authorization read-only replay remains 72 lines / 16,878 bytes, SHA-256
   `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`, with
   `cap=15`, `semantic_start_count=15`, `active_reservations=0`.
+
+### 2026-08-05T18:35:21+08:00 — Start16 presemantic staging failure and narrow repair
+
+- Clean authorization baseline commit `45aac99` produced fresh baseline
+  `1167245343f12dfab8cc7f652c93e186172cb9b001156be464e487110d38ae3c` for run
+  `r23005-real-20260805t102441z-start16`. Delivery appended exactly one `+1` authorization and one start15 repair
+  bound to that baseline. Strict replay became `cap=16`, `semantic_start_count=15`, `active_reservations=0`.
+- The first foreground launch reserved the run but failed before `semantic_start` while App Server started the first
+  Agent thread: required MCP `team_transport` closed before its `initialize` response. Runner appended
+  `presemantic_release`, cleaned the fresh empty Project/Ontology, credentials, Session/Lease and Runtime, and retained
+  the run evidence. The temporary Delivery-only admin key was revoked; backend/frontend remained healthy; replay
+  returned to `16/15/0`. This did not consume the user's semantic opportunity.
+- Direct reproduction found the exact packaging defect introduced with cooperative issue recovery:
+  `transport_mcp.py` is launched as the standalone isolated script `/agent/home/transport_mcp.py`, but its new relative
+  import `.interventions` could not resolve and `_write_config` had staged only the transport file. This is a
+  `runtime/infrastructure` presemantic failure, not a Modeling/Protocol semantic result.
+- Narrow delegated repair keeps Team Transport semantics unchanged: standalone launch selects its sibling import;
+  Codex Runtime stages `interventions.py` beside the transport with mode `0444`; baseline/runtime-core evidence binds
+  the dependency digest. Reusable regression executes the copied standalone script through a real MCP `initialize`.
+  Developer checks passed: issue/P2a/Codex-isolation **87 tests plus 33 subtests**, contracts **38 tests plus 3
+  subtests**, Ruff, `py_compile`, and `git diff --check`.
+- GitNexus identified `_write_config` as HIGH impact (8 affected symbols, 3 execution processes); the repair was
+  restricted to the one additional staged file and immutable manifest binding. After a clean repair commit, Delivery
+  may create a fresh run-id/new baseline and use the existing presemantic rebind path. No additional budget is added
+  and start17 remains unauthorized.

@@ -1693,6 +1693,16 @@ class R23005ContractTests(unittest.TestCase):
             self.assertTrue(any(key.startswith("instructions:acceptance") for key in baseline["files"]))
             self.assertTrue(any(key.startswith("skill:acceptance:") for key in baseline["files"]))
             self.assertIn("runner.acceptance_carrier", baseline["call_sites"])
+            interventions_key = "team_transport_interventions"
+            self.assertIn(interventions_key, baseline["files"])
+            self.assertEqual(
+                baseline["call_sites"]["transport.staged_interventions"],
+                baseline["files"][interventions_key],
+            )
+            self.assertEqual(
+                baseline["runtime_contract"]["team_transport"]["staged_dependency"]["sha256"],
+                baseline["files"][interventions_key],
+            )
             self.assertEqual({agent.package.role for agent in run.configuration.profile.agents}, {"coordinator", "modeling", "protocol", "acceptance"})
             run.terminal_results = {role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol", "acceptance")}
             scope = {

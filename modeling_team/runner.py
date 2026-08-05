@@ -460,6 +460,7 @@ class TeamRunner:
             "preflight": self.repository_root / "modeling_team/preflight.py",
             "codex_adapter": self.repository_root / "modeling_team/runtimes/codex.py",
             "team_transport": self.repository_root / "modeling_team/transport_mcp.py",
+            "team_transport_interventions": self.repository_root / "modeling_team/interventions.py",
             "platform_scope": self.repository_root / "modeling_team/platform_scope.py",
             "protocol_mcp_launch": self.repository_root / "modeling_team/protocol_mcp_launch.py",
             "protocol_mechanics": self.repository_root / "modeling_team/protocol_mechanics.py",
@@ -541,6 +542,7 @@ class TeamRunner:
                 "codex.start_task": digests["codex_adapter"],
                 "transport.send": digests["team_transport"],
                 "transport.report": digests["team_transport"],
+                "transport.staged_interventions": digests["team_transport_interventions"],
                 "transport.mcp_response_report_observer": digests["team_transport"],
                 "transport.ack_terminal_handoff": digests["team_transport"],
                 "foreground_monitor.extract_adverse_order": digests["foreground_monitor"],
@@ -562,6 +564,19 @@ class TeamRunner:
                 "p2a_protocol_driver.main": digests["p2a_protocol_driver"],
             },
             "runtime_contract": {
+                "team_transport": {
+                    "server": "team_transport",
+                    "command": "/usr/bin/python3",
+                    "args": ["/agent/home/transport_mcp.py"],
+                    "source_path": "modeling_team/transport_mcp.py",
+                    "sha256": digests["team_transport"],
+                    "staged_dependency": {
+                        "source_path": "modeling_team/interventions.py",
+                        "staged_path": "/agent/home/interventions.py",
+                        "sha256": digests["team_transport_interventions"],
+                        "mode": "0444",
+                    },
+                },
                 "runner_capability_mcp": {
                     "server": "runner_capability",
                     "source_path": "modeling_team/capability_mcp.py",
@@ -2829,6 +2844,9 @@ class TeamRunner:
                 ),
                 "transport_mcp_sha256": digest_file(
                     self.repository_root / "modeling_team/transport_mcp.py"
+                ),
+                "transport_interventions_sha256": digest_file(
+                    self.repository_root / "modeling_team/interventions.py"
                 ),
             },
         )

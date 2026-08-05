@@ -1483,6 +1483,12 @@ class CodexIsolationTests(unittest.TestCase):
                 else:
                     os.environ["CODEX_HOME"] = original_home
             config = (agent.home / "config.toml").read_text(encoding="utf-8")
+            staged_interventions = agent.home / "interventions.py"
+            self.assertEqual(
+                staged_interventions.read_bytes(),
+                (root / "modeling_team/interventions.py").read_bytes(),
+            )
+            self.assertEqual(stat.S_IMODE(staged_interventions.stat().st_mode), 0o444)
             for feature in ("apps", "plugins", "multi_agent", "browser_use", "memories", "hooks"):
                 self.assertIn(f"{feature} = false", config)
             self.assertIn('web_search = "disabled"', config)

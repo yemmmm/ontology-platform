@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import shutil
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +33,25 @@ def _candidate() -> dict[str, object]:
 
 
 class IssueEscalationTests(unittest.TestCase):
+    def test_staged_transport_starts_as_standalone_script(self) -> None:
+        """The isolated Runtime must not need the repository package on sys.path."""
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "agent-home"
+            home.mkdir()
+            for name in ("transport_mcp.py", "interventions.py"):
+                shutil.copyfile(Path(__file__).parents[1] / name, home / name)
+            completed = subprocess.run(
+                ["/usr/bin/python3", str(home / "transport_mcp.py")],
+                input='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n',
+                text=True,
+                capture_output=True,
+                check=False,
+                env={**os.environ, "TEAM_TRANSPORT_SOCKET": str(home / "missing.sock")},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            response = json.loads(completed.stdout)
+            self.assertEqual(response["result"]["protocolVersion"], "2024-11-05")
+
     def test_strict_report_issue_and_one_active_issue(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker"

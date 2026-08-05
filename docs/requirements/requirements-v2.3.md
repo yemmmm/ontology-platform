@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`已恢复真实建模推进；可恢复问题升级已实现，用户于 2026-08-05 明确授权 1 次 start16，正式账本将在 clean baseline 后由 15/15/0 扩展为 16/15/0；本次仍只完成原有单一业务切片及 Acceptance，不扩大建模目标）`
+当前状态：`已恢复真实建模推进；用户明确授权的 1 次 start16 已入账，正式账本 16/15/0；首次 fresh run 在 semantic_start 前暴露 Team Transport 隔离依赖未 staged，已 cleanup/presemantic_release，窄修复完成待 clean baseline/rebind 后继续，语义次数尚未消耗）`
 
 优先级：`P0`
 

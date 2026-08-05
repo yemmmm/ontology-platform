@@ -13,13 +13,26 @@ from pathlib import Path
 import re
 from typing import Callable
 
-from .interventions import (
-    IssueControl,
-    IssueError,
-    IssueResolution,
-    RecoverableIssueLedger,
-    validate_issue_report_arguments,
-)
+# The Runtime stages this module as a standalone script next to its small
+# dependency rather than exposing the repository package or PYTHONPATH.  Keep
+# the package import for in-repository use, while making that isolated launch
+# boundary explicit for `/usr/bin/python3 /agent/home/transport_mcp.py`.
+if __package__:
+    from .interventions import (
+        IssueControl,
+        IssueError,
+        IssueResolution,
+        RecoverableIssueLedger,
+        validate_issue_report_arguments,
+    )
+else:
+    from interventions import (
+        IssueControl,
+        IssueError,
+        IssueResolution,
+        RecoverableIssueLedger,
+        validate_issue_report_arguments,
+    )
 
 
 _TERMINAL_ROLE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")

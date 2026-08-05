@@ -19,24 +19,25 @@ from modeling_team.runtimes.p2a_codex import P2ACodexRuntimeAdapter
 
 ROOT = Path(__file__).resolve().parents[2]
 FROZEN_GLOBAL_SURFACES = {
-    # R2.3-005 intentionally updates these four shared surfaces for explicit
+    # R2.3-005 intentionally updates these five shared surfaces for explicit
     # proof-gate projection and neutral Producer reuse; keep all other frozen
     # platform/P2a surfaces byte-bound below.
     # Formal candidate-progress and cooperative issue escalation refresh (old -> new):
     # runner 480b0f851e4f311cc1de0c21b7b862e973de9c0913583863fdfe11119ff448c7 ->
-    # 9e66abc68a1359fd8214ebf3ebc9dfe36ae9ef910f0789df543611a4c3956ecf
+    # 69dcf7b65523ff446309354cab8956db6178c24f384e3f9bea5b8ee6a8941cf7
     # protocol_mechanics 1aa81771de8a1ab7d45e7d87b9f2d788a3e989d252afd5cd8468947ecf0fb800 ->
     # 0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb
     # protocol_retrieval_mcp cacc947ca7f1eb02050b1de30d54f4ba471f4eee1eea37195253d5bdb1b73be9 ->
     # ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc
     # codex cd8332734d239e15e4e4743a6d73cbedabf49bb1161b17410cf37ca08e42b6b2 ->
-    # 53c67f94722eadba563335ad7a44354187fc301d84786da62801b361b1163286
-    # These are the four shared files changed by R2.3-005; the platform schema
+    # 7508d05bd186e3a17821c4925695abe8984aeeb9695677f8da93bed015d2d441
+    # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.
-    "modeling_team/runner.py": "9e66abc68a1359fd8214ebf3ebc9dfe36ae9ef910f0789df543611a4c3956ecf",
+    "modeling_team/runner.py": "69dcf7b65523ff446309354cab8956db6178c24f384e3f9bea5b8ee6a8941cf7",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "53c67f94722eadba563335ad7a44354187fc301d84786da62801b361b1163286",
+    "modeling_team/runtimes/codex.py": "7508d05bd186e3a17821c4925695abe8984aeeb9695677f8da93bed015d2d441",
+    "modeling_team/interventions.py": "7f534f51339c85a9d95f3eade3cc0079020a22fae77922b9d56b24da6bf6488e",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
 
