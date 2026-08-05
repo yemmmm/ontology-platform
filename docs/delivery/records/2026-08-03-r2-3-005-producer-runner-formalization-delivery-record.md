@@ -2158,3 +2158,53 @@
   hashes remained unchanged. GitNexus reported CRITICAL/noisy shared-ledger impact and its refresh failed on invalid
   UTF-8; the limitation was surfaced and bounded by direct-source review plus focused compatibility tests. Outcome:
   policy repair PASS; next action is clean commit, direct start8 repair authorization and start9.
+
+### 2026-08-04 to 2026-08-05 — Start9/start10 and formal Acceptance provider-auth closure
+
+- Start9's first prepared reservation was released before semantic start; the valid fresh start9 then reached
+  `semantic_start` but the controlling PTY received EOF because the launcher used a heredoc. It was recorded
+  `collaboration/routing`, false, and cleaned with zero residue. Start10 used a direct PTY and produced a complete
+  56-item candidate, but the persistent Acceptance app-server had no model-provider authentication and returned
+  `401 Unauthorized` before any ticket or Examiner report. Start10 was recorded `runtime/infrastructure`, false.
+- Root cause was a contract mix-up: formal Acceptance correctly had no platform key or source bundle, but its private
+  runtime also omitted the separate Codex provider `auth.json`. Focused plan review accepted a formal-only secure
+  staging repair while preserving non-formal/R2.3-002 behavior. Independent Round 8 passed 12 focused isolation,
+  provider-auth, invalid-source and cleanup checks. Commit `27e8e48` (`Close formal Acceptance auth staging`) contains
+  the implementation, requirement/design sync and Round 8 record.
+
+### 2026-08-05 — Third +3 authorization, start11 and start12
+
+- The user authorized exactly three additional semantic starts. The canonical ledger appended one exact `+3` budget
+  authorization and the start10 repair without rewriting history. The active systemd service lacked the three
+  non-secret canonical semantic environment values; before any reservation, Delivery added
+  `SEMANTIC_CANONICAL_STORE=rdf`, `SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary`, and
+  `SEMANTIC_READ_MODE=canonical`, restarted once, and verified service, backend, frontend and authenticated canonical
+  mode health.
+- Start11 reached semantic modeling but Delivery wrote a grounded owner answer as raw PTY text instead of the required
+  `{action:user,text:...}` JSON envelope. It was recorded `collaboration/routing`, false, and cleaned. Start12 used the
+  correct envelope and became the first R2.3-005 run to apply the complete candidate: staged dry-run/apply succeeded,
+  validation conformed, reasoning was consistent and the negative probe was rejected without application.
+- Start12 still withheld `ready_for_acceptance`: the generic query first used an invalid scope, then combined two CQs
+  in one hybrid request, returned 100 truncated matches with an unconsumed cursor and a missing vector index, and
+  submitted entity/unknown items with empty Evidence arrays. Fallback readback recovered all 11 required entities but
+  could not replace governed generic retrieval. The run was recorded `platform-contract`, false; Acceptance received
+  no ticket.
+
+### 2026-08-05 — Retrieval repair Round 9 and final authorized start13
+
+- Focused plan review required legal Ontology scope, one CQ per query, lexical fallback for a missing vector index,
+  context-before-match cursor consumption, and one-to-one translation of candidate citations into supported inline
+  Evidence while retaining extra digest/location/owner metadata only in local receipts. The main agent rejected the
+  first developer-ready diff because ordinary-v2 Evidence mapping was missing; the corrected contract added it to
+  every model-visible layer.
+- Independent Round 9 passed the existing C88, retrieval-gate, C94/C95/C97/C98, JSON/YAML, strict task/profile, Ruff
+  and diff checks. Commit `4fe546f` (`Clarify governed retrieval contract`) contains the focused repair and Round 9.
+- Start13 produced a complete 58-item candidate with 14 citation-bearing items, three explicit unknowns, one negative
+  probe and two CQs. Protocol received the candidate and a reminder in two separate turns but issued no platform call,
+  receipt, coordination event or terminal report; each turn ended with a pending statement, and Coordinator did not
+  redrive it. The run was recorded `collaboration/routing`, false, then cleaned with owned Project/Ontology deletion,
+  key revocation, zero session/lease/child/process residue and healthy backend/frontend.
+- Final canonical ledger is 62 lines/14,488 bytes, SHA
+  `7e5e2c62989134f71d94325dd363b5d48eb621f3e0e1681bdad9c9ad0088ab05`, replay
+  `cap=13, semantic_start_count=13, active_reservations=0`. Evidence is retained under
+  `workspaces/modeling-runs/r23005-real-20260805t043924z-start13/`. No start14 is authorized.

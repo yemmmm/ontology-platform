@@ -3,14 +3,17 @@
 ## 文档信息
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start8 因 entity-producing items 缺少必填 label 而 `BLOCKED/modeling-quality`；用户追加三次授权已使用
-  一次，label closure 窄修复经独立 Round 6 PASS；其后账本又跑 start9（collaboration/routing 失败）与 start10（runtime/infrastructure 失败），cap/count/active 已至 10/10/0；start10 的 401 根因已确认是正式 Acceptance 缺少私有 model-provider auth staging，不是 platform credential（bootstrap/read/Protocol key）问题；用户于 2026-08-05 新授权 exact +3，待 clean baseline 后追加至 cap 13；
+  start10 的 Acceptance provider-auth 修复经独立 Round 8 PASS，start12 首次完成真实模型应用、
+  validation、reasoning 和负向探针，但通用检索截断而未进入 Acceptance；对应 Protocol 检索修复经
+  独立 Round 9 PASS。start11 与 start13 分别因外层信封错误和 Protocol 收件后不执行而
+  `collaboration/routing` 失败。正式账本现为 `13/13/0`，等待新的用户授权；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：以已通过的场景无关 label closure 建立 clean repair baseline，运行 fresh start9，继续完成
-  首次真实 PASS；正式账本 cap/count/active 为 `10/8/0`
+- 当前下一目标：在新的用户授权后只修复 start13 暴露的 Protocol 收件/redrive 协作停滞，复用
+  start12 已成功的语义候选与 start13 已冻结的检索合同，继续进入独立 Acceptance；正式账本
+  cap/count/active 为 `13/13/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -1371,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`修复中（Runner 与离线机械能力已实现并独立测试 PASS；账本 cap/count/active 已至 10/10/0——10 次真实建模全部失败：8 次 collaboration/routing、1 次 modeling-quality（start8，label closure 窄修复经独立 Round 6 PASS）、1 次 runtime/infrastructure（start10，2026-08-04 12:37，正式 Acceptance 缺少私有 model-provider auth staging 导致 provider 401；platform credential 路径未涉入）；用户于 2026-08-05 新授权 exact +3，Round 8 focused repair 已 PASS，待 clean baseline 后将 cap 追加至 13；当前仍不得 reserve 新 start）`
+当前状态：`修复中（Runner 与离线机械能力已实现并独立测试 PASS；start12 已证明真实 Modeling、分阶段 apply、validation、reasoning 和负向探针，尚未证明独立 Acceptance。start10 provider-auth 修复 Round 8 PASS；start12 retrieval-focused 修复 Round 9 PASS；start13 因 Protocol 收到候选后连续两个 turn 只报告 pending、未调用平台且 Coordinator 未 redrive 而 collaboration/routing 失败。正式账本 cap/count/active=13/13/0，继续前必须获得新的用户授权）`
 
 优先级：`P0`
 
