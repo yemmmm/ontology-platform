@@ -2523,3 +2523,17 @@ the formal builder, or starting another real run before authorization.
   `dafde7d0e5ce3a50e30f3f80e95e47f588d2f2f25feae5c3f7efc752e6ce3e1f`, strict replay `19/19/0`. A separately
   active same-name admin key predates start19 and was deliberately left untouched. All three authorized starts are
   consumed; no start20 is authorized, so the committed redrive repair has not received a fresh real-modeling check.
+
+### 2026-08-05T23:21:00+08:00 — Two additional modeling starts authorized
+
+- The user explicitly authorized **two** additional real semantic modeling starts and directed R2.3-005 to continue.
+  This explicit quantity overrides the normal L0 default tranche of three. The authorization baseline is clean commit
+  `e7a9583`; canonical pre-authorization ledger evidence remains 93 lines, SHA-256
+  `dafde7d0e5ce3a50e30f3f80e95e47f588d2f2f25feae5c3f7efc752e6ce3e1f`, strict replay `19/19/0`.
+- Start20 must reuse the same bounded slice, Task/Profile, Agent roles, source answers and retained start19 candidate
+  evidence. Its only intended platform delta is the committed generic candidate-barrier repair `0531c62`; no plan
+  review, independent-test round, preliminary audit/mock program, new slice or one-off checker is authorized. Real
+  Modeling/Protocol/Acceptance/settlement remains the test.
+- After this authorization record is committed, Delivery may append exactly one `+2` authorization bound to the new
+  baseline, append the permitted repair binding for start19, and launch a fresh start20. The second start may be used
+  only after start20 reaches a recorded terminal outcome and a fresh run is still needed. No third start is authorized.

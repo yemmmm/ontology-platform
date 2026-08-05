@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户授权的 +3 已全部使用。start17、start18 分别暴露 terminal guard 与 foreground issue 输入问题并已修复；start19 生成真实候选，但 Protocol issue 恢复期间 Runner 未及时锁存原候选回合完成状态，恢复回合覆盖该状态后 formal candidate redrive 未触发，最终 candidate-progress-timeout，未发生平台写入且未进入 Acceptance。start19 已分类、保留证据并完成清理，账本 19/19/0。通用 redrive 锁存缺陷已在 0531c62 修复并通过离线回归；R2.3-005 仍未完成，新的真实验证必须取得用户追加授权。`
+当前状态：`用户已在 start19 清理和通用 redrive 锁存修复 0531c62 后明确追加授权 2 次真实建模。授权前账本为 19/19/0；应先以当前干净提交记录精确 +2 授权，再复用同一业务切片启动 start20。仍不重做方案审查或独立测试，以真实 Modeling/Protocol/Acceptance/settlement 为验证；第二次仅在 start20 形成终态且仍有必要时使用，不得启动第三次。`
 
 优先级：`P0`
 
