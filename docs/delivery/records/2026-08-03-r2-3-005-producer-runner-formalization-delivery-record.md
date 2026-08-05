@@ -2367,3 +2367,32 @@ the formal builder, or starting another real run before authorization.
   restricted to the one additional staged file and immutable manifest binding. After a clean repair commit, Delivery
   may create a fresh run-id/new baseline and use the existing presemantic rebind path. No additional budget is added
   and start17 remains unauthorized.
+
+### 2026-08-05T19:05:00+08:00 — Start16 entered semantic modeling and exposed Acceptance recovery gaps
+
+- Clean repair commit `9754966` produced baseline
+  `231e29abd81d44f0c7777779535776ef7b0cf7f492567e9d98689537a5e0b0c7`. Delivery appended the permitted
+  presemantic rebind against failed start15, launched fresh run
+  `r23005-real-20260805t103748z-start16-rebind`, and recorded `semantic_start` at
+  `2026-08-05T10:38:43.603794+00:00`. The canonical ledger reached `cap=16`,
+  `semantic_start_count=16`; the user's one opportunity was therefore consumed.
+- Acceptance correctly refused to call `acceptance_get_ticket` without immutable `acceptance_id` and
+  `acceptance_round_id` and emitted one structured `runtime_recovery` issue before any Acceptance capability,
+  child, verdict, or platform mutation. The report then exposed two platform-contract defects: the initial
+  Acceptance task did not say to wait for `acceptance_start`, and the validated coordination event was never
+  converted into a Runner-owned Runtime delivery carrying those identifiers.
+- The recovery path itself then failed before Coordinator delivery. Runner observed the real Codex thread
+  `019fd181-0bce-7161-a0ff-fa2917f40dbe`, but issue context reused the stable Agent-ID grammar that requires a
+  leading letter. The resulting `thread_id is invalid` RoutingError was wrapped as `issue context binding failed`;
+  the foreground Runner/PTY exited and cleanup was deliberately deferred with state `WAITING_OWNER`. There is no
+  live Runner object to receive a same-run resume, so this run cannot be resurrected by guidance.
+- Delegated narrow repair now treats Runtime thread identities as opaque letter-or-digit-leading identifiers,
+  instructs Acceptance to wait, records the Broker-validated coordination event, queues exactly one immutable
+  `{acceptance_id, round_id, generation, coordination_message_id}` payload, and dispatches it from `Runner.drain`
+  outside Broker locks. The actual Agent MCP `send_coordination` path is covered; a numeric Codex thread issue is
+  bound and delivered to Coordinator without exiting. Developer verification passed: combined focused suites
+  **57 tests plus 3 subtests**, Runner suite **18 tests plus 2 subtests**, and the final issue/frozen-hash refresh
+  **12 tests**; Ruff, `py_compile`, and `git diff --check` passed.
+- This is a `platform-contract` failure, not an Acceptance verdict or modeling-quality result. No start17 is
+  authorized. Delivery must append the terminal classification, clean retained run-owned resources and credentials,
+  and report final ledger/resource/service state before another authorization can be requested.

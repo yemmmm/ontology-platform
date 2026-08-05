@@ -5,10 +5,12 @@ import os
 import subprocess
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
+from modeling_team.acceptance import CoordinatorPhaseController
 from modeling_team.candidate_progress import FormalCandidateProgress
 from modeling_team.interventions import IssueResolution
 from modeling_team.runner import TeamConfigurationError, TeamRunner
@@ -300,7 +302,7 @@ class IssueEscalationTests(unittest.TestCase):
                             SimpleNamespace(agent_id="coordinator", package=SimpleNamespace(role="coordinator")),
                             SimpleNamespace(agent_id="modeling", package=SimpleNamespace(role="modeling")),
                         ]
-                    )
+                    ),
                 ),
             )
 
@@ -488,6 +490,225 @@ class IssueEscalationTests(unittest.TestCase):
                     "cleanup_deferred": True,
                 },
             )
+
+    def test_acceptance_issue_binds_numeric_runtime_thread_and_pauses_without_exit(self) -> None:
+        """Acceptance may report before its ticket; Runner must keep the run recoverable."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "modeling-runs" / "run-early-acceptance"
+            root.mkdir(parents=True)
+            actual_thread_id = "019fd181-0bce-7161-a0ff-fa2917f40dbe"
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.agents = {
+                        "acceptance": SimpleNamespace(
+                            thread_id=actual_thread_id,
+                            active_turn_id=None,
+                            process=None,
+                        )
+                    }
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+                def send_message(
+                    self, agent_id: str, delivery: RuntimeDelivery
+                ) -> RuntimeDispatchReceipt:
+                    self.sent.append((agent_id, delivery))
+                    return RuntimeDispatchReceipt("steer", "turn-issue")
+
+                def receive_messages(self) -> list[object]:
+                    return []
+
+            adapter = Adapter()
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-early-acceptance",
+                root=root,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        schema_version=2,
+                        task_id="r2-3-005-formal-acceptance",
+                    ),
+                    profile=SimpleNamespace(
+                        profile_id="r2-3-005-modeling-team",
+                        agents=[
+                            SimpleNamespace(
+                                agent_id="coordinator", package=SimpleNamespace(role="coordinator")
+                            ),
+                            SimpleNamespace(
+                                agent_id="acceptance", package=SimpleNamespace(role="acceptance")
+                            ),
+                        ],
+                    ),
+                ),
+            )
+            runner.adapter = adapter
+            runner._candidate_progress = None
+            runner._append_evidence = lambda *_args, **_kwargs: None
+            states: list[tuple[str, dict[str, object]]] = []
+            runner._state = lambda value, **extra: states.append((value, extra))
+            runner._issue_abort_requested = False
+            runner._issue_event_queue = []
+            runner._issue_event_lock = threading.Lock()
+            runner._coordination_runtime_queue = []
+            runner._coordination_runtime_lock = threading.Lock()
+            runner._coordination_runtime_message_ids = set()
+            runner.transport = TeamTransportBroker(
+                root / "transport" / "broker",
+                {("acceptance", "coordinator"), ("coordinator", "acceptance")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+                issue_event_callback=runner._issue_event_queue.append,
+            )
+            report = runner.transport.report_issue(
+                "acceptance",
+                category="runtime_recovery",
+                summary="Acceptance started before the round ticket was available",
+                failing_operation="acceptance_get_ticket",
+                error="no acceptance round has been delivered yet",
+                mutation_state="not_started",
+                requested_action="wait for Runner acceptance-start delivery",
+            )
+
+            output = runner.drain()
+
+            active_issue = runner.transport.issue_ledger.active_issue
+            self.assertIsNotNone(active_issue)
+            assert active_issue is not None
+            self.assertEqual(active_issue.thread_id, actual_thread_id)
+            self.assertEqual(runner.transport.issue_ledger.state, "reported")
+            self.assertEqual(states[-1][0], "WAITING_OWNER")
+            self.assertEqual(output, [])
+            self.assertEqual(len(adapter.sent), 1)
+            self.assertEqual(adapter.sent[0][0], "coordinator")
+            self.assertEqual(adapter.sent[0][1].kind, "issue")
+            delivered_issue = json.loads(adapter.sent[0][1].text)
+            self.assertEqual(delivered_issue["issue_id"], report["issue_id"])
+            self.assertEqual(delivered_issue["thread_id"], actual_thread_id)
+
+    def test_acceptance_start_from_mcp_path_queues_one_runtime_delivery(self) -> None:
+        """Agent-side send_coordination must deliver the fixed ticket arguments."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "modeling-runs" / "run-acceptance-start"
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+                def send_message(
+                    self, agent_id: str, delivery: RuntimeDelivery
+                ) -> RuntimeDispatchReceipt:
+                    self.sent.append((agent_id, delivery))
+                    return RuntimeDispatchReceipt("steer", "turn-acceptance-start")
+
+            adapter = Adapter()
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-acceptance-start",
+                root=root,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        schema_version=2,
+                        task_id="r2-3-005-formal-acceptance",
+                    ),
+                    profile=SimpleNamespace(
+                        profile_id="r2-3-005-modeling-team",
+                        agents=[
+                            SimpleNamespace(
+                                agent_id="coordinator", package=SimpleNamespace(role="coordinator")
+                            ),
+                            SimpleNamespace(
+                                agent_id="modeling", package=SimpleNamespace(role="modeling")
+                            ),
+                            SimpleNamespace(
+                                agent_id="protocol", package=SimpleNamespace(role="protocol")
+                            ),
+                            SimpleNamespace(
+                                agent_id="acceptance", package=SimpleNamespace(role="acceptance")
+                            ),
+                        ],
+                    ),
+                ),
+            )
+            runner.adapter = adapter
+            runner.acceptance = SimpleNamespace(acceptance_id="acceptance")
+            runner.coordinator_phase = CoordinatorPhaseController()
+            runner._append_evidence = lambda *_args, **_kwargs: None
+            runner._coordination_runtime_queue = []
+            runner._coordination_runtime_lock = threading.Lock()
+            runner._coordination_runtime_message_ids = set()
+            runner.transport = TeamTransportBroker(
+                root / "transport" / "broker",
+                {
+                    ("modeling", "coordinator"),
+                    ("protocol", "coordinator"),
+                    ("coordinator", "acceptance"),
+                },
+                coordinator_agent_id="coordinator",
+                coordination_phase_callback=runner._coordination_phase_callback,
+                coordination_event_observer=runner._coordination_transport_event_observer,
+            )
+            runner.coordinator_phase.start()
+            runner.coordinator_phase.assign_slice(sender_id="coordinator", objective="bounded slice")
+            generation = runner.coordinator_phase.generation
+            for agent_id, message_kind in (
+                ("modeling", "ready_for_acceptance"),
+                ("protocol", "silent_for_acceptance"),
+            ):
+                response = mcp_response(
+                    {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "send_coordination",
+                            "arguments": {
+                                "recipient_id": "coordinator",
+                                "message_kind": message_kind,
+                                "text": "",
+                                "generation": generation,
+                            },
+                        },
+                    },
+                    broker=runner.transport,
+                    agent_id=agent_id,
+                )
+                self.assertIn("coordination-", response["content"][0]["text"])
+            start_response = mcp_response(
+                {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "send_coordination",
+                        "arguments": {
+                            "recipient_id": "acceptance",
+                            "message_kind": "acceptance_start",
+                            "text": "round-1",
+                            "generation": generation,
+                        },
+                    },
+                },
+                broker=runner.transport,
+                agent_id="coordinator",
+            )
+            start_envelope = json.loads(start_response["content"][0]["text"])
+            self.assertEqual(runner.coordinator_phase.phase.value, "ACCEPTANCE_ROUND_ACTIVE")
+            self.assertEqual(adapter.sent, [])
+
+            runner._drain_coordination_runtime_deliveries()
+
+            self.assertEqual(len(adapter.sent), 1)
+            recipient_id, delivery = adapter.sent[0]
+            self.assertEqual(recipient_id, "acceptance")
+            self.assertEqual(delivery.kind, "acceptance-start")
+            self.assertEqual(delivery.delivery_id, start_envelope["message_id"])
+            self.assertEqual(
+                json.loads(delivery.text),
+                {
+                    "acceptance_id": "acceptance",
+                    "coordination_message_id": start_envelope["message_id"],
+                    "generation": generation,
+                    "round_id": "round-1",
+                },
+            )
+            runner._drain_coordination_runtime_deliveries()
+            self.assertEqual(len(adapter.sent), 1)
 
 
 if __name__ == "__main__":

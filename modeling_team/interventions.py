@@ -41,6 +41,10 @@ ISSUE_STATES = frozenset(
 )
 
 _ID_PATTERN = re.compile(r"[a-z][a-z0-9_:/.-]{0,127}")
+# Runtime thread identities are opaque App Server values.  Unlike stable
+# Agent/run IDs they may begin with a digit (Codex uses UUID-shaped IDs), so
+# they must not be validated by the narrower stable-identifier grammar above.
+_THREAD_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_:/.-]{0,127}")
 _FORBIDDEN_SECRET_PATTERN = re.compile(
     r"(?:api[_-]?key|authorization\s*:\s*bearer|password\s*[:=]|secret\s*[:=]|token\s*[:=])",
     re.IGNORECASE,
@@ -77,6 +81,14 @@ def _optional_id(value: Any, name: str) -> str | None:
     if value is None:
         return None
     return _required_id(value, name)
+
+
+def _optional_thread_id(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not _THREAD_ID_PATTERN.fullmatch(value):
+        raise IssueError(f"{name} is invalid")
+    return value
 
 
 def _canonical_mapping(value: Any, name: str) -> dict[str, Any] | None:
@@ -131,7 +143,7 @@ class IssueReport:
             raise IssueError("issue control epoch is invalid")
         if not isinstance(self.timestamp, (int, float)) or isinstance(self.timestamp, bool) or self.timestamp <= 0:
             raise IssueError("issue timestamp is invalid")
-        _optional_id(self.thread_id, "thread_id")
+        _optional_thread_id(self.thread_id, "thread_id")
         _canonical_mapping(self.candidate_identity, "candidate_identity")
 
     def as_dict(self, *, state: str) -> dict[str, Any]:
@@ -357,7 +369,7 @@ class RecoverableIssueLedger:
         active = self._require_active(issue_id, reporter_id)
         if active.state != "reported":
             raise IssueError("issue context is no longer bindable")
-        normalized_thread = _optional_id(thread_id, "thread_id")
+        normalized_thread = _optional_thread_id(thread_id, "thread_id")
         normalized_candidate = _canonical_mapping(candidate_identity, "candidate_identity")
         active.report = replace(
             active.report,

@@ -135,6 +135,13 @@ class TeamRunner:
         # ``drain`` after all App-Server I/O locks have been released.
         self._issue_event_queue: list[dict[str, Any]] = []
         self._issue_event_lock = threading.Lock()
+        # A Broker coordination callback runs while the Broker's emit lock is
+        # held.  Queue the Acceptance start here and dispatch it from ``drain``
+        # after the callback/observer stack has returned, so Runtime delivery
+        # can never re-enter Broker locking.
+        self._coordination_runtime_queue: list[dict[str, Any]] = []
+        self._coordination_runtime_lock = threading.Lock()
+        self._coordination_runtime_message_ids: set[str] = set()
         self._issue_abort_requested = False
 
     @staticmethod
@@ -945,7 +952,7 @@ class TeamRunner:
                     self._coordination_phase_callback if formal_coordination else None
                 ),
                 coordination_event_observer=(
-                    self._append_coordination_transport_event if formal_coordination else None
+                    self._coordination_transport_event_observer if formal_coordination else None
                 ),
                 issue_escalation_enabled=formal_coordination,
                 issue_event_callback=issue_event_callback if formal_coordination else None,
@@ -1379,6 +1386,9 @@ class TeamRunner:
                     "read staged source paths, call platform tools, spawn Agents, or use generic multi-agent "
                     "features. Use only the Runner-owned Acceptance capability to acknowledge the ticket, "
                     "retrieve child reports, and submit one canonical PASS/FAIL/BLOCKED verdict to Coordinator. "
+                    "Wait for the Runner's acceptance-start delivery before calling acceptance_get_ticket or "
+                    "reporting a missing-ticket issue; it carries the fixed acceptance_id and the exact "
+                    "round_id (the ticket's acceptance_round_id) to use for this round. "
                     "Keep the Acceptance session alive across rounds; never send child terminal state through "
                     "Team Transport. Bind question, acceptance_round_id, slice revision, ticket digest, typed "
                     "evidence, and complete model-state identity in every verdict. Route only "
@@ -2380,6 +2390,7 @@ class TeamRunner:
                 issue_id=issue.issue_id if issue else None,
             )
             return output
+        self._drain_coordination_runtime_deliveries()
         issue_ledger = self._issue_ledger()
         issue_pending = bool(issue_ledger is not None and issue_ledger.pending)
         coordinator = next(
@@ -2971,6 +2982,82 @@ class TeamRunner:
         finally:
             os.close(descriptor)
         os.chmod(path, 0o600)
+
+    def _coordination_transport_event_observer(self, event: dict[str, object]) -> None:
+        """Persist a coordination event, then queue its Runner-owned delivery.
+
+        ``TeamTransportBroker.send_coordination`` invokes the observer only after
+        the phase callback has accepted the message and after it has released the
+        Broker state lock.  The observer itself must remain non-reentrant: it
+        records the immutable coordination evidence first and only then queues an
+        Acceptance start for the Runner's next ``drain`` turn.
+        """
+
+        self._append_coordination_transport_event(event)
+        if (
+            not isinstance(event, dict)
+            or event.get("message_kind") != "acceptance_start"
+            or not isinstance(event.get("message_id"), str)
+            or not isinstance(event.get("recipient_id"), str)
+            or not isinstance(event.get("text"), str)
+            or not isinstance(event.get("phase_event"), dict)
+        ):
+            return
+        queued = {
+            "message_id": event["message_id"],
+            "recipient_id": event["recipient_id"],
+            "round_id": event["text"],
+            "generation": event["phase_event"].get("generation"),
+        }
+        if not isinstance(queued["generation"], int) or isinstance(queued["generation"], bool):
+            raise TeamConfigurationError("Acceptance start generation is invalid")
+        with self._coordination_runtime_lock:
+            message_id = queued["message_id"]
+            if message_id in self._coordination_runtime_message_ids:
+                raise TeamConfigurationError("Acceptance start was queued twice")
+            self._coordination_runtime_message_ids.add(message_id)
+            self._coordination_runtime_queue.append(queued)
+
+    def _drain_coordination_runtime_deliveries(self) -> None:
+        """Dispatch queued coordination deliveries outside Broker callback locks."""
+
+        with self._coordination_runtime_lock:
+            queued, self._coordination_runtime_queue = self._coordination_runtime_queue, []
+        for event in queued:
+            recipient_id = event.get("recipient_id")
+            message_id = event.get("message_id")
+            round_id = event.get("round_id")
+            generation = event.get("generation")
+            if (
+                self.acceptance is None
+                or recipient_id != self.acceptance.acceptance_id
+                or not isinstance(message_id, str)
+                or not isinstance(round_id, str)
+                or not round_id
+                or not isinstance(generation, int)
+                or isinstance(generation, bool)
+            ):
+                raise TeamConfigurationError("Acceptance start delivery binding is invalid")
+            payload = {
+                "acceptance_id": self.acceptance.acceptance_id,
+                "round_id": round_id,
+                "generation": generation,
+                "coordination_message_id": message_id,
+            }
+            try:
+                self.adapter.send_message(
+                    recipient_id,
+                    RuntimeDelivery(
+                        sender_id="runner/coordination",
+                        recipient_id=recipient_id,
+                        kind="acceptance-start",
+                        text=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                        delivery_id=message_id,
+                    ),
+                )
+            except Exception as exc:
+                self._state("FAILED", coordination_message_id=message_id)
+                raise TeamConfigurationError("Acceptance start delivery failed") from exc
 
     def _append_coordination_transport_event(self, event: dict[str, object]) -> None:
         """Persist only fixed coordination metadata after phase validation."""

@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`已恢复真实建模推进；用户明确授权的 1 次 start16 已入账，正式账本 16/15/0；首次 fresh run 在 semantic_start 前暴露 Team Transport 隔离依赖未 staged，已 cleanup/presemantic_release，窄修复完成待 clean baseline/rebind 后继续，语义次数尚未消耗）`
+当前状态：`用户明确授权的 1 次 start16 已消耗，正式账本 16/16/0；真实 run 已进入 semantic_start，但 Acceptance 在验收轮启动前暴露 acceptance-start 载荷未投递及数字开头 Runtime thread ID 被错用 Agent-ID 规则拒绝的平台契约缺陷；Runner 已退出，本次未进入正式 Acceptance/Examiner，窄修复已完成，待失败分类与资源清理，不得未授权启动新 run。`
 
 优先级：`P0`
 
