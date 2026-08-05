@@ -2576,3 +2576,30 @@ the formal builder, or starting another real run before authorization.
   platform resources were deleted, start21 cannot resume the process/thread in place; it must reuse the accepted r2
   candidate, owner answer and two-query scope as frozen inputs, rebuild only unavoidable run resources, and continue
   from mechanical candidate binding/application rather than repeat business modeling.
+
+### 2026-08-06T00:05:00+08:00 — Start21 continuation input and owner-question ambiguity failure
+
+- Clean repair/documentation baseline `328d02c` produced exact fresh run
+  `r23005-real-20260805t155606z-start21` and manifest
+  `aa6373756d1335f91fc8e1137132c58a7cfb25f3e2163f7848a0b7b325eb8c4d`. Delivery appended only the start20 repair
+  binding and used the last already-authorized start; semantic start moved the ledger to `21/21`.
+- The intended continuation artifact froze start20 r2, its accepted digest, owner answer and two-query scope, but it was
+  written under run evidence only after semantic start. Runner does not inject that evidence file into an already
+  launched Agent's sources or prompt, so Modeling did not receive the continuation and asked the two previously known
+  source questions again. This was a process/input-binding failure, not evidence that r2 needed redesign.
+- Both questions became displayed and unconsumed before the first outer answer. Formal schema-v2 accepted only
+  `{action,text}` and `_resolve_formal_owner_question` intentionally failed closed when more than one displayed question
+  was eligible. The answer therefore raised `owner answer matches multiple unanswered questions`; no owner release,
+  candidate, Protocol or Acceptance stage followed. Start21 terminated `collaboration/routing`, complete=false.
+- Cleanup deleted the empty run-owned Project/Ontology, closed Session/Lease, revoked Project/bootstrap keys, removed
+  transport sockets and confirmed all Agent processes absent. Canonical ledger is **105 lines**, SHA-256
+  `20492bdbb5854038811b64097c6da5248159b299ac707ac3e277e45e0c10a6b8`, strict replay `21/21/0`. The explicit +2
+  authorization is exhausted; no start22 is authorized.
+- Generic repair `be5790a` allows optional `question_delivery_id` only on formal outer user envelopes. Explicit IDs
+  still pass through the existing displayed, unconsumed, run/project/origin and replay checks; omission retains the
+  old unique-question inference and remains ambiguous with multiple questions. Focused verification passed **49 tests
+  plus 23 subtests** and full `modeling_team/tests` passed **343 tests, 1 skipped**; Ruff and `py_compile` passed.
+- For any future authorized run, continuation must be an actual frozen input before `Runner.prepare`: use the existing
+  Task `role_sources`/derived `allowed_sources`, or the initial role objective, to provide immutable r2 and the explicit
+  instruction to reuse it. A post-start evidence file is audit material only. Reuse candidate semantics, not start20
+  Project/Ontology/Batch/Session IDs; current-run owner-answer provenance must be rebound mechanically if requested.
