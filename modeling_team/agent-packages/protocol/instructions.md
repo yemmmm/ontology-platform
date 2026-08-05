@@ -45,6 +45,38 @@ and a formal reasoning receipt binds `reasoning_result_graph_iri`. Do not guess,
 an unbound reasoning graph IRI; if that binding is absent, return a concrete pre-call translation
 conflict instead of invoking validation.
 
+## Generic retrieval execution contract (all ordinary v2 tasks)
+
+This is an execution checklist, not a suggestion. Resolve the run-owned Project and Ontology from
+formal platform receipts/reads, then call `query_semantic_context` with that `project_id`, the exact
+`scope_mode=ontologies`, and the exact `ontology_ids`. Never use `scope_mode=selected` or
+`scope_mode=project`, and never put ticket IDs, run IDs, or model-state bindings in query arguments;
+bind those only in the Protocol receipt and Acceptance handoff. A rejected scope call is a contract
+error: correct the request before reading or reporting retrieval.
+
+Run each competency question as its own narrow query. Do not batch unrelated questions and do not
+leave `resource_types` broad/null when a narrower resource kind is sufficient. If the response says
+`vector_index_missing` (or otherwise reports degraded semantic recall), repeat that same question with
+`search_mode=lexical`; a hybrid response with a missing vector index is never a complete result and
+must not be reported as one.
+
+Consume pagination deterministically for every question. For the current match page, send only the
+returned `context_cursor` until `next_context_cursor` is null and the context page is not truncated.
+Only then send the returned `next_match_cursor` for the next match page, and start a new context chain
+for that page. Never send both cursors, reuse a context cursor across match pages, or stop after the
+first page. Retrieval is complete only after every question's match/context chains terminate with
+non-truncated, non-degraded results and the required Evidence and lineage are present. Entity/fact
+readback or an ordinary fallback read cannot replace this generic retrieval proof; an incomplete
+generic result must remain incomplete (and use the formal native fallback sequence where the loaded
+contract makes that verifier eligible).
+
+Preserve candidate citation meaning one-to-one: every citation must support the field/assertion it is
+attached to and carry either inline `{document_name, excerpt}` or an existing reference ID. Never
+forward an empty citation/evidence array for an entity or explicit-unknown item. Keep source digest,
+location, and owner-answer metadata in the local Protocol receipt/evidence binding rather than
+pretending they are platform fields; after apply, read back EvidenceReference/Association and origin
+lineage and verify the binding.
+
 For a proof-gated task with a non-null `expected_matrix_binding`, before returning a successful
 proof-v2 retrieval receipt, use the same reference's
 `semantic_retrieval_completion_contract`. The generic query must be scoped to the selected Ontology;
@@ -89,7 +121,13 @@ For an ordinary v2 task without an `expected_matrix_binding`, keep the same gene
 query and fallback mechanics, but do not require assertion matrices, candidate evidence maps, or
 the native proof-v2 verifier. Accept a source-grounded platform-neutral candidate and return the
 deterministic Protocol receipt or a concrete candidate-to-Batch translation conflict; Protocol owns
-all platform IDs, Batch items, and lifecycle fields.
+all platform IDs, Batch items, and lifecycle fields. During this translation, map every candidate
+`evidence_citations` entry one-to-one into platform-supported inline `evidence:{document_name,excerpt}`
+or an existing reference ID. Entity and `explicit_unknown` items must never carry empty evidence or
+`evidence_reference_ids` when their candidate citation requires support. Source SHA, locator, and
+owner-answer metadata stay in the local receipt/evidence binding; after apply/readback, verify the
+platform EvidenceReference/Association and origin lineage rather than exposing those metadata as
+platform fields.
 
 The candidate's whole-candidate/immutable rule is semantic integrity: preserve the complete
 meaning, constraints, dependencies, citations, and queries exactly while translating it. Protocol

@@ -1289,3 +1289,56 @@ closure, 43 focused tests, static checks, and retained ledger/evidence immutabil
 **Overall verdict: PASS for the formal Acceptance provider-auth repair and its focused regression
 scope; the complete R2.3-005 live requirement remains BLOCKED/unproven.** This round is complete;
 stop writing the shared test plan after this entry.
+
+## 2026-08-05 narrow governed retrieval contract — Independent round 9
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. This round validates only the six-file narrow retrieval
+  contract delta and its model-visible projection. No product implementation, prompt/requirement
+  source outside the supplied delta, ledger, stash, platform resource, service, or real semantic
+  start was touched. No fresh start13 was attempted.
+- Authority: R2.3-005 start12 retrieval-focused repair contract in
+  `docs/requirements/requirements-v2.3.md`, the approved design/implementation plan, and this
+  shared test plan. Stable baseline is HEAD `27e8e48484114f5bebe83823b6441bf4145f58b8`; the exact
+  supplied six-file diff SHA-256 is
+  `44f52425e55db92f64be17fdc7acfced99289d0faad22f06fe09bad7cf4f70b4`.
+- Worktree check: the six supplied files are the only task delta (`docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`,
+  `docs/requirements/requirements-v2.3.md`, Protocol instructions, the modeling-batch contract,
+  formal task YAML, and the focused Codex isolation test). No product runtime code was modified.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| C88 model-visible prompt projection | PASS | `uv run --project backend python -m unittest -v modeling_team.tests.test_codex_isolation.CodexIsolationTests.test_c88_runner_prompt_projects_loaded_002_proof_and_loaded_005_neutral_contract` passed. The ordinary v2 Protocol prompt contains the newly required inline Evidence/reference, entity/explicit-unknown non-empty evidence, and EvidenceReference/Association/origin-lineage clauses while proof-only material remains absent. |
+| Protocol retrieval gate regressions | PASS | `uv run --project backend python -m unittest -v` over `test_protocol_retrieval_gate_requires_completed_eligible_query_and_current_verifier` and `test_protocol_retrieval_gate_fails_closed_for_result_quality_and_semantic_state_changes`: **2/2 passed**. Existing incomplete/degraded/truncated/fallback state transitions and unexpected-response terminal behavior remain fail-closed and unchanged. |
+| C95/C98 candidate/proof boundary | PASS | `test_c95_protocol_never_merges_history_and_builds_each_current_receipt` and `test_c98_proof_bound_002_and_neutral_005_boundaries_remain_distinct`: **2/2 passed**. Ordinary R2.3-005 remains unbound to proof-v2 matrix/native-verifier requirements; current-candidate receipt ownership is preserved. |
+| Adjacent C94/C97 revision projection | PASS | `test_c94_complete_revision_contract_is_projected_to_modeling_and_task` and `test_c97_retained_complete_correction_reaches_ordinary_neutral_receipt`: **2/2 passed**. Complete candidate carry-forward and ordinary neutral receipt behavior remain intact. |
+| JSON/YAML parse and task/profile validation | PASS | `uv run --project backend python` read/parsed `modeling-batch-item-contract.json`, formal task/profile YAML, loaded the strict configuration, and verified the exact four-role roster and ordinary retrieval contract section. |
+| Model-visible High-D closure review | PASS | Direct source inspection across Protocol instructions, `ordinary_v2_execution` contract JSON, formal task objective, and Runner-generated Protocol prompt confirms: run-owned ontology scope; per-CQ narrow queries/resource types; vector-missing lexical fallback; context-before-match pagination with new context chain and no cursor mixing; fallback readback not substituting complete generic retrieval; one-to-one inline/reference citation mapping; entity/explicit-unknown evidence non-emptiness; receipt-only extended metadata; and EvidenceReference/Association plus origin lineage after apply/readback. Protocol's role-specific final coordination signal remains `silent_for_acceptance`; the task-level successful-retrieval gate remains before acceptance readiness. |
+| Ruff and diff check | PASS | `uv run --project backend ruff check modeling_team/tests/test_codex_isolation.py` and `git diff --check` both passed. |
+
+### Unexecuted or not claimable
+
+- No live `query_semantic_context`, vector/lexical fallback, cursor chain, EvidenceReference,
+  Association, or origin-lineage calls were executed. No real Protocol/Acceptance run, platform
+  write/readback, or semantic PASS is claimed.
+- No full repository discovery, backend/frontend suite, service restart, ledger replay, or retained
+  evidence audit was run; these are outside this focused retrieval-contract round.
+
+### Defects and residual risk
+
+- No defect was reproduced in the scoped six-file delta. C88/C95/C98 and retrieval-gate regressions
+  pass, and the newly added High-D candidate-evidence clauses are present in every relevant
+  model-visible layer.
+- Residual risk is live-only: actual runtime behavior must still prove exact ontology scoping,
+  lexical fallback, two-cursor pagination ordering, non-truncated generic completion, and post-apply
+  Evidence/Association/origin-lineage readback in a separately authorized fresh start. The existing
+  terminal Unexpected-response behavior was not changed by this delta.
+
+### Round conclusion
+
+**Overall verdict: PASS for the focused governed-retrieval contract and High-D model-visible closure;
+the complete R2.3-005 live requirement remains BLOCKED/unproven.** Round 9 is complete; stop writing
+the shared test plan after this entry.

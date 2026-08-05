@@ -141,3 +141,14 @@ return to the user for explicit approval.
   no-start smoke; prior/caller scope identities are rejected.
 - Only then may I19 begin. R2.3-005 remains incomplete until the real run reaches independent
   Acceptance and its full semantic/retrieval completion rule.
+
+## 2026-08-05 narrow retrieval repair delta
+
+The next fresh start reuses this plan's four-role/runtime boundary and start12's semantic candidate,
+but Protocol must execute the generic retrieval contract explicitly: one narrow CQ at a time, exact
+ontology scope, lexical fallback when the vector index is missing, and strict context-before-match
+cursor consumption with a new context chain for every match page. A degraded/truncated generic query,
+or an entity/fact readback, never satisfies the retrieval gate. Candidate citations remain one-to-one
+inline Evidence/reference bindings; source digests, locations, and owner-answer IDs stay in receipt/
+lineage evidence rather than platform fields. Only a complete, non-truncated generic retrieval with
+Evidence/lineage may hand off `ready_for_acceptance`.

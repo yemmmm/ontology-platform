@@ -168,6 +168,14 @@
   },
   "semantic_retrieval_completion_contract": {
     "purpose": "Platform-generic, fail-closed completion proof for ontology-scoped retrieval. It contains no business semantics, tester answer, answer count, scenario target, or expected ontology structure.",
+    "ordinary_v2_execution": {
+      "scope": "Resolve run-owned project and ontology from formal receipts/reads; query_semantic_context uses project_id, scope_mode=ontologies, and exact ontology_ids. Ticket, run, and model-state bindings belong to Protocol receipt/Acceptance handoff, not query arguments.",
+      "question_partition": "Issue one narrow query per competency question. Keep resource_types narrow when the needed kind is known; do not batch unrelated questions or use a broad/null resource_types as a substitute for paging.",
+      "vector_index_missing": "A vector_index_missing or degraded semantic-recall response is incomplete. Repeat the same question with search_mode=lexical; hybrid recall with a missing vector index is never complete.",
+      "pagination": "For each match page, consume only context_cursor until next_context_cursor=null and context_page.truncated=false. Then consume only next_match_cursor for the next match page and start a new context chain. Never send both cursors or reuse a context cursor across match pages.",
+      "completion": "Only all-question generic results that are non-truncated, non-degraded, and Evidence/lineage-complete may satisfy the retrieval gate. Entity/fact readback or an ordinary fallback read cannot replace generic retrieval proof.",
+      "candidate_citations": "Map every candidate evidence_citations entry one-to-one to platform-supported inline evidence:{document_name,excerpt} or an existing reference ID; entity and explicit_unknown evidence/evidence_reference_ids must not be empty when their candidate citation requires support. Keep source SHA, locator, and owner-answer metadata in local receipt/evidence binding and verify EvidenceReference/Association plus origin lineage after apply/readback."
+    },
     "successful_receipt_requires": [
       "ontology-scoped generic query",
       "no truncation",

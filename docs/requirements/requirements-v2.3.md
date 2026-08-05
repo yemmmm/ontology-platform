@@ -1771,6 +1771,27 @@ R2.3-004 只有在 R2.3-005 的 Modeling Team Runner 运营基线和 R2.3-003 �
 - 是否使用 R2.3-002/003 业务切片完成真实 Pi 建模，在 R2.3-004 开始前单独细化；
 - Pi Runtime 故障不能成为平台事实，平台写入仍只由 Protocol 通过公开接口完成。
 
+### 2026-08-05 R2.3-005 start12 retrieval-focused repair contract
+
+start12 的语义写入、验证、推理和负向探针已成功，但 Protocol 将两条 CQ 合并到一次
+`hybrid` 查询，未消费 `next_match_cursor`，并以实体回读替代通用召回完整性；该路径保持
+`platform-contract` 阻断，不修改历史运行证据。后续 fresh scope 只修复以下窄合同：
+
+1. `query_semantic_context` 必须绑定 run-owned `project_id`、`scope_mode=ontologies` 和精确
+   `ontology_ids`；ticket、run、model-state 只进入 Protocol receipt/Acceptance handoff。
+2. 每条 CQ 独立、使用窄 `resource_types`；`vector_index_missing` 或 degraded hybrid 结果
+   必须改用 lexical，不能当作完整召回。
+3. 每个 match page 先只消费 `context_cursor` 至 `next_context_cursor=null` 且不截断，再只用
+   `next_match_cursor` 进入下一 match page，并为其建立新的 context 链；两类 cursor 不能同时
+   传递或跨页复用。全部链完成前不得报告 retrieval complete。
+4. 每个 candidate citation 必须逐项绑定 inline Evidence `{document_name, excerpt}` 或现有
+   reference ID；额外 source digest/location/owner-answer 元数据留在 Protocol receipt/evidence
+   binding，不伪装成平台字段，并在 apply/readback 核对 EvidenceReference、Association 与
+   origin lineage。
+5. 仅 generic retrieval complete/non-truncated 且 Evidence/lineage 门满足时可发出
+   `ready_for_acceptance`；实体/事实 fallback readback 不能替代该门。start13 必须使用全新
+   Project/Ontology 和完整 self-contained candidate，复用 start12 的语义经验而非历史状态。
+
 ### R2.3-004 初始完成门
 
 1. Pi Adapter 实现 R2.3-001 冻结的 Runtime Adapter 操作。

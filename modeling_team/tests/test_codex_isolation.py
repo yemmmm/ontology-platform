@@ -2000,6 +2000,12 @@ class CodexIsolationTests(unittest.TestCase):
         self.assertNotIn("frozen proof matrix", neutral_prompt)
         self.assertNotIn("candidate-item-evidence-map", neutral_prompt)
         self.assertIn("generic mechanics contract", neutral_prompt)
+        for phrase in (
+            "platform-supported inline `evidence:{document_name,excerpt}`",
+            "entity and explicit_unknown evidence/evidence_reference_ids",
+            "EvidenceReference/Association plus origin lineage",
+        ):
+            self.assertIn(phrase, neutral_prompt)
 
     def test_terminal_guard_drains_pending_stdout_and_fails_closed_when_io_is_busy(self) -> None:
         root = repository_root()

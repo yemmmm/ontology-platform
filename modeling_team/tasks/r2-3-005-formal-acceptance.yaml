@@ -30,8 +30,21 @@ objective: >-
   semantic.invalid_instance for rejection, that object must carry its own non-empty source-grounded
   label.
   Protocol rejects missing or blank labels and never derives or invents them from item_id,
-  entity_id, or question text. Do not expose expected answers or invoke generic multi-agent/spawn
-  capabilities.
+  entity_id, or question text. For governed retrieval, Protocol must resolve the run-owned
+  Project/Ontology from formal receipts, query `query_semantic_context` only with
+  `scope_mode=ontologies` and exact `ontology_ids`, issue one narrow query per competency question,
+  and use lexical search when `vector_index_missing` makes hybrid recall incomplete. Consume each
+  current page's context cursor to exhaustion before its match cursor, start a new context chain for
+  each match page, never send or reuse both cursors, and do not treat entity/fact fallback readback as
+  generic retrieval completion. Only non-truncated, non-degraded generic results with required
+  Evidence and lineage may produce `ready_for_acceptance`; ticket/run/model-state bindings belong in
+  Protocol receipts and the Acceptance handoff, not query arguments. Do not expose expected answers or
+  invoke generic multi-agent/spawn capabilities. Every candidate citation must map one-to-one to its
+  supporting field via platform-supported inline `evidence:{document_name,excerpt}` or an existing
+  reference ID; entity and explicit_unknown evidence/evidence_reference_ids may not be empty when
+  their candidate citation requires support. Keep source SHA/locator/owner-answer metadata only in
+  local Protocol receipt/evidence binding and verify EvidenceReference/Association plus origin lineage
+  after apply/readback.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/consumer-questions.md
     classification: consumer-question
