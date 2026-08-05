@@ -1236,3 +1236,56 @@ start9.
 R2.3-005 live requirement because direct start8 repair/start9 remains unexecuted.** Formal/legacy
 eligibility separation, central predicate coverage, mechanical budget behavior, invalid-path
 closure, 43 focused tests, static checks, and retained ledger/evidence immutability all pass.
+
+## 2026-08-05 formal Acceptance provider-auth staging — Independent round 8
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. This round validates only the formal R2.3-005
+  persistent Acceptance provider-auth staging repair in `acceptance_runtime.py`,
+  `runtimes/codex.py`, and the focused contract tests. No real Producer, semantic start,
+  Project/Ontology, MCP producer call, ledger/evidence mutation, service restart, key operation,
+  or retained-run mutation was performed; start11 remains explicitly fresh and unexecuted.
+- Authority: R2.3-005 in `docs/requirements/requirements-v2.3.md`, the approved design, and this
+  shared plan. Stable code baseline is HEAD `965a196edbb110b84029c27a27226650a9cf209c`; the
+  supplied code/test diff hash is
+  `fac008cd67b396e800f7cfd274844d8723aa82bb4bc91c865f0ea066c2a2e87f`.
+- Worktree check: only the pre-existing main-agent changes in `AGENTS.md`, `CLAUDE.md`,
+  `docs/requirements/requirements-v2.3.md`, and the three supplied modeling-team files were
+  present before this tester appended this round. No product code was modified by the Tester.
+
+### Executed checks and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Formal positive provider auth and real config content | PASS | `uv run --project backend python` temporary formal carrier probe staged exact synthetic auth bytes into Acceptance `home/auth.json`, observed mode `0600` under owner/mode-checked `0700` home, and inspected `config.toml`; only `team_transport` and the expected Runner `runner_capability` MCP sections were present. No Protocol MCP, platform key/config, or source bytes were present. |
+| Formal provider auth cleanup | PASS | The same probe set `_coordination_enabled=True`, registered the Agent, called `CodexRuntimeAdapter.stop()`, and observed `auth.json` and `runner-capability.token` removed. Existing `test_formal_stop_destroys_capability_material_and_is_idempotent` also passed. |
+| Non-formal and R2.3-002 compatibility | PASS | `test_codex_acceptance_config_has_no_auth_or_sources_and_separate_capabilities`, `test_nonformal_stop_preserves_formal_capability_material`, and existing host-auth preflight tests passed; the non-formal Acceptance path still stages no auth/sources and does not remove formal-only artifacts. |
+| No platform key/source/extra MCP | PASS | Focused contract tests `test_read_only_key_lifecycle_revokes_plaintext_and_allowlist_excludes_writes` and `test_capability_separation_and_opaque_idempotent_child_start` passed; the real formal config probe found no `protocol`/`platform` MCP section and an empty `home/sources`. |
+| Symlink/invalid/parent fail-closed staging | PASS | Formal symlink test plus an independent temporary probe rejected source directory, source symlink, destination symlink, pre-existing destination, and destination parent mode `0755`; no destination auth was created for source/parent failures. `_copy_private` source `lstat`/`O_NOFOLLOW` and target `_write_private` `O_EXCL|O_NOFOLLOW`, mode `0600`, fsync path were directly inspected. |
+| Child existing-path regression and cleanup | PASS | `test_codex_child_resource_seam_stops_and_destroys_private_tree_without_launching` and `test_child_report_sink_and_terminal_recycle_are_immutable` passed; child resource stop/destroy leaves no private tree or active child residue. |
+| Focused contract/runtime tests | PASS | `uv run --project backend python -m unittest -v` over 7 R2.3-005 contract/isolation methods (formal positive/negative, non-formal, allowlist, capability separation, child recycle, child cleanup): **7/7 passed**; adjacent Codex isolation cleanup/preflight set: **5/5 passed**. |
+| Ruff, compile, whitespace | PASS | `uv run --project backend ruff check modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py modeling_team/tests/test_r23005_contracts.py`; `uv run --project backend python -m py_compile` on the same three files; and `git diff --check` all passed. |
+
+### Unexecuted or not claimable
+
+- No real app-server Acceptance launch was performed, so a live provider response/401 recovery,
+  real four-role Acceptance lifecycle, semantic model quality, Protocol/platform behavior, or
+  final settlement remains unclaimed.
+- No backend/frontend full suite, service restart, or platform health check was necessary for
+  this modeling-team-only offline repair and none was run.
+
+### Defects and conclusion
+
+- No defect was reproduced in the scoped provider-auth change. Formal positive content, private
+  modes/ownership boundary, no-source/no-platform/no-extra-MCP contract, invalid-path fail-closed
+  behavior, child existing-path regression, cleanup, and focused static checks all pass.
+- Residual risk is limited to live Acceptance provider authentication and the already retained
+  R2.3-005 runtime/semantic evidence; those require a separately authorized fresh run and are
+  not replaced by this deterministic round.
+
+### Round conclusion
+
+**Overall verdict: PASS for the formal Acceptance provider-auth repair and its focused regression
+scope; the complete R2.3-005 live requirement remains BLOCKED/unproven.** This round is complete;
+stop writing the shared test plan after this entry.

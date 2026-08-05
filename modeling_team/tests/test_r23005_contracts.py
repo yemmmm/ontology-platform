@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -41,7 +42,7 @@ from modeling_team.contracts import TeamConfigurationError, _load_package, repos
 from modeling_team import preflight as preflight_module
 from modeling_team.runner import TeamRunner
 from modeling_team.preflight import normalize_formal_scope
-from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
+from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError, _Agent
 from modeling_team.start_ledger import StartLedger
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 
@@ -1558,6 +1559,66 @@ class R23005ContractTests(unittest.TestCase):
             adapter.stop()
             self.assertFalse((home / "runner-capabilities.json").exists())
             self.assertFalse((home / "config.toml").exists())
+
+    def test_formal_acceptance_config_stages_private_provider_auth_without_sources(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            home, work, skills = base / "acceptance-home", base / "acceptance-work", base / "acceptance-skills"
+            for path in (home, work, skills):
+                path.mkdir(mode=0o700)
+            (base / "sources").mkdir(mode=0o700)
+            codex_home = base / "codex-home"
+            codex_home.mkdir(mode=0o700)
+            (codex_home / "auth.json").write_text("formal-provider-auth", encoding="utf-8")
+            agent = _Agent("acceptance", _load_package(root, "acceptance"), home, work, skills)
+            run = SimpleNamespace(
+                root=base,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance")
+                ),
+                protocol_key=None,
+                acceptance=None,
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                adapter._write_config(run, agent)
+            auth = home / "auth.json"
+            self.assertEqual(auth.read_text(encoding="utf-8"), "formal-provider-auth")
+            self.assertEqual(stat.S_IMODE(auth.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o700)
+            self.assertEqual(list((home / "sources").iterdir()), [])
+            adapter.agents[agent.agent_id] = agent
+            adapter.stop()
+            self.assertFalse(auth.exists())
+
+    def test_formal_acceptance_config_rejects_provider_auth_symlink(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            home, work, skills = base / "acceptance-home", base / "acceptance-work", base / "acceptance-skills"
+            for path in (home, work, skills):
+                path.mkdir(mode=0o700)
+            (base / "sources").mkdir(mode=0o700)
+            codex_home = base / "codex-home"
+            codex_home.mkdir(mode=0o700)
+            target = base / "provider-auth.json"
+            target.write_text("must-not-follow", encoding="utf-8")
+            (codex_home / "auth.json").symlink_to(target)
+            agent = _Agent("acceptance", _load_package(root, "acceptance"), home, work, skills)
+            run = SimpleNamespace(
+                root=base,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance")
+                ),
+                protocol_key=None,
+                acceptance=None,
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                with self.assertRaisesRegex(CodexRuntimeError, "authentication is unavailable"):
+                    adapter._write_config(run, agent)
+            self.assertFalse((home / "auth.json").exists())
 
     def test_codex_child_resource_seam_stops_and_destroys_private_tree_without_launching(self) -> None:
         root = repository_root()

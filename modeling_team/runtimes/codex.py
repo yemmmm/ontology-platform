@@ -24,6 +24,7 @@ from ..contracts import AgentPackage, digest_file
 from ..acceptance_runtime import (
     ReportSinkServer,
     ScopedReadProxy,
+    _copy_private,
     child_config_digest,
     prepare_child_tree,
 )
@@ -1137,6 +1138,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             and agent.package.role in {"coordinator", "acceptance"}
             and self._acceptance is not None
         )
+        formal_acceptance_auth = (
+            self._is_formal_acceptance_run(run) and agent.package.role == "acceptance"
+        )
         if agent.package.role == "protocol" and getattr(task, "schema_version", 1) == 2:
             run_id = getattr(run, "run_id", None)
             if not isinstance(run_id, str) or not run_id:
@@ -1147,13 +1151,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
-        # Only the Protocol receives its platform key/config.  Acceptance gets no
-        # host authentication material and no source bundle; its sole model-visible
-        # capability is the Runner-owned local carrier.
+        # Only the Protocol receives its platform key/config.  Acceptance never gets
+        # platform authentication material or source bytes; formal R2.3-005 Acceptance
+        # receives only a private model-provider auth copy for its own Codex process,
+        # while its sole model-visible capability remains the Runner-owned local carrier.
         if agent.package.role != "acceptance":
             host_auth = self.preflight_host_auth()
             shutil.copyfile(host_auth, agent.home / "auth.json")
             os.chmod(agent.home / "auth.json", 0o600)
+        elif formal_acceptance_auth:
+            _copy_private(self.preflight_host_auth(), agent.home / "auth.json", 0o600)
         shutil.copyfile(
             self.root / "modeling_team" / "transport_mcp.py",
             agent.home / "transport_mcp.py",

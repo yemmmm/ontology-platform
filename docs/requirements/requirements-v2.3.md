@@ -4,7 +4,7 @@
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
   start8 因 entity-producing items 缺少必填 label 而 `BLOCKED/modeling-quality`；用户追加三次授权已使用
-  一次，label closure 窄修复经独立 Round 6 PASS，当前准备 start9；
+  一次，label closure 窄修复经独立 Round 6 PASS；其后账本又跑 start9（collaboration/routing 失败）与 start10（runtime/infrastructure 失败），cap/count/active 已至 10/10/0；start10 的 401 根因已确认是正式 Acceptance 缺少私有 model-provider auth staging，不是 platform credential（bootstrap/read/Protocol key）问题；用户于 2026-08-05 新授权 exact +3，待 clean baseline 后追加至 cap 13；
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
@@ -17,7 +17,7 @@
   `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-04
+- 更新日期：2026-08-05
 
 ## 背景
 
@@ -1371,7 +1371,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`修复中（start4 BLOCKED；新增三次启动授权尚未写账本/使用）`
+当前状态：`修复中（Runner 与离线机械能力已实现并独立测试 PASS；账本 cap/count/active 已至 10/10/0——10 次真实建模全部失败：8 次 collaboration/routing、1 次 modeling-quality（start8，label closure 窄修复经独立 Round 6 PASS）、1 次 runtime/infrastructure（start10，2026-08-04 12:37，正式 Acceptance 缺少私有 model-provider auth staging 导致 provider 401；platform credential 路径未涉入）；用户于 2026-08-05 新授权 exact +3，Round 8 focused repair 已 PASS，待 clean baseline 后将 cap 追加至 13；当前仍不得 reserve 新 start）`
 
 优先级：`P0`
 

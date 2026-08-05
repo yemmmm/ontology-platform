@@ -100,6 +100,18 @@ verdict submission. Both capabilities have no arbitrary filesystem, process, or 
 Acceptance's Package has Team Transport permission but no platform permission and no raw source
 permission; Coordinator's capability does not grant it platform access.
 
+### Persistent Agent provider-auth boundary
+
+Codex staging keeps platform credentials separate from model-provider credentials. Protocol alone
+receives the platform key/config required by its modeling MCP; Acceptance receives no platform,
+bootstrap, read, or Protocol key and no source bytes. In the formal R2.3-005 roster only, the
+persistent Acceptance Agent receives a private `CODEX_HOME/auth.json` copy containing the host
+model-provider credential needed for its own Codex process. This file is staged with the same
+regular-file/non-symlink, owner/mode, exclusive-create, `0600`, `O_NOFOLLOW`, and fsync semantics
+as other private runtime artifacts, is excluded from Acceptance evidence, and is destroyed during
+normal stop/cleanup. Non-formal and R2.3-002 Acceptance paths continue to stage neither provider
+auth nor source bytes.
+
 ### Child Package descriptors
 
 Source Examiner and Platform Examiner are Runner-owned descriptors, not Profile members. They are

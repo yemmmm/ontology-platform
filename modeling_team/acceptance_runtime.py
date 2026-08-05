@@ -79,6 +79,32 @@ def _write_private(path: Path, payload: bytes, mode: int) -> None:
         raise
 
 
+def _copy_private(source: Path, target: Path, mode: int) -> None:
+    """Copy one trusted regular file into a private tree without following links."""
+    try:
+        metadata = os.lstat(source)
+    except OSError as exc:
+        raise ChildRuntimeError("private source is unavailable") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ChildRuntimeError("private source is invalid")
+    _private_dir(target.parent)
+    descriptor = -1
+    try:
+        descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+        metadata = os.fstat(descriptor)
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise ChildRuntimeError("private source is invalid")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            payload = stream.read()
+    except OSError as exc:
+        raise ChildRuntimeError("private source is unavailable") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    _write_private(target, payload, mode)
+
+
 PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
     "check_platform_health",
     "get_project_build_context",
@@ -694,13 +720,7 @@ def prepare_child_tree(
     for path in (home, work, skills):
         _private_dir(path, create=True)
     if host_auth is not None:
-        try:
-            metadata = os.lstat(host_auth)
-        except OSError as exc:
-            raise ChildRuntimeError("model auth source is unavailable") from exc
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            raise ChildRuntimeError("model auth source is invalid")
-        _write_private(home / "auth.json", host_auth.read_bytes(), 0o600)
+        _copy_private(host_auth, home / "auth.json", 0o600)
     _write_private(home / "instructions.md", instructions, 0o400)
     skill_dir = skills / skill_name
     _private_dir(skill_dir, create=True)
