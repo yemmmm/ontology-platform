@@ -2247,3 +2247,35 @@
   remain unchanged.
 - Luna-max delegated development, focused developer smoke, commit, `+1` append, repair authorization, and start15
   remain pending. Canonical state stays `cap=14`, `semantic_start_count=14`, `active_reservations=0` meanwhile.
+
+### 2026-08-05 — Start15 exact-redrive result
+
+- Luna-max development completed under the requested low-cost-subagent protocol. Commit `2b3df35`
+  (`Redeliver formal candidate exactly`) retained the original candidate payload/attribution, added a formal-only
+  one-shot reply-slot reopen, and kept the existing one-redrive terminal boundary. Developer smoke reported 72
+  focused passes and 16 related passes (1 skipped), plus Ruff, compile, and diff checks. Per the user's exception,
+  no plan-review verdict or independent Tester round was required; start15 itself was the test.
+- The canonical ledger appended the exact `+1` authorization and start14 repair, then run
+  `r23005-real-20260805t075408z-start15` recorded its semantic start at
+  `2026-08-05T07:54:49.136350+00:00`. Modeling produced one complete 45,544-byte candidate in `delivery-8` with
+  digest `6fb3b638d0c47be8d9f7b31fd0f620046c20065be13e2eb0a496f05d536f8cb7`; Runner issued exactly one retained-text
+  `kind=candidate-redrive` delivery.
+- Protocol did receive that exact redrive. It nevertheless classified conversion of the delivered JSON text into
+  the parsed object argument required by `build_candidate_receipt` as prohibited reconstruction, so it invoked no
+  receipt builder and no platform tool. Its attempted `report_task_result(status=blocked)` also returned an
+  unexpected-response error, after which it ended with free text. Runner rejected the non-formal result and closed
+  the run as `candidate-redrive-exhausted`, `collaboration/routing`,
+  `complete_modeling_quality_result=false` at `2026-08-05T07:58:01.993560+00:00`.
+- Acceptance never received a valid receipt/handoff and did not perform substantive inspection. No semantic model
+  was applied. Cleanup deleted the empty run-owned Project/Ontology, revoked all run credentials, and retained zero
+  session/lease/child/process residue. Post-run checks showed the service active, backend health OK, and frontend
+  HTTP 200. The user's unrelated `AGENTS.md` and `CLAUDE.md` edits were restored.
+- Canonical ledger is 72 lines/16,878 bytes, SHA
+  `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`; strict replay is
+  `cap=15`, `semantic_start_count=15`, `active_reservations=0`. The one authorized opportunity is exhausted and no
+  start16 is permitted without another explicit authorization.
+
+The remaining blocker is narrower than start14: redelivery and reply-slot recovery now work, but Protocol has no
+unambiguous mechanical binding from the already received exact JSON bytes to the receipt builder's object parameter.
+The next repair must solve that input-binding boundary without modifying Modeling semantics, adding a bypass around
+the formal builder, or starting another real run before authorization.

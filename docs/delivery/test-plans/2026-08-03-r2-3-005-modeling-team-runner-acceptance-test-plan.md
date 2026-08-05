@@ -1516,3 +1516,31 @@ only focused smoke checks for the following implementation invariants before com
 
 There is no Requirement Tester Round 13 and no offline PASS claim. After the focused developer checks and commit, the
 single real start15 is the test; its live evidence and cleanup determine the result.
+
+### start15 live result
+
+**Result: BLOCKED (`collaboration/routing`), not a modeling-quality or Acceptance result.**
+
+- Commit `2b3df35` supplied the exact-candidate redrive and formal reply-slot reopen. Developer smoke reported
+  72 focused passes plus 16 related passes (1 skipped), with Ruff, compile, and diff checks passing; these checks are
+  implementation diagnostics only and do not replace the user-designated live test.
+- Run `r23005-real-20260805t075408z-start15` consumed the one authorized start. Modeling produced one complete
+  45,544-byte candidate in `delivery-8`; the formal progress record retained digest
+  `6fb3b638d0c47be8d9f7b31fd0f620046c20065be13e2eb0a496f05d536f8cb7` and sent exactly one redrive.
+- Protocol received the exact redrive as `kind=candidate-redrive`, but treated parsing that delivered JSON text into
+  the object argument of `build_candidate_receipt` as forbidden reconstruction. It therefore called no receipt
+  builder and no platform tool, attempted a blocked terminal report, and ended in free text. Runner correctly
+  terminated with `candidate-redrive-exhausted` rather than accepting that response.
+- Acceptance never received a candidate receipt or platform handoff and did not begin substantive semantic
+  inspection. No platform model was applied, so this run cannot claim source fidelity, validation, reasoning,
+  retrieval, or Acceptance PASS.
+- Cleanup deleted the empty owned Project/Ontology, revoked run credentials, and left zero session, lease, child, or
+  process residue. The service remained active; backend health returned `{"status":"ok"}` and frontend returned
+  HTTP 200.
+- Canonical ledger strict replay is `cap=15`, `semantic_start_count=15`, `active_reservations=0`; no further start is
+  authorized.
+
+The newly exposed narrow defect is the Protocol input-binding boundary: exact JSON redelivery is now available, but
+Protocol lacks an explicit mechanical path that binds the already-delivered bytes to the builder's parsed candidate
+argument without asking the model to regard that conversion as semantic reconstruction. A future repair must address
+that boundary without changing the candidate, adding another semantic start, or bypassing the receipt builder.
