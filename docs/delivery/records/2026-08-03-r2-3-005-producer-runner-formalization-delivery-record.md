@@ -2603,3 +2603,21 @@ the formal builder, or starting another real run before authorization.
   Task `role_sources`/derived `allowed_sources`, or the initial role objective, to provide immutable r2 and the explicit
   instruction to reuse it. A post-start evidence file is audit material only. Reuse candidate semantics, not start20
   Project/Ontology/Batch/Session IDs; current-run owner-answer provenance must be rebound mechanically if requested.
+
+### 2026-08-06T00:13:39+08:00 — Ten additional modeling starts authorized
+
+- The user explicitly authorized **ten** additional real semantic modeling starts and then confirmed continuation after
+  the interaction was interrupted. This explicit quantity overrides the normal L0 default tranche. The clean
+  authorization baseline is `5993f15`; canonical pre-authorization ledger evidence remains 105 lines, SHA-256
+  `20492bdbb5854038811b64097c6da5248159b299ac707ac3e277e45e0c10a6b8`, strict replay `21/21/0`.
+- After this authorization record is committed, Delivery may append exactly one `+10` authorization and the start21
+  repair binding for a fresh exact start22 manifest. Runs remain sequential: start22 is the only run authorized to
+  launch immediately; each later start requires the preceding run to reach a recorded terminal outcome and a main-agent
+  continuation decision. No eleventh additional start is authorized.
+- Start22 is a continuation, not a new modeling exercise. Before `Runner.prepare`, its frozen Task inputs must include
+  the retained start20 r2 candidate semantics, accepted digest
+  `b36fe86dd32eb8739b0103ea95aa902b96cc853f28511dfb85421ed1901ec082`, the two approved competency questions,
+  explicit cross-release unknown, and an instruction not to re-ask or redesign them. Current-run identities and owner
+  provenance may be mechanically rebound, but old Project/Ontology/Batch/Session IDs must not be reused.
+- The existing waiver remains: no plan review or independent-test round; real Modeling/Protocol/platform retrieval/
+  Acceptance/settlement is the test. No preliminary audit/mock program or requirement-specific checker is authorized.

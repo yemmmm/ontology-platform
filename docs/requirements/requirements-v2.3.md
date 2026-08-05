@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户追加的 2 次授权已由 start20、start21 全部使用，账本 21/21/0，无剩余额度。start21 的 continuation handoff 错误地在 semantic_start 后才写入 run evidence，未进入 Agent 输入；Modeling 同时提出两个已知问题，而 formal outer envelope 无 question_delivery_id，文本答案因多个未消费问题而歧义退出，未进入 Protocol/Acceptance。资源已清理。be5790a 现允许严格绑定 displayed/unconsumed/current-run question_delivery_id，并保留单问题文本推断；下一次若获授权，必须在 Runner.prepare 前通过 Task role_sources/initial prompt 冻结 start20 r2 候选和续跑指令，不能再写启动后无效 handoff。`
+当前状态：`用户在 start21 清理及 be5790a owner-question 消歧修复后明确追加授权 10 次真实建模，并要求继续执行。授权前账本为 21/21/0；应先以当前干净提交记录精确 +10 授权，再启动 start22。start22 必须在 Runner.prepare 前通过 Task role_sources/initial prompt 冻结 start20 已由 Protocol 接受的 r2 候选、两道 CQ、显式 unknown 与续跑指令；禁止重新业务建模或依赖 semantic_start 后的 evidence handoff。每次只启动一个 fresh run，终态后再决定是否使用下一次，不得并发消耗。`
 
 优先级：`P0`
 
