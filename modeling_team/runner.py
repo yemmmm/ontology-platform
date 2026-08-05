@@ -2473,6 +2473,25 @@ class TeamRunner:
                             "invalid_reply_delivery_id": delivery.delivery_id,
                         },
                     )
+                    # An invalid formal response is a transport-level recovery
+                    # artifact, not a peer message.  Do not expose free text or
+                    # malformed receipt payloads to Modeling: doing so would let
+                    # the payload become a second, non-formal reply anchor (for
+                    # example, a revision replying to an invalid guidance ID).
+                    # The original formal slot was already reopened above, so the
+                    # next candidate redrive can elicit one canonical conflict or
+                    # receipt from Protocol.
+                    self.transport.ack_delivery(delivery.delivery_id)
+                    self._append_evidence(
+                        "formal-candidate-progress",
+                        {
+                            "event": "invalid-response-quarantined",
+                            "state": self._candidate_progress.state,
+                            "original_delivery_id": identity.original_delivery_id,
+                            "invalid_reply_delivery_id": delivery.delivery_id,
+                        },
+                    )
+                    continue
             owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
                 self._append_evidence(

@@ -12,7 +12,7 @@ import unittest
 
 from modeling_team.acceptance import CoordinatorPhaseController
 from modeling_team.candidate_progress import FormalCandidateProgress
-from modeling_team.interventions import IssueResolution
+from modeling_team.interventions import IssueControl, IssueError, IssueResolution
 from modeling_team.runner import TeamConfigurationError, TeamRunner
 from modeling_team.runtimes.base import RuntimeDispatchReceipt, RuntimeDelivery
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker, mcp_response
@@ -161,6 +161,140 @@ class IssueEscalationTests(unittest.TestCase):
                 )
             )
             self.assertFalse(broker.issue_ledger.pending)
+
+    def test_issue_control_normalizes_nullable_optional_fields_for_pause_and_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
+                {("protocol", "coordinator"), ("coordinator", "protocol")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+            )
+            listed = mcp_response(
+                {"method": "tools/list"}, broker=broker, agent_id="coordinator"
+            )
+            issue_tool = next(tool for tool in listed["tools"] if tool["name"] == "issue_control")
+            self.assertEqual(
+                issue_tool["inputSchema"]["required"],
+                ["issue_id", "reporter_id", "action", "control_epoch"],
+            )
+            self.assertEqual(
+                issue_tool["inputSchema"]["properties"]["reason"]["type"],
+                ["string", "null"],
+            )
+            report = broker.report_issue(
+                "protocol",
+                category="protocol_guidance",
+                summary="guidance needed",
+                failing_operation="receipt",
+                error="ambiguous contract",
+                mutation_state="not_started",
+                requested_action="clarify parse",
+            )
+            nullable_optionals = {
+                "resolution_type": None,
+                "resolution_text": None,
+                "repair_component": None,
+                "before_digest": None,
+                "after_digest": None,
+                "verification_reference": None,
+                "mutation_reconciliation": None,
+                "reason": None,
+            }
+            pause = mcp_response(
+                {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "issue_control",
+                        "arguments": {
+                            "issue_id": report["issue_id"],
+                            "reporter_id": "protocol",
+                            "action": "pause",
+                            "control_epoch": 1,
+                            **nullable_optionals,
+                        },
+                    },
+                },
+                broker=broker,
+                agent_id="coordinator",
+            )
+            pause_payload = json.loads(pause["content"][0]["text"])
+            self.assertEqual(pause_payload["action"], "pause")
+            self.assertEqual(broker.issue_ledger.state, "waiting_owner")
+
+            resolution = IssueResolution(
+                run_id=report["run_id"],
+                issue_id=report["issue_id"],
+                reporter_id="protocol",
+                resolution_type="guidance",
+                control_epoch=1,
+                resolution_text="Use the frozen receipt fields.",
+            )
+            broker.persist_issue_resolution(resolution)
+            resume = mcp_response(
+                {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "issue_control",
+                        "arguments": {
+                            "issue_id": report["issue_id"],
+                            "reporter_id": "protocol",
+                            "action": "resume",
+                            "control_epoch": 1,
+                            "resolution_type": "guidance",
+                            "resolution_text": resolution.resolution_text,
+                            "repair_component": None,
+                            "before_digest": None,
+                            "after_digest": None,
+                            "verification_reference": None,
+                            "mutation_reconciliation": None,
+                            "reason": None,
+                        },
+                    },
+                },
+                broker=broker,
+                agent_id="coordinator",
+            )
+            resume_payload = json.loads(resume["content"][0]["text"])
+            self.assertEqual(resume_payload["action"], "resume")
+            self.assertEqual(resume_payload["resolution"]["resolution_type"], "guidance")
+
+    def test_issue_control_rejects_unknown_and_non_null_pause_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
+                {("protocol", "coordinator"), ("coordinator", "protocol")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+            )
+            with self.assertRaisesRegex(IssueError, "non-abort control cannot contain a reason"):
+                IssueControl(
+                    run_id="run-1",
+                    issue_id="issue-1",
+                    coordinator_id="coordinator",
+                    reporter_id="protocol",
+                    action="pause",
+                    control_epoch=1,
+                    reason="not allowed",
+                )
+            with self.assertRaisesRegex(RoutingError, "issue_control arguments are invalid"):
+                mcp_response(
+                    {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "issue_control",
+                            "arguments": {
+                                "issue_id": "issue-1",
+                                "reporter_id": "protocol",
+                                "action": "pause",
+                                "control_epoch": 1,
+                                "unknown": None,
+                            },
+                        },
+                    },
+                    broker=broker,
+                    agent_id="coordinator",
+                )
 
     def test_candidate_active_clock_freezes_while_paused(self) -> None:
         now = [0.0]

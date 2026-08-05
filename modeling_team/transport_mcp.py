@@ -24,6 +24,7 @@ if __package__:
         IssueError,
         IssueResolution,
         RecoverableIssueLedger,
+        normalize_issue_control_arguments,
         validate_issue_report_arguments,
     )
 else:
@@ -32,6 +33,7 @@ else:
         IssueError,
         IssueResolution,
         RecoverableIssueLedger,
+        normalize_issue_control_arguments,
         validate_issue_report_arguments,
     )
 
@@ -41,6 +43,8 @@ TERMINAL_REPORT_GUARD_ERROR = (
     "Protocol retrieval evidence is incomplete; retry the required query or verifier before terminal report"
 )
 COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
+_MCP_TOOL_ERROR_CODE = -32000
+_MCP_TOOL_ERROR_MESSAGE = "Team Transport request rejected"
 
 
 def _call_terminal_report_guard(
@@ -1007,7 +1011,11 @@ def mcp_response(
                 tools.append(
                     {
                         "name": "issue_control",
-                        "description": "Coordinator-only cooperative pause/resume/abort control.",
+                        "description": (
+                            "Coordinator-only cooperative pause/resume/abort control. "
+                            "Nullable optional fields are omitted mechanically when null; "
+                            "non-null fields remain action-bound."
+                        ),
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -1114,22 +1122,10 @@ def mcp_response(
     if name == "issue_control":
         if not broker.issue_escalation_enabled or agent_id != broker.coordinator_agent_id:
             raise RoutingError("issue control is Coordinator-only")
-        allowed = {
-            "issue_id",
-            "reporter_id",
-            "action",
-            "control_epoch",
-            "resolution_type",
-            "resolution_text",
-            "repair_component",
-            "before_digest",
-            "after_digest",
-            "verification_reference",
-            "mutation_reconciliation",
-            "reason",
-        }
-        if set(args) - allowed or not {"issue_id", "reporter_id", "action", "control_epoch"}.issubset(args):
-            raise RoutingError("issue_control arguments are invalid")
+        try:
+            args = normalize_issue_control_arguments(args)
+        except IssueError as exc:
+            raise RoutingError(str(exc)) from None
         action = args.get("action")
         resolution: IssueResolution | None = None
         if action == "resume":
@@ -1231,16 +1227,35 @@ def main() -> int:
             connection.connect(endpoint)
             connection.sendall(line.encode())
             response = connection.makefile("r", encoding="utf-8").readline()
-        print(
-            json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "id": request.get("id"),
-                    "result": json.loads(response),
-                }
-            ),
-            flush=True,
-        )
+        broker_response = json.loads(response)
+        if isinstance(broker_response, dict) and "error" in broker_response:
+            # The broker socket is an internal transport and returns a compact
+            # error object.  Do not place that object under JSON-RPC ``result``:
+            # an MCP client expects either a CallToolResult or a JSON-RPC error.
+            wire_response = {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": _MCP_TOOL_ERROR_CODE,
+                    "message": _MCP_TOOL_ERROR_MESSAGE,
+                },
+            }
+        elif isinstance(broker_response, dict):
+            wire_response = {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": broker_response,
+            }
+        else:
+            wire_response = {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": _MCP_TOOL_ERROR_CODE,
+                    "message": _MCP_TOOL_ERROR_MESSAGE,
+                },
+            }
+        print(json.dumps(wire_response), flush=True)
     return 0
 
 

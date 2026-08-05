@@ -12,6 +12,7 @@ from modeling_team.candidate_progress import (
     FormalCandidateProgress,
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
+    formal_candidate_digests,
 )
 from modeling_team.interventions import IssueResolution
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
@@ -420,6 +421,10 @@ def test_runner_reopens_invalid_reply_then_accepts_exact_redrive_reply(tmp_path:
     runner.drain()
     redrives = [delivery for _, delivery in adapter.sent if delivery.kind == "candidate-redrive"]
     assert len(redrives) == 1
+    assert not any(
+        recipient == "modeling" and delivery.text == "Please resend the candidate"
+        for recipient, delivery in adapter.sent
+    )
     assert redrives[0].text == candidate_text
     assert redrives[0].delivery_id == original.delivery_id
     identity = runner._candidate_progress.identity
@@ -441,6 +446,101 @@ def test_runner_reopens_invalid_reply_then_accepts_exact_redrive_reply(tmp_path:
     assert runner._candidate_progress.state == "complete"
     assert len([delivery for _, delivery in adapter.sent if delivery.kind == "candidate-redrive"]) == 1
     assert len(runner.transport._delivery_by_id) == 3
+
+
+def test_runner_quarantines_invalid_guidance_then_binds_revision_to_formal_conflict(
+    tmp_path: Path,
+) -> None:
+    """A malformed Protocol guidance response cannot become a revision anchor."""
+
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    candidate = _candidate()
+    original = runner.transport.send(
+        "modeling",
+        "protocol",
+        json.dumps(candidate, ensure_ascii=False, separators=(",", ":")),
+        expects_reply=True,
+    )
+    guidance = runner.transport.send(
+        "protocol",
+        "modeling",
+        "Please send a complete, self-contained candidate revision",
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+
+    # The malformed guidance is reopened for the formal slot and then dropped;
+    # the only Runtime dispatch is the bounded candidate redrive.
+    runner.drain()
+    assert runner._candidate_progress.state == "redrive_sent"
+    assert [delivery.kind for _, delivery in adapter.sent] == ["peer", "candidate-redrive"]
+    assert not any(
+        recipient == "modeling" and delivery.delivery_id == guidance.delivery_id
+        for recipient, delivery in adapter.sent
+    )
+    progress_events = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "evidence" / "formal-candidate-progress.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    progress_event_names = [event["event"] for event in progress_events]
+    assert progress_event_names.index("invalid-response-quarantined") > progress_event_names.index(
+        "invalid-response-slot-reopened"
+    )
+
+    conflict = build_candidate_conflict(candidate, "competency_question_count_mismatch", "scope mismatch")
+    conflict_delivery = runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(conflict, ensure_ascii=False, separators=(",", ":")),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert runner._candidate_progress.state == "awaiting_revision"
+    assert any(
+        recipient == "modeling" and delivery.delivery_id == conflict_delivery.delivery_id
+        for recipient, delivery in adapter.sent
+    )
+
+    revised = _candidate(2)
+    # After the formal conflict, the original request is no longer an active
+    # revision slot; only the conflict delivery may be reversed by Modeling.
+    with pytest.raises(RoutingError, match="active reversed"):
+        runner.transport.send(
+            "modeling",
+            "protocol",
+            json.dumps(revised, ensure_ascii=False, separators=(",", ":")),
+            expects_reply=True,
+            reply_to_delivery_id=original.delivery_id,
+        )
+    revision_delivery = runner.transport.send(
+        "modeling",
+        "protocol",
+        json.dumps(revised, ensure_ascii=False, separators=(",", ":")),
+        expects_reply=True,
+        reply_to_delivery_id=conflict_delivery.delivery_id,
+    )
+    candidate_digest, semantic_digest = formal_candidate_digests(revised)
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(
+            {
+                "status": "accepted",
+                "candidate_revision": revised["candidate_revision"],
+                "semantic_digest": semantic_digest,
+                "candidate_digest": candidate_digest,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+        reply_to_delivery_id=revision_delivery.delivery_id,
+    )
+    runner.drain()
+    assert runner._candidate_progress.state == "complete"
 
 
 class _FormalProgressAdapter:

@@ -26,6 +26,21 @@ ISSUE_CATEGORIES = frozenset(
 )
 ISSUE_CONTROL_ACTIONS = frozenset({"pause", "resume", "abort"})
 ISSUE_RESOLUTION_TYPES = frozenset({"guidance", "repair_completed", "abort"})
+ISSUE_CONTROL_REQUIRED_FIELDS = frozenset(
+    {"issue_id", "reporter_id", "action", "control_epoch"}
+)
+ISSUE_CONTROL_OPTIONAL_FIELDS = frozenset(
+    {
+        "resolution_type",
+        "resolution_text",
+        "repair_component",
+        "before_digest",
+        "after_digest",
+        "verification_reference",
+        "mutation_reconciliation",
+        "reason",
+    }
+)
 ISSUE_STATES = frozenset(
     {
         "reported",
@@ -259,7 +274,7 @@ class IssueControl:
         if self.action == "abort":
             _required_text(self.reason, "abort reason", allow_newlines=False)
         elif self.reason is not None:
-            _required_text(self.reason, "control reason", allow_newlines=False)
+            raise IssueError("non-abort control cannot contain a reason")
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -537,8 +552,25 @@ def validate_issue_report_arguments(arguments: Any) -> dict[str, Any]:
     return result
 
 
+def normalize_issue_control_arguments(arguments: Any) -> dict[str, Any]:
+    """Drop only schema-declared nullable optionals before action validation."""
+
+    if not isinstance(arguments, Mapping):
+        raise IssueError("issue_control arguments are invalid")
+    declared = ISSUE_CONTROL_REQUIRED_FIELDS | ISSUE_CONTROL_OPTIONAL_FIELDS
+    if set(arguments) - declared or not ISSUE_CONTROL_REQUIRED_FIELDS.issubset(arguments):
+        raise IssueError("issue_control arguments are invalid")
+    return {
+        key: value
+        for key, value in arguments.items()
+        if key not in ISSUE_CONTROL_OPTIONAL_FIELDS or value is not None
+    }
+
+
 __all__ = [
     "ISSUE_CATEGORIES",
+    "ISSUE_CONTROL_OPTIONAL_FIELDS",
+    "ISSUE_CONTROL_REQUIRED_FIELDS",
     "ISSUE_CONTROL_ACTIONS",
     "ISSUE_RESOLUTION_TYPES",
     "ISSUE_STATES",
@@ -547,5 +579,6 @@ __all__ = [
     "IssueReport",
     "IssueResolution",
     "RecoverableIssueLedger",
+    "normalize_issue_control_arguments",
     "validate_issue_report_arguments",
 ]

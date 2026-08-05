@@ -281,7 +281,9 @@ class TransportTests(unittest.TestCase):
                 early_request = self._report_request("completed", "early")
                 early_request["already_synchronized"] = True
                 early = rpc(2, early_request)
-                self.assertIn("terminal handoffs: modeling", early["result"]["error"])
+                self.assertEqual(early["error"]["code"], -32000)
+                self.assertEqual(early["error"]["message"], "Team Transport request rejected")
+                self.assertNotIn("result", early)
                 broker.report("modeling", "completed", "modeling")
                 broker.ack_terminal_handoff("protocol", "modeling")
                 retry = rpc(3, self._report_request("completed", "retry"))
@@ -320,6 +322,80 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(
             tools["report_task_result"]["inputSchema"]["required"], ["status", "summary"]
         )
+
+    def test_stdio_issue_control_rejection_is_jsonrpc_error(self) -> None:
+        root = Path(__file__).parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
+                {("protocol", "coordinator"), ("coordinator", "protocol")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+            )
+            broker.start(["coordinator"])
+            environment = os.environ.copy()
+            environment["PYTHONPATH"] = os.pathsep.join(
+                item for item in (str(root), environment.get("PYTHONPATH", "")) if item
+            )
+            environment["TEAM_TRANSPORT_SOCKET"] = str(broker.endpoint("coordinator"))
+            process = subprocess.Popen(
+                [sys.executable, "-m", "modeling_team.transport_mcp"],
+                cwd=root,
+                env=environment,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+
+            def rpc(request_id: int, payload: dict[str, object]) -> dict[str, object]:
+                assert process.stdin is not None
+                assert process.stdout is not None
+                process.stdin.write(
+                    json.dumps({"jsonrpc": "2.0", "id": request_id, **payload}) + "\n"
+                )
+                process.stdin.flush()
+                return json.loads(process.stdout.readline())
+
+            try:
+                self.assertIn("result", rpc(1, {"method": "initialize", "params": {}}))
+                rejected = rpc(
+                    2,
+                    {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "issue_control",
+                            "arguments": {
+                                "issue_id": "issue-1",
+                                "reporter_id": "protocol",
+                                "action": "pause",
+                                "control_epoch": 1,
+                                "unknown": None,
+                            },
+                        },
+                    },
+                )
+                self.assertEqual(
+                    rejected,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "error": {
+                            "code": -32000,
+                            "message": "Team Transport request rejected",
+                        },
+                    },
+                )
+                self.assertNotIn("unknown", json.dumps(rejected))
+            finally:
+                if process.stdin is not None:
+                    process.stdin.close()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                broker.stop()
 
     def test_reply_correlation_closes_only_after_actual_reply_delivery_ack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
