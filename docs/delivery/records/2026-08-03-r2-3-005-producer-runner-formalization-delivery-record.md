@@ -2537,3 +2537,42 @@ the formal builder, or starting another real run before authorization.
 - After this authorization record is committed, Delivery may append exactly one `+2` authorization bound to the new
   baseline, append the permitted repair binding for start19, and launch a fresh start20. The second start may be used
   only after start20 reaches a recorded terminal outcome and a fresh run is still needed. No third start is authorized.
+
+### 2026-08-05T23:54:14+08:00 — Start20 accepted revision, reply-anchor failure and continuation repair
+
+- Authorization commit `e80bb80` was followed by one exact `+2` ledger record. A mistaken repair binding used the git
+  commit instead of the run-specific manifest hash; the immutable mistake was preserved, then closed through one
+  presemantic reservation/release and rebound to exact run
+  `r23005-real-20260805t152738z-start20-rebind`, manifest
+  `47149c547c1eef4757651dfb7b36adc0f76428637fa61facf1964576a231a515`. This consumed no semantic start. Start20 then
+  entered real modeling in about 11 seconds and moved the ledger to `21/20`.
+- Modeling reused the prior source answer and submitted r1. Protocol raised one scoped issue because r1 carried three
+  consumer queries while the frozen task permits exactly two. Coordinator's native pause and resume both included
+  schema-declared nullable fields; the isolated transport rejected them and malformed the broker error as a successful
+  MCP result, so App Server showed only `Unexpected response type`. Coordinator intent and persisted resolution were
+  fully evidenced; Host replay supplied only the exact pause/resume fields. The same Protocol thread resumed and
+  Runner emitted the previously missing formal `candidate-redrive`, proving repair `0531c62` in a real run.
+- Guidance retained `current-c-behavior-consumed-by-b` and `b-behavior-without-c-score`, while preserving cross-release
+  output continuity as an explicit unknown rather than a third ticket. Modeling delivered complete r2 and Protocol
+  accepted it with digest `b36fe86dd32eb8739b0103ea95aa902b96cc853f28511dfb85421ed1901ec082`.
+- The run nevertheless timed out in formal progress. Protocol had first sent free-text guidance as an expected reply
+  to r1, then sent the formal conflict against the same candidate. Modeling correctly followed the earlier guidance,
+  while the deterministic state machine required the r2 reply to bind only the later conflict delivery. Protocol
+  accepted r2 and began applying root/children batches, but Runner remained on r1 `awaiting_revision`; after 120
+  seconds it recorded `collaboration/routing`, complete=false. Acceptance did not start.
+- Initial Runner cleanup metadata overstated completion. Read-only database verification found the run-owned Project,
+  Ontology, cancelled Build Session and applied/open batches. Delivery preserved the old cleanup evidence, appended
+  `evidence/cleanup-correction.json`, used the existing authenticated Project deletion path, and read back Project,
+  Ontology, Session and Batches as 404. Run keys, processes and transport paths are absent; unrelated older admin keys
+  were not touched. Canonical ledger is 101 lines, strict replay `cap=21`, `semantic_starts=20`, `active=[]`; one
+  previously authorized start remains.
+- Generic repair commit `a11ca8b` mechanically removes only declared null optionals from issue controls, keeps unknown
+  and non-null action-invalid fields rejected, and returns broker failures as valid non-sensitive JSON-RPC errors.
+  Runner now quarantines an invalid formal Protocol response after reopening the canonical slot, so free text cannot
+  become a competing Modeling reply anchor; the existing redrive must elicit the formal receipt/conflict. Focused
+  verification passed **64 tests plus 6 subtests** and full `modeling_team/tests` passed **341 tests, 1 skipped**;
+  Ruff, `py_compile` and diff checks passed. GitNexus final change detection was LOW with no indexed process affected.
+- The user directed continuation from the previous result wherever safe. Because start20 is terminal and its owned
+  platform resources were deleted, start21 cannot resume the process/thread in place; it must reuse the accepted r2
+  candidate, owner answer and two-query scope as frozen inputs, rebuild only unavoidable run resources, and continue
+  from mechanical candidate binding/application rather than repeat business modeling.
