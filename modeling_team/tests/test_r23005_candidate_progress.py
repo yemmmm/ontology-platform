@@ -13,6 +13,7 @@ from modeling_team.candidate_progress import (
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
 )
+from modeling_team.interventions import IssueResolution
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
 from modeling_team.runner import TeamRunner
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
@@ -468,7 +469,35 @@ class _FormalProgressAdapter:
         return [AgentState("protocol", "idle", started, completed)]
 
 
-def _formal_progress_runner(tmp_path: Path, adapter: _FormalProgressAdapter) -> TeamRunner:
+class _IssueRecoveryProgressAdapter(_FormalProgressAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.complete_original = False
+
+    def send_message(self, recipient: str, delivery: RuntimeDelivery):
+        if recipient == "protocol" and delivery.kind == "peer":
+            self.sent.append((recipient, delivery))
+            self.turns["protocol"] = ("candidate-turn", None)
+            return RuntimeDispatchReceipt("start", "candidate-turn")
+        if recipient == "protocol" and delivery.kind == "candidate-redrive":
+            self.sent.append((recipient, delivery))
+            self.turns["protocol"] = ("redrive-turn", None)
+            return RuntimeDispatchReceipt("start", "redrive-turn")
+        return super().send_message(recipient, delivery)
+
+    def get_agent_states(self):
+        if self.complete_original:
+            self.turns["protocol"] = ("candidate-turn", "candidate-turn")
+        started, completed = self.turns["protocol"]
+        return [AgentState("protocol", "idle", started, completed)]
+
+
+def _formal_progress_runner(
+    tmp_path: Path,
+    adapter: _FormalProgressAdapter,
+    *,
+    issue_escalation_enabled: bool = False,
+) -> TeamRunner:
     agents = [
         SimpleNamespace(agent_id=role, package=SimpleNamespace(role=role))
         for role in ("modeling", "protocol", "coordinator", "acceptance")
@@ -481,12 +510,16 @@ def _formal_progress_runner(tmp_path: Path, adapter: _FormalProgressAdapter) -> 
     (run_root / "evidence").mkdir(parents=True)
     runner = TeamRunner(repository_root=tmp_path, adapter=adapter, monotonic_clock=lambda: 0.0)
     runner.run = SimpleNamespace(run_id="run-1", root=run_root, scope={"mode": "create"}, configuration=configuration)
+    permissions = {("modeling", "protocol"), ("protocol", "modeling")}
+    if issue_escalation_enabled:
+        permissions.update({("modeling", "coordinator"), ("coordinator", "modeling")})
     runner.transport = TeamTransportBroker(
         run_root / "broker",
-        {("modeling", "protocol"), ("protocol", "modeling")},
+        permissions,
         modeling_agent_id="modeling",
         coordinator_agent_id="coordinator",
         terminal_dependencies={},
+        issue_escalation_enabled=issue_escalation_enabled,
     )
     runner._candidate_progress = FormalCandidateProgress(clock=lambda: 0.0)
     return runner
@@ -518,3 +551,76 @@ def test_runner_turn_barrier_sends_one_candidate_redrive(tmp_path: Path) -> None
     assert redrive.delivery_id == original.delivery_id
     assert redrive.expects_reply == original.expects_reply
     assert redrive.reply_to_delivery_id == original.reply_to_delivery_id
+
+
+def test_issue_pending_latches_candidate_before_recovery_turn_overwrites_state(tmp_path: Path) -> None:
+    adapter = _IssueRecoveryProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter, issue_escalation_enabled=True)
+    candidate_text = json.dumps(_candidate())
+    runner.transport.send("modeling", "protocol", candidate_text, expects_reply=True)
+
+    # The original dispatch is started, but its completion notification has not
+    # arrived during this drain.  The issue is then reported before the next
+    # main-loop iteration.
+    runner.drain()
+    progress = runner._candidate_progress
+    assert progress is not None and progress.pending is not None
+    assert progress.pending.turn_barrier_complete is False
+    identity = progress.identity
+    assert identity is not None
+    ledger = runner.transport.issue_ledger
+    assert ledger is not None
+    issue = ledger.report(
+        reporter_id="modeling",
+        category="runtime_recovery",
+        summary="Protocol needs recovery guidance",
+        failing_operation="receipt",
+        error="recovery turn required",
+        mutation_state="not_started",
+        requested_action="pause and resume",
+        thread_id="runtime-agent:protocol",
+        candidate_identity=identity.__dict__,
+    )
+
+    # While the issue is pending, Runner must retain the original delivery and
+    # observe its completion, but must not redrive yet.
+    adapter.complete_original = True
+    runner.drain()
+    assert progress.pending is not None and progress.pending.turn_barrier_complete is True
+    assert [delivery.kind for _, delivery in adapter.sent] == ["peer"]
+
+    # A later recovery turn overwrites the adapter's last-completed turn.  Once
+    # the issue is resolved, the latched barrier still permits exactly one
+    # candidate redrive.
+    adapter.complete_original = False
+    adapter.turns["protocol"] = ("recovery-turn", "recovery-turn")
+    pause = ledger.control(
+        issue_id=issue.issue_id,
+        coordinator_id="coordinator",
+        reporter_id="modeling",
+        action="pause",
+        control_epoch=issue.control_epoch,
+    )
+    ledger.mark_dispatch(pause)
+    resolution = IssueResolution(
+        run_id=issue.run_id,
+        issue_id=issue.issue_id,
+        reporter_id="modeling",
+        resolution_type="guidance",
+        control_epoch=issue.control_epoch,
+        resolution_text="Resume the same candidate turn.",
+    )
+    ledger.persist_resolution(resolution)
+    resume = ledger.control(
+        issue_id=issue.issue_id,
+        coordinator_id="coordinator",
+        reporter_id="modeling",
+        action="resume",
+        control_epoch=issue.control_epoch,
+        resolution=resolution,
+    )
+    ledger.mark_dispatch(resume)
+
+    runner.drain()
+    assert [delivery.kind for _, delivery in adapter.sent] == ["peer", "candidate-redrive"]
+    assert progress.state == "redrive_sent"

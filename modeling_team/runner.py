@@ -2416,6 +2416,19 @@ class TeamRunner:
             # Coordinator's issue_control callback can enter the queue.  No
             # ordinary peer/terminal Runtime message is delivered or consumed.
             self.adapter.receive_messages()
+            # The original candidate dispatch may complete while the issue is
+            # pending.  Observe that completion now, before a later pause/
+            # recovery turn overwrites the Runtime's last-completed turn ID.
+            # Keep the issue freeze intact: redrive and deadline checks remain
+            # deferred until the issue has been resolved.
+            if self._candidate_progress is not None:
+                roles = self._formal_candidate_roles()
+                states_reader = getattr(self.adapter, "get_agent_states", None)
+                if roles is not None and callable(states_reader):
+                    _, protocol = roles
+                    self._candidate_progress.observe_states(
+                        states_reader(), protocol_agent_id=protocol
+                    )
             return output
         for delivery in deliveries:
             try:
