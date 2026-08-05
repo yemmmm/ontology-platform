@@ -2323,3 +2323,22 @@ the formal builder, or starting another real run before authorization.
   `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`, strict replay
   `cap=15`, `semantic_start_count=15`, `active_reservations=0`. The original R2.3-005 modeling/Acceptance objective
   remains paused and no start16 is authorized.
+
+### 2026-08-05T18:20:50+08:00 — One start16 opportunity authorized; original objective resumed
+
+- The user explicitly authorized **one** additional semantic modeling start and directed the original R2.3-005 task
+  to resume. This overrides the default three-start authorization amount for this authorization only. The existing
+  exceptional process waiver remains active: do not rerun plan review or an independent test round; start16 is the
+  live test and must enter real modeling promptly.
+- Start16 reuses the exact R2.3-005 formal Task/Profile, approved source slice, fresh create-mode scope, start15
+  candidate/receipt/redrive lessons, and commit `8728dd9` cooperative issue recovery. It must not change the business
+  slice or rebuild the workflow. If Protocol again treats parsing the exact delivered candidate JSON into the builder
+  object as semantic reconstruction, it must call `report_issue`; Coordinator pauses it, surfaces the structured issue
+  to the outer manager, and resumes the same thread with the narrow mechanical guidance that parsing preserves bytes
+  and fields and does not authorize semantic edits.
+- Before ledger mutation, the baseline must include the user's already-written project-guidance updates in
+  `AGENTS.md` and `CLAUDE.md`, this authorization record, and a clean git status. Then append exactly `+1`, authorize a
+  narrow repair for failed start15 against the new baseline, and launch one fresh start16. No start17 is authorized.
+- Pre-authorization read-only replay remains 72 lines / 16,878 bytes, SHA-256
+  `c823081dd3dacaa39fd1d185fa4fc5a33ab3f379e5ecee236ad73e252e10a577`, with
+  `cap=15`, `semantic_start_count=15`, `active_reservations=0`.

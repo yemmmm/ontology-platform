@@ -22,15 +22,97 @@ This repository contains a FastAPI backend and a Vite/React frontend for an onto
 
 ## Project Target Guidance
 
-`docs/requirements/requirements-v1.0.md` is the authoritative global reference for the project's target state.
-Read it before architecture, API, storage, semantic modeling, MCP, or UI work, and use its delivery
-scope, priority, status, and acceptance criteria to guide designs, code, tests, and documentation.
+`docs/requirements/` contains the project's versioned authoritative requirement sources. Before
+architecture, API, storage, semantic modeling, MCP, or UI work, identify the requirement and version
+that own the current task, read that entry first, then follow its declared base and related-version
+links where necessary. No older version file, including `requirements-v1.0.md`, is the default
+global core for every task.
 
-Treat differences between the current implementation and this requirements list as implementation
-gaps, not as reasons to silently redefine the target. Surface conflicts explicitly, and update the
-requirements list when the target or delivery decision changes. `docs/reference/glossary.md` remains the
-reference for canonical terminology only; ADRs record architectural decisions. Neither the current
-code nor older planning documents override the requirements list.
+Treat differences between the current implementation and the applicable requirement set as
+implementation gaps, not as reasons to silently redefine the target. Surface conflicts explicitly,
+and update the owning requirement when the target or delivery decision changes.
+`docs/reference/glossary.md` remains the reference for canonical terminology only; ADRs record
+architectural decisions. Neither current code nor older planning documents override the applicable
+versioned requirements.
+
+## Current Development Priority
+
+The current project stage prioritizes **modeling quality and semantic retrieval quality**. Prefer
+the simplest implementation and operating workflow that preserves or improves those two outcomes.
+
+- Do not make productization concerns such as fine-grained security, generalized version
+  management, immutable audit history, cross-machine coordination, automatic crash recovery,
+  complex orchestration, or polished management UI prerequisites for a modeling-quality experiment.
+- Design documents may reserve extension points and list those concerns as future capabilities, but
+  current implementation and acceptance must not include them unless they are necessary to protect
+  modeling correctness, retrieval correctness, or the integrity of an immediately applied model.
+- For local Agent workflow experiments, prefer a repo-local, gitignored, human-readable shared
+  directory and small deterministic scripts over new backend tables, APIs, services, or frameworks.
+- Keep only the quality gates that directly protect source fidelity, business scope, model
+  correctness, deterministic dry-run/application, and competency-question or retrieval acceptance.
+- Separate every new modeling-workflow design into `current minimal scope` and `future
+  productization`. Do not silently promote future features into the current completion gate.
+- Existing platform capabilities may be reused, but do not require every available governance,
+  recovery, lineage, event, or audit mechanism in each local iteration merely because it exists.
+
+## External Modeling Agent Experiment Rules
+
+The rules in this section are mandatory unless the user or an authoritative requirement explicitly
+changes them. Detailed tactics, examples, and historical lessons are reference-only in
+`docs/reference/modeling-agent-experiment-lessons.md`; that document cannot override these rules.
+`Priority L0` below means the highest operating priority and is distinct from the `L0 Runtime`
+acceptance stage.
+
+- Prioritize evidence about modeling and semantic retrieval quality. Keep the current experiment
+  bounded, proportional to its acceptance stage, and separate from future productization.
+- **Priority L0 — enter real modeling early.** Start the first real modeling attempt within 20
+  minutes unless the user explicitly authorizes a longer preparation phase. Before it, perform only
+  the minimum checks needed to start safely. Do not front-load extensive audits, repeated reviews,
+  mock runs, smoke harnesses, or speculative verification; they can consume most of the attempt
+  time while leaving the first real semantic error undiscovered. If the gate is missed, stop,
+  report the time consumers, reduce the setup, and move to live modeling. Repair the narrow failing
+  layer from real evidence.
+- **Priority L0 — reuse the closest accepted baseline.** A new requirement must not rebuild an
+  already proven workflow from scratch. Before implementation, inventory the closest accepted
+  requirement, scenario, code, prompts, role configuration, protocol helpers, fixtures, evidence
+  readers and patterns, tests, and recorded lessons. Carry them forward wherever compatible and
+  implement only the requirement-specific delta. Document and review any proven incompatibility
+  before replacement; treat rediscovering a previously documented failure as a process defect.
+- **Priority L0 — use the three authorized modeling attempts.** Each authorization grants three
+  fresh semantic modeling starts unless the user explicitly sets a different amount. The budget is
+  a boundary against unapproved runs, not a scarce asset to protect by delaying real modeling or
+  adding speculative preparation. Use attempts promptly when they can produce semantic evidence,
+  preserve each attempt, and request the next authorization after all three are consumed. Never
+  start an additional attempt until that authorization is granted.
+- Use staged acceptance: `L0 Runtime`, `L1 Modeling quality`, `L2 Repeatability`, and
+  `L3 Productization`. Never make a later stage a prerequisite for an earlier one.
+- The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
+  handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
+  semantic acceptance authority.
+- Do not create hard-coded programs that inspect one temporary requirement's or one stage's output
+  merely to support that implementation run. Such one-off checkers are slow to build, brittle, and
+  prone to validating the script's assumptions instead of the real result. Prefer direct evidence
+  inspection and existing generic validators. This restriction does not apply to validation that
+  protects a stable, reusable requirement or platform contract; temporary implementation scripts
+  must remain small, disposable, and non-authoritative.
+- Keep deterministic mechanics out of model reasoning. Tools own protocol formatting, stable
+  identities, immutable publication, retries, and parsing; modeling Agents own business semantics,
+  ontology structure, evidence, Shapes, relations, and explicit unknowns.
+- Require dry-run/application integrity, source fidelity, bounded scope, validation/reasoning, and
+  governed retrieval evidence before accepting a model. Do not add unrelated governance,
+  Consumer, mutation, recovery, or orchestration scope to repair a narrow failure.
+- Make live progress and terminal failures observable, fail fast, and preserve the failing layer as
+  `modeling-quality`, `platform-contract`, `collaboration/routing`, or
+  `runtime/infrastructure`. Repair only the narrow layer and resume the original modeling goal.
+- Preserve requested parallel execution. Freeze contracts and assign non-overlapping ownership of
+  files, ports, Project/Ontology IDs, runtime directories, shared records, and cleanup before work
+  begins.
+- Final semantic acceptance must be independent from the process that produced the live evidence.
+  Independent testing must not create or continue the run it evaluates and must not mutate retained
+  evidence.
+- Track time spent on semantic modeling versus infrastructure, harness, review, and documentation.
+  If semantic modeling is less than half of active effort, pause and propose a smaller path before
+  expanding the harness.
 
 ## Platform and Reference-Ontology Boundary
 
@@ -115,7 +197,7 @@ Copy `.env.example` to `backend/.env` for local development. Do not commit real 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **ontology-platform** (23651 symbols, 48834 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **ontology-platform** (25255 symbols, 52194 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
