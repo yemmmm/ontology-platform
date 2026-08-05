@@ -12,6 +12,7 @@ from typing import Any
 
 from protocol_mechanics import (
     ProtocolRetrievalFallbackError,
+    build_candidate_conflict,
     build_candidate_receipt,
     build_candidate_item_evidence_map,
     protocol_mechanics_contract_bytes,
@@ -23,9 +24,11 @@ from protocol_mechanics import (
 TOOL_NAME = "verify_scoped_retrieval_fallback"
 EVIDENCE_MAP_TOOL_NAME = "write_candidate_item_evidence_map"
 CANDIDATE_RECEIPT_TOOL_NAME = "build_candidate_receipt"
+CANDIDATE_CONFLICT_TOOL_NAME = "build_candidate_conflict"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
 PROOF_GATE_ENV = "PROTOCOL_PROOF_GATE"
+FORMAL_CANDIDATE_GATE_ENV = "PROTOCOL_FORMAL_CANDIDATE_GATE"
 RUNTIME_CONTEXT_PATH = Path("/opt/mechanics-contract.json")
 REQUIRED_PROOF_ARGUMENTS = (
     "mode",
@@ -879,9 +882,34 @@ def _candidate_receipt_tool() -> dict[str, Any]:
     }
 
 
+def _candidate_conflict_tool() -> dict[str, Any]:
+    return {
+        "name": CANDIDATE_CONFLICT_TOOL_NAME,
+        "description": (
+            "Build a deterministic formal conflict bound to the complete current candidate. "
+            "Use only after attempting the accepted receipt builder; send the exact returned "
+            "six-field payload through Team Transport."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["candidate", "conflict_code", "conflict_detail"],
+            "additionalProperties": False,
+            "properties": {
+                "candidate": _candidate_receipt_schema()["properties"]["candidate"],
+                "conflict_code": {"type": "string", "minLength": 1},
+                "conflict_detail": {"type": "string", "minLength": 1},
+            },
+        },
+    }
+
+
 def _proof_gate_enabled() -> bool:
     """Keep direct/local invocations proof-compatible unless Runtime sets the gate explicitly."""
     return os.environ.get(PROOF_GATE_ENV, "1") == "1"
+
+
+def _formal_candidate_gate_enabled() -> bool:
+    return os.environ.get(FORMAL_CANDIDATE_GATE_ENV, "0") == "1"
 
 
 def _validate_candidate_receipt_arguments(arguments: object) -> str | None:
@@ -889,6 +917,22 @@ def _validate_candidate_receipt_arguments(arguments: object) -> str | None:
         return "candidate receipt arguments must contain exactly candidate"
     if not isinstance(arguments.get("candidate"), dict):
         return "candidate receipt candidate must be an object"
+    return None
+
+
+def _validate_candidate_conflict_arguments(arguments: object) -> str | None:
+    if not isinstance(arguments, dict) or set(arguments) != {
+        "candidate",
+        "conflict_code",
+        "conflict_detail",
+    }:
+        return "candidate conflict arguments must contain exactly candidate, conflict_code and conflict_detail"
+    if not isinstance(arguments.get("candidate"), dict):
+        return "candidate conflict candidate must be an object"
+    if not isinstance(arguments.get("conflict_code"), str) or not arguments["conflict_code"].strip():
+        return "candidate conflict code must be a non-empty string"
+    if not isinstance(arguments.get("conflict_detail"), str) or not arguments["conflict_detail"].strip():
+        return "candidate conflict detail must be a non-empty string"
     return None
 
 
@@ -1060,6 +1104,8 @@ def handle(request: object) -> dict[str, Any] | None:
         tools = [_candidate_receipt_tool(), _tool()]
         if _proof_gate_enabled():
             tools.insert(1, _evidence_map_tool())
+        if _formal_candidate_gate_enabled():
+            tools.insert(1, _candidate_conflict_tool())
         return _result(
             request_id,
             {"tools": tools},
@@ -1090,6 +1136,31 @@ def handle(request: object) -> dict[str, Any] | None:
             {
                 "content": [{"type": "text", "text": payload}],
                 "structuredContent": receipt,
+            },
+        )
+    if params.get("name") == CANDIDATE_CONFLICT_TOOL_NAME:
+        if not _formal_candidate_gate_enabled():
+            return _error(request_id, -32601, "method or tool is unavailable")
+        error = _validate_candidate_conflict_arguments(arguments)
+        if error is not None:
+            return _error(request_id, -32602, error)
+        assert isinstance(arguments, dict)
+        candidate = arguments["candidate"]
+        assert isinstance(candidate, dict)
+        try:
+            conflict = build_candidate_conflict(
+                candidate,
+                arguments["conflict_code"],
+                arguments["conflict_detail"],
+            )
+        except ProtocolRetrievalFallbackError as exc:
+            return _error(request_id, -32013, f"candidate conflict failed: {exc}")
+        payload = json.dumps(conflict, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return _result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": payload}],
+                "structuredContent": conflict,
             },
         )
     if params.get("name") == EVIDENCE_MAP_TOOL_NAME:

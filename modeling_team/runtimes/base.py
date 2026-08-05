@@ -21,6 +21,25 @@ class RuntimeMessage:
 
 
 @dataclass(frozen=True)
+class RuntimeDispatchReceipt:
+    """Identity returned by a runtime dispatch.
+
+    ``turn_id`` is optional for legacy adapters and fake runtimes.  The formal
+    R2.3-005 gate treats a missing id as a platform-contract failure, while
+    older gates continue to accept ``None`` for backwards compatibility.
+    """
+
+    mode: str
+    turn_id: str | None
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"start", "steer"}:
+            raise ValueError("runtime dispatch mode must be start or steer")
+        if self.turn_id is not None and not isinstance(self.turn_id, str):
+            raise TypeError("runtime dispatch turn_id must be a string or null")
+
+
+@dataclass(frozen=True)
 class RuntimeDelivery:
     """A mechanically attributed inbound delivery for one Runtime thread."""
 
@@ -39,6 +58,8 @@ class RuntimeDelivery:
 class AgentState:
     agent_id: str
     state: str
+    last_started_turn_id: str | None = None
+    last_completed_turn_id: str | None = None
 
 
 class RuntimeAdapter(ABC):
@@ -58,7 +79,9 @@ class RuntimeAdapter(ABC):
         self, agent_id: str, task_text: str, skill_paths: list[str], roster: list[str]
     ) -> None: ...
     @abstractmethod
-    def send_message(self, agent_id: str, delivery: RuntimeDelivery) -> None: ...
+    def send_message(
+        self, agent_id: str, delivery: RuntimeDelivery
+    ) -> RuntimeDispatchReceipt | None: ...
     @abstractmethod
     def receive_messages(self) -> list[RuntimeMessage]: ...
     @abstractmethod

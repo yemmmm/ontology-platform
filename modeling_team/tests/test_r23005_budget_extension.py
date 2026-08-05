@@ -90,6 +90,28 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             set(),
         )
 
+    def _formal_13_of_13_prefix(self, ledger: StartLedger) -> None:
+        """Build an isolated formal ledger at the retained 13/13 exhausted-cap shape."""
+        self._first_failure(ledger, "run-1")
+        ledger.authorize_budget(3, "authorization-1", "reference-1")
+        ledger.authorize_repair("run-1", "repair-2", "baseline-2")
+        for index in range(2, 14):
+            run_id = f"run-{index}"
+            baseline = f"baseline-{index}"
+            self._begin(ledger, run_id, baseline)
+            ledger.terminal_failure(run_id, "collaboration/routing", False)
+            if index < 13:
+                if index in {4, 7, 10}:
+                    tranche = index // 3
+                    ledger.authorize_budget(
+                        3, f"authorization-{tranche + 1}", f"reference-{tranche + 1}"
+                    )
+                ledger.authorize_repair(
+                    run_id, f"repair-{index + 1}", f"baseline-{index + 1}"
+                )
+        self.assertEqual(ledger._start_cap(ledger._records()), 13)
+        self.assertEqual(ledger._semantic_start_count(ledger._records()), 13)
+
     def test_c61_resolver_has_only_two_fixed_policies_and_rejects_drift_before_access(self) -> None:
         legacy = resolve_ledger_config()
         formal = resolve_ledger_config("R2.3-005")
@@ -97,6 +119,8 @@ class R23005BudgetExtensionTests(unittest.TestCase):
         self.assertEqual((formal.initial_start_cap, formal.authorization_increment), (1, 3))
         self.assertFalse(legacy.allow_incomplete_modeling_quality_repair)
         self.assertTrue(formal.allow_incomplete_modeling_quality_repair)
+        self.assertFalse(legacy.allow_variable_authorization)
+        self.assertTrue(formal.allow_variable_authorization)
         self.assertEqual(legacy.ledger_filename, ".r2-3-002-start-ledger.jsonl")
         self.assertEqual(formal.ledger_filename, ".r2-3-005-start-ledger.jsonl")
         with tempfile.TemporaryDirectory() as directory:
@@ -125,7 +149,7 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             self.assertEqual(ledger._semantic_start_count(ledger._records()), 1)
 
     def test_c63_malformed_or_forged_budget_is_byte_stable(self) -> None:
-        malformed = (1, 2, 4, True, "3")
+        malformed = (0, -1, False, True, "1", 1.5, None)
         for additional_starts in malformed:
             with self.subTest(additional_starts=additional_starts), tempfile.TemporaryDirectory() as directory:
                 ledger = self._ledger(Path(directory))
@@ -282,9 +306,56 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             self._begin(ledger, "legacy-two", "baseline-two")
             ledger.terminal_failure("legacy-two", "runtime/infrastructure", False)
             legacy_before = ledger.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                ledger.authorize_budget(1, "legacy-invalid", "legacy-invalid-reference")
+            self.assertEqual(ledger.path.read_bytes(), legacy_before)
             ledger.authorize_budget(2, "legacy-authorization", "legacy-reference")
             self.assertEqual(ledger._start_cap(ledger._records()), 4)
             self.assertNotEqual(legacy_before, ledger.path.read_bytes())
+
+    def test_c74_explicit_plus_one_extends_isolated_13_of_13_to_14(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            self._formal_13_of_13_prefix(ledger)
+            before = ledger.path.read_bytes()
+            ledger.authorize_budget(1, "authorization-plus-one", "user-authorized-one-start")
+            self.assertNotEqual(before, ledger.path.read_bytes())
+            self.assertEqual(ledger._start_cap(ledger._records()), 14)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 13)
+            ledger.authorize_repair("run-13", "repair-14", "baseline-14")
+            ledger.reserve("run-14", "baseline-14", self.now.isoformat())
+            ledger.mark_semantic_start("run-14")
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 14)
+            self.assertEqual(ledger._start_cap(ledger._records()), 14)
+
+    def test_c75_plus_one_budget_is_serialized_with_one_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            self._formal_13_of_13_prefix(ledger)
+            outcomes: list[str] = []
+
+            def contend(authorization_id: str) -> None:
+                try:
+                    ledger.authorize_budget(1, authorization_id, f"reference-{authorization_id}")
+                    outcomes.append("accepted")
+                except TeamConfigurationError:
+                    outcomes.append("rejected")
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                list(executor.map(contend, ("plus-one-a", "plus-one-b")))
+            self.assertEqual(sorted(outcomes), ["accepted", "rejected"])
+            self.assertEqual(ledger._start_cap(ledger._records()), 14)
+            self.assertEqual(
+                len(
+                    [
+                        record
+                        for record in ledger._records()
+                        if record.get("event") == "budget_authorization"
+                        and record.get("additional_starts") == 1
+                    ]
+                ),
+                1,
+            )
 
     def test_c61_cli_default_is_legacy_and_formal_requires_explicit_selector(self) -> None:
         def invoke(root: Path, argv: list[str]) -> int:

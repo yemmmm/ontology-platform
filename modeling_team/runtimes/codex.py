@@ -32,7 +32,14 @@ from ..capability_mcp import ROLE_OPERATIONS
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
 from ..transport_mcp import TERMINAL_REPORT_GUARD_ERROR
-from .base import AgentRuntimeIdentity, AgentState, RuntimeAdapter, RuntimeDelivery, RuntimeMessage
+from .base import (
+    AgentRuntimeIdentity,
+    AgentState,
+    RuntimeAdapter,
+    RuntimeDelivery,
+    RuntimeDispatchReceipt,
+    RuntimeMessage,
+)
 
 
 class CodexRuntimeError(RuntimeError):
@@ -71,6 +78,8 @@ class _Agent:
     process: subprocess.Popen[str] | None = None
     thread_id: str | None = None
     active_turn_id: str | None = None
+    last_started_turn_id: str | None = None
+    last_completed_turn_id: str | None = None
     state: str = "starting"
     request_id: int = 0
     first_turn_input: list[dict[str, Any]] = field(default_factory=list)
@@ -318,6 +327,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._run_id: str | None = None
         self._acceptance: Any | None = None
         self._coordination_enabled = False
+        self._formal_turn_binding_required = False
         self._private_credentials_destroyed: dict[str, bool] = {}
 
     def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
@@ -892,6 +902,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._run_id = run.run_id
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
+        self._formal_turn_binding_required = self._coordination_enabled
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
@@ -1225,6 +1236,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "[mcp_servers.protocol_mechanics.env]",
                         f'PROTOCOL_RUNTIME_RUN_ID = {json.dumps(run_id)}',
                         f'PROTOCOL_PROOF_GATE = {json.dumps("1" if agent.proof_gate else "0")}',
+                        f'PROTOCOL_FORMAL_CANDIDATE_GATE = {json.dumps("1" if self._coordination_enabled else "0")}',
                     ]
                 )
         if formal_capability:
@@ -1779,6 +1791,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "build_candidate_receipt",
                     "verify_scoped_retrieval_fallback",
                 }
+                if self._coordination_enabled:
+                    expected["protocol_mechanics"].add("build_candidate_conflict")
                 if agent.proof_gate:
                     expected["protocol_mechanics"].add("write_candidate_item_evidence_map")
         if (
@@ -1907,14 +1921,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             }
         ]
 
-    def send_message(self, agent_id: str, delivery: RuntimeDelivery) -> None:
+    def send_message(
+        self, agent_id: str, delivery: RuntimeDelivery
+    ) -> RuntimeDispatchReceipt:
         # A turn/start notification may be queued before an outer message arrives. Pump it
         # first so turn/steer uses the App Server's active turn identity, not a stale reply.
         self.receive_messages()
         agent = self.agents[agent_id]
         if agent.active_turn_id:
             try:
-                self._rpc(
+                result = self._rpc(
                     agent,
                     "turn/steer",
                     {
@@ -1923,7 +1939,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "input": self._delivery_input(delivery),
                     },
                 )
-                return
+                server_turn_id = self._turn_id(result) or agent.active_turn_id
+                if server_turn_id:
+                    agent.active_turn_id = server_turn_id
+                return RuntimeDispatchReceipt("steer", server_turn_id)
             except CodexRuntimeError as exc:
                 # App-server may finish a turn between its notification and our steer.
                 # Its explicit rejection means the text was not accepted, so a fresh turn is safe.
@@ -1935,7 +1954,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         # The server explicitly rejected the first request and supplies its
                         # active turn. One retry preserves the text without duplicating it.
                         agent.active_turn_id = active
-                        self._rpc(
+                        result = self._rpc(
                             agent,
                             "turn/steer",
                             {
@@ -1944,7 +1963,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                 "input": self._delivery_input(delivery),
                             },
                         )
-                        return
+                        server_turn_id = self._turn_id(result) or agent.active_turn_id
+                        if server_turn_id:
+                            agent.active_turn_id = server_turn_id
+                        return RuntimeDispatchReceipt("steer", server_turn_id)
                     states = {item.agent_id: item.state for item in self.get_agent_states()}
                     if states.get(agent_id) == "running":
                         raise
@@ -1957,6 +1979,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             },
         )
         agent.active_turn_id, agent.state = self._turn_id(result), "running"
+        return RuntimeDispatchReceipt("start", agent.active_turn_id)
 
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
         method, params = value.get("method"), value.get("params", {})
@@ -2017,8 +2040,22 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if method == "turn/started":
                 turn = params.get("turn")
                 if isinstance(turn, dict) and isinstance(turn.get("id"), str):
-                    agent.active_turn_id, agent.state = turn["id"], "running"
+                    agent.active_turn_id, agent.last_started_turn_id, agent.state = (
+                        turn["id"],
+                        turn["id"],
+                        "running",
+                    )
             if method in {"turn/completed", "turn/finished"}:
+                turn = params.get("turn")
+                completed_turn_id = (
+                    turn.get("id")
+                    if isinstance(turn, dict) and isinstance(turn.get("id"), str)
+                    else params.get("turnId")
+                    if isinstance(params.get("turnId"), str)
+                    else agent.active_turn_id
+                )
+                if isinstance(completed_turn_id, str):
+                    agent.last_completed_turn_id = completed_turn_id
                 agent.active_turn_id, agent.state = None, "idle"
             if method in {"turn/failed", "thread/error"}:
                 agent.state = "failed"
@@ -2660,7 +2697,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return values
 
     def get_agent_states(self) -> list[AgentState]:
-        return [AgentState(key, value.state) for key, value in self.agents.items()]
+        return [
+            AgentState(
+                key,
+                value.state,
+                value.last_started_turn_id,
+                value.last_completed_turn_id,
+            )
+            for key, value in self.agents.items()
+        ]
 
     def wait_settled(self, agent_ids: list[str], timeout: float) -> bool:
         deadline = time.monotonic() + timeout

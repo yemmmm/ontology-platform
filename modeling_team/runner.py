@@ -7,6 +7,7 @@ import hashlib
 import os
 import shutil
 import threading
+import time
 from copy import deepcopy
 from datetime import UTC, datetime
 from dataclasses import dataclass
@@ -27,6 +28,13 @@ from .acceptance import (
 )
 from .preflight import normalize_formal_scope, run_prestart_preflight
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery
+from .candidate_progress import (
+    FormalCandidateError,
+    FormalCandidatePlatformContractError,
+    FormalCandidateProgress,
+    FormalCandidateProgressTimeout,
+    FormalCandidateRoutingError,
+)
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
     protocol_mcp_reasoner_contract,
@@ -81,6 +89,7 @@ class TeamRunner:
         prestart_preflight: Callable[..., dict[str, Any]] | None = None,
         canonical_base_url: str = "http://127.0.0.1:8001",
         canonical_admin_key: str | None = None,
+        monotonic_clock: Callable[[], float] | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -94,6 +103,7 @@ class TeamRunner:
         self.prestart_preflight = prestart_preflight
         self.canonical_base_url = canonical_base_url
         self.canonical_admin_key = canonical_admin_key
+        self.monotonic_clock = monotonic_clock or time.monotonic
         self.run: TeamRun | None = None
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
@@ -113,6 +123,8 @@ class TeamRunner:
         self.acceptance: RunnerAcceptanceCarrier | None = None
         self.coordinator_phase: CoordinatorPhaseController | None = None
         self._cleanup_evidence_cache: dict[str, Any] | None = None
+        self._candidate_progress: FormalCandidateProgress | None = None
+        self._formal_failure_latched = False
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -279,6 +291,12 @@ class TeamRunner:
         root.mkdir(parents=True, mode=0o700)
         (root / "evidence").mkdir(mode=0o700)
         self.run = TeamRun(run_id, root, config, normalized_scope, gate_binding=gate_binding)
+        self._candidate_progress = (
+            FormalCandidateProgress(clock=self.monotonic_clock)
+            if formal_acceptance
+            else None
+        )
+        self._formal_failure_latched = False
         acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
         source_materials: dict[str, Path] = {}
         ticket_policy: dict[str, Any] | None = None
@@ -1344,6 +1362,9 @@ class TeamRunner:
                     "the Batch/Item envelope, not as a conflict or missing input. Modeling sends a platform-neutral "
                     "semantic candidate; Protocol alone translates it into the envelope and must not require Modeling "
                     "to author exact items. The public tool remains the final execution and validation authority."
+                    " In the formal R2.3-005 gate, call build_candidate_receipt first; if translation conflicts, "
+                    "call build_candidate_conflict with the same complete candidate, stable conflict_code, and "
+                    "concrete conflict_detail. Never hand-write a conflict or reuse prior-delivery digests."
                     " Reply to every Modeling candidate or revision with reply_to_delivery_id set to that candidate's "
                     "delivery_id and send a mechanical receipt or concrete translation conflict. Remain active for "
                     "revisions, and report terminal only after the Runner delivers Modeling's terminal-handoff. "
@@ -1520,6 +1541,126 @@ class TeamRunner:
             "displayed": False,
             "consumed": False,
         }
+
+    def _formal_candidate_roles(self) -> tuple[str, str] | None:
+        if not self._formal_coordination_enabled() or not self.run:
+            return None
+        role_ids = {
+            agent.package.role: agent.agent_id
+            for agent in self.run.configuration.profile.agents
+        }
+        modeling, protocol = role_ids.get("modeling"), role_ids.get("protocol")
+        # Small owner-answer/foreground fixtures from the pre-candidate formal
+        # gate intentionally contain only Modeling+Coordinator.  They must keep
+        # their existing display semantics; the production profile is validated
+        # with all four roles before this gate is enabled.
+        if not isinstance(modeling, str) or not isinstance(protocol, str):
+            return None
+        return modeling, protocol
+
+    def _formal_protocol_thread_id(self, protocol_agent_id: str) -> str:
+        agents = getattr(self.adapter, "agents", None)
+        agent = agents.get(protocol_agent_id) if isinstance(agents, dict) else None
+        thread_id = getattr(agent, "thread_id", None)
+        if isinstance(thread_id, str) and thread_id:
+            return thread_id
+        # A fake/legacy adapter may not expose its private Codex thread.  The
+        # fallback remains a stable pending identity while the real Codex path
+        # always supplies its concrete thread id.
+        return f"runtime-agent:{protocol_agent_id}"
+
+    def _observe_formal_candidate_delivery(self, delivery: Any) -> str | None:
+        roles = self._formal_candidate_roles()
+        if roles is None or self._candidate_progress is None or not self.run:
+            return None
+        modeling, protocol = roles
+        try:
+            result = self._candidate_progress.observe_delivery(
+                delivery,
+                modeling_agent_id=modeling,
+                protocol_agent_id=protocol,
+                run_id=self.run.run_id,
+                protocol_thread_id=self._formal_protocol_thread_id(protocol),
+            )
+        except FormalCandidateError:
+            # Keep the failure at the modeling-quality/protocol boundary.  The
+            # outer loop records terminal evidence and performs one cleanup;
+            # pending state is never silently advanced on malformed envelopes.
+            raise
+        if result is not None:
+            identity = self._candidate_progress.identity
+            self._append_evidence(
+                "formal-candidate-progress",
+                {
+                    "event": result,
+                    "state": self._candidate_progress.state,
+                    "delivery_id": getattr(delivery, "delivery_id", None),
+                    "original_delivery_id": identity.original_delivery_id if identity else None,
+                    "candidate_revision": identity.candidate_revision if identity else None,
+                    "candidate_digest": identity.candidate_digest if identity else None,
+                    "semantic_digest": identity.semantic_digest if identity else None,
+                },
+            )
+        return result
+
+    def _latch_formal_candidate_failure(self, classification: str, reason: str) -> None:
+        """Record one terminal failure before the foreground performs cleanup."""
+
+        if self._formal_failure_latched:
+            return
+        self._formal_failure_latched = True
+        if self._candidate_progress is not None:
+            self._candidate_progress.mark_terminal_failure()
+        self._state(
+            "TERMINAL_FAILURE_PENDING_CLEANUP",
+            failure_category=classification,
+            reason_code=reason,
+        )
+        self._append_evidence(
+            "formal-candidate-terminal-failure",
+            {
+                "classification": classification,
+                "complete_modeling_quality_result": False,
+                "reason_code": reason,
+                "cleanup_required": True,
+            },
+        )
+        self.record_terminal_failure(classification, False)
+
+    def _check_formal_candidate_progress(self) -> None:
+        roles = self._formal_candidate_roles()
+        if roles is None or self._candidate_progress is None:
+            return
+        self._candidate_progress.check_deadline(now=self.monotonic_clock())
+
+    def _maybe_redrive_formal_candidate(self) -> None:
+        roles = self._formal_candidate_roles()
+        if roles is None or self._candidate_progress is None:
+            return
+        _, protocol = roles
+        if not self._candidate_progress.redrive_ready(now=self.monotonic_clock()):
+            return
+        delivery = RuntimeDelivery(
+            sender_id="runner/candidate-progress",
+            recipient_id=protocol,
+            kind="candidate-redrive",
+            text=self._candidate_progress.redrive_text(),
+        )
+        receipt = self.adapter.send_message(protocol, delivery)
+        self._candidate_progress.mark_redrive_dispatch(
+            receipt, now=self.monotonic_clock()
+        )
+        self._append_evidence(
+            "formal-candidate-progress",
+            {
+                "event": "redrive_sent",
+                "recipient_id": protocol,
+                "state": self._candidate_progress.state,
+                "dispatch_mode": getattr(receipt, "mode", None),
+                "turn_id": getattr(receipt, "turn_id", None),
+                "redrive_count": 1,
+            },
+        )
 
     def _observe_coordinator_message(self, message: Any) -> None:
         """Retain the coordinator hook without making prose a display authority.
@@ -1840,6 +1981,11 @@ class TeamRunner:
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
+        try:
+            self._check_formal_candidate_progress()
+        except FormalCandidateProgressTimeout:
+            self._latch_formal_candidate_failure("collaboration/routing", "candidate-progress-timeout")
+            raise
         output: list[dict[str, Any]] = []
         coordinator = next(
             agent.agent_id
@@ -1847,6 +1993,11 @@ class TeamRunner:
             if agent.package.role == "coordinator"
         )
         for delivery in self.transport.drain():
+            try:
+                formal_candidate_event = self._observe_formal_candidate_delivery(delivery)
+            except FormalCandidateError as exc:
+                self._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")
+                raise TeamConfigurationError(str(exc)) from exc
             owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
                 self._append_evidence(
@@ -1888,7 +2039,15 @@ class TeamRunner:
                     reply_to_delivery_id=delivery.reply_to_delivery_id,
                 )
             try:
-                self.adapter.send_message(delivery.recipient_id, runtime_delivery)
+                dispatch_receipt = self.adapter.send_message(delivery.recipient_id, runtime_delivery)
+                if formal_candidate_event in {"candidate", "revision"}:
+                    assert self._candidate_progress is not None
+                    self._candidate_progress.bind_dispatch(
+                        dispatch_receipt, now=self.monotonic_clock()
+                    )
+            except FormalCandidatePlatformContractError:
+                self._latch_formal_candidate_failure("platform-contract", "turn-binding-missing")
+                raise
             except Exception:
                 if owner_answer:
                     self._mark_owner_answer_failure(delivery, "Runtime Adapter delivery failed")
@@ -2005,7 +2164,28 @@ class TeamRunner:
                 )
                 output.append(delivered)
                 self._terminal_handoffs_notified.add(pair)
-        for message in self.adapter.receive_messages():
+        messages = self.adapter.receive_messages()
+        try:
+            if self._candidate_progress is not None:
+                roles = self._formal_candidate_roles()
+                states_reader = getattr(self.adapter, "get_agent_states", None)
+                if roles is not None and callable(states_reader):
+                    _, protocol = roles
+                    self._candidate_progress.observe_states(
+                        states_reader(), protocol_agent_id=protocol
+                    )
+                self._maybe_redrive_formal_candidate()
+                self._check_formal_candidate_progress()
+        except FormalCandidateProgressTimeout:
+            self._latch_formal_candidate_failure("collaboration/routing", "candidate-progress-timeout")
+            raise
+        except FormalCandidateRoutingError:
+            self._latch_formal_candidate_failure("collaboration/routing", "candidate-redrive-exhausted")
+            raise
+        except FormalCandidatePlatformContractError:
+            self._latch_formal_candidate_failure("platform-contract", "turn-binding-missing")
+            raise
+        for message in messages:
             if message.agent_id == coordinator:
                 self._observe_coordinator_message(message)
                 if self._post_settlement_reporting_requested:

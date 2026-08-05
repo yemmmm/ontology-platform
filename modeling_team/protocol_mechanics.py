@@ -6,6 +6,89 @@ import json
 import hashlib
 from typing import Any
 
+try:
+    from .candidate_progress import (
+        FormalCandidateError,
+        formal_candidate_digests,
+        validate_formal_candidate,
+    )
+except ImportError:  # pragma: no cover - stdio facade imports this module directly
+    try:
+        from candidate_progress import (  # type: ignore[no-redef]
+            FormalCandidateError,
+            formal_candidate_digests,
+            validate_formal_candidate,
+        )
+    except ImportError:  # staged Protocol asset has no package siblings
+        class FormalCandidateError(ValueError):
+            pass
+
+        def validate_formal_candidate(candidate: Any) -> dict[str, Any]:
+            required = {
+                "candidate_kind",
+                "candidate_revision",
+                "scope",
+                "constraints",
+                "items",
+            }
+            if not isinstance(candidate, dict) or set(candidate) != required:
+                raise FormalCandidateError("formal candidate fields are not exact")
+            if candidate.get("candidate_kind") != "platform-neutral-candidate-v2":
+                raise FormalCandidateError("formal candidate kind is not platform-neutral-candidate-v2")
+            revision = candidate.get("candidate_revision")
+            if isinstance(revision, bool) or not (
+                (isinstance(revision, int) and revision > 0)
+                or (isinstance(revision, str) and bool(revision.strip()))
+            ):
+                raise FormalCandidateError("formal candidate revision is invalid")
+            scope = candidate.get("scope")
+            if not (
+                (isinstance(scope, str) and bool(scope.strip()))
+                or (isinstance(scope, dict) and bool(scope))
+            ):
+                raise FormalCandidateError("formal candidate scope is not bound")
+            constraints = candidate.get("constraints")
+            if not isinstance(constraints, list) or any(
+                not isinstance(item, str) or not item.strip() for item in constraints
+            ):
+                raise FormalCandidateError("formal candidate constraints must be a string list")
+            items = candidate.get("items")
+            if not isinstance(items, list) or not items:
+                raise FormalCandidateError("formal candidate items are empty")
+            ids: set[str] = set()
+            for item in items:
+                if not isinstance(item, dict):
+                    raise FormalCandidateError("formal candidate item must be an object")
+                if any(
+                    not isinstance(item.get(field), str) or not item[field].strip()
+                    for field in ("item_id", "item_kind")
+                ):
+                    raise FormalCandidateError("formal candidate item identity is not bound")
+                if item["item_id"] in ids:
+                    raise FormalCandidateError("formal candidate item IDs are duplicated")
+                ids.add(item["item_id"])
+                if "semantic" not in item or item["semantic"] is None:
+                    raise FormalCandidateError("formal candidate semantic payload is missing")
+            return json.loads(json.dumps(candidate, ensure_ascii=False))
+
+        def formal_candidate_digests(candidate: Any) -> tuple[str, str]:
+            value = validate_formal_candidate(candidate)
+            semantic = {
+                key: value[key]
+                for key in (
+                    "candidate_kind",
+                    "candidate_revision",
+                    "scope",
+                    "constraints",
+                    "items",
+                )
+            }
+            def encode(item: Any) -> bytes:
+                return json.dumps(
+                    item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            return hashlib.sha256(encode(value)).hexdigest(), hashlib.sha256(encode(semantic)).hexdigest()
+
 
 def protocol_mechanics_contract(run_id: str) -> dict[str, Any]:
     """Return the R2.2 L3 semantic-free Protocol mechanics contract unchanged in meaning."""
@@ -1049,6 +1132,35 @@ def build_candidate_receipt(candidate: Any) -> dict[str, Any]:
             "candidate_digest": validated["candidate_digest"],
         }
     return _neutral_candidate_receipt(candidate_value)
+
+
+def build_candidate_conflict(
+    candidate: Any, conflict_code: Any, conflict_detail: Any
+) -> dict[str, Any]:
+    """Build the formal six-field conflict sibling without changing v1 receipts.
+
+    The conflict is bound to the complete candidate exactly as received.  The
+    caller cannot provide replacement digests or a reduced candidate, so a
+    malformed candidate fails closed before any conflict envelope is emitted.
+    """
+
+    if not isinstance(conflict_code, str) or not conflict_code.strip():
+        raise ProtocolRetrievalFallbackError("candidate conflict code is not bound")
+    if not isinstance(conflict_detail, str) or not conflict_detail.strip():
+        raise ProtocolRetrievalFallbackError("candidate conflict detail is not bound")
+    try:
+        validated = validate_formal_candidate(candidate)
+        candidate_digest, semantic_digest = formal_candidate_digests(validated)
+    except FormalCandidateError as exc:
+        raise ProtocolRetrievalFallbackError(str(exc)) from exc
+    return {
+        "status": "conflict",
+        "candidate_revision": validated["candidate_revision"],
+        "semantic_digest": semantic_digest,
+        "candidate_digest": candidate_digest,
+        "conflict_code": conflict_code,
+        "conflict_detail": conflict_detail,
+    }
 
 
 def validate_candidate_item_evidence_map(*args: Any, **kwargs: Any) -> dict[str, Any]:

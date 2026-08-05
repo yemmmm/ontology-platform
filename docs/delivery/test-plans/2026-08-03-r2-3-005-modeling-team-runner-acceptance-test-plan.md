@@ -1342,3 +1342,155 @@ stop writing the shared test plan after this entry.
 **Overall verdict: PASS for the focused governed-retrieval contract and High-D model-visible closure;
 the complete R2.3-005 live requirement remains BLOCKED/unproven.** Round 9 is complete; stop writing
 the shared test plan after this entry.
+
+## 2026-08-05 formal candidate progress and explicit +1 authorization — Independent round 10
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. This round validates the supplied R2.3-005 A+B delta:
+  explicit positive authorization amounts with retained `+3`/R2.3-002 compatibility; the formal-only
+  candidate/revision/receipt/conflict progress gate; Codex dispatch turn binding and started/completed
+  barrier; one bounded redrive; timeout and terminal cleanup exception paths; and formal-only
+  Protocol conflict-tool exposure. No implementation or test code was changed by the Tester.
+- Baseline/worktree: HEAD `cb9d758403488dd190d5cbd96e45575eda76ac63`; the supplied implementation is
+  uncommitted in the shared worktree. Pre-existing user edits in `AGENTS.md` and `CLAUDE.md` were
+  preserved. No real start14/Acceptance run, canonical ledger append, platform resource, service,
+  credential, retained evidence, or commit was performed.
+- The prior Round 9 “stop writing” sentence is historical; this is the next independent append-only
+  round in the same shared test plan.
+
+### Focused execution and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Formal candidate progress unit/runner tests | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_r23005_candidate_progress.py -q`: **8 passed**. Exact candidate envelope, string-list constraints, dual digests, strict receipt/conflict binding, revision path, missing turn-id fail-closed, and one-redrive dispatch were exercised. |
+| Explicit authorization and historical ledger policy | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_r23005_budget_extension.py -q`: **20 passed, 18 subtests passed**. Formal `+1` isolated extension, replay/order/concurrency/invalid values, ordinary formal `+3`, and R2.3-002 exact `+2` compatibility passed. |
+| Runtime/dispatch and Protocol exposure regressions | PASS | `test_p2a_codex_runtime.py`: **29 passed**; `test_codex_isolation.py`: **49 passed, 33 subtests passed**; `test_p2a_protocol_driver.py`: **15 passed, 21 subtests passed**. Runtime dispatch receipts, turn events, formal-only MCP exposure, old provider/runtime boundaries, and Protocol prompts remain green. |
+| Candidate/receipt/Protocol legacy boundaries | PASS | Combined `test_r23005_complete_revision.py test_r23005_producer_smoke.py test_protocol_retrieval_mcp.py`: **16 passed, 1 skipped, 13 subtests passed**; `test_r23005_candidate_authoring.py`: **7 passed, 3 subtests passed**; `test_proof_v2_runtime_asset.py test_d65_protocol_observation.py`: **6 passed**. The single skip is the expected explicit real-Codex smoke opt-in. |
+| Adjacent R2.3-005/Runner regression | PASS | Combined R2.3-005 A/B/C/contracts/ledger-isolation/T6 suites: **72 passed, 7 subtests passed**; Runner/owner-answer/P2 protocol suites: **48 passed, 23 subtests passed**. |
+| Static checks | PASS | Ruff on every supplied Python implementation/test file, `PYTHONPYCACHEPREFIX=/tmp/r23005_pycache uv run --project backend python -m py_compile ...`, and `git diff --check` all passed. |
+
+### Defect reproduced: terminal progress can be revived by a late receipt
+
+| ID / severity | Reproduction steps | Expected | Actual / evidence |
+| --- | --- | --- | --- |
+| R23005-B-01 — **P1, acceptance-blocking** | In a temporary in-memory probe, create `FormalCandidateProgress(clock=lambda: 0.0)`, observe a valid `platform-neutral-candidate-v2` delivery `d1`, bind `RuntimeDispatchReceipt("start", "turn-1")`, mark the exact started/completed barrier, call `redrive_ready()`, mark one redrive with `RuntimeDispatchReceipt("start", "turn-2")`, mark its barrier, then call `redrive_ready()` again to latch `FormalCandidateRoutingError`/`state="exhausted"`. Submit a valid four-field receipt (the exact pending revision and both computed digests) with `reply_to_delivery_id="d1"`. Repeat with a fresh progress object, bind `turn-1`, advance the injected clock to `120.0`, call `check_deadline()` to raise `FormalCandidateProgressTimeout`, then submit the same exact receipt. Command: `PYTHONPATH=. uv run --project backend python - <<'PY' ...` (the probe only imports `candidate_progress`/runtime dataclasses; it writes no file or ledger). | Once the bounded redrive is exhausted or the 120-second receipt/revision timeout is latched, any late response must be ignored/rejected and must not revive terminal progress. The state must remain `exhausted` (routing terminal) or timeout-failed; no later `complete` transition is permitted. | The direct probe printed: `exhausted_raise= FormalCandidateRoutingError state= exhausted`; `late_after_exhausted_before= exhausted`; `late_after_exhausted_result= accepted after= complete`; `timeout_raise= FormalCandidateProgressTimeout state= awaiting_receipt`; `late_after_timeout_before= awaiting_receipt`; `late_after_timeout_result= accepted after= complete`. Thus a correctly bound late receipt changes `exhausted -> complete`, and also changes the timed-out pending state to `complete`; the `_timeout_latched` flag is not consulted by `observe_delivery`. |
+
+The ordinary focused tests pass because they stop at the routing exception/timeout and do not submit a
+late valid response afterward. This is a real contract defect, not a test-environment failure. The
+Tester did not modify the implementation or add a permanent checker; the minimum safe repair is to
+make terminal/exhausted/timeout-latched progress immutable against all late receipts/conflicts and
+then rerun this same Round 10 document.
+
+### Unexecuted or not claimable
+
+- No real start14, independent Acceptance agent, platform materialization/readback, semantic model
+  quality, canonical `+1` authorization append, or live ledger/evidence mutation was attempted.
+- No backend/frontend full suite, service restart, or endpoint health check was needed for this
+  modeling-team-only offline test and none was run. The live R2.3-005 requirement therefore remains
+  unproven independently of the offline defect.
+
+### Round conclusion
+
+**Overall verdict: FAIL for the supplied formal candidate-progress A+B delta.** All ordinary focused
+tests and static checks pass, but R23005-B-01 is a reproducible P1 acceptance blocker: a late valid
+receipt revives both exhausted and timed-out progress. Ask the requirement Developer to repair this
+narrow state-immutability defect, then rerun Round 10 in this same test plan before any real start14.
+
+## 2026-08-05 formal candidate terminal-latch repair — Independent round 11
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. This round reuses the same Round 10 scope and validates
+  only the claimed R23005-B-01 repair: terminal/timeout/failure latches, pre-parse late-delivery
+  rejection, normal receipt and conflict-to-revision continuity, and the adjacent frozen runtime
+  regression. No implementation or test code was changed by the Tester.
+- Baseline/worktree: HEAD remains `cb9d758403488dd190d5cbd96e45575eda76ac63`; the Developer's
+  uncommitted changes are shared in place. `AGENTS.md`/`CLAUDE.md` and all other user changes were
+  preserved. No real start14/Acceptance run, canonical ledger append, platform resource, retained
+  evidence, service action, or commit was performed.
+
+### Focused execution and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Original exhausted late-receipt/conflict reproduction | PASS | The temporary in-memory probe repeated candidate `d1` -> `turn-1` started/completed barrier -> one redrive `turn-2` barrier -> second `redrive_ready()` routing failure. It then submitted exact four-field receipt and six-field conflict. Output: `exhausted_raise= FormalCandidateRoutingError state= exhausted`; `exhausted_late_receipt= None state= exhausted identity_same= True`; `exhausted_late_conflict= None state= exhausted identity_same= True`. |
+| Original receipt-timeout reproduction and repeated deadline | PASS | After `turn-1` dispatch, injected clock `120.0`; both first and second `check_deadline()` calls raised `FormalCandidateProgressTimeout` while retaining `state=awaiting_receipt` and `latched=True`. Exact late receipt/conflict both returned `None`, state and identity unchanged. Output: `receipt_timeout_1= ...`, `receipt_timeout_2= ...`, `receipt_timeout_late_receipt= None ... identity_same= True`, `receipt_timeout_late_conflict= None ... identity_same= True`. |
+| Revision-timeout and terminal-failure latch reproduction | PASS | A valid conflict moved to `awaiting_revision`; after the same 120-second deadline, a complete revision and late conflict both returned `None`, with `state=awaiting_revision`, identity unchanged, and timeout latched. Calling `mark_terminal_failure()` twice left one idempotent latch; all late receipt/conflict returned `None`. |
+| New candidate-progress regression tests | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_r23005_candidate_progress.py -q`: **12 passed**. This includes four new late-response/latch groups plus normal receipt, normal conflict→revision, one-redrive, turn-id, and envelope checks. |
+| Adjacent Runner/ledger/legacy smoke | **FAIL — one stale frozen-hash contract** | Combined command over `test_p2a_codex_runtime.py`, `test_runner.py`, `test_p2_protocol_driver.py`, `test_r23005_budget_extension.py`, `test_r23005_complete_revision.py`, `test_r23005_producer_smoke.py`, `test_r23005_candidate_authoring.py`, and `test_protocol_retrieval_mcp.py`: **96 passed, 1 skipped, 36 subtests passed, 1 failed**. Re-running `test_p2a_codex_runtime.py -k 'not byte_frozen'` gives **28 passed, 1 deselected**, confirming the functional related tests pass. |
+| Static checks | PASS | Ruff on the supplied implementation/test files, targeted `PYTHONPYCACHEPREFIX=/tmp/r23005_round11_pycache uv run --project backend python -m py_compile ...`, and `git diff --check` all passed. |
+
+### Defect R23005-R11-01: frozen Runner hash was not synchronized
+
+| Severity | Reproduction | Expected | Actual / evidence |
+| --- | --- | --- | --- |
+| **P1 process/acceptance gate blocker** | Run `uv run --project backend python -m pytest modeling_team/tests/test_p2a_codex_runtime.py modeling_team/tests/test_runner.py modeling_team/tests/test_p2_protocol_driver.py modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_r23005_producer_smoke.py modeling_team/tests/test_r23005_candidate_authoring.py modeling_team/tests/test_protocol_retrieval_mcp.py -q`. | The frozen-surface test must match the actual Runner bytes after the approved terminal-latch repair, or the test contract must be updated by the Developer in the same change. | `test_normal_runtime_and_platform_surfaces_remain_byte_frozen` fails: expected `modeling_team/runner.py` SHA `c07ae488eddecf19b2b2f22173cbf9c8586a8f00f322c80323ca6a0853705fe6`, actual `a4bf6d92287565c79c2ebb57dd96a12da0f146f7833e0061a085214e7a690be2`. The actual hash is a real changed Runner file (the new `mark_terminal_failure` synchronization and candidate-progress integration), not an accidental Tester edit. The failure is therefore stale frozen metadata that must be synchronized before acceptance; Tester did not alter the test. |
+
+The claimed B-01 repair itself is **PASS**: exhausted, receipt-timeout, revision-timeout, and explicit
+terminal-failure states now reject late receipt/conflict/revision and retain identity; repeated
+deadlines remain latched and repeat the same timeout without changing state. Normal pending receipt
+and normal conflict -> revision -> receipt paths remain green. Round 11 is nevertheless not a clean
+PASS because the required adjacent frozen-surface regression fails until the Runner hash contract is
+updated and independently rerun.
+
+### Unexecuted or not claimable
+
+- No real start14, Acceptance Agent, platform materialization/readback, semantic model quality,
+  canonical `+1` authorization append, or live ledger/evidence mutation was attempted.
+- No backend/frontend full suite, service restart, or endpoint health check was run; the live
+  R2.3-005 requirement remains unproven.
+
+### Round conclusion
+
+**Overall verdict: FAIL for Round 11 due solely to R23005-R11-01 (stale frozen Runner hash).** The
+P1 late-response state-immutability repair is independently PASS, and all other focused/legacy/static
+checks pass. Ask the Developer to synchronize the frozen hash as part of the approved Runner change,
+then rerun this same Round 11 document before any real start14.
+
+## 2026-08-05 frozen Runner hash synchronization — Independent round 12
+
+### Scope, baseline, and safety boundary
+
+- Tester: independent requirement Tester. This final offline round reuses Round 11 and checks only
+  the reported frozen-hash synchronization plus the necessary candidate-progress, Runner, ledger,
+  legacy, and static regressions. No implementation or test behavior was changed by the Tester.
+- HEAD remains `cb9d758403488dd190d5cbd96e45575eda76ac63`. Read-only worktree inspection shows the
+  same production implementation files as Round 11; the only reported new change is the frozen
+  `modeling_team/runner.py` expected hash/comment in `test_p2a_codex_runtime.py`. Actual
+  `sha256sum modeling_team/runner.py` is
+  `a4bf6d92287565c79c2ebb57dd96a12da0f146f7833e0061a085214e7a690be2`, matching the updated test
+  constant exactly. No real start14/Acceptance run, canonical ledger append, resource/evidence
+  mutation, service action, or commit was performed.
+
+### Focused execution and results
+
+| Check | Result | Direct evidence |
+| --- | --- | --- |
+| Frozen Runner/platform surfaces | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_p2a_codex_runtime.py::test_normal_runtime_and_platform_surfaces_remain_byte_frozen -q`: **1 passed**. The Round 11 stale expected `c07ae488...` is gone; the expected `a4bf6d92...` equals the actual Runner digest. |
+| Candidate-progress and normal path | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_r23005_candidate_progress.py -q`: **12 passed**. Normal pending receipt and normal conflict -> revision -> receipt remain green alongside the new latches. |
+| Round 11 related Runner/ledger/legacy regression | PASS | The same combined focused command over Codex runtime, Runner, P2 protocol, budget extension, complete revision, Producer smoke, candidate authoring, and Protocol retrieval MCP suites: **97 passed, 1 skipped, 36 subtests passed**. |
+| Explicit authorization ledger | PASS | `uv run --project backend python -m pytest modeling_team/tests/test_r23005_budget_extension.py -q`: **20 passed, 18 subtests passed**. Formal `+1`, historical formal `+3`, R2.3-002 exact `+2`, replay/order/concurrency and invalid paths remain intact. |
+| B-01 original minimal repros | PASS | The direct in-memory probe repeated exhausted late exact receipt/conflict, receipt-timeout late receipt/conflict with repeated deadline, revision-timeout late complete revision/conflict, and idempotent terminal-failure latch. Output: `exhausted= exhausted late_receipt= None late_conflict= None identity_same= True`; `receipt_timeout_errors= ['FormalCandidateProgressTimeout', 'FormalCandidateProgressTimeout'] state= awaiting_receipt latched= True late_receipt= None late_conflict= None identity_same= True`; `revision_timeout= awaiting_revision late_revision= None late_conflict= None identity_same= True`; `terminal_failure= True late_receipt= None late_conflict= None state= awaiting_receipt identity_same= True`. |
+| Static checks | PASS | Ruff on all supplied implementation/test files, targeted `PYTHONPYCACHEPREFIX=/tmp/r23005_round12_pycache uv run --project backend python -m py_compile ...`, and `git diff --check` all passed. |
+
+### Defects and disposition
+
+- No defect reproduced. The Round 11 P1 late-response state-immutability repair remains PASS, and
+  the stale frozen-hash gate is fixed by the exact actual Runner digest. No test implementation was
+  edited by the Tester; the expected constant now matches the approved changed Runner surface.
+- The one expected real-Codex smoke skip remains explicit opt-in and is not treated as a failure.
+
+### Unexecuted or not claimable
+
+- No real start14, independent Acceptance Agent, platform materialization/readback, semantic model
+  quality, canonical `+1` authorization append, or live ledger/evidence mutation was attempted.
+- No backend/frontend full suite, service restart, or endpoint health check was run; this is an
+  offline modeling-team contract PASS and does not claim live R2.3-005 semantic acceptance.
+
+### Round conclusion
+
+**Overall verdict: PASS for the final offline Round 12 scope.** Frozen Runner hash, candidate
+progress/latch behavior, normal receipt/revision flow, authorization ledger compatibility, related
+Runner/legacy suites, and static checks all pass. The live requirement remains unclaimed until a
+separately authorized real start14/Acceptance run.

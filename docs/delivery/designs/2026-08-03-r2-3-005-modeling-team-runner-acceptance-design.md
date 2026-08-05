@@ -671,6 +671,24 @@ For the retained start8 state at cap/count `10/8`, Delivery instead appends dire
 failure-to-repair authorization with no new budget event.
 Every new run still creates fresh scope/roles/credentials and executes the full no-start preflight.
 
+## 2026-08-05 explicit one-start authorization
+
+After start13 stopped at the Protocol candidate handoff, the user explicitly authorized one fresh semantic
+start. This is still a retry of the same simple `C -> B -> A` slice, not permission to create another slice.
+The isolated formal ledger state is `cap/count/active=13/13/0`; the authorization must extend it to `14/13/0`,
+and the first complete modeling-quality PASS still ends the run immediately.
+
+The formal R2.3-005 policy keeps `authorization_increment=3` as the coordination default. A caller that has an
+explicit user quantity may persist any positive integer `additional_starts`; this turn passes `1`. `bool`, zero,
+negative, non-integer, duplicate, out-of-order, and losing concurrent records fail before append. Strict replay and
+`_start_cap` add the stored amount from each authorization record, so retained historical `+3` records replay
+unchanged while the new `+1` record yields `13 -> 14`. R2.3-002 remains the exact `+2` policy and its ledger bytes
+and behavior are unchanged. Coordination without an explicit user quantity continues to pass `3`; the CLI does not
+silently create a budget event by omitting the amount.
+
+Implementation and tests use only injected temporary ledgers. Delivery may append the one formal `+1` event to the
+canonical ledger only after this narrow change has an independent PASS and a clean committed baseline.
+
 ## Implementation sequence
 
 1. Replace the three-role formal Profile/Package contract with the exact four-role contract and

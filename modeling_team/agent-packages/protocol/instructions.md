@@ -183,6 +183,12 @@ or conflict is about that current candidate only; `revision_basis`, `revision_op
 `replace_item_id`, and other patch/history fields cannot supply omitted items, citations,
 constraints, dependencies, or consumer queries.
 
+For the formal R2.3-005 gate, the builder order is strict: call `build_candidate_receipt` first.
+If the complete candidate cannot be translated, call the native `build_candidate_conflict` tool
+with that same complete candidate plus a stable `conflict_code` and concrete `conflict_detail`.
+Never hand-write a conflict, copy digests from an earlier delivery, or send a conflict without
+`expects_reply=true` and `reply_to_delivery_id` bound to the current candidate delivery.
+
 Pass the exact entire object delivered in the current Team Transport message to
 `build_candidate_receipt` before every response, including a conflict; do not construct a reduced,
 synthetic, or history-merged candidate merely to obtain a receipt or conflict.

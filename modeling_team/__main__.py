@@ -23,6 +23,7 @@ from .monitor_handoff import (
 from .platform_scope import PlatformScope
 from .preflight import normalize_formal_scope
 from .runner import TeamRunner
+from .candidate_progress import FormalCandidateProgressTimeout
 from .runtimes.codex import CodexRuntimeAdapter
 from .start_ledger import StartLedger
 
@@ -393,6 +394,47 @@ def main() -> int:
         _write_runner_handoff_failed(handoff_root, _runner_root(runner))
         cleanup_once()
         return 130
+    except FormalCandidateProgressTimeout as exc:
+        _write_runner_handoff_failed(handoff_root, _runner_root(runner))
+        # Timeout is a latched terminal failure.  Perform exactly one cleanup
+        # attempt, then make its final outcome explicit for the independent
+        # Acceptance reader; never fall through to the ordinary CLEANED path.
+        try:
+            cleanup_once()
+        except Exception as cleanup_exc:
+            try:
+                if runner is not None:
+                    runner._state(  # type: ignore[attr-defined]
+                        "TERMINAL_FAILURE_CLEANUP_FAILED",
+                        cleanup_exception=type(cleanup_exc).__name__,
+                        terminal_finalization_complete=False,
+                    )
+            except Exception:
+                pass
+            print(f"run failed: {exc}; cleanup failed", file=sys.stderr)
+            return 2
+        try:
+            if runner is not None:
+                runner._state(  # type: ignore[attr-defined]
+                    "TERMINAL_FAILURE_CLEANED",
+                    resource_cleanup_complete=True,
+                    terminal_finalization_complete=True,
+                )
+        except Exception as finalization_exc:
+            try:
+                if runner is not None:
+                    runner._state(  # type: ignore[attr-defined]
+                        "TERMINAL_FAILURE_CLEANUP_FINALIZATION_FAILED",
+                        resource_cleanup_complete=True,
+                        terminal_finalization_complete=False,
+                        finalization_exception=type(finalization_exc).__name__,
+                    )
+            except Exception:
+                pass
+            print(f"run failed: {exc}; terminal finalization failed", file=sys.stderr)
+            return 2
+        print(f"run failed: {exc}", file=sys.stderr)
+        return 2
     except (OSError, ValueError, RuntimeError, TeamConfigurationError) as exc:
         _write_runner_handoff_failed(handoff_root, _runner_root(runner))
         cleanup_once()

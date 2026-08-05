@@ -2287,3 +2287,20 @@ resource/statement 的 `GET /api/ontologies/{O}/lineage`。fact-audit GET 可保
 FactEvidenceBinding count 不进入 verdict gate。自动 FactEvidenceBinding bridge/projection 是 future generic
 capability，不是当前完成前提，也不在本轮实现。允许基于已 apply 且未修改的模型创建新的 fresh
 acceptance round/ticket/read key；这不改变模型、不 reserve/start ledger，也不消耗 semantic start。
+
+### 2026-08-05 R2.3-005 explicit one-start authorization
+
+用户在 start13 的 Protocol 收件停滞修复方向上明确追加一次真实语义建模启动授权。该授权不是新业务
+切片：仍复用同一个简单 `C -> B -> A` 目标，并只在独立修复与新冻结 baseline 完成后串行使用。
+正式账本的当前状态为 `cap/count/active=13/13/0`；本次用户授权使 isolated ledger 的 cap 从 13
+增加到 14，成功接受的完整 modeling-quality 结果仍立即停止后续启动。
+
+R2.3-005 的 formal ledger 保留普通授权的默认 `additional_starts=3` 约定；当用户明确给出不同数量时，
+该条 `budget_authorization` 可以记录任意正整数的真实数量，本次协调层把用户的“一次”编码为 `1`。
+`bool`、零、负数、非整数、错序、重复或并发落败的记录必须在同一账本锁下 fail closed，不得部分追加；
+strict replay 与 `_start_cap` 必须按每条记录实际的 `additional_starts` 累计，而不是按默认值重放。
+省略用户数量时协调层仍传默认 3，CLI 不通过省略参数隐式写入授权。
+
+R2.3-002 的历史账本仍只接受精确 `+2`；R2.3-005 既有精确 `+3` 记录及其 JSONL 字节、顺序和重放结果
+保持兼容。实现和确定性测试只使用隔离临时账本，不改写当前 canonical ledger；只有 Delivery 在开发、独立
+测试和提交完成后，才可按本次授权追加一条 `additional_starts=1` 的正式记录。

@@ -47,9 +47,11 @@ class StartLedgerConfig:
     ledger_filename: str
     lock_filename: str
     initial_start_cap: int
+    # Default authorization amount; formal R2.3-005 may persist explicit amounts.
     authorization_increment: int
     strict_sequence: bool = False
     allow_incomplete_modeling_quality_repair: bool = False
+    allow_variable_authorization: bool = False
 
 
 _LEDGER_CONFIGS = MappingProxyType(
@@ -69,6 +71,7 @@ _LEDGER_CONFIGS = MappingProxyType(
             authorization_increment=_FORMAL_ADDITIONAL_STARTS,
             strict_sequence=True,
             allow_incomplete_modeling_quality_repair=True,
+            allow_variable_authorization=True,
         ),
     }
 )
@@ -217,9 +220,7 @@ class StartLedger:
     def authorize_budget(self, additional_starts: int, authorization_id: str, reference: str) -> None:
         """Append one consumed, user-authorized requirement-specific extension."""
         if (
-            not isinstance(additional_starts, int)
-            or isinstance(additional_starts, bool)
-            or additional_starts != self._authorization_increment
+            not self._budget_amount_allowed(additional_starts)
             or not isinstance(authorization_id, str)
             or not authorization_id.strip()
             or not isinstance(reference, str)
@@ -550,9 +551,7 @@ class StartLedger:
                 authorization_id = record.get("authorization_id")
                 reference = record.get("reference")
                 if (
-                    not isinstance(additional, int)
-                    or isinstance(additional, bool)
-                    or additional != self._authorization_increment
+                    not self._budget_amount_allowed(additional)
                     or not isinstance(authorization_id, str)
                     or not authorization_id.strip()
                     or not isinstance(reference, str)
@@ -574,7 +573,7 @@ class StartLedger:
                     raise TeamConfigurationError("budget authorization ledger is invalid")
                 authorization_ids.add(authorization_id)
                 references.add(reference)
-                cap += self._authorization_increment
+                cap += additional
                 continue
             # repair_authorization
             baseline = record.get("baseline_hash")
@@ -893,9 +892,7 @@ class StartLedger:
             authorization_id = record.get("authorization_id")
             reference = record.get("reference")
             if (
-                not isinstance(additional_starts, int)
-                or isinstance(additional_starts, bool)
-                or additional_starts != self._authorization_increment
+                not self._budget_amount_allowed(additional_starts)
                 or not isinstance(authorization_id, str)
                 or not authorization_id.strip()
                 or not isinstance(reference, str)
@@ -907,8 +904,20 @@ class StartLedger:
                 raise TeamConfigurationError("budget authorization ledger is invalid")
             authorization_ids.add(authorization_id)
             references.add(reference)
-            cap += self._authorization_increment
+            cap += additional_starts
         return cap
+
+    def _budget_amount_allowed(self, additional_starts: Any) -> bool:
+        """Validate one persisted authorization amount against its requirement policy."""
+        if (
+            not isinstance(additional_starts, int)
+            or isinstance(additional_starts, bool)
+            or additional_starts < 1
+        ):
+            return False
+        return self.config.allow_variable_authorization or (
+            additional_starts == self._authorization_increment
+        )
 
     @staticmethod
     def _semantic_start_count(records: list[dict[str, Any]]) -> int:
