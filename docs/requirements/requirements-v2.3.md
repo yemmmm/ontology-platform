@@ -2621,3 +2621,23 @@ and `git diff --check` passed. Strict ledger replay is now `cap/count/active=31/
 `2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. The repair
 must be committed before requesting a new user authorization; no further semantic start is authorized in the
 exhausted tranche.
+
+### 2026-08-06 R2.3-005 start33 delivery-bound draft rejection and platform-ID repair
+
+Start33 `r23005-real-20260806t101159z-start33` reused the retained r3 candidate/overlay semantics. Protocol completed
+the five required stages and both competency-question retrievals with `generic_complete`; the Runner-private
+canonical handoff succeeded as `delivery-5` (handoff digest
+`1936cadd560a1bf25e79bf6fedd1542721eecb1837edd90071b1efaf057b7053`). The first external guidance supplied a factual
+gate-complete notice bound to the candidate and `delivery-5`; Modeling then emitted `ready_for_acceptance`.
+
+Coordinator's two delivery-bound draft requests for the frozen questions were both rejected with generic `-32001`.
+No draft or ticket was created, and no Acceptance round, Examiner report, or verdict exists. The exact failure was a
+platform-contract mismatch: `platform_read_scope` applied the role/workflow safe-ID rule to live platform identifiers,
+rejecting the digit-leading Project/Ontology/graph-set UUIDs before ticket construction. This record does not make a
+semantic-quality claim.
+
+The narrow repair adds a dedicated platform-scope identifier rule while retaining the stricter role-ID rule. A
+temporary in-memory replay of the retained start33 handoff and platform evidence built both CQ draft objects
+successfully. This is developer/contract evidence only and does not turn the retained run into an Acceptance result.
+The live run remains `issue-1` / `WAITING_OWNER`, with no ticket, Acceptance, Examiner, or verdict. The current
+authorization tranche is **1/3 consumed, 2 remaining**.

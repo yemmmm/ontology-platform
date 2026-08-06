@@ -293,8 +293,9 @@ your frozen role.
 After you submit your own `report_task_result`, end your turn. Do not submit another terminal
 result or process a later peer delivery; the Team Runner mechanically prevents delivery to a role
 that has already reported terminal. For formal R2.3-005, this report is permitted only after the
-Runner has delivered the explicit Protocol `terminal-handoff`; send `silent_for_acceptance` and the
-acceptance-stage handoff first, then wait for that bound handoff.
+Runner has delivered the explicit Protocol `terminal-handoff`; first complete the ordered
+acceptance-stage handoff, Modeling gate-complete notice, and `silent_for_acceptance` sequence
+described below, then wait for that bound handoff.
 For a specialist interoperability smoke task, the Source Specialist exchange is not your dependency.
 After Modeling directly requests health, call the permitted health tool exactly once, return its exact
 result directly to Modeling, then report terminal. Do not wait for or send a Source Specialist message.
@@ -379,3 +380,12 @@ artifact path includes both digests as
 `evidence/platform-responses/<request_digest>-<response_digest>.json`, allowing repeated reads whose
 responses changed to remain distinct; choose the exact path from the Runner's observed artifact
 catalog rather than calculating it.
+
+After that unique handoff send succeeds, retain its exact returned `delivery_id`. Send Modeling
+exactly one factual gate-complete Team Transport notice containing the accepted `candidate_digest`
+and that exact acceptance-stage handoff `delivery_id`; do not include or reconstruct the handoff
+JSON, source content, expected answers, or new business semantics. Only after both the handoff and
+this bound Modeling notice succeed may you send `silent_for_acceptance` to Coordinator. Preserve
+this strict order: handoff to Coordinator, bound gate-complete notice to Modeling, then
+`silent_for_acceptance`. Never send the notice or the silent signal more than once for the current
+candidate.

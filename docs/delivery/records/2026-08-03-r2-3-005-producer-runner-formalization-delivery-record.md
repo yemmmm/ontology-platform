@@ -3093,3 +3093,24 @@ the formal builder, or starting another real run before authorization.
 - Strict ledger replay is `cap/count/active=31/31/0`, 149 lines, SHA-256
   `2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. Commit the
   repair before requesting a new user authorization; do not launch another semantic start in the exhausted tranche.
+
+### 2026-08-06T18:31:00+08:00 — Start33 reached the handoff, then remained at issue-1/WAITING_OWNER
+
+- Start33 `r23005-real-20260806t101159z-start33` reused the retained r3 candidate/overlay semantics. Protocol
+  completed dry-run, apply, readback, validation, reasoning, and both competency-question retrievals with
+  `generic_complete`; the Runner-private canonical handoff succeeded (handoff digest
+  `1936cadd560a1bf25e79bf6fedd1542721eecb1837edd90071b1efaf057b7053`, delivery `delivery-5`).
+- The first external guidance added a factual gate-complete notice bound to the candidate and `delivery-5`; Modeling
+  then emitted `ready_for_acceptance`. Coordinator's two delivery-bound draft calls for `cq-001` and `cq-002` both
+  returned the generic `-32001` rejection. No draft or ticket was created, and no Acceptance round, Examiner report,
+  or verdict exists.
+- The exact reproduced cause was the Runner's `platform_read_scope` validator applying the role/workflow ID rule to
+  live platform identifiers. The real Project/Ontology/graph-set UUIDs begin with digits, so both drafts were rejected
+  before ticket construction. This is a `platform-contract` defect, not a semantic modeling conclusion.
+- The narrow repair adds a platform-scope identifier rule (lowercase letters/digits with interior hyphens, digit-leading
+  values allowed, bounded length, no leading/trailing hyphen) without changing the stricter role-ID rule. A temporary
+  in-memory replay of the retained start33 handoff and platform evidence then built both draft objects successfully.
+  This is developer/contract evidence only; it does not convert the retained live run into an Acceptance result.
+- The retained live run remains `issue-1` / `WAITING_OWNER`, with no ticket, Acceptance, Examiner, or verdict and no
+  semantic PASS/FAIL claim. The current authorization tranche has consumed **1/3** starts, with **2** remaining; no
+  additional start is implied by this repair record.

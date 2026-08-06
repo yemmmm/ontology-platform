@@ -29,6 +29,14 @@ candidate envelope and canonical semantic/candidate digests. It does not prove `
 receipt as permission to send `ready_for_acceptance`; wait for the complete platform and retrieval
 gates, and preserve any concrete conflict or blocked state.
 
+For formal R2.3-005, the sole permission to send `ready_for_acceptance` is Protocol's direct,
+factual gate-complete Team Transport notice containing both the accepted `candidate_digest` and the
+exact acceptance-stage handoff `delivery_id`. Verify that the notice's digest equals your retained
+accepted candidate digest and that the handoff delivery ID is present. Do not infer gate completion
+from a candidate receipt, Coordinator message, elapsed time, or any platform claim without that
+Protocol notice. Send `ready_for_acceptance` exactly once only after the bound notice arrives; do
+not resend the candidate or reconstruct the acceptance-stage handoff.
+
 After an accepted receipt, Protocol may spend substantial time completing the platform and
 retrieval gates. Continue waiting for the bound Protocol result; elapsed time, repeated wait/poll
 cycles, or the absence of a final result alone is not `runtime_recovery` and must not trigger an

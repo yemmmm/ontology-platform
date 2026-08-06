@@ -211,6 +211,20 @@ def _safe_id(value: Any, field: str) -> str:
     return value
 
 
+def _safe_platform_id(value: Any, field: str) -> str:
+    """Validate a concrete platform identifier without imposing role-ID rules.
+
+    Platform resources use UUID-shaped identifiers in live runs, including values
+    whose first character is a digit.  Keep the stricter ``_safe_id`` contract for
+    task, role, and other stable workflow identifiers, while allowing the platform
+    scope to represent the identifiers returned by the platform itself.
+    """
+
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?", value):
+        _error(f"{field} must be a safe platform identifier")
+    return value
+
+
 def _safe_digest(value: Any, field: str) -> str:
     if not _digest_matches(value):
         _error(f"{field} must be a lowercase sha256 digest")
@@ -327,7 +341,7 @@ def validate_child_input(kind: str, value: Any) -> dict[str, Any]:
 def validate_platform_read_scope(value: Any) -> dict[str, Any]:
     data = _require_exact_keys(value, {"project_id", "ontology_id", "graph_set_id"}, "platform_read_scope")
     for field in data:
-        _safe_id(data[field], f"platform_read_scope.{field}")
+        _safe_platform_id(data[field], f"platform_read_scope.{field}")
     return data
 
 

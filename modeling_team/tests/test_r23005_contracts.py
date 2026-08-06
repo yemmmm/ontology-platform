@@ -33,6 +33,7 @@ from modeling_team.acceptance import (
     validate_page_chain,
     validate_location_hint,
     validate_model_state,
+    validate_platform_read_scope,
     validate_report,
     validate_typed_evidence_ref,
     validate_ticket,
@@ -304,6 +305,23 @@ def _blocked_verdict(
 
 
 class R23005ContractTests(unittest.TestCase):
+    def test_platform_scope_accepts_live_uuid_shape_and_rejects_non_platform_ids(self) -> None:
+        scope = {
+            "project_id": "289e3e51-f8a7-4e92-b279-55a940d3462b",
+            "ontology_id": "2469c710-8d7b-4269-ba81-6ee66bd696c8",
+            "graph_set_id": "553b91e4-785e-5816-a979-290a3d706c0b",
+        }
+        self.assertEqual(validate_platform_read_scope(scope), scope)
+        short_scope = {"project_id": "a", "ontology_id": "b", "graph_set_id": "c"}
+        self.assertEqual(validate_platform_read_scope(short_scope), short_scope)
+
+        for field in scope:
+            for invalid in ("", "A" + "a" * 35, "a_b", "a/b", "-abc", "abc-"):
+                with self.subTest(field=field, invalid=invalid), self.assertRaisesRegex(
+                    AcceptanceContractError, "safe platform identifier"
+                ):
+                    validate_platform_read_scope({**scope, field: invalid})
+
     def test_formal_scope_is_fresh_create_only(self) -> None:
         self.assertEqual(normalize_formal_scope({"mode": "create"}), {"mode": "create"})
         for value in (

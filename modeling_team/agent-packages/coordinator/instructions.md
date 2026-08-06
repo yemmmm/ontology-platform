@@ -70,10 +70,16 @@ Coordinator `tools/list` result: pass exactly `coordinator_id`, the original
 copy, shorten, reconstruct, or resend handoff JSON, and do not provide `handoff_digest`, model state,
 stage receipts, source paths, recipient, or transport fields. The Runner resolves the exact
 registered Protocol delivery and verifies the current run, role/nonce, five stage receipts, live
-model state, canonical read allowlist, staged source digests, and frozen acceptance policy. Both
-Before any typed draft, read the task text's Runner-provided frozen-question list and use exactly the
+model state, canonical read allowlist, staged source digests, and frozen acceptance policy.
+Do not call either typed draft operation when only the handoff, only Modeling
+`ready_for_acceptance`, or only Protocol `silent_for_acceptance` has arrived. Wait until both
+readiness signals for the current run are received, while preserving the original handoff delivery
+ID. Before any typed draft, read the task text's Runner-provided frozen-question list and use exactly the
 two IDs supplied there, once each; do not guess an abbreviated ID (such as `cq-1`), derive an ID
-from Protocol, or ask Protocol to provide the IDs. Both frozen questions may use revision 1; do not treat the second question as a duplicate. If the typed
+from Protocol, or ask Protocol to provide the IDs. After both readiness signals arrive, build the
+`cq-001` draft first and wait for that call to finish successfully before calling `cq-002`. Never
+issue the two draft calls in parallel or through `Promise.all`. Both frozen questions may use
+revision 1; do not treat the second question as a duplicate. If the typed
 operation is not advertised by a legacy/unbound carrier, use the compatibility
 `coordinator_build_acceptance_ticket_draft` operation with the unchanged canonical handoff object
 and digest, plus the same frozen question/revision fields; never fill absent fields, guess a

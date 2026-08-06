@@ -1828,3 +1828,20 @@ already recorded attempts.
   `2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. Commit and
   verify the repair before requesting new user authorization; no further live semantic start is permitted in this
   tranche and no Acceptance PASS is claimed.
+
+### Start33 live result and platform-scope contract repair (2026-08-06)
+
+- Start33 `r23005-real-20260806t101159z-start33` reused the retained r3 candidate/overlay. Protocol completed all five
+  stages and both competency-question retrievals with `generic_complete`; the canonical Runner handoff succeeded as
+  `delivery-5` (handoff digest `1936cadd560a1bf25e79bf6fedd1542721eecb1837edd90071b1efaf057b7053`).
+- The first external guidance supplied a factual gate-complete notice bound to the candidate and `delivery-5`, after
+  which Modeling sent `ready_for_acceptance`. Both Coordinator delivery-bound draft requests (`cq-001`, `cq-002`)
+  were rejected with `-32001`; no draft, ticket, Acceptance round, Examiner report, or verdict was produced.
+- Reproduction isolated the contract defect: `platform_read_scope` reused the role/workflow safe-ID rule, which
+  rejects the digit-leading UUIDs returned for the live Project, Ontology, and graph set. This is a
+  `platform-contract` failure, not an assertion about modeling quality or retrieval content.
+- The narrow repair uses a dedicated platform-scope identifier rule while preserving the role-ID rule. A temporary
+  in-memory replay of the retained start33 handoff and stage artifacts built both CQ drafts successfully. Treat this
+  as developer/contract verification only; it is not an independent Acceptance result.
+- The live run remains `issue-1` / `WAITING_OWNER`; there is still no ticket, Acceptance, Examiner, or verdict and no
+  semantic PASS/FAIL conclusion. The authorized tranche is **1/3 consumed, 2 remaining**.

@@ -1101,6 +1101,35 @@ class R23005TicketPipelineTests(unittest.TestCase):
         self.assertIn("`reason` must equal the persisted abort `resolution_text` byte-for-byte", coordinator)
         self.assertIn("Never include `resolution_type`, `resolution_text`, `null`", coordinator)
 
+    def test_prompt_contract_serializes_gate_notice_readiness_and_ticket_drafts(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text()
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text()
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text()
+        protocol_words = " ".join(protocol.split())
+        modeling_words = " ".join(modeling.split())
+        coordinator_words = " ".join(coordinator.split())
+
+        self.assertIn(
+            "handoff to Coordinator, bound gate-complete notice to Modeling, then",
+            protocol_words,
+        )
+        self.assertIn("then `silent_for_acceptance`", protocol_words)
+        self.assertIn("accepted `candidate_digest`", protocol)
+        self.assertIn("acceptance-stage handoff `delivery_id`", protocol)
+        self.assertIn("sole permission to send `ready_for_acceptance`", modeling)
+        self.assertIn("Protocol's direct", modeling)
+        self.assertIn(
+            "notice's digest equals your retained accepted candidate digest",
+            modeling_words,
+        )
+        self.assertIn("only after the bound notice arrives", modeling_words)
+        self.assertIn("Wait until both readiness signals", coordinator_words)
+        self.assertIn("`cq-001` draft first", coordinator_words)
+        self.assertIn("before calling `cq-002`", coordinator_words)
+        self.assertIn("Never issue the two draft calls in parallel", coordinator_words)
+        self.assertIn("`Promise.all`", coordinator)
+
 
 if __name__ == "__main__":
     unittest.main()
