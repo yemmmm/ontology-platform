@@ -34,6 +34,9 @@ from .candidate_progress import (
     FormalCandidateProgress,
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
+    formal_candidate_digests,
+    validate_formal_conflict,
+    validate_formal_receipt,
 )
 from .candidate_publication import (
     CandidatePublicationError,
@@ -52,6 +55,9 @@ from .protocol_mcp_launch import (
     protocol_mcp_reasoner_contract,
 )
 from .protocol_mechanics import (
+    ProtocolRetrievalFallbackError,
+    build_candidate_conflict,
+    build_candidate_receipt,
     build_candidate_item_evidence_map,
 )
 from .matrix_artifact import MatrixArtifactError, verify_matrix as verify_proof_matrix
@@ -137,6 +143,10 @@ class TeamRunner:
         self.coordinator_phase: CoordinatorPhaseController | None = None
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
+        # One typed Protocol response is allowed for each active original
+        # Modeling delivery.  The set is Runner-owned so a capability retry
+        # cannot emit a second receipt/conflict for the same delivery.
+        self._protocol_candidate_responses: dict[str, str] = {}
         self._task_overlay: TaskInputOverlay | None = None
         self._validated_candidate_publication: ValidatedCandidatePublication | None = None
         self._candidate_publication: StagedCandidatePublication | None = None
@@ -383,6 +393,7 @@ class TeamRunner:
             if formal_acceptance
             else None
         )
+        self._protocol_candidate_responses = {}
         self._formal_failure_latched = False
         acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
         source_materials: dict[str, Path] = {}
@@ -415,6 +426,16 @@ class TeamRunner:
             candidate_publisher=(
                 self._publish_staged_candidate
                 if self._candidate_publication is not None
+                else None
+            ),
+            candidate_receipt_builder=(
+                self._build_protocol_candidate_receipt
+                if formal_acceptance
+                else None
+            ),
+            candidate_conflict_builder=(
+                self._build_protocol_candidate_conflict
+                if formal_acceptance
                 else None
             ),
         )
@@ -1492,6 +1513,127 @@ class TeamRunner:
             send=self.transport.send,
         )
 
+    def _active_protocol_candidate(
+        self,
+        protocol_id: str,
+        delivery_id: str,
+        *,
+        response_kind: str,
+    ) -> tuple[dict[str, Any], Any]:
+        """Resolve one live formal candidate without accepting model-supplied bytes."""
+
+        if not self._formal_coordination_enabled() or self.run is None:
+            raise TeamConfigurationError("typed candidate binding is unavailable")
+        if self.transport is None or self.acceptance is None or not self.acceptance.is_live:
+            raise TeamConfigurationError("typed candidate binding is not active")
+        role_ids = self._formal_coordination_role_ids()
+        if protocol_id != role_ids["protocol"]:
+            raise TeamConfigurationError("typed candidate protocol identity is not bound")
+        if not isinstance(delivery_id, str) or not delivery_id:
+            raise TeamConfigurationError("typed candidate delivery_id is invalid")
+        progress = self._candidate_progress
+        identity = progress.identity if progress is not None else None
+        candidate = progress.candidate if progress is not None else None
+        if identity is None or candidate is None:
+            raise TeamConfigurationError("typed candidate has no active FormalCandidateProgress")
+        if identity.run_id != self.run.run_id:
+            raise TeamConfigurationError("typed candidate run identity is stale")
+        if identity.protocol_agent_id != protocol_id:
+            raise TeamConfigurationError("typed candidate protocol identity drifts from progress")
+        if identity.original_delivery_id != delivery_id:
+            raise TeamConfigurationError("typed candidate delivery_id is foreign or stale")
+        if progress.state not in {"awaiting_receipt", "redrive_sent"} or progress.paused:
+            raise TeamConfigurationError("typed candidate is not awaiting a Protocol response")
+        if progress.timeout_latched or progress.terminal_failure_latched:
+            raise TeamConfigurationError("typed candidate progress is terminal")
+        try:
+            candidate_digest, semantic_digest = formal_candidate_digests(candidate)
+        except FormalCandidateError as exc:
+            raise TeamConfigurationError("retained formal candidate is invalid") from exc
+        if (
+            candidate_digest != identity.candidate_digest
+            or semantic_digest != identity.semantic_digest
+        ):
+            raise TeamConfigurationError("retained formal candidate identity drifted")
+        previous_response = self._protocol_candidate_responses.get(delivery_id)
+        if previous_response == "conflict":
+            raise TeamConfigurationError("typed candidate response was already built")
+        if response_kind == "conflict" and previous_response != "receipt":
+            raise TeamConfigurationError(
+                "typed candidate conflict requires the canonical receipt first"
+            )
+        if previous_response == "receipt" and response_kind == "receipt":
+            raise TeamConfigurationError("typed candidate response was already built")
+        return deepcopy(candidate), identity
+
+    def _build_protocol_candidate_receipt(
+        self,
+        protocol_id: str,
+        delivery_id: str,
+    ) -> dict[str, Any]:
+        """Build an exact formal receipt from Runner-retained candidate state."""
+
+        candidate, identity = self._active_protocol_candidate(
+            protocol_id,
+            delivery_id,
+            response_kind="receipt",
+        )
+        try:
+            receipt = build_candidate_receipt(candidate)
+        except ProtocolRetrievalFallbackError as exc:
+            raise TeamConfigurationError(str(exc)) from exc
+        try:
+            normalized = validate_formal_receipt(
+                receipt,
+                candidate_revision=identity.candidate_revision,
+                semantic_digest=identity.semantic_digest,
+                candidate_digest=identity.candidate_digest,
+            )
+        except FormalCandidateError as exc:
+            raise TeamConfigurationError("canonical candidate receipt does not match active identity") from exc
+        self._protocol_candidate_responses[delivery_id] = "receipt"
+        return {
+            "delivery_id": delivery_id,
+            "candidate": candidate,
+            "receipt": deepcopy(normalized),
+            "receipt_json": self._canonical_bytes(normalized).decode("utf-8"),
+        }
+
+    def _build_protocol_candidate_conflict(
+        self,
+        protocol_id: str,
+        delivery_id: str,
+        conflict_code: str,
+        conflict_detail: str,
+    ) -> dict[str, Any]:
+        """Build an exact formal conflict from Runner-retained candidate state."""
+
+        candidate, identity = self._active_protocol_candidate(
+            protocol_id,
+            delivery_id,
+            response_kind="conflict",
+        )
+        try:
+            conflict = build_candidate_conflict(candidate, conflict_code, conflict_detail)
+        except ProtocolRetrievalFallbackError as exc:
+            raise TeamConfigurationError(str(exc)) from exc
+        try:
+            normalized = validate_formal_conflict(
+                conflict,
+                candidate_revision=identity.candidate_revision,
+                semantic_digest=identity.semantic_digest,
+                candidate_digest=identity.candidate_digest,
+            )
+        except FormalCandidateError as exc:
+            raise TeamConfigurationError("canonical candidate conflict does not match active identity") from exc
+        self._protocol_candidate_responses[delivery_id] = "conflict"
+        return {
+            "delivery_id": delivery_id,
+            "candidate": candidate,
+            "conflict": deepcopy(normalized),
+            "conflict_json": self._canonical_bytes(normalized).decode("utf-8"),
+        }
+
     def _task_text(self, role: str | None = None) -> str:
         assert self.run
         task = self.run.configuration.task
@@ -1548,6 +1690,18 @@ class TeamRunner:
                     "verdict JSON as text."
                 )
             if role == "protocol":
+                protocol_capability_operations: set[str] = set()
+                if self.acceptance is not None:
+                    descriptor = self.acceptance.capability_descriptors.get("protocol", {})
+                    advertised = descriptor.get("operations", [])
+                    if isinstance(advertised, list):
+                        protocol_capability_operations = {
+                            value for value in advertised if isinstance(value, str)
+                        }
+                typed_candidate_binding = {
+                    "protocol_build_candidate_receipt",
+                    "protocol_build_candidate_conflict",
+                }.issubset(protocol_capability_operations)
                 text += (
                     "\nYou must read the enumerated modeling-batch-item-contract.json source. "
                     "You must also read the enumerated acceptance-stage-handoff-contract.json source; it is the "
@@ -1565,11 +1719,15 @@ class TeamRunner:
                     "the Batch/Item envelope, not as a conflict or missing input. Modeling sends a platform-neutral "
                     "semantic candidate; Protocol alone translates it into the envelope and must not require Modeling "
                     "to author exact items. The public tool remains the final execution and validation authority."
-                    " In the formal R2.3-005 gate, call build_candidate_receipt first; if translation conflicts, "
-                    "call build_candidate_conflict with the same complete candidate, stable conflict_code, and "
-                    "concrete conflict_detail. Never hand-write a conflict or reuse prior-delivery digests."
-                    " Reply to every Modeling candidate or revision with reply_to_delivery_id set to that candidate's "
-                    "delivery_id and send a mechanical receipt or concrete translation conflict. Remain active for "
+                    " In the formal R2.3-005 gate, first obtain the current candidate and mechanical receipt: use "
+                    "the Runner-typed candidate receipt path when it is advertised below, otherwise call "
+                    "build_candidate_receipt. This builder step does not send Team Transport. Complete the full "
+                    "platform-translation decision before any response: if translation conflicts, call the "
+                    "corresponding typed or native build_candidate_conflict path with a stable conflict_code and "
+                    "concrete conflict_detail, then send only conflict_json; if translation succeeds, send only "
+                    "receipt_json. Never hand-write a conflict or reuse prior-delivery digests. For every current "
+                    "candidate or revision, send exactly one of those two responses through Team Transport, with "
+                    "reply_to_delivery_id set to that candidate's delivery_id. Remain active for "
                     "revisions, and report terminal only after the Runner delivers Modeling's terminal-handoff. "
                     "Preserve source-grounded evidence_citations when present; do not read/guess source locators or "
                     "owner answers. Use the generic mechanics contract and configured retrieval fallback for ordinary "
@@ -1596,6 +1754,24 @@ class TeamRunner:
                         "Runner rejects unobserved calls, wrong stage tool/mode/status/scope, artifact tamper, and "
                         "candidate identities other than the accepted candidate. Coordinator must pass the exact "
                         "delivery_id and unchanged object to its draft capability."
+                    )
+                if typed_candidate_binding:
+                    text += (
+                        " The Runner-private Protocol capability advertises typed formal candidate binding: "
+                        "for every current Modeling candidate or candidate-redrive, call "
+                        "protocol_build_candidate_receipt with exactly protocol_id=protocol and the original "
+                        "delivery_id. Do not pass candidate JSON, candidate_text, path, digest, recipient, or "
+                        "transport fields; the Runner resolves the retained exact candidate and returns structured "
+                        "candidate plus receipt and exact canonical receipt_json; this obtains the retained data but "
+                        "does not send it. Complete the translation decision before any Team Transport response. If "
+                        "translation cannot proceed, call protocol_build_candidate_conflict with exactly the same "
+                        "protocol_id and delivery_id plus stable conflict_code and concrete conflict_detail, then "
+                        "send only its unchanged conflict_json with expects_reply=true. If translation succeeds, "
+                        "send only the unchanged receipt_json with expects_reply=false. Every candidate or revision "
+                        "gets exactly one of receipt_json or conflict_json, never both, with reply_to_delivery_id set "
+                        "to the original delivery_id. The typed capability never sends Team Transport; it permits "
+                        "one conflict immediately after that receipt build, before either response is sent, but "
+                        "rejects duplicate receipt/conflict calls, stale or foreign IDs, and terminal delivery IDs."
                     )
                 if proof_gate:
                     text += (

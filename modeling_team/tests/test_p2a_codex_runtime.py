@@ -37,10 +37,10 @@ FROZEN_GLOBAL_SURFACES = {
     # intentionally changed surfaces.
     # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.
-    "modeling_team/runner.py": "8d36cb7e08119c8d2841d5601f9ec41b66cd9facd5021e8ff29e3f625e4688ab",
+    "modeling_team/runner.py": "5b731d5b108d81646214d362d731d6ccb4c9c4d1052a47073f1e29fc6cb8ca64",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "66c1b1235bbb130e51ee8cfb76b8353e0d041dce5edb6cc27f137082d1a806f3",
+    "modeling_team/runtimes/codex.py": "8b0c65562fa23db5f841d4e40fa081ea58130d798bf83c6372f2d71184560ea0",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

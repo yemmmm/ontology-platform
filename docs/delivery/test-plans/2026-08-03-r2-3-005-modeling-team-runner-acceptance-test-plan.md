@@ -1671,6 +1671,7 @@ modeling-quality and Acceptance test.
 | C113 | Existing mechanics regression | Candidate progress/redrive, Protocol cursor verifier, Prompt E artifacts/ticket, pause/resume, settlement, cleanup, R2.3-002, and complete `modeling_team` tests remain green |
 | C114 | Modeling capability Runtime reachability | When Modeling advertises the typed publication operation, its exact private host socket is bind-mounted at `/agent/home/runner-capability.sock`; roles without that operation receive no such mount |
 | C115 | Formal foreground EOF fail-closed | EOF before `TERMINAL_REPORT_COMPLETE` records `collaboration/routing`, returns non-zero, and cleans once; legacy non-formal EOF and completed terminal behavior remain compatible |
+| C116 | Protocol delivery-bound receipt/conflict | Protocol supplies only its identity plus an active original `delivery_id`; Runner binds the retained exact candidate and returns canonical receipt/conflict JSON, while repeat, foreign, stale, or mismatched calls fail closed without transport or platform mutation |
 | I24 | Next live continuation | A fresh run uses the tracked authoritative Task plus exact r3 overlay, reaches normal Protocol receipt/platform work and then both independent Acceptance rounds without Modeling shell extraction or copied Task drift |
 
 The canonical ledger is read-only throughout developer testing. The newly granted `+5` is pending because the ledger
@@ -1719,3 +1720,30 @@ already recorded attempts.
   heredoc or add a temporary requirement-specific launcher script.
 - Focused verification passed **3 tests and 5 subtests**; complete regression passed **430 tests, 1 skipped,
   177 subtests**. Start27 is classified `collaboration/routing`, complete=false. I24 remains pending.
+
+### Start28 typed-publication result and C116 repair gate (2026-08-06)
+
+- Start28 live-proved C108-C110 through the Runtime boundary: Modeling invoked the typed operation and Runner sent
+  the exact retained r3 candidate as `delivery-1`, without Agent-side parsing, shell, serialization, or business
+  semantic rebuild.
+- I24 stopped at the next narrow boundary before any platform mutation. Protocol's generic receipt mechanics require
+  a caller-provided candidate and cannot bind `delivery-1` to Runner's retained immutable candidate without model
+  reconstruction. The run closed `collaboration/routing`, `complete=false`, with normal zero-residue cleanup.
+- C116 is now the mandatory start29 gate. The repair must remain Runtime-neutral and additive: only the active
+  Protocol identity and original delivery ID cross the semantic boundary; Runner owns candidate identity, canonical
+  receipt/conflict construction, and exact serialization. Existing generic mechanics and no-overlay/legacy paths
+  must remain unchanged and the complete `modeling_team` suite must pass before another semantic start.
+- Ledger strict replay is **133 lines**, SHA-256
+  `b277601b518e62f3a9ce905b514d637eb52cfcdde931dce281ee0407f8a53137`, with
+  `cap/count/active=31/27/0` and four recorded starts remaining. I24 remains pending; no start29 has been launched.
+
+### C116 verification result (2026-08-06)
+
+- C116 passes focused tests for exact retained-candidate binding, canonical receipt JSON, receipt-then-conflict local
+  build order, duplicate rejection, foreign/stale/terminal rejection, and legacy/no-callback operation hiding.
+- Codex formal manifests now use the carrier's actual advertised operations; no-overlay and lightweight legacy paths
+  retain their prior tool surface. Prompt assertions require the translation decision before any Team Transport and
+  exactly one receipt-or-conflict response per candidate/revision.
+- Focused verification passed **81 tests and 18 subtests**; prompt-order regression passed **45 tests and 3
+  subtests**. Final complete regression passed **432 tests, 1 skipped, 177 subtests**; Ruff and diff checks passed.
+  C116 is developer-complete. I24/start29 remains the live semantic/Protocol/Acceptance test.

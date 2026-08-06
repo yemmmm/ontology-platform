@@ -2,26 +2,27 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 start25 已终止并完成清理，
-  终态为 `modeling-quality` `candidate-envelope-invalid`（不是 Protocol、平台或 Acceptance 结论）。
-  正式账本现为 `cap/count/active=31/26/0`，剩余 `5` 次；Prompt A/C/D 已由
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 正在以 start24 r3 精确候选继续。
+  正式账本现为 `cap/count/active=31/27/0`，剩余 `4` 次；Prompt A/C/D 已由
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
   platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
   ADR 0008 Runtime-neutral mechanical spine 已实现并通过完整 Modeling Team 回归，已移除 copied Task 与
   Agent shell/JSON extraction；start26 在 `semantic_start` 前暴露并清理了 Modeling capability socket
   挂载遗漏，未消耗建模次数；start27 已证明四角色 Runtime 启动恢复，但 Delivery heredoc 关闭了控制
-  stdin，导致进入 `semantic_start` 后立即清理，终态为 `collaboration/routing`、不是建模质量结论；
-  Runner EOF fail-closed 与启动方式修复已通过完整回归，待复用同一 carrier/overlay 窄重试；
+  stdin，导致进入 `semantic_start` 后立即清理；Runner EOF fail-closed 与启动方式修复已通过完整回归。
+  start28 已由 Modeling 的 typed capability 原样发布候选并进入 Protocol，但 Protocol receipt builder
+  尚不能按 `delivery_id` 机械绑定 Runner 保留的候选，故在任何平台写入前以 `collaboration/routing`
+  终止并完成零残留清理；该窄绑定缺口现已代码化修复并通过完整回归，待 start29 真实验证，
+  start28 仍不是建模质量或 Acceptance 结论；
   用户新增 `+5` 授权已记录为待生效授权，因 canonical ledger 只允许余额耗尽时追加，当前不改写账本。
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：复用 ADR 0008 的 append-only Task overlay、typed Modeling candidate publication 和
-  start24 精确 r3 carrier（不重建业务切片），在已修复 Modeling capability socket 挂载后窄重试，继续
-  Protocol 平台执行与独立 Acceptance；
-  仍有 `5` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
-  cap/count/active 为 `31/26/0`
+- 当前下一目标：复用已通过完整回归的 Runner-private `delivery_id -> exact candidate` Protocol
+  receipt/conflict binding 与 start24 精确 r3 carrier（不重建业务切片）启动 start29，继续 Protocol 平台执行
+  与独立 Acceptance；仍有 `4` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
+  cap/count/active 为 `31/27/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -70,7 +71,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start27 Delivery stdin EOF 已修复，待同 carrier PTY 窄重试；31/26/0，已入账剩余 5，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `Protocol delivery binding 已完整回归，待 start29 真实验证；31/27/0，已入账剩余 4，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 

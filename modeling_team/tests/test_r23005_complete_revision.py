@@ -269,6 +269,8 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "Never merge, reconstruct, or mutate a candidate across",
             "Before every receipt or conflict response",
             "entire current candidate as its sole argument",
+            "Complete the full platform-translation decision before any",
+            "send exactly one of `receipt_json` or `conflict_json`, never both",
             "revision_basis",
             "replace_item_id",
         ):
@@ -284,6 +286,8 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         self.assertIn("Protocol never merges prior deliveries", protocol_text)
         self.assertIn("build_candidate_receipt", protocol_text)
         self.assertIn("before every receipt or conflict response", protocol_text)
+        self.assertIn("Complete the full platform-translation decision before any response", protocol_text)
+        self.assertIn("exactly one of those two responses", protocol_text)
 
     def test_c96_retained_partial_revision_is_rejected_without_cross_delivery_merge(self) -> None:
         partial = _start5_partial_revision()

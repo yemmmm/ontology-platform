@@ -17,13 +17,13 @@ from uuid import uuid4
 import yaml
 
 from modeling_team.acceptance import AcceptanceContractError, RunnerAcceptanceCarrier
-from modeling_team.candidate_progress import formal_candidate_digests
+from modeling_team.candidate_progress import FormalCandidateProgress, formal_candidate_digests
 from modeling_team.candidate_publication import (
     CandidatePublicationError,
     stage_candidate_publication,
     validate_candidate_publication,
 )
-from modeling_team.capability_mcp import MODELING_OPERATIONS
+from modeling_team.capability_mcp import MODELING_OPERATIONS, PROTOCOL_OPERATIONS, PROTOCOL_STAGE_OPERATIONS
 from modeling_team.contracts import (
     TeamConfigurationError,
     load_formal_team_configuration,
@@ -31,6 +31,7 @@ from modeling_team.contracts import (
     repository_root,
 )
 from modeling_team.runner import TeamRunner
+from modeling_team.runtimes.base import RuntimeDelivery, RuntimeDispatchReceipt
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.start_ledger import StartLedger
 from modeling_team.task_overlay import load_task_input_overlay
@@ -448,6 +449,142 @@ class R23005MechanicalSpineTests(unittest.TestCase):
                     command[socket_target - 1],
                     str(carrier.capability_socket_path("modeling")),
                 )
+            finally:
+                carrier.cleanup()
+
+    def test_typed_protocol_candidate_binding_uses_retained_candidate_and_allows_one_conflict(self) -> None:
+        candidate = self._candidate()
+        progress = FormalCandidateProgress(clock=lambda: 0.0)
+        original_text = json.dumps(candidate, ensure_ascii=False, separators=(",", ":")) + "\n"
+        delivery = RuntimeDelivery(
+            "modeling",
+            "protocol",
+            "peer",
+            original_text,
+            delivery_id="delivery-1",
+            expects_reply=True,
+            reply_to_delivery_id=None,
+        )
+        self.assertEqual(
+            progress.observe_delivery(
+                delivery,
+                modeling_agent_id="modeling",
+                protocol_agent_id="protocol",
+                run_id="run-1",
+                protocol_thread_id="thread-1",
+            ),
+            "candidate",
+        )
+        progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+
+        runner = TeamRunner(repository_root=self.root, adapter=SimpleNamespace())
+        runner.run = SimpleNamespace(
+            run_id="run-1",
+            configuration=SimpleNamespace(
+                task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+                profile=SimpleNamespace(
+                    profile_id="r2-3-005-modeling-team",
+                    agents=[
+                        SimpleNamespace(agent_id=role, package=SimpleNamespace(role=role))
+                        for role in ("coordinator", "modeling", "protocol", "acceptance")
+                    ],
+                ),
+            ),
+        )
+        runner.transport = object()
+        runner._candidate_progress = progress
+        runner._protocol_candidate_responses = {}
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory),
+                task_id="r2-3-005-formal-acceptance",
+                acceptance_id="acceptance",
+                candidate_receipt_builder=runner._build_protocol_candidate_receipt,
+                candidate_conflict_builder=runner._build_protocol_candidate_conflict,
+            )
+            runner.acceptance = carrier
+            try:
+                self.assertEqual(
+                    tuple(carrier.capability_descriptors["protocol"]["operations"]),
+                    PROTOCOL_OPERATIONS,
+                )
+                receipt_result = carrier.protocol_build_candidate_receipt(
+                    protocol_id="protocol",
+                    delivery_id="delivery-1",
+                    capability=carrier.capability_token("protocol"),
+                )
+                self.assertEqual(receipt_result["candidate"], candidate)
+                self.assertEqual(
+                    receipt_result["receipt_json"],
+                    json.dumps(receipt_result["receipt"], ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                )
+                conflict_result = carrier.protocol_build_candidate_conflict(
+                    protocol_id="protocol",
+                    delivery_id="delivery-1",
+                    conflict_code="missing_label",
+                    conflict_detail="label requires a source-grounded value",
+                    capability=carrier.capability_token("protocol"),
+                )
+                self.assertEqual(conflict_result["candidate"], candidate)
+                self.assertEqual(
+                    conflict_result["conflict_json"],
+                    json.dumps(conflict_result["conflict"], ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                )
+                with self.assertRaisesRegex(TeamConfigurationError, "already built"):
+                    carrier.protocol_build_candidate_receipt(
+                        protocol_id="protocol",
+                        delivery_id="delivery-1",
+                        capability=carrier.capability_token("protocol"),
+                    )
+                with self.assertRaisesRegex(TeamConfigurationError, "already built"):
+                    carrier.protocol_build_candidate_conflict(
+                        protocol_id="protocol",
+                        delivery_id="delivery-1",
+                        conflict_code="duplicate",
+                        conflict_detail="duplicate conflict",
+                        capability=carrier.capability_token("protocol"),
+                    )
+                with self.assertRaisesRegex(TeamConfigurationError, "foreign or stale"):
+                    carrier.protocol_build_candidate_receipt(
+                        protocol_id="protocol",
+                        delivery_id="delivery-foreign",
+                        capability=carrier.capability_token("protocol"),
+                    )
+                progress.pending.state = "complete"  # type: ignore[union-attr]
+                with self.assertRaisesRegex(TeamConfigurationError, "not awaiting"):
+                    carrier.protocol_build_candidate_receipt(
+                        protocol_id="protocol",
+                        delivery_id="delivery-1",
+                        capability=carrier.capability_token("protocol"),
+                    )
+            finally:
+                carrier.cleanup()
+
+    def test_legacy_protocol_capability_does_not_advertise_typed_candidate_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory),
+                task_id="task",
+                acceptance_id="acceptance",
+            )
+            try:
+                self.assertEqual(
+                    tuple(carrier.capability_descriptors["protocol"]["operations"]),
+                    PROTOCOL_STAGE_OPERATIONS,
+                )
+                endpoint = carrier.capability_endpoint("protocol")
+                result = endpoint.handle(
+                    {
+                        "id": 1,
+                        "token": carrier.capability_token("protocol"),
+                        "method": "tools/call",
+                        "params": {
+                            "name": "protocol_build_candidate_receipt",
+                            "arguments": {"protocol_id": "protocol", "delivery_id": "delivery-1"},
+                        },
+                    }
+                )
+                self.assertIn("error", result)
             finally:
                 carrier.cleanup()
 

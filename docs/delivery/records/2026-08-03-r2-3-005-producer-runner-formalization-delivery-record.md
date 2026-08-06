@@ -2927,3 +2927,51 @@ the formal builder, or starting another real run before authorization.
   `70655dc9fd7e098b9264b61ed353f33b77e146b6bc5553fae6d2ab07e9d0e7a3`. Five recorded starts remain; pending
   `+5` is unchanged. Start28 must reuse the same carrier/overlay and may refresh only the required baseline,
   authorization, Runtime instance, and reservation.
+
+### 2026-08-06T14:46:00+08:00 — Start28 reached typed Protocol handoff, then closed on missing delivery binding
+
+- Start28 `r23005-real-20260806t064302z-start28` reused the read-only start24 r3 carrier SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806` and overlay SHA-256
+  `cd2e85d4b2e8b304e73d32c85f975f13b99ab321c573eb172304b52de39e5c24`. All four persistent roles started and
+  `semantic_start` was recorded against baseline
+  `9bcf7de3fbf66280eefa2552cce182e3d62ff7e2915c9feab83904584df84a62`.
+- Modeling called `modeling_publish_staged_candidate`; Runner delivered the exact five-field r3 candidate to
+  Protocol as `delivery-1`, revision `dify-cba-slice-r3`, with candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Modeling performed no shell extraction,
+  carrier parsing, JSON reconstruction, or semantic rebuild. This live-proves the first mechanical-spine boundary.
+- Protocol then correctly stopped before platform access: the generic receipt/conflict mechanics still require a
+  model-supplied `candidate` object, while Protocol only had the Runtime prompt rendering and no typed handle to the
+  immutable candidate retained by Runner. Reconstructing or shortening that object would violate the frozen
+  mechanical contract. Delivery therefore closed the run as `collaboration/routing`, `rebind_required`, with
+  `mutation_state=no_write`; this is not a modeling-quality, platform, or Acceptance result.
+- No receipt, dry-run, apply, validation, reasoning, governed retrieval, Acceptance ticket, Examiner, or verdict was
+  produced. Cleanup reached the normal terminal state: empty scope removed, keys revoked, all four roles and
+  Acceptance children absent, and zero process/credential residue.
+- Canonical ledger strict replay passes at `cap/count/active=31/27/0`, 133 lines, SHA-256
+  `b277601b518e62f3a9ce905b514d637eb52cfcdde931dce281ee0407f8a53137`; four recorded starts remain and pending
+  `+5` is unchanged. Before start29, add a Runner-private Protocol operation whose semantic input is only the active
+  `delivery_id`; Runner must bind the original retained candidate and build the canonical receipt/conflict without
+  allowing Protocol to supply candidate bytes, paths, digests, or recipients.
+
+### 2026-08-06T15:35:00+08:00 — Protocol delivery-bound receipt/conflict implemented and regression-verified
+
+- The formal Protocol capability now advertises two additive Runner-private operations only when the live carrier
+  has the corresponding callbacks. Receipt accepts only `protocol_id` and original `delivery_id`; conflict adds only
+  stable `conflict_code` and concrete `conflict_detail`. Runner binds the active retained candidate, verifies
+  run/role/delivery/state/digests, reuses the canonical builders and formal validators, and returns structured data
+  plus exact canonical `receipt_json` or `conflict_json`. It performs no Team Transport or platform mutation.
+- The order contract is explicit: Protocol first builds the receipt to obtain the retained candidate, completes the
+  full translation decision before sending anything, then sends exactly one response. Success sends only the
+  receipt; translation failure builds and sends only the conflict. One conflict may follow the local receipt build,
+  while duplicate receipt/conflict calls and foreign, stale, paused, or terminal delivery IDs fail closed.
+- Codex remains a thin projection: real formal roles read the carrier's advertised descriptor rather than a static
+  full operation table. Legacy/no-callback Protocol runs retain only their previous stage operations, while the
+  overlay-enabled formal run receives the new typed operations. The Runner-owned contract has no Codex or Pi RPC
+  field and remains suitable for a future Pi adapter.
+- Focused affected verification passed **81 tests and 18 subtests**; the final prompt-order regression passed
+  **45 tests and 3 subtests**. Root reran the complete suite after the final prompt repair:
+  `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests` passed **432 tests, 1 skipped, 177 subtests**.
+  Ruff and `git diff --check` passed. No backend/frontend file changed, so service restart rules do not apply.
+- Ledger remained read-only at `cap/count/active=31/27/0`, 133 lines, SHA-256
+  `b277601b518e62f3a9ce905b514d637eb52cfcdde931dce281ee0407f8a53137`. Start29 may now reuse the exact retained
+  carrier/overlay; no business semantic rebuild or new preflight harness is authorized.

@@ -29,7 +29,10 @@ COORDINATOR_OPERATIONS: tuple[str, ...] = (
 PROTOCOL_OPERATIONS: tuple[str, ...] = (
     "protocol_list_platform_artifacts",
     "protocol_build_acceptance_stage_handoff",
+    "protocol_build_candidate_receipt",
+    "protocol_build_candidate_conflict",
 )
+PROTOCOL_STAGE_OPERATIONS: tuple[str, ...] = PROTOCOL_OPERATIONS[:2]
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
@@ -85,6 +88,26 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
         "required": ["protocol_id", "stage_calls"],
+        "additionalProperties": False,
+    },
+    "protocol_build_candidate_receipt": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "delivery_id": {"type": "string"},
+        },
+        "required": ["protocol_id", "delivery_id"],
+        "additionalProperties": False,
+    },
+    "protocol_build_candidate_conflict": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "delivery_id": {"type": "string"},
+            "conflict_code": {"type": "string"},
+            "conflict_detail": {"type": "string"},
+        },
+        "required": ["protocol_id", "delivery_id", "conflict_code", "conflict_detail"],
         "additionalProperties": False,
     },
     "coordinator_build_acceptance_ticket_draft": {
@@ -292,13 +315,17 @@ class RunnerCapabilityEndpoint:
         socket_path: Path,
         token: str,
         dispatch: Callable[[str, str, Mapping[str, Any]], Any],
+        operations: tuple[str, ...] | None = None,
     ) -> None:
         if role not in ROLE_OPERATIONS:
             raise ValueError("unknown Runner capability role")
         self.role = role
         self.socket_path = socket_path
         self.token = token
-        self.operations = ROLE_OPERATIONS[role]
+        configured = ROLE_OPERATIONS[role] if operations is None else tuple(operations)
+        if not configured or not set(configured).issubset(ROLE_OPERATIONS[role]):
+            raise ValueError("Runner capability operations are not role-owned")
+        self.operations = configured
         self._dispatch = dispatch
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None

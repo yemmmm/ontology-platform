@@ -27,6 +27,7 @@ from .capability_mcp import (
     COORDINATOR_OPERATIONS,
     MODELING_OPERATIONS,
     PROTOCOL_OPERATIONS,
+    PROTOCOL_STAGE_OPERATIONS,
     ROLE_OPERATIONS,
     RunnerCapabilityEndpoint,
     token_digest,
@@ -1062,6 +1063,8 @@ class RunnerAcceptanceCarrier:
         source_materials: Mapping[str, Path] | None = None,
         ticket_policy: Mapping[str, Any] | None = None,
         candidate_publisher: Callable[[str], Mapping[str, Any]] | None = None,
+        candidate_receipt_builder: Callable[[str, str], Mapping[str, Any]] | None = None,
+        candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
     ):
         self.root = root
         self.task_id = _safe_id(task_id, "task_id")
@@ -1101,6 +1104,8 @@ class RunnerAcceptanceCarrier:
         }
         self._ticket_policy = _safe_copy(ticket_policy) if ticket_policy else None
         self._candidate_publisher = candidate_publisher
+        self._candidate_receipt_builder = candidate_receipt_builder
+        self._candidate_conflict_builder = candidate_conflict_builder
         # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
         # as a non-secret binding in its task text, while exact delivery bytes
         # are recorded only as a digest by TeamRunner before Coordinator can
@@ -1163,11 +1168,21 @@ class RunnerAcceptanceCarrier:
         self._capability_endpoints: dict[str, RunnerCapabilityEndpoint] = {}
         for role, token in self._capability_tokens.items():
             _write_exclusive_token(self.capability_token_path(role), token)
+            operations = (
+                ROLE_OPERATIONS[role]
+                if role != "protocol"
+                else (
+                    PROTOCOL_OPERATIONS
+                    if candidate_receipt_builder is not None and candidate_conflict_builder is not None
+                    else PROTOCOL_STAGE_OPERATIONS
+                )
+            )
             self._capability_endpoints[role] = RunnerCapabilityEndpoint(
                 role=role,
                 socket_path=self.capability_socket_path(role),
                 token=token,
                 dispatch=self._dispatch_capability,
+                operations=operations,
             )
         self._active_acceptance = True
         self._round_sequence = 0
@@ -1689,7 +1704,7 @@ class RunnerAcceptanceCarrier:
             },
             "protocol": {
                 "token_digest": token_digest(self._capability_tokens["protocol"]),
-                "operations": list(PROTOCOL_OPERATIONS),
+                "operations": list(self._capability_endpoints["protocol"].operations),
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             },
@@ -2191,6 +2206,53 @@ class RunnerAcceptanceCarrier:
             )
         return {"artifacts": artifacts}
 
+    def protocol_build_candidate_receipt(
+        self,
+        *,
+        protocol_id: str,
+        delivery_id: str,
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Bind the active formal candidate to the canonical receipt builder.
+
+        The Protocol Agent supplies only its role identity and the original
+        Modeling delivery ID.  The Runner callback resolves the retained
+        candidate and validates its active progress state; no candidate bytes,
+        digests, paths, or recipient fields cross this capability boundary.
+        """
+
+        self._check_capability("protocol", protocol_id, capability)
+        if self._candidate_receipt_builder is None:
+            _error("typed candidate receipt capability is unavailable")
+        result = self._candidate_receipt_builder(protocol_id, delivery_id)
+        if not isinstance(result, Mapping):
+            _error("typed candidate receipt builder returned an invalid result")
+        return _safe_copy(dict(result))
+
+    def protocol_build_candidate_conflict(
+        self,
+        *,
+        protocol_id: str,
+        delivery_id: str,
+        conflict_code: str,
+        conflict_detail: str,
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Bind a concrete translation conflict to the retained candidate."""
+
+        self._check_capability("protocol", protocol_id, capability)
+        if self._candidate_conflict_builder is None:
+            _error("typed candidate conflict capability is unavailable")
+        result = self._candidate_conflict_builder(
+            protocol_id,
+            delivery_id,
+            conflict_code,
+            conflict_detail,
+        )
+        if not isinstance(result, Mapping):
+            _error("typed candidate conflict builder returned an invalid result")
+        return _safe_copy(dict(result))
+
     def _dispatch_capability(
         self,
         role: str,
@@ -2220,6 +2282,20 @@ class RunnerAcceptanceCarrier:
         if role == "protocol" and operation == "protocol_list_platform_artifacts":
             return self.protocol_list_platform_artifacts(
                 protocol_id=args["protocol_id"],
+                capability=capability,
+            )
+        if role == "protocol" and operation == "protocol_build_candidate_receipt":
+            return self.protocol_build_candidate_receipt(
+                protocol_id=args["protocol_id"],
+                delivery_id=args["delivery_id"],
+                capability=capability,
+            )
+        if role == "protocol" and operation == "protocol_build_candidate_conflict":
+            return self.protocol_build_candidate_conflict(
+                protocol_id=args["protocol_id"],
+                delivery_id=args["delivery_id"],
+                conflict_code=args["conflict_code"],
+                conflict_detail=args["conflict_detail"],
                 capability=capability,
             )
         if role == "coordinator":

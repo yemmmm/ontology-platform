@@ -893,8 +893,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if not formal_run or self._acceptance is None:
             return ()
         expected = ROLE_OPERATIONS.get(role, ())
-        if role != "modeling":
-            return expected
+        if not hasattr(self._acceptance, "capability_descriptors"):
+            # Keep lightweight Runtime test doubles and legacy adapters
+            # compatible; a real RunnerAcceptanceCarrier always exposes the
+            # descriptor map and therefore takes the authoritative path below.
+            return expected if role != "modeling" else ()
         descriptors = getattr(self._acceptance, "capability_descriptors", None)
         if not isinstance(descriptors, dict):
             return ()
@@ -902,7 +905,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         operations = descriptor.get("operations") if isinstance(descriptor, dict) else None
         if not isinstance(operations, list) or any(not isinstance(item, str) for item in operations):
             return ()
-        return tuple(operations) if tuple(operations) == expected else ()
+        normalized = tuple(operations)
+        if not normalized or len(set(normalized)) != len(normalized):
+            return ()
+        return normalized if set(normalized).issubset(expected) else ()
 
     @staticmethod
     def preflight_host_auth() -> Path:
@@ -1283,10 +1289,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
         capability_names = (
             list(capability_operations)
-            if agent.package.role == "modeling"
-            else {
-                role: list(operations) for role, operations in ROLE_OPERATIONS.items()
-            }.get(agent.package.role, [])
+            if formal_capability
+            else (
+                list(ROLE_OPERATIONS.get(agent.package.role, ()))
+                if agent.package.role != "modeling"
+                else []
+            )
         )
         capability_manifest = agent.home / "runner-capabilities.json"
         carrier = getattr(run, "acceptance", None)
