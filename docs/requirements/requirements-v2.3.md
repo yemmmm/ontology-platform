@@ -2938,3 +2938,25 @@ are not weakened. The repair adds no Runtime- or Pi-specific coupling or semanti
 
 No start39 blocker remains. The stable repair may be committed, and start39 may launch from that committed reviewed
 baseline through the normal strict-ledger repair/reservation sequence under the already registered allowance.
+
+### 2026-08-07 R2.3-005 start39 zero-Agent-turn Delivery launcher defect
+
+Start39 `r23005-real-20260806t160248z-start39` consumed one semantic-start allowance from committed HEAD `e62e375`
+and baseline `d7c38a8c44ad82dc287d0f4e422769f4f03eafd70171d6b2d9b1a09d7d94a0c6`, but it did not execute the semantic
+workflow. Delivery placed the foreground Runner below a Python heredoc and `subprocess.call`. The child inherited the
+heredoc's EOF rather than the outer PTY and immediately failed with
+`foreground CLI ended before terminal report completion`. Only thread/startup notifications exist; there was no Agent
+turn, candidate publication, platform write, Host retrieval, ticket, Acceptance child, verdict, or settlement.
+
+This failure is `collaboration/routing`, `complete_modeling_quality_result=false`, and belongs to the Delivery launch
+contract. It does not invalidate the reviewed Host-derived Acceptance projection repair. Automatic cleanup deleted
+the empty owned scope, terminalized Session/Lease state, revoked all keys, destroyed private role credentials, and
+left zero child/process/in-flight residue.
+
+Current strict replay is `cap/count/active=40/38/0`, SHA-256
+`0e06710337d899cdae8b154918dcbd68e71161473397f968ff5847647e26b492`, with **2 remaining** starts. No start40 is
+authorized to launch yet. Before start40, the authoritative Delivery prompt/checklist must be repaired and verified to
+reuse the start38 shell-direct PTY contract: the tool-owned PTY directly hosts
+`uv run ... python -m modeling_team run`, retains a live session ID, and receives later control through
+`write_stdin`. Python-heredoc/subprocess foreground indirection is forbidden. Only after that narrow Delivery repair
+review may the normal strict-ledger repair/reservation sequence proceed.

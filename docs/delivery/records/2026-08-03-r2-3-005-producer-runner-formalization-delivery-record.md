@@ -3427,3 +3427,28 @@ the formal builder, or starting another real run before authorization.
   semantic authority or coupling.
 - No start39 blocker remains. The stable repair is eligible for commit, and start39 may launch from the committed,
   reviewed state under the already registered allowance.
+
+### 2026-08-07 — Start39 consumed by a zero-Agent-turn Delivery launcher defect
+
+- Start39 `r23005-real-20260806t160248z-start39` used committed HEAD `e62e375` and fresh baseline
+  `d7c38a8c44ad82dc287d0f4e422769f4f03eafd70171d6b2d9b1a09d7d94a0c6`. The exact start38 task overlay and r3
+  candidate carrier matched, and the start38 `collaboration/routing` failure received the narrow Host-derived
+  acceptance-child-input repair authorization before one reservation and semantic start.
+- The semantic workflow never began. The Delivery wrapper launched the foreground CLI as a child of
+  `uv run python - <<'PY' ... subprocess.call(...)`: although the outer tool requested a PTY, the Python interpreter
+  consumed stdin from the heredoc, and the child inherited that EOF instead of the PTY. Runner failed immediately
+  with `foreground CLI ended before terminal report completion`, about 15 ms after the ledger semantic-start event.
+  Raw runtime evidence contains thread/startup notifications only: zero Agent response turn, zero candidate delivery,
+  zero platform batch, zero Host retrieval, and zero Acceptance child or verdict.
+- This is a Delivery launch defect, classified `collaboration/routing` with
+  `complete_modeling_quality_result=false`; it is not evidence against the Host-derived projection repair. Runner
+  automatically cleaned the empty scope: Project/Ontology deleted, Session/Lease terminal, all project/Runner/
+  Delivery admin keys revoked, four role-private credentials destroyed, and zero child/process/in-flight residue.
+- Strict replay is `cap/count/active=40/38/0`, SHA-256
+  `0e06710337d899cdae8b154918dcbd68e71161473397f968ff5847647e26b492`, with **2 remaining** starts. No start40 was
+  reserved or started.
+- **Start40 Delivery gate:** first update and verify the authoritative Delivery operating prompt/checklist so a formal
+  foreground run uses the proven start38 launcher shape: one shell wrapper directly executes
+  `uv run ... python -m modeling_team run` inside the tool-owned PTY, returns a live session, and is driven by
+  `write_stdin`. Do not place the foreground Runner beneath a Python heredoc or any subprocess whose stdin is not the
+  live PTY. Only after that prompt/checklist repair is reviewed may start40 receive a repair authorization and launch.

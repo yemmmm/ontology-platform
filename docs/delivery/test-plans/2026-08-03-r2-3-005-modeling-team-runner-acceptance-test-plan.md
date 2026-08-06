@@ -2092,3 +2092,22 @@ already recorded attempts.
   settlement behavior remain intact. No Runtime or Pi coupling was added.
 - The repair is eligible for commit. After using the committed reviewed baseline and normal strict-ledger repair
   sequence, start39 may launch under the existing allowance; no additional projection-binding blocker remains.
+
+### Start39 zero-Agent-turn Delivery launcher failure (2026-08-07)
+
+- Start39 passed clean-baseline, exact carrier/overlay, canonical preflight, reservation, and semantic-start gates,
+  but produced no Agent turn. Its Python-heredoc wrapper called the foreground Runner through
+  `subprocess.call`; the child inherited heredoc EOF despite the outer tool's PTY and failed with
+  `foreground CLI ended before terminal report completion`.
+- Assert the evidence boundary: startup/thread notifications do not constitute an Agent turn. There is no candidate,
+  modeling batch, retrieval receipt, ticket, Examiner, verdict, or Host-derived projection result to evaluate.
+  Classification is `collaboration/routing`, complete=false, at the Delivery launch layer.
+- Cleanup acceptance passed for the empty scope: owned Project/Ontology absent, Session/Lease terminal, project and
+  admin keys revoked, role-private credentials destroyed, Acceptance active handles zero, and no runtime residue.
+- Ledger replay is `cap/count/active=40/38/0`, SHA-256
+  `0e06710337d899cdae8b154918dcbd68e71161473397f968ff5847647e26b492`; **2 starts remain**, and start40 does not
+  exist.
+- **Pre-start40 launcher test:** the authoritative Delivery prompt/checklist must require the exact start38 mechanism:
+  direct shell execution of the foreground Runner in a tool-owned PTY, a returned live session ID, and subsequent
+  `write_stdin` control. Reject Python heredoc/subprocess indirection and verify stdin remains the PTY before consuming
+  another semantic start.
