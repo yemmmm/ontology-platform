@@ -3195,3 +3195,23 @@ the formal builder, or starting another real run before authorization.
   future start, repair and verify the authoritative Protocol prompt so its first valid immutable retrieval tuple is
   selected from the advertised resource-type contract and includes every evidence family required by each question;
   then obtain a new user authorization. No further run is implied or authorized.
+
+### 2026-08-06 — Start36 authorization exposed an exhausted-cap strict-ledger deadlock
+
+- The user explicitly authorized three additional real modeling starts under authorization
+  `user-20260806-r23005-start36-38`, with start36 only as the next permitted start and no automatic start37 or
+  start38. The pre-start36 attempt to register that authorization failed with
+  `budget authorization requires the latest retryable failure`; no baseline, reservation, or semantic start followed.
+- The ledger was not mutated and remains `cap/count/active=34/34/0`, 162 lines, SHA-256
+  `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with zero remaining starts and no start36.
+  The new three-start authorization therefore remains pending registration until the narrow repair is committed and
+  verified.
+- The deadlock is in strict sequencing: start35 is an incomplete `modeling-quality` terminal result and can be
+  eligible for the configured narrow repair, but strict budget predecessor/replay currently accepts only
+  `_RETRYABLE` classifications. At the exhausted cap, the repair gate simultaneously requires the exact preceding
+  budget event. Budget and repair therefore wait on each other, leaving no legal event sequence.
+- The narrow repair contract is for budget eligibility to reuse `_repair_failure_eligible`, so only a
+  configuration-enabled incomplete `modeling-quality` result is admitted. Complete modeling-quality results and a
+  disabled configuration remain rejected. Existing exact-predecessor, authorization-identity, cap-consumption, and
+  repair-baseline gates remain in force. After the repair passes verification, register the pending authorization,
+  append the required repair/baseline sequence, and permit start36 only.

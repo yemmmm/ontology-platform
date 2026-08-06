@@ -565,8 +565,7 @@ class StartLedger:
                     raise TeamConfigurationError("budget authorization ledger is invalid")
                 failure = records[index - 1]
                 if (
-                    failure.get("classification") not in _RETRYABLE
-                    or failure.get("complete_modeling_quality_result") is not False
+                    not self._repair_failure_eligible(failure)
                     or failure.get("run_id") not in failures
                     or failures[failure["run_id"]][0] != index - 1
                 ):
@@ -615,8 +614,7 @@ class StartLedger:
         failure = records[-1]
         if (
             failure.get("run_id") != starts[-1].get("run_id")
-            or failure.get("classification") not in _RETRYABLE
-            or failure.get("complete_modeling_quality_result") is not False
+            or not self._repair_failure_eligible(failure)
         ):
             raise TeamConfigurationError("budget authorization requires the latest retryable failure")
 

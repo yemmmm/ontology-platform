@@ -1909,3 +1909,19 @@ already recorded attempts.
 - Strict ledger replay is `cap/count/active=34/34/0`, 162 lines, SHA-256
   `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with **zero remaining** starts. There is no
   canonical handoff, ticket, Acceptance round, Examiner report, verdict, or PASS for start35.
+
+### Pre-start36 exhausted-cap budget/repair deadlock gate (2026-08-06)
+
+- The user authorization `user-20260806-r23005-start36-38` grants three additional starts, but its registration was
+  rejected before any mutation with `budget authorization requires the latest retryable failure`. The authoritative
+  ledger remains `cap/count/active=34/34/0`, 162 lines, SHA-256
+  `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`; no start36 exists.
+- Regression acceptance must prove the legal exhausted-cap sequence for a configuration-enabled incomplete
+  `modeling-quality` terminal result: explicit budget authorization, exact repair event, fresh baseline/reservation,
+  then one semantic start. Budget eligibility and repair eligibility must share `_repair_failure_eligible` so their
+  classifications cannot diverge.
+- Negative cases must remain closed: complete modeling-quality results, incomplete modeling-quality results when the
+  configuration is disabled, a non-exact predecessor, duplicate authorization identity, and authorization before the
+  current cap is consumed. Existing strict replay and repair-baseline checks must still reject these sequences.
+- The user's authorization remains pending until this narrow repair is committed and verified. Registration may then
+  make start36 eligible; it does not automatically start or authorize start37 or start38 execution.

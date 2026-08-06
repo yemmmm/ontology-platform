@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -90,7 +91,9 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             set(),
         )
 
-    def _formal_13_of_13_prefix(self, ledger: StartLedger) -> None:
+    def _formal_13_of_13_prefix(
+        self, ledger: StartLedger, final_classification: str = "collaboration/routing"
+    ) -> None:
         """Build an isolated formal ledger at the retained 13/13 exhausted-cap shape."""
         self._first_failure(ledger, "run-1")
         ledger.authorize_budget(3, "authorization-1", "reference-1")
@@ -99,7 +102,8 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             run_id = f"run-{index}"
             baseline = f"baseline-{index}"
             self._begin(ledger, run_id, baseline)
-            ledger.terminal_failure(run_id, "collaboration/routing", False)
+            classification = final_classification if index == 13 else "collaboration/routing"
+            ledger.terminal_failure(run_id, classification, False)
             if index < 13:
                 if index in {4, 7, 10}:
                     tranche = index // 3
@@ -327,6 +331,21 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             ledger.mark_semantic_start("run-14")
             self.assertEqual(ledger._semantic_start_count(ledger._records()), 14)
             self.assertEqual(ledger._start_cap(ledger._records()), 14)
+
+    def test_c76_exhausted_incomplete_modeling_quality_allows_budget_repair_and_next_start(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = self._ledger(Path(directory))
+            self._formal_13_of_13_prefix(ledger, final_classification="modeling-quality")
+
+            before = ledger.path.read_bytes()
+            ledger.authorize_budget(3, "authorization-four", "reference-four")
+            self.assertNotEqual(before, ledger.path.read_bytes())
+            ledger.authorize_repair("run-13", "repair-14", "baseline-14")
+            ledger.reserve("run-14", "baseline-14", self.now.isoformat())
+            ledger.mark_semantic_start("run-14")
+
+            self.assertEqual(ledger._start_cap(ledger._records()), 16)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 14)
 
     def test_c75_plus_one_budget_is_serialized_with_one_winner(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -636,6 +655,16 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 and record.get("run_id") == "run-8"
             ][0]
             formal.reserve("run-9", accepted_baseline, self.now.isoformat())
+
+            disabled = self._ledger(root / "disabled")
+            self._formal_13_of_13_prefix(disabled, final_classification="modeling-quality")
+            disabled.config = replace(
+                disabled.config, allow_incomplete_modeling_quality_repair=False
+            )
+            before_disabled = disabled.path.read_bytes()
+            with self.assertRaises(TeamConfigurationError):
+                disabled.authorize_budget(3, "authorization-disabled", "reference-disabled")
+            self.assertEqual(disabled.path.read_bytes(), before_disabled)
 
             legacy = self._ledger(root / "legacy", requirement_id="R2.3-002")
             self._begin(legacy, "legacy-one", "legacy-baseline-one")

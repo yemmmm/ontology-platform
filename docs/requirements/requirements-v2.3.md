@@ -2717,3 +2717,23 @@ valid immutable retrieval tuple is selected from the advertised resource-type co
 family required by the competency question. A new user authorization is required after that repair; the exhausted
 tranche cannot authorize another run. Strict ledger replay is `cap/count/active=34/34/0`, 162 lines, SHA-256
 `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with **zero remaining** starts.
+
+### 2026-08-06 R2.3-005 exhausted incomplete-modeling-quality budget/repair sequencing
+
+The user has explicitly authorized three additional real modeling starts under
+`user-20260806-r23005-start36-38`, but that authorization is not yet registered. Its pre-start36 registration was
+rejected with `budget authorization requires the latest retryable failure`, and no ledger event or semantic start was
+created. The authoritative ledger remains `cap/count/active=34/34/0`, 162 lines, SHA-256
+`6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with zero remaining starts and no start36.
+
+At an exhausted cap, strict budget authorization and repair must have one legal sequence when the latest terminal
+result is incomplete `modeling-quality` and the formal configuration enables that repair. Budget-predecessor and
+strict-replay eligibility **must** reuse `_repair_failure_eligible`, which is also authoritative for the repair gate,
+instead of admitting only `_RETRYABLE` classifications. The following cases remain prohibited: complete
+modeling-quality results, incomplete modeling-quality results when the configuration is disabled, and any sequence
+that violates the existing exact-predecessor, authorization-identity, cap-consumption, or repair-baseline contracts.
+
+At exhausted cap, the explicit budget event must still precede the exact repair event, and the repair must precede a
+fresh baseline/reservation. Only after this narrow repair is committed and verified may the pending authorization be
+registered. That registration makes start36 the next eligible semantic start; it does not automatically execute
+start37 or start38.
