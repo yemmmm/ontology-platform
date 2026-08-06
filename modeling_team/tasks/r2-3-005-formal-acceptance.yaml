@@ -24,7 +24,15 @@ objective: >-
   generated IDs/IRIs come only from preceding formal receipts or required reads. The fresh
   Project/Ontology, Build Session/Lease, Batch/Item envelopes, stage ordering, and all other
   platform mechanics belong to Runner/Protocol and must never appear in Modeling's semantic
-  constraints. Modeling constraints must remain source-grounded semantic invariants only. Every
+  constraints. Modeling constraints must remain source-grounded semantic invariants only. For formal
+  R2.3-005, every `relation` item must carry at least one source-grounded `evidence_citations` entry;
+  a missing or empty relation citation must use build_candidate_conflict with the same complete
+  candidate and cannot be accepted. This relation-specific gate does not promote ordinary unbound
+  v2 tasks to the same hard requirement. A build_candidate_receipt status=accepted verifies only
+  the neutral envelope and canonical semantic/candidate digests; it is not evidence of dry_run,
+  apply_atomic, readback, validation, reasoning, or governed retrieval. Until every required gate
+  is complete, Modeling must not send ready_for_acceptance and Protocol must not send
+  silent_for_acceptance or a successful handoff. Every
   entity or explicit_unknown item that Protocol materializes as create_entity must carry a
   non-empty source-grounded semantic.values.label; when a negative_probe materializes a
   semantic.invalid_instance for rejection, that object must carry its own non-empty source-grounded
@@ -33,13 +41,18 @@ objective: >-
   entity_id, or question text. For governed retrieval, Protocol must resolve the run-owned
   Project/Ontology from formal receipts, query `query_semantic_context` only with
   `scope_mode=ontologies` and exact `ontology_ids`, issue one narrow query per competency question,
-  and use lexical search when `vector_index_missing` makes hybrid recall incomplete. Consume each
-  current page's context cursor to exhaustion before its match cursor, start a new context chain for
-  each match page, never send or reuse both cursors, and do not treat entity/fact fallback readback as
-  generic retrieval completion. Only non-truncated, non-degraded generic results with required
-  Evidence and lineage may produce `ready_for_acceptance`; ticket/run/model-state bindings belong in
-  Protocol receipts and the Acceptance handoff, not query arguments. Do not expose expected answers or
-  invoke generic multi-agent/spawn capabilities. Every candidate citation must map one-to-one to its
+  and use lexical search when `vector_index_missing` makes hybrid recall incomplete. For each
+  competency question, freeze the first request's exact `query`, `project_id`, `scope_mode`,
+  `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`, and
+  `context_limit`; a context continuation may change only `context_cursor`, while a match
+  continuation may change only `match_cursor` and must start a new context chain. Never carry a
+  cursor across competency questions, send both cursors, or alter a frozen query argument.
+  Consume each current page's context cursor to exhaustion before its match cursor, start a new
+  context chain for each match page, never send or reuse both cursors, and do not treat entity/fact
+  fallback readback as generic retrieval completion. Only non-truncated, non-degraded generic results
+  with required Evidence and lineage may produce `ready_for_acceptance`; ticket/run/model-state
+  bindings belong in Protocol receipts and the Acceptance handoff, not query arguments. Do not expose
+  expected answers or invoke generic multi-agent/spawn capabilities. Every candidate citation must map one-to-one to its
   supporting field via platform-supported inline `evidence:{document_name,excerpt}` or an existing
   reference ID; entity and explicit_unknown evidence/evidence_reference_ids may not be empty when
   their candidate citation requires support. Keep source SHA/locator/owner-answer metadata only in

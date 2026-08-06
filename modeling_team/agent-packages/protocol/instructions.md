@@ -60,6 +60,14 @@ leave `resource_types` broad/null when a narrower resource kind is sufficient. I
 `search_mode=lexical`; a hybrid response with a missing vector index is never a complete result and
 must not be reported as one.
 
+Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
+`scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`,
+and `context_limit`. A context continuation preserves that tuple and changes only
+`context_cursor`; a match continuation preserves it, changes only `match_cursor`, and starts a
+new context chain for the returned match page. Never carry a cursor across competency questions,
+send both cursors, reuse a context cursor on a later match page, or change any frozen query
+argument during continuation.
+
 Consume pagination deterministically for every question. For the current match page, send only the
 returned `context_cursor` until `next_context_cursor` is null and the context page is not truncated.
 Only then send the returned `next_match_cursor` for the next match page, and start a new context chain
@@ -188,6 +196,16 @@ If the complete candidate cannot be translated, call the native `build_candidate
 with that same complete candidate plus a stable `conflict_code` and concrete `conflict_detail`.
 Never hand-write a conflict, copy digests from an earlier delivery, or send a conflict without
 `expects_reply=true` and `reply_to_delivery_id` bound to the current candidate delivery.
+
+For formal R2.3-005, every `relation` item must carry at least one source-grounded
+`evidence_citations` entry that supports that relation. If any relation citation list is missing or
+empty, invoke `build_candidate_conflict` with the same complete candidate and do not send an
+accepted receipt, even if the neutral builder accepted the envelope; this relation-specific gate
+does not turn into a hard requirement for ordinary unbound v2 tasks. A `build_candidate_receipt`
+result with `status=accepted` proves only the neutral envelope and canonical semantic/candidate
+digests. It is not evidence of `dry_run`, `apply_atomic`, readback, semantic validation, reasoning,
+or governed retrieval. Until every required platform and retrieval gate is complete, do not send
+`silent_for_acceptance` or a successful handoff.
 
 Pass the exact entire object delivered in the current Team Transport message to
 `build_candidate_receipt` before every response, including a conflict; do not construct a reduced,

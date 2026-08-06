@@ -618,6 +618,56 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
                 with self.assertRaisesRegex(CandidateAuthoringError, "requires"):
                     _validate_create_entity_labels(candidate)
 
+    def test_r23005_prompt_contract_freezes_receipt_relation_and_cursor_gates(self) -> None:
+        root = repository_root()
+        configuration = load_formal_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        protocol = (
+            root / "modeling_team/agent-packages/protocol/instructions.md"
+        ).read_text(encoding="utf-8")
+        modeling = (
+            root / "modeling_team/agent-packages/modeling/instructions.md"
+        ).read_text(encoding="utf-8")
+        objective = configuration.task.objective
+
+        for text in (protocol, modeling, objective):
+            self.assertIn("status=accepted", text)
+            self.assertIn("neutral envelope", text)
+            self.assertIn("semantic/candidate digests", text)
+            self.assertIn("dry_run", text)
+            self.assertIn("apply_atomic", text)
+            self.assertIn("governed retrieval", text)
+        self.assertIn("silent_for_acceptance", protocol)
+        self.assertIn("ready_for_acceptance", modeling)
+        self.assertIn("build_candidate_conflict", protocol)
+        self.assertIn("same complete candidate", protocol)
+        for text in (protocol, modeling, objective):
+            self.assertIn("every `relation` item", text)
+            self.assertIn("source-grounded", text)
+            self.assertIn("evidence_citations", text)
+            self.assertIn("ordinary unbound v2 tasks", text)
+
+        for field in (
+            "query",
+            "project_id",
+            "scope_mode",
+            "ontology_ids",
+            "resource_types",
+            "assertion_types",
+            "search_mode",
+            "depth",
+            "limit",
+            "context_limit",
+        ):
+            self.assertIn(f"`{field}`", objective)
+        self.assertIn("context continuation may change only `context_cursor`", objective)
+        self.assertIn("match continuation may change only `match_cursor`", objective)
+        self.assertIn("new context chain", objective)
+        self.assertIn("across competency questions", objective)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,12 @@ Treat a Protocol receipt declaring truncated, cross-ontology, missing Evidence/l
 continuation, or otherwise incomplete retrieval proof as a conflict: do not report completed, and
 either revise from the concrete blocker or report blocked.
 
+For formal R2.3-005, a Protocol candidate receipt with `status=accepted` verifies only the neutral
+candidate envelope and canonical semantic/candidate digests. It does not prove `dry_run`,
+`apply_atomic`, readback, semantic validation, reasoning, or governed retrieval. Do not treat that
+receipt as permission to send `ready_for_acceptance`; wait for the complete platform and retrieval
+gates, and preserve any concrete conflict or blocked state.
+
 ## Complete immutable candidate revisions
 
 Every v2 candidate and every revision is a complete, self-contained immutable candidate for the
@@ -33,6 +39,11 @@ deliveries are unavailable. Never send a patch-only substitute or ask Protocol t
 reconstruct, or mutate an earlier delivery. `revision_basis`, `revision_operation`,
 `replace_item_id`, and any other patch/history instruction are never a substitute for the full
 candidate.
+
+For formal R2.3-005 only, every `relation` item must include at least one source-grounded
+`evidence_citations` entry supporting that relation. A missing or empty relation citation is a
+formal candidate conflict, not an accepted candidate; revise the complete candidate from the
+concrete conflict. Do not impose this relation-specific evidence gate on ordinary unbound v2 tasks.
 
 ## Ordinary-neutral candidate authoring checklist
 
