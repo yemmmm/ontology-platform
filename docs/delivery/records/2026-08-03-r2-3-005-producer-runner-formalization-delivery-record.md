@@ -3489,3 +3489,55 @@ the formal builder, or starting another real run before authorization.
 - User files were restored unchanged and excluded from this commit: `AGENTS.md` SHA-256
   `366451626bca75b93d9567e8675265de7ef6e216b4719027d6b46b2abbfda318`; `CLAUDE.md` SHA-256
   `643dc990ec0031ece4e7728e65f3d3393e0dda9575e003e3af855db2606a9531`.
+
+### 2026-08-07 — DeepSeek-V4-Flash whole-team retarget authorized
+
+- The user authorized switching the current active Modeling Team to `deepseek-v4-flash`, including
+  Coordinator, Modeling, Protocol, Acceptance, and clarified that the Acceptance Agent is in scope.
+  Because Acceptance creates private Source/Platform Examiner model processes, those children are
+  included so the whole acceptance reasoning path remains homogeneous.
+- The authoritative scope is the active R2.3-005 `modeling_team/` runtime. Historical L0/L1/L3
+  experiment configurations remain unchanged. This corrects the earlier R2.2 record entry that
+  temporarily framed the retarget as an unresolved historical-stage scope question.
+- Provider configuration follows DeepSeek's Codex Responses integration: custom `deepseek`
+  provider, `https://api.deepseek.com/`, `wire_api = "responses"`, and
+  `deepseek-v4-flash`. The supplied secret remains Host-owned and must not be committed, copied to
+  Agent homes, written into generated TOML/evidence, or placed in process argv.
+- The user explicitly waived validation after configuration. The test-plan disposition is
+  `configured, verification waived`; no model call, test suite, service restart, or semantic start
+  will be performed for this retarget.
+
+### 2026-08-07 — Max reasoning, resumed R2.3-005, and ten starts authorized
+
+- The user superseded the earlier no-validation instruction: all initial Team and Examiner model
+  processes use `deepseek-v4-flash` with reasoning effort `max`, then R2.3-005 resumes with ten
+  authorized real semantic modeling starts and stops at the first complete PASS.
+- If retained evidence shows that one named Team member's model-output quality regressed enough to
+  block the workflow, that role may switch to `gpt-5.6-luna` at `max` for a later authorized start.
+  Platform, Runtime, collaboration, or protocol defects do not authorize a model fallback.
+- Plan review returned REVISE with three High findings: both persistent and Examiner launch paths
+  lacked DeepSeek configuration/key propagation, Examiner bubblewrap cleared the key, and no
+  model-visible shell secret filter or secure fallback-file validation was specified. The design
+  now freezes a minimal explicit process environment, no secret-bearing argv, Codex shell-policy
+  exclusion, and strict fallback-file ownership/mode checks. Re-review is required before code.
+
+### 2026-08-07 — DeepSeek Runtime implementation and independent verification PASS
+
+- Revised plan review returned PASS after confirming that the three High findings were closed by
+  the explicit minimal process environment, inherited Examiner bubblewrap environment, no secret
+  argv, shell-policy exclusion, and strict fallback-file validation.
+- `modeling_team/runtimes/codex.py` now projects `deepseek-v4-flash`, provider `deepseek`, Responses
+  wire protocol, and reasoning effort `max` into all four formal persistent-role configs and both
+  private Examiner configs. Both process-launch paths receive only the minimal allowlisted
+  environment; raw credentials remain absent from TOML, argv, repository and evidence. The
+  gitignored `backend/.env` was tightened to mode `0600`.
+- Developer verification passed 122 tests plus 61 subtests, focused Ruff, and diff checks.
+  Independent Tester Round 1 passed 13 focused tests and 103 related Runtime/isolation/contract
+  tests; Ruff and diff checks passed. The Tester's first generic pytest invocation lacked
+  `PYTHONPATH=.` and failed collection only; the corrected canonical invocation passed and no code
+  repair was required. A final post-cleanup focused rerun passed 13 tests and Ruff.
+- GitNexus `detect_changes` reported CRITICAL because the index over-associated private `_rpc` and
+  Codex Runtime symbols with 292 processes, including unrelated backend/frontend flows. The direct
+  diff is confined to the shared Codex adapter, its focused tests and delivery docs; the 103 related
+  regressions provide the operative boundary evidence. No live model call or semantic start has
+  yet occurred under this baseline.

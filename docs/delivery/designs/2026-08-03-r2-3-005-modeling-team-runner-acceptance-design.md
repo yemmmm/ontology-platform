@@ -10,6 +10,45 @@
 - Shared test plan:
   `docs/delivery/test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md`
 
+## 2026-08-07 DeepSeek-V4-Flash whole-team runtime retarget
+
+The active R2.3-005 Codex Runtime is retargeted homogeneously to
+`deepseek-v4-flash` through DeepSeek's Responses-compatible endpoint. The scope is the exact
+four-role Profile (Coordinator, Modeling, Protocol, Acceptance) plus the two private Examiner
+processes that Acceptance asks Runner to create. Historical L0/L1/L3 experiment assets are not
+changed.
+
+Each Runner-created private Codex home receives an explicit custom provider configuration:
+`model = "deepseek-v4-flash"`, `model_provider = "deepseek"`, DeepSeek base URL,
+`wire_api = "responses"`, `model_reasoning_effort = "max"`, and an environment-key reference. The API key remains Host-owned: the
+adapter resolves `DEEPSEEK_API_KEY` first and otherwise reads the existing gitignored
+`backend/.env` `LLM_API_KEY`; it injects the value only into the Codex process environment. The
+generated TOML, Agent homes, evidence, logs, argv, repository files, and model-visible shell
+environment must not contain the secret.
+
+Both persistent-role and Examiner launch paths pass an explicit minimal process environment rather
+than the ambient Host environment. That allowlist contains only `CODEX_HOME`, `HOME`, `PATH`,
+`TERM`, locale values, and `DEEPSEEK_API_KEY`. Examiner bubblewrap no longer clears that already
+minimal environment; neither namespace puts the key in `--setenv` or any other argv element.
+Every generated Codex config sets `shell_environment_policy.inherit = "core"` and excludes
+`DEEPSEEK_API_KEY`, so model-launched shell/tool processes do not inherit provider authentication.
+The gitignored fallback file must be a regular non-symlink owned by the current user and have no
+group/other permission bits; only an exact non-empty `LLM_API_KEY` assignment is accepted.
+
+No Team topology, Task/Package contract, transport, capability, settlement, acceptance,
+credential-lifecycle, or platform-access behavior changes. The existing private `auth.json`
+staging/cleanup contract is preserved to avoid broadening this retarget into credential-lifecycle
+refactoring, but the explicit custom provider authenticates exclusively through the private
+DeepSeek environment key. Missing/empty DeepSeek credentials fail before a Codex process is
+launched.
+
+The user subsequently authorized resuming R2.3-005 with ten fresh semantic starts. The initial
+homogeneous Team uses DeepSeek Flash at `max`. If retained live evidence attributes a workflow-
+blocking quality regression to one specific role, that role alone may be retargeted to
+`gpt-5.6-luna` at `max` before a later authorized start. Runtime/platform or protocol defects must
+not be relabeled as model-quality regressions, and the first complete semantic PASS terminates the
+attempt sequence.
+
 ## Goal
 
 Formalize one Runner-managed Modeling Team task with exactly four persistent roles:

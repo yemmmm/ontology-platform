@@ -8,6 +8,25 @@
 - Main documentation owner: root agent
 - Independent acceptance owner: a fresh Acceptance role in the real four-role task
 
+## 2026-08-07 DeepSeek-V4-Flash retarget and resumed-run disposition
+
+The retarget must cover Coordinator, Modeling, Protocol, Acceptance, Source Examiner, and Platform
+Examiner with the same `deepseek-v4-flash` Responses provider, while keeping the API key out of
+repository/config/evidence and failing before process launch when no credential is available.
+
+The user subsequently authorized resuming R2.3-005 with ten real semantic starts. Before the first
+start, focused deterministic coverage must prove both persistent and Examiner configs select
+DeepSeek Flash at `max`, both launch paths use a minimal process environment, the secret is absent
+from config/argv/model-visible shell environment, and insecure or malformed fallback files fail
+before process launch. One bounded no-business-model provider/tool smoke may be used before the
+first semantic start; it does not count as semantic acceptance.
+
+Each real attempt must retain per-role model/provider metadata. A role-specific switch to
+`gpt-5.6-luna` at `max` is permitted only after evidence attributes a blocking semantic-output
+quality regression to that role; tests must show the override is confined to that role and does
+not weaken provider-auth, tool, scope, or settlement boundaries. Stop at the first full PASS or
+after ten consumed starts.
+
 ## Completion rule
 
 R2.3-005 is complete only when the exact four-role Profile starts through Runner from a clean
@@ -2111,3 +2130,41 @@ already recorded attempts.
   direct shell execution of the foreground Runner in a tool-owned PTY, a returned live session ID, and subsequent
   `write_stdin` control. Reject Python heredoc/subprocess indirection and verify stdin remains the PTY before consuming
   another semantic start.
+
+## 2026-08-07 DeepSeek-V4-Flash whole-team runtime retarget — Independent round 1
+
+### Scope and safety boundary
+
+- Authority: the design's **2026-08-07 DeepSeek-V4-Flash whole-team runtime retarget** section and the
+  retarget subsection above. This round is deterministic/unit/static verification only; it made no live
+  model call, semantic start, Project/Ontology mutation, or credential publication.
+- Workspace was intentionally left with the pre-existing user/agent edits (`AGENTS.md`, `CLAUDE.md`,
+  design/plan records, and the current `codex.py`/test fixture changes). Evidence paths are the changed
+  adapter [`modeling_team/runtimes/codex.py`](../../../modeling_team/runtimes/codex.py), focused tests
+  [`modeling_team/tests/test_deepseek_codex_runtime.py`](../../../modeling_team/tests/test_deepseek_codex_runtime.py),
+  and the adjacent isolation/R2.3 runtime tests listed below.
+
+### Executed commands and results
+
+1. `uv run pytest modeling_team/tests/test_deepseek_codex_runtime.py -q` — **BLOCKED (test invocation only)**:
+   collection failed with `ModuleNotFoundError: No module named 'modeling_team'` from the root `uv` environment.
+   This was not a product failure; the repository's modeling-team tests require the checkout on `PYTHONPATH`.
+2. `PYTHONPATH=. pytest modeling_team/tests/test_deepseek_codex_runtime.py -q` — **PASS**, `13 passed in 0.71s`.
+3. `PYTHONPATH=. pytest modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py -q` — **PASS**, `103 passed in 2.62s`.
+4. `backend/.venv/bin/ruff check modeling_team/runtimes/codex.py modeling_team/tests/test_deepseek_codex_runtime.py modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py` — **PASS**, `All checks passed!`; `git diff --check --` for the adapter/design/plan/test paths — **PASS** (no output).
+5. `PYTHONPATH=. python3` static probe of `load_team_configuration(...)`, `_deepseek_provider_config_lines()`, and `_minimal_codex_process_env(...)` — **PASS**: persistent roles are exactly `['coordinator', 'modeling', 'protocol', 'acceptance']` (4), Examiner kinds are exactly `source` and `platform` (2), provider is `deepseek-v4-flash` with `model_reasoning_effort = "max"`, `wire_api = "responses"`, and the DeepSeek base URL, and the process-env keys are only `CODEX_HOME`, `HOME`, `PATH`, `TERM`, `LANG`, `LC_ALL`, `DEEPSEEK_API_KEY`.
+6. `PYTHONPATH=. python3` fallback/bwrap probes — **PASS**: a private regular `backend/.env` with one exact `LLM_API_KEY=fallback-secret` resolves; a symlink fallback is rejected as insecure; the Examiner bubblewrap argv has neither `--clearenv` nor `DEEPSEEK_API_KEY`.
+
+### Acceptance mapping and disposition
+
+- Persistent and both Examiner launch paths assert the same provider fields, `max` reasoning, secret-free
+  config/argv, minimal process environment, and `[shell_environment_policy] inherit = "core"` with
+  `DEEPSEEK_API_KEY` excluded. Focused negative coverage rejects empty/malformed fallback assignments and
+  group/other permissions; the additional static probes cover valid fallback and symlink rejection.
+- The adapter diff is confined to provider projection, explicit process-env construction, fallback validation,
+  and removal of Examiner `--clearenv`; the 103-test isolation/R2.3 regression passed with no Team topology,
+  transport, capability, settlement, acceptance, credential-lifecycle, or platform-access regression.
+- **Overall: PASS.** No defect requiring a repair agent was found. The root `uv` import failure is classified
+  `runtime/infrastructure` for the invocation environment only and is resolved by `PYTHONPATH=.`; it does not
+  change the product result. This round is not a live Runtime/L0 acceptance result and does not authorize a
+  semantic start; the later real R2.3-005 run must still verify actual process/PID/environment evidence.

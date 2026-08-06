@@ -1,9 +1,9 @@
 # R2.2-001 本体建模团队三 Agent 协作 Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.2.md` R2.2-001
-- Status: completed; standalone L2 merged into L3; L0, L1 and L3 independently accepted
+- Status: completed baseline
 - Started: 2026-07-29T23:55:42+08:00
-- Last updated: 2026-07-30T17:35:04+08:00
+- Last updated: 2026-08-07T00:56:59+08:00
 - Designs:
   `docs/delivery/designs/2026-07-29-r2-2-001-ontology-modeling-team-l0-design.md`;
   `docs/delivery/designs/2026-07-30-r2-2-001-ontology-modeling-team-l1-design.md`;
@@ -1228,3 +1228,34 @@
   Ruff, diff check, service/backend/frontend health all PASS.
 - Outcome: independent `PASS`; no finding and no repair/retest round required. R2.2-001 L3 is
   complete.
+
+### 2026-08-07T00:56:59+08:00 — DeepSeek whole-team retarget source audit — Delivery Agent
+
+- Context: the user requested that the complete three-role Ontology Modeling Team use
+  `deepseek-v4-flash` and supplied an API credential for direct configuration. DeepSeek's current
+  official Codex guide now documents native Responses API support for this model; local Codex
+  `0.146.1` exceeds the documented minimum `0.144.0`.
+- Current state: L0, L1 and L3 each construct isolated Codex homes independently. Role files do not
+  pin a model, coordinator configs are generated at runtime, and protocol Agents use separately
+  generated homes so that write MCP credentials remain isolated. The worktree already contains
+  unrelated user edits to `AGENTS.md` and `CLAUDE.md`; they remain excluded from this delivery.
+- Credential decision: never commit or log the supplied secret. Reuse the existing gitignored
+  DeepSeek credential source on the host, inject it only into the isolated Codex process, exclude
+  it from model-executed shell environments, and continue prohibiting any `.env` mount in Agent
+  namespaces.
+- Scope question: confirm whether the retarget applies to every future L0/L1/L3 Team launch or only
+  the current L3 production-like path. No launcher or role configuration is changed until this
+  consequential scope is confirmed.
+- Evidence: `docs/requirements/requirements-v2.2.md`; `docs/evaluation-scenarios/ontology-modeling-team-l0/`;
+  `docs/evaluation-scenarios/ontology-modeling-team-l1/`;
+  `docs/evaluation-scenarios/ontology-modeling-team-l3/`; DeepSeek official Codex and Responses API
+  guides; `codex-cli 0.146.1`; unauthenticated route probe returned HTTP `401` from `/responses`.
+- Outcome/next step: obtain the scope decision, then run the smallest direct multi-agent and MCP
+  compatibility probes before freezing the design and shared test plan.
+
+### 2026-08-07 — Retarget scope corrected to the active R2.3 Team
+
+- The user clarified that “the whole Team” means the current active four-role R2.3-005 runtime,
+  including Protocol and Acceptance, rather than the historical L0/L1/L3 assets recorded here.
+- This R2.2 delivery remains complete and unchanged. Retarget design, implementation, and the
+  explicit no-validation disposition are owned by the R2.3-005 delivery record.

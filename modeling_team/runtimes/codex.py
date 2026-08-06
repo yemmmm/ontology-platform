@@ -73,6 +73,45 @@ _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES = (
     "runner_capability_mcp.py",
 )
 
+_DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY"
+_DEEPSEEK_BASE_URL = "https://api.deepseek.com/"
+_DEEPSEEK_MODEL = "deepseek-v4-flash"
+_DEEPSEEK_PROVIDER = "deepseek"
+
+
+def _deepseek_provider_config_lines() -> list[str]:
+    """Return the secret-free Codex projection for the active DeepSeek provider."""
+
+    return [
+        f'model = "{_DEEPSEEK_MODEL}"',
+        f'model_provider = "{_DEEPSEEK_PROVIDER}"',
+        'model_reasoning_effort = "max"',
+        "[model_providers.deepseek]",
+        'name = "DeepSeek"',
+        f'base_url = "{_DEEPSEEK_BASE_URL}"',
+        f'env_key = "{_DEEPSEEK_API_KEY_ENV}"',
+        'wire_api = "responses"',
+        "[shell_environment_policy]",
+        'inherit = "core"',
+        f'exclude = ["{_DEEPSEEK_API_KEY_ENV}"]',
+    ]
+
+
+def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[str, str]:
+    """Build the explicit environment allowed for a Codex app-server process."""
+
+    values = {
+        "CODEX_HOME": str(home),
+        "HOME": str(home),
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "TERM": "xterm-256color",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+    }
+    if api_key is not None:
+        values[_DEEPSEEK_API_KEY_ENV] = api_key
+    return values
+
 
 @dataclass
 class _Agent:
@@ -410,7 +449,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         command = [
             bwrap,
             "--die-with-parent",
-            "--clearenv",
             "--unshare-pid",
             "--proc",
             "/proc",
@@ -561,6 +599,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         kind = spec.get("kind")
         if kind not in {"source", "platform"}:
             raise CodexRuntimeError("Examiner child kind is invalid")
+        deepseek_enabled = bool(
+            self._coordination_enabled
+            or spec.get("deepseek_provider") is True
+            or spec.get("task_id") == "r2-3-005-formal-acceptance"
+        )
+        deepseek_key = self._resolve_deepseek_api_key() if deepseek_enabled else None
         private_root = Path(str(spec["private_root"]))
         try:
             root_metadata = os.lstat(private_root)
@@ -704,6 +748,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "required = true",
             ]
         )
+        if deepseek_enabled:
+            provider_lines = _deepseek_provider_config_lines()
+            config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         config_path = home / "config.toml"
         _write_private(config_path, ("\n".join(config_lines) + "\n").encode("utf-8"), 0o600)
         _write_private(home / "child-config.json", json.dumps(config, sort_keys=True, ensure_ascii=False).encode("utf-8"), 0o400)
@@ -744,14 +791,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             proxy_socket=proxy_socket,
             report_socket=report_socket,
         )
-        env = {
-            "CODEX_HOME": str(home),
-            "HOME": str(home),
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "TERM": "xterm-256color",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-        }
+        env = _minimal_codex_process_env(home, deepseek_key)
         process = self.process_factory(
             command,
             stdin=subprocess.PIPE,
@@ -936,6 +976,56 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("host Codex authentication is unavailable for private staging")
         return host_auth
 
+    def _resolve_deepseek_api_key(self) -> str:
+        """Resolve the provider key without retaining it in any generated artifact.
+
+        The process environment is the primary Host-owned source.  The repository
+        fallback is deliberately narrow: it must be a user-owned, non-symlink,
+        private regular file and contain one exact ``LLM_API_KEY=value`` assignment.
+        """
+
+        process_value = os.environ.get(_DEEPSEEK_API_KEY_ENV)
+        if process_value is not None:
+            if (
+                not process_value
+                or not process_value.strip()
+                or process_value != process_value.strip()
+                or any(char in process_value for char in "\x00\r\n")
+            ):
+                raise CodexRuntimeError("DeepSeek API key is missing or malformed")
+            return process_value
+
+        fallback = self.root / "backend" / ".env"
+        try:
+            metadata = os.lstat(fallback)
+        except OSError as exc:
+            raise CodexRuntimeError("DeepSeek API key is unavailable") from exc
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) & 0o077
+        ):
+            raise CodexRuntimeError("DeepSeek fallback file is insecure")
+        try:
+            content = fallback.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise CodexRuntimeError("DeepSeek fallback file is malformed") from exc
+
+        matches: list[str] = []
+        for line in content.splitlines():
+            if not line or line.lstrip().startswith("#"):
+                continue
+            match = re.fullmatch(r"LLM_API_KEY=([^=\s\r\n\"']+)", line)
+            if match:
+                matches.append(match.group(1))
+                continue
+            if re.match(r"^\s*(?:export\s+)?LLM_API_KEY\b", line):
+                raise CodexRuntimeError("DeepSeek fallback assignment is malformed")
+        if len(matches) != 1 or not matches[0].strip():
+            raise CodexRuntimeError("DeepSeek API key is unavailable")
+        return matches[0]
+
     def start_roster(self, run: Any, agents: Any) -> list[AgentRuntimeIdentity]:
         self._run_root = run.root
         self._run_id = run.run_id
@@ -951,6 +1041,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             == 2
         )
         self._formal_turn_binding_required = self._coordination_enabled
+        if self._coordination_enabled:
+            # A missing or insecure provider key is a no-start failure.  Resolve it
+            # before creating the first private role tree or invoking process_factory.
+            self._resolve_deepseek_api_key()
+            self._deepseek_enabled = True
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
@@ -1192,6 +1287,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)
+        deepseek_enabled = self._is_formal_acceptance_run(run) or self._coordination_enabled
+        if deepseek_enabled:
+            # Resolve before staging any private artifact.  start_roster also performs
+            # this check before entering its first process-launch loop.
+            self._resolve_deepseek_api_key()
+            self._deepseek_enabled = True
         capability_operations = self._role_capability_operations(agent.package.role, run=run)
         formal_capability = bool(capability_operations)
         formal_acceptance_auth = (
@@ -1315,6 +1416,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "required = true",
                 ]
             )
+        if deepseek_enabled:
+            provider_lines = _deepseek_provider_config_lines()
+            # Keep scalar settings before the first TOML table; append provider and
+            # shell-policy tables after the existing MCP tables.
+            lines = provider_lines[:3] + lines + provider_lines[3:]
         capability_names = (
             list(capability_operations)
             if formal_capability
@@ -1553,6 +1659,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return self._run_root / "transport" / "broker"
 
     def _start_process(self, agent: _Agent) -> subprocess.Popen[str]:
+        api_key = (
+            self._resolve_deepseek_api_key()
+            if self._coordination_enabled or getattr(self, "_deepseek_enabled", False)
+            else None
+        )
         command = self.namespace_command(agent)
         descriptors = agent.retrieval_asset_fds
         try:
@@ -1565,6 +1676,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 bufsize=1,
                 start_new_session=True,
                 pass_fds=descriptors,
+                env=_minimal_codex_process_env(agent.home, api_key),
             )
         finally:
             self._close_retrieval_asset_fds(agent)
