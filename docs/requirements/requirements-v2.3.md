@@ -1511,6 +1511,10 @@ Runner 不得继续把缺少 Acceptance 的三角色 Profile 作为合法完整�
   对可安全刷新的 `ontology_platform` MCP，只允许 Host 创建新的隔离版本、记录 digest、显式 reload 并
   重验精确工具面；失败则保留 paused 并回滚，不覆盖原始快照。跨进程 crash recovery、跨 run 恢复、
   多 issue 队列、自动平台修复和管理 UI 不在当前最小范围。
+- 真实运行中凡是可由更清晰的 Task、角色 instructions、Skill、工具参数说明或 handoff 提示避免的错误，
+  必须记录为 `prompt-contract` defect，绑定原始调用/回执和负责的提示词位置。本 run 可用 grounded
+  guidance 原地恢复，但在下一次 semantic start 前必须修改并验证权威提示词；不得只记录经验、继续沿用
+  已知会诱发同一错误的 prompt。平台/runtime 实现缺陷仍按其真实层分类，不得用提示词掩盖。
 - `mutation_state=unknown`、原子 apply 结果不确定或平台状态无法通过正式 receipt/readback 对账时，不得
   resume 写入。完整 modeling-quality 结果、不可恢复 Runtime 死亡和外层明确 abort 仍走既有 terminal、
   cleanup 和后续授权规则，不能用 issue pause 绕过。

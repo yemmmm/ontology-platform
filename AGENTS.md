@@ -78,6 +78,13 @@ acceptance stage.
   readers and patterns, tests, and recorded lessons. Carry them forward wherever compatible and
   implement only the requirement-specific delta. Document and review any proven incompatibility
   before replacement; treat rediscovering a previously documented failure as a process defect.
+- **Repair prompt-correctable failures before the next start.** When live evidence shows that an
+  Agent error could have been prevented by clearer Task, role, Skill, tool-use, or handoff
+  instructions, record the exact failure as a prompt-contract defect and identify the owning
+  prompt surface. Runtime guidance may unblock the current run, but it is not the durable fix.
+  Before launching the next semantic start, update and verify that authoritative prompt surface;
+  do not consume another attempt while knowingly carrying the same avoidable instruction gap.
+  Keep platform/runtime defects classified separately and do not hide them with prompt wording.
 - **Priority L0 — use the three authorized modeling attempts.** Each authorization grants three
   fresh semantic modeling starts unless the user explicitly sets a different amount. The budget is
   a boundary against unapproved runs, not a scarce asset to protect by delaying real modeling or

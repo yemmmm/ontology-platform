@@ -2685,3 +2685,17 @@ the formal builder, or starting another real run before authorization.
   produce one complete r3 that adds only source-grounded relation citations and current-run provenance; it must not
   rebuild the slice, change predicates, resolve explicit unknowns or treat a rebuilt vector index as substitute
   Evidence. This moves the known quality correction before the one-reply candidate acceptance boundary.
+
+### 2026-08-06T09:50:00+08:00 — Prompt-correctable failures require a pre-start prompt repair
+
+- The user directed that every failure preventable through clearer main-agent guidance or Agent prompting be recorded
+  and repaired in its authoritative prompt surface before the next modeling start. A same-run guidance resolution is
+  only an immediate recovery, not closure of the prompt defect.
+- Current prompt-contract backlog from retained live evidence: Modeling must distinguish a candidate accepted receipt
+  from governed-retrieval completion; Protocol must emit the formal receipt/conflict instead of a free-text expected
+  reply; candidate acceptance must check relation evidence citations before platform application; semantic retrieval
+  pagination must repeat the original query/scope and use `context_cursor` and `match_cursor` according to their
+  separate chains, with API limits inside the published range. Each item must be bound to the actual Modeling,
+  Protocol or semantic-tool instruction file and changed before any start after start24.
+- Platform defects remain separate: nullable issue-control MCP response handling, coordination Runtime delivery and
+  the MCP cursor signer lifecycle required code repairs. Prompt changes must not be used to relabel or conceal them.
