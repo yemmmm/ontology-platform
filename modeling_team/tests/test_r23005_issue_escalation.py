@@ -805,6 +805,24 @@ class IssueEscalationTests(unittest.TestCase):
                     agent_id=agent_id,
                 )
                 self.assertIn("coordination-", response["content"][0]["text"])
+            runner._drain_coordination_runtime_deliveries()
+            self.assertEqual(len(adapter.sent), 2)
+            for (recipient_id, delivery), expected_kind in zip(
+                adapter.sent,
+                ("ready_for_acceptance", "silent_for_acceptance"),
+                strict=True,
+            ):
+                self.assertEqual(recipient_id, "coordinator")
+                self.assertEqual(delivery.kind, "coordination-phase")
+                self.assertEqual(delivery.sender_id, "runner/coordination")
+                self.assertEqual(delivery.recipient_id, "coordinator")
+                self.assertIsNotNone(delivery.delivery_id)
+                payload = json.loads(delivery.text)
+                self.assertEqual(payload["message_kind"], expected_kind)
+                self.assertEqual(payload["sender_id"], "modeling" if expected_kind == "ready_for_acceptance" else "protocol")
+                self.assertEqual(payload["recipient_id"], "coordinator")
+                self.assertEqual(payload["generation"], generation)
+                self.assertEqual(payload["coordination_message_id"], delivery.delivery_id)
             start_response = mcp_response(
                 {
                     "method": "tools/call",
@@ -823,12 +841,12 @@ class IssueEscalationTests(unittest.TestCase):
             )
             start_envelope = json.loads(start_response["content"][0]["text"])
             self.assertEqual(runner.coordinator_phase.phase.value, "ACCEPTANCE_ROUND_ACTIVE")
-            self.assertEqual(adapter.sent, [])
+            self.assertEqual(len(adapter.sent), 2)
 
             runner._drain_coordination_runtime_deliveries()
 
-            self.assertEqual(len(adapter.sent), 1)
-            recipient_id, delivery = adapter.sent[0]
+            self.assertEqual(len(adapter.sent), 3)
+            recipient_id, delivery = adapter.sent[2]
             self.assertEqual(recipient_id, "acceptance")
             self.assertEqual(delivery.kind, "acceptance-start")
             self.assertEqual(delivery.delivery_id, start_envelope["message_id"])
@@ -842,7 +860,280 @@ class IssueEscalationTests(unittest.TestCase):
                 },
             )
             runner._drain_coordination_runtime_deliveries()
+            self.assertEqual(len(adapter.sent), 3)
+
+    def test_readiness_delivery_deduplicates_same_generation_signal(self) -> None:
+        """A repeated validated readiness signal cannot steer Coordinator twice."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "modeling-runs" / "run-readiness-dedupe"
+            root.mkdir(parents=True)
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+                def send_message(
+                    self, agent_id: str, delivery: RuntimeDelivery
+                ) -> RuntimeDispatchReceipt:
+                    self.sent.append((agent_id, delivery))
+                    return RuntimeDispatchReceipt("start", "turn-ready")
+
+            adapter = Adapter()
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-readiness-dedupe",
+                root=root,
+                configuration=SimpleNamespace(
+                    profile=SimpleNamespace(
+                        agents=[
+                            SimpleNamespace(
+                                agent_id="coordinator", package=SimpleNamespace(role="coordinator")
+                            ),
+                            SimpleNamespace(
+                                agent_id="modeling", package=SimpleNamespace(role="modeling")
+                            ),
+                            SimpleNamespace(
+                                agent_id="protocol", package=SimpleNamespace(role="protocol")
+                            ),
+                            SimpleNamespace(
+                                agent_id="acceptance", package=SimpleNamespace(role="acceptance")
+                            ),
+                        ]
+                    )
+                ),
+            )
+            runner.adapter = adapter
+            runner._append_evidence = lambda *_args, **_kwargs: None
+            runner._coordination_runtime_queue = []
+            runner._coordination_runtime_lock = threading.Lock()
+            runner._coordination_runtime_message_ids = set()
+            runner._coordination_runtime_signal_keys = set()
+            event = {
+                "sender_id": "modeling",
+                "recipient_id": "coordinator",
+                "message_kind": "ready_for_acceptance",
+                "message_id": "coordination-1",
+                "text": "ready",
+                "timestamp": 1.0,
+                "terminal": False,
+                "settles": False,
+                "phase_event": {"generation": 1},
+            }
+            runner._coordination_transport_event_observer(event)
+            with self.assertRaisesRegex(TeamConfigurationError, "readiness delivery was queued twice"):
+                runner._coordination_transport_event_observer(
+                    {**event, "message_id": "coordination-2"}
+                )
+            runner._drain_coordination_runtime_deliveries()
             self.assertEqual(len(adapter.sent), 1)
+            self.assertEqual(adapter.sent[0][1].delivery_id, "coordination-1")
+
+    def test_verdict_route_delivery_preserves_identity_and_generation(self) -> None:
+        """A validated Acceptance verdict reaches Coordinator without rewriting its JSON."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "modeling-runs" / "run-verdict-route"
+            root.mkdir(parents=True)
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+                def send_message(
+                    self, agent_id: str, delivery: RuntimeDelivery
+                ) -> RuntimeDispatchReceipt:
+                    self.sent.append((agent_id, delivery))
+                    return RuntimeDispatchReceipt("start", "turn-verdict")
+
+            adapter = Adapter()
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-verdict-route",
+                root=root,
+                configuration=SimpleNamespace(
+                    profile=SimpleNamespace(
+                        agents=[
+                            SimpleNamespace(
+                                agent_id="coordinator", package=SimpleNamespace(role="coordinator")
+                            ),
+                            SimpleNamespace(
+                                agent_id="modeling", package=SimpleNamespace(role="modeling")
+                            ),
+                            SimpleNamespace(
+                                agent_id="protocol", package=SimpleNamespace(role="protocol")
+                            ),
+                            SimpleNamespace(
+                                agent_id="acceptance", package=SimpleNamespace(role="acceptance")
+                            ),
+                        ]
+                    )
+                ),
+            )
+            runner.adapter = adapter
+            runner._append_evidence = lambda *_args, **_kwargs: None
+            runner._coordination_runtime_queue = []
+            runner._coordination_runtime_lock = threading.Lock()
+            runner._coordination_runtime_message_ids = set()
+            runner._coordination_runtime_signal_keys = set()
+            verdict_text = json.dumps(
+                {"verdict": "BLOCKED", "blocked_reason": "upstream retrieval conflict"},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            event = {
+                "sender_id": "acceptance",
+                "recipient_id": "coordinator",
+                "message_kind": "acceptance_verdict_route",
+                "message_id": "coordination-verdict-1",
+                "text": verdict_text,
+                "timestamp": 1.0,
+                "terminal": False,
+                "settles": False,
+                "phase_event": {"generation": 4},
+            }
+            runner._coordination_transport_event_observer(event)
+            runner._drain_coordination_runtime_deliveries()
+            self.assertEqual(len(adapter.sent), 1)
+            recipient_id, delivery = adapter.sent[0]
+            self.assertEqual(recipient_id, "coordinator")
+            self.assertEqual(delivery.kind, "coordination-phase")
+            self.assertEqual(delivery.delivery_id, event["message_id"])
+            self.assertEqual(delivery.sender_id, "runner/coordination")
+            self.assertEqual(
+                json.loads(delivery.text),
+                {
+                    "coordination_message_id": event["message_id"],
+                    "generation": 4,
+                    "message_kind": "acceptance_verdict_route",
+                    "recipient_id": "coordinator",
+                    "sender_id": "acceptance",
+                    "text": verdict_text,
+                },
+            )
+            with self.assertRaisesRegex(TeamConfigurationError, "delivery was queued twice"):
+                runner._coordination_transport_event_observer(event)
+
+    def test_non_default_agent_ids_map_all_coordination_deliveries(self) -> None:
+        """Role routing uses configured IDs rather than role-name defaults."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "modeling-runs" / "run-non-default-coordination-ids"
+            root.mkdir(parents=True)
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+                def send_message(
+                    self, agent_id: str, delivery: RuntimeDelivery
+                ) -> RuntimeDispatchReceipt:
+                    self.sent.append((agent_id, delivery))
+                    return RuntimeDispatchReceipt("start", "turn-non-default")
+
+            role_agents = [
+                SimpleNamespace(agent_id="coord-c", package=SimpleNamespace(role="coordinator")),
+                SimpleNamespace(agent_id="model-a", package=SimpleNamespace(role="modeling")),
+                SimpleNamespace(agent_id="proto-b", package=SimpleNamespace(role="protocol")),
+                SimpleNamespace(agent_id="accept-d", package=SimpleNamespace(role="acceptance")),
+            ]
+            adapter = Adapter()
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-non-default-coordination-ids",
+                root=root,
+                configuration=SimpleNamespace(
+                    profile=SimpleNamespace(agents=role_agents)
+                ),
+            )
+            runner.adapter = adapter
+            runner.acceptance = SimpleNamespace(acceptance_id="accept-d")
+            runner._append_evidence = lambda *_args, **_kwargs: None
+            runner._coordination_runtime_queue = []
+            runner._coordination_runtime_lock = threading.Lock()
+            runner._coordination_runtime_message_ids = set()
+            runner._coordination_runtime_signal_keys = set()
+
+            events = [
+                {
+                    "sender_id": "model-a",
+                    "recipient_id": "coord-c",
+                    "message_kind": "ready_for_acceptance",
+                    "message_id": "coordination-non-default-ready",
+                    "text": "ready",
+                    "timestamp": 1.0,
+                    "terminal": False,
+                    "settles": False,
+                    "phase_event": {"generation": 1},
+                },
+                {
+                    "sender_id": "proto-b",
+                    "recipient_id": "coord-c",
+                    "message_kind": "silent_for_acceptance",
+                    "message_id": "coordination-non-default-silent",
+                    "text": "silent",
+                    "timestamp": 2.0,
+                    "terminal": False,
+                    "settles": False,
+                    "phase_event": {"generation": 1},
+                },
+                {
+                    "sender_id": "coord-c",
+                    "recipient_id": "accept-d",
+                    "message_kind": "acceptance_start",
+                    "message_id": "coordination-non-default-start",
+                    "text": "round-1",
+                    "timestamp": 3.0,
+                    "terminal": False,
+                    "settles": False,
+                    "phase_event": {"generation": 1},
+                },
+                {
+                    "sender_id": "accept-d",
+                    "recipient_id": "coord-c",
+                    "message_kind": "acceptance_verdict_route",
+                    "message_id": "coordination-non-default-verdict",
+                    "text": json.dumps(
+                        {"verdict": "BLOCKED", "blocked_reason": "retrieval conflict"},
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "timestamp": 4.0,
+                    "terminal": False,
+                    "settles": False,
+                    "phase_event": {"generation": 1},
+                },
+            ]
+            for event in events:
+                runner._coordination_transport_event_observer(event)
+
+            runner._drain_coordination_runtime_deliveries()
+
+            self.assertEqual(
+                [recipient for recipient, _delivery in adapter.sent],
+                ["coord-c", "coord-c", "accept-d", "coord-c"],
+            )
+            self.assertEqual(
+                [delivery.kind for _recipient, delivery in adapter.sent],
+                ["coordination-phase", "coordination-phase", "acceptance-start", "coordination-phase"],
+            )
+            for (_recipient, delivery), event in zip(adapter.sent, events, strict=True):
+                self.assertEqual(delivery.delivery_id, event["message_id"])
+                payload = json.loads(delivery.text)
+                self.assertEqual(payload["generation"], 1)
+                self.assertEqual(payload["coordination_message_id"], event["message_id"])
+                if event["message_kind"] == "acceptance_start":
+                    self.assertEqual(
+                        payload,
+                        {
+                            "acceptance_id": "accept-d",
+                            "coordination_message_id": event["message_id"],
+                            "generation": 1,
+                            "round_id": "round-1",
+                        },
+                    )
+                else:
+                    self.assertEqual(payload["sender_id"], event["sender_id"])
+                    self.assertEqual(payload["recipient_id"], event["recipient_id"])
+                    self.assertEqual(payload["message_kind"], event["message_kind"])
+                    self.assertEqual(payload["text"], event["text"])
 
 
 if __name__ == "__main__":

@@ -142,6 +142,7 @@ class TeamRunner:
         self._coordination_runtime_queue: list[dict[str, Any]] = []
         self._coordination_runtime_lock = threading.Lock()
         self._coordination_runtime_message_ids: set[str] = set()
+        self._coordination_runtime_signal_keys: set[str] = set()
         self._issue_abort_requested = False
 
     @staticmethod
@@ -3035,39 +3036,110 @@ class TeamRunner:
             os.close(descriptor)
         os.chmod(path, 0o600)
 
+    def _formal_coordination_role_ids(self) -> dict[str, str]:
+        """Resolve formal coordination roles to their configured agent IDs."""
+
+        configuration = getattr(self.run, "configuration", None)
+        profile = getattr(configuration, "profile", None)
+        agents = getattr(profile, "agents", None)
+        required_roles = {"coordinator", "modeling", "protocol", "acceptance"}
+        if not isinstance(agents, (list, tuple)):
+            raise TeamConfigurationError("formal coordination role identities are unavailable")
+        role_ids: dict[str, str] = {}
+        for agent in agents:
+            package = getattr(agent, "package", None)
+            role = getattr(package, "role", None)
+            agent_id = getattr(agent, "agent_id", None)
+            if (
+                not isinstance(role, str)
+                or role not in required_roles
+                or role in role_ids
+                or not isinstance(agent_id, str)
+                or not agent_id
+            ):
+                raise TeamConfigurationError("formal coordination role identities are invalid")
+            role_ids[role] = agent_id
+        if set(role_ids) != required_roles:
+            raise TeamConfigurationError("formal coordination role identities are incomplete")
+        return role_ids
+
     def _coordination_transport_event_observer(self, event: dict[str, object]) -> None:
         """Persist a coordination event, then queue its Runner-owned delivery.
 
         ``TeamTransportBroker.send_coordination`` invokes the observer only after
         the phase callback has accepted the message and after it has released the
         Broker state lock.  The observer itself must remain non-reentrant: it
-        records the immutable coordination evidence first and only then queues an
-        Acceptance start for the Runner's next ``drain`` turn.
+        records the immutable coordination evidence first and only then queues a
+        validated phase delivery for the Runner's next ``drain`` turn.  Readiness,
+        silence, and verdict-route signals go to Coordinator; only
+        ``acceptance_start`` goes to Acceptance.
         """
 
         self._append_coordination_transport_event(event)
         if (
             not isinstance(event, dict)
-            or event.get("message_kind") != "acceptance_start"
+            or not isinstance(event.get("message_kind"), str)
+            or event.get("message_kind")
+            not in {
+                "ready_for_acceptance",
+                "silent_for_acceptance",
+                "acceptance_start",
+                "acceptance_verdict_route",
+            }
+            or not isinstance(event.get("sender_id"), str)
             or not isinstance(event.get("message_id"), str)
+            or not event.get("message_id")
             or not isinstance(event.get("recipient_id"), str)
             or not isinstance(event.get("text"), str)
             or not isinstance(event.get("phase_event"), dict)
         ):
             return
+        message_kind = event["message_kind"]
+        sender_id = event["sender_id"]
+        recipient_id = event["recipient_id"]
+        role_ids = self._formal_coordination_role_ids()
+        expected_sender, expected_recipient = {
+            "ready_for_acceptance": (role_ids["modeling"], role_ids["coordinator"]),
+            "silent_for_acceptance": (role_ids["protocol"], role_ids["coordinator"]),
+            "acceptance_start": (role_ids["coordinator"], role_ids["acceptance"]),
+            "acceptance_verdict_route": (role_ids["acceptance"], role_ids["coordinator"]),
+        }[message_kind]
+        if sender_id != expected_sender or recipient_id != expected_recipient:
+            raise TeamConfigurationError("coordination Runtime delivery binding is invalid")
+        generation = event["phase_event"].get("generation")
+        if not isinstance(generation, int) or isinstance(generation, bool) or generation <= 0:
+            error = (
+                "Acceptance start generation is invalid"
+                if message_kind == "acceptance_start"
+                else "coordination Runtime delivery generation is invalid"
+            )
+            raise TeamConfigurationError(error)
         queued = {
             "message_id": event["message_id"],
-            "recipient_id": event["recipient_id"],
-            "round_id": event["text"],
-            "generation": event["phase_event"].get("generation"),
+            "recipient_id": recipient_id,
+            "message_kind": message_kind,
+            "sender_id": sender_id,
+            "text": event["text"],
+            "generation": generation,
         }
-        if not isinstance(queued["generation"], int) or isinstance(queued["generation"], bool):
-            raise TeamConfigurationError("Acceptance start generation is invalid")
         with self._coordination_runtime_lock:
             message_id = queued["message_id"]
-            if message_id in self._coordination_runtime_message_ids:
-                raise TeamConfigurationError("Acceptance start was queued twice")
-            self._coordination_runtime_message_ids.add(message_id)
+            message_ids = getattr(self, "_coordination_runtime_message_ids", None)
+            if not isinstance(message_ids, set):
+                message_ids = set()
+                self._coordination_runtime_message_ids = message_ids
+            if message_id in message_ids:
+                raise TeamConfigurationError("coordination Runtime delivery was queued twice")
+            signal_keys = getattr(self, "_coordination_runtime_signal_keys", None)
+            if not isinstance(signal_keys, set):
+                signal_keys = set()
+                self._coordination_runtime_signal_keys = signal_keys
+            if message_kind in {"ready_for_acceptance", "silent_for_acceptance"}:
+                signal_key = f"{generation}:{message_kind}:{sender_id}"
+                if signal_key in signal_keys:
+                    raise TeamConfigurationError("coordination readiness delivery was queued twice")
+                signal_keys.add(signal_key)
+            message_ids.add(message_id)
             self._coordination_runtime_queue.append(queued)
 
     def _drain_coordination_runtime_deliveries(self) -> None:
@@ -3075,41 +3147,90 @@ class TeamRunner:
 
         with self._coordination_runtime_lock:
             queued, self._coordination_runtime_queue = self._coordination_runtime_queue, []
+        if not queued:
+            return
+        role_ids = self._formal_coordination_role_ids()
         for event in queued:
             recipient_id = event.get("recipient_id")
             message_id = event.get("message_id")
-            round_id = event.get("round_id")
+            message_kind = event.get("message_kind")
+            sender_id = event.get("sender_id")
+            text = event.get("text")
             generation = event.get("generation")
             if (
-                self.acceptance is None
-                or recipient_id != self.acceptance.acceptance_id
+                message_kind
+                not in {
+                    "ready_for_acceptance",
+                    "silent_for_acceptance",
+                    "acceptance_start",
+                    "acceptance_verdict_route",
+                }
                 or not isinstance(message_id, str)
-                or not isinstance(round_id, str)
-                or not round_id
+                or not message_id
+                or not isinstance(sender_id, str)
+                or not isinstance(text, str)
                 or not isinstance(generation, int)
                 or isinstance(generation, bool)
+                or generation <= 0
             ):
-                raise TeamConfigurationError("Acceptance start delivery binding is invalid")
-            payload = {
-                "acceptance_id": self.acceptance.acceptance_id,
-                "round_id": round_id,
-                "generation": generation,
-                "coordination_message_id": message_id,
-            }
+                error = (
+                    "Acceptance start delivery binding is invalid"
+                    if message_kind == "acceptance_start"
+                    else "coordination Runtime delivery binding is invalid"
+                )
+                raise TeamConfigurationError(error)
+            expected_sender, expected_recipient = {
+                "ready_for_acceptance": (role_ids["modeling"], role_ids["coordinator"]),
+                "silent_for_acceptance": (role_ids["protocol"], role_ids["coordinator"]),
+                "acceptance_start": (role_ids["coordinator"], role_ids["acceptance"]),
+                "acceptance_verdict_route": (role_ids["acceptance"], role_ids["coordinator"]),
+            }[message_kind]
+            if sender_id != expected_sender or recipient_id != expected_recipient:
+                error = (
+                    "Acceptance start delivery binding is invalid"
+                    if message_kind == "acceptance_start"
+                    else "coordination Runtime delivery binding is invalid"
+                )
+                raise TeamConfigurationError(error)
+            if message_kind == "acceptance_start":
+                if self.acceptance is None or recipient_id != self.acceptance.acceptance_id:
+                    raise TeamConfigurationError("Acceptance start delivery binding is invalid")
+                payload = {
+                    "acceptance_id": self.acceptance.acceptance_id,
+                    "round_id": text,
+                    "generation": generation,
+                    "coordination_message_id": message_id,
+                }
+                delivery_kind = "acceptance-start"
+            else:
+                payload = {
+                    "coordination_message_id": message_id,
+                    "generation": generation,
+                    "message_kind": message_kind,
+                    "sender_id": sender_id,
+                    "recipient_id": recipient_id,
+                    "text": text,
+                }
+                delivery_kind = "coordination-phase"
             try:
                 self.adapter.send_message(
                     recipient_id,
                     RuntimeDelivery(
                         sender_id="runner/coordination",
                         recipient_id=recipient_id,
-                        kind="acceptance-start",
+                        kind=delivery_kind,
                         text=json.dumps(payload, ensure_ascii=False, sort_keys=True),
                         delivery_id=message_id,
                     ),
                 )
             except Exception as exc:
                 self._state("FAILED", coordination_message_id=message_id)
-                raise TeamConfigurationError("Acceptance start delivery failed") from exc
+                error = (
+                    "Acceptance start delivery failed"
+                    if message_kind == "acceptance_start"
+                    else "coordination Runtime delivery failed"
+                )
+                raise TeamConfigurationError(error) from exc
 
     def _append_coordination_transport_event(self, event: dict[str, object]) -> None:
         """Persist only fixed coordination metadata after phase validation."""
