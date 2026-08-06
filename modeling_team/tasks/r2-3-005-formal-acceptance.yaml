@@ -80,6 +80,9 @@ role_sources:
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]
+  - path: modeling_team/references/acceptance-stage-handoff-contract.json
+    classification: protocol
+    roles: [protocol]
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/public-protocol.md
     classification: protocol
     roles: [protocol]

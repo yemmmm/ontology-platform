@@ -252,10 +252,12 @@ class R23005T6RepeatabilityTests(unittest.TestCase):
                 )
                 carrier.start_capability_endpoints()
                 endpoint_paths = {
-                    carrier.capability_socket_path(role) for role in ("coordinator", "acceptance")
+                    carrier.capability_socket_path(role)
+                    for role in ("coordinator", "protocol", "acceptance")
                 }
                 token_paths = {
-                    carrier.capability_token_path(role) for role in ("coordinator", "acceptance")
+                    carrier.capability_token_path(role)
+                    for role in ("coordinator", "protocol", "acceptance")
                 }
                 self.assertTrue(all(path.exists() for path in endpoint_paths | token_paths))
                 self.assertEqual(adapter.cleanup_identifiers()["acceptance_children"]["active"], 0)
@@ -302,6 +304,8 @@ class R23005T6RepeatabilityTests(unittest.TestCase):
             self.assertNotEqual(first[1], second[1])
             self.assertNotEqual(first[4].capability_token_path("acceptance"), second[4].capability_token_path("acceptance"))
             self.assertNotEqual(first[4].capability_socket_path("acceptance"), second[4].capability_socket_path("acceptance"))
+            self.assertNotEqual(first[4].capability_token_path("protocol"), second[4].capability_token_path("protocol"))
+            self.assertNotEqual(first[4].capability_socket_path("protocol"), second[4].capability_socket_path("protocol"))
             self.assertNotEqual(first[4].capability_token_path("acceptance").read_bytes(), second[4].capability_token_path("acceptance").read_bytes())
             self.assertIsNot(first[5]._acceptance_children, second[5]._acceptance_children)
             self.assertNotEqual(first[0], second[0])
@@ -315,8 +319,18 @@ class R23005T6RepeatabilityTests(unittest.TestCase):
                 self.assertEqual(carrier.cleanup(), cleanup)
                 self.assertFalse(carrier.is_live)
                 self.assertFalse(carrier.capability_root.exists())
-                self.assertFalse(any(carrier.capability_socket_path(role).exists() for role in ("coordinator", "acceptance")))
-                self.assertFalse(any(carrier.capability_token_path(role).exists() for role in ("coordinator", "acceptance")))
+                self.assertFalse(
+                    any(
+                        carrier.capability_socket_path(role).exists()
+                        for role in ("coordinator", "protocol", "acceptance")
+                    )
+                )
+                self.assertFalse(
+                    any(
+                        carrier.capability_token_path(role).exists()
+                        for role in ("coordinator", "protocol", "acceptance")
+                    )
+                )
                 self.assertFalse(carrier._handles)
                 self.assertFalse(carrier._resources)
                 self.assertFalse(carrier._pending_reports)

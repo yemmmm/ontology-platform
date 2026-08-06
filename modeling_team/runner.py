@@ -590,7 +590,12 @@ class TeamRunner:
                     "source_path": "modeling_team/capability_mcp.py",
                     "sha256": digests["capability_mcp"],
                     "roles": {
+                        "protocol": [
+                            "protocol_list_platform_artifacts",
+                            "protocol_build_acceptance_stage_handoff",
+                        ],
                         "coordinator": [
+                            "coordinator_build_acceptance_ticket_draft",
                             "coordinator_publish_acceptance_ticket",
                             "coordinator_get_verdict",
                         ],
@@ -1407,6 +1412,10 @@ class TeamRunner:
             if role == "protocol":
                 text += (
                     "\nYou must read the enumerated modeling-batch-item-contract.json source. "
+                    "You must also read the enumerated acceptance-stage-handoff-contract.json source; it is the "
+                    "authoritative nested schema for modeling_receipts, platform_read evidence_ref/page fields, "
+                    "stage-specific successful statuses, and canonical handoff/delivery digest rules. Do not "
+                    "guess nested receipt fields from this prompt or Python implementation. "
                     "Before any platform call, read /opt/mechanics-contract.json and follow its ordered "
                     "Build Session lifecycle exactly: create with initial_checkpoint omitted or null; save the "
                     "mandatory initial checkpoint before lease acquisition; after Batch/application, validation, "
@@ -1429,6 +1438,27 @@ class TeamRunner:
                     "candidates. Emit only silent_for_acceptance to coordinator through "
                     "send_coordination with the current generation after the ordered protocol work is quiet."
                 )
+                if self._formal_coordination_enabled() and self.acceptance is not None:
+                    text += (
+                        " For the formal R2.3-005 acceptance gate, the Runner has issued the exact non-secret "
+                        f"stage-handoff nonce {self.acceptance.stage_handoff_nonce}. After all five current-run "
+                        "stages (dry-run, apply, readback, validation, reasoning) and governed retrieval are "
+                        "complete, send one canonical compact JSON object directly to Coordinator with "
+                        "send_team_message (not send_coordination), using schema "
+                        "r2-3-005-acceptance-stage-handoff/v1 and exact fields "
+                        "schema_version,handoff_id,handoff_nonce,task_id,producer_run_id,slice_id,slice_revision, "
+                        "model_state,model_state_digest,candidate_digest,modeling_receipts,handoff_digest. "
+                        "The capability supplies the nonce, receipt bindings, and canonical digest; include no source "
+                        "bytes, expected answers, or ticket fields. Before sending, call the Runner-private "
+                        "protocol_list_platform_artifacts catalog, then call protocol_build_acceptance_stage_handoff "
+                        "with exactly five observed stage calls keyed by dry-run, apply, readback, validation, and "
+                        "reasoning; provide each actual platform tool, complete request arguments, and exact catalog "
+                        "artifact_path. Do not compute receipts, pages, digests, or artifact paths in model reasoning. "
+                        "Send the returned handoff_json unchanged once. The "
+                        "Runner rejects unobserved calls, wrong stage tool/mode/status/scope, artifact tamper, and "
+                        "candidate identities other than the accepted candidate. Coordinator must pass the exact "
+                        "delivery_id and unchanged object to its draft capability."
+                    )
                 if proof_gate:
                     text += (
                         " For this proof-gated task, before the first submit_modeling_batch call, validate assertion "
@@ -1451,6 +1481,17 @@ class TeamRunner:
                     "generation and acceptance_round_id as text. Use only the Project/Ontology created for this "
                     "run; never reuse or bind a prior/caller-supplied scope and never initiate a second semantic "
                     "start."
+                    " When Protocol sends the structured acceptance-stage handoff, parse its exact JSON and call "
+                    "the Runner-private coordinator_build_acceptance_ticket_draft once per question, passing the "
+                    "delivery_id from the direct Team Transport envelope, the unchanged handoff object and digest, "
+                    "the frozen question_id, and the positive ticket_revision. The capability owns staged source "
+                    "digests, authenticated live model_state, canonical read allowlist, standard fields, and all "
+                    "five receipt checks. Publish only the returned complete draft exactly once through "
+                    "coordinator_publish_acceptance_ticket, passing the same object/digest/requirement reference; "
+                    "never hand-author, shorten, replace, or mutate it. `{}`/shorthand, changed run/project/ontology/"
+                    "state/slice/digest, or any second draft is rejected. Only after unchanged publication succeeds "
+                    "send acceptance_start with the returned acceptance_round_id. Coordinator never reads staged "
+                    "business sources or receipt payload bytes."
                     "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
@@ -1729,6 +1770,11 @@ class TeamRunner:
             raise
         if result is not None:
             identity = self._candidate_progress.identity
+            if result == "accepted" and identity is not None and self.acceptance is not None:
+                self.acceptance.register_accepted_candidate(
+                    candidate_revision=identity.candidate_revision,
+                    candidate_digest=identity.candidate_digest,
+                )
             self._append_evidence(
                 "formal-candidate-progress",
                 {
@@ -2449,6 +2495,19 @@ class TeamRunner:
             except FormalCandidateError as exc:
                 self._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")
                 raise TeamConfigurationError(str(exc)) from exc
+            if self._formal_coordination_enabled() and self.acceptance is not None:
+                role_ids = self._formal_coordination_role_ids()
+                if (
+                    delivery.sender_id == role_ids["protocol"]
+                    and delivery.recipient_id == role_ids["coordinator"]
+                ):
+                    handoff_record = self.acceptance.register_stage_handoff_delivery(
+                        delivery_id=delivery.delivery_id,
+                        text=delivery.text,
+                        sender_role="protocol",
+                        recipient_role="coordinator",
+                    )
+                    self._append_evidence("acceptance-stage-handoff", handoff_record)
             formal_invalid_response = False
             formal_roles = self._formal_candidate_roles()
             if formal_roles is not None and self._candidate_progress is not None:

@@ -2,9 +2,9 @@
 
 The broker is intentionally separate from Team Transport.  A private Unix
 socket authenticates one opaque, task-scoped token and dispatches only the fixed
-operations for Coordinator or Acceptance.  The small stdio facade is the MCP
-client registered in the two Agent configs; it never receives a raw carrier or
-platform socket.
+operations for Protocol, Coordinator, or Acceptance.  The small stdio facade is
+the MCP client registered in those Agent configs; it never receives a raw carrier
+or platform socket.
 """
 
 from __future__ import annotations
@@ -22,8 +22,13 @@ from typing import Any
 
 
 COORDINATOR_OPERATIONS: tuple[str, ...] = (
+    "coordinator_build_acceptance_ticket_draft",
     "coordinator_publish_acceptance_ticket",
     "coordinator_get_verdict",
+)
+PROTOCOL_OPERATIONS: tuple[str, ...] = (
+    "protocol_list_platform_artifacts",
+    "protocol_build_acceptance_stage_handoff",
 )
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
@@ -36,11 +41,64 @@ ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
 )
 ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     "coordinator": COORDINATOR_OPERATIONS,
+    "protocol": PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
 
 
 CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "protocol_list_platform_artifacts": {
+        "type": "object",
+        "properties": {"protocol_id": {"type": "string"}},
+        "required": ["protocol_id"],
+        "additionalProperties": False,
+    },
+    "protocol_build_acceptance_stage_handoff": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "stage_calls": {
+                "type": "object",
+                "properties": {
+                    stage: {
+                        "type": "object",
+                        "properties": {
+                            "tool": {"type": "string"},
+                            "arguments": {"type": "object"},
+                            "artifact_path": {"type": "string"},
+                        },
+                        "required": ["tool", "arguments", "artifact_path"],
+                        "additionalProperties": False,
+                    }
+                    for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                },
+                "required": ["dry-run", "apply", "readback", "validation", "reasoning"],
+                "additionalProperties": False,
+            },
+        },
+        "required": ["protocol_id", "stage_calls"],
+        "additionalProperties": False,
+    },
+    "coordinator_build_acceptance_ticket_draft": {
+        "type": "object",
+        "properties": {
+            "coordinator_id": {"type": "string"},
+            "handoff_delivery_id": {"type": "string"},
+            "handoff_json": {"type": "object"},
+            "handoff_digest": {"type": "string"},
+            "question_id": {"type": "string"},
+            "ticket_revision": {"type": "integer", "minimum": 1},
+        },
+        "required": [
+            "coordinator_id",
+            "handoff_delivery_id",
+            "handoff_json",
+            "handoff_digest",
+            "question_id",
+            "ticket_revision",
+        ],
+        "additionalProperties": False,
+    },
     "coordinator_publish_acceptance_ticket": {
         "type": "object",
         "properties": {

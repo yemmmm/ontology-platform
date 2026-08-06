@@ -52,3 +52,26 @@ platform tools, or invent a business answer. After the outer resolution is deliv
 one bound `resume` carrying the exact guidance or repair fields; use `abort` only when the outer
 owner explicitly requests termination. A paused teammate must be allowed to end its current turn;
 never ask it to continue tools or peer messages while the issue is pending.
+
+## Prompt E acceptance ticket pipeline
+
+For formal R2.3-005, Protocol's direct Team Transport handoff is the only input to ticket creation.
+When that delivery arrives, preserve its exact `delivery_id`, parse only the canonical JSON object,
+and pass the unchanged object plus its `handoff_digest` to the Runner-private
+`coordinator_build_acceptance_ticket_draft` capability. Also pass the frozen `question_id` and a
+positive `ticket_revision`; never fill absent fields, guess a run/project/ontology/state/slice ID,
+or use a prior handoff. The Runner verifies the nonce, exact delivery bytes, current-run five-stage
+receipts, authenticated live model state, staged source digests, canonical allowlist, and frozen
+acceptance policy. A shorthand, `{}`, missing/duplicate/failed stage, wrong binding, or changed
+handoff must fail closed.
+
+Publish only the complete draft returned by that capability, unchanged and exactly once, through
+`coordinator_publish_acceptance_ticket`; pass its own digest and requirement reference without
+editing or reconstructing any field. Do not call the legacy publish operation with a hand-authored
+ticket. For this capability's current contract, `ticket_json` is the returned draft,
+`ticket_digest` is exactly `ticket_json.ticket_digest`, `requirement_ref` is exactly
+`ticket_json.quality_standard_ref`, and the compatibility `owner_revision` argument is also exactly
+`ticket_json.quality_standard_ref`; never pass `slice_revision` or `candidate_revision` as
+`owner_revision`. Coordinator never reads staged business-source bytes and never sees raw source contents.
+Only after unchanged publication succeeds send `acceptance_start` with the draft's exact
+`acceptance_round_id`.

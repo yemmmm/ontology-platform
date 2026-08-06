@@ -24,19 +24,19 @@ FROZEN_GLOBAL_SURFACES = {
     # platform/P2a surfaces byte-bound below.
     # Formal candidate-progress and cooperative issue escalation refresh (old -> new):
     # runner 480b0f851e4f311cc1de0c21b7b862e973de9c0913583863fdfe11119ff448c7 ->
-    # 183759310643d7159fad33861e00cd624177c5f64ab2e90a48adc6d4c011fa82
+    # 079c11b93ed07dffb47404946bde7b981a6d512c0ae273e103f8cd5f4c8eda13
     # protocol_mechanics 1aa81771de8a1ab7d45e7d87b9f2d788a3e989d252afd5cd8468947ecf0fb800 ->
     # 0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb
     # protocol_retrieval_mcp cacc947ca7f1eb02050b1de30d54f4ba471f4eee1eea37195253d5bdb1b73be9 ->
     # ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc
     # codex cd8332734d239e15e4e4743a6d73cbedabf49bb1161b17410cf37ca08e42b6b2 ->
-    # 65c571b8363b2ca86f259d3d16ef3aa0a016a7fe134db40d3ab1b3511617a0f0
+    # c68a07c5daede05120a1a208094f073c4721288dee9dbe9f5b3a68e8375c6d7a
     # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.
-    "modeling_team/runner.py": "183759310643d7159fad33861e00cd624177c5f64ab2e90a48adc6d4c011fa82",
+    "modeling_team/runner.py": "079c11b93ed07dffb47404946bde7b981a6d512c0ae273e103f8cd5f4c8eda13",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "65c571b8363b2ca86f259d3d16ef3aa0a016a7fe134db40d3ab1b3511617a0f0",
+    "modeling_team/runtimes/codex.py": "c68a07c5daede05120a1a208094f073c4721288dee9dbe9f5b3a68e8375c6d7a",
     "modeling_team/interventions.py": "e22a8500d751f0968f049e615bf8ca3e07421d927058d95806a02415da08f661",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

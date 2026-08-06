@@ -1146,7 +1146,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         task = getattr(getattr(run, "configuration", None), "task", None)
         formal_capability = (
             self._is_formal_acceptance_run(run)
-            and agent.package.role in {"coordinator", "acceptance"}
+            and agent.package.role in {"coordinator", "protocol", "acceptance"}
             and self._acceptance is not None
         )
         formal_acceptance_auth = (
@@ -1360,7 +1360,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ]
         if (
             self._coordination_enabled
-            and agent.package.role in {"coordinator", "acceptance"}
+            and agent.package.role in {"coordinator", "protocol", "acceptance"}
             and self._acceptance is not None
         ):
             command[command.index("--chdir") : command.index("--chdir")] = [
@@ -2052,6 +2052,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if method in {"item/completed", "item/updated"}:
                 self._complete_agent_message(agent, params)
             if method == "item/completed":
+                self._record_protocol_platform_artifact(agent, params)
                 self._complete_retrieval_gate_item(agent, params)
             if method == "turn/started":
                 turn = params.get("turn")
@@ -2075,6 +2076,40 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 agent.active_turn_id, agent.state = None, "idle"
             if method in {"turn/failed", "thread/error"}:
                 agent.state = "failed"
+
+    def _record_protocol_platform_artifact(
+        self, agent: _Agent, params: Mapping[str, Any]
+    ) -> None:
+        """Send completed Protocol platform MCP results to the Runner sink.
+
+        The app-server notification is the trusted owner of request/result
+        bytes.  The Agent can mention a digest in a later handoff, but cannot
+        create this registry entry or write the immutable artifact itself.
+        """
+
+        if not self._coordination_enabled or self._acceptance is None:
+            return
+        if agent.package.role != "protocol" or not isinstance(params, Mapping):
+            return
+        item = params.get("item")
+        if not isinstance(item, Mapping):
+            return
+        if (
+            item.get("type") != "mcpToolCall"
+            or item.get("server") != "ontology_platform"
+            or item.get("status") != "completed"
+        ):
+            return
+        tool = item.get("tool")
+        arguments = item.get("arguments")
+        if not isinstance(tool, str) or not isinstance(arguments, Mapping) or "result" not in item:
+            return
+        record = self._acceptance.register_platform_tool_result(
+            tool=tool,
+            arguments=arguments,
+            result=item.get("result"),
+        )
+        self._append_runtime_evidence("platform-response-artifacts", record)
 
     def _respond_dynamic_tool(
         self, agent: _Agent, request_id: Any, params: dict[str, Any]

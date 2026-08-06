@@ -1620,6 +1620,54 @@ class R23005ContractTests(unittest.TestCase):
                     adapter._write_config(run, agent)
             self.assertFalse((home / "auth.json").exists())
 
+    def test_formal_protocol_config_stages_role_bound_runner_capability(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            home, work, skills = base / "protocol-home", base / "protocol-work", base / "protocol-skills"
+            for path in (home, work, skills):
+                path.mkdir(mode=0o700)
+            (base / "sources" / "protocol").mkdir(parents=True, mode=0o700)
+            host_auth = base / "host-auth.json"
+            host_auth.write_text("protocol-provider-auth", encoding="utf-8")
+            agent = _Agent("protocol", _load_package(root, "protocol"), home, work, skills)
+            carrier = RunnerAcceptanceCarrier(
+                base / "acceptance-carrier",
+                task_id="r2-3-005-formal-acceptance",
+                acceptance_id="acceptance",
+            )
+            run = SimpleNamespace(
+                root=base,
+                run_id="run-r23005-protocol-capability",
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance")
+                ),
+                protocol_key="protocol-platform-key",
+                acceptance=carrier,
+            )
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._acceptance = carrier
+            with patch.object(adapter, "preflight_host_auth", return_value=host_auth):
+                adapter._write_config(run, agent)
+            config = (home / "config.toml").read_text(encoding="utf-8")
+            self.assertIn("[mcp_servers.runner_capability]", config)
+            self.assertIn("runner_capability_mcp.py", config)
+            self.assertTrue((home / "runner-capability.token").is_file())
+            manifest = json.loads((home / "runner-capabilities.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["role"], "protocol")
+            self.assertEqual(
+                manifest["capabilities"],
+                [
+                    "protocol_list_platform_artifacts",
+                    "protocol_build_acceptance_stage_handoff",
+                ],
+            )
+            adapter.agents[agent.agent_id] = agent
+            adapter._coordination_enabled = True
+            adapter.stop()
+            carrier.cleanup()
+            self.assertFalse((home / "runner-capability.token").exists())
+
     def test_codex_child_resource_seam_stops_and_destroys_private_tree_without_launching(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:

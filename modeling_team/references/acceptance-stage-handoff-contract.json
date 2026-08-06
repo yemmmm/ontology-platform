@@ -1,0 +1,100 @@
+{
+  "schema_version": "r2-3-005-acceptance-stage-handoff/v1",
+  "handoff_fields": [
+    "schema_version",
+    "handoff_id",
+    "handoff_nonce",
+    "task_id",
+    "producer_run_id",
+    "slice_id",
+    "slice_revision",
+    "model_state",
+    "model_state_digest",
+    "candidate_digest",
+    "modeling_receipts",
+    "handoff_digest"
+  ],
+  "model_state_fields": [
+    "project_id",
+    "ontology_id",
+    "workspace_version",
+    "source_signature",
+    "build_session_id",
+    "graph_set_id",
+    "state_digest"
+  ],
+  "modeling_receipt_fields": [
+    "stage",
+    "status",
+    "receipt_digest",
+    "run_id",
+    "project_id",
+    "ontology_id",
+    "slice_revision",
+    "model_state_digest",
+    "evidence_ref"
+  ],
+  "stages": {
+    "dry-run": {
+      "status": "validated",
+      "tool": "submit_modeling_batch",
+      "request_mode": "dry_run"
+    },
+    "apply": {
+      "status": "applied",
+      "tool": "submit_modeling_batch",
+      "request_mode": "apply_atomic"
+    },
+    "readback": {
+      "status": "complete",
+      "tool": "get_modeling_context",
+      "request_mode": null
+    },
+    "validation": {
+      "status": "succeeded",
+      "tool": "run_semantic_validation",
+      "request_mode": null
+    },
+    "reasoning": {
+      "status": "succeeded",
+      "tool": "run_semantic_reasoning",
+      "request_mode": null
+    }
+  },
+  "platform_read_evidence_fields": [
+    "type",
+    "ref_id",
+    "ticket_digest",
+    "model_state_digest",
+    "tool",
+    "request_digest",
+    "response_digest",
+    "artifact_path",
+    "page"
+  ],
+  "platform_read_page_fields": [
+    "ordinal",
+    "input_cursor",
+    "output_cursor",
+    "has_more",
+    "sequence_complete"
+  ],
+  "candidate_binding": "Runner registers exactly one FormalCandidateProgress accepted identity; handoff.slice_revision must equal its candidate_revision and handoff.candidate_digest must equal its candidate_digest",
+  "runner_builder_operation": "protocol_list_platform_artifacts exposes observed metadata; protocol_build_acceptance_stage_handoff accepts exactly five stage->{tool,arguments,artifact_path} selections and returns handoff_json/handoff_digest; Protocol sends that JSON unchanged",
+  "digest_rules": {
+    "handoff": "canonical compact JSON SHA-256; set the self field handoff_digest to null and set every nested ticket_digest ref to null in the preimage",
+    "receipt": "canonical compact JSON SHA-256; set the self field receipt_digest to null and set every nested ticket_digest ref to null in the preimage",
+    "model_state": "canonical compact JSON SHA-256 over schema_version r2-3-005-model-state/v1 and the six identity fields",
+    "delivery": "Runner compares the canonical compact handoff bytes to the exact Protocol->Coordinator Team Transport delivery digest",
+    "platform_artifact": "Runner/Codex Runtime hashes canonical completed ontology_platform MCP arguments as request_digest and canonical result envelope bytes as response_digest; each completion is immutable at evidence/platform-responses/<request_digest>-<response_digest>.json, so repeated requests with changed results remain distinct"
+  },
+  "forbidden": [
+    "raw_source_bytes",
+    "expected_answers",
+    "ticket_fields",
+    "free_text_status",
+    "shorthand",
+    "empty_object",
+    "owner_revision_from_candidate_or_slice_revision"
+  ]
+}

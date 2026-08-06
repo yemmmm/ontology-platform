@@ -1856,7 +1856,7 @@ class CodexIsolationTests(unittest.TestCase):
             ("coordinator-formal", "coordinator", 2, True, True, "runner_capability", "accept"),
             ("acceptance-formal", "acceptance", 2, True, True, "runner_capability", "accept"),
             ("modeling-formal", "modeling", 2, True, True, "runner_capability", "decline"),
-            ("protocol-formal", "protocol", 2, True, True, "runner_capability", "decline"),
+            ("protocol-formal", "protocol", 2, True, True, "runner_capability", "accept"),
             ("coordinator-legacy", "coordinator", 1, False, True, "runner_capability", "decline"),
             ("coordinator-no-carrier", "coordinator", 2, True, False, "runner_capability", "decline"),
             ("unknown-server", "coordinator", 2, True, True, "unknown", "decline"),

@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterable, Mapping
 from .capability_mcp import (
     ACCEPTANCE_OPERATIONS,
     COORDINATOR_OPERATIONS,
+    PROTOCOL_OPERATIONS,
     ROLE_OPERATIONS,
     RunnerCapabilityEndpoint,
     token_digest,
@@ -86,6 +87,27 @@ MODEL_STATE_FIELDS: tuple[str, ...] = (
     "build_session_id",
     "graph_set_id",
 )
+
+# The formal stage handoff does not accept an arbitrary platform read as proof
+# of a particular stage.  These are the only Runner-observed calls that may
+# bind each receipt.  The write modes are carried in the original MCP request
+# arguments; readback is deliberately restricted to the generic model-context
+# read wrappers, while validation/reasoning each have one dedicated tool.
+STAGE_TOOL_BINDINGS: dict[str, tuple[frozenset[str], str | None]] = {
+    "dry-run": (frozenset({"submit_modeling_batch"}), "dry_run"),
+    "apply": (frozenset({"submit_modeling_batch"}), "apply_atomic"),
+    "readback": (frozenset({"get_modeling_context"}), None),
+    "validation": (frozenset({"run_semantic_validation"}), None),
+    "reasoning": (frozenset({"run_semantic_reasoning"}), None),
+}
+
+# Prompt E keeps the Protocol-to-Coordinator boundary a typed, Runner-bound
+# handoff.  The handoff is deliberately not an Acceptance ticket: it carries
+# only current-run mechanics and opaque semantic/candidate digests.  The
+# Runner-owned draft builder adds the approved source manifest, frozen CQ
+# policy, read allowlist, and live model state before the existing strict
+# ticket validator is invoked.
+STAGE_HANDOFF_SCHEMA = "r2-3-005-acceptance-stage-handoff/v1"
 
 
 def _error(message: str) -> None:
@@ -430,6 +452,99 @@ def validate_modeling_receipt(value: Any, *, run_id: str, project_id: str, ontol
     if ref["type"] != "platform_read":
         _error("modeling receipt evidence must be platform_read")
     return data
+
+
+def stage_handoff_digest(handoff: Mapping[str, Any]) -> str:
+    """Return the canonical digest for one Protocol stage handoff."""
+
+    return canonical_digest(handoff, self_field="handoff_digest")
+
+
+def validate_stage_handoff(
+    value: Any,
+    *,
+    expected_task_id: str | None = None,
+    expected_run_id: str | None = None,
+    expected_nonce: str | None = None,
+    expected_delivery_digest: str | None = None,
+) -> dict[str, Any]:
+    """Validate the exact current-run receipt handoff used by Prompt E.
+
+    ``handoff_digest`` is used as the temporary ticket binding for each typed
+    platform evidence reference.  It is intentionally replaced by the draft
+    ticket digest only after all Runner-owned values have been assembled.  The
+    receipt digest itself excludes nested ``ticket_digest`` fields, so this
+    rebinding cannot relabel or fabricate stage evidence.
+    """
+
+    fields = {
+        "schema_version",
+        "handoff_id",
+        "handoff_nonce",
+        "task_id",
+        "producer_run_id",
+        "slice_id",
+        "slice_revision",
+        "model_state",
+        "model_state_digest",
+        "candidate_digest",
+        "modeling_receipts",
+        "handoff_digest",
+    }
+    data = _require_exact_keys(value, fields, "acceptance stage handoff")
+    if data["schema_version"] != STAGE_HANDOFF_SCHEMA:
+        _error("acceptance stage handoff schema_version is unsupported")
+    for field in (
+        "handoff_id",
+        "task_id",
+        "producer_run_id",
+        "slice_id",
+        "slice_revision",
+    ):
+        _safe_id(data[field], f"stage handoff.{field}")
+    _safe_digest(data["handoff_nonce"], "stage handoff.handoff_nonce")
+    _safe_digest(data["candidate_digest"], "stage handoff.candidate_digest")
+    _safe_digest(data["handoff_digest"], "stage handoff.handoff_digest")
+    state = validate_model_state(data["model_state"], allow_runner_bound=False)
+    if data["model_state_digest"] != state["state_digest"]:
+        _error("stage handoff model_state_digest mismatch")
+    _safe_digest(data["model_state_digest"], "stage handoff.model_state_digest")
+    if expected_task_id is not None and data["task_id"] != expected_task_id:
+        _error("stage handoff task does not match Runner task")
+    if expected_run_id is not None and data["producer_run_id"] != expected_run_id:
+        _error("stage handoff run does not match Runner run")
+    if expected_nonce is not None and data["handoff_nonce"] != expected_nonce:
+        _error("stage handoff nonce is not the Runner-issued nonce")
+    if expected_delivery_digest is not None and _sha256_bytes(_canonical_json(data)) != expected_delivery_digest:
+        _error("stage handoff canonical bytes do not match Team Transport delivery")
+    if data["handoff_digest"] != stage_handoff_digest(data):
+        _error("stage handoff digest does not match canonical preimage")
+
+    receipts = data["modeling_receipts"]
+    if not isinstance(receipts, list) or len(receipts) != len(MODELING_STAGES):
+        _error("stage handoff must contain exactly five modeling receipts")
+    seen_stages: set[str] = set()
+    for receipt in receipts:
+        if not isinstance(receipt, Mapping):
+            _error("stage handoff modeling receipt is invalid")
+        evidence = receipt.get("evidence_ref")
+        if not isinstance(evidence, Mapping) or evidence.get("ticket_digest") != data["handoff_digest"]:
+            _error("stage handoff evidence is not bound to handoff digest")
+        normalized = validate_modeling_receipt(
+            receipt,
+            run_id=data["producer_run_id"],
+            project_id=state["project_id"],
+            ontology_id=state["ontology_id"],
+            slice_revision=data["slice_revision"],
+            state_digest=data["model_state_digest"],
+            ticket_digest=data["handoff_digest"],
+        )
+        if normalized["stage"] in seen_stages:
+            _error("stage handoff modeling receipts duplicate a stage")
+        seen_stages.add(normalized["stage"])
+    if seen_stages != set(MODELING_STAGES):
+        _error("stage handoff modeling receipts omit a required stage")
+    return _safe_copy(data)
 
 
 def _validate_sources(sources: Any) -> tuple[dict[str, str], ...]:
@@ -983,6 +1098,21 @@ class RunnerAcceptanceCarrier:
             for name, path in (source_materials or {}).items()
         }
         self._ticket_policy = _safe_copy(ticket_policy) if ticket_policy else None
+        # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
+        # as a non-secret binding in its task text, while exact delivery bytes
+        # are recorded only as a digest by TeamRunner before Coordinator can
+        # invoke the draft capability.
+        self._stage_handoff_nonce = secrets.token_hex(32)
+        self._stage_handoff_deliveries: dict[str, dict[str, Any]] = {}
+        # These records are populated only by the host Runtime when a formal
+        # Protocol MCP item actually completes.  Coordinator/Protocol have no
+        # capability to add or alter them; the draft builder uses the registry
+        # and the immutable files as the evidence owner of stage digests.
+        self._accepted_candidate_identity: dict[str, Any] | None = None
+        self._platform_read_artifacts: dict[str, dict[str, Any]] = {}
+        self._platform_artifact_sequence = 0
+        self._ticket_drafts: dict[str, dict[str, Any]] = {}
+        self._ticket_draft_bindings: dict[str, dict[str, Any]] = {}
         self._settlement_payload: dict[str, Any] | None = None
         self._cleanup_payload: dict[str, Any] | None = None
         # C-stage integrity state is deliberately kept in the Runner-owned carrier.
@@ -1005,6 +1135,7 @@ class RunnerAcceptanceCarrier:
         # checks and config/manifest staging.
         self._capability_tokens = {
             "coordinator": secrets.token_urlsafe(32),
+            "protocol": secrets.token_urlsafe(32),
             "acceptance": secrets.token_urlsafe(32),
         }
         self.capability_root = self.root / "capabilities"
@@ -1038,6 +1169,158 @@ class RunnerAcceptanceCarrier:
         self.descriptors = {
             "source": validate_child_descriptor(descriptors["source"] if descriptors else self.default_descriptor("source")),
             "platform": validate_child_descriptor(descriptors["platform"] if descriptors else self.default_descriptor("platform")),
+        }
+
+    @property
+    def stage_handoff_nonce(self) -> str:
+        """The current Runner-issued non-secret handoff nonce."""
+
+        return self._stage_handoff_nonce
+
+    def register_stage_handoff_delivery(
+        self,
+        *,
+        delivery_id: str,
+        text: str,
+        sender_role: str,
+        recipient_role: str,
+    ) -> dict[str, str]:
+        """Record the exact Protocol -> Coordinator delivery identity.
+
+        Only the delivery digest and fixed role metadata are retained.  Raw
+        handoff text is not persisted by the Runner, preventing business bytes
+        from becoming a Coordinator-visible carrier artifact.  Re-registering
+        the same immutable delivery is idempotent; changing its bytes or role
+        binding fails closed.
+        """
+
+        _safe_id(delivery_id, "stage handoff delivery_id")
+        if not isinstance(text, str) or not text:
+            _error("stage handoff delivery text is invalid")
+        if sender_role != "protocol" or recipient_role != "coordinator":
+            _error("stage handoff delivery role binding is invalid")
+        digest = _sha256_bytes(text.encode("utf-8"))
+        existing = self._stage_handoff_deliveries.get(delivery_id)
+        record = {
+            "delivery_id": delivery_id,
+            "text_digest": digest,
+            "sender_role": sender_role,
+            "recipient_role": recipient_role,
+        }
+        if existing is not None:
+            if existing != record:
+                _error("stage handoff delivery identity was mutated")
+            return _safe_copy(record)
+        self._stage_handoff_deliveries[delivery_id] = record
+        return _safe_copy(record)
+
+    def register_accepted_candidate(
+        self,
+        *,
+        candidate_revision: Any,
+        candidate_digest: str,
+    ) -> dict[str, Any]:
+        """Bind the one formal candidate accepted by the Modeling/Protocol gate.
+
+        The identity comes from :class:`FormalCandidateProgress` in TeamRunner,
+        never from a Protocol handoff or Coordinator argument.  R2.3-005 uses a
+        safe string revision because it is also the immutable ticket slice
+        revision; integer/boolean revisions from archived fixtures cannot enter
+        this formal binding.
+        """
+
+        _safe_id(candidate_revision, "accepted candidate_revision")
+        _safe_digest(candidate_digest, "accepted candidate_digest")
+        record = {
+            "candidate_revision": candidate_revision,
+            "candidate_digest": candidate_digest,
+        }
+        if self._accepted_candidate_identity is not None:
+            if self._accepted_candidate_identity != record:
+                _error("accepted candidate identity was mutated")
+            return _safe_copy(record)
+        self._accepted_candidate_identity = record
+        return _safe_copy(record)
+
+    def register_platform_tool_result(
+        self,
+        *,
+        tool: str,
+        arguments: Mapping[str, Any],
+        result: Any,
+    ) -> dict[str, str]:
+        """Persist one host-observed Protocol platform MCP result.
+
+        This method is called by the Runtime only after an actual completed
+        ``ontology_platform`` MCP item.  It intentionally exposes no model
+        capability and accepts no caller-supplied digest/path: both are
+        derived from the observed request/result.  The immutable artifact is
+        the exact canonical result envelope; its SHA is the response digest
+        used by the structured handoff.
+        """
+
+        if not isinstance(tool, str) or not tool:
+            _error("observed platform tool is invalid")
+        if not isinstance(arguments, Mapping):
+            _error("observed platform request arguments are invalid")
+        # Keep the sink broad enough to retain deterministic write/read stage
+        # results; the stage validator below still restricts which tool/mode
+        # can satisfy each receipt.
+        request_digest = _sha256_bytes(_canonical_json(dict(arguments)))
+        response_bytes = _canonical_json(result)
+        response_digest = _sha256_bytes(response_bytes)
+        artifact_path = f"evidence/platform-responses/{request_digest}-{response_digest}.json"
+        target = self.root.parent / artifact_path
+        try:
+            runtime_root = self.root.parent.resolve(strict=True)
+            target_parent = target.parent.resolve(strict=False)
+            target_parent.relative_to(runtime_root)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise AcceptanceContractError("observed platform artifact path escapes run root") from exc
+        record = {
+            "tool": tool,
+            "request_digest": request_digest,
+            "response_digest": response_digest,
+            "artifact_path": artifact_path,
+            "request_arguments": _safe_copy(dict(arguments)),
+            "successful": bool(
+                isinstance(result, Mapping)
+                and result.get("isError") is not True
+                and "error" not in result
+                and (
+                    not isinstance(result.get("structuredContent"), Mapping)
+                    or result["structuredContent"].get("ok") is not False
+                )
+            ),
+        }
+        existing = self._platform_read_artifacts.get(artifact_path)
+        if existing is not None:
+            if any(existing.get(key) != record.get(key) for key in record):
+                _error("observed platform artifact identity was mutated")
+            try:
+                if target.is_symlink() or not target.is_file() or target.read_bytes() != response_bytes:
+                    _error("observed platform artifact bytes were mutated")
+            except OSError as exc:
+                raise AcceptanceContractError("observed platform artifact is unreadable") from exc
+            return {
+                key: record[key]
+                for key in ("tool", "request_digest", "response_digest", "artifact_path")
+            }
+        record["observation_sequence"] = self._platform_artifact_sequence + 1
+        if target.exists() or target.is_symlink():
+            _error("observed platform artifact path is already occupied")
+        _write_exclusive_bytes(target, response_bytes, mode=0o440)
+        try:
+            metadata = os.lstat(target)
+            if stat.S_IMODE(metadata.st_mode) != 0o440 or not stat.S_ISREG(metadata.st_mode) or target.is_symlink():
+                _error("observed platform artifact metadata is invalid")
+        except OSError as exc:
+            raise AcceptanceContractError("observed platform artifact is unavailable") from exc
+        self._platform_read_artifacts[artifact_path] = record
+        self._platform_artifact_sequence += 1
+        return {
+            key: record[key]
+            for key in ("tool", "request_digest", "response_digest", "artifact_path")
         }
 
     def bind_model_state(
@@ -1370,7 +1653,13 @@ class RunnerAcceptanceCarrier:
             _error("only the live Acceptance runtime may invoke the child capability")
 
     def _check_capability(self, role: str, actor_id: str, capability: str | None = None) -> None:
-        expected_id = "coordinator" if role == "coordinator" else self.acceptance_id
+        expected_id = {
+            "coordinator": "coordinator",
+            "protocol": "protocol",
+            "acceptance": self.acceptance_id,
+        }.get(role)
+        if expected_id is None:
+            _error("unknown Runner capability role")
         if actor_id != expected_id:
             _error(f"only {role.title()} may invoke this Runner capability")
         if capability is not None and capability != self._capability_tokens[role]:
@@ -1389,6 +1678,12 @@ class RunnerAcceptanceCarrier:
             "coordinator": {
                 "token_digest": token_digest(self._capability_tokens["coordinator"]),
                 "operations": list(COORDINATOR_OPERATIONS),
+                "socket_mode": "0600",
+                "token_file_mode": "0400",
+            },
+            "protocol": {
+                "token_digest": token_digest(self._capability_tokens["protocol"]),
+                "operations": list(PROTOCOL_OPERATIONS),
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             },
@@ -1417,11 +1712,11 @@ class RunnerAcceptanceCarrier:
             raise AcceptanceContractError("unknown Runner capability role") from exc
 
     def start_capability_endpoints(self) -> None:
-        """Start the two private MCP capability brokers before Agent processes."""
+        """Start the three private MCP capability brokers before Agent processes."""
 
         started: list[RunnerCapabilityEndpoint] = []
         try:
-            for role in ("coordinator", "acceptance"):
+            for role in ("coordinator", "protocol", "acceptance"):
                 endpoint = self.capability_endpoint(role)
                 endpoint.start()
                 started.append(endpoint)
@@ -1439,6 +1734,450 @@ class RunnerAcceptanceCarrier:
             except OSError:
                 pass
 
+    def _carrier_run_id(self) -> str | None:
+        """Resolve the formal run ID from the Runner-owned carrier path."""
+
+        parts = self.root.parts
+        try:
+            index = parts.index("modeling-runs")
+        except ValueError:
+            return None
+        if index + 1 >= len(parts):
+            return None
+        candidate = parts[index + 1]
+        return candidate if isinstance(candidate, str) and candidate else None
+
+    def _validate_observed_stage_evidence(
+        self,
+        receipt: Mapping[str, Any],
+        *,
+        state_digest: str,
+    ) -> None:
+        """Bind one receipt to an actual Runtime-observed MCP artifact."""
+
+        live_state = self._observed_model_state(None)
+        if live_state["state_digest"] != state_digest:
+            _error("stage receipt state digest is not the live Runner state")
+        stage = receipt.get("stage")
+        evidence = receipt.get("evidence_ref")
+        if stage not in STAGE_TOOL_BINDINGS or not isinstance(evidence, Mapping):
+            _error("stage receipt evidence binding is invalid")
+        if evidence.get("type") != "platform_read":
+            _error("stage receipt evidence must be platform_read")
+        if evidence.get("model_state_digest") != state_digest:
+            _error("stage receipt evidence model state drifts")
+        tool = evidence.get("tool")
+        request_digest = evidence.get("request_digest")
+        response_digest = evidence.get("response_digest")
+        artifact_path = evidence.get("artifact_path")
+        _safe_digest(request_digest, "stage receipt request_digest")
+        _safe_digest(response_digest, "stage receipt response_digest")
+        artifact_path = _safe_relative_path(artifact_path, "stage receipt artifact_path")
+        expected_path = f"evidence/platform-responses/{request_digest}-{response_digest}.json"
+        if artifact_path != expected_path:
+            _error("stage receipt artifact_path is not Runner-owned")
+        observed = self._platform_read_artifacts.get(artifact_path)
+        if observed is None:
+            _error("stage receipt artifact was not observed by Runner")
+        if observed["tool"] != tool or observed["request_digest"] != request_digest or observed["response_digest"] != response_digest:
+            _error("stage receipt artifact digest binding drifts")
+        if not observed.get("successful"):
+            _error("stage receipt artifact result was unsuccessful")
+        allowed_tools, required_mode = STAGE_TOOL_BINDINGS[stage]
+        if tool not in allowed_tools:
+            _error("stage receipt tool does not match its stage")
+        arguments = observed.get("request_arguments")
+        if not isinstance(arguments, Mapping):
+            _error("stage receipt observed request arguments are unavailable")
+        if required_mode is not None and arguments.get("mode") != required_mode:
+            _error("stage receipt request mode does not match its stage")
+        if required_mode is None and stage in {"readback", "validation", "reasoning"} and "mode" in arguments:
+            _error("stage receipt read request carries an unexpected mode")
+        target = self.root.parent / artifact_path
+        try:
+            metadata = os.lstat(target)
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                _error("stage receipt artifact is not a regular file")
+            if _sha256_bytes(target.read_bytes()) != response_digest:
+                _error("stage receipt artifact bytes do not match response_digest")
+            result = json.loads(target.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise AcceptanceContractError("stage receipt artifact is unreadable") from exc
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AcceptanceContractError("stage receipt artifact is not canonical JSON") from exc
+        if not isinstance(result, Mapping):
+            _error("stage receipt artifact result is not an object")
+        structured = result.get("structuredContent")
+        data = structured.get("data") if isinstance(structured, Mapping) else result
+        if isinstance(structured, Mapping) and structured.get("ok") is not True:
+            _error("stage receipt MCP result did not report success")
+        if not isinstance(data, Mapping):
+            _error("stage receipt MCP result data is unavailable")
+        if stage in {"dry-run", "apply"}:
+            if (
+                data.get("mode") != required_mode
+                or data.get("attempt_status") != ("validated" if stage == "dry-run" else "applied")
+            ):
+                _error("stage receipt result status does not match its stage")
+            if stage == "apply":
+                workspace = data.get("workspace")
+                if (
+                    not isinstance(workspace, Mapping)
+                    or workspace.get("after_version") != live_state["workspace_version"]
+                ):
+                    _error("stage receipt apply workspace version is stale")
+                target_snapshot = data.get("target")
+                if isinstance(target_snapshot, Mapping) and "source_signature_after" in target_snapshot:
+                    if target_snapshot.get("source_signature_after") != live_state["source_signature"]:
+                        _error("stage receipt apply source signature is stale")
+        elif stage == "readback":
+            ontology = data.get("ontology")
+            workspace = data.get("workspace")
+            if (
+                not isinstance(ontology, Mapping)
+                or ontology.get("id") != live_state["ontology_id"]
+                or not isinstance(workspace, Mapping)
+                or workspace.get("workspace_version") != live_state["workspace_version"]
+            ):
+                _error("stage receipt readback ontology binding is invalid")
+        elif stage in {"validation", "reasoning"}:
+            if data.get("status") != "succeeded" or data.get("graph_set_id") != live_state["graph_set_id"]:
+                _error("stage receipt result status or graph scope is invalid")
+        if stage in {"dry-run", "apply"}:
+            if (
+                arguments.get("ontology_id") != live_state["ontology_id"]
+                or arguments.get("session_id") != live_state["build_session_id"]
+            ):
+                _error("stage receipt submit scope is invalid")
+        elif stage == "readback":
+            if arguments.get("ontology_id") != live_state["ontology_id"]:
+                _error("stage receipt readback request scope is invalid")
+        elif stage in {"validation", "reasoning"}:
+            if arguments.get("graph_set_id") != live_state["graph_set_id"]:
+                _error("stage receipt request graph scope is invalid")
+
+    def coordinator_build_acceptance_ticket_draft(
+        self,
+        handoff: Mapping[str, Any],
+        *,
+        handoff_delivery_id: str,
+        handoff_digest: str,
+        question_id: str,
+        ticket_revision: int,
+        coordinator_id: str = "coordinator",
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Build and retain one canonical ticket draft from a live handoff.
+
+        This is the only path that can create a formal ticket candidate.  The
+        Coordinator supplies an unchanged handoff and the exact Team Transport
+        delivery ID; all source bytes, policy fields, allowlist entries, and
+        authenticated model-state bindings come from this Runner carrier.
+        """
+
+        self._check_capability("coordinator", coordinator_id, capability)
+        if not self._ticket_policy:
+            _error("acceptance ticket draft capability is unavailable")
+        _safe_id(handoff_delivery_id, "stage handoff delivery_id")
+        _safe_digest(handoff_digest, "stage handoff digest argument")
+        delivery = self._stage_handoff_deliveries.get(handoff_delivery_id)
+        if delivery is None:
+            _error("stage handoff delivery is not recorded by Runner")
+        if delivery["sender_role"] != "protocol" or delivery["recipient_role"] != "coordinator":
+            _error("stage handoff delivery role binding is invalid")
+        if not isinstance(handoff, Mapping):
+            _error("stage handoff payload is invalid")
+        # The MCP capability receives a parsed JSON object, but the recorded
+        # delivery digest is over the exact canonical bytes.  Any whitespace,
+        # key-order, or mutation therefore fails before ticket construction.
+        if _sha256_bytes(_canonical_json(handoff)) != delivery["text_digest"]:
+            _error("stage handoff payload is not the unchanged delivered object")
+        normalized = validate_stage_handoff(
+            handoff,
+            expected_task_id=self.task_id,
+            expected_run_id=self._carrier_run_id(),
+            expected_nonce=self._stage_handoff_nonce,
+            expected_delivery_digest=delivery["text_digest"],
+        )
+        if normalized["handoff_digest"] != handoff_digest:
+            _error("stage handoff digest argument does not match payload")
+        accepted_candidate = self._accepted_candidate_identity
+        if accepted_candidate is None:
+            _error("formal accepted candidate identity is unavailable")
+        if (
+            normalized["slice_revision"] != accepted_candidate["candidate_revision"]
+            or normalized["candidate_digest"] != accepted_candidate["candidate_digest"]
+        ):
+            _error("stage handoff candidate binding does not match accepted candidate")
+        for receipt in normalized["modeling_receipts"]:
+            self._validate_observed_stage_evidence(
+                receipt,
+                state_digest=normalized["model_state_digest"],
+            )
+        live_state = self._observed_model_state(None)
+        if live_state != normalized["model_state"]:
+            _error("stage handoff model state does not match authenticated live state")
+
+        if not isinstance(question_id, str) or not question_id:
+            _error("ticket draft question_id is invalid")
+        if not isinstance(ticket_revision, int) or isinstance(ticket_revision, bool) or ticket_revision <= 0:
+            _error("ticket draft revision is invalid")
+        policy = self._ticket_policy
+        expected_questions = policy.get("competency_questions")
+        if not isinstance(expected_questions, list) or not expected_questions:
+            _error("acceptance standard has no competency questions")
+        question_map = {
+            item["id"]: item["question"]
+            for item in expected_questions
+            if isinstance(item, Mapping)
+            and isinstance(item.get("id"), str)
+            and isinstance(item.get("question"), str)
+        }
+        if question_id not in question_map:
+            _error("ticket draft question is not in the acceptance standard")
+        _safe_id(question_id, "ticket draft question_id")
+
+        source_paths_by_question = policy.get("approved_source_paths_by_question")
+        if not isinstance(source_paths_by_question, Mapping):
+            _error("acceptance standard source paths are unavailable")
+        raw_paths = source_paths_by_question.get(question_id)
+        if not isinstance(raw_paths, list) or not raw_paths:
+            _error("ticket draft approved sources are unavailable")
+        approved_sources: list[dict[str, str]] = []
+        for raw_path in sorted(raw_paths):
+            path = _safe_relative_path(raw_path, "ticket draft approved source path")
+            source = self._source_materials.get(path)
+            if source is None:
+                _error("ticket draft approved source is not staged for Runner")
+            try:
+                digest = _sha256_bytes(source.read_bytes())
+            except OSError as exc:
+                raise AcceptanceContractError("ticket draft approved source is unreadable") from exc
+            approved_sources.append({"path": path, "sha256": digest})
+        source_bundle_digest = _sha256_bytes(_canonical_json(approved_sources))
+
+        run_id = normalized["producer_run_id"]
+        ticket_id = f"acceptance-ticket-{run_id}-{question_id}-{ticket_revision}"
+        round_id = f"acceptance-round-{run_id}-{question_id}-{ticket_revision}"
+        _safe_id(ticket_id, "ticket draft ticket_id")
+        _safe_id(round_id, "ticket draft acceptance_round_id")
+        state = _safe_copy(live_state)
+        receipts = _safe_copy(normalized["modeling_receipts"])
+        # Receipt evidence is temporarily handoff-bound.  ``ticket_digest`` is
+        # excluded from all canonical receipt/ticket preimages, so this is a
+        # mechanical rebinding after validation, never a receipt rewrite.
+        for receipt in receipts:
+            evidence = receipt["evidence_ref"]
+            evidence["ticket_digest"] = None
+        ticket: dict[str, Any] = {
+            "schema_version": "r2-3-005-slice-acceptance-ticket/v1",
+            "ticket_id": ticket_id,
+            "acceptance_round_id": round_id,
+            "task_id": self.task_id,
+            "producer_run_id": run_id,
+            "slice_id": normalized["slice_id"],
+            "slice_revision": normalized["slice_revision"],
+            "question_id": question_id,
+            "question": question_map[question_id],
+            "approved_sources": approved_sources,
+            "source_bundle_digest": source_bundle_digest,
+            "platform_read_scope": {
+                "project_id": state["project_id"],
+                "ontology_id": state["ontology_id"],
+                "graph_set_id": state["graph_set_id"],
+            },
+            "model_state": state,
+            "model_state_digest": state["state_digest"],
+            "competency_questions": _safe_copy(expected_questions),
+            "allowed_read_tools": list(canonical_platform_allowlist()),
+            "modeling_receipts": receipts,
+            "timeout_seconds": 600,
+            "quality_standard_ref": policy["quality_standard_ref"],
+            "quality_standard_digest": policy["quality_standard_digest"],
+            "quality_standard_artifact": _safe_copy(policy["quality_standard_artifact"]),
+            "unknown_policy": policy["unknown_policy"],
+            "ticket_revision": ticket_revision,
+            "ticket_digest": None,
+        }
+        draft_digest = ticket_digest(ticket)
+        ticket["ticket_digest"] = draft_digest
+        for receipt in ticket["modeling_receipts"]:
+            receipt["evidence_ref"]["ticket_digest"] = draft_digest
+        normalized_ticket = validate_ticket(
+            ticket,
+            expected_owner_revision=policy["quality_standard_ref"],
+        )
+        existing = self._ticket_drafts.get(draft_digest)
+        if existing is not None and existing != normalized_ticket:
+            _error("ticket draft digest collision contains mutated content")
+        if existing is None:
+            self._ticket_drafts[draft_digest] = _safe_copy(normalized_ticket)
+            self._ticket_draft_bindings[draft_digest] = {
+                "handoff_delivery_id": handoff_delivery_id,
+                "handoff_digest": handoff_digest,
+                "candidate_digest": normalized["candidate_digest"],
+            }
+            path = self.acceptance_root / round_id / "ticket-draft.json"
+            _write_exclusive_json(path, normalized_ticket, mode=0o440)
+        return _safe_copy(normalized_ticket)
+
+    def protocol_build_acceptance_stage_handoff(
+        self,
+        stage_calls: Mapping[str, Mapping[str, Any]],
+        *,
+        protocol_id: str = "protocol",
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the canonical handoff from Runner-observed stage calls.
+
+        Protocol supplies only the complete request objects and exact artifact
+        paths selected from the observed catalog.  The Runner resolves those
+        selections against its immutable MCP-result registry and computes every
+        digest, page, receipt, nonce, candidate/state binding, and handoff
+        self-reference.
+        """
+
+        self._check_capability("protocol", protocol_id, capability)
+        if not isinstance(stage_calls, Mapping) or len(stage_calls) != len(MODELING_STAGES):
+            _error("stage handoff builder requires exactly five stage calls")
+        accepted = self._accepted_candidate_identity
+        if accepted is None:
+            _error("formal accepted candidate identity is unavailable")
+        run_id = self._carrier_run_id()
+        if run_id is None:
+            _error("formal stage handoff run identity is unavailable")
+        state = self._observed_model_state(None)
+        by_stage: dict[str, Mapping[str, Any]] = {}
+        for stage, entry in stage_calls.items():
+            if not isinstance(stage, str) or not isinstance(entry, Mapping) or set(entry) != {"tool", "arguments", "artifact_path"}:
+                _error("stage handoff builder stage call fields drift")
+            if stage in by_stage or stage not in MODELING_STAGES:
+                _error("stage handoff builder stage is duplicated or unknown")
+            if (
+                not isinstance(entry["tool"], str)
+                or not entry["tool"]
+                or not isinstance(entry["arguments"], Mapping)
+                or not isinstance(entry["artifact_path"], str)
+            ):
+                _error("stage handoff builder stage call is invalid")
+            by_stage[stage] = entry
+        if set(by_stage) != set(MODELING_STAGES):
+            _error("stage handoff builder omits a required stage")
+
+        receipts: list[dict[str, Any]] = []
+        for stage in MODELING_STAGES:
+            entry = by_stage[stage]
+            matches = [
+                record
+                for record in self._platform_read_artifacts.values()
+                if record["tool"] == entry["tool"]
+                and record.get("request_arguments") == dict(entry["arguments"])
+                and record["artifact_path"] == entry["artifact_path"]
+            ]
+            if len(matches) != 1:
+                _error("stage handoff builder request is not one observed platform call")
+            observed = matches[0]
+            receipt = {
+                "stage": stage,
+                "status": {
+                    "dry-run": "validated",
+                    "apply": "applied",
+                    "readback": "complete",
+                    "validation": "succeeded",
+                    "reasoning": "succeeded",
+                }[stage],
+                "receipt_digest": None,
+                "run_id": run_id,
+                "project_id": state["project_id"],
+                "ontology_id": state["ontology_id"],
+                "slice_revision": accepted["candidate_revision"],
+                "model_state_digest": state["state_digest"],
+                "evidence_ref": {
+                    "type": "platform_read",
+                    "ref_id": f"platform-{stage}-{observed['request_digest'][:16]}",
+                    "ticket_digest": "0" * 64,
+                    "model_state_digest": state["state_digest"],
+                    "tool": observed["tool"],
+                    "request_digest": observed["request_digest"],
+                    "response_digest": observed["response_digest"],
+                    "artifact_path": observed["artifact_path"],
+                    "page": {
+                        "ordinal": 0,
+                        "input_cursor": None,
+                        "output_cursor": None,
+                        "has_more": False,
+                        "sequence_complete": True,
+                    },
+                },
+            }
+            receipt["receipt_digest"] = modeling_receipt_digest(receipt)
+            self._validate_observed_stage_evidence(
+                receipt,
+                state_digest=state["state_digest"],
+            )
+            receipts.append(receipt)
+
+        handoff: dict[str, Any] = {
+            "schema_version": STAGE_HANDOFF_SCHEMA,
+            "handoff_id": f"handoff-{run_id}-{accepted['candidate_digest'][:16]}",
+            "handoff_nonce": self._stage_handoff_nonce,
+            "task_id": self.task_id,
+            "producer_run_id": run_id,
+            "slice_id": f"slice-{accepted['candidate_revision']}",
+            "slice_revision": accepted["candidate_revision"],
+            "model_state": _safe_copy(state),
+            "model_state_digest": state["state_digest"],
+            "candidate_digest": accepted["candidate_digest"],
+            "modeling_receipts": receipts,
+            "handoff_digest": None,
+        }
+        _safe_id(handoff["handoff_id"], "stage handoff.handoff_id")
+        _safe_id(handoff["slice_id"], "stage handoff.slice_id")
+        handoff_digest = stage_handoff_digest(handoff)
+        handoff["handoff_digest"] = handoff_digest
+        for receipt in handoff["modeling_receipts"]:
+            receipt["evidence_ref"]["ticket_digest"] = handoff_digest
+        validate_stage_handoff(
+            handoff,
+            expected_task_id=self.task_id,
+            expected_run_id=run_id,
+            expected_nonce=self._stage_handoff_nonce,
+        )
+        return {
+            "handoff_json": _safe_copy(handoff),
+            "handoff_digest": handoff_digest,
+        }
+
+    def protocol_list_platform_artifacts(
+        self,
+        *,
+        protocol_id: str = "protocol",
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Expose only observed artifact metadata needed for stage selection."""
+
+        self._check_capability("protocol", protocol_id, capability)
+        artifacts = []
+        for record in sorted(
+            self._platform_read_artifacts.values(),
+            key=lambda item: item["observation_sequence"],
+        ):
+            artifacts.append(
+                {
+                    key: record[key]
+                    for key in (
+                        "tool",
+                        "request_digest",
+                        "response_digest",
+                        "artifact_path",
+                        "request_arguments",
+                        "successful",
+                        "observation_sequence",
+                    )
+                }
+            )
+        return {"artifacts": artifacts}
+
     def _dispatch_capability(
         self,
         role: str,
@@ -1451,7 +2190,34 @@ class RunnerAcceptanceCarrier:
             _error("Runner capability operation is not available to this role")
         args = dict(arguments)
         capability = self.capability_token(role)
+        if role == "protocol" and operation == "protocol_build_acceptance_stage_handoff":
+            stage_calls = args["stage_calls"]
+            if not isinstance(stage_calls, Mapping):
+                _error("stage handoff builder stage_calls is invalid")
+            return self.protocol_build_acceptance_stage_handoff(
+                stage_calls,
+                protocol_id=args["protocol_id"],
+                capability=capability,
+            )
+        if role == "protocol" and operation == "protocol_list_platform_artifacts":
+            return self.protocol_list_platform_artifacts(
+                protocol_id=args["protocol_id"],
+                capability=capability,
+            )
         if role == "coordinator":
+            if operation == "coordinator_build_acceptance_ticket_draft":
+                handoff_payload = args["handoff_json"]
+                if not isinstance(handoff_payload, Mapping):
+                    _error("stage handoff payload is invalid")
+                return self.coordinator_build_acceptance_ticket_draft(
+                    handoff_payload,
+                    handoff_delivery_id=args["handoff_delivery_id"],
+                    handoff_digest=args["handoff_digest"],
+                    question_id=args["question_id"],
+                    ticket_revision=args["ticket_revision"],
+                    coordinator_id=args["coordinator_id"],
+                    capability=capability,
+                )
             if operation == "coordinator_publish_acceptance_ticket":
                 ticket_payload = args["ticket_json"]
                 if not isinstance(ticket_payload, Mapping):
@@ -1573,6 +2339,15 @@ class RunnerAcceptanceCarrier:
         capability: str | None = None,
     ) -> dict[str, Any]:
         self._check_capability("coordinator", coordinator_id, capability)
+        if self._ticket_policy is not None:
+            if not isinstance(ticket, Mapping):
+                _error("formal Coordinator publication requires a Runner-built ticket draft")
+            draft_digest = ticket.get("ticket_digest")
+            stored = self._ticket_drafts.get(draft_digest) if isinstance(draft_digest, str) else None
+            if stored is None:
+                _error("formal Coordinator publication requires a Runner-built ticket draft")
+            if dict(ticket) != stored:
+                _error("formal Coordinator ticket draft was mutated")
         normalized = validate_ticket(ticket, expected_owner_revision=owner_revision)
         self._enforce_ticket_policy(normalized)
         if normalized["task_id"] != self.task_id:
@@ -3503,5 +4278,5 @@ def classify_comparison(*, source: Mapping[str, Any], platform: Mapping[str, Any
 
 
 __all__ = [
-    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "READ_ONLY_VALIDATION_TOOLS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
+    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "READ_ONLY_VALIDATION_TOOLS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "stage_handoff_digest", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_stage_handoff", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
 ]
