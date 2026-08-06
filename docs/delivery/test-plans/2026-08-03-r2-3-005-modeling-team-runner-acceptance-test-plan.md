@@ -1614,3 +1614,18 @@ modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_r23005_t6_
 This offline result does not replace the user-designated real start25 test. Delivery must stage the accepted start24
 r3 carrier before prepare, then retain independent evidence for the five stage receipts, governed retrieval,
 unchanged ticket draft/publication, two Acceptance competency questions, and terminal cleanup.
+
+## Start25 launch checklist correction (2026-08-06)
+
+Every v2 `prepare` invocation must pass an actual UTC `--freeze-started-at` value immediately before launch. The
+required command shape is:
+
+`PYTHONPATH=. uv run --project backend python -m modeling_team run --profile modeling_team/profiles/r2-3-005-modeling-team.yaml --task modeling_team/.continuations/r23005-start25-task.yaml --run-id <run-id> --scope /tmp/r23005-start11-scope.yaml --base-url http://127.0.0.1:8001 --freeze-started-at <UTC-START-INSTANT>`
+
+The first start25 entry omitted that argument and failed closed with `v2 Task requires explicit freeze_started_at`
+before reservation/prepare. No run directory, `reservation`, `semantic_start`, or ledger event was produced; this
+must be recorded as a launch checklist defect and does not consume a start. A second corrected preflight attempt
+failed because the Delivery-only admin credential was not injected; it also produced no run or ledger event. Neither
+failure is semantic evidence. Before retrying, Delivery must provision the admin credential through the existing
+bootstrap helper, keep it out of Agent inputs, stage the exact start24 r3 carrier before prepare, and retain the
+current ledger/carrier checks.

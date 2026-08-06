@@ -2783,3 +2783,21 @@ the formal builder, or starting another real run before authorization.
   `delivery-4`, revision `dify-cba-slice-r3`, and candidate/semantic digest
   `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Start25 must stage these exact bytes before
   `Runner.prepare`, continue the accepted candidate, and not rebuild business semantics.
+
+### 2026-08-06T11:44:53+08:00 — Start25 launch checklist correction (pre-reservation, no start consumed)
+
+- The first start25 command used the otherwise frozen fresh Runner/task/carrier but omitted the v2-required
+  `--freeze-started-at` argument. The formal CLI failed closed with `run failed: v2 Task requires explicit
+  freeze_started_at` before `Runner.prepare`; this is a Delivery launch/checklist defect, not a semantic or
+  platform result. No start25 run directory was created, and read-only checks found no start25 `reservation`,
+  `semantic_start`, or ledger line. The canonical ledger remains `cap/count/active=31/24/0` with `7` remaining.
+- The corrected launch template is therefore mandatory for every v2 run (use the actual UTC instant immediately
+  before the command):
+
+  `PYTHONPATH=. uv run --project backend python -m modeling_team run --profile modeling_team/profiles/r2-3-005-modeling-team.yaml --task modeling_team/.continuations/r23005-start25-task.yaml --run-id <run-id> --scope /tmp/r23005-start11-scope.yaml --base-url http://127.0.0.1:8001 --freeze-started-at <UTC-START-INSTANT>`
+
+- A second pre-reservation retry supplied `--freeze-started-at 2026-08-06T03:44:19Z` and then failed closed at
+  canonical preflight because the Delivery-only admin credential was not injected. It likewise produced no run
+  directory or ledger event. The next retry must provision that Delivery-only credential through the existing
+  bootstrap helper, keep it out of Agent inputs, and use a fresh current UTC freeze value; no production code or
+  semantic attempt is authorized by either pre-reservation failure.
