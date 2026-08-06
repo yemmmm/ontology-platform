@@ -2699,3 +2699,40 @@ the formal builder, or starting another real run before authorization.
   Protocol or semantic-tool instruction file and changed before any start after start24.
 - Platform defects remain separate: nullable issue-control MCP response handling, coordination Runtime delivery and
   the MCP cursor signer lifecycle required code repairs. Prompt changes must not be used to relabel or conceal them.
+
+### 2026-08-06T10:39:34+08:00 — Start24 r3 retrieval repair, rebind-required terminal cleanup
+
+- Start24 `r23005-real-20260806t011151z-start24` continued the pre-prepare r2 lineage. Modeling's retained
+  `delivery-3` was parsed mechanically as a complete 50-item `dify-cba-slice-r3`; formal digest recomputation
+  returned both `candidate_digest` and `semantic_digest`
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Protocol's `delivery-4` accepted the exact
+  same digest. The carrier
+  `modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` was generated from those retained bytes,
+  not hand-authored, set to mode `0444`, and validated by the existing formal configuration loader before any
+  stop. Its carrier SHA-256 is
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`; `candidate_text` and parsed candidate
+  are exact, and the manifest entry is bound to `modeling`/`protocol` with `classification=coordination`.
+- Protocol resumed issue-1 after the shared MCP repair (`issue-resolution.jsonl` records before/after runtime
+  digests, app-server/MCP PIDs, direct page hashes and `two_page_cursor_continuation=ok`) and confirmed
+  `mutation_reconciliation=confirmed_no_write`. Modeling emitted `ready_for_acceptance`; Protocol emitted
+  `silent_for_acceptance`. Coordinator recorded that three Runner-private ticket publication calls were declined,
+  so no formal Acceptance ticket, Examiner child, verdict or settlement was created. The current Runner was started
+  before `2173848`; its in-memory handler could not hot-rebind to the approval repair. This is classified as
+  `runtime/infrastructure` with `platform-contract` `rebind-required`, while preserving the original
+  `rebind-required` evidence and all decline records.
+- After verifying all four role turns idle, Delivery sent exactly one PTY outer `{"action":"stop"}`. Runner's
+  normal cleanup reached `state=CLEANED`; `acceptance.active_handles=0`, `acceptance_children=0`, all private
+  credentials destroyed, `secrets` and runtime sockets absent, and no Runner/App Server/role child remained. The
+  owned non-empty Project/Ontology was retained as `failed-written-retained` (not deleted); direct authenticated
+  reads confirmed Project `62ea52c5-2077-4b15-a39b-9adbecd09e93`, Ontology
+  `fbd3faec-737a-4472-abab-2a43794e6659`, project key `54aeaa8b-1601-4901-b335-173e1834160f`, and admin key
+  `c96517c8-8ebc-473b-9bba-672b6f0d0b35`. Both key receipts report `revoked_at` and non-active status.
+- The existing `classify-failure` entry recorded the terminal state as `runtime/infrastructure`,
+  `complete_modeling_quality_result=false`. Read-only strict replay then passed with canonical R2.3-005
+  `cap/count/active=31/24/0`, 118 ledger lines and SHA-256
+  `ed91d6d882b94cc10157c8a5301ab28c024526461c5e878c08ee97c4428ac060`. This does not authorize start25.
+- Prompt A/C/D/E closure is now recorded against the actual source surfaces and focused regression test: A separates
+  `status=accepted` from platform/retrieval completion; C requires source-grounded relation citations before the
+  formal receipt; D freezes the query tuple and cursor-chain rules; E blocks `ready_for_acceptance`/
+  `silent_for_acceptance` until all platform and governed-retrieval gates pass. The prompt changes are intentionally
+  narrow and do not promote productization, Consumer, mutation or generalized recovery scope.

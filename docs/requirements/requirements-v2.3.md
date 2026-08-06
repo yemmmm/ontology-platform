@@ -2344,3 +2344,45 @@ strict replay 与 `_start_cap` 必须按每条记录实际的 `additional_starts
 R2.3-002 的历史账本仍只接受精确 `+2`；R2.3-005 既有精确 `+3` 记录及其 JSONL 字节、顺序和重放结果
 保持兼容。实现和确定性测试只使用隔离临时账本，不改写当前 canonical ledger；只有 Delivery 在开发、独立
 测试和提交完成后，才可按本次授权追加一条 `additional_starts=1` 的正式记录。
+
+### 2026-08-06 R2.3-005 start24 terminal outcome and prompt-contract closure
+
+Start24 `r23005-real-20260806t011151z-start24` continued the accepted r2 lineage without rebuilding the business
+slice. Modeling produced the complete immutable `dify-cba-slice-r3` candidate from the frozen source material;
+Protocol accepted it and completed dependency-ordered apply/readback, asserted-only validation, consistent reasoning,
+and the required lexical cursor repair. The candidate and semantic digests are both
+`7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. The exact candidate is retained as the
+gitignored, read-only pre-prepare carrier
+`modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` (carrier SHA-256
+`9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`, mode `0444`), mechanically extracted from
+the retained start24 `delivery-3` bytes and bound to accepted `delivery-4`.
+
+Acceptance did not start a ticket, Examiner, or verdict: the current Runner process was started before commit
+`2173848`, so its formal `runner_capability` approval handler could not be rebound in place. Three immutable ticket
+publication requests were declined. This is a `runtime/infrastructure` plus `platform-contract` `rebind-required`
+outcome, not a modeling-quality failure and not an Acceptance PASS. The same-run process/thread is not safely
+reattachable; a future authorized run must stage the carrier before `Runner.prepare` and use a fresh Runner process
+with the repaired handler. The Runner's normal `action=stop` path then completed cleanup; all child turns/processes,
+private credentials, sockets and secrets were removed, while the non-empty Project/Ontology was retained for
+diagnosis. Project `62ea52c5-2077-4b15-a39b-9adbecd09e93`, Ontology
+`fbd3faec-737a-4472-abab-2a43794e6659`, and both project/admin key receipts remain directly auditable; both keys
+are revoked and non-active.
+
+The canonical R2.3-005 ledger now records `cap/count/active=31/24/0`, strict replay PASS, 118 lines, and SHA-256
+`ed91d6d882b94cc10157c8a5301ab28c024526461c5e878c08ee97c4428ac060`. Start24 has one terminal failure record
+with `classification=runtime/infrastructure` and `complete_modeling_quality_result=false`; no start25 is implied
+or authorized by this outcome.
+
+The pre-start prompt repair required by the prior delivery is now bound to the real prompt surfaces and tests:
+
+- Prompt A: Modeling distinguishes an accepted candidate receipt from platform/retrieval completion.
+- Prompt C: Modeling and Protocol require source-grounded `evidence_citations` on every formal relation item before
+  accepting the candidate; a missing citation is a complete-candidate conflict.
+- Prompt D: Protocol freezes the complete query tuple and keeps context and match cursor chains separate,
+  including a fresh context chain for every match page.
+- Prompt E: Modeling and Protocol cannot emit `ready_for_acceptance` or `silent_for_acceptance` until
+  `dry_run`, `apply_atomic`, readback, validation, reasoning, and governed retrieval are complete.
+
+These prompt changes remain ordinary current-scope safeguards for R2.3-005 and do not add Consumer, mutation,
+recovery, orchestration, or productization scope. Acceptance remains unproved until a future fresh Runner binds a
+formal ticket and an independent Acceptance round returns a verdict.
