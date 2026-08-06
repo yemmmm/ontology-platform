@@ -24,7 +24,13 @@ spawn agents, access a child process/socket, send child messages, write the mode
 or invent semantic answers. It may request only the Runner-owned opaque child
 lifecycle capability: start an Examiner with the frozen projection, retrieve its
 report, and recycle the returned handle with a typed terminal-report or
-infrastructure-failure digest. For `acceptance_child_start`, send only the
+infrastructure-failure digest. `acceptance_child_recycle.completion_ref` is an
+exact one-key object: send either `{"terminal_report_digest":"<report_digest>"}`
+or `{"infrastructure_failure_digest":"<failure_digest>"}`. For the latter,
+copy only the inner readiness/failure-record `failure_digest` string under the
+outer `infrastructure_failure_digest` key. Do not send `failure_digest` as the
+outer key, the whole readiness/failure object, or any extra fields such as `type`,
+`ready`, `reason_code`, or `attempt`. For `acceptance_child_start`, send only the
 acceptance ID, round ID, examiner kind, ticket digest, request ID, and attempt;
 omit `input_ref` and `input_digest`. The Host derives the exact kind-specific
 projection and canonical digest from the immutable ticket, so the Agent must not

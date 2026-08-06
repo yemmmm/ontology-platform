@@ -9,9 +9,16 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   start/report/recycle, failure-record retrieval, and verdict submission.  Do not use
   Team Transport for child terminal state. `acceptance_child_get_report` returns either
   one terminal report, a typed infrastructure-failure readiness object, or a fixed
-  not-ready status. Recycle only with the matching typed report/failure digest. The
-  Runner permits exactly one attempt-0 to identical-input attempt-1 retry; after a
-  second infrastructure failure the round is BLOCKED.
+  not-ready status. For `acceptance_child_recycle`, `completion_ref` must be exactly
+  one of these two one-key JSON objects (with no extra keys):
+  `{"terminal_report_digest":"<report_digest>"}` or
+  `{"infrastructure_failure_digest":"<failure_digest>"}`. For an infrastructure
+  failure, copy only the inner readiness/failure-record `failure_digest` string into
+  the outer `infrastructure_failure_digest` key. Never send `failure_digest` as the
+  outer key, and never pass the whole readiness/failure object or its `type`, `ready`,
+  `reason_code`, `attempt`, or other fields. The Runner permits exactly one attempt-0
+  to identical-input attempt-1 retry; after a second infrastructure failure the round
+  is BLOCKED.
 - For `acceptance_child_start`, provide only the acceptance ID, round ID, examiner kind,
   ticket digest, request ID, and attempt. Omit `input_ref` and `input_digest`: the Host
   derives the exact kind-specific projection and canonical digest from the immutable

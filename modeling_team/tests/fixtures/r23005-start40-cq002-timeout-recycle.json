@@ -1,0 +1,19 @@
+{
+  "run_id": "r23005-real-20260806t161228z-start40",
+  "acceptance_id": "acceptance",
+  "round_id": "acceptance-round-r23005-real-20260806t161228z-start40-cq-002-1",
+  "child_handle": "child-handle-start40-cq002-source-timeout",
+  "child_handle_digest": "cce64093444251adbc0420b8f1ffc6b4e7171da07c393ec20dd30369fb6a50e2",
+  "failure": {
+    "type": "infrastructure_failure",
+    "ready": true,
+    "failure_digest": "a4946bead437856aea6edf0de86f8c3858f5feef71448e4d788400e5e9b066be",
+    "failure_category": "runtime",
+    "reason_code": "child-timeout",
+    "attempt": 0,
+    "child_handle_digest": "cce64093444251adbc0420b8f1ffc6b4e7171da07c393ec20dd30369fb6a50e2"
+  },
+  "recycle_completion_ref": {
+    "infrastructure_failure_digest": "a4946bead437856aea6edf0de86f8c3858f5feef71448e4d788400e5e9b066be"
+  }
+}

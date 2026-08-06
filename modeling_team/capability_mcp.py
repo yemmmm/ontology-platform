@@ -229,7 +229,24 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
             "child_handle": {"type": "string"},
-            "completion_ref": {"type": "object"},
+            "completion_ref": {
+                "oneOf": [
+                    {
+                        "title": "terminal-report-digest",
+                        "type": "object",
+                        "properties": {"terminal_report_digest": {"type": "string"}},
+                        "required": ["terminal_report_digest"],
+                        "additionalProperties": False,
+                    },
+                    {
+                        "title": "infrastructure-failure-digest",
+                        "type": "object",
+                        "properties": {"infrastructure_failure_digest": {"type": "string"}},
+                        "required": ["infrastructure_failure_digest"],
+                        "additionalProperties": False,
+                    },
+                ]
+            },
             "request_id": {"type": "string"},
         },
         "required": ["acceptance_id", "round_id", "child_handle", "completion_ref", "request_id"],
@@ -290,6 +307,14 @@ def _text_content(value: Any) -> list[dict[str, str]]:
 
 def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
     """Small deterministic validator for the fixed capability input schemas."""
+
+    one_of = schema.get("oneOf")
+    if isinstance(one_of, list):
+        return sum(
+            1
+            for option in one_of
+            if isinstance(option, Mapping) and _matches_schema(value, option)
+        ) == 1
 
     expected = schema.get("type")
     types = expected if isinstance(expected, list) else [expected]

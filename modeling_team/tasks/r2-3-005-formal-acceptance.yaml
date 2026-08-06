@@ -7,7 +7,14 @@ objective: >-
   inside this task. Coordinator receives no raw business-source bytes and only serializes the
   separate Modeling-ready and Protocol-silent signals before publishing an immutable ticket for
   each of two competency questions. Acceptance uses only two fresh, isolated Examiner pairs per
-  round and preserves explicit unknowns. Modeling owns source-grounded semantics; Protocol alone
+  round and preserves explicit unknowns. When Acceptance recycles a child, completion_ref must be
+  exactly one of these two one-key JSON objects (with no extra keys):
+  {"terminal_report_digest":"<report_digest>"} or
+  {"infrastructure_failure_digest":"<failure_digest>"}. For an infrastructure failure, copy
+  only the inner readiness/failure-record failure_digest string into the outer
+  infrastructure_failure_digest key; never send failure_digest as the outer key, never pass the
+  whole readiness/failure object, and never add type, ready, failure_category, reason_code,
+  attempt, or other fields. Modeling owns source-grounded semantics; Protocol alone
   performs deterministic candidate-v2/Batch translation, dry-run, apply_atomic, readback,
   validation, reasoning, and governed retrieval. Every Modeling candidate revision is a complete,
   self-contained immutable candidate: resend all unchanged items, citations, constraints,
