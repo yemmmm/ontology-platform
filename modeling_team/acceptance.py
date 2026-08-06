@@ -1118,6 +1118,11 @@ class RunnerAcceptanceCarrier:
         # or re-sending business bytes.  The original text is represented only
         # by the immutable digest in ``_stage_handoff_deliveries``.
         self._stage_handoff_payloads: dict[str, dict[str, Any]] = {}
+        # TeamRunner drains every Protocol -> Coordinator delivery.  Keep the
+        # exact canonical bytes emitted by the Runner-private builder so only
+        # that output can enter the handoff registry; ordinary replies (such as
+        # frozen-question ID arrays) remain ordinary peer deliveries.
+        self._stage_handoff_builder_outputs: dict[str, dict[str, str]] = {}
         self._typed_ticket_draft_revisions: dict[tuple[str, str], int] = {}
         self._typed_ticket_draft_requests: set[tuple[str, str, int]] = set()
         # These records are populated only by the host Runtime when a formal
@@ -1209,6 +1214,22 @@ class RunnerAcceptanceCarrier:
 
         return self._stage_handoff_nonce
 
+    def frozen_question_ids(self) -> tuple[str, ...]:
+        """Return the exact requirement-owned competency-question IDs."""
+
+        policy = self._ticket_policy
+        questions = policy.get("competency_questions") if isinstance(policy, Mapping) else None
+        if not isinstance(questions, list) or len(questions) != 2:
+            _error("acceptance policy must freeze exactly two competency question IDs")
+        ids: list[str] = []
+        for question in questions:
+            if not isinstance(question, Mapping) or not isinstance(question.get("id"), str) or not question["id"]:
+                _error("acceptance policy competency question ID is invalid")
+            ids.append(question["id"])
+        if len(set(ids)) != 2:
+            _error("acceptance policy competency question IDs are duplicated")
+        return tuple(ids)
+
     def register_stage_handoff_delivery(
         self,
         *,
@@ -1254,6 +1275,40 @@ class RunnerAcceptanceCarrier:
         self._stage_handoff_deliveries[delivery_id] = record
         self._stage_handoff_payloads[delivery_id] = _safe_copy(dict(parsed))
         return _safe_copy(record)
+
+    def classify_stage_handoff_delivery(self, text: str) -> bool:
+        """Return whether *text* is exact output of the formal handoff builder.
+
+        This classifier is anchored to the builder's recorded canonical bytes,
+        never to a guessed object shape.  A delivery carrying a known handoff
+        identity but mutated bytes fails closed; unrelated arrays, text, and
+        objects return ``False`` and remain ordinary peer messages.
+        """
+
+        if not isinstance(text, str) or not text:
+            _error("stage handoff delivery text is invalid")
+        digest = _sha256_bytes(text.encode("utf-8"))
+        expected = self._stage_handoff_builder_outputs.get(digest)
+        if expected is not None:
+            if expected["canonical_text"] != text:
+                _error("stage handoff builder output digest collision")
+            return True
+        if not self._stage_handoff_builder_outputs:
+            return False
+        try:
+            parsed = json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            return False
+        if not isinstance(parsed, Mapping):
+            return False
+        known_ids = {
+            value
+            for output in self._stage_handoff_builder_outputs.values()
+            for value in (output["handoff_id"], output["handoff_digest"])
+        }
+        if parsed.get("handoff_id") in known_ids or parsed.get("handoff_digest") in known_ids:
+            _error("stage handoff builder output was mutated")
+        return False
 
     def register_accepted_candidate(
         self,
@@ -2273,6 +2328,12 @@ class RunnerAcceptanceCarrier:
             expected_run_id=run_id,
             expected_nonce=self._stage_handoff_nonce,
         )
+        canonical_text = _canonical_json(handoff).decode("utf-8")
+        self._stage_handoff_builder_outputs[_sha256_bytes(canonical_text.encode("utf-8"))] = {
+            "canonical_text": canonical_text,
+            "handoff_id": handoff["handoff_id"],
+            "handoff_digest": handoff["handoff_digest"],
+        }
         return {
             "handoff_json": _safe_copy(handoff),
             "handoff_digest": handoff_digest,

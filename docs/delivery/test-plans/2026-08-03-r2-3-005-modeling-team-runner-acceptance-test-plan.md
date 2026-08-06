@@ -1783,3 +1783,27 @@ already recorded attempts.
 - Strict ledger replay after start30 is `cap/count/active=31/29/0`, 141 lines, SHA-256
   `f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with 2 remaining starts. I24 remains pending
   until C118-C120 are committed and verified; no Acceptance PASS is claimed.
+
+### Start31 live result and C121-C123 repair gate (2026-08-06)
+
+- Start31 `r23005-real-20260806t083205z-start31` reused baseline
+  `9e2fd6d978f4909fdc482e9949f7a37501849466ea589bb6ea395d45afef03e6`, completed all five Protocol stages plus
+  governed retrieval, and sent the exact Prompt-E handoff as `delivery-5` (text digest
+  `ae913494aa4ac14a668c8cb8a7f73ee67565b817558517e5c279c164b27e1cd8`).
+- Coordinator's first `cq-1` typed draft request failed closed without creating a draft or consuming a revision. The
+  subsequent Protocol `delivery-7` was an ordinary JSON array of two response slugs, not Acceptance policy IDs. The
+  pre-repair Runner nevertheless attempted stage-handoff registration for it and failed with
+  `stage handoff delivery is not an object`; the run exited 2 and cleaned. No issue, ticket, Acceptance round,
+  Examiner, or verdict was produced. Classification is `collaboration/routing`, `complete_modeling_quality_result=false`;
+  cleanup is `failed-written-retained` with zero key/session/process residue.
+- **C121 — exact handoff registration:** only the exact canonical output recorded by the Runner-private handoff builder
+  may be registered; ordinary Protocol -> Coordinator arrays, text, and other objects must route without touching the
+  handoff registry, while mutated known handoff identities fail closed.
+- **C122 — policy-owned frozen IDs:** Runner task text must mechanically expose the two acceptance-standard IDs
+  (`cq-001`,`cq-002`) before typed drafting. Coordinator must not guess abbreviated IDs, derive them from Protocol, or
+  ask Protocol for them; Protocol response slugs are never substituted for ticket IDs.
+- **C123 — regression gate:** retain typed draft rejection/revision integrity and the full Runtime-neutral/legacy suite.
+  Developer verification passed **442 tests, 1 skipped, 177 subtests**; Ruff and diff checks passed. I24 remains pending
+  for a fresh semantic continuation; no Acceptance PASS is claimed.
+- Strict ledger replay after start31 is `cap/count/active=31/30/0`, 145 lines, SHA-256
+  `d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with 1 remaining start.

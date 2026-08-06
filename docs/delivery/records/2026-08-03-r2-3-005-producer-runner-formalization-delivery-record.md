@@ -3045,3 +3045,28 @@ the formal builder, or starting another real run before authorization.
   `f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with **2 remaining**
   starts. Do not begin another semantic start until these prompt/Runner repairs are committed and verified; retain the
   same candidate semantics and evidence.
+
+### 2026-08-06T16:40:06+08:00 — Start31 reached the handoff, then exposed the ordinary-reply drain boundary
+
+- Start31 `r23005-real-20260806t083205z-start31` reused the same authoritative Task, r3 candidate/overlay semantics,
+  and baseline `9e2fd6d978f4909fdc482e9949f7a37501849466ea589bb6ea395d45afef03e6`. Protocol completed dry-run, apply,
+  readback, validation, reasoning, and governed retrieval, then sent the exact acceptance-stage handoff `delivery-5`
+  (handoff text digest `ae913494aa4ac14a668c8cb8a7f73ee67565b817558517e5c279c164b27e1cd8`).
+- Coordinator's first typed draft attempt used `cq-1`; the Runner rejected it before creating a draft or consuming a
+  revision. Coordinator then asked Protocol for the IDs. Protocol's `delivery-7` reply was the ordinary JSON array
+  `["current-c-behavior-consumed-by-b","b-behavior-without-c-score"]`; these are Protocol response slugs, not the
+  requirement-owned Acceptance ticket IDs. The pre-repair drain treated every Protocol -> Coordinator delivery as a
+  handoff, attempted to parse that array as an object, raised `stage handoff delivery is not an object`, and the
+  wrapper exited 2/`CLEANED`. No issue was raised, no ticket was published, and Acceptance did not start.
+- This is `collaboration/routing` with `complete_modeling_quality_result=false`, not a semantic-quality PASS/FAIL. The
+  written non-empty scope was retained as `failed-written-retained`; all keys were revoked, sessions reached terminal,
+  and Runtime/Acceptance child processes and credential projections have zero residue.
+- The next gate is now explicit: only the exact canonical output registered by
+  `protocol_build_acceptance_stage_handoff` may enter the Runner handoff registry; every other Protocol -> Coordinator
+  array, text, or object remains an ordinary peer delivery. Coordinator's task text must receive the two exact frozen
+  question IDs mechanically from the Runner's acceptance policy (`cq-001`,`cq-002`) and must not guess or ask Protocol.
+- Developer repair verification passed **442 tests, 1 skipped, 177 subtests**; Ruff and `git diff --check` passed. No
+  Acceptance ticket, Examiner report, verdict, or independent Acceptance evidence exists for start31.
+- Strict R2.3-005 ledger replay is `cap/count/active=31/30/0`, 145 lines, SHA-256
+  `d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with **1 remaining** start. The next run must
+  reuse the retained candidate semantics and wait for the exact delivery-bound and policy-ID repairs to be committed.

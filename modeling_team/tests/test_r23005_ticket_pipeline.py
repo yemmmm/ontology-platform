@@ -15,7 +15,9 @@ from modeling_team.acceptance import (
     modeling_receipt_digest,
     stage_handoff_digest,
 )
+from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
+from modeling_team.runtimes.base import RuntimeDelivery
 
 
 def _digest(value: object) -> str:
@@ -296,6 +298,170 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     capability=carrier.capability_token("coordinator"),
                 )
                 self.assertEqual(published["ticket_digest"], draft["ticket_digest"])
+            finally:
+                carrier.cleanup()
+
+    def test_builder_output_classifier_ignores_question_reply_and_rejects_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                handoff_text = json.dumps(
+                    built["handoff_json"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                self.assertTrue(carrier.classify_stage_handoff_delivery(handoff_text))
+                self.assertFalse(carrier.classify_stage_handoff_delivery('["cq-001","cq-002"]'))
+                self.assertFalse(carrier.classify_stage_handoff_delivery('{"question_ids":["cq-001","cq-002"]}'))
+
+                mutated = json.loads(handoff_text)
+                mutated["slice_revision"] = "revision-2"
+                mutated_text = json.dumps(mutated, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                with self.assertRaisesRegex(AcceptanceContractError, "builder output was mutated"):
+                    carrier.classify_stage_handoff_delivery(mutated_text)
+            finally:
+                carrier.cleanup()
+
+    def test_wrong_frozen_question_id_does_not_consume_typed_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                handoff = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )["handoff_json"]
+                handoff_text = json.dumps(
+                    handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                carrier.register_stage_handoff_delivery(
+                    delivery_id="delivery-5",
+                    text=handoff_text,
+                    sender_role="protocol",
+                    recipient_role="coordinator",
+                )
+                operation = "coordinator_build_acceptance_ticket_draft_from_delivery"
+                with self.assertRaisesRegex(AcceptanceContractError, "not in the acceptance standard"):
+                    carrier._dispatch_capability(
+                        "coordinator",
+                        operation,
+                        {
+                            "coordinator_id": "coordinator",
+                            "handoff_delivery_id": "delivery-5",
+                            "question_id": "cq-1",
+                            "ticket_revision": 1,
+                        },
+                    )
+                first = carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-5",
+                        "question_id": "cq-001",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual(first["question_id"], "cq-001")
+                second = carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-5",
+                        "question_id": "cq-002",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual(second["question_id"], "cq-002")
+            finally:
+                carrier.cleanup()
+
+    def test_runner_routes_question_id_reply_after_exact_handoff_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                handoff = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )["handoff_json"]
+                handoff_text = json.dumps(
+                    handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                runner = TeamRunner(repository_root=Path(__file__).resolve().parents[2], adapter=object())
+                runner.acceptance = carrier
+                runner._formal_coordination_enabled = lambda: True  # type: ignore[method-assign]
+                runner._formal_coordination_role_ids = lambda: {  # type: ignore[method-assign]
+                    "coordinator": "coordinator",
+                    "modeling": "modeling",
+                    "protocol": "protocol",
+                    "acceptance": "acceptance",
+                }
+                evidence: list[tuple[str, dict[str, str]]] = []
+                runner._append_evidence = lambda name, value: evidence.append((name, value))  # type: ignore[method-assign]
+
+                registered = runner._register_stage_handoff_delivery_if_exact(
+                    RuntimeDelivery(
+                        sender_id="protocol",
+                        recipient_id="coordinator",
+                        kind="peer",
+                        text=handoff_text,
+                        delivery_id="delivery-5",
+                    )
+                )
+                self.assertEqual(registered["delivery_id"], "delivery-5")
+                self.assertIsNone(
+                    runner._register_stage_handoff_delivery_if_exact(
+                        RuntimeDelivery(
+                            sender_id="protocol",
+                            recipient_id="coordinator",
+                            kind="peer",
+                            text='["cq-001","cq-002"]',
+                            delivery_id="delivery-7",
+                        )
+                    )
+                )
+                self.assertEqual([name for name, _ in evidence], ["acceptance-stage-handoff"])
+                first = carrier._dispatch_capability(
+                    "coordinator",
+                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-5",
+                        "question_id": "cq-001",
+                        "ticket_revision": 1,
+                    },
+                )
+                second = carrier._dispatch_capability(
+                    "coordinator",
+                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-5",
+                        "question_id": "cq-002",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual((first["question_id"], second["question_id"]), ("cq-001", "cq-002"))
             finally:
                 carrier.cleanup()
 
@@ -907,6 +1073,8 @@ class R23005TicketPipelineTests(unittest.TestCase):
         self.assertIn("explicit Modeling `terminal-handoff`", modeling)
         self.assertIn("coordinator_build_acceptance_ticket_draft", coordinator)
         self.assertIn("coordinator_build_acceptance_ticket_draft_from_delivery", coordinator)
+        self.assertIn("Runner-provided frozen-question list", coordinator)
+        self.assertIn("do not guess an abbreviated ID", coordinator)
         self.assertIn("owner_revision", coordinator)
         self.assertIn("quality_standard_ref", coordinator)
         self.assertIn("For `pause`, the argument object must contain exactly", coordinator)

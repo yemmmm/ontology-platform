@@ -2574,3 +2574,24 @@ handoff prompts, and action-specific `issue_control` `oneOf` schemas must be com
 replay is `cap/count/active=31/29/0`, 141 lines, SHA-256
 `f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with 2 remaining starts; the same candidate
 semantics and retained evidence remain the continuation baseline.
+
+### 2026-08-06 R2.3-005 start31 ordinary-reply routing failure and repair gate
+
+Start31 `r23005-real-20260806t083205z-start31` reused the retained candidate/overlay semantics and baseline
+`9e2fd6d978f4909fdc482e9949f7a37501849466ea589bb6ea395d45afef03e6`. Protocol completed dry-run, apply, readback,
+validation, reasoning, and governed retrieval, and sent the exact Prompt-E handoff as `delivery-5` (text digest
+`ae913494aa4ac14a668c8cb8a7f73ee67565b817558517e5c279c164b27e1cd8`).
+
+Coordinator's first typed draft request used the guessed `cq-1` and was correctly rejected without revision mutation.
+It then asked Protocol for IDs; Protocol replied in `delivery-7` with two slugs, which are not the requirement-owned
+Acceptance ticket IDs. The pre-repair Runner classified every Protocol -> Coordinator delivery as a handoff, attempted
+to parse that ordinary array, raised `stage handoff delivery is not an object`, and exited 2/`CLEANED`. No issue, ticket,
+Acceptance, Examiner, or verdict exists. The run is `collaboration/routing`, `complete_modeling_quality_result=false`,
+with written scope `failed-written-retained` and zero key/session/process residue.
+
+The durable gate is: register only the exact canonical bytes produced by the Runner-private handoff builder; route all
+other Protocol peer replies normally and fail closed on mutated known handoff identities. Runner task text must inject
+the exact two frozen IDs from the acceptance policy (`cq-001`,`cq-002`) so Coordinator never guesses or asks Protocol;
+Protocol response slugs cannot become ticket IDs. Developer verification passed `442 tests, 1 skipped, 177 subtests`.
+Strict ledger replay is `cap/count/active=31/30/0`, 145 lines, SHA-256
+`d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with 1 remaining start.

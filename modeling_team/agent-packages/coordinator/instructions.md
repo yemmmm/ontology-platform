@@ -71,7 +71,9 @@ copy, shorten, reconstruct, or resend handoff JSON, and do not provide `handoff_
 stage receipts, source paths, recipient, or transport fields. The Runner resolves the exact
 registered Protocol delivery and verifies the current run, role/nonce, five stage receipts, live
 model state, canonical read allowlist, staged source digests, and frozen acceptance policy. Both
-frozen questions may use revision 1; do not treat the second question as a duplicate. If the typed
+Before any typed draft, read the task text's Runner-provided frozen-question list and use exactly the
+two IDs supplied there, once each; do not guess an abbreviated ID (such as `cq-1`), derive an ID
+from Protocol, or ask Protocol to provide the IDs. Both frozen questions may use revision 1; do not treat the second question as a duplicate. If the typed
 operation is not advertised by a legacy/unbound carrier, use the compatibility
 `coordinator_build_acceptance_ticket_draft` operation with the unchanged canonical handoff object
 and digest, plus the same frozen question/revision fields; never fill absent fields, guess a

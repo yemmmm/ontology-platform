@@ -1645,6 +1645,20 @@ class TeamRunner:
             "conflict_json": self._canonical_bytes(normalized).decode("utf-8"),
         }
 
+    def _frozen_acceptance_question_ids(self) -> tuple[str, ...]:
+        """Resolve the two exact requirement-owned CQ IDs for Coordinator text."""
+
+        if not self._formal_coordination_enabled() or self.run is None:
+            return ()
+        if self.acceptance is not None:
+            ids = self.acceptance.frozen_question_ids()
+        else:
+            policy = self._acceptance_ticket_policy(self.run.configuration)
+            ids = tuple(item["id"] for item in policy["competency_questions"])
+        if len(ids) != 2 or len(set(ids)) != 2:
+            raise TeamConfigurationError("formal acceptance must expose exactly two frozen question IDs")
+        return ids
+
     def _task_text(self, role: str | None = None) -> str:
         assert self.run
         task = self.run.configuration.task
@@ -1807,6 +1821,17 @@ class TeamRunner:
                         isinstance(advertised, list)
                         and "coordinator_build_acceptance_ticket_draft_from_delivery" in advertised
                     )
+                frozen_question_ids = self._frozen_acceptance_question_ids()
+                frozen_question_instruction = ""
+                if frozen_question_ids:
+                    rendered_ids = ", ".join(f"`{question_id}`" for question_id in frozen_question_ids)
+                    frozen_question_instruction = (
+                        " Before any typed ticket draft, read the task's Runner-provided frozen-question list; "
+                        f"the exact two IDs are {rendered_ids}. Use only these IDs, once each, with a positive "
+                        "ticket_revision (revision 1 for the first draft). Never guess an abbreviated ID such as "
+                        "`cq-1`, derive an ID from Protocol, or ask Protocol to provide the IDs. If the task does "
+                        "not expose exactly these two IDs, do not call the draft capability."
+                    )
                 if typed_ticket_binding:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, retain only the "
@@ -1821,6 +1846,7 @@ class TeamRunner:
                         "source digests, and frozen policy. Both frozen questions may use revision 1; do not "
                         "treat the second question as a duplicate. Publish only the complete returned draft "
                         "exactly once through coordinator_publish_acceptance_ticket."
+                        + frozen_question_instruction
                     )
                 else:
                     ticket_instruction = (
@@ -1834,6 +1860,7 @@ class TeamRunner:
                         "same object/digest/requirement reference; never hand-author, shorten, replace, or mutate "
                         "it. `{}`/shorthand, changed run/project/ontology/state/slice/digest, or any second draft "
                         "is rejected."
+                        + frozen_question_instruction
                     )
                 return text + (
                     "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
@@ -2157,6 +2184,32 @@ class TeamRunner:
                 },
             )
         return result
+
+    def _register_stage_handoff_delivery_if_exact(self, delivery: Any) -> dict[str, str] | None:
+        """Register only the exact Runner-built Prompt-E delivery, if present."""
+
+        if not self._formal_coordination_enabled() or self.acceptance is None:
+            return None
+        role_ids = self._formal_coordination_role_ids()
+        try:
+            is_builder_output = self.acceptance.classify_stage_handoff_delivery(delivery.text)
+        except AcceptanceContractError as exc:
+            raise TeamConfigurationError(str(exc)) from exc
+        if not is_builder_output:
+            return None
+        if (
+            delivery.sender_id != role_ids["protocol"]
+            or delivery.recipient_id != role_ids["coordinator"]
+        ):
+            raise TeamConfigurationError("stage handoff delivery role binding is invalid")
+        handoff_record = self.acceptance.register_stage_handoff_delivery(
+            delivery_id=delivery.delivery_id,
+            text=delivery.text,
+            sender_role="protocol",
+            recipient_role="coordinator",
+        )
+        self._append_evidence("acceptance-stage-handoff", handoff_record)
+        return handoff_record
 
     def _latch_formal_candidate_failure(self, classification: str, reason: str) -> None:
         """Record one terminal failure before the foreground performs cleanup."""
@@ -2864,19 +2917,7 @@ class TeamRunner:
             except FormalCandidateError as exc:
                 self._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")
                 raise TeamConfigurationError(str(exc)) from exc
-            if self._formal_coordination_enabled() and self.acceptance is not None:
-                role_ids = self._formal_coordination_role_ids()
-                if (
-                    delivery.sender_id == role_ids["protocol"]
-                    and delivery.recipient_id == role_ids["coordinator"]
-                ):
-                    handoff_record = self.acceptance.register_stage_handoff_delivery(
-                        delivery_id=delivery.delivery_id,
-                        text=delivery.text,
-                        sender_role="protocol",
-                        recipient_role="coordinator",
-                    )
-                    self._append_evidence("acceptance-stage-handoff", handoff_record)
+            self._register_stage_handoff_delivery_if_exact(delivery)
             formal_invalid_response = False
             formal_roles = self._formal_candidate_roles()
             if formal_roles is not None and self._candidate_progress is not None:

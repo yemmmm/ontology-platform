@@ -314,6 +314,20 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         ):
             self.assertIn(phrase, coordinator_instructions)
 
+    def test_coordinator_task_text_injects_requirement_owned_frozen_question_ids(self) -> None:
+        root = repository_root()
+        configuration = load_formal_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
+        runner.run = SimpleNamespace(configuration=configuration, protocol_context=None)
+        coordinator = runner._task_text("coordinator")
+        self.assertIn("the exact two IDs are `cq-001`, `cq-002`", coordinator)
+        self.assertIn("Never guess an abbreviated ID such as `cq-1`", coordinator)
+        self.assertIn("derive an ID from Protocol", coordinator)
+
     def test_c96_retained_partial_revision_is_rejected_without_cross_delivery_merge(self) -> None:
         partial = _start5_partial_revision()
         before = copy.deepcopy(partial)
