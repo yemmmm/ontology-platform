@@ -1855,3 +1855,30 @@ already recorded attempts.
   processes, capability sockets, or local credential projections. User `AGENTS.md`/`CLAUDE.md` diffs were restored.
 - Strict ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
   `fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.
+
+### Start34 live result and explicit entity-identifier preservation gate (2026-08-06)
+
+- Start34 `r23005-real-20260806t105645z-start34` used the exact retained carrier
+  `modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` (SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`) as Runner-private `delivery-1`; no
+  reconstruction occurred. Protocol's delivery-bound `delivery-5` receipt was accepted for revision
+  `dify-cba-slice-r3`, with candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+- Class, property, and entity stages were written, and entity batch `r23005-entities` applied atomically. Before any
+  relation or Shape submission, direct artifact inspection found at least six explicit ID substitutions:
+  `c-version-1` -> `c-v1`, `c-version-2` -> `c-v2`, `c-current-draft` -> `c-draft`, `quality-score-field` ->
+  `quality-score`, `quality-rating-field` -> `quality-rating`, and `unknown-cross-release-output-meaning` ->
+  `unknown-cross-release-meaning`.
+- The platform correctly applied the identifiers Protocol submitted. Classify the result as `modeling-quality` and a
+  Protocol prompt-contract defect, not a platform execution/contract failure. The run was formally aborted from
+  `issue-1` / `WAITING_OWNER` and reached `TERMINAL_REPORT_COMPLETE`, `issue_abort=true`,
+  `complete_modeling_quality_result=false`.
+- No Acceptance ticket, round, Examiner, or verdict exists. Cleanup retained the non-empty Project as
+  `failed-written-retained`, cancelled the Build Session, released the Lease, revoked all relevant keys, destroyed all
+  role-private credentials, and left zero child/process/socket/token/credential or in-flight-attempt residue.
+- **Next-start gate:** before start35, repair and verify the authoritative Protocol prompt so every explicit candidate
+  identifier is copied byte-for-byte during candidate-to-platform translation; abbreviation, normalization, and
+  substitution are forbidden. Start35 must reuse the exact retained candidate rather than rebuild it.
+- Strict ledger replay is `cap/count/active=34/33/0`, 158 lines, SHA-256
+  `2ec4cf833a007f8ffa30f9227f068e9de00ef2d10cbae26c06ab879596d39424`, with **1 remaining** start. This failed run
+  supplies no Acceptance PASS or semantic acceptance conclusion.

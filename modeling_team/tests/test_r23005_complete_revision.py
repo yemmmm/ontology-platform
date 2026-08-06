@@ -273,6 +273,15 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "send exactly one of `receipt_json` or `conflict_json`, never both",
             "revision_basis",
             "replace_item_id",
+            "Every explicit semantic resource/entity ID supplied by the candidate",
+            "Copy each",
+            "byte-for-byte into the corresponding platform item translation",
+            "never shorten, normalize, replace, or alias it",
+            "c-version-1",
+            "quality-score-field",
+            "unknown-cross-release-output-meaning",
+            "return a concrete",
+            "candidate-to-Batch translation conflict through the typed or native conflict builder",
         ):
             self.assertIn(phrase, protocol_instructions)
         configuration = load_formal_team_configuration(

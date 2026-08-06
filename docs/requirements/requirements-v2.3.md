@@ -2652,3 +2652,33 @@ Cleanup retained the non-empty Project, completed the Session, released the Leas
 processes, capability sockets, or local credential projections. User `AGENTS.md`/`CLAUDE.md` diffs were restored.
 Strict R2.3-005 ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
 `fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.
+
+### 2026-08-06 R2.3-005 start34 entity-identifier preservation failure and gate
+
+Start34 `r23005-real-20260806t105645z-start34` used the exact retained carrier
+`modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` (SHA-256
+`9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`) as Runner-private `delivery-1`, without
+reconstructing its semantics. Protocol returned an accepted receipt bound to that delivery as `delivery-5`, for
+revision `dify-cba-slice-r3` and candidate/semantic digest
+`7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+
+Protocol wrote the class, property, and entity stages; entity batch `r23005-entities` applied atomically. Direct
+artifact inspection then found at least six Modeling-owned explicit `entity_id` values changed during
+candidate-to-platform translation: `c-version-1` -> `c-v1`, `c-version-2` -> `c-v2`, `c-current-draft` -> `c-draft`,
+`quality-score-field` -> `quality-score`, `quality-rating-field` -> `quality-rating`, and
+`unknown-cross-release-output-meaning` -> `unknown-cross-release-meaning`. No relation or Shape batch was submitted.
+The platform correctly executed the submitted entity batch, so this is a `modeling-quality` / Protocol prompt-contract
+defect rather than a platform execution or platform-contract defect.
+
+The run was formally aborted from `issue-1` / `WAITING_OWNER`, preserved all start34 evidence, and reached
+`TERMINAL_REPORT_COMPLETE` with `issue_abort=true` and `complete_modeling_quality_result=false`. Acceptance never
+started or settled: no ticket, Acceptance round, Examiner, or verdict exists. Cleanup retained the non-empty Project
+as `failed-written-retained`, cancelled the Build Session, released the Lease, revoked all relevant keys, destroyed
+all role-private credentials, and left zero child/process/socket/token/credential or in-flight-attempt residue.
+
+Before start35, the authoritative Protocol prompt contract **must** be repaired and verified so every explicit
+candidate identifier is preserved byte-for-byte in candidate-to-platform translation. Abbreviation, normalization,
+or substitution of any explicit identifier is forbidden, and the next start must reuse the exact retained candidate.
+Strict ledger replay is `cap/count/active=34/33/0`, 158 lines, SHA-256
+`2ec4cf833a007f8ffa30f9227f068e9de00ef2d10cbae26c06ab879596d39424`, with **1 remaining** start. Start34 provides
+no Acceptance PASS or semantic acceptance conclusion.

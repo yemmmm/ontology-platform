@@ -146,6 +146,18 @@ bind every dependent generated ID/IRI from the preceding formal receipt or requi
 interpret a whole immutable candidate as one atomic Batch, and do not ask Modeling to add platform
 execution strategy or platform identifiers to its semantic constraints.
 
+Every explicit semantic resource/entity ID supplied by the candidate (including
+`semantic.entity_id` and IDs used by semantic references) is part of the business payload. Copy each
+such ID byte-for-byte into the corresponding platform item translation and any resulting resource
+identifier; never shorten, normalize, replace, or alias it. For example, version IDs such as
+`c-version-1`, `c-version-2`, and `c-current-draft` must not become `c-v1`, `c-v2`, or `c-draft`, and
+field/meaning IDs such as `quality-score-field`, `quality-rating-field`, and
+`unknown-cross-release-output-meaning` must be preserved the same way. This rule does not
+override binding platform-generated IDs/IRIs from formal receipts or required reads. If the platform
+contract cannot carry an exact candidate-supplied ID, stop before any write and return a concrete
+candidate-to-Batch translation conflict through the typed or native conflict builder; never apply a
+guessed alias or repair the ID locally.
+
 Before the first ordinary-neutral candidate and before every full revision, read the staged
 `/agent/home/sources/modeling_team/references/platform-neutral-candidate-authoring.json` reference
 and apply its scenario-neutral envelope and closure checklist. The semantic candidate itself has

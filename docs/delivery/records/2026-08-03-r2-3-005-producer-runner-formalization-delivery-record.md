@@ -3125,3 +3125,39 @@ the formal builder, or starting another real run before authorization.
   were restored.
 - Strict R2.3-005 ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
   `fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.
+
+### 2026-08-06T19:01:25+08:00 — Start34 exposed Protocol entity-identifier translation drift
+
+- Start34 `r23005-real-20260806t105645z-start34` ran at HEAD
+  `f9a382d9526eb824673c3bfb79a076bd138bc29f` from baseline
+  `a0a58a48a9a8186561c80e8cfca4cb994bd101b674524d4df7fc7fa2506a7872`. Modeling published the exact retained
+  carrier `modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` (SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`) through the Runner-private staged-candidate
+  tool as `delivery-1`, rather than reconstructing it; Protocol returned the delivery-bound receipt as `delivery-5`
+  with `status=accepted`, revision `dify-cba-slice-r3`, and candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. The overlay SHA-256 was
+  `cd2e85d4b2e8b304e73d32c85f975f13b99ab321c573eb172304b52de39e5c24`.
+- Protocol wrote the class, property, and entity stages to Project `627a6439-6f75-496d-9bbd-13adb5a47ef0`, Ontology
+  `7df42def-fa51-4f14-a5f3-7dd4df575e05`, and Build Session `b3e06604-2a32-4b7f-9413-2f67a98d34bd`. Entity batch
+  `r23005-entities` applied atomically and produced workspace version
+  `345a4b373e6cc828a7a96a755ec494aa49b3dfbdd06793c83cae916c0bf3106c`; no relation or Shape batch was submitted.
+- Direct artifact inspection found at least six explicit Modeling-owned `entity_id` values changed during Protocol's
+  candidate-to-platform translation: `c-version-1` -> `c-v1`, `c-version-2` -> `c-v2`, `c-current-draft` ->
+  `c-draft`, `quality-score-field` -> `quality-score`, `quality-rating-field` -> `quality-rating`, and
+  `unknown-cross-release-output-meaning` -> `unknown-cross-release-meaning`. Protocol initially surfaced only the
+  three WorkflowVersion identity changes. The platform correctly executed the submitted entity batch; therefore this
+  is `modeling-quality` and a Protocol prompt-contract defect, not a platform execution or platform-contract defect.
+- The run paused as `issue-1` / `WAITING_OWNER`. The authorized resolution formally aborted it because explicit
+  identifiers had changed after entity apply, preserved all start34 evidence, prohibited relations and Shapes, and
+  required the next run to reuse the exact candidate. Coordinator issued the exact five-field outer `abort`; Runner
+  reached `TERMINAL_REPORT_COMPLETE` with `issue_abort=true`, classification `modeling-quality`, and
+  `complete_modeling_quality_result=false`.
+- Acceptance was aborted before start or settlement: no ticket, Acceptance round, Examiner, or verdict exists.
+  Cleanup destroyed all four role-private runtime credentials, left zero Acceptance children and zero
+  process/socket/token/credential residue, revoked all three relevant keys including the bootstrap trap, cancelled the
+  Build Session, released the Lease, and left zero in-flight attempts. The non-empty Project is retained as
+  `failed-written-retained`.
+- Strict R2.3-005 ledger replay is `cap/count/active=34/33/0`, 158 lines, SHA-256
+  `2ec4cf833a007f8ffa30f9227f068e9de00ef2d10cbae26c06ab879596d39424`, with **1 remaining** start. Before start35,
+  the authoritative Protocol prompt contract must be repaired and verified to preserve every explicit candidate
+  identifier byte-for-byte, with abbreviation, normalization, and substitution forbidden.
