@@ -2,25 +2,24 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 的 Runner 与离线机械能力已实现，
-  start10 的 Acceptance provider-auth 修复经独立 Round 8 PASS，start12 首次完成真实模型应用、
-  validation、reasoning 和负向探针，但通用检索截断而未进入 Acceptance；对应 Protocol 检索修复经
-  独立 Round 9 PASS。start11 与 start13 分别因外层信封错误和 Protocol 收件后不执行而
-  `collaboration/routing` 失败。正式账本现为 `13/13/0`，等待新的用户授权；
-  R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 start24 已终止并完成清理，
+  终态为 `runtime/infrastructure` + `platform-contract` `rebind-required`，不是建模质量结论或
+  Acceptance PASS。正式账本现为 `cap/count/active=31/24/0`，剩余 `7` 次；Prompt A/C/D 已由
+  `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
+  platform-contract 仍待实现与验证。R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：在新的用户授权后只修复 start13 暴露的 Protocol 收件/redrive 协作停滞，复用
-  start12 已成功的语义候选与 start13 已冻结的检索合同，继续进入独立 Acceptance；正式账本
-  cap/count/active 为 `13/13/0`
+- 当前下一目标：在下一次 semantic_start 前完成并验证 Prompt E 的 Coordinator canonical
+  acceptance-ticket contract（复用 start24 的精确 r3 carrier，不重建业务切片），随后在仍有授权的
+  `7` 次额度内以 fresh Runner 继续独立 Acceptance；正式账本 cap/count/active 为 `31/24/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
   `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-05
+- 更新日期：2026-08-06
 
 ## 背景
 
@@ -62,7 +61,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `修复中（start6 BLOCKED；cap 7 已用 6，剩余 1）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start24 terminal（rebind-required；31/24/0，剩余 7；Prompt E pending）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2345,7 +2344,7 @@ R2.3-002 的历史账本仍只接受精确 `+2`；R2.3-005 既有精确 `+3` 记
 保持兼容。实现和确定性测试只使用隔离临时账本，不改写当前 canonical ledger；只有 Delivery 在开发、独立
 测试和提交完成后，才可按本次授权追加一条 `additional_starts=1` 的正式记录。
 
-### 2026-08-06 R2.3-005 start24 terminal outcome and prompt-contract closure
+### 2026-08-06 R2.3-005 start24 terminal outcome and prompt-contract state
 
 Start24 `r23005-real-20260806t011151z-start24` continued the accepted r2 lineage without rebuilding the business
 slice. Modeling produced the complete immutable `dify-cba-slice-r3` candidate from the frozen source material;
@@ -2375,13 +2374,18 @@ or authorized by this outcome.
 
 The pre-start prompt repair required by the prior delivery is now bound to the real prompt surfaces and tests:
 
-- Prompt A: Modeling distinguishes an accepted candidate receipt from platform/retrieval completion.
+- Prompt A: Modeling distinguishes an accepted candidate receipt from platform/retrieval completion, and
+  neither Modeling nor Protocol emits `ready_for_acceptance` or `silent_for_acceptance` before dry-run,
+  apply/readback, validation, reasoning, and governed retrieval gates complete.
 - Prompt C: Modeling and Protocol require source-grounded `evidence_citations` on every formal relation item before
   accepting the candidate; a missing citation is a complete-candidate conflict.
 - Prompt D: Protocol freezes the complete query tuple and keeps context and match cursor chains separate,
   including a fresh context chain for every match page.
-- Prompt E: Modeling and Protocol cannot emit `ready_for_acceptance` or `silent_for_acceptance` until
-  `dry_run`, `apply_atomic`, readback, validation, reasoning, and governed retrieval are complete.
+- Prompt E: **Pending platform-contract implementation.** Coordinator currently lacks a canonical Acceptance
+  ticket schema plus run-specific values, which allowed shorthand or `{}` publication attempts. The required
+  contract is a structured Protocol receipt handoff, a Runner-built canonical ticket draft with run-specific
+  bindings, and Coordinator publication of that draft unchanged. This must be implemented and independently
+  verified before the next `semantic_start`; it is not prompt closure and does not make Acceptance ready.
 
 These prompt changes remain ordinary current-scope safeguards for R2.3-005 and do not add Consumer, mutation,
 recovery, orchestration, or productization scope. Acceptance remains unproved until a future fresh Runner binds a

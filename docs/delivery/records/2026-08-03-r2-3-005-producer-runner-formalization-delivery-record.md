@@ -2736,3 +2736,19 @@ the formal builder, or starting another real run before authorization.
   formal receipt; D freezes the query tuple and cursor-chain rules; E blocks `ready_for_acceptance`/
   `silent_for_acceptance` until all platform and governed-retrieval gates pass. The prompt changes are intentionally
   narrow and do not promote productization, Consumer, mutation or generalized recovery scope.
+
+### 2026-08-06T10:46:40+08:00 — Correction: start24 Prompt E remains pending platform-contract work
+
+- Correction to the preceding start24 entry: Prompt A/C/D are complete and bound to the actual prompt/test surfaces
+  by `749b6bc`; the Runner capability approval whitelist is provided by `2173848`. Prompt A owns the no-premature-
+  `ready_for_acceptance`/`silent_for_acceptance` gate as well as the distinction between an accepted candidate
+  receipt and platform/retrieval completion. Prompt C owns source-grounded relation citations, and Prompt D owns
+  the frozen query tuple plus separate context/match cursor chains.
+- Prompt E is **not complete**. It is the remaining `platform-contract` gap: Coordinator lacks a canonical
+  Acceptance-ticket schema and run-specific values, which permitted shorthand or `{}` publication attempts. E
+  requires a structured Protocol receipt handoff, a Runner-built canonical ticket draft with run-specific bindings,
+  and Coordinator publication of that draft unchanged. It must be implemented and independently verified before
+  the next `semantic_start`; no prompt-closure-complete or Acceptance-ready claim is authorized.
+- Current status remains start24 terminal `runtime/infrastructure` + `platform-contract` `rebind-required`, with
+  canonical ledger `cap/count/active=31/24/0` and `7` remaining starts. No start25 was started or authorized; the
+  exact r3 carrier remains the continuation baseline after Prompt E verification.
