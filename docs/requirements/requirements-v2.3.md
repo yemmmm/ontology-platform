@@ -2779,3 +2779,14 @@ mitigation is formal-v2-only opt-in wiring with zero default-path behavior diffe
 modeling tests, 1 skipped, 195 subtests**, **843 backend tests, 10 skipped**, Ruff, and diff checks. The service restart
 and post-restart backend/frontend health checks remain pending with root; start37 must not begin until that runtime
 verification is complete. This repair itself does not change the ledger or consume a semantic start.
+
+### 2026-08-06 R2.3-005 candidate-receipt barrier delivery closeout
+
+The mechanical receipt barrier is committed as `e9bd80f`. The repository-managed service was restarted and reached
+`active`. A backend curl issued approximately 4 ms after restart preceded listener readiness; bounded short polling
+succeeded on attempt 5. Backend `/api/health` returned `{"status":"ok"}`, and frontend port `5173` returned HTTP
+success.
+
+The start37 receipt-barrier prerequisite is now satisfied by committed implementation, regression evidence, service
+restart, and live endpoint health. This closeout does not authorize an automatic start37 and does not mutate the
+semantic-start ledger.

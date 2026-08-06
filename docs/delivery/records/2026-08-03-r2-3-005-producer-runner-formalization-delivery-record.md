@@ -3261,3 +3261,13 @@ the formal builder, or starting another real run before authorization.
   **843 passed, 10 skipped**; Ruff and diff checks passed. The repository-managed service restart and post-restart
   backend/frontend health verification remain for root to complete before start37. No ledger event or additional
   semantic start was created by this repair verification.
+
+### 2026-08-06 — Candidate-receipt barrier runtime closeout
+
+- The mechanical barrier implementation was committed as `e9bd80f`. After
+  `systemctl --user restart ontology-platform.service`, the unit reached `active`.
+- The first backend curl ran only about 4 ms after restart and failed before the listener was ready; bounded short
+  polling then succeeded on attempt 5. The backend `/api/health` response was `{"status":"ok"}`, and the frontend
+  on port `5173` returned HTTP success.
+- The start37 candidate-receipt gate is therefore satisfied at committed-code, regression, restarted-service, and
+  endpoint-health levels. This runtime closeout did not mutate the ledger or start another semantic run.

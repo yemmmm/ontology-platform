@@ -1963,3 +1963,12 @@ already recorded attempts.
   195 subtests** and **843 backend tests, 10 skipped**; Ruff and diff checks passed.
 - Runtime acceptance remains pending: root must restart `ontology-platform.service` and verify backend/frontend health
   before start37. This repair round created no ledger mutation or semantic start.
+
+### Mechanical candidate-receipt barrier runtime closeout (2026-08-06)
+
+- Implementation commit: `e9bd80f`.
+- `ontology-platform.service` restarted and reached `active`. An immediate backend probe at approximately 4 ms was
+  earlier than listener readiness; bounded polling succeeded on attempt 5.
+- Backend `/api/health` returned `{"status":"ok"}` and frontend port `5173` returned HTTP success. The runtime
+  acceptance item is closed, and the mechanical receipt barrier is satisfied as the start37 gate. No ledger event or
+  semantic start was created by this check.
