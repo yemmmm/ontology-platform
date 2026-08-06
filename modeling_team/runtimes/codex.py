@@ -2023,6 +2023,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 agent.package.role == "protocol"
                 and agent.schema_version == 2
                 and server_name == "protocol_mechanics"
+            ) or (
+                self._coordination_enabled
+                and self._acceptance is not None
+                and agent.package.role in ROLE_OPERATIONS
+                and server_name == "runner_capability"
             )
             action = "accept" if expected else "decline"
             self._append_runtime_evidence(

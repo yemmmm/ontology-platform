@@ -1850,6 +1850,60 @@ class CodexIsolationTests(unittest.TestCase):
                 {"action": "accept", "content": {}},
             )
 
+    def test_runner_capability_elicitation_is_formal_operations_only(self) -> None:
+        root = repository_root()
+        cases = (
+            ("coordinator-formal", "coordinator", 2, True, True, "runner_capability", "accept"),
+            ("acceptance-formal", "acceptance", 2, True, True, "runner_capability", "accept"),
+            ("modeling-formal", "modeling", 2, True, True, "runner_capability", "decline"),
+            ("protocol-formal", "protocol", 2, True, True, "runner_capability", "decline"),
+            ("coordinator-legacy", "coordinator", 1, False, True, "runner_capability", "decline"),
+            ("coordinator-no-carrier", "coordinator", 2, True, False, "runner_capability", "decline"),
+            ("unknown-server", "coordinator", 2, True, True, "unknown", "decline"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            evidence_path = base / "evidence" / "mcp-elicitations.jsonl"
+            for request_id, (case, role, schema_version, coordination, has_carrier, server_name, action) in enumerate(cases, start=1):
+                with self.subTest(case=case):
+                    agent = _Agent(
+                        case,
+                        _load_package(root, role),
+                        base / case / "home",
+                        base / case / "work",
+                        base / case / "skills",
+                        schema_version=schema_version,
+                    )
+                    agent.process = SimpleNamespace(stdin=StringIO())
+                    adapter = CodexRuntimeAdapter(repository_root=root)
+                    adapter._run_root = base
+                    adapter._coordination_enabled = coordination
+                    adapter._acceptance = SimpleNamespace() if has_carrier else None
+                    adapter._notification(
+                        agent,
+                        {
+                            "id": request_id,
+                            "method": "mcpServer/elicitation/request",
+                            "params": {
+                                "serverName": server_name,
+                                "mode": "form",
+                                "message": f"private-message-{case}",
+                                "requestedSchema": {
+                                    "type": "object",
+                                    "properties": {"ticket": {"type": "object"}},
+                                },
+                            },
+                        },
+                    )
+                    self.assertEqual(
+                        json.loads(agent.process.stdin.getvalue())["result"],
+                        {"action": action, "content": {}},
+                    )
+                    event = json.loads(evidence_path.read_text(encoding="utf-8").splitlines()[-1])
+                    self.assertEqual(event["server_name"], server_name)
+                    self.assertEqual(event["action"], action)
+                    self.assertNotIn(f"private-message-{case}", json.dumps(event))
+
     def test_start_roster_derives_retrieval_gate_eligibility_only_for_v2_protocol_create(self) -> None:
         root = repository_root()
         cases = (

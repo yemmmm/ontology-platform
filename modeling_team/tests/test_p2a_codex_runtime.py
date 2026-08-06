@@ -30,13 +30,13 @@ FROZEN_GLOBAL_SURFACES = {
     # protocol_retrieval_mcp cacc947ca7f1eb02050b1de30d54f4ba471f4eee1eea37195253d5bdb1b73be9 ->
     # ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc
     # codex cd8332734d239e15e4e4743a6d73cbedabf49bb1161b17410cf37ca08e42b6b2 ->
-    # b3b3506e85a572fdfa9bbd083740bd80462df96416570c24a10e0eada26f19df
+    # 65c571b8363b2ca86f259d3d16ef3aa0a016a7fe134db40d3ab1b3511617a0f0
     # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.
     "modeling_team/runner.py": "183759310643d7159fad33861e00cd624177c5f64ab2e90a48adc6d4c011fa82",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "b3b3506e85a572fdfa9bbd083740bd80462df96416570c24a10e0eada26f19df",
+    "modeling_team/runtimes/codex.py": "65c571b8363b2ca86f259d3d16ef3aa0a016a7fe134db40d3ab1b3511617a0f0",
     "modeling_team/interventions.py": "e22a8500d751f0968f049e615bf8ca3e07421d927058d95806a02415da08f661",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
