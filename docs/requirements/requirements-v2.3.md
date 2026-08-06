@@ -2641,3 +2641,14 @@ temporary in-memory replay of the retained start33 handoff and platform evidence
 successfully. This is developer/contract evidence only and does not turn the retained run into an Acceptance result.
 The live run remains `issue-1` / `WAITING_OWNER`, with no ticket, Acceptance, Examiner, or verdict. The current
 authorization tranche is **1/3 consumed, 2 remaining**.
+
+### 2026-08-06 R2.3-005 start33 terminal closeout
+
+Coordinator issued a legal outer `abort` using exactly the five fields `action`, `issue_id`, `reporter_id`,
+`control_epoch`, and `reason`. Runner reached `TERMINAL_REPORT_COMPLETE`; terminal classification is
+`platform-contract`, with `complete_modeling_quality_result=false`.
+
+Cleanup retained the non-empty Project, completed the Session, released the Lease, and left zero keys, child/runtime
+processes, capability sockets, or local credential projections. User `AGENTS.md`/`CLAUDE.md` diffs were restored.
+Strict R2.3-005 ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
+`fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.

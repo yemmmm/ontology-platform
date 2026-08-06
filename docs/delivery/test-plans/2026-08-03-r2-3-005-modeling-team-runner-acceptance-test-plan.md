@@ -1845,3 +1845,13 @@ already recorded attempts.
   as developer/contract verification only; it is not an independent Acceptance result.
 - The live run remains `issue-1` / `WAITING_OWNER`; there is still no ticket, Acceptance, Examiner, or verdict and no
   semantic PASS/FAIL conclusion. The authorized tranche is **1/3 consumed, 2 remaining**.
+
+### Start33 terminal closeout (2026-08-06)
+
+- Coordinator issued a legal outer `abort` with exactly five fields (`action`, `issue_id`, `reporter_id`,
+  `control_epoch`, `reason`). Runner reached `TERMINAL_REPORT_COMPLETE`; terminal classification is
+  `platform-contract`, `complete_modeling_quality_result=false`.
+- Cleanup retained the non-empty Project, completed the Session, released the Lease, and left zero keys, child/runtime
+  processes, capability sockets, or local credential projections. User `AGENTS.md`/`CLAUDE.md` diffs were restored.
+- Strict ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
+  `fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.

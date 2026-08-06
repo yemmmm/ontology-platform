@@ -3114,3 +3114,14 @@ the formal builder, or starting another real run before authorization.
 - The retained live run remains `issue-1` / `WAITING_OWNER`, with no ticket, Acceptance, Examiner, or verdict and no
   semantic PASS/FAIL claim. The current authorization tranche has consumed **1/3** starts, with **2** remaining; no
   additional start is implied by this repair record.
+
+### 2026-08-06T18:45:00+08:00 — Start33 terminal closeout
+
+- Coordinator issued a legal outer `abort` with the exact five-field shape (`action`, `issue_id`, `reporter_id`,
+  `control_epoch`, `reason`). Runner reached `TERMINAL_REPORT_COMPLETE` and persisted terminal classification
+  `platform-contract`, `complete_modeling_quality_result=false`.
+- Cleanup completed with the non-empty Project retained, Session completed, and Lease released; keys, child/runtime
+  processes, capability sockets, and local credential projections are all zero. User `AGENTS.md`/`CLAUDE.md` diffs
+  were restored.
+- Strict R2.3-005 ledger replay is `cap/count/active=34/32/0`, 154 lines, SHA-256
+  `fe942e0ddd26cd5253aa107558adcb4781510877074c8615b7ee7a2a56ec654a`, with **2 remaining** starts.
