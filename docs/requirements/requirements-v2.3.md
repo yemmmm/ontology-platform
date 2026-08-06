@@ -2595,3 +2595,29 @@ the exact two frozen IDs from the acceptance policy (`cq-001`,`cq-002`) so Coord
 Protocol response slugs cannot become ticket IDs. Developer verification passed `442 tests, 1 skipped, 177 subtests`.
 Strict ledger replay is `cap/count/active=31/30/0`, 145 lines, SHA-256
 `d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with 1 remaining start.
+
+### 2026-08-06 R2.3-005 start32 canonical handoff identity failure and repair gate
+
+Start32 `r23005-real-20260806t090130z-start32` reused the retained candidate/overlay semantics and baseline
+`19246c30c190da84ab0b0b3dea9c0b2c5a1aa13e197722ac7039246d3de7cb24`. Protocol completed all five platform stages
+(dry-run, apply, readback, validation, and reasoning) and governed retrieval completed both competency questions
+with `generic_complete`. The Runner-private handoff builder succeeded with handoff digest
+`7dd7f977feb2ac08158658011642bba42c9ea4fa302bfcd4db21ba1edfbfdcf7`.
+
+Protocol's `delivery-6` contained the same 6,850-byte handoff object as the builder: parsed objects were deeply
+equal and the canonical JSON SHA-256 was
+`33f260dcda87d26ee28d1af7b7feec328bb654a093e4717682ae397deb35e4ee`, while the raw delivery SHA-256 was
+`c160a9e39be6269079e8c1657c4a5d7e4874f0c7eefbe56ef601f02d000866f9`; the only difference was JSON key insertion
+order. The pre-repair raw-byte classifier nevertheless reported a mutation, the formal wrapper exited 2 and
+`CLEANED`, and no acceptance-stage-handoff evidence, ticket, or Acceptance round was produced. The run is
+`collaboration/routing`, `complete_modeling_quality_result=false`; cleanup retained the written scope as
+`failed-written-retained` and left zero key/session/process residue.
+
+The durable repair is a canonical semantic-identity gate: parse JSON before classification, accept only the exact
+builder semantic object regardless of insignificant whitespace/key order, keep raw bytes only as evidence, and fail
+closed on field/value/array-order mutations or reserved handoff markers while routing ordinary arrays, text, and
+unrelated objects normally. Developer regression after the repair passed `442 tests, 1 skipped, 177 subtests`; Ruff
+and `git diff --check` passed. Strict ledger replay is now `cap/count/active=31/31/0`, 149 lines, SHA-256
+`2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. The repair
+must be committed before requesting a new user authorization; no further semantic start is authorized in the
+exhausted tranche.

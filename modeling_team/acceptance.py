@@ -1259,10 +1259,12 @@ class RunnerAcceptanceCarrier:
             raise AcceptanceContractError("stage handoff delivery is not valid JSON") from exc
         if not isinstance(parsed, Mapping):
             _error("stage handoff delivery is not an object")
+        canonical_digest = _sha256_bytes(_canonical_json(parsed))
         existing = self._stage_handoff_deliveries.get(delivery_id)
         record = {
             "delivery_id": delivery_id,
             "text_digest": digest,
+            "canonical_digest": canonical_digest,
             "sender_role": sender_role,
             "recipient_role": recipient_role,
         }
@@ -1277,36 +1279,46 @@ class RunnerAcceptanceCarrier:
         return _safe_copy(record)
 
     def classify_stage_handoff_delivery(self, text: str) -> bool:
-        """Return whether *text* is exact output of the formal handoff builder.
+        """Return whether *text* has the builder's canonical handoff identity.
 
-        This classifier is anchored to the builder's recorded canonical bytes,
-        never to a guessed object shape.  A delivery carrying a known handoff
-        identity but mutated bytes fails closed; unrelated arrays, text, and
-        objects return ``False`` and remain ordinary peer messages.
+        JSON key order and insignificant whitespace may differ at Transport,
+        but canonical semantic identity must match exactly.  A delivery
+        carrying a known handoff identity but mutated fields fails closed;
+        unrelated arrays, text, and objects return ``False`` and remain
+        ordinary peer messages.
         """
 
         if not isinstance(text, str) or not text:
             _error("stage handoff delivery text is invalid")
-        digest = _sha256_bytes(text.encode("utf-8"))
-        expected = self._stage_handoff_builder_outputs.get(digest)
-        if expected is not None:
-            if expected["canonical_text"] != text:
-                _error("stage handoff builder output digest collision")
-            return True
-        if not self._stage_handoff_builder_outputs:
-            return False
         try:
             parsed = json.loads(text)
         except (TypeError, json.JSONDecodeError):
             return False
         if not isinstance(parsed, Mapping):
             return False
+        canonical_digest = _sha256_bytes(_canonical_json(parsed))
+        if canonical_digest in self._stage_handoff_builder_outputs:
+            return True
+        if not self._stage_handoff_builder_outputs:
+            return False
+        # A formal handoff keeps its schema marker even when an Agent mutates
+        # another field.  Treat that reserved shape as an attempted handoff,
+        # while unrelated objects remain ordinary peer deliveries.
+        if parsed.get("schema_version") == STAGE_HANDOFF_SCHEMA:
+            _error("stage handoff builder output was mutated")
         known_ids = {
             value
             for output in self._stage_handoff_builder_outputs.values()
-            for value in (output["handoff_id"], output["handoff_digest"])
+            for value in (
+                output["handoff_id"],
+                output["handoff_digest"],
+                output["handoff_nonce"],
+            )
         }
-        if parsed.get("handoff_id") in known_ids or parsed.get("handoff_digest") in known_ids:
+        if any(
+            parsed.get(field) in known_ids
+            for field in ("handoff_id", "handoff_digest", "handoff_nonce")
+        ):
             _error("stage handoff builder output was mutated")
         return False
 
@@ -2070,17 +2082,18 @@ class RunnerAcceptanceCarrier:
             _error("stage handoff delivery role binding is invalid")
         if not isinstance(handoff, Mapping):
             _error("stage handoff payload is invalid")
-        # The MCP capability receives a parsed JSON object, but the recorded
-        # delivery digest is over the exact canonical bytes.  Any whitespace,
-        # key-order, or mutation therefore fails before ticket construction.
-        if _sha256_bytes(_canonical_json(handoff)) != delivery["text_digest"]:
+        # The MCP capability receives a parsed JSON object. Compare its
+        # canonical semantic identity with the recorded delivery identity so
+        # harmless whitespace/key-order differences survive, while any field
+        # mutation still fails before ticket construction.
+        if _sha256_bytes(_canonical_json(handoff)) != delivery["canonical_digest"]:
             _error("stage handoff payload is not the unchanged delivered object")
         normalized = validate_stage_handoff(
             handoff,
             expected_task_id=self.task_id,
             expected_run_id=self._carrier_run_id(),
             expected_nonce=self._stage_handoff_nonce,
-            expected_delivery_digest=delivery["text_digest"],
+            expected_delivery_digest=delivery["canonical_digest"],
         )
         if normalized["handoff_digest"] != handoff_digest:
             _error("stage handoff digest argument does not match payload")
@@ -2328,11 +2341,14 @@ class RunnerAcceptanceCarrier:
             expected_run_id=run_id,
             expected_nonce=self._stage_handoff_nonce,
         )
-        canonical_text = _canonical_json(handoff).decode("utf-8")
-        self._stage_handoff_builder_outputs[_sha256_bytes(canonical_text.encode("utf-8"))] = {
-            "canonical_text": canonical_text,
+        canonical_digest = _sha256_bytes(_canonical_json(handoff))
+        self._stage_handoff_builder_outputs[canonical_digest] = {
+            "canonical_digest": canonical_digest,
             "handoff_id": handoff["handoff_id"],
             "handoff_digest": handoff["handoff_digest"],
+            "handoff_nonce": handoff["handoff_nonce"],
+            "task_id": handoff["task_id"],
+            "producer_run_id": handoff["producer_run_id"],
         }
         return {
             "handoff_json": _safe_copy(handoff),

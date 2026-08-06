@@ -3070,3 +3070,26 @@ the formal builder, or starting another real run before authorization.
 - Strict R2.3-005 ledger replay is `cap/count/active=31/30/0`, 145 lines, SHA-256
   `d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with **1 remaining** start. The next run must
   reuse the retained candidate semantics and wait for the exact delivery-bound and policy-ID repairs to be committed.
+
+### 2026-08-06T17:07:54+08:00 — Start32 exposed raw-byte handoff classification drift
+
+- Start32 `r23005-real-20260806t090130z-start32` reused the retained candidate/overlay semantics and baseline
+  `19246c30c190da84ab0b0b3dea9c0b2c5a1aa13e197722ac7039246d3de7cb24`. Protocol completed dry-run, apply,
+  readback, validation, reasoning, and both governed retrieval questions (`generic_complete`). The Runner-private
+  handoff builder succeeded with handoff digest
+  `7dd7f977feb2ac08158658011642bba42c9ea4fa302bfcd4db21ba1edfbfdcf7`.
+- Protocol's `delivery-6` carried a 6,850-byte handoff object deeply equal to the builder output. Its canonical JSON
+  SHA-256 is `33f260dcda87d26ee28d1af7b7feec328bb654a093e4717682ae397deb35e4ee`; its raw delivery SHA-256 is
+  `c160a9e39be6269079e8c1657c4a5d7e4874f0c7eefbe56ef601f02d000866f9`. The only difference was JSON key insertion
+  order. The pre-repair raw-byte classifier treated the harmless serialization difference as mutation, the formal
+  wrapper exited 2/`CLEANED`, and no handoff evidence, ticket, Acceptance round, Examiner report, or verdict exists.
+- Final classification is `collaboration/routing` with `complete_modeling_quality_result=false`, not a semantic
+  quality result. Cleanup retained the written scope as `failed-written-retained` and left zero key/session/process
+  residue.
+- The durable repair now uses parsed canonical semantic identity: harmless key-order/whitespace differences are
+  accepted only when the builder's canonical object is unchanged; field/value/array-order mutations and reserved
+  handoff markers fail closed; ordinary arrays, text, and unrelated objects remain normal peer deliveries. Developer
+  verification after this repair passed **442 tests, 1 skipped, 177 subtests**; Ruff and `git diff --check` passed.
+- Strict ledger replay is `cap/count/active=31/31/0`, 149 lines, SHA-256
+  `2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. Commit the
+  repair before requesting a new user authorization; do not launch another semantic start in the exhausted tranche.

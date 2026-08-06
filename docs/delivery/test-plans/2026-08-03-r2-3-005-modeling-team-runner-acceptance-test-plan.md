@@ -1807,3 +1807,24 @@ already recorded attempts.
   for a fresh semantic continuation; no Acceptance PASS is claimed.
 - Strict ledger replay after start31 is `cap/count/active=31/30/0`, 145 lines, SHA-256
   `d219531abef2078e4cd8f04dbbc7deff459bb72e24399c6f66f00dd40652279a`, with 1 remaining start.
+
+### Start32 live result and C124 canonical-identity repair gate (2026-08-06)
+
+- Start32 `r23005-real-20260806t090130z-start32` reused baseline
+  `19246c30c190da84ab0b0b3dea9c0b2c5a1aa13e197722ac7039246d3de7cb24`, completed all five Protocol stages, and
+  completed both governed retrieval questions with `generic_complete`. The Runner-private handoff builder produced
+  handoff digest `7dd7f977feb2ac08158658011642bba42c9ea4fa302bfcd4db21ba1edfbfdcf7`.
+- `delivery-6` was a 6,850-byte object deeply equal to the builder handoff. Canonical JSON SHA-256 was
+  `33f260dcda87d26ee28d1af7b7feec328bb654a093e4717682ae397deb35e4ee`, raw delivery SHA-256 was
+  `c160a9e39be6269079e8c1657c4a5d7e4874f0c7eefbe56ef601f02d000866f9`, and only key insertion order differed.
+  The pre-repair raw-byte classifier falsely reported mutation; the run exited 2/`CLEANED` as
+  `collaboration/routing`, with no handoff evidence, ticket, Acceptance, Examiner, or verdict. Cleanup retained
+  `failed-written-retained` scope and left zero residue.
+- **C124 — canonical semantic identity:** classification must parse JSON and compare the builder's canonical semantic
+  identity, accepting insignificant whitespace/key-order changes but rejecting any field/value/array-order mutation
+  or reserved handoff marker; ordinary arrays, text, and unrelated objects must route normally. The repaired gate's
+  developer verification passed **442 tests, 1 skipped, 177 subtests**; Ruff and `git diff --check` passed.
+- Strict ledger replay is `cap/count/active=31/31/0`, 149 lines, SHA-256
+  `2f30f720d0fa5a151b5b8ac378a0a5bd7bad072a310dcc7ba66e48906cd075bd`, with **zero remaining** starts. Commit and
+  verify the repair before requesting new user authorization; no further live semantic start is permitted in this
+  tranche and no Acceptance PASS is claimed.

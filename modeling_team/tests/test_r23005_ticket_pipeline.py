@@ -319,8 +319,26 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     built["handoff_json"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
                 )
                 self.assertTrue(carrier.classify_stage_handoff_delivery(handoff_text))
+                reordered = dict(reversed(list(built["handoff_json"].items())))
+                reordered_text = json.dumps(reordered, ensure_ascii=False, sort_keys=False, separators=(",", ":"))
+                self.assertNotEqual(reordered_text, handoff_text)
+                self.assertTrue(carrier.classify_stage_handoff_delivery(reordered_text))
                 self.assertFalse(carrier.classify_stage_handoff_delivery('["cq-001","cq-002"]'))
                 self.assertFalse(carrier.classify_stage_handoff_delivery('{"question_ids":["cq-001","cq-002"]}'))
+                self.assertFalse(
+                    carrier.classify_stage_handoff_delivery(
+                        json.dumps(
+                            {
+                                "task_id": "task-r23005-e",
+                                "producer_run_id": "run-r23005-e",
+                                "answer": "ordinary protocol response",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )
+                )
 
                 mutated = json.loads(handoff_text)
                 mutated["slice_revision"] = "revision-2"
@@ -404,8 +422,9 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     protocol_id="protocol",
                     capability=carrier.capability_token("protocol"),
                 )["handoff_json"]
-                handoff_text = json.dumps(
-                    handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                reordered_handoff = dict(reversed(list(handoff.items())))
+                reordered_text = json.dumps(
+                    reordered_handoff, ensure_ascii=False, sort_keys=False, separators=(",", ":")
                 )
                 runner = TeamRunner(repository_root=Path(__file__).resolve().parents[2], adapter=object())
                 runner.acceptance = carrier
@@ -424,7 +443,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         sender_id="protocol",
                         recipient_id="coordinator",
                         kind="peer",
-                        text=handoff_text,
+                        text=reordered_text,
                         delivery_id="delivery-5",
                     )
                 )
