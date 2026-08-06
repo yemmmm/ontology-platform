@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterable, Mapping
 from .capability_mcp import (
     ACCEPTANCE_OPERATIONS,
     COORDINATOR_OPERATIONS,
+    COORDINATOR_FORMAL_OPERATIONS,
     MODELING_OPERATIONS,
     PROTOCOL_OPERATIONS,
     PROTOCOL_STAGE_OPERATIONS,
@@ -1112,6 +1113,13 @@ class RunnerAcceptanceCarrier:
         # invoke the draft capability.
         self._stage_handoff_nonce = secrets.token_hex(32)
         self._stage_handoff_deliveries: dict[str, dict[str, Any]] = {}
+        # Keep the parsed handoff in the Runner-owned carrier so a Coordinator
+        # can bind a draft by opaque delivery identity without reconstructing
+        # or re-sending business bytes.  The original text is represented only
+        # by the immutable digest in ``_stage_handoff_deliveries``.
+        self._stage_handoff_payloads: dict[str, dict[str, Any]] = {}
+        self._typed_ticket_draft_revisions: dict[tuple[str, str], int] = {}
+        self._typed_ticket_draft_requests: set[tuple[str, str, int]] = set()
         # These records are populated only by the host Runtime when a formal
         # Protocol MCP item actually completes.  Coordinator/Protocol have no
         # capability to add or alter them; the draft builder uses the registry
@@ -1177,6 +1185,10 @@ class RunnerAcceptanceCarrier:
                     else PROTOCOL_STAGE_OPERATIONS
                 )
             )
+            if role == "coordinator" and ticket_policy is None:
+                operations = COORDINATOR_OPERATIONS
+            elif role == "coordinator":
+                operations = COORDINATOR_FORMAL_OPERATIONS
             self._capability_endpoints[role] = RunnerCapabilityEndpoint(
                 role=role,
                 socket_path=self.capability_socket_path(role),
@@ -1207,9 +1219,9 @@ class RunnerAcceptanceCarrier:
     ) -> dict[str, str]:
         """Record the exact Protocol -> Coordinator delivery identity.
 
-        Only the delivery digest and fixed role metadata are retained.  Raw
-        handoff text is not persisted by the Runner, preventing business bytes
-        from becoming a Coordinator-visible carrier artifact.  Re-registering
+        The delivery digest, fixed role metadata, and the parsed handoff object
+        are retained only in Runner memory.  Raw handoff text is not persisted
+        or exposed as a Coordinator-visible carrier artifact.  Re-registering
         the same immutable delivery is idempotent; changing its bytes or role
         binding fails closed.
         """
@@ -1220,6 +1232,12 @@ class RunnerAcceptanceCarrier:
         if sender_role != "protocol" or recipient_role != "coordinator":
             _error("stage handoff delivery role binding is invalid")
         digest = _sha256_bytes(text.encode("utf-8"))
+        try:
+            parsed = json.loads(text)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise AcceptanceContractError("stage handoff delivery is not valid JSON") from exc
+        if not isinstance(parsed, Mapping):
+            _error("stage handoff delivery is not an object")
         existing = self._stage_handoff_deliveries.get(delivery_id)
         record = {
             "delivery_id": delivery_id,
@@ -1230,8 +1248,11 @@ class RunnerAcceptanceCarrier:
         if existing is not None:
             if existing != record:
                 _error("stage handoff delivery identity was mutated")
+            if self._stage_handoff_payloads.get(delivery_id) != dict(parsed):
+                _error("stage handoff delivery payload was mutated")
             return _safe_copy(record)
         self._stage_handoff_deliveries[delivery_id] = record
+        self._stage_handoff_payloads[delivery_id] = _safe_copy(dict(parsed))
         return _safe_copy(record)
 
     def register_accepted_candidate(
@@ -1698,7 +1719,7 @@ class RunnerAcceptanceCarrier:
         descriptors = {
             "coordinator": {
                 "token_digest": token_digest(self._capability_tokens["coordinator"]),
-                "operations": list(COORDINATOR_OPERATIONS),
+                "operations": list(self._capability_endpoints["coordinator"].operations),
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             },
@@ -1884,6 +1905,85 @@ class RunnerAcceptanceCarrier:
             if arguments.get("graph_set_id") != live_state["graph_set_id"]:
                 _error("stage receipt request graph scope is invalid")
 
+    def coordinator_build_acceptance_ticket_draft_from_delivery(
+        self,
+        *,
+        handoff_delivery_id: str,
+        question_id: str,
+        ticket_revision: int,
+        coordinator_id: str = "coordinator",
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a formal draft from one Runner-registered handoff delivery.
+
+        The Coordinator receives only the opaque delivery identity and frozen
+        question/revision bindings.  The parsed handoff and its digest remain
+        in the Runner-owned carrier and are passed to the existing canonical
+        builder unchanged.  A question may be drafted again only with a fresh
+        positive revision; the two frozen questions therefore both accept
+        revision one without sharing a global duplicate counter.
+        """
+
+        self._check_capability("coordinator", coordinator_id, capability)
+        if self._ticket_policy is None:
+            _error("delivery-bound acceptance ticket capability is unavailable")
+        _safe_id(handoff_delivery_id, "stage handoff delivery_id")
+        if not isinstance(question_id, str) or not question_id:
+            _error("ticket draft question_id is invalid")
+        _safe_id(question_id, "ticket draft question_id")
+        if not isinstance(ticket_revision, int) or isinstance(ticket_revision, bool) or ticket_revision <= 0:
+            _error("ticket draft revision is invalid")
+
+        delivery = self._stage_handoff_deliveries.get(handoff_delivery_id)
+        handoff = self._stage_handoff_payloads.get(handoff_delivery_id)
+        if delivery is None or handoff is None:
+            _error("stage handoff delivery is not recorded by Runner")
+        if delivery["sender_role"] != "protocol" or delivery["recipient_role"] != "coordinator":
+            _error("stage handoff delivery role binding is invalid")
+
+        request_key = (handoff_delivery_id, question_id, ticket_revision)
+        already_bound = any(
+            binding.get("handoff_delivery_id") == handoff_delivery_id
+            and binding.get("question_id") == question_id
+            and binding.get("ticket_revision") == ticket_revision
+            for binding in self._ticket_draft_bindings.values()
+            if isinstance(binding, Mapping)
+        )
+        if request_key in self._typed_ticket_draft_requests or already_bound:
+            _error("delivery-bound ticket draft request was already built")
+        previous_revisions = [
+            int(binding["ticket_revision"])
+            for binding in self._ticket_draft_bindings.values()
+            if isinstance(binding, Mapping)
+            and binding.get("handoff_delivery_id") == handoff_delivery_id
+            and binding.get("question_id") == question_id
+            and isinstance(binding.get("ticket_revision"), int)
+        ]
+        previous_revision = max(
+            [
+                *previous_revisions,
+                self._typed_ticket_draft_revisions.get((handoff_delivery_id, question_id), 0),
+            ]
+        )
+        if previous_revision and ticket_revision <= previous_revision:
+            _error("delivery-bound ticket draft revision is stale")
+
+        handoff_digest = handoff.get("handoff_digest")
+        if not isinstance(handoff_digest, str):
+            _error("stage handoff digest is unavailable")
+        draft = self.coordinator_build_acceptance_ticket_draft(
+            handoff,
+            handoff_delivery_id=handoff_delivery_id,
+            handoff_digest=handoff_digest,
+            question_id=question_id,
+            ticket_revision=ticket_revision,
+            coordinator_id=coordinator_id,
+            capability=capability,
+        )
+        self._typed_ticket_draft_requests.add(request_key)
+        self._typed_ticket_draft_revisions[(handoff_delivery_id, question_id)] = ticket_revision
+        return draft
+
     def coordinator_build_acceptance_ticket_draft(
         self,
         handoff: Mapping[str, Any],
@@ -2044,6 +2144,8 @@ class RunnerAcceptanceCarrier:
                 "handoff_delivery_id": handoff_delivery_id,
                 "handoff_digest": handoff_digest,
                 "candidate_digest": normalized["candidate_digest"],
+                "question_id": question_id,
+                "ticket_revision": ticket_revision,
             }
             path = self.acceptance_root / round_id / "ticket-draft.json"
             _write_exclusive_json(path, normalized_ticket, mode=0o440)
@@ -2299,6 +2401,14 @@ class RunnerAcceptanceCarrier:
                 capability=capability,
             )
         if role == "coordinator":
+            if operation == "coordinator_build_acceptance_ticket_draft_from_delivery":
+                return self.coordinator_build_acceptance_ticket_draft_from_delivery(
+                    handoff_delivery_id=args["handoff_delivery_id"],
+                    question_id=args["question_id"],
+                    ticket_revision=args["ticket_revision"],
+                    coordinator_id=args["coordinator_id"],
+                    capability=capability,
+                )
             if operation == "coordinator_build_acceptance_ticket_draft":
                 handoff_payload = args["handoff_json"]
                 if not isinstance(handoff_payload, Mapping):

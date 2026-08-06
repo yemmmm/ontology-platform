@@ -1008,32 +1008,110 @@ def mcp_response(
                 }
             )
             if agent_id == broker.coordinator_agent_id:
+                issue_control_common_properties = {
+                    "issue_id": {"type": "string"},
+                    "reporter_id": {"type": "string"},
+                    "control_epoch": {"type": "integer", "minimum": 1},
+                }
                 tools.append(
                     {
                         "name": "issue_control",
                         "description": (
                             "Coordinator-only cooperative pause/resume/abort control. "
-                            "Nullable optional fields are omitted mechanically when null; "
-                            "non-null fields remain action-bound."
+                            "The schema is action-specific: pause has four fields, abort has "
+                            "those four plus a required persisted-resolution reason, and resume "
+                            "uses one of its explicit resolution branches."
                         ),
                         "inputSchema": {
                             "type": "object",
-                            "properties": {
-                                "issue_id": {"type": "string"},
-                                "reporter_id": {"type": "string"},
-                                "action": {"type": "string", "enum": ["pause", "resume", "abort"]},
-                                "control_epoch": {"type": "integer", "minimum": 1},
-                                "resolution_type": {"type": "string", "enum": ["guidance", "repair_completed", "abort"]},
-                                "resolution_text": {"type": ["string", "null"]},
-                                "repair_component": {"type": ["string", "null"]},
-                                "before_digest": {"type": ["string", "null"]},
-                                "after_digest": {"type": ["string", "null"]},
-                                "verification_reference": {"type": ["string", "null"]},
-                                "mutation_reconciliation": {"type": ["string", "null"]},
-                                "reason": {"type": ["string", "null"]},
-                            },
-                            "required": ["issue_id", "reporter_id", "action", "control_epoch"],
-                            "additionalProperties": False,
+                            "oneOf": [
+                                {
+                                    "title": "pause",
+                                    "properties": {
+                                        **issue_control_common_properties,
+                                        "action": {"type": "string", "enum": ["pause"]},
+                                    },
+                                    "required": [
+                                        "issue_id",
+                                        "reporter_id",
+                                        "action",
+                                        "control_epoch",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "title": "abort",
+                                    "properties": {
+                                        **issue_control_common_properties,
+                                        "action": {"type": "string", "enum": ["abort"]},
+                                        "reason": {"type": "string", "minLength": 1},
+                                    },
+                                    "required": [
+                                        "issue_id",
+                                        "reporter_id",
+                                        "action",
+                                        "control_epoch",
+                                        "reason",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "title": "resume-guidance",
+                                    "properties": {
+                                        **issue_control_common_properties,
+                                        "action": {"type": "string", "enum": ["resume"]},
+                                        "resolution_type": {
+                                            "type": "string",
+                                            "enum": ["guidance"],
+                                        },
+                                        "resolution_text": {"type": "string", "minLength": 1},
+                                    },
+                                    "required": [
+                                        "issue_id",
+                                        "reporter_id",
+                                        "action",
+                                        "control_epoch",
+                                        "resolution_type",
+                                        "resolution_text",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                                {
+                                    "title": "resume-repair-completed",
+                                    "properties": {
+                                        **issue_control_common_properties,
+                                        "action": {"type": "string", "enum": ["resume"]},
+                                        "resolution_type": {
+                                            "type": "string",
+                                            "enum": ["repair_completed"],
+                                        },
+                                        "repair_component": {"type": "string", "minLength": 1},
+                                        "before_digest": {"type": "string", "minLength": 1},
+                                        "after_digest": {"type": "string", "minLength": 1},
+                                        "verification_reference": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                        "mutation_reconciliation": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                        },
+                                    },
+                                    "required": [
+                                        "issue_id",
+                                        "reporter_id",
+                                        "action",
+                                        "control_epoch",
+                                        "resolution_type",
+                                        "repair_component",
+                                        "before_digest",
+                                        "after_digest",
+                                        "verification_reference",
+                                        "mutation_reconciliation",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                            ],
                         },
                     }
                 )

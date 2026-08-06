@@ -3019,3 +3019,29 @@ the formal builder, or starting another real run before authorization.
   live evidence.
 - Focused tests passed **36 tests**. Complete `modeling_team/tests` passed **435 tests, 1 skipped, 177 subtests**;
   Ruff and `git diff --check` passed. No backend/frontend file changed, so service restart rules do not apply.
+
+### 2026-08-06T16:17:24+08:00 — Start30 completed the five-stage handoff, then aborted on a delivery-bound ticket gap
+
+- Start30 `r23005-real-20260806t074302z-start30` reused the authoritative R2.3-005 Task, the exact retained r3
+  candidate/overlay semantics, and baseline `ea11a49363f5f62b211664b165c9ec1d403037d7322debd17351270c1387141b`.
+  Protocol completed the five platform stages (dry-run, apply, readback, validation, and reasoning), followed by
+  governed retrieval, and sent generation-1 `silent_for_acceptance` plus the retained acceptance-stage handoff `delivery-5` (text digest
+  `966cf5f3adf433190490d1eb671a051d3d7b572095a8952e0fcecc64e0c44865`). Modeling sent `ready_for_acceptance`.
+- Coordinator retained `delivery-5` and the two frozen competency-question IDs, but the old acceptance-ticket draft
+  operation required model-supplied handoff JSON/digest and could not safely bind the original delivery. Reconstructing
+  or resending the handoff was forbidden; Coordinator raised issue-3. No ticket was published, Acceptance did not
+  start, and no Examiner or verdict exists. Final classification is `collaboration/routing` with
+  `complete_modeling_quality_result=false`; this is not a semantic PASS/FAIL.
+- Coordinator issued the valid five-field abort (`action`, `issue_id`, `reporter_id`, `control_epoch`, `reason`), with
+  the reason byte-for-byte equal to the persisted abort resolution text. Runner reached
+  `TERMINAL_REPORT_COMPLETE`; cleanup completed with platform state classified `failed-written-retained` and no active
+  runtime/credential/child residue.
+- Durable repairs before the next semantic start are: the formal Runner-private
+  `coordinator_build_acceptance_ticket_draft_from_delivery` typed operation (binds the exact original delivery ID and
+  keeps the two CQ revision-1 drafts distinct); Modeling/Protocol terminal-handoff prompts (an explicit terminal
+  handoff is required before `report_task_result`); and action-specific `issue_control` `oneOf` schemas plus the
+  Coordinator exact pause/abort field guidance.
+- The strict R2.3-005 ledger replay is `cap/count/active=31/29/0`, 141 lines, SHA-256
+  `f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with **2 remaining**
+  starts. Do not begin another semantic start until these prompt/Runner repairs are committed and verified; retain the
+  same candidate semantics and evidence.

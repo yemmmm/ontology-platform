@@ -1762,3 +1762,24 @@ already recorded attempts.
   without cleanup; missing `classify-failure --requirement-id` writes no ledger; Modeling wait and Coordinator pause
   instructions contain the exact constraints. Full regression passed **435 tests, 1 skipped, 177 subtests**.
 - I24 remains pending for start30, reusing the same candidate semantics. No new harness or semantic rebuild is needed.
+
+### Start30 live result and C118-C120 repair gate (2026-08-06)
+
+- Start30 `r23005-real-20260806t074302z-start30` reached all five Protocol platform stages and both required handoffs:
+  Protocol sent `silent_for_acceptance` and retained acceptance handoff `delivery-5`; Modeling sent
+  `ready_for_acceptance`. This proves the delivery mechanics only; no Acceptance ticket, Examiner, or verdict was
+  produced.
+- Coordinator issue-3 exposed the remaining routing gap: the acceptance-ticket draft capability could not bind the
+  retained `delivery-5` and required unsafe reconstruction/resend. The valid five-field Coordinator abort was accepted;
+  Runner reached `TERMINAL_REPORT_COMPLETE`, cleanup completed, and the written platform scope is retained under
+  `failed-written-retained`. Final classification is `collaboration/routing`, `complete_modeling_quality_result=false`.
+- **C118 — delivery-bound ticket draft:** the formal Runner-private typed operation must resolve the exact retained
+  handoff by original `delivery_id` and produce two distinct frozen CQ revision-1 drafts without accepting handoff
+  JSON/digest bytes from the Agent.
+- **C119 — terminal handoff gate:** Modeling and Protocol must emit an explicit Runner terminal-handoff before
+  `report_task_result`; readiness/silence alone must not be treated as terminal.
+- **C120 — issue-control schema:** `issue_control` must expose action-specific `oneOf` schemas and Coordinator prompts
+  must keep pause/abort argument sets exact, including the five-field abort reason binding.
+- Strict ledger replay after start30 is `cap/count/active=31/29/0`, 141 lines, SHA-256
+  `f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with 2 remaining starts. I24 remains pending
+  until C118-C120 are committed and verified; no Acceptance PASS is claimed.

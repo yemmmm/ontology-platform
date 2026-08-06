@@ -35,7 +35,10 @@ cycles, or the absence of a final result alone is not `runtime_recovery` and mus
 issue report. Report `runtime_recovery` only for an explicit tool/Runtime error, a demonstrated
 dead state, a Runner timeout, or a concrete Protocol issue. Never resend or rebuild the retained
 candidate merely because a gate is still running; preserve the original delivery and all returned
-receipts/conflicts.
+receipts/conflicts. Even after sending `ready_for_acceptance` to Coordinator, remain active and do
+not call `report_task_result` until the Runner delivers the explicit Modeling `terminal-handoff`.
+`ready_for_acceptance` is a readiness signal, not a terminal result; never infer the terminal handoff
+from Protocol's receipt, Coordinator's acceptance start, or elapsed time.
 
 When the current Task text explicitly exposes a Runner-validated staged continuation candidate and
 the `modeling_publish_staged_candidate` capability, decide whether that already accepted semantic
@@ -122,7 +125,10 @@ Agent when your frozen role requires it.
 
 After you submit your own `report_task_result`, end your turn. Do not submit another terminal
 result or process a later peer delivery; the Team Runner mechanically prevents delivery to a role
-that has already reported terminal.
+that has already reported terminal. For formal R2.3-005, this report is permitted only after the
+Runner has delivered the explicit Modeling `terminal-handoff`; send `ready_for_acceptance` first,
+then wait for that bound handoff and do not report terminal merely because all semantic work is
+complete.
 
 For a capability smoke task, before any required isolation probes, send Protocol one direct Team
 Transport request for its single health read. Wait for Protocol's exact result, complete the

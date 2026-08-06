@@ -46,7 +46,7 @@ let either recipient's initial assignment substitute for the required supplement
 
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
-`issue_control` Team Transport tool. The pause call's argument object must contain exactly
+`issue_control` Team Transport tool. For `pause`, the argument object must contain exactly
 `action`, `issue_id`, `reporter_id`, and `control_epoch`; do not include `reason`, any other key, or
 an optional field set to JSON `null`. If the tool rejects the shape, correct it from the advertised
 schema and retry that same pause once; do not claim that the Runner resolved the issue. Then wait
@@ -54,20 +54,29 @@ for the Runner's structured outer resolution delivery. Do not call Runtime contr
 tools, or invent a business answer. After the outer resolution is delivered, send exactly one bound
 `resume` carrying the exact persisted guidance or repair fields from that resolution; do not
 reconstruct, shorten, or replace them. Use `abort` only when the outer owner explicitly requests
-termination. A paused teammate must be allowed to end its current turn; never ask it to continue
-tools or peer messages while the issue is pending.
+termination. An `abort` argument object must contain exactly `action`, `issue_id`, `reporter_id`,
+`control_epoch`, and `reason`; `reason` must equal the persisted abort `resolution_text` byte-for-byte.
+Never include `resolution_type`, `resolution_text`, `null`, or any other field in an abort call.
+A paused teammate must be allowed to end its current turn; never ask it to continue tools or peer
+messages while the issue is pending.
 
 ## Prompt E acceptance ticket pipeline
 
 For formal R2.3-005, Protocol's direct Team Transport handoff is the only input to ticket creation.
-When that delivery arrives, preserve its exact `delivery_id`, parse only the canonical JSON object,
-and pass the unchanged object plus its `handoff_digest` to the Runner-private
-`coordinator_build_acceptance_ticket_draft` capability. Also pass the frozen `question_id` and a
-positive `ticket_revision`; never fill absent fields, guess a run/project/ontology/state/slice ID,
-or use a prior handoff. The Runner verifies the nonce, exact delivery bytes, current-run five-stage
-receipts, authenticated live model state, staged source digests, canonical allowlist, and frozen
-acceptance policy. A shorthand, `{}`, missing/duplicate/failed stage, wrong binding, or changed
-handoff must fail closed.
+When that delivery arrives, preserve its exact `delivery_id`. Prefer the Runner-private
+`coordinator_build_acceptance_ticket_draft_from_delivery` capability when it is present in the
+Coordinator `tools/list` result: pass exactly `coordinator_id`, the original
+`handoff_delivery_id`, the frozen `question_id`, and a positive `ticket_revision`. Do not parse,
+copy, shorten, reconstruct, or resend handoff JSON, and do not provide `handoff_digest`, model state,
+stage receipts, source paths, recipient, or transport fields. The Runner resolves the exact
+registered Protocol delivery and verifies the current run, role/nonce, five stage receipts, live
+model state, canonical read allowlist, staged source digests, and frozen acceptance policy. Both
+frozen questions may use revision 1; do not treat the second question as a duplicate. If the typed
+operation is not advertised by a legacy/unbound carrier, use the compatibility
+`coordinator_build_acceptance_ticket_draft` operation with the unchanged canonical handoff object
+and digest, plus the same frozen question/revision fields; never fill absent fields, guess a
+run/project/ontology/state/slice ID, or use a prior handoff. A shorthand, `{}`, missing/duplicate/
+failed stage, wrong binding, or changed handoff must fail closed.
 
 Publish only the complete draft returned by that capability, unchanged and exactly once, through
 `coordinator_publish_acceptance_ticket`; pass its own digest and requirement reference without

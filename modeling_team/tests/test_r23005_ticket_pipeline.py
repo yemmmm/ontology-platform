@@ -299,6 +299,141 @@ class R23005TicketPipelineTests(unittest.TestCase):
             finally:
                 carrier.cleanup()
 
+    def test_delivery_bound_draft_keeps_handoff_runner_private_and_allows_two_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                handoff = _handoff(carrier.stage_handoff_nonce, artifact_records=artifacts)
+                text = json.dumps(handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                carrier.register_stage_handoff_delivery(
+                    delivery_id="delivery-bound",
+                    text=text,
+                    sender_role="protocol",
+                    recipient_role="coordinator",
+                )
+                operation = "coordinator_build_acceptance_ticket_draft_from_delivery"
+                descriptor = carrier.capability_descriptors["coordinator"]
+                self.assertIn(operation, descriptor["operations"])
+                first = carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-bound",
+                        "question_id": "cq-001",
+                        "ticket_revision": 1,
+                    },
+                )
+                second = carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-bound",
+                        "question_id": "cq-002",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual(first["question_id"], "cq-001")
+                self.assertEqual(second["question_id"], "cq-002")
+                self.assertEqual(first["ticket_revision"], 1)
+                self.assertEqual(second["ticket_revision"], 1)
+                with self.assertRaisesRegex(AcceptanceContractError, "already built"):
+                    carrier._dispatch_capability(
+                        "coordinator",
+                        operation,
+                        {
+                            "coordinator_id": "coordinator",
+                            "handoff_delivery_id": "delivery-bound",
+                            "question_id": "cq-001",
+                            "ticket_revision": 1,
+                        },
+                    )
+                carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-bound",
+                        "question_id": "cq-001",
+                        "ticket_revision": 3,
+                    },
+                )
+                with self.assertRaisesRegex(AcceptanceContractError, "revision is stale"):
+                    carrier._dispatch_capability(
+                        "coordinator",
+                        operation,
+                        {
+                            "coordinator_id": "coordinator",
+                            "handoff_delivery_id": "delivery-bound",
+                            "question_id": "cq-001",
+                            "ticket_revision": 2,
+                        },
+                    )
+                with self.assertRaisesRegex(AcceptanceContractError, "revision is invalid"):
+                    carrier._dispatch_capability(
+                        "coordinator",
+                        operation,
+                        {
+                            "coordinator_id": "coordinator",
+                            "handoff_delivery_id": "delivery-bound",
+                            "question_id": "cq-001",
+                            "ticket_revision": 0,
+                        },
+                    )
+                with self.assertRaisesRegex(AcceptanceContractError, "not recorded"):
+                    carrier._dispatch_capability(
+                        "coordinator",
+                        operation,
+                        {
+                            "coordinator_id": "coordinator",
+                            "handoff_delivery_id": "delivery-foreign",
+                            "question_id": "cq-001",
+                            "ticket_revision": 1,
+                        },
+                    )
+                endpoint = carrier.capability_endpoint("coordinator")
+                response = endpoint.handle(
+                    {
+                        "id": "typed-extra",
+                        "token": carrier.capability_token("coordinator"),
+                        "method": "tools/call",
+                        "params": {
+                            "name": operation,
+                            "arguments": {
+                                "coordinator_id": "coordinator",
+                                "handoff_delivery_id": "delivery-bound",
+                                "question_id": "cq-001",
+                                "ticket_revision": 2,
+                                "handoff_json": handoff,
+                            },
+                        },
+                    }
+                )
+                self.assertIn("error", response)
+            finally:
+                carrier.cleanup()
+
+    def test_delivery_bound_draft_is_not_advertised_by_legacy_carrier(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory) / "carrier",
+                task_id="task-legacy",
+                acceptance_id="acceptance",
+            )
+            try:
+                self.assertNotIn(
+                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    carrier.capability_descriptors["coordinator"]["operations"],
+                )
+            finally:
+                carrier.cleanup()
+
     def test_formal_protocol_runtime_sink_records_completed_platform_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
@@ -765,11 +900,19 @@ class R23005TicketPipelineTests(unittest.TestCase):
         self.assertIn("page", reference["platform_read_evidence_fields"])
         self.assertIn("handoff_nonce", reference["handoff_fields"])
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text()
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text()
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text()
         self.assertIn("acceptance-stage-handoff-contract.json", protocol)
+        self.assertIn("do not call `report_task_result` until the Runner delivers the explicit Protocol", protocol)
+        self.assertIn("explicit Modeling `terminal-handoff`", modeling)
         self.assertIn("coordinator_build_acceptance_ticket_draft", coordinator)
+        self.assertIn("coordinator_build_acceptance_ticket_draft_from_delivery", coordinator)
         self.assertIn("owner_revision", coordinator)
         self.assertIn("quality_standard_ref", coordinator)
+        self.assertIn("For `pause`, the argument object must contain exactly", coordinator)
+        self.assertIn("An `abort` argument object must contain exactly", coordinator)
+        self.assertIn("`reason` must equal the persisted abort `resolution_text` byte-for-byte", coordinator)
+        self.assertIn("Never include `resolution_type`, `resolution_text`, `null`", coordinator)
 
 
 if __name__ == "__main__":

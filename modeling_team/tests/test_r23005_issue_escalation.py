@@ -174,13 +174,30 @@ class IssueEscalationTests(unittest.TestCase):
                 {"method": "tools/list"}, broker=broker, agent_id="coordinator"
             )
             issue_tool = next(tool for tool in listed["tools"] if tool["name"] == "issue_control")
+            schema = issue_tool["inputSchema"]
+            self.assertEqual(schema["type"], "object")
+            branches = schema["oneOf"]
             self.assertEqual(
-                issue_tool["inputSchema"]["required"],
+                {branch["title"] for branch in branches},
+                {"pause", "abort", "resume-guidance", "resume-repair-completed"},
+            )
+            pause_schema = next(branch for branch in branches if branch["title"] == "pause")
+            self.assertEqual(
+                pause_schema["required"],
                 ["issue_id", "reporter_id", "action", "control_epoch"],
             )
+            self.assertNotIn("reason", pause_schema["properties"])
+            abort_schema = next(branch for branch in branches if branch["title"] == "abort")
             self.assertEqual(
-                issue_tool["inputSchema"]["properties"]["reason"]["type"],
-                ["string", "null"],
+                abort_schema["required"],
+                ["issue_id", "reporter_id", "action", "control_epoch", "reason"],
+            )
+            self.assertEqual(abort_schema["properties"]["reason"]["type"], "string")
+            self.assertNotIn("resolution_type", abort_schema["properties"])
+            resume_schema = [branch for branch in branches if branch["title"].startswith("resume-")]
+            self.assertEqual(
+                {branch["properties"]["resolution_type"]["enum"][0] for branch in resume_schema},
+                {"guidance", "repair_completed"},
             )
             report = broker.report_issue(
                 "protocol",
@@ -258,6 +275,106 @@ class IssueEscalationTests(unittest.TestCase):
             resume_payload = json.loads(resume["content"][0]["text"])
             self.assertEqual(resume_payload["action"], "resume")
             self.assertEqual(resume_payload["resolution"]["resolution_type"], "guidance")
+
+    def test_issue_control_mcp_abort_requires_persisted_reason_without_resolution_type(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
+                {("protocol", "coordinator"), ("coordinator", "protocol")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+            )
+            report = broker.report_issue(
+                "protocol",
+                category="runtime_recovery",
+                summary="runtime cannot continue",
+                failing_operation="tool_call",
+                error="runtime unavailable",
+                mutation_state="not_started",
+                requested_action="request outer disposition",
+            )
+            mcp_response(
+                {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "issue_control",
+                        "arguments": {
+                            "issue_id": report["issue_id"],
+                            "reporter_id": "protocol",
+                            "action": "pause",
+                            "control_epoch": 1,
+                        },
+                    },
+                },
+                broker=broker,
+                agent_id="coordinator",
+            )
+            with self.assertRaisesRegex(RoutingError, "issue_control abort fields are invalid"):
+                mcp_response(
+                    {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "issue_control",
+                            "arguments": {
+                                "issue_id": report["issue_id"],
+                                "reporter_id": "protocol",
+                                "action": "abort",
+                                "control_epoch": 1,
+                            },
+                        },
+                    },
+                    broker=broker,
+                    agent_id="coordinator",
+                )
+            abort = IssueResolution(
+                run_id=report["run_id"],
+                issue_id=report["issue_id"],
+                reporter_id="protocol",
+                resolution_type="abort",
+                control_epoch=1,
+                resolution_text="Stop this run.",
+            )
+            broker.persist_issue_resolution(abort)
+            with self.assertRaisesRegex(RoutingError, "issue_control abort fields are invalid"):
+                mcp_response(
+                    {
+                        "method": "tools/call",
+                        "params": {
+                            "name": "issue_control",
+                            "arguments": {
+                                "issue_id": report["issue_id"],
+                                "reporter_id": "protocol",
+                                "action": "abort",
+                                "control_epoch": 1,
+                                "reason": abort.resolution_text,
+                                "resolution_type": "abort",
+                            },
+                        },
+                    },
+                    broker=broker,
+                    agent_id="coordinator",
+                )
+            result = mcp_response(
+                {
+                    "method": "tools/call",
+                    "params": {
+                        "name": "issue_control",
+                        "arguments": {
+                            "issue_id": report["issue_id"],
+                            "reporter_id": "protocol",
+                            "action": "abort",
+                            "control_epoch": 1,
+                            "reason": abort.resolution_text,
+                        },
+                    },
+                },
+                broker=broker,
+                agent_id="coordinator",
+            )
+            payload = json.loads(result["content"][0]["text"])
+            self.assertEqual(payload["action"], "abort")
+            self.assertEqual(payload["reason"], abort.resolution_text)
+            self.assertFalse(broker.issue_ledger.pending)
 
     def test_issue_control_rejects_unknown_and_non_null_pause_reason(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

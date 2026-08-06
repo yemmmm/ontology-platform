@@ -687,6 +687,17 @@ class TeamRunner:
                 "acceptance_get_verdict",
             ],
         }
+        formal_acceptance_contract = (
+            configuration.task.schema_version == 2
+            and (
+                configuration.task.task_id == "r2-3-005-formal-acceptance"
+                or configuration.profile.profile_id == "r2-3-005-modeling-team"
+            )
+        )
+        if formal_acceptance_contract:
+            runner_capability_roles["coordinator"].insert(
+                1, "coordinator_build_acceptance_ticket_draft_from_delivery"
+            )
         if task_overlay is not None:
             runner_capability_roles["modeling"] = ["modeling_publish_staged_candidate"]
         return {
@@ -1786,6 +1797,44 @@ class TeamRunner:
                         context, ensure_ascii=False, sort_keys=True
                     )
             if role == "coordinator":
+                typed_ticket_binding = False
+                if self._formal_coordination_enabled() and self.acceptance is not None:
+                    coordinator_descriptor = self.acceptance.capability_descriptors.get(
+                        "coordinator", {}
+                    )
+                    advertised = coordinator_descriptor.get("operations", [])
+                    typed_ticket_binding = (
+                        isinstance(advertised, list)
+                        and "coordinator_build_acceptance_ticket_draft_from_delivery" in advertised
+                    )
+                if typed_ticket_binding:
+                    ticket_instruction = (
+                        " When Protocol sends the structured acceptance-stage handoff, retain only the "
+                        "original delivery_id from the direct Team Transport envelope and call the "
+                        "Runner-private coordinator_build_acceptance_ticket_draft_from_delivery once "
+                        "per frozen question, passing exactly coordinator_id=coordinator, "
+                        "handoff_delivery_id, question_id, and positive ticket_revision. Do not parse, "
+                        "copy, shorten, reconstruct, or resend handoff JSON; do not provide handoff_digest, "
+                        "model_state, stage receipts, source paths, recipient, or transport fields. The "
+                        "Runner resolves the exact registered Protocol delivery and owns nonce, current-run "
+                        "stage receipts, authenticated live model state, canonical read allowlist, staged "
+                        "source digests, and frozen policy. Both frozen questions may use revision 1; do not "
+                        "treat the second question as a duplicate. Publish only the complete returned draft "
+                        "exactly once through coordinator_publish_acceptance_ticket."
+                    )
+                else:
+                    ticket_instruction = (
+                        " When Protocol sends the structured acceptance-stage handoff, parse its exact JSON and "
+                        "call the Runner-private coordinator_build_acceptance_ticket_draft once per question, "
+                        "passing the delivery_id from the direct Team Transport envelope, the unchanged "
+                        "handoff object and digest, the frozen question_id, and the positive ticket_revision. "
+                        "The capability owns staged source digests, authenticated live model_state, canonical "
+                        "read allowlist, standard fields, and all five receipt checks. Publish only the returned "
+                        "complete draft exactly once through coordinator_publish_acceptance_ticket, passing the "
+                        "same object/digest/requirement reference; never hand-author, shorten, replace, or mutate "
+                        "it. `{}`/shorthand, changed run/project/ontology/state/slice/digest, or any second draft "
+                        "is rejected."
+                    )
                 return text + (
                     "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
                     "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
@@ -1795,15 +1844,8 @@ class TeamRunner:
                     "generation and acceptance_round_id as text. Use only the Project/Ontology created for this "
                     "run; never reuse or bind a prior/caller-supplied scope and never initiate a second semantic "
                     "start."
-                    " When Protocol sends the structured acceptance-stage handoff, parse its exact JSON and call "
-                    "the Runner-private coordinator_build_acceptance_ticket_draft once per question, passing the "
-                    "delivery_id from the direct Team Transport envelope, the unchanged handoff object and digest, "
-                    "the frozen question_id, and the positive ticket_revision. The capability owns staged source "
-                    "digests, authenticated live model_state, canonical read allowlist, standard fields, and all "
-                    "five receipt checks. Publish only the returned complete draft exactly once through "
-                    "coordinator_publish_acceptance_ticket, passing the same object/digest/requirement reference; "
-                    "never hand-author, shorten, replace, or mutate it. `{}`/shorthand, changed run/project/ontology/"
-                    "state/slice/digest, or any second draft is rejected. Only after unchanged publication succeeds "
+                    + ticket_instruction
+                    + " Only after unchanged publication succeeds "
                     "send acceptance_start with the returned acceptance_round_id. Coordinator never reads staged "
                     "business sources or receipt payload bytes."
                     "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "

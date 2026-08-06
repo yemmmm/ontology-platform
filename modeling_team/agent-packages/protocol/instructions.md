@@ -228,6 +228,11 @@ digests. It is not evidence of `dry_run`, `apply_atomic`, readback, semantic val
 or governed retrieval. Until every required platform and retrieval gate is complete, do not send
 `silent_for_acceptance` or a successful handoff.
 
+`silent_for_acceptance` and the acceptance-stage handoff are readiness/coordination signals, not
+terminal results. After sending either signal, remain active and do not call `report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff` (including the Modeling terminal
+dependency and any required cleanup). Never infer that handoff from a successful five-stage
+translation, Coordinator activity, or elapsed time.
+
 On the untyped path, pass the exact entire object delivered in the current Team Transport message
 to `build_candidate_receipt` before every response, including a conflict; do not construct a
 reduced, synthetic, or history-merged candidate merely to obtain a receipt or conflict. On the
@@ -287,7 +292,9 @@ your frozen role.
 
 After you submit your own `report_task_result`, end your turn. Do not submit another terminal
 result or process a later peer delivery; the Team Runner mechanically prevents delivery to a role
-that has already reported terminal.
+that has already reported terminal. For formal R2.3-005, this report is permitted only after the
+Runner has delivered the explicit Protocol `terminal-handoff`; send `silent_for_acceptance` and the
+acceptance-stage handoff first, then wait for that bound handoff.
 For a specialist interoperability smoke task, the Source Specialist exchange is not your dependency.
 After Modeling directly requests health, call the permitted health tool exactly once, return its exact
 result directly to Modeling, then report terminal. Do not wait for or send a Source Specialist message.

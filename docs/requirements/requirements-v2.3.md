@@ -2557,3 +2557,20 @@ Focused EOF/terminal/legacy tests pass, and the complete `modeling_team/tests` s
 `430 passed, 1 skipped, 177 subtests`. Canonical ledger strict replay is `cap/count/active=31/26/0`, 129 lines,
 SHA-256 `70655dc9fd7e098b9264b61ed353f33b77e146b6bc5553fae6d2ab07e9d0e7a3`, with five already-recorded starts
 remaining and the later `+5` still pending. The next start must reuse the same carrier/overlay semantics.
+
+### 2026-08-06 R2.3-005 start30 status and repair gate
+
+Start30 `r23005-real-20260806t074302z-start30` completed the five Protocol platform stages and the required
+cross-agent handoffs: Protocol retained and sent `delivery-5` after `silent_for_acceptance`, and Modeling sent
+`ready_for_acceptance`. The Coordinator could not publish an Acceptance ticket because the existing draft capability
+could not bind the retained handoff by delivery ID without asking the Agent to reconstruct or resend it. This created
+issue-3, a `collaboration/routing` defect; no Acceptance ticket, Examiner, or verdict exists and
+`complete_modeling_quality_result=false`.
+
+Coordinator used the valid five-field abort shape and persisted the exact reason. Runner reached
+`TERMINAL_REPORT_COMPLETE`; cleanup completed and the written platform scope is retained as `failed-written-retained`.
+Before another semantic start, the formal Runner-private delivery-bound ticket-draft operation, explicit terminal-
+handoff prompts, and action-specific `issue_control` `oneOf` schemas must be committed and verified. The strict ledger
+replay is `cap/count/active=31/29/0`, 141 lines, SHA-256
+`f33535e141170c17f042cf790217d3b6d0109ede5c8b23807383ced7e0acda1a`, with 2 remaining starts; the same candidate
+semantics and retained evidence remain the continuation baseline.

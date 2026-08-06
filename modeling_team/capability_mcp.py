@@ -26,6 +26,10 @@ COORDINATOR_OPERATIONS: tuple[str, ...] = (
     "coordinator_publish_acceptance_ticket",
     "coordinator_get_verdict",
 )
+COORDINATOR_FORMAL_OPERATIONS: tuple[str, ...] = (
+    *COORDINATOR_OPERATIONS,
+    "coordinator_build_acceptance_ticket_draft_from_delivery",
+)
 PROTOCOL_OPERATIONS: tuple[str, ...] = (
     "protocol_list_platform_artifacts",
     "protocol_build_acceptance_stage_handoff",
@@ -44,7 +48,10 @@ ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_verdict",
 )
 ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
-    "coordinator": COORDINATOR_OPERATIONS,
+    # The endpoint narrows this list for legacy carriers.  Keeping the formal
+    # operation in the role registry lets the dispatcher validate it without
+    # advertising the delivery-bound capability to an unbound carrier.
+    "coordinator": COORDINATOR_FORMAL_OPERATIONS,
     "modeling": MODELING_OPERATIONS,
     "protocol": PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
@@ -125,6 +132,22 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "handoff_delivery_id",
             "handoff_json",
             "handoff_digest",
+            "question_id",
+            "ticket_revision",
+        ],
+        "additionalProperties": False,
+    },
+    "coordinator_build_acceptance_ticket_draft_from_delivery": {
+        "type": "object",
+        "properties": {
+            "coordinator_id": {"type": "string"},
+            "handoff_delivery_id": {"type": "string"},
+            "question_id": {"type": "string"},
+            "ticket_revision": {"type": "integer", "minimum": 1},
+        },
+        "required": [
+            "coordinator_id",
+            "handoff_delivery_id",
             "question_id",
             "ticket_revision",
         ],
@@ -525,6 +548,7 @@ __all__ = [
     "ACCEPTANCE_OPERATIONS",
     "CAPABILITY_TOOL_SCHEMAS",
     "COORDINATOR_OPERATIONS",
+    "COORDINATOR_FORMAL_OPERATIONS",
     "MODELING_OPERATIONS",
     "ROLE_OPERATIONS",
     "RunnerCapabilityEndpoint",
