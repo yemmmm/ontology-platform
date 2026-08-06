@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户在 start21 清理及 be5790a owner-question 消歧修复后明确追加授权 10 次真实建模，并要求继续执行。授权前账本为 21/21/0；应先以当前干净提交记录精确 +10 授权，再启动 start22。start22 必须在 Runner.prepare 前通过 Task role_sources/initial prompt 冻结 start20 已由 Protocol 接受的 r2 候选、两道 CQ、显式 unknown 与续跑指令；禁止重新业务建模或依赖 semantic_start 后的 evidence handoff。每次只启动一个 fresh run，终态后再决定是否使用下一次，不得并发消耗。`
+当前状态：`用户追加的 10 次授权已由 start22 使用 1 次，账本 31/22/0，剩余 9 次。start22 在 prepare 前真实加载 continuation source，Modeling 直接复用 r2，Protocol 接受并完成 apply/readback/validation/reasoning；retrieval 最终 non-truncated 但 Evidence 缺失，Modeling/Protocol truthful blocked。其 readiness/silence 信号只落 Broker evidence、未送达 Coordinator，静态 Acceptance dependency 因未启动 Acceptance而死锁。start22 已分类清理。ca250bc 现将 validated ready/silent/verdict_route 通过动态角色绑定单次投递 Coordinator，并保持 acceptance_start 单次投递 Acceptance；start23 应继续复用同一 r2 输入验证 Acceptance 链。`
 
 优先级：`P0`
 

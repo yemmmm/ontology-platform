@@ -2621,3 +2621,36 @@ the formal builder, or starting another real run before authorization.
   provenance may be mechanically rebound, but old Project/Ontology/Batch/Session IDs must not be reused.
 - The existing waiver remains: no plan review or independent-test round; real Modeling/Protocol/platform retrieval/
   Acceptance/settlement is the test. No preliminary audit/mock program or requirement-specific checker is authorized.
+
+### 2026-08-06T00:35:00+08:00 — Start22 continuation succeeded; coordination delivery deadlocked Acceptance
+
+- Delivery appended exactly one `+10` authorization, raising the canonical cap from 21 to 31. A run-independent,
+  gitignored continuation source under `modeling_team/.continuations/` was mechanically extracted from retained
+  start20 delivery-8. Its formal candidate digest
+  `b36fe86dd32eb8739b0103ea95aa902b96cc853f28511dfb85421ed1901ec082` matched Protocol's retained accepted receipt;
+  the immutable source and derived Task were loaded before `Runner.prepare` and staged read-only for Modeling and
+  Protocol. Exact start22 manifest
+  `a7968c584afc5fb04ec5b4203bfea4d3919cc8fe059837d34277b2bb8c90cf02` bound run
+  `r23005-real-20260806t001240z-start22`.
+- Start22 proved the continuation path: Modeling did not repeat source questions or redesign the slice, and directly
+  sent r2. Protocol accepted the same digest, applied/read back the model, obtained conforming asserted-only validation,
+  consistent reasoning and the expected negative-probe rejection. Both governed lexical queries eventually became
+  non-truncated, but generic retrieval still reported `evidence_missing`; Modeling and Protocol truthfully completed
+  blocked terminal handoffs without asserting Acceptance.
+- The run then deadlocked in orchestration. Broker/phase evidence contained validated
+  `ready_for_acceptance` and `silent_for_acceptance`, but Runner's coordination observer queued only
+  `acceptance_start`; it never delivered upstream phase signals to Coordinator. Coordinator therefore never started
+  Acceptance, while its static terminal dependencies required an Acceptance terminal handoff. No Acceptance ticket,
+  child, verdict or settlement existed. Start22 was classified `platform-contract`, complete=false.
+- Delivery stopped the isolated Runner and used generic authenticated APIs to delete the non-empty run Project.
+  Project, Ontology, Build Context, Batches and Session read back 404; all run keys were revoked and no process,
+  transport or Acceptance child remains. Canonical ledger is **110 lines**, SHA-256
+  `7f73d4780f80e5d8863a0cca846f7fd5df34dffe0ae32d472dbe43bdf22fb996`, strict replay `31/22/0`. Nine authorized
+  starts remain.
+- Generic repair `ca250bc` queues validated `ready_for_acceptance`, `silent_for_acceptance` and
+  `acceptance_verdict_route` as Runner-owned Runtime deliveries to the dynamically resolved Coordinator agent;
+  `acceptance_start` remains a single delivery to dynamically resolved Acceptance. Message identity, generation,
+  sender/recipient binding and readiness dedupe remain fail-closed; Broker, phase rules, terminal dependencies,
+  settlement and Agent results are unchanged. Focused tests passed **4**, related suites **57**, and full
+  `modeling_team/tests` passed **346 tests, 1 skipped**; Ruff, `py_compile` and diff checks passed. Pre-edit TeamRunner
+  aggregate impact was HIGH (central class); final GitNexus change detection was LOW with no indexed process affected.
