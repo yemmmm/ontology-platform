@@ -1590,3 +1590,27 @@ they do not claim R2.3-005 modeling or Acceptance PASS.
 - Current in-place repair resume is fail-closed to `shared_backend_service|shared_backend_data`. MCP code, frozen role
   assets/instructions, Runner/Transport mechanics, dead App Servers, thread drift, candidate drift, and unfinished
   reporter turns become `rebind_required` or terminal; no hot replacement is claimed.
+
+## Prompt E implementation review — offline verification only (2026-08-06)
+
+Commit `ebea0eb` adds the structured Protocol stage-handoff and Coordinator canonical-ticket pipeline. The review
+records the following boundaries for the next live run:
+
+- Prompt-contract: Protocol must not hand-calculate receipt summaries; the Runner capability owns receipt, digest,
+  page, and artifact construction. The readback prompt and validator both bind the stage to `get_modeling_context`.
+- Runtime/platform wiring: completed Protocol MCP results are captured by the Codex runtime sink; artifact identity
+  includes both request and response digests; Protocol capability endpoints are staged and authorized in the Runner.
+- Test-contract limitation: `test_r23005_ticket_pipeline.py` uses a synthetic `submit_modeling_batch` payload to
+  exercise carrier validation. It is not a live platform schema probe or semantic Acceptance evidence; the frozen
+  `modeling-batch-item-contract.json` remains authoritative. Existing intervention/hash records are retained as raw
+  evidence, and no hash failure is promoted to PASS.
+
+Focused command and result:
+
+`PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests/test_r23005_ticket_pipeline.py
+modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_r23005_t6_repeatability.py` — **46 passed,
+3 subtests passed in 7.17s**.
+
+This offline result does not replace the user-designated real start25 test. Delivery must stage the accepted start24
+r3 carrier before prepare, then retain independent evidence for the five stage receipts, governed retrieval,
+unchanged ticket draft/publication, two Acceptance competency questions, and terminal cleanup.

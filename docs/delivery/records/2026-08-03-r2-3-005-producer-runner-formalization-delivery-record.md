@@ -2752,3 +2752,34 @@ the formal builder, or starting another real run before authorization.
 - Current status remains start24 terminal `runtime/infrastructure` + `platform-contract` `rebind-required`, with
   canonical ledger `cap/count/active=31/24/0` and `7` remaining starts. No start25 was started or authorized; the
   exact r3 carrier remains the continuation baseline after Prompt E verification.
+
+### 2026-08-06T11:40:00+08:00 — Prompt E implementation review and start25 preflight boundary
+
+- Prompt E is now implemented by `ebea0eb` (`Add R2.3-005 acceptance ticket pipeline`), with Prompt A/C/D bound to
+  `749b6bc` and the Runner capability approval whitelist bound to `2173848`. The implementation adds the structured
+  Protocol stage-handoff, Runner-built canonical ticket draft with run-specific bindings, and Coordinator unchanged
+  publication path. It does not claim a live Acceptance verdict.
+- Review findings are classified instead of being collapsed into one prompt result. Prompt-contract items fixed in
+  `ebea0eb` are: Protocol hand-calculated receipt summaries (now Runner-owned receipt/digest/page construction), and
+  the readback tool prompt/validator conflict (the prompt and `STAGE_TOOL_BINDINGS` both require
+  `get_modeling_context` for readback and reject inconsistent mode/tool evidence). Runtime/platform wiring items
+  fixed in the same commit are: request+response artifact identity so repeated requests with changed responses do
+  not overwrite, and Protocol capability staging/authorization in the Runner/Codex runtime. These use
+  `modeling_team/acceptance.py`, `modeling_team/runtimes/codex.py`, `modeling_team/runner.py`, and
+  `modeling_team/capability_mcp.py`.
+- The new ticket-pipeline tests use a synthetic `submit_modeling_batch` fixture to exercise carrier validation. That
+  pseudo-schema is a test-contract limitation, not a live platform receipt and not semantic Acceptance evidence;
+  the frozen `modeling-batch-item-contract.json` remains authoritative for real Protocol calls. Existing start24
+  intervention/runtime hash and digest records remain immutable raw evidence; no prior hash failure is reclassified
+  as PASS.
+- Verification: `PYTHONPATH=. uv run --project backend pytest -q
+  modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r23005_contracts.py
+  modeling_team/tests/test_r23005_t6_repeatability.py` returned **46 passed, 3 subtests passed**. This verifies the
+  offline contract only; a fresh Runner must still prove five-stage/retrieval handoff, draft/publish, and Acceptance.
+- Preflight status before the next authorized run is canonical ledger `cap/count/active=31/24/0`, strict replay PASS,
+  118 lines, `7` remaining. The exact continuation carrier is
+  `modeling_team/.continuations/r23005-start24-r3-exact-candidate.json`, SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`, mode `0444`, source `delivery-3`, accepted
+  `delivery-4`, revision `dify-cba-slice-r3`, and candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Start25 must stage these exact bytes before
+  `Runner.prepare`, continue the accepted candidate, and not rebuild business semantics.

@@ -6,13 +6,14 @@
   终态为 `runtime/infrastructure` + `platform-contract` `rebind-required`，不是建模质量结论或
   Acceptance PASS。正式账本现为 `cap/count/active=31/24/0`，剩余 `7` 次；Prompt A/C/D 已由
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
-  platform-contract 仍待实现与验证。R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
+  platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
+  R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：在下一次 semantic_start 前完成并验证 Prompt E 的 Coordinator canonical
-  acceptance-ticket contract（复用 start24 的精确 r3 carrier，不重建业务切片），随后在仍有授权的
-  `7` 次额度内以 fresh Runner 继续独立 Acceptance；正式账本 cap/count/active 为 `31/24/0`
+- 当前下一目标：使用 `ebea0eb` 的 fresh Runner，在下一次 semantic_start 前置入 start24 精确 r3
+  carrier（不重建业务切片），继续独立 Acceptance；仍有 `7` 次额度，正式账本 cap/count/active 为
+  `31/24/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -61,7 +62,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start24 terminal（rebind-required；31/24/0，剩余 7；Prompt E pending）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start24 terminal（rebind-required；Prompt E=ebea0eb 离线验证；31/24/0，剩余 7）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2381,12 +2382,42 @@ The pre-start prompt repair required by the prior delivery is now bound to the r
   accepting the candidate; a missing citation is a complete-candidate conflict.
 - Prompt D: Protocol freezes the complete query tuple and keeps context and match cursor chains separate,
   including a fresh context chain for every match page.
-- Prompt E: **Pending platform-contract implementation.** Coordinator currently lacks a canonical Acceptance
-  ticket schema plus run-specific values, which allowed shorthand or `{}` publication attempts. The required
-  contract is a structured Protocol receipt handoff, a Runner-built canonical ticket draft with run-specific
-  bindings, and Coordinator publication of that draft unchanged. This must be implemented and independently
-  verified before the next `semantic_start`; it is not prompt closure and does not make Acceptance ready.
+- Prompt E: Coordinator's canonical Acceptance-ticket schema, run-specific bindings, structured Protocol receipt
+  handoff, Runner-built draft, and unchanged Coordinator publication are implemented by `ebea0eb`. Focused offline
+  contract tests pass; a real Acceptance round is still required and no Acceptance-ready or PASS claim follows from
+  this implementation result alone.
 
 These prompt changes remain ordinary current-scope safeguards for R2.3-005 and do not add Consumer, mutation,
 recovery, orchestration, or productization scope. Acceptance remains unproved until a future fresh Runner binds a
 formal ticket and an independent Acceptance round returns a verdict.
+
+### 2026-08-06 R2.3-005 Prompt E implementation review and evidence boundary
+
+The platform-contract repair is commit `ebea0eb` (`Add R2.3-005 acceptance ticket pipeline`), building on prompt and
+approval changes in `749b6bc` and `2173848`. It closes the Coordinator canonical-ticket gap without moving semantic
+meaning into the Runner:
+
+- Prompt-only defects fixed in the authoritative instruction surfaces: (A) an accepted candidate receipt is not
+  full platform/retrieval completion and `ready_for_acceptance`/`silent_for_acceptance` are gated; (C) formal relation
+  items require source-grounded citations; (D) the complete query tuple and context/match cursor chains are frozen.
+- The E handoff now has a structured Protocol receipt path. Protocol must read the nested handoff contract and use
+  Runner-observed artifacts; it may not hand-calculate receipt summaries, digests, pages, or paths. The stage
+  validator and the prompt agree that readback uses `get_modeling_context` and rejects an inconsistent tool/mode.
+  These are prompt/contract fixes in `modeling_team/agent-packages/protocol/instructions.md`,
+  `modeling_team/references/acceptance-stage-handoff-contract.json`, and the Runner-owned validator in
+  `modeling_team/acceptance.py`.
+- Runtime/platform wiring fixes are separate from prompt guidance: completed Protocol MCP results are captured by
+  the Codex runtime sink; immutable response artifacts are keyed by both request and response digests so the same
+  request with different responses cannot overwrite; Protocol capability endpoints are staged, authorized, and
+  cleaned by the Runner. The relevant runtime/Runner surfaces are in `modeling_team/runtimes/codex.py`,
+  `modeling_team/runner.py`, and `modeling_team/capability_mcp.py`.
+- The ticket-pipeline test helper uses a synthetic `submit_modeling_batch` payload to exercise carrier validation;
+  that pseudo-schema is a test-fixture limitation, not a live platform acceptance or a replacement for the frozen
+  `modeling-batch-item-contract.json`. It must not be cited as semantic proof. Existing start24 intervention and
+  runtime hash/digest records remain raw evidence; no prior hash failure is relabeled as PASS.
+
+Verification fact: `PYTHONPATH=. uv run --project backend pytest -q
+modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r23005_contracts.py
+modeling_team/tests/test_r23005_t6_repeatability.py` returned **46 passed, 3 subtests passed**. This is offline
+implementation evidence only; the next fresh Runner must prove the full five-stage/retrieval handoff, unchanged
+ticket publication, and independent Acceptance.
