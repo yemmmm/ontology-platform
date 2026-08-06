@@ -480,6 +480,83 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0].cleaned)
 
+    def test_formal_main_rejects_foreground_eof_before_terminal_report(self) -> None:
+        created = []
+
+        class EofRunner:
+            def __init__(self, **_kwargs):
+                self.run = None
+                self.canonical_admin_key = "delivery-only"
+                self.classifications = []
+                self.cleaned = 0
+                created.append(self)
+
+            def prepare(self, *, run_id, **_kwargs):
+                self.run = SimpleNamespace(run_id=run_id, root=run_root)
+
+            def start(self):
+                return None
+
+            def record_terminal_failure(self, classification, complete):
+                self.classifications.append((classification, complete))
+
+            def cleanup(self):
+                self.cleaned += 1
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_root = root / "run"
+            run_root.mkdir()
+            scope = root / "scope.yaml"
+            scope.write_text("mode: create\n", encoding="utf-8")
+            configuration = SimpleNamespace(
+                task=SimpleNamespace(
+                    schema_version=2,
+                    task_id="r2-3-005-formal-acceptance",
+                ),
+                profile=SimpleNamespace(profile_id="r2-3-005-modeling-team"),
+            )
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(root / "profile.yaml"),
+                "--task",
+                str(root / "task.yaml"),
+                "--run-id",
+                "formal-eof-run",
+                "--scope",
+                str(scope),
+                "--freeze-started-at",
+                datetime.now(UTC).isoformat(),
+            ]
+            adapter = SimpleNamespace(preflight_host_auth=lambda: None)
+            with (
+                patch.object(team_main, "repository_root", return_value=root),
+                patch.object(
+                    team_main,
+                    "load_formal_team_configuration",
+                    return_value=configuration,
+                ),
+                patch.object(
+                    team_main,
+                    "_bootstrap_helpers",
+                    return_value=(lambda: ("key", "id"), lambda _id: True),
+                ),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=adapter),
+                patch.object(team_main, "TeamRunner", EofRunner),
+                patch.object(team_main, "_foreground_event_loop", return_value=None),
+                patch.object(sys, "argv", argv),
+                patch.dict(
+                    team_main.os.environ,
+                    {"ONTOLOGY_PLATFORM_ADMIN_API_KEY": "delivery-only"},
+                ),
+            ):
+                self.assertEqual(team_main.main(), 2)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].classifications, [("collaboration/routing", False)])
+        self.assertEqual(created[0].cleaned, 1)
+
     def test_monitor_extraction_ack_timeout_remains_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fake_repo = Path(directory)

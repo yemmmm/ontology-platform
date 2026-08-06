@@ -4,12 +4,14 @@
 
 - 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 start25 已终止并完成清理，
   终态为 `modeling-quality` `candidate-envelope-invalid`（不是 Protocol、平台或 Acceptance 结论）。
-  正式账本现为 `cap/count/active=31/25/0`，剩余 `6` 次；Prompt A/C/D 已由
+  正式账本现为 `cap/count/active=31/26/0`，剩余 `5` 次；Prompt A/C/D 已由
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
   platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
   ADR 0008 Runtime-neutral mechanical spine 已实现并通过完整 Modeling Team 回归，已移除 copied Task 与
   Agent shell/JSON extraction；start26 在 `semantic_start` 前暴露并清理了 Modeling capability socket
-  挂载遗漏，未消耗建模次数，Runtime 修复已通过完整回归，待复用同一 carrier/overlay 窄重试；
+  挂载遗漏，未消耗建模次数；start27 已证明四角色 Runtime 启动恢复，但 Delivery heredoc 关闭了控制
+  stdin，导致进入 `semantic_start` 后立即清理，终态为 `collaboration/routing`、不是建模质量结论；
+  Runner EOF fail-closed 与启动方式修复已通过完整回归，待复用同一 carrier/overlay 窄重试；
   用户新增 `+5` 授权已记录为待生效授权，因 canonical ledger 只允许余额耗尽时追加，当前不改写账本。
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
@@ -18,8 +20,8 @@
 - 当前下一目标：复用 ADR 0008 的 append-only Task overlay、typed Modeling candidate publication 和
   start24 精确 r3 carrier（不重建业务切片），在已修复 Modeling capability socket 挂载后窄重试，继续
   Protocol 平台执行与独立 Acceptance；
-  仍有 `6` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
-  cap/count/active 为 `31/25/0`
+  仍有 `5` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
+  cap/count/active 为 `31/26/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -68,7 +70,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start26 pre-semantic Runtime 挂载缺陷已修复，待同 carrier 窄重试；31/25/0，已入账剩余 6，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start27 Delivery stdin EOF 已修复，待同 carrier PTY 窄重试；31/26/0，已入账剩余 5，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2534,3 +2536,21 @@ when its typed operation is configured; legacy/no-overlay runs remain unchanged.
 the complete Modeling Team suite pass (`429 passed, 1 skipped, 177 subtests`). The next live run must reuse the same
 carrier/overlay semantics and perform only the fresh Runtime/ledger reservation required after the pre-semantic
 release.
+
+### 2026-08-06 R2.3-005 start27 foreground-control repair
+
+Start27 `r23005-real-20260806t055331z-start27` proved the start26 socket repair: Coordinator, Modeling, Protocol, and
+Acceptance all completed `thread/start`, and the Runner wrote `semantic_start`. The Delivery wrapper had been launched
+through `python - <<'PY'`; that heredoc was also the Runner's control stdin. Once Python consumed the script, the
+foreground control loop immediately observed EOF, performed cleanup, and returned success before any typed candidate,
+Protocol receipt, platform operation, or Acceptance round could be evidenced. The run is therefore terminal
+`collaboration/routing`, `complete_modeling_quality_result=false`, not a semantic-quality result. Cleanup deleted the
+empty owned scope, revoked all keys, and retained zero runtime children.
+
+Formal CLI operation now treats EOF before `TERMINAL_REPORT_COMPLETE` as a fatal coordination boundary, records the
+terminal classification, and returns non-zero; legacy non-formal EOF behavior remains unchanged. The Delivery launch
+must use an stdin-preserving PTY and an in-process `python -c` bootstrap wrapper, not heredoc/stdin script injection.
+Focused EOF/terminal/legacy tests pass, and the complete `modeling_team/tests` suite passes
+`430 passed, 1 skipped, 177 subtests`. Canonical ledger strict replay is `cap/count/active=31/26/0`, 129 lines,
+SHA-256 `70655dc9fd7e098b9264b61ed353f33b77e146b6bc5553fae6d2ab07e9d0e7a3`, with five already-recorded starts
+remaining and the later `+5` still pending. The next start must reuse the same carrier/overlay semantics.

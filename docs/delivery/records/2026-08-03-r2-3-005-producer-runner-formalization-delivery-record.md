@@ -2905,3 +2905,25 @@ the formal builder, or starting another real run before authorization.
   `6fd08ada03e7c620c53679bed7ab340f31803fdba6edef7a8523e76211cbdebc`. Six recorded starts remain and the later
   `+5` authorization is still pending. The next run must reuse the same carrier/overlay and business semantics; only
   a fresh Runtime instance and ledger reservation are required.
+
+### 2026-08-06T13:58:00+08:00 — Start27 entered semantic start, then Delivery stdin EOF
+
+- Start27 `r23005-real-20260806t055331z-start27` reused the exact start24 r3 carrier and read-only overlay. All four
+  persistent roles completed `thread/start`; the Runner wrote `semantic_start` against baseline
+  `e6fcfacae16cbba8bc1662d6967f20e0b8b6db9cfdccc662e269b3f16c9f7cb1`, proving the start26 capability-socket
+  defect was repaired.
+- The bootstrap command used `python - <<'PY'`. Its heredoc consumed the same stdin needed by the Runner foreground
+  control loop, which immediately observed EOF and triggered ordinary cleanup with wrapper `return=0`. No typed
+  candidate delivery, Protocol receipt/platform operation, ticket, Examiner, or Acceptance verdict was produced.
+  This is a Delivery `collaboration/routing` failure, not a Modeling/Protocol/platform/Acceptance result.
+- The run has now been explicitly classified `collaboration/routing`, `complete_modeling_quality_result=false`.
+  Cleanup reached `CLEANED`, deleted the empty owned Project/Ontology, revoked all keys, and retained zero role,
+  app-server, transport, credential, or Acceptance-child residue.
+- Formal CLI EOF before `TERMINAL_REPORT_COMPLETE` now records the same terminal classification and returns non-zero.
+  The focused test proves formal EOF failure plus terminal/legacy compatibility; complete regression passes
+  **430 tests, 1 skipped, 177 subtests**. The next launch must preserve stdin through a PTY and use `python -c` for
+  same-process bootstrap/revoke rather than a heredoc or temporary requirement-specific script.
+- Canonical ledger strict replay is `cap/count/active=31/26/0`, 129 lines, SHA-256
+  `70655dc9fd7e098b9264b61ed353f33b77e146b6bc5553fae6d2ab07e9d0e7a3`. Five recorded starts remain; pending
+  `+5` is unchanged. Start28 must reuse the same carrier/overlay and may refresh only the required baseline,
+  authorization, Runtime instance, and reservation.

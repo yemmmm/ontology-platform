@@ -448,10 +448,13 @@ def main() -> int:
             sys.stdin,
             lambda output: print(json.dumps(output, ensure_ascii=False), flush=True),
         )
-        if handoff_root is not None:
-            if not _terminal_report_complete(runner):
+        if not _terminal_report_complete(runner):
+            if formal_acceptance:
+                runner.record_terminal_failure("collaboration/routing", False)
+            if formal_acceptance or handoff_root is not None:
                 _write_runner_handoff_failed(handoff_root, runner.run.root)
                 raise RuntimeError("foreground CLI ended before terminal report completion")
+        if handoff_root is not None:
             write_runner_phase(handoff_root, "cleanup_pending", run_root=runner.run.root)
             _await_monitor_extraction(handoff_root, runner.run.root)
     except KeyboardInterrupt:

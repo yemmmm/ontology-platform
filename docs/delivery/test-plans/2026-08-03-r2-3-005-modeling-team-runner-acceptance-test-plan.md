@@ -1670,6 +1670,7 @@ modeling-quality and Acceptance test.
 | C112 | Codex thin projection | Only an overlay-enabled formal Modeling role receives the Runner capability/token/socket/config; formal runs without an overlay and all legacy tasks retain the previous tool surface |
 | C113 | Existing mechanics regression | Candidate progress/redrive, Protocol cursor verifier, Prompt E artifacts/ticket, pause/resume, settlement, cleanup, R2.3-002, and complete `modeling_team` tests remain green |
 | C114 | Modeling capability Runtime reachability | When Modeling advertises the typed publication operation, its exact private host socket is bind-mounted at `/agent/home/runner-capability.sock`; roles without that operation receive no such mount |
+| C115 | Formal foreground EOF fail-closed | EOF before `TERMINAL_REPORT_COMPLETE` records `collaboration/routing`, returns non-zero, and cleans once; legacy non-formal EOF and completed terminal behavior remain compatible |
 | I24 | Next live continuation | A fresh run uses the tracked authoritative Task plus exact r3 overlay, reaches normal Protocol receipt/platform work and then both independent Acceptance rounds without Modeling shell extraction or copied Task drift |
 
 The canonical ledger is read-only throughout developer testing. The newly granted `+5` is pending because the ledger
@@ -1708,3 +1709,13 @@ already recorded attempts.
 - Focused repair verification passed **8 tests and 2 subtests**. Complete regression passed **429 tests, 1 skipped,
   177 subtests**; Ruff and `git diff --check` passed. I24 remains pending because no Protocol, platform, or independent
   Acceptance evidence was produced.
+
+### Start27 foreground-control repair result (2026-08-06)
+
+- The start26 socket repair is live-proven: all four persistent roles created threads and `semantic_start` was
+  recorded. I24 still failed before semantic work because the Delivery heredoc closed the foreground control stdin.
+- C115 now makes formal EOF terminal and non-zero while preserving legacy and completed-terminal behavior. The next
+  live launcher must use an stdin-preserving PTY with same-process `python -c` bootstrap/revoke; it must not use a
+  heredoc or add a temporary requirement-specific launcher script.
+- Focused verification passed **3 tests and 5 subtests**; complete regression passed **430 tests, 1 skipped,
+  177 subtests**. Start27 is classified `collaboration/routing`, complete=false. I24 remains pending.
