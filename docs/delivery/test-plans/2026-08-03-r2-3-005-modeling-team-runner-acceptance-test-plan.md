@@ -1996,3 +1996,44 @@ already recorded attempts.
   registration and fails closed on duplicate/drifting wake state; **456 modeling tests** passed. Start38 requires
   independently frozen narrow chains for every `consumer_query.required_paths` evidence family and Host-owned
   completeness verification before handoff. Do not launch start38 automatically.
+
+### Pending start39–41 authorization extension (2026-08-06)
+
+- The current user message grants three additional starts under authorization
+  `user-20260806-r23005-start39-41`, but the extension remains pending while the previously authorized start38 is
+  still available at strict replay `cap/count=37/36`.
+- Do not mutate the ledger for this authorization before start38 has consumed the current allowance and reached its
+  terminal result. After start38 terminal handling, register the authorization through the normal strict-ledger
+  path, then make start39 eligible.
+- This pending record does not launch start38 and must not be interpreted as permission to start start39, start40,
+  or start41 early.
+
+### Final pre-start38 retrieval-gate repair verification (2026-08-06)
+
+- The retained start37 Project/Ontology was queried read-only with seven independent exact-path chains. Each chain
+  used its predicate-kind singleton `resource_types`, asserted lexical search, depth 3, and 50/50 limits, and reached
+  terminal match/context pagination with an exact-predicate, Evidence-supported, lineage-complete statement.
+- **False-accept regression:** path presence alone is insufficient. The `fieldName` chain can select
+  `quality_score`, which satisfies the predicate checks but not the candidate-required connected
+  `quality-rating-field` / `quality_rating` semantics.
+- **Host completion gate:** verify each candidate-declared required path against its connected expected
+  subject/object/value, exhaust match-page and context subchains independently, and replace degraded hybrid retrieval
+  with an independently frozen lexical chain. Do not infer family completeness from one matching predicate.
+- A schema-marked completed Host receipt is the only condition under which the existing Codex coarse warning gate
+  avoids repeating the same rejection. Legacy and no-receipt behavior must remain unchanged. Host remains the
+  semantic authority and the contract stays Pi-/adapter-neutral.
+- Repair verification passed **21 focused tests**, **66 targeted runtime tests**, **480 passed, 1 skipped, 195
+  subtests** in the complete modeling suite, Ruff, and diff checks. Three runtime-related tests were added, including
+  query-state authority coverage. GitNexus `detect_changes` was LOW with **29 changed symbols and 0 affected
+  processes**.
+- Do not launch start38 until an independent final review passes on this stable state. The pending
+  `user-20260806-r23005-start39-41` authorization remains unchanged and may be registered only after start38 terminal
+  handling.
+
+### Independent final review result (2026-08-06)
+
+- **PASS:** Protocol cannot forge the schema-marked Host completion receipt. No-receipt, legacy, and non-formal
+  execution preserves the prior warning-block behavior, and Pi remains unbound from semantic gate authority.
+- No start38 blocker remains. The stable repair is eligible for commit, and start38 may launch from that committed
+  state under the existing allowance. The pending start39–41 authorization remains deferred until start38 terminal
+  handling.

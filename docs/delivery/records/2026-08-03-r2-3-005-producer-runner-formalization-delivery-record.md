@@ -3308,3 +3308,46 @@ the formal builder, or starting another real run before authorization.
   receipt registration and fails closed on duplicate or drifting wake state; **456 modeling tests** passed. Before
   start38, each candidate `consumer_query.required_paths` family must have an independently frozen narrow retrieval
   chain and a Host-owned completeness verification gate. No start38 is automatically launched.
+
+### 2026-08-06 — Pending authorization extension for start39–41
+
+- In the current user message, the user explicitly authorized three additional real modeling starts. Record that
+  authorization as `user-20260806-r23005-start39-41`, pending extension for start39 through start41.
+- Strict replay still has the previously authorized start38 available at `cap/count=37/36`. The budget-extension
+  contract permits registration only after that existing allowance is consumed and start38 reaches a terminal
+  result. Therefore this authorization must not be written to the ledger yet.
+- Immediately after start38 terminal handling, register the pending authorization through the normal strict-ledger
+  path before reserving start39. This record neither starts start38 nor permits start39, start40, or start41 to begin
+  early.
+
+### 2026-08-06 — Final pre-start38 retrieval gate repair
+
+- The independent read-only diagnosis queried all seven candidate `consumer_query.required_paths` separately against
+  the retained start37 Project/Ontology. Every relation/fact singleton chain used asserted lexical retrieval at depth
+  3 with 50/50 limits, exhausted both match-page and context subchains, and returned an exact-predicate statement
+  with supported Evidence references and complete lineage. That path-only result was nevertheless a false accept:
+  the `fieldName` chain could select the valid but CQ-wrong `quality_score` statement instead of the candidate-required
+  `quality-rating-field` value `quality_rating`.
+- The Host gate now verifies candidate-declared connected semantics, not predicate presence alone. For every required
+  path it binds the expected statement to the candidate-owned subject/object/value and requires the connected family
+  to complete across independently paged match and context subchains. A degraded hybrid result is retried through an
+  independently frozen lexical chain rather than being accepted or rejected from the mixed result.
+- The existing Codex coarse warning gate may avoid a duplicate rejection only after receiving a schema-marked,
+  completed Host verification receipt. Legacy flows and flows without that exact receipt retain their prior warning
+  behavior. The Host is the authoritative gate owner; the contract is Pi- and adapter-neutral and does not move
+  semantic authority into a Runtime adapter.
+- Verification passed **21 focused tests**, **66 targeted runtime tests**, and the complete modeling suite with **480
+  passed, 1 skipped, 195 subtests**. The repair added three runtime-related tests, including query-state authority
+  coverage. Ruff and diff checks passed. GitNexus `detect_changes` reported LOW scope with **29 changed symbols and 0
+  affected processes**.
+- Start38 remains blocked pending an independent final review of this stable gate state. The pending
+  `user-20260806-r23005-start39-41` authorization is unchanged: register it only after start38 reaches terminal state;
+  do not start or reserve start39 early.
+
+### 2026-08-06 — Independent final review cleared the start38 gate
+
+- Independent final review passed. Protocol cannot forge the schema-marked Host completion receipt; absent-receipt,
+  legacy, and non-formal paths retain the existing coarse-warning rejection, and no Pi binding was introduced.
+- The review found no remaining start38 blocker. This stable repair state is cleared for commit, and start38 may be
+  launched from the committed state under its existing allowance. The pending start39–41 authorization remains
+  unchanged and is still registered only after start38 terminal handling.

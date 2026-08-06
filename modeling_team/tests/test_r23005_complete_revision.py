@@ -299,6 +299,7 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
             root=root,
         )
+        task_objective = configuration.task.objective
         runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
         runner.run = SimpleNamespace(configuration=configuration, protocol_context=None)
         protocol_text = runner._task_text("protocol")
@@ -307,6 +308,16 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         self.assertIn("before every receipt or conflict response", protocol_text)
         self.assertIn("Complete the full platform-translation decision before any response", protocol_text)
         self.assertIn("exactly one of those two responses", protocol_text)
+        for phrase in (
+            "`consumer_query.semantic.required_paths`",
+            "one independent `query_semantic_context` chain",
+            "`query` is exactly the required-path string",
+            "typed ordinary retrieval receipt",
+        ):
+            self.assertIn(phrase, task_objective)
+        self.assertIn("accepted candidate's consumer_query", protocol_text)
+        self.assertIn("query exactly equal to that path", protocol_text)
+        self.assertIn("host artifact gate validates", protocol_text)
 
     def test_c95_modeling_waits_for_bound_protocol_gates_and_coordinator_uses_exact_pause_shape(self) -> None:
         root = repository_root()

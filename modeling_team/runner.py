@@ -1771,7 +1771,11 @@ class TeamRunner:
                     "revisions, and report terminal only after the Runner delivers Modeling's terminal-handoff. "
                     "Preserve source-grounded evidence_citations when present; do not read/guess source locators or "
                     "owner answers. Use the generic mechanics contract and configured retrieval fallback for ordinary "
-                    "candidates. Emit only silent_for_acceptance to coordinator through "
+                    "candidates. For ordinary formal retrieval, use the accepted candidate's consumer_query "
+                    "required_paths as the sole plan: issue one query_semantic_context call per required path with "
+                    "query exactly equal to that path, singleton relation/fact resource_types, asserted-only and "
+                    "run-owned ontology scope; broad CQ/question queries and expected answers never count. The "
+                    "host artifact gate validates each frozen cursor chain and registers the typed receipt. Emit only silent_for_acceptance to coordinator through "
                     "send_coordination with the current generation after the ordered protocol work is quiet."
                 )
                 if self._formal_coordination_enabled() and self.acceptance is not None:
@@ -2293,6 +2297,7 @@ class TeamRunner:
                 self.acceptance.register_accepted_candidate(
                     candidate_revision=identity.candidate_revision,
                     candidate_digest=identity.candidate_digest,
+                    candidate=self._candidate_progress.candidate,
                 )
             if self._candidate_platform_gate is not None:
                 if result in {"candidate", "revision", "conflict"}:

@@ -60,6 +60,18 @@ leave `resource_types` broad/null when a narrower resource kind is sufficient. I
 `search_mode=lexical`; a hybrid response with a missing vector index is never a complete result and
 must not be reported as one.
 
+For an ordinary formal candidate, the candidate's `consumer_query.semantic.required_paths` is the
+only retrieval plan. For every `query_id` and every required path, issue an independent
+`query_semantic_context` call whose `query` is exactly the path string (never the CQ expected answer
+or a free-form question), whose `resource_types` is exactly one `relation` or `fact` matching that
+path, whose `assertion_types` is exactly `["asserted"]`, and whose scope is the run-owned
+`project_id` plus `scope_mode=ontologies` and the exact singleton `ontology_ids`. Freeze all other
+query fields and consume context cursors before match cursors until the selected chain terminates.
+Broad CQ/question queries do not contribute retrieval evidence. After every required path has a
+complete supported statement chain, the Runner's common host artifact gate registers the typed
+ordinary receipt; do not hand-write a receipt or use expected answers, source answers, or warning
+rows as retrieval evidence.
+
 Before the first query, use only the exact `resource_types` values advertised by the
 `query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`.
 Never probe unsupported aliases such as `entity`, `entities`, or `individual`; an unsupported value is

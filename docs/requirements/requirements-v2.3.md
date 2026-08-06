@@ -2823,3 +2823,50 @@ passed. Before start38, each `consumer_query.required_paths` evidence family **m
 independently frozen narrow chain, and a Host-owned verifier must judge candidate-bound required-path completeness
 without treating unrelated structural-row warnings as relevant. This final-start gate does not automatically launch
 start38.
+
+### 2026-08-06 R2.3-005 pending authorization for start39–41
+
+The current user message explicitly authorizes three additional real modeling starts under authorization
+`user-20260806-r23005-start39-41`. This is a pending extension, not an immediate ledger event: strict replay still
+contains the previously authorized start38 allowance at `cap/count=37/36`, and the authorization-extension contract
+allows the next extension to be registered only after that allowance is consumed and start38 reaches a terminal
+result.
+
+After start38 terminal handling, the Runner must immediately register the pending authorization through the normal
+strict-ledger path before reserving start39. This requirement neither starts start38 nor authorizes start39, start40,
+or start41 to execute before that registration.
+
+### 2026-08-06 R2.3-005 final pre-start38 retrieval gate
+
+The retained start37 Project/Ontology was diagnosed read-only through seven independently frozen exact-path queries.
+Every chain used predicate-kind-specific relation/fact scope, asserted lexical retrieval, depth 3, 50/50 limits, and
+terminal match-page plus context-subchain pagination. All seven returned an exact-predicate statement with supported
+Evidence references and complete lineage. This also proved that a path-only gate can false-accept: the `fieldName`
+chain may select `quality_score` even though the candidate-connected CQ requires the `quality-rating-field` value
+`quality_rating`.
+
+Before start38, the Host-owned verifier **must** bind every `consumer_query.required_paths` member to the connected
+subject/object/value declared by the accepted candidate and judge the whole connected family only after independently
+exhausting match and context pagination. If hybrid retrieval reports degraded completeness, the verifier **must**
+execute an independently frozen lexical chain; it must not reuse the degraded chain as completeness evidence.
+
+The existing Codex coarse warning gate may suppress a duplicate rejection only when a schema-marked Host receipt
+states that this candidate-bound verification completed. Legacy execution and any execution without that receipt
+retain their previous warning behavior. Host remains the semantic acceptance authority; Pi and other Runtime adapters
+consume the same neutral contract and do not implement their own semantic gate.
+
+Verification passed **21 focused tests**, **66 targeted runtime tests**, and **480 passed, 1 skipped, 195 subtests**
+in the complete modeling suite. Three runtime-related tests were added, including query-state authority coverage.
+Ruff and diff checks passed. GitNexus `detect_changes` classified the scope LOW with **29 changed symbols and 0
+affected processes**. Start38 must not begin until an independent final review passes on this stable state. The
+pending `user-20260806-r23005-start39-41` authorization remains unchanged and must be registered only after start38
+terminal handling.
+
+### 2026-08-06 R2.3-005 independent final review closeout
+
+Independent final review passed: Protocol cannot forge the schema-marked Host completion receipt; execution without
+that receipt, legacy execution, and non-formal execution retain the prior warning-block behavior; and Pi is not bound
+to semantic gate authority. No start38 blocker remains. The stable repair state may be committed, and start38 may
+launch from that committed state under the existing allowance. The pending
+`user-20260806-r23005-start39-41` authorization remains unchanged and may be registered only after start38 terminal
+handling.

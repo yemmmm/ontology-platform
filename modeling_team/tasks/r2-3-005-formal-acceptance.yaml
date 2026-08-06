@@ -39,17 +39,25 @@ objective: >-
   label.
   Protocol rejects missing or blank labels and never derives or invents them from item_id,
   entity_id, or question text. For governed retrieval, Protocol must resolve the run-owned
-  Project/Ontology from formal receipts, query `query_semantic_context` only with
-  `scope_mode=ontologies` and exact `ontology_ids`, issue one narrow query per competency question,
-  and use lexical search when `vector_index_missing` makes hybrid recall incomplete. For each
-  competency question, freeze the first request's exact `query`, `project_id`, `scope_mode`,
-  `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`, and
-  `context_limit`; a context continuation may change only `context_cursor`, while a match
-  continuation may change only `match_cursor` and must start a new context chain. Never carry a
-  cursor across competency questions, send both cursors, or alter a frozen query argument.
-  Consume each current page's context cursor to exhaustion before its match cursor, start a new
-  context chain for each match page, never send or reuse both cursors, and do not treat entity/fact
-  fallback readback as generic retrieval completion. Only non-truncated, non-degraded generic results
+  Project/Ontology from formal receipts and use the accepted candidate's
+  `consumer_query.semantic.required_paths` as the sole ordinary retrieval plan. For every
+  `query_id` and required path, issue one independent `query_semantic_context` chain whose
+  `query` is exactly the required-path string (never a CQ expected answer or free-form question),
+  whose `resource_types` is exactly one singleton `relation` or `fact` matching the path, whose
+  `assertion_types` is exactly `["asserted"]`, and whose scope is only
+  `scope_mode=ontologies` with the exact run-owned `ontology_ids`. Use lexical search when
+  `vector_index_missing` makes a hybrid chain incomplete; that lexical chain is an independent
+  fallback for the same path. For each required-path chain, freeze the first request's exact
+  `query`, `project_id`, `scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`,
+  `search_mode`, `depth`, `limit`, and `context_limit`; a context continuation may change only
+  `context_cursor`, while a match continuation may change only `match_cursor` and must start a
+  new context chain. Never carry a cursor across competency questions or required paths, send both cursors, or alter a
+  frozen query argument. Consume each current page's context cursor to exhaustion before its
+  match cursor, start a new context chain for each match page, never send or reuse both cursors,
+  and do not treat entity/fact fallback readback as generic retrieval completion. The host-observed
+  Runner gate ignores broad CQ/question queries, structural rows, and warnings, and registers the
+  typed ordinary retrieval receipt only after every required path has a complete supported
+  statement chain. Only non-truncated, non-degraded generic results
   with required Evidence and lineage may produce `ready_for_acceptance`; ticket/run/model-state
   bindings belong in Protocol receipts and the Acceptance handoff, not query arguments. Do not expose
   expected answers or invoke generic multi-agent/spawn capabilities. Every candidate citation must map one-to-one to its

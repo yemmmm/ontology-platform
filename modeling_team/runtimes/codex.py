@@ -36,6 +36,7 @@ from ..candidate_platform_gate import (
 )
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
+from ..protocol_retrieval_gate import ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
 from ..transport_mcp import TERMINAL_REPORT_GUARD_ERROR
 from .base import (
     AgentRuntimeIdentity,
@@ -2429,10 +2430,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         agent.retrieval_episode += 1
         previous = agent.retrieval_state
         formal = self._formal_mcp_result(item)
+        host_receipt_complete = self._host_ordinary_retrieval_complete()
         state = (
             "complete"
             if item.get("status") == "completed"
-            and self._complete_generic_retrieval(formal, arguments["ontology_ids"])
+            and (
+                host_receipt_complete
+                or self._complete_generic_retrieval(formal, arguments["ontology_ids"])
+            )
             else "fallback_required"
         )
         agent.retrieval_state = state
@@ -2441,8 +2446,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             tool="query_semantic_context",
             previous=previous,
             current=state,
-            reason="generic_complete" if state == "complete" else "fallback_required",
+            reason=(
+                "host_receipt_complete"
+                if host_receipt_complete and state == "complete"
+                else "generic_complete"
+                if state == "complete"
+                else "fallback_required"
+            ),
         )
+
+    def _host_ordinary_retrieval_complete(self) -> bool:
+        """Read the Runner-owned ordinary receipt without re-evaluating its evidence.
+
+        The Host carrier is the only component allowed to validate the accepted
+        candidate's path/binding/paging receipt.  Runtime adapters may use its
+        typed completion marker to avoid applying the older aggregate-warning
+        heuristic a second time.  A missing receipt keeps the legacy gate intact.
+        """
+
+        if not self._coordination_enabled or self._acceptance is None:
+            return False
+        receipt = getattr(self._acceptance, "ordinary_retrieval_receipt", None)
+        if not isinstance(receipt, Mapping):
+            return False
+        return receipt.get("schema_version") == ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
 
     def _complete_retrieval_verifier(self, agent: _Agent, item: dict[str, Any]) -> None:
         previous = agent.retrieval_state
@@ -2665,6 +2692,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "fallback_required",
                     "query_required",
                 }
+                and not self._host_ordinary_retrieval_complete()
             )
             if blocked:
                 self._record_retrieval_transition(

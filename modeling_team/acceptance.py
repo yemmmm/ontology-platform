@@ -33,6 +33,10 @@ from .capability_mcp import (
     RunnerCapabilityEndpoint,
     token_digest,
 )
+from .protocol_retrieval_gate import (
+    ProtocolRetrievalGate,
+    ProtocolRetrievalGateError,
+)
 
 
 class AcceptanceContractError(ValueError):
@@ -1144,6 +1148,9 @@ class RunnerAcceptanceCarrier:
         # capability to add or alter them; the draft builder uses the registry
         # and the immutable files as the evidence owner of stage digests.
         self._accepted_candidate_identity: dict[str, Any] | None = None
+        self._accepted_candidate: dict[str, Any] | None = None
+        self._ordinary_retrieval_gate: ProtocolRetrievalGate | None = None
+        self._ordinary_retrieval_receipt: dict[str, Any] | None = None
         self._platform_read_artifacts: dict[str, dict[str, Any]] = {}
         self._platform_artifact_sequence = 0
         self._ticket_drafts: dict[str, dict[str, Any]] = {}
@@ -1341,6 +1348,7 @@ class RunnerAcceptanceCarrier:
         *,
         candidate_revision: Any,
         candidate_digest: str,
+        candidate: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Bind the one formal candidate accepted by the Modeling/Protocol gate.
 
@@ -1360,9 +1368,72 @@ class RunnerAcceptanceCarrier:
         if self._accepted_candidate_identity is not None:
             if self._accepted_candidate_identity != record:
                 _error("accepted candidate identity was mutated")
+            if candidate is not None:
+                detached = _safe_copy(dict(candidate))
+                if self._accepted_candidate is not None and self._accepted_candidate != detached:
+                    _error("accepted candidate semantic payload was mutated")
+                if self._accepted_candidate is None:
+                    self._accepted_candidate = detached
+                    try:
+                        gate = ProtocolRetrievalGate(
+                            detached,
+                            candidate_revision=candidate_revision,
+                            candidate_digest=candidate_digest,
+                        )
+                    except ProtocolRetrievalGateError as exc:
+                        _error(str(exc))
+                    self._ordinary_retrieval_gate = gate if gate.enabled else None
             return _safe_copy(record)
         self._accepted_candidate_identity = record
+        if candidate is not None:
+            detached = _safe_copy(dict(candidate))
+            try:
+                gate = ProtocolRetrievalGate(
+                    detached,
+                    candidate_revision=candidate_revision,
+                    candidate_digest=candidate_digest,
+                )
+            except ProtocolRetrievalGateError as exc:
+                _error(str(exc))
+            self._accepted_candidate = detached
+            self._ordinary_retrieval_gate = gate if gate.enabled else None
         return _safe_copy(record)
+
+    @property
+    def ordinary_retrieval_receipt(self) -> dict[str, Any] | None:
+        """Return the Runner-registered ordinary retrieval receipt, if complete."""
+
+        return _safe_copy(self._ordinary_retrieval_receipt) if self._ordinary_retrieval_receipt else None
+
+    def validate_ordinary_retrieval(self) -> dict[str, Any]:
+        """Validate and register the candidate-bound receipt from host artifacts."""
+
+        gate = self._ordinary_retrieval_gate
+        if gate is None:
+            _error("ordinary retrieval candidate plan is unavailable")
+        try:
+            state = self._observed_model_state(None)
+            receipt = gate.build_receipt(runtime_root=self.root.parent, model_state=state)
+        except ProtocolRetrievalGateError as exc:
+            _error(str(exc))
+        existing = self._ordinary_retrieval_receipt
+        if existing is not None and existing != receipt:
+            _error("ordinary retrieval receipt was mutated")
+        self._ordinary_retrieval_receipt = _safe_copy(receipt)
+        return _safe_copy(receipt)
+
+    def _try_register_ordinary_retrieval(self) -> None:
+        """Promote a complete gate result without failing the MCP event sink early."""
+
+        if self._ordinary_retrieval_gate is None or self._ordinary_retrieval_receipt is not None:
+            return
+        try:
+            self.validate_ordinary_retrieval()
+        except AcceptanceContractError:
+            # A partial page sequence is expected while Protocol is still
+            # retrieving.  Handoff calls the public validator and fails closed
+            # with the precise missing/invalid path reason.
+            return
 
     def register_platform_tool_result(
         self,
@@ -1440,6 +1511,12 @@ class RunnerAcceptanceCarrier:
             raise AcceptanceContractError("observed platform artifact is unavailable") from exc
         self._platform_read_artifacts[artifact_path] = record
         self._platform_artifact_sequence += 1
+        if self._ordinary_retrieval_gate is not None:
+            try:
+                self._ordinary_retrieval_gate.observe(record, target)
+            except ProtocolRetrievalGateError as exc:
+                _error(str(exc))
+            self._try_register_ordinary_retrieval()
         return {
             key: record[key]
             for key in ("tool", "request_digest", "response_digest", "artifact_path")
@@ -2255,6 +2332,8 @@ class RunnerAcceptanceCarrier:
         accepted = self._accepted_candidate_identity
         if accepted is None:
             _error("formal accepted candidate identity is unavailable")
+        if self._ordinary_retrieval_gate is not None and self._ordinary_retrieval_receipt is None:
+            self.validate_ordinary_retrieval()
         run_id = self._carrier_run_id()
         if run_id is None:
             _error("formal stage handoff run identity is unavailable")
