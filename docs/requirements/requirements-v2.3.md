@@ -1374,7 +1374,7 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户追加的 10 次授权已由 start22 使用 1 次，账本 31/22/0，剩余 9 次。start22 在 prepare 前真实加载 continuation source，Modeling 直接复用 r2，Protocol 接受并完成 apply/readback/validation/reasoning；retrieval 最终 non-truncated 但 Evidence 缺失，Modeling/Protocol truthful blocked。其 readiness/silence 信号只落 Broker evidence、未送达 Coordinator，静态 Acceptance dependency 因未启动 Acceptance而死锁。start22 已分类清理。ca250bc 现将 validated ready/silent/verdict_route 通过动态角色绑定单次投递 Coordinator，并保持 acceptance_start 单次投递 Acceptance；start23 应继续复用同一 r2 输入验证 Acceptance 链。`
+当前状态：`用户追加的 10 次授权已由 start22、start23 使用 2 次，账本 31/23/0，剩余 8 次。start23 原生验证 issue pause/resume 与 ca250bc readiness delivery；Protocol完成apply/readback后确认 lexical non-truncated，但 r2 的12个relation items没有 evidence_citations，真实lineage因此 evidence_missing。Protocol能构造正式 conflict，却因r2早已accepted、原回复槽关闭而不能作为第二回复路由；start23已正式abort并清理。start24不得重建业务模型，只应在prepare前复用r2与该12-item conflict，生成仅补source-grounded relation citations的完整r3，再继续retrieval与Acceptance。vector index missing是独立降级，不得伪造Evidence或作为citation替代。`
 
 优先级：`P0`
 

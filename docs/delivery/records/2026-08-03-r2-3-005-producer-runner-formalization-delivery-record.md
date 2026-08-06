@@ -2654,3 +2654,34 @@ the formal builder, or starting another real run before authorization.
   settlement and Agent results are unchanged. Focused tests passed **4**, related suites **57**, and full
   `modeling_team/tests` passed **346 tests, 1 skipped**; Ruff, `py_compile` and diff checks passed. Pre-edit TeamRunner
   aggregate impact was HIGH (central class); final GitNexus change detection was LOW with no indexed process affected.
+
+### 2026-08-06T01:08:00+08:00 — Start23 same-run recovery exposed post-acceptance revision boundary
+
+- Baseline `b962e6a` and exact manifest
+  `f98e592ff1d47373eccf078aa98f805b5eb27e3996d48f9bbae7bdac726250fd` launched
+  `r23005-real-20260806t004537z-start23` with the same pre-prepare continuation source and accepted r2 digest. Start23
+  consumed one existing authorization, moving the ledger to count 23. Modeling briefly mistook the candidate receipt
+  for governed-retrieval completion; issue-1 used the fully native pause/guidance/resume path and kept r2 unchanged.
+- Protocol applied the complete dependency-ordered model, read it back, obtained conforming asserted-only validation,
+  consistent reasoning and the expected negative-probe rejection. Issue-2 originally labeled the remaining retrieval
+  gap `platform_repair`; external read-only diagnosis made no mutation and proved the EvidenceReference/entity
+  EvidenceAssociation data and lineage decoration were present. Hybrid vector projection was independently missing,
+  but both lexical queries were complete and non-truncated.
+- The actual `evidence_missing` cause was candidate input: all 12 applied relation modeling items had empty
+  `evidence_reference_ids`/inline evidence and no EvidenceAssociation. Protocol correctly built a formal
+  `relation_evidence_citations_missing` conflict naming those 12 relation IDs and requiring a complete citation-only
+  revision without predicate or business-semantic changes.
+- That conflict could not be routed in the current candidate lifecycle. r2 delivery-4 had already received accepted
+  receipt delivery-5, closing its formal reply slot and marking candidate progress complete. Broker therefore rejected
+  the later conflict as a second reply. There is no safe in-run command to reopen accepted candidate state; issue-3
+  used a formal outer abort rather than mutating transport state or inventing citations. Start23 ended
+  `collaboration/routing`, complete=false; Acceptance did not start.
+- Delivery preserved Runner's original `failed-written-retained` evidence, then used the generic authenticated Project
+  deletion path. Project, Ontology, Build Context, six Batches and Session all read back 404; run/admin/protocol keys
+  are non-active and no process/transport child remains. Canonical ledger is **114 lines**, SHA-256
+  `2484cf2214bad54b557e18b075f221cd9356991a372e83b6f8bacef471e2d1b7`, strict replay `31/23/0`. Eight authorized
+  starts remain.
+- Start24 must continue from the retained r2 plus exact 12-item conflict as a pre-prepare role source. Modeling may
+  produce one complete r3 that adds only source-grounded relation citations and current-run provenance; it must not
+  rebuild the slice, change predicates, resolve explicit unknowns or treat a rebuilt vector index as substitute
+  Evidence. This moves the known quality correction before the one-reply candidate acceptance boundary.
