@@ -8,15 +8,16 @@
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
   platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
   ADR 0008 Runtime-neutral mechanical spine 已实现并通过完整 Modeling Team 回归，已移除 copied Task 与
-  Agent shell/JSON extraction；真实 start26 尚未启动；
+  Agent shell/JSON extraction；start26 在 `semantic_start` 前暴露并清理了 Modeling capability socket
+  挂载遗漏，未消耗建模次数，Runtime 修复已通过完整回归，待复用同一 carrier/overlay 窄重试；
   用户新增 `+5` 授权已记录为待生效授权，因 canonical ledger 只允许余额耗尽时追加，当前不改写账本。
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：先完成 ADR 0008 的 append-only Task overlay 与 typed Modeling candidate publication，
-  由 Runner 解析、校验并投递 `candidate_text`，Agent 不再读取 carrier、选择解释器或序列化 JSON；
-  再使用 `ebea0eb` 的 fresh Runner 置入 start24 精确 r3 carrier（不重建业务切片）继续独立 Acceptance；
+- 当前下一目标：复用 ADR 0008 的 append-only Task overlay、typed Modeling candidate publication 和
+  start24 精确 r3 carrier（不重建业务切片），在已修复 Modeling capability socket 挂载后窄重试，继续
+  Protocol 平台执行与独立 Acceptance；
   仍有 `6` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
   cap/count/active 为 `31/25/0`
 - 关联交付记录：
@@ -67,7 +68,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `ADR 0008 开发回归完成，待 start26 真实验收；31/25/0，已入账剩余 6，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start26 pre-semantic Runtime 挂载缺陷已修复，待同 carrier 窄重试；31/25/0，已入账剩余 6，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2515,3 +2516,21 @@ Implementation verification completed on 2026-08-06. The tracked Task plus read-
 and 51 subtests; the complete `modeling_team/tests` suite passed 429 tests, skipped 1, and passed 177 subtests. This
 proves only the deterministic mechanical contract and Codex projection. R2.3-005 remains incomplete until a fresh
 live start reaches Protocol/platform work and independent Acceptance evidence.
+
+### 2026-08-06 R2.3-005 start26 pre-semantic Runtime repair
+
+Start26 `r23005-real-20260806t054000z-start26` froze the authoritative Task, overlay, retained carrier, and exact
+baseline successfully. Coordinator completed `thread/start`, while Modeling timed out before thread identity. The
+Runner correctly emitted `presemantic_release`, performed normal cleanup, deleted the empty scope, revoked all keys,
+and retained no child process or credential residue. No `semantic_start` was written, so strict replay remains
+`cap/count/active=31/25/0`, with six authorized starts remaining; the ledger now contains 125 lines and has SHA-256
+`6fd08ada03e7c620c53679bed7ab340f31803fdba6edef7a8523e76211cbdebc`.
+
+The root cause was a Codex projection integration defect: Modeling received a required `runner_capability` MCP
+configuration, but `namespace_command` mounted the corresponding private socket only for Coordinator, Protocol, and
+Acceptance. Thread startup therefore waited for an unreachable required MCP until the 15-second RPC deadline. The
+mount condition now follows the Runtime-neutral role capability descriptor, so Modeling receives the socket only
+when its typed operation is configured; legacy/no-overlay runs remain unchanged. A direct regression assertion and
+the complete Modeling Team suite pass (`429 passed, 1 skipped, 177 subtests`). The next live run must reuse the same
+carrier/overlay semantics and perform only the fresh Runtime/ledger reservation required after the pre-semantic
+release.

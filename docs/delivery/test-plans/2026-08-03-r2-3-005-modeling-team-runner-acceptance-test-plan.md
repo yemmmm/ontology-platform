@@ -1669,6 +1669,7 @@ modeling-quality and Acceptance test.
 | C111 | Runtime-neutral core | Overlay/carrier/publication unit tests contain no Codex thread, rollout, app-server event, or Pi RPC dependency; capability descriptor is stable for a future Pi-native adapter |
 | C112 | Codex thin projection | Only an overlay-enabled formal Modeling role receives the Runner capability/token/socket/config; formal runs without an overlay and all legacy tasks retain the previous tool surface |
 | C113 | Existing mechanics regression | Candidate progress/redrive, Protocol cursor verifier, Prompt E artifacts/ticket, pause/resume, settlement, cleanup, R2.3-002, and complete `modeling_team` tests remain green |
+| C114 | Modeling capability Runtime reachability | When Modeling advertises the typed publication operation, its exact private host socket is bind-mounted at `/agent/home/runner-capability.sock`; roles without that operation receive no such mount |
 | I24 | Next live continuation | A fresh run uses the tracked authoritative Task plus exact r3 overlay, reaches normal Protocol receipt/platform work and then both independent Acceptance rounds without Modeling shell extraction or copied Task drift |
 
 The canonical ledger is read-only throughout developer testing. The newly granted `+5` is pending because the ledger
@@ -1695,3 +1696,15 @@ already recorded attempts.
   `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, with
   `cap/count/active=31/25/0`. No developer test consumed a semantic start. I24 remains pending and is the next step;
   no modeling-quality or Acceptance PASS is claimed by this result.
+
+### Start26 pre-semantic Runtime repair result (2026-08-06)
+
+- I24 entered real preflight but did not enter semantic modeling: Coordinator `thread/start` succeeded and Modeling
+  timed out because its required capability MCP socket was configured but not mounted into the private namespace.
+  Runner wrote `presemantic_release`; no `semantic_start` was recorded and cleanup retained zero residue.
+- C114 now asserts the exact Modeling host/namespace socket bind pair. The mount is derived from configured per-role
+  operations rather than a fixed role list, keeping the Runtime-neutral contract reusable by a future Pi adapter and
+  preserving old/no-overlay Codex behavior.
+- Focused repair verification passed **8 tests and 2 subtests**. Complete regression passed **429 tests, 1 skipped,
+  177 subtests**; Ruff and `git diff --check` passed. I24 remains pending because no Protocol, platform, or independent
+  Acceptance evidence was produced.

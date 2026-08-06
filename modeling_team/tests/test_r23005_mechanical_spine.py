@@ -427,6 +427,27 @@ class R23005MechanicalSpineTests(unittest.TestCase):
                     adapter._role_capability_operations("modeling", run=run),
                     MODELING_OPERATIONS,
                 )
+                adapter._coordination_enabled = True
+                adapter._run_root = Path(value)
+                modeling_home = Path(value) / "modeling-home"
+                modeling_work = Path(value) / "modeling-work"
+                modeling_skills = Path(value) / "modeling-skills"
+                for path in (modeling_home, modeling_work, modeling_skills):
+                    path.mkdir()
+                modeling_agent = SimpleNamespace(
+                    agent_id="modeling",
+                    package=SimpleNamespace(role="modeling"),
+                    home=modeling_home,
+                    work=modeling_work,
+                    skills=modeling_skills,
+                )
+                command = adapter.namespace_command(modeling_agent)
+                socket_target = command.index("/agent/home/runner-capability.sock")
+                self.assertEqual(command[socket_target - 2], "--bind")
+                self.assertEqual(
+                    command[socket_target - 1],
+                    str(carrier.capability_socket_path("modeling")),
+                )
             finally:
                 carrier.cleanup()
 

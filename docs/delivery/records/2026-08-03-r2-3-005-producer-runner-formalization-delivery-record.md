@@ -2882,3 +2882,26 @@ the formal builder, or starting another real run before authorization.
   `cap/count/active=31/25/0`. No semantic start was consumed. The additional user-granted `+5` remains pending until
   the existing six starts are exhausted. Next action is the fresh start26 live semantic/Acceptance run; no live PASS
   is claimed by this developer verification.
+
+### 2026-08-06T13:50:32+08:00 — Start26 pre-semantic Runtime failure repaired
+
+- Start26 `r23005-real-20260806t054000z-start26` completed formal preflight and froze the tracked Task, read-only
+  overlay, exact start24 r3 carrier, and baseline SHA-256
+  `4f281390cb9167f7f4af2c331739da88651579e85933efd10c022225c4edea37`. Coordinator obtained a Codex thread;
+  Modeling emitted startup notifications but `thread/start` did not return within the fixed RPC deadline.
+- Runner failed closed before business delivery, wrote `presemantic_release`, and did not write `semantic_start`.
+  Cleanup reached `CLEANED`, deleted the empty owned scope, revoked Delivery/admin/Protocol credentials, and retained
+  zero role, app-server, transport, or Acceptance child residue. This is `runtime/infrastructure`, not a modeling,
+  Protocol, platform, or Acceptance result.
+- Direct code tracing found the exact mismatch: `_write_config` projected the newly configured Modeling
+  `runner_capability` as required, but `namespace_command` mounted the private socket only for Coordinator, Protocol,
+  and Acceptance. The mount condition now follows the actual per-role capability descriptor, which includes
+  Modeling only for overlay-enabled continuation runs and preserves legacy/no-overlay behavior.
+- The regression test now checks the host Modeling socket and `/agent/home/runner-capability.sock` bind pair directly.
+  Focused verification passed 8 tests and 2 subtests; complete `modeling_team/tests` passed 429 tests, skipped 1, and
+  passed 177 subtests. Ruff and `git diff --check` passed. The P2a frozen shared-runtime hash was explicitly rebound
+  to the reviewed Codex bytes; no Pi-specific parsing or publication path was introduced.
+- Canonical ledger strict replay remains `cap/count/active=31/25/0`; it now has 125 lines and SHA-256
+  `6fd08ada03e7c620c53679bed7ab340f31803fdba6edef7a8523e76211cbdebc`. Six recorded starts remain and the later
+  `+5` authorization is still pending. The next run must reuse the same carrier/overlay and business semantics; only
+  a fresh Runtime instance and ledger reservation are required.

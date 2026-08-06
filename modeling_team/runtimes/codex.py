@@ -1381,8 +1381,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ]
         if (
             self._coordination_enabled
-            and agent.package.role in {"coordinator", "protocol", "acceptance"}
             and self._acceptance is not None
+            and self._role_capability_operations(agent.package.role)
         ):
             command[command.index("--chdir") : command.index("--chdir")] = [
                 "--bind",
