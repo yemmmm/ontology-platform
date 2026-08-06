@@ -2790,3 +2790,36 @@ success.
 The start37 receipt-barrier prerequisite is now satisfied by committed implementation, regression evidence, service
 restart, and live endpoint health. This closeout does not authorize an automatic start37 and does not mutate the
 semantic-start ledger.
+
+### 2026-08-06 R2.3-005 start37 retrieval result and final-start gate
+
+Start37 `r23005-real-20260806t141512z-start37` live-proved the mechanical candidate-receipt barrier. Modeling's exact
+retained candidate was `delivery-1`, revision `dify-cba-slice-r3`, digest
+`7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`; Protocol's accepted `delivery-4` bound
+the original delivery, Runner formally registered it, and the gate opened while platform artifact count remained
+zero. One external narrow intervention on the same Coordinator thread then produced factual, non-reply `delivery-5`
+to wake the retained Protocol workflow without rebuilding the candidate, receipt, or business semantics.
+
+Class, property, entity, relation, and Shape dry-run/apply_atomic stages passed. The negative probe was rejected in
+dry-run, validation conformed, reasoning was consistent, and explicit Modeling-owned entity IDs remained exact. Both
+mixed relation-plus-fact competency-query chains consumed all cursors, but unrelated schema/RDFS/SHACL structural rows
+raised Evidence/lineage warnings and the written `quality-rating-field` `fieldName=quality_rating` fact was not
+returned. Protocol did not claim completeness. No handoff, ready/silent gate, ticket, independent Acceptance round,
+verdict, or PASS exists.
+
+The exact authorized abort closed start37 as `platform-contract`, with
+`complete_modeling_quality_result=false`. Cleanup retained the non-empty Project, terminated Session/Lease activity,
+revoked keys, destroyed private credentials, and left zero runtime or in-flight residue. Strict replay is
+`cap/count/active=37/36/0`, 171 lines, SHA-256
+`f9790fe7e43f459df24e22de8e09d959b3df2264abfab828ec6f0c45f8adb75b`, with **1 remaining** start.
+
+An independent fact-only read diagnostic returned one terminal page and 17 asserted facts for each original CQ; all
+were Evidence-supported and lineage-complete. CQ2's required unknown facts were returned, while CQ1 still omitted
+`fieldName=quality_rating`. All temporary keys were revoked. This diagnosis is not Acceptance evidence.
+
+Commit `55e2dee` replaces the external continuation with one Runner-owned, direct, delivery-ID-bound Protocol wake
+after accepted receipt registration and fails closed on duplicate or drifting wake state; **456 modeling tests**
+passed. Before start38, each `consumer_query.required_paths` evidence family **must** be queried through its own
+independently frozen narrow chain, and a Host-owned verifier must judge candidate-bound required-path completeness
+without treating unrelated structural-row warnings as relevant. This final-start gate does not automatically launch
+start38.

@@ -1972,3 +1972,27 @@ already recorded attempts.
 - Backend `/api/health` returned `{"status":"ok"}` and frontend port `5173` returned HTTP success. The runtime
   acceptance item is closed, and the mechanical receipt barrier is satisfied as the start37 gate. No ledger event or
   semantic start was created by this check.
+
+### Start37 receipt, platform, retrieval, and terminal result (2026-08-06)
+
+- Live receipt ordering passed: exact candidate `delivery-1` received accepted `delivery-4` with the original-delivery
+  binding; Runner formally registered it and opened the candidate gate before the first platform artifact. A single
+  factual external Coordinator-thread intervention produced non-reply `delivery-5` and woke the retained Protocol
+  thread without candidate, receipt, or business-semantic reconstruction.
+- Class, property, entity, relation, and Shape dry-run/apply_atomic passed; the negative probe was rejected in
+  dry-run; validation conformed and reasoning was consistent. Exact candidate-owned entity IDs remained unchanged in
+  entity dry-run and apply.
+- Both mixed relation-plus-fact CQ chains reached terminal cursors. Unrelated structural rows raised Evidence/lineage
+  warnings, and the written `quality-rating-field` `fieldName=quality_rating` fact was not recalled. No governed
+  completeness, handoff, ready/silent notice, ticket, Acceptance round, verdict, or PASS was produced.
+- The exact five-field abort closed start37 as `platform-contract`, complete=false. Cleanup retained the written
+  Project, terminated Session/Lease activity, revoked keys, destroyed private credentials, and left zero runtime or
+  in-flight residue. Strict replay is `cap/count/active=37/36/0`, 171 lines, SHA-256
+  `f9790fe7e43f459df24e22de8e09d959b3df2264abfab828ec6f0c45f8adb75b`, with **1 remaining** start.
+- Independent read-only fact-only queries returned one terminal page per CQ, 17/17 asserted facts with supported
+  Evidence and complete lineage. CQ2 unknown facts were present; CQ1 still lacked `fieldName=quality_rating` despite
+  returning its datatype. Diagnostic keys were revoked. This is diagnostic evidence only, not Acceptance.
+- Commit `55e2dee` adds one Runner-owned direct, delivery-ID-bound Protocol continuation after formal accepted receipt
+  registration and fails closed on duplicate/drifting wake state; **456 modeling tests** passed. Start38 requires
+  independently frozen narrow chains for every `consumer_query.required_paths` evidence family and Host-owned
+  completeness verification before handoff. Do not launch start38 automatically.

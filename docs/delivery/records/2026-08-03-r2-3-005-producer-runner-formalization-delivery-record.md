@@ -3271,3 +3271,40 @@ the formal builder, or starting another real run before authorization.
   on port `5173` returned HTTP success.
 - The start37 candidate-receipt gate is therefore satisfied at committed-code, regression, restarted-service, and
   endpoint-health levels. This runtime closeout did not mutate the ledger or start another semantic run.
+
+### 2026-08-06 — Start37 passed modeling gates but exposed ordinary-v2 retrieval incompleteness
+
+- Start37 `r23005-real-20260806t141512z-start37` ran from HEAD `42c83a9` against clean baseline
+  `4f902d5b03ec5b7ea2d682018a591092b9c1e3b5239c9eb27fed80abc07c1484`, reusing the exact retained carrier and
+  overlay. Modeling published `delivery-1`, revision `dify-cba-slice-r3`, digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+- The mechanical receipt barrier passed in the live run. Protocol returned accepted `delivery-4` bound to original
+  `delivery-1`; Runner formally recorded the receipt and opened the exact candidate gate while the platform artifact
+  count was still zero. Protocol then ended its turn, so one external narrow Coordinator-thread intervention caused
+  Coordinator to send factual, non-reply `delivery-5` to the retained Protocol thread. It added no business semantic
+  content and resumed the existing workflow without rebuilding the candidate or receipt.
+- All class, property, entity, relation, and Shape dry-run/apply_atomic stages passed; the negative probe failed in
+  dry-run as required; validation returned `conforms=true`, and reasoning returned `consistent=true`. Entity dry-run
+  and apply preserved the exact explicit IDs, including `c-version-1`, `c-version-2`, `c-current-draft`,
+  `quality-score-field`, `quality-rating-field`, and `unknown-cross-release-output-meaning`.
+- The two mixed relation-plus-fact competency-query chains consumed their full cursor sequences to terminal pages.
+  Schema, RDFS, and SHACL structural rows raised unrelated Evidence/lineage warnings, while the required
+  `quality-rating-field` `fieldName=quality_rating` fact had been written but was not returned. Protocol correctly
+  refused to claim completeness and raised `issue-1`; no handoff, gate-complete notice, ticket, Examiner round,
+  Acceptance verdict, or PASS exists.
+- The authorized exact abort was issued through Coordinator's five-field control. Start37 is classified
+  `platform-contract`, `complete_modeling_quality_result=false`. Cleanup retained the non-empty Project, terminated
+  Session/Lease activity, revoked all relevant keys, destroyed role-private credentials, and left zero child,
+  process, socket, or in-flight-attempt residue.
+- A subsequent independent read-only fact-only diagnostic used each original English CQ with exact ontology scope,
+  `resource_types=["fact"]`, `assertion_types=["asserted"]`, lexical search, depth 3, and 50/50 limits. Each query
+  returned one terminal page with 17 facts; all 17 were asserted, Evidence-supported, lineage-complete, and had no
+  item warnings. CQ2 returned the required unknown facts, but CQ1 still omitted `fieldName=quality_rating` while
+  returning its `fieldDatatype=number`. All temporary diagnostic keys were revoked. This diagnostic is not run
+  evidence and does not substitute for Acceptance.
+- Strict replay is `cap/count/active=37/36/0`, 171 lines, SHA-256
+  `f9790fe7e43f459df24e22de8e09d959b3df2264abfab828ec6f0c45f8adb75b`, with **1 remaining** start. Commit
+  `55e2dee` removes the external wake dependency: Runner emits one direct, ID-bound continuation kind after accepted
+  receipt registration and fails closed on duplicate or drifting wake state; **456 modeling tests** passed. Before
+  start38, each candidate `consumer_query.required_paths` family must have an independently frozen narrow retrieval
+  chain and a Host-owned completeness verification gate. No start38 is automatically launched.
