@@ -3644,3 +3644,58 @@ the formal builder, or starting another real run before authorization.
   for the already stale P2a byte-freeze assertion for historical Runner/Codex hashes. Independent Tester
   Round 4 passed 32 candidate-progress tests, 118 DeepSeek/isolation/Runtime/contract tests, the complete
   timeout authority/invalid/default probe, Ruff, and diff checks. No model call or semantic start occurred.
+
+### 2026-08-07 — Start44 reached independent Acceptance and exposed an Examiner report-contract deadlock
+
+- Start44 `r23005-real-20260807-deepseek-start44` used commit `133e045` and exact baseline
+  `b5f6a73b6fe755b4fe22af4e73ebc47799b8a348fb9700b1755c7569491f48c0`. All four persistent
+  roles and the spawned Source Examiner resolved to `deepseek-v4-flash/deepseek/max` over Responses.
+- The 300-second formal progress repair worked: Modeling published the unchanged r3 candidate and Protocol
+  returned the exact receipt after about 134 seconds. Protocol then created the Build Session/Lease, applied
+  all 12 batches, completed readback, semantic validation and reasoning, and retained 14 governed retrieval
+  chains. Its incidental command-approval request was declined by the repaired adapter and execution continued.
+- Protocol produced the canonical acceptance-stage handoff with model-state digest
+  `e1cf204d9e6b5c0890ac2895515b5c27cc73013a25598dd6aad615c7132228ec`. Coordinator published
+  immutable cq-001 and cq-002 tickets and correctly started cq-001 first; the Host rejected concurrent cq-002
+  activation because acceptance rounds are sequential.
+- The fresh Source Examiner independently derived the correct cq-001 source conclusion, but the model-visible
+  `submit_examiner_report` tool exposed only an empty-object schema. It therefore called the tool with `{}`.
+  No valid report was published, the child remained active, and Acceptance's later polling turn ended without
+  another Host trigger. This is directly retained in child rollout `019fd86d-cdb1-7dc0-aac9-b2884a8731e3`
+  at `18:55:26.047Z` (correct conclusion) and `18:55:26.399Z` (empty-argument report call). Separately, the
+  persistent Acceptance Agent's later polling turn ended with `402 Payment Required: Insufficient Balance`;
+  this provider failure is retained as a distinct runtime/infrastructure fact. The run was interrupted only after
+  the deadlock was directly confirmed; no CQ verdict, settlement, or semantic PASS is inferred.
+- Abort cleanup destroyed all child and role credentials, left zero active child residue, revoked Project,
+  Protocol, and Delivery admin keys, terminalized Session/Lease, and retained the non-empty failed-written
+  Project. The strict ledger records `collaboration/routing,false`. Start44 is the fourth of the ten starts
+  authorized for this resumption, leaving six.
+- The reviewed repair target is the reusable Examiner report contract: strict child-authored semantic fields,
+  Runner-injected identity/model-state/digest fields, Runner-constructed Source refs, exact retained Platform proxy
+  receipts, strict kind-specific MCP JSON Schemas, and the Platform proxy short-socket path. It does not remodel the
+  already proven r3 candidate or change platform semantics. The later 402 must be resolved independently before a
+  further DeepSeek-backed real start can be expected to progress.
+
+### 2026-08-07 — Start44 Examiner contract repair independently accepted
+
+- Mandatory plan review first returned REVISE with three High findings: raw child evidence had to be cited separately
+  from the later 402, nested Source/Platform evidence bindings could not be model-authored or blindly relabeled, and
+  `source_bundle_digest` had to be kind-specific. The amended design added Source location-only locators with
+  mechanical Host refs, current-child Platform proxy locator matching, Source=ticket/Platform=null bundle injection,
+  Host raw-socket validation, explicit `--kind`, and short-root cleanup. Re-review returned PASS.
+- Implementation preserves the existing complete stored-report validator/replay contract. A child can submit only
+  six semantic fields; the Host constructs or matches evidence first, injects all Runner-owned bindings, and only
+  then validates and digests the full report. Strict kind-specific schemas are exposed to the model but repeated at
+  the Host socket trust boundary. Platform report and read-proxy sockets share the short private root when the
+  durable run path exceeds Unix socket limits, with cleanup on both normal destroy and startup failure.
+- Developer verification passed 88 focused/related tests plus 21 subtests, Ruff, py_compile, and diff checks. The
+  preceding complete modeling-team run passed 516 tests, 1 skipped, and 195 subtests except for the known historical
+  P2a byte-freeze hash assertion; no other failure occurred.
+- Independent Round 5 initially found one cursor-type gap: object/list pagination cursors could bypass the declared
+  `string|null` schema. After the narrow three-layer repair, final independent verification passed 10 focused tests,
+  140 proportional tests, and 52 supplemental tests. It directly proved invalid cursors leave no callback/report/
+  artifact, valid cursors work, Source/Platform binding and long-path cleanup hold, all six active runtime paths stay
+  DeepSeek Flash/max over Responses, and no key appears in argv, TOML, or evidence.
+- **Round 5 result: PASS.** No live model/API call or semantic start occurred during deterministic verification.
+  Start45 requires a clean committed baseline and exact repair authorization. The retained provider 402 remains an
+  external runtime prerequisite: do not spend another semantic start until the DeepSeek account has usable balance.

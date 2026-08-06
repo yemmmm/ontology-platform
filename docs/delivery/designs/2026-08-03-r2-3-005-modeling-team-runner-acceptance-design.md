@@ -879,3 +879,56 @@ destroyed child/role credentials and processes, revoked all keys, terminalized S
 non-empty failed-written Project. No CQ verdict or settlement is inferred. Classification is
 `runtime/infrastructure`, `complete_modeling_quality_result=false`; ledger replay is `40/39/0`, leaving one idle
 authorized start and no authorization for repair or start41.
+
+## 2026-08-07 amendment: Runner-bound Examiner report submission
+
+Start44 reached the first independent Source Examiner after completing candidate publication, platform
+application, validation, reasoning, and governed retrieval. The retained child rollout at
+`acceptance-carrier/acceptance/acceptance-round-r23005-real-20260807-deepseek-start44-cq-001-1/children/
+8f16a8f8c3a51c9be5ab7f9ab0db6aa5cdca8e34cbd770ea85f2976c250c84b2/home/sessions/2026/08/06/
+rollout-2026-08-06T18-55-02-019fd86d-cdb1-7dc0-aac9-b2884a8731e3.jsonl` records the correct Version 2 /
+`quality_rating:number` reasoning at `18:55:26.047Z`, followed by `submit_examiner_report` arguments `{}` at
+`18:55:26.399Z` and no call output. The model-visible tool schema exposed only an unconstrained empty object, so
+this is a confirmed prompt/tool contract defect. Separately, the persistent Acceptance Agent's later polling turn
+ended with provider `402 Payment Required: Insufficient Balance`; that runtime/provider failure does not erase the
+earlier child evidence and must be reported independently rather than attributed to the report schema.
+
+The durable repair keeps the stored Examiner report shape above unchanged while making ownership explicit:
+
+- the child submits only `answerability`, `conclusion`, `evidence`, `coverage`, `gaps`, and kind-specific
+  evidence locators/receipts;
+- the private Runner report sink injects `task_id`, `acceptance_round_id`, `ticket_digest`, `examiner_kind`,
+  `child_handle_digest`, `child_session_id`, `child_input_digest`, `source_bundle_digest`, and the complete
+  ticket-bound `model_state`, then computes `report_digest`;
+- the Host callback behind `ReportSinkServer` applies the same strict kind-specific child-payload validator and
+  normalization before any injection or persistence. The MCP bridge schema is guidance, not the trust boundary;
+  a child that bypasses the bridge and writes directly to its mounted private socket cannot submit extra
+  Runner-owned fields or a cross-kind shape;
+- Source child evidence locators contain only approved `location` values. Runner resolves each location against the
+  staged ticket manifest and mechanically constructs `ref_id`, `ticket_digest`, `source_bundle_digest`, the exact
+  round-bound retained `artifact_path`, and that source entry's per-file `sha256` as `artifact_digest`; an unknown,
+  duplicate, or out-of-manifest location fails closed;
+- Platform child evidence locators contain only `ref_id`, `tool`, `request_digest`, `response_digest`,
+  `artifact_path`, and the structurally validated pagination/completeness `page`. Runner first matches the immutable
+  tool/digest/path tuple to exactly one receipt in this child's scoped proxy registry, rejects duplicates, and only
+  then injects `type=platform_read`, `ticket_digest`, and `model_state_digest`. The child schema forbids those
+  Runner-owned binding fields, so a child cannot ask Runner to relabel a foreign receipt;
+- the MCP tool publishes strict kind-specific JSON Schemas for all child-authored fields and rejects unknown or
+  missing fields. The Runtime starts the private sink bridge with a non-secret `--kind source|platform` argument,
+  and the bridge selects only that kind's frozen schema. Source instructions describe location-only submission and
+  Runner constructs its deterministic `ref_id`; Platform instructions require exact proxy-locator copying without
+  invention;
+- top-level `source_bundle_digest` injection is kind-specific: Source receives the immutable ticket value and
+  Platform receives `null`;
+- the Platform Examiner binds both its report sink and read proxy under the already-created short, private
+  `/tmp/mt-ex-<handle-digest-prefix>` socket root when the durable child path exceeds Unix-domain socket limits;
+  the child still sees only its bind-mounted `/agent/home/*.sock` endpoints, and teardown removes the short root.
+
+No ticket, verdict, semantic model, platform read allowlist, retry budget, or settlement rule changes. Invalid
+child payloads still fail closed before durable report publication. Focused tests must prove schema discovery,
+Runner binding injection, rejection of missing/extra child fields, mechanical per-file Source reference creation,
+exact Platform proxy-receipt matching, kind-specific source-bundle handling, both Examiner launch paths on DeepSeek
+Flash/max (including a durable child path longer than the Unix socket limit), and unchanged full-report
+validation/replay behavior. Independent review and
+verification are required before start45; start44 is recorded as `collaboration/routing,false` and consumes the
+fourth of the ten newly authorized starts.

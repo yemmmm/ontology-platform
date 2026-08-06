@@ -334,6 +334,7 @@ class _CodexChildResource:
                 self._read_key_revoked = True
         self.spec.pop("read_key_plaintext", None)
         self.spec.pop("report_submit", None)
+        self.spec.pop("report_submit_payload", None)
         self.spec.pop("platform_forwarder", None)
         self.spec.pop("_runtime_proxy", None)
         self.spec.pop("_runtime_report_sink", None)
@@ -681,9 +682,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         report_socket = socket_root / "report.sock"
         # The resource owns this callback; the carrier remains the only report validator.
         submitted_reports: list[Mapping[str, Any]] = []
-        report_submit = spec.get("report_submit")
+        # The private sink must receive the strict six-field child payload.  The
+        # full-envelope callback remains available only to deterministic resource
+        # doubles and is never installed behind a production socket.
+        report_submit = spec.get("report_submit_payload")
+        if not callable(report_submit):
+            report_submit = spec.get("report_submit")
         report_callback = report_submit if callable(report_submit) else submitted_reports.append
-        report_sink = ReportSinkServer(report_socket, report_token, report_callback)
+        report_sink = ReportSinkServer(
+            report_socket,
+            report_token,
+            report_callback,
+            kind=kind,
+        )
         spec["_runtime_report_sink"] = report_sink
         report_sink.start()
         def _write_private(path: Path, payload: bytes, mode: int) -> None:
@@ -703,7 +714,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 report_sink.stop()
                 raise CodexRuntimeError("formal Platform Examiner forwarder is unavailable")
             proxy_token = secrets.token_urlsafe(24)
-            proxy_socket = home / "platform-proxy.sock"
+            # Use the same short socket root selected for the report sink.  A
+            # deep run path otherwise lets the report socket bind successfully
+            # while the platform proxy fails with AF_UNIX's path-length limit.
+            proxy_socket = socket_root / "platform-proxy.sock"
             proxy_token_path = home / "platform-proxy.token"
             proxy = ScopedReadProxy(
                 socket_path=proxy_socket,
@@ -767,7 +781,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             [
                 "[mcp_servers.examiner_report]",
                 'command = "/usr/bin/python3"',
-                'args = ["/agent/home/report_sink_mcp.py", "--stdio", "--socket", "/agent/home/report.sock", "--token-file", "/agent/home/report-sink.token"]',
+                f'args = ["/agent/home/report_sink_mcp.py", "--stdio", "--kind", "{kind}", "--socket", "/agent/home/report.sock", "--token-file", "/agent/home/report-sink.token"]',
                 "required = true",
             ]
         )

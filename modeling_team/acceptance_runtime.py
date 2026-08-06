@@ -48,6 +48,82 @@ def _safe_id(value: Any, field: str) -> str:
     return value
 
 
+_REPORT_SEMANTIC_FIELDS = frozenset(
+    {"answerability", "conclusion", "evidence", "coverage", "gaps", "evidence_refs"}
+)
+_REPORT_PLATFORM_LOCATOR_FIELDS = frozenset(
+    {"ref_id", "tool", "request_digest", "response_digest", "artifact_path", "page"}
+)
+
+
+def _validate_report_sink_payload(value: Any, *, kind: str) -> dict[str, Any]:
+    """Validate the kind-specific child payload before invoking the Host callback."""
+
+    if kind not in {"source", "platform"}:
+        raise ChildRuntimeError("report sink kind is invalid")
+    if not isinstance(value, Mapping) or set(value) != _REPORT_SEMANTIC_FIELDS:
+        raise ChildRuntimeError("report payload fields drift")
+    if value["answerability"] not in {"answerable", "insufficient-evidence", "unavailable"}:
+        raise ChildRuntimeError("report answerability is invalid")
+    if not isinstance(value["conclusion"], str) or not value["conclusion"]:
+        raise ChildRuntimeError("report conclusion is invalid")
+    if not isinstance(value["evidence"], list) or not isinstance(value["gaps"], list):
+        raise ChildRuntimeError("report evidence/gaps are invalid")
+    coverage = value["coverage"]
+    if (
+        not isinstance(coverage, Mapping)
+        or set(coverage) != {"queries_or_sections", "complete"}
+        or not isinstance(coverage["queries_or_sections"], list)
+        or not isinstance(coverage["complete"], bool)
+    ):
+        raise ChildRuntimeError("report coverage is invalid")
+    refs = value["evidence_refs"]
+    if not isinstance(refs, list) or not refs:
+        raise ChildRuntimeError("report evidence_refs are invalid")
+    for ref in refs:
+        if not isinstance(ref, Mapping):
+            raise ChildRuntimeError("report evidence locator is invalid")
+        if kind == "source":
+            if set(ref) != {"location"} or not isinstance(ref["location"], str) or not ref["location"]:
+                raise ChildRuntimeError("source evidence locator is invalid")
+            path = ref["location"].split("#", 1)[0]
+            if not path or Path(path).is_absolute() or ".." in Path(path).parts:
+                raise ChildRuntimeError("source evidence locator path is invalid")
+        else:
+            if set(ref) != _REPORT_PLATFORM_LOCATOR_FIELDS:
+                raise ChildRuntimeError("platform evidence locator fields drift")
+            if not isinstance(ref["ref_id"], str) or not ref["ref_id"]:
+                raise ChildRuntimeError("platform evidence locator ref_id is invalid")
+            if not isinstance(ref["tool"], str) or not ref["tool"]:
+                raise ChildRuntimeError("platform evidence locator tool is invalid")
+            for field in ("request_digest", "response_digest"):
+                if not isinstance(ref[field], str) or len(ref[field]) != 64 or any(
+                    char not in "0123456789abcdef" for char in ref[field]
+                ):
+                    raise ChildRuntimeError(f"platform evidence locator {field} is invalid")
+            path = ref["artifact_path"]
+            if not isinstance(path, str) or not path or Path(path).is_absolute() or ".." in Path(path).parts:
+                raise ChildRuntimeError("platform evidence locator path is invalid")
+            page = ref["page"]
+            if not isinstance(page, Mapping) or set(page) != {
+                "ordinal", "input_cursor", "output_cursor", "has_more", "sequence_complete"
+            }:
+                raise ChildRuntimeError("platform evidence locator page is invalid")
+            if not isinstance(page["ordinal"], int) or page["ordinal"] < 0:
+                raise ChildRuntimeError("platform evidence locator page ordinal is invalid")
+            if not isinstance(page["input_cursor"], (str, type(None))) or not isinstance(
+                page["output_cursor"], (str, type(None))
+            ):
+                raise ChildRuntimeError("platform evidence locator page cursors are invalid")
+            if not isinstance(page["has_more"], bool) or not isinstance(
+                page["sequence_complete"], bool
+            ):
+                raise ChildRuntimeError("platform evidence locator page flags are invalid")
+            if page["has_more"] and page["sequence_complete"]:
+                raise ChildRuntimeError("platform evidence locator page is incomplete and complete")
+    return dict(value)
+
+
 def _private_dir(path: Path, *, create: bool = False) -> None:
     if create:
         path.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -628,10 +704,19 @@ class McpReadForwarder:
 class ReportSinkServer:
     """Write-only private child report endpoint; never Team Transport."""
 
-    def __init__(self, socket_path: Path, token: str, submit: Callable[[Mapping[str, Any]], Any]):
+    def __init__(
+        self,
+        socket_path: Path,
+        token: str,
+        submit: Callable[[Mapping[str, Any]], Any],
+        kind: str | None = None,
+    ):
         self.socket_path = socket_path
         self.token = token
         self._submit = submit
+        if kind is not None and kind not in {"source", "platform"}:
+            raise ChildRuntimeError("report sink kind is invalid")
+        self.kind = kind
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -670,14 +755,19 @@ class ReportSinkServer:
                 try:
                     data = conn.recv(128 * 1024)
                     request = json.loads(data.decode("utf-8")) if data else {}
-                    if request.get("token") != self.token:
+                    if not isinstance(request, Mapping):
+                        response = {"ok": False, "code": "report-invalid"}
+                    elif request.get("token") != self.token:
                         response = {"ok": False, "code": "report-token-invalid"}
                     elif self._submitted:
                         response = {"ok": False, "code": "report-already-submitted"}
                     elif not isinstance(request.get("report"), Mapping):
                         response = {"ok": False, "code": "report-invalid"}
                     else:
-                        self._submit(request["report"])
+                        report = request["report"]
+                        if self.kind is not None:
+                            report = _validate_report_sink_payload(report, kind=self.kind)
+                        self._submit(report)
                         self._submitted = True
                         response = {"ok": True}
                     conn.sendall(_canonical(response))

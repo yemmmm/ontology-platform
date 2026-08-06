@@ -116,6 +116,106 @@ STAGE_TOOL_BINDINGS: dict[str, tuple[frozenset[str], str | None]] = {
 # ticket validator is invoked.
 STAGE_HANDOFF_SCHEMA = "r2-3-005-acceptance-stage-handoff/v1"
 
+# Examiner children submit only semantic content.  Every task/round/session,
+# source-bundle, and model-state binding is added by the Runner after this
+# payload crosses the private report sink.  Keeping this set closed is the
+# important boundary: a model cannot smuggle a Runner-owned field into the
+# stored report by using the sink or by connecting to its socket directly.
+EXAMINER_SEMANTIC_FIELDS: frozenset[str] = frozenset(
+    {"answerability", "conclusion", "evidence", "coverage", "gaps", "evidence_refs"}
+)
+PLATFORM_EVIDENCE_LOCATOR_FIELDS: frozenset[str] = frozenset(
+    {
+        "ref_id",
+        "tool",
+        "request_digest",
+        "response_digest",
+        "artifact_path",
+        "page",
+    }
+)
+
+
+def validate_examiner_payload(value: Any, *, kind: str) -> dict[str, Any]:
+    """Validate the exact six-field semantic payload accepted from a child.
+
+    The returned object is still unbound: source locators contain only a
+    location and platform locators contain only proxy receipt coordinates.
+    ``RunnerAcceptanceCarrier.ingest_child_report`` performs the binding and
+    calls the existing full-envelope validator before persistence.
+    """
+
+    if kind not in EXAMINER_KINDS:
+        _error("unknown Examiner kind")
+    data = _require_exact_keys(value, EXAMINER_SEMANTIC_FIELDS, "Examiner semantic payload")
+    if data["answerability"] not in {"answerable", "insufficient-evidence", "unavailable"}:
+        _error("Examiner payload answerability is invalid")
+    if not isinstance(data["conclusion"], str) or not data["conclusion"]:
+        _error("Examiner payload conclusion is empty")
+    if not isinstance(data["evidence"], list):
+        _error("Examiner payload evidence is invalid")
+    if not isinstance(data["gaps"], list):
+        _error("Examiner payload gaps are invalid")
+    coverage = _require_exact_keys(
+        data["coverage"], {"queries_or_sections", "complete"}, "Examiner payload coverage"
+    )
+    if (
+        not isinstance(coverage["queries_or_sections"], list)
+        or any(not isinstance(item, str) or not item for item in coverage["queries_or_sections"])
+        or not isinstance(coverage["complete"], bool)
+    ):
+        _error("Examiner payload coverage is invalid")
+    refs = data["evidence_refs"]
+    if not isinstance(refs, list) or not refs:
+        _error("Examiner payload requires evidence references")
+    seen: set[tuple[Any, ...]] = set()
+    for ref in refs:
+        if kind == "source":
+            locator = _require_exact_keys(ref, {"location"}, "Source evidence locator")
+            location = locator["location"]
+            if not isinstance(location, str) or not location:
+                _error("Source evidence locator location is invalid")
+            path = location.split("#", 1)[0]
+            _safe_relative_path(path, "Source evidence locator location")
+            identity = (location,)
+        else:
+            locator = _require_exact_keys(
+                ref, PLATFORM_EVIDENCE_LOCATOR_FIELDS, "Platform evidence locator"
+            )
+            _safe_id(locator["ref_id"], "Platform evidence locator ref_id")
+            if not isinstance(locator["tool"], str) or not locator["tool"]:
+                _error("Platform evidence locator tool is invalid")
+            _safe_digest(locator["request_digest"], "Platform evidence locator request_digest")
+            _safe_digest(locator["response_digest"], "Platform evidence locator response_digest")
+            _safe_relative_path(locator["artifact_path"], "Platform evidence locator artifact_path")
+            page = _require_exact_keys(
+                locator["page"],
+                {"ordinal", "input_cursor", "output_cursor", "has_more", "sequence_complete"},
+                "Platform evidence locator page",
+            )
+            if not isinstance(page["ordinal"], int) or page["ordinal"] < 0:
+                _error("Platform evidence locator page ordinal is invalid")
+            if not isinstance(page["input_cursor"], (str, type(None))) or not isinstance(
+                page["output_cursor"], (str, type(None))
+            ):
+                _error("Platform evidence locator page cursors are invalid")
+            if not isinstance(page["has_more"], bool) or not isinstance(
+                page["sequence_complete"], bool
+            ):
+                _error("Platform evidence locator page flags are invalid")
+            if page["has_more"] and page["sequence_complete"]:
+                _error("Platform evidence locator page is incomplete and complete")
+            identity = (
+                locator["tool"],
+                locator["request_digest"],
+                locator["response_digest"],
+                locator["artifact_path"],
+            )
+        if identity in seen:
+            _error("Examiner payload repeats an evidence locator")
+        seen.add(identity)
+    return _safe_copy(data)
+
 
 def _error(message: str) -> None:
     raise AcceptanceContractError(message)
@@ -392,6 +492,10 @@ def validate_typed_evidence_ref(value: Any, *, expected_ticket: str | None = Non
         page = _require_exact_keys(data["page"], {"ordinal", "input_cursor", "output_cursor", "has_more", "sequence_complete"}, "platform_read.page")
         if not isinstance(page["ordinal"], int) or page["ordinal"] < 0:
             _error("platform_read page ordinal is invalid")
+        if not isinstance(page["input_cursor"], (str, type(None))) or not isinstance(
+            page["output_cursor"], (str, type(None))
+        ):
+            _error("platform_read page cursors are invalid")
         if not isinstance(page["has_more"], bool) or not isinstance(page["sequence_complete"], bool):
             _error("platform_read page flags are invalid")
         if page["has_more"] and page["sequence_complete"]:
@@ -3100,6 +3204,16 @@ class RunnerAcceptanceCarrier:
                 handle=handle,
                 report=report,
             ),
+            # Production Examiner sinks use the strict six-field semantic
+            # callback.  Keep ``report_submit`` above as the existing full
+            # envelope seam for deterministic resource doubles and retained
+            # report replay tests.
+            "report_submit_payload": lambda payload: self.ingest_child_report(
+                acceptance_id=self.acceptance_id,
+                round_id=round_id,
+                handle=handle,
+                payload=payload,
+            ),
             "record_infrastructure_failure": lambda failure_category, reason_code: self.record_infrastructure_failure(
                 acceptance_id=self.acceptance_id,
                 round_id=round_id,
@@ -3370,6 +3484,137 @@ class RunnerAcceptanceCarrier:
         # malformed or duplicate refs cannot leave a misleading retained artifact.
         for artifact, payload in artifacts_to_write:
             _write_exclusive_json(artifact, payload, mode=0o440)
+
+    @staticmethod
+    def _source_ref_id(
+        *,
+        ticket_digest_value: str,
+        round_id: str,
+        path: str,
+        artifact_digest: str,
+    ) -> str:
+        """Build a stable per-ticket/per-round/per-file source reference ID."""
+
+        preimage = {
+            "schema_version": "r2-3-005-approved-source-ref/v1",
+            "ticket_digest": ticket_digest_value,
+            "acceptance_round_id": round_id,
+            "path": path,
+            "artifact_digest": artifact_digest,
+        }
+        return f"approved-source-{_sha256_bytes(_canonical_json(preimage))}"
+
+    def _normalize_child_evidence_refs(
+        self,
+        *,
+        found: ChildHandle,
+        payload: Mapping[str, Any],
+        ticket: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Bind child locators to current Runner-owned ticket evidence."""
+
+        refs: list[dict[str, Any]] = []
+        if found.kind == "source":
+            approved = {item["path"]: item["sha256"] for item in ticket["approved_sources"]}
+            for locator in payload["evidence_refs"]:
+                location = locator["location"]
+                path = location.split("#", 1)[0]
+                digest = approved.get(path)
+                if digest is None:
+                    _error("Source evidence location is outside the approved manifest")
+                refs.append(
+                    {
+                        "type": "approved_source",
+                        "ref_id": self._source_ref_id(
+                            ticket_digest_value=ticket["ticket_digest"],
+                            round_id=found.acceptance_round_id,
+                            path=path,
+                            artifact_digest=digest,
+                        ),
+                        "ticket_digest": ticket["ticket_digest"],
+                        "source_bundle_digest": ticket["source_bundle_digest"],
+                        "location": location,
+                        "artifact_path": (
+                            f"acceptance/{found.acceptance_round_id}/approved-source/{path}.json"
+                        ),
+                        "artifact_digest": digest,
+                    }
+                )
+            return refs
+
+        for locator in payload["evidence_refs"]:
+            refs.append(
+                {
+                    "type": "platform_read",
+                    "ref_id": locator["ref_id"],
+                    "ticket_digest": ticket["ticket_digest"],
+                    "model_state_digest": ticket["model_state_digest"],
+                    "tool": locator["tool"],
+                    "request_digest": locator["request_digest"],
+                    "response_digest": locator["response_digest"],
+                    "artifact_path": locator["artifact_path"],
+                    "page": _safe_copy(locator["page"]),
+                }
+            )
+        return refs
+
+    def ingest_child_report(
+        self,
+        *,
+        acceptance_id: str,
+        round_id: str,
+        handle: ChildHandle | str,
+        payload: Mapping[str, Any],
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Accept the six semantic child fields and add all Runner bindings.
+
+        This is the only callback installed behind a production Examiner report
+        sink.  ``ingest_report`` remains the full-envelope path used by retained
+        artifacts/replay and deterministic legacy fixtures.
+        """
+
+        found = self._lookup_handle(
+            acceptance_id=acceptance_id,
+            round_id=round_id,
+            handle=handle,
+            capability=capability,
+        )
+        _assert_report_persistence_safe(payload)
+        semantic = validate_examiner_payload(payload, kind=found.kind)
+        ticket = self._tickets[round_id]
+        normalized = {
+            "task_id": ticket["task_id"],
+            "acceptance_round_id": ticket["acceptance_round_id"],
+            "ticket_digest": ticket["ticket_digest"],
+            "examiner_kind": found.kind,
+            "child_handle_digest": found.digest,
+            "child_session_id": found.session_id,
+            "child_input_digest": found.input_digest,
+            "source_bundle_digest": (
+                ticket["source_bundle_digest"] if found.kind == "source" else None
+            ),
+            "answerability": semantic["answerability"],
+            "conclusion": semantic["conclusion"],
+            "evidence": semantic["evidence"],
+            "coverage": semantic["coverage"],
+            "gaps": semantic["gaps"],
+            "model_state": _safe_copy(ticket["model_state"]),
+            "evidence_refs": self._normalize_child_evidence_refs(
+                found=found,
+                payload=semantic,
+                ticket=ticket,
+            ),
+            "report_digest": None,
+        }
+        normalized["report_digest"] = report_digest(normalized)
+        return self.ingest_report(
+            acceptance_id=acceptance_id,
+            round_id=round_id,
+            handle=found,
+            report=normalized,
+            capability=capability,
+        )
 
     def ingest_report(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, report: Mapping[str, Any], capability: str | None = None) -> dict[str, Any]:
         found = self._lookup_handle(acceptance_id=acceptance_id, round_id=round_id, handle=handle, capability=capability)

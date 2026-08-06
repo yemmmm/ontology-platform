@@ -2279,3 +2279,44 @@ already recorded attempts.
   live timeout remains classified as `collaboration/routing,false`, not modeling quality; this deterministic
   round is not a live Runtime/L0 or semantic-quality acceptance. A reviewed clean baseline and explicit
   authorization are still required before the next real semantic start.
+
+## 2026-08-07 Start44 Examiner report-contract repair — planned independent round 5
+
+The round is deterministic and must not call a live model or consume a semantic start. It accepts the repair only
+when all of the following pass:
+
+1. `submit_examiner_report` discovery exposes six required child-authored fields
+   (`answerability`, `conclusion`, `evidence`, `coverage`, `gaps`, `evidence_refs`), rejects additional top-level
+   fields, and publishes the correct kind-specific evidence schema: approved locations for Source and binding-free
+   scoped proxy locators plus page metadata for Platform.
+2. A child submission cannot author or override task, round, ticket, kind, handle, session, input, source-bundle,
+   model-state, or report-digest bindings. Runner injects those fields from the active immutable handle/ticket and
+   the stored full report still passes the existing validator and digest rules. The same rejection is exercised by
+   a direct private-socket submission that bypasses MCP schema discovery.
+3. Runner mechanically turns Source locations into the ticket/round-bound typed refs with each manifest entry's
+   per-file digest and turns only exactly matched current-child Platform locators into ticket/state-bound refs;
+   unknown/duplicate locations, forged Source bindings, unmatched Platform receipts, cross-kind
+   refs, replay, missing/extra child fields, and unsafe persistence content fail closed without a durable report.
+4. Source instructions require location-only submission and never ask the model to author ticket/path/digest
+   bindings; Platform instructions retain exact proxy-owned request/response/artifact/ticket/state values. Source
+   receives the ticket source-bundle digest while Platform receives `null`.
+5. A long-path runtime probe starts and tears down both Source and Platform Examiner resources with both private
+   Unix sockets under the short Runner-owned socket root. The children still receive only bind-mounted
+   `/agent/home/report.sock` and `/agent/home/platform-proxy.sock`, and no key appears in argv, TOML, or evidence.
+6. The active four persistent roles and both Examiner paths remain `deepseek-v4-flash/deepseek/max` over Responses;
+   related Acceptance, Codex isolation, settlement, and contract suites plus Ruff and diff checks pass.
+
+### Independent Round 5 execution and result
+
+- Initial independent execution passed 8 focused tests, 138 proportional Acceptance/Codex/settlement/contract/
+  DeepSeek tests, and 52 ticket/revision/progress/recycle tests, plus the invalid-first raw-socket, pending startup,
+  long-path normal/startup-failure cleanup, and no-secret static probes. It found one contract defect: object/list
+  `page.input_cursor` or `page.output_cursor` values were accepted despite the published `string|null` schema.
+- The repair added the same cursor type check to the child MCP validator, Host raw-socket validator, child-payload
+  normalizer, and stored typed-reference validator. Re-test passed 10 focused tests, 140 proportional tests, and
+  52 supplemental tests. Independent probes confirmed object/list cursors are rejected before callback or
+  persistence through all three paths, leave no report/artifact, and valid string/null cursors remain accepted.
+- Source/Platform long-path normal destroy and startup-exception cleanup, current-child proxy matching, DeepSeek
+  Flash/max Responses configuration, no key in argv/TOML/evidence, Ruff, and diff checks all remain PASS.
+- **Final Round 5 result: PASS.** No remaining implementation defect was found. This round made no live model/API
+  call and consumed no semantic start.
