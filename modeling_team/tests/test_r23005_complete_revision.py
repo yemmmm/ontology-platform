@@ -282,6 +282,16 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "unknown-cross-release-output-meaning",
             "return a concrete",
             "candidate-to-Batch translation conflict through the typed or native conflict builder",
+            "Before the first query, use only the exact `resource_types` values advertised by the",
+            "`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`",
+            "Never probe unsupported aliases such as `entity`, `entities`, or `individual`",
+            "Read the entire consumer question and its required",
+            "response before freezing the first request",
+            "relation topology together with literal facts requires the single tuple `relation` plus `fact`",
+            "choose one complete, immutable tuple containing every required supported kind",
+            "relation-only tuple when fact evidence is also required",
+            "return a concrete pre-query",
+            "do not issue a probe or a partial query",
         ):
             self.assertIn(phrase, protocol_instructions)
         configuration = load_formal_team_configuration(

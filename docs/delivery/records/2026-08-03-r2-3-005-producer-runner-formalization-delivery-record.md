@@ -3161,3 +3161,37 @@ the formal builder, or starting another real run before authorization.
   `2ec4cf833a007f8ffa30f9227f068e9de00ef2d10cbae26c06ab879596d39424`, with **1 remaining** start. Before start35,
   the authoritative Protocol prompt contract must be repaired and verified to preserve every explicit candidate
   identifier byte-for-byte, with abbreviation, normalization, and substitution forbidden.
+
+### 2026-08-06T19:18:02+08:00 — Start35 fixed entity IDs but failed governed-query planning
+
+- Start35 `r23005-real-20260806t110812z-start35` ran at HEAD
+  `c2ac1eedc6b391fce37a1d1e8276a5874411d3d7` from clean baseline
+  `2659b5ce2e91dd93f888b395c6810378ed658fa3bffe9f24f81aa5bc10b3d635`. Modeling published the exact retained
+  carrier as `delivery-1`; Protocol's bound `delivery-4` receipt was `status=accepted` for revision
+  `dify-cba-slice-r3`, with candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+- The start34 entity-identifier defect was repaired in this run. Entity dry-run, apply input, formal outputs, relation
+  references, and reasoning results preserved `c-version-1`, `c-version-2`, `c-current-draft`,
+  `quality-score-field`, `quality-rating-field`, and `unknown-cross-release-output-meaning` byte-for-byte.
+- Protocol completed the class, property, entity, relation, and Shape dry-run/apply stages. The negative probe was
+  dry-run-only and rejected as required. Semantic validation succeeded with `conforms=true`, and reasoning succeeded
+  with `consistent=true`.
+- Governed retrieval did not complete. Protocol first tried unsupported resource types (`entity`, `entities`, and
+  `individual`), then froze the first valid tuple as `resource_types=["relation"]`. Exhaustive lexical pagination
+  could return relation statements but could not cover the `fieldName` and `fieldDatatype` fact statements required
+  by the first competency question; a returned Shape statement also had missing lineage. Changing the frozen tuple
+  afterward would violate the immutable continuation contract, so no completeness claim or handoff was produced.
+- This is a `modeling-quality` Protocol query-planning prompt defect with
+  `complete_modeling_quality_result=false`; the platform correctly rejected invalid resource types and enforced the
+  frozen-query contract. No canonical handoff, gate-complete notice, `ready_for_acceptance`,
+  `silent_for_acceptance`, ticket, Acceptance round, Examiner report, or verdict exists.
+- Protocol raised `issue-1` and the run paused at `WAITING_OWNER`. The authorized exact resolution was persisted;
+  Coordinator issued the exact five-field `abort`, and Runner reached `TERMINAL_REPORT_COMPLETE` with
+  `issue_abort=true`. Cleanup destroyed all four role-private credentials, left zero Acceptance children and zero
+  process/socket/token/credential residue, revoked all relevant keys, terminated the Session/Lease with zero in-flight
+  attempts, and retained the non-empty Project as `failed-written-retained`.
+- Strict ledger replay is `cap/count/active=34/34/0`, 162 lines, SHA-256
+  `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with **zero remaining** starts. Before any
+  future start, repair and verify the authoritative Protocol prompt so its first valid immutable retrieval tuple is
+  selected from the advertised resource-type contract and includes every evidence family required by each question;
+  then obtain a new user authorization. No further run is implied or authorized.

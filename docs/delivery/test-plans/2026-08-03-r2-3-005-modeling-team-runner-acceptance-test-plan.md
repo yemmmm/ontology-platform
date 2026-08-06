@@ -1882,3 +1882,30 @@ already recorded attempts.
 - Strict ledger replay is `cap/count/active=34/33/0`, 158 lines, SHA-256
   `2ec4cf833a007f8ffa30f9227f068e9de00ef2d10cbae26c06ab879596d39424`, with **1 remaining** start. This failed run
   supplies no Acceptance PASS or semantic acceptance conclusion.
+
+### Start35 live result and governed-query planning gate (2026-08-06)
+
+- Start35 `r23005-real-20260806t110812z-start35` reused the exact retained carrier as `delivery-1`; Protocol returned
+  the accepted bound receipt as `delivery-4`, revision `dify-cba-slice-r3`, candidate/semantic digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+- The start34 repair passed in live translation: entity dry-run, apply, outputs, downstream relation references, and
+  reasoning preserved all six priority IDs byte-for-byte: `c-version-1`, `c-version-2`, `c-current-draft`,
+  `quality-score-field`, `quality-rating-field`, and `unknown-cross-release-output-meaning`.
+- Class, property, entity, relation, and Shape stages all completed dry-run/apply. The negative probe was rejected in
+  dry-run as required; validation succeeded with `conforms=true`, and reasoning succeeded with `consistent=true`.
+- Retrieval failed before the handoff gate. Protocol tried unsupported `entity`, `entities`, and `individual`
+  resource types, then froze `resource_types=["relation"]`. Exhaustive lexical pagination could not return the
+  `fieldName`/`fieldDatatype` fact statements required alongside relation evidence for the first competency question,
+  and a Shape result lacked lineage. The immutable tuple could not be changed after freezing, so retrieval remained
+  incomplete and no handoff or Acceptance evidence was created.
+- Classify this as `modeling-quality`, `complete_modeling_quality_result=false`: a Protocol query-planning prompt
+  defect, not a platform error. The exact outer resolution led to an exact five-field abort and
+  `TERMINAL_REPORT_COMPLETE`. Cleanup retained the non-empty Project as `failed-written-retained`, terminated the
+  Session/Lease, revoked all keys, destroyed all private credentials, and left zero child/process/socket/token/
+  credential or in-flight-attempt residue.
+- **Next authorization gate:** repair and verify the Protocol prompt so the first valid immutable tuple comes from the
+  advertised resource-type contract and covers every evidence family required by the question. Only after that repair
+  may a new user authorization be requested; no remaining start is available.
+- Strict ledger replay is `cap/count/active=34/34/0`, 162 lines, SHA-256
+  `6ced4b919a4bd7e17d5f36f7577db6fe1c3f092728a9fa2e598db280ac3e67f8`, with **zero remaining** starts. There is no
+  canonical handoff, ticket, Acceptance round, Examiner report, verdict, or PASS for start35.

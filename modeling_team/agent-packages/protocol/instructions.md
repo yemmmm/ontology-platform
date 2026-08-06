@@ -60,6 +60,18 @@ leave `resource_types` broad/null when a narrower resource kind is sufficient. I
 `search_mode=lexical`; a hybrid response with a missing vector index is never a complete result and
 must not be reported as one.
 
+Before the first query, use only the exact `resource_types` values advertised by the
+`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`.
+Never probe unsupported aliases such as `entity`, `entities`, or `individual`; an unsupported value is
+a contract error, not a discovery mechanism. Read the entire consumer question and its required
+response before freezing the first request. Classify all evidence families it needs (for example,
+relation topology together with literal facts requires the single tuple `relation` plus `fact`) and
+choose one complete, immutable tuple containing every required supported kind. If a narrow tuple cannot
+express all required families, use the widest tuple that the public contract explicitly permits; do not
+choose a relation-only tuple when fact evidence is also required. Self-check coverage before the first
+call. If the contract cannot express the required evidence families, return a concrete pre-query
+translation conflict and do not issue a probe or a partial query.
+
 Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
 `scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`,
 and `context_limit`. A context continuation preserves that tuple and changes only
