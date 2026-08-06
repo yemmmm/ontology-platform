@@ -2202,3 +2202,36 @@ already recorded attempts.
   historically `collaboration/routing,false`; this round verifies its narrow repair only and is not a live
   Runtime/L0 or semantic-quality acceptance. After normal review/commit and authorization handling, the next
   real run may proceed; no additional test-induced start is authorized here.
+
+## 2026-08-07 Start42 repair (restore homogeneous DeepSeek runtime) — Independent round 3
+
+### Scope, baseline, and safety boundary
+
+- Authority: the Start42 transport-timeout and narrow-repair entries in
+  `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`.
+  The active Protocol package override is removed; the generic adapter override helper remains dormant.
+  The checked baseline is `f9d428c110894b03b773eb87f467bf59c09c9b5e`, with the current package/test edits
+  and the pre-existing delivery-record edit left untouched.
+- This is deterministic, read-only verification. No live model call, semantic start, Project/Ontology
+  mutation, remote service call, or credential publication was performed.
+
+### Executed commands and results
+
+1. `PYTHONPATH=. pytest modeling_team/tests/test_deepseek_codex_runtime.py -q` — **PASS**, `14 passed in 0.73s`.
+2. `PYTHONPATH=. pytest modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py -q` — **PASS**, `103 passed in 2.64s`.
+3. A `PYTHONPATH=. python3` temporary-run probe loaded all four active packages, parsed each generated `config.toml`, captured process-factory environments, and exercised the dormant synthetic package override — **PASS**. Coordinator/Modeling/Protocol/Acceptance all resolve `deepseek-v4-flash/deepseek/max`, each process has exactly the seven-key allowlist including `DEEPSEEK_API_KEY`, and the dormant helper still accepts a synthetic `gpt-5.6-luna/openai/max` declaration. A second probe staged both Source and Platform Examiner children and confirmed the same DeepSeek TOML/provider and exact seven-key environment for each.
+4. A `PYTHONPATH=. python3` app-server probe sent `item/commandExecution/requestApproval` with command/cwd/reason/value secrets, then sent `turn/completed` — **PASS**. The only response is exact JSON-RPC `{"jsonrpc":"2.0","id":42,"result":{"decision":"decline"}}`; the Agent reaches idle with the completed turn, and both `app-server-events.jsonl` and `command-approval-events.jsonl` contain sanitized action/decision/parameter metadata without sensitive fields or values.
+5. `backend/.venv/bin/ruff check modeling_team/runtimes/codex.py modeling_team/tests/test_deepseek_codex_runtime.py` plus `git diff --check -- modeling_team/agent-packages/protocol/package.yaml modeling_team/tests/test_deepseek_codex_runtime.py` — **PASS**, Ruff reported `All checks passed!` and diff check was clean.
+
+### Acceptance mapping and disposition
+
+- The active whole Team and both private Examiner launch paths are homogeneous DeepSeek Flash/max again;
+  Protocol's process environment contains the provider key, and no active package override remains. The
+  generic override capability remains available but is not exercised by the active profile.
+- Built-in command approval continues to return only `decision=decline`, never executes a command, permits
+  the next turn lifecycle notification, and writes no command/cwd/reason/value content to either evidence
+  stream.
+- **Overall: PASS.** No defect requiring a repair agent was found. The prior Start42 transport timeout remains
+  `collaboration/routing,false` historical live evidence and is outside this deterministic gate. The known
+  stale P2a byte-freeze assertion is not part of this proportional R2.3-005 regression scope. A new clean
+  baseline and explicit authorization are still required before the next real semantic start.

@@ -3589,3 +3589,29 @@ the formal builder, or starting another real run before authorization.
   the committed DeepSeek baseline. That unrelated frozen expectation is not weakened or rewritten here.
 - This repair does not reinterpret Start41. After commit, the exact clean baseline must be bound in the
   strict-ledger repair authorization before the next real start is reserved.
+
+### 2026-08-07 — Start42 Protocol Luna transport timeout
+
+- Start42 `r23005-real-20260807-deepseek-start42` used reviewed commit `f9d428c` and exact baseline
+  `b1db6b6187f29d961f7a31c4b1ad0bc5a8cb0b235902f251854d7581f6c406aa`. Runtime TOML directly
+  confirmed Coordinator/Modeling/Acceptance on `deepseek-v4-flash/deepseek/max` and Protocol on the
+  authorized role-local fallback `gpt-5.6-luna/openai/max`.
+- Modeling published the exact full r3 candidate. Protocol's initial Luna sampling request timed out on
+  all five streamed retries and then its HTTP fallback did not produce a turn. No candidate receipt or
+  platform stage began, and the 120-second formal candidate-progress gate failed closed. Classification
+  is `collaboration/routing,false`; this is a Runtime/transport availability failure, not a Protocol
+  semantic-quality judgment and not a complete modeling-quality result.
+- Cleanup reached `TERMINAL_FAILURE_CLEANED`: Acceptance is aborted/unsettled with zero active handles,
+  zero child residue, and destroyed private credentials; the empty owned Project/Ontology were deleted;
+  the latest Delivery admin credentials are revoked; and no start42 process remains. The strict ledger
+  records start42 as the second of the user's ten authorized starts, leaving eight starts available.
+- Narrow plan review PASS permits removing only Protocol's active Luna package override. This returns the
+  active Team to DeepSeek Flash/max while retaining the independently tested generic override mechanism
+  and the command-approval decline repair. Start41 already proved that DeepSeek Protocol can complete the
+  candidate receipt, Batch/apply, validation, reasoning, and 14 governed retrieval chains; start43 must
+  use a new independently tested clean baseline and an exact start42 repair authorization.
+- The narrow implementation removed only the active Protocol package override. Developer verification
+  passed 123 related tests plus 61 subtests, Ruff, and diff checks. Independent Tester Round 3 passed 14
+  focused tests plus 103 Runtime/isolation/contract tests, exact TOML/environment probes across all four
+  persistent roles and both Examiner kinds, a dormant synthetic Luna-override probe, and the sanitized
+  command-approval decline/continued-turn probe. Round 3 made no model call or semantic start.

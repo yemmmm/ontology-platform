@@ -51,7 +51,7 @@ def _agent(root: Path, role: str) -> _Agent:
     return _Agent(role, _load_package(repository_root(), role), home, work, skills)
 
 
-def test_formal_persistent_configs_and_process_env_select_protocol_fallback_without_spillover(
+def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
     monkeypatch, tmp_path: Path
 ) -> None:
     repo = repository_root()
@@ -77,28 +77,20 @@ def test_formal_persistent_configs_and_process_env_select_protocol_fallback_with
         agent = _agent(tmp_path, role)
         adapter._write_config(run, agent)
         config = (agent.home / "config.toml").read_text(encoding="utf-8")
+        assert 'model = "deepseek-v4-flash"' in config
+        assert 'model_provider = "deepseek"' in config
+        assert 'name = "DeepSeek"' in config
+        assert 'base_url = "https://api.deepseek.com/"' in config
+        assert 'wire_api = "responses"' in config
+        assert 'env_key = "DEEPSEEK_API_KEY"' in config
         assert 'model_reasoning_effort = "max"' in config
+        assert '[shell_environment_policy]' in config
+        assert 'inherit = "core"' in config
+        assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
         assert "process-secret" not in config
         adapter._start_process(agent)
         env = calls[-1][1]["env"]
-        if role == "protocol":
-            assert 'model = "gpt-5.6-luna"' in config
-            assert 'model_provider = "openai"' in config
-            assert 'model = "deepseek-v4-flash"' not in config
-            assert 'model_provider = "deepseek"' not in config
-            assert 'name = "DeepSeek"' not in config
-            assert "DEEPSEEK_API_KEY" not in env
-        else:
-            assert 'model = "deepseek-v4-flash"' in config
-            assert 'model_provider = "deepseek"' in config
-            assert 'name = "DeepSeek"' in config
-            assert 'base_url = "https://api.deepseek.com/"' in config
-            assert 'wire_api = "responses"' in config
-            assert 'env_key = "DEEPSEEK_API_KEY"' in config
-            assert '[shell_environment_policy]' in config
-            assert 'inherit = "core"' in config
-            assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
-            assert env["DEEPSEEK_API_KEY"] == "process-secret"
+        assert env["DEEPSEEK_API_KEY"] == "process-secret"
 
     assert len(calls) == 4
     for command, kwargs in calls:
