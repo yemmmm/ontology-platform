@@ -2,18 +2,19 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 start24 已终止并完成清理，
-  终态为 `runtime/infrastructure` + `platform-contract` `rebind-required`，不是建模质量结论或
-  Acceptance PASS。正式账本现为 `cap/count/active=31/24/0`，剩余 `7` 次；Prompt A/C/D 已由
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 start25 已终止并完成清理，
+  终态为 `modeling-quality` `candidate-envelope-invalid`（不是 Protocol、平台或 Acceptance 结论）。
+  正式账本现为 `cap/count/active=31/25/0`，剩余 `6` 次；Prompt A/C/D 已由
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
   platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：使用 `ebea0eb` 的 fresh Runner，在下一次 semantic_start 前置入 start24 精确 r3
-  carrier（不重建业务切片），继续独立 Acceptance；仍有 `7` 次额度，正式账本 cap/count/active 为
-  `31/24/0`
+- 当前下一目标：先修复 start25 暴露的 carrier canonical extraction prompt-contract（明确只发送
+  `candidate_text` 解析后的完整候选，不发送 carrier 元数据 envelope），再使用 `ebea0eb` 的 fresh Runner
+  置入 start24 精确 r3 carrier（不重建业务切片）继续独立 Acceptance；仍有 `6` 次额度，正式账本
+  cap/count/active 为 `31/25/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -62,7 +63,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start24 terminal（rebind-required；Prompt E=ebea0eb 离线验证；31/24/0，剩余 7）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start25 terminal（modeling-quality/candidate-envelope-invalid；Prompt E=ebea0eb；31/25/0，剩余 6）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2421,3 +2422,47 @@ modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r230
 modeling_team/tests/test_r23005_t6_repeatability.py` returned **46 passed, 3 subtests passed**. This is offline
 implementation evidence only; the next fresh Runner must prove the full five-stage/retrieval handoff, unchanged
 ticket publication, and independent Acceptance.
+
+### 2026-08-06 R2.3-005 start25 terminal candidate-envelope-invalid and repair ordering
+
+Start25 `r23005-real-20260806t034500z-start25` used a fresh Runner and staged the exact start24 r3 carrier before
+`Runner.prepare`. Its `source-manifest.json` directly binds
+`modeling_team/.continuations/r23005-start24-r3-exact-candidate.json` at mode `0444`, SHA-256
+`9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`, accepted `delivery-4`, revision
+`dify-cba-slice-r3`, and candidate/semantic digest
+`7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. The run then failed at the first Modeling
+delivery with `reason_code=candidate-envelope-invalid`, classification `modeling-quality`, and
+`complete_modeling_quality_result=false`; no Protocol platform call, Acceptance ticket, verdict, or semantic-quality
+claim exists. Cleanup reached `CLEANED`, deleted the empty owned Project/Ontology, revoked keys, and left zero child,
+credential, socket, or process residue.
+
+The pre-reservation repair-ordering defect is also retained: after start24's latest incomplete terminal failure,
+the first start25 preparation failed closed with `next start lacks a frozen narrow repair baseline`. It produced no
+run directory, reservation, or semantic start. Delivery then computed the fresh clean-HEAD baseline
+`bff57388c98e7e1515fc99f6c7e7b69bd96d81529b5f898e7c836cb3fdc59b82` and appended the required `authorize-repair`
+event before the actual start25 reservation/start; that repair event does not consume a semantic start.
+
+The new prompt-contract defect is carrier extraction ambiguity: the exact continuation carrier is a metadata
+envelope containing a canonical `candidate_text` string and an equivalent parsed `candidate` object. Modeling sent a
+non-canonical candidate envelope, so the Runner correctly rejected it before Protocol. Before the next
+`semantic_start`, the authoritative Modeling/task prompt must state that only `candidate_text` is parsed and sent as
+the complete candidate JSON, while carrier metadata is coordination context; it must also require recomputation and
+matching of the accepted candidate/semantic digests. This is a prompt-contract repair, not permission to mutate or
+rebuild the r3 business semantics.
+
+The canonical ledger now has SHA-256
+`07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, strict replay PASS,
+`cap/count/active=31/25/0`, 122 lines, and `6` remaining starts. No start26 is authorized until the extraction
+prompt repair is implemented and independently verified.
+
+Direct task-input evidence adds a collaboration/routing layer to this run. The start25 `task.snapshot.yaml` was
+copied from an older continuation task and differed from the HEAD authoritative
+`modeling_team/tasks/r2-3-005-formal-acceptance.yaml`: it retained only the carrier-path addition while dropping the
+Prompt A accepted-receipt-versus-full-gate text, Prompt C relation-citation gate, Prompt D frozen query tuple and
+cursor-chain text, and the Prompt E `acceptance-stage-handoff-contract.json` Protocol role source. The Runner's raw
+terminal classification remains `modeling-quality`/`candidate-envelope-invalid`; the delivery diagnosis additionally
+records `collaboration/routing` + `prompt-contract/stale-launch-input`. This does not rewrite the raw verdict. Before
+start26, the launcher must derive a fresh task snapshot from the authoritative HEAD task, add only the exact r3 carrier
+path, retain all current A/C/D/E text and role sources, and make the Modeling instruction explicit: send only the
+carrier's five-field canonical candidate (`candidate`/parsed `candidate_text`), never the complete continuation
+envelope or its coordination metadata.

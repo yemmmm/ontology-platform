@@ -1629,3 +1629,25 @@ failed because the Delivery-only admin credential was not injected; it also prod
 failure is semantic evidence. Before retrying, Delivery must provision the admin credential through the existing
 bootstrap helper, keep it out of Agent inputs, stage the exact start24 r3 carrier before prepare, and retain the
 current ledger/carrier checks.
+
+## Start25 terminal and stale launch-input finding (2026-08-06; start26 prohibited)
+
+Start25 `r23005-real-20260806t034500z-start25` did stage the exact r3 carrier before `prepare` (source-manifest
+SHA-256 `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`, mode `0444`), but Modeling's first
+delivery was rejected as `candidate-envelope-invalid`. The raw Runner/ledger classification is
+`modeling-quality`, `complete_modeling_quality_result=false`; no Protocol/platform/Acceptance phase started. Cleanup
+was `CLEANED`, empty scope deleted, and zero runtime residue remained.
+
+Independent task-input comparison found the launcher's `task.snapshot.yaml` was copied from an older continuation
+task rather than HEAD `modeling_team/tasks/r2-3-005-formal-acceptance.yaml`. It added only the carrier source and
+dropped Prompt A receipt/full-gate text, Prompt C relation-citation gate, Prompt D complete query tuple/cursor-chain
+text, and Prompt E `acceptance-stage-handoff-contract.json` from Protocol role sources. Record this as an additional
+`collaboration/routing` + `prompt-contract/stale-launch-input` diagnosis, while preserving the raw Runner
+`modeling-quality` classification.
+
+The exact carrier is a coordination envelope, not the candidate wire object. Before any next start, the authoritative
+task snapshot must be regenerated from HEAD and the Modeling prompt must say to parse/send only the carrier's
+five-field canonical `candidate` (equivalently parsed `candidate_text`), never the outer continuation envelope;
+candidate/semantic digests must match the accepted r3 identity. No start26 may begin before this prompt/task repair and
+independent verification. Ledger terminal state is `cap/count/active=31/25/0`, SHA-256
+`07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, remaining `6`.

@@ -2801,3 +2801,32 @@ the formal builder, or starting another real run before authorization.
   directory or ledger event. The next retry must provision that Delivery-only credential through the existing
   bootstrap helper, keep it out of Agent inputs, and use a fresh current UTC freeze value; no production code or
   semantic attempt is authorized by either pre-reservation failure.
+
+### 2026-08-06T11:48:00+08:00 — Start25 terminal and stale task-input diagnosis (no start26)
+
+- After the required repair authorization, start25 consumed exactly one semantic start:
+  `r23005-real-20260806t034500z-start25`. The fresh Runner staged the exact r3 carrier before `prepare`; the run
+  `source-manifest.json` records path
+  `modeling_team/.continuations/r23005-start24-r3-exact-candidate.json`, SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`, mode `0444`, accepted `delivery-4`, and
+  candidate/semantic digest `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+- Modeling's first response was rejected by the Runner as `reason_code=candidate-envelope-invalid`; raw ledger and
+  terminal evidence classify this as `modeling-quality`, `complete_modeling_quality_result=false`. No Protocol
+  platform call, Acceptance ticket, Examiner, verdict, or semantic-quality PASS occurred. Normal cleanup reached
+  `CLEANED`, deleted the empty owned Project/Ontology, revoked keys, and left zero child/process/credential residue.
+- Delivery diagnosis adds `collaboration/routing` + `prompt-contract/stale-launch-input` without rewriting the raw
+  Runner classification. Direct `diff -u modeling_team/tasks/r2-3-005-formal-acceptance.yaml
+  modeling_team/.continuations/r23005-start25-task.yaml` shows the snapshot was copied from an older continuation
+  task: it added only the carrier source but dropped the authoritative Prompt A accepted-receipt/full-gate text,
+  Prompt C relation-citation gate, Prompt D frozen query tuple/cursor-chain text, and Prompt E
+  `acceptance-stage-handoff-contract.json` Protocol role source. This stale-input defect is separate from the
+  candidate envelope failure and must be corrected before any next semantic start.
+- The carrier itself is a coordination envelope containing `candidate` and canonical `candidate_text` plus identity,
+  receipts, directives, and provenance. The authoritative Modeling/task prompt for the next run must require sending
+  only the five-field canonical candidate object (`candidate`/parsed `candidate_text`) and never the entire envelope;
+  candidate and semantic digests must be recomputed and matched before delivery. No business semantics may be
+  rebuilt or mutated.
+- Canonical ledger after terminal cleanup is SHA-256
+  `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, strict replay PASS,
+  `cap/count/active=31/25/0`, 122 lines, `6` remaining. No start26 is authorized until the authoritative task
+  snapshot and carrier-extraction prompt are repaired and independently verified.
