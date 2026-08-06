@@ -206,8 +206,6 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "acceptance_id",
             "round_id",
             "kind",
-            "input_ref",
-            "input_digest",
             "ticket_digest",
             "request_id",
             "attempt",
@@ -317,9 +315,11 @@ def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
         return False
     if isinstance(value, Mapping):
         properties = schema.get("properties", {})
-        required = schema.get("required", [])
+        required = set(schema.get("required", []))
         if properties or required:
-            if set(value) != set(required):
+            if not required.issubset(value):
+                return False
+            if schema.get("additionalProperties") is False and not set(value).issubset(properties):
                 return False
             return all(
                 key in properties and _matches_schema(child, properties[key])
@@ -456,7 +456,6 @@ class RunnerCapabilityEndpoint:
             operation not in self.operations
             or schema is None
             or not isinstance(arguments, Mapping)
-            or set(arguments) != set(schema["required"])
             or not _matches_schema(arguments, schema)
         ):
             return self._error(request_id)

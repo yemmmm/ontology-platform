@@ -2870,3 +2870,71 @@ to semantic gate authority. No start38 blocker remains. The stable repair state 
 launch from that committed state under the existing allowance. The pending
 `user-20260806-r23005-start39-41` authorization remains unchanged and may be registered only after start38 terminal
 handling.
+
+### 2026-08-06 R2.3-005 start38 Host-retrieval pass and Acceptance projection-binding gate
+
+Start38 `r23005-real-20260806t153245z-start38` reused the exact r3 candidate under committed HEAD `181225e`. The
+candidate receipt barrier and direct ID-bound wake passed without external intervention. Protocol completed every
+modeling stage, required negative dry-run probe, semantic validation, and reasoning. It then executed 14
+Host-observed retrieval episodes across the seven independently frozen required paths; episode 14 reached
+`host_receipt_complete`, including the connected `quality-rating-field fieldName quality_rating` statement with
+supported Evidence and complete lineage. Canonical handoff `delivery-6`, gate-complete/silent `delivery-7`, and both
+immutable CQ tickets were published. Therefore the modeling and Host-retrieval portions are real live evidence and
+must be reused; a later retry must not rebuild the candidate or rediscover those already proven layers.
+
+Independent Acceptance exposed a narrower collaboration/routing defect before CQ1 children were created. Both source
+and platform attempt-0 `acceptance_child_start` calls supplied a caller-constructed
+`{ticket_digest, acceptance_round_id, question_id}` input and used the ticket digest as the child-input digest. Runner
+rejected both with MCP `-32001`; CQ2 did not start, and no Examiner report, verdict, settlement, or PASS exists.
+
+The owning defect is the Acceptance prompt/capability binding to the Host-private projection contract.
+`RunnerAcceptanceCarrier.project_child_input` deterministically owns the source/platform projections and their
+canonical SHA-256 values, while the model-visible Acceptance surface did not expose that projection or instruct a
+valid opaque binding. The durable repair must make Acceptance consume the exact Runner-projected kind-specific input
+without manually reconstructing it. It must preserve ticket digest, model-state, source/platform isolation,
+attempt/recycle, and independent verdict boundaries. Tests must accept the exact projected bindings and reject the
+start38 fabricated envelope and ticket-digest substitution.
+
+The exact abort reached `TERMINAL_REPORT_COMPLETE` with Acceptance `settled=false`, zero active/retained children,
+destroyed private credentials, terminal Session/Lease state, revoked keys, and retained non-empty Project evidence.
+The ledger records start38 as `classification=collaboration/routing` and
+`complete_modeling_quality_result=false`. After strict replay passed at `37/37/0`, the already explicit user
+authorization was registered as `user-20260806-r23005-start39-41`, `additional_starts=3`. Current strict replay is
+`cap/count/active=40/37/0`, 176 lines, SHA-256
+`80163dec934749eb743102c7f8f0941fc1c6ccae990842e87eb7237b9b74c08f`, with **3 remaining** starts.
+
+Start39 is blocked until the authoritative Acceptance prompt/Skill plus capability projection binding is repaired,
+reviewed, and verified. The available allowance does not authorize an immediate repair event, reservation, or
+semantic start, and no start39 may begin while knowingly carrying the same prompt-contract defect.
+
+### 2026-08-06 R2.3-005 pre-start39 Host-derived child-input repair
+
+The narrow projection-binding repair is implemented. `acceptance_child_start` treats `input_ref` and `input_digest`
+as optional compatibility fields; when they are omitted, common Runner dispatch uses the frozen `round_id` and
+requested `kind` to call the existing `RunnerAcceptanceCarrier.project_child_input` path and supplies its canonical
+projection/digest. Acceptance Agents must not construct or hash this Host-private input and must not use
+`ticket_digest` as `input_digest`. The authoritative instructions, formal Task, and packaged Skills state that rule.
+
+Exact explicit legacy input remains compatible only when both fields equal the Runner-derived canonical pair. Partial
+input, wrong projection or digest, cross-kind/cross-round reuse, ticket-metadata construction, ticket-digest
+substitution, and unknown endpoint arguments fail closed. Capability endpoint schemas must maintain
+`required ⊆ arguments ⊆ properties`; omission is valid only for the two Host-derived compatibility fields.
+
+The real start38 CQ1 fixture freezes source digest
+`b2577d6e649c8593087a518754ef510a4f4f49b0f3171f3f3daf2a92b4a0cacc` and platform digest
+`2926d748a84333ea115f1564d6b289f7c6f3214dfcce00f5797a9819ab2927f5`. GitNexus impact analysis is LOW.
+Verification passed **63 focused tests plus 21 subtests**, full modeling regression **483 passed, 1 skipped, 195
+subtests**, Ruff, and diff checks.
+
+This closes implementation and local verification only. Start39 remains blocked pending a separately recorded
+independent final review PASS; no repair authorization, reservation, or semantic start may precede that result.
+
+### 2026-08-06 R2.3-005 independent final review cleared start39
+
+Independent final review is **PASS**. Omitted Host-derived child inputs and the exact explicit legacy pair are both
+reachable, while partial, wrong, cross-round, cross-kind, and unknown-argument inputs fail closed. Original
+`start_child` ticket/capability validation, request replay, child lifecycle, report/recycle, and settlement contracts
+are not weakened. The repair adds no Runtime- or Pi-specific coupling or semantic authority.
+
+No start39 blocker remains. The stable repair may be committed, and start39 may launch from that committed reviewed
+baseline through the normal strict-ledger repair/reservation sequence under the already registered allowance.

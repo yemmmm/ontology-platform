@@ -39,9 +39,10 @@ FROZEN_GLOBAL_SURFACES = {
     # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.  The Runner now advertises the formal
     # delivery-bound Coordinator draft path, terminal-handoff prompt guard,
-    # exact Prompt-E delivery/CQ binding, and accepted-candidate retrieval plan
-    # registration for the formal Runner.
-    "modeling_team/runner.py": "e42e428dde6e88fe104ea24489093bf9680e3d901b733a4690f59ec2607b272a",
+    # exact Prompt-E delivery/CQ binding, accepted-candidate retrieval plan
+    # registration, and Host-derived Acceptance child-input projection binding
+    # for the formal Runner.
+    "modeling_team/runner.py": "63699526868eaf8f9fed9c1cec3c82c0f2543bed3e27d269ebbffd67f2653cd3",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
     "modeling_team/runtimes/codex.py": "36fa7383d2bdef670613c8d48ff884b0163187b74edbce44dad0226e87d7790b",

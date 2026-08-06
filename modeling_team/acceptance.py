@@ -2629,12 +2629,30 @@ class RunnerAcceptanceCarrier:
             )
             return ticket
         if operation == "acceptance_child_start":
+            # The projection and its digest are Runner-owned mechanics.  Keep
+            # accepting the legacy explicit fields for compatibility, but
+            # require them to be the exact immutable projection for this
+            # round/kind.  A model never has to reconstruct or hash either
+            # value, and a fabricated binding cannot be silently accepted.
+            projected_input, projected_digest = self.project_child_input(
+                round_id=args["round_id"],
+                kind=args["kind"],
+            )
+            supplied_input = args.get("input_ref")
+            supplied_digest = args.get("input_digest")
+            if (supplied_input is None) != (supplied_digest is None):
+                _error("child input binding must include both input_ref and input_digest")
+            if supplied_input is None:
+                supplied_input = projected_input
+                supplied_digest = projected_digest
+            elif supplied_input != projected_input or supplied_digest != projected_digest:
+                _error("child input binding does not match the Runner projection")
             return self.start_child(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
                 kind=args["kind"],
-                input_ref=args["input_ref"],
-                input_digest=args["input_digest"],
+                input_ref=supplied_input,
+                input_digest=supplied_digest,
                 ticket_digest_value=args["ticket_digest"],
                 attempt=args["attempt"],
                 request_id=args["request_id"],

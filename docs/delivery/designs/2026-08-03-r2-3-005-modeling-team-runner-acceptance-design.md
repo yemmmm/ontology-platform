@@ -793,3 +793,31 @@ No frontend UI, database migration, or domain-specific Dify route is required. T
 read-only validation/reasoning MCP wrappers are in current scope because the authoritative acceptance
 contract requires independent retrieval of Producer-created results; they must reuse existing read
 services and remain Project-owned and ontology-scoped.
+
+## 2026-08-06 amendment: Host-derived Acceptance child input
+
+This amendment supersedes only the argument-ownership semantics of the historical
+`acceptance_child_start(..., input_ref, input_digest, ...)` signature above. It does not rewrite the historical design
+record and does not change child isolation, ticket identity, attempt/recycle, report, verdict, or settlement rules.
+
+In the current contract, `input_ref` and `input_digest` are optional compatibility arguments. Common Runner dispatch
+uses `round_id` and `kind` to call the existing `RunnerAcceptanceCarrier.project_child_input` and supplies the
+canonical pair when the caller omits them. Acceptance prompts, Tasks, and Skills must direct the Agent to omit both;
+the Agent must never construct a projection, hash it, or substitute `ticket_digest`.
+
+An exact legacy caller may still supply both arguments, but Runner compares them with the Host-derived canonical pair.
+Supplying only one, supplying a wrong digest or projection, or reusing a projection across kind or round fails closed.
+The capability endpoint schema keeps `required ⊆ arguments ⊆ properties` and rejects unknown arguments. The real
+start38 CQ1 fixture binds source digest
+`b2577d6e649c8593087a518754ef510a4f4f49b0f3171f3f3daf2a92b4a0cacc` and platform digest
+`2926d748a84333ea115f1564d6b289f7c6f3214dfcce00f5797a9819ab2927f5`.
+
+Implementation impact is LOW. Verification passed **63 focused tests plus 21 subtests**, complete modeling regression
+**483 passed, 1 skipped, 195 subtests**, Ruff, and diff checks. This amendment remains pending independent final review;
+it is not yet a start39 release gate PASS.
+
+Independent final review subsequently passed. Omitted Host-derived arguments and the exact explicit legacy pair are
+reachable; partial, wrong, cross-round, cross-kind, and unknown-argument forms fail closed. Existing `start_child`
+ticket/capability validation, replay, lifecycle, report/recycle, and settlement contracts remain unchanged, and the
+amendment introduces no Runtime or Pi coupling. The amendment is eligible for commit and presents no remaining
+start39 blocker.

@@ -12,6 +12,13 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   not-ready status. Recycle only with the matching typed report/failure digest. The
   Runner permits exactly one attempt-0 to identical-input attempt-1 retry; after a
   second infrastructure failure the round is BLOCKED.
+- For `acceptance_child_start`, provide only the acceptance ID, round ID, examiner kind,
+  ticket digest, request ID, and attempt. Omit `input_ref` and `input_digest`: the Host
+  derives the exact kind-specific projection and canonical digest from the immutable
+  ticket. Never construct or hash a child input, and never use the ticket digest as the
+  child-input digest. Legacy calls that include both fields are accepted only when they
+  exactly match the Host projection; a mismatched, cross-round, or cross-kind binding is
+  rejected.
 - Do not spawn Agents, call `spawn_agent`, access child processes/sockets, send child
   messages, call platform tools, write the platform, or infer an expected answer. The
   Runner adds the ticket-bound model-state envelope to reports; do not author or replace

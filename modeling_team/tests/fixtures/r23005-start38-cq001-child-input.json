@@ -1,0 +1,62 @@
+{
+  "acceptance_round_id": "acceptance-round-r23005-real-20260806t153245z-start38-cq-001-1",
+  "ticket_digest": "a5b69eeb1629b5275503197a120ba17c715f15df0519b3584bb77793f0de0455",
+  "ticket": {
+    "question": "在 B 调用 C 作为 Tool 的关系中，当前能够确认的最新发布版本是什么，B 消费的是哪个输出？",
+    "approved_sources": [
+      {
+        "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx",
+        "sha256": "92a97c639fb8d4782e95207cb84ede79b1739ff3abdb9bc1fe384f0741c2c96b"
+      },
+      {
+        "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/release-register.md",
+        "sha256": "f5386a00a2a048831ce524ef605aed14c1124a6ac74fb8dc99c5b0a0f777caae"
+      },
+      {
+        "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/workflow-landscape.md",
+        "sha256": "9dde79c61d9849776c9140aa5c3be02c17aea7800efa56135fb8dfaa0be7011e"
+      }
+    ],
+    "source_bundle_digest": "38b7c61c09171f14d1bc3ae81cc679da1095ebf75684d0d9dd09be897d4164f8",
+    "model_state": {
+      "build_session_id": "70b0f543-709f-447a-b04d-ee412219debe",
+      "graph_set_id": "765142b9-d47e-5986-a6ec-24e34a37fa3b",
+      "ontology_id": "82488561-03bb-4ad4-9a9c-7cdcd8dce23e",
+      "project_id": "62330e9e-d380-4984-88ad-994612257515",
+      "source_signature": "3cfdc0a479430445fa27e4cd15054264",
+      "state_digest": "d2c4e1e025ff0f63a977231a43348a5004a75ca523131b816d394978aeb9c295",
+      "workspace_version": "bde1f79e959f1ee6ce457c457ce1e415f4c4a87fb0079950e7a690be25a209a9"
+    },
+    "platform_read_scope": {
+      "graph_set_id": "765142b9-d47e-5986-a6ec-24e34a37fa3b",
+      "ontology_id": "82488561-03bb-4ad4-9a9c-7cdcd8dce23e",
+      "project_id": "62330e9e-d380-4984-88ad-994612257515"
+    },
+    "allowed_read_tools": [
+      "check_platform_health",
+      "get_project_build_context",
+      "get_build_session",
+      "get_modeling_context",
+      "get_ontology_workspace_context",
+      "get_ontology_read_model",
+      "get_semantic_read_model",
+      "query_semantic_context",
+      "semantic_sparql_query",
+      "describe_semantic_graph_set",
+      "list_semantic_derived_pointers",
+      "inspect_semantic_projection_status",
+      "list_evidence_references",
+      "get_evidence_reference",
+      "get_ontology_lineage",
+      "inspect_semantic_statement_provenance",
+      "get_semantic_reasoning_run",
+      "get_semantic_validation_run",
+      "list_semantic_reasoning_runs",
+      "list_semantic_validation_runs"
+    ]
+  },
+  "expected": {
+    "source_input_digest": "b2577d6e649c8593087a518754ef510a4f4f49b0f3171f3f3daf2a92b4a0cacc",
+    "platform_input_digest": "2926d748a84333ea115f1564d6b289f7c6f3214dfcce00f5797a9819ab2927f5"
+  }
+}

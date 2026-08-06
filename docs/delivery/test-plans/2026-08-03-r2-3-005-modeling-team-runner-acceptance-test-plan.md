@@ -2037,3 +2037,58 @@ already recorded attempts.
 - No start38 blocker remains. The stable repair is eligible for commit, and start38 may launch from that committed
   state under the existing allowance. The pending start39–41 authorization remains deferred until start38 terminal
   handling.
+
+### Start38 live Host-receipt pass and Acceptance projection-binding failure (2026-08-06)
+
+- **Modeling/platform PASS:** start38 reused the exact r3 candidate, passed the accepted-receipt barrier and automatic
+  direct wake, completed all class/property/entity/relation/Shape dry-run and atomic application stages, rejected the
+  negative dry-run probe, and produced conforming validation plus consistent reasoning.
+- **Seven-chain Host gate PASS:** 14 Host-observed query episodes independently exercised all seven frozen
+  `consumer_query.required_paths` chains. Episode 14 recorded `host_receipt_complete`; connected required values,
+  Evidence support, lineage completeness, and terminal pagination passed. Canonical handoff and both immutable CQ
+  tickets were published, so the run legitimately entered independent Acceptance.
+- **Acceptance lifecycle FAIL before verdict:** CQ1 source and platform attempt-0 `acceptance_child_start` calls both
+  returned MCP `-32001`. The caller supplied ticket metadata as `input_ref` and the ticket digest as `input_digest`;
+  neither value matched the Runner-owned child projection contract. No child handle or report exists, CQ2 never
+  started, and no verdict, settlement, or PASS may be inferred.
+- **Classification and cleanup:** record `collaboration/routing`, `complete_modeling_quality_result=false`. The exact
+  abort reached terminal state with Acceptance `settled=false`, zero active handles/child residue, destroyed private
+  credentials, released Lease, completed Build Session, and revoked project/Runner/Delivery admin keys. Retain the
+  non-empty model and immutable evidence.
+- **Start39 repair acceptance:** expose or automatically bind the Host-private
+  `RunnerAcceptanceCarrier.project_child_input(round_id, kind)` result so model-visible Acceptance never constructs
+  it. For CQ1, source must bind digest
+  `b2577d6e649c8593087a518754ef510a4f4f49b0f3171f3f3daf2a92b4a0cacc`; platform must bind
+  `2926d748a84333ea115f1564d6b289f7c6f3214dfcce00f5797a9819ab2927f5`. Add negative coverage for the exact start38
+  `{ticket_digest, acceptance_round_id, question_id}` envelope and ticket-digest substitution. Verify source and
+  platform attempt 0 can both start, report, recycle, and settle without weakening ticket/model-state isolation.
+- Strict replay after closeout and authorized extension is `cap/count/active=40/37/0`, 176 lines, SHA-256
+  `80163dec934749eb743102c7f8f0941fc1c6ccae990842e87eb7237b9b74c08f`, with **3 remaining** starts. Do not append a
+  repair, reservation, or semantic start until the projection-binding repair passes review and tests.
+
+### Pre-start39 Host-derived projection repair verification (2026-08-06)
+
+- `acceptance_child_start` schema accepts omitted `input_ref`/`input_digest`; common Runner dispatch must derive both
+  from the frozen round and requested kind through `project_child_input`. The endpoint contract must maintain
+  `required ⊆ arguments ⊆ properties` and reject every unknown argument.
+- Positive cases cover omission for source/platform and exact explicit legacy compatibility. The real start38 CQ1
+  fixture must produce source digest `b2577d6e649c8593087a518754ef510a4f4f49b0f3171f3f3daf2a92b4a0cacc`
+  and platform digest `2926d748a84333ea115f1564d6b289f7c6f3214dfcce00f5797a9819ab2927f5`.
+- Negative cases reject `input_ref` without `input_digest`, digest without projection, wrong projection/digest,
+  source/platform cross-kind reuse, cross-round reuse, the exact start38 ticket-metadata envelope, ticket-digest
+  substitution, and unknown endpoint fields.
+- Prompt-contract checks require the authoritative Acceptance instructions, formal Task, and packaged Skills to say
+  that Agents omit these Host-derived fields and never construct, hash, or substitute them.
+- GitNexus impact is LOW. Focused verification passed **63 tests plus 21 subtests**; full modeling regression passed
+  **483 tests, 1 skipped, 195 subtests**; Ruff and diff checks passed.
+- Status remains **pending independent final review**. These implementation/test results are not a start39 PASS and
+  do not authorize a repair event, reservation, or semantic start.
+
+### Independent final review of the start39 projection-binding gate (2026-08-06)
+
+- **PASS:** omission and exact legacy compatibility are reachable; partial, wrong, cross-round, cross-kind, and
+  unknown-argument inputs fail closed.
+- Existing `start_child` ticket/capability checks, request replay identity, Examiner lifecycle, report/recycle, and
+  settlement behavior remain intact. No Runtime or Pi coupling was added.
+- The repair is eligible for commit. After using the committed reviewed baseline and normal strict-ledger repair
+  sequence, start39 may launch under the existing allowance; no additional projection-binding blocker remains.

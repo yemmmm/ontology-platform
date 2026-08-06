@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
@@ -95,6 +96,207 @@ class _ImmediateFailureResource:
 
 
 class R23005BRuntimeTests(unittest.TestCase):
+    def test_project_child_input_matches_real_start38_cq001_fixture(self) -> None:
+        fixture_path = Path(__file__).parent / "fixtures" / "r23005-start38-cq001-child-input.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        round_id = fixture["acceptance_round_id"]
+        ticket = fixture["ticket"]
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory), task_id="r2-3-005-formal-acceptance", acceptance_id="acceptance"
+            )
+            # This fixture intentionally contains only the immutable fields that
+            # the Runner's projection function is allowed to expose.  Keeping
+            # the ticket in the carrier's Runner-private map avoids re-publishing
+            # retained start38 evidence just to test the projection digest.
+            carrier._tickets[round_id] = ticket
+            source_projection, source_digest = carrier.project_child_input(
+                round_id=round_id, kind="source"
+            )
+            platform_projection, platform_digest = carrier.project_child_input(
+                round_id=round_id, kind="platform"
+            )
+            self.assertEqual(source_digest, fixture["expected"]["source_input_digest"])
+            self.assertEqual(platform_digest, fixture["expected"]["platform_input_digest"])
+            self.assertEqual(
+                set(source_projection), {"question", "approved_sources", "source_bundle_digest"}
+            )
+            self.assertEqual(
+                set(platform_projection),
+                {"question", "model_state", "platform_read_scope", "allowed_read_tools"},
+            )
+            self.assertEqual(source_projection["question"], ticket["question"])
+            self.assertEqual(platform_projection["model_state"], ticket["model_state"])
+            carrier.cleanup()
+
+    def test_capability_child_start_derives_host_projection_when_input_fields_are_omitted(self) -> None:
+        from modeling_team.tests.test_r23005_contracts import _ticket
+
+        ticket = _ticket("host-derived")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory),
+                task_id=ticket["task_id"],
+                acceptance_id="acceptance",
+            )
+            carrier.publish_ticket(
+                ticket,
+                coordinator_id="coordinator",
+                owner_revision=ticket["quality_standard_ref"],
+            )
+            carrier.ack_ticket(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                ticket_digest_value=ticket["ticket_digest"],
+            )
+            expected_projection, expected_digest = carrier.project_child_input(
+                round_id=ticket["acceptance_round_id"], kind="source"
+            )
+            arguments = {
+                "acceptance_id": "acceptance",
+                "round_id": ticket["acceptance_round_id"],
+                "kind": "source",
+                "ticket_digest": ticket["ticket_digest"],
+                "request_id": "host-derived-start",
+                "attempt": 0,
+            }
+            endpoint = carrier._capability_endpoints["acceptance"]
+            response = endpoint.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "token": carrier.capability_token("acceptance"),
+                    "method": "tools/call",
+                    "params": {
+                        "name": "acceptance_child_start",
+                        "arguments": arguments,
+                    },
+                }
+            )
+            self.assertNotIn("error", response)
+            data = response["result"]["structuredContent"]["data"]
+            self.assertEqual(data["input_digest"], expected_digest)
+            self.assertEqual(data["acceptance_round_id"], ticket["acceptance_round_id"])
+            self.assertEqual(expected_projection["question"], ticket["question"])
+            legacy_response = endpoint.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "token": carrier.capability_token("acceptance"),
+                    "method": "tools/call",
+                    "params": {
+                        "name": "acceptance_child_start",
+                        "arguments": {
+                            **arguments,
+                            "input_ref": expected_projection,
+                            "input_digest": expected_digest,
+                        },
+                    },
+                }
+            )
+            self.assertNotIn("error", legacy_response)
+            carrier.cleanup()
+
+    def test_capability_child_start_rejects_mismatched_or_cross_bound_input_fields(self) -> None:
+        from modeling_team.tests.test_r23005_contracts import _ticket
+
+        first, second = _ticket("cross-round-1"), _ticket("cross-round-2")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory), task_id=first["task_id"], acceptance_id="acceptance"
+            )
+            for ticket in (first, second):
+                carrier.publish_ticket(
+                    ticket,
+                    coordinator_id="coordinator",
+                    owner_revision=ticket["quality_standard_ref"],
+                )
+                carrier.ack_ticket(
+                    acceptance_id="acceptance",
+                    round_id=ticket["acceptance_round_id"],
+                    ticket_digest_value=ticket["ticket_digest"],
+                )
+            first_source, first_digest = carrier.project_child_input(
+                round_id=first["acceptance_round_id"], kind="source"
+            )
+            # The synthetic ticket helper keeps every projection field stable
+            # across suffixes.  Make the second round's immutable source bundle
+            # distinct so the cross-round binding assertion exercises the Host
+            # round lookup rather than equal-content replay.
+            carrier._tickets[second["acceptance_round_id"]]["source_bundle_digest"] = "2" * 64
+            second_source, second_digest = carrier.project_child_input(
+                round_id=second["acceptance_round_id"], kind="source"
+            )
+            first_platform, first_platform_digest = carrier.project_child_input(
+                round_id=first["acceptance_round_id"], kind="platform"
+            )
+            common = {
+                "acceptance_id": "acceptance",
+                "round_id": first["acceptance_round_id"],
+                "kind": "source",
+                "ticket_digest": first["ticket_digest"],
+                "attempt": 0,
+            }
+            endpoint = carrier._capability_endpoints["acceptance"]
+
+            def call(arguments: dict[str, object], request_id: int) -> dict[str, object]:
+                return endpoint.handle(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "token": carrier.capability_token("acceptance"),
+                        "method": "tools/call",
+                        "params": {
+                            "name": "acceptance_child_start",
+                            "arguments": arguments,
+                        },
+                    }
+                )
+
+            wrong_fabricated = {
+                **common,
+                "request_id": "wrong-fabricated",
+                "input_ref": {
+                    "ticket_digest": first["ticket_digest"],
+                    "acceptance_round_id": first["acceptance_round_id"],
+                    "question_id": "cq-001",
+                },
+                "input_digest": first["ticket_digest"],
+            }
+            self.assertEqual(call(wrong_fabricated, 1)["error"]["code"], -32001)
+
+            cross_round = {
+                **common,
+                "request_id": "wrong-cross-round",
+                "input_ref": second_source,
+                "input_digest": second_digest,
+            }
+            self.assertEqual(call(cross_round, 2)["error"]["code"], -32001)
+
+            cross_kind = {
+                **common,
+                "request_id": "wrong-cross-kind",
+                "input_ref": first_platform,
+                "input_digest": first_platform_digest,
+            }
+            self.assertEqual(call(cross_kind, 3)["error"]["code"], -32001)
+
+            # A partial legacy binding is rejected by the endpoint schema before
+            # dispatch, so it cannot accidentally trigger Host derivation.
+            partial = {
+                **common,
+                "request_id": "wrong-partial",
+                "input_digest": first_digest,
+            }
+            self.assertEqual(call(partial, 4)["error"]["code"], -32001)
+            unknown = {
+                **common,
+                "request_id": "wrong-unknown",
+                "input_hint": "must-not-be-accepted",
+            }
+            self.assertEqual(call(unknown, 5)["error"]["code"], -32001)
+            carrier.cleanup()
+
     def test_capability_get_report_failure_readiness_recycles_once_then_blocks(self) -> None:
         from modeling_team.tests.test_r23005_contracts import _ticket
 
@@ -308,6 +510,9 @@ class R23005BRuntimeTests(unittest.TestCase):
             self.assertIn("attempt-0", text)
             self.assertIn("infrastructure", text)
             self.assertIn("BLOCKED", text)
+            self.assertIn("input_ref", text)
+            self.assertIn("input_digest", text)
+            self.assertIn("omit", text.lower())
             self.assertNotIn("start or control examiner children", text)
         self.assertIn("opaque child", instructions)
         self.assertIn("fixed not-ready", " ".join(instructions.split()))
