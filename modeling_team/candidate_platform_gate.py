@@ -20,10 +20,31 @@ CANDIDATE_PLATFORM_GATE_SCHEMA = "r2-3-005-candidate-platform-gate/v1"
 CANDIDATE_PLATFORM_GATE_ENV = "FORMAL_CANDIDATE_GATE_PATH"
 CANDIDATE_PLATFORM_GATE_MOUNT = "/opt/candidate-gate/state.json"
 CANDIDATE_PLATFORM_GATE_DIR_MOUNT = "/opt/candidate-gate"
+CANDIDATE_RECEIPT_REGISTERED_KIND = "candidate-receipt-registered"
+CANDIDATE_RECEIPT_REGISTERED_SCHEMA = "r2-3-005-candidate-receipt-registered/v1"
 
 
 class CandidatePlatformGateError(RuntimeError):
     """The Runner-owned platform gate carrier is invalid or unavailable."""
+
+
+def candidate_receipt_registered_notice(
+    identity: Mapping[str, Any], accepted_receipt_delivery_id: str
+) -> dict[str, str]:
+    """Build the bounded fact sent directly to Protocol after gate opening."""
+
+    if not isinstance(accepted_receipt_delivery_id, str) or not accepted_receipt_delivery_id:
+        raise CandidatePlatformGateError("accepted receipt delivery identity is invalid")
+    required = ("run_id", "original_delivery_id", "candidate_digest")
+    if any(not isinstance(identity.get(field), str) or not identity[field] for field in required):
+        raise CandidatePlatformGateError("candidate receipt registration identity is invalid")
+    return {
+        "schema_version": CANDIDATE_RECEIPT_REGISTERED_SCHEMA,
+        "run_id": identity["run_id"],
+        "original_delivery_id": identity["original_delivery_id"],
+        "accepted_receipt_delivery_id": accepted_receipt_delivery_id,
+        "candidate_digest": identity["candidate_digest"],
+    }
 
 
 class CandidatePlatformGate:

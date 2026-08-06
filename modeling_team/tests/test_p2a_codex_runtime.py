@@ -40,7 +40,7 @@ FROZEN_GLOBAL_SURFACES = {
     # hash below remains byte-frozen.  The Runner now advertises the formal
     # delivery-bound Coordinator draft path, terminal-handoff prompt guard,
     # and exact Prompt-E delivery/CQ binding for the formal Runner.
-    "modeling_team/runner.py": "8ce15e77ae652848e954964a35fde3329a7208c08098ce71a0e8ba9a662ed83c",
+    "modeling_team/runner.py": "1ee644ecef700db83d0bc170c14f4e4161b74478fb5d938d8e205a0e3f18c3d6",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
     "modeling_team/runtimes/codex.py": "2506f7652c5bce2364b559d850205e6b3a705a5ec91057d0c7c65ebbd38f9ee9",

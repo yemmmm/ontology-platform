@@ -38,7 +38,12 @@ from .candidate_progress import (
     validate_formal_conflict,
     validate_formal_receipt,
 )
-from .candidate_platform_gate import CandidatePlatformGate
+from .candidate_platform_gate import (
+    CANDIDATE_RECEIPT_REGISTERED_KIND,
+    CandidatePlatformGate,
+    CandidatePlatformGateError,
+    candidate_receipt_registered_notice,
+)
 from .candidate_publication import (
     CandidatePublicationError,
     StagedCandidatePublication,
@@ -145,6 +150,7 @@ class TeamRunner:
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
         self._candidate_platform_gate: CandidatePlatformGate | None = None
+        self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
         # One typed Protocol response is allowed for each active original
         # Modeling delivery.  The set is Runner-owned so a capability retry
         # cannot emit a second receipt/conflict for the same delivery.
@@ -401,6 +407,7 @@ class TeamRunner:
             else None
         )
         self._protocol_candidate_responses = {}
+        self._candidate_receipt_wakeup_sent = set()
         self._formal_failure_latched = False
         acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
         source_materials: dict[str, Path] = {}
@@ -2154,6 +2161,114 @@ class TeamRunner:
         # always supplies its concrete thread id.
         return f"runtime-agent:{protocol_agent_id}"
 
+    def _notify_candidate_receipt_registered(
+        self,
+        identity: Any,
+        accepted_receipt_delivery_id: Any,
+    ) -> None:
+        """Wake the same Protocol Runtime thread once after the gate opens."""
+
+        progress = self._candidate_progress
+        gate = self._candidate_platform_gate
+        if (
+            gate is None
+            or progress is None
+            or self._formal_failure_latched
+            or progress.paused
+            or progress.timeout_latched
+            or progress.terminal_failure_latched
+        ):
+            return
+        if not isinstance(accepted_receipt_delivery_id, str) or not accepted_receipt_delivery_id:
+            gate.close("receipt_notification_failed")
+            self._append_evidence(
+                "formal-candidate-progress",
+                {
+                    "event": "candidate-receipt-notification-failed",
+                    "classification": "platform-contract",
+                    "reason_code": "accepted-receipt-delivery-id-missing",
+                },
+            )
+            self._latch_formal_candidate_failure(
+                "platform-contract", "candidate-receipt-wakeup-delivery-id-missing"
+            )
+            raise TeamConfigurationError("candidate receipt registration wakeup failed")
+        original_delivery_id = getattr(identity, "original_delivery_id", None)
+        wakeup_key = (accepted_receipt_delivery_id, original_delivery_id)
+        if wakeup_key in self._candidate_receipt_wakeup_sent:
+            return
+        try:
+            notice = candidate_receipt_registered_notice(
+                identity.__dict__ if hasattr(identity, "__dict__") else identity,
+                accepted_receipt_delivery_id,
+            )
+        except CandidatePlatformGateError as exc:
+            gate.close("receipt_notification_failed")
+            self._append_evidence(
+                "formal-candidate-progress",
+                {
+                    "event": "candidate-receipt-notification-failed",
+                    "classification": "platform-contract",
+                    "reason_code": "candidate-receipt-notice-invalid",
+                },
+            )
+            self._latch_formal_candidate_failure(
+                "platform-contract", "candidate-receipt-wakeup-notice-invalid"
+            )
+            raise TeamConfigurationError("candidate receipt registration wakeup failed") from exc
+        self._candidate_receipt_wakeup_sent.add(wakeup_key)
+        delivery = RuntimeDelivery(
+            sender_id="runner/candidate-gate",
+            recipient_id=identity.protocol_agent_id,
+            kind=CANDIDATE_RECEIPT_REGISTERED_KIND,
+            text=json.dumps(notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            delivery_id=f"candidate-receipt-registered:{accepted_receipt_delivery_id}",
+            expects_reply=False,
+            reply_to_delivery_id=accepted_receipt_delivery_id,
+        )
+        try:
+            receipt = self.adapter.send_message(identity.protocol_agent_id, delivery)
+        except Exception as exc:
+            gate.close("receipt_notification_failed")
+            self._append_evidence(
+                "formal-candidate-progress",
+                {
+                    "event": "candidate-receipt-notification-failed",
+                    "classification": "runtime/infrastructure",
+                    "reason_code": "candidate-receipt-wakeup-dispatch-failed",
+                },
+            )
+            self._latch_formal_candidate_failure(
+                "runtime/infrastructure", "candidate-receipt-wakeup-dispatch-failed"
+            )
+            raise TeamConfigurationError("candidate receipt registration wakeup failed") from exc
+        if not isinstance(getattr(receipt, "turn_id", None), str) or not receipt.turn_id:
+            gate.close("receipt_notification_failed")
+            self._append_evidence(
+                "formal-candidate-progress",
+                {
+                    "event": "candidate-receipt-notification-failed",
+                    "classification": "platform-contract",
+                    "reason_code": "candidate-receipt-wakeup-turn-binding-missing",
+                },
+            )
+            self._latch_formal_candidate_failure(
+                "platform-contract", "candidate-receipt-wakeup-turn-binding-missing"
+            )
+            raise TeamConfigurationError("candidate receipt registration wakeup failed")
+        self._append_evidence(
+            "formal-candidate-progress",
+            {
+                "event": "candidate-receipt-registered",
+                "run_id": notice["run_id"],
+                "original_delivery_id": notice["original_delivery_id"],
+                "accepted_receipt_delivery_id": notice["accepted_receipt_delivery_id"],
+                "candidate_digest": notice["candidate_digest"],
+                "dispatch_mode": getattr(receipt, "mode", None),
+                "turn_id": receipt.turn_id,
+            },
+        )
+
     def _observe_formal_candidate_delivery(self, delivery: Any) -> str | None:
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None or not self.run:
@@ -2187,7 +2302,14 @@ class TeamRunner:
                         else "protocol_conflict",
                     )
                 elif result == "accepted" and identity is not None:
-                    self._candidate_platform_gate.open(identity.__dict__)
+                    if self._candidate_progress.paused or self._formal_failure_latched:
+                        self._candidate_platform_gate.close("receipt_notification_suppressed")
+                    else:
+                        self._candidate_platform_gate.open(identity.__dict__)
+                        self._notify_candidate_receipt_registered(
+                            identity,
+                            getattr(delivery, "delivery_id", None),
+                        )
             self._append_evidence(
                 "formal-candidate-progress",
                 {

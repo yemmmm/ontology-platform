@@ -10,6 +10,7 @@ from modeling_team.candidate_platform_gate import (
 )
 from modeling_team.protocol_mcp_launch import protocol_mcp_launch_spec
 from modeling_team.runtimes.codex import _Agent, CodexRuntimeAdapter
+from modeling_team.runtimes.base import RuntimeDelivery
 from modeling_team.contracts import repository_root
 
 
@@ -141,3 +142,19 @@ def test_codex_nonformal_v2_has_no_candidate_gate_env_or_mount(monkeypatch, tmp_
     adapter._candidate_platform_gate_enabled = False
     command = adapter.namespace_command(agent)
     assert "/opt/candidate-gate" not in command
+
+
+def test_codex_direct_delivery_preserves_receipt_wakeup_kind_and_fact() -> None:
+    delivery = RuntimeDelivery(
+        sender_id="runner/candidate-gate",
+        recipient_id="protocol",
+        kind="candidate-receipt-registered",
+        text='{"schema_version":"r2-3-005-candidate-receipt-registered/v1"}',
+        delivery_id="candidate-receipt-registered:receipt-1",
+        reply_to_delivery_id="receipt-1",
+    )
+    rendered = json.loads(CodexRuntimeAdapter._delivery_input(delivery)[0]["text"])
+    assert rendered["kind"] == "candidate-receipt-registered"
+    assert rendered["text"] == delivery.text
+    assert rendered["delivery_id"] == delivery.delivery_id
+    assert rendered["reply_to_delivery_id"] == delivery.reply_to_delivery_id

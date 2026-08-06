@@ -14,7 +14,11 @@ from modeling_team.candidate_progress import (
     FormalCandidateRoutingError,
     formal_candidate_digests,
 )
-from modeling_team.candidate_platform_gate import CandidatePlatformGate
+from modeling_team.candidate_platform_gate import (
+    CANDIDATE_RECEIPT_REGISTERED_KIND,
+    CandidatePlatformGate,
+)
+from modeling_team.contracts import TeamConfigurationError
 from modeling_team.interventions import IssueResolution
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
 from modeling_team.runner import TeamRunner
@@ -684,6 +688,64 @@ def test_runner_opens_platform_gate_only_after_registered_receipt(tmp_path: Path
     assert json.loads(gate.state_path.read_text())["state"] == "open"
 
 
+def test_runner_wakes_protocol_once_after_accepted_receipt_and_not_on_duplicate_drain(
+    tmp_path: Path,
+) -> None:
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    gate = CandidatePlatformGate.ensure(tmp_path / "run" / "candidate-gate")
+    runner._candidate_platform_gate = gate
+    original = runner.transport.send(
+        "modeling", "protocol", json.dumps(_candidate()), expects_reply=True
+    )
+    runner.drain()
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    accepted = runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(
+            {
+                "status": "accepted",
+                "candidate_revision": identity.candidate_revision,
+                "semantic_digest": identity.semantic_digest,
+                "candidate_digest": identity.candidate_digest,
+            }
+        ),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    wakeups = [
+        delivery
+        for recipient, delivery in adapter.sent
+        if recipient == "protocol" and delivery.kind == CANDIDATE_RECEIPT_REGISTERED_KIND
+    ]
+    assert len(wakeups) == 1
+    assert wakeups[0].reply_to_delivery_id == accepted.delivery_id
+    notice = json.loads(wakeups[0].text)
+    assert set(notice) == {
+        "schema_version",
+        "run_id",
+        "original_delivery_id",
+        "accepted_receipt_delivery_id",
+        "candidate_digest",
+    }
+    assert notice["run_id"] == "run-1"
+    assert notice["original_delivery_id"] == identity.original_delivery_id
+    assert notice["accepted_receipt_delivery_id"] == accepted.delivery_id
+    assert notice["candidate_digest"] == identity.candidate_digest
+
+    runner.drain()
+    assert len(
+        [
+            delivery
+            for recipient, delivery in adapter.sent
+            if recipient == "protocol" and delivery.kind == CANDIDATE_RECEIPT_REGISTERED_KIND
+        ]
+    ) == 1
+
+
 def test_runner_keeps_platform_gate_closed_after_protocol_conflict(tmp_path: Path) -> None:
     adapter = _FormalProgressAdapter()
     runner = _formal_progress_runner(tmp_path, adapter)
@@ -704,6 +766,79 @@ def test_runner_keeps_platform_gate_closed_after_protocol_conflict(tmp_path: Pat
     )
     runner.drain()
     assert json.loads(gate.state_path.read_text())["state"] == "closed"
+    assert not any(
+        delivery.kind == CANDIDATE_RECEIPT_REGISTERED_KIND
+        for _, delivery in adapter.sent
+    )
+
+
+def test_legacy_without_platform_gate_does_not_wake_protocol(tmp_path: Path) -> None:
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    runner._candidate_platform_gate = None
+    original = runner.transport.send(
+        "modeling", "protocol", json.dumps(_candidate()), expects_reply=True
+    )
+    runner.drain()
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(
+            {
+                "status": "accepted",
+                "candidate_revision": identity.candidate_revision,
+                "semantic_digest": identity.semantic_digest,
+                "candidate_digest": identity.candidate_digest,
+            }
+        ),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert not any(
+        delivery.kind == CANDIDATE_RECEIPT_REGISTERED_KIND
+        for _, delivery in adapter.sent
+    )
+
+
+class _WakeupFailureAdapter(_FormalProgressAdapter):
+    def send_message(self, recipient: str, delivery: RuntimeDelivery):
+        if delivery.kind == CANDIDATE_RECEIPT_REGISTERED_KIND:
+            raise RuntimeError("wakeup transport failed")
+        return super().send_message(recipient, delivery)
+
+
+def test_receipt_wakeup_failure_closes_gate_and_latches_runtime_failure(tmp_path: Path) -> None:
+    adapter = _WakeupFailureAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    gate = CandidatePlatformGate.ensure(tmp_path / "run" / "candidate-gate")
+    runner._candidate_platform_gate = gate
+    original = runner.transport.send(
+        "modeling", "protocol", json.dumps(_candidate()), expects_reply=True
+    )
+    runner.drain()
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(
+            {
+                "status": "accepted",
+                "candidate_revision": identity.candidate_revision,
+                "semantic_digest": identity.semantic_digest,
+                "candidate_digest": identity.candidate_digest,
+            }
+        ),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    with pytest.raises(TeamConfigurationError, match="registration wakeup failed"):
+        runner.drain()
+    assert json.loads(gate.state_path.read_text())["state"] == "closed"
+    assert runner._formal_failure_latched is True
 
 
 def test_issue_pending_latches_candidate_before_recovery_turn_overwrites_state(tmp_path: Path) -> None:
