@@ -2168,3 +2168,37 @@ already recorded attempts.
   `runtime/infrastructure` for the invocation environment only and is resolved by `PYTHONPATH=.`; it does not
   change the product result. This round is not a live Runtime/L0 acceptance result and does not authorize a
   semantic start; the later real R2.3-005 run must still verify actual process/PID/environment evidence.
+
+## 2026-08-07 Start41 repair (Protocol Luna fallback and command-approval decline) — Independent round 2
+
+### Scope, baseline, and safety boundary
+
+- Authority: the Start41 failure and repair gate recorded in
+  `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`.
+  This round covers only the uncommitted `modeling_team/agent-packages/protocol/package.yaml`,
+  `modeling_team/runtimes/codex.py`, and focused test changes at baseline
+  `c4e78598983b27c1654b7809a798c841a9c949d3`.
+- The check is deterministic and read-only: no live model call, semantic start, Project/Ontology write,
+  remote service call, or credential publication was performed. Existing unrelated delivery-record edits
+  were preserved.
+
+### Executed commands and results
+
+1. `PYTHONPATH=. pytest modeling_team/tests/test_deepseek_codex_runtime.py -q` — **PASS**, `14 passed in 0.75s`.
+2. `PYTHONPATH=. pytest modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py -q` — **PASS**, `103 passed in 2.64s`.
+3. A `PYTHONPATH=. python3` temporary-run probe loaded all four formal packages, parsed every generated `config.toml`, and captured process-factory environments — **PASS**. Protocol resolves exactly `gpt-5.6-luna/openai/max` and its env keys are exactly `CODEX_HOME`, `HOME`, `PATH`, `TERM`, `LANG`, `LC_ALL` (no `DEEPSEEK_API_KEY`); Coordinator/Modeling/Acceptance and both Source/Platform Examiner paths retain DeepSeek Flash/max and inject exactly the expected seven-key environment.
+4. A `PYTHONPATH=. python3` app-server probe sent `item/commandExecution/requestApproval` with command/cwd/reason/value secrets, checked the JSON-RPC response, then delivered `turn/completed` — **PASS**. The response is exactly `{"jsonrpc":"2.0","id":41,"result":{"decision":"decline"}}`; the Agent returns to `idle` with the completed turn recorded, and both `app-server-events.jsonl` and `command-approval-events.jsonl` contain only sanitized metadata (no raw command, cwd, reason, or value).
+5. `backend/.venv/bin/ruff check modeling_team/runtimes/codex.py modeling_team/tests/test_deepseek_codex_runtime.py` plus `git diff --check -- modeling_team/runtimes/codex.py modeling_team/agent-packages/protocol/package.yaml modeling_team/tests/test_deepseek_codex_runtime.py` — **PASS**, Ruff reported `All checks passed!` and diff check was clean.
+
+### Acceptance mapping and disposition
+
+- The declarative Protocol override is role-local: generated TOML has no DeepSeek provider block and the
+  process receives no DeepSeek key, while all other persistent roles and both Examiner kinds keep the
+  DeepSeek Flash/max provider and key injection. TOML parsing and exact environment-key assertions passed.
+- Built-in command approval now follows the app-server JSON-RPC request/response contract and fail-closes
+  with `decision=decline`; the subsequent turn-completion event is still processed. Evidence records method,
+  parameter names, and the decline decision only; command/cwd/reason/value contents are absent.
+- **Overall: PASS.** No remaining defect or repair-agent request. The earlier Start41 live result remains
+  historically `collaboration/routing,false`; this round verifies its narrow repair only and is not a live
+  Runtime/L0 or semantic-quality acceptance. After normal review/commit and authorization handling, the next
+  real run may proceed; no additional test-induced start is authorized here.

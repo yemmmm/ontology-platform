@@ -12,5 +12,8 @@ permissions:
 runtime:
   codex:
     sandbox: workspace-write
+    model: gpt-5.6-luna
+    model_provider: openai
+    model_reasoning_effort: max
 task_input:
   required: [task, allowed_sources, roster]

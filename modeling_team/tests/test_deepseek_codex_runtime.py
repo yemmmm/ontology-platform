@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,7 +51,9 @@ def _agent(root: Path, role: str) -> _Agent:
     return _Agent(role, _load_package(repository_root(), role), home, work, skills)
 
 
-def test_formal_persistent_configs_and_process_env_cover_all_four_roles(monkeypatch, tmp_path: Path) -> None:
+def test_formal_persistent_configs_and_process_env_select_protocol_fallback_without_spillover(
+    monkeypatch, tmp_path: Path
+) -> None:
     repo = repository_root()
     run = _formal_run(tmp_path / "run")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "process-secret")
@@ -73,31 +77,36 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(monkeypa
         agent = _agent(tmp_path, role)
         adapter._write_config(run, agent)
         config = (agent.home / "config.toml").read_text(encoding="utf-8")
-        assert 'model = "deepseek-v4-flash"' in config
-        assert 'model_provider = "deepseek"' in config
-        assert 'name = "DeepSeek"' in config
-        assert 'base_url = "https://api.deepseek.com/"' in config
-        assert 'wire_api = "responses"' in config
-        assert 'env_key = "DEEPSEEK_API_KEY"' in config
         assert 'model_reasoning_effort = "max"' in config
-        assert '[shell_environment_policy]' in config
-        assert 'inherit = "core"' in config
-        assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
         assert "process-secret" not in config
         adapter._start_process(agent)
+        env = calls[-1][1]["env"]
+        if role == "protocol":
+            assert 'model = "gpt-5.6-luna"' in config
+            assert 'model_provider = "openai"' in config
+            assert 'model = "deepseek-v4-flash"' not in config
+            assert 'model_provider = "deepseek"' not in config
+            assert 'name = "DeepSeek"' not in config
+            assert "DEEPSEEK_API_KEY" not in env
+        else:
+            assert 'model = "deepseek-v4-flash"' in config
+            assert 'model_provider = "deepseek"' in config
+            assert 'name = "DeepSeek"' in config
+            assert 'base_url = "https://api.deepseek.com/"' in config
+            assert 'wire_api = "responses"' in config
+            assert 'env_key = "DEEPSEEK_API_KEY"' in config
+            assert '[shell_environment_policy]' in config
+            assert 'inherit = "core"' in config
+            assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
+            assert env["DEEPSEEK_API_KEY"] == "process-secret"
 
     assert len(calls) == 4
     for command, kwargs in calls:
         assert "process-secret" not in " ".join(command)
-        assert kwargs["env"] == {
-            "CODEX_HOME": str(kwargs["env"]["CODEX_HOME"]),
-            "HOME": str(kwargs["env"]["HOME"]),
-            "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "TERM": "xterm-256color",
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "DEEPSEEK_API_KEY": "process-secret",
-        }
+        assert kwargs["env"]["PATH"] == "/usr/local/bin:/usr/bin:/bin"
+        assert kwargs["env"]["TERM"] == "xterm-256color"
+        assert kwargs["env"]["LANG"] == "C.UTF-8"
+        assert kwargs["env"]["LC_ALL"] == "C.UTF-8"
 
 
 @pytest.mark.parametrize("kind", ["source", "platform"])
@@ -213,6 +222,50 @@ def test_examiner_bwrap_inherits_minimal_parent_env_without_clearenv(monkeypatch
     )
     assert "--clearenv" not in command
     assert "DEEPSEEK_API_KEY" not in command
+
+
+def test_command_approval_is_declined_with_sanitized_evidence_and_no_shell_execution(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "run"
+    root.mkdir()
+    agent = _agent(tmp_path, "protocol")
+    agent.process = SimpleNamespace(stdin=StringIO())
+    adapter = CodexRuntimeAdapter(repository_root=repository_root())
+    adapter._run_root = root
+    secret = "do-not-retain-command-or-reason"
+
+    adapter._notification(
+        agent,
+        {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "thread-secret",
+                "turnId": "turn-secret",
+                "itemId": "item-secret",
+                "command": f"/bin/sh -c {secret}",
+                "cwd": "/private/cwd",
+                "reason": secret,
+            },
+        },
+    )
+
+    response = json.loads(agent.process.stdin.getvalue())
+    assert response == {"jsonrpc": "2.0", "id": 41, "result": {"decision": "decline"}}
+    evidence = (root / "evidence" / "command-approval-events.jsonl").read_text(
+        encoding="utf-8"
+    )
+    event = json.loads(evidence)
+    assert event == {
+        "agent_id": "protocol",
+        "decision": "decline",
+        "method": "item/commandExecution/requestApproval",
+        "param_keys": ["command", "cwd", "itemId", "reason", "threadId", "turnId"],
+    }
+    assert secret not in evidence
+    assert "/private/cwd" not in evidence
 
 
 @pytest.mark.parametrize(

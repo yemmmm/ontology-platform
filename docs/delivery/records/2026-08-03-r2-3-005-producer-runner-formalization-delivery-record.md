@@ -3544,3 +3544,48 @@ the formal builder, or starting another real run before authorization.
 - The reviewed retarget baseline was committed as `6104952` (`Route modeling team through DeepSeek
   Flash`). Unrelated user-owned `AGENTS.md` and `CLAUDE.md` modifications remain unstaged and
   excluded; the real run must use a separate clean worktree at this commit.
+
+### 2026-08-07 — Start41 DeepSeek run reached retrieval then deadlocked on command approval
+
+- Start41 `r23005-real-20260807-deepseek-start41` used baseline
+  `7c84cf2e2c3f87f968e90f0ed479011d44139cedd8b36516e9b5f6a41fb80d51`, the exact r3
+  carrier, and the refreshed ignored overlay `r23005-start41-deepseek-r3` bound to the current Task
+  digest. The first temporary-worktree and missing-Delivery-key probes failed before reservation;
+  the actual main-checkout run then recorded reservation and semantic start.
+- Runtime evidence directly confirmed Coordinator, Modeling, Protocol, and Acceptance were each
+  configured as `deepseek-v4-flash/deepseek/max`. Modeling published the full unchanged r3
+  candidate with explicit unknowns. Protocol returned the exact accepted receipt, created the
+  Build Session/Lease, completed modeling batches, semantic validation, semantic reasoning, and 14
+  governed retrieval chains.
+- After the platform stages, Protocol requested `item/commandExecution/requestApproval`. The
+  adapter handles MCP elicitation but had no fail-closed response for built-in command approval, so
+  the turn stopped making progress. The run was interrupted only after the event stream stayed at
+  that request; no semantic PASS or Acceptance verdict is claimed.
+- Cleanup completed with four private credentials destroyed, Acceptance aborted with zero active
+  child residue, Sessions/Lease terminal, all Project/Protocol/admin keys revoked, and the non-empty
+  failed-written Project retained. Ledger terminal classification is
+  `collaboration/routing,false`; replay reached exhausted `40/40/0`.
+- The user's ten-start authorization is counted from start41. After start41 consumed the first
+  slot, the strict ledger accepted one `+9` budget event, raising the cap to 49 with nine remaining.
+  The next-start gate is a narrow Runtime decline for every built-in command approval plus a
+  role-local Protocol fallback to `gpt-5.6-luna/max`; all other roles and Examiner children remain
+  DeepSeek Flash/max.
+
+### 2026-08-07 — Start41 narrow Runtime repair independently accepted
+
+- The Protocol package now declaratively selects `gpt-5.6-luna/openai/max`. The shared adapter applies
+  that override only to Protocol and omits `DEEPSEEK_API_KEY` from its process environment. Coordinator,
+  Modeling, Acceptance, and both private Examiner kinds remain `deepseek-v4-flash/deepseek/max`.
+- The adapter now fail-closes every built-in `item/commandExecution/requestApproval` request with the
+  documented app-server response `{"decision":"decline"}`. It executes no shell command, continues to
+  process the subsequent turn lifecycle, and retains only parameter names plus the decline decision in
+  Runtime evidence; command, cwd, reason, and value contents are excluded.
+- Developer verification passed 123 related tests and Ruff. Independent Tester Round 2 passed 14 focused
+  tests plus 103 Runtime/isolation/contract tests, exact TOML/environment probes for all persistent and
+  Examiner paths, the approval-response/continued-turn probe, Ruff, and diff checks. No live model call or
+  semantic start occurred during deterministic verification.
+- The full `modeling_team/tests` run passed 497 tests, 1 skipped, and 195 subtests except for the already
+  stale byte-freeze assertion in `test_p2a_codex_runtime.py`, whose expected shared-adapter hash predates
+  the committed DeepSeek baseline. That unrelated frozen expectation is not weakened or rewritten here.
+- This repair does not reinterpret Start41. After commit, the exact clean baseline must be bound in the
+  strict-ledger repair authorization before the next real start is reserved.

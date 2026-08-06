@@ -79,6 +79,29 @@ _DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_PROVIDER = "deepseek"
 
 
+def _codex_package_model_override(package: AgentPackage) -> tuple[str, str, str] | None:
+    """Return a safe declarative package model override, when one is configured."""
+
+    runtime = getattr(package, "runtime", None)
+    codex = runtime.get("codex") if isinstance(runtime, dict) else None
+    if not isinstance(codex, dict):
+        return None
+    values = tuple(codex.get(name) for name in ("model", "model_provider", "model_reasoning_effort"))
+    if all(value is None for value in values):
+        return None
+    if any(
+        not isinstance(value, str)
+        or not value
+        or any(char in value for char in '\"\r\n')
+        for value in values
+    ):
+        raise CodexRuntimeError("Codex package model override is malformed")
+    model, provider, reasoning = values
+    if provider != "openai":
+        raise CodexRuntimeError("Codex package model override has an unsupported provider")
+    return model, provider, reasoning
+
+
 def _deepseek_provider_config_lines() -> list[str]:
     """Return the secret-free Codex projection for the active DeepSeek provider."""
 
@@ -1288,6 +1311,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)
         deepseek_enabled = self._is_formal_acceptance_run(run) or self._coordination_enabled
+        model_override = _codex_package_model_override(agent.package)
         if deepseek_enabled:
             # Resolve before staging any private artifact.  start_roster also performs
             # this check before entering its first process-launch loop.
@@ -1416,7 +1440,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "required = true",
                 ]
             )
-        if deepseek_enabled:
+        if model_override is not None:
+            model, provider, reasoning = model_override
+            lines = [
+                f'model = "{model}"',
+                f'model_provider = "{provider}"',
+                f'model_reasoning_effort = "{reasoning}"',
+                *lines,
+            ]
+        elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
             # Keep scalar settings before the first TOML table; append provider and
             # shell-policy tables after the existing MCP tables.
@@ -1659,9 +1691,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return self._run_root / "transport" / "broker"
 
     def _start_process(self, agent: _Agent) -> subprocess.Popen[str]:
+        model_override = _codex_package_model_override(agent.package)
         api_key = (
             self._resolve_deepseek_api_key()
-            if self._coordination_enabled or getattr(self, "_deepseek_enabled", False)
+            if (self._coordination_enabled or getattr(self, "_deepseek_enabled", False))
+            and model_override is None
             else None
         )
         command = self.namespace_command(agent)
@@ -2180,8 +2214,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "method": method,
                     "has_request_id": "id" in value,
                     "param_keys": sorted(params) if isinstance(params, dict) else [],
+                    **(
+                        {"action": "decline", "decision": "decline"}
+                        if method == "item/commandExecution/requestApproval" and "id" in value
+                        else {}
+                    ),
                 },
             )
+        if method == "item/commandExecution/requestApproval" and "id" in value:
+            self._append_runtime_evidence(
+                "command-approval-events",
+                {
+                    "agent_id": agent.agent_id,
+                    "method": method,
+                    "decision": "decline",
+                    "param_keys": sorted(params) if isinstance(params, dict) else [],
+                },
+            )
+            self._respond_server_request(agent, value["id"], {"decision": "decline"})
+            return
         if method == "item/tool/call" and "id" in value and isinstance(params, dict):
             self._respond_dynamic_tool(agent, value["id"], params)
             return
