@@ -3541,3 +3541,6 @@ the formal builder, or starting another real run before authorization.
   diff is confined to the shared Codex adapter, its focused tests and delivery docs; the 103 related
   regressions provide the operative boundary evidence. No live model call or semantic start has
   yet occurred under this baseline.
+- The reviewed retarget baseline was committed as `6104952` (`Route modeling team through DeepSeek
+  Flash`). Unrelated user-owned `AGENTS.md` and `CLAUDE.md` modifications remain unstaged and
+  excluded; the real run must use a separate clean worktree at this commit.
