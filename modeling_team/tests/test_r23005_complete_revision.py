@@ -289,6 +289,31 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         self.assertIn("Complete the full platform-translation decision before any response", protocol_text)
         self.assertIn("exactly one of those two responses", protocol_text)
 
+    def test_c95_modeling_waits_for_bound_protocol_gates_and_coordinator_uses_exact_pause_shape(self) -> None:
+        root = repository_root()
+        modeling_instructions = (
+            root / "modeling_team/agent-packages/modeling/instructions.md"
+        ).read_text(encoding="utf-8")
+        for phrase in (
+            "elapsed time, repeated wait/poll",
+            "absence of a final result alone is not `runtime_recovery`",
+            "explicit tool/Runtime error",
+            "Never resend or rebuild the retained",
+        ):
+            self.assertIn(phrase, modeling_instructions)
+        coordinator_instructions = (
+            root / "modeling_team/agent-packages/coordinator/instructions.md"
+        ).read_text(encoding="utf-8")
+        for phrase in (
+            "argument object must contain exactly",
+            "`action`, `issue_id`, `reporter_id`, and `control_epoch`",
+            "do not include `reason`",
+            "retry that same pause once",
+            "do not claim that the Runner resolved the issue",
+            "exact persisted guidance or repair fields",
+        ):
+            self.assertIn(phrase, coordinator_instructions)
+
     def test_c96_retained_partial_revision_is_rejected_without_cross_delivery_merge(self) -> None:
         partial = _start5_partial_revision()
         before = copy.deepcopy(partial)

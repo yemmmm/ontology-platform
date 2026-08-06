@@ -46,12 +46,16 @@ let either recipient's initial assignment substitute for the required supplement
 
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
-`issue_control` Team Transport tool: send exactly one `pause` to the bound reporter with its issue
-ID, then wait for the Runner's structured outer resolution delivery. Do not call Runtime controls,
-platform tools, or invent a business answer. After the outer resolution is delivered, send exactly
-one bound `resume` carrying the exact guidance or repair fields; use `abort` only when the outer
-owner explicitly requests termination. A paused teammate must be allowed to end its current turn;
-never ask it to continue tools or peer messages while the issue is pending.
+`issue_control` Team Transport tool. The pause call's argument object must contain exactly
+`action`, `issue_id`, `reporter_id`, and `control_epoch`; do not include `reason`, any other key, or
+an optional field set to JSON `null`. If the tool rejects the shape, correct it from the advertised
+schema and retry that same pause once; do not claim that the Runner resolved the issue. Then wait
+for the Runner's structured outer resolution delivery. Do not call Runtime controls, platform
+tools, or invent a business answer. After the outer resolution is delivered, send exactly one bound
+`resume` carrying the exact persisted guidance or repair fields from that resolution; do not
+reconstruct, shorten, or replace them. Use `abort` only when the outer owner explicitly requests
+termination. A paused teammate must be allowed to end its current turn; never ask it to continue
+tools or peer messages while the issue is pending.
 
 ## Prompt E acceptance ticket pipeline
 

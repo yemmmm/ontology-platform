@@ -218,6 +218,67 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
         self.assertEqual(runner.received, [{"action": "status"}])
         self.assertEqual(runner.observed, [[{"type": "accepted"}]])
 
+    def test_foreground_loop_rejects_missing_action_and_keeps_run_for_next_input(self) -> None:
+        class Runner:
+            def __init__(self) -> None:
+                self.received: list[dict[str, object]] = []
+                self.cleaned = 0
+
+            def drain(self):
+                return []
+
+            def receive_outer(self, message):
+                self.received.append(message)
+                return [{"type": "accepted"}]
+
+            def cleanup(self):
+                self.cleaned += 1
+
+        runner = Runner()
+        emitted: list[list[dict[str, object]]] = []
+        stream = StringIO('{"type":"issue-resolution"}\n{"action":"status"}\n')
+        _foreground_event_loop(
+            runner,
+            stream,
+            emitted.append,
+            select_fn=lambda *_args: ([stream], [], []),
+        )
+        self.assertEqual(
+            emitted,
+            [
+                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
+                [{"type": "accepted"}],
+            ],
+        )
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(runner.cleaned, 0)
+
+    def test_classify_failure_requires_explicit_requirement_before_ledger_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stderr = StringIO()
+            with (
+                patch.object(team_main, "repository_root", return_value=root),
+                patch.object(
+                    team_main.sys,
+                    "argv",
+                    [
+                        "modeling-team",
+                        "classify-failure",
+                        "--run-id",
+                        "start29",
+                        "--classification",
+                        "collaboration/routing",
+                    ],
+                ),
+                patch.object(team_main.sys, "stderr", stderr),
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    team_main.main()
+            self.assertEqual(raised.exception.code, 2)
+            self.assertEqual(list((root / "workspaces").rglob("*")) if (root / "workspaces").exists() else [], [])
+            self.assertIn("the following arguments are required: --requirement-id", stderr.getvalue())
+
     def test_foreground_loop_rejects_early_issue_resolution_then_retries_after_pause(self) -> None:
         class Ledger:
             state = "reported"

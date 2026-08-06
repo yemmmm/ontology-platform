@@ -1672,6 +1672,7 @@ modeling-quality and Acceptance test.
 | C114 | Modeling capability Runtime reachability | When Modeling advertises the typed publication operation, its exact private host socket is bind-mounted at `/agent/home/runner-capability.sock`; roles without that operation receive no such mount |
 | C115 | Formal foreground EOF fail-closed | EOF before `TERMINAL_REPORT_COMPLETE` records `collaboration/routing`, returns non-zero, and cleans once; legacy non-formal EOF and completed terminal behavior remain compatible |
 | C116 | Protocol delivery-bound receipt/conflict | Protocol supplies only its identity plus an active original `delivery_id`; Runner binds the retained exact candidate and returns canonical receipt/conflict JSON, while repeat, foreign, stale, or mismatched calls fail closed without transport or platform mutation |
+| C117 | Cooperative recovery input resilience | Modeling does not escalate elapsed Protocol work alone; Coordinator pause uses the exact four-field shape; a missing/unknown foreground action is retryably rejected without cleanup; classify-failure requires an explicit requirement ledger |
 | I24 | Next live continuation | A fresh run uses the tracked authoritative Task plus exact r3 overlay, reaches normal Protocol receipt/platform work and then both independent Acceptance rounds without Modeling shell extraction or copied Task drift |
 
 The canonical ledger is read-only throughout developer testing. The newly granted `+5` is pending because the ledger
@@ -1747,3 +1748,17 @@ already recorded attempts.
 - Focused verification passed **81 tests and 18 subtests**; prompt-order regression passed **45 tests and 3
   subtests**. Final complete regression passed **432 tests, 1 skipped, 177 subtests**; Ruff and diff checks passed.
   C116 is developer-complete. I24/start29 remains the live semantic/Protocol/Acceptance test.
+
+### Start29 live result and C117 verification (2026-08-06)
+
+- Start29 live-proved typed Protocol receipt binding and progressed through applied class/relation batches and
+  validation. It did not reach independent Acceptance because Modeling escalated elapsed work, Coordinator emitted
+  an invalid pause shape, and Delivery's wrong outer action key terminated the foreground process during recovery.
+  The run is `collaboration/routing,false`; retained platform writes are not a semantic PASS.
+- Cleanup preserved the non-empty failed scope, completed/released Session/Lease, revoked all platform keys, removed
+  the exact local credential projections, and retained the run evidence. R2.3-005 strict ledger replay is
+  `31/28/0`; the documented stray R2.3-002 terminal line has no reservation/start and no count impact.
+- C117 passes tests showing that wrong-key outer input is rejected and the following valid input is still processed
+  without cleanup; missing `classify-failure --requirement-id` writes no ledger; Modeling wait and Coordinator pause
+  instructions contain the exact constraints. Full regression passed **435 tests, 1 skipped, 177 subtests**.
+- I24 remains pending for start30, reusing the same candidate semantics. No new harness or semantic rebuild is needed.

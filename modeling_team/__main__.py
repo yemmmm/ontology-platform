@@ -95,6 +95,9 @@ _OUTER_INPUT_REJECTION = {
     "code": "invalid_outer_input",
     "retryable": True,
 }
+_KNOWN_OUTER_ACTIONS = frozenset(
+    {"question", "issue_resolution", "user", "status", "pause", "resume", "stop"}
+)
 
 
 def _foreground_issue_resolution_is_ready(runner: object) -> bool:
@@ -149,8 +152,16 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         except TeamConfigurationError:
             emit_outer_input_rejection()
             continue
+        action = message.get("action")
+        if not isinstance(action, str) or action not in _KNOWN_OUTER_ACTIONS:
+            # A missing/unknown action is a malformed outer control-plane
+            # message.  Reject only this line so a later valid command can
+            # still drive the live Runner; admitted actions retain the
+            # existing fatal receive_outer boundary below.
+            emit_outer_input_rejection()
+            continue
         if (
-            message.get("action") == "issue_resolution"
+            action == "issue_resolution"
             and not _foreground_issue_resolution_is_ready(runner)
         ):
             emit_outer_input_rejection()
@@ -234,7 +245,7 @@ def main() -> int:
         required=True,
         choices=["modeling-quality", "platform-contract", "collaboration/routing", "runtime/infrastructure"],
     )
-    classify.add_argument("--requirement-id")
+    classify.add_argument("--requirement-id", required=True)
     classify.add_argument("--ledger-root", type=Path)
     classify.add_argument("--ledger-filename")
     classify.add_argument("--lock-filename")

@@ -2975,3 +2975,47 @@ the formal builder, or starting another real run before authorization.
 - Ledger remained read-only at `cap/count/active=31/27/0`, 133 lines, SHA-256
   `b277601b518e62f3a9ce905b514d637eb52cfcdde931dce281ee0407f8a53137`. Start29 may now reuse the exact retained
   carrier/overlay; no business semantic rebuild or new preflight harness is authorized.
+
+### 2026-08-06T15:31:00+08:00 — Start29 proved typed receipt and platform execution, then failed in issue recovery
+
+- Start29 `r23005-real-20260806t071043z-start29` started from HEAD `1e50afc` with the unchanged carrier/overlay and
+  baseline `babb359628cbbef794c2edad001a8deede7ead9cddc646888a800589d11ed04b`. Modeling published the exact r3
+  candidate as `delivery-1`; Protocol's real capability manifest advertised both typed builders, and its accepted
+  `delivery-5` bound the original candidate/digests without model-side reconstruction. This live-proves C116.
+- Protocol created Project `e8d70f49...`, Ontology `818c9b77...`, and Build Session `4837aa9...`; it applied the
+  class/relation stages through deterministic dry-run/apply pairs and reached semantic validation. Twenty-two
+  platform response artifacts were retained, and Protocol emitted generation-1 `silent_for_acceptance`. No
+  modeling-quality conflict or typed-receipt defect occurred.
+- Modeling nevertheless reported `runtime_recovery` after elapsed/repeated waits without a concrete Protocol or
+  Runtime failure. Runner entered `WAITING_OWNER`. Coordinator twice tried pause with a prohibited non-null `reason`
+  field, so both calls were rejected. An explicitly recorded outer-assisted exact pause then succeeded.
+- Delivery next sent `{type:"issue-resolution",...}` instead of the foreground contract's
+  `{action:"issue_resolution",...}`. The admitted unknown action raised a fatal outer-control error and the wrapper
+  exited return 2 before resolution/resume or Acceptance. This is `collaboration/routing,false`, not a semantic,
+  platform-quality, or Acceptance conclusion.
+- Existing `PlatformScope.cleanup()` reconciled the written scope as `failed-written-retained`: Session completed,
+  Lease released, no in-flight attempts, Project retained because it is non-empty, and every Project/admin cleanup
+  key is non-active. Runtime and Acceptance child processes are zero. The original `state.json=WAITING_OWNER` is
+  preserved as crash evidence rather than rewritten; exact local credential projections were separately removed
+  after their sockets/processes became unavailable, while sessions/evidence/state were retained.
+- The correct R2.3-005 ledger terminal event produces strict replay PASS at `cap/count/active=31/28/0`, 137 lines,
+  SHA-256 `e5dcd7965830b02c9235454d3b9fd5c869345e2136830af35cfd94f5488a44b2`, with three recorded starts remaining.
+  Delivery first omitted `--requirement-id` and appended one non-authoritative start29 terminal-failure line to the
+  legacy R2.3-002 ledger. Append-only history was not rewritten: that line has no R2.3-002 reservation/start, does
+  not alter its cap/count/active, and is permanently documented as misrouted.
+
+### 2026-08-06T15:48:00+08:00 — Start29 control-path defects repaired before the next semantic start
+
+- Modeling instructions now forbid reporting `runtime_recovery` from elapsed/repeated waits or absence of a final
+  Protocol result alone. Only an explicit tool/Runtime error, demonstrated dead state, Runner timeout, or concrete
+  Protocol issue qualifies; the retained candidate must never be republished merely because platform gates run.
+- Coordinator instructions freeze the pause arguments to exactly `action,issue_id,reporter_id,control_epoch`, with
+  no `reason` or null optionals, and allow one schema-corrected retry without claiming a resolution.
+- The foreground CLI prevalidates the outer `action`: missing/unknown actions now emit retryable
+  `outer-input-rejected` and leave the live Runner available for the next correct line. Core `receive_outer` remains
+  strict and valid admitted actions retain their existing fatal internal-error boundary.
+- `classify-failure` now requires explicit `--requirement-id`, so argparse rejects omission before either ledger can
+  be written. Other ledger mutation commands retain their existing legacy default and were not expanded without
+  live evidence.
+- Focused tests passed **36 tests**. Complete `modeling_team/tests` passed **435 tests, 1 skipped, 177 subtests**;
+  Ruff and `git diff --check` passed. No backend/frontend file changed, so service restart rules do not apply.

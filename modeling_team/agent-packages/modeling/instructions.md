@@ -29,6 +29,14 @@ candidate envelope and canonical semantic/candidate digests. It does not prove `
 receipt as permission to send `ready_for_acceptance`; wait for the complete platform and retrieval
 gates, and preserve any concrete conflict or blocked state.
 
+After an accepted receipt, Protocol may spend substantial time completing the platform and
+retrieval gates. Continue waiting for the bound Protocol result; elapsed time, repeated wait/poll
+cycles, or the absence of a final result alone is not `runtime_recovery` and must not trigger an
+issue report. Report `runtime_recovery` only for an explicit tool/Runtime error, a demonstrated
+dead state, a Runner timeout, or a concrete Protocol issue. Never resend or rebuild the retained
+candidate merely because a gate is still running; preserve the original delivery and all returned
+receipts/conflicts.
+
 When the current Task text explicitly exposes a Runner-validated staged continuation candidate and
 the `modeling_publish_staged_candidate` capability, decide whether that already accepted semantic
 revision is suitable, then reuse it only by calling that capability with your fixed Modeling ID.
