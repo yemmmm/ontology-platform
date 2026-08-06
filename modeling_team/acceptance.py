@@ -25,6 +25,7 @@ from typing import Any, Callable, Iterable, Mapping
 from .capability_mcp import (
     ACCEPTANCE_OPERATIONS,
     COORDINATOR_OPERATIONS,
+    MODELING_OPERATIONS,
     PROTOCOL_OPERATIONS,
     ROLE_OPERATIONS,
     RunnerCapabilityEndpoint,
@@ -1060,6 +1061,7 @@ class RunnerAcceptanceCarrier:
         key_lifecycle: ReadOnlyKeyLifecycle | None = None,
         source_materials: Mapping[str, Path] | None = None,
         ticket_policy: Mapping[str, Any] | None = None,
+        candidate_publisher: Callable[[str], Mapping[str, Any]] | None = None,
     ):
         self.root = root
         self.task_id = _safe_id(task_id, "task_id")
@@ -1098,6 +1100,7 @@ class RunnerAcceptanceCarrier:
             for name, path in (source_materials or {}).items()
         }
         self._ticket_policy = _safe_copy(ticket_policy) if ticket_policy else None
+        self._candidate_publisher = candidate_publisher
         # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
         # as a non-secret binding in its task text, while exact delivery bytes
         # are recorded only as a digest by TeamRunner before Coordinator can
@@ -1138,6 +1141,8 @@ class RunnerAcceptanceCarrier:
             "protocol": secrets.token_urlsafe(32),
             "acceptance": secrets.token_urlsafe(32),
         }
+        if candidate_publisher is not None:
+            self._capability_tokens["modeling"] = secrets.token_urlsafe(32)
         self.capability_root = self.root / "capabilities"
         self.capability_root.mkdir(mode=0o700, exist_ok=True)
         capability_metadata = os.lstat(self.capability_root)
@@ -1655,6 +1660,7 @@ class RunnerAcceptanceCarrier:
     def _check_capability(self, role: str, actor_id: str, capability: str | None = None) -> None:
         expected_id = {
             "coordinator": "coordinator",
+            "modeling": "modeling",
             "protocol": "protocol",
             "acceptance": self.acceptance_id,
         }.get(role)
@@ -1674,7 +1680,7 @@ class RunnerAcceptanceCarrier:
     @property
     def capability_descriptors(self) -> dict[str, dict[str, Any]]:
         """Return non-secret capability metadata for private config assertions."""
-        return {
+        descriptors = {
             "coordinator": {
                 "token_digest": token_digest(self._capability_tokens["coordinator"]),
                 "operations": list(COORDINATOR_OPERATIONS),
@@ -1694,6 +1700,14 @@ class RunnerAcceptanceCarrier:
                 "token_file_mode": "0400",
             },
         }
+        if "modeling" in self._capability_tokens:
+            descriptors["modeling"] = {
+                "token_digest": token_digest(self._capability_tokens["modeling"]),
+                "operations": list(MODELING_OPERATIONS),
+                "socket_mode": "0600",
+                "token_file_mode": "0400",
+            }
+        return descriptors
 
     def capability_socket_path(self, role: str) -> Path:
         if role not in ROLE_OPERATIONS:
@@ -1712,12 +1726,11 @@ class RunnerAcceptanceCarrier:
             raise AcceptanceContractError("unknown Runner capability role") from exc
 
     def start_capability_endpoints(self) -> None:
-        """Start the three private MCP capability brokers before Agent processes."""
+        """Start every configured private MCP capability before Agent processes."""
 
         started: list[RunnerCapabilityEndpoint] = []
         try:
-            for role in ("coordinator", "protocol", "acceptance"):
-                endpoint = self.capability_endpoint(role)
+            for endpoint in self._capability_endpoints.values():
                 endpoint.start()
                 started.append(endpoint)
         except Exception:
@@ -2190,6 +2203,11 @@ class RunnerAcceptanceCarrier:
             _error("Runner capability operation is not available to this role")
         args = dict(arguments)
         capability = self.capability_token(role)
+        if role == "modeling" and operation == "modeling_publish_staged_candidate":
+            self._check_capability("modeling", args["modeling_id"], capability)
+            if self._candidate_publisher is None:
+                _error("staged candidate publication is unavailable")
+            return self._candidate_publisher(args["modeling_id"])
         if role == "protocol" and operation == "protocol_build_acceptance_stage_handoff":
             stage_calls = args["stage_calls"]
             if not isinstance(stage_calls, Mapping):

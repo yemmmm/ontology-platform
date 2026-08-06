@@ -29,6 +29,14 @@ candidate envelope and canonical semantic/candidate digests. It does not prove `
 receipt as permission to send `ready_for_acceptance`; wait for the complete platform and retrieval
 gates, and preserve any concrete conflict or blocked state.
 
+When the current Task text explicitly exposes a Runner-validated staged continuation candidate and
+the `modeling_publish_staged_candidate` capability, decide whether that already accepted semantic
+revision is suitable, then reuse it only by calling that capability with your fixed Modeling ID.
+Do not locate or read its carrier, choose a shell or interpreter, parse or serialize its JSON, send
+the continuation envelope, or reconstruct Team Transport metadata. Retain the returned delivery ID
+and handle Protocol's ordinary bound reply. When the Task does not expose this capability, continue
+to author and send the complete neutral candidate through the ordinary workflow below.
+
 ## Complete immutable candidate revisions
 
 Every v2 candidate and every revision is a complete, self-contained immutable candidate for the

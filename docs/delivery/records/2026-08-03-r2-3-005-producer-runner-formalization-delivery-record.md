@@ -2830,3 +2830,55 @@ the formal builder, or starting another real run before authorization.
   `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, strict replay PASS,
   `cap/count/active=31/25/0`, 122 lines, `6` remaining. No start26 is authorized until the authoritative task
   snapshot and carrier-extraction prompt are repaired and independently verified.
+
+### 2026-08-06T12:56:07+08:00 — Runtime-neutral mechanical spine approved and designed
+
+- The user approved autonomous design, development, and testing before resuming the live requirement, with explicit
+  consideration for a future Pi Runtime. The exceptional R2.3-005 waiver remains: this round skips Plan Reviewer and
+  independent Requirement Tester; developer regression is required and the later live run is the semantic test.
+- ADR 0008 separates the semantic decision plane from a bounded mechanical execution plane. The current scope is an
+  append-only Task input overlay plus a Modeling-only typed candidate publication operation. It does not add a
+  workflow engine, new backend API/table, arbitrary Task patching, automated semantic retries, or Pi itself.
+- The overlay always binds the tracked authoritative Task ID/SHA and one Runner-private carrier. It cannot overwrite
+  objective, role sources, Protocol tools, gates, Profile, or Packages. Base/overlay/carrier digests enter baseline
+  preview and reservation; the base Task and overlay retain separate immutable snapshots.
+- Modeling will decide whether to publish the approved continuation, but Runner code will own carrier parsing,
+  candidate/object equality, formal validation, accepted digest matching, exact text serialization, recipient/reply
+  binding, and ordinary Team Transport publication. This directly removes start25's `python` shell dependency and
+  the possibility of sending carrier metadata or shell error text as a candidate.
+- The core contract contains no Codex thread/rollout/app-server or Pi RPC field. Codex only projects the role
+  capability into its private config; a later Pi Adapter must expose the same operation and must not duplicate
+  parsing/publication logic. Existing Protocol cursor mechanics and Prompt E pipeline are reused.
+- GitNexus pre-edit analysis classifies `TeamRunner.prepare` HIGH (29 direct callers) and Codex `_write_config` HIGH
+  (8 direct callers across formal and P2/P2a paths). Changes must therefore be additive/opt-in, preserve default
+  behavior, and pass complete `modeling_team` regression before commit.
+- User authorization: five additional future starts. Canonical strict replay remains unchanged at
+  `cap/count/active=31/25/0`, 122 lines, SHA-256
+  `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`. Because current ledger policy permits a
+  budget event only at exhausted cap, `+5` is retained as pending external authorization and will be appended exactly
+  once after the six already-recorded attempts are consumed. No ledger bytes were changed in this design step.
+
+### 2026-08-06T13:26:34+08:00 — Runtime-neutral mechanical spine implemented and verified
+
+- ADR 0008 is implemented as an append-only Task overlay, strict carrier validator, immutable staged candidate, and
+  Modeling-only `modeling_publish_staged_candidate` capability. The operation accepts only `modeling_id`; Runner
+  owns exact candidate extraction, accepted identity/digest checks, fixed Protocol recipient, reply requirement, and
+  ordinary Team Transport publication. Modeling's authoritative instructions now prohibit carrier parsing, shell or
+  interpreter selection, JSON serialization, outer-envelope delivery, and generic transport reconstruction when the
+  typed capability is present.
+- The core modules contain no Codex thread/rollout/app-server or Pi RPC fields. Codex projects the capability only
+  when the formal Acceptance carrier advertises it; no-overlay R2.3-005 and legacy tasks retain the previous surface.
+  A future Pi Adapter can map the same stable operation without duplicating parsing or publication semantics.
+- Focused affected verification passed **150 tests and 51 subtests**. The complete
+  `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests` run passed **429 tests, skipped 1, and passed
+  177 subtests**. Ruff, `git diff --check`, and the P2a 29-test frozen-boundary suite passed. No backend/frontend file
+  changed, so application restart rules do not apply to this local Runner-only implementation.
+- The real retained start24 r3 carrier validates through both CLI paths using read-only overlay
+  `modeling_team/.continuations/r23005-start26-overlay.yaml` (mode `0444`). Candidate carrier SHA-256 remains
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`; baseline preview SHA-256 is
+  `d3f51603ae406c2777ab41e9b6093717dd6a2efcd0e1555319b13910e03c705a`.
+- Strict read-only ledger replay remains 122 lines, SHA-256
+  `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, and
+  `cap/count/active=31/25/0`. No semantic start was consumed. The additional user-granted `+5` remains pending until
+  the existing six starts are exhausted. Next action is the fresh start26 live semantic/Acceptance run; no live PASS
+  is claimed by this developer verification.

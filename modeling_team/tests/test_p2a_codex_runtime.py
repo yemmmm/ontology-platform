@@ -31,13 +31,17 @@ FROZEN_GLOBAL_SURFACES = {
     # ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc
     # codex cd8332734d239e15e4e4743a6d73cbedabf49bb1161b17410cf37ca08e42b6b2 ->
     # c68a07c5daede05120a1a208094f073c4721288dee9dbe9f5b3a68e8375c6d7a
+    # ADR 0008 adds only the Runtime-neutral overlay/publication spine and an
+    # opt-in Codex projection. The interventions source itself is unchanged in
+    # this round; its current tracked digest is normalized here with the two
+    # intentionally changed surfaces.
     # These are the five shared files changed by R2.3-005; the platform schema
     # hash below remains byte-frozen.
-    "modeling_team/runner.py": "079c11b93ed07dffb47404946bde7b981a6d512c0ae273e103f8cd5f4c8eda13",
+    "modeling_team/runner.py": "8d36cb7e08119c8d2841d5601f9ec41b66cd9facd5021e8ff29e3f625e4688ab",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "c68a07c5daede05120a1a208094f073c4721288dee9dbe9f5b3a68e8375c6d7a",
-    "modeling_team/interventions.py": "e22a8500d751f0968f049e615bf8ca3e07421d927058d95806a02415da08f661",
+    "modeling_team/runtimes/codex.py": "e99dc551dd72863e455837e0ca273b2090ef07b623d8ee1d06a01c30be387e99",
+    "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
 

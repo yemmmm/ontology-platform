@@ -23,9 +23,11 @@ from .monitor_handoff import (
 from .platform_scope import PlatformScope
 from .preflight import normalize_formal_scope
 from .runner import TeamRunner
+from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
 from .runtimes.codex import CodexRuntimeAdapter
 from .start_ledger import StartLedger
+from .task_overlay import load_task_input_overlay
 
 
 def _bootstrap_helpers(root: Path):
@@ -216,9 +218,11 @@ def main() -> int:
     validate = subparsers.add_parser("validate")
     validate.add_argument("--profile", required=True, type=Path)
     validate.add_argument("--task", required=True, type=Path)
+    validate.add_argument("--task-overlay", type=Path)
     run = subparsers.add_parser("run")
     run.add_argument("--profile", required=True, type=Path)
     run.add_argument("--task", required=True, type=Path)
+    run.add_argument("--task-overlay", type=Path)
     run.add_argument("--run-id", required=True)
     run.add_argument("--scope", required=True, type=Path)
     run.add_argument("--base-url", default="http://127.0.0.1:8001")
@@ -255,6 +259,7 @@ def main() -> int:
     baseline.add_argument("--run-id", required=True)
     baseline.add_argument("--profile", required=True, type=Path)
     baseline.add_argument("--task", required=True, type=Path)
+    baseline.add_argument("--task-overlay", type=Path)
     handoff = subparsers.add_parser("publish-handoff")
     handoff.add_argument("--run-id", required=True)
     handoff.add_argument("--phase-a-verdict", required=True, type=Path)
@@ -313,6 +318,7 @@ def main() -> int:
                 run_id=args.run_id,
                 profile_path=args.profile,
                 task_path=args.task,
+                task_overlay_path=args.task_overlay,
             )
         except TeamConfigurationError as exc:
             print(f"baseline failed: {exc}", file=sys.stderr)
@@ -337,6 +343,18 @@ def main() -> int:
         return 0
     try:
         configuration = load_formal_team_configuration(args.profile, args.task, root=root)
+        task_overlay = (
+            load_task_input_overlay(
+                args.task_overlay,
+                root=root,
+                task_path=args.task,
+                task=configuration.task,
+            )
+            if args.task_overlay is not None
+            else None
+        )
+        if task_overlay is not None:
+            validate_candidate_publication(task_overlay)
     except TeamConfigurationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 2
@@ -346,6 +364,7 @@ def main() -> int:
                 {
                     "profile_id": configuration.profile.profile_id,
                     "task_id": configuration.task.task_id,
+                    "task_overlay_id": task_overlay.overlay_id if task_overlay else None,
                     "roster": [
                         agent.agent_id for agent in configuration.profile.agents
                     ],
@@ -399,6 +418,7 @@ def main() -> int:
             profile_path=args.profile,
             task_path=args.task,
             scope=scope,
+            task_overlay_path=args.task_overlay,
         )
         if formal_acceptance:
             # The Delivery-only key is needed by the no-start canonical gate,

@@ -35,6 +35,13 @@ from .candidate_progress import (
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
 )
+from .candidate_publication import (
+    CandidatePublicationError,
+    StagedCandidatePublication,
+    ValidatedCandidatePublication,
+    stage_candidate_publication,
+    validate_candidate_publication,
+)
 from .interventions import (
     IssueControl,
     IssueError,
@@ -56,6 +63,7 @@ from .start_ledger import (
     resolve_ledger_config,
 )
 from .transport_mcp import RoutingError, TeamTransportBroker, _call_terminal_report_guard
+from .task_overlay import TaskInputOverlay, load_task_input_overlay
 
 
 _PROOF_MATRIX_RELATIVE = "modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json"
@@ -129,6 +137,9 @@ class TeamRunner:
         self.coordinator_phase: CoordinatorPhaseController | None = None
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
+        self._task_overlay: TaskInputOverlay | None = None
+        self._validated_candidate_publication: ValidatedCandidatePublication | None = None
+        self._candidate_publication: StagedCandidatePublication | None = None
         self._formal_failure_latched = False
         # Issue callbacks are invoked by the Broker/App-Server side.  They only
         # append to this queue; Runtime dispatch and evidence writes happen in
@@ -150,6 +161,28 @@ class TeamRunner:
         import re
 
         return bool(re.fullmatch(r"[a-z0-9][a-z0-9-]{2,80}", value))
+
+    @staticmethod
+    def _write_frozen_bytes(path: Path, payload: bytes, *, mode: int = 0o444) -> None:
+        """Write one immutable run-local input without following a symlink."""
+
+        if path.exists() or path.is_symlink():
+            raise TeamConfigurationError("frozen input path is already occupied")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(path, flags, mode)
+        try:
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(descriptor, remaining)
+                if written <= 0:
+                    raise OSError("frozen input write did not progress")
+                remaining = remaining[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.chmod(path, mode)
 
     @staticmethod
     def _expected_matrix_binding(configuration: TeamConfiguration) -> dict[str, str] | None:
@@ -228,7 +261,13 @@ class TeamRunner:
         raise TeamConfigurationError("ledger factory signature is invalid")
 
     def prepare(
-        self, *, run_id: str, profile_path: Path, task_path: Path, scope: dict[str, str]
+        self,
+        *,
+        run_id: str,
+        profile_path: Path,
+        task_path: Path,
+        scope: dict[str, str],
+        task_overlay_path: Path | None = None,
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
@@ -248,6 +287,18 @@ class TeamRunner:
                 or config.profile.profile_id == "r2-3-005-modeling-team"
             )
         )
+        task_overlay: TaskInputOverlay | None = None
+        validated_publication: ValidatedCandidatePublication | None = None
+        if task_overlay_path is not None:
+            if not formal_acceptance:
+                raise TeamConfigurationError("Task overlay is formal R2.3-005-only")
+            task_overlay = load_task_input_overlay(
+                task_overlay_path,
+                root=self.repository_root,
+                task_path=task_path,
+                task=config.task,
+            )
+            validated_publication = validate_candidate_publication(task_overlay)
         if formal_acceptance:
             self._reject_formal_ledger_root_override()
         normalized_scope: dict[str, str] = dict(scope)
@@ -261,6 +312,7 @@ class TeamRunner:
             configuration=config,
             profile_path=profile_path,
             task_path=task_path,
+            frozen_task_overlay=task_overlay,
         )
         baseline_hash = StartLedger.baseline_hash(baseline)
         preflight_evidence: dict[str, Any] | None = None
@@ -274,11 +326,20 @@ class TeamRunner:
                 admin_key=self.canonical_admin_key,
                 probe=self.prestart_preflight,
             )
+            if task_overlay_path is not None:
+                task_overlay = load_task_input_overlay(
+                    task_overlay_path,
+                    root=self.repository_root,
+                    task_path=task_path,
+                    task=config.task,
+                )
+                validated_publication = validate_candidate_publication(task_overlay)
             baseline_after_preflight = self._baseline_manifest(
                 run_id=run_id,
                 configuration=config,
                 profile_path=profile_path,
                 task_path=task_path,
+                frozen_task_overlay=task_overlay,
             )
             if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
                 raise TeamConfigurationError("baseline manifest drifted during preflight")
@@ -310,6 +371,13 @@ class TeamRunner:
         root.mkdir(parents=True, mode=0o700)
         (root / "evidence").mkdir(mode=0o700)
         self.run = TeamRun(run_id, root, config, normalized_scope, gate_binding=gate_binding)
+        self._task_overlay = task_overlay
+        self._validated_candidate_publication = validated_publication
+        self._candidate_publication = (
+            stage_candidate_publication(task_overlay, validated_publication, run_root=root)
+            if task_overlay is not None and validated_publication is not None
+            else None
+        )
         self._candidate_progress = (
             FormalCandidateProgress(clock=self.monotonic_clock)
             if formal_acceptance
@@ -344,6 +412,11 @@ class TeamRunner:
             descriptors=examiner_descriptors,
             source_materials=source_materials,
             ticket_policy=ticket_policy,
+            candidate_publisher=(
+                self._publish_staged_candidate
+                if self._candidate_publication is not None
+                else None
+            ),
         )
         self.coordinator_phase = CoordinatorPhaseController()
         self.run.acceptance = self.acceptance
@@ -359,7 +432,22 @@ class TeamRunner:
             },
         )
         shutil.copyfile(profile_path, root / "profile.snapshot.yaml")
-        shutil.copyfile(task_path, root / "task.snapshot.yaml")
+        if task_overlay is None:
+            shutil.copyfile(task_path, root / "task.snapshot.yaml")
+        else:
+            self._write_frozen_bytes(root / "task.snapshot.yaml", task_overlay.base_task_bytes)
+            self._write_frozen_bytes(
+                root / "task-overlay.snapshot.yaml",
+                task_overlay.overlay_bytes,
+            )
+            self._write_frozen_bytes(
+                root / "candidate-publication-manifest.json",
+                json.dumps(
+                    task_overlay.manifest(),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode("utf-8"),
+            )
         self._stage_sources()
         self._record_runtime_core_hashes("before_start")
         self._atomic_json(root / "baseline-manifest.json", baseline)
@@ -457,12 +545,18 @@ class TeamRunner:
         configuration: TeamConfiguration,
         profile_path: Path,
         task_path: Path,
+        task_overlay_path: Path | None = None,
+        frozen_task_overlay: TaskInputOverlay | None = None,
     ) -> dict[str, Any]:
+        if task_overlay_path is not None and frozen_task_overlay is not None:
+            raise TeamConfigurationError("Task overlay cannot be both live and frozen")
         files = {
             "runner": self.repository_root / "modeling_team/runner.py",
             "acceptance_contract": self.repository_root / "modeling_team/acceptance.py",
             "acceptance_runtime": self.repository_root / "modeling_team/acceptance_runtime.py",
             "capability_mcp": self.repository_root / "modeling_team/capability_mcp.py",
+            "task_overlay": self.repository_root / "modeling_team/task_overlay.py",
+            "candidate_publication": self.repository_root / "modeling_team/candidate_publication.py",
             "read_proxy_mcp": self.repository_root / "modeling_team/read_proxy_mcp.py",
             "report_sink_mcp": self.repository_root / "modeling_team/report_sink_mcp.py",
             "preflight": self.repository_root / "modeling_team/preflight.py",
@@ -504,6 +598,15 @@ class TeamRunner:
             "examiner_source_skill": self.repository_root / "skills/source-examiner/SKILL.md",
             "examiner_platform_skill": self.repository_root / "skills/platform-examiner/SKILL.md",
         }
+        task_overlay = frozen_task_overlay
+        if task_overlay is None and task_overlay_path is not None:
+            task_overlay = load_task_input_overlay(
+                task_overlay_path,
+                root=self.repository_root,
+                task_path=task_path,
+                task=configuration.task,
+            )
+            validate_candidate_publication(task_overlay)
         for agent in configuration.profile.agents:
             files[f"package:{agent.package.package_id}"] = self.repository_root / "modeling_team/agent-packages" / agent.package.package_id / "package.yaml"
             files[f"instructions:{agent.package.package_id}"] = agent.package.instructions_path
@@ -538,8 +641,40 @@ class TeamRunner:
             if p2a.is_file() and not p2a.is_symlink():
                 files["p2a_pass_artifact"] = p2a
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
+        if task_overlay is not None:
+            digests["task_input_overlay"] = task_overlay.sha256
+            digests["candidate_publication_source"] = (
+                task_overlay.candidate_publication.sha256
+            )
+        runner_capability_roles = {
+            "protocol": [
+                "protocol_list_platform_artifacts",
+                "protocol_build_acceptance_stage_handoff",
+            ],
+            "coordinator": [
+                "coordinator_build_acceptance_ticket_draft",
+                "coordinator_publish_acceptance_ticket",
+                "coordinator_get_verdict",
+            ],
+            "acceptance": [
+                "acceptance_get_ticket",
+                "acceptance_child_start",
+                "acceptance_child_get_report",
+                "acceptance_child_recycle",
+                "acceptance_get_failure_record",
+                "submit_acceptance_result",
+                "acceptance_get_verdict",
+            ],
+        }
+        if task_overlay is not None:
+            runner_capability_roles["modeling"] = ["modeling_publish_staged_candidate"]
         return {
             "run_id": run_id,
+            **(
+                {"task_input_overlay": task_overlay.manifest()}
+                if task_overlay is not None
+                else {}
+            ),
             "files": digests,
             "call_sites": {
                 "runner.prepare": digests["runner"],
@@ -564,6 +699,8 @@ class TeamRunner:
                 "runner.outer_answer_fsync_delivery": digests["runner"],
                 "runner.acceptance_carrier": digests["runner"],
                 "runner.capability_broker": digests["capability_mcp"],
+                "runner.task_overlay": digests["task_overlay"],
+                "runner.candidate_publication": digests["candidate_publication"],
                 "runner.acceptance_child_runtime": digests["acceptance_runtime"],
                 "runner.acceptance_read_proxy": digests["read_proxy_mcp"],
                 "runner.acceptance_report_sink": digests["report_sink_mcp"],
@@ -589,26 +726,7 @@ class TeamRunner:
                     "server": "runner_capability",
                     "source_path": "modeling_team/capability_mcp.py",
                     "sha256": digests["capability_mcp"],
-                    "roles": {
-                        "protocol": [
-                            "protocol_list_platform_artifacts",
-                            "protocol_build_acceptance_stage_handoff",
-                        ],
-                        "coordinator": [
-                            "coordinator_build_acceptance_ticket_draft",
-                            "coordinator_publish_acceptance_ticket",
-                            "coordinator_get_verdict",
-                        ],
-                        "acceptance": [
-                            "acceptance_get_ticket",
-                            "acceptance_child_start",
-                            "acceptance_child_get_report",
-                            "acceptance_child_recycle",
-                            "acceptance_get_failure_record",
-                            "submit_acceptance_result",
-                            "acceptance_get_verdict",
-                        ],
-                    },
+                    "roles": runner_capability_roles,
                     "socket_mode": "0600",
                     "token_file_mode": "0400",
                 },
@@ -747,7 +865,13 @@ class TeamRunner:
 
     @classmethod
     def preview_baseline(
-        cls, *, repository_root: Path, run_id: str, profile_path: Path, task_path: Path
+        cls,
+        *,
+        repository_root: Path,
+        run_id: str,
+        profile_path: Path,
+        task_path: Path,
+        task_overlay_path: Path | None = None,
     ) -> tuple[dict[str, Any], str]:
         """Compute the prepare-time binding without creating any run or ledger state."""
         if not cls._safe_run_id(run_id):
@@ -762,6 +886,7 @@ class TeamRunner:
             configuration=configuration,
             profile_path=profile_path,
             task_path=task_path,
+            task_overlay_path=task_overlay_path,
         )
         return manifest, StartLedger.baseline_hash(manifest)
 
@@ -1354,6 +1479,19 @@ class TeamRunner:
             },
         )
 
+    def _publish_staged_candidate(self, modeling_id: str) -> dict[str, Any]:
+        """Publish one prevalidated candidate through ordinary Team Transport."""
+
+        if self._candidate_publication is None or self.transport is None:
+            raise CandidatePublicationError("staged candidate publication is unavailable")
+        role_ids = self._formal_coordination_role_ids()
+        return self._candidate_publication.publish(
+            actor_id=modeling_id,
+            modeling_id=role_ids["modeling"],
+            protocol_id=role_ids["protocol"],
+            send=self.transport.send,
+        )
+
     def _task_text(self, role: str | None = None) -> str:
         assert self.run
         task = self.run.configuration.task
@@ -1512,6 +1650,19 @@ class TeamRunner:
                     "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
                     "or receipt labels into the platform-neutral candidate."
                 )
+                if self._candidate_publication is not None:
+                    identity = self._candidate_publication.identity
+                    modeling_text += (
+                        "\nThis run has one Runner-validated continuation candidate, revision "
+                        f"{identity.candidate_revision}, candidate_digest {identity.candidate_digest}, and "
+                        f"semantic_digest {identity.semantic_digest}. Reuse it only by calling the "
+                        "Runner-private modeling_publish_staged_candidate capability exactly once with "
+                        "modeling_id=modeling. Do not read or parse a carrier, invoke a shell or interpreter, "
+                        "serialize JSON, send the outer continuation envelope, or call send_team_message for this "
+                        "candidate. The capability owns the exact candidate_text, digest checks, recipient, "
+                        "expects_reply flag, and delivery ID. Retain its returned delivery_id and wait for the "
+                        "normal Protocol reply bound to that ID."
+                    )
                 if proof_gate:
                     modeling_text += (
                         " For this proof-gated task, every item must carry non-empty evidence_citations with the "

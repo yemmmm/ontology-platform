@@ -884,6 +884,26 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             or getattr(task, "task_id", None) == "p2a-protocol-production"
         )
 
+    def _role_capability_operations(self, role: str, *, run: Any | None = None) -> tuple[str, ...]:
+        """Return only capabilities actually configured for this formal run."""
+
+        formal_run = self._coordination_enabled or (
+            run is not None and self._is_formal_acceptance_run(run)
+        )
+        if not formal_run or self._acceptance is None:
+            return ()
+        expected = ROLE_OPERATIONS.get(role, ())
+        if role != "modeling":
+            return expected
+        descriptors = getattr(self._acceptance, "capability_descriptors", None)
+        if not isinstance(descriptors, dict):
+            return ()
+        descriptor = descriptors.get(role)
+        operations = descriptor.get("operations") if isinstance(descriptor, dict) else None
+        if not isinstance(operations, list) or any(not isinstance(item, str) for item in operations):
+            return ()
+        return tuple(operations) if tuple(operations) == expected else ()
+
     @staticmethod
     def preflight_host_auth() -> Path:
         """Validate the host auth source without opening or emitting its contents."""
@@ -1144,11 +1164,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)
-        formal_capability = (
-            self._is_formal_acceptance_run(run)
-            and agent.package.role in {"coordinator", "protocol", "acceptance"}
-            and self._acceptance is not None
-        )
+        capability_operations = self._role_capability_operations(agent.package.role, run=run)
+        formal_capability = bool(capability_operations)
         formal_acceptance_auth = (
             self._is_formal_acceptance_run(run) and agent.package.role == "acceptance"
         )
@@ -1264,9 +1281,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "required = true",
                 ]
             )
-        capability_names = {
-            role: list(operations) for role, operations in ROLE_OPERATIONS.items()
-        }.get(agent.package.role, [])
+        capability_names = (
+            list(capability_operations)
+            if agent.package.role == "modeling"
+            else {
+                role: list(operations) for role, operations in ROLE_OPERATIONS.items()
+            }.get(agent.package.role, [])
+        )
         capability_manifest = agent.home / "runner-capabilities.json"
         carrier = getattr(run, "acceptance", None)
         capability_descriptors = None
@@ -1806,12 +1827,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     expected["protocol_mechanics"].add("build_candidate_conflict")
                 if agent.proof_gate:
                     expected["protocol_mechanics"].add("write_candidate_item_evidence_map")
-        if (
-            self._coordination_enabled
-            and agent.package.role in ROLE_OPERATIONS
-            and self._acceptance is not None
-        ):
-            expected["runner_capability"] = set(ROLE_OPERATIONS[agent.package.role])
+        capability_operations = self._role_capability_operations(agent.package.role)
+        if capability_operations:
+            expected["runner_capability"] = set(capability_operations)
         self._require_mcp_surface(agent, expected)
 
     def _require_mcp_surface(self, agent: _Agent, expected: dict[str, set[str]]) -> None:
@@ -2024,9 +2042,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 and agent.schema_version == 2
                 and server_name == "protocol_mechanics"
             ) or (
-                self._coordination_enabled
-                and self._acceptance is not None
-                and agent.package.role in ROLE_OPERATIONS
+                bool(self._role_capability_operations(agent.package.role))
                 and server_name == "runner_capability"
             )
             action = "accept" if expected else "decline"

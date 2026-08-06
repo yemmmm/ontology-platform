@@ -30,6 +30,7 @@ PROTOCOL_OPERATIONS: tuple[str, ...] = (
     "protocol_list_platform_artifacts",
     "protocol_build_acceptance_stage_handoff",
 )
+MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
     "acceptance_child_start",
@@ -41,12 +42,19 @@ ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
 )
 ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     "coordinator": COORDINATOR_OPERATIONS,
+    "modeling": MODELING_OPERATIONS,
     "protocol": PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
 
 
 CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "modeling_publish_staged_candidate": {
+        "type": "object",
+        "properties": {"modeling_id": {"type": "string"}},
+        "required": ["modeling_id"],
+        "additionalProperties": False,
+    },
     "protocol_list_platform_artifacts": {
         "type": "object",
         "properties": {"protocol_id": {"type": "string"}},
@@ -490,6 +498,7 @@ __all__ = [
     "ACCEPTANCE_OPERATIONS",
     "CAPABILITY_TOOL_SCHEMAS",
     "COORDINATOR_OPERATIONS",
+    "MODELING_OPERATIONS",
     "ROLE_OPERATIONS",
     "RunnerCapabilityEndpoint",
     "run_stdio_client",

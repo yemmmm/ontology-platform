@@ -1651,3 +1651,47 @@ five-field canonical `candidate` (equivalently parsed `candidate_text`), never t
 candidate/semantic digests must match the accepted r3 identity. No start26 may begin before this prompt/task repair and
 independent verification. Ledger terminal state is `cap/count/active=31/25/0`, SHA-256
 `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, remaining `6`.
+
+## Runtime-neutral mechanical spine round (2026-08-06)
+
+This round reuses the existing plan and the user's exceptional waiver: no Plan Reviewer or independent Requirement
+Tester is required. Developer tests verify deterministic contracts; the next real semantic start remains the only
+modeling-quality and Acceptance test.
+
+| ID | Case | Expected evidence |
+| --- | --- | --- |
+| C105 | Authoritative Task overlay | A valid overlay binds the exact tracked Task ID/SHA and one immutable candidate source; prepare preserves the exact base `task.snapshot.yaml` and writes a separate overlay snapshot/manifest |
+| C106 | Overlay fail-closed matrix | Base digest/task drift, extra fields, path escape/symlink, missing source, wrong source digest, wrong role/recipient, and more than one candidate source fail before ledger reservation, run root, scope, or Runtime |
+| C107 | Baseline parity | `validate`, `baseline`, and `run` consume the same optional overlay; baseline includes base Task, overlay, and carrier digests and detects mutation between preflight reads |
+| C108 | Typed candidate extraction | Runner parses only `candidate_text`, proves equality with `candidate`, validates the five-field formal candidate, recomputes candidate/semantic digests, and matches the accepted carrier receipt |
+| C109 | Typed publication identity | Modeling-only invocation emits exactly one ordinary Modeling-to-Protocol delivery using the original candidate text, `expects_reply=true`, no `reply_to_delivery_id`, and returns its delivery/candidate identity |
+| C110 | Publication fail-closed matrix | Wrong actor/role, missing overlay, repeat call, carrier/object mismatch, invalid candidate, revision/digest mismatch, or Transport rejection creates no additional delivery and no false publication receipt |
+| C111 | Runtime-neutral core | Overlay/carrier/publication unit tests contain no Codex thread, rollout, app-server event, or Pi RPC dependency; capability descriptor is stable for a future Pi-native adapter |
+| C112 | Codex thin projection | Only an overlay-enabled formal Modeling role receives the Runner capability/token/socket/config; formal runs without an overlay and all legacy tasks retain the previous tool surface |
+| C113 | Existing mechanics regression | Candidate progress/redrive, Protocol cursor verifier, Prompt E artifacts/ticket, pause/resume, settlement, cleanup, R2.3-002, and complete `modeling_team` tests remain green |
+| I24 | Next live continuation | A fresh run uses the tracked authoritative Task plus exact r3 overlay, reaches normal Protocol receipt/platform work and then both independent Acceptance rounds without Modeling shell extraction or copied Task drift |
+
+The canonical ledger is read-only throughout developer testing. The newly granted `+5` is pending because the ledger
+allows budget extension only at exhausted cap; current replay must remain `31/25/0` until live starts consume the six
+already recorded attempts.
+
+### Runtime-neutral mechanical spine verification result (2026-08-06)
+
+- C105-C112 are developer-verified by `test_r23005_mechanical_spine.py` plus the existing Codex isolation suite. The
+  overlay preserves the exact tracked Task, rejects stale or mutable inputs before reservation, stages the original
+  carrier bytes read-only, and exposes one exact Modeling-only operation with no candidate/path/digest/recipient
+  arguments.
+- The focused affected command passed **150 tests and 51 subtests**. The P2a frozen Runtime boundary passed **29
+  tests** after intentionally rebinding only the changed Runner/Codex byte surfaces and normalizing the already
+  tracked interventions digest.
+- C113 complete regression passed: `PYTHONPATH=. uv run --project backend pytest -q modeling_team/tests` returned
+  **429 passed, 1 skipped, 177 subtests passed**. `uv run --project backend ruff check modeling_team` and
+  `git diff --check` also passed.
+- Real-input CLI parity passed for both `validate` and `baseline` with the authoritative Task, overlay
+  `r23005-start26-r3`, and retained carrier SHA-256
+  `9acce460e1e2d28712deaac4a9901cf2357f947fc54d853344cff41c2bacd806`; preview baseline SHA-256 is
+  `d3f51603ae406c2777ab41e9b6093717dd6a2efcd0e1555319b13910e03c705a`.
+- Read-only strict ledger replay remains **122 lines**, SHA-256
+  `07379e4ac130de8f3844364bffa73f66847303c074da24b376e48bd86bbb6958`, with
+  `cap/count/active=31/25/0`. No developer test consumed a semantic start. I24 remains pending and is the next step;
+  no modeling-quality or Acceptance PASS is claimed by this result.

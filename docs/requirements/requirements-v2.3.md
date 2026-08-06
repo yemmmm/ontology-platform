@@ -7,13 +7,17 @@
   正式账本现为 `cap/count/active=31/25/0`，剩余 `6` 次；Prompt A/C/D 已由
   `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
   platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
+  ADR 0008 Runtime-neutral mechanical spine 已实现并通过完整 Modeling Team 回归，已移除 copied Task 与
+  Agent shell/JSON extraction；真实 start26 尚未启动；
+  用户新增 `+5` 授权已记录为待生效授权，因 canonical ledger 只允许余额耗尽时追加，当前不改写账本。
   R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：先修复 start25 暴露的 carrier canonical extraction prompt-contract（明确只发送
-  `candidate_text` 解析后的完整候选，不发送 carrier 元数据 envelope），再使用 `ebea0eb` 的 fresh Runner
-  置入 start24 精确 r3 carrier（不重建业务切片）继续独立 Acceptance；仍有 `6` 次额度，正式账本
+- 当前下一目标：先完成 ADR 0008 的 append-only Task overlay 与 typed Modeling candidate publication，
+  由 Runner 解析、校验并投递 `candidate_text`，Agent 不再读取 carrier、选择解释器或序列化 JSON；
+  再使用 `ebea0eb` 的 fresh Runner 置入 start24 精确 r3 carrier（不重建业务切片）继续独立 Acceptance；
+  仍有 `6` 次已入账额度，另有 `5` 次待余额耗尽后生效，正式账本
   cap/count/active 为 `31/25/0`
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
@@ -63,7 +67,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start25 terminal（modeling-quality/candidate-envelope-invalid；Prompt E=ebea0eb；31/25/0，剩余 6）` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `ADR 0008 开发回归完成，待 start26 真实验收；31/25/0，已入账剩余 6，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -2466,3 +2470,48 @@ start26, the launcher must derive a fresh task snapshot from the authoritative H
 path, retain all current A/C/D/E text and role sources, and make the Modeling instruction explicit: send only the
 carrier's five-field canonical candidate (`candidate`/parsed `candidate_text`), never the complete continuation
 envelope or its coordination metadata.
+
+### 2026-08-06 R2.3-005 Runtime-neutral mechanical spine
+
+The user approved pausing the live start sequence long enough to code the fixed deterministic path, then restoring
+the original modeling/Acceptance goal. ADR 0008 is authoritative for the current minimal design. This change
+supersedes the start25 wording that asks Modeling to parse the carrier itself: parsing, digest verification,
+serialization, recipient/reply binding, and publication are mechanical responsibilities and must not be performed by
+Agent shell commands or free-form prompting.
+
+1. Every formal continuation launch must pass the tracked authoritative Task unchanged. An optional append-only Task
+   overlay binds the exact base `task_id` and Task SHA-256 and may add only one immutable Runner-private candidate
+   publication source. It cannot replace objective, role sources, Protocol tools, gates, Profile, or Packages.
+2. The overlay and carrier path, bytes, mode, and digest are frozen before ledger reservation and included in baseline
+   preview/reservation. `task.snapshot.yaml` is the authoritative Task; the overlay receives its own immutable
+   snapshot and manifest record. Base drift fails before scope or Runtime mutation.
+3. Modeling decides whether to reuse the approved carrier, then invokes the role-bound
+   `modeling_publish_staged_candidate` operation. The Runner parses only `candidate_text`, verifies equality with the
+   parsed `candidate`, validates the existing formal candidate contract, recomputes both digests, matches the accepted
+   carrier identity, and publishes the original candidate text as an ordinary Modeling-to-Protocol request with
+   `expects_reply=true`.
+4. Candidate bytes, path selection, digest calculation, recipient identity, and reply flags are not model arguments.
+   A wrong role, repeated invocation, missing/drifted carrier, invalid envelope, candidate mismatch, or digest mismatch
+   must create no Team Transport delivery.
+5. The new loader, validator, publication service, and capability schema are Runtime-neutral and contain no Codex
+   thread/rollout/app-server or Pi RPC field. Codex only projects the capability into its private runtime config;
+   R2.3-004 Pi must adapt the same operation rather than reimplement candidate parsing or transport publication.
+6. Existing Protocol cursor verification, candidate progress, Prompt E ticket pipeline, pause/resume, settlement,
+   cleanup, and ledger policies are reused. This change does not add a workflow engine, arbitrary Task patches,
+   automatic semantic retries, backend APIs/tables, or Pi Runtime itself.
+7. The earlier user waiver remains explicit: no Plan Reviewer or independent Requirement Tester is required for this
+   exceptional round. Focused and complete developer regression are required; the next live run is the semantic and
+   Acceptance test and must not claim PASS before independent Acceptance evidence exists.
+
+The user additionally authorized five future semantic starts. Current strict replay remains
+`cap/count/active=31/25/0` with six already authorized starts. Because the immutable ledger policy permits a budget
+authorization only when the current cap is exhausted, the new `+5` is retained as an explicit pending authorization
+and must be appended exactly once after the existing six are consumed; it does not authorize rewriting or bypassing
+the current ledger.
+
+Implementation verification completed on 2026-08-06. The tracked Task plus read-only
+`r23005-start26-r3` overlay validated successfully against the retained start24 r3 carrier; baseline preview hash is
+`d3f51603ae406c2777ab41e9b6093717dd6a2efcd0e1555319b13910e03c705a`. Focused affected regression passed 150 tests
+and 51 subtests; the complete `modeling_team/tests` suite passed 429 tests, skipped 1, and passed 177 subtests. This
+proves only the deterministic mechanical contract and Codex projection. R2.3-005 remains incomplete until a fresh
+live start reaches Protocol/platform work and independent Acceptance evidence.
