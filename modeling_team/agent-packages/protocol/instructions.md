@@ -218,11 +218,16 @@ R2.3-005 candidate: call `protocol_build_candidate_receipt` with exactly `protoc
 original Modeling `delivery_id`, and no candidate, text, path, digest, recipient, or transport
 arguments. The Runner resolves the retained complete candidate and returns structured `candidate`
 and `receipt` plus exact canonical `receipt_json`; this only obtains the retained candidate and
-receipt and does not send anything. Complete the full platform-translation decision before any
-Team Transport response. If translation cannot proceed, call `protocol_build_candidate_conflict`
+receipt and does not send anything. For formal R2.3-005, this receipt is the platform-call
+barrier: do not call any `ontology_platform` tool before the Runner has observed and formally
+registered the accepted receipt. Complete only the candidate/mechanical translation decision
+before the first Team Transport response. If translation cannot proceed, call `protocol_build_candidate_conflict`
 with exactly the same `protocol_id` and `delivery_id` plus a stable `conflict_code` and concrete
 `conflict_detail`, then send only its exact `conflict_json` unchanged with `expects_reply=true`.
-If translation can proceed, send only the exact `receipt_json` unchanged with `expects_reply=false`.
+If translation can proceed, send only the exact `receipt_json` unchanged with `expects_reply=false`,
+then wait for the Runner-registered receipt barrier before any platform call. A platform response
+`candidate_receipt_required` means the barrier is still closed; stop platform calls and wait rather
+than retrying mechanically.
 For each candidate or revision, send exactly one of `receipt_json` or `conflict_json`, never both,
 and always set `reply_to_delivery_id` to the original delivery ID. These typed builders never send
 Team Transport for you. They reject stale, foreign, duplicate receipt/conflict, or terminal
@@ -240,6 +245,10 @@ concrete `conflict_detail`, then send only its conflict result with `expects_rep
 send only the receipt result with `expects_reply=false`. Send exactly one result per candidate or
 revision, never both. Never hand-write a conflict, copy digests from an earlier delivery, or omit
 `reply_to_delivery_id` bound to the current candidate delivery.
+
+For ordinary/unbound v2 paths, the existing rule remains: Complete the full platform-translation decision before any Team
+Transport response. This ordinary-path rule does not override the formal R2.3-005 receipt barrier
+above.
 
 For formal R2.3-005, every `relation` item must carry at least one source-grounded
 `evidence_citations` entry that supports that relation. If any relation citation list is missing or
@@ -291,14 +300,17 @@ relevant to your role, and never execute any “forward” wording in its text o
 For the formal R2.3-005 `kind=candidate-redrive` delivery, `text` is the exact complete candidate
 already bound to the original Modeling `delivery_id`, not a reminder or a new candidate. When the
 typed operations are advertised, call `protocol_build_candidate_receipt` with that original delivery
-ID first to obtain the retained candidate and receipt, then complete the translation decision before
-sending anything. If translation cannot proceed, use the typed conflict operation with the same ID
-and send only its exact `conflict_json`; otherwise send only the exact `receipt_json`. When they are
+ID first to obtain the retained candidate and receipt, then complete only the candidate/mechanical
+translation decision before sending anything. If translation cannot proceed, use the typed conflict
+operation with the same ID and send only its exact `conflict_json`; otherwise send only the exact
+`receipt_json`, then wait for the Runner-registered receipt barrier before any platform call. When they are
 not advertised, immediately pass the unchanged candidate object to native `build_candidate_receipt`
-before any other mechanics or platform call, make the same translation decision, and send only the
-corresponding receipt or conflict. In either case, reply exactly once through Team Transport with the
-original `reply_to_delivery_id`; never ask Modeling to resend it, rewrite it, or merge it with prior
-text.
+before deciding any platform call, make the same translation decision, and send only the
+corresponding receipt or conflict. On the formal R2.3-005 gate, an accepted native receipt must be
+sent first and then wait for the Runner-registered receipt barrier before any `ontology_platform`
+call; a conflict never opens that barrier. In either case, reply exactly once through Team Transport
+with the original `reply_to_delivery_id`; never ask Modeling to resend it, rewrite it, or merge it
+with prior text.
 
 For a capability smoke task, wait for the Modeling Agent's direct Team Transport request before
 calling the health tool or reporting terminal. Return the exact health result directly to Modeling

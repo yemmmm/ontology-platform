@@ -3215,3 +3215,49 @@ the formal builder, or starting another real run before authorization.
   disabled configuration remain rejected. Existing exact-predecessor, authorization-identity, cap-consumption, and
   repair-baseline gates remain in force. After the repair passes verification, register the pending authorization,
   append the required repair/baseline sequence, and permit start36 only.
+
+### 2026-08-06 — Start36 crossed semantic start but timed out behind the candidate-receipt barrier
+
+- The strict-ledger repair was committed at `0e083b6`. The pending `+3` authorization was then registered, and the
+  start35 repair was bound to the fresh clean baseline
+  `f78b73d469db1dc1500986ec45412d606126d66261b48ffaaaf9a6e60f8b5929` plus the Protocol prompt repair `6dd2d90`
+  and ledger repair `0e083b6`.
+- The first launch of `r23005-real-20260806t134038z-start36` omitted the Delivery-only admin credential. Canonical
+  preflight rejected it with `Delivery-only admin credential is unavailable for canonical preflight` before a run
+  root, reservation, or semantic start existed, so it consumed no attempt. The retry reused the same run ID and exact
+  authorized baseline, used the previously verified bootstrap/export/trap-revoke wrapper, and successfully recorded
+  one reservation and one semantic start. It did not append another budget or repair event.
+- Modeling published the exact retained candidate as `delivery-1`, revision `dify-cba-slice-r3`, digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Runner remained in
+  `awaiting_receipt`: Protocol never returned the required accepted candidate receipt, but nevertheless executed
+  class, property, entity, and relation dry-run/apply_atomic stages and the Shape dry-run. Shape apply_atomic,
+  validation, reasoning, governed retrieval, handoff, and Acceptance never occurred.
+- After 120 seconds Runner failed closed with `candidate-progress-timeout`, classified the run
+  `collaboration/routing`, and recorded `complete_modeling_quality_result=false`. Cleanup retained the non-empty
+  Project, terminated the Session/Lease, destroyed role-private runtime material, and revoked both temporary
+  Delivery admin keys; direct checks found no start36 process or socket residue, and backend/frontend remained
+  healthy.
+- Strict replay is `cap/count/active=37/35/0`, 167 lines, SHA-256
+  `09d616619f3f40fedcd5ed00b0ca6b52337c5173ccc75f4a051a579e30c62210`, with **2 remaining** starts. Before
+  start37, enforce the mechanical candidate-receipt barrier: Protocol must return and bind the accepted receipt before
+  any platform batch may execute. No start37 is implied or automatically authorized by this terminal result.
+
+### 2026-08-06 — Mechanical candidate-receipt barrier implemented and verified
+
+- Runner now owns one atomic closed/open candidate-receipt gate. It is closed for a new candidate, every revision or
+  conflict transition, and terminal state; only formal registration of the accepted receipt opens it. Protocol prompt
+  instructions were synchronized with this mechanical order but are not the enforcement authority.
+- The gate carrier is projected only for formal v2 execution through a private environment binding and read-only
+  namespace mount. Backend MCP `_run_tool` checks the carrier before resource resolution or tool-function dispatch and
+  fails closed with `candidate_receipt_required`; therefore no platform resource lookup or mutation can occur while
+  the candidate is still awaiting its receipt.
+- Legacy and non-formal paths receive no gate environment variable, mount, or runtime directory, preserving their
+  default behavior. The carrier is Runtime-neutral and can be reused by a future Pi adapter without duplicating the
+  receipt state machine or moving semantic authority into the adapter.
+- GitNexus classified the backend runtime edit as CRITICAL and the launch surface as HIGH; those blast-radius
+  warnings were surfaced before implementation. The repair remains formal-v2 opt-in, and default-path regressions
+  demonstrate zero behavior difference outside that contract.
+- Verification passed: complete `modeling_team` regression **452 passed, 1 skipped, 195 subtests**; backend regression
+  **843 passed, 10 skipped**; Ruff and diff checks passed. The repository-managed service restart and post-restart
+  backend/frontend health verification remain for root to complete before start37. No ledger event or additional
+  semantic start was created by this repair verification.

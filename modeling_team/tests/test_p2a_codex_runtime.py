@@ -22,7 +22,8 @@ FROZEN_GLOBAL_SURFACES = {
     # R2.3-005 intentionally updates these five shared surfaces for explicit
     # proof-gate projection and neutral Producer reuse; keep all other frozen
     # platform/P2a surfaces byte-bound below.
-    # Formal candidate-progress and cooperative issue escalation refresh (old -> new):
+    # Formal candidate-progress, cooperative issue escalation, and the
+    # Runner-owned platform-call barrier refresh (old -> new):
     # runner 480b0f851e4f311cc1de0c21b7b862e973de9c0913583863fdfe11119ff448c7 ->
     # 079c11b93ed07dffb47404946bde7b981a6d512c0ae273e103f8cd5f4c8eda13
     # protocol_mechanics 1aa81771de8a1ab7d45e7d87b9f2d788a3e989d252afd5cd8468947ecf0fb800 ->
@@ -39,10 +40,10 @@ FROZEN_GLOBAL_SURFACES = {
     # hash below remains byte-frozen.  The Runner now advertises the formal
     # delivery-bound Coordinator draft path, terminal-handoff prompt guard,
     # and exact Prompt-E delivery/CQ binding for the formal Runner.
-    "modeling_team/runner.py": "23ef9012d2153ad1d36181f07cd0c55883acc3680e2742520a8ac31f1525375b",
+    "modeling_team/runner.py": "8ce15e77ae652848e954964a35fde3329a7208c08098ce71a0e8ba9a662ed83c",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "8b0c65562fa23db5f841d4e40fa081ea58130d798bf83c6372f2d71184560ea0",
+    "modeling_team/runtimes/codex.py": "2506f7652c5bce2364b559d850205e6b3a705a5ec91057d0c7c65ebbd38f9ee9",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

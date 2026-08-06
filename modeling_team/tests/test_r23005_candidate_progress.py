@@ -14,6 +14,7 @@ from modeling_team.candidate_progress import (
     FormalCandidateRoutingError,
     formal_candidate_digests,
 )
+from modeling_team.candidate_platform_gate import CandidatePlatformGate
 from modeling_team.interventions import IssueResolution
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
 from modeling_team.runner import TeamRunner
@@ -651,6 +652,58 @@ def test_runner_turn_barrier_sends_one_candidate_redrive(tmp_path: Path) -> None
     assert redrive.delivery_id == original.delivery_id
     assert redrive.expects_reply == original.expects_reply
     assert redrive.reply_to_delivery_id == original.reply_to_delivery_id
+
+
+def test_runner_opens_platform_gate_only_after_registered_receipt(tmp_path: Path) -> None:
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    gate = CandidatePlatformGate.ensure(tmp_path / "run" / "candidate-gate")
+    runner._candidate_platform_gate = gate
+    original = runner.transport.send(
+        "modeling", "protocol", json.dumps(_candidate()), expects_reply=True
+    )
+    runner.drain()
+    assert json.loads(gate.state_path.read_text())["state"] == "closed"
+
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    receipt = {
+        "status": "accepted",
+        "candidate_revision": identity.candidate_revision,
+        "semantic_digest": identity.semantic_digest,
+        "candidate_digest": identity.candidate_digest,
+    }
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(receipt),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert json.loads(gate.state_path.read_text())["state"] == "open"
+
+
+def test_runner_keeps_platform_gate_closed_after_protocol_conflict(tmp_path: Path) -> None:
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    gate = CandidatePlatformGate.ensure(tmp_path / "run" / "candidate-gate")
+    runner._candidate_platform_gate = gate
+    candidate = _candidate()
+    original = runner.transport.send(
+        "modeling", "protocol", json.dumps(candidate), expects_reply=True
+    )
+    runner.drain()
+    conflict = build_candidate_conflict(candidate, "unsupported", "relation is not declared")
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(conflict),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert json.loads(gate.state_path.read_text())["state"] == "closed"
 
 
 def test_issue_pending_latches_candidate_before_recovery_turn_overwrites_state(tmp_path: Path) -> None:

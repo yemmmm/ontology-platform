@@ -1925,3 +1925,41 @@ already recorded attempts.
   current cap is consumed. Existing strict replay and repair-baseline checks must still reject these sequences.
 - The user's authorization remains pending until this narrow repair is committed and verified. Registration may then
   make start36 eligible; it does not automatically start or authorize start37 or start38 execution.
+
+### Start36 candidate-receipt barrier failure (2026-08-06)
+
+- The initial start36 invocation failed canonical preflight because the Delivery-only admin credential was absent.
+  It created no run root, reservation, or semantic start and consumed no attempt. Reusing the same run ID and exact
+  authorized baseline with the verified bootstrap/export/trap-revoke wrapper then passed preflight and entered one
+  semantic start; no duplicate budget or repair event was appended.
+- The exact retained candidate was published as `delivery-1` with digest
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`, but formal progress remained
+  `awaiting_receipt`. No accepted Protocol receipt was delivered or bound before Protocol executed class, property,
+  entity, and relation dry-run/apply_atomic plus Shape dry-run.
+- C116-style platform execution evidence is partial only: Shape apply_atomic, validation, reasoning, governed
+  retrieval, canonical handoff, ticket publication, Examiner rounds, Acceptance verdict, and PASS are absent. The
+  120-second `candidate-progress-timeout` is `collaboration/routing`, with
+  `complete_modeling_quality_result=false`.
+- Cleanup and credential gates passed: the non-empty Project was retained, Session/Lease were terminated, temporary
+  keys were revoked, no start36 process/socket remained, and both application endpoints were healthy. Strict replay
+  is `cap/count/active=37/35/0`, 167 lines, SHA-256
+  `09d616619f3f40fedcd5ed00b0ca6b52337c5173ccc75f4a051a579e30c62210`, with **2 remaining** starts.
+- **Start37 gate:** mechanically prevent platform execution while a candidate is `awaiting_receipt`; the exact
+  accepted receipt must be delivered and bound before the first batch. Do not launch start37 automatically.
+
+### Mechanical candidate-receipt barrier repair verification (2026-08-06)
+
+- Runner owns an atomic formal candidate gate. A new candidate, revision, conflict, or terminal transition closes it;
+  formal accepted-receipt registration alone opens it. Tests cover close/open ordering and prevent prompt compliance
+  from substituting for enforcement.
+- Formal v2 is the only path that receives the private environment carrier and read-only namespace binding. Backend
+  MCP `_run_tool` rejects with `candidate_receipt_required` before resolving resources or invoking the requested tool
+  while the carrier is closed. This proves platform tools cannot execute in the start36 `awaiting_receipt` state.
+- Negative compatibility coverage confirms legacy and non-formal execution receives no environment variable, mount,
+  or gate directory. The carrier contract is adapter-neutral so a future Pi runtime can reuse it without copying gate
+  logic.
+- GitNexus reported CRITICAL risk for the backend runtime surface and HIGH risk for launch wiring; the opt-in formal-v2
+  design and default-path tests address those blast radii. Full verification passed **452 modeling tests, 1 skipped,
+  195 subtests** and **843 backend tests, 10 skipped**; Ruff and diff checks passed.
+- Runtime acceptance remains pending: root must restart `ontology-platform.service` and verify backend/frontend health
+  before start37. This repair round created no ledger mutation or semantic start.

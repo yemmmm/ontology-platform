@@ -2737,3 +2737,45 @@ At exhausted cap, the explicit budget event must still precede the exact repair 
 fresh baseline/reservation. Only after this narrow repair is committed and verified may the pending authorization be
 registered. That registration makes start36 the next eligible semantic start; it does not automatically execute
 start37 or start38.
+
+### 2026-08-06 R2.3-005 start36 candidate-receipt ordering failure
+
+The repaired ledger accepted the pending three-start authorization and the start35 repair against clean baseline
+`f78b73d469db1dc1500986ec45412d606126d66261b48ffaaaf9a6e60f8b5929`. A first invocation of
+`r23005-real-20260806t134038z-start36` lacked the Delivery-only admin credential and failed canonical preflight before
+the run root, reservation, or semantic-start boundary; it therefore consumed no attempt. The corrected invocation
+reused the same run ID and exact authorized baseline, used the established ephemeral bootstrap/revoke wrapper, and
+recorded exactly one reservation and semantic start without duplicating budget or repair authorization.
+
+Modeling published the exact retained candidate as `delivery-1`, revision `dify-cba-slice-r3`, digest
+`7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`. Protocol did not return the accepted
+candidate receipt, so Runner remained `awaiting_receipt`; Protocol nevertheless executed class, property, entity, and
+relation dry-run/apply_atomic stages and Shape dry-run. After 120 seconds Runner closed
+`candidate-progress-timeout` as `collaboration/routing`, with `complete_modeling_quality_result=false`. Shape apply,
+validation, reasoning, governed retrieval, handoff, and Acceptance have no evidence and must not be inferred.
+
+Before start37, the candidate receipt is a mechanical execution barrier: Protocol **must** deliver and bind the exact
+accepted receipt before any platform batch is permitted. This gate must prevent a model from bypassing receipt order;
+prompt guidance alone is insufficient. Cleanup retained the written Project, terminated the Session/Lease, revoked
+temporary credentials, and left no start36 runtime residue. Strict replay is `cap/count/active=37/35/0`, 167 lines,
+SHA-256 `09d616619f3f40fedcd5ed00b0ca6b52337c5173ccc75f4a051a579e30c62210`, with **2 remaining** starts. No start37
+is automatically launched.
+
+### 2026-08-06 R2.3-005 mechanical candidate-receipt enforcement
+
+The start37 gate is implemented as a Runner-owned atomic closed/open carrier. A formal v2 candidate begins closed;
+candidate replacement, revision, conflict, and terminal transitions close it again. Only formal registration of the
+exact accepted receipt may open it. Protocol prompt instructions must describe the same order, but prompt behavior is
+not accepted as enforcement evidence.
+
+Only formal v2 runtime receives the private gate environment binding and read-only namespace mount. Backend MCP
+`_run_tool` **must** evaluate the carrier before resolving platform resources or dispatching the requested function
+and fail closed with `candidate_receipt_required` while the gate is closed. Legacy and non-formal execution must
+receive no gate environment variable, mount, or runtime directory. The carrier contract remains Runtime-neutral so a
+future Pi adapter reuses the same Runner state rather than implementing an adapter-specific receipt authority.
+
+GitNexus reported CRITICAL blast radius for the backend runtime surface and HIGH for launch wiring. The accepted
+mitigation is formal-v2-only opt-in wiring with zero default-path behavior difference. Verification passed **452
+modeling tests, 1 skipped, 195 subtests**, **843 backend tests, 10 skipped**, Ruff, and diff checks. The service restart
+and post-restart backend/frontend health checks remain pending with root; start37 must not begin until that runtime
+verification is complete. This repair itself does not change the ledger or consume a semantic start.

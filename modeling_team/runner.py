@@ -38,6 +38,7 @@ from .candidate_progress import (
     validate_formal_conflict,
     validate_formal_receipt,
 )
+from .candidate_platform_gate import CandidatePlatformGate
 from .candidate_publication import (
     CandidatePublicationError,
     StagedCandidatePublication,
@@ -143,6 +144,7 @@ class TeamRunner:
         self.coordinator_phase: CoordinatorPhaseController | None = None
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
+        self._candidate_platform_gate: CandidatePlatformGate | None = None
         # One typed Protocol response is allowed for each active original
         # Modeling delivery.  The set is Runner-owned so a capability retry
         # cannot emit a second receipt/conflict for the same delivery.
@@ -393,6 +395,11 @@ class TeamRunner:
             if formal_acceptance
             else None
         )
+        self._candidate_platform_gate = (
+            CandidatePlatformGate.ensure(root / "candidate-gate")
+            if formal_acceptance
+            else None
+        )
         self._protocol_candidate_responses = {}
         self._formal_failure_latched = False
         acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
@@ -586,6 +593,7 @@ class TeamRunner:
             "team_transport_interventions": self.repository_root / "modeling_team/interventions.py",
             "platform_scope": self.repository_root / "modeling_team/platform_scope.py",
             "protocol_mcp_launch": self.repository_root / "modeling_team/protocol_mcp_launch.py",
+            "candidate_platform_gate": self.repository_root / "modeling_team/candidate_platform_gate.py",
             "protocol_mechanics": self.repository_root / "modeling_team/protocol_mechanics.py",
             "proof_v2": self.repository_root / "modeling_team/proof_v2.py",
             "proof_matrix_generator": self.repository_root / "modeling_team/matrix_artifact.py",
@@ -2171,6 +2179,15 @@ class TeamRunner:
                     candidate_revision=identity.candidate_revision,
                     candidate_digest=identity.candidate_digest,
                 )
+            if self._candidate_platform_gate is not None:
+                if result in {"candidate", "revision", "conflict"}:
+                    self._candidate_platform_gate.close(
+                        "candidate_pending_receipt"
+                        if result in {"candidate", "revision"}
+                        else "protocol_conflict",
+                    )
+                elif result == "accepted" and identity is not None:
+                    self._candidate_platform_gate.open(identity.__dict__)
             self._append_evidence(
                 "formal-candidate-progress",
                 {
@@ -2219,6 +2236,8 @@ class TeamRunner:
         self._formal_failure_latched = True
         if self._candidate_progress is not None:
             self._candidate_progress.mark_terminal_failure()
+        if self._candidate_platform_gate is not None:
+            self._candidate_platform_gate.close("formal_candidate_terminal_failure")
         self._state(
             "TERMINAL_FAILURE_PENDING_CLEANUP",
             failure_category=classification,

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import inspect
+import os
+import stat
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -359,7 +361,54 @@ def _set_runtime_principal(principal: AuthPrincipal) -> None:
     _principal = principal
 
 
+def _candidate_platform_gate_error() -> dict[str, str] | None:
+    """Return the fixed formal-candidate denial envelope, when the gate is closed.
+
+    The environment variable is absent for every legacy/non-formal launch, so that
+    path intentionally performs no additional filesystem or runtime work.  Formal
+    Protocol launches inject a read-only carrier path; any missing, malformed,
+    symlinked, or closed state fails before resources, authorization, or the tool
+    callback are touched.
+    """
+
+    gate_path = os.environ.get("FORMAL_CANDIDATE_GATE_PATH")
+    if gate_path is None:
+        return None
+    allowed = False
+    if gate_path:
+        descriptor: int | None = None
+        try:
+            flags = os.O_RDONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(gate_path, flags)
+            metadata = os.fstat(descriptor)
+            if stat.S_ISREG(metadata.st_mode) and metadata.st_size <= 64 * 1024:
+                payload = os.read(descriptor, 64 * 1024 + 1)
+                value = json.loads(payload.decode("utf-8"))
+                allowed = (
+                    isinstance(value, dict)
+                    and value.get("schema_version") == "r2-3-005-candidate-platform-gate/v1"
+                    and value.get("state") == "open"
+                )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            allowed = False
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+    if allowed:
+        return None
+    return {
+        "ok": False,
+        "error": "candidate receipt required before platform call",
+        "error_code": "candidate_receipt_required",
+    }
+
+
 def _run_tool(fn: Callable[[Session, Any, EmbeddingClient], T]) -> dict[str, Any]:
+    gate_error = _candidate_platform_gate_error()
+    if gate_error is not None:
+        return gate_error
     session_factory, _driver, embedding_client = get_resources()
     tool_name = inspect.currentframe().f_back.f_code.co_name
     try:

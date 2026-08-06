@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .candidate_platform_gate import CANDIDATE_PLATFORM_GATE_ENV
+
 
 # The frozen semantic mode is deliberately fixed rather than inherited from the host environment.
 _CANONICAL_MODE_ENV = (
@@ -40,6 +42,7 @@ class ProtocolMcpLaunchSpec:
     reasoner_env: tuple[tuple[str, str], ...] = ()
     connection_env: tuple[tuple[str, str], ...] = _CONNECTION_ENV
     secret_env_name: str = "ONTOLOGY_MCP_API_KEY"
+    candidate_gate_path: str | None = None
 
     def config_lines(self, *, api_key: str) -> list[str]:
         """Render the private config block without reading ambient environment state."""
@@ -49,6 +52,7 @@ class ProtocolMcpLaunchSpec:
             *self.reasoner_env,
             *self.connection_env,
             (self.secret_env_name, api_key),
+            *(((CANDIDATE_PLATFORM_GATE_ENV, self.candidate_gate_path),) if self.candidate_gate_path else ()),
         )
         return [
             "[mcp_servers.ontology_platform]",
@@ -63,12 +67,13 @@ class ProtocolMcpLaunchSpec:
 
 
 def protocol_mcp_launch_spec(
-    tools: frozenset[str], *, schema_version: int = 2
+    tools: frozenset[str], *, schema_version: int = 2, candidate_gate_path: str | None = None
 ) -> ProtocolMcpLaunchSpec:
     """Build the stable launch specification from the frozen Protocol tool surface."""
     return ProtocolMcpLaunchSpec(
         tools=tuple(sorted(tools)),
         reasoner_env=_REASONER_ENV if schema_version == 2 else (),
+        candidate_gate_path=candidate_gate_path if schema_version == 2 else None,
     )
 
 

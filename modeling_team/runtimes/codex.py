@@ -29,6 +29,11 @@ from ..acceptance_runtime import (
     prepare_child_tree,
 )
 from ..capability_mcp import ROLE_OPERATIONS
+from ..candidate_platform_gate import (
+    CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
+    CANDIDATE_PLATFORM_GATE_MOUNT,
+    CandidatePlatformGate,
+)
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
 from ..transport_mcp import TERMINAL_REPORT_GUARD_ERROR
@@ -327,6 +332,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._run_id: str | None = None
         self._acceptance: Any | None = None
         self._coordination_enabled = False
+        self._candidate_platform_gate_enabled = False
         self._formal_turn_binding_required = False
         self._private_credentials_destroyed: dict[str, bool] = {}
 
@@ -863,6 +869,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
         )
 
+    @classmethod
+    def _candidate_platform_gate_enabled_for_run(cls, run: Any) -> bool:
+        configuration = getattr(run, "configuration", None)
+        task = getattr(configuration, "task", None)
+        return cls._is_formal_acceptance_run(run) and getattr(task, "schema_version", 1) == 2
+
     @staticmethod
     def _proof_gate_enabled(run: Any) -> bool:
         """Resolve proof-v2 assets from an explicit gate, not schema version alone.
@@ -928,6 +940,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._run_id = run.run_id
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
+        self._candidate_platform_gate_enabled = (
+            self._coordination_enabled
+            and getattr(
+                getattr(getattr(run, "configuration", None), "task", None),
+                "schema_version",
+                1,
+            )
+            == 2
+        )
         self._formal_turn_binding_required = self._coordination_enabled
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
@@ -1252,10 +1273,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             platform = agent.home / "platform"
             shutil.copytree(self.root / "backend" / "app", platform / "app")
+            formal_candidate_gate = self._candidate_platform_gate_enabled_for_run(run)
+            if formal_candidate_gate:
+                CandidatePlatformGate.ensure(run.root / "candidate-gate")
             lines.extend(
                 protocol_mcp_launch_spec(
                     agent.platform_tools,
                     schema_version=getattr(task, "schema_version", 1),
+                    candidate_gate_path=(
+                        CANDIDATE_PLATFORM_GATE_MOUNT if formal_candidate_gate else None
+                    ),
                 ).config_lines(api_key=key)
             )
             if getattr(task, "schema_version", 1) == 2:
@@ -1477,6 +1504,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     )
                 command[command.index("--chdir") : command.index("--chdir")] = mounts
             if agent.schema_version == 2:
+                if self._candidate_platform_gate_enabled:
+                    if self._run_root is None:
+                        raise CodexRuntimeError("Protocol candidate gate is missing its run root")
+                    gate_directory = self._run_root / "candidate-gate"
+                    CandidatePlatformGate.ensure(gate_directory)
+                    command[command.index("--chdir") : command.index("--chdir")] = [
+                        "--dir",
+                        CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
+                        "--ro-bind",
+                        str(gate_directory),
+                        CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
+                    ]
                 reasoner = self._protocol_reasoner_script()
                 command[command.index("--chdir") : command.index("--chdir")] = [
                     "--dir",
