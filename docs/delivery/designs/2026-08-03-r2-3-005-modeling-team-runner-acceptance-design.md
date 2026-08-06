@@ -821,3 +821,22 @@ reachable; partial, wrong, cross-round, cross-kind, and unknown-argument forms f
 ticket/capability validation, replay, lifecycle, report/recycle, and settlement contracts remain unchanged, and the
 amendment introduces no Runtime or Pi coupling. The amendment is eligible for commit and presents no remaining
 start39 blocker.
+
+### 2026-08-07 — Start40 retained upstream proof and failed in Acceptance runtime
+
+Start40 reused the nearest accepted r3 candidate through the corrected direct PTY. Candidate publication, platform
+application/validation/reasoning, governed retrieval, and handoff completed in a fresh scope and remain valid upstream
+evidence; the later runtime failure must not trigger remodeling. Host-derived omitted input binding worked. Source
+attempts 0 and 1 then produced typed `child-timeout` failures and were recycled to zero residue; platform start failed
+before handle/read-key creation, so no typed platform child result permits retry.
+
+The first recycle exposed a prompt defect: `completion_ref` is a discriminated one-key digest reference, never the
+readiness object. Commit `8efe993` makes that rule durable in Acceptance instructions, Task text, capability
+schema/dispatch, packaged Skill, and regression coverage. It is reusable protocol guidance, not a start-specific
+checker.
+
+The user chose terminal failure rather than continued verdict-contract repair. Issue 2 used formal abort; Runner
+destroyed child/role credentials and processes, revoked all keys, terminalized Session/Lease, and retained the
+non-empty failed-written Project. No CQ verdict or settlement is inferred. Classification is
+`runtime/infrastructure`, `complete_modeling_quality_result=false`; ledger replay is `40/39/0`, leaving one idle
+authorized start and no authorization for repair or start41.

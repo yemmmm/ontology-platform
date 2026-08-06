@@ -3452,3 +3452,40 @@ the formal builder, or starting another real run before authorization.
   `uv run ... python -m modeling_team run` inside the tool-owned PTY, returns a live session, and is driven by
   `write_stdin`. Do not place the foreground Runner beneath a Python heredoc or any subprocess whose stdin is not the
   live PTY. Only after that prompt/checklist repair is reviewed may start40 receive a repair authorization and launch.
+
+### 2026-08-07 — Start40 live recovery and user-directed terminal failure
+
+- Start40 `r23005-real-20260806t161228z-start40` launched from baseline `1656c31` with the direct PTY, exact start38
+  overlay, and r3 candidate digest `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`.
+  Fresh Project/Ontology are `1e877b1e-2d91-473e-9f90-06ff26e7740d` /
+  `5a162467-05f8-4806-83fc-cefcbcde26bd`; model-state digest is
+  `8d386326c425cd7d3db613d78040af1917fbe3f887193d39469cd1280fa5216d`.
+- Candidate receipt, dry-run, apply, readback, validation, reasoning, governed retrieval, and acceptance handoff
+  completed. Handoff digest is `4230f40613b2f53d1406f0249cdf097e61ddbf8a573207e089055c940960c31a`.
+  These retained upstream results are not a complete modeling-quality PASS.
+- CQ2 ticket digest is `df3dccdc4165fc662fb0801f8160b9d5cb88a21187c5c744e4a5dad3c7bf623d`.
+  Omitted child-input arguments correctly selected Host source/platform projection digests
+  `63fcc1080e98106070740688acb959eb85fc95549d4b04d1732e9b90c5216cdd` /
+  `d358cfe811badf4d4ed9058b86e965d627655d5eae32d5c4d6763a6cd5c7838e`.
+- Source attempt 0 timed out with failure digest `a4946bead437856aea6edf0de86f8c3858f5feef71448e4d788400e5e9b066be`.
+  Its whole-object recycle was rejected, then issue 1 guidance resumed the same thread and supplied only the required
+  one-key digest reference. Cleanup receipt is `3f1c3d3f8766124d22e51522845796210f96f2e67e65700f3ddcaa61adcbe090`.
+  Attempt 1 reused the identical Host input/ticket with a fresh request ID; it also timed out, failure digest
+  `51e22980d16fd1f8be7bb77b5eaf25e833516831518e1c5ee10529fa25b6d3d4`, and cleanup receipt
+  `3a81031b288e53e3fa064ef7b33c9ec38b04d1be053b51e936031815388abf2d`.
+- Platform attempt 0 was rejected twice with generic MCP `-32001` before handle/read-key creation and was not blindly
+  retried. Acceptance had 0/2 terminal Examiner reports; no CQ verdict was accepted or persisted. Issue 2 paused on
+  rejected verdict submission.
+- The user explicitly directed start40 to count as failed. Formal issue-2 abort preserved all evidence and prohibited
+  new attempts. Runner emitted `issue-aborted` and `TERMINAL_REPORT_COMPLETE`; Acceptance is aborted/unsettled with
+  active handles 0, zero child residue, and destroyed credentials. Role processes/forwarders are absent, Build Session
+  is completed, Lease released, and project/protocol/admin plus outer Delivery keys are revoked. The non-empty Project
+  is retained as failed-written evidence.
+- Commit `8efe993` (`Constrain acceptance recycle references`) is the durable prompt/schema/Skill/test repair for the
+  one-key recycle reference. It does not rewrite start40's result.
+- Strict ledger closeout is `terminal_failure(runtime/infrastructure,false)` at `cap/count/active=40/39/0`, 184 lines,
+  45,337 bytes, SHA-256 `3c8aedd517feb412b07acd88b2a4109ef510946f545a2c23df784ad2299f51c6`.
+  One authorized start remains; no budget, repair, reservation, or start41 event was written.
+- User files were restored unchanged and excluded from this commit: `AGENTS.md` SHA-256
+  `366451626bca75b93d9567e8675265de7ef6e216b4719027d6b46b2abbfda318`; `CLAUDE.md` SHA-256
+  `643dc990ec0031ece4e7728e65f3d3393e0dda9575e003e3af855db2606a9531`.

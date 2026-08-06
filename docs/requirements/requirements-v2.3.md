@@ -2960,3 +2960,24 @@ reuse the start38 shell-direct PTY contract: the tool-owned PTY directly hosts
 `uv run ... python -m modeling_team run`, retains a live session ID, and receives later control through
 `write_stdin`. Python-heredoc/subprocess foreground indirection is forbidden. Only after that narrow Delivery repair
 review may the normal strict-ledger repair/reservation sequence proceed.
+
+### 2026-08-07 R2.3-005 start40 runtime-infrastructure failure
+
+Start40 `r23005-real-20260806t161228z-start40` reused the retained r3 candidate and start38 overlay from baseline
+`1656c31` through the corrected shell-direct PTY. Candidate receipt, platform dry-run/apply, readback, validation,
+reasoning, governed retrieval, and the acceptance-stage handoff completed in fresh Project
+`1e877b1e-2d91-473e-9f90-06ff26e7740d` / Ontology `5a162467-05f8-4806-83fc-cefcbcde26bd`.
+
+CQ2 proved omitted child inputs bind the Host projections, but Source Examiner attempt 0 and the sole identical-input
+attempt 1 both ended in typed `child-timeout` and were recycled. Platform start was rejected twice with generic MCP
+`-32001` before any handle/read key existed. No semantic Examiner report, CQ verdict, settlement, or complete
+modeling-quality result exists. Same-run issue guidance recovered the first recycle after Acceptance incorrectly sent
+the whole readiness object. Commit `8efe993` (`Constrain acceptance recycle references`) durably freezes the required
+one-key `completion_ref` contract in prompts, schema, Skill, and tests.
+
+At the user's direction, issue 2 used formal abort rather than verdict repair. Runner reached
+`TERMINAL_REPORT_COMPLETE`; children, processes, credentials, keys, Build Session, and Lease are terminal/clean, while
+the non-empty failed-written Project is retained as evidence. Ledger classification is `runtime/infrastructure` with
+`complete_modeling_quality_result=false`; strict replay is `cap/count/active=40/39/0`, 184 lines, SHA-256
+`3c8aedd517feb412b07acd88b2a4109ef510946f545a2c23df784ad2299f51c6`, leaving **1** authorized start. This does
+not authorize repair, reservation, or start41 without a new user instruction.
