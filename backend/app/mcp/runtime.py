@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import inspect
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -15,6 +16,7 @@ from app.core.config import Settings
 from app.mcp.errors import map_exception
 from app.repositories.postgres import create_session_factory
 from app.services.embedding import EmbeddingClient
+from app.services.semantic_context_cursor import ContextCursorCodec
 from app.repositories.models import ApiKeyModel
 from app.security.auth import AuthPrincipal, audit_security_event, resolve_api_key, validate_scopes
 from app.security.http import _collect_resource_ids, _project_for_resource
@@ -26,6 +28,8 @@ _settings: Settings | None = None
 _session_factory: sessionmaker | None = None
 _embedding_client: EmbeddingClient | None = None
 _principal: AuthPrincipal | None = None
+_context_cursor_codec: ContextCursorCodec | None = None
+_context_cursor_codec_lock = threading.Lock()
 
 
 class McpOwnership(StrEnum):
@@ -208,11 +212,35 @@ def get_resources() -> tuple[sessionmaker, None, EmbeddingClient]:
 
 def reset_resources() -> None:
     """Clear cached singletons. Tests use this for isolation."""
-    global _settings, _session_factory, _embedding_client, _principal
+    global _settings, _session_factory, _embedding_client, _principal, _context_cursor_codec
     _settings = None
     _session_factory = None
     _embedding_client = None
     _principal = None
+    with _context_cursor_codec_lock:
+        _context_cursor_codec = None
+
+
+def get_context_cursor_codec() -> ContextCursorCodec:
+    """Return the process-wide MCP Context Query cursor signer.
+
+    MCP tool calls create a fresh service object for each request. The cursor
+    codec must nevertheless outlive those service objects so an ephemeral
+    process-local signing key can verify a continuation on the next call. A
+    configured signing secret remains the source of stable verification across
+    process restarts; this accessor only owns the per-process instance.
+    """
+    global _context_cursor_codec
+    codec = _context_cursor_codec
+    if codec is not None:
+        return codec
+    with _context_cursor_codec_lock:
+        codec = _context_cursor_codec
+        if codec is None:
+            settings = _settings or Settings()
+            codec = ContextCursorCodec.from_settings(settings)
+            _context_cursor_codec = codec
+        return codec
 
 
 def authenticate_runtime() -> AuthPrincipal:

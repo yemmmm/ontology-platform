@@ -10,7 +10,12 @@ from mcp.server.fastmcp import FastMCP
 
 from app.api.semantic import _ensure_rule_access, _rule_definition_read  # noqa: PLC2701
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool, runtime_actor, runtime_principal
+from app.mcp.runtime import (
+    _run_tool,
+    get_context_cursor_codec,
+    runtime_actor,
+    runtime_principal,
+)
 from app.repositories.rdf_store import RdfStoreRepository
 from app.repositories.models import (
     SemanticGraphSetModel,
@@ -77,7 +82,12 @@ def _scope_resolver(session) -> SemanticQueryScopeResolver:
 
 
 def _context_query_service(session) -> SemanticContextQueryService:
-    return SemanticContextQueryService(session, _rdf_store(), _scope_resolver(session))
+    return SemanticContextQueryService(
+        session,
+        _rdf_store(),
+        _scope_resolver(session),
+        cursor_codec=get_context_cursor_codec(),
+    )
 
 
 def _normalize_mcp_queries(*, query: str | None, queries: list[str] | None) -> list[str]:

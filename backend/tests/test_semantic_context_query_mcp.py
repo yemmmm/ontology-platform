@@ -414,3 +414,122 @@ def test_mcp_context_query_forwards_refreshed_principal(scoped_mcp, monkeypatch)
     forwarded = captured.get("principal")
     assert forwarded is not None
     assert forwarded.subject_type == "api_key"
+
+
+def test_mcp_context_cursor_survives_service_recreation_and_keeps_bindings(
+    scoped_mcp, monkeypatch, in_memory_session, mcp_principal_factory
+):
+    """MCP calls rebuild the service, but continuation uses one process codec."""
+    settings = Settings(semantic_graph_iri_prefix="https://mcp.test/graph/")
+
+    def candidates(self, _rows, scope, _text, _terms):  # noqa: ARG001
+        return [
+            {
+                "id": "https://mcp.test/resource/one",
+                "kind": "instance",
+                "target_kind": "resource",
+                "ontology_id": "o",
+                "iri": "https://mcp.test/resource/one",
+                "label": "one",
+                "aliases": [],
+                "description": None,
+                "data": {},
+                "distance": 0,
+                "assertion_kind": "asserted",
+                "match": {
+                    "score": 900,
+                    "matched_terms": ["topic"],
+                    "matched_fields": ["label"],
+                    "reasons": ["exact_label"],
+                },
+            },
+            {
+                "id": "https://mcp.test/resource/two",
+                "kind": "instance",
+                "target_kind": "resource",
+                "ontology_id": "o",
+                "iri": "https://mcp.test/resource/two",
+                "label": "two",
+                "aliases": [],
+                "description": None,
+                "data": {},
+                "distance": 0,
+                "assertion_kind": "asserted",
+                "match": {
+                    "score": 800,
+                    "matched_terms": ["topic"],
+                    "matched_fields": ["label"],
+                    "reasons": ["label_contains"],
+                },
+            },
+        ]
+
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._rdf_store",
+        lambda: EmptyStore(),
+    )
+    monkeypatch.setattr(
+        "app.mcp.tools.semantic._scope_resolver",
+        lambda session: SemanticQueryScopeResolver(session, settings),
+    )
+    monkeypatch.setattr(SemanticContextQueryService, "_lexical_candidate_rows", lambda *args: [])
+    monkeypatch.setattr(SemanticContextQueryService, "_rdf_candidates", candidates)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        lambda *_args, **_kwargs: {
+            "candidates_by_query": [[]],
+            "indexes": [],
+            "warnings": [],
+            "completeness": "complete",
+        },
+    )
+    monkeypatch.setattr("app.mcp.runtime._context_cursor_codec", None)
+    scoped_mcp(EmptyStore())
+
+    request = {
+        "project_id": "p",
+        "scope_mode": "ontologies",
+        "ontology_ids": ["o"],
+        "query": "topic",
+        "resource_types": ["instance"],
+        "depth": 0,
+        "limit": 1,
+    }
+    first = _tool("query_semantic_context").fn(**request)
+    assert first["ok"] is True
+    cursor = first["data"]["matches_page"]["next_match_cursor"]
+    assert isinstance(cursor, str) and cursor
+
+    continued = _tool("query_semantic_context").fn(**request, match_cursor=cursor)
+    assert continued["ok"] is True
+    assert [item["label"] for item in continued["data"]["primary_matches"]] == ["two"]
+
+    changed_query = _tool("query_semantic_context").fn(
+        **{**request, "query": "other"}, match_cursor=cursor
+    )
+    assert changed_query["ok"] is False
+    assert changed_query["error_code"] == "context_cursor_mismatch"
+
+    changed_scope = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="project",
+        query="topic",
+        resource_types=["instance"],
+        depth=0,
+        limit=1,
+        match_cursor=cursor,
+    )
+    assert changed_scope["ok"] is False
+    assert changed_scope["error_code"] == "context_cursor_mismatch"
+
+    mcp_principal_factory(in_memory_session, project_id="p", scopes=["read"])
+    in_memory_session.commit()
+    changed_principal = _tool("query_semantic_context").fn(**request, match_cursor=cursor)
+    assert changed_principal["ok"] is False
+    assert changed_principal["error_code"] == "context_cursor_mismatch"
+
+    missing_query = _tool("query_semantic_context").fn(
+        project_id="p", scope_mode="ontologies", ontology_ids=["o"]
+    )
+    assert missing_query["ok"] is False
+    assert missing_query["error_code"] == "invalid_query"
