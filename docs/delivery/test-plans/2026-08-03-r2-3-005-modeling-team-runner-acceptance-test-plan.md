@@ -2235,3 +2235,47 @@ already recorded attempts.
   `collaboration/routing,false` historical live evidence and is outside this deterministic gate. The known
   stale P2a byte-freeze assertion is not part of this proportional R2.3-005 regression scope. A new clean
   baseline and explicit authorization are still required before the next real semantic start.
+
+## 2026-08-07 Start43 timeout repair (Profile-owned candidate progress timeout) — Independent round 4
+
+### Scope, baseline, and safety boundary
+
+- Authority: the Start43 live timeout evidence and narrow repair gate recorded in
+  `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`.
+  This round verifies that the candidate-progress timeout has one authoritative formal Profile parameter,
+  strict validation, and no drift to nonformal/default or existing lifecycle semantics.
+- The checked source baseline is `0edcc2b` (`Restore DeepSeek Protocol after start42`). The worktree also
+  contains the current timeout repair edits in `modeling_team/contracts.py`,
+  `modeling_team/profiles/r2-3-005-modeling-team.yaml`, `modeling_team/runner.py`, and their focused
+  tests, plus the pre-existing delivery-record edit. The delivery record was not modified by this round.
+- This is deterministic, read-only verification. No live model call, semantic start, Project/Ontology
+  mutation, remote service call, or credential publication was performed.
+
+### Executed commands and results
+
+1. `PYTHONPATH=. pytest modeling_team/tests/test_r23005_candidate_progress.py -q` — **PASS**, `32 passed in 0.25s`.
+2. `PYTHONPATH=. pytest modeling_team/tests/test_deepseek_codex_runtime.py modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py -q` — **PASS**, `118 passed in 3.28s`.
+3. A `PYTHONPATH=. python3` temporary-profile probe — **PASS**. The active formal Profile contains exactly
+   one `candidate_progress_timeout_seconds` parameter with value `300`; `load_profile(..., strict=True)`
+   rejects booleans, quoted/string values, `NaN`, positive/negative infinity, zero, negatives, and values
+   above `600`; bounded positive values are accepted. Removing the formal parameter leaves the formal
+   configuration at the `120`-second default, a nonformal Profile cannot configure the formal parameter,
+   and direct `FormalCandidateProgress` construction still defaults to `120` seconds.
+4. `backend/.venv/bin/ruff check modeling_team/contracts.py modeling_team/runner.py modeling_team/runtimes/codex.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_deepseek_codex_runtime.py` plus
+   `git diff --check --` over the changed timeout/runtime/test paths — **PASS**. Ruff reported `All checks passed!`;
+   the diff check produced no output.
+
+### Acceptance mapping and disposition
+
+- `TeamRunner.prepare` receives `300.0` for the R2.3-005 formal Profile, `120.0` for a temporary formal
+  Profile with the parameter omitted, and no formal tracker for other scenarios; the class default remains
+  `120.0`. The focused contract tests cover the first two mappings.
+- The candidate-progress suite covers unchanged pause/active-elapsed accounting, timeout and terminal
+  latches, one-redrive exhaustion, late receipts/conflicts, and exact handoff identity/digest behavior.
+- The related DeepSeek runtime/isolation tests retain homogeneous `deepseek-v4-flash` with `max` reasoning
+  for Coordinator, Modeling, Protocol, Acceptance, and both Examiner paths. Their approval test continues
+  to fail closed with the exact JSON-RPC `decision=decline` and no command fallback or sensitive evidence.
+- **Overall: PASS.** No defect requiring a repair agent was found. Start43's historical fixed-120-second
+  live timeout remains classified as `collaboration/routing,false`, not modeling quality; this deterministic
+  round is not a live Runtime/L0 or semantic-quality acceptance. A reviewed clean baseline and explicit
+  authorization are still required before the next real semantic start.

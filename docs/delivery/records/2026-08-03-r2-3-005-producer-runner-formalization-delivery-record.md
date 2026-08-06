@@ -3615,3 +3615,32 @@ the formal builder, or starting another real run before authorization.
   focused tests plus 103 Runtime/isolation/contract tests, exact TOML/environment probes across all four
   persistent roles and both Examiner kinds, a dormant synthetic Luna-override probe, and the sanitized
   command-approval decline/continued-turn probe. Round 3 made no model call or semantic start.
+
+### 2026-08-07 — Start43 exposed the 120-second max-reasoning deadline mismatch
+
+- Start43 `r23005-real-20260807-deepseek-start43` used commit `0edcc2b` and exact baseline
+  `43b81efa25691f30e2d76bd1b2a044756e21d4052822faedea4032141e90ef73`. Runtime TOML
+  confirmed all four persistent roles on `deepseek-v4-flash/deepseek/max`; Modeling immediately
+  published the complete unchanged r3 candidate.
+- Protocol produced continuous reasoning deltas with no provider error, malformed output, platform call,
+  or command-approval request, but did not emit its first candidate receipt before the fixed 120-second
+  `FormalCandidateProgress` deadline. The deadline failed closed as `candidate-progress-timeout` and the
+  strict ledger recorded `collaboration/routing,false`. This is incomplete Runtime timing evidence, not a
+  semantic-quality verdict and not proof that the candidate or Protocol reasoning was wrong.
+- Cleanup reached `TERMINAL_FAILURE_CLEANED`: Acceptance is aborted/unsettled with zero handles and child
+  residue, credentials destroyed, the empty owned Project/Ontology deleted, latest Delivery admin keys
+  revoked, and no start43 process remaining. Start43 is the third of ten authorized starts; seven remain.
+- GitNexus reports `TeamRunner.prepare` as CRITICAL because it is a shared entry point (263 direct
+  dependants, six indexed flows), while `FormalCandidateProgress` is MEDIUM. The reviewed repair therefore
+  keeps the generic/default deadline at 120 seconds and adds one strictly validated, single-source
+  R2.3-005 Profile parameter of 300 seconds. It must reject booleans, non-finite/non-positive values, and
+  values above the bounded maximum; no non-formal or P2 deadline may change.
+- Implementation keeps the single authority at
+  `Profile.parameters.candidate_progress_timeout_seconds=300`; `load_profile` permits it only on the exact
+  formal Profile and bounds it to finite numeric `0 < value <= 600`. The Runner injects it only into the
+  formal tracker; missing configuration and the generic class default remain 120 seconds.
+- Developer verification passed 73 focused tests plus 21 subtests, 174 related tests plus 68 subtests,
+  Ruff, and diff checks. The full modeling-team suite passed 507 tests, 1 skipped, and 195 subtests except
+  for the already stale P2a byte-freeze assertion for historical Runner/Codex hashes. Independent Tester
+  Round 4 passed 32 candidate-progress tests, 118 DeepSeek/isolation/Runtime/contract tests, the complete
+  timeout authority/invalid/default probe, Ruff, and diff checks. No model call or semantic start occurred.

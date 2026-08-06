@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,20 @@ SAFE_PROTOCOL_TOOLS = frozenset(
     }
 )
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
+_FORMAL_PROFILE_ID = "r2-3-005-modeling-team"
+_CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
+_CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
+
+
+def _validate_candidate_progress_timeout(value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TeamConfigurationError("candidate progress timeout is invalid")
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise TeamConfigurationError("candidate progress timeout is invalid") from exc
+    if not math.isfinite(normalized) or not 0 < normalized <= _CANDIDATE_PROGRESS_TIMEOUT_MAX:
+        raise TeamConfigurationError("candidate progress timeout is invalid")
 
 
 class TeamConfigurationError(ValueError):
@@ -404,6 +419,14 @@ def load_profile(
             edges.add((sender, recipient))
     if not isinstance(data["parameters"], dict):
         raise TeamConfigurationError("parameters must be an object")
+    if _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER in data["parameters"]:
+        if profile_id != _FORMAL_PROFILE_ID:
+            raise TeamConfigurationError(
+                "candidate progress timeout is restricted to the formal Profile"
+            )
+        _validate_candidate_progress_timeout(
+            data["parameters"][_CANDIDATE_PROGRESS_TIMEOUT_PARAMETER]
+        )
     if strict:
         required_edges = {
             ("coordinator", "modeling"),

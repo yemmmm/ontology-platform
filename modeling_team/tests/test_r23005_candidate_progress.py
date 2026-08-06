@@ -18,7 +18,7 @@ from modeling_team.candidate_platform_gate import (
     CANDIDATE_RECEIPT_REGISTERED_KIND,
     CandidatePlatformGate,
 )
-from modeling_team.contracts import TeamConfigurationError
+from modeling_team.contracts import TeamConfigurationError, load_profile, repository_root
 from modeling_team.interventions import IssueResolution
 from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
 from modeling_team.runner import TeamRunner
@@ -57,6 +57,61 @@ def _delivery(sender: str, recipient: str, text: str, delivery_id: str, *, reply
 
 def _progress(clock):
     return FormalCandidateProgress(clock=clock)
+
+
+def _formal_profile_with_timeout(tmp_path: Path, value: str) -> Path:
+    source = repository_root() / "modeling_team/profiles/r2-3-005-modeling-team.yaml"
+    content = source.read_text(encoding="utf-8").replace(
+        "  candidate_progress_timeout_seconds: 300\n",
+        f"  candidate_progress_timeout_seconds: {value}\n",
+    )
+    path = tmp_path / "formal-profile.yaml"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_formal_profile_timeout_is_loaded_from_the_profile_parameters(tmp_path: Path) -> None:
+    profile = load_profile(_formal_profile_with_timeout(tmp_path, "300"), strict=True)
+    assert profile.parameters["candidate_progress_timeout_seconds"] == 300
+
+
+def test_missing_timeout_keeps_the_120_second_default_for_formal_and_nonformal_profiles(
+    tmp_path: Path,
+) -> None:
+    formal_source = repository_root() / "modeling_team/profiles/r2-3-005-modeling-team.yaml"
+    formal_without_timeout = tmp_path / "formal-without-timeout.yaml"
+    formal_without_timeout.write_text(
+        formal_source.read_text(encoding="utf-8").replace(
+            "  candidate_progress_timeout_seconds: 300\n", ""
+        ),
+        encoding="utf-8",
+    )
+    formal = load_profile(formal_without_timeout, strict=True)
+    nonformal = load_profile(repository_root() / "modeling_team/profiles/base-three-agent.yaml")
+    assert formal.parameters.get("candidate_progress_timeout_seconds", 120.0) == 120.0
+    assert nonformal.parameters.get("candidate_progress_timeout_seconds", 120.0) == 120.0
+
+
+@pytest.mark.parametrize("value", ["true", "not-a-number", ".nan", ".inf", "0", "-1", "601"])
+def test_formal_profile_timeout_rejects_malformed_or_out_of_range_values(
+    tmp_path: Path, value: str
+) -> None:
+    with pytest.raises(TeamConfigurationError, match="candidate progress timeout"):
+        load_profile(_formal_profile_with_timeout(tmp_path, value), strict=True)
+
+
+def test_nonformal_profile_cannot_configure_formal_candidate_timeout(tmp_path: Path) -> None:
+    source = repository_root() / "modeling_team/profiles/base-three-agent.yaml"
+    path = tmp_path / "nonformal-profile.yaml"
+    path.write_text(
+        source.read_text(encoding="utf-8").replace(
+            "parameters: {}\n",
+            "parameters:\n  candidate_progress_timeout_seconds: 300\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(TeamConfigurationError, match="restricted to the formal Profile"):
+        load_profile(path)
 
 
 def test_conflict_builder_binds_complete_formal_candidate() -> None:

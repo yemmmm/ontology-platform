@@ -397,7 +397,12 @@ class TeamRunner:
             else None
         )
         self._candidate_progress = (
-            FormalCandidateProgress(clock=self.monotonic_clock)
+            FormalCandidateProgress(
+                clock=self.monotonic_clock,
+                timeout_seconds=config.profile.parameters.get(
+                    "candidate_progress_timeout_seconds", 120.0
+                ),
+            )
             if formal_acceptance
             else None
         )

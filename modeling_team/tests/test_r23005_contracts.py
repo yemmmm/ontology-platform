@@ -412,6 +412,8 @@ class R23005ContractTests(unittest.TestCase):
                     task_path=root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
                     scope={"mode": "create"},
                 )
+            self.assertIsNotNone(runner._candidate_progress)
+            self.assertEqual(runner._candidate_progress.timeout_seconds, 300.0)
             self.assertEqual(run.scope, {"mode": "create"})
             evidence = json.loads(
                 (run.root / "evidence" / "prestart-preflight.json").read_text(encoding="utf-8")
@@ -433,6 +435,54 @@ class R23005ContractTests(unittest.TestCase):
         self.assertNotIn("Environment", command)
         self.assertNotIn("FragmentPath", command)
         self.assertEqual(set(service), {"unit", "active_state", "sub_state", "main_pid", "active_enter_timestamp"})
+
+    def test_formal_runner_timeout_defaults_to_120_when_profile_omits_parameter(self) -> None:
+        root = repository_root()
+        run_id = f"r23005-timeout-default-{__import__('uuid').uuid4().hex}"
+        run_root = root / "workspaces" / "modeling-runs" / run_id
+        ledger_root = Path(tempfile.mkdtemp()) / "ledger"
+        profile_root = Path(tempfile.mkdtemp())
+        profile_path = profile_root / "formal-profile.yaml"
+        profile_path.write_text(
+            (root / "modeling_team/profiles/r2-3-005-modeling-team.yaml")
+            .read_text(encoding="utf-8")
+            .replace("  candidate_progress_timeout_seconds: 300\n", ""),
+            encoding="utf-8",
+        )
+        runner = TeamRunner(
+            repository_root=root,
+            adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
+            freeze_started_at=datetime.now(UTC).isoformat(),
+            prestart_preflight=lambda **_kwargs: {
+                "status_code": 200,
+                "product_write_mode": "rdf_primary",
+            },
+        )
+        runner._canonical_ledger_root = lambda: ledger_root
+        try:
+            with patch(
+                "modeling_team.preflight.capture_clean_checkout",
+                return_value={
+                    "repository_root": str(root),
+                    "head": "a" * 40,
+                    "status_porcelain": "",
+                    "status_digest": "b" * 64,
+                },
+            ):
+                runner.prepare(
+                    run_id=run_id,
+                    profile_path=profile_path,
+                    task_path=root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+                    scope={"mode": "create"},
+                )
+            self.assertIsNotNone(runner._candidate_progress)
+            self.assertEqual(runner._candidate_progress.timeout_seconds, 120.0)
+        finally:
+            runner.cleanup()
+            if run_root.exists():
+                rmtree(run_root)
+            rmtree(profile_root)
 
     def test_preflight_health_and_canonical_failures_are_read_only_and_path_safe(self) -> None:
         service = {
