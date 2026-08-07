@@ -55,7 +55,11 @@ FROZEN_GLOBAL_SURFACES = {
     # ticket_digest/attempt optional; the dispatcher derives the projection,
     # ticket digest, and attempt from the round.  The Prompt-E guidance now tells
     # Acceptance to call with only acceptance_id/round_id/kind/request_id.
-    "modeling_team/runner.py": "8dac45e82648568a4c23c8933344bed3118d06391c29031bfb0b34324fc28d03",
+    # 2026-08-08 R2.3-005 step-4 refresh: build_acceptance_verdict is added so the
+    # Host assembles the 28-field acceptance verdict from the agent's judgment
+    # plus the bound ticket/reports/failures; the agent never hand-assembles the
+    # envelope.  Listed in the runner runtime_contract manifest acceptance role.
+    "modeling_team/runner.py": "f5c83350b7d3f90770b79a75c69939f7328359fe8a6678e23062ef169e495a52",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",

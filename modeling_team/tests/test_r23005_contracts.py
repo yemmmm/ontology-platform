@@ -1620,6 +1620,7 @@ class R23005ContractTests(unittest.TestCase):
                     "acceptance_child_get_report",
                     "acceptance_child_recycle",
                     "acceptance_get_failure_record",
+                    "build_acceptance_verdict",
                     "submit_acceptance_result",
                     "acceptance_get_verdict",
                 ],

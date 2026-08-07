@@ -44,14 +44,23 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   wait for the next immutable ticket or settlement instruction.
 - Use a fresh, globally-unique `request_id` for EVERY capability call
   (`acceptance_child_start`, `acceptance_child_get_report`, `acceptance_child_recycle`,
-  `submit_acceptance_result`). Never reuse a `request_id` across operations or attempts; a reused
-  id is rejected.
-- For `submit_acceptance_result`, the `verdict_digest` argument must equal the
-  `verdict_json.verdict_digest` field and equal the canonical digest: sha256 of compact sorted JSON
-  of `verdict_json` with the `verdict_digest` field and every `ticket_digest` field set to null. If
-  the capability returns `ok: false` with `expected_verdict_digest`, set BOTH the
-  `verdict_json.verdict_digest` field AND the `verdict_digest` argument to that exact value and
-  retry once.
+  `build_acceptance_verdict`, `submit_acceptance_result`). Never reuse a `request_id` across
+  operations or attempts; a reused id is rejected.
+- Build the verdict with `build_acceptance_verdict`, then submit it unchanged. Never
+  hand-assemble the 28-field `verdict_json` and never compute `verdict_digest` yourself.
+  Call `build_acceptance_verdict` with ONLY your business judgment plus identifiers:
+  `acceptance_id`, `round_id`, `verdict` (PASS/FAIL/BLOCKED), `failure_layer`,
+  `blocked_reason`, `evidence_refs` (your typed approved_source/platform_read evidence,
+  with the full page chain), `checks` (the eight CHECK_KEYS statuses),
+  `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
+  `recommended_action`, and `summary`. The Host fills every mechanical field from the
+  bound ticket, the two examiner terminal reports, and the tracked infrastructure
+  failures (including `failure_evidence_refs`, `failure_evidence_digests`, and
+  `infrastructure_failure_digests` — do not pass these, the Host derives them from
+  recycled infrastructure failures). Then call `submit_acceptance_result` with the
+  returned `verdict_json` and `verdict_digest` UNCHANGED (plus `acceptance_id`,
+  `round_id`, and a fresh `request_id`). Do not add, drop, rename, reorder, or rehash
+  any field between the two calls.
 
 ## Cooperative issue escalation
 

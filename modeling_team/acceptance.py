@@ -3127,6 +3127,24 @@ class RunnerAcceptanceCarrier:
                 failure_digest=args["failure_digest"],
                 capability=capability,
             )
+        if operation == "build_acceptance_verdict":
+            # The Host assembles every mechanical field from the bound ticket,
+            # examiner terminal reports, and tracked failures.  The Acceptance
+            # agent supplies only its judgment plus identifiers; it never
+            # hand-assembles the 28-field envelope.
+            return self.build_acceptance_verdict(
+                acceptance_id=args["acceptance_id"],
+                round_id=args["round_id"],
+                verdict=args["verdict"],
+                failure_layer=args["failure_layer"],
+                blocked_reason=args["blocked_reason"],
+                evidence_refs=args["evidence_refs"],
+                checks=args["checks"],
+                competency_question_results=args["competency_question_results"],
+                recommended_action=args["recommended_action"],
+                summary=args["summary"],
+                capability=capability,
+            )
         if operation == "submit_acceptance_result":
             verdict = args["verdict_json"]
             if not isinstance(verdict, Mapping):
@@ -4366,6 +4384,135 @@ class RunnerAcceptanceCarrier:
             else:
                 self._rounds[round_id]["status"] = "cleaned"
         return receipt
+
+    def _host_failure_evidence_refs(self, round_id: str) -> list[dict[str, Any]]:
+        """Host-derive typed infrastructure_failure refs for one round.
+
+        Only failures with a durable cleanup receipt are citable in a verdict.
+        The Host reconstructs each typed ref from the tracked failure plus its
+        cleanup receipt so the Acceptance agent never hand-assembles failure
+        bindings.  Refs without a cleanup (e.g. an attempt-0 failure whose child
+        was later recycled with a terminal report on retry) are intentionally
+        absent: they are not durable BLOCKED evidence.
+        """
+
+        refs: list[dict[str, Any]] = []
+        for failure in self._failures.values():
+            if failure.acceptance_round_id != round_id:
+                continue
+            cleanup = next(
+                (
+                    receipt
+                    for receipt in self._cleanups.values()
+                    if receipt.child_handle_digest == failure.child_handle_digest
+                    and receipt.infrastructure_failure_digest == failure.failure_digest
+                ),
+                None,
+            )
+            if cleanup is None:
+                continue
+            ref = {
+                "type": "infrastructure_failure",
+                "failure_digest": failure.failure_digest,
+                "cleanup_receipt_digest": cleanup.receipt_digest,
+                "task_id": failure.task_id,
+                "acceptance_round_id": failure.acceptance_round_id,
+                "child_handle_digest": failure.child_handle_digest,
+                "attempt": failure.attempt,
+                "failure_category": failure.failure_category,
+                "ticket_digest": failure.ticket_digest,
+                "child_input_digest": failure.child_input_digest,
+                "reason_code": failure.reason_code,
+            }
+            refs.append(
+                validate_typed_evidence_ref(ref, expected_ticket=failure.ticket_digest)
+            )
+        refs.sort(key=lambda item: item["failure_digest"])
+        return refs
+
+    def build_acceptance_verdict(
+        self,
+        *,
+        acceptance_id: str,
+        round_id: str,
+        verdict: str,
+        failure_layer: str | None,
+        blocked_reason: str | None,
+        evidence_refs: list[Mapping[str, Any]],
+        checks: Mapping[str, str],
+        competency_question_results: list[Mapping[str, Any]],
+        recommended_action: str,
+        summary: str,
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Host-build the canonical 28-field acceptance verdict envelope.
+
+        The Acceptance agent supplies only its business judgment (verdict,
+        failure_layer, blocked_reason, typed evidence_refs, checks, CQ results,
+        recommended_action, summary) plus the acceptance/round identifiers.
+        The Host fills every mechanical field from the immutable bound ticket,
+        the round's examiner terminal reports, and the tracked infrastructure
+        failures, then computes the canonical ``verdict_digest``.  The returned
+        ``verdict_json`` / ``verdict_digest`` are passed unchanged to
+        ``submit_acceptance_result``; the agent never hand-assembles the 28
+        fields and cannot drift the schema-version, ticket-copied bindings,
+        modeling receipts, report digests, failure-evidence bindings, model
+        state, or verdict digest.
+
+        This is a pure deterministic assembler: it does not call
+        ``validate_verdict`` itself.  Validation remains the submit path's
+        contract so a contradictory judgment (e.g. PASS while the Host tracked
+        citable infrastructure failures) still surfaces as a deterministic
+        acceptance-contract error at submission time rather than being silently
+        rewritten by the Host.
+        """
+
+        self._check_capability("acceptance", acceptance_id, capability)
+        if round_id not in self._tickets:
+            _error("verdict build binding is invalid")
+        ticket = self._tickets[round_id]
+        reports = self._rounds[round_id]["reports"]
+        source_report = reports.get("source")
+        platform_report = reports.get("platform")
+        failure_refs = self._host_failure_evidence_refs(round_id)
+        failure_digests = sorted({ref["failure_digest"] for ref in failure_refs})
+        envelope: dict[str, Any] = {
+            "schema_version": "r2-3-005-acceptance-verdict/v1",
+            "task_id": ticket["task_id"],
+            "acceptance_round_id": ticket["acceptance_round_id"],
+            "question_id": ticket["question_id"],
+            "slice_id": ticket["slice_id"],
+            "slice_revision": ticket["slice_revision"],
+            "ticket_id": ticket["ticket_id"],
+            "ticket_digest": ticket["ticket_digest"],
+            "quality_standard_digest": ticket["quality_standard_digest"],
+            "quality_standard_artifact": _safe_copy(ticket["quality_standard_artifact"]),
+            "model_state": _safe_copy(ticket["model_state"]),
+            "model_state_digest": ticket["model_state_digest"],
+            "source_bundle_digest": ticket["source_bundle_digest"],
+            "modeling_receipts": _safe_copy(ticket["modeling_receipts"]),
+            "source_report_digest": (
+                source_report.get("report_digest") if source_report else None
+            ),
+            "platform_report_digest": (
+                platform_report.get("report_digest") if platform_report else None
+            ),
+            "failure_evidence_digests": failure_digests,
+            "infrastructure_failure_digests": failure_digests,
+            "failure_evidence_refs": failure_refs,
+            "verdict": verdict,
+            "failure_layer": failure_layer,
+            "blocked_reason": blocked_reason,
+            "evidence_refs": _safe_copy(evidence_refs),
+            "checks": _safe_copy(checks),
+            "competency_question_results": _safe_copy(competency_question_results),
+            "recommended_action": recommended_action,
+            "summary": summary,
+            "verdict_digest": None,
+        }
+        digest = verdict_digest(envelope)
+        envelope["verdict_digest"] = digest
+        return {"verdict_json": envelope, "verdict_digest": digest}
 
     def submit_verdict(
         self,

@@ -43,3 +43,13 @@ retry; this is not permission to widen scope or perform arbitrary retries. A
 second infrastructure failure is BLOCKED.
 Infrastructure failures and missing evidence are reported through the Runner
 carrier, not hidden or converted into PASS.
+
+For the terminal verdict, call `build_acceptance_verdict` with ONLY the judgment
+fields (`acceptance_id`, `round_id`, `verdict`, `failure_layer`, `blocked_reason`,
+`evidence_refs`, `checks`, `competency_question_results`, `recommended_action`,
+`summary`) and then call `submit_acceptance_result` with the returned
+`verdict_json`/`verdict_digest` unchanged. The Host fills every mechanical field
+(the 28-field schema_version, all ticket-copied bindings, modeling receipts,
+report digests, failure-evidence refs/digest lists, model state, and the verdict
+digest) from the bound ticket, examiner reports, and tracked failures; never
+hand-assemble the envelope or compute the digest yourself.

@@ -50,6 +50,7 @@ ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_child_get_report",
     "acceptance_child_recycle",
     "acceptance_get_failure_record",
+    "build_acceptance_verdict",
     "submit_acceptance_result",
     "acceptance_get_verdict",
 )
@@ -266,6 +267,44 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["acceptance_id", "round_id", "failure_digest"],
         "additionalProperties": False,
     },
+    "build_acceptance_verdict": {
+        "type": "object",
+        # The Acceptance agent supplies ONLY its business judgment plus the
+        # acceptance/round identifiers.  Every mechanical field (schema_version,
+        # ticket-copied bindings, modeling receipts, report digests, failure
+        # evidence refs/digests, model state, verdict digest) is Host-derived
+        # from the bound ticket, examiner reports, and tracked failures.  Deep
+        # validation of these judgment objects lives in the carrier's
+        # ``validate_verdict``; the schema only accepts their shape.
+        "properties": {
+            "acceptance_id": {"type": "string"},
+            "round_id": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
+            "failure_layer": {"type": ["string", "null"]},
+            "blocked_reason": {"type": ["string", "null"]},
+            "evidence_refs": {"type": "array", "items": {"type": "object"}},
+            "checks": {"type": "object"},
+            "competency_question_results": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
+            "recommended_action": {"type": "string"},
+            "summary": {"type": "string"},
+        },
+        "required": [
+            "acceptance_id",
+            "round_id",
+            "verdict",
+            "failure_layer",
+            "blocked_reason",
+            "evidence_refs",
+            "checks",
+            "competency_question_results",
+            "recommended_action",
+            "summary",
+        ],
+        "additionalProperties": False,
+    },
     "submit_acceptance_result": {
         "type": "object",
         "properties": {
@@ -330,6 +369,8 @@ def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
             valid_type = True
         elif candidate == "integer" and isinstance(value, int) and not isinstance(value, bool):
             valid_type = True
+        elif candidate == "array" and isinstance(value, (list, tuple)) and not isinstance(value, str):
+            valid_type = True
         elif candidate == "null" and value is None:
             valid_type = True
     if not valid_type:
@@ -342,6 +383,16 @@ def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
         not isinstance(value, (int, float)) or value < minimum
     ):
         return False
+    if isinstance(value, (list, tuple)) and not isinstance(value, (str, Mapping)):
+        # ``items`` is optional: when omitted any array element is accepted and
+        # the owning capability performs the structural validation.  This keeps
+        # the schema validator deterministic for the judgment arrays (typed
+        # evidence refs, competency-question results) without duplicating the
+        # deep contract checks that live in the carrier.
+        items = schema.get("items")
+        if isinstance(items, Mapping):
+            return all(_matches_schema(item, items) for item in value)
+        return True
     if isinstance(value, Mapping):
         properties = schema.get("properties", {})
         required = set(schema.get("required", []))
