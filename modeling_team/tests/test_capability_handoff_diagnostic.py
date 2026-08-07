@@ -2,8 +2,12 @@
 
 Platform-contract coverage only: when ``protocol_build_acceptance_stage_handoff``
 cannot resolve a Protocol-supplied ``(tool, arguments, artifact_path)`` triple to
-exactly one observed platform call, the opaque ``-32001`` error now carries a
-structured ``data`` payload so Protocol can self-correct instead of guessing.
+exactly one observed platform call, the broker returns the structured
+``no_match`` diagnostic on the success path with ``structuredContent``
+``{ok: False, error: ...}`` (plus a readable text block).  The codex CLI MCP
+client wrapper strips ``error.data`` when re-wrapping a JSON-RPC error, so the
+diagnostic must not travel on the ``-32001`` error path; Protocol reads
+``ok: False`` and self-corrects instead of guessing.
 """
 
 from __future__ import annotations
@@ -48,9 +52,9 @@ def _broker(
 
 
 class BrokerDiagnosticPassthroughTests(unittest.TestCase):
-    """The broker surfaces a dispatch exception's Mapping ``data`` only."""
+    """The broker routes a dispatch exception's Mapping ``data`` to a success-path ``{ok: False}`` result."""
 
-    def test_structured_dispatch_error_surfaces_data_with_opaque_code(self) -> None:
+    def test_structured_dispatch_error_surfaces_diagnostic_on_success_path(self) -> None:
         captured: list[tuple[str, str, dict[str, Any]]] = []
 
         def dispatch(role: str, operation: str, arguments: dict[str, Any]) -> Any:
@@ -91,12 +95,17 @@ class BrokerDiagnosticPassthroughTests(unittest.TestCase):
                 }
             )
         self.assertEqual(captured[0][1], "protocol_build_acceptance_stage_handoff")
-        self.assertNotIn("result", response)
-        error = response["error"]
-        self.assertEqual(error["code"], -32001)
-        self.assertEqual(error["message"], "Runner capability request rejected")
-        self.assertEqual(error["data"]["reason"], "stage_handoff_no_match")
-        self.assertEqual(error["data"]["stage"], "dry-run")
+        self.assertNotIn("error", response)
+        structured = response["result"]["structuredContent"]
+        self.assertFalse(structured["ok"])
+        diagnostic = structured["error"]
+        self.assertEqual(diagnostic["reason"], "stage_handoff_no_match")
+        self.assertEqual(diagnostic["stage"], "dry-run")
+        # The text block carries the same diagnostic so the codex CLI MCP
+        # wrapper surfaces it even when structuredContent is not inspected.
+        text = response["result"]["content"][0]["text"]
+        self.assertIn("stage_handoff_no_match", text)
+        self.assertIn("dry-run", text)
 
     def test_plain_dispatch_error_stays_opaque_without_data(self) -> None:
         def dispatch(role: str, operation: str, arguments: dict[str, Any]) -> Any:
@@ -362,11 +371,10 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
             "reasoning": {"tool": "run_semantic_reasoning", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
         }
         response = self._handoff_response(stage_calls)
-        self.assertNotIn("result", response)
-        error = response["error"]
-        self.assertEqual(error["code"], -32001)
-        self.assertEqual(error["message"], "Runner capability request rejected")
-        data = error["data"]
+        self.assertNotIn("error", response)
+        structured = response["result"]["structuredContent"]
+        self.assertFalse(structured["ok"])
+        data = structured["error"]
         self.assertEqual(data["reason"], "stage_handoff_no_match")
         self.assertEqual(data["stage"], "dry-run")
         self.assertEqual(data["requested"]["tool"], "submit_modeling_batch")
@@ -393,7 +401,9 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
             "reasoning": {"tool": "run_semantic_reasoning", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
         }
         response = self._handoff_response(stage_calls)
-        data = response["error"]["data"]
+        structured = response["result"]["structuredContent"]
+        self.assertFalse(structured["ok"])
+        data = structured["error"]
         self.assertEqual(data["reason"], "stage_handoff_no_match")
         self.assertEqual(data["observed_candidates"], 0)
         self.assertEqual(data["near_misses"], [])

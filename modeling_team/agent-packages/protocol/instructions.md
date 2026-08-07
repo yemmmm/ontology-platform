@@ -438,6 +438,20 @@ artifact path includes both digests as
 responses changed to remain distinct; choose the exact path from the Runner's observed artifact
 catalog rather than calculating it.
 
+If the capability returns a structured result with `ok: false` (its `error.reason` is
+`stage_handoff_no_match` or `stage_handoff_multiple_matches`) or an opaque `-32001`, that result is the
+only correction signal: the offending stage's supplied `(tool, arguments, artifact_path)` did not bind to
+exactly one observed platform call. Read `error.stage`, `error.requested`, and `error.near_misses`, then
+re-select that one stage's exact `tool`, complete request `arguments`, and `artifact_path` from the
+`protocol_list_platform_artifacts` catalog and retry only that stage. Do not compute a digest or path
+yourself, hand-author the handoff, read host sources to "repair" it, or retry with a guessed call. After
+one correction the same stage still returns `ok: false` or `-32001`, do not retry a third time: call native
+Team Transport `report_issue` with `category=platform-contract`,
+`failing_operation=protocol_build_acceptance_stage_handoff`, the failing stage and diagnostic in `error`,
+and `requested_action` describing the unbound stage, then end your current turn for the cooperative pause.
+Never replace that bounded escalation with a source-reading loop, repeated identical retries, or a
+terminal `blocked` report.
+
 After that unique handoff send succeeds, retain its exact returned `delivery_id`. Send Modeling
 exactly one factual gate-complete Team Transport notice containing the accepted `candidate_digest`
 and that exact acceptance-stage handoff `delivery_id`; do not include or reconstruct the handoff

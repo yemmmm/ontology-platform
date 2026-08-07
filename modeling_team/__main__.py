@@ -20,6 +20,7 @@ from .monitor_handoff import (
     read_phase,
     write_runner_phase,
 )
+from .outer_input import OuterInputFifo, OuterInputFramingError
 from .platform_scope import PlatformScope
 from .preflight import normalize_formal_scope
 from .runner import TeamRunner
@@ -116,16 +117,70 @@ def _foreground_issue_resolution_is_ready(runner: object) -> bool:
     return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
 
 
-def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> None:
-    """Pump App Server events even when an outer user sends no further input.
+def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_rejection):
+    """Admit one outer line through the shared stdin/FIFO admission path.
 
-    A non-interactive host may close stdin (``readline`` returns ``""`` = EOF)
-    immediately after the Runner starts.  Such an EOF must not end the run
-    before any Agent output reaches the terminal report: the stream is retired
-    and the loop keeps draining Runner output until the terminal-report gate
-    fires.  ``select_fn`` remains the open-stream "is there input?" injection
-    point; once the stream is retired the real ``select`` timeout throttles the
-    idle loop.
+    Decode, the known-action gate, the cooperative issue-readiness gate,
+    ``receive_outer``, and the foreground emit/observe acknowledgement are
+    identical for stdin and FIFO lines.  Only the framing (readline vs FIFO
+    byte buffering) differs; this helper owns everything after a complete line
+    exists.  The fatal ``receive_outer`` boundary is preserved: a
+    ``TeamConfigurationError`` raised inside ``receive_outer`` (or its drain)
+    propagates and tears the run down, exactly as before.
+    """
+    try:
+        message = _decode_foreground_message(line)
+    except TeamConfigurationError:
+        emit_outer_input_rejection()
+        return
+    action = message.get("action")
+    if not isinstance(action, str) or action not in _KNOWN_OUTER_ACTIONS:
+        # A missing/unknown action is a malformed outer control-plane message.
+        # Reject only this line so a later valid command can still drive the
+        # live Runner; admitted actions retain the existing fatal receive_outer
+        # boundary below.
+        emit_outer_input_rejection()
+        return
+    if (
+        action == "issue_resolution"
+        and not _foreground_issue_resolution_is_ready(runner)
+    ):
+        emit_outer_input_rejection()
+        return
+    # Once admitted, preserve the existing fatal boundary.  Do not catch
+    # TeamConfigurationError raised by receive_outer's internal drain or by
+    # persistence/Runtime delivery failures.
+    output = runner.receive_outer(message)
+    if output:
+        emit_and_observe(output)
+
+
+def _foreground_event_loop(
+    runner, stream, emit, *, outer_input=None, select_fn=select.select
+) -> None:
+    """Pump Runner output and admit outer input from stdin and/or the FIFO.
+
+    Without ``outer_input`` the loop is byte-for-byte identical to the
+    pre-FIFO implementation, including the immediate-EOF keep-pumping path:
+    a non-interactive host may close stdin before the first read, so EOF
+    retires only stdin and the loop keeps draining Runner output until the
+    terminal-report gate fires.
+
+    With ``outer_input`` (an :class:`~modeling_team.outer_input.OuterInputFifo`)
+    the loop additionally selects the FIFO and applies the order rules from
+    the R2.3-005 background-outer-input design:
+
+    * drain and emit Runner output before reading outer input;
+    * when stdin and FIFO are both readable, process stdin first;
+    * process at most one outer message per loop iteration, then continue so
+      Runner pumping is not starved;
+    * stdin EOF retires only stdin (the FIFO stays active);
+    * a FIFO framing error emits ``outer-input-rejected`` without calling
+      ``receive_outer`` and resyncs at the next newline.
+
+    ``select_fn`` remains the open-stream "is there input?" injection point for
+    tests; once both sources are retired the real ``select`` timeout throttles
+    the idle loop.
     """
 
     def emit_and_observe(output: list[dict[str, object]]) -> None:
@@ -144,55 +199,65 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         # must only inspect Runner-generated delivery envelopes.
         emit([dict(_OUTER_INPUT_REJECTION)])
 
-    watch = [stream]
+    stdin_active = True
     while True:
         output = runner.drain()
         if output:
             emit_and_observe(output)
         if _terminal_report_complete(runner):
             return
-        if not watch:
-            # stdin reached EOF in a non-interactive host.  Do not end the run:
-            # retire the outer-input stream and keep pumping Runner output to
-            # the terminal-report gate, throttling the idle loop without
-            # re-selecting the closed stream.
-            select.select([], [], [], 0.1)
+        if outer_input is None:
+            # stdin-only path: behavior is identical to the pre-FIFO loop,
+            # including the immediate-EOF keep-pumping contract.
+            if not stdin_active:
+                select.select([], [], [], 0.1)
+                continue
+            readable, _, _ = select_fn([stream], [], [], 0.1)
+            if not readable:
+                continue
+            line = stream.readline()
+            if not line:
+                # stdin EOF: retire this stream but keep pumping Runner output
+                # until the terminal report completes.
+                stdin_active = False
+                continue
+            _handle_foreground_message(
+                runner, line, emit_and_observe, emit_outer_input_rejection
+            )
             continue
-        readable, _, _ = select_fn(watch, [], [], 0.1)
-        if not readable:
+        # FIFO path.  stdin takes priority; at most one outer message is
+        # admitted per iteration so Runner pumping is never starved.
+        readers = []
+        if stdin_active:
+            readers.append(stream)
+        readers.append(outer_input)
+        readable, _, _ = select_fn(readers, [], [], 0.1)
+        if stdin_active and stream in readable:
+            line = stream.readline()
+            if not line:
+                # stdin EOF retires only stdin; the FIFO stays active.
+                stdin_active = False
+            else:
+                _handle_foreground_message(
+                    runner, line, emit_and_observe, emit_outer_input_rejection
+                )
             continue
-        line = stream.readline()
-        if not line:
-            # stdin EOF: retire this stream but keep pumping Runner output until
-            # the terminal report completes.
-            watch = []
-            continue
+        if outer_input in readable:
+            try:
+                outer_input.read_ready()
+            except OuterInputFramingError:
+                emit_outer_input_rejection()
+                continue
         try:
-            message = _decode_foreground_message(line)
-        except TeamConfigurationError:
+            line = outer_input.pop_line()
+        except OuterInputFramingError:
             emit_outer_input_rejection()
             continue
-        action = message.get("action")
-        if not isinstance(action, str) or action not in _KNOWN_OUTER_ACTIONS:
-            # A missing/unknown action is a malformed outer control-plane
-            # message.  Reject only this line so a later valid command can
-            # still drive the live Runner; admitted actions retain the
-            # existing fatal receive_outer boundary below.
-            emit_outer_input_rejection()
-            continue
-        if (
-            action == "issue_resolution"
-            and not _foreground_issue_resolution_is_ready(runner)
-        ):
-            emit_outer_input_rejection()
-            continue
-        # Once the input is admitted by the narrow cooperative issue gate,
-        # preserve the existing fatal boundary.  In particular, do not catch
-        # TeamConfigurationError raised by receive_outer's internal drain or
-        # by persistence/Runtime delivery failures.
-        output = runner.receive_outer(message)
-        if output:
-            emit_and_observe(output)
+        if line is not None:
+            _handle_foreground_message(
+                runner, line, emit_and_observe, emit_outer_input_rejection
+            )
+        continue
 
 
 def _monitor_handoff_root() -> Path | None:
@@ -258,6 +323,14 @@ def main() -> int:
     run.add_argument("--scope", required=True, type=Path)
     run.add_argument("--base-url", default="http://127.0.0.1:8001")
     run.add_argument("--freeze-started-at")
+    run.add_argument(
+        "--enable-outer-input-fifo",
+        action="store_true",
+        help=(
+            "Create a local FIFO at <run-root>/control/outer-input.fifo so a "
+            "background Host can send NDJSON outer actions while stdin is closed"
+        ),
+    )
     classify = subparsers.add_parser("classify-failure")
     classify.add_argument("--run-id", required=True)
     classify.add_argument(
@@ -411,6 +484,7 @@ def main() -> int:
             runner.cleanup()
             cleaned = True
 
+    outer_input = None
     try:
         adapter = CodexRuntimeAdapter(repository_root=root)
         scope = yaml.safe_load(args.scope.read_text(encoding="utf-8"))
@@ -473,11 +547,20 @@ def main() -> int:
             )
         if handoff_root is not None:
             write_runner_phase(handoff_root, "prepared", run_root=runner.run.root)
+        # The FIFO is created after prepare() (run root exists) and before
+        # start() (Agents begin).  A background Host whose stdin is /dev/null
+        # can then write NDJSON outer actions to this path for the live run.
+        if getattr(args, "enable_outer_input_fifo", False):
+            fifo_path = runner.run.root / "control" / "outer-input.fifo"
+            outer_input = OuterInputFifo(fifo_path)
+            outer_input.open()
+            print(f"outer-input-fifo: {fifo_path}", file=sys.stderr)
         runner.start()
         _foreground_event_loop(
             runner,
             sys.stdin,
             lambda output: print(json.dumps(output, ensure_ascii=False), flush=True),
+            outer_input=outer_input,
         )
         if not _terminal_report_complete(runner):
             if formal_acceptance:
@@ -540,6 +623,12 @@ def main() -> int:
         return 2
     else:
         cleanup_once()
+    finally:
+        # The foreground loop has exited on every path; retire the FIFO exactly
+        # once regardless of which handler returned.  ``outer_input`` stays
+        # ``None`` when the flag was off or before the FIFO was assigned.
+        if outer_input is not None:
+            outer_input.close()
     return 0
 
 

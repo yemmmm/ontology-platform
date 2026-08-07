@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,11 @@ from unittest.mock import patch
 from modeling_team import __main__ as team_main
 from modeling_team.__main__ import _foreground_event_loop
 from modeling_team.contracts import repository_root
+from modeling_team.outer_input import (
+    OuterInputFifo,
+    OuterInputInvalidUtf8,
+    OuterInputLineTooLong,
+)
 from modeling_team.monitor_handoff import create_handoff_root
 from modeling_team.runner import TeamRunner
 from modeling_team.transport_mcp import RoutingError, mcp_response
@@ -948,3 +954,369 @@ class RunnerTests(unittest.TestCase):
             runner.cleanup()
             if run_root.exists():
                 rmtree(run_root)
+
+
+class _FakeOuterInput:
+    """A selectable FIFO double that mirrors the OuterInputFifo surface.
+
+    Both ``read_error`` and ``pop_error`` are one-shot: raising once models the
+    real FIFO dropping/resyncing a single bad line, so the loop emits exactly
+    one ``outer-input-rejected`` per framing fault.
+    """
+
+    def __init__(self, lines=None) -> None:
+        self.lines: list[str] = list(lines or [])
+        self.read_ready_calls = 0
+        self.pop_calls = 0
+        self.read_error: Exception | None = None
+        self.pop_error: Exception | None = None
+
+    def fileno(self) -> int:
+        # A stable sentinel distinct from any stdin fileno; the loop only uses
+        # membership, never the raw fd, when a fake select is injected.
+        return 4242
+
+    def read_ready(self) -> None:
+        self.read_ready_calls += 1
+        if self.read_error is not None:
+            error = self.read_error
+            self.read_error = None
+            raise error
+
+    def pop_line(self):
+        self.pop_calls += 1
+        if self.pop_error is not None:
+            error = self.pop_error
+            self.pop_error = None
+            raise error
+        if self.lines:
+            return self.lines.pop(0)
+        return None
+
+
+class ForegroundFifoLoopTests(unittest.TestCase):
+    def _terminal_runner(self, root, *, terminal_drain=2):
+        class Runner:
+            def __init__(self):
+                self.drains = 0
+                self.received: list[dict[str, object]] = []
+                self.run = SimpleNamespace(root=root)
+
+            def drain(self):
+                self.drains += 1
+                if self.drains >= terminal_drain:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                return []
+
+            def receive_outer(self, message):
+                self.received.append(message)
+                return [{"type": "accepted"}]
+
+        return Runner()
+
+    def test_fifo_line_reaches_receive_outer_when_stdin_is_at_eof(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory))
+            stream = StringIO("")  # stdin at EOF
+            fifo = _FakeOuterInput(['{"action":"status"}'])
+            emitted: list[list[dict[str, object]]] = []
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: ([fifo], [], []),
+            )
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(emitted, [[{"type": "accepted"}]])
+
+    def test_real_fifo_line_reaches_receive_outer_through_loop(self) -> None:
+        # End-to-end: a real OuterInputFifo plus a short-lived writer, drained
+        # through the foreground loop with a fake select that reports the fifo
+        # readable.  Proves the actual read_ready/pop_line path admits a line.
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory))
+            fifo_path = Path(directory) / "control" / "outer-input.fifo"
+            fifo = OuterInputFifo(fifo_path)
+            fifo.open()
+            try:
+                wfd = os.open(str(fifo_path), os.O_WRONLY | os.O_NONBLOCK)
+                os.write(wfd, b'{"action":"status"}\n')
+                os.close(wfd)
+                emitted: list[list[dict[str, object]]] = []
+                _foreground_event_loop(
+                    runner,
+                    StringIO(""),
+                    emitted.append,
+                    outer_input=fifo,
+                    select_fn=lambda *_args: ([fifo], [], []),
+                )
+            finally:
+                fifo.close()
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(emitted, [[{"type": "accepted"}]])
+        self.assertFalse(fifo_path.exists())
+
+    def test_fifo_partial_line_is_not_decoded_before_newline(self) -> None:
+        # A partial line (no newline) must not be decoded.  The same fake
+        # surfaces a complete line only after its newline arrives.
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory), terminal_drain=3)
+            fifo = _FakeOuterInput()
+            stream = StringIO("")
+            emitted: list[list[dict[str, object]]] = []
+            polls = iter([([fifo], [], []), ([fifo], [], [])])
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: next(polls),
+            )
+        self.assertEqual(runner.received, [])
+
+    def test_stdin_takes_priority_when_stdin_and_fifo_are_both_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory))
+            stream = StringIO('{"action":"status"}\n')
+            fifo = _FakeOuterInput(['{"action":"pause"}'])
+            emitted: list[list[dict[str, object]]] = []
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: ([stream, fifo], [], []),
+            )
+        # stdin processed first; the FIFO line never reached receive_outer.
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(emitted, [[{"type": "accepted"}]])
+        self.assertEqual(fifo.pop_calls, 0)
+
+    def test_stdin_eof_retires_only_stdin_and_fifo_stays_active(self) -> None:
+        # stdin reaches EOF on the first read; the FIFO must remain active and
+        # deliver its line on the next iteration.
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory), terminal_drain=3)
+            stream = StringIO("")
+            fifo = _FakeOuterInput(['{"action":"status"}'])
+            emitted: list[list[dict[str, object]]] = []
+            polls = iter([([stream], [], []), ([fifo], [], [])])
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: next(polls),
+            )
+        self.assertEqual(runner.received, [{"action": "status"}])
+        self.assertEqual(emitted, [[{"type": "accepted"}]])
+
+    def test_each_fifo_admission_and_framing_error_emits_rejection_without_runner(
+        self,
+    ) -> None:
+        rejection = [
+            {"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}
+        ]
+
+        class RejectRunner:
+            def __init__(self, root):
+                self.drains = 0
+                self.received: list[dict[str, object]] = []
+                self.run = SimpleNamespace(root=root)
+
+            def drain(self):
+                self.drains += 1
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                return []
+
+            def receive_outer(self, _message):
+                raise AssertionError("rejected FIFO line reached receive_outer")
+
+        cases = [
+            ("malformed json", '{"action":"status"', None, None),
+            ("duplicate keys", '{"action":"status","action":"pause"}', None, None),
+            ("unknown action", '{"action":"nope"}', None, None),
+            ("missing action", '{"type":"question"}', None, None),
+            ("invalid utf-8", None, None, OuterInputInvalidUtf8("bad utf-8")),
+            ("oversized line", None, OuterInputLineTooLong("too long"), None),
+        ]
+        for label, line, read_error, pop_error in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                runner = RejectRunner(Path(directory))
+                fifo = _FakeOuterInput([line] if line is not None else None)
+                fifo.read_error = read_error
+                fifo.pop_error = pop_error
+                emitted: list[list[dict[str, object]]] = []
+                polls = [([fifo], [], []), ([], [], [])]
+
+                def fake_select(*_args):
+                    return polls.pop(0) if polls else ([], [], [])
+
+                _foreground_event_loop(
+                    runner,
+                    StringIO(""),
+                    emitted.append,
+                    outer_input=fifo,
+                    select_fn=fake_select,
+                )
+                self.assertEqual(emitted, [rejection], f"case {label}")
+                self.assertEqual(runner.received, [], f"case {label}")
+
+    def test_terminal_report_wins_over_late_fifo_input(self) -> None:
+        # Once the terminal-report gate fires, a late FIFO line must not be
+        # admitted even if select would report it readable.
+        with tempfile.TemporaryDirectory() as directory:
+            runner = self._terminal_runner(Path(directory), terminal_drain=1)
+            fifo = _FakeOuterInput(['{"action":"status"}'])
+            emitted: list[list[dict[str, object]]] = []
+            _foreground_event_loop(
+                runner,
+                StringIO(""),
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: ([fifo], [], []),
+            )
+        self.assertEqual(runner.received, [])
+        self.assertEqual(fifo.pop_calls, 0)
+
+    def test_main_creates_prints_and_closes_outer_input_fifo_when_flag_set(self) -> None:
+        class FakeRunner:
+            def __init__(self, **_kwargs):
+                self.run = SimpleNamespace(root=run_root)
+
+            def prepare(self, **_kwargs):
+                return None
+
+            def start(self):
+                return None
+
+            def drain(self):
+                (self.run.root / "state.json").write_text(
+                    json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                    encoding="utf-8",
+                )
+                return []
+
+            def cleanup(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_root = root / "run"
+            run_root.mkdir()
+            scope = root / "scope.yaml"
+            scope.write_text("{}", encoding="utf-8")
+            fifo_path = run_root / "control" / "outer-input.fifo"
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(root / "profile.yaml"),
+                "--task",
+                str(root / "task.yaml"),
+                "--run-id",
+                "fifo-flag-run",
+                "--scope",
+                str(scope),
+                "--enable-outer-input-fifo",
+            ]
+            configuration = SimpleNamespace(
+                task=SimpleNamespace(schema_version=1),
+                profile=SimpleNamespace(profile_id="legacy"),
+            )
+            stderr = StringIO()
+            with (
+                patch.object(team_main, "repository_root", return_value=root),
+                patch.object(
+                    team_main,
+                    "load_formal_team_configuration",
+                    return_value=configuration,
+                ),
+                patch.object(
+                    team_main,
+                    "_bootstrap_helpers",
+                    return_value=(lambda: ("key", "id"), lambda _id: True),
+                ),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=SimpleNamespace()),
+                patch.object(team_main, "TeamRunner", FakeRunner),
+                patch.object(team_main.sys, "argv", argv),
+                patch.object(team_main.sys, "stdin", StringIO("")),
+                patch.object(team_main.sys, "stderr", stderr),
+            ):
+                self.assertEqual(team_main.main(), 0)
+            self.assertIn(f"outer-input-fifo: {fifo_path}", stderr.getvalue())
+            self.assertFalse(fifo_path.exists())
+
+    def test_main_without_flag_does_not_create_outer_input_fifo(self) -> None:
+        class FakeRunner:
+            def __init__(self, **_kwargs):
+                self.run = SimpleNamespace(root=run_root)
+
+            def prepare(self, **_kwargs):
+                return None
+
+            def start(self):
+                return None
+
+            def drain(self):
+                (self.run.root / "state.json").write_text(
+                    json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                    encoding="utf-8",
+                )
+                return []
+
+            def cleanup(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_root = root / "run"
+            run_root.mkdir()
+            scope = root / "scope.yaml"
+            scope.write_text("{}", encoding="utf-8")
+            argv = [
+                "modeling-team",
+                "run",
+                "--profile",
+                str(root / "profile.yaml"),
+                "--task",
+                str(root / "task.yaml"),
+                "--run-id",
+                "no-fifo-run",
+                "--scope",
+                str(scope),
+            ]
+            configuration = SimpleNamespace(
+                task=SimpleNamespace(schema_version=1),
+                profile=SimpleNamespace(profile_id="legacy"),
+            )
+            stderr = StringIO()
+            with (
+                patch.object(team_main, "repository_root", return_value=root),
+                patch.object(
+                    team_main,
+                    "load_formal_team_configuration",
+                    return_value=configuration,
+                ),
+                patch.object(
+                    team_main,
+                    "_bootstrap_helpers",
+                    return_value=(lambda: ("key", "id"), lambda _id: True),
+                ),
+                patch.object(team_main, "CodexRuntimeAdapter", return_value=SimpleNamespace()),
+                patch.object(team_main, "TeamRunner", FakeRunner),
+                patch.object(team_main.sys, "argv", argv),
+                patch.object(team_main.sys, "stdin", StringIO("")),
+                patch.object(team_main.sys, "stderr", stderr),
+            ):
+                self.assertEqual(team_main.main(), 0)
+            self.assertNotIn("outer-input-fifo:", stderr.getvalue())
+            self.assertFalse((run_root / "control").exists())

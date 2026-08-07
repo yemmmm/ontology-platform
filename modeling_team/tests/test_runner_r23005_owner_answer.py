@@ -1349,5 +1349,149 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 )
 
 
+class _FakeOuterInput:
+    """FIFO double for foreground-loop admission tests (see test_runner.py)."""
+
+    def __init__(self, lines=None) -> None:
+        self.lines: list[str] = list(lines or [])
+        self.read_ready_calls = 0
+        self.pop_calls = 0
+
+    def fileno(self) -> int:
+        return 4242
+
+    def read_ready(self) -> None:
+        self.read_ready_calls += 1
+
+    def pop_line(self):
+        self.pop_calls += 1
+        if self.lines:
+            return self.lines.pop(0)
+        return None
+
+
+class RunnerR23005FifoOuterInputTests(unittest.TestCase):
+    def test_foreground_loop_rejects_early_issue_resolution_via_fifo_then_retries(self) -> None:
+        # The FIFO line routes through the same cooperative issue gate as
+        # stdin: a premature resolution is rejected, and a later one admitted
+        # once the Coordinator pause lands the ledger in waiting_owner.
+        class Ledger:
+            state = "reported"
+
+        class Runner:
+            def __init__(self, root) -> None:
+                self.transport = SimpleNamespace(issue_ledger=Ledger())
+                self.drains = 0
+                self.received: list[dict[str, object]] = []
+                self.run = SimpleNamespace(root=root)
+
+            def drain(self):
+                self.drains += 1
+                if self.drains == 2:
+                    self.transport.issue_ledger.state = "waiting_owner"
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                return []
+
+            def receive_outer(self, message):
+                assert self.transport.issue_ledger.state == "waiting_owner"
+                self.received.append(message)
+                return [{"type": "resolution-accepted"}]
+
+        resolution = {
+            "action": "issue_resolution",
+            "issue_id": "issue-1",
+            "reporter_id": "modeling",
+            "control_epoch": 1,
+            "resolution_type": "guidance",
+            "resolution_text": "Use the already retained protocol receipt.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner(Path(directory))
+            fifo = _FakeOuterInput(
+                [json.dumps(resolution), json.dumps(resolution)]
+            )
+            emitted: list[list[dict[str, object]]] = []
+            polls = iter([([fifo], [], []), ([fifo], [], [])])
+            _foreground_event_loop(
+                runner,
+                StringIO(""),
+                emitted.append,
+                outer_input=fifo,
+                select_fn=lambda *_args: next(polls),
+            )
+        self.assertEqual(
+            emitted,
+            [
+                [{"type": "outer-input-rejected", "code": "invalid_outer_input", "retryable": True}],
+                [{"type": "resolution-accepted"}],
+            ],
+        )
+        self.assertEqual(runner.received, [resolution])
+
+    def test_formal_owner_answer_via_fifo_requires_displayed_question(self) -> None:
+        # An owner answer through the FIFO follows the identical emit-then-
+        # observe-then-receive_outer contract as stdin: the displayed question
+        # is bound first, then the FIFO owner answer releases to modeling.
+        with tempfile.TemporaryDirectory() as directory:
+            runner, adapter = _formal_runner(Path(directory))
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate via fifo", expects_reply=True
+            )
+            fifo = _FakeOuterInput(['{"action":"user","text":"captured"}'])
+            emitted: list[list[dict[str, object]]] = []
+            _original_receive_outer = runner.receive_outer
+
+            def _terminating_receive_outer(message):
+                output = _original_receive_outer(message)
+                (runner.run.root / "state.json").write_text(
+                    json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                    encoding="utf-8",
+                )
+                return output
+
+            runner.receive_outer = _terminating_receive_outer  # type: ignore[method-assign]
+            try:
+                polls = iter([([fifo], [], []), ([fifo], [], [])])
+                _foreground_event_loop(
+                    runner,
+                    StringIO(""),
+                    emitted.append,
+                    outer_input=fifo,
+                    select_fn=lambda *_args: next(polls),
+                )
+            finally:
+                runner.receive_outer = _original_receive_outer  # type: ignore[method-assign]
+
+        self.assertEqual(emitted[0][0]["delivery_id"], question.delivery_id)
+        self.assertTrue(runner._outer_questions[question.delivery_id]["displayed"])
+        owner = emitted[1][0]
+        self.assertEqual(owner["recipient_id"], "modeling")
+        self.assertEqual(owner["reply_to_delivery_id"], question.delivery_id)
+        self.assertTrue(owner["owner_answer_id"].startswith("owner-answer-"))
+        self.assertEqual(adapter.sent[1][1].kind, "owner-answer")
+
+    def test_formal_owner_answer_via_fifo_without_displayed_question_is_fatal(self) -> None:
+        # With no displayed question, the FIFO owner answer hits the same
+        # strict receive_outer boundary as stdin: the fatal
+        # TeamConfigurationError propagates and tears the run down rather than
+        # being swallowed into outer-input-rejected.
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            fifo = _FakeOuterInput(['{"action":"user","text":"no question"}'])
+            with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
+                _foreground_event_loop(
+                    runner,
+                    StringIO(""),
+                    lambda _output: None,
+                    outer_input=fifo,
+                    select_fn=lambda *_args: ([fifo], [], []),
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

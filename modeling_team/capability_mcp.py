@@ -445,22 +445,19 @@ class RunnerCapabilityEndpoint:
                 except OSError:
                     pass
 
-    def _error(
-        self,
-        request_id: Any,
-        *,
-        data: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        error: dict[str, Any] = {
-            "code": -32001,
-            "message": "Runner capability request rejected",
-        }
-        if data is not None:
-            error["data"] = dict(data)
+    def _error(self, request_id: Any) -> dict[str, Any]:
+        # The ``-32001`` error is deliberately opaque: unrelated token, schema,
+        # and dispatch failures must remain indistinguishable to the caller.
+        # A structured diagnostic an Agent must act on (e.g. a stage-handoff
+        # ``no_match`` payload) is returned on the success path with
+        # ``structuredContent`` ``{ok: False, error: ...}`` from ``handle``;
+        # the codex CLI MCP client wrapper strips ``error.data`` when it
+        # re-wraps a JSON-RPC error as a flat ``"Mcp error"`` string, so a
+        # diagnostic placed on the error path would never reach the Agent.
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": error,
+            "error": {"code": -32001, "message": "Runner capability request rejected"},
         }
 
     def handle(self, request: Any) -> dict[str, Any]:
@@ -498,15 +495,28 @@ class RunnerCapabilityEndpoint:
         try:
             result = _jsonable(self._dispatch(self.role, str(operation), arguments))
         except Exception as exc:
-            # Surface only a structured diagnostic the dispatch chose to expose
-            # (e.g. the stage-handoff no_match payload).  The error code and
-            # message stay opaque so unrelated protocol/schema/token failures
-            # remain indistinguishable to the caller, as before.
+            # A dispatch may choose to expose a structured diagnostic (e.g. the
+            # stage-handoff ``no_match`` payload) by raising with a Mapping
+            # ``data`` attribute.  Route it through a *successful* JSON-RPC
+            # result with ``structuredContent`` ``{ok: False, error: ...}`` and a
+            # readable text block: the codex CLI MCP client wrapper re-wraps a
+            # JSON-RPC error as ``"Mcp error: <code>: <message>"`` and strips
+            # ``error.data`` along the way, so a diagnostic on the error path
+            # never reaches the Agent.  A plain exception (no Mapping ``data``)
+            # and every protocol/schema/token rejection keep the opaque
+            # ``-32001`` error below so unrelated failures stay indistinguishable.
             payload = getattr(exc, "data", None)
-            return self._error(
-                request_id,
-                data=payload if isinstance(payload, Mapping) else None,
-            )
+            if not isinstance(payload, Mapping):
+                return self._error(request_id)
+            diagnostic: dict[str, Any] = dict(payload)
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "structuredContent": {"ok": False, "error": diagnostic},
+                    "content": _text_content({"ok": False, "error": diagnostic}),
+                },
+            }
         return {
             "jsonrpc": "2.0",
             "id": request_id,
