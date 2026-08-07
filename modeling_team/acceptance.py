@@ -2207,15 +2207,32 @@ class RunnerAcceptanceCarrier:
                 _error("stage receipt result status does not match its stage")
             if stage == "apply":
                 workspace = data.get("workspace")
+                actual_after = workspace.get("after_version") if isinstance(workspace, Mapping) else None
                 if (
                     not isinstance(workspace, Mapping)
-                    or workspace.get("after_version") != live_state["workspace_version"]
+                    or actual_after != live_state["workspace_version"]
                 ):
-                    _error("stage receipt apply workspace version is stale")
+                    _error(
+                        "stage receipt apply workspace version is stale",
+                        data={
+                            "reason": "apply_workspace_version_stale",
+                            "stage": stage,
+                            "expected_after_version": live_state["workspace_version"],
+                            "actual_after_version": actual_after,
+                        },
+                    )
                 target_snapshot = data.get("target")
                 if isinstance(target_snapshot, Mapping) and "source_signature_after" in target_snapshot:
                     if target_snapshot.get("source_signature_after") != live_state["source_signature"]:
-                        _error("stage receipt apply source signature is stale")
+                        _error(
+                            "stage receipt apply source signature is stale",
+                            data={
+                                "reason": "apply_source_signature_stale",
+                                "stage": stage,
+                                "expected_source_signature": live_state["source_signature"],
+                                "actual_source_signature": target_snapshot.get("source_signature_after"),
+                            },
+                        )
         elif stage == "readback":
             ontology = data.get("ontology")
             workspace = data.get("workspace")

@@ -431,7 +431,14 @@ sending, provide that capability exactly five observed stage calls keyed by `dry
 `readback`, `validation`, and `reasoning`; first use the Runner-private
 `protocol_list_platform_artifacts` catalog to select each actual call's `tool`, complete request
 `arguments`, and exact `artifact_path`. Do not compute any digest, path, page, receipt, or handoff
-field yourself. The builder returns a canonical `handoff_json` plus `handoff_digest`. Send that returned
+field yourself. Each stage receipt must reflect the FINAL live model state, so select the call that
+produced the final state for each stage: for `apply`, choose the LAST `apply_atomic` in the
+cross-batch chain (the one whose `workspace.after_version` equals the final workspace version --
+cross-batch application produces several applies and only the last one matches the live state); for
+`readback`, `validation`, and `reasoning`, choose the call made AFTER every apply completed. If the
+builder returns `ok: false` with `expected_*` / `actual_*` fields for a stage, re-select that
+stage's call to match the `expected_*` value and retry. The builder returns a canonical
+`handoff_json` plus `handoff_digest`. Send that returned
 `handoff_json` unchanged as canonical compact JSON with exactly this schema and no extra fields:
 
 `schema_version,handoff_id,handoff_nonce,task_id,producer_run_id,slice_id,slice_revision,model_state,model_state_digest,candidate_digest,modeling_receipts,handoff_digest`.
