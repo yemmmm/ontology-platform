@@ -504,5 +504,46 @@ class CapabilityAuditTrailTests(unittest.TestCase):
         self.assertEqual(response["error"]["code"], -32001)
 
 
+class HandoffPreconditionDiagnosticTests(unittest.TestCase):
+    """A precondition failure (not a stage no-match) surfaces as ``{ok: False, reason}``.
+
+    Before this, every handoff precondition except stage-binding raised a plain
+    AcceptanceContractError, which the broker collapsed into an opaque -32001;
+    Protocol could not tell WHICH precondition failed.  Now each protocol-level
+    precondition carries a stable ``reason`` that rides the same structured
+    channel as ``stage_handoff_no_match``.
+    """
+
+    def test_missing_accepted_candidate_returns_structured_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory), task_id="precondition-test", acceptance_id="acceptance"
+            )
+            endpoint = carrier.capability_endpoint("protocol")
+            token = carrier.capability_token("protocol")
+            response = endpoint.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "pre-1",
+                    "token": token,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "protocol_build_acceptance_stage_handoff",
+                        "arguments": {
+                            "protocol_id": "protocol",
+                            "stage_calls": {
+                                stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
+                                for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                            },
+                        },
+                    },
+                }
+            )
+        self.assertNotIn("error", response)
+        structured = response["result"]["structuredContent"]
+        self.assertFalse(structured["ok"])
+        self.assertEqual(structured["error"]["reason"], "accepted_candidate_unavailable")
+
+
 if __name__ == "__main__":
     unittest.main()

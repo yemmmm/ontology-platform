@@ -1580,15 +1580,24 @@ class RunnerAcceptanceCarrier:
 
         gate = self._ordinary_retrieval_gate
         if gate is None:
-            _error("ordinary retrieval candidate plan is unavailable")
+            _error(
+                "ordinary retrieval candidate plan is unavailable",
+                data={"reason": "ordinary_retrieval_plan_unavailable"},
+            )
         try:
             state = self._observed_model_state(None)
             receipt = gate.build_receipt(runtime_root=self.root.parent, model_state=state)
         except ProtocolRetrievalGateError as exc:
-            _error(str(exc))
+            _error(
+                str(exc),
+                data={"reason": "ordinary_retrieval_incomplete", "detail": str(exc)},
+            )
         existing = self._ordinary_retrieval_receipt
         if existing is not None and existing != receipt:
-            _error("ordinary retrieval receipt was mutated")
+            _error(
+                "ordinary retrieval receipt was mutated",
+                data={"reason": "ordinary_retrieval_receipt_mutated"},
+            )
         self._ordinary_retrieval_receipt = _safe_copy(receipt)
         return _safe_copy(receipt)
 
@@ -2498,32 +2507,59 @@ class RunnerAcceptanceCarrier:
 
         self._check_capability("protocol", protocol_id, capability)
         if not isinstance(stage_calls, Mapping) or len(stage_calls) != len(MODELING_STAGES):
-            _error("stage handoff builder requires exactly five stage calls")
+            _error(
+                "stage handoff builder requires exactly five stage calls",
+                data={"reason": "stage_handoff_requires_five_stages"},
+            )
         accepted = self._accepted_candidate_identity
         if accepted is None:
-            _error("formal accepted candidate identity is unavailable")
+            _error(
+                "formal accepted candidate identity is unavailable",
+                data={"reason": "accepted_candidate_unavailable"},
+            )
         if self._ordinary_retrieval_gate is not None and self._ordinary_retrieval_receipt is None:
             self.validate_ordinary_retrieval()
         run_id = self._carrier_run_id()
         if run_id is None:
-            _error("formal stage handoff run identity is unavailable")
+            _error(
+                "formal stage handoff run identity is unavailable",
+                data={"reason": "stage_handoff_run_identity_unavailable"},
+            )
         state = self._observed_model_state(None)
         by_stage: dict[str, Mapping[str, Any]] = {}
         for stage, entry in stage_calls.items():
             if not isinstance(stage, str) or not isinstance(entry, Mapping) or set(entry) != {"tool", "arguments", "artifact_path"}:
-                _error("stage handoff builder stage call fields drift")
+                _error(
+                    "stage handoff builder stage call fields drift",
+                    data={"reason": "stage_handoff_fields_drift"},
+                )
             if stage in by_stage or stage not in MODELING_STAGES:
-                _error("stage handoff builder stage is duplicated or unknown")
+                _error(
+                    "stage handoff builder stage is duplicated or unknown",
+                    data={
+                        "reason": "stage_handoff_stage_duplicated_or_unknown",
+                        "stage": stage if isinstance(stage, str) else None,
+                    },
+                )
             if (
                 not isinstance(entry["tool"], str)
                 or not entry["tool"]
                 or not isinstance(entry["arguments"], Mapping)
                 or not isinstance(entry["artifact_path"], str)
             ):
-                _error("stage handoff builder stage call is invalid")
+                _error(
+                    "stage handoff builder stage call is invalid",
+                    data={
+                        "reason": "stage_handoff_stage_call_invalid",
+                        "stage": stage if isinstance(stage, str) else None,
+                    },
+                )
             by_stage[stage] = entry
         if set(by_stage) != set(MODELING_STAGES):
-            _error("stage handoff builder omits a required stage")
+            _error(
+                "stage handoff builder omits a required stage",
+                data={"reason": "stage_handoff_missing_stage"},
+            )
 
         receipts: list[dict[str, Any]] = []
         for stage in MODELING_STAGES:
