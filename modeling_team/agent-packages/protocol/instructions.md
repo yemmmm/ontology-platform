@@ -28,8 +28,18 @@ instances and required property/relation paths exist. Never delete or deactivate
 or weaken validation. If a dependency cannot be formally bound, send a concrete translation conflict
 before the dangerous write.
 
-For one object predicate that is constrained by `create_shape.constraints[].path_id`, create it only
-with `create_property` and `object_class_id`. Bind every matching
+Every object-typed predicate (a relation whose range is a class/resource, not a literal) MUST be
+created with `create_property` and `object_class_id`, regardless of whether a Shape constrains it.
+Never use `create_relation_type` for such a predicate: `create_relation` binds its
+`relation_type_iri` to the formal `/property/{id}` resource, while `create_relation_type` produces a
+distinct `/relation-type/{id}` resource. If a predicate exists only as `/relation-type/{id}`, the
+matching `create_relation` is accepted but materializes ZERO triples (the batch reports `applied`
+with empty `resource_outputs` and no delta inserts), so the governed-retrieval gate later finds no
+statement for that path and the acceptance-stage handoff fails. This applies to EVERY object
+predicate, not only Shape-constrained ones.
+
+For one object predicate that is also constrained by `create_shape.constraints[].path_id`, create it
+only with `create_property` and `object_class_id`. Bind every matching
 `create_relation.relation_type_iri` to that create-property formal `resource_iri`
 (`/property/{id}`), and bind the Shape `path_id` to the same formal create-property `resource_id`.
 Do not create `create_relation_type` for the same predicate and then let the Shape path resolve to
