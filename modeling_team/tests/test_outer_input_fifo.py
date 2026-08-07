@@ -8,7 +8,6 @@ from pathlib import Path
 
 from modeling_team.outer_input import (
     OuterInputFifo,
-    OuterInputFramingError,
     OuterInputInvalidUtf8,
     OuterInputLineTooLong,
 )
