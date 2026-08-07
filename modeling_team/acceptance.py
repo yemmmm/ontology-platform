@@ -42,6 +42,13 @@ from .protocol_retrieval_gate import (
 class AcceptanceContractError(ValueError):
     """A malformed or out-of-scope Acceptance contract must fail closed."""
 
+    def __init__(self, *args: Any, data: Mapping[str, Any] | None = None) -> None:
+        super().__init__(*args)
+        # Optional structured payload surfaced to role-bound capability
+        # callers (e.g. the Protocol handoff builder no_match diagnostic).
+        # When None the error stays opaque, preserving the prior contract.
+        self.data: Mapping[str, Any] | None = data
+
 
 class AcceptancePhase(StrEnum):
     PREPARED = "PREPARED"
@@ -217,8 +224,8 @@ def validate_examiner_payload(value: Any, *, kind: str) -> dict[str, Any]:
     return _safe_copy(data)
 
 
-def _error(message: str) -> None:
-    raise AcceptanceContractError(message)
+def _error(message: str, *, data: Mapping[str, Any] | None = None) -> None:
+    raise AcceptanceContractError(message, data=data)
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -583,6 +590,64 @@ def stage_handoff_digest(handoff: Mapping[str, Any]) -> str:
     """Return the canonical digest for one Protocol stage handoff."""
 
     return canonical_digest(handoff, self_field="handoff_digest")
+
+
+def stage_handoff_no_match_diagnostic(
+    stage: str,
+    entry: Mapping[str, Any],
+    matches: list[Mapping[str, Any]],
+    observed_records: Mapping[str, Mapping[str, Any]],
+    *,
+    near_miss_limit: int = 5,
+) -> dict[str, Any]:
+    """Build the structured no_match diagnostic for one stage handoff tuple.
+
+    The capability broker surfaces this mapping on the opaque ``-32001`` error
+    so Protocol can see which ``(tool, arguments, artifact_path)`` triple failed
+    and which observed platform calls are close, instead of guessing.  Only the
+    current-run, already-published platform observations are exposed; no tokens,
+    digests of private material, or cross-run data leave the Runner.
+
+    ``observed_records`` is keyed by ``artifact_path`` so each path appears at
+    most once; therefore ``matches`` is normally 0 (no triple matched) and the
+    ``>1`` case is a defensive guard.  Near-miss candidates (same tool or same
+    artifact_path as the request) are only listed for the 0-match case so
+    Protocol can correct its tuple; when several observations already match the
+    triple the count alone signals a platform-side deduplication problem.
+    """
+
+    requested = {
+        "tool": entry["tool"],
+        "arguments": dict(entry["arguments"]),
+        "artifact_path": entry["artifact_path"],
+    }
+    diagnostic: dict[str, Any] = {
+        "reason": (
+            "stage_handoff_no_match"
+            if len(matches) == 0
+            else "stage_handoff_multiple_matches"
+        ),
+        "stage": stage,
+        "requested": requested,
+        "observed_total": len(observed_records),
+        "observed_candidates": len(matches),
+    }
+    if not matches:
+        near_misses = [
+            {
+                "tool": record["tool"],
+                "arguments": dict(record.get("request_arguments", {})),
+                "artifact_path": record["artifact_path"],
+            }
+            for record in sorted(
+                observed_records.values(),
+                key=lambda record: str(record.get("artifact_path", "")),
+            )
+            if record.get("tool") == entry["tool"]
+            or record.get("artifact_path") == entry["artifact_path"]
+        ]
+        diagnostic["near_misses"] = near_misses[:near_miss_limit]
+    return diagnostic
 
 
 def validate_stage_handoff(
@@ -2470,7 +2535,15 @@ class RunnerAcceptanceCarrier:
                 and record["artifact_path"] == entry["artifact_path"]
             ]
             if len(matches) != 1:
-                _error("stage handoff builder request is not one observed platform call")
+                _error(
+                    "stage handoff builder request is not one observed platform call",
+                    data=stage_handoff_no_match_diagnostic(
+                        stage,
+                        entry,
+                        matches,
+                        self._platform_read_artifacts,
+                    ),
+                )
             observed = matches[0]
             receipt = {
                 "stage": stage,
@@ -4915,5 +4988,5 @@ def classify_comparison(*, source: Mapping[str, Any], platform: Mapping[str, Any
 
 
 __all__ = [
-    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "READ_ONLY_VALIDATION_TOOLS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "stage_handoff_digest", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_stage_handoff", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
+    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "READ_ONLY_VALIDATION_TOOLS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "stage_handoff_digest", "stage_handoff_no_match_diagnostic", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_stage_handoff", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
 ]

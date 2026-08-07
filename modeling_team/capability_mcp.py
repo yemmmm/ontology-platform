@@ -445,11 +445,22 @@ class RunnerCapabilityEndpoint:
                 except OSError:
                     pass
 
-    def _error(self, request_id: Any) -> dict[str, Any]:
+    def _error(
+        self,
+        request_id: Any,
+        *,
+        data: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        error: dict[str, Any] = {
+            "code": -32001,
+            "message": "Runner capability request rejected",
+        }
+        if data is not None:
+            error["data"] = dict(data)
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": {"code": -32001, "message": "Runner capability request rejected"},
+            "error": error,
         }
 
     def handle(self, request: Any) -> dict[str, Any]:
@@ -486,8 +497,16 @@ class RunnerCapabilityEndpoint:
             return self._error(request_id)
         try:
             result = _jsonable(self._dispatch(self.role, str(operation), arguments))
-        except Exception:
-            return self._error(request_id)
+        except Exception as exc:
+            # Surface only a structured diagnostic the dispatch chose to expose
+            # (e.g. the stage-handoff no_match payload).  The error code and
+            # message stay opaque so unrelated protocol/schema/token failures
+            # remain indistinguishable to the caller, as before.
+            payload = getattr(exc, "data", None)
+            return self._error(
+                request_id,
+                data=payload if isinstance(payload, Mapping) else None,
+            )
         return {
             "jsonrpc": "2.0",
             "id": request_id,
