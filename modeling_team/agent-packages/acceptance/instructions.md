@@ -44,23 +44,26 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   wait for the next immutable ticket or settlement instruction.
 - Use a fresh, globally-unique `request_id` for EVERY capability call
   (`acceptance_child_start`, `acceptance_child_get_report`, `acceptance_child_recycle`,
-  `build_acceptance_verdict`, `submit_acceptance_result`). Never reuse a `request_id` across
-  operations or attempts; a reused id is rejected.
-- Build the verdict with `build_acceptance_verdict`, then submit it unchanged. Never
-  hand-assemble the 28-field `verdict_json` and never compute `verdict_digest` yourself.
-  Call `build_acceptance_verdict` with ONLY your business judgment plus identifiers:
+  `submit_acceptance_result`). Never reuse a `request_id` across operations or attempts;
+  a reused id is rejected.
+- Submit your verdict with a SINGLE `submit_acceptance_result` call that carries ONLY
+  your business judgment plus identifiers and a fresh `request_id`. Never hand-assemble
+  the 28-field `verdict_json`, never compute `verdict_digest` yourself, and never relay a
+  built `verdict_json` back to the Host (the codex CLI display-truncates large JSON in
+  tool-result view, which breaks the relay). Call `submit_acceptance_result` with:
   `acceptance_id`, `round_id`, `verdict` (PASS/FAIL/BLOCKED), `failure_layer`,
   `blocked_reason`, `evidence_refs` (your typed approved_source/platform_read evidence,
   with the full page chain), `checks` (the eight CHECK_KEYS statuses),
   `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
-  `recommended_action`, and `summary`. The Host fills every mechanical field from the
-  bound ticket, the two examiner terminal reports, and the tracked infrastructure
-  failures (including `failure_evidence_refs`, `failure_evidence_digests`, and
-  `infrastructure_failure_digests` — do not pass these, the Host derives them from
-  recycled infrastructure failures). Then call `submit_acceptance_result` with the
-  returned `verdict_json` and `verdict_digest` UNCHANGED (plus `acceptance_id`,
-  `round_id`, and a fresh `request_id`). Do not add, drop, rename, reorder, or rehash
-  any field between the two calls.
+  `recommended_action`, `summary`, and a fresh `request_id`. The Host assembles every
+  mechanical field from the bound ticket, the two examiner terminal reports, and the
+  tracked infrastructure failures (including `failure_evidence_refs`,
+  `failure_evidence_digests`, and `infrastructure_failure_digests` — do not pass these,
+  the Host derives them from recycled infrastructure failures), then validates and
+  records the verdict internally. The `verdict_json` never leaves the Host; the call
+  returns only the small verdict receipt/digest. `build_acceptance_verdict` remains as
+  an optional inspection-only capability if you need to preview the assembled envelope,
+  but it is NOT part of the submission path.
 
 ## Cooperative issue escalation
 

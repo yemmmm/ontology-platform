@@ -3216,25 +3216,33 @@ class RunnerAcceptanceCarrier:
                 capability=capability,
             )
         if operation == "submit_acceptance_result":
-            verdict = args["verdict_json"]
-            if not isinstance(verdict, Mapping):
-                _error("verdict payload is invalid")
-            if verdict.get("verdict_digest") != args["verdict_digest"]:
-                _error(
-                    "verdict digest argument does not match payload",
-                    data={
-                        "reason": "verdict_digest_argument_mismatch",
-                        "expected_verdict_digest": canonical_digest(
-                            verdict, self_field="verdict_digest"
-                        ),
-                        "argument_verdict_digest": args["verdict_digest"],
-                        "payload_verdict_digest": verdict.get("verdict_digest"),
-                    },
-                )
+            # The agent supplies ONLY its business judgment plus identifiers and
+            # a fresh request_id.  The Host assembles the 28-field verdict
+            # envelope (deterministic assembly, identical to
+            # ``build_acceptance_verdict``), then validates and records it via
+            # ``submit_verdict``.  The large ``verdict_json`` never transits the
+            # codex CLI tool-result, so it cannot be display-truncated or
+            # re-typed by the agent: this eliminates the build->relay->submit
+            # round trip that depended on the agent reproducing the assembled
+            # verdict bytes.  ``validate_verdict`` remains the single source of
+            # truth (the merged call validates after assembling).
+            built = self.build_acceptance_verdict(
+                acceptance_id=args["acceptance_id"],
+                round_id=args["round_id"],
+                verdict=args["verdict"],
+                failure_layer=args["failure_layer"],
+                blocked_reason=args["blocked_reason"],
+                evidence_refs=args["evidence_refs"],
+                checks=args["checks"],
+                competency_question_results=args["competency_question_results"],
+                recommended_action=args["recommended_action"],
+                summary=args["summary"],
+                capability=capability,
+            )
             return self.submit_verdict(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
-                verdict=verdict,
+                verdict=built["verdict_json"],
                 request_id=args["request_id"],
                 capability=capability,
             )
@@ -4522,19 +4530,19 @@ class RunnerAcceptanceCarrier:
         recommended_action, summary) plus the acceptance/round identifiers.
         The Host fills every mechanical field from the immutable bound ticket,
         the round's examiner terminal reports, and the tracked infrastructure
-        failures, then computes the canonical ``verdict_digest``.  The returned
-        ``verdict_json`` / ``verdict_digest`` are passed unchanged to
-        ``submit_acceptance_result``; the agent never hand-assembles the 28
-        fields and cannot drift the schema-version, ticket-copied bindings,
-        modeling receipts, report digests, failure-evidence bindings, model
-        state, or verdict digest.
+        failures, then computes the canonical ``verdict_digest``.
 
         This is a pure deterministic assembler: it does not call
-        ``validate_verdict`` itself.  Validation remains the submit path's
-        contract so a contradictory judgment (e.g. PASS while the Host tracked
-        citable infrastructure failures) still surfaces as a deterministic
-        acceptance-contract error at submission time rather than being silently
-        rewritten by the Host.
+        ``validate_verdict`` itself.  It is reused by the merged
+        ``submit_acceptance_result`` dispatch, which assembles via this method
+        and then validates + records in one Host-owned step so the large
+        ``verdict_json`` never transits the codex CLI tool-result.  When exposed
+        directly as the ``build_acceptance_verdict`` capability it remains useful
+        for inspection, but the agent's submission path is the single merged
+        call, not build-then-relay-then-submit.  Either way the agent never
+        hand-assembles the 28 fields and cannot drift the schema-version,
+        ticket-copied bindings, modeling receipts, report digests,
+        failure-evidence bindings, model state, or verdict digest.
         """
 
         self._check_capability("acceptance", acceptance_id, capability)

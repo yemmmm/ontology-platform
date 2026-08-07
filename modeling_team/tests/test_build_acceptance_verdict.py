@@ -525,7 +525,13 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             self.assertIn(uncleaned.failure_digest, carrier._failures)
             carrier.cleanup()
 
-    def test_dispatch_build_then_submit_unchanged_passes(self) -> None:
+    def test_dispatch_merged_submit_records_verdict_found_by_coordinator(self) -> None:
+        # start59 fix: the agent calls ONE merged ``submit_acceptance_result``
+        # with only its judgment + identifiers + a fresh request_id.  The Host
+        # assembles the 28-field envelope, validates it, and records the verdict
+        # internally; the large verdict_json never transits the codex CLI
+        # tool-result.  The recorded verdict must be findable by
+        # ``coordinator_get_verdict`` (and ``acceptance_get_verdict``).
         ticket = _ticket(round_suffix="e2e")
         with tempfile.TemporaryDirectory() as directory:
             carrier = self._carrier(ticket, directory)
@@ -541,13 +547,13 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             ]
             endpoint = carrier._capability_endpoints["acceptance"]
             token = carrier.capability_token("acceptance")
-            response = endpoint.handle({
+            submit = endpoint.handle({
                 "jsonrpc": "2.0",
                 "id": 1,
                 "token": token,
                 "method": "tools/call",
                 "params": {
-                    "name": "build_acceptance_verdict",
+                    "name": "submit_acceptance_result",
                     "arguments": {
                         "acceptance_id": "acceptance",
                         "round_id": ticket["acceptance_round_id"],
@@ -564,17 +570,186 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                         }],
                         "recommended_action": "advance",
                         "summary": "source and platform agree",
+                        "request_id": "submit-e2e",
                     },
                 },
             })
-            self.assertNotIn("error", response)
-            data = response["result"]["structuredContent"]["data"]
-            verdict_json = data["verdict_json"]
-            verdict_digest_value = data["verdict_digest"]
-            # Submit unchanged through the capability broker.
+            self.assertNotIn("error", submit)
+            receipt = submit["result"]["structuredContent"]["data"]
+            # The agent receives only the small verdict receipt/digest, never the
+            # 28-field verdict_json.  There is nothing to display-truncate.
+            self.assertEqual(set(receipt), {
+                "task_id",
+                "acceptance_round_id",
+                "request_id",
+                "verdict_digest",
+                "receipt_digest",
+                "verdict",
+            })
+            self.assertEqual(receipt["verdict"], "PASS")
+            self.assertEqual(receipt["request_id"], "submit-e2e")
+            self.assertEqual(receipt["acceptance_round_id"], ticket["acceptance_round_id"])
+            # The Host-recorded verdict is findable by coordinator_get_verdict
+            # and acceptance_get_verdict (independent readers).
+            coordinator_receipt = carrier.coordinator_get_verdict(
+                coordinator_id="coordinator",
+                round_id=ticket["acceptance_round_id"],
+                verdict_digest_value=None,
+                capability=carrier.capability_token("coordinator"),
+            )
+            self.assertEqual(coordinator_receipt.verdict_digest, receipt["verdict_digest"])
+            acceptance_receipt = carrier.get_verdict(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                verdict_digest_value=receipt["verdict_digest"],
+                capability=carrier.capability_token("acceptance"),
+            )
+            self.assertEqual(acceptance_receipt.request_id, "submit-e2e")
+            carrier.cleanup()
+
+    def test_dispatch_merged_submit_idempotent_retry_same_judgment(self) -> None:
+        # A retry with the SAME judgment + SAME request_id is idempotent: the
+        # deterministic assembly yields the same verdict_digest, so the Host
+        # returns the existing receipt.  A retry with a DIFFERENT judgment
+        # produces a different digest and is rejected as a conflicting retry.
+        ticket = _ticket(round_suffix="retry")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = self._carrier(ticket, directory)
+            source_handle, source_report = self._start_and_report(
+                carrier, ticket, kind="source", request_id="src-retry-0"
+            )
+            platform_handle, platform_report = self._start_and_report(
+                carrier, ticket, kind="platform", request_id="plt-retry-0"
+            )
+            evidence_refs = [
+                source_report["evidence_refs"][0],
+                platform_report["evidence_refs"][0],
+            ]
+            endpoint = carrier._capability_endpoints["acceptance"]
+            token = carrier.capability_token("acceptance")
+            common = {
+                "acceptance_id": "acceptance",
+                "round_id": ticket["acceptance_round_id"],
+                "verdict": "PASS",
+                "failure_layer": None,
+                "blocked_reason": None,
+                "evidence_refs": evidence_refs,
+                "checks": _pass_checks(),
+                "competency_question_results": [{
+                    "id": ticket["question_id"],
+                    "status": "PASS",
+                    "answer": source_report["conclusion"],
+                    "evidence_refs": evidence_refs,
+                }],
+                "recommended_action": "advance",
+                "summary": "source and platform agree",
+                "request_id": "submit-retry",
+            }
+            first = endpoint.handle({
+                "jsonrpc": "2.0", "id": 1, "token": token, "method": "tools/call",
+                "params": {"name": "submit_acceptance_result", "arguments": dict(common)},
+            })
+            self.assertNotIn("error", first)
+            replay = endpoint.handle({
+                "jsonrpc": "2.0", "id": 2, "token": token, "method": "tools/call",
+                "params": {"name": "submit_acceptance_result", "arguments": dict(common)},
+            })
+            self.assertNotIn("error", replay)
+            self.assertEqual(
+                first["result"]["structuredContent"]["data"]["receipt_digest"],
+                replay["result"]["structuredContent"]["data"]["receipt_digest"],
+            )
+            # A different judgment (different summary) drifts the digest; the
+            # Host rejects the conflicting retry with the opaque capability error.
+            conflicting = dict(common)
+            conflicting["summary"] = "a different judgment"
+            conflicting["request_id"] = "submit-different"
+            rejected = endpoint.handle({
+                "jsonrpc": "2.0", "id": 3, "token": token, "method": "tools/call",
+                "params": {"name": "submit_acceptance_result", "arguments": conflicting},
+            })
+            self.assertIn("error", rejected)
+            carrier.cleanup()
+
+    def test_dispatch_merged_submit_blocked_like_start59_records_and_finds(self) -> None:
+        # start59 shape: the source examiner produced a terminal report, the
+        # platform examiner crashed twice (attempt 0 + the retry attempt 1),
+        # both recycled with infrastructure-failure cleanups.  The merged call
+        # must assemble a BLOCKED/runtime/runtime-infrastructure verdict that
+        # cites exactly the two platform failures, validate it, and record it so
+        # coordinator_get_verdict finds it.  The agent supplies only judgment;
+        # there is no verdict_json to display-truncate (the start59 root cause).
+        ticket = _ticket(round_suffix="merged-blk")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = self._carrier(ticket, directory)
+            source_handle, source_report = self._start_and_report(
+                carrier, ticket, kind="source", request_id="src-mblk-0"
+            )
+            carrier.recycle_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=source_handle,
+                completion_ref={"terminal_report_digest": source_report["report_digest"]},
+                request_id="recycle-src-mblk",
+            )
+            platform_projection, platform_digest = carrier.project_child_input(
+                round_id=ticket["acceptance_round_id"], kind="platform"
+            )
+            platform0 = carrier.start_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                kind="platform",
+                input_ref=platform_projection,
+                input_digest=platform_digest,
+                ticket_digest_value=ticket["ticket_digest"],
+                request_id="plt-mblk-0",
+                attempt=0,
+            )
+            failure0 = carrier.record_infrastructure_failure(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=platform0,
+                failure_category="runtime",
+                reason_code="child-timeout",
+            )
+            carrier.recycle_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=platform0,
+                completion_ref={"infrastructure_failure_digest": failure0.failure_digest},
+                request_id="recycle-plt-mblk-0",
+            )
+            platform1 = carrier.start_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                kind="platform",
+                input_ref=platform_projection,
+                input_digest=platform_digest,
+                ticket_digest_value=ticket["ticket_digest"],
+                request_id="plt-mblk-1",
+                attempt=1,
+            )
+            failure1 = carrier.record_infrastructure_failure(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=platform1,
+                failure_category="runtime",
+                reason_code="child-timeout",
+            )
+            carrier.recycle_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=platform1,
+                completion_ref={"infrastructure_failure_digest": failure1.failure_digest},
+                request_id="recycle-plt-mblk-1",
+            )
+            checks = _pass_checks()
+            checks["validation_reasoning"] = "BLOCKED"
+            endpoint = carrier._capability_endpoints["acceptance"]
+            token = carrier.capability_token("acceptance")
             submit = endpoint.handle({
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": 1,
                 "token": token,
                 "method": "tools/call",
                 "params": {
@@ -582,16 +757,50 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     "arguments": {
                         "acceptance_id": "acceptance",
                         "round_id": ticket["acceptance_round_id"],
-                        "verdict_json": verdict_json,
-                        "verdict_digest": verdict_digest_value,
-                        "request_id": "submit-e2e",
+                        "verdict": "BLOCKED",
+                        "failure_layer": "runtime",
+                        "blocked_reason": "runtime-infrastructure",
+                        "evidence_refs": [],
+                        "checks": checks,
+                        "competency_question_results": [{
+                            "id": ticket["question_id"],
+                            "status": "BLOCKED",
+                            "answer": "platform examiner did not return a terminal report",
+                            "evidence_refs": [],
+                        }],
+                        "recommended_action": "retry-after-recovery",
+                        "summary": "platform examiner timed out twice",
+                        "request_id": "submit-mblk",
                     },
                 },
             })
             self.assertNotIn("error", submit)
             receipt = submit["result"]["structuredContent"]["data"]
-            self.assertEqual(receipt["verdict"], "PASS")
-            self.assertEqual(receipt["verdict_digest"], verdict_digest_value)
+            self.assertEqual(receipt["verdict"], "BLOCKED")
+            self.assertEqual(receipt["request_id"], "submit-mblk")
+            # The Host-derived envelope (inspected via the recorded verdict)
+            # cites exactly the two cleaned platform failures and is the exact
+            # 28-field shape validate_verdict accepts.
+            recorded = carrier._rounds[ticket["acceptance_round_id"]]["verdict"]
+            cited = sorted({failure0.failure_digest, failure1.failure_digest})
+            self.assertEqual(recorded["failure_evidence_digests"], cited)
+            self.assertEqual(recorded["infrastructure_failure_digests"], cited)
+            self.assertEqual(len(recorded), 28)
+            renormalized = validate_verdict(
+                recorded,
+                ticket=ticket,
+                source_report=source_report,
+                platform_report=None,
+                infrastructure_failures=[failure0, failure1],
+            )
+            self.assertEqual(renormalized["verdict_digest"], receipt["verdict_digest"])
+            # round_summary exposes the BLOCKED verdict to the Coordinator
+            # (coordinator_get_verdict only retrieves PASS verdicts by design;
+            # the merged recording path persists the BLOCKED verdict regardless).
+            self.assertEqual(
+                carrier.round_summary(ticket["acceptance_round_id"])["verdict"],
+                "BLOCKED",
+            )
             carrier.cleanup()
 
     def test_build_rejects_unknown_round_and_bad_capability(self) -> None:
@@ -704,6 +913,71 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "competency_question_results": [{"id": "cq1", "status": "PASS"}],
                     "recommended_action": "wait",
                     "summary": "blocked",
+                },
+                schema,
+            )
+        )
+
+    def test_submit_acceptance_result_schema_accepts_judgment_and_request_id(self) -> None:
+        from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
+
+        schema = CAPABILITY_TOOL_SCHEMAS["submit_acceptance_result"]
+        self.assertTrue(
+            _matches_schema(
+                {
+                    "acceptance_id": "acceptance",
+                    "round_id": "round-1",
+                    "verdict": "BLOCKED",
+                    "failure_layer": "runtime",
+                    "blocked_reason": "runtime-infrastructure",
+                    "evidence_refs": [{"type": "infrastructure_failure"}],
+                    "checks": {"source_fidelity": "PASS"},
+                    "competency_question_results": [{"id": "cq1", "status": "BLOCKED"}],
+                    "recommended_action": "retry-after-recovery",
+                    "summary": "blocked",
+                    "request_id": "submit-1",
+                },
+                schema,
+            )
+        )
+
+    def test_submit_acceptance_result_schema_rejects_verdict_json_relay(self) -> None:
+        # The merged submit surface must NOT accept the large verdict_json /
+        # verdict_digest relay: that was the start59 root cause (codex CLI
+        # display-truncated the assembled verdict in the tool-result view).
+        from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
+
+        schema = CAPABILITY_TOOL_SCHEMAS["submit_acceptance_result"]
+        self.assertFalse(
+            _matches_schema(
+                {
+                    "acceptance_id": "acceptance",
+                    "round_id": "round-1",
+                    "verdict_json": {"verdict": "PASS"},
+                    "verdict_digest": "0" * 64,
+                    "request_id": "submit-1",
+                },
+                schema,
+            )
+        )
+
+    def test_submit_acceptance_result_schema_rejects_missing_request_id(self) -> None:
+        from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
+
+        schema = CAPABILITY_TOOL_SCHEMAS["submit_acceptance_result"]
+        self.assertFalse(
+            _matches_schema(
+                {
+                    "acceptance_id": "acceptance",
+                    "round_id": "round-1",
+                    "verdict": "PASS",
+                    "failure_layer": None,
+                    "blocked_reason": None,
+                    "evidence_refs": [],
+                    "checks": {},
+                    "competency_question_results": [],
+                    "recommended_action": "advance",
+                    "summary": "ok",
                 },
                 schema,
             )

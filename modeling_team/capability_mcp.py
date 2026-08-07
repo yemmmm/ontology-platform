@@ -307,14 +307,45 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "submit_acceptance_result": {
         "type": "object",
+        # The Acceptance agent supplies ONLY its business judgment plus the
+        # acceptance/round identifiers and a fresh request_id.  The Host then
+        # assembles the 28-field verdict envelope (the same deterministic
+        # assembly ``build_acceptance_verdict`` performs), validates it through
+        # ``validate_verdict``, and records the receipt internally.  The large
+        # ``verdict_json`` never transits the codex CLI tool-result, so it cannot
+        # be display-truncated or re-typed by the agent; the agent relays only
+        # judgment, never the assembled verdict bytes.  Deep validation of these
+        # judgment objects lives in the carrier's ``validate_verdict``; the
+        # schema only accepts their shape.
         "properties": {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
-            "verdict_json": {"type": "object"},
-            "verdict_digest": {"type": "string"},
+            "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
+            "failure_layer": {"type": ["string", "null"]},
+            "blocked_reason": {"type": ["string", "null"]},
+            "evidence_refs": {"type": "array", "items": {"type": "object"}},
+            "checks": {"type": "object"},
+            "competency_question_results": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
+            "recommended_action": {"type": "string"},
+            "summary": {"type": "string"},
             "request_id": {"type": "string"},
         },
-        "required": ["acceptance_id", "round_id", "verdict_json", "verdict_digest", "request_id"],
+        "required": [
+            "acceptance_id",
+            "round_id",
+            "verdict",
+            "failure_layer",
+            "blocked_reason",
+            "evidence_refs",
+            "checks",
+            "competency_question_results",
+            "recommended_action",
+            "summary",
+            "request_id",
+        ],
         "additionalProperties": False,
     },
     "acceptance_get_verdict": {
