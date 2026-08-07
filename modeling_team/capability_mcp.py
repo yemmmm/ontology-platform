@@ -269,23 +269,45 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "build_acceptance_verdict": {
         "type": "object",
-        # The Acceptance agent supplies ONLY its business judgment plus the
+        # The Acceptance agent supplies ONLY simple judgment content plus the
         # acceptance/round identifiers.  Every mechanical field (schema_version,
         # ticket-copied bindings, modeling receipts, report digests, failure
-        # evidence refs/digests, model state, verdict digest) is Host-derived
-        # from the bound ticket, examiner reports, and tracked failures.  Deep
+        # evidence refs/digests, model state, verdict digest, typed evidence-ref
+        # structures, the checks key set, and the CQ id) is Host-derived from
+        # the bound ticket, examiner reports, and tracked failures.  Deep
         # validation of these judgment objects lives in the carrier's
-        # ``validate_verdict``; the schema only accepts their shape.
+        # ``build_acceptance_verdict``/``validate_verdict``; the schema only
+        # accepts their top-level shape.
         "properties": {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
             "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
             "failure_layer": {"type": ["string", "null"]},
             "blocked_reason": {"type": ["string", "null"]},
-            "evidence_refs": {"type": "array", "items": {"type": "object"}},
-            "checks": {"type": "object"},
+            "evidence_refs": {
+                "type": "array",
+                # Evidence LOCATORS, not typed refs.  Each item is either a
+                # source locator ``{"location": "<approved-path>#<anchor>"}``
+                # or a platform locator with the receipt coordinate set
+                # (ref_id, tool, request_digest, response_digest,
+                # artifact_path, page).  The Host rebuilds the full typed ref
+                # (approved_source/platform_read) from the ticket; the agent
+                # never supplies typed-ref digests, paths, ref ids, or
+                # ticket/state bindings.
+                "items": {"type": "object"},
+            },
+            "checks": {
+                # The flat eight-key mapping of CHECK_KEYS to a PASS/FAIL/
+                # BLOCKED verdict.  The Host owns the key set and rejects any
+                # drift; only the verdict-per-check value is the agent's
+                # judgment.
+                "type": "object",
+            },
             "competency_question_results": {
                 "type": "array",
+                # Each item carries ONLY {status, answer, evidence_refs} where
+                # evidence_refs are locators (see above).  The Host fills the
+                # ticket-bound question id and rebuilds the typed evidence refs.
                 "items": {"type": "object"},
             },
             "recommended_action": {"type": "string"},
@@ -307,26 +329,40 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "submit_acceptance_result": {
         "type": "object",
-        # The Acceptance agent supplies ONLY its business judgment plus the
-        # acceptance/round identifiers and a fresh request_id.  The Host then
-        # assembles the 28-field verdict envelope (the same deterministic
-        # assembly ``build_acceptance_verdict`` performs), validates it through
-        # ``validate_verdict``, and records the receipt internally.  The large
-        # ``verdict_json`` never transits the codex CLI tool-result, so it cannot
-        # be display-truncated or re-typed by the agent; the agent relays only
-        # judgment, never the assembled verdict bytes.  Deep validation of these
-        # judgment objects lives in the carrier's ``validate_verdict``; the
-        # schema only accepts their shape.
+        # The Acceptance agent supplies ONLY simple judgment content plus the
+        # acceptance/round identifiers and a fresh request_id: evidence locators
+        # (not typed refs), the eight-key checks mapping (not the wrapped
+        # structure), and CQ status/answer/locators (the Host fills the CQ id).
+        # The Host assembles the 28-field verdict envelope (the same
+        # deterministic assembly ``build_acceptance_verdict`` performs),
+        # validates it through ``validate_verdict``, and records the receipt
+        # internally.  The large ``verdict_json`` never transits the codex CLI
+        # tool-result, so it cannot be display-truncated or re-typed by the
+        # agent; the agent relays only judgment, never the assembled verdict
+        # bytes.  Deep validation of these judgment objects lives in the
+        # carrier's ``build_acceptance_verdict``/``validate_verdict``; the
+        # schema only accepts their top-level shape.
         "properties": {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
             "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
             "failure_layer": {"type": ["string", "null"]},
             "blocked_reason": {"type": ["string", "null"]},
-            "evidence_refs": {"type": "array", "items": {"type": "object"}},
-            "checks": {"type": "object"},
+            "evidence_refs": {
+                "type": "array",
+                # Evidence LOCATORS, not typed refs (see build_acceptance_verdict
+                # for the locator contract).  The Host rebuilds every typed ref
+                # from the ticket.
+                "items": {"type": "object"},
+            },
+            "checks": {
+                # The flat eight-key CHECK_KEYS -> PASS/FAIL/BLOCKED mapping.
+                "type": "object",
+            },
             "competency_question_results": {
                 "type": "array",
+                # Each item carries ONLY {status, answer, evidence_refs
+                # (locators)}; the Host fills the question id.
                 "items": {"type": "object"},
             },
             "recommended_action": {"type": "string"},
@@ -417,9 +453,9 @@ def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
     if isinstance(value, (list, tuple)) and not isinstance(value, (str, Mapping)):
         # ``items`` is optional: when omitted any array element is accepted and
         # the owning capability performs the structural validation.  This keeps
-        # the schema validator deterministic for the judgment arrays (typed
-        # evidence refs, competency-question results) without duplicating the
-        # deep contract checks that live in the carrier.
+        # the schema validator deterministic for the judgment arrays (evidence
+        # locators, competency-question results) without duplicating the deep
+        # contract checks that live in the carrier.
         items = schema.get("items")
         if isinstance(items, Mapping):
             return all(_matches_schema(item, items) for item in value)
