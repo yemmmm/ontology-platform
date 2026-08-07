@@ -2320,3 +2320,39 @@ when all of the following pass:
   Flash/max Responses configuration, no key in argv/TOML/evidence, Ruff, and diff checks all remain PASS.
 - **Final Round 5 result: PASS.** No remaining implementation defect was found. This round made no live model/API
   call and consumed no semantic start.
+
+## 2026-08-07 Start45 Examiner event-pump and elicitation repair — planned independent round 6
+
+This round is deterministic and must not call a live model or consume a semantic start. It accepts the repair
+only when all of the following pass:
+
+1. The elicitation allowlist is exactly package-specific. The Source Examiner package admits only
+   `examiner_report`; the Platform Examiner package admits `examiner_report` and `platform_read_proxy`; every
+   other package and role — including a `source-specialist` role outside the two Examiner packages and all four
+   persistent roles — declines with the existing sanitized evidence; built-in command approval returns
+   `decision=decline` with no fallback; and the four existing arms (Team Transport, Protocol Platform, Protocol
+   Mechanics v2, Runner Capability) are unchanged.
+2. A scripted App Server that completes `initialize/thread-start/mcp-status/turn-start` and then writes an
+   `examiner_report` elicitation notification line on stdout is drained by the new lifecycle-owned pump after
+   `turn/start` returns: the notification reaches `_notification`, the package-specific branch admits it, the
+   private bridge submits the six-field payload, and `ReportSinkServer` receives and persists it. The pump
+   reuses `_read_output_line` and the child `_Agent` `io_lock` and adds no new read path.
+3. The same scripted harness proves the Platform path: a `platform_read_proxy` elicitation after `turn/start`
+   is admitted for the Platform Examiner package, declined for every other package, and never reaches command
+   approval.
+4. Pump failure semantics are fixed and closed: App Server output close (`_read_output_line` EOF), a malformed
+   line, and process death each map to the fixed `runtime` reason through `_record_failure`, surface no raw
+   exception text, honor the `_failure_recorded/_stopped/_destroyed` guards, and do not overwrite or erase an
+   already-delivered six-field report.
+5. Lifecycle residue is zero: `stop` joins the pump with a timeout before `_terminate_process`, proxy, and
+   report-sink teardown; after both normal destroy and startup-failure cleanup there are no pump/watchdog
+   threads, no child process, no `report.sock`/`platform-proxy.sock`, and no short socket root left behind.
+6. Regression holds: the existing start44 report-contract tests, the Codex isolation allowlist/drain tests,
+   homogeneous `deepseek-v4-flash/deepseek/max` over Responses across all six runtime paths, the no-secret
+   static probes (no key in argv, TOML, or evidence), Ruff, and the diff checks pass, and the full
+   `modeling_team/tests` suite passes except, at most, the known historical P2a byte-freeze hash assertion,
+   which is reported as-is and never satisfied by editing the frozen expectation.
+
+### Independent Round 6 execution and result
+
+(to be appended by the independent tester)

@@ -207,6 +207,14 @@ class _CodexChildResource:
         self._failure_recorded = False
         self.startup_complete = startup_complete
         self._watchdog_stop = threading.Event()
+        self._watchdog_thread: threading.Thread | None = None
+        # The Examiner stdout pump owns the child App Server output after
+        # ``turn/start`` returns; it is lifecycle-bound to this resource and is
+        # stopped/joined before any descriptor teardown in ``stop``.
+        self._pump_stop = threading.Event()
+        self._stdout_pump: threading.Thread | None = None
+        self._child_agent: _Agent | None = None
+        self._adapter: CodexRuntimeAdapter | None = None
         self._read_key_revoked = False
         if process is not None:
             self._start_watchdog()
@@ -244,7 +252,60 @@ class _CodexChildResource:
                     self._terminate_process(grace_seconds=0.5)
                     return
 
-        threading.Thread(target=watch, name="acceptance-child-watchdog", daemon=True).start()
+        thread = threading.Thread(target=watch, name="acceptance-child-watchdog", daemon=True)
+        self._watchdog_thread = thread
+        thread.start()
+
+    def start_stdout_pump(self, adapter: CodexRuntimeAdapter, agent: _Agent) -> None:
+        """Start the lifecycle-owned Examiner App Server stdout pump.
+
+        Reuses the existing ``_read_output_line`` and the child ``_Agent``'s
+        reentrant ``io_lock`` so every reader serializes on the same lock
+        ``_rpc_locked`` already honors.  Each parsed notification is dispatched
+        through ``adapter._notification``; no new read path is introduced.
+        """
+
+        self._adapter = adapter
+        self._child_agent = agent
+        thread = threading.Thread(
+            target=self._run_stdout_pump,
+            name="acceptance-child-stdout-pump",
+            daemon=True,
+        )
+        self._stdout_pump = thread
+        thread.start()
+
+    def _run_stdout_pump(self) -> None:
+        adapter = self._adapter
+        agent = self._child_agent
+        if adapter is None or agent is None:
+            return
+        while not self._pump_stop.is_set():
+            try:
+                with agent.io_lock:
+                    if self._pump_stop.is_set():
+                        return
+                    line = adapter._read_output_line(agent, 0.1)
+                    if line is None:
+                        continue
+                    try:
+                        value = json.loads(line)
+                    except json.JSONDecodeError:
+                        # A stop requested at the very start of ``stop`` (via
+                        # ``_watchdog_stop``) precedes descriptor teardown, so an
+                        # output close during teardown is not a failure.
+                        if not self._watchdog_stop.is_set():
+                            self._record_failure("runtime", "child-output-malformed")
+                        return
+                    adapter._notification(agent, value)
+            except CodexRuntimeError:
+                if not self._watchdog_stop.is_set():
+                    self._record_failure("runtime", "child-output-closed")
+                return
+            except Exception:
+                if not self._watchdog_stop.is_set():
+                    self._record_failure("runtime", "child-output-failed")
+                return
 
     def failure_evidence(self) -> dict[str, str] | None:
         """Return only fixed sanitized infrastructure codes for the carrier."""
@@ -318,7 +379,18 @@ class _CodexChildResource:
                 pass
 
     def stop(self) -> None:
+        # Signal both lifecycle threads before any descriptor teardown so the pump
+        # never reads a closed stdout and a join-timeout EOF cannot misfire as a
+        # failure.  ``_watchdog_stop`` is the earliest stop signal (set here at the
+        # very start of ``stop``); ``self.stopped`` is only the final state below.
         self._watchdog_stop.set()
+        self._pump_stop.set()
+        pump = self._stdout_pump
+        if pump is not None:
+            pump.join(timeout=2.0)
+        watchdog = self._watchdog_thread
+        if watchdog is not None:
+            watchdog.join(timeout=2.0)
         self._terminate_process()
         if self.proxy is not None:
             self.proxy.revoke()
@@ -916,6 +988,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             resource.spec["runtime_config_digest"] = child_config_digest(config)
             resource.submitted_reports = submitted_reports
             resource.startup_complete = True
+            # The Examiner child is intentionally not registered in
+            # ``self.agents``, so the persistent-role output drains never cover it.
+            # Own its App Server stdout here with one lifecycle-bound pump so the
+            # model's ``submit_examiner_report`` elicitation can complete.
+            resource.start_stdout_pump(self, child_agent)
             return resource
         except Exception as exc:
             resource.failure_category = "runtime"
@@ -2269,6 +2346,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ) or (
                 bool(self._role_capability_operations(agent.package.role))
                 and server_name == "runner_capability"
+            ) or (
+                # Examiner elicitations are package-specific: both Examiner packages
+                # carry role ``source-specialist``, so the branch keys on package_id,
+                # matching the package discrimination in ``_require_expected_mcp_servers``.
+                agent.package.package_id == "source-examiner"
+                and server_name == "examiner_report"
+            ) or (
+                agent.package.package_id == "platform-examiner"
+                and server_name in {"examiner_report", "platform_read_proxy"}
             )
             action = "accept" if expected else "decline"
             self._append_runtime_evidence(

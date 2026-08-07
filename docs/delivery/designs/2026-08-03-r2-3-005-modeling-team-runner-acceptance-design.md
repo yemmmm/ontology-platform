@@ -932,3 +932,91 @@ Flash/max (including a durable child path longer than the Unix socket limit), an
 validation/replay behavior. Independent review and
 verification are required before start45; start44 is recorded as `collaboration/routing,false` and consumes the
 fourth of the ten newly authorized starts.
+
+## 2026-08-07 amendment: Examiner child stdout pump and package-specific elicitation allowlist
+
+Start45 carried the proven r3 candidate through candidate publication, the five atomic platform batches,
+readback, validation, reasoning, the governed retrieval gate, and the formal `delivery-5` acceptance-stage
+handoff, then reached the first real Source Examiner. The retained rollout records a correct six-field
+`submit_examiner_report` function call, but no function-call output ever returned: the Examiner App Server's
+stdout was never consumed after `turn/start`, the private report bridge never reached `report.sock`, the Host
+received no Source report, and the 600-second child watchdog classified the run as `runtime/child-timeout`
+(`runtime/infrastructure`, `complete_modeling_quality_result=false`). DeepSeek Flash/max/Responses stayed
+homogeneous and reachable across all six runtime paths; the failure is a Runtime output-consumption gap, not a
+modeling-quality or provider defect.
+
+Two layers must be repaired together; either alone still fails the Examiner:
+
+1. After `CodexRuntimeAdapter._launch_acceptance_child_impl` returns from `turn/start`, no path consumes the
+   Examiner child's App Server stdout. The child `_Agent` is a method-local object that is intentionally not
+   registered in `self.agents`, so the `receive_messages` and `terminal_report_blocked` drains never cover it.
+   The model's `submit_examiner_report` elicitation therefore blocks forever inside the App Server.
+2. `CodexRuntimeAdapter._notification`'s elicitation allowlist admits only Team Transport, the two Protocol
+   surfaces, and Runner Capability. It has no branch for `examiner_report` or `platform_read_proxy`, so even a
+   consumed Examiner notification would be declined.
+
+### Non-goals
+
+This amendment is a platform/Runtime narrow repair only. It does not remodel the proven r3 candidate, change
+platform semantics, alter the strict six-field report contract, or touch ticket/verdict/retry/settlement rules.
+It does not change command approval (the built-in decision stays `decline`), the four existing elicitation
+branches, or the output-consumption and elicitation behavior of the four persistent roles. It introduces no
+Runner phase gate, write freeze, Lease revocation, pause/resume state, or Producer-side abstraction, and it
+consumes no semantic start. Start46 remains gated on an independently passed repair, a reviewed clean baseline,
+and exact repair authorization.
+
+### Repair contract
+
+- **Examiner child output pump.** After `turn/start` succeeds and before the resource is returned, the Runtime
+  starts one lifecycle-owned daemon thread (alongside the existing watchdog) that owns the Examiner child's
+  stdout. The pump reuses the existing `_read_output_line` and the child `_Agent`'s reentrant `io_lock` — the
+  same primitives `_rpc_locked` already serializes on — and dispatches each parsed notification line through
+  `adapter._notification`. No new read path is introduced. The child `_Agent` reference (process, stdout,
+  `io_lock`, `stdout_buffer`) is retained on `_CodexChildResource` so the pump shares the exact lock instance
+  any future reader must honor.
+- **Fixed failure semantics.** `_read_output_line` raises on App Server output close; the pump catches that and
+  any malformed line or process death and routes them only through the existing `_record_failure` with a fixed
+  `runtime` reason code, honoring its `_failure_recorded/_stopped/_destroyed` guards. No path retains or
+  surfaces raw exception text, and a pump exit after the watchdog fires or `stop` is requested is not a failure.
+- **Pump lifecycle.** The pump is stopped and joined with a timeout inside `_CodexChildResource.stop`, before
+  `_terminate_process`, proxy, and report-sink teardown, so it never reads a closed descriptor. `destroy`
+  ordering is otherwise unchanged; zero thread/process/socket residue after stop/destroy is an acceptance gate.
+- **Package-specific elicitation allowlist.** The new branch keys on `agent.package.package_id` — not on role,
+  because both Examiner packages carry role `source-specialist` — matching the package discrimination already
+  used by `_require_expected_mcp_servers`. The Source Examiner package admits only `examiner_report`; the
+  Platform Examiner package admits `examiner_report` and `platform_read_proxy`. Every other package and role,
+  including the four persistent roles, continues to fail closed exactly as today, and built-in command approval
+  keeps returning `decline`.
+- **Concurrency boundary.** The pump reads stdout while `ReportSinkServer` reads `report.sock`; they are
+  independent threads on independent descriptors and share no state. The pump and any server-request response
+  write serialize on the same child `io_lock`. Per-child socket-root isolation is unchanged and the pump never
+  touches a socket.
+
+### Impact and risk
+
+GitNexus upstream impact, recomputed this session: `_CodexChildResource` MEDIUM (6 direct callers, no affected
+process), `_notification` CRITICAL (163 upstream, 5 processes), `_launch_acceptance_child_impl` CRITICAL
+(187 upstream, 8 processes). Every affected process is a Runtime call-chain entry (smoke, protocol drivers,
+ledger, `__main__`, semantic MCP tools); none is a modeling-semantic path. The change is therefore treated as a
+high-risk shared-Runtime edit: the elicitation addition is a package-specific branch that leaves every existing
+allowlist arm and command-approval behavior unchanged, and the pump is scoped to the Examiner child, with
+persistent-role output handling untouched.
+
+### Acceptance focus
+
+Focused tests must prove: the exact allowlist matrix (Source admits `examiner_report`; Platform admits
+`examiner_report` and `platform_read_proxy`; every other package/role, including `source-specialist` outside the
+two Examiner packages, declines; command approval stays `decline`; the four existing arms are unchanged); a
+scripted App Server that emits an elicitation notification after `turn/start` returns is drained by the pump,
+reaches `_notification`, and is published to `report.sock` as a six-field payload; EOF/malformed/process-death
+map to the fixed `runtime` reason with no raw exception text and honor the `_record_failure` guards without
+overwriting an already-delivered report; stop/destroy leave zero thread/process/socket residue and join the pump
+before descriptor teardown; the existing start44 contract tests, Codex isolation tests, homogeneous DeepSeek
+Flash/max/Responses across all six runtime paths, and no-secret static probes still pass; and the full
+`modeling_team/tests` suite passes except, at most, the known historical P2a byte-freeze hash assertion, which
+is reported as-is and never satisfied by editing the frozen expectation.
+
+Independent review and verification are required before any start46 reservation; this amendment consumes no
+semantic start. Start45's terminal failure stays recorded as `runtime/infrastructure,false` and is the fifth of
+the ten newly authorized starts, leaving five; repair authorization for start45 may be written only after this
+amendment is independently accepted and committed on a reviewed clean baseline.

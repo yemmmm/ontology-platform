@@ -1904,6 +1904,71 @@ class CodexIsolationTests(unittest.TestCase):
                     self.assertEqual(event["action"], action)
                     self.assertNotIn(f"private-message-{case}", json.dumps(event))
 
+    def test_examiner_elicitation_allowlist_is_package_specific(self) -> None:
+        root = repository_root()
+        # Keys on package_id (both Examiner packages carry role source-specialist),
+        # not on role. Source admits only examiner_report; Platform admits
+        # examiner_report and platform_read_proxy; every other package/role,
+        # including a source-specialist outside the two Examiner packages, declines.
+        cases = (
+            ("source-examiner", "source-examiner", "examiner_report", "accept"),
+            ("platform-examiner", "platform-examiner", "examiner_report", "accept"),
+            ("platform-examiner", "platform-examiner", "platform_read_proxy", "accept"),
+            ("source-examiner-platform-tool", "source-examiner", "platform_read_proxy", "decline"),
+            ("source-examiner-unknown", "source-examiner", "unknown", "decline"),
+            ("platform-examiner-unknown", "platform-examiner", "unknown", "decline"),
+            ("other-source-specialist", "other-specialist", "examiner_report", "decline"),
+            ("other-source-specialist-platform", "other-specialist", "platform_read_proxy", "decline"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            evidence_path = base / "evidence" / "mcp-elicitations.jsonl"
+            for request_id, (case, package_id, server_name, action) in enumerate(cases, start=1):
+                with self.subTest(case=case):
+                    # Examiner packages are isolated children that do not permit Team
+                    # Transport, so they are not loadable via ``_load_package``; the
+                    # elicitation branch only reads ``package_id`` and ``role``, so a
+                    # minimal package double is sufficient and proves the branch keys
+                    # on package_id (both Examiner packages carry role source-specialist).
+                    package = SimpleNamespace(package_id=package_id, role="source-specialist")
+                    agent = _Agent(
+                        case,
+                        package,
+                        base / case / "home",
+                        base / case / "work",
+                        base / case / "skills",
+                    )
+                    agent.process = SimpleNamespace(stdin=StringIO())
+                    adapter = CodexRuntimeAdapter(repository_root=root)
+                    adapter._run_root = base
+                    secret_message = f"message-secret-{case}"
+                    secret_schema = f"schema-secret-{case}"
+                    adapter._notification(
+                        agent,
+                        {
+                            "id": request_id,
+                            "method": "mcpServer/elicitation/request",
+                            "params": {
+                                "serverName": server_name,
+                                "mode": "form",
+                                "message": secret_message,
+                                "requestedSchema": {
+                                    "type": "object",
+                                    "properties": {secret_schema: {"type": "string"}},
+                                },
+                            },
+                        },
+                    )
+                    self.assertEqual(
+                        json.loads(agent.process.stdin.getvalue())["result"],
+                        {"action": action, "content": {}},
+                    )
+                    event = json.loads(evidence_path.read_text(encoding="utf-8").splitlines()[-1])
+                    self.assertEqual(event["server_name"], server_name)
+                    self.assertEqual(event["action"], action)
+                    self.assertNotIn(secret_message, json.dumps(event))
+                    self.assertNotIn(secret_schema, json.dumps(event))
+
     def test_start_roster_derives_retrieval_gate_eligibility_only_for_v2_protocol_create(self) -> None:
         root = repository_root()
         cases = (
