@@ -37,6 +37,16 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   result to the ticket, acceptance_round_id, question, slice revision, and full model state.
 - Acceptance remains alive across rounds.  Return the verdict only to Coordinator, then
   wait for the next immutable ticket or settlement instruction.
+- Use a fresh, globally-unique `request_id` for EVERY capability call
+  (`acceptance_child_start`, `acceptance_child_get_report`, `acceptance_child_recycle`,
+  `submit_acceptance_result`). Never reuse a `request_id` across operations or attempts; a reused
+  id is rejected.
+- For `submit_acceptance_result`, the `verdict_digest` argument must equal the
+  `verdict_json.verdict_digest` field and equal the canonical digest: sha256 of compact sorted JSON
+  of `verdict_json` with the `verdict_digest` field and every `ticket_digest` field set to null. If
+  the capability returns `ok: false` with `expected_verdict_digest`, set BOTH the
+  `verdict_json.verdict_digest` field AND the `verdict_digest` argument to that exact value and
+  retry once.
 
 ## Cooperative issue escalation
 

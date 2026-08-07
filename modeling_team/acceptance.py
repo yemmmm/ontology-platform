@@ -2918,7 +2918,17 @@ class RunnerAcceptanceCarrier:
             if not isinstance(verdict, Mapping):
                 _error("verdict payload is invalid")
             if verdict.get("verdict_digest") != args["verdict_digest"]:
-                _error("verdict digest argument does not match payload")
+                _error(
+                    "verdict digest argument does not match payload",
+                    data={
+                        "reason": "verdict_digest_argument_mismatch",
+                        "expected_verdict_digest": canonical_digest(
+                            verdict, self_field="verdict_digest"
+                        ),
+                        "argument_verdict_digest": args["verdict_digest"],
+                        "payload_verdict_digest": verdict.get("verdict_digest"),
+                    },
+                )
             return self.submit_verdict(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
