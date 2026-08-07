@@ -42,10 +42,12 @@ FROZEN_GLOBAL_SURFACES = {
     # exact Prompt-E delivery/CQ binding, accepted-candidate retrieval plan
     # registration, and Host-derived Acceptance child-input projection binding
     # for the formal Runner.
-    "modeling_team/runner.py": "5e56c6cf78ad38968af5a6617bce4d5a578f1ffb2fb231beb30a4b27a75b00d3",
+    # 2026-08-07 refresh: runner.py (formal candidate-progress window, 133e045) and
+    # codex.py (Examiner stdout-pump + package-specific elicitation allowlist, 8f4e2cd).
+    "modeling_team/runner.py": "8b4da8db75f31ba288d1848f09e6bdf7d44d0236334d1589e7d687b4c5ae1226",
     "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
     "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "36fa7383d2bdef670613c8d48ff884b0163187b74edbce44dad0226e87d7790b",
+    "modeling_team/runtimes/codex.py": "53ec88fb0cfda0521da93bfc53d76fbbb2db7011df94e35cd97a95c0f9a05645",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
@@ -70,7 +72,7 @@ def test_normal_runtime_and_platform_surfaces_remain_byte_frozen():
 def _agent(tmp_path: Path):
     return SimpleNamespace(
         agent_id="protocol",
-        package=SimpleNamespace(role="protocol"),
+        package=SimpleNamespace(role="protocol", package_id="protocol"),
         proof_v2_path=ROOT / "modeling_team/proof_v2.py",
         home=tmp_path / "home",
         platform_tools=frozenset({"check_platform_health"}),
