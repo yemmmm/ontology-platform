@@ -185,11 +185,19 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
 
     def test_foreground_loop_rejects_decoder_error_and_continues(self) -> None:
         class Runner:
-            def __init__(self) -> None:
+            def __init__(self, root) -> None:
                 self.received: list[dict[str, object]] = []
                 self.observed: list[list[dict[str, object]]] = []
+                self.drains = 0
+                self.run = SimpleNamespace(root=root)
 
             def drain(self):
+                self.drains += 1
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
                 return []
 
             def receive_outer(self, message):
@@ -199,15 +207,16 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             def observe_foreground_output(self, output):
                 self.observed.append(output)
 
-        runner = Runner()
-        emitted: list[list[dict[str, object]]] = []
-        stream = StringIO('{"action":"status","action":"pause"}\n{"action":"status"}\n')
-        _foreground_event_loop(
-            runner,
-            stream,
-            emitted.append,
-            select_fn=lambda *_args: ([stream], [], []),
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner(Path(directory))
+            emitted: list[list[dict[str, object]]] = []
+            stream = StringIO('{"action":"status","action":"pause"}\n{"action":"status"}\n')
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: ([stream], [], []),
+            )
         self.assertEqual(
             emitted,
             [
@@ -220,11 +229,19 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
 
     def test_foreground_loop_rejects_missing_action_and_keeps_run_for_next_input(self) -> None:
         class Runner:
-            def __init__(self) -> None:
+            def __init__(self, root) -> None:
                 self.received: list[dict[str, object]] = []
                 self.cleaned = 0
+                self.drains = 0
+                self.run = SimpleNamespace(root=root)
 
             def drain(self):
+                self.drains += 1
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
                 return []
 
             def receive_outer(self, message):
@@ -234,15 +251,16 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             def cleanup(self):
                 self.cleaned += 1
 
-        runner = Runner()
-        emitted: list[list[dict[str, object]]] = []
-        stream = StringIO('{"type":"issue-resolution"}\n{"action":"status"}\n')
-        _foreground_event_loop(
-            runner,
-            stream,
-            emitted.append,
-            select_fn=lambda *_args: ([stream], [], []),
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner(Path(directory))
+            emitted: list[list[dict[str, object]]] = []
+            stream = StringIO('{"type":"issue-resolution"}\n{"action":"status"}\n')
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: ([stream], [], []),
+            )
         self.assertEqual(
             emitted,
             [
@@ -284,15 +302,21 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             state = "reported"
 
         class Runner:
-            def __init__(self) -> None:
+            def __init__(self, root) -> None:
                 self.transport = SimpleNamespace(issue_ledger=Ledger())
                 self.drains = 0
                 self.received: list[dict[str, object]] = []
+                self.run = SimpleNamespace(root=root)
 
             def drain(self):
                 self.drains += 1
                 if self.drains == 2:
                     self.transport.issue_ledger.state = "waiting_owner"
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
                 return []
 
             def receive_outer(self, message):
@@ -311,20 +335,21 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             "resolution_type": "guidance",
             "resolution_text": "Use the already retained protocol receipt.",
         }
-        runner = Runner()
-        emitted: list[list[dict[str, object]]] = []
-        stream = StringIO(
-            json.dumps(resolution, ensure_ascii=False)
-            + "\n"
-            + json.dumps(resolution, ensure_ascii=False)
-            + "\n"
-        )
-        _foreground_event_loop(
-            runner,
-            stream,
-            emitted.append,
-            select_fn=lambda *_args: ([stream], [], []),
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner(Path(directory))
+            emitted: list[list[dict[str, object]]] = []
+            stream = StringIO(
+                json.dumps(resolution, ensure_ascii=False)
+                + "\n"
+                + json.dumps(resolution, ensure_ascii=False)
+                + "\n"
+            )
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: ([stream], [], []),
+            )
         self.assertEqual(
             emitted,
             [
@@ -377,6 +402,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 scope_path = root / "scope.yaml"
                 scope_path.write_text("{}", encoding="utf-8")
                 run_root = root / "run"
+                run_root.mkdir()
                 created: list[object] = []
 
                 class FakeRunner:
@@ -385,6 +411,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                         self.prepared = 0
                         self.started = 0
                         self.received = 0
+                        self.drains = 0
                         self.run = SimpleNamespace(root=run_root)
                         created.append(self)
 
@@ -395,6 +422,15 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                         self.started += 1
 
                     def drain(self):
+                        self.drains += 1
+                        # The foreground loop now runs until the terminal-report
+                        # gate fires (stdin EOF no longer ends it).  Reject the
+                        # invalid line, then retire the loop at the next drain.
+                        if self.drains >= 2:
+                            (self.run.root / "state.json").write_text(
+                                json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                                encoding="utf-8",
+                            )
                         return []
 
                     def receive_outer(self, _message):
@@ -462,12 +498,29 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             stream = StringIO('{"action":"user","text":"未知"}\n')
             polls = iter([([stream], [], []), ([stream], [], [])])
             emitted: list[list[dict[str, object]]] = []
+
+            # The foreground loop now runs until the terminal-report gate fires
+            # (stdin EOF no longer ends it).  Drive exactly one owner answer,
+            # then signal terminal completion on the next drain so the loop
+            # returns without consuming the rest of the polls double.
+            _original_receive_outer = runner.receive_outer
+
+            def _terminating_receive_outer(message):
+                output = _original_receive_outer(message)
+                (runner.run.root / "state.json").write_text(
+                    json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                    encoding="utf-8",
+                )
+                return output
+
+            runner.receive_outer = _terminating_receive_outer  # type: ignore[method-assign]
             _foreground_event_loop(
                 runner,
                 stream,
                 emitted.append,
                 select_fn=lambda *_args: next(polls),
             )
+            runner.receive_outer = _original_receive_outer  # type: ignore[method-assign]
             first = emitted[0]
             self.assertEqual(first[0]["delivery_id"], question.delivery_id)
             self.assertTrue(runner._outer_questions[question.delivery_id]["displayed"])
@@ -924,6 +977,14 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 calls += 1
                 if calls == 1:
                     return []
+                if calls >= 3:
+                    # The foreground loop now runs until the terminal-report
+                    # gate fires; retire the loop once the post-emit display
+                    # hook has been exercised.
+                    (runner.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
                 return original_drain()
 
             runner.drain = delayed_drain  # type: ignore[method-assign]

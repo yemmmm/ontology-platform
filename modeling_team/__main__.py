@@ -117,7 +117,16 @@ def _foreground_issue_resolution_is_ready(runner: object) -> bool:
 
 
 def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> None:
-    """Pump App Server events even when an outer user sends no further input."""
+    """Pump App Server events even when an outer user sends no further input.
+
+    A non-interactive host may close stdin (``readline`` returns ``""`` = EOF)
+    immediately after the Runner starts.  Such an EOF must not end the run
+    before any Agent output reaches the terminal report: the stream is retired
+    and the loop keeps draining Runner output until the terminal-report gate
+    fires.  ``select_fn`` remains the open-stream "is there input?" injection
+    point; once the stream is retired the real ``select`` timeout throttles the
+    idle loop.
+    """
 
     def emit_and_observe(output: list[dict[str, object]]) -> None:
         # The successful emitter return is the deterministic foreground-display
@@ -135,18 +144,29 @@ def _foreground_event_loop(runner, stream, emit, *, select_fn=select.select) -> 
         # must only inspect Runner-generated delivery envelopes.
         emit([dict(_OUTER_INPUT_REJECTION)])
 
+    watch = [stream]
     while True:
         output = runner.drain()
         if output:
             emit_and_observe(output)
         if _terminal_report_complete(runner):
             return
-        readable, _, _ = select_fn([stream], [], [], 0.1)
+        if not watch:
+            # stdin reached EOF in a non-interactive host.  Do not end the run:
+            # retire the outer-input stream and keep pumping Runner output to
+            # the terminal-report gate, throttling the idle loop without
+            # re-selecting the closed stream.
+            select.select([], [], [], 0.1)
+            continue
+        readable, _, _ = select_fn(watch, [], [], 0.1)
         if not readable:
             continue
         line = stream.readline()
         if not line:
-            return
+            # stdin EOF: retire this stream but keep pumping Runner output until
+            # the terminal report completes.
+            watch = []
+            continue
         try:
             message = _decode_foreground_message(line)
         except TeamConfigurationError:

@@ -389,25 +389,75 @@ class RunnerTests(unittest.TestCase):
 
     def test_foreground_loop_pumps_events_without_followup_user_input(self) -> None:
         class PumpingRunner:
-            def __init__(self):
+            def __init__(self, root):
                 self.drains = 0
+                self.run = SimpleNamespace(root=root)
 
             def drain(self):
                 self.drains += 1
-                return [{"type": "settled"}] if self.drains == 2 else []
+                if self.drains == 2:
+                    return [{"type": "settled"}]
+                if self.drains >= 3:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                return []
 
             def receive_outer(self, _message):
                 raise AssertionError("the test provides no user message")
 
-        runner = PumpingRunner()
-        stream = StringIO("")
-        polls = iter([([], [], []), ([stream], [], [])])
-        emitted = []
-        _foreground_event_loop(
-            runner, stream, emitted.append, select_fn=lambda *_args: next(polls)
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            runner = PumpingRunner(Path(directory))
+            stream = StringIO("")
+            polls = iter([([], [], []), ([stream], [], [])])
+            emitted = []
+            _foreground_event_loop(
+                runner, stream, emitted.append, select_fn=lambda *_args: next(polls)
+            )
         self.assertEqual(emitted, [[{"type": "settled"}]])
         self.assertGreaterEqual(runner.drains, 2)
+
+    def test_foreground_loop_keeps_pumping_after_immediate_stdin_eof(self) -> None:
+        # A non-interactive host closes stdin before the first read, so the very
+        # first readline() returns "".  The loop must not treat that EOF as
+        # terminal: it keeps pumping Runner output until the terminal-report
+        # gate fires, instead of tearing the run down ~milliseconds after start.
+        class ImmediateEofRunner:
+            def __init__(self, root):
+                self.drains = 0
+                self.run = SimpleNamespace(root=root)
+
+            def drain(self):
+                self.drains += 1
+                if self.drains >= 4:
+                    (self.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                    return [{"type": "coordinator", "text": "final"}]
+                return [{"type": "settled"}] if self.drains == 2 else []
+
+            def receive_outer(self, _message):
+                raise AssertionError("immediate EOF provides no user message")
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = ImmediateEofRunner(Path(directory))
+            stream = StringIO("")
+            emitted = []
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: ([stream], [], []),
+            )
+        # The drain-2 event was pumped and the loop reached terminal instead of
+        # returning at the first EOF; under the old contract emitted would be [].
+        self.assertEqual(
+            emitted,
+            [[{"type": "settled"}], [{"type": "coordinator", "text": "final"}]],
+        )
+        self.assertGreaterEqual(runner.drains, 4)
 
     def test_foreground_loop_returns_after_terminal_report_without_waiting_for_stdin(self) -> None:
         class TerminalRunner:
