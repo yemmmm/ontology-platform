@@ -31,13 +31,15 @@ copy only the inner readiness/failure-record `failure_digest` string under the
 outer `infrastructure_failure_digest` key. Do not send `failure_digest` as the
 outer key, the whole readiness/failure object, or any extra fields such as `type`,
 `ready`, `reason_code`, or `attempt`. For `acceptance_child_start`, send only the
-acceptance ID, round ID, examiner kind, ticket digest, request ID, and attempt;
-omit `input_ref` and `input_digest`. The Host derives the exact kind-specific
-projection and canonical digest from the immutable ticket, so the Agent must not
-construct or hash child input or substitute the ticket digest. Legacy callers may
-include both fields only when they exactly match the Host projection; mismatched,
-cross-round, or cross-kind bindings are rejected. The Runner contract permits one
-narrow attempt-0 to identical-input attempt-1 retry; this is not permission to
-widen scope or perform arbitrary retries. A second infrastructure failure is BLOCKED.
+acceptance ID, round ID, examiner kind, and a fresh unique request ID; omit
+`input_ref` and `input_digest`. The Host derives every mechanical field: the exact
+kind-specific projection and canonical digest from the immutable ticket, the
+`ticket_digest` from the round, and the `attempt` (Host-tracked per round/kind: 0
+for the first start, 1 for the single identical-input retry). Never construct or
+hash child input, substitute the ticket digest, or pass `ticket_digest`/`attempt`;
+the schema rejects `input_ref`/`input_digest` and ignores `ticket_digest`/`attempt`.
+The Runner contract permits one narrow attempt-0 to identical-input attempt-1
+retry; this is not permission to widen scope or perform arbitrary retries. A
+second infrastructure failure is BLOCKED.
 Infrastructure failures and missing evidence are reported through the Runner
 carrier, not hidden or converted into PASS.

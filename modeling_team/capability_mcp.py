@@ -205,20 +205,15 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
             "kind": {"type": "string", "enum": ["source", "platform"]},
-            "input_ref": {"type": "object"},
-            "input_digest": {"type": "string"},
-            "ticket_digest": {"type": "string"},
             "request_id": {"type": "string"},
+            # ticket_digest and attempt are accepted-but-ignored: the Host derives
+            # both from the immutable round/ticket state.  Retained as optional
+            # properties so a careful caller may pass them as a sanity check, but
+            # the schema no longer requires them and the dispatcher never reads them.
+            "ticket_digest": {"type": "string"},
             "attempt": {"type": "integer", "enum": [0, 1]},
         },
-        "required": [
-            "acceptance_id",
-            "round_id",
-            "kind",
-            "ticket_digest",
-            "request_id",
-            "attempt",
-        ],
+        "required": ["acceptance_id", "round_id", "kind", "request_id"],
         "additionalProperties": False,
     },
     "acceptance_child_get_report": {

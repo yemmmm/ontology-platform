@@ -3091,32 +3091,15 @@ class RunnerAcceptanceCarrier:
             )
             return ticket
         if operation == "acceptance_child_start":
-            # The projection and its digest are Runner-owned mechanics.  Keep
-            # accepting the legacy explicit fields for compatibility, but
-            # require them to be the exact immutable projection for this
-            # round/kind.  A model never has to reconstruct or hash either
-            # value, and a fabricated binding cannot be silently accepted.
-            projected_input, projected_digest = self.project_child_input(
-                round_id=args["round_id"],
-                kind=args["kind"],
-            )
-            supplied_input = args.get("input_ref")
-            supplied_digest = args.get("input_digest")
-            if (supplied_input is None) != (supplied_digest is None):
-                _error("child input binding must include both input_ref and input_digest")
-            if supplied_input is None:
-                supplied_input = projected_input
-                supplied_digest = projected_digest
-            elif supplied_input != projected_input or supplied_digest != projected_digest:
-                _error("child input binding does not match the Runner projection")
+            # The Host derives every mechanical field from the immutable
+            # round/ticket state.  Caller-supplied input_ref/input_digest are not
+            # accepted by the capability schema; ticket_digest/attempt are
+            # accepted-but-ignored.  The Acceptance agent passes only
+            # acceptance_id, round_id, kind, and a fresh request_id.
             return self.start_child(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
                 kind=args["kind"],
-                input_ref=supplied_input,
-                input_digest=supplied_digest,
-                ticket_digest_value=args["ticket_digest"],
-                attempt=args["attempt"],
                 request_id=args["request_id"],
                 capability=capability,
             )
@@ -3386,6 +3369,40 @@ class RunnerAcceptanceCarrier:
         self._rounds[round_id]["status"] = "active"
         return self._rounds[round_id]
 
+    def _derive_next_attempt(self, round_data: Mapping[str, Any], kind: str) -> int:
+        """Host-track the next Examiner attempt for (round, kind).
+
+        Returns 0 for the first start of this kind in the round, 1 for the single
+        permitted identical-input retry after an attempt-0 infrastructure failure.
+        The carrier retains the per-round/kind attempt lineage and retryable-kinds
+        set, so this derivation is deterministic and needs no caller input.  A
+        structured diagnostic is surfaced when a retry is not authorized or the
+        budget is exhausted so the Acceptance agent can observe the BLOCKED path.
+        """
+
+        previous_attempt = round_data["attempts"].get(kind)
+        if previous_attempt is None:
+            return 0
+        if previous_attempt == 0:
+            if kind not in round_data.get("retryable_kinds", set()):
+                _error(
+                    "attempt one requires an identical-input infrastructure retry",
+                    data={
+                        "reason": "examiner_retry_not_authorized",
+                        "kind": kind,
+                        "prior_attempt": previous_attempt,
+                    },
+                )
+            return 1
+        _error(
+            "Examiner retry budget is exhausted",
+            data={
+                "reason": "examiner_retry_budget_exhausted",
+                "kind": kind,
+                "prior_attempt": previous_attempt,
+            },
+        )
+
     def project_child_input(self, *, round_id: str, kind: str) -> tuple[dict[str, Any], str]:
         if round_id not in self._tickets:
             _error("Acceptance ticket not found")
@@ -3411,19 +3428,44 @@ class RunnerAcceptanceCarrier:
         acceptance_id: str,
         round_id: str,
         kind: str,
-        input_ref: Mapping[str, Any],
-        input_digest: str,
-        ticket_digest_value: str,
         request_id: str,
-        attempt: int,
         capability: str | None = None,
+        # The following mechanical fields are Host-derived from the immutable
+        # round/ticket state.  They remain accepted as keyword overrides so direct
+        # unit-test callers can exercise the validated internal path; the capability
+        # dispatcher never supplies them and the LLM-facing schema does not accept
+        # ``input_ref``/``input_digest`` at all.  ``ticket_digest``/``attempt`` are
+        # accepted-but-ignored when the dispatcher is invoked through the schema.
+        input_ref: Mapping[str, Any] | None = None,
+        input_digest: str | None = None,
+        ticket_digest_value: str | None = None,
+        attempt: int | None = None,
     ) -> ChildHandle:
         # C2 boundary (a): pair creation is always preceded by a passive complete
         # model-state read when a Provider has supplied one.
         self.revalidate_model_state(boundary="before-pair")
+        if round_id not in self._rounds:
+            _error("Acceptance ticket not found")
+        # The round is already bound to its immutable ticket; the Host derives the
+        # digest instead of trusting a caller-supplied binding.
+        if ticket_digest_value is None:
+            ticket_digest_value = self._rounds[round_id]["ticket_digest"]
         round_data = self._round(acceptance_id, round_id, ticket_digest_value, capability)
         if kind not in EXAMINER_KINDS or not isinstance(request_id, str) or not request_id:
             _error("child start kind/request is invalid")
+        # The Host projection is the canonical child input.  Direct unit-test
+        # callers may still supply the explicit projection; the capability
+        # dispatcher never does and the schema rejects caller-supplied values.
+        if input_ref is None and input_digest is None:
+            input_ref, input_digest = self.project_child_input(round_id=round_id, kind=kind)
+        elif (input_ref is None) != (input_digest is None):
+            _error("child input binding must include both input_ref and input_digest")
+        # Attempt is Host-tracked per (round, kind): 0 for the first start of this
+        # kind, 1 for the single permitted identical-input retry.  The capability
+        # dispatcher omits it; direct unit-test callers may still pass the explicit
+        # value to exercise the validated internal path.
+        if attempt is None:
+            attempt = self._derive_next_attempt(round_data, kind)
         if attempt not in {0, 1}:
             _error("Examiner attempt must be 0 or 1")
         validate_child_input(kind, input_ref)
@@ -3464,10 +3506,31 @@ class RunnerAcceptanceCarrier:
             ):
                 _error("Examiner retry must reuse the identical frozen input and ticket")
         # Round ordering: every prior round must have durable cleanup before this start.
+        # This is a real lifecycle guard the Acceptance agent owns; surface the
+        # unresolved prior round/child as a structured diagnostic so the agent can
+        # observe and recycle it rather than guessing.
         current_index = list(self._rounds).index(round_id)
+        unresolved: list[dict[str, Any]] = []
         for prior in list(self._rounds)[:current_index]:
-            if self._rounds[prior]["status"] not in {"cleaned", "invalidated", "state_invalidated", "blocked"}:
-                _error("next Acceptance round cannot start before prior child cleanup")
+            prior_data = self._rounds[prior]
+            if prior_data["status"] not in {"cleaned", "invalidated", "state_invalidated", "blocked"}:
+                unresolved.append(
+                    {
+                        "acceptance_round_id": prior,
+                        "status": prior_data["status"],
+                        "active_kinds": sorted(
+                            child.kind for child in prior_data.get("children", {}).values()
+                        ),
+                    }
+                )
+        if unresolved:
+            _error(
+                "next Acceptance round cannot start before prior child cleanup",
+                data={
+                    "reason": "prior_round_cleanup_required",
+                    "unresolved_rounds": unresolved,
+                },
+            )
         session_id = f"examiner-{secrets.token_hex(12)}"
         token = f"child-handle-{secrets.token_urlsafe(24)}"
         binding = {"task_id": self.task_id, "acceptance_round_id": round_id, "kind": kind, "input_digest": input_digest, "ticket_digest": ticket_digest_value, "session_id": session_id, "request_id": request_id}
@@ -4877,12 +4940,13 @@ class ReadOnlyKeyLifecycle:
         input_digest: str,
         config_digest: str,
     ) -> ReadOnlyKeyRecord:
-        for field, value in (
-            ("project_id", project_id),
-            ("ontology_id", ontology_id),
-            ("acceptance_round_id", acceptance_round_id),
-        ):
-            _safe_id(value, field)
+        # project_id/ontology_id are platform identifiers (UUIDs whose first
+        # character may be a digit); use the platform-identifier rule, not the
+        # stricter stable-workflow-id rule.  acceptance_round_id remains a stable
+        # workflow identifier.
+        _safe_platform_id(project_id, "project_id")
+        _safe_platform_id(ontology_id, "ontology_id")
+        _safe_id(acceptance_round_id, "acceptance_round_id")
         _safe_digest(ticket_digest_value, "read key ticket_digest")
         _safe_digest(input_digest, "read key input_digest")
         _safe_digest(config_digest, "read key config_digest")
@@ -5003,12 +5067,11 @@ class PlatformApiReadKeyLifecycle(ReadOnlyKeyLifecycle):
         input_digest: str,
         config_digest: str,
     ) -> ReadOnlyKeyRecord:
-        for field, value in (
-            ("project_id", project_id),
-            ("ontology_id", ontology_id),
-            ("acceptance_round_id", acceptance_round_id),
-        ):
-            _safe_id(value, field)
+        # See ReadOnlyKeyLifecycle.create: platform identifiers use the platform
+        # rule, not the stricter stable-workflow-id rule.
+        _safe_platform_id(project_id, "project_id")
+        _safe_platform_id(ontology_id, "ontology_id")
+        _safe_id(acceptance_round_id, "acceptance_round_id")
         _safe_digest(ticket_digest_value, "read key ticket_digest")
         _safe_digest(input_digest, "read key input_digest")
         _safe_digest(config_digest, "read key config_digest")

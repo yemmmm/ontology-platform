@@ -50,7 +50,12 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-08 R2.3-005 step-2 refresh: protocol_build_acceptance_stage_handoff
     # stage_calls is now optional (carrier auto-selects the five final-state calls);
     # the runner-injected Prompt-E guidance no longer tells Protocol to hand-pick.
-    "modeling_team/runner.py": "6b7744a70e40eb16842aad7c8cc33c359bca083f9e2fe8245cc504b348826dbb",
+    # 2026-08-08 R2.3-005 step-3 refresh: acceptance_child_start is now fully
+    # Host-derived.  The schema drops input_ref/input_digest and makes
+    # ticket_digest/attempt optional; the dispatcher derives the projection,
+    # ticket digest, and attempt from the round.  The Prompt-E guidance now tells
+    # Acceptance to call with only acceptance_id/round_id/kind/request_id.
+    "modeling_team/runner.py": "8dac45e82648568a4c23c8933344bed3118d06391c29031bfb0b34324fc28d03",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",

@@ -156,9 +156,7 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "acceptance_id": "acceptance",
                 "round_id": ticket["acceptance_round_id"],
                 "kind": "source",
-                "ticket_digest": ticket["ticket_digest"],
                 "request_id": "host-derived-start",
-                "attempt": 0,
             }
             endpoint = carrier._capability_endpoints["acceptance"]
             response = endpoint.handle(
@@ -178,6 +176,9 @@ class R23005BRuntimeTests(unittest.TestCase):
             self.assertEqual(data["input_digest"], expected_digest)
             self.assertEqual(data["acceptance_round_id"], ticket["acceptance_round_id"])
             self.assertEqual(expected_projection["question"], ticket["question"])
+            # input_ref/input_digest are no longer accepted by the schema: the Host
+            # always derives the projection.  A legacy caller passing either field
+            # (even the correct projection) is rejected at the schema layer.
             legacy_response = endpoint.handle(
                 {
                     "jsonrpc": "2.0",
@@ -188,13 +189,14 @@ class R23005BRuntimeTests(unittest.TestCase):
                         "name": "acceptance_child_start",
                         "arguments": {
                             **arguments,
+                            "request_id": "host-derived-start-legacy",
                             "input_ref": expected_projection,
                             "input_digest": expected_digest,
                         },
                     },
                 }
             )
-            self.assertNotIn("error", legacy_response)
+            self.assertEqual(legacy_response["error"]["code"], -32001)
             carrier.cleanup()
 
     def test_capability_child_start_rejects_mismatched_or_cross_bound_input_fields(self) -> None:
@@ -221,8 +223,7 @@ class R23005BRuntimeTests(unittest.TestCase):
             )
             # The synthetic ticket helper keeps every projection field stable
             # across suffixes.  Make the second round's immutable source bundle
-            # distinct so the cross-round binding assertion exercises the Host
-            # round lookup rather than equal-content replay.
+            # distinct so a cross-round binding remains distinguishable.
             carrier._tickets[second["acceptance_round_id"]]["source_bundle_digest"] = "2" * 64
             second_source, second_digest = carrier.project_child_input(
                 round_id=second["acceptance_round_id"], kind="source"
@@ -230,12 +231,13 @@ class R23005BRuntimeTests(unittest.TestCase):
             first_platform, first_platform_digest = carrier.project_child_input(
                 round_id=first["acceptance_round_id"], kind="platform"
             )
+            # The schema no longer accepts input_ref/input_digest: the Host always
+            # derives the projection.  ticket_digest/attempt remain optional and
+            # are accepted-but-ignored by the dispatcher.
             common = {
                 "acceptance_id": "acceptance",
                 "round_id": first["acceptance_round_id"],
                 "kind": "source",
-                "ticket_digest": first["ticket_digest"],
-                "attempt": 0,
             }
             endpoint = carrier._capability_endpoints["acceptance"]
 
@@ -295,6 +297,28 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "input_hint": "must-not-be-accepted",
             }
             self.assertEqual(call(unknown, 5)["error"]["code"], -32001)
+
+            # Direct dispatch bypasses the schema.  Even when a wrong/cross-bound
+            # input_ref is supplied directly, the Host ignores it and starts the
+            # child with its own projection; the resulting handle's input_digest
+            # is the Host projection's digest, not the supplied wrong one.
+            handle = carrier._dispatch_capability(
+                "acceptance",
+                "acceptance_child_start",
+                {
+                    "acceptance_id": "acceptance",
+                    "round_id": first["acceptance_round_id"],
+                    "kind": "source",
+                    "request_id": "host-overrides-wrong-input",
+                    "input_ref": second_source,
+                    "input_digest": second_digest,
+                    "ticket_digest": "0" * 64,
+                    "attempt": 9,
+                },
+            )
+            self.assertEqual(handle.input_digest, first_digest)
+            self.assertEqual(handle.ticket_digest, first["ticket_digest"])
+            self.assertEqual(handle.attempt, 0)
             carrier.cleanup()
 
     def test_capability_get_report_failure_readiness_recycles_once_then_blocks(self) -> None:
