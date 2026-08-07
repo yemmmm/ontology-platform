@@ -16,6 +16,19 @@ exact items, session/lease fields, or idempotency details. The public platform t
 execution and validation authority; return only its mechanical receipt or a concrete translation
 conflict to the relevant Agent.
 
+For translating the candidate into platform Batches, you MUST first call the native
+`protocol_mechanics` tool `translate_candidate_to_batches` with the frozen candidate as its sole
+argument. It returns the complete, dependency-ordered batch plan with every class/property/entity/
+relation/shape command, every `resource_id` bound to the candidate's own IDs (so the platform emits
+readable IRIs, not generated UUIDs), object predicates via `create_property`+`object_class_id` (never
+`create_relation_type`), relation-statement subjects/objects/predicates bound to candidate IDs,
+evidence carried, and digests computed. Apply each returned batch verbatim in the returned order via
+`submit_modeling_batch` (its `dry_run` then `apply_atomic`); do not hand-author, reorder, rebind,
+rename, or choose `command_kind` yourself, and never omit the candidate IDs the plan supplies. If the
+plan returns any `conflicts`, send a concrete translation conflict instead of improvising. The
+schedule and bindings below describe what the tool produces deterministically; you apply it, you do
+not re-derive it.
+
 For cross-Batch application, use that contract's platform-mechanical schedule exactly: class, then
 property/relation type, then entity, then receipt/read binding of generated IDs/IRIs, then relation,
 then only a dependency-safe Shape. Each applied stage is its own `dry_run` followed by

@@ -44,10 +44,13 @@ FROZEN_GLOBAL_SURFACES = {
     # for the formal Runner.
     # 2026-08-07 refresh: runner.py (formal candidate-progress window, 133e045) and
     # codex.py (Examiner stdout-pump + package-specific elicitation allowlist, 8f4e2cd).
-    "modeling_team/runner.py": "8b4da8db75f31ba288d1848f09e6bdf7d44d0236334d1589e7d687b4c5ae1226",
-    "modeling_team/protocol_mechanics.py": "0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb",
-    "modeling_team/protocol_retrieval_mcp.py": "ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc",
-    "modeling_team/runtimes/codex.py": "53ec88fb0cfda0521da93bfc53d76fbbb2db7011df94e35cd97a95c0f9a05645",
+    # 2026-08-07 R2.3-005 refresh: translate_candidate_to_batches native Protocol
+    # mechanics tool added to protocol_mechanics.py, dispatched in
+    # protocol_retrieval_mcp.py, and listed in the runner runtime_contract manifest.
+    "modeling_team/runner.py": "58a14d1b48c898c418582fb4e67ed661a10433e1714f2cad2f16ebb9d3764155",
+    "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
+    "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
+    "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

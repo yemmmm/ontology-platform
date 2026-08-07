@@ -16,6 +16,7 @@ from protocol_mechanics import (
     build_candidate_receipt,
     build_candidate_item_evidence_map,
     protocol_mechanics_contract_bytes,
+    translate_candidate_to_batches,
     validate_candidate_item_evidence_map,
     verify_scoped_retrieval_fallback,
 )
@@ -25,6 +26,7 @@ TOOL_NAME = "verify_scoped_retrieval_fallback"
 EVIDENCE_MAP_TOOL_NAME = "write_candidate_item_evidence_map"
 CANDIDATE_RECEIPT_TOOL_NAME = "build_candidate_receipt"
 CANDIDATE_CONFLICT_TOOL_NAME = "build_candidate_conflict"
+TRANSLATE_CANDIDATE_TOOL_NAME = "translate_candidate_to_batches"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
 PROOF_GATE_ENV = "PROTOCOL_PROOF_GATE"
@@ -903,6 +905,33 @@ def _candidate_conflict_tool() -> dict[str, Any]:
     }
 
 
+def _translate_candidate_tool() -> dict[str, Any]:
+    return {
+        "name": TRANSLATE_CANDIDATE_TOOL_NAME,
+        "description": (
+            "Deterministically translate one frozen platform-neutral-candidate-v2 into an "
+            "ordered, submit-ready batch plan (class -> property -> entity -> relation -> "
+            "shape). Pure candidate-bound mechanics: no platform calls, no receipts. Every "
+            "create_* payload binds the candidate's own ID so the platform emits readable "
+            "resource IRIs; object predicates always use create_property+object_class_id."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["candidate"],
+            "additionalProperties": False,
+            "properties": {"candidate": _neutral_candidate_schema()},
+        },
+    }
+
+
+def _validate_translate_candidate_arguments(arguments: object) -> str | None:
+    if not isinstance(arguments, dict) or set(arguments) != {"candidate"}:
+        return "translate candidate arguments must contain exactly candidate"
+    if not isinstance(arguments.get("candidate"), dict):
+        return "translate candidate candidate must be an object"
+    return None
+
+
 def _proof_gate_enabled() -> bool:
     """Keep direct/local invocations proof-compatible unless Runtime sets the gate explicitly."""
     return os.environ.get(PROOF_GATE_ENV, "1") == "1"
@@ -1102,6 +1131,7 @@ def handle(request: object) -> dict[str, Any] | None:
         )
     if method == "tools/list":
         tools = [_candidate_receipt_tool(), _tool()]
+        tools.append(_translate_candidate_tool())
         if _proof_gate_enabled():
             tools.insert(1, _evidence_map_tool())
         if _formal_candidate_gate_enabled():
@@ -1194,6 +1224,25 @@ def handle(request: object) -> dict[str, Any] | None:
             {
                 "content": [{"type": "text", "text": json.dumps(evidence_map, sort_keys=True)}],
                 "structuredContent": evidence_map,
+            },
+        )
+    if params.get("name") == TRANSLATE_CANDIDATE_TOOL_NAME:
+        error = _validate_translate_candidate_arguments(arguments)
+        if error is not None:
+            return _error(request_id, -32602, error)
+        assert isinstance(arguments, dict)
+        candidate = arguments["candidate"]
+        assert isinstance(candidate, dict)
+        try:
+            plan = translate_candidate_to_batches(candidate)
+        except ProtocolRetrievalFallbackError as exc:
+            return _error(request_id, -32014, f"candidate translation failed: {exc}")
+        payload = json.dumps(plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return _result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": payload}],
+                "structuredContent": plan,
             },
         )
     if params.get("name") != TOOL_NAME:

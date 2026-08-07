@@ -2106,6 +2106,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if agent.schema_version == 2:
                 expected["protocol_mechanics"] = {
                     "build_candidate_receipt",
+                    "translate_candidate_to_batches",
                     "verify_scoped_retrieval_fallback",
                 }
                 if self._coordination_enabled:

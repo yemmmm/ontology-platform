@@ -1163,6 +1163,337 @@ def build_candidate_conflict(
     }
 
 
+def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
+    """Deterministically translate one frozen candidate into a batch plan.
+
+    This is the systemic R2.3-005 fix for Protocol translation variance: the
+    candidate -> platform-batch mapping is ~100% deterministic mechanics, so it
+    is owned by this tool rather than by model reasoning.  The function is a pure
+    candidate-bound transform: frozen candidate in, ordered batch plan out.  It
+    makes no platform calls and emits no receipts; every resource identity is
+    candidate-bound, so the plan is fully reproducible at translation time.
+
+    The plan follows the cross-batch dependency order
+    ``class -> property -> entity -> relation -> shape`` and binds the
+    candidate's own IDs onto every create_* payload so the platform produces
+    readable, deterministic resource IRIs (``/class/{id}``, ``/property/{id}``,
+    ``/entity/{id}``, ``/shape/{id}``) instead of UUID IRIs.  Object-valued
+    predicates always go through ``create_property`` with ``object_class_id``;
+    ``create_relation_type`` is never emitted for candidate predicates.
+
+    Items that are not platform create resources (``consumer_query`` is retrieval
+    metadata, ``negative_probe`` is a validation probe) are skipped silently.  Any
+    item that cannot be translated is omitted and recorded in ``conflicts``.
+    """
+    normalized = _validate_translate_candidate(candidate)
+    revision = normalized["candidate_revision"]
+    items = normalized["items"]
+
+    declared_entity_ids: set[str] = set()
+    for item in items:
+        if item["item_kind"] in {"entity", "explicit_unknown"}:
+            entity_id = item["semantic"].get("entity_id")
+            if _is_nonempty_string(entity_id):
+                declared_entity_ids.add(entity_id)
+    declared_predicates: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if item["item_kind"] != "predicate":
+            continue
+        semantic = item["semantic"]
+        name = semantic.get("predicate")
+        if _is_nonempty_string(name):
+            declared_predicates[name] = semantic
+
+    staged: dict[str, list[dict[str, Any]]] = {stage: [] for stage in _TRANSLATE_STAGE_ORDER}
+    conflicts: list[dict[str, Any]] = []
+    for item in items:
+        kind = item["item_kind"]
+        semantic = item["semantic"]
+        item_id = item["item_id"]
+        citations = item.get("evidence_citations") or []
+        evidence = _inline_evidence(citations)
+        handler = _TRANSLATE_ITEM_HANDLERS.get(kind)
+        if kind in {"consumer_query", "negative_probe"}:
+            continue
+        if handler is None:
+            conflicts.append(_conflict(item_id, "unsupported_item_kind", kind))
+            continue
+        try:
+            command_kind, payload = handler(semantic, declared_entity_ids, declared_predicates)
+        except _TranslateConflict as exc:
+            conflicts.append(_conflict(item_id, exc.code, exc.detail))
+            continue
+        stage = _TRANSLATE_STAGE_FOR_COMMAND[command_kind]
+        staged[stage].append(
+            {
+                "client_item_id": item_id,
+                "command_kind": command_kind,
+                "payload": payload,
+                "evidence": evidence,
+            }
+        )
+
+    batches: list[dict[str, Any]] = []
+    for index, stage in enumerate(_TRANSLATE_STAGE_ORDER, start=1):
+        stage_items = sorted(staged[stage], key=lambda value: value["client_item_id"])
+        if not stage_items:
+            continue
+        batches.append(
+            {
+                "stage_kind": stage,
+                "client_batch_id": f"{revision}-stage{index}-{stage}",
+                "idempotency_key": f"{revision}-stage{index}-{stage}-v1",
+                "items": stage_items,
+            }
+        )
+
+    return {
+        "candidate_kind": normalized["candidate_kind"],
+        "candidate_revision": revision,
+        "semantic_digest": _canonical_digest(
+            {
+                "candidate_kind": normalized["candidate_kind"],
+                "candidate_revision": revision,
+                "scope": normalized["scope"],
+                "constraints": normalized["constraints"],
+                "items": items,
+            }
+        ),
+        "stage_order": list(_TRANSLATE_STAGE_ORDER),
+        "batches": batches,
+        "conflicts": conflicts,
+    }
+
+
+class _TranslateConflict(Exception):
+    """A single candidate item cannot be translated into a platform command."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+
+
+_TRANSLATE_PLATFORM_IRI_BASE = "http://ontology-platform.local/semantic"
+_TRANSLATE_STAGE_ORDER = ("class", "property", "entity", "relation", "shape")
+_TRANSLATE_STAGE_FOR_COMMAND = {
+    "create_class": "class",
+    "create_property": "property",
+    "create_entity": "entity",
+    "create_relation": "relation",
+    "create_shape": "shape",
+}
+
+
+def _validate_translate_candidate(candidate: Any) -> dict[str, Any]:
+    if not isinstance(candidate, dict):
+        raise ProtocolRetrievalFallbackError("translate candidate must be an object")
+    try:
+        normalized = json.loads(json.dumps(candidate, ensure_ascii=False))
+    except (TypeError, ValueError) as exc:
+        raise ProtocolRetrievalFallbackError("translate candidate is not JSON") from exc
+    if normalized.get("candidate_kind") != "platform-neutral-candidate-v2":
+        raise ProtocolRetrievalFallbackError("translate candidate kind is not platform-neutral-candidate-v2")
+    revision = normalized.get("candidate_revision")
+    if isinstance(revision, bool) or not (
+        (isinstance(revision, int) and revision > 0) or _is_nonempty_string(revision)
+    ):
+        raise ProtocolRetrievalFallbackError("translate candidate revision is invalid")
+    scope = normalized.get("scope")
+    if not (_is_nonempty_string(scope) or (isinstance(scope, dict) and bool(scope))):
+        raise ProtocolRetrievalFallbackError("translate candidate scope is not bound")
+    constraints = normalized.get("constraints")
+    if not isinstance(constraints, list) or any(
+        not _is_nonempty_string(value) for value in constraints
+    ):
+        raise ProtocolRetrievalFallbackError("translate candidate constraints are invalid")
+    items = normalized.get("items")
+    if not isinstance(items, list) or not items:
+        raise ProtocolRetrievalFallbackError("translate candidate items are empty")
+    item_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ProtocolRetrievalFallbackError("translate candidate item is invalid")
+        for field in ("item_id", "item_kind"):
+            if not _is_nonempty_string(item.get(field)):
+                raise ProtocolRetrievalFallbackError(f"translate candidate {field} is not bound")
+        if item["item_id"] in item_ids:
+            raise ProtocolRetrievalFallbackError("translate candidate item IDs are duplicated")
+        item_ids.add(item["item_id"])
+        semantic = item.get("semantic")
+        if not isinstance(semantic, dict) or not semantic:
+            raise ProtocolRetrievalFallbackError("translate candidate semantic payload is missing")
+        citations = item.get("evidence_citations")
+        if citations is not None and (
+            not isinstance(citations, list)
+            or any(not isinstance(citation, dict) for citation in citations)
+        ):
+            raise ProtocolRetrievalFallbackError("translate candidate evidence citations are invalid")
+    return normalized
+
+
+def _inline_evidence(citations: list[Any]) -> list[dict[str, str]]:
+    evidence: list[dict[str, str]] = []
+    for citation in citations:
+        if not isinstance(citation, dict):
+            continue
+        document_name = citation.get("document_name")
+        excerpt = citation.get("excerpt")
+        if _is_nonempty_string(document_name) and _is_nonempty_string(excerpt):
+            evidence.append({"document_name": document_name, "excerpt": excerpt})
+    return evidence
+
+
+def _conflict(item_id: str, code: str, detail: Any) -> dict[str, Any]:
+    return {"item_id": item_id, "code": code, "detail": str(detail)}
+
+
+def _require_semantic_string(semantic: dict[str, Any], field: str) -> str:
+    value = semantic.get(field)
+    if not _is_nonempty_string(value):
+        raise _TranslateConflict(f"missing_{field}", f"semantic.{field} is not bound")
+    return value
+
+
+def _platform_resource_iri(kind: str, resource_id: str) -> str:
+    return f"{_TRANSLATE_PLATFORM_IRI_BASE}/{kind}/{resource_id}"
+
+
+def _translate_class(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    class_id = _require_semantic_string(semantic, "class_id")
+    payload: dict[str, Any] = {"class_id": class_id, "name": class_id}
+    description = semantic.get("description")
+    if _is_nonempty_string(description):
+        payload["description"] = description
+    superclass = semantic.get("superclass")
+    if _is_nonempty_string(superclass):
+        payload["parent_class_ids"] = [superclass]
+    return "create_class", payload
+
+
+def _translate_predicate(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    name = _require_semantic_string(semantic, "predicate")
+    domain = _require_semantic_string(semantic, "domain")
+    predicate_kind = semantic.get("predicate_kind")
+    payload: dict[str, Any] = {"property_id": name, "class_id": domain, "name": name}
+    description = semantic.get("description")
+    if _is_nonempty_string(description):
+        payload["description"] = description
+    if predicate_kind == "fact":
+        range_value = semantic.get("range")
+        if not _is_nonempty_string(range_value):
+            raise _TranslateConflict("missing_range", "semantic.range is not bound for a fact predicate")
+        payload["datatype"] = range_value
+    elif predicate_kind == "relation":
+        range_value = semantic.get("range")
+        if not _is_nonempty_string(range_value):
+            raise _TranslateConflict("missing_range", "semantic.range is not bound for a relation predicate")
+        payload["object_class_id"] = range_value
+    else:
+        raise _TranslateConflict(
+            "unsupported_predicate_kind",
+            f"predicate_kind '{predicate_kind}' is not fact or relation",
+        )
+    return "create_property", payload
+
+
+def _translate_entity(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    entity_id = _require_semantic_string(semantic, "entity_id")
+    class_ref = _require_semantic_string(semantic, "class")
+    values = semantic.get("values")
+    if not isinstance(values, dict) or not values:
+        raise _TranslateConflict("missing_values", "semantic.values is not bound")
+    label = values.get("label")
+    if not _is_nonempty_string(label):
+        raise _TranslateConflict("missing_label", "semantic.values.label is not bound")
+    properties = {key: value for key, value in values.items() if key != "label"}
+    payload: dict[str, Any] = {
+        "entity_id": entity_id,
+        "class_iri_or_legacy_id": class_ref,
+        "label": label,
+        "properties": properties,
+    }
+    return "create_entity", payload
+
+
+def _translate_relation(
+    semantic: dict[str, Any], entities: set[str], predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    subject = _require_semantic_string(semantic, "subject")
+    obj = _require_semantic_string(semantic, "object")
+    predicate = _require_semantic_string(semantic, "predicate")
+    if subject not in entities:
+        raise _TranslateConflict(
+            "unbound_relation_subject", f"subject '{subject}' is not a declared entity"
+        )
+    if obj not in entities:
+        raise _TranslateConflict(
+            "unbound_relation_object", f"object '{obj}' is not a declared entity"
+        )
+    declared = predicates.get(predicate)
+    if declared is None:
+        raise _TranslateConflict(
+            "unbound_relation_predicate", f"predicate '{predicate}' is not declared"
+        )
+    if declared.get("predicate_kind") != "relation":
+        raise _TranslateConflict(
+            "relation_predicate_not_object_property",
+            f"predicate '{predicate}' is not a relation predicate",
+        )
+    payload = {
+        "source_entity_iri": _platform_resource_iri("entity", subject),
+        "relation_type_iri": _platform_resource_iri("property", predicate),
+        "target_entity_iri": _platform_resource_iri("entity", obj),
+    }
+    return "create_relation", payload
+
+
+def _translate_shape(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    shape_id = _require_semantic_string(semantic, "shape_id")
+    target_class = _require_semantic_string(semantic, "target_class")
+    paths = semantic.get("paths")
+    if not isinstance(paths, list) or not paths:
+        raise _TranslateConflict("missing_paths", "semantic.paths is not bound")
+    constraints: list[dict[str, Any]] = []
+    for path in paths:
+        if not isinstance(path, dict):
+            raise _TranslateConflict("invalid_path", "a shape path is not an object")
+        predicate = path.get("predicate")
+        if not _is_nonempty_string(predicate):
+            raise _TranslateConflict("missing_path_predicate", "a shape path predicate is not bound")
+        constraint: dict[str, Any] = {"path_id": predicate}
+        for field, target in (("min_count", "min_count"), ("max_count", "max_count")):
+            if path.get(field) is not None:
+                constraint[target] = path[field]
+        if _is_nonempty_string(path.get("datatype")):
+            constraint["datatype"] = path["datatype"]
+        if _is_nonempty_string(path.get("pattern")):
+            constraint["pattern"] = path["pattern"]
+        if _is_nonempty_string(path.get("description")):
+            constraint["description"] = path["description"]
+        constraints.append(constraint)
+    payload = {"shape_id": shape_id, "target_class_id": target_class, "constraints": constraints}
+    return "create_shape", payload
+
+
+_TRANSLATE_ITEM_HANDLERS = {
+    "class": _translate_class,
+    "predicate": _translate_predicate,
+    "entity": _translate_entity,
+    "explicit_unknown": _translate_entity,
+    "relation": _translate_relation,
+    "shape": _translate_shape,
+}
+
+
 def validate_candidate_item_evidence_map(*args: Any, **kwargs: Any) -> dict[str, Any]:
     return _v2_call(_proof_v2_attr("validate_candidate_item_evidence_map"), *args, **kwargs)
 

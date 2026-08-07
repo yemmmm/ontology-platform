@@ -82,6 +82,7 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
                                 "build_candidate_receipt",
                                 "verify_scoped_retrieval_fallback",
                                 "write_candidate_item_evidence_map",
+                                "translate_candidate_to_batches",
                             },
                         )
                         tool = next(item for item in tools if item["name"] == "verify_scoped_retrieval_fallback")

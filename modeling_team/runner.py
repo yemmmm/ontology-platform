@@ -830,6 +830,7 @@ class TeamRunner:
                         "build_candidate_receipt",
                         "verify_scoped_retrieval_fallback",
                         "write_candidate_item_evidence_map",
+                        "translate_candidate_to_batches",
                     ],
                 },
                 "proof_v2": {

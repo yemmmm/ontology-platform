@@ -553,6 +553,7 @@ class CodexIsolationTests(unittest.TestCase):
                 "name": "protocol_mechanics",
                 "tools": [
                     {"name": "build_candidate_receipt"},
+                    {"name": "translate_candidate_to_batches"},
                     {"name": "verify_scoped_retrieval_fallback"},
                     {"name": "write_candidate_item_evidence_map"},
                 ],
@@ -2098,7 +2099,11 @@ class CodexIsolationTests(unittest.TestCase):
                         ).stdout
                     )["result"]["tools"]
                 ),
-                ["build_candidate_receipt", "verify_scoped_retrieval_fallback"],
+                [
+                    "build_candidate_receipt",
+                    "translate_candidate_to_batches",
+                    "verify_scoped_retrieval_fallback",
+                ],
             )
 
     def test_c88_runner_prompt_projects_loaded_002_proof_and_loaded_005_neutral_contract(self) -> None:
