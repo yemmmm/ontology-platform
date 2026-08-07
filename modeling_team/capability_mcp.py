@@ -81,6 +81,9 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "protocol_id": {"type": "string"},
+            # stage_calls is intentionally optional: when omitted, the carrier
+            # auto-selects the five canonical final-state observed calls.  When
+            # supplied, each stage must still exact-match one observed call.
             "stage_calls": {
                 "type": "object",
                 "properties": {
@@ -100,7 +103,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "additionalProperties": False,
             },
         },
-        "required": ["protocol_id", "stage_calls"],
+        "required": ["protocol_id"],
         "additionalProperties": False,
     },
     "protocol_build_candidate_receipt": {

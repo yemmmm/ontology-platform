@@ -47,7 +47,10 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-07 R2.3-005 refresh: translate_candidate_to_batches native Protocol
     # mechanics tool added to protocol_mechanics.py, dispatched in
     # protocol_retrieval_mcp.py, and listed in the runner runtime_contract manifest.
-    "modeling_team/runner.py": "58a14d1b48c898c418582fb4e67ed661a10433e1714f2cad2f16ebb9d3764155",
+    # 2026-08-08 R2.3-005 step-2 refresh: protocol_build_acceptance_stage_handoff
+    # stage_calls is now optional (carrier auto-selects the five final-state calls);
+    # the runner-injected Prompt-E guidance no longer tells Protocol to hand-pick.
+    "modeling_team/runner.py": "6b7744a70e40eb16842aad7c8cc33c359bca083f9e2fe8245cc504b348826dbb",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",

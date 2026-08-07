@@ -2506,43 +2506,23 @@ class RunnerAcceptanceCarrier:
             _write_exclusive_json(path, normalized_ticket, mode=0o440)
         return _safe_copy(normalized_ticket)
 
-    def protocol_build_acceptance_stage_handoff(
+    def _resolve_supplied_stage_calls(
         self,
         stage_calls: Mapping[str, Mapping[str, Any]],
-        *,
-        protocol_id: str = "protocol",
-        capability: str | None = None,
-    ) -> dict[str, Any]:
-        """Build the canonical handoff from Runner-observed stage calls.
+    ) -> dict[str, Mapping[str, Any]]:
+        """Validate a Protocol-supplied five-stage mapping shape.
 
-        Protocol supplies only the complete request objects and exact artifact
-        paths selected from the observed catalog.  The Runner resolves those
-        selections against its immutable MCP-result registry and computes every
-        digest, page, receipt, nonce, candidate/state binding, and handoff
-        self-reference.
+        Keeps the backward-compatible exact-match path: Protocol may still pass
+        the complete five observed stage calls, and each entry must carry exactly
+        ``tool``/``arguments``/``artifact_path``.  The exact one-observed-call
+        match itself happens in the shared receipts loop after this returns.
         """
 
-        self._check_capability("protocol", protocol_id, capability)
         if not isinstance(stage_calls, Mapping) or len(stage_calls) != len(MODELING_STAGES):
             _error(
                 "stage handoff builder requires exactly five stage calls",
                 data={"reason": "stage_handoff_requires_five_stages"},
             )
-        accepted = self._accepted_candidate_identity
-        if accepted is None:
-            _error(
-                "formal accepted candidate identity is unavailable",
-                data={"reason": "accepted_candidate_unavailable"},
-            )
-        if self._ordinary_retrieval_gate is not None and self._ordinary_retrieval_receipt is None:
-            self.validate_ordinary_retrieval()
-        run_id = self._carrier_run_id()
-        if run_id is None:
-            _error(
-                "formal stage handoff run identity is unavailable",
-                data={"reason": "stage_handoff_run_identity_unavailable"},
-            )
-        state = self._observed_model_state(None)
         by_stage: dict[str, Mapping[str, Any]] = {}
         for stage, entry in stage_calls.items():
             if not isinstance(stage, str) or not isinstance(entry, Mapping) or set(entry) != {"tool", "arguments", "artifact_path"}:
@@ -2577,6 +2557,257 @@ class RunnerAcceptanceCarrier:
                 "stage handoff builder omits a required stage",
                 data={"reason": "stage_handoff_missing_stage"},
             )
+        return by_stage
+
+    def _auto_select_stage_calls(
+        self,
+        state: Mapping[str, Any],
+    ) -> dict[str, Mapping[str, Any]]:
+        """Deterministically select the five canonical final-state stage calls.
+
+        Each observed platform call's persisted response artifact (the same
+        files :meth:`_validate_observed_stage_evidence` reads) is inspected to
+        pick, per stage, the unique observed call that reflects the live model
+        state.  This keeps the final-state stage selection in the tool layer
+        instead of asking the Protocol role to hand-pick five observed calls.
+        A stage with zero or more than one candidate raises a structured
+        :class:`AcceptanceContractError` so the failure is observable and is
+        never silently guessed.
+        """
+
+        live_workspace = state["workspace_version"]
+        live_graph_set = state["graph_set_id"]
+        records = list(self._platform_read_artifacts.values())
+        data_cache: dict[str, Mapping[str, Any] | None] = {}
+
+        def _data(record: Mapping[str, Any]) -> Mapping[str, Any] | None:
+            artifact_path = record["artifact_path"]
+            cached = data_cache.get(artifact_path, ...)
+            if cached is not ...:
+                return cached
+            target = self.root.parent / artifact_path
+            try:
+                result = json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                data_cache[artifact_path] = None
+                return None
+            structured = result.get("structuredContent") if isinstance(result, Mapping) else None
+            data = structured.get("data") if isinstance(structured, Mapping) else result
+            if not isinstance(data, Mapping):
+                data = None
+            data_cache[artifact_path] = data
+            return data
+
+        def _submit_mode(record: Mapping[str, Any]) -> str | None:
+            arguments = record.get("request_arguments")
+            if not isinstance(arguments, Mapping):
+                return None
+            mode = arguments.get("mode")
+            return mode if isinstance(mode, str) else None
+
+        def _select(
+            stage: str,
+            candidates: list[Mapping[str, Any]],
+            *,
+            selector: str,
+        ) -> Mapping[str, Any]:
+            if not candidates:
+                _error(
+                    f"stage handoff auto-select found no {stage} call",
+                    data={
+                        "reason": "stage_auto_select_missing",
+                        "stage": stage,
+                        "selector": selector,
+                    },
+                )
+            if len(candidates) > 1:
+                _error(
+                    f"stage handoff auto-select found multiple {stage} calls",
+                    data={
+                        "reason": "stage_auto_select_ambiguous",
+                        "stage": stage,
+                        "selector": selector,
+                        "matches": [
+                            {
+                                "tool": candidate["tool"],
+                                "request_digest": candidate["request_digest"],
+                                "response_digest": candidate["response_digest"],
+                                "artifact_path": candidate["artifact_path"],
+                            }
+                            for candidate in candidates
+                        ],
+                    },
+                )
+            return candidates[0]
+
+        # apply: the final apply_atomic whose workspace.after_version is the
+        # live workspace_version.  Cross-batch application produces several
+        # applies; only the last one matches the live state.
+        apply_candidates: list[Mapping[str, Any]] = []
+        for record in records:
+            if record["tool"] != "submit_modeling_batch" or _submit_mode(record) != "apply_atomic":
+                continue
+            data = _data(record)
+            workspace = data.get("workspace") if isinstance(data, Mapping) else None
+            if (
+                isinstance(data, Mapping)
+                and data.get("attempt_status") == "applied"
+                and isinstance(workspace, Mapping)
+                and workspace.get("after_version") == live_workspace
+            ):
+                apply_candidates.append(record)
+        apply_record = _select(
+            "apply",
+            apply_candidates,
+            selector="submit_modeling_batch mode=apply_atomic workspace.after_version==live",
+        )
+        apply_data = _data(apply_record)
+        apply_workspace = apply_data.get("workspace") if isinstance(apply_data, Mapping) else None
+        apply_before_version = (
+            apply_workspace.get("before_version")
+            if isinstance(apply_workspace, Mapping)
+            else None
+        )
+
+        # dry-run: the validated dry_run paired with the final apply, i.e. the
+        # one whose workspace.before_version equals the final apply's
+        # before_version.  A later stale dry_run over the live version (e.g. an
+        # unsuccessful re-check) is excluded because its before_version is the
+        # live workspace_version and its attempt_status is not "validated".
+        dry_candidates: list[Mapping[str, Any]] = []
+        for record in records:
+            if record["tool"] != "submit_modeling_batch" or _submit_mode(record) != "dry_run":
+                continue
+            data = _data(record)
+            workspace = data.get("workspace") if isinstance(data, Mapping) else None
+            if (
+                isinstance(data, Mapping)
+                and data.get("attempt_status") == "validated"
+                and isinstance(workspace, Mapping)
+                and workspace.get("before_version") == apply_before_version
+            ):
+                dry_candidates.append(record)
+        dry_record = _select(
+            "dry-run",
+            dry_candidates,
+            selector="submit_modeling_batch mode=dry_run attempt_status=validated "
+            "workspace.before_version==final apply before_version",
+        )
+
+        # readback: the get_modeling_context whose workspace.workspace_version
+        # is the live workspace_version.  Repeated reads whose response changed
+        # remain distinct artifact paths; only the final-state read matches.
+        readback_candidates: list[Mapping[str, Any]] = []
+        for record in records:
+            if record["tool"] != "get_modeling_context":
+                continue
+            data = _data(record)
+            workspace = data.get("workspace") if isinstance(data, Mapping) else None
+            if (
+                isinstance(workspace, Mapping)
+                and workspace.get("workspace_version") == live_workspace
+            ):
+                readback_candidates.append(record)
+        readback_record = _select(
+            "readback",
+            readback_candidates,
+            selector="get_modeling_context workspace.workspace_version==live",
+        )
+
+        # validation / reasoning: the succeeded run whose graph_set_id is the
+        # live graph_set_id.
+        validation_candidates: list[Mapping[str, Any]] = []
+        for record in records:
+            if record["tool"] != "run_semantic_validation":
+                continue
+            data = _data(record)
+            if (
+                isinstance(data, Mapping)
+                and data.get("status") == "succeeded"
+                and data.get("graph_set_id") == live_graph_set
+            ):
+                validation_candidates.append(record)
+        validation_record = _select(
+            "validation",
+            validation_candidates,
+            selector="run_semantic_validation status=succeeded graph_set_id==live",
+        )
+
+        reasoning_candidates: list[Mapping[str, Any]] = []
+        for record in records:
+            if record["tool"] != "run_semantic_reasoning":
+                continue
+            data = _data(record)
+            if (
+                isinstance(data, Mapping)
+                and data.get("status") == "succeeded"
+                and data.get("graph_set_id") == live_graph_set
+            ):
+                reasoning_candidates.append(record)
+        reasoning_record = _select(
+            "reasoning",
+            reasoning_candidates,
+            selector="run_semantic_reasoning status=succeeded graph_set_id==live",
+        )
+
+        def _triple(record: Mapping[str, Any]) -> dict[str, Any]:
+            return {
+                "tool": record["tool"],
+                "arguments": _safe_copy(dict(record["request_arguments"])),
+                "artifact_path": record["artifact_path"],
+            }
+
+        return {
+            "dry-run": _triple(dry_record),
+            "apply": _triple(apply_record),
+            "readback": _triple(readback_record),
+            "validation": _triple(validation_record),
+            "reasoning": _triple(reasoning_record),
+        }
+
+    def protocol_build_acceptance_stage_handoff(
+        self,
+        stage_calls: Mapping[str, Mapping[str, Any]] | None = None,
+        *,
+        protocol_id: str = "protocol",
+        capability: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the canonical handoff from Runner-observed stage calls.
+
+        Protocol may omit ``stage_calls`` to let the carrier auto-select the
+        five canonical final-state calls (the final ``apply_atomic`` whose
+        ``workspace.after_version`` matches the live workspace version, the
+        validated ``dry_run`` paired with that apply via a shared
+        ``before_version``, the final ``get_modeling_context`` readback over
+        the live workspace version, and the succeeded validation/reasoning over
+        the live graph set).  Supplying ``stage_calls`` is still accepted for
+        backward compatibility: it must then be the complete five-stage mapping
+        and each entry must exact-match one observed platform call.  In both
+        paths the Runner resolves the selection against its immutable
+        MCP-result registry and computes every digest, page, receipt, nonce,
+        candidate/state binding, and handoff self-reference.
+        """
+
+        self._check_capability("protocol", protocol_id, capability)
+        accepted = self._accepted_candidate_identity
+        if accepted is None:
+            _error(
+                "formal accepted candidate identity is unavailable",
+                data={"reason": "accepted_candidate_unavailable"},
+            )
+        if self._ordinary_retrieval_gate is not None and self._ordinary_retrieval_receipt is None:
+            self.validate_ordinary_retrieval()
+        run_id = self._carrier_run_id()
+        if run_id is None:
+            _error(
+                "formal stage handoff run identity is unavailable",
+                data={"reason": "stage_handoff_run_identity_unavailable"},
+            )
+        state = self._observed_model_state(None)
+        if stage_calls is None:
+            by_stage = self._auto_select_stage_calls(state)
+        else:
+            by_stage = self._resolve_supplied_stage_calls(stage_calls)
 
         receipts: list[dict[str, Any]] = []
         for stage in MODELING_STAGES:
@@ -2774,8 +3005,8 @@ class RunnerAcceptanceCarrier:
                 _error("staged candidate publication is unavailable")
             return self._candidate_publisher(args["modeling_id"])
         if role == "protocol" and operation == "protocol_build_acceptance_stage_handoff":
-            stage_calls = args["stage_calls"]
-            if not isinstance(stage_calls, Mapping):
+            stage_calls = args.get("stage_calls")
+            if stage_calls is not None and not isinstance(stage_calls, Mapping):
                 _error("stage handoff builder stage_calls is invalid")
             return self.protocol_build_acceptance_stage_handoff(
                 stage_calls,

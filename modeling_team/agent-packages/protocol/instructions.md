@@ -439,18 +439,16 @@ the authoritative nested schema for `modeling_receipts`, each stage's successful
 complete `platform_read` `evidence_ref` and `page` fields, and the digest preimages. Do not infer
 those nested fields from this paragraph or from Python code.
 The Runner task text supplies a non-secret Runner-issued `handoff_nonce`; the Runner-private
-`protocol_build_acceptance_stage_handoff` capability owns that nonce and all mechanical fields. Before
-sending, provide that capability exactly five observed stage calls keyed by `dry-run`, `apply`,
-`readback`, `validation`, and `reasoning`; first use the Runner-private
-`protocol_list_platform_artifacts` catalog to select each actual call's `tool`, complete request
-`arguments`, and exact `artifact_path`. Do not compute any digest, path, page, receipt, or handoff
-field yourself. Each stage receipt must reflect the FINAL live model state, so select the call that
-produced the final state for each stage: for `apply`, choose the LAST `apply_atomic` in the
-cross-batch chain (the one whose `workspace.after_version` equals the final workspace version --
-cross-batch application produces several applies and only the last one matches the live state); for
-`readback`, `validation`, and `reasoning`, choose the call made AFTER every apply completed. If the
-builder returns `ok: false` with `expected_*` / `actual_*` fields for a stage, re-select that
-stage's call to match the `expected_*` value and retry. The builder returns a canonical
+`protocol_build_acceptance_stage_handoff` capability owns that nonce and all mechanical fields. Call
+that capability with exactly `protocol_id=protocol` and DO NOT supply `stage_calls`: the carrier
+auto-selects the five canonical final-state observed calls (the final `apply_atomic` whose
+`workspace.after_version` equals the live workspace version, the validated `dry_run` paired with
+that apply, the final `get_modeling_context` readback, and the succeeded validation/reasoning over
+the live graph set). `protocol_list_platform_artifacts` is for your awareness only; never
+hand-pick stages, copy request arguments, or compute any digest, path, page, receipt, or handoff
+field yourself. The auto-select encodes the "each stage receipt must reflect the FINAL live model
+state" rule; if it returns `ok: false`, the platform contract is genuinely broken and you must
+escalate rather than re-pick stages. The builder returns a canonical
 `handoff_json` plus `handoff_digest`. Send that returned
 `handoff_json` unchanged as canonical compact JSON with exactly this schema and no extra fields:
 
@@ -471,11 +469,15 @@ catalog rather than calculating it.
 If the capability returns a structured result with `ok: false`, its `error.reason` names the exact
 failure; act on exactly that reason and never retry blindly:
 
-- `stage_handoff_no_match` or `stage_handoff_multiple_matches` — a supplied stage did not bind to exactly
-  one observed platform call. Read `error.stage`, `error.requested`, and `error.near_misses`, re-select
-  that one stage's exact `tool`, complete request `arguments`, and `artifact_path` from the
-  `protocol_list_platform_artifacts` catalog, and retry only that stage. Do not compute a digest or path
-  yourself, hand-author the handoff, read host sources to "repair" it, or retry with a guessed call.
+- `stage_auto_select_missing` or `stage_auto_select_ambiguous` (carries `error.stage` and
+  `error.selector`, and `matches` when ambiguous) — the carrier could not resolve exactly one
+  final-state observed call for that stage. This is a platform-contract defect, not a selection
+  mistake: do NOT hand-pick a stage, supply `stage_calls`, compute a digest/path, hand-author the
+  handoff, read host sources to "repair" it, or retry with a guessed call. Escalate via
+  `report_issue` (see below).
+- `stage_handoff_no_match` or `stage_handoff_multiple_matches` — only reachable if you explicitly
+  supplied `stage_calls`; a supplied stage did not bind to exactly one observed platform call. Re-run
+  without `stage_calls` so the carrier auto-selects, rather than re-selecting stages yourself.
 - `ordinary_retrieval_incomplete` (carries `error.detail`) — the ordinary-retrieval receipt could not be
   built. Re-complete the specific required path/page named in `error.detail` (full lexical fallback,
   non-truncated, with required Evidence/lineage), then retry the handoff.
