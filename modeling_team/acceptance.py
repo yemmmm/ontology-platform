@@ -942,11 +942,28 @@ def validate_verdict(verdict: Any, *, ticket: Mapping[str, Any], source_report: 
         if not isinstance(data[field], list) or any(not _digest_matches(item) for item in data[field]):
             _error(f"verdict {field} is invalid")
     if data["verdict"] not in {"PASS", "FAIL", "BLOCKED"}:
-        _error("verdict result is invalid")
+        _error(
+            "verdict result is invalid",
+            data={"reason": "verdict_result_invalid", "allowed": ["PASS", "FAIL", "BLOCKED"], "actual": data["verdict"]},
+        )
     if data["failure_layer"] is not None and data["failure_layer"] not in ACCEPTANCE_FAILURE_LAYERS:
-        _error("verdict failure_layer is invalid")
+        _error(
+            "verdict failure_layer is invalid",
+            data={
+                "reason": "verdict_failure_layer_invalid",
+                "allowed": sorted(ACCEPTANCE_FAILURE_LAYERS),
+                "actual": data["failure_layer"],
+            },
+        )
     if data["blocked_reason"] is not None and data["blocked_reason"] not in BLOCKED_REASONS:
-        _error("verdict blocked_reason is invalid")
+        _error(
+            "verdict blocked_reason is invalid",
+            data={
+                "reason": "verdict_blocked_reason_invalid",
+                "allowed": sorted(BLOCKED_REASONS),
+                "actual": data["blocked_reason"],
+            },
+        )
     refs = data["evidence_refs"]
     if not isinstance(refs, list):
         _error("verdict evidence_refs is invalid")

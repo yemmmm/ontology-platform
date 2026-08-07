@@ -51,8 +51,11 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   the 28-field `verdict_json`, never compute `verdict_digest` yourself, and never relay a
   built `verdict_json` back to the Host (the codex CLI display-truncates large JSON in
   tool-result view, which breaks the relay). Call `submit_acceptance_result` with:
-  `acceptance_id`, `round_id`, `verdict` (PASS/FAIL/BLOCKED), `failure_layer`,
-  `blocked_reason`, `evidence_refs` (your typed approved_source/platform_read evidence,
+  `acceptance_id`, `round_id`, `verdict` (one of PASS/FAIL/BLOCKED), `failure_layer`
+  (one of: protocol-delivery, interview, runtime, platform, modeling-quality; null if
+  PASS), `blocked_reason` (one of: state-invalidated, source-missing,
+  acceptance-evidence, runtime-infrastructure, acceptance-input; null unless BLOCKED),
+  `evidence_refs` (your typed approved_source/platform_read evidence,
   with the full page chain), `checks` (the eight CHECK_KEYS statuses),
   `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
   `recommended_action`, `summary`, and a fresh `request_id`. The Host assembles every
