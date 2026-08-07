@@ -16,9 +16,15 @@ import os
 import socket
 import threading
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+
+
+# One lock shared across every role endpoint so concurrent role threads can
+# append to a single shared audit log without interleaving partial lines.
+_AUDIT_LOCK = threading.Lock()
 
 
 COORDINATOR_OPERATIONS: tuple[str, ...] = (
@@ -364,6 +370,7 @@ class RunnerCapabilityEndpoint:
         token: str,
         dispatch: Callable[[str, str, Mapping[str, Any]], Any],
         operations: tuple[str, ...] | None = None,
+        audit_path: Path | None = None,
     ) -> None:
         if role not in ROLE_OPERATIONS:
             raise ValueError("unknown Runner capability role")
@@ -375,6 +382,12 @@ class RunnerCapabilityEndpoint:
             raise ValueError("Runner capability operations are not role-owned")
         self.operations = configured
         self._dispatch = dispatch
+        # Runner-private audit sink.  When set, every ``tools/call`` outcome is
+        # appended here with the *original* exception type/message so a debugger
+        # or independent acceptance reader can see why a capability call failed
+        # even when the JSON-RPC response stays opaque (-32001) or carries only
+        # a structured diagnostic.  Agent processes never read this file.
+        self._audit_path: Path | None = Path(audit_path) if audit_path is not None else None
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -460,6 +473,45 @@ class RunnerCapabilityEndpoint:
             "error": {"code": -32001, "message": "Runner capability request rejected"},
         }
 
+    def _audit(
+        self,
+        operation: Any,
+        ok: bool,
+        *,
+        error_type: str | None = None,
+        error_message: str | None = None,
+        diagnostic: Mapping[str, Any] | None = None,
+    ) -> None:
+        # Runner-private debugging/acceptance trail.  This is NOT the
+        # Agent-visible response channel: it records the original exception
+        # type/message for every ``tools/call`` outcome so a later debugger or
+        # independent reader can recover the exact reason a capability call
+        # failed, even when ``handle`` returned an opaque ``-32001`` (which by
+        # contract hides token/schema/dispatch failures from the caller).
+        if self._audit_path is None:
+            return
+        record: dict[str, Any] = {
+            "role": self.role,
+            "operation": operation if isinstance(operation, str) else None,
+            "ok": ok,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if error_type is not None:
+            record["error_type"] = error_type
+        if error_message is not None:
+            record["error_message"] = error_message
+        if diagnostic is not None:
+            record["diagnostic"] = dict(diagnostic)
+        line = json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+        try:
+            with _AUDIT_LOCK:
+                self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._audit_path, "a", encoding="utf-8") as handle:
+                    handle.write(line)
+        except OSError:
+            # The audit trail must never break a live capability call.
+            return
+
     def handle(self, request: Any) -> dict[str, Any]:
         if not isinstance(request, Mapping):
             return self._error(None)
@@ -491,6 +543,7 @@ class RunnerCapabilityEndpoint:
             or not isinstance(arguments, Mapping)
             or not _matches_schema(arguments, schema)
         ):
+            self._audit(operation, False, error_type="schema_or_operation_rejected")
             return self._error(request_id)
         try:
             result = _jsonable(self._dispatch(self.role, str(operation), arguments))
@@ -507,8 +560,21 @@ class RunnerCapabilityEndpoint:
             # ``-32001`` error below so unrelated failures stay indistinguishable.
             payload = getattr(exc, "data", None)
             if not isinstance(payload, Mapping):
+                self._audit(
+                    operation,
+                    False,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
                 return self._error(request_id)
             diagnostic: dict[str, Any] = dict(payload)
+            self._audit(
+                operation,
+                False,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                diagnostic=diagnostic,
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -517,6 +583,7 @@ class RunnerCapabilityEndpoint:
                     "content": _text_content({"ok": False, "error": diagnostic}),
                 },
             }
+        self._audit(operation, True)
         return {
             "jsonrpc": "2.0",
             "id": request_id,

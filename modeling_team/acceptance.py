@@ -1390,6 +1390,7 @@ class RunnerAcceptanceCarrier:
                 token=token,
                 dispatch=self._dispatch_capability,
                 operations=operations,
+                audit_path=self.root.parent / "evidence" / "capability-calls.jsonl",
             )
         self._active_acceptance = True
         self._round_sequence = 0

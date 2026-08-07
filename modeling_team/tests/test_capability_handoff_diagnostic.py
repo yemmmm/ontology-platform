@@ -409,5 +409,100 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
         self.assertEqual(data["near_misses"], [])
 
 
+class CapabilityAuditTrailTests(unittest.TestCase):
+    """The Runner-private audit log records every tools/call outcome.
+
+    The audit trail is the debugging/acceptance channel distinct from the
+    Agent-visible response: even when ``handle`` returns an opaque ``-32001``
+    (which by contract hides the failure reason from the caller), the original
+    exception type/message is recoverable from this file.
+    """
+
+    def _endpoint(
+        self, directory: Path, dispatch: Any, audit_path: Path
+    ) -> RunnerCapabilityEndpoint:
+        return RunnerCapabilityEndpoint(
+            role="protocol",
+            socket_path=directory / "protocol.sock",
+            token="protocol-token",
+            dispatch=dispatch,
+            audit_path=audit_path,
+        )
+
+    @staticmethod
+    def _handoff_request(request_id: str, stage_calls: dict[str, Any] | None = None) -> dict[str, Any]:
+        sc = stage_calls or {
+            stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
+            for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+        }
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "token": "protocol-token",
+            "method": "tools/call",
+            "params": {
+                "name": "protocol_build_acceptance_stage_handoff",
+                "arguments": {"protocol_id": "protocol", "stage_calls": sc},
+            },
+        }
+
+    def test_audit_records_success_structured_plain_and_schema_rejections(self) -> None:
+        behaviors: list[tuple[str, Exception | None]] = [
+            ("ok", None),
+            ("structured", _StructuredError("no match", data={"reason": "stage_handoff_no_match", "stage": "dry-run"})),
+            ("plain", ValueError("formal accepted candidate identity is unavailable")),
+        ]
+        cursor = {"i": 0}
+
+        def dispatch(role: str, operation: str, arguments: dict[str, Any]) -> Any:
+            _, exc = behaviors[cursor["i"]]
+            cursor["i"] += 1
+            if exc is not None:
+                raise exc
+            return {"built": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            audit = Path(directory) / "run" / "evidence" / "capability-calls.jsonl"
+            endpoint = self._endpoint(Path(directory), dispatch, audit)
+            endpoint.handle(self._handoff_request("ok-1"))
+            endpoint.handle(self._handoff_request("struct-1"))
+            endpoint.handle(self._handoff_request("plain-1"))
+            endpoint.handle(self._handoff_request("bad-1", stage_calls={"dry-run": {}}))
+            records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+        self.assertEqual([r["ok"] for r in records], [True, False, False, False])
+        self.assertEqual(records[0]["operation"], "protocol_build_acceptance_stage_handoff")
+        self.assertNotIn("error_type", records[0])
+        self.assertNotIn("error_message", records[0])
+        # Structured diagnostic: original exception type/message AND diagnostic payload.
+        self.assertEqual(records[1]["error_type"], "_StructuredError")
+        self.assertEqual(records[1]["diagnostic"]["reason"], "stage_handoff_no_match")
+        # Plain error: type/message recoverable, no diagnostic, response was opaque -32001.
+        self.assertEqual(records[2]["error_type"], "ValueError")
+        self.assertIn("accepted candidate identity is unavailable", records[2]["error_message"])
+        self.assertNotIn("diagnostic", records[2])
+        # Schema/operation rejection is audited as its own category.
+        self.assertEqual(records[3]["error_type"], "schema_or_operation_rejected")
+        self.assertNotIn("diagnostic", records[3])
+        # Every record carries role + timestamp.
+        for record in records:
+            self.assertEqual(record["role"], "protocol")
+            self.assertIn("recorded_at", record)
+
+    def test_no_audit_path_is_silent_and_writes_no_file(self) -> None:
+        def dispatch(role: str, operation: str, arguments: dict[str, Any]) -> Any:
+            raise ValueError("anything")
+
+        with tempfile.TemporaryDirectory() as directory:
+            endpoint = RunnerCapabilityEndpoint(
+                role="protocol",
+                socket_path=Path(directory) / "protocol.sock",
+                token="protocol-token",
+                dispatch=dispatch,
+            )
+            response = endpoint.handle(self._handoff_request("x-1"))
+        self.assertEqual(response["error"]["code"], -32001)
+
+
 if __name__ == "__main__":
     unittest.main()
