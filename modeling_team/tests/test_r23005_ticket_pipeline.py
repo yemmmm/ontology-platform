@@ -484,6 +484,189 @@ class R23005TicketPipelineTests(unittest.TestCase):
             finally:
                 carrier.cleanup()
 
+    def _build_runner_for_carrier(self, carrier: RunnerAcceptanceCarrier) -> TeamRunner:
+        runner = TeamRunner(repository_root=Path(__file__).resolve().parents[2], adapter=object())
+        runner.acceptance = carrier
+        runner._formal_coordination_enabled = lambda: True  # type: ignore[method-assign]
+        runner._formal_coordination_role_ids = lambda: {  # type: ignore[method-assign]
+            "coordinator": "coordinator",
+            "modeling": "modeling",
+            "protocol": "protocol",
+            "acceptance": "acceptance",
+        }
+        evidence: list[tuple[str, dict[str, str]]] = []
+        runner._append_evidence = lambda name, value: evidence.append((name, value))  # type: ignore[method-assign]
+        runner._handoff_evidence = evidence  # type: ignore[attr-defined]
+        return runner
+
+    def test_token_relay_records_handoff_without_resent_json(self) -> None:
+        # start58 regression: Protocol re-serializing ~7 KB of nested handoff
+        # JSON mangled the bytes (dropped receipt braces), so classify's
+        # json.loads failed and the delivery was never recorded.  The builder
+        # now pre-binds the handoff under an opaque token (its handoff_id) and
+        # Protocol relays only that short token, which cannot be mangled.
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                token = built["handoff_delivery_text"]
+                self.assertEqual(token, built["handoff_json"]["handoff_id"])
+                runner = self._build_runner_for_carrier(carrier)
+
+                registered = runner._register_stage_handoff_delivery_if_exact(
+                    RuntimeDelivery(
+                        sender_id="protocol",
+                        recipient_id="coordinator",
+                        kind="peer",
+                        text=token,
+                        delivery_id="delivery-6",
+                    )
+                )
+                self.assertEqual(registered["delivery_id"], "delivery-6")
+                self.assertEqual(
+                    registered["canonical_digest"], _digest(built["handoff_json"])
+                )
+                self.assertEqual(
+                    [name for name, _ in runner._handoff_evidence],  # type: ignore[attr-defined]
+                    ["acceptance-stage-handoff"],
+                )
+                draft = carrier._dispatch_capability(
+                    "coordinator",
+                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-6",
+                        "question_id": "cq-001",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual(draft["question_id"], "cq-001")
+                self.assertEqual(len(draft["modeling_receipts"]), 5)
+            finally:
+                carrier.cleanup()
+
+    def test_token_relay_survives_where_mangled_json_text_fails(self) -> None:
+        # The exact start58 failure mode: the re-serialized handoff JSON drops a
+        # closing brace per receipt, so json.loads fails and the legacy
+        # full-JSON classify path returns False.  The token relay path records
+        # the same handoff without depending on that text.
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                token = built["handoff_delivery_text"]
+                # Corrupt the full JSON the way start58 did: the re-serialized
+                # nested receipts lost closing braces, leaving the document
+                # unbalanced.  Drop one closing brace after the receipts array
+                # opens so json.loads fails the same way.
+                full_text = json.dumps(
+                    built["handoff_json"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                break_at = full_text.find("}", full_text.find('"modeling_receipts"'))
+                mangled_text = full_text[:break_at] + full_text[break_at + 1:]
+                self.assertRaises(json.JSONDecodeError, json.loads, mangled_text)
+                self.assertFalse(carrier.classify_stage_handoff_delivery(mangled_text))
+                runner = self._build_runner_for_carrier(carrier)
+
+                # Mangled text is not a recognized token and cannot classify.
+                self.assertIsNone(
+                    runner._register_stage_handoff_delivery_if_exact(
+                        RuntimeDelivery(
+                            sender_id="protocol",
+                            recipient_id="coordinator",
+                            kind="peer",
+                            text=mangled_text,
+                            delivery_id="delivery-mangled",
+                        )
+                    )
+                )
+                # The same handoff relayed by token records cleanly.
+                registered = runner._register_stage_handoff_delivery_if_exact(
+                    RuntimeDelivery(
+                        sender_id="protocol",
+                        recipient_id="coordinator",
+                        kind="peer",
+                        text=token,
+                        delivery_id="delivery-token",
+                    )
+                )
+                self.assertEqual(registered["delivery_id"], "delivery-token")
+            finally:
+                carrier.cleanup()
+
+    def test_repeated_builds_keep_delivery_token_idempotent(self) -> None:
+        # start58 built the handoff more than once.  The token pre-bind must
+        # stay idempotent: repeated deterministic builds re-register the same
+        # token/payload without corrupting the registry or blocking the relay.
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23005-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            carrier = self._carrier(run_root, source)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                first = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                second = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                self.assertEqual(
+                    first["handoff_delivery_text"], second["handoff_delivery_text"]
+                )
+                token = first["handoff_delivery_text"]
+                self.assertEqual(len(carrier._stage_handoff_delivery_tokens), 1)
+                runner = self._build_runner_for_carrier(carrier)
+                registered = runner._register_stage_handoff_delivery_if_exact(
+                    RuntimeDelivery(
+                        sender_id="protocol",
+                        recipient_id="coordinator",
+                        kind="peer",
+                        text=token,
+                        delivery_id="delivery-once",
+                    )
+                )
+                self.assertEqual(registered["delivery_id"], "delivery-once")
+                # A second relay of the same token binds a distinct broker id.
+                again = runner._register_stage_handoff_delivery_if_exact(
+                    RuntimeDelivery(
+                        sender_id="protocol",
+                        recipient_id="coordinator",
+                        kind="peer",
+                        text=token,
+                        delivery_id="delivery-twice",
+                    )
+                )
+                self.assertEqual(again["delivery_id"], "delivery-twice")
+            finally:
+                carrier.cleanup()
+
     def test_delivery_bound_draft_keeps_handoff_runner_private_and_allows_two_questions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "modeling-runs" / "run-r23005-e"

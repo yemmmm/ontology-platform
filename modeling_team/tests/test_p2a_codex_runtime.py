@@ -59,7 +59,7 @@ FROZEN_GLOBAL_SURFACES = {
     # Host assembles the 28-field acceptance verdict from the agent's judgment
     # plus the bound ticket/reports/failures; the agent never hand-assembles the
     # envelope.  Listed in the runner runtime_contract manifest acceptance role.
-    "modeling_team/runner.py": "f5c83350b7d3f90770b79a75c69939f7328359fe8a6678e23062ef169e495a52",
+    "modeling_team/runner.py": "eb386f84dbad40a1ce451518795c1822957c1d7d622b4978088ab6b14947c35a",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",

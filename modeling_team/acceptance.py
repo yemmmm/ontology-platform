@@ -1310,6 +1310,13 @@ class RunnerAcceptanceCarrier:
         # that output can enter the handoff registry; ordinary replies (such as
         # frozen-question ID arrays) remain ordinary peer deliveries.
         self._stage_handoff_builder_outputs: dict[str, dict[str, str]] = {}
+        # Pre-bound delivery tokens emitted by the Runner-private handoff builder.
+        # The builder owns every handoff byte; Protocol relays only the opaque
+        # token as delivery text, so the Team Transport delivery never depends on
+        # an Agent re-serializing the (large, nested) handoff JSON verbatim.
+        # ``text`` mangles -- common when an LLM re-emits ~7 KB of nested JSON --
+        # cannot defeat recording because the token is a short stable string.
+        self._stage_handoff_delivery_tokens: dict[str, dict[str, Any]] = {}
         self._typed_ticket_draft_revisions: dict[tuple[str, str], int] = {}
         self._typed_ticket_draft_requests: set[tuple[str, str, int]] = set()
         # These records are populated only by the host Runtime when a formal
@@ -1467,6 +1474,52 @@ class RunnerAcceptanceCarrier:
             return _safe_copy(record)
         self._stage_handoff_deliveries[delivery_id] = record
         self._stage_handoff_payloads[delivery_id] = _safe_copy(dict(parsed))
+        return _safe_copy(record)
+
+    def register_stage_handoff_delivery_by_token(
+        self,
+        *,
+        delivery_id: str,
+        text: str,
+        sender_role: str,
+        recipient_role: str,
+    ) -> dict[str, str] | None:
+        """Bind a pre-recorded handoff delivery by its opaque relay token.
+
+        The builder pre-binds each handoff under its ``handoff_id`` token at
+        build time (see :meth:`protocol_build_acceptance_stage_handoff`).
+        Protocol relays only that token as the Team Transport delivery text, so
+        recording survives any Agent re-serialization of the nested handoff JSON.
+        Returns the delivery record when *text* is a recognized token, otherwise
+        ``None`` so the caller falls through to the full-JSON classify path.
+        """
+
+        if not isinstance(text, str):
+            return None
+        token = text.strip()
+        bind = self._stage_handoff_delivery_tokens.get(token)
+        if bind is None:
+            return None
+        _safe_id(delivery_id, "stage handoff delivery_id")
+        if sender_role != "protocol" or recipient_role != "coordinator":
+            _error("stage handoff delivery role binding is invalid")
+        payload = bind["payload"]
+        record = {
+            "delivery_id": delivery_id,
+            "text_digest": _sha256_bytes(token.encode("utf-8")),
+            "canonical_digest": bind["canonical_digest"],
+            "sender_role": sender_role,
+            "recipient_role": recipient_role,
+        }
+        existing = self._stage_handoff_deliveries.get(delivery_id)
+        if existing is not None:
+            if existing != record:
+                _error("stage handoff delivery identity was mutated")
+            if self._stage_handoff_payloads.get(delivery_id) != dict(payload):
+                _error("stage handoff delivery payload was mutated")
+            return _safe_copy(record)
+        self._stage_handoff_deliveries[delivery_id] = record
+        self._stage_handoff_payloads[delivery_id] = _safe_copy(dict(payload))
         return _safe_copy(record)
 
     def classify_stage_handoff_delivery(self, text: str) -> bool:
@@ -2905,9 +2958,26 @@ class RunnerAcceptanceCarrier:
             "task_id": handoff["task_id"],
             "producer_run_id": handoff["producer_run_id"],
         }
+        # Pre-bind the delivery token (the handoff_id) so TeamRunner can record
+        # the handoff by opaque identity when Protocol relays it, without
+        # depending on an exact re-serialization of the nested handoff JSON.
+        # Repeated deterministic builds overwrite the entry idempotently.
+        token = handoff["handoff_id"]
+        existing_bind = self._stage_handoff_delivery_tokens.get(token)
+        bind_payload = _safe_copy(handoff)
+        if existing_bind is not None and existing_bind["canonical_digest"] != canonical_digest:
+            _error("stage handoff delivery token payload was mutated")
+        self._stage_handoff_delivery_tokens[token] = {
+            "canonical_digest": canonical_digest,
+            "handoff_id": handoff["handoff_id"],
+            "handoff_digest": handoff["handoff_digest"],
+            "handoff_nonce": handoff["handoff_nonce"],
+            "payload": bind_payload,
+        }
         return {
             "handoff_json": _safe_copy(handoff),
             "handoff_digest": handoff_digest,
+            "handoff_delivery_text": token,
         }
 
     def protocol_list_platform_artifacts(

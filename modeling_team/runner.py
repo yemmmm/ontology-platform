@@ -2358,16 +2358,35 @@ class TeamRunner:
         if not self._formal_coordination_enabled() or self.acceptance is None:
             return None
         role_ids = self._formal_coordination_role_ids()
+        is_handoff_channel = (
+            delivery.sender_id == role_ids["protocol"]
+            and delivery.recipient_id == role_ids["coordinator"]
+        )
+        # Primary path: Protocol relays the opaque builder token (the
+        # handoff_id) as delivery text.  The Runner pre-bound the handoff at
+        # build time, so recording does not depend on the Agent re-serializing
+        # the nested handoff JSON -- a short token cannot be mangled the way
+        # ~7 KB of nested JSON can.
+        if is_handoff_channel:
+            token_record = self.acceptance.register_stage_handoff_delivery_by_token(
+                delivery_id=delivery.delivery_id,
+                text=delivery.text,
+                sender_role="protocol",
+                recipient_role="coordinator",
+            )
+            if token_record is not None:
+                self._append_evidence("acceptance-stage-handoff", token_record)
+                return token_record
+        # Backward-compatible path: a full unchanged handoff JSON text still
+        # classifies by canonical bytes.  This keeps older sends and the exact
+        # "builder output was mutated" guard available when no token is relayed.
         try:
             is_builder_output = self.acceptance.classify_stage_handoff_delivery(delivery.text)
         except AcceptanceContractError as exc:
             raise TeamConfigurationError(str(exc)) from exc
         if not is_builder_output:
             return None
-        if (
-            delivery.sender_id != role_ids["protocol"]
-            or delivery.recipient_id != role_ids["coordinator"]
-        ):
+        if not is_handoff_channel:
             raise TeamConfigurationError("stage handoff delivery role binding is invalid")
         handoff_record = self.acceptance.register_stage_handoff_delivery(
             delivery_id=delivery.delivery_id,

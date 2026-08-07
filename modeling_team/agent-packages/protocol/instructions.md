@@ -448,20 +448,18 @@ the live graph set). `protocol_list_platform_artifacts` is for your awareness on
 hand-pick stages, copy request arguments, or compute any digest, path, page, receipt, or handoff
 field yourself. The auto-select encodes the "each stage receipt must reflect the FINAL live model
 state" rule; if it returns `ok: false`, the platform contract is genuinely broken and you must
-escalate rather than re-pick stages. The builder returns a canonical
-`handoff_json` plus `handoff_digest`. Send that returned
-`handoff_json` unchanged as canonical compact JSON with exactly this schema and no extra fields:
-
-`schema_version,handoff_id,handoff_nonce,task_id,producer_run_id,slice_id,slice_revision,model_state,model_state_digest,candidate_digest,modeling_receipts,handoff_digest`.
-
-Set `schema_version` to `r2-3-005-acceptance-stage-handoff/v1`. Include only the complete five
-current-run typed platform receipts and opaque candidate/state digests returned by the capability;
-do not add source bytes, expected answers, ticket fields, or free-text status. Do not send `{}`,
-shorthand, a mutated copy, or a second handoff. Coordinator will use the exact returned `delivery_id`
-from the Runner envelope when asking the Runner-private draft capability to build the ticket. The
-capability rejects unobserved calls, wrong stage tool/mode/status, wrong live scope, missing artifact
-files, and candidate identities other than the accepted FormalCandidateProgress revision/digest. The
-artifact path includes both digests as
+escalate rather than re-pick stages. The builder owns every handoff byte and returns `handoff_json`,
+`handoff_digest`, and `handoff_delivery_text` (a short opaque relay token). Relay exactly that
+`handoff_delivery_text` string verbatim as the `text` of one `send_team_message` to Coordinator; do
+NOT re-serialize, re-type, compress, wrap, or quote the nested `handoff_json` into the delivery
+text. The Runner pre-recorded the handoff under that token, so Coordinator resolves it by the
+returned Team Transport `delivery_id` without depending on your re-emitting ~7 KB of nested JSON
+unchanged (which is brittle and has corrupted past deliveries). Never send `{}`, shorthand, a
+mutated copy, the full `handoff_json` text, or a second handoff. Coordinator will use the exact
+returned `delivery_id` from the Runner envelope when asking the Runner-private draft capability to
+build the ticket. The capability rejects unobserved calls, wrong stage tool/mode/status, wrong live
+scope, missing artifact files, and candidate identities other than the accepted
+FormalCandidateProgress revision/digest. The artifact path includes both digests as
 `evidence/platform-responses/<request_digest>-<response_digest>.json`, allowing repeated reads whose
 responses changed to remain distinct; choose the exact path from the Runner's observed artifact
 catalog rather than calculating it.
