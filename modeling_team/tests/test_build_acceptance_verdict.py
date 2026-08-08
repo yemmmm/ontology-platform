@@ -234,31 +234,22 @@ def _pass_checks() -> dict[str, str]:
     return {key: "PASS" for key in _CHECK_KEYS}
 
 
-def _source_locator(ref: Mapping[str, Any]) -> dict[str, Any]:
-    """The verdict agent cites a source by location only; the Host rebuilds."""
+def _ref_id(ref: Mapping[str, Any]) -> str:
+    """The verdict agent cites evidence by ref_id copied from a report.
 
-    return {"location": ref["location"]}
+    The Acceptance agent copies the ref_id string verbatim from one of the two
+    Examiner terminal reports (source ``approved-source-...`` prefix or
+    platform reader-chosen id) and the Host lifts the fully-typed bound ref
+    verbatim from that report.
+    """
 
-
-def _platform_locator(ref: Mapping[str, Any]) -> dict[str, Any]:
-    """The verdict agent cites a platform read by its receipt coordinate set."""
-
-    return {
-        key: ref[key]
-        for key in (
-            "ref_id",
-            "tool",
-            "request_digest",
-            "response_digest",
-            "artifact_path",
-            "page",
-        )
-    }
+    return ref["ref_id"]
 
 
-def _cq_result(*, status: str, answer: str, locators: list) -> dict[str, Any]:
-    # The agent supplies ONLY status/answer/locators; the Host fills the id.
-    return {"status": status, "answer": answer, "evidence_refs": locators}
+def _cq_result(*, status: str, answer: str, ref_ids: list) -> dict[str, Any]:
+    # The agent supplies ONLY status/answer/ref_ids; the Host fills the id
+    # and lifts the typed refs from the examiner reports.
+    return {"status": status, "answer": answer, "evidence_ref_ids": ref_ids}
 
 
 class BuildAcceptanceVerdictTests(unittest.TestCase):
@@ -313,9 +304,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-0"
             )
-            evidence_refs = [
-                _source_locator(source_report["evidence_refs"][0]),
-                _platform_locator(platform_report["evidence_refs"][0]),
+            ref_ids = [
+                _ref_id(source_report["evidence_refs"][0]),
+                _ref_id(platform_report["evidence_refs"][0]),
             ]
             built = carrier.build_acceptance_verdict(
                 acceptance_id="acceptance",
@@ -323,12 +314,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 verdict="PASS",
                 failure_layer=None,
                 blocked_reason=None,
-                evidence_refs=evidence_refs,
+                evidence_ref_ids=ref_ids,
                 checks=_pass_checks(),
                 competency_question_results=[_cq_result(
                     status="PASS",
                     answer=source_report["conclusion"],
-                    locators=evidence_refs,
+                    ref_ids=ref_ids,
                 )],
                 recommended_action="advance",
                 summary="source and platform agree",
@@ -351,12 +342,13 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             self.assertEqual(verdict_json["failure_evidence_refs"], [])
             self.assertEqual(verdict_json["failure_evidence_digests"], [])
             self.assertEqual(verdict_json["infrastructure_failure_digests"], [])
-            # The agent supplied only locators; the Host rebuilt the typed refs.
+            # The agent supplied only ref_ids; the Host lifted the typed refs
+            # verbatim from the examiner reports.
             for ref in verdict_json["evidence_refs"]:
                 self.assertIn(ref["type"], {"approved_source", "platform_read"})
                 self.assertEqual(ref["ticket_digest"], ticket["ticket_digest"])
-            # The rebuilt approved_source ref matches the examiner report's ref
-            # (deterministic Host assembly from the same ticket).
+            # The lifted approved_source ref matches the examiner report's ref
+            # exactly (the Host lifts the fully-typed bound ref verbatim).
             self.assertEqual(
                 verdict_json["evidence_refs"][0],
                 source_report["evidence_refs"][0],
@@ -386,7 +378,7 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-fail-0"
             )
-            evidence_refs = [_source_locator(source_report["evidence_refs"][0])]
+            ref_ids = [_ref_id(source_report["evidence_refs"][0])]
             checks = _pass_checks()
             checks["ontology_structure"] = "FAIL"
             built = carrier.build_acceptance_verdict(
@@ -395,12 +387,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 verdict="FAIL",
                 failure_layer="modeling-quality",
                 blocked_reason=None,
-                evidence_refs=evidence_refs,
+                evidence_ref_ids=ref_ids,
                 checks=checks,
                 competency_question_results=[_cq_result(
                     status="PASS",
                     answer=source_report["conclusion"],
-                    locators=evidence_refs,
+                    ref_ids=ref_ids,
                 )],
                 recommended_action="model-repair",
                 summary="ontology structure check failed",
@@ -493,12 +485,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 verdict="BLOCKED",
                 failure_layer="runtime",
                 blocked_reason="runtime-infrastructure",
-                evidence_refs=[],
+                evidence_ref_ids=[],
                 checks=checks,
                 competency_question_results=[_cq_result(
                     status="BLOCKED",
                     answer="platform examiner did not return a terminal report",
-                    locators=[],
+                    ref_ids=[],
                 )],
                 recommended_action="retry-after-recovery",
                 summary="platform examiner timed out twice",
@@ -595,9 +587,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-e2e-0"
             )
-            evidence_refs = [
-                _source_locator(source_report["evidence_refs"][0]),
-                _platform_locator(platform_report["evidence_refs"][0]),
+            ref_ids = [
+                _ref_id(source_report["evidence_refs"][0]),
+                _ref_id(platform_report["evidence_refs"][0]),
             ]
             endpoint = carrier._capability_endpoints["acceptance"]
             token = carrier.capability_token("acceptance")
@@ -614,12 +606,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                         "verdict": "PASS",
                         "failure_layer": None,
                         "blocked_reason": None,
-                        "evidence_refs": evidence_refs,
+                        "evidence_ref_ids": ref_ids,
                         "checks": _pass_checks(),
                         "competency_question_results": [_cq_result(
                             status="PASS",
                             answer=source_report["conclusion"],
-                            locators=evidence_refs,
+                            ref_ids=ref_ids,
                         )],
                         "recommended_action": "advance",
                         "summary": "source and platform agree",
@@ -674,9 +666,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-retry-0"
             )
-            evidence_refs = [
-                _source_locator(source_report["evidence_refs"][0]),
-                _platform_locator(platform_report["evidence_refs"][0]),
+            ref_ids = [
+                _ref_id(source_report["evidence_refs"][0]),
+                _ref_id(platform_report["evidence_refs"][0]),
             ]
             endpoint = carrier._capability_endpoints["acceptance"]
             token = carrier.capability_token("acceptance")
@@ -686,12 +678,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 "verdict": "PASS",
                 "failure_layer": None,
                 "blocked_reason": None,
-                "evidence_refs": evidence_refs,
+                "evidence_ref_ids": ref_ids,
                 "checks": _pass_checks(),
                 "competency_question_results": [_cq_result(
                     status="PASS",
                     answer=source_report["conclusion"],
-                    locators=evidence_refs,
+                    ref_ids=ref_ids,
                 )],
                 "recommended_action": "advance",
                 "summary": "source and platform agree",
@@ -812,12 +804,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                         "verdict": "BLOCKED",
                         "failure_layer": "runtime",
                         "blocked_reason": "runtime-infrastructure",
-                        "evidence_refs": [],
+                        "evidence_ref_ids": [],
                         "checks": checks,
                         "competency_question_results": [_cq_result(
                             status="BLOCKED",
                             answer="platform examiner did not return a terminal report",
-                            locators=[],
+                            ref_ids=[],
                         )],
                         "recommended_action": "retry-after-recovery",
                         "summary": "platform examiner timed out twice",
@@ -865,10 +857,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="PASS",
                     failure_layer=None,
                     blocked_reason=None,
-                    evidence_refs=[],
+                    evidence_ref_ids=[],
                     checks=_pass_checks(),
                     competency_question_results=[_cq_result(
-                        status="PASS", answer="ok", locators=[],
+                        status="PASS", answer="ok", ref_ids=[],
                     )],
                     recommended_action="advance",
                     summary="x",
@@ -881,10 +873,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="PASS",
                     failure_layer=None,
                     blocked_reason=None,
-                    evidence_refs=[],
+                    evidence_ref_ids=[],
                     checks=_pass_checks(),
                     competency_question_results=[_cq_result(
-                        status="PASS", answer="ok", locators=[],
+                        status="PASS", answer="ok", ref_ids=[],
                     )],
                     recommended_action="advance",
                     summary="x",
@@ -902,19 +894,19 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-dig-0"
             )
-            evidence_refs = [_source_locator(source_report["evidence_refs"][0])]
+            ref_ids = [_ref_id(source_report["evidence_refs"][0])]
             built = carrier.build_acceptance_verdict(
                 acceptance_id="acceptance",
                 round_id=ticket["acceptance_round_id"],
                 verdict="PASS",
                 failure_layer=None,
                 blocked_reason=None,
-                evidence_refs=evidence_refs,
+                evidence_ref_ids=ref_ids,
                 checks=_pass_checks(),
                 competency_question_results=[_cq_result(
                     status="PASS",
                     answer=source_report["conclusion"],
-                    locators=evidence_refs,
+                    ref_ids=ref_ids,
                 )],
                 recommended_action="advance",
                 summary="ok",
@@ -941,8 +933,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
     def test_host_rejects_typed_evidence_ref_inputs(self) -> None:
         # start61 root cause: the agent hand-assembled the approved_source
         # typed-ref field set and got it wrong.  The merged submit must accept
-        # ONLY locators; a typed ref (or any structure carrying Host-owned
-        # digests/paths) is rejected at assembly time, before validate_verdict.
+        # ONLY ref_id strings; a typed ref (or any non-string structure
+        # carrying Host-owned digests/paths) is rejected at assembly time,
+        # before validate_verdict.
         ticket = _ticket(round_suffix="driftref")
         with tempfile.TemporaryDirectory() as directory:
             carrier = self._carrier(ticket, directory)
@@ -960,10 +953,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="PASS",
                     failure_layer=None,
                     blocked_reason=None,
-                    evidence_refs=[typed_ref],
+                    evidence_ref_ids=[typed_ref],
                     checks=_pass_checks(),
                     competency_question_results=[_cq_result(
-                        status="PASS", answer="ok", locators=[],
+                        status="PASS", answer="ok", ref_ids=[],
                     )],
                     recommended_action="advance",
                     summary="typed ref must be rejected",
@@ -994,10 +987,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="FAIL",
                     failure_layer="modeling-quality",
                     blocked_reason=None,
-                    evidence_refs=[],
+                    evidence_ref_ids=[],
                     checks=extra,
                     competency_question_results=[_cq_result(
-                        status="PASS", answer="ok", locators=[],
+                        status="PASS", answer="ok", ref_ids=[],
                     )],
                     recommended_action="model-repair",
                     summary="unknown check key must be rejected",
@@ -1012,10 +1005,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="PASS",
                     failure_layer=None,
                     blocked_reason=None,
-                    evidence_refs=[],
+                    evidence_ref_ids=[],
                     checks=missing,
                     competency_question_results=[_cq_result(
-                        status="PASS", answer="ok", locators=[],
+                        status="PASS", answer="ok", ref_ids=[],
                     )],
                     recommended_action="advance",
                     summary="missing check key must be rejected",
@@ -1042,13 +1035,13 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     verdict="PASS",
                     failure_layer=None,
                     blocked_reason=None,
-                    evidence_refs=[],
+                    evidence_ref_ids=[],
                     checks=_pass_checks(),
                     competency_question_results=[{
                         "id": ticket["question_id"],
                         "status": "PASS",
                         "answer": "ok",
-                        "evidence_refs": [],
+                        "evidence_ref_ids": [],
                     }],
                     recommended_action="advance",
                     summary="agent-supplied CQ id must be rejected",
@@ -1058,9 +1051,10 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
 
     def test_simplified_submit_records_verdict_passing_validate(self) -> None:
         # The end-to-end contract the start61 fix targets: the agent supplies
-        # ONLY locators + the flat checks mapping + CQ status/answer/locators.
-        # The Host rebuilds every typed structure; the recorded verdict passes
-        # validate_verdict unchanged and is findable by an independent reader.
+        # ONLY ref_ids + the flat checks mapping + CQ status/answer/ref_ids.
+        # The Host lifts every typed structure verbatim from the examiner
+        # reports; the recorded verdict passes validate_verdict unchanged and
+        # is findable by an independent reader.
         ticket = _ticket(round_suffix="simple")
         with tempfile.TemporaryDirectory() as directory:
             carrier = self._carrier(ticket, directory)
@@ -1070,9 +1064,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             platform_handle, platform_report = self._start_and_report(
                 carrier, ticket, kind="platform", request_id="plt-simple-0"
             )
-            locators = [
-                _source_locator(source_report["evidence_refs"][0]),
-                _platform_locator(platform_report["evidence_refs"][0]),
+            ref_ids = [
+                _ref_id(source_report["evidence_refs"][0]),
+                _ref_id(platform_report["evidence_refs"][0]),
             ]
             endpoint = carrier._capability_endpoints["acceptance"]
             token = carrier.capability_token("acceptance")
@@ -1089,12 +1083,12 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                         "verdict": "PASS",
                         "failure_layer": None,
                         "blocked_reason": None,
-                        "evidence_refs": locators,
+                        "evidence_ref_ids": ref_ids,
                         "checks": _pass_checks(),
                         "competency_question_results": [_cq_result(
                             status="PASS",
                             answer=source_report["conclusion"],
-                            locators=locators,
+                            ref_ids=ref_ids,
                         )],
                         "recommended_action": "advance",
                         "summary": "source and platform agree",
@@ -1106,8 +1100,8 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             receipt = submit["result"]["structuredContent"]["data"]
             self.assertEqual(receipt["verdict"], "PASS")
             recorded = carrier._rounds[ticket["acceptance_round_id"]]["verdict"]
-            # The Host rebuilt typed refs that exactly match the examiner
-            # reports (deterministic assembly from the same ticket).
+            # The Host lifted the typed refs verbatim from the examiner
+            # reports (no field drift, byte-identical bound refs).
             self.assertEqual(
                 recorded["evidence_refs"][0],
                 source_report["evidence_refs"][0],
@@ -1130,6 +1124,177 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             self.assertEqual(renormalized["verdict_digest"], receipt["verdict_digest"])
             carrier.cleanup()
 
+    def test_page_chain_whole_group_lifted_when_one_page_is_cited(self) -> None:
+        # The Acceptance agent copies one ref_id from a multi-page platform
+        # read group.  The Host must lift EVERY page in that
+        # (tool, request_digest) group verbatim, in report order, so
+        # validate_page_chain observes no artificial gap.  This is the key
+        # page-chain whole-group completion guarantee for ref_id-based lifting.
+        ticket = _ticket(round_suffix="pages")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = self._carrier(ticket, directory)
+            source_handle, source_report = self._start_and_report(
+                carrier, ticket, kind="source", request_id="src-pages-0"
+            )
+            # Start the platform child and ingest a two-page report sharing one
+            # (tool, request_digest) group, with a valid cursor chain.
+            platform_projection, platform_digest = carrier.project_child_input(
+                round_id=ticket["acceptance_round_id"], kind="platform"
+            )
+            platform_handle = carrier.start_child(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                kind="platform",
+                input_ref=platform_projection,
+                input_digest=platform_digest,
+                ticket_digest_value=ticket["ticket_digest"],
+                request_id="plt-pages-0",
+                attempt=0,
+            )
+            tool = "get_modeling_context"
+            request_digest = "a" * 64
+            page0_ref = {
+                "type": "platform_read",
+                "ref_id": "read-facts-page-0",
+                "ticket_digest": ticket["ticket_digest"],
+                "model_state_digest": ticket["model_state_digest"],
+                "tool": tool,
+                "request_digest": request_digest,
+                "response_digest": "b" * 64,
+                "artifact_path": "evidence/platform-page-0.json",
+                "page": {
+                    "ordinal": 0,
+                    "input_cursor": None,
+                    "output_cursor": "cursor-1",
+                    "has_more": True,
+                    "sequence_complete": False,
+                },
+            }
+            page1_ref = {
+                "type": "platform_read",
+                "ref_id": "read-facts-page-1",
+                "ticket_digest": ticket["ticket_digest"],
+                "model_state_digest": ticket["model_state_digest"],
+                "tool": tool,
+                "request_digest": request_digest,
+                "response_digest": "c" * 64,
+                "artifact_path": "evidence/platform-page-1.json",
+                "page": {
+                    "ordinal": 1,
+                    "input_cursor": "cursor-1",
+                    "output_cursor": None,
+                    "has_more": False,
+                    "sequence_complete": True,
+                },
+            }
+            platform_report = carrier.ingest_report(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                handle=platform_handle,
+                report={
+                    "task_id": ticket["task_id"],
+                    "acceptance_round_id": ticket["acceptance_round_id"],
+                    "ticket_digest": ticket["ticket_digest"],
+                    "examiner_kind": "platform",
+                    "child_handle_digest": platform_handle.digest,
+                    "child_session_id": platform_handle.session_id,
+                    "child_input_digest": platform_handle.input_digest,
+                    "source_bundle_digest": None,
+                    "answerability": "answerable",
+                    "conclusion": "confirmed",
+                    "evidence": [
+                        {"ref_id": "read-facts-page-0", "summary": "page 0"},
+                        {"ref_id": "read-facts-page-1", "summary": "page 1"},
+                    ],
+                    "coverage": {"queries_or_sections": ["cq1"], "complete": True},
+                    "gaps": [],
+                    "model_state": ticket["model_state"],
+                    "evidence_refs": [page0_ref, page1_ref],
+                    "report_digest": None,
+                },
+            )
+            # The agent cites ONLY the first page's ref_id; the Host must lift
+            # both pages of the group.
+            ref_ids = [
+                _ref_id(source_report["evidence_refs"][0]),
+                _ref_id(page0_ref),
+            ]
+            built = carrier.build_acceptance_verdict(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                verdict="PASS",
+                failure_layer=None,
+                blocked_reason=None,
+                evidence_ref_ids=ref_ids,
+                checks=_pass_checks(),
+                competency_question_results=[_cq_result(
+                    status="PASS",
+                    answer=source_report["conclusion"],
+                    ref_ids=ref_ids,
+                )],
+                recommended_action="advance",
+                summary="source and platform agree",
+                capability=carrier.capability_token("acceptance"),
+            )
+            verdict_json = built["verdict_json"]
+            lifted_ids = [ref["ref_id"] for ref in verdict_json["evidence_refs"]]
+            # The approved_source ref plus both pages of the cited group appear.
+            self.assertEqual(
+                lifted_ids,
+                [
+                    source_report["evidence_refs"][0]["ref_id"],
+                    "read-facts-page-0",
+                    "read-facts-page-1",
+                ],
+            )
+            # The lifted pages match the examiner report verbatim (byte-for-byte
+            # bound refs, including page cursors).
+            self.assertEqual(verdict_json["evidence_refs"][1], page0_ref)
+            self.assertEqual(verdict_json["evidence_refs"][2], page1_ref)
+            # validate_verdict accepts the assembled envelope (its page-chain
+            # check passes because the whole group was lifted).
+            normalized = validate_verdict(
+                verdict_json,
+                ticket=ticket,
+                source_report=source_report,
+                platform_report=platform_report,
+            )
+            self.assertEqual(normalized["verdict_digest"], built["verdict_digest"])
+            carrier.cleanup()
+
+    def test_resolver_rejects_ref_id_not_in_examiner_reports(self) -> None:
+        # A ref_id the agent invents (not present in either examiner report) is
+        # rejected at assembly time, before validate_verdict.  The agent can
+        # only copy ref_ids that already appear in a terminal examiner report.
+        ticket = _ticket(round_suffix="badref")
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = self._carrier(ticket, directory)
+            source_handle, source_report = self._start_and_report(
+                carrier, ticket, kind="source", request_id="src-badref-0"
+            )
+            platform_handle, platform_report = self._start_and_report(
+                carrier, ticket, kind="platform", request_id="plt-badref-0"
+            )
+            with self.assertRaises(AcceptanceContractError):
+                carrier.build_acceptance_verdict(
+                    acceptance_id="acceptance",
+                    round_id=ticket["acceptance_round_id"],
+                    verdict="PASS",
+                    failure_layer=None,
+                    blocked_reason=None,
+                    evidence_ref_ids=["invented-ref-id-not-in-any-report"],
+                    checks=_pass_checks(),
+                    competency_question_results=[_cq_result(
+                        status="PASS",
+                        answer="ok",
+                        ref_ids=[_ref_id(source_report["evidence_refs"][0])],
+                    )],
+                    recommended_action="advance",
+                    summary="ok",
+                    capability=carrier.capability_token("acceptance"),
+                )
+            carrier.cleanup()
+
 
 class CapabilitySchemaArraySupportTests(unittest.TestCase):
     def test_build_acceptance_verdict_schema_accepts_judgment_arrays(self) -> None:
@@ -1144,28 +1309,16 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "verdict": "BLOCKED",
                     "failure_layer": "runtime",
                     "blocked_reason": "runtime-infrastructure",
-                    # Evidence LOCATORS (source location / platform coordinate set),
+                    # Evidence REF_IDS copied verbatim from the examiner reports
+                    # (source approved-source- prefix, platform reader-chosen id),
                     # never the typed-ref structure the Host owns.
-                    "evidence_refs": [
-                        {"location": "source.md#anchor"},
-                        {
-                            "ref_id": "plt-1",
-                            "tool": "get_modeling_context",
-                            "request_digest": "e" * 64,
-                            "response_digest": "f" * 64,
-                            "artifact_path": "evidence/platform.json",
-                            "page": {
-                                "ordinal": 0,
-                                "input_cursor": None,
-                                "output_cursor": None,
-                                "has_more": False,
-                                "sequence_complete": True,
-                            },
-                        },
+                    "evidence_ref_ids": [
+                        "approved-source-abc",
+                        "ev-platform-read-1",
                     ],
                     "checks": {"source_fidelity": "PASS"},
                     "competency_question_results": [
-                        {"status": "PASS", "answer": "ok", "evidence_refs": []},
+                        {"status": "PASS", "answer": "ok", "evidence_ref_ids": []},
                     ],
                     "recommended_action": "wait",
                     "summary": "blocked",
@@ -1186,10 +1339,10 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "verdict": "BLOCKED",
                     "failure_layer": "runtime",
                     "blocked_reason": "runtime-infrastructure",
-                    "evidence_refs": [{"location": "source.md#anchor"}],
+                    "evidence_ref_ids": ["approved-source-abc"],
                     "checks": {"source_fidelity": "PASS"},
                     "competency_question_results": [
-                        {"status": "BLOCKED", "answer": "blocked", "evidence_refs": []},
+                        {"status": "BLOCKED", "answer": "blocked", "evidence_ref_ids": []},
                     ],
                     "recommended_action": "retry-after-recovery",
                     "summary": "blocked",
@@ -1231,7 +1384,7 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "verdict": "PASS",
                     "failure_layer": None,
                     "blocked_reason": None,
-                    "evidence_refs": [],
+                    "evidence_ref_ids": [],
                     "checks": {},
                     "competency_question_results": [],
                     "recommended_action": "advance",
@@ -1253,7 +1406,7 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "verdict": "PASS",
                     "failure_layer": None,
                     "blocked_reason": None,
-                    "evidence_refs": [],
+                    "evidence_ref_ids": [],
                     "checks": {},
                     "competency_question_results": [],
                     "recommended_action": "advance",
@@ -1265,7 +1418,7 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
             )
         )
 
-    def test_schema_rejects_non_array_evidence_refs(self) -> None:
+    def test_schema_rejects_non_array_evidence_ref_ids(self) -> None:
         from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
 
         schema = CAPABILITY_TOOL_SCHEMAS["build_acceptance_verdict"]
@@ -1277,7 +1430,32 @@ class CapabilitySchemaArraySupportTests(unittest.TestCase):
                     "verdict": "PASS",
                     "failure_layer": None,
                     "blocked_reason": None,
-                    "evidence_refs": {"not": "a list"},
+                    "evidence_ref_ids": {"not": "a list"},
+                    "checks": {},
+                    "competency_question_results": [],
+                    "recommended_action": "advance",
+                    "summary": "ok",
+                },
+                schema,
+            )
+        )
+
+    def test_schema_rejects_non_string_evidence_ref_id(self) -> None:
+        # The agent must copy ref_id strings, never the typed-ref dict (the
+        # start61 root cause: the agent hand-assembled the field set and got
+        # it wrong).  A non-string item is rejected at the schema layer.
+        from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
+
+        schema = CAPABILITY_TOOL_SCHEMAS["build_acceptance_verdict"]
+        self.assertFalse(
+            _matches_schema(
+                {
+                    "acceptance_id": "acceptance",
+                    "round_id": "round-1",
+                    "verdict": "PASS",
+                    "failure_layer": None,
+                    "blocked_reason": None,
+                    "evidence_ref_ids": [{"location": "source.md#anchor"}],
                     "checks": {},
                     "competency_question_results": [],
                     "recommended_action": "advance",

@@ -284,17 +284,17 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
             "failure_layer": {"type": ["string", "null"]},
             "blocked_reason": {"type": ["string", "null"]},
-            "evidence_refs": {
+            "evidence_ref_ids": {
                 "type": "array",
-                # Evidence LOCATORS, not typed refs.  Each item is either a
-                # source locator ``{"location": "<approved-path>#<anchor>"}``
-                # or a platform locator with the receipt coordinate set
-                # (ref_id, tool, request_digest, response_digest,
-                # artifact_path, page).  The Host rebuilds the full typed ref
-                # (approved_source/platform_read) from the ticket; the agent
-                # never supplies typed-ref digests, paths, ref ids, or
-                # ticket/state bindings.
-                "items": {"type": "object"},
+                # Evidence REF_IDS, not typed refs and not locators.  Each item
+                # is a ref_id string copied verbatim from one of the two
+                # Examiner terminal reports (source ``approved-source-...``
+                # prefixes, platform reader-chosen ids).  The Host lifts the
+                # fully-typed bound ref verbatim from the report it came from
+                # and completes page chains by (tool, request_digest) group;
+                # the agent never supplies typed-ref digests, paths, page
+                # fields, or ticket/state bindings.
+                "items": {"type": "string"},
             },
             "checks": {
                 # The flat eight-key mapping of CHECK_KEYS to a PASS/FAIL/
@@ -305,9 +305,10 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "competency_question_results": {
                 "type": "array",
-                # Each item carries ONLY {status, answer, evidence_refs} where
-                # evidence_refs are locators (see above).  The Host fills the
-                # ticket-bound question id and rebuilds the typed evidence refs.
+                # Each item carries ONLY {status, answer, evidence_ref_ids}
+                # where evidence_ref_ids are ref_id strings (see above).  The
+                # Host fills the ticket-bound question id and lifts the typed
+                # evidence refs.
                 "items": {"type": "object"},
             },
             "recommended_action": {"type": "string"},
@@ -319,7 +320,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "verdict",
             "failure_layer",
             "blocked_reason",
-            "evidence_refs",
+            "evidence_ref_ids",
             "checks",
             "competency_question_results",
             "recommended_action",
@@ -330,30 +331,31 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "submit_acceptance_result": {
         "type": "object",
         # The Acceptance agent supplies ONLY simple judgment content plus the
-        # acceptance/round identifiers and a fresh request_id: evidence locators
-        # (not typed refs), the eight-key checks mapping (not the wrapped
-        # structure), and CQ status/answer/locators (the Host fills the CQ id).
-        # The Host assembles the 28-field verdict envelope (the same
-        # deterministic assembly ``build_acceptance_verdict`` performs),
-        # validates it through ``validate_verdict``, and records the receipt
-        # internally.  The large ``verdict_json`` never transits the codex CLI
-        # tool-result, so it cannot be display-truncated or re-typed by the
-        # agent; the agent relays only judgment, never the assembled verdict
-        # bytes.  Deep validation of these judgment objects lives in the
-        # carrier's ``build_acceptance_verdict``/``validate_verdict``; the
-        # schema only accepts their top-level shape.
+        # acceptance/round identifiers and a fresh request_id: evidence ref_ids
+        # (strings copied from the examiner reports, not typed refs), the
+        # eight-key checks mapping (not the wrapped structure), and CQ
+        # status/answer/ref_ids (the Host fills the CQ id).  The Host assembles
+        # the 28-field verdict envelope (the same deterministic assembly
+        # ``build_acceptance_verdict`` performs), validates it through
+        # ``validate_verdict``, and records the receipt internally.  The large
+        # ``verdict_json`` never transits the codex CLI tool-result, so it
+        # cannot be display-truncated or re-typed by the agent; the agent
+        # relays only judgment, never the assembled verdict bytes.  Deep
+        # validation of these judgment objects lives in the carrier's
+        # ``build_acceptance_verdict``/``validate_verdict``; the schema only
+        # accepts their top-level shape.
         "properties": {
             "acceptance_id": {"type": "string"},
             "round_id": {"type": "string"},
             "verdict": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
             "failure_layer": {"type": ["string", "null"]},
             "blocked_reason": {"type": ["string", "null"]},
-            "evidence_refs": {
+            "evidence_ref_ids": {
                 "type": "array",
-                # Evidence LOCATORS, not typed refs (see build_acceptance_verdict
-                # for the locator contract).  The Host rebuilds every typed ref
-                # from the ticket.
-                "items": {"type": "object"},
+                # Evidence REF_IDS (see build_acceptance_verdict for the
+                # ref_id contract).  The Host lifts every typed ref verbatim
+                # from the examiner report it came from.
+                "items": {"type": "string"},
             },
             "checks": {
                 # The flat eight-key CHECK_KEYS -> PASS/FAIL/BLOCKED mapping.
@@ -361,8 +363,8 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "competency_question_results": {
                 "type": "array",
-                # Each item carries ONLY {status, answer, evidence_refs
-                # (locators)}; the Host fills the question id.
+                # Each item carries ONLY {status, answer, evidence_ref_ids
+                # (ref_id strings)}; the Host fills the question id.
                 "items": {"type": "object"},
             },
             "recommended_action": {"type": "string"},
@@ -375,7 +377,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "verdict",
             "failure_layer",
             "blocked_reason",
-            "evidence_refs",
+            "evidence_ref_ids",
             "checks",
             "competency_question_results",
             "recommended_action",

@@ -3257,17 +3257,18 @@ class RunnerAcceptanceCarrier:
         if operation == "build_acceptance_verdict":
             # The Host assembles every mechanical field from the bound ticket,
             # examiner terminal reports, and tracked failures.  The Acceptance
-            # agent supplies ONLY simple judgment content (evidence locators,
-            # the eight-key checks mapping, and CQ status/answer/locators) plus
-            # identifiers; it never hand-assembles the 28-field envelope, the
-            # typed evidence-ref structures, or the checks/CQ structure.
+            # agent supplies ONLY simple judgment content (evidence ref_ids
+            # copied from the examiner reports, the eight-key checks mapping,
+            # and CQ status/answer/ref_ids) plus identifiers; it never
+            # hand-assembles the 28-field envelope, the typed evidence-ref
+            # structures, or the checks/CQ structure.
             return self.build_acceptance_verdict(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
                 verdict=args["verdict"],
                 failure_layer=args["failure_layer"],
                 blocked_reason=args["blocked_reason"],
-                evidence_refs=args["evidence_refs"],
+                evidence_ref_ids=args["evidence_ref_ids"],
                 checks=args["checks"],
                 competency_question_results=args["competency_question_results"],
                 recommended_action=args["recommended_action"],
@@ -3276,27 +3277,27 @@ class RunnerAcceptanceCarrier:
             )
         if operation == "submit_acceptance_result":
             # The agent supplies ONLY simple judgment content plus identifiers
-            # and a fresh request_id: evidence locators (not typed refs), the
-            # eight-key checks mapping (not the wrapped structure), and CQ
-            # status/answer/locators (the Host fills the ticket-bound CQ id).
-            # The Host assembles the 28-field verdict envelope (deterministic
-            # assembly, identical to ``build_acceptance_verdict``), then
-            # validates and records it via ``submit_verdict``.  The large
-            # ``verdict_json`` never transits the codex CLI tool-result, so it
-            # cannot be display-truncated or re-typed by the agent: this
-            # eliminates the build->relay->submit round trip that depended on
-            # the agent reproducing the assembled verdict bytes.  The typed
-            # evidence-ref field sets, digests, paths, ref ids, the checks key
-            # set, and the CQ id are all Host-owned.
-            # ``validate_verdict`` remains the single source of truth (the
-            # merged call validates after assembling).
+            # and a fresh request_id: evidence ref_ids (strings copied from the
+            # examiner reports, not typed refs), the eight-key checks mapping
+            # (not the wrapped structure), and CQ status/answer/ref_ids (the
+            # Host fills the ticket-bound CQ id).  The Host assembles the
+            # 28-field verdict envelope (deterministic assembly, identical to
+            # ``build_acceptance_verdict``), then validates and records it via
+            # ``submit_verdict``.  The large ``verdict_json`` never transits
+            # the codex CLI tool-result, so it cannot be display-truncated or
+            # re-typed by the agent: this eliminates the build->relay->submit
+            # round trip that depended on the agent reproducing the assembled
+            # verdict bytes.  The typed evidence-ref field sets, digests,
+            # paths, ref ids, the checks key set, and the CQ id are all
+            # Host-owned.  ``validate_verdict`` remains the single source of
+            # truth (the merged call validates after assembling).
             built = self.build_acceptance_verdict(
                 acceptance_id=args["acceptance_id"],
                 round_id=args["round_id"],
                 verdict=args["verdict"],
                 failure_layer=args["failure_layer"],
                 blocked_reason=args["blocked_reason"],
-                evidence_refs=args["evidence_refs"],
+                evidence_ref_ids=args["evidence_ref_ids"],
                 checks=args["checks"],
                 competency_question_results=args["competency_question_results"],
                 recommended_action=args["recommended_action"],
@@ -4589,47 +4590,111 @@ class RunnerAcceptanceCarrier:
         refs.sort(key=lambda item: item["failure_digest"])
         return refs
 
+    def _resolve_evidence_refs_from_reports(
+        self,
+        *,
+        ref_ids: Any,
+        source_report: Mapping[str, Any] | None,
+        platform_report: Mapping[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Lift typed evidence refs from examiner reports by ref_id.
+
+        The Acceptance agent supplies only ref_id strings copied from the two
+        Examiner terminal reports.  The Host looks each ref_id up in the
+        combined source/platform ``evidence_refs`` index and lifts the
+        fully-typed bound ref verbatim into the verdict -- the refs already
+        carry every digest, path, ref id, and ticket/state binding (the
+        Examiner child ingestor bound them and they passed
+        ``validate_report``).  Page chains are completed by group: when a
+        cited ``platform_read`` ref belongs to a ``(tool, request_digest)``
+        paging group, every page in that group is lifted in report order so
+        ``validate_page_chain`` cannot observe an artificial gap.  Duplicate
+        ref_ids are deduped by first citation; report order is preserved.
+        """
+
+        if not isinstance(ref_ids, list):
+            _error("verdict evidence ref_ids are invalid")
+        index: dict[str, dict[str, Any]] = {}
+        page_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for report in (source_report, platform_report):
+            if not isinstance(report, Mapping):
+                continue
+            refs = report.get("evidence_refs")
+            if not isinstance(refs, list):
+                continue
+            for ref in refs:
+                if not isinstance(ref, Mapping):
+                    _error("examiner report evidence ref is invalid")
+                ref_id = ref.get("ref_id")
+                if not isinstance(ref_id, str) or not ref_id:
+                    _error("examiner report evidence ref_id is invalid")
+                if ref_id in index:
+                    _error("verdict evidence ref_id is duplicated across examiner reports")
+                index[ref_id] = _safe_copy(ref)
+                tool = ref.get("tool")
+                request_digest = ref.get("request_digest")
+                if (
+                    ref.get("type") == "platform_read"
+                    and isinstance(tool, str)
+                    and tool
+                    and isinstance(request_digest, str)
+                    and request_digest
+                ):
+                    page_groups.setdefault((tool, request_digest), []).append(
+                        _safe_copy(ref)
+                    )
+        resolved: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for ref_id in ref_ids:
+            if not isinstance(ref_id, str) or not ref_id:
+                _error("verdict evidence ref_id is invalid")
+            ref = index.get(ref_id)
+            if ref is None:
+                _error("verdict evidence ref_id is not in examiner reports")
+            tool = ref.get("tool")
+            request_digest = ref.get("request_digest")
+            group_key: tuple[str, str] | None = None
+            if (
+                ref.get("type") == "platform_read"
+                and isinstance(tool, str)
+                and tool
+                and isinstance(request_digest, str)
+                and request_digest
+            ):
+                group_key = (tool, request_digest)
+            members = page_groups.get(group_key) if group_key is not None else None
+            lift_set = members if members else [ref]
+            for member in lift_set:
+                member_id = member["ref_id"]
+                if member_id not in seen:
+                    seen.add(member_id)
+                    resolved.append(_safe_copy(member))
+        return resolved
+
     def _normalize_verdict_evidence_refs(
         self,
         *,
-        locators: Any,
+        ref_ids: Any,
         round_id: str,
         ticket: Mapping[str, Any],
     ) -> list[dict[str, Any]]:
-        """Host-build typed evidence refs from simple agent-supplied locators.
+        """Host-lift typed evidence refs by ref_id from examiner reports.
 
-        The Acceptance agent supplies only a locator per cited evidence item (a
-        source ``location`` or a platform receipt coordinate set), mirroring the
-        Examiner child contract.  The Host rebuilds each full typed ref
-        (approved_source/platform_read) from the immutable ticket, validates the
-        source artifacts against the approved manifest, and runs the platform
-        page-chain check.  The agent never assembles typed-ref digests, paths,
-        ticket/source/model-state bindings, or ref ids: those are Host-owned.
+        The Acceptance agent supplies only ref_id strings copied from the two
+        Examiner terminal reports (source ``approved-source-...`` prefixes,
+        platform reader-chosen ids).  The Host looks each ref_id up in the
+        round's combined source/platform ``evidence_refs`` index and lifts the
+        fully-typed bound ref verbatim, completing page chains by group.  The
+        agent never supplies typed-ref digests, paths, ref ids, page fields,
+        or ticket/state bindings: those are already bound in the reports.
         """
 
-        if not isinstance(locators, list):
-            _error("verdict evidence locators are invalid")
-        refs: list[dict[str, Any]] = []
-        seen: set[tuple[Any, ...]] = set()
-        for locator in locators:
-            kind = _infer_evidence_locator_kind(locator)
-            valid_locator = _validate_evidence_locator(locator, kind=kind)
-            ref = self._build_typed_evidence_ref(
-                locator=valid_locator, kind=kind, round_id=round_id, ticket=ticket,
-            )
-            if kind == "source":
-                identity = (ref["location"],)
-            else:
-                identity = (
-                    ref["tool"],
-                    ref["request_digest"],
-                    ref["response_digest"],
-                    ref["artifact_path"],
-                )
-            if identity in seen:
-                _error("verdict evidence repeats a locator")
-            seen.add(identity)
-            refs.append(ref)
+        reports = self._rounds[round_id]["reports"]
+        refs = self._resolve_evidence_refs_from_reports(
+            ref_ids=ref_ids,
+            source_report=reports.get("source"),
+            platform_report=reports.get("platform"),
+        )
         self._validate_source_artifacts(round_id=round_id, refs=refs, ticket=ticket)
         validate_page_chain(refs)
         return refs
@@ -4668,9 +4733,10 @@ class RunnerAcceptanceCarrier:
         """Host-assemble competency-question results from simple agent content.
 
         The agent supplies only the CQ status, the natural-language answer, and
-        a list of evidence locators.  The Host fills the question id from the
-        bound ticket and rebuilds the typed evidence refs.  The agent never
-        supplies the CQ id (ticket-bound) or typed evidence-ref structures.
+        a list of evidence ref_ids copied from the examiner reports.  The Host
+        fills the question id from the bound ticket and lifts the typed evidence
+        refs.  The agent never supplies the CQ id (ticket-bound) or typed
+        evidence-ref structures.
         """
 
         if not isinstance(results, list) or len(results) != 1:
@@ -4680,7 +4746,7 @@ class RunnerAcceptanceCarrier:
             _error("verdict competency question result is invalid")
         content = _require_exact_keys(
             item,
-            {"status", "answer", "evidence_refs"},
+            {"status", "answer", "evidence_ref_ids"},
             "competency question result",
         )
         if content["status"] not in {"PASS", "FAIL", "BLOCKED"}:
@@ -4688,7 +4754,7 @@ class RunnerAcceptanceCarrier:
         if not isinstance(content["answer"], str) or not content["answer"]:
             _error("verdict competency question answer is empty")
         refs = self._normalize_verdict_evidence_refs(
-            locators=content["evidence_refs"], round_id=round_id, ticket=ticket,
+            ref_ids=content["evidence_ref_ids"], round_id=round_id, ticket=ticket,
         )
         return [
             {
@@ -4707,7 +4773,7 @@ class RunnerAcceptanceCarrier:
         verdict: str,
         failure_layer: str | None,
         blocked_reason: str | None,
-        evidence_refs: list[Mapping[str, Any]],
+        evidence_ref_ids: list[str],
         checks: Mapping[str, str],
         competency_question_results: list[Mapping[str, Any]],
         recommended_action: str,
@@ -4719,18 +4785,24 @@ class RunnerAcceptanceCarrier:
         The Acceptance agent supplies ONLY simple judgment content plus the
         acceptance/round identifiers:
 
-        * ``evidence_refs`` and each CQ result's ``evidence_refs`` carry simple
-          locators (a source ``location`` or a platform receipt coordinate set),
-          identical to the Examiner child locator contract.  The Host rebuilds
-          every typed ref -- ref id, ticket/source/model-state digests,
-          artifact paths, and approved-source artifact digests -- from the
-          immutable ticket, so the agent cannot drift the typed-ref field set.
+        * ``evidence_ref_ids`` and each CQ result's ``evidence_ref_ids`` carry
+          ref_id strings copied from the two Examiner terminal reports (source
+          ``approved-source-...`` prefixes, platform reader-chosen ids).  The
+          Host lifts each fully-typed bound ref verbatim from the report it
+          came from -- the ref already carries its ref id, ticket/source/model-
+          state digests, artifact paths, and approved-source artifact digests
+          (bound by the Examiner child ingestor, already passed
+          ``validate_report``).  The agent never supplies typed-ref digests,
+          paths, page fields, or ticket/state bindings, so it cannot drift the
+          typed-ref field set.  Page chains are completed by group: citing one
+          page of a ``(tool, request_digest)`` paging group lifts the whole
+          group in report order.
         * ``checks`` is the flat eight-key mapping of CHECK_KEYS to a
           PASS/FAIL/BLOCKED verdict.  The Host owns the key set and rejects
           drift; only the verdict-per-check value is the agent's judgment.
         * ``competency_question_results`` carries only the CQ status, answer,
-          and evidence locators.  The Host fills the ticket-bound question id
-          and rebuilds the typed evidence refs.
+          and evidence ref_ids.  The Host fills the ticket-bound question id
+          and lifts the typed evidence refs.
 
         The Host fills every remaining mechanical field from the immutable bound
         ticket, the round's examiner terminal reports, and the tracked
@@ -4760,7 +4832,7 @@ class RunnerAcceptanceCarrier:
         failure_refs = self._host_failure_evidence_refs(round_id)
         failure_digests = sorted({ref["failure_digest"] for ref in failure_refs})
         normalized_refs = self._normalize_verdict_evidence_refs(
-            locators=evidence_refs, round_id=round_id, ticket=ticket,
+            ref_ids=evidence_ref_ids, round_id=round_id, ticket=ticket,
         )
         normalized_checks = self._canonicalize_verdict_checks(checks)
         normalized_cq = self._normalize_verdict_cq_results(

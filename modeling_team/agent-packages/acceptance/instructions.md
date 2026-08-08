@@ -55,12 +55,16 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   (one of: protocol-delivery, interview, runtime, platform, modeling-quality; null if
   PASS), `blocked_reason` (one of: state-invalidated, source-missing,
   acceptance-evidence, runtime-infrastructure, acceptance-input; null unless BLOCKED),
-  `evidence_refs` (your typed approved_source/platform_read evidence,
-  with the full page chain), `checks` (a flat map of exactly these eight keys to
-  PASS/FAIL/BLOCKED: competency_questions, evidence_lineage, explicit_unknowns,
-  governed_retrieval, ontology_structure, scope, source_fidelity,
-  validation_reasoning),
-  `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
+  `evidence_ref_ids` (ref_id strings copied verbatim from the two Examiner
+  reports: source report `approved-source-...` prefixes, platform report
+  reader-chosen ids; do NOT write digest/page/tool/request_digest/
+  response_digest/artifact_path — the Host lifts the fully-typed bound ref
+  verbatim from the report and completes each page chain by group), `checks`
+  (a flat map of exactly these eight keys to PASS/FAIL/BLOCKED:
+  competency_questions, evidence_lineage, explicit_unknowns, governed_retrieval,
+  ontology_structure, scope, source_fidelity, validation_reasoning),
+  `competency_question_results` (the single CQ status/answer/evidence_ref_ids
+  item),
   `recommended_action` (one of: `advance`, `model-repair`, `retry-after-recovery`,
   `revise-ticket`, `wait`, `end` — PASS→`advance`, FAIL→`model-repair`, BLOCKED with
   `runtime-infrastructure`/`runtime-infrastructure` retry-budget-exhausted→`retry-after-recovery`,
