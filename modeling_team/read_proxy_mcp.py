@@ -75,8 +75,22 @@ def main() -> int:
                     arguments.setdefault(field, scope[env_name])
                 response = _proxy_call(args.socket, {"token": token, "operation": "tools/call", "tool": name, "arguments": arguments})
                 if not response.get("ok"):
-                    raise RuntimeError(str(response.get("code", "proxy-call-denied")))
-                result = {"content": [{"type": "text", "text": _json(response.get("result", {}))}], "isError": False}
+                    # Surface the platform's full error detail instead of a single opaque
+                    # code, so the Agent can tell a bad argument from a service fault and
+                    # stop blind-retrying parameter names.
+                    err_fields = {k: response[k] for k in ("code", "error", "message", "detail") if response.get(k) is not None}
+                    raise RuntimeError(_json(err_fields) if err_fields else "proxy-call-denied")
+                # Preserve the digest locators ScopedReadProxy returns at the top level
+                # (request_digest/response_digest/artifact_path). They sit next to, not
+                # inside, ``result``; forwarding only ``result`` dropped them, which left
+                # the Examiner unable to fill evidence_refs and got its report rejected.
+                result_data = response.get("result", {})
+                digest_locators = {k: response[k] for k in ("request_digest", "response_digest", "artifact_path") if response.get(k)}
+                if digest_locators:
+                    payload = {**result_data, **digest_locators} if isinstance(result_data, dict) else {"result": result_data, **digest_locators}
+                else:
+                    payload = result_data
+                result = {"content": [{"type": "text", "text": _json(payload)}], "isError": False}
             else:
                 raise RuntimeError("mcp-method-denied")
             sys.stdout.write(_json({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n")
