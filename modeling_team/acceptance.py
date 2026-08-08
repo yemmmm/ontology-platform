@@ -74,6 +74,9 @@ ACCEPTANCE_FAILURE_LAYERS: frozenset[str] = frozenset(
 BLOCKED_REASONS: frozenset[str] = frozenset(
     {"acceptance-evidence", "acceptance-input", "runtime-infrastructure", "source-missing", "state-invalidated"}
 )
+RECOMMENDED_ACTIONS: frozenset[str] = frozenset(
+    {"advance", "model-repair", "retry-after-recovery", "revise-ticket", "wait", "end"}
+)
 CHECK_KEYS: tuple[str, ...] = (
     "source_fidelity",
     "scope",
@@ -1071,8 +1074,11 @@ def validate_verdict(verdict: Any, *, ticket: Mapping[str, Any], source_report: 
             _error("non-runtime BLOCKED requires evidence refs")
         if data["recommended_action"] == "model-repair":
             _error("BLOCKED cannot recommend model repair")
-    if data["recommended_action"] not in {"advance", "model-repair", "retry-after-recovery", "revise-ticket", "wait", "end"}:
-        _error("verdict recommended_action is invalid")
+    if data["recommended_action"] not in RECOMMENDED_ACTIONS:
+        _error(
+            "verdict recommended_action is invalid",
+            data={"field": "recommended_action", "allowed": sorted(RECOMMENDED_ACTIONS)},
+        )
     if not isinstance(data["summary"], str) or not data["summary"]:
         _error("verdict summary is empty")
     if data["verdict_digest"] != verdict_digest(data):

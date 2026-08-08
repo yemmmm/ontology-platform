@@ -61,7 +61,11 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   governed_retrieval, ontology_structure, scope, source_fidelity,
   validation_reasoning),
   `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
-  `recommended_action`, `summary`, and a fresh `request_id`. The Host assembles every
+  `recommended_action` (one of: `advance`, `model-repair`, `retry-after-recovery`,
+  `revise-ticket`, `wait`, `end` — PASS→`advance`, FAIL→`model-repair`, BLOCKED with
+  `runtime-infrastructure`/`runtime-infrastructure` retry-budget-exhausted→`retry-after-recovery`,
+  BLOCKED `source-missing`→`revise-ticket`; never invent synonyms like `retry`/`repair`/`block`),
+  `summary`, and a fresh `request_id`. The Host assembles every
   mechanical field from the bound ticket, the two examiner terminal reports, and the
   tracked infrastructure failures (including `failure_evidence_refs`,
   `failure_evidence_digests`, and `infrastructure_failure_digests` — do not pass these,
