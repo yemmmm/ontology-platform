@@ -78,6 +78,13 @@ _DEEPSEEK_BASE_URL = "https://api.deepseek.com/"
 _DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_PROVIDER = "deepseek"
 
+# LLM inactivity timeout.  If a role's App Server emits no notification (streaming
+# token, tool call, turn event, ...) for this many seconds while the role is in a
+# running turn, the model endpoint is treated as hung: the role process is killed and
+# the run fails fast as ``runtime/infrastructure``.  Unlike the Examiner child watchdog
+# (an absolute deadline) this is an inactivity timer driven by observed stdout activity.
+_LLM_INACTIVITY_TIMEOUT_SECONDS = 300.0
+
 
 def _codex_package_model_override(package: AgentPackage) -> tuple[str, str, str] | None:
     """Return a safe declarative package model override, when one is configured."""
@@ -170,6 +177,13 @@ class _Agent:
     completed_mcp_item_ids: set[str] = field(default_factory=set)
     io_lock: threading.RLock = field(default_factory=threading.RLock)
     state_lock: threading.RLock = field(default_factory=threading.RLock)
+    # Monotonic timestamp of the last App Server notification observed for this role.
+    # Refreshed by ``_notification`` on every stdout line; read by the inactivity
+    # watchdog thread to detect a hung model endpoint without blocking the main loop.
+    last_output_monotonic: float = 0.0
+    inactivity_watchdog_thread: threading.Thread | None = None
+    inactivity_watchdog_stop: threading.Event = field(default_factory=threading.Event)
+    inactivity_failure: dict[str, Any] | None = None
 
 
 class _CodexChildResource:
@@ -471,6 +485,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._candidate_platform_gate_enabled = False
         self._formal_turn_binding_required = False
         self._private_credentials_destroyed: dict[str, bool] = {}
+        self._inactivity_timeout_seconds = _LLM_INACTIVITY_TIMEOUT_SECONDS
+        self._inactivity_failures: list[tuple[str, dict[str, Any]]] = []
+        self._inactivity_lock = threading.Lock()
 
     def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
         """Create one private Source/Platform Examiner child.
@@ -1155,6 +1172,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             == 2
         )
         self._formal_turn_binding_required = self._coordination_enabled
+        parameters = getattr(getattr(getattr(run, "configuration", None), "profile", None), "parameters", None)
+        if isinstance(parameters, Mapping):
+            try:
+                self._inactivity_timeout_seconds = float(
+                    parameters.get("llm_inactivity_timeout_seconds", _LLM_INACTIVITY_TIMEOUT_SECONDS)
+                )
+            except (TypeError, ValueError):
+                self._inactivity_timeout_seconds = _LLM_INACTIVITY_TIMEOUT_SECONDS
         if self._coordination_enabled:
             # A missing or insecure provider key is a no-start failure.  Resolve it
             # before creating the first private role tree or invoking process_factory.
@@ -1199,10 +1224,94 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             agent.process = self._start_process(agent)
             self._initialize(agent)
             agent.app_server_host_pid = self._app_server_host_pid(agent)
+            with agent.state_lock:
+                agent.last_output_monotonic = time.monotonic()
+            self._start_inactivity_watchdog(agent)
             identities.append(
                 AgentRuntimeIdentity(agent.agent_id, f"codex-thread:{agent.thread_id}")
             )
         return identities
+
+    def _reset_activity_clock(self, agent: _Agent) -> None:
+        """Mark now as the last observed App Server activity (inactivity clock origin).
+
+        Safe for test doubles that omit ``state_lock``: a single float store is atomic
+        under the CPython GIL, so the watchdog's read never observes a torn value.
+        """
+        now = time.monotonic()
+        lock = getattr(agent, "state_lock", None)
+        if lock is None:
+            agent.last_output_monotonic = now
+            return
+        with lock:
+            agent.last_output_monotonic = now
+
+    def _start_inactivity_watchdog(self, agent: _Agent) -> None:
+        """Start a per-role daemon thread that fails fast on a hung model endpoint.
+
+        Mirrors the Examiner child watchdog but is an inactivity timer: while the role
+        is in a running turn, absence of any App Server notification for
+        ``_inactivity_timeout_seconds`` means the model endpoint (or the App Server) is
+        hung.  The thread never blocks the main loop; it only latches a failure, kills
+        the role process group, and queues the failure for ``runner.drain`` to settle.
+        """
+        timeout = self._inactivity_timeout_seconds
+
+        def watch() -> None:
+            while not agent.inactivity_watchdog_stop.wait(0.05):
+                with agent.state_lock:
+                    state = agent.state
+                    last = agent.last_output_monotonic
+                    already_failed = agent.inactivity_failure is not None
+                if already_failed or state != "running" or last <= 0.0:
+                    continue
+                if time.monotonic() - last >= timeout:
+                    self._on_inactivity_timeout(agent, timeout)
+                    return
+
+        thread = threading.Thread(
+            target=watch,
+            name=f"role-inactivity-watchdog-{agent.agent_id}",
+            daemon=True,
+        )
+        agent.inactivity_watchdog_thread = thread
+        thread.start()
+
+    def _on_inactivity_timeout(self, agent: _Agent, timeout: float) -> None:
+        """Latch one inactivity failure, kill the role process, and queue for drain."""
+
+        with agent.state_lock:
+            if agent.inactivity_failure is not None or agent.inactivity_watchdog_stop.is_set():
+                return
+            now = time.monotonic()
+            idle_seconds = (now - agent.last_output_monotonic) if agent.last_output_monotonic else timeout
+            detail = {
+                "agent_id": agent.agent_id,
+                "role": agent.package.role,
+                "timeout_seconds": timeout,
+                "idle_seconds": idle_seconds,
+                "reason": "llm-inactivity-timeout",
+            }
+            agent.inactivity_failure = detail
+            agent.state = "failed"
+        process = agent.process
+        pid = getattr(process, "pid", None) if process is not None else None
+        if isinstance(pid, int) and pid > 0:
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        self._append_runtime_evidence("llm-inactivity-timeout", detail)
+        with self._inactivity_lock:
+            self._inactivity_failures.append((agent.agent_id, detail))
+
+    def consume_inactivity_failures(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return and clear latched role inactivity failures (called by ``runner.drain``)."""
+
+        with self._inactivity_lock:
+            failures = self._inactivity_failures
+            self._inactivity_failures = []
+        return failures
 
     @staticmethod
     def _stage_protocol_mechanics_contract(run: Any, agent: _Agent) -> None:
@@ -2294,10 +2403,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             },
         )
         agent.active_turn_id, agent.state = self._turn_id(result), "running"
+        # A freshly started turn is the activity origin for the inactivity watchdog.
+        self._reset_activity_clock(agent)
         return RuntimeDispatchReceipt("start", agent.active_turn_id)
 
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
         method, params = value.get("method"), value.get("params", {})
+        # Any App Server notification (streaming token, tool call, turn event, ...)
+        # counts as live model activity and resets the inactivity watchdog clock.
+        self._reset_activity_clock(agent)
         if isinstance(method, str):
             self._append_runtime_evidence(
                 "app-server-events",
@@ -3183,6 +3297,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             finally:
                 self._acceptance_children.pop(handle_digest, None)
         for agent in self.agents.values():
+            agent.inactivity_watchdog_stop.set()
             self._close_retrieval_asset_fds(agent)
             if agent.process and agent.process.poll() is None:
                 try:

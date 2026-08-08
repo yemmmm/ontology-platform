@@ -3044,6 +3044,34 @@ class TeamRunner:
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
+        # Fail fast on a hung model endpoint: if a role's inactivity watchdog latched
+        # a timeout (no App Server notification for ``llm_inactivity_timeout_seconds``
+        # during a running turn), settle it before any further coordination work.
+        inactivity_reader = getattr(self.adapter, "consume_inactivity_failures", None)
+        if callable(inactivity_reader):
+            failures = inactivity_reader()
+            if failures:
+                agent_id, detail = failures[0]
+                self._append_evidence(
+                    "llm-inactivity-terminal",
+                    {"agent_id": agent_id, **detail},
+                )
+                self.record_terminal_failure("runtime/infrastructure", False)
+                cleanup = self.cleanup()
+                self._state(
+                    "TERMINAL_REPORT_COMPLETE",
+                    inactivity_timeout=True,
+                    agent_id=agent_id,
+                    role=detail.get("role"),
+                )
+                return [
+                    {
+                        "type": "llm-inactivity-timeout",
+                        "agent_id": agent_id,
+                        "role": detail.get("role"),
+                        "cleanup": cleanup,
+                    }
+                ]
         try:
             self._check_formal_candidate_progress()
         except FormalCandidateProgressTimeout:

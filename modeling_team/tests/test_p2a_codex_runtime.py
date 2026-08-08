@@ -59,10 +59,15 @@ FROZEN_GLOBAL_SURFACES = {
     # Host assembles the 28-field acceptance verdict from the agent's judgment
     # plus the bound ticket/reports/failures; the agent never hand-assembles the
     # envelope.  Listed in the runner runtime_contract manifest acceptance role.
-    "modeling_team/runner.py": "eb386f84dbad40a1ce451518795c1822957c1d7d622b4978088ab6b14947c35a",
+    # 2026-08-08 R2.3-005 step-5 refresh: LLM inactivity watchdog added.  A per-role
+    # daemon thread fails fast when a running turn produces no App Server notification
+    # for ``llm_inactivity_timeout_seconds`` (default 300s); the role process is killed
+    # and the run settles as runtime/infrastructure via runner.drain consuming the
+    # latched failure.  codex.py gains the watchdog/timeout fields; runner.py consumes.
+    "modeling_team/runner.py": "0bf81c84cd139e824f7fb2d93904297aeb03baf9806e423d7e2679b5a6adbb75",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "176ba25de21faa180f119284e9e019da2095018e353e54ab43cbd691cc41e2f0",
+    "modeling_team/runtimes/codex.py": "252ff85335761a843a78200d4b2e1fb46c192a687b91491b396cd8ca73b8983d",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }
