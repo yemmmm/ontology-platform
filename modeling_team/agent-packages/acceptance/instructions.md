@@ -56,7 +56,10 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   PASS), `blocked_reason` (one of: state-invalidated, source-missing,
   acceptance-evidence, runtime-infrastructure, acceptance-input; null unless BLOCKED),
   `evidence_refs` (your typed approved_source/platform_read evidence,
-  with the full page chain), `checks` (the eight CHECK_KEYS statuses),
+  with the full page chain), `checks` (a flat map of exactly these eight keys to
+  PASS/FAIL/BLOCKED: competency_questions, evidence_lineage, explicit_unknowns,
+  governed_retrieval, ontology_structure, scope, source_fidelity,
+  validation_reasoning),
   `competency_question_results` (the single CQ id/status/answer/evidence_refs item),
   `recommended_action`, `summary`, and a fresh `request_id`. The Host assembles every
   mechanical field from the bound ticket, the two examiner terminal reports, and the

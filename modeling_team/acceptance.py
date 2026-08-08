@@ -4637,9 +4637,16 @@ class RunnerAcceptanceCarrier:
         verdict-per-check value is the agent's judgment.
         """
 
-        if not isinstance(checks, Mapping):
-            _error("verdict checks must be a mapping of check keys to verdicts")
-        canonical = _require_exact_keys(checks, CHECK_KEYS, "verdict checks")
+        if not isinstance(checks, Mapping) or set(checks) != set(CHECK_KEYS):
+            _error(
+                "verdict checks fields drift",
+                data={
+                    "reason": "verdict_checks_keys_invalid",
+                    "allowed": sorted(CHECK_KEYS),
+                    "actual_keys": sorted(checks.keys()) if isinstance(checks, Mapping) else None,
+                },
+            )
+        canonical = dict(checks)
         for key in CHECK_KEYS:
             if canonical[key] not in {"PASS", "FAIL", "BLOCKED"}:
                 _error("verdict checks contain invalid status")
