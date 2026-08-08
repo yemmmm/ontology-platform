@@ -1287,12 +1287,18 @@ class R23002Tests(unittest.TestCase):
             ledger.reserve("run-one", "baseline-one", "2026-07-31T10:00:00+00:00")
             ledger.mark_semantic_start("run-one")
             ledger.terminal_failure("run-one", "modeling-quality", True, "baseline-two")
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-two", "baseline-two", "2026-07-31T10:00:00+00:00")
+            # The authorize-repair gate has been removed: a fresh reservation
+            # now succeeds directly after the latest terminal failure, with no
+            # authorize_repair prerequisite and no baseline-match check.
+            ledger.reserve("run-two", "baseline-two", "2026-07-31T10:00:00+00:00")
+            ledger.mark_semantic_start("run-two")
+            with self.assertRaisesRegex(TeamConfigurationError, "budget"):
+                ledger.reserve("run-three", "baseline-three", "2026-07-31T10:00:00+00:00")
             ledger = self._ledger(Path(directory) / "fresh")
             ledger.reserve("run-one", "baseline-one", "2026-07-31T10:00:00+00:00")
             ledger.mark_semantic_start("run-one")
             ledger.terminal_failure("run-one", "runtime/infrastructure", False)
+            # authorize_repair remains an accepted advisory history record.
             ledger.authorize_repair("run-one", "focused test evidence", "baseline-two")
             ledger.reserve("run-two", "baseline-two", "2026-07-31T10:00:00+00:00")
             ledger.mark_semantic_start("run-two")
@@ -1327,8 +1333,9 @@ class R23002Tests(unittest.TestCase):
                 ledger.authorize_budget(2, "approval-one", "different reference")
             with self.assertRaisesRegex(TeamConfigurationError, "invalid"):
                 ledger.authorize_budget(1, "malformed", "malformed authorization")
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-three-wrong-baseline", "wrong-baseline", "2026-07-31T10:00:00+00:00")
+            # The authorize-repair gate has been removed, so a reservation no
+            # longer needs a matching repair baseline. There is nothing to
+            # reject here; the concurrent reservation below starts clean.
 
             reserve_outcomes: list[str] = []
 
@@ -1387,14 +1394,20 @@ class R23002Tests(unittest.TestCase):
             self.assertEqual(authorization_outcomes.count("rejected"), 1)
             self.assertEqual(ledger._start_cap(ledger._records()), 12)
 
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-eleven-without-repair", "baseline-eleven", "2026-07-31T10:00:00+00:00")
-            ledger.authorize_repair("run-ten", "tested tenth repair", "baseline-eleven")
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-eleven-wrong-baseline", "wrong-baseline", "2026-07-31T10:00:00+00:00")
-            with self.assertRaisesRegex(TeamConfigurationError, "20-minute"):
-                ledger.reserve("run-eleven-expired", "baseline-eleven", "2026-07-31T09:39:00+00:00")
+            # The authorize-repair gate has been removed: a fresh reservation
+            # succeeds directly after the latest terminal failure, with no
+            # authorize_repair prerequisite and no baseline-match check.
             ledger.reserve("run-eleven", "baseline-eleven", "2026-07-31T10:00:00+00:00")
+            ledger.mark_semantic_start("run-eleven")
+            ledger.terminal_failure("run-eleven", "runtime/infrastructure", False)
+            # authorize_repair remains an accepted advisory history record,
+            # including a duplicate baseline and a rebind after the next start.
+            ledger.authorize_repair("run-ten", "tested tenth repair", "baseline-eleven")
+            ledger.authorize_repair("run-eleven", "tested eleventh repair", "baseline-twelve")
+            # Freeze-time gate still rejects a stale reservation regardless of
+            # the removed repair gate.
+            with self.assertRaisesRegex(TeamConfigurationError, "20-minute"):
+                ledger.reserve("run-twelve-expired", "baseline-twelve", "2026-07-31T09:39:00+00:00")
 
     def test_budget_authorization_cli_requires_consumption_and_never_appends_invalid_records(self) -> None:
         def invoke(root: Path, additional_starts: int, authorization_id: str, reference: str) -> int:
@@ -1481,8 +1494,13 @@ class R23002Tests(unittest.TestCase):
             ledger.reserve("run-one", "baseline-one", "2026-07-31T10:00:00+00:00")
             ledger.mark_semantic_start("run-one")
             ledger.terminal_failure("run-one", "modeling-quality", False)
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-two", "baseline-two", "2026-07-31T10:00:00+00:00")
+            # The authorize-repair gate has been removed: a fresh reservation
+            # succeeds directly after the latest terminal failure, with no
+            # authorize_repair prerequisite.
+            ledger.reserve("run-two", "baseline-two", "2026-07-31T10:00:00+00:00")
+            ledger.mark_semantic_start("run-two")
+            with self.assertRaisesRegex(TeamConfigurationError, "budget"):
+                ledger.reserve("run-three", "baseline-three", "2026-07-31T10:00:00+00:00")
 
     def test_start_ledger_enforces_freeze_to_start_gate(self) -> None:
         now = __import__("datetime").datetime
@@ -1553,11 +1571,15 @@ class R23002Tests(unittest.TestCase):
             ledger.reserve("run-one", "baseline-one", "2026-07-31T10:00:00+00:00")
             ledger.mark_semantic_start("run-one")
             ledger.terminal_failure("run-one", "runtime/infrastructure", False)
+            # Entry validation for authorize_repair is still kept, so an empty
+            # baseline hash is rejected.
             with self.assertRaisesRegex(TeamConfigurationError, "tested repair"):
                 ledger.authorize_repair("run-one", "focused evidence", "")
             ledger.authorize_repair("run-one", "focused evidence", "baseline-two")
-            with self.assertRaisesRegex(TeamConfigurationError, "next start"):
-                ledger.reserve("run-two", "different-baseline", "2026-07-31T10:00:00+00:00")
+            # The authorize-repair gate has been removed, so the next reservation
+            # no longer has to match the advisory repair baseline and succeeds
+            # directly after the latest terminal failure.
+            ledger.reserve("run-two", "different-baseline", "2026-07-31T10:00:00+00:00")
 
     def test_start_ledger_allows_only_presemantic_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1642,8 +1664,10 @@ class R23002Tests(unittest.TestCase):
                             encoding="utf-8",
                         )
                     baseline = "baseline-two" if mode == "same-baseline" else "baseline-three"
-                    with self.assertRaisesRegex(TeamConfigurationError, "immutable"):
-                        candidate.authorize_repair("run-one", "invalid rebind", baseline)
+                    # Repair rebind immutability has been removed: authorize_repair
+                    # is advisory history, so an additional record (including a
+                    # duplicate baseline) is accepted in every mode.
+                    candidate.authorize_repair("run-one", "invalid rebind", baseline)
 
             concurrent = self._ledger(Path(directory) / "concurrent")
             begin(concurrent, "run-one", "baseline-one")
@@ -1662,7 +1686,9 @@ class R23002Tests(unittest.TestCase):
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 list(executor.map(rebind, ("baseline-three", "baseline-four")))
-            self.assertEqual(sorted(rebind_outcomes), ["authorized", "rejected"])
+            # Repair rebind immutability has been removed: both advisory
+            # authorize_repair records are accepted.
+            self.assertEqual(sorted(rebind_outcomes), ["authorized", "authorized"])
 
     def test_cli_host_auth_preflight_waits_for_runner_prepare_and_has_no_run_side_effect(self) -> None:
         root = repository_root()

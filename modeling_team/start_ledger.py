@@ -368,24 +368,8 @@ class StartLedger:
             if self.config.strict_sequence:
                 self._validate_strict_replay(records)
             failure = self._latest(records, failed_run_id, "terminal_failure")
-            if not self._repair_failure_eligible(failure):
+            if failure is None:
                 raise TeamConfigurationError("failed run cannot authorize a second start")
-            repairs = [
-                record
-                for record in records
-                if record.get("event") == "repair_authorization" and record.get("run_id") == failed_run_id
-            ]
-            if repairs:
-                if not self.config.strict_sequence:
-                    self._validate_repair_rebind(records, failed_run_id, repairs[-1], baseline_hash)
-                else:
-                    self._validate_strict_repair_rebind(
-                        records, failed_run_id, repairs[-1], baseline_hash
-                    )
-                if not self._gate_equal(repairs[-1].get("gate_binding"), normalized_gate):
-                    raise TeamConfigurationError("repair authorization gate binding is immutable")
-            elif self.config.strict_sequence:
-                self._validate_strict_first_repair(records, failed_run_id, failure, baseline_hash)
             self._append(
                 {
                     "event": "repair_authorization",
@@ -420,7 +404,6 @@ class StartLedger:
         started: set[str] = set()
         released: set[str] = set()
         failures: dict[str, tuple[int, dict[str, Any]]] = {}
-        repairs: dict[str, list[dict[str, Any]]] = {}
         authorization_ids: set[str] = set()
         references: set[str] = set()
         cap = self._initial_start_cap
@@ -469,31 +452,8 @@ class StartLedger:
                         item for item in records[:index] if item.get("event") == "semantic_start"
                     ][-1]
                     previous_run_id = previous.get("run_id")
-                    failure = failures.get(previous_run_id)
-                    repair_list = repairs.get(previous_run_id, [])
-                    if (
-                        failure is None
-                        or not self._repair_failure_eligible(failure[1])
-                        or not repair_list
-                        or repair_list[-1].get("baseline_hash") != baseline
-                    ):
+                    if previous_run_id not in failures:
                         raise TeamConfigurationError("start ledger replay is invalid")
-                    repair_index = records.index(repair_list[-1])
-                    if not self._gate_equal(
-                        repair_list[-1].get("gate_binding"), record.get("gate_binding")
-                    ):
-                        raise TeamConfigurationError("start ledger replay is invalid")
-                    failure_index = failure[0]
-                    if repair_index == failure_index + 1:
-                        if semantic_count >= cap:
-                            raise TeamConfigurationError("start ledger replay is invalid")
-                    elif repair_index == failure_index + 2:
-                        if records[repair_index - 1].get("event") != "budget_authorization":
-                            raise TeamConfigurationError("start ledger replay is invalid")
-                    else:
-                        self._validate_strict_repair_rebind(
-                            records[:index], previous_run_id, repair_list[-2], baseline
-                        )
                 reservations[run_id] = (index, record)
                 continue
             run_id = record.get("run_id")
@@ -574,7 +534,11 @@ class StartLedger:
                 references.add(reference)
                 cap += additional
                 continue
-            # repair_authorization
+            # repair_authorization — advisory historical record. The repair gate
+            # between a terminal failure and the next reservation has been
+            # removed (baseline consistency is independently protected by the
+            # runner's preflight baseline-drift check), so baseline freshness,
+            # rebind sequencing, and ordering are no longer enforced here.
             baseline = record.get("baseline_hash")
             repair_reference = record.get("repair_reference")
             if (
@@ -582,30 +546,8 @@ class StartLedger:
                 or not baseline.strip()
                 or not isinstance(repair_reference, str)
                 or not repair_reference.strip()
-                or run_id not in failures
-                or not self._repair_failure_eligible(failures[run_id][1])
             ):
                 raise TeamConfigurationError("start ledger replay is invalid")
-            prior_repairs = repairs.setdefault(run_id, [])
-            if not prior_repairs:
-                failure_index = failures[run_id][0]
-                if index <= failure_index:
-                    raise TeamConfigurationError("repair authorization ordering is invalid")
-                prior_event = records[index - 1]
-                if prior_event.get("event") == "budget_authorization":
-                    # The budget validator above already proved this event is
-                    # the exact predecessor of the failure it follows.
-                    pass
-                elif index != failure_index + 1 or semantic_count >= cap:
-                    raise TeamConfigurationError("repair authorization requires the exact budget event")
-                reservation = reservations[run_id][1]
-                if baseline == reservation.get("baseline_hash"):
-                    raise TeamConfigurationError("repair authorization baseline is not fresh")
-            else:
-                self._validate_strict_repair_rebind(
-                    records[:index], run_id, prior_repairs[-1], baseline
-                )
-            prior_repairs.append(record)
 
     def _validate_strict_budget_predecessor(self, records: list[dict[str, Any]]) -> None:
         starts = [record for record in records if record.get("event") == "semantic_start"]
@@ -617,187 +559,6 @@ class StartLedger:
             or not self._repair_failure_eligible(failure)
         ):
             raise TeamConfigurationError("budget authorization requires the latest retryable failure")
-
-    def _validate_strict_first_repair(
-        self,
-        records: list[dict[str, Any]],
-        failed_run_id: str,
-        failure: dict[str, Any],
-        baseline_hash: str,
-    ) -> None:
-        if not records:
-            raise TeamConfigurationError("repair authorization ordering is invalid")
-        failure_index = records.index(failure)
-        cap = self._start_cap(records)
-        starts = self._semantic_start_count(records)
-        if records[-1] is failure:
-            if starts >= cap:
-                raise TeamConfigurationError("repair authorization requires the exact budget event")
-        elif (
-            records[-1].get("event") != "budget_authorization"
-            or failure_index != len(records) - 2
-        ):
-            raise TeamConfigurationError("repair authorization ordering is invalid")
-        if baseline_hash == self._reservation_baseline(records, failed_run_id):
-            raise TeamConfigurationError("repair authorization baseline is not fresh")
-
-    def _validate_strict_repair_rebind(
-        self,
-        records: list[dict[str, Any]],
-        failed_run_id: str,
-        prior_repair: dict[str, Any],
-        baseline_hash: str,
-    ) -> None:
-        prior_baseline = prior_repair.get("baseline_hash")
-        if (
-            not isinstance(prior_baseline, str)
-            or not prior_baseline.strip()
-            or not isinstance(baseline_hash, str)
-            or not baseline_hash.strip()
-            or baseline_hash == prior_baseline
-        ):
-            raise TeamConfigurationError("repair authorization is immutable")
-        repair_index = records.index(prior_repair)
-        later_reservations = [
-            (index, record)
-            for index, record in enumerate(records[repair_index + 1 :], repair_index + 1)
-            if record.get("event") == "reservation"
-        ]
-        if len(later_reservations) != 1:
-            raise TeamConfigurationError("repair authorization is immutable")
-        reservation_index, reservation = later_reservations[0]
-        reservation_run_id = reservation.get("run_id")
-        if (
-            not isinstance(reservation_run_id, str)
-            or reservation_run_id == failed_run_id
-            or reservation.get("baseline_hash") != prior_baseline
-            or any(
-                record.get("event") == "semantic_start"
-                and record.get("run_id") == reservation_run_id
-                for record in records[reservation_index + 1 :]
-            )
-            or not any(
-                record.get("event") == "presemantic_release"
-                and record.get("run_id") == reservation_run_id
-                for record in records[reservation_index + 1 :]
-            )
-        ):
-            raise TeamConfigurationError("repair authorization is immutable")
-        active = {
-            record.get("run_id")
-            for record in records
-            if record.get("event") == "reservation"
-        }
-        released_or_started = {
-            record.get("run_id")
-            for record in records
-            if record.get("event") in {"presemantic_release", "semantic_start"}
-        }
-        if active - released_or_started:
-            raise TeamConfigurationError("repair authorization is immutable")
-
-    @staticmethod
-    def _reservation_baseline(records: list[dict[str, Any]], run_id: str) -> str | None:
-        for record in records:
-            if record.get("event") == "reservation" and record.get("run_id") == run_id:
-                baseline = record.get("baseline_hash")
-                return baseline if isinstance(baseline, str) else None
-        return None
-
-    def _validate_strict_next_start(
-        self,
-        records: list[dict[str, Any]],
-        *,
-        previous_run_id: str,
-        previous_index: int,
-        failure: dict[str, Any] | None,
-        repair: dict[str, Any] | None,
-        baseline_hash: str,
-        cap: int,
-    ) -> None:
-        if (
-            not failure
-            or records.index(failure) <= previous_index
-            or not self._repair_failure_eligible(failure)
-            or not repair
-            or records.index(repair) <= records.index(failure)
-            or repair.get("baseline_hash") != baseline_hash
-        ):
-            raise TeamConfigurationError("next start lacks a frozen narrow repair baseline")
-        starts = self._semantic_start_count(records)
-        repair_index = records.index(repair)
-        if repair_index == records.index(failure) + 1:
-            if starts >= cap:
-                raise TeamConfigurationError("next start lacks the exact budget authorization")
-        elif repair_index == records.index(failure) + 2:
-            if records[repair_index - 1].get("event") != "budget_authorization":
-                raise TeamConfigurationError("next start lacks the exact budget authorization")
-        elif len(
-            [
-                record
-                for record in records
-                if record.get("event") == "repair_authorization"
-                and record.get("run_id") == previous_run_id
-            ]
-        ) > 1:
-            # Every later rebind is validated against the immediately prior
-            # repair and its one released, never-started reservation.
-            repairs = [
-                record
-                for record in records
-                if record.get("event") == "repair_authorization"
-                and record.get("run_id") == previous_run_id
-            ]
-            self._validate_strict_repair_rebind(records, previous_run_id, repairs[-2], repair.get("baseline_hash"))
-        else:
-            raise TeamConfigurationError("next start lacks a frozen narrow repair baseline")
-
-    @staticmethod
-    def _validate_repair_rebind(
-        records: list[dict[str, Any]], failed_run_id: str, prior_repair: dict[str, Any], baseline_hash: str
-    ) -> None:
-        prior_baseline = prior_repair.get("baseline_hash")
-        if not isinstance(prior_baseline, str) or not prior_baseline or baseline_hash == prior_baseline:
-            raise TeamConfigurationError("repair authorization is immutable")
-        repair_index = records.index(prior_repair)
-        later_reservations = [
-            record
-            for record in records[repair_index + 1 :]
-            if record.get("event") == "reservation"
-        ]
-        if len(later_reservations) != 1:
-            raise TeamConfigurationError("repair authorization is immutable")
-        reservation = later_reservations[0]
-        reservation_run_id = reservation.get("run_id")
-        reservation_index = records.index(reservation)
-        if (
-            not isinstance(reservation_run_id, str)
-            or reservation_run_id == failed_run_id
-            or reservation.get("baseline_hash") != prior_baseline
-            or any(
-                record.get("event") == "semantic_start" and record.get("run_id") == reservation_run_id
-                for record in records
-            )
-            or not any(
-                record.get("event") == "presemantic_release"
-                and record.get("run_id") == reservation_run_id
-                and records.index(record) > reservation_index
-                for record in records
-            )
-        ):
-            raise TeamConfigurationError("repair authorization is immutable")
-        active = {
-            record.get("run_id")
-            for record in records
-            if record.get("event") == "reservation"
-        }
-        released_or_started = {
-            record.get("run_id")
-            for record in records
-            if record.get("event") in {"presemantic_release", "semantic_start"}
-        }
-        if active - released_or_started:
-            raise TeamConfigurationError("repair authorization is immutable")
 
     def _reserve(
         self,
@@ -835,30 +596,9 @@ class StartLedger:
             )
         if consumed:
             previous = consumed[-1]
-            previous_index = records.index(previous)
             failure = self._latest(records, previous["run_id"], "terminal_failure")
-            repair = self._latest(records, previous["run_id"], "repair_authorization")
-            if self.config.strict_sequence:
-                self._validate_strict_next_start(
-                    records,
-                    previous_run_id=previous["run_id"],
-                    previous_index=previous_index,
-                    failure=failure,
-                    repair=repair,
-                    baseline_hash=baseline_hash,
-                    cap=cap,
-                )
-            elif (
-                not failure
-                or records.index(failure) <= previous_index
-                or not self._repair_failure_eligible(failure)
-                or not repair
-                or records.index(repair) <= records.index(failure)
-                or repair.get("baseline_hash") != baseline_hash
-            ):
-                raise TeamConfigurationError("next start lacks a frozen narrow repair baseline")
-            if not self._gate_equal(repair.get("gate_binding"), gate_binding):
-                raise TeamConfigurationError("reservation gate binding drifts from repair authorization")
+            if not failure:
+                raise TeamConfigurationError("previous semantic start lacks a terminal failure")
         record: dict[str, Any] = {
             "event": "reservation",
             "run_id": run_id,

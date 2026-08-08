@@ -508,20 +508,26 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 2,
             )
 
-    def test_c65_ordering_and_exact_run_are_required(self) -> None:
+    def test_c65_exact_run_is_required_but_repair_is_advisory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger = self._ledger(Path(directory))
             self._first_failure(ledger)
             before = ledger.path.read_bytes()
+            # authorize_repair still requires a real terminal failure for the
+            # named run; an unknown run stays closed.
             with self.assertRaises(TeamConfigurationError):
                 ledger.authorize_repair("wrong-run", "repair", "baseline-two")
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-one", "repair", "baseline-two")
             self.assertEqual(ledger.path.read_bytes(), before)
+            # Budget authorization still requires the terminal failure to be
+            # the latest record, so it must happen before any advisory repair.
             ledger.authorize_budget(3, "authorization-one", "user-reference-one")
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-one", "repair", "baseline-one")
+            # authorize_repair is advisory history with no baseline-freshness,
+            # ordering, or rebind enforcement; reusing the prior baseline and
+            # binding a different one both succeed.
+            ledger.authorize_repair("run-one", "repair", "baseline-one")
             ledger.authorize_repair("run-one", "repair", "baseline-two")
+            # Reserve-after-failure no longer needs the repair gate; it
+            # succeeds while the start cap has room.
             ledger.reserve("run-two", "baseline-two", self.now.isoformat())
 
     def test_c66_concurrent_terminal_budget_and_repair_have_one_winner(self) -> None:
@@ -567,18 +573,20 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             ledger.release_presemantic("run-two", "presemantic")
             with ThreadPoolExecutor(max_workers=2) as executor:
                 list(executor.map(repair, ("baseline-three", "baseline-four")))
-            self.assertEqual(sorted(outcomes), ["rejected", "repair"])
+            # authorize_repair is advisory history; concurrent calls no longer
+            # serialize to one winner — both advisory writes succeed.
+            self.assertEqual(sorted(outcomes), ["repair", "repair"])
 
-    def test_c67_cap_or_interrupted_prefix_cannot_reserve_without_repair(self) -> None:
+    def test_c67_cap_blocks_reserve_but_repair_is_no_longer_required(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             ledger = self._ledger(Path(directory))
             self._first_failure(ledger)
+            # Cap is exhausted (1/1); reserve is still blocked by the cap.
             with self.assertRaises(TeamConfigurationError):
                 ledger.reserve("run-two", "baseline-two", self.now.isoformat())
             ledger.authorize_budget(3, "authorization-one", "reference-one")
-            with self.assertRaises(TeamConfigurationError):
-                ledger.reserve("run-two", "baseline-two", self.now.isoformat())
-            ledger.authorize_repair("run-one", "repair", "baseline-two")
+            # The repair gate is removed: reserve now succeeds directly after
+            # a terminal failure as long as the start cap has room.
             ledger.reserve("run-two", "baseline-two", self.now.isoformat())
 
     def test_c68_complete_modeling_quality_failure_stops_even_with_remaining_policy(self) -> None:
@@ -586,11 +594,16 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             ledger = self._ledger(Path(directory))
             self._begin(ledger, "run-one", "baseline-one")
             ledger.terminal_failure("run-one", "modeling-quality", True)
+            # authorize_repair is advisory history; a complete modeling-quality
+            # result no longer blocks the advisory repair write.
+            ledger.authorize_repair("run-one", "repair-one", "baseline-two")
             before = ledger.path.read_bytes()
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-one", "repair-one", "baseline-two")
+            # Budget authorization eligibility is unchanged: a complete
+            # modeling-quality result is not a budget-eligible failure.
             with self.assertRaises(TeamConfigurationError):
                 ledger.authorize_budget(3, "authorization-one", "reference-one")
+            # Cap is exhausted (1/1) and no eligible failure can authorize
+            # more, so the next reservation stays closed.
             with self.assertRaises(TeamConfigurationError):
                 ledger.reserve("run-two", "baseline-two", self.now.isoformat())
             self.assertEqual(ledger.path.read_bytes(), before)
@@ -600,6 +613,7 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             ledger = self._ledger(Path(directory))
             self._retained_like_10_8_0_prefix(ledger)
             before = ledger.path.read_bytes()
+            # Budget authorization still requires the cap to be exhausted first.
             with self.assertRaises(TeamConfigurationError):
                 ledger.authorize_budget(3, "authorization-four", "reference-four")
             self.assertEqual(ledger.path.read_bytes(), before)
@@ -611,27 +625,25 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 "p2a_pass_digest": "b" * 64,
                 "source_run_id": "run-8",
             }
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-8", "repair-invalid", "baseline-8")
-            self.assertEqual(ledger.path.read_bytes(), before)
-            ledger.authorize_repair("run-8", "repair-9", "baseline-9", gate_binding=gate)
-            records = ledger._records()
-            self.assertEqual(
-                len([record for record in records if record.get("event") == "budget_authorization"]),
-                3,
-            )
-
-            replay = self._ledger(Path(directory))
-            replay._validate_strict_replay(replay._records())
-            before_gate_mismatch = ledger.path.read_bytes()
-            with self.assertRaises(TeamConfigurationError):
-                ledger.reserve("run-9", "baseline-9", self.now.isoformat())
-            self.assertEqual(ledger.path.read_bytes(), before_gate_mismatch)
+            # The repair gate is removed: an incomplete modeling-quality failure
+            # allows the next reservation directly, with no repair authorization
+            # and no additional budget required (cap is 10, starts consumed is 8).
             ledger.reserve("run-9", "baseline-9", self.now.isoformat(), gate_binding=gate)
             self.assertEqual(ledger._start_cap(ledger._records()), 10)
             self.assertEqual(ledger._semantic_start_count(ledger._records()), 8)
 
-    def test_c68_incomplete_modeling_quality_repair_is_serialized_and_r23002_stays_closed(self) -> None:
+            # Replay still validates the resulting ledger.
+            replay = self._ledger(Path(directory))
+            replay._validate_strict_replay(replay._records())
+
+            # gate_binding match between reservation and semantic_start is still
+            # enforced in mark_semantic_start.
+            with self.assertRaises(TeamConfigurationError):
+                ledger.mark_semantic_start("run-9")
+            ledger.mark_semantic_start("run-9", gate_binding=gate)
+            self.assertEqual(ledger._semantic_start_count(ledger._records()), 9)
+
+    def test_c68_incomplete_modeling_quality_repair_is_advisory_and_r23002_budget_stays_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             formal = self._ledger(root / "formal")
@@ -647,7 +659,9 @@ class R23005BudgetExtensionTests(unittest.TestCase):
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 list(executor.map(repair, ("baseline-9", "baseline-10")))
-            self.assertEqual(sorted(outcomes), ["accepted", "rejected"])
+            # authorize_repair is advisory history; concurrent calls no longer
+            # serialize to one winner — both advisory writes succeed.
+            self.assertEqual(sorted(outcomes), ["accepted", "accepted"])
             accepted_baseline = [
                 record["baseline_hash"]
                 for record in formal._records()
@@ -662,6 +676,8 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                 disabled.config, allow_incomplete_modeling_quality_repair=False
             )
             before_disabled = disabled.path.read_bytes()
+            # Budget eligibility is unchanged: when incomplete modeling-quality
+            # repair is disabled, the failure is not budget-eligible.
             with self.assertRaises(TeamConfigurationError):
                 disabled.authorize_budget(3, "authorization-disabled", "reference-disabled")
             self.assertEqual(disabled.path.read_bytes(), before_disabled)
@@ -670,11 +686,12 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             self._begin(legacy, "legacy-one", "legacy-baseline-one")
             legacy.terminal_failure("legacy-one", "modeling-quality", False)
             before = legacy.path.read_bytes()
-            with self.assertRaises(TeamConfigurationError):
-                legacy.authorize_repair("legacy-one", "legacy-repair", "legacy-baseline-two")
-            self.assertEqual(legacy.path.read_bytes(), before)
+            # authorize_repair is advisory history for legacy too; a terminal
+            # failure is sufficient and the advisory write succeeds.
+            legacy.authorize_repair("legacy-one", "legacy-repair", "legacy-baseline-two")
+            self.assertNotEqual(legacy.path.read_bytes(), before)
 
-    def test_c68_cli_selector_allows_formal_incomplete_repair_only(self) -> None:
+    def test_c68_cli_selector_writes_advisory_repair_for_formal_and_legacy(self) -> None:
         def invoke(root: Path, argv: list[str]) -> int:
             with patch.object(team_main, "repository_root", return_value=root), patch.object(
                 sys, "argv", ["modeling-team", *argv]
@@ -709,6 +726,8 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             self._begin(legacy, "legacy-one", "legacy-baseline-one")
             legacy.terminal_failure("legacy-one", "modeling-quality", False)
             before = legacy.path.read_bytes()
+            # authorize-repair is advisory history for legacy too; the CLI now
+            # returns 0 (success) and appends a repair_authorization record.
             self.assertEqual(
                 invoke(
                     root,
@@ -724,9 +743,10 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                         "legacy-cli-repair",
                     ],
                 ),
-                2,
+                0,
             )
-            self.assertEqual(legacy.path.read_bytes(), before)
+            self.assertNotEqual(legacy.path.read_bytes(), before)
+            self.assertEqual(legacy._records()[-1]["event"], "repair_authorization")
 
     def test_c69_c73_rebind_requires_one_released_fresh_reservation_per_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -744,9 +764,11 @@ class R23005BudgetExtensionTests(unittest.TestCase):
             )
 
             before = ledger.path.read_bytes()
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-one", "duplicate", "baseline-four")
-            self.assertEqual(ledger.path.read_bytes(), before)
+            # authorize_repair is advisory history; rebind sequencing and
+            # duplicate-baseline enforcement have been removed, so a duplicate
+            # advisory write now succeeds.
+            ledger.authorize_repair("run-one", "duplicate", "baseline-four")
+            self.assertNotEqual(ledger.path.read_bytes(), before)
 
     def test_c70_and_i15_temporary_formal_ledger_is_isolated_from_legacy_namespace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -777,15 +799,15 @@ class R23005BudgetExtensionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ledger = self._ledger(Path(directory))
             self._first_failure(ledger)
-            failure_prefix = ledger.path.read_bytes()
-            with self.assertRaises(TeamConfigurationError):
-                ledger.authorize_repair("run-one", "wrong-order", "baseline-two")
-            self.assertEqual(ledger.path.read_bytes(), failure_prefix)
+            # Budget authorization still requires the terminal failure to be
+            # the latest record (no advisory repair may interleave before it).
             ledger.authorize_budget(3, "authorization-one", "reference-one")
             budget_prefix = ledger.path.read_bytes()
             with self.assertRaises(TeamConfigurationError):
                 ledger.authorize_budget(3, "authorization-two", "reference-two")
             self.assertEqual(ledger.path.read_bytes(), budget_prefix)
+            # authorize_repair is advisory history; it no longer has ordering
+            # constraints against the budget authorization.
             ledger.authorize_repair("run-one", "repair", "baseline-two")
             ledger.reserve("run-two", "baseline-two", self.now.isoformat())
             self.assertEqual(
@@ -809,15 +831,19 @@ class R23005BudgetExtensionTests(unittest.TestCase):
                     ledger.reserve("run-two", "baseline-two", self.now.isoformat())
                     ledger.release_presemantic("run-two", "released")
                     before = ledger.path.read_bytes()
+                    # authorize_repair still requires a real terminal failure
+                    # for the named run; an unknown run stays closed.
                     with self.assertRaises(TeamConfigurationError):
                         ledger.authorize_repair("wrong-run", "wrong", "baseline-three")
                     self.assertEqual(ledger.path.read_bytes(), before)
                     continue
+                # authorize_repair is advisory history; it no longer fails based
+                # on reservation activity, started state, or baseline freshness,
+                # so the advisory write now succeeds in every mode here.
                 before = ledger.path.read_bytes()
                 baseline = "baseline-two" if mode == "equal" else "baseline-three"
-                with self.assertRaises(TeamConfigurationError):
-                    ledger.authorize_repair("run-one", "invalid", baseline)
-                self.assertEqual(ledger.path.read_bytes(), before)
+                ledger.authorize_repair("run-one", "invalid", baseline)
+                self.assertNotEqual(ledger.path.read_bytes(), before)
 
 
 if __name__ == "__main__":
