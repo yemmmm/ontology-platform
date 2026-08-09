@@ -21,6 +21,11 @@ from .contracts import (
     digest_file,
     load_formal_team_configuration,
 )
+from .model_manifest import (
+    FORMAL_MODEL_MANIFEST_RELATIVE,
+    FormalModelManifest,
+    load_formal_model_manifest,
+)
 from .acceptance import (
     AcceptanceContractError,
     CoordinatorPhaseController,
@@ -98,6 +103,7 @@ class TeamRun:
     protocol_context: dict[str, str] | None = None
     gate_binding: dict[str, str] | None = None
     acceptance: RunnerAcceptanceCarrier | None = None
+    model_manifest: FormalModelManifest | None = None
 
 
 class TeamRunner:
@@ -133,6 +139,7 @@ class TeamRunner:
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
         self._terminal_emitted = False
+        self._runtime_failure_finalized = False
         self._terminal_handoffs_notified: set[tuple[str, str]] = set()
         self._terminal_handoff_sequence = 0
         # Acceptance settlement can be reached from both the foreground drain and
@@ -301,8 +308,6 @@ class TeamRunner:
         config = load_formal_team_configuration(
             profile_path, task_path, root=self.repository_root
         )
-        if config.task.schema_version == 2 and not self.freeze_started_at:
-            raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
         formal_acceptance = (
             config.task.schema_version == 2
             and (
@@ -310,6 +315,18 @@ class TeamRunner:
                 or config.profile.profile_id == "r2-3-005-modeling-team"
             )
         )
+        # The model contract is the first formal gate after configuration
+        # loading.  It performs only immutable package reads, so malformed,
+        # partial, unsupported, inconsistent, or missing Examiner declarations
+        # cannot create a run root, reserve a ledger start, probe the platform,
+        # start transport/capabilities, or invoke a process/child factory.
+        model_manifest = (
+            load_formal_model_manifest(self.repository_root)
+            if formal_acceptance
+            else None
+        )
+        if config.task.schema_version == 2 and not self.freeze_started_at:
+            raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
         task_overlay: TaskInputOverlay | None = None
         validated_publication: ValidatedCandidatePublication | None = None
         if task_overlay_path is not None:
@@ -337,6 +354,8 @@ class TeamRunner:
             task_path=task_path,
             frozen_task_overlay=task_overlay,
         )
+        if formal_acceptance:
+            self._assert_formal_model_manifest_digest(baseline, model_manifest)
         baseline_hash = StartLedger.baseline_hash(baseline)
         preflight_evidence: dict[str, Any] | None = None
         if formal_acceptance:
@@ -363,6 +382,9 @@ class TeamRunner:
                 profile_path=profile_path,
                 task_path=task_path,
                 frozen_task_overlay=task_overlay,
+            )
+            self._assert_formal_model_manifest_digest(
+                baseline_after_preflight, model_manifest
             )
             if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
                 raise TeamConfigurationError("baseline manifest drifted during preflight")
@@ -393,7 +415,14 @@ class TeamRunner:
             )
         root.mkdir(parents=True, mode=0o700)
         (root / "evidence").mkdir(mode=0o700)
-        self.run = TeamRun(run_id, root, config, normalized_scope, gate_binding=gate_binding)
+        self.run = TeamRun(
+            run_id,
+            root,
+            config,
+            normalized_scope,
+            gate_binding=gate_binding,
+            model_manifest=model_manifest,
+        )
         self._task_overlay = task_overlay
         self._validated_candidate_publication = validated_publication
         self._candidate_publication = (
@@ -509,6 +538,20 @@ class TeamRunner:
                 },
             )
         return self.run
+
+    @staticmethod
+    def _assert_formal_model_manifest_digest(
+        baseline: dict[str, Any], model_manifest: FormalModelManifest | None
+    ) -> None:
+        if model_manifest is None:
+            raise TeamConfigurationError("formal model manifest is unavailable")
+        binding = baseline.get("formal_model_manifest")
+        if (
+            not isinstance(binding, dict)
+            or binding.get("path") != str(FORMAL_MODEL_MANIFEST_RELATIVE)
+            or binding.get("sha256") != model_manifest.digest
+        ):
+            raise TeamConfigurationError("formal model manifest digest drifted")
 
     def _acceptance_ticket_policy(self, configuration: TeamConfiguration) -> dict[str, Any]:
         """Load the requirement-owned CQ/source standard without any answers."""
@@ -686,6 +729,17 @@ class TeamRunner:
                 files["proof_matrix_artifact"] = matrix
             if p2a.is_file() and not p2a.is_symlink():
                 files["p2a_pass_artifact"] = p2a
+        formal_acceptance_contract = (
+            configuration.task.schema_version == 2
+            and (
+                configuration.task.task_id == "r2-3-005-formal-acceptance"
+                or configuration.profile.profile_id == "r2-3-005-modeling-team"
+            )
+        )
+        if formal_acceptance_contract:
+            files["formal_model_manifest"] = (
+                self.repository_root / FORMAL_MODEL_MANIFEST_RELATIVE
+            )
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
         if task_overlay is not None:
             digests["task_input_overlay"] = task_overlay.sha256
@@ -713,20 +767,13 @@ class TeamRunner:
                 "acceptance_get_verdict",
             ],
         }
-        formal_acceptance_contract = (
-            configuration.task.schema_version == 2
-            and (
-                configuration.task.task_id == "r2-3-005-formal-acceptance"
-                or configuration.profile.profile_id == "r2-3-005-modeling-team"
-            )
-        )
         if formal_acceptance_contract:
             runner_capability_roles["coordinator"].insert(
                 1, "coordinator_build_acceptance_ticket_draft_from_delivery"
             )
         if task_overlay is not None:
             runner_capability_roles["modeling"] = ["modeling_publish_staged_candidate"]
-        return {
+        baseline = {
             "run_id": run_id,
             **(
                 {"task_input_overlay": task_overlay.manifest()}
@@ -921,6 +968,12 @@ class TeamRunner:
             },
             "expected_matrix_binding": configuration.task.expected_matrix_binding or configuration.profile.expected_matrix_binding,
         }
+        if formal_acceptance_contract:
+            baseline["formal_model_manifest"] = {
+                "path": str(FORMAL_MODEL_MANIFEST_RELATIVE),
+                "sha256": digests["formal_model_manifest"],
+            }
+        return baseline
 
     @classmethod
     def preview_baseline(
@@ -1142,6 +1195,53 @@ class TeamRunner:
                 )
                 self._acceptance_settlement_evidence_recorded = True
 
+    def _consume_runtime_failures(self) -> list[tuple[str, dict[str, Any]]]:
+        """Read the adapter-owned typed failure queue with legacy fallback."""
+
+        reader = getattr(self.adapter, "consume_runtime_failures", None)
+        if callable(reader):
+            failures = reader()
+            return list(failures) if isinstance(failures, (list, tuple)) else []
+        # Older deterministic adapters expose only the inactivity projection.
+        legacy = getattr(self.adapter, "consume_inactivity_failures", None)
+        if callable(legacy):
+            failures = legacy()
+            return list(failures) if isinstance(failures, (list, tuple)) else []
+        return []
+
+    def _finalize_runtime_failure(
+        self, failures: list[tuple[str, dict[str, Any]]]
+    ) -> list[dict[str, Any]]:
+        """Settle one typed runtime failure exactly once and stop the roster."""
+
+        if self._runtime_failure_finalized or not failures:
+            return []
+        self._runtime_failure_finalized = True
+        agent_id, detail = failures[0]
+        safe_detail = dict(detail) if isinstance(detail, dict) else {}
+        self._append_evidence(
+            "runtime-failure",
+            {"agent_id": agent_id, **safe_detail},
+        )
+        self.record_terminal_failure("runtime/infrastructure", False)
+        cleanup = self.cleanup()
+        self._state(
+            "TERMINAL_REPORT_COMPLETE",
+            runtime_failure=True,
+            agent_id=agent_id,
+            role=safe_detail.get("role"),
+            reason=safe_detail.get("reason"),
+        )
+        return [
+            {
+                "type": "runtime-failure",
+                "agent_id": agent_id,
+                "role": safe_detail.get("role"),
+                "reason": safe_detail.get("reason"),
+                "cleanup": cleanup,
+            }
+        ]
+
     def start(self) -> None:
         if not self.run:
             raise RuntimeError("Runner is not prepared")
@@ -1255,14 +1355,32 @@ class TeamRunner:
                     },
                 )
             for agent in self.run.configuration.profile.agents:
-                self.adapter.start_task(
-                    agent.agent_id,
-                    self._task_text(agent.package.role),
-                    [str(path) for path in agent.package.required_skills],
-                    roster,
-                )
+                try:
+                    self.adapter.start_task(
+                        agent.agent_id,
+                        self._task_text(agent.package.role),
+                        [str(path) for path in agent.package.required_skills],
+                        roster,
+                    )
+                except Exception:
+                    failures = self._consume_runtime_failures()
+                    if failures:
+                        self._state("FAILED")
+                        self._finalize_runtime_failure(failures)
+                        return
+                    raise
+                failures = self._consume_runtime_failures()
+                if failures:
+                    self._state("FAILED")
+                    self._finalize_runtime_failure(failures)
+                    return
             self._state("RUNNING", identities=[item.agent_id for item in identities])
         except Exception:
+            failures = self._consume_runtime_failures()
+            if failures:
+                self._state("FAILED")
+                self._finalize_runtime_failure(failures)
+                return
             self._state("FAILED")
             if self._ledger and (self.run.root / "evidence" / "semantic-start.jsonl").exists():
                 self.record_terminal_failure("runtime/infrastructure", False)
@@ -3126,34 +3244,9 @@ class TeamRunner:
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
-        # Fail fast on a hung model endpoint: if a role's inactivity watchdog latched
-        # a timeout (no App Server notification for ``llm_inactivity_timeout_seconds``
-        # during a running turn), settle it before any further coordination work.
-        inactivity_reader = getattr(self.adapter, "consume_inactivity_failures", None)
-        if callable(inactivity_reader):
-            failures = inactivity_reader()
-            if failures:
-                agent_id, detail = failures[0]
-                self._append_evidence(
-                    "llm-inactivity-terminal",
-                    {"agent_id": agent_id, **detail},
-                )
-                self.record_terminal_failure("runtime/infrastructure", False)
-                cleanup = self.cleanup()
-                self._state(
-                    "TERMINAL_REPORT_COMPLETE",
-                    inactivity_timeout=True,
-                    agent_id=agent_id,
-                    role=detail.get("role"),
-                )
-                return [
-                    {
-                        "type": "llm-inactivity-timeout",
-                        "agent_id": agent_id,
-                        "role": detail.get("role"),
-                        "cleanup": cleanup,
-                    }
-                ]
+        failures = self._consume_runtime_failures()
+        if failures:
+            return self._finalize_runtime_failure(failures)
         try:
             self._check_formal_candidate_progress()
         except FormalCandidateProgressTimeout:
@@ -3195,6 +3288,9 @@ class TeamRunner:
             # Coordinator's issue_control callback can enter the queue.  No
             # ordinary peer/terminal Runtime message is delivered or consumed.
             self.adapter.receive_messages()
+            failures = self._consume_runtime_failures()
+            if failures:
+                return self._finalize_runtime_failure(failures)
             # The original candidate dispatch may complete while the issue is
             # pending.  Observe that completion now, before a later pause/
             # recovery turn overwrites the Runtime's last-completed turn ID.
@@ -3439,6 +3535,9 @@ class TeamRunner:
                 output.append(delivered)
                 self._terminal_handoffs_notified.add(pair)
         messages = self.adapter.receive_messages()
+        failures = self._consume_runtime_failures()
+        if failures:
+            return self._finalize_runtime_failure(failures)
         try:
             if self._candidate_progress is not None:
                 roles = self._formal_candidate_roles()

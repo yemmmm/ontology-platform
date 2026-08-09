@@ -2605,3 +2605,377 @@ implementation before execution and append the result below without rewriting ea
   Round 12 and is not attributed to the repair.
 - **Overall Round 12 result: PASS (deterministic repair only).** R2.3-005 remains `NOT_PASSED`, all three live starts
   are consumed, and a new semantic start requires explicit user authorization.
+
+### Independent Round 13 — Start72 real-evidence acceptance audit (2026-08-09)
+
+- **Scope and boundary:** Independent, read-only audit of
+  `workspaces/modeling-runs/r23005-real-20260809-deepseek-start72/`. The Tester did not start a
+  semantic run, call a write endpoint, revoke credentials, delete resources, or modify product/runtime evidence.
+  Only this shared test plan was appended. The audit covered the R2.3-005 live completion gate, two sequential
+  Acceptance CQs, five Protocol receipts, four-role terminal settlement, child cleanup, retained-scope semantics,
+  strict start-ledger behavior, runtime health, and C33 credential sanitization.
+- **Semantic evidence:** PASS. `cq-001-1` ticket digest is
+  `f122822cdc183774086846df6d9bcaa94af5911c353387b46690e4bb72716ec0`; `cq-002-1` is
+  `12e19d2c4e45b8fcd85a1c45626505bf45370c5039088d9e5f75d263766b0770`. Both drafts equal their immutable
+  tickets, both tickets validate, and both CQ verdicts validate and bind to the same final model-state digest
+  `368ce1ad035f43be36067f2a16ee5ed4652a5cc6035a729fda4788c3c78c48a4`. Verdict digests are
+  `4525f5892b23083423c48944556a0b30af78625ce9e839a0c6b1e03cd4f04e2a` (CQ-001) and
+  `c2b25a5bbc596a1a5165a9d55ab731bee9c656131e889c473c222d5fa86305a7` (CQ-002), both `PASS`. Raw
+  `evidence/coordination.jsonl` shows CQ-002 starts only after the CQ-001 PASS route; the two CQs use fresh
+  Source/Platform child pairs and each pair has terminal cleanup with report-digest binding.
+- **Modeling/Protocol gates:** PASS. Each verdict carries the same current-run dry-run, apply, readback,
+  validation, and reasoning receipts; all five receipt stages bind to the final model state and current Project/
+  Ontology. The two source reports and two platform reports validate; CQ-002 preserves the required
+  `insufficient-evidence`/ExplicitUnknown behavior rather than inventing B's action.
+- **Settlement and terminal chain:** PASS. Eight state-revalidation records are valid at the same state digest;
+  `acceptance-carrier/evidence/settlement-cas.json` is settled and the final readback matches. Terminal-result
+  handoff/ack evidence is ordered `acceptance -> modeling -> protocol -> coordinator`, with all four accepted
+  completed reports and the final `settled` record. Acceptance cleanup reports `settled=true`, `active_handles=0`,
+  `zero_child_residue=true`, and `credentials_destroyed=true`.
+- **Cleanup/scope/health:** PASS for the intended retained-scope boundary. Session/lease state is terminal, the
+  Project and Ontology remain intentionally `retained-pending-acceptance`, and project, protocol, child-read, and
+  org-admin credentials are revoked/non-active. Post-revocation unauthenticated reads returned 401; the service
+  remained active with backend `/api/health` HTTP 200 and frontend `/` HTTP 200.
+- **Strict ledger stop semantics:** PASS (expected termination). On an owner-only temporary copy of the canonical
+  `.r2-3-005-start-ledger.jsonl`, replaying `StartLedger.reserve()` after the successful start raised
+  `previous semantic start lacks a terminal failure`; the temporary copy and live ledger bytes were unchanged.
+  This is the expected first-complete-PASS stop boundary even though the authorized tranche has numerical starts
+  remaining: no terminal-failure record should be fabricated and no next reservation is allowed.
+- **C33 credential-sanitization defect (D1, P0 acceptance/security blocker): FAIL.** A sanitized read-only scan
+  of the retained run root found one distinct provider-key-shaped value in seven retained runtime files (21
+  occurrences before file-mode hardening), including all four role `home/shell_snapshots/*.sh`, the Protocol rollout
+  evidence, and Protocol sqlite/WAL logs. The shell snapshots contain an exported assignment shape
+  `declare -x DEEPSEEK_API_KEY=[REDACTED]`; the state/cleanup `credentials_destroyed=true` assertion does not
+  account for these retained logs/snapshots. The original scan observed group-readable/writable modes on these
+  artifacts; a later owner-only mode hardening changed permissions but did not remove the secret bytes. The
+  reproducible check is `rg -n -I -a 'DEEPSEEK_API_KEY|sk-' <run-root>` with values redacted from output. No
+  `OPENAI_API_KEY`, `OPENAI_BASE_URL`, or Anthropic key marker, nor any retained private `auth.json`/config artifact,
+  was found in this target; however, any future provider key injected into the app-server environment would be
+  exposed by the same environment-snapshot/logging path.
+- **Unexecuted/non-goals:** No additional semantic start, destructive cleanup/revocation, or evidence rewriting was
+  performed. Full repository-wide regression was outside this live-run audit; prior Round 12 deterministic gates
+  remain the applicable baseline.
+- **Overall Round 13 result: FAIL.** The modeling/CQ/settlement semantics are independently PASS, but R2.3-005
+  cannot be accepted while D1 leaves a real provider credential in retained runtime evidence. The owner should
+  immediately revoke/rotate the affected provider key, repair environment snapshot/log sanitization and cleanup
+  accounting, then run a fresh independent credential-sanitization audit before any acceptance closure. Do not
+  consume another semantic start solely to address this evidence defect.
+- **Post-round Delivery ledger note:** after this read-only audit completed, Delivery appended a
+  `terminal_failure` for start72 with `classification=runtime/infrastructure` and
+  `complete_modeling_quality_result=false`. This is an external post-audit state transition, not a Tester action
+  or evidence produced by the successful four-role run. The pre-append audit snapshot proved strict refusal of a
+  next reservation; on the current ledger the same strict state machine permits a retryable reservation. Delivery
+  must keep this distinction explicit and must not describe the run as both a complete success and a retryable
+  failure.
+
+### Independent Round 14 — Luna-max Team switch validation (2026-08-10)
+
+- **Scope and boundary:** Independent validation of the frozen implementation plan
+  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-luna-max-team-switch.md`. The Tester verified the six
+  formal package declarations, the zero-side-effect `TeamRunner.prepare` model gate, persistent and Examiner
+  runtime configuration/auth cleanup, startup-failure cleanup, secret audits, R2.3-005 regressions, complete
+  `modeling_team` discovery, Ruff, diff, GitNexus, service health, and one bounded real Luna provider smoke. No
+  semantic modeling start, Project/Ontology mutation, platform call, StartLedger reservation/append, retained
+  start72 evidence rewrite, credential revocation, or product-code edit was performed. Only this shared test plan
+  was appended.
+- **Frozen implementation hashes:** `modeling_team/runner.py`
+  `16e6bd71c487470931a87e7cdfb2405f34611275aebefee477ee3d6366bc0f6a`; `modeling_team/runtimes/codex.py`
+  `c9721998b6085f5b6e8a563ed195e1724633d42b6ef20c86d0e59e4bdfe38094`; and
+  `modeling_team/model_manifest.py`
+  `e54f33b69f47ca4fc92ee3f9045faccee0e1895cb6c4fd64525fdac3616b8e12`. The six package YAML files each parsed
+  to the exact tuple `gpt-5.6-luna/openai/max`; no unknown Codex keys were present. The new manifest test and the
+  modified runtime/contract tests were independently hash-checked before execution.
+- **Focused deterministic behavior:** PASS. `PYTHONPATH=. backend/.venv/bin/pytest -q
+  modeling_team/tests/test_luna_max_model_manifest.py modeling_team/tests/test_deepseek_codex_runtime.py
+  modeling_team/tests/test_p2a_codex_runtime.py modeling_team/tests/test_r23005_b_runtime.py
+  modeling_team/tests/test_r23005_contracts.py` returned **108 passed, 23 subtests**. This covers the exact
+  six-package allowlist, malformed/partial/unsupported/missing declarations, prepare-before-platform/ledger/
+  process side-effect ordering, formal four-role and both Examiner Luna configs, Host `DEEPSEEK_API_KEY` sentinel
+  non-resolution/non-injection, 0600 auth staging/unlink, auth-leaf audit, capability/Protocol token handling,
+  and startup-failure/cleanup paths.
+- **R2.3-005 and full regression:** PASS. `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s
+  modeling_team/tests -p 'test_r23005*.py'` returned **176 tests OK, 1 expected skip**. Complete discovery with
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py'` returned
+  **493 tests OK, 1 expected skip**. Existing ResourceWarning/RuntimeWarning and negative-path diagnostics were
+  non-failing. `backend/.venv/bin/ruff check modeling_team` and `git diff --check --` both passed.
+- **GitNexus/diff scope:** PASS/LOW. `mcp__gitnexus__detect_changes(scope=all, repo=ontology-platform)` reported
+  12 changed files, 27 touched symbols, 0 affected processes, and `risk_level=low`; no unexpected changed
+  process was identified.
+- **Retained start72 read-only credential scan:** FAIL (historical defect intentionally preserved). The retained
+  root `workspaces/modeling-runs/r23005-real-20260809-deepseek-start72/` remains present and was not changed. A
+  sanitized scan restricted to generated `runtime` artifacts (excluding staged Skills/reference docs) found one
+  distinct provider-key-shaped value, **7 files / 21 occurrences**, with secret digest
+  `e2a085dc1c56fb44bbc91bf6e6f2d2f6c48f0bebeea3f7b4211ac888e60f8b4e`; matching files are the four role shell
+  snapshots plus Protocol session JSONL, sqlite, and WAL. No credential content was printed. This confirms the
+  historical C33 breach and the implementation plan's requirement for external DeepSeek revocation/rotation; the
+  Tester did not redact or delete it.
+- **Bounded real Luna provider smoke:** **FAIL/BLOCKED (`runtime/infrastructure`)**. In a temporary 0700 root,
+  the host `auth.json` was staged at 0600, the only model config was `gpt-5.6-luna/openai/max`, no source files or
+  MCP/platform endpoint were present, and no Runner/ledger code was called. The smoke completed initialize,
+  thread-start, and empty MCP discovery, unlinked private `auth.json` before the first `turn/start`, then failed to
+  observe a `turn/completed`/`turn/finished` event within the bounded turn window; the sanitized harness result was
+  `status=FAIL`, `failure_class=RuntimeError`, `auth_unlinked_before_turn=true`, `turn_terminal=null`. The final
+  artifact audit scanned **29 files**, found **0 matches / 0 matched secrets** (`matched_secret_digests=[]`), and
+  the real host auth source contributed **4 sensitive leaf values**; their only retained identifiers were the
+  digests `bb78ebfd55e65b6dedb7ca6cb6bf495b2eb17e617980cdccda079d2332de2890`,
+  `b9f945e4be60f83044667999a4641024abe23b74ce7078463ba35e95a15345d4`,
+  `0301051509859fc23ccc8d97d52d02f3054b850152927cea34db23636d6e5593`, and
+  `fa759dd7ed3482ef9f89ef49b68fd6a68ce70823066014b756080d4a82ca156c` (no secret content was printed). It
+  verified `ledger_unchanged=true`, `source_files_created=0`, `platform_calls=0`, and
+  `start_ledger_mutations=0`. A first attempt had only a Tester-harness stderr-collection TypeError after process
+  cleanup and produced no retained evidence; the corrected attempt above is the operative result. The harness
+  intentionally retained no RPC error/stderr text, so no provider token or raw error was emitted; the precise
+  provider subcause (turn/start RPC error versus provider/model availability versus process timeout) is not
+  recoverable from the deleted temporary root.
+- **Service restart/health:** PASS. `systemctl --user restart ontology-platform.service` reached `active (running)`;
+  backend `GET http://127.0.0.1:8001/api/health` returned `{"status":"ok"}`/HTTP **200**, and frontend
+  `GET http://127.0.0.1:5173/` returned HTTP **200**. No runtime ledger or retained run files changed.
+- **Defects and smallest repair layer:**
+  - **D1 — P0 acceptance/security blocker, historical C33:** the retained start72 provider value remains in
+    generated runtime logs/snapshots. Reproduction is the read-only scan above; expected future formal runs have
+    zero provider-value matches after cleanup, actual retained start72 has 7 files/21 occurrences. Required action
+    is provider-side revoke/rotate plus the already-scoped artifact-sanitization repair; do not mutate start72 in
+    this test round.
+  - **D2 — P1 runtime/infrastructure blocker:** a real Luna-max app-server did not complete the empty provider
+    turn after auth unlink. Reproduction is the bounded smoke sequence above; expected one terminal turn completion,
+    actual no terminal event and sanitized `RuntimeError`. Because the test wrapper discarded raw RPC/stderr to
+    protect secrets, the next developer/tester loop must first add a non-secret failure classification or verify
+    provider/model availability, then rerun the same bounded smoke before any semantic start.
+- **Unexecuted/non-goals:** No semantic start, business source delivery, platform mutation, StartLedger write,
+  retained evidence cleanup, or provider revocation was attempted. These are deliberate boundaries, not passes.
+- **Overall Round 14 result: FAIL.** The deterministic Luna-max and regression gates pass, but the retained C33
+  credential breach remains and the required real Luna provider smoke is blocked before a completed turn. Do not
+  close R2.3-005 or consume a fresh semantic start; revoke/rotate the historical key and resolve the bounded
+  provider-runtime failure, then run a new independent round in this same test plan.
+
+### Independent Round 15 — Luna-max DEVELOPMENT_READY barrier and bounded provider smoke (2026-08-10)
+
+- **Scope and boundary:** Independent validation of the final DEVELOPMENT_READY hashes and the same frozen
+  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-luna-max-team-switch.md` contract. The Tester did not
+  edit product code, mutate retained start72 evidence, reserve/append the StartLedger, start semantic modeling,
+  call a platform write endpoint, or revoke credentials. Only this shared test plan was appended. The one real
+  Luna smoke used an empty business prompt, no source files, no Runner/ledger, and a temporary 0700 root; its
+  temporary artifacts were cleaned after the bounded attempt.
+- **Frozen hashes:** `modeling_team/runner.py`
+  `435d6049f9d6e697addf9105d9378a934a7386ef8d95e664c4283bd68ee41225`; `modeling_team/runtimes/codex.py`
+  `f8e6ad247570400bd40b8481ff80445e9521003eb44c378e2ed5f85ef1d32da1`; `modeling_team/model_manifest.py`
+  `a4698f89b283e0ccddf7f3aa13d528867505e2538cc81b50d26c31db0e90a034`; formal manifest YAML
+  `modeling_team/model-manifests/r2-3-005-luna-max.yaml`
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`; and
+  `modeling_team/tests/test_luna_max_model_manifest.py`
+  `28312982e3d7660e785fe9c0b63f35f02226efd4aac6c09f548d786b21cb94fa`.
+- **Focused barrier:** PASS. The focused command covering the Luna manifest, Codex isolation, DeepSeek runtime,
+  Examiner stdout pump/start44, candidate gate, P2A, and R2.3-005 contracts returned **193 passed, 71 subtests
+  passed** in 14.71s. This includes typed authoritative `item/tool/requestUserInput` responses, command/file/
+  permissions approval and MCP elicitation/unknown-request barriers, every early ServerRequest auth unlink before
+  dispatch with exact-once/no-deadlock assertions, startup-failure cleanup, auth staging, extensionless and `.sh`
+  shell-snapshot scans, persistent/Examiner config-env-argv isolation, and capability/Protocol/read/report token
+  cleanup scans.
+- **Formal manifest/preflight:** PASS. A read-only probe parsed all six formal packages as exactly
+  `gpt-5.6-luna/openai/max`; two independent initial/post baseline probes produced the same formal manifest digest
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`, with no run attached and no workspace
+  created. The formal package override probe returned the Luna tuple for all six packages; the non-formal probe
+  returned `[None, None, None, None]`, preserving the nonformal/R2.3-002 path. No platform, process, or ledger
+  side effect occurred during this preflight.
+- **Regression/quality:** PASS. R2.3-005 unittest discovery returned **176 tests OK, 1 expected skip**;
+  complete `modeling_team` discovery returned **493 tests OK, 1 expected skip**. `ruff check modeling_team`
+  and `git diff --check --` both passed. GitNexus `detect_changes(scope=all, repo=ontology-platform)` reported
+  **11 changed files, 56 changed symbols, 0 affected processes, LOW risk**. No unexpected execution flow was
+  identified.
+- **Host sentinel and auth audit:** PASS for the deterministic boundary. With a synthetic `DEEPSEEK_API_KEY`
+  sentinel present, the formal resolver path made zero resolver calls and the focused four-role/two-Examiner tests
+  found no sentinel in generated config, environment, argv, shell snapshots, session/SQLite WAL/SHM, or evidence;
+  auth staging/unlink and success/failure cleanup assertions passed. A separate read-only host audit found the real
+  `auth.json` to be a regular file (4307 bytes) with **3** sensitive leaves; only SHA-256 digests were retained:
+  `b9f945e4be60f83044667999a4641024abe23b74ce7078463ba35e95a15345d4`,
+  `0301051509859fc23ccc8d97d52d02f3054b850152927cea34db23636d6e5593`, and
+  `fa759dd7ed3482ef9f89ef49b68fd6a68ce70823066014b756080d4a82ca156c`. No secret value was printed.
+- **Bounded real Luna smoke:** **FAIL (`runtime/infrastructure`)**. The single permitted attempt reached
+  `initialize`, `skills/extraRoots/set`, `skills/list`, and `thread/start` with sanitized RPC responses, then
+  repeatedly received `mcpServerStatus/list` responses (`status=response`, code `ok`) before the adapter raised
+  `CodexRuntimeError` at stage `mcpServerStatus/list`. The process exit was `null`; no `turn/start` dispatch,
+  terminal event, completed turn id, or terminal response was observed (`terminal.event=null`, `state=null`,
+  `turn_id_present=false`). The harness retained no raw RPC/stderr text, token, path, or secret, so the provider
+  subcause is classified only as bounded startup/runtime failure, not inferred as auth.json missing, model
+  unavailable, timeout, or a turn/start RPC error. No retry was started. The final sanitized audit scanned 28
+  temporary files with **0** secret matches, `cleanup_zero_active_children=true`, `ledger_unchanged=true`,
+  `source_files_created=0`, `platform_calls=0`, and `start_ledger_mutations=0`; the auth barrier did not observe
+  unlink/dispatch because startup failed before dispatch (`auth_unlinked=false`, `first_dispatch_observed=false`).
+- **Retained start72:** read-only boundary preserved; no retained file was changed. The historical C33 credential
+  finding from Rounds 13–14 (one provider-shaped value in seven runtime files/21 occurrences) remains an open
+  P0 acceptance/security blocker and is not reclassified by this deterministic pass.
+- **Service health:** PASS. `systemctl --user restart ontology-platform.service` reached active/running; backend
+  `/api/health` returned `{"status":"ok"}` (HTTP 200) and frontend `/` returned HTTP 200. No ledger or retained
+  run files changed.
+- **Defects and next action:** D1/C33 remains P0 until the historical provider credential is revoked/rotated and
+  retained artifacts are proven clean. D2 remains P1 runtime/infrastructure: the one real Luna-max empty smoke
+  has no terminal response and fails at repeated `mcpServerStatus/list`; the owner should add/obtain a non-secret
+  provider failure classification or verify model availability, then rerun this same bounded smoke. Do not start
+  semantic modeling or consume a new StartLedger reservation for either defect.
+- **Overall Round 15 result: FAIL.** Deterministic manifest, barrier, isolation, regression, and health gates pass,
+  but the required real terminal Luna response is absent and the retained C33 credential breach is unresolved.
+
+### Independent Round 16 — Opaque MCP status parser and bounded Luna smoke (2026-08-10)
+
+- **Scope and boundary:** Independent validation of the opaque-key MCP status refresh on top of the final Round 15
+  Luna-max hashes. The Tester did not edit product code, mutate retained start72 evidence, reserve/append the
+  StartLedger, start semantic modeling, call a platform endpoint, or revoke credentials. Only this shared test plan
+  was appended. The one real Luna attempt used the same empty-business, temporary 0700 root and no source,
+  Runner, ledger, or platform mutation boundary; no retry was started.
+- **Frozen hashes:** `modeling_team/runner.py`
+  `435d6049f9d6e697addf9105d9378a934a7386ef8d95e664c4283bd68ee41225`; `modeling_team/runtimes/codex.py`
+  `9143c04d78604243fc6ffcb91841cc0588dd975433c579a598d9e2c81337e66a`; `modeling_team/model_manifest.py`
+  `a4698f89b283e0ccddf7f3aa13d528867505e2538cc81b50d26c31db0e90a034`; formal manifest YAML
+  `modeling_team/model-manifests/r2-3-005-luna-max.yaml`
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`; Luna manifest test
+  `28312982e3d7660e785fe9c0b63f35f02226efd4aac6c09f548d786b21cb94fa`; updated isolation test
+  `b543339d673e37a851a81da1ecc5ded984bd67cdff6a4fd71088bb485a5d4491`; and updated P2A runtime test
+  `3fd591819b94bcfd5dd93c01d5ae16bf3fa0c1387c6e0fea5b4a7a93baf4ea17`.
+- **Opaque-key parser and exact fail-closed barrier:** PASS. The targeted parser/preflight checks returned 2
+  Codex isolation tests with 4 subtests and 2 P2A preflight tests: status `tools` maps with opaque keys are
+  normalized from both object and array forms, a tool entry without a string `name` normalizes to an empty set,
+  and zero/wrong/extra/role-drift surfaces fail closed. The focused `item/tool/requestUserInput` and all early
+  ServerRequest unlink-before-dispatch/exact-once/no-deadlock assertions remain green.
+- **Focused/regression quality:** PASS. The complete focused command returned **193 passed, 71 subtests passed**;
+  R2.3-005 discovery returned **176 tests OK, 1 expected skip**; complete `modeling_team` discovery returned
+  **493 tests OK, 1 expected skip**. `ruff check modeling_team` and `git diff --check --` passed. GitNexus
+  `detect_changes(scope=all, repo=ontology-platform)` reported **11 changed files, 60 changed symbols, 0 affected
+  processes, LOW risk**.
+- **Bounded real Luna smoke:** **FAIL (`runtime/infrastructure`)**. The one formal coordinator attempt returned
+  sanitized `ok` responses for `initialize`, `skills/extraRoots/set`, `skills/list`, `thread/start`, and
+  `mcpServerStatus/list`. The observed MCP surface was exactly the expected Team Transport names
+  `issue_control`, `report_issue`, `report_task_result`, `send_coordination`, and `send_team_message`, proving
+  opaque-key parsing against the live status object. `turn/start` also returned `ok`, then the bounded 45-second
+  turn wait expired with failure `{stage: turn_wait, code: bounded_timeout, message_class: no_terminal_turn_event}`.
+  No terminal event or completed turn id was observed (`terminal.event=null`, `state=null`,
+  `turn_id_present=false`); process exit was `null` before cleanup and `-15` after cleanup. Auth unlink completed
+  before any dispatch (`auth_unlinked=true`, `first_dispatch_observed=false`). No raw RPC error, stderr, token,
+  path, or secret was retained or printed, and no retry was started. The smoke harness did not retain
+  `turn/start` result/turn object keys or notification headers; `turn_id_present=false` reports the absence of a
+  completed-turn id, not an assertion that the successful `turn/start` result lacked an id.
+- **Smoke cleanup and side effects:** The temporary artifact scan found **0 matches / 0 matched secrets** both
+  before cleanup (32 files) and after cleanup (30 files); `cleanup_zero_active_children=true` and
+  `private_credentials_destroyed=true`. The real host auth source was a regular owner-private file with **3**
+  sensitive leaves; only these digests were retained:
+  `b9f945e4be60f83044667999a4641024abe23b74ce7078463ba35e95a15345d4`,
+  `0301051509859fc23ccc8d97d52d02f3054b850152927cea34db23636d6e5593`, and
+  `fa759dd7ed3482ef9f89ef49b68fd6a68ce70823066014b756080d4a82ca156c`. Source files created: 0;
+  platform calls: 0; StartLedger mutations: 0; formal ledger digest/bytes remained unchanged.
+- **Retained start72 and service:** The historical C33 provider credential finding (seven retained runtime files/
+  21 occurrences) remains untouched and unresolved as the P0 acceptance/security blocker; this round did not scan,
+  rewrite, or revoke it. `ontology-platform.service` restarted active/running; backend `/api/health` returned
+  `{"status":"ok"}`/HTTP 200 and frontend `/` returned HTTP 200.
+- **Overall Round 16 result: FAIL.** Opaque MCP parsing, deterministic barriers, regression, cleanup, and health
+  pass, but the real Luna smoke has no terminal response and the retained C33 credential breach remains open.
+
+### Independent Round 17 — Frozen-turn terminal contract and 300-second Luna smoke (2026-08-10)
+
+- **Scope and boundary:** Independent re-test of the opaque MCP/barrier refresh with the reviewer-approved real
+  smoke contract. The Tester did not edit product code, mutate retained start72 evidence, reserve/append the
+  StartLedger, start semantic modeling, call a platform endpoint, or revoke credentials. Only this shared test plan
+  was appended. Exactly one formal Coordinator empty-business smoke was started; no retry was performed.
+- **Frozen hashes:** Round 16 hashes were unchanged and re-verified: `runner.py`
+  `435d6049f9d6e697addf9105d9378a934a7386ef8d95e664c4283bd68ee41225`; `runtimes/codex.py`
+  `9143c04d78604243fc6ffcb91841cc0588dd975433c579a598d9e2c81337e66a`; `model_manifest.py`
+  `a4698f89b283e0ccddf7f3aa13d528867505e2538cc81b50d26c31db0e90a034`; formal YAML
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`; Luna manifest test
+  `28312982e3d7660e785fe9c0b63f35f02226efd4aac6c09f548d786b21cb94fa`; isolation test
+  `b543339d673e37a851a81da1ecc5ded984bd67cdff6a4fd71088bb485a5d4491`; and P2A test
+  `3fd591819b94bcfd5dd93c01d5ae16bf3fa0c1387c6e0fea5b4a7a93baf4ea17`.
+- **Focused barrier gate:** PASS. Opaque object/array tool-map normalization and exact fail-closed preflight
+  returned 2 Codex isolation tests with 4 subtests plus 2 P2A preflight tests. The Luna manifest barrier subset
+  (auth-leaf audit, shell/evidence SQLite WAL/SHM scan, first-turn unlink, and typed ServerRequest no-deadlock
+  cases) returned **10 passed**. Round 16's unchanged full focused/R2.3-005/full/Ruff results remain the applicable
+  baseline: 193 focused passed/71 subtests, 176 R2.3-005 passed/1 skip, 493 full passed/1 skip, Ruff and diff clean.
+- **Reviewer-approved smoke contract and result:** FAIL (`runtime/infrastructure`). The one formal Coordinator
+  started with an empty business prompt. After `start_task`, a non-empty `adapter.agents[coordinator].active_turn_id`
+  was frozen (the value was never printed). The wait bound was **300 seconds**, taken from the `codex.py`
+  `_LLM_INACTIVITY_TIMEOUT_SECONDS = 300.0` default; it was not read from a Profile field. During the bound the
+  public no-argument `adapter.receive_messages()` pump ran **1499** times with a measured maximum gap of
+  **0.2094s** (<=0.25s), and RuntimeMessage filtering saw zero target messages and zero other messages. Setup RPCs
+  `initialize`, `skills/extraRoots/set`, `skills/list`, `thread/start`, `mcpServerStatus/list`, and `turn/start`
+  all returned sanitized `status=response`, `code=ok`. The `turn/start` result shape exposed only keys
+  `turn`, whose turn keys were `completedAt`, `durationMs`, `error`, `id`, `items`, `itemsView`, `startedAt`, and
+  `status` (keys only; no values retained).
+- **Terminal/notification telemetry:** No accepted `turn/completed` or `turn/finished` method arrived. Sanitized
+  notification header counts were: `error=5`, `item/completed=1`, `item/started=1`,
+  `mcpServer/startupStatus/updated=2`, `remoteControl/status/changed=1`, `skills/changed=1`,
+  `thread/started=1`, `thread/status/changed=1`, `turn/started=1`, and `warning=2`. The terminal summary was
+  `method=null`, `state=null`, `last_completed_turn_id_present=false`, and
+  `last_completed_matches_frozen=false`; no raw notification payload, RPC error, stderr, token, path, or secret was
+  retained. The terminal failure is exactly `{stage: turn_wait, code: bounded_timeout_300s,
+  message_class: no_matching_terminal_event}`. `watchdog_failure=false`; process exit was `null` before cleanup
+  and `-15` after cleanup. Any watchdog failure, process exit, RPC error, or 300-second no-match would fail this
+  contract; none was retried.
+- **Auth/secret/cleanup boundary:** Auth unlink completed before any dispatch (`auth_unlinked=true`,
+  `first_dispatch_observed=false`). Full temporary artifact scans covered 32 files before cleanup and 30 after;
+  both had **0 matches / 0 matched secrets**. `cleanup_zero_active_children=true` and
+  `private_credentials_destroyed=true`. The real host auth source had **3** sensitive leaves; only digests were
+  retained: `b9f945e4be60f83044667999a4641024abe23b74ce7078463ba35e95a15345d4`,
+  `0301051509859fc23ccc8d97d52d02f3054b850152927cea34db23636d6e5593`, and
+  `fa759dd7ed3482ef9f89ef49b68fd6a68ce70823066014b756080d4a82ca156c`. Source files created: 0; platform calls:
+  0; StartLedger mutations: 0; formal ledger bytes/digest unchanged.
+- **GitNexus, retained evidence, and service:** `detect_changes(scope=all, repo=ontology-platform)` remained LOW:
+  11 changed files, 60 changed symbols, and 0 affected processes. The historical C33 provider credential finding
+  (seven retained runtime files/21 occurrences) remains untouched and unresolved as the P0 acceptance/security
+  blocker. `ontology-platform.service` restarted active/running; backend `/api/health` returned
+  `{"status":"ok"}`/HTTP 200 and frontend `/` returned HTTP 200.
+- **Overall Round 17 result: FAIL.** The frozen-turn pump and deterministic barriers are proven, but the real Luna
+  provider produced no matching terminal event within the explicit 300-second bound, and C33 remains open.
+
+### Independent Round 18 — Typed provider/RPC liveness boundary and bounded Luna smoke (2026-08-10)
+
+- **Scope and boundary:** Independent validation of the typed provider-error/RPC liveness refresh. The Tester did
+  not edit product code, mutate retained start72 evidence, reserve/append the StartLedger, start semantic modeling,
+  call a platform endpoint, or revoke credentials. Only this shared test plan was appended. Exactly one formal
+  Coordinator empty-business smoke was attempted; no retry was performed.
+- **Frozen hashes:** `modeling_team/runner.py`
+  `2796c938020da5305695f225c559eda2248bb7df2f5da258a7e56db36998372f`; `modeling_team/runtimes/codex.py`
+  `e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e`; unchanged manifest module
+  `a4698f89b283e0ccddf7f3aa13d528867505e2538cc81b50d26c31db0e90a034`; formal YAML
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`; Luna manifest test
+  `28312982e3d7660e785fe9c0b63f35f02226efd4aac6c09f548d786b21cb94fa`; P2A test
+  `4291edb3f9715f3d54a068fa7bbac88b77a151a269070960999206810d09d2e5`; and new
+  `modeling_team/tests/test_runtime_failure_boundary.py`
+  `43905f6370802a55013f4511fd06c936a967bc9adf92410a7b2b479008d35263`.
+- **Plan #8–13 deterministic coverage:** PASS. The new provider-boundary test returned **9 passed**, covering
+  retryable versus terminal ErrorNotification sanitization, malformed provider schema, thread/turn binding,
+  HTTP-status allowlist, progress-clock allowlist, typed JSON-RPC error category/code projection, secondary EOF
+  suppression, and Runner runtime-failure finalization exactly once. The focused regression also covered first-turn
+  auth before/after dispatch, start-loop/EOF behavior, exact terminal identity, and legacy terminal paths.
+- **Regression/quality:** PASS. The updated focused command returned **202 passed, 71 subtests passed**;
+  R2.3-005 discovery returned **176 tests OK, 1 expected skip**; complete `modeling_team` discovery returned
+  **493 tests OK, 1 expected skip**. `ruff check modeling_team` and `git diff --check --` passed. GitNexus
+  `detect_changes(scope=all, repo=ontology-platform)` reported **11 changed files, 80 changed symbols, 0 affected
+  processes, LOW risk**.
+- **Single real Luna smoke:** FAIL (`runtime/infrastructure`). The formal Coordinator setup and `turn/start`
+  returned sanitized `status=response`, `code=ok`; the live opaque MCP status exactly matched Team Transport tools
+  `issue_control`, `report_issue`, `report_task_result`, `send_coordination`, and `send_team_message`. A non-empty
+  active turn id was frozen after `start_task`. The no-argument public `adapter.receive_messages()` pump ran **1499**
+  times under the **300-second** `codex.py` default bound, with maximum measured gap **0.2156s** (<=0.25s).
+  No typed runtime failure latched first, so the immediate typed-failure stop path was not entered. The wait ended
+  with the exact safe failure `{stage: turn_wait, code: bounded_timeout_300s}`; no retry was started.
+- **Smoke telemetry:** Sanitized notification method counts were `error=5`, `item/completed=1`, `item/started=1`,
+  `mcpServer/startupStatus/updated=2`, `remoteControl/status/changed=1`, `skills/changed=1`, `thread/started=1`,
+  `thread/status/changed=1`, `turn/started=1`, and `warning=2`. No `turn/completed` or `turn/finished` arrived;
+  terminal method/state were null and `last_completed_turn_id` was absent. RuntimeMessage filtering observed zero
+  target and zero other messages. No provider message/data, RPC message/data, stderr, token, path, or secret was
+  retained or printed; no safe provider variant/status/will_retry existed because no typed failure latched. Counts
+  came from a wrapper around decoded `adapter._notification` method headers while the public
+  `adapter.receive_messages()` and its stdout drain remained unmonkeypatched. The harness did not retain provider
+  error parameter keys/types or `codexErrorInfo` variant names; its `typed_provider_events` projection remained an
+  empty list by design.
+- **Secret/cleanup/side-effect boundary:** Auth unlink completed before dispatch (`auth_unlinked=true`,
+  `first_dispatch_observed=false`). Full temporary scans covered 33 files before cleanup and 31 after, with **0
+  matches / 0 matched secrets** in both. `cleanup_zero_active_children=true` and
+  `private_credentials_destroyed=true`. The real host auth source had **3** sensitive leaves; only digests were
+  retained: `b9f945e4be60f83044667999a4641024abe23b74ce7078463ba35e95a15345d4`,
+  `0301051509859fc23ccc8d97d52d02f3054b850152927cea34db23636d6e5593`, and
+  `fa759dd7ed3482ef9f89ef49b68fd6a68ce70823066014b756080d4a82ca156c`. Source files created: 0; platform calls:
+  0; StartLedger mutations: 0; formal ledger bytes/digest unchanged. Process exit was `null` before cleanup and
+  `-15` after cleanup.
+- **Retained evidence and service:** The historical C33 provider credential finding (seven retained runtime files/
+  21 occurrences) remains untouched and unresolved as the P0 acceptance/security blocker. The service restarted
+  active/running; backend `/api/health` returned `{"status":"ok"}`/HTTP 200 and frontend `/` returned HTTP 200.
+- **Overall Round 18 result: FAIL.** Typed provider/RPC and terminal-boundary tests pass, but the real Luna smoke
+  produced no matching terminal event within the explicit bound and C33 remains open.

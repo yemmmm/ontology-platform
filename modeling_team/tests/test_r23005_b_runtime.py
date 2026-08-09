@@ -424,6 +424,7 @@ class R23005BRuntimeTests(unittest.TestCase):
             auth_home = base / "codex-home"
             auth_home.mkdir(mode=0o700)
             (auth_home / "auth.json").write_text("{}", encoding="utf-8")
+            (auth_home / "auth.json").chmod(0o600)
             process_calls = []
 
             def process_factory(command, **kwargs):
@@ -699,6 +700,7 @@ class R23005BRuntimeTests(unittest.TestCase):
             auth_home = base / "codex-home"
             auth_home.mkdir(mode=0o700)
             (auth_home / "auth.json").write_text("{}", encoding="utf-8")
+            (auth_home / "auth.json").chmod(0o600)
             process_calls: list[tuple[list[str], dict[str, object]]] = []
 
             def process_factory(command, **kwargs):

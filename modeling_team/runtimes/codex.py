@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..contracts import AgentPackage, digest_file
+from ..model_manifest import FormalModelManifest
 from ..acceptance_runtime import (
     ReportSinkServer,
     ScopedReadProxy,
@@ -52,6 +53,47 @@ class CodexRuntimeError(RuntimeError):
     pass
 
 
+_RPC_ERROR_CATEGORIES = frozenset(
+    {
+        "rpc_error",
+        "malformed_rpc_error",
+        "no_active_turn_to_steer",
+        "active_turn_mismatch",
+    }
+)
+
+
+class CodexRuntimeRPCError(CodexRuntimeError):
+    """Sanitized JSON-RPC failure returned by the local App Server.
+
+    The App Server's ``message`` and ``data`` fields are provider-controlled and
+    are deliberately discarded.  Consumers may branch on this closed category
+    set and, for the one steer-retry case, use the validated in-memory turn ID.
+    """
+
+    def __init__(
+        self,
+        method: str,
+        code: int | None,
+        category: str,
+        *,
+        active_turn_id: str | None = None,
+    ) -> None:
+        if category not in _RPC_ERROR_CATEGORIES:
+            category = "rpc_error"
+        self.method = method
+        self.code = code if isinstance(code, int) and not isinstance(code, bool) else None
+        self.category = category
+        self.active_turn_id = active_turn_id
+        code_fragment = str(self.code) if self.code is not None else "unknown"
+        super().__init__(f"app-server {method} failed ({category}, code={code_fragment})")
+
+
+# Keep a short compatibility spelling for focused integrations that imported the
+# adapter's typed error by the conventional ``RPC`` acronym.
+CodexRPCError = CodexRuntimeRPCError
+
+
 _RETRIEVAL_BLOCKING_WARNINGS = frozenset(
     {
         "evidence_missing",
@@ -78,12 +120,117 @@ _DEEPSEEK_BASE_URL = "https://api.deepseek.com/"
 _DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_PROVIDER = "deepseek"
 
+_SECRET_AUDIT_SUFFIXES = frozenset(
+    {
+        ".json",
+        ".jsonl",
+        ".toml",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".wal",
+        ".shm",
+        ".log",
+        ".txt",
+        ".yaml",
+        ".yml",
+        ".sh",
+    }
+)
+
+_AUTH_SECRET_KEY_NAMES = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "apikey",
+        "auth_token",
+        "client_secret",
+        "id_token",
+        "private_key",
+        "refresh_token",
+        "secret",
+        "session_token",
+        "token",
+    }
+)
+
 # LLM inactivity timeout.  If a role's App Server emits no notification (streaming
 # token, tool call, turn event, ...) for this many seconds while the role is in a
 # running turn, the model endpoint is treated as hung: the role process is killed and
 # the run fails fast as ``runtime/infrastructure``.  Unlike the Examiner child watchdog
 # (an absolute deadline) this is an inactivity timer driven by observed stdout activity.
 _LLM_INACTIVITY_TIMEOUT_SECONDS = 300.0
+
+# These are the current App Server notification methods whose payloads represent
+# actual turn/item/tool work.  Keep this explicit: generic status, warning,
+# startup, and unknown notifications must not postpone the inactivity watchdog.
+_PROGRESS_NOTIFICATION_METHODS = frozenset(
+    {
+        "turn/started",
+        "turn/completed",
+        "turn/finished",
+        "turn/failed",
+        "turn/diff/updated",
+        "item/started",
+        "item/updated",
+        "item/completed",
+        "item/agentMessage/delta",
+        "item/reasoning/summaryTextDelta",
+        "item/reasoning/summaryPartAdded",
+        "item/reasoning/textDelta",
+        "item/commandExecution/outputDelta",
+        "item/commandExecution/terminalInteraction",
+        "item/fileChange/outputDelta",
+        "item/fileChange/patchUpdated",
+        "item/mcpToolCall/progress",
+        "mcpToolCall/progress",
+        "command/exec/outputDelta",
+        "process/outputDelta",
+        "process/exited",
+        "hook/started",
+        "hook/completed",
+    }
+)
+_PROGRESS_SERVER_REQUEST_METHODS = frozenset(
+    {
+        "item/tool/call",
+        "item/tool/requestUserInput",
+        "item/commandExecution/requestApproval",
+        "item/fileChange/requestApproval",
+        "item/permissions/requestApproval",
+        "mcpServer/elicitation/request",
+    }
+)
+_PROVIDER_ERROR_METHOD = "error"
+_PROVIDER_ERROR_VARIANTS = frozenset(
+    {
+        "contextWindowExceeded",
+        "sessionBudgetExceeded",
+        "usageLimitExceeded",
+        "serverOverloaded",
+        "cyberPolicy",
+        "internalServerError",
+        "unauthorized",
+        "badRequest",
+        "threadRollbackFailed",
+        "sandboxError",
+        "other",
+        "httpConnectionFailed",
+        "responseStreamConnectionFailed",
+        "responseStreamDisconnected",
+        "responseTooManyFailedAttempts",
+        "activeTurnNotSteerable",
+    }
+)
+_PROVIDER_HTTP_VARIANTS = frozenset(
+    {
+        "httpConnectionFailed",
+        "responseStreamConnectionFailed",
+        "responseStreamDisconnected",
+        "responseTooManyFailedAttempts",
+    }
+)
+_SAFE_TURN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
 
 
 def _codex_package_model_override(package: AgentPackage) -> tuple[str, str, str] | None:
@@ -143,6 +290,142 @@ def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[s
     return values
 
 
+def audit_private_artifacts(
+    roots: Path | list[Path] | tuple[Path, ...],
+    secret_values: list[bytes] | tuple[bytes, ...] = (),
+    *,
+    process_surfaces: list[tuple[str, bytes]] | tuple[tuple[str, bytes], ...] = (),
+) -> dict[str, Any]:
+    """Scan private generated artifacts for secret bytes without returning content.
+
+    The result is intentionally limited to counts and secret digests.  Regular
+    files are scanned recursively, including SQLite ``-wal``/``-shm`` siblings;
+    sockets, symlinks, and device files are ignored.  ``process_surfaces`` lets
+    cleanup inspect argv/environment snapshots before a process is terminated.
+    """
+
+    if isinstance(roots, Path):
+        root_values = [roots]
+    else:
+        root_values = list(roots)
+    values = tuple(
+        value
+        for value in secret_values
+        if isinstance(value, bytes) and value
+    )
+    # Preserve order while deduplicating exact bytes; digest values are safe to
+    # expose in cleanup evidence and make repeated audits deterministic.
+    unique_values: list[bytes] = []
+    seen: set[bytes] = set()
+    for value in values:
+        if value not in seen:
+            unique_values.append(value)
+            seen.add(value)
+    digests = tuple(hashlib.sha256(value).hexdigest() for value in unique_values)
+    matched_surfaces: set[str] = set()
+    matched_digest_indices: set[int] = set()
+    scanned_files = 0
+
+    def inspect(surface: str, payload: bytes) -> None:
+        for index, value in enumerate(unique_values):
+            if value in payload:
+                matched_surfaces.add(surface)
+                matched_digest_indices.add(index)
+
+    for root in root_values:
+        try:
+            path = Path(root)
+            candidates = [path] if path.is_file() else list(path.rglob("*"))
+        except OSError:
+            continue
+        for candidate in candidates:
+            try:
+                metadata = candidate.lstat()
+            except OSError:
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                continue
+            # Keep the walk generic, but avoid loading arbitrary binary blobs or
+            # generated model payloads that cannot contain textual auth material.
+            shell_snapshot = any(parent.name == "shell_snapshots" for parent in candidate.parents)
+            if (
+                candidate.suffix.lower() not in _SECRET_AUDIT_SUFFIXES
+                and not candidate.name.endswith(("-wal", "-shm"))
+                and candidate.name not in {
+                    "auth.json",
+                    "config.toml",
+                    "environ",
+                    "cmdline",
+                }
+                and not shell_snapshot
+            ):
+                continue
+            try:
+                payload = candidate.read_bytes()
+            except OSError:
+                continue
+            scanned_files += 1
+            inspect(str(candidate), payload)
+    for surface, payload in process_surfaces:
+        if isinstance(surface, str) and isinstance(payload, bytes):
+            inspect(surface, payload)
+    return {
+        "scanned_files": scanned_files,
+        "match_count": len(matched_surfaces),
+        "matched_secret_count": len(matched_digest_indices),
+        "matched_secret_digests": [
+            digests[index] for index in sorted(matched_digest_indices)
+        ],
+        "matched_surfaces": sorted(matched_surfaces),
+    }
+
+
+def _auth_secret_leaf_values(payload: bytes) -> tuple[bytes, ...]:
+    """Extract sensitive scalar leaves from a provider auth JSON document.
+
+    App-server logs and SQLite journals may retain only a token value rather than the
+    original JSON object.  Keep exact sensitive leaves in the adapter's transient audit
+    set so cleanup catches that representation too, while ignoring ordinary metadata
+    such as IDs, labels, URLs, and expiry values.
+    """
+
+    try:
+        document = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ()
+    values: list[bytes] = []
+
+    def normalized_key(value: str) -> str:
+        value = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", value)
+        return value.casefold().replace("-", "_")
+
+    def sensitive_key(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        normalized = normalized_key(value)
+        return normalized in _AUTH_SECRET_KEY_NAMES or normalized.endswith(
+            ("_token", "_secret", "_api_key", "_private_key")
+        )
+
+    def visit(value: object, key: object = None) -> None:
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                visit(child_value, child_key)
+            return
+        if isinstance(value, list):
+            for child_value in value:
+                visit(child_value, key)
+            return
+        if not sensitive_key(key) or not isinstance(value, str) or not value.strip():
+            return
+        encoded = value.encode("utf-8")
+        if encoded not in values:
+            values.append(encoded)
+
+    visit(document)
+    return tuple(values)
+
+
 @dataclass
 class _Agent:
     agent_id: str
@@ -169,6 +452,10 @@ class _Agent:
     retrieval_verifier_path: Path | None = None
     proof_v2_path: Path | None = None
     retrieval_asset_fds: tuple[int, ...] = ()
+    auth_path: Path | None = None
+    auth_barrier_pending: bool = False
+    auth_unlinked_monotonic: float | None = None
+    first_dispatch_monotonic: float | None = None
     schema_version: int = 1
     proof_gate: bool = False
     fallback_eligible: bool = False
@@ -184,6 +471,11 @@ class _Agent:
     inactivity_watchdog_thread: threading.Thread | None = None
     inactivity_watchdog_stop: threading.Event = field(default_factory=threading.Event)
     inactivity_failure: dict[str, Any] | None = None
+    # Adapter-owned typed runtime failure latch.  Provider errors and inactivity
+    # watchdogs share this boundary so a secondary EOF/reader exception cannot
+    # overwrite the first sanitized infrastructure cause.
+    runtime_failure: dict[str, Any] | None = None
+    runtime_failure_termination_attempted: bool = False
 
 
 class _CodexChildResource:
@@ -312,12 +604,14 @@ class _CodexChildResource:
                             self._record_failure("runtime", "child-output-malformed")
                         return
                     adapter._notification(agent, value)
+                    if getattr(agent, "runtime_failure", None) is not None:
+                        return
             except CodexRuntimeError:
-                if not self._watchdog_stop.is_set():
+                if not self._watchdog_stop.is_set() and getattr(agent, "runtime_failure", None) is None:
                     self._record_failure("runtime", "child-output-closed")
                 return
             except Exception:
-                if not self._watchdog_stop.is_set():
+                if not self._watchdog_stop.is_set() and getattr(agent, "runtime_failure", None) is None:
                     self._record_failure("runtime", "child-output-failed")
                 return
 
@@ -484,10 +778,130 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._coordination_enabled = False
         self._candidate_platform_gate_enabled = False
         self._formal_turn_binding_required = False
+        self._formal_model_manifest: FormalModelManifest | None = None
         self._private_credentials_destroyed: dict[str, bool] = {}
+        self._secret_audit_values: list[bytes] = []
+        self._secret_audit_failures: dict[str, dict[str, Any]] = {}
+        self._child_auth_barriers: dict[str, dict[str, float | None]] = {}
         self._inactivity_timeout_seconds = _LLM_INACTIVITY_TIMEOUT_SECONDS
         self._inactivity_failures: list[tuple[str, dict[str, Any]]] = []
         self._inactivity_lock = threading.Lock()
+        self._runtime_failures: list[tuple[str, dict[str, Any]]] = []
+        self._runtime_failure_lock = threading.Lock()
+
+    def _validated_model_override(
+        self,
+        package: AgentPackage,
+        *,
+        formal: bool,
+    ) -> tuple[str, str, str] | None:
+        """Resolve a package model from the frozen formal manifest when required."""
+
+        if formal:
+            manifest = self._formal_model_manifest
+            if manifest is None:
+                raise CodexRuntimeError("formal runtime is missing its validated model manifest")
+            return manifest.override_for(package.package_id)
+        return _codex_package_model_override(package)
+
+    def _remember_secret(self, value: object) -> None:
+        """Retain only transient credential bytes needed by the cleanup audit.
+
+        Provider auth is JSON, so remember both the raw document and its sensitive
+        scalar leaves.  The latter catches app-server logs that persist only a token
+        value.  No value is returned in cleanup evidence and the list is cleared at
+        the lifecycle boundary.
+        """
+
+        if isinstance(value, str):
+            value = value.encode("utf-8")
+        if not isinstance(value, bytes) or not value:
+            return
+        for candidate in (value, *_auth_secret_leaf_values(value)):
+            if candidate and candidate not in self._secret_audit_values:
+                self._secret_audit_values.append(candidate)
+
+    @staticmethod
+    def _read_secret_bytes(path: Path) -> bytes | None:
+        try:
+            value = path.read_bytes()
+        except OSError:
+            return None
+        return value if value else None
+
+    @staticmethod
+    def _stage_private_auth(source: Path, target: Path) -> None:
+        """Stage provider auth through one no-follow, exclusive, fsynced copy."""
+
+        occupied = target.exists() or target.is_symlink()
+        if occupied:
+            raise CodexRuntimeError("private provider auth destination is occupied")
+        try:
+            _copy_private(source, target, 0o600)
+        except Exception as exc:
+            # The private-copy primitive removes a partial destination on write
+            # failure. Keep the Runtime surface typed and never expose source
+            # paths or credential bytes through the exception text.
+            if not occupied:
+                target.unlink(missing_ok=True)
+            raise CodexRuntimeError("private provider auth staging failed") from exc
+
+    def _audit_process_surfaces(self, agent: _Agent) -> dict[str, Any]:
+        surfaces: list[tuple[str, bytes]] = []
+        process = agent.process
+        if process is not None:
+            command = getattr(process, "args", None)
+            if command is None:
+                command = getattr(process, "command", None)
+            if isinstance(command, (list, tuple)):
+                surfaces.append((f"{agent.agent_id}:argv", " ".join(map(str, command)).encode()))
+            elif isinstance(command, str):
+                surfaces.append((f"{agent.agent_id}:argv", command.encode()))
+            environment = getattr(process, "env", None)
+            if not isinstance(environment, dict):
+                process_kwargs = getattr(process, "kwargs", None)
+                if isinstance(process_kwargs, dict):
+                    environment = process_kwargs.get("env")
+            if isinstance(environment, dict):
+                surfaces.append(
+                    (
+                        f"{agent.agent_id}:env",
+                        "\0".join(f"{key}={value}" for key, value in environment.items()).encode(),
+                    )
+                )
+            pid = getattr(process, "pid", None)
+            if isinstance(pid, int) and pid > 0:
+                for name in ("cmdline", "environ"):
+                    try:
+                        surfaces.append((f"{agent.agent_id}:{name}", Path(f"/proc/{pid}/{name}").read_bytes()))
+                    except OSError:
+                        pass
+        return audit_private_artifacts(
+            (), self._secret_audit_values, process_surfaces=surfaces
+        )
+
+    def _record_cleanup_audit(
+        self,
+        identity: str,
+        result: dict[str, Any],
+        *,
+        ignore_auth_paths: bool = False,
+    ) -> None:
+        matches = result.get("match_count", 0)
+        if ignore_auth_paths and matches:
+            surfaces = result.get("matched_surfaces", [])
+            matches = sum(
+                1
+                for surface in surfaces
+                if not str(surface).endswith("/auth.json")
+            )
+        if matches:
+            self._secret_audit_failures[identity] = {
+                "scanned_files": result.get("scanned_files", 0),
+                "match_count": matches,
+                "matched_secret_count": result.get("matched_secret_count", 0),
+                "matched_secret_digests": list(result.get("matched_secret_digests", [])),
+            }
 
     def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
         """Create one private Source/Platform Examiner child.
@@ -712,10 +1126,27 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         kind = spec.get("kind")
         if kind not in {"source", "platform"}:
             raise CodexRuntimeError("Examiner child kind is invalid")
-        deepseek_enabled = bool(
+        formal = bool(
             self._coordination_enabled
-            or spec.get("deepseek_provider") is True
             or spec.get("task_id") == "r2-3-005-formal-acceptance"
+        )
+        child_package_id = f"{kind}-examiner"
+        if formal:
+            manifest = self._formal_model_manifest
+            if manifest is None:
+                raise CodexRuntimeError("formal runtime is missing its validated model manifest")
+            child_model_override = manifest.override_for(child_package_id)
+        else:
+            child_model_override = None
+        # DeepSeek is intentionally retained only for non-formal legacy adapters.
+        # A formal run never resolves or injects the legacy provider key, even if
+        # the Host environment still carries the historical sentinel.
+        deepseek_enabled = bool(
+            not formal
+            and (
+                spec.get("deepseek_provider") is True
+                or getattr(self, "_deepseek_enabled", False)
+            )
         )
         deepseek_key = self._resolve_deepseek_api_key() if deepseek_enabled else None
         private_root = Path(str(spec["private_root"]))
@@ -739,6 +1170,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             skill_bytes=skill.read_bytes(),
         )
         home, work, skills = paths["home"], paths["work"], paths["skills"]
+        auth_payload = self._read_secret_bytes(home / "auth.json")
+        self._remember_secret(auth_payload)
         # Carrier input/source bytes are staged before the adapter is invoked.  Copy only
         # the projected input into the child home; the Platform child never receives the
         # source directory, while the Source child receives exact approved bytes.
@@ -759,6 +1192,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if item.is_file():
                     os.chmod(item, 0o400)
         report_token = secrets.token_urlsafe(24)
+        self._remember_secret(report_token.encode("utf-8"))
         report_token_path = home / "report-sink.token"
         descriptor_path = home / "examiner-descriptor.json"
         socket_root = home
@@ -803,6 +1237,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 report_sink.stop()
                 raise CodexRuntimeError("formal Platform Examiner forwarder is unavailable")
             proxy_token = secrets.token_urlsafe(24)
+            self._remember_secret(proxy_token.encode("utf-8"))
+            self._remember_secret(read_key.encode("utf-8"))
             # Use the same short socket root selected for the report sink.  A
             # deep run path otherwise lets the report socket bind successfully
             # while the platform proxy fails with AF_UNIX's path-length limit.
@@ -874,7 +1310,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "required = true",
             ]
         )
-        if deepseek_enabled:
+        if formal:
+            provider_lines = [
+                f'model = "{child_model_override[0]}"',
+                f'model_provider = "{child_model_override[1]}"',
+                f'model_reasoning_effort = "{child_model_override[2]}"',
+            ]
+            config_lines = provider_lines + config_lines
+        elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
             config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         config_path = home / "config.toml"
@@ -946,7 +1389,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             required_skills=(skills / skill.parent.name / "SKILL.md",),
             references=(),
             permissions={"team_transport": False, "platform": "read" if kind == "platform" else "none", "source": "read" if kind == "source" else "none", "spawn": False, "write": False},
-            runtime={"codex": {"sandbox": "read-only"}},
+            runtime={
+                "codex": {
+                    "sandbox": "read-only",
+                    **(
+                        {
+                            "model": child_model_override[0],
+                            "model_provider": child_model_override[1],
+                            "model_reasoning_effort": child_model_override[2],
+                        }
+                        if child_model_override is not None
+                        else {}
+                    ),
+                }
+            },
             task_input={},
         )
         child_agent = _Agent(
@@ -958,6 +1414,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             process=process,
             platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
         )
+        child_agent.auth_path = home / "auth.json"
+        child_agent.auth_barrier_pending = formal
         try:
             self._rpc(child_agent, "initialize", {"clientInfo": {"name": "modeling-team-examiner", "version": "1"}})
             thread_result = self._rpc(
@@ -1027,6 +1485,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
+
+    @staticmethod
+    def _unlink_private_auth(home: Path) -> None:
+        """Remove staged provider auth after init/MCP discovery, before first turn."""
+
+        auth = home / "auth.json"
+        try:
+            auth.unlink(missing_ok=True)
+        except OSError as exc:
+            raise CodexRuntimeError("private provider auth cleanup failed") from exc
 
     @staticmethod
     def _is_formal_acceptance_run(run: Any) -> bool:
@@ -1105,6 +1573,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("host Codex authentication is unavailable for private staging") from exc
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
             raise CodexRuntimeError("host Codex authentication is unavailable for private staging")
+        if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise CodexRuntimeError("host Codex authentication is not owner-private")
         return host_auth
 
     def _resolve_deepseek_api_key(self) -> str:
@@ -1160,8 +1630,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def start_roster(self, run: Any, agents: Any) -> list[AgentRuntimeIdentity]:
         self._run_root = run.root
         self._run_id = run.run_id
+        self._secret_audit_values.clear()
+        self._secret_audit_failures.clear()
+        self._child_auth_barriers.clear()
+        with self._runtime_failure_lock:
+            self._runtime_failures.clear()
+        with self._inactivity_lock:
+            self._inactivity_failures.clear()
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
+        self._formal_model_manifest = (
+            getattr(run, "model_manifest", None)
+            if self._coordination_enabled
+            else None
+        )
+        if self._coordination_enabled and not isinstance(
+            self._formal_model_manifest, FormalModelManifest
+        ):
+            raise CodexRuntimeError("formal runtime model manifest is unavailable")
+        if self._coordination_enabled:
+            # Keep only an in-memory sentinel for the final private-artifact
+            # audit.  It is never resolved into provider configuration or child
+            # environment, and its bytes are cleared after cleanup.
+            host_sentinel = os.environ.get(_DEEPSEEK_API_KEY_ENV)
+            if isinstance(host_sentinel, str) and host_sentinel:
+                self._remember_secret(host_sentinel.encode("utf-8"))
         self._candidate_platform_gate_enabled = (
             self._coordination_enabled
             and getattr(
@@ -1180,11 +1673,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             except (TypeError, ValueError):
                 self._inactivity_timeout_seconds = _LLM_INACTIVITY_TIMEOUT_SECONDS
-        if self._coordination_enabled:
-            # A missing or insecure provider key is a no-start failure.  Resolve it
-            # before creating the first private role tree or invoking process_factory.
-            self._resolve_deepseek_api_key()
-            self._deepseek_enabled = True
+        # Formal R2.3-005 model authentication is provided by each private
+        # Codex ``auth.json`` only during app-server initialization.  In
+        # particular, do not resolve the historical DeepSeek environment key
+        # here: a sentinel in the Host environment must have no formal effect.
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
@@ -1217,12 +1709,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 ),
             )
             self.agents[agent.agent_id] = agent
-            self._stage_protocol_mechanics_contract(run, agent)
-            self._stage_protocol_retrieval_mcp(run, agent)
-            self._stage_skills(agent)
-            self._write_config(run, agent)
-            agent.process = self._start_process(agent)
-            self._initialize(agent)
+            try:
+                self._stage_protocol_mechanics_contract(run, agent)
+                self._stage_protocol_retrieval_mcp(run, agent)
+                self._stage_skills(agent)
+                self._write_config(run, agent)
+                agent.process = self._start_process(agent)
+                self._initialize(agent)
+            except Exception:
+                self._cleanup_startup_auth(agent)
+                raise
             agent.app_server_host_pid = self._app_server_host_pid(agent)
             with agent.state_lock:
                 agent.last_output_monotonic = time.monotonic()
@@ -1231,6 +1727,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 AgentRuntimeIdentity(agent.agent_id, f"codex-thread:{agent.thread_id}")
             )
         return identities
+
+    @staticmethod
+    def _cleanup_startup_auth(agent: _Agent) -> None:
+        path = agent.auth_path
+        if path is None:
+            return
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            # The outer Runner cleanup/audit remains authoritative if a startup
+            # failure races an OS-level unlink error.
+            pass
+        agent.auth_barrier_pending = False
 
     def _reset_activity_clock(self, agent: _Agent) -> None:
         """Mark now as the last observed App Server activity (inactivity clock origin).
@@ -1262,7 +1771,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 with agent.state_lock:
                     state = agent.state
                     last = agent.last_output_monotonic
-                    already_failed = agent.inactivity_failure is not None
+                    already_failed = getattr(agent, "runtime_failure", None) is not None
                 if already_failed or state != "running" or last <= 0.0:
                     continue
                 if time.monotonic() - last >= timeout:
@@ -1277,33 +1786,135 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         agent.inactivity_watchdog_thread = thread
         thread.start()
 
+    @staticmethod
+    def _safe_runtime_detail(agent: _Agent, detail: Mapping[str, Any]) -> dict[str, Any]:
+        """Project one failure to the fixed, provider-text-free evidence shape."""
+
+        safe: dict[str, Any] = {
+            "agent_id": agent.agent_id,
+            "role": str(getattr(agent.package, "role", agent.agent_id)),
+        }
+        for key in (
+            "source",
+            "reason",
+            "variant",
+            "turn_digest",
+            "terminal_method",
+        ):
+            value = detail.get(key)
+            if isinstance(value, str) and value and len(value) <= 128:
+                safe[key] = value
+        for key in ("will_retry", "timeout_seconds", "idle_seconds", "http_status"):
+            value = detail.get(key)
+            if key == "will_retry":
+                if isinstance(value, bool):
+                    safe[key] = value
+            elif key == "http_status":
+                if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 65535:
+                    safe[key] = value
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                safe[key] = value
+        return safe
+
+    def _terminate_runtime_process_once(self, agent: _Agent) -> None:
+        """Terminate one role process group at most once after a typed failure."""
+
+        lock = getattr(agent, "state_lock", None)
+        if lock is None:
+            if getattr(agent, "runtime_failure_termination_attempted", False):
+                return
+            agent.runtime_failure_termination_attempted = True
+        else:
+            with lock:
+                if getattr(agent, "runtime_failure_termination_attempted", False):
+                    return
+                agent.runtime_failure_termination_attempted = True
+        process = agent.process
+        if process is None:
+            return
+        pid = getattr(process, "pid", None)
+        try:
+            if isinstance(pid, int) and pid > 0:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            else:
+                terminate = getattr(process, "terminate", None)
+                if callable(terminate):
+                    terminate()
+        except (ProcessLookupError, PermissionError, OSError):
+            # The cleanup owner performs the final process wait/kill.  This latch
+            # only needs to prevent a duplicate termination attempt.
+            pass
+
+    def _latch_runtime_failure(
+        self,
+        agent: _Agent,
+        detail: Mapping[str, Any],
+        *,
+        evidence_type: str = "runtime-failure",
+        compatibility_inactivity: bool = False,
+    ) -> bool:
+        """Latch and queue one sanitized runtime failure, idempotently."""
+
+        safe = self._safe_runtime_detail(agent, detail)
+        lock = getattr(agent, "state_lock", None)
+        if lock is None:
+            if getattr(agent, "runtime_failure", None) is not None:
+                return False
+            agent.runtime_failure = safe
+            if compatibility_inactivity:
+                agent.inactivity_failure = dict(safe)
+            agent.state = "failed"
+        else:
+            with lock:
+                if getattr(agent, "runtime_failure", None) is not None:
+                    return False
+                agent.runtime_failure = safe
+                if compatibility_inactivity:
+                    agent.inactivity_failure = dict(safe)
+                agent.state = "failed"
+        self._terminate_runtime_process_once(agent)
+        self._append_runtime_evidence(evidence_type, safe)
+        with self._runtime_failure_lock:
+            self._runtime_failures.append((agent.agent_id, dict(safe)))
+        return True
+
     def _on_inactivity_timeout(self, agent: _Agent, timeout: float) -> None:
         """Latch one inactivity failure, kill the role process, and queue for drain."""
 
         with agent.state_lock:
-            if agent.inactivity_failure is not None or agent.inactivity_watchdog_stop.is_set():
+            if agent.runtime_failure is not None or agent.inactivity_watchdog_stop.is_set():
                 return
             now = time.monotonic()
-            idle_seconds = (now - agent.last_output_monotonic) if agent.last_output_monotonic else timeout
-            detail = {
-                "agent_id": agent.agent_id,
-                "role": agent.package.role,
-                "timeout_seconds": timeout,
-                "idle_seconds": idle_seconds,
-                "reason": "llm-inactivity-timeout",
-            }
-            agent.inactivity_failure = detail
-            agent.state = "failed"
-        process = agent.process
-        pid = getattr(process, "pid", None) if process is not None else None
-        if isinstance(pid, int) and pid > 0:
-            try:
-                os.killpg(os.getpgid(pid), signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-        self._append_runtime_evidence("llm-inactivity-timeout", detail)
+            idle_seconds = (
+                (now - agent.last_output_monotonic)
+                if agent.last_output_monotonic
+                else timeout
+            )
+        detail = {
+            "source": "inactivity-watchdog",
+            "timeout_seconds": timeout,
+            "idle_seconds": idle_seconds,
+            "reason": "llm-inactivity-timeout",
+        }
+        if not self._latch_runtime_failure(
+            agent,
+            detail,
+            evidence_type="llm-inactivity-timeout",
+            compatibility_inactivity=True,
+        ):
+            return
+        # The historical reader remains a compatibility projection for callers
+        # that predate the typed runtime queue.  Runner prefers the generic queue.
         with self._inactivity_lock:
-            self._inactivity_failures.append((agent.agent_id, detail))
+            self._inactivity_failures.append((agent.agent_id, dict(agent.inactivity_failure or {})))
+
+    def consume_runtime_failures(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return and clear typed provider/watchdog failures exactly once."""
+
+        with self._runtime_failure_lock:
+            failures = self._runtime_failures
+            self._runtime_failures = []
+        return failures
 
     def consume_inactivity_failures(self) -> list[tuple[str, dict[str, Any]]]:
         """Return and clear latched role inactivity failures (called by ``runner.drain``)."""
@@ -1510,13 +2121,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)
-        deepseek_enabled = self._is_formal_acceptance_run(run) or self._coordination_enabled
-        model_override = _codex_package_model_override(agent.package)
-        if deepseek_enabled:
-            # Resolve before staging any private artifact.  start_roster also performs
-            # this check before entering its first process-launch loop.
-            self._resolve_deepseek_api_key()
-            self._deepseek_enabled = True
+        formal = self._is_formal_acceptance_run(run)
+        deepseek_enabled = bool(
+            not formal
+            and getattr(self, "_deepseek_enabled", False)
+        )
+        model_override = self._validated_model_override(agent.package, formal=formal)
         capability_operations = self._role_capability_operations(agent.package.role, run=run)
         formal_capability = bool(capability_operations)
         formal_acceptance_auth = (
@@ -1538,10 +2148,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # while its sole model-visible capability remains the Runner-owned local carrier.
         if agent.package.role != "acceptance":
             host_auth = self.preflight_host_auth()
-            shutil.copyfile(host_auth, agent.home / "auth.json")
-            os.chmod(agent.home / "auth.json", 0o600)
+            self._remember_secret(self._read_secret_bytes(host_auth))
+            auth_path = agent.home / "auth.json"
+            self._stage_private_auth(host_auth, auth_path)
+            agent.auth_path = auth_path
+            agent.auth_barrier_pending = formal
         elif formal_acceptance_auth:
-            _copy_private(self.preflight_host_auth(), agent.home / "auth.json", 0o600)
+            host_auth = self.preflight_host_auth()
+            self._remember_secret(self._read_secret_bytes(host_auth))
+            auth_path = agent.home / "auth.json"
+            self._stage_private_auth(host_auth, auth_path)
+            agent.auth_path = auth_path
+            agent.auth_barrier_pending = True
         shutil.copyfile(
             self.root / "modeling_team" / "transport_mcp.py",
             agent.home / "transport_mcp.py",
@@ -1597,6 +2215,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "Protocol key is required before Runtime startup"
                 )
+            self._remember_secret(key)
             platform = agent.home / "platform"
             shutil.copytree(self.root / "backend" / "app", platform / "app")
             formal_candidate_gate = self._candidate_platform_gate_enabled_for_run(run)
@@ -1630,7 +2249,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             os.chmod(capability_script, 0o444)
             token_source = self._acceptance.capability_token_path(agent.package.role)
             token_target = agent.home / "runner-capability.token"
-            token_target.write_text(token_source.read_text(encoding="utf-8"), encoding="utf-8")
+            capability_token = token_source.read_text(encoding="utf-8")
+            self._remember_secret(capability_token)
+            token_target.write_text(capability_token, encoding="utf-8")
             os.chmod(token_target, 0o400)
             lines.extend(
                 [
@@ -1891,10 +2512,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return self._run_root / "transport" / "broker"
 
     def _start_process(self, agent: _Agent) -> subprocess.Popen[str]:
-        model_override = _codex_package_model_override(agent.package)
+        formal = self._coordination_enabled
+        model_override = self._validated_model_override(agent.package, formal=formal)
         api_key = (
             self._resolve_deepseek_api_key()
-            if (self._coordination_enabled or getattr(self, "_deepseek_enabled", False))
+            if (not formal and getattr(self, "_deepseek_enabled", False))
             and model_override is None
             else None
         )
@@ -2041,6 +2663,155 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         with agent.io_lock:
             return self._rpc_locked(agent, method, params)
 
+    @staticmethod
+    def _turn_digest(turn_id: str | None) -> str | None:
+        if not isinstance(turn_id, str) or not turn_id:
+            return None
+        return hashlib.sha256(turn_id.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _validated_turn_id(value: object) -> str | None:
+        return value if isinstance(value, str) and _SAFE_TURN_ID_RE.fullmatch(value) else None
+
+    @classmethod
+    def _provider_error_info(cls, value: object) -> tuple[str, int | None] | None:
+        """Validate generated ``CodexErrorInfo`` and return a normalized variant."""
+
+        if value is None:
+            return "none", None
+        if isinstance(value, str):
+            return (value, None) if value in _PROVIDER_ERROR_VARIANTS else None
+        if not isinstance(value, dict) or len(value) != 1:
+            return None
+        variant, payload = next(iter(value.items()))
+        if variant not in _PROVIDER_ERROR_VARIANTS or not isinstance(payload, dict):
+            return None
+        if variant in _PROVIDER_HTTP_VARIANTS:
+            if any(key != "httpStatusCode" for key in payload):
+                return None
+            status = payload.get("httpStatusCode")
+            if status is not None and (
+                not isinstance(status, int)
+                or isinstance(status, bool)
+                or not 0 <= status <= 65535
+            ):
+                return None
+            return variant, status
+        if variant == "activeTurnNotSteerable":
+            if set(payload) != {"turnKind"} or payload.get("turnKind") not in {"review", "compact"}:
+                return None
+            return variant, None
+        return None
+
+    def _provider_error_detail(
+        self, agent: _Agent, value: dict[str, Any]
+    ) -> tuple[bool, dict[str, Any]]:
+        """Strictly validate one ErrorNotification without retaining provider text."""
+
+        params = value.get("params")
+        malformed: dict[str, Any] = {
+            "source": "provider-error",
+            "reason": "provider-error-malformed",
+            "variant": "malformed",
+        }
+        if not isinstance(params, dict) or set(params) != {"error", "willRetry", "threadId", "turnId"}:
+            return False, malformed
+        thread_id = params.get("threadId")
+        turn_id = params.get("turnId")
+        if not isinstance(thread_id, str) or not thread_id or not isinstance(turn_id, str) or not turn_id:
+            return False, malformed
+        expected_thread = agent.thread_id
+        expected_turn = agent.active_turn_id or agent.last_started_turn_id
+        if expected_thread is None or thread_id != expected_thread:
+            malformed["variant"] = "thread-mismatch"
+            return False, malformed
+        if expected_turn is None or turn_id != expected_turn:
+            malformed["variant"] = "turn-mismatch"
+            malformed["turn_digest"] = self._turn_digest(turn_id)
+            return False, malformed
+        will_retry = params.get("willRetry")
+        error = params.get("error")
+        if not isinstance(will_retry, bool) or not isinstance(error, dict):
+            return False, malformed
+        if any(key not in {"message", "codexErrorInfo", "additionalDetails"} for key in error):
+            return False, malformed
+        if not isinstance(error.get("message"), str):
+            return False, malformed
+        if "additionalDetails" in error and error.get("additionalDetails") is not None and not isinstance(error.get("additionalDetails"), str):
+            return False, malformed
+        info = self._provider_error_info(error.get("codexErrorInfo"))
+        if info is None:
+            return False, malformed
+        variant, status = info
+        detail: dict[str, Any] = {
+            "source": "provider-error",
+            "reason": "provider-error-terminal" if not will_retry else "provider-error",
+            "will_retry": will_retry,
+            "variant": variant,
+            "turn_digest": self._turn_digest(turn_id),
+        }
+        if status is not None:
+            detail["http_status"] = status
+        return True, detail
+
+    def _handle_provider_error_notification(self, agent: _Agent, value: dict[str, Any]) -> None:
+        valid, detail = self._provider_error_detail(agent, value)
+        if not valid:
+            self._latch_runtime_failure(agent, detail)
+            return
+        # A retryable provider error is observable but deliberately does not
+        # refresh the inactivity clock; only allowlisted work notifications do.
+        self._append_runtime_evidence("provider-error", detail)
+        if detail.get("will_retry") is False:
+            self._latch_runtime_failure(agent, detail)
+
+    @staticmethod
+    def _classify_steer_message(message: object) -> tuple[str, str | None]:
+        if not isinstance(message, str):
+            return "rpc_error", None
+        normalized = message.strip()
+        legacy_prefix = "app-server turn/steer failed: "
+        if normalized.startswith(legacy_prefix):
+            normalized = normalized[len(legacy_prefix) :]
+        if normalized.casefold() == "no active turn to steer":
+            return "no_active_turn_to_steer", None
+        # The exact active-turn mismatch wording is the only provider text
+        # interpreted.  The captured ID is validated and retained in memory only.
+        match = re.fullmatch(
+            r"(?:app-server turn/steer failed: )?expected active turn id `([^`]+)` but found `([^`]+)`",
+            normalized,
+        )
+        if match:
+            active = CodexRuntimeAdapter._validated_turn_id(match.group(2))
+            if active is not None:
+                return "active_turn_mismatch", active
+        return "rpc_error", None
+
+    @classmethod
+    def _rpc_error_from_value(cls, method: str, value: object) -> CodexRuntimeRPCError:
+        if not isinstance(value, dict):
+            return CodexRuntimeRPCError(method, None, "malformed_rpc_error")
+        code = value.get("code")
+        if (
+            not isinstance(code, int)
+            or isinstance(code, bool)
+            or not -(2**63) <= code <= (2**63 - 1)
+            or not isinstance(value.get("message"), str)
+        ):
+            return CodexRuntimeRPCError(method, None, "malformed_rpc_error")
+        message = value.get("message")
+        category, active = cls._classify_steer_message(message) if method == "turn/steer" else ("rpc_error", None)
+        return CodexRuntimeRPCError(method, code, category, active_turn_id=active)
+
+    @staticmethod
+    def _is_progress_notification(value: Mapping[str, Any]) -> bool:
+        method = value.get("method")
+        if not isinstance(method, str):
+            return False
+        if "id" in value:
+            return method in _PROGRESS_SERVER_REQUEST_METHODS
+        return method in _PROGRESS_NOTIFICATION_METHODS
+
     def _rpc_locked(
         self, agent: _Agent, method: str, params: dict[str, Any]
     ) -> dict[str, Any]:
@@ -2050,6 +2821,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             or agent.process.stdout is None
         ):
             raise CodexRuntimeError("app-server is unavailable")
+        if method == "turn/start" and agent.auth_barrier_pending:
+            return self._first_turn_rpc_locked(agent, method, params)
         agent.request_id += 1
         request_id = agent.request_id
         agent.process.stdin.write(
@@ -2068,20 +2841,253 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 value = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise CodexRuntimeError("malformed app-server JSON") from exc
+            if not isinstance(value, dict):
+                raise CodexRuntimeError("app-server message is not an object")
             if value.get("id") == request_id:
                 if "error" in value:
-                    raise CodexRuntimeError(
-                        f"app-server {method} failed: {value['error']}"
-                    )
-                return value.get("result", {})
+                    raise self._rpc_error_from_value(method, value.get("error"))
+                result = value.get("result", {})
+                return result if isinstance(result, dict) else {}
             self._notification(agent, value)
+            if getattr(agent, "runtime_failure", None) is not None:
+                raise CodexRuntimeError("runtime failure is latched")
         raise CodexRuntimeError(f"app-server did not answer {method}")
+
+    def _first_turn_rpc_locked(
+        self, agent: _Agent, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Wait for the accepted first turn while guarding provider auth removal.
+
+        Ordinary notifications are held until the matching response proves the turn
+        identity.  A server request is never buffered: auth is unlinked first, then
+        its typed fail-closed response is dispatched so a server waiting on that
+        response cannot deadlock.  Every item is consumed exactly once by this loop.
+        """
+
+        if agent.process is None or agent.process.stdin is None:
+            raise CodexRuntimeError("app-server is unavailable")
+        agent.request_id += 1
+        request_id = agent.request_id
+        try:
+            agent.process.stdin.write(
+                json.dumps(
+                    {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+                )
+                + "\n"
+            )
+            agent.process.stdin.flush()
+            deadline = time.monotonic() + 15
+            buffered: list[dict[str, Any]] = []
+            while time.monotonic() < deadline:
+                line = self._read_output_line(agent, deadline - time.monotonic())
+                if line is None:
+                    continue
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    self._unlink_auth_barrier(agent)
+                    raise CodexRuntimeError("malformed app-server JSON") from exc
+                if not isinstance(value, dict):
+                    self._unlink_auth_barrier(agent)
+                    raise CodexRuntimeError("app-server message is not an object")
+                if value.get("id") == request_id and "method" not in value:
+                    self._unlink_auth_barrier(agent)
+                    if "error" in value:
+                        raise self._rpc_error_from_value(method, value.get("error"))
+                    result = value.get("result", {})
+                    if not isinstance(result, dict) or self._validated_turn_id(self._turn_id(result)) is None:
+                        raise CodexRuntimeError("first turn response has no valid turn identity")
+                    # Freeze the server-selected turn before replay.  A replayed
+                    # terminal/error notification may legitimately transition the
+                    # Agent back to idle/failed, and start_task must not overwrite it.
+                    turn_id = self._turn_id(result)
+                    agent.active_turn_id = turn_id
+                    agent.last_started_turn_id = turn_id
+                    agent.state = "running"
+                    for pending in buffered:
+                        self._notification(agent, pending)
+                    # Consume any response-following lines already readable before
+                    # releasing the reentrant I/O lock. This closes the first-turn
+                    # race without inventing a terminal event.
+                    if getattr(agent, "runtime_failure", None) is None:
+                        self._drain_agent_output_locked(agent)
+                    if getattr(agent, "runtime_failure", None) is not None:
+                        raise CodexRuntimeError("first turn failed during startup")
+                    return result if isinstance(result, dict) else {}
+                if "id" in value and isinstance(value.get("method"), str):
+                    self._record_notification_header(agent, value)
+                    self._unlink_auth_barrier(agent)
+                    self._dispatch_server_request(agent, value)
+                    continue
+                # JSON-RPC responses with another id are not server requests. Keep
+                # them as ordinary events and replay once auth is gone.
+                buffered.append(value)
+            self._unlink_auth_barrier(agent)
+            raise CodexRuntimeError(f"app-server did not answer {method}")
+        except CodexRuntimeError:
+            # Error/timeout paths remove auth but intentionally do not replay buffered
+            # notifications; none may reach a model-selected tool before cleanup.
+            try:
+                self._unlink_auth_barrier(agent)
+            except CodexRuntimeError:
+                pass
+            raise
+
+    def _unlink_auth_barrier(self, agent: _Agent) -> None:
+        if not agent.auth_barrier_pending:
+            return
+        path = agent.auth_path
+        if path is None:
+            raise CodexRuntimeError("first-turn auth barrier has no private path")
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise CodexRuntimeError("private provider auth cleanup failed") from exc
+        agent.auth_barrier_pending = False
+        timestamp = time.monotonic()
+        agent.auth_unlinked_monotonic = timestamp
+        self._append_runtime_evidence(
+            "auth-barrier",
+            {
+                "agent_id": agent.agent_id,
+                "event": "auth_unlinked",
+                "monotonic": timestamp,
+            },
+        )
+
+    def _record_notification_header(self, agent: _Agent, value: dict[str, Any]) -> None:
+        method, params = value.get("method"), value.get("params", {})
+        if self._is_progress_notification(value):
+            self._reset_activity_clock(agent)
+        if isinstance(method, str):
+            self._append_runtime_evidence(
+                "app-server-events",
+                {
+                    "agent_id": agent.agent_id,
+                    "method": method,
+                    "has_request_id": "id" in value,
+                    "param_keys": sorted(params) if isinstance(params, dict) else [],
+                    **(
+                        {"action": "decline", "decision": "decline"}
+                        if method
+                        in {
+                            "item/commandExecution/requestApproval",
+                            "item/fileChange/requestApproval",
+                            "item/permissions/requestApproval",
+                        }
+                        and "id" in value
+                        else {}
+                    ),
+                },
+            )
+
+    def _dispatch_server_request(self, agent: _Agent, value: dict[str, Any]) -> None:
+        """Handle one JSON-RPC ServerRequest exactly once, fail-closed."""
+
+        request_id = value.get("id")
+        method = value.get("method")
+        params = value.get("params", {})
+        if "id" not in value or not isinstance(method, str):
+            return
+        if method in {
+            "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+            "item/permissions/requestApproval",
+        }:
+            self._append_runtime_evidence(
+                "command-approval-events",
+                {
+                    "agent_id": agent.agent_id,
+                    "method": method,
+                    "decision": "decline",
+                    "param_keys": sorted(params) if isinstance(params, dict) else [],
+                },
+            )
+            self._respond_server_request(agent, request_id, {"decision": "decline"})
+            return
+        if method == "item/tool/call" and isinstance(params, dict):
+            if (
+                getattr(agent, "auth_unlinked_monotonic", None) is not None
+                and getattr(agent, "first_dispatch_monotonic", None) is None
+            ):
+                agent.first_dispatch_monotonic = time.monotonic()
+                self._append_runtime_evidence(
+                    "auth-barrier",
+                    {
+                        "agent_id": agent.agent_id,
+                        "event": "first_tool_dispatch",
+                        "monotonic": agent.first_dispatch_monotonic,
+                    },
+                )
+            self._respond_dynamic_tool(agent, request_id, params)
+            return
+        if method == "mcpServer/elicitation/request":
+            if (
+                getattr(agent, "auth_unlinked_monotonic", None) is not None
+                and getattr(agent, "first_dispatch_monotonic", None) is None
+            ):
+                agent.first_dispatch_monotonic = time.monotonic()
+                self._append_runtime_evidence(
+                    "auth-barrier",
+                    {
+                        "agent_id": agent.agent_id,
+                        "event": "first_mcp_dispatch",
+                        "monotonic": agent.first_dispatch_monotonic,
+                    },
+                )
+            schema = params.get("requestedSchema") if isinstance(params, dict) else None
+            server_name = str(params.get("serverName", "")) if isinstance(params, dict) else ""
+            expected = server_name == "team_transport" or (
+                agent.package.role == "protocol" and server_name == "ontology_platform"
+            ) or (
+                agent.package.role == "protocol"
+                and agent.schema_version == 2
+                and server_name == "protocol_mechanics"
+            ) or (
+                bool(self._role_capability_operations(agent.package.role))
+                and server_name == "runner_capability"
+            ) or (
+                agent.package.package_id == "source-examiner"
+                and server_name == "examiner_report"
+            ) or (
+                agent.package.package_id == "platform-examiner"
+                and server_name in {"examiner_report", "platform_read_proxy"}
+            )
+            action = "accept" if expected else "decline"
+            self._append_runtime_evidence(
+                "mcp-elicitations",
+                {
+                    "agent_id": agent.agent_id,
+                    "server_name": server_name,
+                    "mode": str(params.get("mode", "")) if isinstance(params, dict) else "",
+                    "schema_keys": sorted(schema) if isinstance(schema, dict) else [],
+                    "action": action,
+                },
+            )
+            self._respond_server_request(
+                agent, request_id, {"action": action, "content": {}}
+            )
+            return
+        if method == "item/tool/requestUserInput":
+            self._append_runtime_evidence(
+                "user-input-requests",
+                {"agent_id": agent.agent_id, "method": method, "response": "unavailable"},
+            )
+            self._respond_server_request(agent, request_id, {"answers": {}})
+            return
+        self._append_runtime_evidence(
+            "unknown-server-requests",
+            {"agent_id": agent.agent_id, "method": method, "response": "method-not-supported"},
+        )
+        self._respond_server_error(agent, request_id, -32601, "Method not supported")
 
     def _drain_agent_output_locked(self, agent: _Agent) -> None:
         """Apply every App Server notification already readable while holding its I/O lock."""
         if agent.process is None or agent.process.stdout is None:
             return
         while True:
+            if getattr(agent, "runtime_failure", None) is not None:
+                return
             line = self._read_output_line(agent, 0)
             if line is None:
                 return
@@ -2092,6 +3098,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     agent.state = "failed"
                 raise CodexRuntimeError("malformed app-server JSON") from exc
             self._notification(agent, value)
+            if getattr(agent, "runtime_failure", None) is not None:
+                return
 
     @staticmethod
     def _read_output_line(agent: _Agent, timeout: float) -> str | None:
@@ -2255,11 +3263,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Normalize the object and array forms emitted by app-server status."""
         if isinstance(raw_tools, dict):
             return {
-                str(name)
-                for name, tool in raw_tools.items()
+                str(tool.get("name"))
+                for tool in raw_tools.values()
                 if isinstance(tool, dict)
                 and isinstance(tool.get("name"), str)
-                and tool["name"] == name
             }
         if isinstance(raw_tools, list):
             return {
@@ -2294,8 +3301,22 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "turn/start",
             {"threadId": agent.thread_id, "input": agent.first_turn_input},
         )
-        agent.active_turn_id = self._turn_id(result)
-        agent.state = "running"
+        turn_id = self._turn_id(result)
+        if getattr(agent, "runtime_failure", None) is not None:
+            # A replayed provider error/terminal owns the state; never revive it
+            # merely because the synchronous response returned successfully.
+            return
+        if turn_id is None:
+            raise CodexRuntimeError("turn/start response has no valid turn identity")
+        with agent.state_lock:
+            if agent.state == "idle" and agent.last_completed_turn_id == turn_id:
+                return
+            if agent.state == "failed":
+                return
+            agent.active_turn_id = turn_id
+            agent.last_started_turn_id = turn_id
+            agent.state = "running"
+        self._reset_activity_clock(agent)
 
     @staticmethod
     def _turn_id(result: dict[str, Any]) -> str | None:
@@ -2307,9 +3328,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     @staticmethod
-    def _expected_active_turn_id(error: str) -> str | None:
-        match = re.search(r"found `([^`]+)`", error)
-        return match.group(1) if match else None
+    def _expected_active_turn_id(error: str | CodexRuntimeRPCError) -> str | None:
+        if isinstance(error, CodexRuntimeRPCError):
+            return error.active_turn_id
+        # Legacy test seams may still raise the old text-only exception.  Accept
+        # only the exact historical wording and validate the captured ID; real
+        # App Server responses always use CodexRuntimeRPCError above.
+        category, active = CodexRuntimeAdapter._classify_steer_message(
+            error if isinstance(error, str) else str(error)
+        )
+        return active if category == "active_turn_mismatch" else None
 
     @staticmethod
     def _delivery_input(delivery: RuntimeDelivery) -> list[dict[str, str]]:
@@ -2352,6 +3380,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # first so turn/steer uses the App Server's active turn identity, not a stale reply.
         self.receive_messages()
         agent = self.agents[agent_id]
+        if getattr(agent, "runtime_failure", None) is not None:
+            raise CodexRuntimeError("runtime failure is latched")
         if agent.active_turn_id:
             try:
                 result = self._rpc(
@@ -2370,10 +3400,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             except CodexRuntimeError as exc:
                 # App-server may finish a turn between its notification and our steer.
                 # Its explicit rejection means the text was not accepted, so a fresh turn is safe.
-                if "no active turn to steer" in str(exc):
+                category = (
+                    exc.category
+                    if isinstance(exc, CodexRuntimeRPCError)
+                    else CodexRuntimeAdapter._classify_steer_message(str(exc))[0]
+                )
+                if category == "no_active_turn_to_steer":
                     agent.active_turn_id, agent.state = None, "idle"
                 else:
-                    active = self._expected_active_turn_id(str(exc))
+                    active = self._expected_active_turn_id(exc)
                     if active:
                         # The server explicitly rejected the first request and supplies its
                         # active turn. One retry preserves the text without duplicating it.
@@ -2408,81 +3443,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return RuntimeDispatchReceipt("start", agent.active_turn_id)
 
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
+        if getattr(agent, "runtime_failure", None) is not None:
+            return
         method, params = value.get("method"), value.get("params", {})
-        # Any App Server notification (streaming token, tool call, turn event, ...)
-        # counts as live model activity and resets the inactivity watchdog clock.
-        self._reset_activity_clock(agent)
-        if isinstance(method, str):
-            self._append_runtime_evidence(
-                "app-server-events",
-                {
-                    "agent_id": agent.agent_id,
-                    "method": method,
-                    "has_request_id": "id" in value,
-                    "param_keys": sorted(params) if isinstance(params, dict) else [],
-                    **(
-                        {"action": "decline", "decision": "decline"}
-                        if method == "item/commandExecution/requestApproval" and "id" in value
-                        else {}
-                    ),
-                },
-            )
-        if method == "item/commandExecution/requestApproval" and "id" in value:
-            self._append_runtime_evidence(
-                "command-approval-events",
-                {
-                    "agent_id": agent.agent_id,
-                    "method": method,
-                    "decision": "decline",
-                    "param_keys": sorted(params) if isinstance(params, dict) else [],
-                },
-            )
-            self._respond_server_request(agent, value["id"], {"decision": "decline"})
+        if method == _PROVIDER_ERROR_METHOD:
+            self._handle_provider_error_notification(agent, value)
             return
-        if method == "item/tool/call" and "id" in value and isinstance(params, dict):
-            self._respond_dynamic_tool(agent, value["id"], params)
-            return
-        if (
-            method == "mcpServer/elicitation/request"
-            and "id" in value
-            and isinstance(params, dict)
-        ):
-            # App Server routes MCP tool approval through elicitation. Accept only the preflight-
-            # locked Profile servers plus the v2 Protocol-only native verifier; all other requests
-            # fail closed.
-            schema = params.get("requestedSchema")
-            server_name = str(params.get("serverName", ""))
-            expected = server_name == "team_transport" or (
-                agent.package.role == "protocol" and server_name == "ontology_platform"
-            ) or (
-                agent.package.role == "protocol"
-                and agent.schema_version == 2
-                and server_name == "protocol_mechanics"
-            ) or (
-                bool(self._role_capability_operations(agent.package.role))
-                and server_name == "runner_capability"
-            ) or (
-                # Examiner elicitations are package-specific: both Examiner packages
-                # carry role ``source-specialist``, so the branch keys on package_id,
-                # matching the package discrimination in ``_require_expected_mcp_servers``.
-                agent.package.package_id == "source-examiner"
-                and server_name == "examiner_report"
-            ) or (
-                agent.package.package_id == "platform-examiner"
-                and server_name in {"examiner_report", "platform_read_proxy"}
-            )
-            action = "accept" if expected else "decline"
-            self._append_runtime_evidence(
-                "mcp-elicitations",
-                {
-                    "agent_id": agent.agent_id,
-                    "server_name": server_name,
-                    "mode": str(params.get("mode", "")),
-                    "schema_keys": sorted(schema) if isinstance(schema, dict) else [],
-                    "action": action,
-                },
-            )
-            self._respond_server_request(agent, value["id"], {"action": action, "content": {}})
+        # Only allowlisted turn/item/tool work counts as live model activity. Error,
+        # warning, startup, status, and unknown notices are intentionally ignored.
+        self._record_notification_header(agent, value)
+        if "id" in value and isinstance(method, str):
+            self._dispatch_server_request(agent, value)
             return
         if not isinstance(params, dict):
             return
@@ -2498,10 +3469,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 self._complete_retrieval_gate_item(agent, params)
             if method == "turn/started":
                 turn = params.get("turn")
-                if isinstance(turn, dict) and isinstance(turn.get("id"), str):
+                started_id = turn.get("id") if isinstance(turn, dict) else None
+                if self._validated_turn_id(started_id) is None:
+                    self._latch_runtime_failure(
+                        agent,
+                        {"source": "notification", "reason": "turn-identity-invalid", "terminal_method": method},
+                    )
+                    return
+                if agent.active_turn_id is not None and started_id != agent.active_turn_id:
+                    self._latch_runtime_failure(
+                        agent,
+                        {"source": "notification", "reason": "turn-identity-mismatch", "terminal_method": method},
+                    )
+                    return
+                if isinstance(started_id, str):
                     agent.active_turn_id, agent.last_started_turn_id, agent.state = (
-                        turn["id"],
-                        turn["id"],
+                        started_id,
+                        started_id,
                         "running",
                     )
             if method in {"turn/completed", "turn/finished"}:
@@ -2513,6 +3497,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     if isinstance(params.get("turnId"), str)
                     else agent.active_turn_id
                 )
+                # Retain the legacy no-payload terminal projection when no turn
+                # is active. A first-turn response always freezes an active ID,
+                # so a replayed terminal there remains strictly bound.
+                if completed_turn_id is None and agent.active_turn_id is None:
+                    agent.active_turn_id, agent.state = None, "idle"
+                    return
+                if self._validated_turn_id(completed_turn_id) is None:
+                    self._latch_runtime_failure(
+                        agent,
+                        {"source": "notification", "reason": "turn-terminal-invalid", "terminal_method": method},
+                    )
+                    return
+                if agent.active_turn_id is not None and completed_turn_id != agent.active_turn_id:
+                    self._latch_runtime_failure(
+                        agent,
+                        {"source": "notification", "reason": "turn-terminal-mismatch", "terminal_method": method},
+                    )
+                    return
                 if isinstance(completed_turn_id, str):
                     agent.last_completed_turn_id = completed_turn_id
                 agent.active_turn_id, agent.state = None, "idle"
@@ -2580,6 +3582,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("app-server is unavailable")
         agent.process.stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}) + "\n"
+        )
+        agent.process.stdin.flush()
+
+    @staticmethod
+    def _respond_server_error(
+        agent: _Agent, request_id: Any, code: int, message: str
+    ) -> None:
+        if agent.process is None or agent.process.stdin is None:
+            raise CodexRuntimeError("app-server is unavailable")
+        agent.process.stdin.write(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": code, "message": message},
+                }
+            )
+            + "\n"
         )
         agent.process.stdin.flush()
 
@@ -3242,8 +4262,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def receive_messages(self) -> list[RuntimeMessage]:
         for agent in self.agents.values():
-            with agent.io_lock:
-                self._drain_agent_output_locked(agent)
+            try:
+                with agent.io_lock:
+                    self._drain_agent_output_locked(agent)
+            except CodexRuntimeError:
+                # A provider failure owns the first terminal cause; process-group
+                # termination may close stdout before Runner consumes its typed
+                # queue. Preserve that cause and suppress only this secondary EOF.
+                if getattr(agent, "runtime_failure", None) is None:
+                    raise
         values, self._messages = self._messages[:], []
         return values
 
@@ -3287,6 +4314,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # persistent Agent shutdown.  This path is idempotent and uses only the
         # injected resource seam; it does not create or discover arbitrary children.
         for handle_digest, resource in list(self._acceptance_children.items()):
+            private_root = resource.spec.get("private_root") if hasattr(resource, "spec") else None
+            resource_identity = f"child:{handle_digest}"
+            child_agent = getattr(resource, "_child_agent", None)
+            if isinstance(child_agent, _Agent):
+                self._child_auth_barriers[resource_identity] = {
+                    "auth_unlinked_monotonic": child_agent.auth_unlinked_monotonic,
+                    "first_dispatch_monotonic": child_agent.first_dispatch_monotonic,
+                }
+                self._record_cleanup_audit(
+                    resource_identity,
+                    self._audit_process_surfaces(child_agent),
+                )
             try:
                 stop = getattr(resource, "stop", None)
                 if callable(stop):
@@ -3296,7 +4335,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     destroy()
             finally:
                 self._acceptance_children.pop(handle_digest, None)
+            if isinstance(private_root, str) and private_root:
+                self._record_cleanup_audit(
+                    resource_identity,
+                    audit_private_artifacts(
+                        Path(private_root), self._secret_audit_values
+                    ),
+                )
         for agent in self.agents.values():
+            self._record_cleanup_audit(
+                agent.agent_id,
+                self._audit_process_surfaces(agent),
+            )
             agent.inactivity_watchdog_stop.set()
             self._close_retrieval_asset_fds(agent)
             if agent.process and agent.process.poll() is None:
@@ -3326,8 +4376,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 (agent.home / name).exists() or (agent.home / name).is_symlink()
                 for name in artifact_names
             )
-            self._private_credentials_destroyed[agent.agent_id] = cleanup_ok and not residual
+            post_cleanup_audit = audit_private_artifacts(
+                self._run_root if self._run_root is not None else agent.home,
+                self._secret_audit_values,
+            )
+            self._record_cleanup_audit(
+                agent.agent_id,
+                post_cleanup_audit,
+                ignore_auth_paths=False,
+            )
+            self._private_credentials_destroyed[agent.agent_id] = (
+                cleanup_ok
+                and not residual
+                and agent.agent_id not in self._secret_audit_failures
+            )
             agent.state = "stopped"
+        # The values are only held transiently to support the post-cleanup audit;
+        # never retain credential bytes after the lifecycle boundary.
+        self._secret_audit_values.clear()
 
     def cleanup_identifiers(self) -> dict[str, Any]:
         identifiers = {}
@@ -3344,11 +4410,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             identifiers[key] = {
                 "thread_id": value.thread_id,
                 "pid": value.process.pid if value.process else None,
+                "auth_barrier": {
+                    "auth_unlinked_monotonic": value.auth_unlinked_monotonic,
+                    "first_dispatch_monotonic": value.first_dispatch_monotonic,
+                },
                 "private_credentials_destroyed": private_credentials_destroyed,
+                "secret_audit": self._secret_audit_failures.get(
+                    key,
+                    {
+                        "scanned_files": 0,
+                        "match_count": 0,
+                        "matched_secret_count": 0,
+                        "matched_secret_digests": [],
+                    },
+                ),
             }
         return identifiers | {
             "acceptance_children": {
                 "active": len(self._acceptance_children),
                 "zero_residue": not self._acceptance_children,
+                "auth_barriers": dict(self._child_auth_barriers),
+                "secret_audit": {
+                    key: value
+                    for key, value in self._secret_audit_failures.items()
+                    if key.startswith("child:")
+                },
             }
         }

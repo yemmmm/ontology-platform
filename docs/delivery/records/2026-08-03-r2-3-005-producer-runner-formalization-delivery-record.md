@@ -1,11 +1,11 @@
 # R2.3-005 Modeling Team Runner Formalization Delivery Record
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`, R2.3-005
-- Status: functional refinement complete; awaiting design
+- Status: R2.3-005 ongoing; Luna-max deterministic switch ready, live provider/security gates blocked
 - Started: 2026-08-03T09:10:57+08:00
-- Last updated: 2026-08-03T15:26:29+08:00
-- Design: pending
-- Shared test plan: pending
+- Last updated: 2026-08-10T02:48:12+08:00
+- Design: `docs/delivery/designs/2026-08-03-r2-3-005-modeling-team-runner-acceptance-design.md`
+- Shared test plan: `docs/delivery/test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md`
 - Delivery baseline: commit `99396c3145a2bba17af59c370d4bf6594a3c7e3c`; pre-existing
   mixed, unstaged `AGENTS.md`, `CLAUDE.md`, and `modeling_team/` experiment changes are excluded
 - Delivery commit: pending
@@ -4011,3 +4011,40 @@ the formal builder, or starting another real run before authorization.
 - Repository-wide Ruff has 48 pre-existing unrelated backend/Pi findings and no modeling-team finding; recorded as P2
   baseline debt, not a target defect. No semantic run was launched. The repair is commit-ready, while R2.3-005 still
   requires a separately authorized live terminal proof.
+
+### 2026-08-10 — start72 semantic success, credential audit failure, and Luna-max handoff
+
+- start72 completed candidate publication, all five Protocol stages, governed retrieval, cq-001/cq-002 PASS,
+  settlement CAS/readback, the Acceptance -> Modeling -> Protocol -> Coordinator terminal chain, four completed role
+  reports, Team settlement, and cleanup. Independent Round 13 therefore accepts its semantic evidence.
+- The same audit found one real DeepSeek provider key in seven retained generated files/21 occurrences: four shell
+  snapshots plus Protocol session JSONL, SQLite, and WAL. No key is repeated here. File-mode hardening did not remove
+  the bytes, and the retained evidence was not rewritten. The run is overall FAIL; Delivery appended the post-audit
+  `runtime/infrastructure,false` ledger event. Provider-side revoke/rotate confirmation remains outstanding.
+- The user directed the Team to switch after that round to Luna-max. The reviewed implementation uses the formal-only
+  manifest `r2-3-005-luna-max/v1`, exact six-role `gpt-5.6-luna/openai/max`, zero formal DeepSeek resolution/env,
+  three-way baseline digest binding, private auth staging/unlink barrier, complete secret audit, and non-formal
+  compatibility.
+
+### 2026-08-10 — Independent Rounds 14–18 and current blocked baseline
+
+- Rounds 14–17 successively exposed and repaired the first-turn auth timing, a wrong ServerRequest method literal,
+  opaque MCP tool-map keys, and the missing persistent stdout-pump contract in the smoke harness. None consumed a
+  semantic-start authorization or called a platform write endpoint.
+- The final implementation adds typed provider/RPC error sanitization, an exact model-progress allowlist, one
+  Adapter Runtime-failure queue, startup/drain fail-fast finalization, early error/terminal state preservation, and
+  expected EOF handling after process-group termination. Provider free text is never retained.
+- Developer verification: `test_runtime_failure_boundary.py` 9 passed; R2.3-005 272 passed/1 skipped/71 subtests;
+  full `modeling_team` 663 passed/1 skipped/218 subtests; Ruff, py_compile, diff check, and GitNexus LOW/0 affected
+  processes passed. Final code hashes are runner
+  `2796c938020da5305695f225c559eda2248bb7df2f5da258a7e56db36998372f` and Codex Runtime
+  `e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e`.
+- Independent Round 18 re-ran the new boundary tests (9/9), focused 202 plus 71 subtests, R2.3-005 unittest 176 with
+  one skip, full unittest 493 with one skip, Ruff/diff/GitNexus, service restart, backend health, and frontend HTTP
+  200. Its single real Luna smoke completed setup, exact MCP discovery, and `turn/start`, pumped 1,499 times with
+  maximum 0.2156-second gap, and leaked zero auth bytes, but produced no matching terminal within 300 seconds.
+  Round 18 remains `runtime/infrastructure` FAIL; no retry or semantic run followed.
+- Authorization `user-20260809-r23005-start72-74` is registered; start72 consumed one. The user's later additional
+  three-start authorization is recorded as pending `user-20260810-r23005-start75-77` and must not be appended to the
+  strict ledger until start74 is terminal. Five conceptual starts remain, all paused behind key rotation and Luna
+  matching-terminal proof.

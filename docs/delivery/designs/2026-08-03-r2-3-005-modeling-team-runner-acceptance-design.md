@@ -2,7 +2,7 @@
 
 ## Status and sources
 
-- Status: Deterministic implementation and prompt-repair gates passed; live R2.3-005 acceptance pending
+- Status: Formal Luna-max switch is deterministic-ready; real provider terminal and historical key rotation pending
 - Requirement: `docs/requirements/requirements-v2.3.md`, R2.3-005
 - Base: R2.3-001 Team Runner/Codex adapter and R2.3-002 fresh-scope modeling workflow
 - Delivery record:
@@ -1183,3 +1183,37 @@ Implementation matches the reviewed design. Independent Round 12 passed the true
 completed-only rejection/acceptance boundary, one Acceptance-to-Modeling handoff, direct four-role terminal order,
 actual formal/non-formal Runner graph and prompt contract, full requirement/modeling-team regressions, modeling-team
 Ruff, diff/GitNexus checks, and restarted backend/frontend health. No live start was performed.
+
+## 2026-08-10 formal-only Luna-max runtime and provider-failure boundary
+
+The post-start72 runtime target is a formal-only six-package manifest, not shared package mutation. The authoritative
+artifact maps Coordinator, Modeling, Protocol, Acceptance, Source Examiner, and Platform Examiner to the exact tuple
+`gpt-5.6-luna/openai/max`. `TeamRunner.prepare` validates and digest-binds it before platform preflight, ledger,
+run-root, transport, capability, or process creation. The initial and post-preflight baseline digests must both equal
+the loader digest. Non-formal and R2.3-002 package behavior remains unchanged.
+
+Formal Codex processes never resolve or inherit the historical DeepSeek key. Host OpenAI auth must be a regular,
+non-symlink, owner-only file and is staged through an exclusive fsynced 0600 copy. It remains available through
+initialize, thread start, exact MCP discovery, and synchronous acceptance of the first turn, then is unlinked before
+any model-selected ServerRequest/tool/MCP dispatch. Ordinary early notifications buffer; an early request with an
+`id` first removes auth and receives a typed response before the matching turn response is awaited. Both persistent
+and Examiner paths share this barrier and secret audit, including `.sh` and extensionless shell snapshots plus
+session/SQLite/WAL/SHM artifacts.
+
+Current Codex status uses opaque tool-map keys, so exact MCP validation derives tool identity from each value's
+`name`; it still rejects missing, wrong, or extra servers/tools. Provider ErrorNotification and matching JSON-RPC
+errors are strictly normalized to closed, secret-free fields. A typed Adapter failure latch/queue owns provider and
+inactivity failures; Runner consumes it before startup continuation and before/after notification pumping, records
+`runtime/infrastructure,false`, cleans once, and reaches `TERMINAL_REPORT_COMPLETE` without forging a turn terminal.
+Only an explicit current-schema progress allowlist refreshes the 300-second inactivity clock; errors, warnings,
+startup/status heartbeats, and unknown notifications do not.
+
+This design is deterministic-ready but not live-provider accepted. Independent Round 18 passed all focused and full
+regressions and credential scans, while its single empty Luna turn returned a valid active turn and exact Team
+Transport surface but no matching completion within the bounded window. start72 remains semantic-PASS evidence but
+overall FAIL because of the retained DeepSeek credential. No new semantic start is allowed until provider-side key
+rotation is confirmed and a Luna smoke produces a matching terminal response.
+
+The user-authorized start72–74 tranche is registered and has two numerical starts remaining. A further three starts,
+start75–77, are explicitly authorized but remain a pending strict-ledger extension until start74 is terminal. This
+authorization changes only the future budget; it does not waive the security or provider-terminal gates.

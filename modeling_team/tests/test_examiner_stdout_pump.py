@@ -329,6 +329,7 @@ def _launch_with_script(
     auth_home = base / "codex-home"
     auth_home.mkdir(mode=0o700)
     (auth_home / "auth.json").write_text("{}", encoding="utf-8")
+    (auth_home / "auth.json").chmod(0o600)
     root = repository_root()
 
     def process_factory(_command, **_kwargs):
@@ -568,6 +569,7 @@ class ExaminerStdoutPumpTests(unittest.TestCase):
             auth_home = base / "codex-home"
             auth_home.mkdir(mode=0o700)
             (auth_home / "auth.json").write_text("{}", encoding="utf-8")
+            (auth_home / "auth.json").chmod(0o600)
             root = repository_root()
             server = _ScriptedAppServer(kind="source", thread_start_error=True)
             self.addCleanup(server.close)

@@ -64,10 +64,30 @@ FROZEN_GLOBAL_SURFACES = {
     # for ``llm_inactivity_timeout_seconds`` (default 300s); the role process is killed
     # and the run settles as runtime/infrastructure via runner.drain consuming the
     # latched failure.  codex.py gains the watchdog/timeout fields; runner.py consumes.
-    "modeling_team/runner.py": "0bf81c84cd139e824f7fb2d93904297aeb03baf9806e423d7e2679b5a6adbb75",
+    # 2026-08-10 R2.3-005 Luna-max refresh: formal Team model declarations are
+    # validated across all four persistent roles and both Examiner packages;
+    # formal DeepSeek environment injection is disabled, init-only auth copies
+    # are unlinked before the first turn, and cleanup scans generated artifacts
+    # for credential sentinels without retaining their content.
+    # 2026-08-10 R2.3-005 credential-boundary refresh: auth JSON sensitive leaves,
+    # protocol keys, and Runner capability tokens are included in the transient
+    # cleanup audit so token-only log/journal residues fail closed.
+    # 2026-08-10 Luna-max/credential-boundary refresh: the formal-only manifest
+    # is digest-bound at prepare; persistent and Examiner auth use owner-private
+    # O_EXCL copies; the first turn barrier unlinks auth before dispatching any
+    # typed ServerRequest (including item/tool/requestUserInput) and preserves
+    # ordinary notifications for one replay.
+    # 2026-08-10 MCP-status-shape refresh: Codex's generated status schema uses
+    # opaque tool-map keys; preflight now reads each Tool value's exact name and
+    # continues to reject missing, extra, or unknown server/tool surfaces.
+    # 2026-08-10 provider-error/liveness refresh: generated ErrorNotification and
+    # JSON-RPC failures now use closed typed categories; Runtime latches one
+    # sanitized provider/watchdog failure, consumes it before/after receive, and
+    # Runner finalizes cleanup/terminal reporting exactly once.
+    "modeling_team/runner.py": "2796c938020da5305695f225c559eda2248bb7df2f5da258a7e56db36998372f",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "252ff85335761a843a78200d4b2e1fb46c192a687b91491b396cd8ca73b8983d",
+    "modeling_team/runtimes/codex.py": "e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

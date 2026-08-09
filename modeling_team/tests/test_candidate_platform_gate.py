@@ -9,6 +9,7 @@ from modeling_team.candidate_platform_gate import (
     CandidatePlatformGate,
 )
 from modeling_team.protocol_mcp_launch import protocol_mcp_launch_spec
+from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team.runtimes.codex import _Agent, CodexRuntimeAdapter
 from modeling_team.runtimes.base import RuntimeDelivery
 from modeling_team.contracts import repository_root
@@ -71,8 +72,8 @@ def test_launch_contract_injects_gate_only_when_requested(tmp_path: Path) -> Non
 def _protocol_agent(root: Path, name: str = "protocol") -> _Agent:
     home, work, skills = (root / f"{name}-home", root / f"{name}-work", root / f"{name}-skills")
     for path in (home, work, skills):
-        path.mkdir(parents=True)
-    package = SimpleNamespace(role="protocol")
+        path.mkdir(parents=True, mode=0o700)
+    package = SimpleNamespace(role="protocol", package_id="protocol")
     return _Agent(
         name,
         package,
@@ -107,7 +108,9 @@ def test_codex_formal_config_and_namespace_bind_gate_read_only(monkeypatch, tmp_
     agent = _protocol_agent(base)
     host_auth = base / "host-auth.json"
     host_auth.write_text("{}", encoding="utf-8")
+    host_auth.chmod(0o600)
     adapter = CodexRuntimeAdapter(repository_root=root)
+    adapter._formal_model_manifest = load_formal_model_manifest(root)
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     adapter._write_config(run, agent)
@@ -130,6 +133,7 @@ def test_codex_nonformal_v2_has_no_candidate_gate_env_or_mount(monkeypatch, tmp_
     agent = _protocol_agent(base)
     host_auth = base / "host-auth.json"
     host_auth.write_text("{}", encoding="utf-8")
+    host_auth.chmod(0o600)
     adapter = CodexRuntimeAdapter(repository_root=root)
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 

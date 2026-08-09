@@ -9,6 +9,7 @@ import pytest
 
 from modeling_team.acceptance_runtime import PLATFORM_PROXY_READ_TOOLS
 from modeling_team.contracts import _load_package, repository_root
+from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team.runtimes.codex import (
     CodexRuntimeAdapter,
     CodexRuntimeError,
@@ -71,26 +72,25 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
+    adapter._formal_model_manifest = load_formal_model_manifest(repo)
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     for role in ("coordinator", "modeling", "protocol", "acceptance"):
         agent = _agent(tmp_path, role)
         adapter._write_config(run, agent)
         config = (agent.home / "config.toml").read_text(encoding="utf-8")
-        assert 'model = "deepseek-v4-flash"' in config
-        assert 'model_provider = "deepseek"' in config
-        assert 'name = "DeepSeek"' in config
-        assert 'base_url = "https://api.deepseek.com/"' in config
-        assert 'wire_api = "responses"' in config
-        assert 'env_key = "DEEPSEEK_API_KEY"' in config
+        assert 'model = "gpt-5.6-luna"' in config
+        assert 'model_provider = "openai"' in config
         assert 'model_reasoning_effort = "max"' in config
-        assert '[shell_environment_policy]' in config
-        assert 'inherit = "core"' in config
-        assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
+        assert 'model_provider = "deepseek"' not in config
+        assert "DEEPSEEK_API_KEY" not in config
         assert "process-secret" not in config
         adapter._start_process(agent)
         env = calls[-1][1]["env"]
-        assert env["DEEPSEEK_API_KEY"] == "process-secret"
+        assert "DEEPSEEK_API_KEY" not in env
+        assert (agent.home / "auth.json").stat().st_mode & 0o777 == 0o600
+        adapter._unlink_private_auth(agent.home)
+        assert not (agent.home / "auth.json").exists()
 
     assert len(calls) == 4
     for command, kwargs in calls:
@@ -121,6 +121,7 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
+    adapter._formal_model_manifest = load_formal_model_manifest(repo)
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     def rpc(_agent: _Agent, method: str, _params: dict[str, object]) -> dict[str, object]:
@@ -178,20 +179,19 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
 
     resource = adapter.acceptance_child_factory(spec)
     config = (private_root / "home" / "config.toml").read_text(encoding="utf-8")
-    assert 'model = "deepseek-v4-flash"' in config
-    assert 'model_provider = "deepseek"' in config
-    assert 'name = "DeepSeek"' in config
-    assert 'base_url = "https://api.deepseek.com/"' in config
-    assert 'wire_api = "responses"' in config
-    assert 'env_key = "DEEPSEEK_API_KEY"' in config
+    assert 'model = "gpt-5.6-luna"' in config
+    assert 'model_provider = "openai"' in config
     assert 'model_reasoning_effort = "max"' in config
-    assert '[shell_environment_policy]' in config
-    assert 'inherit = "core"' in config
-    assert 'exclude = ["DEEPSEEK_API_KEY"]' in config
+    assert "deepseek" not in config.lower()
+    assert "DEEPSEEK_API_KEY" not in config
     assert "child-secret" not in config
     command, kwargs = calls[0]
     assert "child-secret" not in " ".join(command)
-    assert kwargs["env"]["DEEPSEEK_API_KEY"] == "child-secret"
+    assert "DEEPSEEK_API_KEY" not in kwargs["env"]
+    # Auth remains through initialization/MCP discovery; the real first-turn
+    # barrier unlinks it after the synchronous turn/start response.
+    assert (private_root / "home" / "auth.json").exists()
+    adapter._unlink_private_auth(private_root / "home")
     resource.destroy()
 
 
@@ -303,14 +303,14 @@ def test_process_key_takes_precedence_over_fallback(monkeypatch, tmp_path: Path)
     assert CodexRuntimeAdapter(repository_root=root)._resolve_deepseek_api_key() == "process-secret"
 
 
-def test_missing_key_fails_before_persistent_process_factory(tmp_path: Path) -> None:
+def test_formal_process_factory_does_not_resolve_deepseek_key(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "repo"
     (root / "backend").mkdir(parents=True)
     calls: list[object] = []
 
     def process_factory(*_args: object, **_kwargs: object) -> _Process:
         calls.append(True)
-        raise AssertionError("process_factory must not run without a provider key")
+        return _Process([], _kwargs)
 
     adapter = CodexRuntimeAdapter(
         repository_root=root,
@@ -318,13 +318,20 @@ def test_missing_key_fails_before_persistent_process_factory(tmp_path: Path) -> 
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
+    adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_deepseek_api_key",
+        lambda: (_ for _ in ()).throw(AssertionError("formal DeepSeek resolver called")),
+    )
     agent = _Agent(
         "coordinator",
-        SimpleNamespace(role="coordinator"),
+        SimpleNamespace(role="coordinator", package_id="coordinator"),
         tmp_path / "home",
         tmp_path / "work",
         tmp_path / "skills",
     )
-    with pytest.raises(CodexRuntimeError):
-        adapter._start_process(agent)
-    assert calls == []
+    process = adapter._start_process(agent)
+    assert process is not None
+    assert calls == [True]
+    assert "DEEPSEEK_API_KEY" not in process.kwargs["env"]

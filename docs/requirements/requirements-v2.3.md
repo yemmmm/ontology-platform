@@ -2,28 +2,28 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start71，仍为
-  `进行中 / NOT_PASSED`。start71 再次真实完成 r3 candidate、五阶段平台写入、governed retrieval、
-  cq-001/cq-002 `PASS` 与 Acceptance settlement；但 Acceptance 只向 Coordinator 发送普通 completion
-  delivery，未调用 `report_task_result`，因此 formal terminal chain 没有源结果可启动。账本已记为
-  `collaboration/routing,false`，非空失败写入作用域按合同保留，临时凭证与四个 Examiner 均已清理。
-  三次授权已全部消耗；Acceptance terminal-report 修复已通过独立 Round 12 deterministic gate，尚未取得
-  新的真实启动授权。
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start72，仍为
+  `进行中 / NOT_PASSED`。start72 的建模、五阶段写入、两轮 CQ、Acceptance settlement 与四角色 terminal
+  chain 语义证据均为 PASS，但独立审计发现真实 DeepSeek key 残留于保留的 shell snapshot/session/SQLite
+  产物，因此整体按后审计 `runtime/infrastructure,false` 记账，不能作为需求完成证据。后续 formal Team
+  已离线切换为 `gpt-5.6-luna/openai/max`，确定性、隔离和凭据门通过；真实 Luna provider smoke 仍无
+  matching terminal，Rounds 14–18 均明确为 FAIL。start72 历史 key 尚待提供方撤销/轮换确认。
   R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：提交已通过独立 Round 12 的 Acceptance final-PASS terminal-report prompt、串行幂等
-  settlement guard 与 completed-only 机械门。不得启动 start72；任何进一步真实运行必须取得用户
-  新授权。start71 的双题 PASS 与 Acceptance settlement 仍只是部分证据，不能替代四角色 terminal、
-  Team settlement 和 terminal report。
+- 当前下一目标：提交已通过确定性回归的 formal-only Luna-max manifest、first-turn auth barrier、凭据
+  审计、opaque MCP tool-key 兼容与 typed provider/RPC failure liveness 修复；在提供方完成 start72
+  DeepSeek key 撤销/轮换且真实 Luna 空业务 turn 获得 matching terminal 前，不得启动新的语义建模。
+  用户已额外授权三次 start75–77，但该授权须在当前 start72–74 tranche 消耗并终态后通过严格账本登记，
+  不能提前追加或视作已消费。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
   `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-09
+- 更新日期：2026-08-10
 
 ## 背景
 
@@ -3075,3 +3075,40 @@ Runner start coverage and direct four-role order pass. R2.3-005 discovery is 176
 modeling-team discovery is 493/493 with one opt-in skip, full modeling-team Ruff/diff/GitNexus and restarted service
 health pass. Repository-wide Ruff still reports 48 pre-existing findings outside `modeling_team`; these are recorded
 as non-blocking P2 baseline debt and do not weaken the requirement-scoped gate.
+
+## 2026-08-10 R2.3-005 start72 审计、Luna-max 切换与授权边界
+
+start72 `r23005-real-20260809-deepseek-start72` 的业务语义证据达到完整边界：候选、五阶段
+Protocol 写入与 governed retrieval、两轮有序 CQ、四个独立 Examiner、两份 usable PASS verdict、settlement
+CAS/readback、Acceptance -> Modeling -> Protocol -> Coordinator terminal handoff 与 Team settled 均成立。
+但 Independent Round 13 在保留的 Runtime 产物中发现同一个真实 DeepSeek provider key：四个
+`shell_snapshots/*.sh`、Protocol session JSONL 及 SQLite/WAL 共 7 个文件、21 次。因此该运行只可表述为
+“semantic evidence PASS，overall requirement FAIL”；账本中的 `runtime/infrastructure,false` 是 Delivery
+后审计分类。保留证据不得改写，暴露的 key 必须由提供方撤销/轮换并由用户确认。
+
+后续 formal R2.3-005 Team 的模型选择改为独立 manifest
+`modeling_team/model-manifests/r2-3-005-luna-max.yaml`，六个 package ID 精确绑定
+`gpt-5.6-luna/openai/max`。共享 package YAML 和非正式/R2.3-002 路径不受影响。`TeamRunner.prepare`
+在任何平台、账本、run root、transport、capability 或进程副作用前校验六包 manifest，并把 loader、初始
+baseline 与 post-preflight 三个 digest 绑定。正式路径不得解析或注入 DeepSeek key；provider auth 只以
+owner-only、non-symlink、O_NOFOLLOW/O_EXCL/0600/fsync 的临时 `auth.json` 进入 app-server 初始化，并在首个
+turn 被接受后、任何模型选择的 ServerRequest/tool/MCP dispatch 前删除。
+
+首轮 barrier 对 response 前普通 notification 做 buffer/replay；任何带 `id` 的 ServerRequest 必须先删
+auth，再按当前 Codex schema typed respond。MCP discovery 读取 `tools` 字典 value 的 `name`，不得假设
+opaque key 等于工具名，同时继续对 server/tool 集合做 exact fail-closed。同步 JSON-RPC error 与异步
+ErrorNotification 均只允许安全的 method/code/category、`will_retry`、规范 variant 和可选整数 HTTP status；
+provider free text 不得进入异常、stderr 或 evidence。typed Runtime failure queue 由 startup 和 Runner
+drain 共同 exactly-once 收口；错误、warning 和状态心跳不得刷新 model-progress 时钟。
+
+Independent Rounds 14–18 证明 manifest、非正式兼容、auth barrier、secret scan、opaque MCP 形状、typed
+failure、Runner cleanup/terminal、R2.3-005 回归和服务健康均通过。最终确定性基线为 runner
+`2796c938...`、Codex Runtime `e39b3645...`，R2.3-005 pytest discovery 272 passed/1 skipped/71 subtests，
+完整 `modeling_team` 663 passed/1 skipped/218 subtests。真实 Luna 空业务 smoke 已能完成
+initialize/thread/MCP/turn-start，并准确看到 Coordinator 的五个 Team Transport 工具；但 300 秒内没有
+matching `turn/completed|turn/finished`，故 provider gate 仍为 `runtime/infrastructure` FAIL。
+
+账本已登记 `user-20260809-r23005-start72-74`，start72 已消费，start73–74 数值上仍可用。用户于
+2026-08-10 又明确追加三次授权，冻结标识为 `user-20260810-r23005-start75-77`；严格账本要求当前 tranche
+在 start74 终态后才登记下一笔 authorization，因此当前只记录用户决定，不提前修改账本。概念上未消费
+授权共 5 次（start73–77），但在 key rotation 与 Luna matching-terminal gate 完成前全部暂停。

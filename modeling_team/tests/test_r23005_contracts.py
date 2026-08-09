@@ -40,6 +40,7 @@ from modeling_team.acceptance import (
     validate_verdict,
 )
 from modeling_team.contracts import TeamConfigurationError, _load_package, repository_root
+from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team import preflight as preflight_module
 from modeling_team.runner import TeamRunner
 from modeling_team.preflight import normalize_formal_scope
@@ -1746,6 +1747,7 @@ class R23005ContractTests(unittest.TestCase):
             codex_home = base / "codex-home"
             codex_home.mkdir(mode=0o700)
             (codex_home / "auth.json").write_text("formal-provider-auth", encoding="utf-8")
+            (codex_home / "auth.json").chmod(0o600)
             agent = _Agent("acceptance", _load_package(root, "acceptance"), home, work, skills)
             run = SimpleNamespace(
                 root=base,
@@ -1756,6 +1758,7 @@ class R23005ContractTests(unittest.TestCase):
                 acceptance=None,
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._formal_model_manifest = load_formal_model_manifest(root)
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 adapter._write_config(run, agent)
             auth = home / "auth.json"
@@ -1790,6 +1793,7 @@ class R23005ContractTests(unittest.TestCase):
                 acceptance=None,
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._formal_model_manifest = load_formal_model_manifest(root)
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 with self.assertRaisesRegex(CodexRuntimeError, "authentication is unavailable"):
                     adapter._write_config(run, agent)
@@ -1805,6 +1809,7 @@ class R23005ContractTests(unittest.TestCase):
             (base / "sources" / "protocol").mkdir(parents=True, mode=0o700)
             host_auth = base / "host-auth.json"
             host_auth.write_text("protocol-provider-auth", encoding="utf-8")
+            host_auth.chmod(0o600)
             agent = _Agent("protocol", _load_package(root, "protocol"), home, work, skills)
             carrier = RunnerAcceptanceCarrier(
                 base / "acceptance-carrier",
@@ -1822,12 +1827,16 @@ class R23005ContractTests(unittest.TestCase):
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._acceptance = carrier
+            adapter._formal_model_manifest = load_formal_model_manifest(root)
             with patch.object(adapter, "preflight_host_auth", return_value=host_auth):
                 adapter._write_config(run, agent)
             config = (home / "config.toml").read_text(encoding="utf-8")
             self.assertIn("[mcp_servers.runner_capability]", config)
             self.assertIn("runner_capability_mcp.py", config)
             self.assertTrue((home / "runner-capability.token").is_file())
+            capability_token = (home / "runner-capability.token").read_text(encoding="utf-8")
+            self.assertIn(b"protocol-platform-key", adapter._secret_audit_values)
+            self.assertIn(capability_token.encode("utf-8"), adapter._secret_audit_values)
             manifest = json.loads((home / "runner-capabilities.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["role"], "protocol")
             self.assertEqual(

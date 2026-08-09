@@ -44,6 +44,7 @@ class CodexIsolationTests(unittest.TestCase):
             auth = codex_home / "auth.json"
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 auth.write_text("{}", encoding="utf-8")
+                auth.chmod(0o600)
                 self.assertEqual(adapter.preflight_host_auth(), auth)
                 auth.unlink()
                 with self.assertRaisesRegex(CodexRuntimeError, "authentication is unavailable"):
@@ -213,7 +214,7 @@ class CodexIsolationTests(unittest.TestCase):
                 base / "skills",
             )
             for path in (agent.home, agent.work, agent.skills):
-                path.mkdir()
+                path.mkdir(mode=0o700)
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._run_root = base
             command = adapter.namespace_command(agent)
@@ -561,6 +562,18 @@ class CodexIsolationTests(unittest.TestCase):
         ]
         adapter._rpc = lambda _agent, _method, _params: {"data": expected_protocol}  # type: ignore[method-assign]
         adapter._require_expected_mcp_servers(protocol)
+        opaque_protocol = [
+            {
+                "name": server["name"],
+                "tools": {
+                    f"opaque-{server['name']}-{index}": tool
+                    for index, tool in enumerate(server["tools"])
+                },
+            }
+            for server in expected_protocol
+        ]
+        adapter._rpc = lambda _agent, _method, _params: {"data": opaque_protocol}  # type: ignore[method-assign]
+        adapter._require_expected_mcp_servers(protocol)
         coordinator = _Agent(
             "coordinator",
             _load_package(root, "coordinator"),
@@ -713,7 +726,7 @@ class CodexIsolationTests(unittest.TestCase):
                         agent_root / "skills",
                     )
                     for path in (agent.home, agent.work, agent.skills):
-                        path.mkdir(parents=True)
+                        path.mkdir(parents=True, mode=0o700)
                     for source in configuration.task.role_sources:
                         if agent.package.role in source.roles:
                             staged = agent.home / "sources" / source.relative_path
@@ -958,8 +971,8 @@ class CodexIsolationTests(unittest.TestCase):
 
     def test_mcp_tool_names_accepts_status_object_and_array_forms(self) -> None:
         tools = {
-            "send_team_message": {"name": "send_team_message"},
-            "report_task_result": {"name": "report_task_result"},
+            "opaque-tool-id-1": {"name": "send_team_message"},
+            "opaque-tool-id-2": {"name": "report_task_result"},
         }
         self.assertEqual(
             CodexRuntimeAdapter._mcp_tool_names(tools),
@@ -968,6 +981,12 @@ class CodexIsolationTests(unittest.TestCase):
         self.assertEqual(
             CodexRuntimeAdapter._mcp_tool_names(list(tools.values())),
             {"send_team_message", "report_task_result"},
+        )
+        self.assertEqual(
+            CodexRuntimeAdapter._mcp_tool_names(
+                {"opaque-tool-id": {"title": "missing-name"}}
+            ),
+            set(),
         )
 
     def test_stale_active_turn_falls_back_to_one_new_turn(self) -> None:
@@ -1467,13 +1486,14 @@ class CodexIsolationTests(unittest.TestCase):
                 "modeling", _load_package(root, "modeling"), base / "home", base / "work", base / "skills"
             )
             for path in (agent.home, agent.work, agent.skills):
-                path.mkdir()
+                path.mkdir(mode=0o700)
             run = SimpleNamespace(root=base, protocol_key=None)
             (base / "sources").mkdir()
             adapter = CodexRuntimeAdapter(repository_root=root)
             codex_home = base / "codex-home"
             codex_home.mkdir()
             (codex_home / "auth.json").write_text("{}", encoding="utf-8")
+            (codex_home / "auth.json").chmod(0o600)
             original_home = os.environ.get("CODEX_HOME")
             os.environ["CODEX_HOME"] = str(codex_home)
             try:
@@ -1503,6 +1523,7 @@ class CodexIsolationTests(unittest.TestCase):
             codex_home = base / "codex-home"
             codex_home.mkdir()
             (codex_home / "auth.json").write_text("{}", encoding="utf-8")
+            (codex_home / "auth.json").chmod(0o600)
             for role in ("coordinator", "modeling", "protocol"):
                 (base / "sources" / role).mkdir(parents=True)
             run = SimpleNamespace(
@@ -1532,7 +1553,7 @@ class CodexIsolationTests(unittest.TestCase):
                         platform_tools=frozenset({"submit_modeling_batch", "check_platform_health"}),
                     )
                     for path in (agent.home, agent.work, agent.skills):
-                        path.mkdir(parents=True)
+                        path.mkdir(parents=True, mode=0o700)
                     adapter._write_config(run, agent)
                     configs[role] = (agent.home / "config.toml").read_text(encoding="utf-8")
 
@@ -1590,7 +1611,7 @@ class CodexIsolationTests(unittest.TestCase):
                 schema_version=1,
             )
             for path in (v1_agent.home, v1_agent.work, v1_agent.skills):
-                path.mkdir(parents=True)
+                path.mkdir(parents=True, mode=0o700)
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 adapter._write_config(
                     SimpleNamespace(
