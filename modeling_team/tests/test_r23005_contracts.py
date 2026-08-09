@@ -505,6 +505,14 @@ class R23005ContractTests(unittest.TestCase):
                         )
                     runner.start()
                     assert runner.transport is not None
+                    if formal:
+                        acceptance_prompt = runner._task_text("acceptance")
+                        self.assertIn("non-final cq-001 PASS", acceptance_prompt)
+                        self.assertIn("final cq-002 usable PASS", acceptance_prompt)
+                        self.assertIn("report_task_result exactly once", acceptance_prompt)
+                        self.assertIn("report_task_result(status=completed, ...)", acceptance_prompt)
+                        self.assertIn("status=completed", acceptance_prompt)
+                        self.assertIn("ordinary acceptance_verdict_route delivery is not a terminal report", acceptance_prompt)
                     expected = {
                         **common,
                         **({"modeling": {"acceptance"}} if formal else {}),

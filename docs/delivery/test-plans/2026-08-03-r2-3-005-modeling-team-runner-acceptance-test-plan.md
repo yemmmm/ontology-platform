@@ -2567,3 +2567,41 @@ implementation before execution and append the result below without rewriting ea
   the Tester, and its temporary run root was removed.
 - **Overall Round 10 result: PASS (deterministic terminal-routing repair gate).** R2.3-005 remains `NOT_PASSED`;
   only a clean committed start71 may prove the remaining persistent-role terminal and Team settlement gates.
+
+### Round 11 — Start71 live boundary and Acceptance terminal-report repair
+
+- **Live result:** FAIL (`collaboration/routing`, `complete_modeling_quality_result=false`). start71 from clean commit
+  `b3ac7ca`/baseline `c80347e0...` completed candidate receipt, all five Protocol stages, governed retrieval, both
+  ordered CQ rounds, four fresh Examiner reports/recycles, two usable PASS verdicts, and Acceptance settlement with
+  matched CAS/readback. Acceptance delivery-9 reported ordinary completion to Coordinator, but no
+  `report_task_result`, terminal-result handoff, four-role settled evidence, or final report exists.
+- **Cleanup/ledger:** PASS. State is `CLEANED`; Acceptance is settled/cleaned with zero child residue; role/private,
+  project, Protocol, and temporary admin credentials are revoked; the non-empty failed-written scope is retained.
+  The ledger is 317 records/76,502 bytes, SHA-256
+  `b0ee08342ed4fa29c437aec835f88cf89cfe4bdc5c1510c6e7275106908b1a86`. All three authorized starts are consumed.
+- **Root cause:** the formal Acceptance task-text branch omits the generic terminal-tool rule, while package/task
+  wording permits an ordinary Coordinator completion delivery followed by waiting. The new implementation plan was
+  REVISE on its first review because guard/drain settlement could race and settled+blocked could pass; the revised
+  Runner-owned lock/idempotent finalizer plus completed-only guard and true concurrent test received PASS.
+- **Deterministic gate:** superseded by independent Round 12 below. No semantic start was permitted in this round.
+
+### Independent Round 12 — Acceptance terminal-report repair
+
+- **Frozen hashes:** `runner.py`
+  `a791235fb734f0ff3d0686b6c82b512ad87dfa57afbd19234f5cfd5ca07fed15`; Acceptance instructions
+  `6a9d942a86da7b0055866ff9f28dc2a48eaebfa6a1c1a5462bdfad5075a9dcb0`; settlement tests
+  `e5a625fa81ba9f0499b97f2d8b0446bccff01f5d865bb5c47d2fc15e22e8c2cc`; contracts tests
+  `c43ee9ec40cefdab88a0ddd1b7ab842653d6bfbb4f12002cfbe3e4503c6cff63`.
+- **Focused behavior:** PASS, 7/7. The real two-thread test produced one settlement call, CAS, artifact, evidence row,
+  accepted completed report, and one Modeling handoff; settled+blocked was rejected. Actual
+  `TeamRunner.prepare/start` froze the formal/non-formal graphs and prompt literals; direct four-role terminal order,
+  guard status, and phase/prompt boundaries also passed.
+- **Regression/quality:** PASS. R2.3-005 discovery ran 176/176 with one opt-in skip; complete modeling-team discovery
+  ran 493/493 with one opt-in skip; `ruff check modeling_team` and `git diff --check` passed. GitNexus reported LOW,
+  10 changed symbols across 8 indexed files, 0 affected processes. The service restarted active; backend health and
+  frontend returned HTTP 200. Tester created no semantic run, commit, or persistent temp root.
+- **P2 baseline debt:** repository-wide `ruff check .` reports 48 pre-existing findings in unrelated backend/Pi files,
+  with no `modeling_team` finding. The reviewed R2.3-005 gate is full modeling-team Ruff, so this does not block
+  Round 12 and is not attributed to the repair.
+- **Overall Round 12 result: PASS (deterministic repair only).** R2.3-005 remains `NOT_PASSED`, all three live starts
+  are consumed, and a new semantic start requires explicit user authorization.

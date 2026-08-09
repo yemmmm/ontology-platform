@@ -135,6 +135,11 @@ class TeamRunner:
         self._terminal_emitted = False
         self._terminal_handoffs_notified: set[tuple[str, str]] = set()
         self._terminal_handoff_sequence = 0
+        # Acceptance settlement can be reached from both the foreground drain and
+        # the formal Acceptance terminal-report guard. Serialize only that
+        # finalization boundary; the method itself is idempotent after the lock.
+        self._acceptance_settlement_lock = threading.Lock()
+        self._acceptance_settlement_evidence_recorded = False
         self._post_settlement_reporting_requested = False
         self._coordinator_final_captured = False
         self._outer_user_texts: set[str] = set()
@@ -1092,8 +1097,14 @@ class TeamRunner:
             acceptance_id = role_ids.get("acceptance", "acceptance")
             if agent_id == acceptance_id:
                 # Acceptance itself cannot terminate after merely producing a
-                # verdict.  The Delivery/Runner path must first perform the
-                # complete cleanup + CAS/readback settlement transition.
+                # verdict. Only a completed report may cross this boundary, and
+                # the Delivery/Runner path must first perform the complete
+                # cleanup + CAS/readback settlement transition. Incomplete,
+                # failed, and blocked reports remain live even if a stale carrier
+                # happens to expose a settled flag.
+                if status != "completed":
+                    return True
+                self._finalize_acceptance_if_ready()
                 return self.acceptance is None or not self.acceptance.is_settled
         return False
 
@@ -1102,22 +1113,34 @@ class TeamRunner:
 
         if not self._formal_coordination_enabled() or self.acceptance is None:
             return
-        if self.acceptance.is_settled or not self.acceptance.settlement_ready():
+        settlement_ready = getattr(self.acceptance, "settlement_ready", None)
+        if not callable(settlement_ready):
+            # Lightweight legacy test doubles and offline adapters may expose
+            # only ``is_settled``. They cannot claim the settlement boundary, so
+            # leave the terminal guard blocked without invoking a partial path.
             return
-        try:
-            receipt = self.acceptance.settle()
-        except AcceptanceContractError:
-            # A state reader may have observed drift.  The carrier records the
-            # invalidation and remains non-settled; Coordinator cannot pass its guard.
-            return
-        self._append_evidence(
-            "acceptance-settlement",
-            {
-                "status": receipt.get("status"),
-                "settlement_cas": receipt.get("settlement_cas"),
-                "final_readback": receipt.get("final_readback"),
-            },
-        )
+        with self._acceptance_settlement_lock:
+            # Both checks intentionally happen after acquiring the shared lock.
+            # A concurrent guard/drain pair must observe the settled carrier and
+            # return without a second CAS, settlement artifact, or evidence row.
+            if self.acceptance.is_settled or not settlement_ready():
+                return
+            try:
+                receipt = self.acceptance.settle()
+            except AcceptanceContractError:
+                # A state reader may have observed drift. The carrier records the
+                # invalidation and remains non-settled; Coordinator cannot pass its guard.
+                return
+            if not self._acceptance_settlement_evidence_recorded:
+                self._append_evidence(
+                    "acceptance-settlement",
+                    {
+                        "status": receipt.get("status"),
+                        "settlement_cas": receipt.get("settlement_cas"),
+                        "final_readback": receipt.get("final_readback"),
+                    },
+                )
+                self._acceptance_settlement_evidence_recorded = True
 
     def start(self) -> None:
         if not self.run:
@@ -1787,8 +1810,14 @@ class TeamRunner:
                     "Team Transport. Bind question, acceptance_round_id, slice revision, ticket digest, typed "
                     "evidence, and complete model-state identity in every verdict. Route only "
                     "acceptance_verdict_route to coordinator with the current generation and canonical "
-                    "verdict JSON as text."
-                )
+                    "verdict JSON as text. Acceptance remains live after the non-final cq-001 PASS, and "
+                    "after any FAIL or BLOCKED verdict; do not call report_task_result for those outcomes. "
+                    "Only after the final cq-002 usable PASS has been routed successfully may you call Team "
+                    "Transport report_task_result exactly once, using report_task_result(status=completed, ...) "
+                    "with a concise summary "
+                    "before ending. The ordinary acceptance_verdict_route delivery is not a terminal report "
+                    "and cannot substitute for that completed Team Transport call."
+                    )
             if role == "protocol":
                 protocol_capability_operations: set[str] = set()
                 if self.acceptance is not None:

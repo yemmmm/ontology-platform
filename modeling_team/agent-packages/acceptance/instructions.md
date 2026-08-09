@@ -42,6 +42,15 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   result to the ticket, acceptance_round_id, question, slice revision, and full model state.
 - Acceptance remains alive across rounds.  Return the verdict only to Coordinator, then
   wait for the next immutable ticket or settlement instruction.
+- Keep the Acceptance session live after the non-final `cq-001` PASS and after every FAIL or
+  BLOCKED verdict; those outcomes must not call `report_task_result`.
+- Only after the final `cq-002` usable PASS has been routed successfully to Coordinator may you
+  call Team Transport `report_task_result` exactly once, using
+  `report_task_result(status=completed, ...)` with a concise summary, then end. The ordinary
+  `acceptance_verdict_route` delivery is not a terminal report
+  and cannot substitute for that completed Team Transport call. A final FAIL/BLOCKED or an
+  invalidated ticket/state remains live until the Runner supplies the next round or settlement
+  instruction.
 - Use a fresh, globally-unique `request_id` for EVERY capability call
   (`acceptance_child_start`, `acceptance_child_get_report`, `acceptance_child_recycle`,
   `submit_acceptance_result`). Never reuse a `request_id` across operations or attempts;

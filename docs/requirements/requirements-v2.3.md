@@ -2,21 +2,21 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start70，仍为
-  `进行中 / NOT_PASSED`。start70 真实完成 r3 candidate、五阶段平台写入、governed retrieval、两题
-  Examiner 报告与 cq-001/cq-002 `PASS`，证明 sequential-CQ 与 start69 Protocol prompt 修复有效；但
-  Acceptance settled 后 formal terminal dependency graph 未向 Modeling 发送 terminal handoff，四角色与
-  Team 无法共同 terminal。账本已记为 `collaboration/routing,false`，非空失败写入作用域按合同保留，
-  临时凭证与子进程均已清理。formal-only terminal dependency 与 Acceptance verdict prompt 修复已通过
-  独立 Round 10 deterministic gate，剩余授权仅 start71 一次。
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start71，仍为
+  `进行中 / NOT_PASSED`。start71 再次真实完成 r3 candidate、五阶段平台写入、governed retrieval、
+  cq-001/cq-002 `PASS` 与 Acceptance settlement；但 Acceptance 只向 Coordinator 发送普通 completion
+  delivery，未调用 `report_task_result`，因此 formal terminal chain 没有源结果可启动。账本已记为
+  `collaboration/routing,false`，非空失败写入作用域按合同保留，临时凭证与四个 Examiner 均已清理。
+  三次授权已全部消耗；Acceptance terminal-report 修复已通过独立 Round 12 deterministic gate，尚未取得
+  新的真实启动授权。
   R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：提交已通过独立 Round 10 的 formal-only terminal dependency 与 Acceptance verdict prompt
-  修复，再从 clean baseline 启动最后一次 start71。不得把 start70 的双题 PASS 与 Acceptance
-  settlement 单独解释为 R2.3-005 完成；start71 仍须证明四角色 terminal、Team settlement、terminal
-  report、cleanup 与 strict-ledger closeout。
+- 当前下一目标：提交已通过独立 Round 12 的 Acceptance final-PASS terminal-report prompt、串行幂等
+  settlement guard 与 completed-only 机械门。不得启动 start72；任何进一步真实运行必须取得用户
+  新授权。start71 的双题 PASS 与 Acceptance settlement 仍只是部分证据，不能替代四角色 terminal、
+  Team settlement 和 terminal report。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -65,7 +65,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start70 双 CQ PASS 后 terminal-routing FAIL；formal-only dependency 修复独立 Round 10 PASS；仅 start71 尚余一次授权` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start71 双 CQ PASS/Acceptance settled 后缺 terminal report；三次授权耗尽；终态 prompt/guard 修复独立 Round 12 PASS` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -3044,3 +3044,34 @@ to exactly `{status, answer, evidence_ref_ids}`, require `PASS|FAIL|BLOCKED`, an
 or identifier/typed-reference fields; Host tests prove invalid labels are rejected without round/verdict mutation.
 This deterministic repair does not complete R2.3-005. Only a clean committed start71 may prove the remaining four-role
 terminal, Team settlement, terminal report, cleanup, and ledger gates.
+
+### 2026-08-09 R2.3-005 start71 final authorized result and Acceptance terminal-report gate
+
+Start71 ran from clean commit `b3ac7ca` and baseline
+`c80347e0ff753181c1eff5e0c209e3d739d3d9fd22d9ddf1a9fa41540d470292`. It independently repeated the full
+semantic success boundary: exact r3 candidate/receipt, five platform stages, all governed retrieval paths, two frozen
+tickets, ordered cq-001 then cq-002, four fresh Examiner reports and recycle, two usable `PASS` verdicts on one final
+model state, and matched Acceptance settlement CAS/readback.
+
+The formal terminal chain still did not start. Acceptance sent an ordinary completion delivery to Coordinator and
+ended its turn without calling Team Transport `report_task_result`; consequently there was no Acceptance terminal
+result, no Modeling/Protocol/Coordinator terminal handoff, no four-role settlement, and no final report. The role's
+formal task-text branch omitted the generic terminal-tool instruction and its package told it to return the verdict to
+Coordinator and await another ticket/settlement instruction. This is `collaboration/routing`, not a modeling-quality
+result. Cleanup is `CLEANED`, Acceptance remains durably `settled`, all four child attempts are terminal/recycled,
+credentials are destroyed, and the non-empty failed-written Project/Ontology is retained.
+
+The exact start69–start71 authorization is exhausted. Strict ledger state is 317 records, 76,502 bytes, SHA-256
+`b0ee08342ed4fa29c437aec835f88cf89cfe4bdc5c1510c6e7275106908b1a86`. No start72 may launch without new explicit
+user authorization. The reviewed deterministic repair makes final cq-002 usable PASS require exactly one
+`report_task_result(status=completed)` after the verdict route, mechanically rejects Acceptance non-completed terminal
+status, and serializes the existing settlement finalizer behind one Runner-owned lock shared by foreground drain and
+the terminal guard. It adds no automatic Agent report and preserves FAIL/BLOCKED revision reachability. Implementation,
+independent testing, documentation sync, and commit may proceed offline; another live proof remains separately gated.
+
+Implementation and independent Round 12 passed. A true two-thread test proves one settlement call/CAS/artifact/evidence
+record, accepted completed report, and one Modeling handoff; settled-plus-blocked is rejected. Formal/non-formal actual
+Runner start coverage and direct four-role order pass. R2.3-005 discovery is 176/176 with one opt-in skip, complete
+modeling-team discovery is 493/493 with one opt-in skip, full modeling-team Ruff/diff/GitNexus and restarted service
+health pass. Repository-wide Ruff still reports 48 pre-existing findings outside `modeling_team`; these are recorded
+as non-blocking P2 baseline debt and do not weaken the requirement-scoped gate.

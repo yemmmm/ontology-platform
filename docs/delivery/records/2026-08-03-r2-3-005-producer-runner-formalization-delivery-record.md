@@ -3972,3 +3972,42 @@ the formal builder, or starting another real run before authorization.
   processes. Ledger is 314 records/75,867 bytes, SHA-256
   `8cdd1aea036c5f3adbe93b43f6c5a5d82dba0d5832f1c6e41f4de1e217764da4`; only start71 remains and will not launch
   before a clean repair commit.
+
+### 2026-08-09T22:28:23+08:00 — start71 final authorized live boundary and repair plan
+
+- Commit `b3ac7ca` and baseline `c80347e0...` launched start71 through the required shell-direct foreground PTY.
+  Protocol completed the five platform stages and governed retrieval; Coordinator published both frozen tickets and
+  started them in exact order; two fresh Examiner pairs completed and recycled; cq-001/cq-002 both received usable
+  PASS; Acceptance settlement recorded matched final readback/CAS.
+- Acceptance then sent delivery-9, an ordinary completion message to Coordinator, and ended without
+  `report_task_result`. With no Acceptance terminal result, `acceptance -> modeling` could not emit the first handoff;
+  no persistent role or Team settlement followed. Directly impersonating a role or forging a result was rejected as
+  evidence-corrupting. The formal FIFO stop produced cleanup and the ledger records `collaboration/routing,false`.
+- Cleanup is `CLEANED`: Acceptance settled/cleaned, zero child residue, all role/private and platform credentials
+  destroyed/revoked, sessions terminal, and the non-empty failed-written Project
+  `e7c432dc-7b32-484d-8303-bd91d192d304` / Ontology `f3201c76-fe33-48e1-b35d-e5486ec7988b` retained. Ledger state is
+  317 records/76,502 bytes, SHA-256 `b0ee08342ed4fa29c437aec835f88cf89cfe4bdc5c1510c6e7275106908b1a86`.
+- Root cause is prompt/guard coordination: the formal Acceptance task branch omitted the generic terminal-tool rule,
+  and package language directed an ordinary Coordinator completion/wait. The first repair plan was REVISE because
+  guard/drain settlement concurrency was unsafe and settled+blocked remained admissible. The revised plan passed:
+  final cq-002 PASS explicitly calls the terminal tool; non-final/FAIL/BLOCKED remain live; a Runner-owned lock makes
+  settlement finalization single/idempotent; formal Acceptance accepts only `status=completed`; true concurrent and
+  end-to-end terminal-chain tests are mandatory.
+- All three starts authorized by `user-20260809-r23005-start69-71` are consumed. No start72 is authorized. Offline
+  implementation, independent test, documentation, and commit may proceed, but a new real proof requires explicit
+  user authorization.
+
+### 2026-08-09 — Acceptance terminal-report repair independent Round 12 PASS
+
+- Implementation adds one Runner-owned settlement lock with lock-internal settled/readiness recheck, reuses that
+  idempotent finalizer from foreground drain and formal Acceptance guard, and admits only Acceptance
+  `status=completed`. The package/formal task text requires exactly one terminal tool call only after final cq-002
+  usable PASS is routed; ordinary delivery, cq-001 PASS, FAIL, and BLOCKED remain non-terminal.
+- Independent hashes are runner `a791235f...`, Acceptance instructions `6a9d942a...`, settlement test `e5a625fa...`,
+  and contracts test `c43ee9ec...`. Focused 7/7, R2.3-005 176/176 plus one skip, full modeling-team 493/493 plus one
+  skip, modeling-team Ruff, diff, GitNexus LOW/0 processes, service active, backend health, and frontend HTTP 200 all
+  passed. The true race test asserts one settlement CAS/artifact/evidence and one Modeling handoff; direct four-role
+  order and non-formal compatibility pass.
+- Repository-wide Ruff has 48 pre-existing unrelated backend/Pi findings and no modeling-team finding; recorded as P2
+  baseline debt, not a target defect. No semantic run was launched. The repair is commit-ready, while R2.3-005 still
+  requires a separately authorized live terminal proof.

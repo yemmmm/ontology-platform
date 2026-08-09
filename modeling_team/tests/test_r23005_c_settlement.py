@@ -4,6 +4,7 @@ import json
 import copy
 import hashlib
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -703,6 +704,139 @@ class R23005CSettlementTests(unittest.TestCase):
                 broker.report("acceptance", "blocked", "acceptance is not settled")
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("coordinator", "blocked", "coordinator is not settled")
+
+    def test_c_acceptance_finalization_serializes_drain_and_completed_guard(self) -> None:
+        """Two concurrent settlement observers produce one CAS, evidence row, and handoff."""
+
+        class GuardAdapter:
+            def __init__(self) -> None:
+                self.sent: list[tuple[str, object]] = []
+
+            def terminal_report_blocked(self, *_args: object) -> bool:
+                return False
+
+            def send_message(self, recipient_id: str, delivery: object) -> None:
+                self.sent.append((recipient_id, delivery))
+
+            def receive_messages(self) -> list[object]:
+                return []
+
+            def stop(self) -> None:
+                return None
+
+            def cleanup_identifiers(self) -> dict[str, object]:
+                return {}
+
+            def wait_settled(self, _agent_ids: list[str], _timeout: float) -> bool:
+                return False
+
+        roles = [
+            SimpleNamespace(agent_id=name, package=SimpleNamespace(role=name))
+            for name in ("coordinator", "modeling", "protocol", "acceptance")
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_root = root / "run"
+            (run_root / "evidence").mkdir(parents=True)
+            carrier = RunnerAcceptanceCarrier(
+                root / "carrier", task_id="task-r23005", acceptance_id="acceptance"
+            )
+            first = _two_cq_ticket("race-1", "cq1")
+            second = _two_cq_ticket("race-2", "cq2")
+            _run_round(carrier, first, "race-cq1")
+            _run_round(carrier, second, "race-cq2")
+            self.assertTrue(carrier.settlement_ready())
+
+            adapter = GuardAdapter()
+            runner = TeamRunner(repository_root=root, adapter=adapter)
+            runner.run = SimpleNamespace(
+                root=run_root,
+                run_id="run-r23005-race",
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+                    profile=SimpleNamespace(
+                        profile_id="r2-3-005-modeling-team", agents=roles
+                    ),
+                ),
+            )
+            runner.acceptance = carrier
+            permissions = {
+                (sender, recipient)
+                for sender in ("coordinator", "modeling", "protocol", "acceptance")
+                for recipient in ("coordinator", "modeling", "protocol", "acceptance")
+                if sender != recipient
+            }
+            broker = TeamTransportBroker(
+                root / "transport",
+                permissions,
+                terminal_dependencies={
+                    "modeling": {"acceptance"},
+                    "protocol": {"modeling"},
+                    "coordinator": {"modeling", "protocol", "acceptance"},
+                },
+                modeling_agent_id="modeling",
+                terminal_report_guard=runner._terminal_report_guard,
+            )
+            runner.transport = broker
+
+            entered = threading.Event()
+            release = threading.Event()
+            settle_calls = 0
+            original_settle = carrier.settle
+
+            def synchronized_settle() -> dict:
+                nonlocal settle_calls
+                settle_calls += 1
+                entered.set()
+                if not release.wait(timeout=5):
+                    raise AssertionError("settlement release timed out")
+                return original_settle()
+
+            carrier.settle = synchronized_settle  # type: ignore[method-assign]
+            foreground = threading.Thread(target=runner._finalize_acceptance_if_ready)
+            foreground.start()
+            self.assertTrue(entered.wait(timeout=5))
+            guard_result: list[bool] = []
+            guarded = threading.Thread(
+                target=lambda: guard_result.append(
+                    runner._terminal_report_guard("acceptance", True, "completed")
+                )
+            )
+            guarded.start()
+            release.set()
+            foreground.join(timeout=5)
+            guarded.join(timeout=5)
+            self.assertFalse(foreground.is_alive())
+            self.assertFalse(guarded.is_alive())
+            self.assertEqual(settle_calls, 1)
+            self.assertEqual(guard_result, [False])
+            self.assertTrue(carrier.is_settled)
+            self.assertEqual(
+                len((runner.run.root / "evidence" / "acceptance-settlement.jsonl").read_text().splitlines()),
+                1,
+            )
+            self.assertEqual(len(list((root / "carrier").rglob("settlement-cas.json"))), 1)
+            self.assertEqual(len(list((root / "carrier").rglob("settlement.json"))), 1)
+
+            # A settled carrier still cannot accept an incorrect blocked terminal
+            # status; the completed report is the only Acceptance terminal path.
+            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
+                broker.report("acceptance", "blocked", "settled but blocked")
+            completed = broker.report("acceptance", "completed", "acceptance settled")
+            self.assertEqual(completed.status, "completed")
+
+            # The real Runner drain emits the Acceptance -> Modeling handoff once;
+            # a second drain observes the acknowledgement and emits no duplicate.
+            runner.drain()
+            runner.drain()
+            modeling_handoffs = [
+                delivery
+                for recipient, delivery in adapter.sent
+                if recipient == "modeling" and getattr(delivery, "kind", None) == "terminal-handoff"
+            ]
+            self.assertEqual(len(modeling_handoffs), 1)
+            broker.stop()
+            carrier.cleanup()
 
     def test_c31_c47_infrastructure_abort_keeps_acceptance_live_until_explicit_abort_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

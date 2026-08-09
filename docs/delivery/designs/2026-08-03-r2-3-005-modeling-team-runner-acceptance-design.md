@@ -1155,3 +1155,31 @@ are never CQ statuses. Mechanical carrier tests reject those values before verdi
 Plan review initially rejected early Modeling termination because it destroyed revision reachability, then passed the
 formal-only dependency design after it preserved FAIL/BLOCKED lifecycle and non-formal compatibility. This repair is
 an implementation gate only; start71 remains the sole authorized live proof of full terminal settlement.
+
+## 2026-08-09 start71 Acceptance terminal-report closure
+
+Start71 proved the terminal dependency edge itself was not sufficient: after final PASS and settlement, Acceptance
+sent an ordinary completion delivery but never called the terminal tool, so the edge had no source result. The formal
+Acceptance task-text branch had replaced the generic terminal instruction, while the package's wait language made the
+ordinary delivery a plausible completion action.
+
+The repair has two coordinated parts. First, the package and formal task text explicitly distinguish a verdict route
+or completion delivery from `report_task_result`. Non-final cq-001 PASS and every FAIL/BLOCKED path remain live. Only
+after final cq-002 usable PASS is submitted and routed does Acceptance call
+`report_task_result(status=completed)` exactly once. Second, the formal Acceptance terminal guard accepts only
+`completed` and invokes the existing settlement finalizer before checking settlement, so Agent timing cannot race the
+foreground drain.
+
+Because Broker report handling and foreground drain are concurrent, the finalizer is protected by one Runner-owned
+lock and rechecks settled/readiness inside the lock. Both callers share this idempotent path. Exactly one settlement
+CAS, settlement artifact, and Runner evidence record may be written; the other caller observes the settled result.
+Missing prerequisites or non-completed Acceptance status remain rejected without a terminal result or handoff.
+The plan passed review only after adding this serialization and completed-only guard.
+
+No semantic start is part of this repair. The start69–start71 authorization is exhausted, and a later live terminal
+proof requires new user authorization after deterministic PASS and commit.
+
+Implementation matches the reviewed design. Independent Round 12 passed the true concurrent finalization test,
+completed-only rejection/acceptance boundary, one Acceptance-to-Modeling handoff, direct four-role terminal order,
+actual formal/non-formal Runner graph and prompt contract, full requirement/modeling-team regressions, modeling-team
+Ruff, diff/GitNexus checks, and restarted backend/frontend health. No live start was performed.
