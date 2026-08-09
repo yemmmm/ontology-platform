@@ -2,20 +2,21 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start68，仍为
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start69，仍为
   `进行中 / NOT_PASSED`。start68 真实证明 r3 candidate、五阶段平台写入、governed retrieval、两类
-  Examiner 报告和 cq-001 独立 `PASS` verdict；cq-001 PASS 后 Coordinator 未启动 cq-002，运行以
-  `collaboration/routing,false` 终止。该 sequential-CQ 缺口已完成设计、三轮 plan review、开发及独立
-  Round 7/8；Round 8 为确定性实现门 PASS，但尚未执行新的真实 start。正式账本已耗尽为
-  `cap/count/active=67/67/0`，最后事件是 start68 `terminal_failure`，未获新授权前不得启动下一轮。
+  Examiner 报告和 cq-001 独立 `PASS` verdict；其 sequential-CQ 缺口已由 commit `400040c` 修复并
+  通过独立 Round 8。用户随后授权 start69～start71 三次 fresh semantic start。start69 在 CQ 前暴露
+  Protocol 共用 prompt 将 formal task 误判为 capability smoke，仅完成 receipt/health 后被 Host 拒绝
+  terminal；账本已记为 `collaboration/routing,false`，自有 Project/Ontology 与临时凭证均已清理。
+  smoke/formal 分流 prompt 修复已通过独立 Round 9，剩余授权为 start70、start71 两次。
   R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：提交已通过独立 Round 8 的 sequential-CQ 修复；获得新的真实 semantic-start 授权后，
-  从 clean baseline 创建 fresh Project/Ontology，复用已证明的精确 r3 carrier，串行完成 cq-001、cq-002、
-  四角色 terminal、team settlement、terminal report 与 cleanup。不得把 start68 的单题 PASS 或离线
-  Round 8 解释为 R2.3-005 完成。
+- 当前下一目标：提交已通过独立 Round 9 的 Protocol smoke/formal 分流修复，再从 clean baseline
+  启动 start70，复用已证明的精确 r3 carrier，串行完成 cq-001、cq-002、四角色 terminal、team
+  settlement、terminal report 与 cleanup。不得把 start68 的单题 PASS、start69 的 receipt/health，
+  或离线 Round 8/9 解释为 R2.3-005 完成。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -64,7 +65,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start68 cq-001 PASS；sequential-CQ 修复独立 Round 8 PASS；待新授权真实双 CQ/settlement/cleanup；67/67/0` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start69 collaboration/routing；Protocol prompt 修复独立 Round 9 PASS；start70/71 尚余两次授权` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1376,9 +1377,10 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`进行中 / NOT_PASSED。start68 已真实完成候选、平台阶段、检索、Examiner 和 cq-001 PASS，
-但 Coordinator 未启动 cq-002，最终为 collaboration/routing,false。sequential-CQ prompt + Host validation
-修复已通过独立 Round 8；正式账本 67/67/0 已耗尽，待提交并申请新授权完成真实双 CQ、settlement 与 cleanup。`
+当前状态：`进行中 / NOT_PASSED。start68 已真实完成候选、平台阶段、检索、Examiner 和 cq-001 PASS；
+sequential-CQ 修复已通过 Round 8 并提交为 400040c。用户授权 start69～71 后，start69 暴露 Protocol
+共用 prompt 的 smoke/formal 误判，在验收前以 collaboration/routing,false 结束并完成零残留清理。
+该 prompt 修复已通过独立 Round 9；尚余 start70、start71 两次授权用于真实双 CQ、settlement 与 cleanup。`
 
 优先级：`P0`
 

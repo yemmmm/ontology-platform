@@ -3918,3 +3918,28 @@ the formal builder, or starting another real run before authorization.
   The authoritative observed tester timestamps remain Round 7 `19:52 +0800` and Round 8 `19:56 +0800` in the shared
   test plan; final service verification completed at approximately `20:00 +0800`. The event order and evidence are
   unchanged. Future delivery entries must use the shell-observed timestamp at append time.
+
+### 2026-08-09T20:35:23+08:00 — start69 live failure, Protocol prompt repair, and Round 9 PASS
+
+- After commit `400040c`, the user explicitly authorized three fresh semantic starts, recorded as authorization
+  `user-20260809-r23005-start69-71`. start69 reserved baseline
+  `3de30ca5fdc286bb86b87fedb0e7659f8e6bd5c4b727f7ea652b68f8a48a32f3` and performed a real semantic start.
+- Modeling published the exact retained r3 candidate and Protocol produced the accepted candidate receipt. Protocol
+  then misapplied the shared package's unconditional capability-smoke sentence, performed only health reads, and
+  attempted terminal reporting. The Host rejected it as `missing_modeling_handoff`; no five-stage platform work,
+  governed retrieval, acceptance handoff, `silent_for_acceptance`, ticket, or CQ round occurred.
+- Main-agent disposition preserved the run as `collaboration/routing,false`, stopped through the Runner control
+  plane, and verified `CLEANED`: the run-owned Project/Ontology was deleted, project and temporary admin keys were
+  revoked, sessions were terminal, Acceptance had zero active children, and all residual counts were zero. start69
+  consumed one authorized start; start70 and start71 remain.
+- The narrow repair changes only `modeling_team/agent-packages/protocol/instructions.md` plus its existing
+  R2.3-005 prompt-contract test. Smoke behavior now requires an explicit Task/Profile declaration; formal
+  `r2-3-005-formal-acceptance` cannot treat receipt/health as completion and must finish the five platform stages,
+  governed retrieval, Coordinator handoff, Modeling gate notice, `silent_for_acceptance`, and bound terminal handoff.
+- Independent Round 9 result: **PASS (prompt-repair gate; start69 remains a live FAIL)**. Frozen hashes were Protocol
+  instructions `ce149f0c02f4742684619234d7e83fa6aa093a4c22d7b697852cfe14b74adadf` and test
+  `5a738b5d138d28362ae791ecc42f9d4bd22c04bb15f31f3ffcfd9da97ace79a2`. Focused prompt 1/1,
+  complete-revision 8/8, R2.3-005 173/173 with one opt-in skip, complete modeling-team 489/489 with one opt-in skip,
+  Ruff, diff check, GitNexus LOW/0 processes, service health, and independent start69 evidence inspection all passed.
+- R2.3-005 remains `NOT_PASSED`. The next allowed action is to commit this verified prompt repair and launch start70
+  from a clean checkout; no offline result is substituted for live double-CQ acceptance and settlement.

@@ -2,7 +2,7 @@
 
 ## Status and sources
 
-- Status: Design approved by plan review; implementation pending
+- Status: Deterministic implementation and prompt-repair gates passed; live R2.3-005 acceptance pending
 - Requirement: `docs/requirements/requirements-v2.3.md`, R2.3-005
 - Base: R2.3-001 Team Runner/Codex adapter and R2.3-002 fresh-scope modeling workflow
 - Delivery record:
@@ -1113,3 +1113,22 @@ the FIFO test. The one-line lint repair did not alter behavior. Independent Roun
 focused sequential-CQ 6/6, R2.3-005 172/172 with one opt-in skip, related 66/66, complete modeling-team unittest
 discovery 488/488 with one opt-in skip, diff/GitNexus checks, service restart, backend health, and frontend HTTP 200.
 No real semantic run occurred; the live completion gate remains open.
+## 2026-08-09 start69 live prompt repair
+
+start69 reused the frozen r3 continuation candidate and correctly crossed the formal candidate-receipt barrier, but
+the Protocol Agent then followed the shared package's unconditional sentence that called the current work a
+"capability smoke task". It performed only the permitted health read, returned that result to Modeling, and attempted
+terminal reporting. The Host rejected the attempt as `missing_modeling_handoff`; no platform stages, governed
+retrieval, acceptance handoff, or CQ round occurred. This is a prompt-contract defect in the Protocol package, not a
+modeling-quality result and not a failure of the sequential-CQ Host validator.
+
+The narrow repair makes task-mode selection explicit. The smoke-only health/terminal path is available only when the
+loaded Task/Profile itself declares capability smoke; availability of a health tool, a candidate receipt, shared
+package text, or supplemental input cannot imply that mode. For `task_id=r2-3-005-formal-acceptance`, receipt and
+health are intermediate evidence only. Protocol must execute the five current-run platform stages, complete governed
+retrieval, publish the Coordinator handoff, send Modeling's bound gate-complete notice, send
+`silent_for_acceptance`, and wait for the Runner's Protocol `terminal-handoff` before terminal reporting.
+
+This repair changes no Host selector, phase state, ticket binding, platform API, or semantic model. A prompt-contract
+test binds the formal task ID and non-smoke objective to the mandatory full-run wording. Independent Round 9 is the
+deterministic repair gate; only a later fresh live start can prove the repaired behavior.

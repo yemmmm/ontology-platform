@@ -2484,3 +2484,57 @@ implementation before execution and append the result below without rewriting ea
   clean commit/review and a request for the next real-start authorization only. Live R2.3-005 completion is
   still unexecuted and requires a newly authorized semantic start proving both real CQ verdicts, terminal
   reports, settlement, cleanup, and strict-ledger evidence.
+
+### Independent Round 9 execution and result — Start69 Protocol prompt repair
+
+- **Round 9 baseline:** 2026-08-09, independent requirement Tester. The frozen repair hashes matched exactly:
+  `modeling_team/agent-packages/protocol/instructions.md`
+  `ce149f0c02f4742684619234d7e83fa6aa093a4c22d7b697852cfe14b74adadf` and
+  `modeling_team/tests/test_r23005_complete_revision.py`
+  `5a738b5d138d28362ae791ecc42f9d4bd22c04bb15f31f3ffcfd9da97ace79a2`. No product implementation was
+  modified, no semantic start was launched, and no live model/API call was made by this round.
+- **Prompt-contract test:** PASS —
+  `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_complete_revision.R23005CompleteRevisionTests.test_protocol_smoke_shortcut_requires_explicit_declaration_and_formal_full_run`
+  ran 1/1. It verifies the formal task ID is not a smoke task; smoke behavior requires an explicit loaded
+  Task/Profile declaration; formal R2.3-005 forbids the smoke shortcut; receipt/health are intermediate only;
+  all five current-run stages plus governed retrieval, acceptance handoff, bound gate-complete, and
+  `silent_for_acceptance` are required; and `report_task_result` waits for the explicit Protocol
+  `terminal-handoff`.
+- **Complete-revision regression:** PASS —
+  `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005_complete_revision.py'`
+  ran 8/8. The complete R2.3-005 regression discovery ran 173/173 with 1 opt-in Runtime smoke skip, and
+  the complete `modeling_team/tests` discovery ran 489/489 with 1 opt-in Runtime smoke skip. Existing
+  ResourceWarning/RuntimeWarning and expected negative-path stderr remained non-failing diagnostics.
+- **Ruff and diff:** PASS — `uv run --project backend ruff check modeling_team` and `git diff --check` both
+  passed. No stale full-suite lint defect remains.
+- **Independent Start69 evidence audit:** the retained run is
+  `workspaces/modeling-runs/r23005-real-20260809-deepseek-start69/`. Its raw evidence confirms the observed
+  live defect, rather than a claimed completion:
+  - `evidence/capability-calls.jsonl` contains only `modeling_publish_staged_candidate` and
+    `protocol_build_candidate_receipt`.
+  - `evidence/platform-response-artifacts.jsonl` contains exactly two `check_platform_health` results and
+    no dry-run, apply, readback, validation, reasoning, or governed-retrieval artifact.
+  - Protocol's only outbound deliveries after the candidate are the accepted receipt (`delivery-5`) and the
+    exact health envelope (`delivery-6`); no acceptance-stage handoff or `silent_for_acceptance` was produced.
+  - `evidence/team-transport-events.jsonl` records Protocol `report_task_result` as
+    `status=rejected`, `category=missing_modeling_handoff`; the raw Protocol session records that the
+    unconditional shared smoke instruction was followed and the terminal report was refused by the closed
+    terminal gate. This is the `collaboration/routing` prompt-contract defect being repaired.
+  - `state.json` records `state=CLEANED`, Acceptance `status=aborted`, `settled=false`, `active_handles=0`,
+    `zero_child_residue=true`, `credentials_destroyed=true`; runtime Acceptance children are `active=0` and
+    `zero_residue=true`; the owned scope has `owned_project_deleted=true`, `scope_disposition=deleted-empty`,
+    terminal Session/Lease and no in-flight attempts, revoked project/protocol/admin keys, HTTP 204 delete,
+    and post-delete residual counts of zero for Project/Ontology/Session/Lease/scoped key.
+  - `evidence/aborted.jsonl` records `runner-abort-before-settlement` with `settled=false`. The authoritative
+    `workspaces/modeling-runs/.r2-3-005-start-ledger.jsonl` records start69 as
+    `classification=collaboration/routing` and `complete_modeling_quality_result=false` (line 311).
+- **GitNexus and runtime health:** PASS — `mcp__gitnexus__detect_changes(scope=unstaged)` reported 3
+  changed test symbols, 0 affected processes, and `risk_level=low`; the two changed files are the Protocol
+  package instructions and its focused regression test. The existing `ontology-platform.service` remained
+  active; backend `/api/health` returned `{"status":"ok"}` and frontend `/` returned HTTP 200.
+- **Overall Round 9 result: PASS (prompt-repair gate; live Start69 remains a recorded FAIL).** The
+  authoritative formal prompt now blocks the smoke misclassification and the deterministic contract and full
+  regression gates pass. The prior live Start69 failure is correctly preserved as `collaboration/routing`,
+  not reclassified or hidden; cleanup evidence is complete. No fresh semantic run was executed, so R2.3-005
+  remains `NOT_PASSED` and still requires a newly authorized run to prove all five Protocol stages, governed
+  retrieval, both real CQ verdicts, terminal reports, settlement, and final ledger closeout.

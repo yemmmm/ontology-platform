@@ -319,6 +319,37 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         self.assertIn("query exactly equal to that path", protocol_text)
         self.assertIn("host artifact gate validates", protocol_text)
 
+    def test_protocol_smoke_shortcut_requires_explicit_declaration_and_formal_full_run(self) -> None:
+        root = repository_root()
+        protocol_instructions = (
+            root / "modeling_team/agent-packages/protocol/instructions.md"
+        ).read_text(encoding="utf-8")
+        configuration = load_formal_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        protocol_words = " ".join(protocol_instructions.split())
+
+        self.assertEqual(configuration.task.task_id, "r2-3-005-formal-acceptance")
+        self.assertNotIn("capability smoke", configuration.task.objective.lower())
+        for phrase in (
+            "only when the loaded Task/Profile explicitly declares a capability smoke run",
+            "Never infer that designation",
+            "from a candidate receipt",
+            "For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`)",
+            "the capability smoke shortcut is forbidden",
+            "a candidate receipt or a health/read-only result is intermediate evidence, never",
+            "Execute all five current-run stages (dry-run, apply, readback, validation, reasoning)",
+            "complete governed retrieval",
+            "publish the acceptance-stage handoff to Coordinator",
+            "send the bound gate-complete notice to Modeling",
+            "then send `silent_for_acceptance`",
+            "do not call `report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`",
+            "This smoke-only path never applies to formal R2.3-005",
+        ):
+            self.assertIn(phrase, protocol_words)
+
     def test_c95_modeling_waits_for_bound_protocol_gates_and_coordinator_uses_exact_pause_shape(self) -> None:
         root = repository_root()
         modeling_instructions = (
