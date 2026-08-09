@@ -262,6 +262,14 @@ completion and must not be promoted to a full PASS.
   method counts and normalized provider error codes only. A Runner-visible failure is a
   valid liveness result but is not a successful Luna provider smoke; only a matching
   terminal response satisfies the provider gate.
+- After the user-confirmed DeepSeek-key revocation, one final diagnostic smoke may run
+  from committed code. It has no business source, platform client, or StartLedger. It
+  stops on the first matching terminal or typed Runtime failure and captures only the
+  safe provider-error projection already written by the Adapter. Because the 300-second
+  watchdog is an inactivity window that begins again on genuine allowlisted progress,
+  the harness uses a 420-second absolute safety cap: a timeout before the Adapter's own
+  typed watchdog failure is `BLOCKED/inconclusive`, not a product PASS or failure. No
+  retry is permitted in that round.
 - A retained start72 scan continues to detect the historical DeepSeek breach without
   modifying it; release notes require provider-side revocation/rotation confirmation.
 - Run focused model/runtime tests, all R2.3-005 tests, full `modeling_team` tests, Ruff,
@@ -275,4 +283,8 @@ must verify the final frozen hashes. Documentation and commit closure follow a p
 deterministic and credential-sanitization gates. Start72 does not satisfy the full
 requirement. The remaining authorization may be used for a later fresh semantic run
 only after this repair is committed, the exposed DeepSeek key is revoked/rotated, and
-the user confirms continuation.
+the user confirms continuation. The user confirmed revocation on 2026-08-10; the Luna
+matching-terminal gate remains open. Independent Round 19 consumed the single permitted
+post-revocation diagnostic, not a semantic start: setup succeeded, but the Adapter emitted
+typed `inactivity-watchdog/llm-inactivity-timeout` before the 420-second cap and without a
+matching terminal. No retry is authorized by this plan.

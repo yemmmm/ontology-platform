@@ -1211,8 +1211,11 @@ startup/status heartbeats, and unknown notifications do not.
 This design is deterministic-ready but not live-provider accepted. Independent Round 18 passed all focused and full
 regressions and credential scans, while its single empty Luna turn returned a valid active turn and exact Team
 Transport surface but no matching completion within the bounded window. start72 remains semantic-PASS evidence but
-overall FAIL because of the retained DeepSeek credential. No new semantic start is allowed until provider-side key
-rotation is confirmed and a Luna smoke produces a matching terminal response.
+overall FAIL because the retained evidence contains the historical DeepSeek credential. The user confirmed that key
+was revoked on 2026-08-10; the evidence remains unchanged. Independent Round 19 then ran the one permitted
+post-revocation empty diagnostic from commit `5a30826`: setup and `turn/start` succeeded, but the Adapter emitted
+typed `{stage: inactivity-watchdog, code: llm-inactivity-timeout}` after about 320 seconds without a matching
+terminal. No new semantic start is allowed until a Luna smoke produces a matching terminal response.
 
 The user-authorized start72–74 tranche is registered and has two numerical starts remaining. A further three starts,
 start75–77, are explicitly authorized but remain a pending strict-ledger extension until start74 is terminal. This

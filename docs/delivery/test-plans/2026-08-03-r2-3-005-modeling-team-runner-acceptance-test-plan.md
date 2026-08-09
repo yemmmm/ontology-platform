@@ -2979,3 +2979,50 @@ implementation before execution and append the result below without rewriting ea
   active/running; backend `/api/health` returned `{"status":"ok"}`/HTTP 200 and frontend `/` returned HTTP 200.
 - **Overall Round 18 result: FAIL.** Typed provider/RPC and terminal-boundary tests pass, but the real Luna smoke
   produced no matching terminal event within the explicit bound and C33 remains open.
+
+### Independent Round 19 — Post-revocation final Luna diagnostic (2026-08-10)
+
+- **Scope and authorization boundary:** Independent validation after the user confirmed that the historical
+  start72 DeepSeek key was revoked. The Tester did not independently verify the provider-side revocation, and did
+  not edit start72 evidence. Exactly one formal Coordinator empty-business diagnostic was run from committed
+  product code; no retry was started. The smoke used no business source, platform client, or StartLedger/Runner
+  reservation. Only this shared test plan was appended by the Tester.
+- **Frozen product binding:** HEAD was `5a30826` (`Switch formal modeling team to Luna max`). The unchanged product
+  hashes were `runner.py` `2796c938020da5305695f225c559eda2248bb7df2f5da258a7e56db36998372f`,
+  `runtimes/codex.py` `e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e`,
+  `model_manifest.py` `a4698f89b283e0ccddf7f3aa13d528867505e2538cc81b50d26c31db0e90a034`, formal manifest
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`, Luna manifest test
+  `28312982e3d7660e785fe9c0b63f35f02226efd4aac6c09f548d786b21cb94fa`, and runtime-boundary test
+  `43905f6370802a55013f4511fd06c936a967bc9adf92410a7b2b479008d35263`.
+- **Focused regression:** **PASS.** `backend/.venv/bin/python -m pytest -q
+  modeling_team/tests/test_runtime_failure_boundary.py modeling_team/tests/test_luna_max_model_manifest.py
+  modeling_team/tests/test_codex_isolation.py` returned **81 passed, 48 subtests passed**. `git diff --check --`
+  passed.
+- **Smoke protocol:** The harness froze a non-empty Coordinator `active_turn_id` immediately after `start_task`
+  and invoked the public no-argument `adapter.receive_messages()` every 0.20 seconds. It made **1600** pump
+  calls; maximum measured gap was **0.20613s** (within the 0.25s limit). `initialize`,
+  `skills/extraRoots/set`, `skills/list`, `thread/start`, `mcpServerStatus/list`, and `turn/start` all returned
+  sanitized `status=response`, `code=ok`. The observed Team Transport surface was exactly
+  `issue_control`, `report_issue`, `report_task_result`, `send_coordination`, and `send_team_message`.
+- **Luna terminal gate:** **FAIL (`runtime/infrastructure`, typed Runtime failure).** No matching
+  `turn/completed`/`turn/finished` arrived and no `last_completed_turn_id` was recorded. Before the 420-second
+  absolute cap, the Adapter latched the safe failure `{stage: inactivity-watchdog, code: llm-inactivity-timeout}`;
+  no raw provider text, RPC message/data, stderr, token, path, or secret was retained. This is a valid liveness
+  failure classification, not a Luna provider terminal PASS; the 420-second cap was not reached, so this is not the
+  cap-induced `BLOCKED/inconclusive` branch.
+- **Auth, secret, cleanup, and side effects:** `auth_unlinked=true` and `first_dispatch_observed=false`. Scans
+  covered **34** files before cleanup and **32** after cleanup, with **0 matches / 0 matched secrets** in both;
+  the host auth input contributed three sensitive leaves represented only by their existing SHA-256 digests. Active
+  children were **0** and `private_credentials_destroyed=true`; post-cleanup process exit was `-15`. No source files
+  were created, platform calls were **0**, StartLedger mutations were **0**, and the formal ledger remained byte- and
+  digest-identical (`ed4b2bd95ccc8eed685b566e557fb9fb5b2ea50e4bd4038f25f8bd28c655d3e8`).
+- **Service health and retained evidence:** `ontology-platform.service` remained active; backend
+  `/api/health` returned `{"status":"ok"}`/HTTP **200**, and frontend `/` returned HTTP **200**. The retained
+  start72 seven-file/21-occurrence historical credential finding was not scanned, rewritten, or deleted by this
+  round; the user's revocation confirmation closes provider-side validity risk only and does not change retained
+  evidence.
+- **Overall Round 19 result: FAIL.** Deterministic focused checks, auth/secret isolation, cleanup, no-side-effect,
+  and service-health gates pass. The real Luna provider gate remains open because the one permitted diagnostic
+  stopped on Adapter's typed inactivity failure without a matching terminal response. No further diagnostic retry is
+  authorized by this round; a later semantic start remains gated on a matching Luna terminal and the documented
+  ledger/authorization state.

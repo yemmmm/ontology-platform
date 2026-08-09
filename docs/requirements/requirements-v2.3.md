@@ -7,14 +7,18 @@
   chain 语义证据均为 PASS，但独立审计发现真实 DeepSeek key 残留于保留的 shell snapshot/session/SQLite
   产物，因此整体按后审计 `runtime/infrastructure,false` 记账，不能作为需求完成证据。后续 formal Team
   已离线切换为 `gpt-5.6-luna/openai/max`，确定性、隔离和凭据门通过；真实 Luna provider smoke 仍无
-  matching terminal，Rounds 14–18 均明确为 FAIL。start72 历史 key 尚待提供方撤销/轮换确认。
+  matching terminal，Rounds 14–19 均明确为 FAIL。用户已于 2026-08-10 确认撤销 start72 历史 key；
+  retained 证据仍保持原样。Round 19 在提交 `5a30826` 上完成唯一一次 post-revocation 空业务诊断：初始化、
+  MCP 与 `turn/start` 均成功，但 Adapter 在约 320 秒后产生类型化 `llm-inactivity-timeout`，未获得 matching
+  terminal，且未触碰业务 source、平台或 StartLedger。
   R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
 - 当前下一目标：提交已通过确定性回归的 formal-only Luna-max manifest、first-turn auth barrier、凭据
-  审计、opaque MCP tool-key 兼容与 typed provider/RPC failure liveness 修复；在提供方完成 start72
-  DeepSeek key 撤销/轮换且真实 Luna 空业务 turn 获得 matching terminal 前，不得启动新的语义建模。
+  审计、opaque MCP tool-key 兼容与 typed provider/RPC failure liveness 修复；start72 DeepSeek key 已由
+  用户确认撤销，但 Round 19 已证明当前 Luna 空业务 turn 仍以类型化 inactivity failure 结束；在获得
+  matching terminal 前仍不得启动新的语义建模，也不得把该 Runtime 失败计入已授权的语义 start。
   用户已额外授权三次 start75–77，但该授权须在当前 start72–74 tranche 消耗并终态后通过严格账本登记，
   不能提前追加或视作已消费。
 - 关联交付记录：

@@ -4048,3 +4048,28 @@ the formal builder, or starting another real run before authorization.
   three-start authorization is recorded as pending `user-20260810-r23005-start75-77` and must not be appended to the
   strict ledger until start74 is terminal. Five conceptual starts remain, all paused behind key rotation and Luna
   matching-terminal proof.
+
+### 2026-08-10 — Historical DeepSeek key revoked by user
+
+- The user explicitly confirmed that the DeepSeek API key exposed by retained start72 Runtime artifacts has been
+  revoked. This closes the provider-side credential-validity risk; it does not rewrite or delete retained evidence,
+  and it does not retroactively convert start72 overall acceptance to PASS.
+- No ledger event or semantic-start authorization was consumed by this confirmation. The remaining live gate is one
+  matching Luna terminal from committed code; only after that gate passes may Delivery reserve start73.
+
+### 2026-08-10 — Round 19 post-revocation Luna diagnostic
+
+- The independently executed, single permitted empty diagnostic was bound to commit `5a30826`. Initialization,
+  skills, thread start, exact Team Transport discovery, and `turn/start` all returned sanitized `ok` responses. The
+  public no-argument receive pump froze a non-empty active turn id and ran 1,600 times with a maximum 0.20613-second
+  gap.
+- No matching `turn/completed` or `turn/finished` arrived. At about 320 seconds the Adapter emitted the typed safe
+  failure `{stage: inactivity-watchdog, code: llm-inactivity-timeout}` before the 420-second absolute cap. Round 19
+  is therefore `FAIL (runtime/infrastructure)`, not `BLOCKED/inconclusive` and not a Luna provider terminal PASS.
+- Credential and lifecycle boundaries passed: both pre- and post-cleanup scans found zero secret matches; private
+  credentials were destroyed; active children were zero; backend and frontend remained HTTP 200. The diagnostic
+  created no source files, made no platform calls, and left the StartLedger byte-identical.
+- The user-confirmed DeepSeek-key revocation closes the historical credential's provider-side validity risk, while
+  retained start72 evidence remains unchanged. Round 19 consumed no semantic start, so start73–77 remain
+  conceptually available under their existing strict-ledger sequencing; all remain paused behind the Luna
+  matching-terminal gate. No further diagnostic retry is authorized by this round.
