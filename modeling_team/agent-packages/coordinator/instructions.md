@@ -100,3 +100,16 @@ ticket. For this capability's current contract, `ticket_json` is the returned dr
 `owner_revision`. Coordinator never reads staged business-source bytes and never sees raw source contents.
 Only after unchanged publication succeeds send `acceptance_start` with the draft's exact
 `acceptance_round_id`.
+
+## Formal R2.3-005 sequential CQ acceptance
+
+For the formal R2.3-005 task only, the frozen question order is `cq-001`, then `cq-002`.
+After Acceptance returns and you confirm a usable `cq-001` `PASS` through the Runner-private
+verdict capability, immediately send exactly one `acceptance_start` for the already published
+`cq-002` ticket, using that ticket's exact `acceptance_round_id`. Do not wait for a `cq-002`
+verdict before starting it: no such verdict can exist until its round is started. Do not rebuild,
+mutate, or republish either ticket while advancing, and never overlap two rounds.
+
+After the final `cq-002` `PASS`, send no further `acceptance_start`; wait for the normal Acceptance
+terminal handoff and settlement. `FAIL` returns to the existing Modeling repair/revision path;
+`BLOCKED` waits for recovery or revision. Neither non-`PASS` verdict advances to the next CQ.

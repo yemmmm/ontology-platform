@@ -1020,3 +1020,96 @@ Independent review and verification are required before any start46 reservation;
 semantic start. Start45's terminal failure stays recorded as `runtime/infrastructure,false` and is the fifth of
 the ten newly authorized starts, leaving five; repair authorization for start45 may be written only after this
 amendment is independently accepted and committed on a reviewed clean baseline.
+
+## 2026-08-09 Start68 sequential-CQ Coordinator contract repair
+
+### Evidence and target
+
+Start68 reached the first complete independent verdict route: cq-001 was submitted and confirmed as `PASS`.
+`AcceptancePhase.route_verdict` then correctly returned the same generation to `WAITING_ACCEPTANCE`, preserving
+the already completed Modeling-ready and Protocol-silent signals so a second sequential round was legal. The
+Coordinator nevertheless stated that it would wait for cq-002's verdict without sending cq-002
+`acceptance_start`; no second round existed, so both persistent roles waited until the run was aborted.
+
+The target behavior is requirement-owned Coordinator scheduling: after it receives and confirms a PASS verdict,
+it inspects the frozen question order already injected by the Runner and starts the next published,
+not-yet-completed ticket with that ticket's exact `acceptance_round_id`. After the final frozen question PASS it
+starts no further round and waits for the normal Acceptance terminal handoff and settlement sequence.
+
+### Current minimal scope
+
+- Amend the authoritative Coordinator package instructions and the formal Coordinator branch of
+  `TeamRunner._task_text` with the same explicit state transition: PASS plus a remaining frozen question means
+  immediately send exactly one `acceptance_start` for the next published ticket; do not merely wait for a verdict
+  that cannot exist.
+- Preserve requirement order (`cq-001`, then `cq-002`), the existing ticket objects, ticket revisions,
+  `acceptance_round_id` values, Team Transport operation, and current generation. Coordinator must not rebuild,
+  mutate, or republish a ticket while advancing.
+- Advance only after the prior verdict has been received through the normal verdict route and confirmed through
+  the existing Runner-private verdict capability. FAIL returns to Modeling repair under the existing generation
+  rules; BLOCKED waits for recovery/revision; neither starts the next CQ. A final PASS starts no extra CQ.
+- Before the formal Runner lets `CoordinatorPhaseController` change phase or lets Team Transport enqueue an
+  `acceptance_start`, it asks the existing `RunnerAcceptanceCarrier` to validate the Coordinator-selected round.
+  Validation is read-only and must require: the round has an already published frozen ticket; its question is the
+  next requirement-ordered CQ without a completed usable PASS; the selected round has not already started/completed;
+  and no next round exists after the final CQ PASS. Before cq-002 starts, the validator invokes the existing passive
+  `revalidate_model_state` boundary against the live platform snapshot, then requires cq-001's verdict to remain
+  `verdict_usable=true`, its ticket/round epoch and model-state digest to equal the carrier's current bound state,
+  and its child pair to be fully recycled with no active handles. The cq-002 ticket must bind that same current model
+  state. A wrong/early/replayed/post-final ID leaves phase, generation, delivery queue, tickets, rounds, and verdict
+  state unchanged. A real platform drift may append only the existing state-revalidation/invalidation evidence and
+  invalidate stale PASS/round state as designed; it still must not change coordination phase or enqueue a delivery.
+- The Host continues to reject overlap, stale generations, out-of-phase starts, and now wrong/unpublished,
+  early, duplicate, or post-final round IDs. The carrier validation must not return or choose a round ID and must
+  not start anything; Coordinator remains the sole CQ selector. No new Host scheduler, persistent state field,
+  model-visible capability, or automatic runtime delivery is introduced.
+
+### Non-goals
+
+This repair does not change Acceptance semantics, verdict construction, Examiner inputs or reports, the proven r3
+candidate, platform apply/retrieval, settlement, cleanup, start-ledger policy, provider configuration, or outer
+input. It does not add another competency question, business slice, retry loop, generalized orchestration layer,
+or product UI. It consumes no semantic start during implementation or deterministic verification.
+
+### Risk containment
+
+GitNexus reports `TeamRunner._task_text`, `TeamRunner._coordination_phase_callback`, and
+`CoordinatorPhaseController.start_acceptance_round` as CRITICAL (each 83 affected symbols, 77 direct dependants)
+because they are shared prompt/coordination entry points. The implementation must therefore change only the existing
+formal Coordinator prompt branch and insert the carrier validation only in the formal R2.3-005 callback before the
+unchanged generic phase transition. The generic phase controller, non-formal runs, other roles, branch selection,
+and legacy tasks remain unchanged. Focused tests freeze both the positive formal behavior and negative unaffected
+surfaces.
+
+### Acceptance criteria
+
+1. Both authoritative Coordinator prompt surfaces explicitly require cq-001 PASS -> cq-002 `acceptance_start`
+   using the already published cq-002 round ID, and explicitly forbid waiting for cq-002 verdict before starting it.
+2. The prompt contract says final-CQ PASS starts no further round; FAIL and BLOCKED do not advance; two rounds are
+   never active concurrently; ticket rebuild/republication is forbidden during advancement.
+3. Runner+carrier integration tests prove PASS returns to `WAITING_ACCEPTANCE` on the same generation and permits
+   exactly the next published frozen round. Wrong/unpublished ID, cq-002 before cq-001 PASS, duplicate/replayed
+   round, third round, and any start after final PASS fail before phase transition and enqueue, with carrier and
+   delivery state unchanged. A valid-looking cq-002 start after post-PASS platform drift performs passive state
+   revalidation, invalidates cq-001 PASS, rejects the start with no phase/enqueue change, and requires fresh tickets
+   plus both CQs on the new state. Existing overlap, stale generation, FAIL, and BLOCKED behavior remains unchanged.
+4. The carrier validator never selects or starts a round and is not exposed as a model-visible capability. The
+   generic `CoordinatorPhaseController` and non-formal coordination behavior remain unchanged.
+5. Formal Coordinator task text contains the repair; other roles and non-formal task text remain unchanged.
+6. Focused and full `modeling_team/tests`, Ruff, GitNexus `detect_changes`, service restart, backend health, and
+   frontend HTTP verification pass before commit. This proves implementation readiness only; R2.3-005 still
+   requires a newly authorized real start completing cq-001, cq-002, terminal reports, settlement, and cleanup.
+
+### Implementation and independent verification result
+
+Implemented as reviewed. `RunnerAcceptanceCarrier.validate_coordinator_acceptance_start` validates only the
+Coordinator-selected round and returns no selection; the formal Runner callback calls it before the unchanged generic
+phase controller. Both Coordinator prompt surfaces carry the sequential PASS contract. A focused six-test module
+covers the ordered success path, wrong/early/replayed/stale/third-round rejection, current digest and child cleanup,
+post-PASS state drift invalidation, and role isolation.
+
+Independent Round 7 found no behavior defect but failed the planned full-Ruff gate on one pre-existing unused local in
+the FIFO test. The one-line lint repair did not alter behavior. Independent Round 8 passed full Ruff, FIFO 10/10,
+focused sequential-CQ 6/6, R2.3-005 172/172 with one opt-in skip, related 66/66, complete modeling-team unittest
+discovery 488/488 with one opt-in skip, diff/GitNexus checks, service restart, backend health, and frontend HTTP 200.
+No real semantic run occurred; the live completion gate remains open.

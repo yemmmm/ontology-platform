@@ -1003,6 +1003,36 @@ class TeamRunner:
                 generation=generation,
             )
         if message_kind == "acceptance_start":
+            # Formal R2.3-005 keeps Coordinator as the sole round selector,
+            # while the Runner-owned carrier validates that selection before
+            # the generic controller changes phase or the observer queues the
+            # Acceptance delivery.  Reject the generic controller's own
+            # out-of-phase/stale-generation cases first so a rejected request
+            # cannot append even a passive CQ2 revalidation record.
+            formal_sequential = (
+                self._formal_coordination_enabled()
+                and self.acceptance is not None
+                and getattr(self.acceptance, "_ticket_policy", None) is not None
+            )
+            if formal_sequential:
+                phase = getattr(self.coordinator_phase, "phase", None)
+                phase_value = getattr(phase, "value", phase)
+                controller = self.coordinator_phase
+                if (
+                    sender_id != controller.coordinator_id
+                    or phase_value != "WAITING_ACCEPTANCE"
+                    or not isinstance(text, str)
+                    or not text
+                    or isinstance(generation, bool)
+                    or not isinstance(generation, int)
+                    or generation != controller.generation
+                ):
+                    return controller.start_acceptance_round(
+                        sender_id=sender_id,
+                        round_id=text,
+                        generation=generation,
+                    )
+                self.acceptance.validate_coordinator_acceptance_start(round_id=text)
             return self.coordinator_phase.start_acceptance_round(
                 sender_id=sender_id,
                 round_id=text,
@@ -1904,6 +1934,19 @@ class TeamRunner:
                         "is rejected."
                         + frozen_question_instruction
                     )
+                sequential_instruction = ""
+                if self._formal_coordination_enabled():
+                    sequential_instruction = (
+                        "\nFormal R2.3-005 sequential acceptance is mandatory: after you receive and confirm the "
+                        "cq-001 PASS verdict through the Runner-private verdict capability, immediately send "
+                        "exactly one acceptance_start for the already published cq-002 ticket, using that "
+                        "ticket's exact acceptance_round_id. Do not wait for a cq-002 verdict before starting "
+                        "cq-002; no such verdict can exist until its round is started. Do not rebuild, mutate, "
+                        "or republish either ticket while advancing. A final cq-002 PASS starts no further "
+                        "round and waits for the normal Acceptance terminal handoff and settlement. FAIL returns "
+                        "to the existing Modeling repair/revision path; BLOCKED waits for recovery or revision; "
+                        "neither non-PASS verdict advances to the next CQ, and never overlap two rounds."
+                    )
                 return text + (
                     "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
                     "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
@@ -1917,7 +1960,8 @@ class TeamRunner:
                     + " Only after unchanged publication succeeds "
                     "send acceptance_start with the returned acceptance_round_id. Coordinator never reads staged "
                     "business sources or receipt payload bytes."
-                    "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
+                    + sequential_instruction
+                    + "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
                     "\nreport_task_result is recorded exactly once only after Modeling, Protocol, and Acceptance "

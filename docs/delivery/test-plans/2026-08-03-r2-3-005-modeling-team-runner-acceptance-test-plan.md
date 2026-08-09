@@ -2356,3 +2356,131 @@ only when all of the following pass:
 ### Independent Round 6 execution and result
 
 (to be appended by the independent tester)
+
+## 2026-08-09 Start68 sequential-CQ Coordinator repair — planned independent round 7
+
+This round is deterministic and consumes no semantic-start authorization. The independent tester must review the
+implementation before execution and append the result below without rewriting earlier rounds.
+
+1. **Formal prompt contract:** package instructions and the Runner-injected formal Coordinator task text both state
+   that, after confirming cq-001 PASS, Coordinator starts the already published cq-002 round exactly once with its
+   exact `acceptance_round_id`; waiting for a not-yet-started cq-002 verdict is forbidden.
+2. **Terminal and non-PASS boundaries:** final cq-002 PASS starts no additional round; FAIL returns to the existing
+   modeling-revision path; BLOCKED waits for recovery/revision; neither non-PASS result advances to the next CQ.
+3. **Runner+carrier mechanics:** publish both frozen tickets, send ready/silent, start cq-001, store/recycle its
+   Examiner results and PASS verdict, route PASS, observe the same generation in `WAITING_ACCEPTANCE`, and start the
+   exact published cq-002 round once. Reject wrong/unpublished ID, cq-002 before cq-001 PASS, duplicate/replayed
+   cq-001, overlap, stale generation, a third round, and any start after final cq-002 PASS before phase transition
+   or Runtime enqueue.
+4. **Post-PASS state revalidation:** before cq-002 transition, re-read the live model state. Stable state requires
+   cq-001 `verdict_usable=true`, current epoch/model-state digest, current cq-002 ticket binding, and zero active
+   cq-001 children. A platform write or revision after cq-001 PASS invalidates the old PASS, rejects cq-002 start,
+   leaves phase and Runtime queue unchanged, records the existing state-invalidation evidence, and requires fresh
+   tickets plus both CQs on the new state.
+5. **No mutation on ordinary rejection:** snapshot phase/generation, coordination queue, tickets, rounds, verdicts, and durable
+   evidence before every invalid start and prove they remain unchanged. The carrier validation returns no selected
+   ID, is not a model-visible capability, and performs no automatic dispatch. The drift case may append only the
+   expected passive revalidation/invalidation records and stale-PASS markers.
+6. **No ticket mutation on success:** the advancement instruction reuses the published cq-002 ticket and exact round
+   ID. It never rebuilds, republishes, rewrites, or derives ticket fields and never changes ticket revision or
+   generation.
+7. **Isolation regression:** the generic phase controller and non-formal coordination path remain compatible;
+   non-formal tasks and Modeling, Protocol, and Acceptance task text do not acquire the new
+   Coordinator-only instruction. Existing ticket pipeline, issue escalation, settlement, verdict, FIFO outer input,
+   Runtime isolation, DeepSeek configuration, and start68 evidence-ref regressions pass.
+8. **Repository gates:** run focused tests for Coordinator task text and Runner+carrier acceptance sequencing, then the complete
+   `modeling_team/tests` suite and Ruff. Run GitNexus `detect_changes`; restart `ontology-platform.service`; verify
+   `http://127.0.0.1:8001/api/health` and frontend `http://127.0.0.1:5173/`.
+9. **Evidence boundary:** deterministic PASS permits a clean commit and a request for new real-start authorization;
+   it does not mark R2.3-005 complete. Live completion still requires both CQ verdicts, persistent-role terminal
+   reports, team settlement, terminal report, cleanup, and strict-ledger evidence from one fresh authorized start.
+
+### Independent Round 7 execution and result
+
+- **Round 7 execution:** 2026-08-09 19:52 +0800, independent requirement Tester. The reviewed stable
+  worktree matched the handoff hashes exactly: `acceptance.py`
+  `5113bfe4525755da23610d8bb516106472ddf20aabdebab226361fd577f3f2f6`, `runner.py`
+  `37fe2f873c8203dde7016c0e41f14a8d8f15960c212ed0ae39774a433e5423a5`, Coordinator instructions
+  `276f4ec6947cb512a8da4f731f30d52d03a60d9e4f0e270ce8c705b81407799a`, and focused test
+  `test_r23005_sequential_cq.py` `9636737b5e822658c9ba46b984ee12ceb41809ae17560ab363605950d74378e2`.
+  No product file was changed and no semantic start or live model/API call was made by this round.
+- **Focused sequential-CQ contract:** PASS —
+  `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_sequential_cq`
+  ran 6/6. It covers the formal Coordinator prompt isolation, exact published cq-001 to cq-002
+  advancement on the same generation, no ticket mutation, unpublished/early/replayed/stale-generation
+  rejection before phase/round/runtime mutation, final-pass third-round rejection, current digest and
+  complete prior-child cleanup requirements, and passive model-state drift invalidating the stale cq-001
+  PASS without enqueueing cq-002.
+- **Additional boundary probe:** PASS — an isolated formal Runner/phase/carrier probe exercised overlap,
+  `FAIL`, and `BLOCKED`; overlap and cq-002 without a usable cq-001 PASS were rejected with unchanged
+  phase, generation, events, and runtime queue. `FAIL` entered the existing Modeling-revision path and
+  `BLOCKED` remained in `WAITING_ACCEPTANCE`; neither advanced to cq-002.
+- **R2.3-005 regression:** PASS —
+  `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py' -v`
+  ran 172 tests, 172 passed, 1 skipped (`real Codex Runtime smoke requires explicit opt-in`). This
+  includes the existing phase-controller, ticket, issue, settlement, ledger, non-formal/legacy, prompt,
+  isolation, and start68 evidence-reference regressions.
+- **Related suites:** PASS — `test_acceptance_child_start_host_derived.py` 6/6,
+  `test_build_acceptance_verdict.py` 22/22, and `test_r23002.py` 38/38 passed (66/66 total).
+- **Complete modeling-team suite:** PASS —
+  `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'`
+  ran 488 tests, 488 passed, 1 skipped. Existing ResourceWarning/RuntimeWarning and expected negative-path
+  stderr were non-failing diagnostics.
+- **Changed-surface lint and diff:** PASS — `uv run --project backend ruff check modeling_team/acceptance.py
+  modeling_team/runner.py modeling_team/tests/test_r23005_sequential_cq.py`; `git diff --check`; and
+  `ruff check modeling_team --exclude modeling_team/tests/test_outer_input_fifo.py` all passed.
+- **Repository Ruff gate:** FAIL (pre-existing, unrelated P3). `uv run --project backend ruff check modeling_team`
+  fails only at unchanged `modeling_team/tests/test_outer_input_fifo.py:42` with `F841 Local variable
+  fifo is assigned to but never used`. `git blame` attributes the line to existing commit `8a9777d5`, and
+  linting the exact HEAD version reproduces the same error; no Round 7 file introduced it. The implementation
+  surface itself is lint-clean, but the planned full Ruff gate is not green until that unrelated baseline
+  warning is corrected or explicitly waived.
+- **GitNexus and runtime health:** PASS — `mcp__gitnexus__detect_changes(scope=unstaged)` reported 9
+  changed symbols across 6 files, 0 affected execution processes, and `risk_level=low`. After restarting
+  `ontology-platform.service`, the unit became active; `GET http://127.0.0.1:8001/api/health` returned
+  `{"status":"ok"}` and `GET http://127.0.0.1:5173/` returned HTTP 200.
+- **Overall Round 7 result: FAIL (quality gate only).** The sequential-CQ implementation and all focused,
+  related, complete-test, diff, GitNexus, and runtime checks passed. The sole failing gate is the unrelated
+  pre-existing full-Ruff `F841` above. No D1/D2 behavior defect was reproduced. Live completion remains
+  unexecuted: a newly authorized semantic start is still required to prove both real CQ verdicts, terminal
+  reports, settlement, cleanup, and strict-ledger evidence; deterministic Round 7 does not mark R2.3-005
+  complete.
+
+### Independent Round 8 execution and result
+
+- **Round 8 execution:** 2026-08-09 19:56 +0800, independent requirement Tester. The four R2.3-005 product
+  hashes remained unchanged from the frozen Round 7 baseline: `acceptance.py`
+  `5113bfe4525755da23610d8bb516106472ddf20aabdebab226361fd577f3f2f6`, `runner.py`
+  `37fe2f873c8203dde7016c0e41f14a8d8f15960c212ed0ae39774a433e5423a5`, Coordinator instructions
+  `276f4ec6947cb512a8da4f731f30d52d03a60d9e4f0e270ce8c705b81407799a`, and focused test
+  `test_r23005_sequential_cq.py` `9636737b5e822658c9ba46b984ee12ceb41809ae17560ab363605950d74378e2`.
+  The only new file hash is the authorized lint-only change to
+  `modeling_team/tests/test_outer_input_fifo.py`: `c77f9da620e63c2e7c98dde1a94ccd93298b97b88a1e6e96d2011ce1f46bb580`.
+  No product implementation was changed, and no semantic start or live model/API call was made.
+- **Ruff and FIFO repair:** PASS — `uv run --project backend ruff check modeling_team` is clean. The affected
+  `uv run --project backend python -m unittest -v modeling_team.tests.test_outer_input_fifo` ran 10/10
+  tests successfully, including the tight-permission FIFO creation case changed from an unused local binding
+  to a direct `self._open()` call.
+- **Focused sequential-CQ re-test:** PASS —
+  `uv run --project backend python -m unittest -v modeling_team.tests.test_r23005_sequential_cq` ran 6/6.
+  The exact ordered PASS path, ticket immutability, wrong/unpublished/early/replay/stale-generation/third-round
+  rejection, current digest and cleanup checks, prompt isolation, and live model-state drift invalidation all
+  remain green.
+- **R2.3-005 and related regressions:** PASS — `test_r23005*.py` discovery ran 172/172 with 1 opt-in Runtime
+  smoke skip; `test_acceptance_child_start_host_derived.py` ran 6/6; `test_build_acceptance_verdict.py` ran
+  22/22; and `test_r23002.py` ran 38/38. The prior Round 7 boundary and non-PASS probe remains applicable;
+  no product hash changed between rounds.
+- **Complete modeling-team suite:** PASS —
+  `uv run --project backend python -m unittest discover -s modeling_team/tests -p 'test_*.py'` ran 488/488,
+  with 1 opt-in Runtime smoke skip. ResourceWarning/RuntimeWarning and expected negative-path stderr remained
+  non-failing diagnostics.
+- **Diff, GitNexus, and runtime health:** PASS — `git diff --check` passed. GitNexus
+  `detect_changes(scope=unstaged)` reported 9 changed symbols in 7 files, 0 affected processes, and
+  `risk_level=low`; the additional file is the one-line FIFO lint repair. After restarting
+  `ontology-platform.service`, the unit was active, `GET http://127.0.0.1:8001/api/health` returned
+  `{"status":"ok"}`, and `GET http://127.0.0.1:5173/` returned HTTP 200.
+- **Overall Round 8 result: PASS (deterministic implementation gate).** The Round 7 quality-gate defect is
+  fixed and independently verified; no D1/D2 behavior defect or regression was found. This PASS authorizes
+  clean commit/review and a request for the next real-start authorization only. Live R2.3-005 completion is
+  still unexecuted and requires a newly authorized semantic start proving both real CQ verdicts, terminal
+  reports, settlement, cleanup, and strict-ledger evidence.

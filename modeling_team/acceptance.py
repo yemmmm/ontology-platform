@@ -2002,6 +2002,169 @@ class RunnerAcceptanceCarrier:
         )
         return _safe_copy(invalidation)
 
+    def validate_coordinator_acceptance_start(self, *, round_id: str) -> None:
+        """Validate one Coordinator-selected formal CQ round before dispatch.
+
+        The Coordinator remains the only component that chooses a round.  This
+        Runner-private guard only checks that the selected, already-published
+        ticket is the next requirement-ordered question and that all preceding
+        PASS evidence is still consumable.  It deliberately returns no round
+        identity and does not mutate ticket, round, verdict, or coordination
+        state.  The one exception is the existing passive model-state boundary:
+        before CQ2 it may append the normal revalidation/invalidation evidence
+        and mark stale PASS evidence unusable when the live snapshot drifted.
+        """
+
+        if not isinstance(round_id, str) or not round_id:
+            _error("Coordinator acceptance round identity is invalid")
+        if self._ticket_policy is None:
+            _error("sequential Coordinator acceptance validation is unavailable")
+        try:
+            question_ids = self.frozen_question_ids()
+        except AcceptanceContractError:
+            raise
+        if len(question_ids) != 2:
+            _error("formal acceptance must freeze exactly two competency questions")
+
+        selected_ticket = self._tickets.get(round_id)
+        selected_round = self._rounds.get(round_id)
+        if selected_ticket is None or selected_round is None:
+            _error("Coordinator acceptance round is unpublished")
+
+        # The next requirement-ordered question is the first one without a
+        # usable PASS in the current retained state epoch.  A failed/blocked
+        # old round therefore cannot be replayed: it must be replaced by a
+        # fresh ticket after the existing Modeling revision path.
+        current_epoch = self._state_epoch
+        expected_index = 0
+        prior_round: dict[str, Any] | None = None
+        for index, question_id in enumerate(question_ids):
+            matching = [
+                (candidate_id, candidate)
+                for candidate_id, candidate in self._rounds.items()
+                if self._tickets.get(candidate_id, {}).get("question_id") == question_id
+                and candidate.get("state_epoch") == current_epoch
+            ]
+            usable = next(
+                (
+                    (candidate_id, candidate)
+                    for candidate_id, candidate in matching
+                    if candidate.get("verdict_usable") is True
+                    and isinstance(candidate.get("verdict"), Mapping)
+                    and candidate["verdict"].get("verdict") == "PASS"
+                ),
+                None,
+            )
+            if usable is None:
+                expected_index = index
+                if index:
+                    prior_round = self._rounds.get(
+                        next(
+                            candidate_id
+                            for candidate_id, candidate in self._rounds.items()
+                            if self._tickets.get(candidate_id, {}).get("question_id")
+                            == question_ids[index - 1]
+                            and candidate.get("state_epoch") == current_epoch
+                            and candidate.get("verdict_usable") is True
+                            and isinstance(candidate.get("verdict"), Mapping)
+                            and candidate["verdict"].get("verdict") == "PASS"
+                        )
+                    )
+                break
+        else:
+            # Both frozen questions have a usable PASS in this state epoch;
+            # there is no legal third round or replay after final PASS.
+            _error("all frozen Acceptance questions already have usable PASS verdicts")
+
+        expected_question_id = question_ids[expected_index]
+        if selected_ticket.get("question_id") != expected_question_id:
+            _error("Coordinator acceptance round is not the next requirement-ordered question")
+
+        # A round is startable only while it is still a published, untouched
+        # ticket.  Once Acceptance has acknowledged it, started a child, filed
+        # reports, or reached any terminal/retry state, a replay is rejected.
+        if selected_round.get("status") != "published":
+            _error("Coordinator acceptance round was already started or completed")
+        if selected_round.get("verdict") is not None or selected_round.get("children"):
+            _error("Coordinator acceptance round was already started or completed")
+        if selected_round.get("ticket_digest") != selected_ticket.get("ticket_digest"):
+            _error("Coordinator acceptance round ticket binding is invalid")
+
+        if self._model_state_boundary is None:
+            _error("Coordinator acceptance model-state snapshot is unavailable")
+        current_digest = self._model_state_boundary.digest
+        if selected_round.get("state_epoch") != current_epoch:
+            _error("Coordinator acceptance round belongs to a stale model-state epoch")
+        if selected_ticket.get("model_state_digest") != current_digest:
+            _error("Coordinator acceptance ticket is bound to stale model state")
+
+        if expected_index == 1:
+            if prior_round is None:
+                _error("Coordinator acceptance CQ1 PASS is unavailable")
+            if prior_round.get("verdict_usable") is not True:
+                _error("Coordinator acceptance CQ1 PASS is not usable")
+            prior_verdict = prior_round.get("verdict")
+            if not isinstance(prior_verdict, Mapping) or prior_verdict.get("verdict") != "PASS":
+                _error("Coordinator acceptance CQ1 verdict is not PASS")
+            if prior_verdict.get("model_state_digest") != self._model_state_boundary.digest:
+                _error("Coordinator acceptance CQ1 verdict is bound to stale model state")
+            if prior_round.get("state_epoch") != self._state_epoch:
+                _error("Coordinator acceptance CQ1 PASS belongs to a stale model-state epoch")
+            if prior_round.get("state_digest") != self._model_state_boundary.digest:
+                _error("Coordinator acceptance CQ1 PASS digest is stale")
+            prior_round_id = next(
+                candidate_id
+                for candidate_id, candidate in self._rounds.items()
+                if candidate is prior_round
+            )
+            prior_ticket = self._tickets.get(prior_round_id)
+            if not isinstance(prior_ticket, Mapping) or prior_ticket.get("ticket_digest") != prior_round.get("ticket_digest"):
+                _error("Coordinator acceptance CQ1 ticket binding is invalid")
+            if (
+                prior_verdict.get("acceptance_round_id") != prior_round_id
+                or prior_verdict.get("ticket_digest") != prior_ticket.get("ticket_digest")
+            ):
+                _error("Coordinator acceptance CQ1 verdict ticket binding is invalid")
+            prior_receipt = self._verdicts.get(prior_round_id)
+            if (
+                prior_receipt is None
+                or prior_receipt.verdict_digest != prior_verdict.get("verdict_digest")
+            ):
+                _error("Coordinator acceptance CQ1 verdict receipt is unavailable")
+            if prior_ticket.get("model_state_digest") != self._model_state_boundary.digest:
+                _error("Coordinator acceptance CQ1 ticket is bound to stale model state")
+            if prior_round.get("children"):
+                _error("Coordinator acceptance CQ1 children are still active")
+            if prior_round.get("cleanup") != EXAMINER_KINDS:
+                _error("Coordinator acceptance CQ1 child pair was not fully recycled")
+            if any(
+                handle.acceptance_round_id == prior_round_id
+                for handle in self._handles.values()
+            ):
+                _error("Coordinator acceptance CQ1 child handle is still active")
+
+            # CQ2 is the only advancement path.  Re-read the live Producer
+            # snapshot after all ordinary ticket/round checks have passed so a
+            # write after PASS invalidates the old evidence and cannot enqueue
+            # CQ2.  A stable revalidation is the existing durable boundary;
+            # drift is allowed to append only its normal invalidation records.
+            revalidation = self.revalidate_model_state(boundary="before-cq-002")
+            if revalidation.get("status") != "valid":
+                _error("Coordinator acceptance CQ1 PASS was invalidated by model-state drift")
+            if prior_round.get("state_epoch") != self._state_epoch:
+                _error("Coordinator acceptance CQ1 PASS belongs to a stale model-state epoch")
+            if prior_round.get("state_digest") != self._model_state_boundary.digest:
+                _error("Coordinator acceptance CQ1 PASS digest is stale")
+            if selected_round.get("state_epoch") != self._state_epoch:
+                _error("Coordinator acceptance CQ2 ticket belongs to a stale model-state epoch")
+            if selected_ticket.get("model_state_digest") != self._model_state_boundary.digest:
+                _error("Coordinator acceptance CQ2 ticket is bound to stale model state")
+
+        # No selected ID is returned and no dispatch occurs here.  The caller
+        # may now invoke the unchanged phase controller and enqueue the exact
+        # round text it received from Coordinator.
+        return None
+
     def issue_ticket_revision(
         self,
         ticket: Mapping[str, Any],

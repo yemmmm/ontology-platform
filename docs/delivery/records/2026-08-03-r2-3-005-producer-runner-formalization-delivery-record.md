@@ -3699,3 +3699,222 @@ the formal builder, or starting another real run before authorization.
 - **Round 5 result: PASS.** No live model/API call or semantic start occurred during deterministic verification.
   Start45 requires a clean committed baseline and exact repair authorization. The retained provider 402 remains an
   external runtime prerequisite: do not spend another semantic start until the DeepSeek account has usable balance.
+
+### 2026-08-09T19:15:15+08:00 — Codex takeover and start68 current-state audit
+
+- The user asked Codex to lead the remaining R2.3-005 work. The authoritative requirement remains
+  `docs/requirements/requirements-v2.3.md#R2.3-005`; this existing append-only record, design, and shared test plan
+  are resumed rather than replaced.
+- The takeover baseline is clean `main` at `c4b7713` (`Host-derive verdict evidence_refs from examiner reports`).
+  Backend `/api/health` returned `{"status":"ok"}` and the frontend returned HTTP 200. No product file was changed
+  during the audit.
+- Canonical ledger replay evidence ends with start68
+  `r23005-real-20260808-deepseek-start68` as `terminal_failure`,
+  `classification=collaboration/routing`, and `complete_modeling_quality_result=false`. The ledger has 307 records,
+  SHA-256 `e023fe04913d301cdd59db7816c1de595d9d75547ce437575f0852014e5a0c5d`; the authorized semantic-start count is
+  exhausted at `67/67`. No further real start is allowed without a new user authorization.
+- Direct start68 evidence proves the unchanged r3 candidate, five Protocol platform stages, governed retrieval,
+  Examiner reports, and the first successful cq-001 Acceptance verdict route with `PASS`. It does not prove cq-002,
+  persistent-role terminal reports, team settlement, cleanup completeness, or the R2.3-005 completion gate.
+- The remaining observed failure is narrow: after confirming cq-001 PASS, Coordinator stated that it would wait for
+  cq-002 but never emitted cq-002 `acceptance_start`. `AcceptancePhase.route_verdict` already returns the same
+  generation to `WAITING_ACCEPTANCE` after PASS, so a sequential second round is legal; the current Coordinator
+  instructions describe the first start but do not explicitly require the next uncompleted frozen question to be
+  started after a PASS verdict.
+- The next phase is collaborative functional refinement of the ownership boundary, followed by design/test-plan
+  amendment, mandatory plan review, delegated implementation, and independent testing. Start68's partial PASS must
+  not be promoted to requirement PASS.
+
+### 2026-08-09T19:18:00+08:00 — Pre-design impact and refinement gate
+
+- GitNexus exploration found no separate Host process that automatically selects the next CQ. The existing
+  `AcceptancePhase.route_verdict` state machine deliberately returns a PASS round to `WAITING_ACCEPTANCE` while
+  preserving the same ready/silent generation, and `start_acceptance_round` already permits the next sequential
+  round from that state.
+- The likely authoritative prompt surfaces are
+  `modeling_team/agent-packages/coordinator/instructions.md` and the formal Coordinator branch of
+  `TeamRunner._task_text`. GitNexus upstream impact for `_task_text` is **CRITICAL**: 83 affected symbols, including
+  77 direct dependants. This is a shared prompt construction entry point, so any accepted implementation must keep
+  the code change inside the exact formal Coordinator branch and prove non-formal/other-role regressions.
+- One consequential functional decision remains with the user: preserve requirement-owned Coordinator scheduling
+  and repair its prompt contract, or transfer PASS-to-next-CQ selection into new Host automation. No implementation
+  begins until that boundary is confirmed.
+
+### 2026-08-09T19:20:00+08:00 — Functional refinement decision
+
+- The user approved the recommended boundary: Coordinator continues to own sequential CQ scheduling. The Host
+  phase machine validates ordering and bindings but does not select or auto-start the next competency question.
+- The repair must make the Coordinator, after receiving and confirming a PASS verdict, start the next published,
+  frozen, not-yet-completed CQ ticket in requirement order. It must not start another round after the final CQ PASS,
+  must not advance on FAIL or BLOCKED, and must never overlap two active Acceptance rounds.
+- The current minimal scope is a formal R2.3-005 Coordinator prompt-contract repair plus deterministic prompt/
+  phase regressions and later one real end-to-end start. New Host orchestration, a generalized CQ scheduler,
+  additional business slices, and changes to Modeling, Protocol, Examiner, verdict, settlement, or platform
+  semantics remain out of scope.
+
+### 2026-08-09T19:25:00+08:00 — Plan review round 1 and accepted High revision
+
+- Independent plan review result: **REVISE**, with one evidence-backed High finding. The original plan claimed Host
+  rejection of wrong/third rounds while `CoordinatorPhaseController.start_acceptance_round` accepted any non-empty
+  round ID and the Runner queued it without carrier ticket validation. A typo, early cq-002, replay, or post-final
+  third round could therefore mutate phase and later block settlement.
+- Main-agent disposition: `accepted-high`. The finding is directly reproduced and consistent with the user's
+  confirmed boundary that Host validates but does not schedule. GitNexus rates both
+  `start_acceptance_round` and `_coordination_phase_callback` CRITICAL (83 affected symbols, 77 direct dependants).
+- Plan revision: keep the generic phase controller unchanged; before the formal R2.3-005 phase transition/enqueue,
+  use a new read-only `RunnerAcceptanceCarrier` validation of the Coordinator-selected published round, frozen CQ
+  order, preceding PASS/cleanup, replay, and final-round exhaustion. It returns no chosen ID and performs no
+  dispatch. Invalid starts must leave phase, queue, tickets, rounds, and verdicts unchanged.
+- The design and shared Round 7 plan now require Runner+carrier integration tests for wrong/unpublished ID,
+  cq-002-before-cq-001-PASS, duplicate/replay, overlap, stale generation, third round, and post-final start, plus
+  non-formal/generic-controller isolation. The revised plan is returned to the same reviewer before development.
+
+### 2026-08-09T19:30:00+08:00 — Plan review round 2 and stale-PASS revision
+
+- Re-review confirmed the round-ID/order High was closed, then returned **REVISE** with one additional High: the
+  proposed validator required only a stored PASS and cleanup, but an existing PASS can remain stored while
+  `verdict_usable=false` after model-state drift. The requirement and C40 require both CQs to bind one final model
+  state; `submit_verdict` revalidation occurs before PASS persistence and does not cover a later write before the
+  next `acceptance_start`.
+- Main-agent disposition: `accepted-high`. A stale literal PASS could incorrectly admit cq-002 and later produce a
+  false semantic completion or settlement deadlock.
+- Plan revision: after validating that the Coordinator selected the expected published next round, formal carrier
+  validation passively revalidates the live model state at the pre-cq-002 boundary. It requires the preceding PASS
+  to remain usable, epoch/digest and both ticket bindings to match current state, and the prior child pair to be
+  fully recycled. Drift invokes only the existing durable invalidation behavior, rejects the start, leaves phase and
+  Runtime queue unchanged, and requires fresh tickets plus both CQs on the new state.
+- Round 7 now includes a PASS-then-platform-drift regression and distinguishes ordinary invalid-start zero mutation
+  from the drift path's intentional state-revalidation/invalidation evidence.
+
+### 2026-08-09T19:35:00+08:00 — Plan review round 3 PASS and development freeze
+
+- Independent re-review result: **PASS**. Both accepted High findings are closed; no remaining evidence-backed
+  Critical/High finding was reported.
+- Frozen design: `docs/delivery/designs/2026-08-03-r2-3-005-modeling-team-runner-acceptance-design.md`, section
+  `2026-08-09 Start68 sequential-CQ Coordinator contract repair`.
+- Frozen shared plan: `docs/delivery/test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md`,
+  planned independent Round 7. Review dispositions are `accepted-high` for round-ID/order validation and stale-PASS
+  state revalidation; both were revised and re-reviewed.
+- Development baseline is clean product code at `c4b7713` plus main-agent-only documentation changes in the design,
+  test plan, and this delivery record. Developer ownership is limited to the Coordinator prompt surfaces, formal
+  Runner/carrier pre-transition validation, and focused tests; it must not edit this delivery record, rewrite test
+  history, change the generic phase controller, start a real model run, or commit.
+- Required development verification: focused sequential-CQ/prompt/state-drift tests, related ticket/settlement/
+  coordination regressions, complete `modeling_team/tests`, and Ruff. A development-ready signal is required before
+  independent Round 7 begins.
+
+### 2026-08-09T20:00:00+08:00 — Development-ready cycle 1
+
+- Developer returned **DEVELOPMENT_READY** without commit or real semantic start. Product changes are limited to
+  `modeling_team/acceptance.py`, `modeling_team/runner.py`,
+  `modeling_team/agent-packages/coordinator/instructions.md`, and new
+  `modeling_team/tests/test_r23005_sequential_cq.py`; the main-agent documentation changes were preserved.
+- Implementation adds `RunnerAcceptanceCarrier.validate_coordinator_acceptance_start`, invokes it only in the
+  formal Runner callback before the unchanged generic phase transition, and amends both Coordinator prompt surfaces.
+  The validator checks published requirement order, replay/final boundaries, current ticket/state bindings, usable
+  preceding PASS, complete child cleanup, and pre-cq-002 passive state revalidation without selecting or dispatching
+  a round.
+- Developer verification: focused `6 passed`; related suites `89 passed, 6 subtests`; complete modeling suite
+  `628 passed, 1 skipped, 212 subtests` plus one known historical P2a byte-freeze hash failure caused by the intended
+  `runner.py` change. The frozen expectation was not altered. Ruff passes on changed files; full modeling-team Ruff
+  still reports the pre-existing `modeling_team/tests/test_outer_input_fifo.py:42 F841` unused `fifo` variable.
+  GitNexus `detect_changes(all)` reported LOW/no affected process, while pre-edit symbol impact remained CRITICAL for
+  the two shared Runner methods.
+- Main-agent diff inspection and `git diff --check` passed. Stable implementation hashes are:
+  `acceptance.py=5cba8408...f721d`, `runner.py=37fe2f87...423a5`, Coordinator instructions
+  `276f4ec6...7799a`, and the focused test `127de02c...b15a`. This uncommitted stable state is frozen for independent
+  Round 7; no developer remains writing files.
+
+### 2026-08-09T20:10:00+08:00 — Development handoff correction and final freeze
+
+- Correction: the developer added final receipt/ticket-digest and stale-generation coverage after the first
+  `DEVELOPMENT_READY`, so the initial frozen hashes above became stale. The independent tester detected the mismatch
+  before formal execution; its one preliminary focused command passed 6/6, but no Round 7 result was recorded and
+  no file was modified. Testing was paused immediately.
+- The developer then stopped all writes and returned **FINAL_DEVELOPMENT_READY**. Main-agent reinspection and
+  `git diff --check` passed. The superseding stable hashes are:
+  `acceptance.py=5113bfe4525755da23610d8bb516106472ddf20aabdebab226361fd577f3f2f6`,
+  `runner.py=37fe2f873c8203dde7016c0e41f14a8d8f15960c212ed0ae39774a433e5423a5`,
+  Coordinator instructions `276f4ec6947cb512a8da4f731f30d52d03a60d9e4f0e270ce8c705b81407799a`, and
+  focused test `9636737b5e822658c9ba46b984ee12ceb41809ae17560ab363605950d74378e2`.
+- The previous development verification remains evidence for the pre-tightening state; after the final tightening,
+  focused 6/6, changed-file Ruff, and `git diff --check` passed. Independent Round 7 must use the superseding hashes
+  and independently rerun the proportional/full gates.
+
+### 2026-08-09T20:25:00+08:00 — Independent Round 7 FAIL and repair handoff
+
+- Independent Round 7 matched the corrected hashes and found no sequential-CQ behavior defect. Focused 6/6,
+  an additional FAIL/BLOCKED/overlap probe, R2.3-005 discovery 172/172 with one opt-in skip, related suites 66/66,
+  complete modeling-team unittest discovery 488/488 with one skip, changed-surface Ruff/diff, GitNexus LOW/no
+  affected process, service restart, backend health, and frontend HTTP 200 all passed. No semantic start occurred.
+- Round 7 overall result is **FAIL (quality gate only)** because full `ruff check modeling_team` reports the single
+  pre-existing `modeling_team/tests/test_outer_input_fifo.py:42 F841` unused local `fifo`. Git blame and a HEAD-only
+  reproduction bind it to existing commit `8a9777d5`; no current implementation surface introduced it.
+- Main-agent disposition: confirmed P3/unrelated behavior defect but accepted as a required repair because the
+  reviewed shared plan explicitly froze full modeling-team Ruff as a completion gate. The acceptance standard is not
+  waived or relaxed. Developer repair ownership is limited to removing the unused assignment without changing test
+  behavior, followed by the affected test, full Ruff, diff check, and a new stable handoff. The same tester must
+  append Round 8 and retain this failed Round 7 unchanged.
+
+### 2026-08-09T20:35:00+08:00 — P3 lint repair development-ready
+
+- Developer returned **REPAIR_DEVELOPMENT_READY** after changing only
+  `modeling_team/tests/test_outer_input_fifo.py:42` from `fifo = self._open()` to `self._open()`. Product code,
+  requirement documents, prior test history, and frozen expectations were untouched.
+- GitNexus could not resolve the test method/class in the stale index and reported UNKNOWN/no upstream rather than a
+  false-safe LOW. Main-agent inspection confirms the one-line change preserves the test's FIFO setup and cleanup
+  behavior.
+- Verification passed: affected file `10 passed, 3 subtests passed`; full `ruff check modeling_team`; changed-file
+  Ruff; and `git diff --check`. Stable file SHA-256 is
+  `c77f9da620e63c2e7c98dde1a94ccd93298b97b88a1e6e96d2011ce1f46bb580`. No writer remains active; this state is
+  frozen for independent Round 8.
+
+### 2026-08-09T20:45:00+08:00 — Independent Round 8 PASS and documentation sync
+
+- Independent Round 8 result: **PASS (deterministic implementation gate)**. The four R2.3-005 implementation hashes
+  remained unchanged; only the authorized FIFO lint-test hash changed.
+- Verification passed: full modeling-team Ruff; FIFO 10/10; focused sequential-CQ 6/6; R2.3-005 discovery 172/172
+  with one opt-in Runtime skip; related suites 66/66; complete modeling-team unittest discovery 488/488 with one
+  opt-in Runtime skip; `git diff --check`; GitNexus LOW with 9 changed symbols/7 files/0 affected processes; service
+  restart active; backend `{"status":"ok"}`; frontend HTTP 200. No D1/D2 defect or regression remained.
+- Documentation sync updates the v2.3 document header, requirement table, R2.3-005 current status, chronological
+  start41–start68 boundary, deterministic repair result, design implementation result, shared Round 7/8 history, and
+  this append-only delivery record. API/MCP/UI/migration docs are unchanged because no public platform surface,
+  schema, endpoint, or deployment configuration changed.
+- R2.3-005 remains `NOT_PASSED`: deterministic PASS authorizes commit and a request for new semantic-start allowance,
+  not requirement completion. The residual live gate is one fresh authorized run with both CQ verdicts on one final
+  model state, four persistent-role terminals, team settlement, terminal report, cleanup, and strict-ledger closeout.
+
+### 2026-08-09T20:05:00+08:00 — Final deterministic verification and commit-ready state
+
+- Main-agent final verification passed: `uv run --project backend python -m unittest discover -s
+  modeling_team/tests -p 'test_*.py'` ran 488 tests with 1 opt-in skip; `uv run --project backend ruff check
+  modeling_team` passed; and `git diff --check` passed. Existing ResourceWarning/RuntimeWarning and expected
+  negative-path stderr were non-failing diagnostics already present in independent rounds.
+- Required GitNexus `detect_changes(scope=compare, base_ref=main)` passed with LOW risk, 9 coarsely mapped changed
+  symbols across 8 indexed files, 0 affected execution processes. The index maps class-sized hunks to several
+  neighboring unchanged methods; direct diff inspection confirms the intended carrier method, formal callback, and
+  formal task-text changes only.
+- `ontology-platform.service` was restarted and became active. The first immediate curl raced service startup; the
+  bounded readiness poll then returned backend `{"status":"ok"}` and frontend HTTP 200. No runtime error required
+  journal diagnosis.
+- Cleanup: no real semantic run, credential, Project/Ontology, Build Session, child process, or new ledger event was
+  created by this delivery, so no semantic resource cleanup was required. Existing retained start68 evidence and
+  canonical ledger remain unchanged.
+- Commit-ready scope contains the sequential-CQ prompt/validation implementation, focused tests, the one-line FIFO
+  lint repair required by Round 7, synchronized requirement/design/test/record documents, and no unrelated working
+  tree changes. Delivery commit subject is `Repair sequential acceptance rounds`; `git log -- <this-record>` resolves
+  its immutable hash after commit.
+- Retrospective: the first plan exposed that prompt-only sequencing could not enforce round identity; re-review then
+  exposed stale literal PASS after state drift. Addressing both before development avoided another real-start
+  failure. The only defect loop was an unrelated pre-existing lint gate. A developer write after the first
+  development-ready signal caused one paused tester handoff; hash re-freeze prevented accepting evidence from an
+  unstable state.
+
+### 2026-08-09T20:01:00+08:00 — Timeline timestamp correction
+
+- Correction: the locally appended headings labeled `20:10`, `20:25`, `20:35`, `20:45`, and `20:05` above were
+  prospective sequence labels written during one continuous delivery turn, not observed wall-clock timestamps.
+  The authoritative observed tester timestamps remain Round 7 `19:52 +0800` and Round 8 `19:56 +0800` in the shared
+  test plan; final service verification completed at approximately `20:00 +0800`. The event order and evidence are
+  unchanged. Future delivery entries must use the shell-observed timestamp at append time.

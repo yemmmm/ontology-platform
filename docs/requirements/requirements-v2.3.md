@@ -2,36 +2,27 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 正在以 start24 r3 精确候选继续。
-  正式账本现为 `cap/count/active=31/28/0`，剩余 `3` 次；Prompt A/C/D 已由
-  `749b6bc` 完成，Runner capability 审批白名单由 `2173848` 提供，Prompt E 的 canonical ticket
-  platform-contract 已由 `ebea0eb` 实现并通过离线焦点契约测试，但尚未由真实 Acceptance 运行证明。
-  ADR 0008 Runtime-neutral mechanical spine 已实现并通过完整 Modeling Team 回归，已移除 copied Task 与
-  Agent shell/JSON extraction；start26 在 `semantic_start` 前暴露并清理了 Modeling capability socket
-  挂载遗漏，未消耗建模次数；start27 已证明四角色 Runtime 启动恢复，但 Delivery heredoc 关闭了控制
-  stdin，导致进入 `semantic_start` 后立即清理；Runner EOF fail-closed 与启动方式修复已通过完整回归。
-  start28 已由 Modeling 的 typed capability 原样发布候选并进入 Protocol，但 Protocol receipt builder
-  尚不能按 `delivery_id` 机械绑定 Runner 保留的候选，故在任何平台写入前以 `collaboration/routing`
-  终止并完成零残留清理；该窄绑定缺口已在 start29 真实证明，Protocol 接收精确 receipt 并完成分批
-  apply、validation 与 `silent_for_acceptance`。随后 Modeling 因等待策略过短提前上报 issue；恢复期间
-  Coordinator pause 参数和 Delivery outer envelope 又出现机械格式错误，前台退出，故 start29 仍以
-  `collaboration/routing,false` 收口，未进入独立 Acceptance。三处可避免控制缺口已修复并通过完整回归；
-  用户新增 `+5` 授权已记录为待生效授权，因 canonical ledger 只允许余额耗尽时追加，当前不改写账本。
-  R2.3-003～R2.3-004 已确认路线，须按依赖顺序细化
+- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start68，仍为
+  `进行中 / NOT_PASSED`。start68 真实证明 r3 candidate、五阶段平台写入、governed retrieval、两类
+  Examiner 报告和 cq-001 独立 `PASS` verdict；cq-001 PASS 后 Coordinator 未启动 cq-002，运行以
+  `collaboration/routing,false` 终止。该 sequential-CQ 缺口已完成设计、三轮 plan review、开发及独立
+  Round 7/8；Round 8 为确定性实现门 PASS，但尚未执行新的真实 start。正式账本已耗尽为
+  `cap/count/active=67/67/0`，最后事件是 start68 `terminal_failure`，未获新授权前不得启动下一轮。
+  R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：复用已通过真实 Protocol receipt/platform 阶段验证的精确 r3 carrier（不重建业务切片），
-  在 Modeling 长等待、Coordinator exact pause、前台未知 action 非致命拒绝及显式 ledger requirement
-  修复后启动 start30，继续剩余 reasoning/retrieval 与独立 Acceptance；仍有 `3` 次已入账额度，另有
-  `5` 次待余额耗尽后生效，正式账本 cap/count/active 为 `31/28/0`
+- 当前下一目标：提交已通过独立 Round 8 的 sequential-CQ 修复；获得新的真实 semantic-start 授权后，
+  从 clean baseline 创建 fresh Project/Ontology，复用已证明的精确 r3 carrier，串行完成 cq-001、cq-002、
+  四角色 terminal、team settlement、terminal report 与 cleanup。不得把 start68 的单题 PASS 或离线
+  Round 8 解释为 R2.3-005 完成。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
   `docs/delivery/records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md`
 - 总体目标：固定本体建模团队的机械运行基础，使后续建模流程优化主要通过新增 Agent、
   调整 Modeling Team Profile 和优化 Skill 完成
-- 更新日期：2026-08-06
+- 更新日期：2026-08-09
 
 ## 背景
 
@@ -73,7 +64,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start29 已证明 typed receipt/platform apply，控制恢复缺口已回归，待 start30；31/28/0，已入账剩余 3，另有待生效 +5` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start68 cq-001 PASS；sequential-CQ 修复独立 Round 8 PASS；待新授权真实双 CQ/settlement/cleanup；67/67/0` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1385,7 +1376,9 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`用户追加的 10 次授权已由 start22、start23 使用 2 次，账本 31/23/0，剩余 8 次。start23 原生验证 issue pause/resume 与 ca250bc readiness delivery；Protocol完成apply/readback后确认 lexical non-truncated，但 r2 的12个relation items没有 evidence_citations，真实lineage因此 evidence_missing。Protocol能构造正式 conflict，却因r2早已accepted、原回复槽关闭而不能作为第二回复路由；start23已正式abort并清理。start24不得重建业务模型，只应在prepare前复用r2与该12-item conflict，生成仅补source-grounded relation citations的完整r3，再继续retrieval与Acceptance。vector index missing是独立降级，不得伪造Evidence或作为citation替代。`
+当前状态：`进行中 / NOT_PASSED。start68 已真实完成候选、平台阶段、检索、Examiner 和 cq-001 PASS，
+但 Coordinator 未启动 cq-002，最终为 collaboration/routing,false。sequential-CQ prompt + Host validation
+修复已通过独立 Round 8；正式账本 67/67/0 已耗尽，待提交并申请新授权完成真实双 CQ、settlement 与 cleanup。`
 
 优先级：`P0`
 
@@ -2981,3 +2974,44 @@ the non-empty failed-written Project is retained as evidence. Ledger classificat
 `complete_modeling_quality_result=false`; strict replay is `cap/count/active=40/39/0`, 184 lines, SHA-256
 `3c8aedd517feb412b07acd88b2a4109ef510946f545a2c23df784ad2299f51c6`, leaving **1** authorized start. This does
 not authorize repair, reservation, or start41 without a new user instruction.
+
+### 2026-08-09 R2.3-005 start41–start68 accumulated repair and live boundary
+
+The start41–start68 sequence reused the accepted r3 semantics and progressively repaired only observed Runtime,
+platform-contract, and collaboration/routing defects. The committed baseline before the current repair includes
+DeepSeek Flash/max/Responses role configuration, bounded inactivity detection, foreground/FIFO outer control,
+Examiner output pumping and report schemas, Host-owned candidate staging and handoff identity, Host-derived Examiner
+inputs and verdict structures, read-proxy digest preservation, and Host-derived verdict evidence references.
+
+Start68 `r23005-real-20260808-deepseek-start68` reached the furthest real boundary. Modeling published the unchanged
+`dify-cba-slice-r3` candidate; Protocol completed dry-run, apply, readback, validation, reasoning, governed retrieval,
+and acceptance-stage handoff. Both frozen tickets were published. cq-001's fresh Examiner pair produced bound reports,
+Acceptance submitted the verdict successfully, and Coordinator confirmed `PASS`. This is valid partial evidence but
+not the requirement result.
+
+The remaining live failure was deterministic: after cq-001 PASS, Coordinator waited for cq-002's verdict without
+sending cq-002 `acceptance_start`. No cq-002 verdict, persistent-role terminal set, team settlement, terminal report,
+or complete cleanup proof exists. The run was aborted and the canonical ledger recorded
+`classification=collaboration/routing`, `complete_modeling_quality_result=false`. Ledger state is 307 records,
+SHA-256 `e023fe04913d301cdd59db7816c1de595d9d75547ce437575f0852014e5a0c5d`, and
+`cap/count/active=67/67/0`; no real start remains authorized.
+
+### 2026-08-09 R2.3-005 sequential-CQ deterministic repair gate
+
+The user confirmed that Coordinator remains the semantic scheduler. The repair therefore updates both authoritative
+Coordinator prompt surfaces to require cq-001 PASS -> exact already-published cq-002 round, while formal Runner uses
+the existing Acceptance carrier only as a pre-transition validator. The Host does not choose or dispatch a CQ. It
+rejects unpublished, early, replayed, duplicate, third, post-final, stale-state, wrong-ticket, incomplete-cleanup, and
+unusable-PASS starts before phase transition or Runtime enqueue. Before cq-002, passive live-state revalidation makes
+any post-PASS platform drift invalidate old PASS evidence and require fresh tickets plus both CQs on the new state.
+
+Mandatory plan review required two High revisions (round/ticket ordering and stale-PASS revalidation) and passed on
+round 3. Independent Round 7 passed every behavior/runtime gate but failed the frozen full-Ruff gate on one pre-existing
+unused test local. The one-line lint-only repair preserved behavior. Independent Round 8 then passed focused 6/6,
+R2.3-005 172/172 with one opt-in skip, related 66/66, complete modeling-team unittest discovery 488/488 with one
+opt-in skip, full Ruff, diff checks, GitNexus change detection, service restart, backend health, and frontend HTTP 200.
+No live model call or semantic start occurred during these deterministic rounds.
+
+This evidence permits a clean implementation commit and a request for new start authorization only. R2.3-005 remains
+`NOT_PASSED` until one fresh authorized run completes both real CQ verdicts on one final model state, all four
+persistent-role terminal reports, team settlement, terminal report, strict cleanup, and ledger closeout.

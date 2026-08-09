@@ -39,7 +39,7 @@ class OuterInputFifoTests(unittest.TestCase):
         return fifo
 
     def test_open_creates_fifo_with_tight_permissions_under_private_dir(self) -> None:
-        fifo = self._open()
+        self._open()
         info = os.stat(self.fifo_path, follow_symlinks=False)
         self.assertTrue(stat.S_ISFIFO(info.st_mode))
         self.assertEqual(info.st_mode & 0o777, 0o600)
