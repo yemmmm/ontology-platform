@@ -3943,3 +3943,32 @@ the formal builder, or starting another real run before authorization.
   Ruff, diff check, GitNexus LOW/0 processes, service health, and independent start69 evidence inspection all passed.
 - R2.3-005 remains `NOT_PASSED`. The next allowed action is to commit this verified prompt repair and launch start70
   from a clean checkout; no offline result is substituted for live double-CQ acceptance and settlement.
+
+### 2026-08-09T21:39:05+08:00 — start70 double-CQ PASS, terminal-routing failure, and repair handoff
+
+- start70 used clean commit `5288775` and baseline
+  `4b86ddf0eb72f0b60bce55f53d509f93600154b534ff7deb27e829495104026e`. It proved the start69 Protocol repair and
+  sequential-CQ repair live: exact r3 publication/receipt, five platform stages, seven governed retrieval paths,
+  Coordinator handoff, Modeling gate notice, Protocol silence, both tickets, cq-001 then cq-002, four Examiner
+  reports/recycles, two `PASS` verdicts, and Acceptance settlement.
+- Acceptance initially supplied `question_id` and later an Examiner answerability label as CQ status. The Host
+  rejected both without recording a verdict. Formal issue guidance specified the exact
+  `{status, answer, evidence_ref_ids}` item, after which cq-001 and cq-002 completed. This live issue is now repaired
+  durably in the Acceptance package and protected by build/submit no-mutation tests.
+- The run then deadlocked because Modeling correctly waited for explicit terminal handoff while the old dependency
+  graph had no predecessor for Modeling. Protocol waited on Modeling; Coordinator waited on all three peers.
+  Acceptance alone was settled. The run was stopped and ledgered `collaboration/routing,false`; cleanup is `CLEANED`,
+  Acceptance is settled/cleaned with zero child residue, role credentials and keys are revoked, and the non-empty
+  failed-written Project `4dfa3386-ff42-4627-940f-ba548024a4d8` / Ontology
+  `1a9b3623-9375-49e5-8b13-0c62393ffe57` is retained under the cleanup contract.
+- Plan review rejected early Modeling reporting because terminal results are immutable and later FAIL/BLOCKED repair
+  could no longer reach Modeling. The accepted repair adds `modeling <- acceptance` only in formal coordination,
+  preserving the live revision path and all non-formal graphs. The normal broker chain then becomes Acceptance ->
+  Modeling -> Protocol -> Coordinator after final settlement.
+- Development-ready evidence: actual `TeamRunner.prepare/start` formal/non-formal integration coverage; focused
+  77/77; full modeling-team 492/492 with one opt-in skip; Ruff and diff clean; GitNexus LOW, 5 files/10 symbols/0
+  processes. Independent Round 10 then passed the actual Runner test, R2.3-005 175/175 with one skip, full
+  492/492 with one skip, modeling-team Ruff, diff, service active, backend/frontend HTTP 200, and GitNexus LOW/0
+  processes. Ledger is 314 records/75,867 bytes, SHA-256
+  `8cdd1aea036c5f3adbe93b43f6c5a5d82dba0d5832f1c6e41f4de1e217764da4`; only start71 remains and will not launch
+  before a clean repair commit.

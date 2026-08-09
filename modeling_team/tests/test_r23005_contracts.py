@@ -425,6 +425,104 @@ class R23005ContractTests(unittest.TestCase):
             if run_root.exists():
                 rmtree(run_root)
 
+    def test_team_runner_start_wires_formal_terminal_dependency_graph_only(self) -> None:
+        """The production ``start`` path adds the Acceptance -> Modeling edge only formally."""
+
+        class GraphAdapter:
+            def start_roster(self, _run, agents):
+                return [SimpleNamespace(agent_id=agent.agent_id) for agent in agents]
+
+            def probe_role_visibility(self, run):
+                return {
+                    agent.agent_id: {"probe": "passed"}
+                    for agent in run.configuration.profile.agents
+                }
+
+            def start_task(self, *_args):
+                return None
+
+            def stop(self):
+                return None
+
+            def cleanup_identifiers(self):
+                return {}
+
+        root = repository_root()
+        common = {
+            "protocol": {"modeling"},
+            "coordinator": {"modeling", "protocol", "acceptance"},
+        }
+        cases = (
+            (
+                "formal",
+                root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+                root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+                True,
+            ),
+            (
+                "nonformal",
+                root / "modeling_team/profiles/base-three-agent.yaml",
+                root / "modeling_team/tasks/base-capability-smoke.yaml",
+                False,
+            ),
+        )
+        for label, profile_path, task_path, formal in cases:
+            with self.subTest(mode=label), tempfile.TemporaryDirectory() as directory:
+                run_id = f"r23005-terminal-graph-{label}-{__import__('uuid').uuid4().hex}"
+                run_root = root / "workspaces" / "modeling-runs" / run_id
+                ledger_root = Path(directory) / "ledger"
+                kwargs = {}
+                if formal:
+                    kwargs = {
+                        "freeze_started_at": datetime.now(UTC).isoformat(),
+                        "prestart_preflight": lambda **_kwargs: {
+                            "status_code": 200,
+                            "product_write_mode": "rdf_primary",
+                        },
+                        "ledger_factory": lambda *, root, config, now: StartLedger(
+                            root, config=config, now=now
+                        ),
+                    }
+                runner = TeamRunner(repository_root=root, adapter=GraphAdapter(), **kwargs)
+                if formal:
+                    runner._canonical_ledger_root = lambda: ledger_root
+                try:
+                    patcher = patch(
+                        "modeling_team.preflight.capture_clean_checkout",
+                        return_value={
+                            "repository_root": str(root),
+                            "head": "a" * 40,
+                            "status_porcelain": "",
+                            "status_digest": "b" * 64,
+                        },
+                    )
+                    with patcher:
+                        runner.prepare(
+                            run_id=run_id,
+                            profile_path=profile_path,
+                            task_path=task_path,
+                            scope={"mode": "create"},
+                        )
+                    runner.start()
+                    assert runner.transport is not None
+                    expected = {
+                        **common,
+                        **({"modeling": {"acceptance"}} if formal else {}),
+                    }
+                    self.assertEqual(
+                        {
+                            agent_id: set(dependencies)
+                            for agent_id, dependencies in runner.transport.terminal_dependencies.items()
+                        },
+                        expected,
+                    )
+                    if not formal:
+                        self.assertNotIn("modeling", runner.transport.terminal_dependencies)
+                finally:
+                    runner.cleanup()
+                    if run_root.exists():
+                        rmtree(run_root)
+
     def test_service_probe_requests_only_safe_scalar_properties(self) -> None:
         output = "ActiveState=active\nSubState=running\nMainPID=4242\nActiveEnterTimestamp=Mon 2026-08-03 00:00:00 UTC\n"
         with patch.object(preflight_module, "_run_checked", return_value=output) as checked:
@@ -1770,6 +1868,7 @@ class R23005ContractTests(unittest.TestCase):
                 root / "transport",
                 permissions,
                 terminal_dependencies={
+                    "modeling": {"acceptance"},
                     "protocol": {"modeling"},
                     "coordinator": {"modeling", "protocol", "acceptance"},
                 },
@@ -1777,6 +1876,10 @@ class R23005ContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance, modeling, protocol"):
                 broker.report("coordinator", "completed", "coordinator must be last")
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
+                broker.report("modeling", "blocked", "modeling must await Acceptance")
+            broker.report("acceptance", "completed", "acceptance settled")
+            broker.ack_terminal_handoff("modeling", "acceptance")
             request = broker.send("modeling", "protocol", "handoff", expects_reply=True)
             reply = broker.send("protocol", "modeling", "handoff-ack", reply_to_delivery_id=request.delivery_id)
             broker.ack_delivery(reply.delivery_id)
@@ -1785,12 +1888,26 @@ class R23005ContractTests(unittest.TestCase):
             broker.report("protocol", "blocked", "protocol")
             broker.ack_terminal_handoff("coordinator", "modeling")
             broker.ack_terminal_handoff("coordinator", "protocol")
-            broker.report("acceptance", "completed", "acceptance")
             broker.ack_terminal_handoff("coordinator", "acceptance")
             coordinator = broker.report("coordinator", "completed", "coordinator")
             self.assertEqual(coordinator.agent_id, "coordinator")
-            self.assertEqual(list(broker.results), ["modeling", "protocol", "acceptance", "coordinator"])
+            self.assertEqual(list(broker.results), ["acceptance", "modeling", "protocol", "coordinator"])
             self.assertEqual(set(broker.results), roles)
+            broker.stop()
+
+    def test_nonformal_terminal_dependencies_keep_modeling_independent_of_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "transport",
+                set(),
+                terminal_dependencies={
+                    "protocol": {"modeling"},
+                    "coordinator": {"modeling", "protocol", "acceptance"},
+                },
+                modeling_agent_id="modeling",
+            )
+            broker.report("modeling", "blocked", "legacy modeling")
+            self.assertEqual(broker.results["modeling"].status, "blocked")
             broker.stop()
 
     def test_baseline_and_retained_handoff_include_acceptance_package_skill_and_terminal_status(self) -> None:

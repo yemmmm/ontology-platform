@@ -17,6 +17,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -1047,6 +1048,72 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                     summary="agent-supplied CQ id must be rejected",
                     capability=carrier.capability_token("acceptance"),
                 )
+            carrier.cleanup()
+
+    def test_host_rejects_examiner_answerability_statuses_without_verdict_mutation(self) -> None:
+        """CQ status is a verdict vocabulary, never an Examiner answerability label."""
+
+        ticket = _ticket(round_suffix="answerability")
+        answerability_statuses = (
+            "answerable",
+            "unanswerable",
+            "insufficient-evidence",
+            "unavailable",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = self._carrier(ticket, directory)
+            self._start_and_report(carrier, ticket, kind="source", request_id="src-answerability-0")
+            self._start_and_report(carrier, ticket, kind="platform", request_id="plt-answerability-0")
+            round_id = ticket["acceptance_round_id"]
+            before_round = deepcopy(carrier._rounds[round_id])
+            before_verdicts = dict(carrier._verdicts)
+            endpoint = carrier._capability_endpoints["acceptance"]
+            token = carrier.capability_token("acceptance")
+            for index, status in enumerate(answerability_statuses):
+                with self.subTest(status=status):
+                    with self.assertRaises(AcceptanceContractError):
+                        carrier.build_acceptance_verdict(
+                            acceptance_id="acceptance",
+                            round_id=round_id,
+                            verdict="PASS",
+                            failure_layer=None,
+                            blocked_reason=None,
+                            evidence_ref_ids=[],
+                            checks=_pass_checks(),
+                            competency_question_results=[
+                                {"status": status, "answer": "not a verdict", "evidence_ref_ids": []}
+                            ],
+                            recommended_action="advance",
+                            summary="invalid answerability status",
+                            capability=carrier.capability_token("acceptance"),
+                        )
+                    response = endpoint.handle({
+                        "jsonrpc": "2.0",
+                        "id": index + 1,
+                        "token": token,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "submit_acceptance_result",
+                            "arguments": {
+                                "acceptance_id": "acceptance",
+                                "round_id": round_id,
+                                "verdict": "PASS",
+                                "failure_layer": None,
+                                "blocked_reason": None,
+                                "evidence_ref_ids": [],
+                                "checks": _pass_checks(),
+                                "competency_question_results": [
+                                    {"status": status, "answer": "not a verdict", "evidence_ref_ids": []}
+                                ],
+                                "recommended_action": "advance",
+                                "summary": "invalid answerability status",
+                                "request_id": f"submit-answerability-{index}",
+                            },
+                        },
+                    })
+                    self.assertIn("error", response)
+                    self.assertEqual(carrier._rounds[round_id], before_round)
+                    self.assertEqual(carrier._verdicts, before_verdicts)
             carrier.cleanup()
 
     def test_simplified_submit_records_verdict_passing_validate(self) -> None:

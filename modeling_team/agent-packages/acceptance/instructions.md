@@ -63,8 +63,9 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   (a flat map of exactly these eight keys to PASS/FAIL/BLOCKED:
   competency_questions, evidence_lineage, explicit_unknowns, governed_retrieval,
   ontology_structure, scope, source_fidelity, validation_reasoning),
-  `competency_question_results` (the single CQ status/answer/evidence_ref_ids
-  item),
+  `competency_question_results` (a list with exactly one item containing ONLY
+  `status`, `answer`, and `evidence_ref_ids`; `status` is exactly one of
+  `PASS`, `FAIL`, or `BLOCKED`, and a positive answer uses `PASS`),
   `recommended_action` (one of: `advance`, `model-repair`, `retry-after-recovery`,
   `revise-ticket`, `wait`, `end` — PASS→`advance`, FAIL→`model-repair`, BLOCKED with
   `runtime-infrastructure`/`runtime-infrastructure` retry-budget-exhausted→`retry-after-recovery`,
@@ -78,6 +79,13 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   returns only the small verdict receipt/digest. `build_acceptance_verdict` remains as
   an optional inspection-only capability if you need to preview the assembled envelope,
   but it is NOT part of the submission path.
+
+  Never use Examiner answerability values (`answerable`, `unanswerable`,
+  `insufficient-evidence`, or `unavailable`) as a CQ status. Never include
+  `question_id` or `id` in the CQ item—the Host binds the ticket question—and
+  never include typed `evidence_refs` or any digest/page/tool/path fields; only
+  copy Examiner `ref_id` strings into `evidence_ref_ids`. The Host rejects
+  these fields and statuses before build or submit can mutate verdict state.
 
 ## Cooperative issue escalation
 

@@ -1132,3 +1132,26 @@ retrieval, publish the Coordinator handoff, send Modeling's bound gate-complete 
 This repair changes no Host selector, phase state, ticket binding, platform API, or semantic model. A prompt-contract
 test binds the formal task ID and non-smoke objective to the mandatory full-run wording. Independent Round 9 is the
 deterministic repair gate; only a later fresh live start can prove the repaired behavior.
+
+## 2026-08-09 start70 terminal-chain and verdict-shape repair
+
+Start70 reached both ordered CQ `PASS` verdicts and Acceptance settlement, then exposed a lifecycle dependency gap.
+The pre-repair graph required Protocol to wait for Modeling and Coordinator to wait for Modeling, Protocol, and
+Acceptance, but no settled role could send Modeling its explicit terminal handoff. Modeling could not report early:
+doing so would make it immutable and unable to receive later FAIL/BLOCKED revision work.
+
+The minimal design adds one edge only when `formal_coordination` is active:
+`modeling <- acceptance`. Acceptance remains terminal-guarded by final settlement, so FAIL/BLOCKED and unfinished
+rounds emit no Modeling terminal handoff. After final settlement, the existing broker/drain machinery produces the
+chain Acceptance -> Modeling -> Protocol -> Coordinator without a new lifecycle state or model-visible capability.
+All non-formal dependency maps are unchanged.
+
+Start70 also showed that the Acceptance Agent could confuse Examiner answerability labels with CQ verdict status.
+The authoritative package now requires each CQ result to contain only `status`, `answer`, and `evidence_ref_ids`, with
+status exactly `PASS`, `FAIL`, or `BLOCKED`; `answerable`, `unanswerable`, `insufficient-evidence`, and `unavailable`
+are never CQ statuses. Mechanical carrier tests reject those values before verdict/round mutation. A real
+`TeamRunner.prepare/start` integration test freezes both the formal added edge and the unchanged non-formal graph.
+
+Plan review initially rejected early Modeling termination because it destroyed revision reachability, then passed the
+formal-only dependency design after it preserved FAIL/BLOCKED lifecycle and non-formal compatibility. This repair is
+an implementation gate only; start71 remains the sole authorized live proof of full terminal settlement.

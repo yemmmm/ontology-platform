@@ -1156,17 +1156,26 @@ class TeamRunner:
                 with self._issue_event_lock:
                     self._issue_event_queue.append(deepcopy(event))
 
+            terminal_dependencies = {
+                role_agents["protocol"]: {role_agents["modeling"]},
+                role_agents["coordinator"]: {
+                    role_agents["modeling"],
+                    role_agents["protocol"],
+                    role_agents["acceptance"],
+                },
+            }
+            if formal_coordination:
+                # Formal Acceptance is the semantic gate for the Modeling
+                # terminal. Keep the historical non-formal dependency graph
+                # unchanged; only the formal four-role run serializes the
+                # final path Acceptance -> Modeling -> Protocol -> Coordinator.
+                terminal_dependencies[role_agents["modeling"]] = {
+                    role_agents["acceptance"]
+                }
             self.transport = TeamTransportBroker(
                 self.run.root / "transport" / "broker",
                 set(self.run.configuration.profile.communication),
-                terminal_dependencies={
-                    role_agents["protocol"]: {role_agents["modeling"]},
-                    role_agents["coordinator"]: {
-                        role_agents["modeling"],
-                        role_agents["protocol"],
-                        role_agents["acceptance"],
-                    }
-                },
+                terminal_dependencies=terminal_dependencies,
                 modeling_agent_id=role_agents["modeling"],
                 coordinator_agent_id=role_agents["coordinator"],
                 terminal_report_guard=self._terminal_report_guard,

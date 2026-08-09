@@ -2538,3 +2538,32 @@ implementation before execution and append the result below without rewriting ea
   not reclassified or hidden; cleanup evidence is complete. No fresh semantic run was executed, so R2.3-005
   remains `NOT_PASSED` and still requires a newly authorized run to prove all five Protocol stages, governed
   retrieval, both real CQ verdicts, terminal reports, settlement, and final ledger closeout.
+
+### Round 10 — Start70 terminal-chain and Acceptance verdict-shape repair
+
+- **Live boundary:** start70 completed the five Protocol stages, seven governed retrieval paths, two ordered CQ
+  rounds, four Examiner reports/recycles, two `PASS` verdicts, and Acceptance settlement. Runtime issue guidance
+  corrected the first CQ payload to the exact three-field item. The remaining failure was terminal routing:
+  Modeling had no dependency predecessor and therefore received no explicit terminal handoff; Protocol and
+  Coordinator could not become terminal. The run is preserved as `collaboration/routing,false`, `CLEANED`, with
+  zero child residue and revoked credentials; the non-empty failed-written scope is retained.
+- **Reviewed contract:** formal coordination alone adds `modeling <- acceptance`; non-formal graphs remain unchanged.
+  Acceptance instructions freeze CQ result shape/status and Host tests reject all four Examiner answerability labels
+  without round or verdict mutation. Plan review passed after confirming FAIL/BLOCKED revision reachability.
+- **Development verification:** focused contract/settlement/verdict suites ran 77/77; complete modeling-team unittest
+  discovery ran 492/492 with one opt-in skip; full Ruff and `git diff --check` passed. GitNexus change detection
+  reported 5 files, 10 symbols, 0 affected processes, LOW risk. A real `TeamRunner.prepare/start` integration test
+  asserts the formal dependency graph and the unchanged non-formal graph.
+- **Frozen implementation hashes:** `runner.py`
+  `7352a06cb15fa61058f38c9291153511a4833a59a7748b71a5fa2ff3a464b2de`; Acceptance instructions
+  `cfcadb8bc2363a532e9db088511a5c1dcd79c3db67d7bcf3338bb5c90b9e373c`; contracts test
+  `178590efecab3df552b7925b2fefb75bd82b780b9205f8740c7bcdb341bafaf1`; settlement test
+  `cc753acabc420d9843bcc1cb429026fd9c852f8aa9fe3750b7b5de2d8a3267c8`; verdict test
+  `1c7648973db7223a7132fe664d7bdefa140963d27adf10fce0a6549d6724ee97`.
+- **Independent result:** PASS. The actual Runner integration test passed; R2.3-005 discovery ran 175/175 with one
+  opt-in skip; complete modeling-team discovery ran 492/492 with one opt-in skip; full modeling-team Ruff,
+  `git diff --check`, service active state, backend health, and frontend HTTP 200 all passed. GitNexus reported LOW
+  risk, 10 changed symbols, and 0 affected processes. No semantic run or product/document mutation was performed by
+  the Tester, and its temporary run root was removed.
+- **Overall Round 10 result: PASS (deterministic terminal-routing repair gate).** R2.3-005 remains `NOT_PASSED`;
+  only a clean committed start71 may prove the remaining persistent-role terminal and Team settlement gates.

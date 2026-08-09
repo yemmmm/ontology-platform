@@ -620,6 +620,7 @@ class R23005CSettlementTests(unittest.TestCase):
                 Path(directory) / "transport",
                 {(sender, recipient) for sender in ("coordinator", "modeling", "protocol", "acceptance") for recipient in ("coordinator", "modeling", "protocol", "acceptance") if sender != recipient},
                 terminal_dependencies={
+                    "modeling": {"acceptance"},
                     "protocol": {"modeling"},
                     "coordinator": {"modeling", "protocol", "acceptance"},
                 },
@@ -629,13 +630,16 @@ class R23005CSettlementTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("acceptance", "completed", "premature")
             self.assertNotIn("acceptance", broker.results)
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
+                broker.report("modeling", "blocked", "modeling must await settled Acceptance")
             acceptance.is_settled = True
+            broker.report("acceptance", "completed", "acceptance settled")
+            broker.ack_terminal_handoff("modeling", "acceptance")
             broker.report("modeling", "blocked", "modeling")
             broker.ack_terminal_handoff("protocol", "modeling")
             broker.report("protocol", "completed", "protocol")
             broker.ack_terminal_handoff("coordinator", "modeling")
             broker.ack_terminal_handoff("coordinator", "protocol")
-            broker.report("acceptance", "completed", "acceptance")
             broker.ack_terminal_handoff("coordinator", "acceptance")
             coordinator = broker.report("coordinator", "completed", "coordinator")
             self.assertEqual(coordinator.agent_id, "coordinator")
@@ -676,6 +680,7 @@ class R23005CSettlementTests(unittest.TestCase):
                 Path(directory) / "transport",
                 set(),
                 terminal_dependencies={
+                    "modeling": {"acceptance"},
                     "protocol": {"modeling"},
                     "coordinator": {"modeling", "protocol", "acceptance"},
                 },
@@ -687,10 +692,12 @@ class R23005CSettlementTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
                 broker.report("protocol", "blocked", "bounded recovery")
 
-            broker.report("modeling", "blocked", "modeling terminal handoff")
-            broker.ack_terminal_handoff("protocol", "modeling")
-            broker.report("protocol", "blocked", "bounded recovery")
-            self.assertEqual(broker.results["protocol"].status, "blocked")
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
+                broker.report("modeling", "blocked", "modeling awaits Acceptance")
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
+                broker.report("protocol", "blocked", "bounded recovery")
+            self.assertNotIn("modeling", broker.results)
+            self.assertNotIn("protocol", broker.results)
 
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("acceptance", "blocked", "acceptance is not settled")
