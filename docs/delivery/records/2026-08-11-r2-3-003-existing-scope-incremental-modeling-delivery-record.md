@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T01:48:20+08:00
+- Last updated: 2026-08-11T01:56:30+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -129,12 +129,14 @@
 | 1 | plan-review PASS worktree | 新增 003 formal contract/assets、cap=0 的 exact +4 initial authorization、nonempty existing preflight/cleanup、`existing_entity_ref` live binding/translator，以及 Runner/CLI/role prompt wiring | developer targeted groups 48/68/43 PASS；compileall 与 diff-check PASS | development-ready |
 | 2 | development-ready worktree | 已批准共享入口变化导致 frozen-surface hash 回归；更新 3 个精确 hash，不改变 005 行为 | frozen-surface + 003/scope/manifest/ledger 43 PASS | fixed |
 | 3 | stable deterministic candidate | 使用错误的系统 Python 时出现 Pydantic 内部模块导入错误 | 改用仓库 backend uv 环境后 `modeling_team/tests` 700 PASS、1 skipped；backend 843 PASS、10 skipped | environment classified；无产品缺陷 |
+| 4 | commit `72ab597` clean baseline | Independent Round 1 发现 003 先读 DeepSeek credential 再做 existing live preflight，且 Project HTTP 200 `{}` 会被默认成目标 ID | 仅调整 003 顺序并要求 Project payload 显式匹配 ID；005 顺序不变；新增精确回归 | fixed |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | 1 | stable deterministic candidate | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | 无已执行范围缺陷；真实建模按独立性要求未由 tester 启动 | 共享 test plan §6 Round 1；003 focused 6 PASS；contract/ledger/scope 65 PASS；CQ/cleanup 40 PASS；modeling_team 700 PASS；backend 843 PASS |
+| 2 | post-`72ab597` narrow preflight fix | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | Round 1 High 已修复；无新确定性缺陷 | 003/005/frozen/CQ/cleanup 87 PASS；003 focused 10 PASS；modeling_team 704 PASS、1 skipped；backend 843 PASS、10 skipped；cap/count/active=`4/0/0` |
 
 ## Final verification
 

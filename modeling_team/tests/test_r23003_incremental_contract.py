@@ -3,9 +3,14 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
+from modeling_team import runner as runner_module
+from modeling_team import preflight as preflight_module
+from modeling_team.contracts import TeamConfigurationError
 from modeling_team.formal_runs import load_formal_run_configuration
 from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team.platform_scope import PlatformScope
@@ -15,6 +20,7 @@ from modeling_team.preflight import (
     R2_3_003_PROJECT_ID,
     load_existing_scope_handoff,
     normalize_existing_scope,
+    canonical_existing_scope_preflight,
     run_existing_scope_preflight,
 )
 from modeling_team.protocol_mechanics import (
@@ -141,6 +147,73 @@ def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytes
     )
     assert evidence["live"]["workspace_version"].startswith("0d34")
     assert "secret" not in json.dumps(evidence)
+
+
+@pytest.mark.parametrize("project_payload", [{}, [], {"id": "wrong-project"}])
+def test_r23003_existing_project_identity_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    project_payload: object,
+) -> None:
+    monkeypatch.setattr(
+        preflight_module,
+        "_authenticated_json_get",
+        lambda *_args, **_kwargs: project_payload,
+    )
+    with pytest.raises(TeamConfigurationError, match="Project identity"):
+        canonical_existing_scope_preflight(
+            scope=SCOPE,
+            handoff={"workspace_version": "v1"},
+            base_url="http://example",
+            admin_key="delivery-only-secret",
+        )
+
+
+def test_r23003_runner_reads_credential_only_after_existing_live_preflight(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    ledger_root = tmp_path / "ledger"
+    run_id = "r23003-credential-order"
+    run_root = ROOT / "workspaces" / "modeling-runs" / run_id
+
+    def live_preflight(**_kwargs: object) -> dict[str, object]:
+        events.append("live-preflight")
+        return {"status": "ready", "live": {"workspace_version": "v1"}}
+
+    def credential_preflight(_path: object) -> object:
+        events.append("credential")
+        return object()
+
+    runner = runner_module.TeamRunner(
+        repository_root=ROOT,
+        adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+        deepseek_credential_path=tmp_path / "deepseek.env",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+        ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
+    )
+    runner._canonical_ledger_root = lambda: ledger_root
+    StartLedger(ledger_root, requirement_id="R2.3-003").initial_authorization()
+    try:
+        with patch.object(runner_module, "run_existing_scope_preflight", live_preflight), patch.object(
+            runner_module, "preflight_deepseek_credential", credential_preflight
+        ):
+            runner.prepare(
+                run_id=run_id,
+                profile_path=ROOT
+                / "modeling_team/profiles/r2-3-003-existing-scope-modeling-team.yaml",
+                task_path=ROOT
+                / "modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml",
+                scope=SCOPE,
+            )
+        assert events == ["live-preflight", "credential"]
+        assert runner._ledger is not None
+        assert runner._ledger._records()[1]["event"] == "reservation"
+    finally:
+        runner.cleanup()
+        if run_root.exists():
+            import shutil
+
+            shutil.rmtree(run_root)
 
 
 def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None:

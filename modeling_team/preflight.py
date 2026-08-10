@@ -522,7 +522,7 @@ def canonical_existing_scope_preflight(
     if not isinstance(admin_key, str) or not admin_key:
         raise TeamConfigurationError("existing scope credential is unavailable")
     project = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}")
-    if not isinstance(project, Mapping) or project.get("id", project_id) != project_id:
+    if not isinstance(project, Mapping) or project.get("id") != project_id:
         raise TeamConfigurationError("existing Project identity drifts")
     listed = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}/ontologies")
     if isinstance(listed, Mapping):

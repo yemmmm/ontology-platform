@@ -153,7 +153,7 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 
-### Round 1 — 2026-08-11 independent deterministic contract test — PASS / real run BLOCKED
+### Round 1 — 2026-08-11 independent deterministic contract test — FAIL / real run BLOCKED
 
 - Stable state: development-stopped uncommitted worktree at `84b0abf655e7cac8068e634c4cb90cb2932be6d0`;
   `git diff --check` PASS. The implementation/test worktree was not reset or reverted. No semantic
@@ -203,8 +203,67 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   Modeling candidate, binding receipt from the live read model, dry-run/apply/readback, validation/reasoning,
   governed retrieval, semantic two-CQ verdicts, settlement, and production cleanup were intentionally not
   run per the tester instruction not to create or continue a real modeling run. They are `BLOCKED`/unexecuted,
-  not PASS. Therefore this round is a deterministic implementation gate PASS, while the requirement-level
-  completion gate remains BLOCKED pending an authorized real run and independent read-only acceptance.
-- Defects: none found in the executed deterministic scope. Recommendation: do not request a product-code
-  repair from the requirement developer for this round; proceed only after the main agent decides the
-  separate real-run authorization/operation gate.
+  not PASS. Therefore the requirement-level completion gate remains BLOCKED pending an authorized real run
+  and independent read-only acceptance.
+- Defect 1 — **High, platform-contract/fail-closed ordering**: existing live-drift preflight is not the
+  first credential-side-effect gate. Reproduction: inspect a formal R2.3-003 `TeamRunner.prepare` call with
+  a missing/invalid DeepSeek credential and an injected/live existing-scope probe; at
+  `modeling_team/runner.py:362-369`, `preflight_deepseek_credential(...)` runs before the existing-scope
+  `run_existing_scope_preflight(...)` at `:403-414`. Expected: verify the exact live Project/Ontology,
+  ownership, Graph Set, workspace version, and inactive Session/Lease/Attempt/fence first, then read/bind
+  the formal credential, and only then reserve the ledger/create a run root. Actual: credential read and
+  its failure can occur before the required existing-scope live-drift gate. Evidence: source inspection
+  above; the successful focused tests do not assert this credential-vs-live-preflight ordering. The
+  developer should repair this narrow ordering and add a regression that proves a live-scope rejection
+  happens before credential read or any other side effect, then request Round 2. The same High preflight
+  repair scope includes malformed/missing identity: a direct `canonical_existing_scope_preflight` probe
+  with an otherwise valid live response but Project GET body `{}` returned `scope_disposition=retained`
+  because `project.get("id", project_id)` defaults the missing ID to the requested path. Expected: a
+  missing Project identity is rejected fail-closed before any later scope use. Round 2 must add and pass
+  the missing-id/malformed Project regression as well as the credential-vs-live-preflight ordering check.
+- No other defect was found in the executed deterministic scope. The real L0 start, live existing-scope
+  credential/API preflight against Start75, Modeling candidate, binding receipt from the live read model,
+  dry-run/apply/readback, validation/reasoning, governed retrieval, semantic two-CQ verdicts, settlement,
+  and production cleanup remain `BLOCKED`/unexecuted by instruction.
+
+### Round 2 — 2026-08-11 independent retest after High preflight repair — PASS / real run BLOCKED
+
+- Stable state: developer stopped at the narrow repair worktree; no real semantic run was created or
+  continued. The canonical R2.3-003 ledger now contains exactly the authorized initial event
+  `user-20260811-r23003-start1-4` (`cap/count/active=4/0/0`); no reservation or semantic start was
+  consumed. The retained Start75 tree digest remained `22750e36caeedb11bfc3ab9613fe66f85d45df01f63d43188c61205e5ded0634`,
+  the L3 source tree remained `457549bdf325d6b0c4f796a762474dd79c90d5b55d5b922fb1bd28799ae23cf4`,
+  and R2.3-002/R2.3-005 ledger hashes remained unchanged. `git diff --check` PASS.
+- Fixed since Round 1: R2.3-003 defers DeepSeek credential read until after existing live-scope
+  preflight and before ledger reservation/run-root creation; malformed/missing Project identity now fails
+  closed instead of defaulting a missing response ID to the requested path. New regressions assert the
+  live-preflight-before-credential event order and reject `{}`, `[]`, and wrong Project IDs.
+- Commands and results:
+  - Focused repaired contract set:
+    `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_r23005_ledger_isolation.py
+    modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_r23005_t6_repeatability.py
+    modeling_team/tests/test_r23005_sequential_cq.py modeling_team/tests/test_r23005_c_settlement.py -q`:
+    PASS, 87 tests, 27 subtests. The 003 file alone is 10 passed, including both Round 1 High regressions;
+    005/003 formal identity, frozen baseline, ledger isolation, two-CQ ordering, settlement/CAS and cleanup
+    remain PASS.
+  - Full `uv run --project backend python -m pytest modeling_team/tests -q`: PASS, 704 passed, 1 skipped,
+    218 subtests.
+  - Full backend `cd backend && uv run pytest -q --disable-warnings`: PASS, 843 passed, 10 skipped.
+  - Formal CLI smoke (read-only): matching 003/005 `validate` commands exit `0` with exact four-role rosters;
+    matching 003/005 `baseline` previews exit `0` with manifest bindings
+    (`r23003` hash `8e1f77fa64cab0e575d2eae578a9ccf0f8eff8673051eb86fcfa710501c11c4d`,
+    `r23005` hash `5d02b98ab5108f12c78d61fe81c0100c838029ebfd62d2d354e5beb6b38bf147`). Both cross-wired
+    validate pairs exit `2` with `validation failed: unknown or cross-wired formal run contract`; no smoke
+    run root was created.
+  - Runtime health: `ontology-platform.service` active; backend `/api/health` returned `{"status":"ok"}`;
+    frontend `/` returned HTTP `200`. Retained Start75 and source hashes above were unchanged after all
+    tests; no retained evidence was modified.
+- Result: **PASS for the deterministic implementation gate**. The Round 1 High defects are FIXED by the
+  focused regressions and full suites; no remaining deterministic defect was found. Real L0 start, live
+  Start75 mutation/readback, validation/reasoning/retrieval, two semantic CQ verdicts, settlement and
+  production cleanup remain `BLOCKED`/unexecuted by instruction, not PASS. Requirement-level completion
+  therefore remains BLOCKED pending a separately authorized real run and independent read-only acceptance.
+- Recommendation: no further requirement-developer repair is requested from Round 2; the main agent may
+  proceed to the independent real-run gate when it is ready, preserving the exact four-start budget and
+  success-stop rule.

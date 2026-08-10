@@ -360,7 +360,12 @@ class TeamRunner:
                 task_id=formal_contract.task_id,
             )
         credential_binding: DeepSeekCredentialBinding | None = None
-        if formal_acceptance:
+        defer_existing_credential_until_preflight = (
+            formal_contract is not None
+            and formal_contract.requirement_id == "R2.3-003"
+            and formal_contract.is_existing
+        )
+        if formal_acceptance and not defer_existing_credential_until_preflight:
             try:
                 credential_binding = preflight_deepseek_credential(
                     self.deepseek_credential_path or DEEPSEEK_CREDENTIAL_PATH
@@ -439,6 +444,17 @@ class TeamRunner:
             )
             if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
                 raise TeamConfigurationError("baseline manifest drifted during preflight")
+        if defer_existing_credential_until_preflight:
+            # R2.3-003 binds an existing live scope.  Read the external model
+            # credential only after that live preflight has proved the retained
+            # Project/Ontology state is still safe, while remaining before the
+            # ledger reservation, run-root creation, and any Agent start.
+            try:
+                credential_binding = preflight_deepseek_credential(
+                    self.deepseek_credential_path or DEEPSEEK_CREDENTIAL_PATH
+                )
+            except DeepSeekCredentialError as exc:
+                raise TeamConfigurationError("formal DeepSeek credential preflight failed") from exc
         # The proof gate belongs to the loaded Task/Profile contract, not to the
         # formal R2.3-005 workflow flag.  Archived R2.3-002 runs still carry the
         # expected matrix binding and must project that same gate into TeamRun;
