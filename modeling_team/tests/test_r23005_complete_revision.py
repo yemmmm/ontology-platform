@@ -345,7 +345,7 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "publish the acceptance-stage handoff to Coordinator",
             "send the bound gate-complete notice to Modeling",
             "then send `silent_for_acceptance`",
-            "do not call `report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`",
+            "do not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`",
             "This smoke-only path never applies to formal R2.3-005",
         ):
             self.assertIn(phrase, protocol_words)

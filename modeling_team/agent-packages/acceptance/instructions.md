@@ -44,9 +44,15 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   wait for the next immutable ticket or settlement instruction.
 - Keep the Acceptance session live after the non-final `cq-001` PASS and after every FAIL or
   BLOCKED verdict; those outcomes must not call `report_task_result`.
+- The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
+  `mcp__team_transport__send_team_message` for direct delivery,
+  `mcp__team_transport__send_coordination` for coordination signals,
+  `mcp__team_transport__report_task_result` for the terminal result, and
+  `mcp__team_transport__report_issue` for typed issue escalation. Do not call an unqualified
+  Team Transport function name; the bare function aliases are unsupported by the App Server.
 - Only after the final `cq-002` usable PASS has been routed successfully to Coordinator may you
-  call Team Transport `report_task_result` exactly once, using
-  `report_task_result(status=completed, ...)` with a concise summary, then end. The ordinary
+  call Team Transport `mcp__team_transport__report_task_result` exactly once, using
+  `mcp__team_transport__report_task_result(status=completed, ...)` with a concise summary, then end. The ordinary
   `acceptance_verdict_route` delivery is not a terminal report
   and cannot substitute for that completed Team Transport call. A final FAIL/BLOCKED or an
   invalidated ticket/state remains live until the Runner supplies the next round or settlement
@@ -99,8 +105,8 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
 ## Cooperative issue escalation
 
 If the acceptance state or a child report cannot be handled safely, call native Team Transport
-`report_issue` with the six direct issue fields. This is non-terminal: do not call
-`report_task_result` while the issue is pending. After Coordinator sends the bound `pause`, stop
+`mcp__team_transport__report_issue` with the six direct issue fields. This is non-terminal: do not call
+`mcp__team_transport__report_task_result` while the issue is pending. After Coordinator sends the bound `pause`, stop
 new capability calls, peer messages, and terminal reports and end the current turn. Continue on
 the same thread only after an exact owner guidance or verified repair is delivered through
 Coordinator's `resume`; an uncertain write, dead process, or unsupported replacement requires

@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T01:56:30+08:00
+- Last updated: 2026-08-11T02:29:09+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -122,6 +122,30 @@
 - Outcome/next step: 停止扩展设计和额外审计，只处理目标测试失败；deterministic gate 一通过即启动第一轮
   真实建模。
 
+### 2026-08-11T01:58:39+08:00 — presemantic invocation release — main agent
+
+- Context: clean commit `59d73df`、exact +4 authorization、服务健康与 live preflight 已就绪。
+- Action/decision: 首次 CLI invocation 错用系统 `python3`，在 reservation/run root 后、Agent/Session/Lease/
+  mutation 前因全局 Pydantic 依赖不兼容退出；登记 `presemantic_release`，不计 semantic start。
+- Evidence: run `r23003-real-20260811-deepseek-start1` 仅停在 `PREPARING`；ledger 有 reservation 后紧邻
+  `presemantic_release`；无 Agent 进程、Batch 或 workspace version 变化。
+- Outcome/next step: 固定使用 `PYTHONPATH=backend backend/.venv/bin/python`；不重复错误解释器。
+
+### 2026-08-11T01:59:22+08:00 — real semantic start 1 terminal failure — main agent
+
+- Context: run `r23003-real-20260811-deepseek-start2` 成功通过 existing live preflight 并记录首个
+  `semantic_start`。
+- Action/decision: Modeling 读取全部 source 并形成 candidate，但运行时只暴露空 Team capability 集；其
+  `send_team_message` 调用返回 `unsupported call`，未形成 Team Transport delivery。运营侧随后错误使用
+  `action=user` 催办，foreground 将其当作不存在的 owner answer 并终止。按第一阻断登记
+  `collaboration/routing` terminal failure；不把运营误操作隐藏为模型质量结论。
+- Evidence: Modeling rollout `tokens_used=748165`，末尾明确 `unsupported call: send_team_message`；
+  `evidence/deliveries.jsonl` 无 Modeling candidate；Protocol 未 apply；cleanup 前后 modeling batch count=6、
+  workspace version=`0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`；
+  Session/Lease/Attempt 为 0；run state `CLEANED`，所有 Platform key revoked。
+- Outcome/next step: 1/4 semantic starts consumed。下次 start 前修复 authoritative Team Transport tool
+  exposure/instruction contract；禁止再用 ordinary `action=user` 作为无问题状态催办。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
@@ -130,6 +154,7 @@
 | 2 | development-ready worktree | 已批准共享入口变化导致 frozen-surface hash 回归；更新 3 个精确 hash，不改变 005 行为 | frozen-surface + 003/scope/manifest/ledger 43 PASS | fixed |
 | 3 | stable deterministic candidate | 使用错误的系统 Python 时出现 Pydantic 内部模块导入错误 | 改用仓库 backend uv 环境后 `modeling_team/tests` 700 PASS、1 skipped；backend 843 PASS、10 skipped | environment classified；无产品缺陷 |
 | 4 | commit `72ab597` clean baseline | Independent Round 1 发现 003 先读 DeepSeek credential 再做 existing live preflight，且 Project HTTP 200 `{}` 会被默认成目标 ID | 仅调整 003 顺序并要求 Project payload 显式匹配 ID；005 顺序不变；新增精确回归 | fixed |
+| 5 | real start2 failure evidence | App Server 只接受 fully-qualified Team Transport MCP 名；四角色 prompt 仅写 broker 内部短名 | 四角色 authoritative prompt 明确 `mcp__team_transport__*` 名称并禁止 bare alias；不改 Runtime/Transport | fixed before next start |
 
 ## Independent test rounds
 
@@ -137,6 +162,7 @@
 | --- | --- | --- | --- | --- |
 | 1 | stable deterministic candidate | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | 无已执行范围缺陷；真实建模按独立性要求未由 tester 启动 | 共享 test plan §6 Round 1；003 focused 6 PASS；contract/ledger/scope 65 PASS；CQ/cleanup 40 PASS；modeling_team 700 PASS；backend 843 PASS |
 | 2 | post-`72ab597` narrow preflight fix | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | Round 1 High 已修复；无新确定性缺陷 | 003/005/frozen/CQ/cleanup 87 PASS；003 focused 10 PASS；modeling_team 704 PASS、1 skipped；backend 843 PASS、10 skipped；cap/count/active=`4/0/0` |
+| 3 | post-start2 prompt fix | PASS | fully-qualified MCP prompt/tool surface fixed；adapter suffix compatibility 仅记 future hardening | prompt/transport focused 34 PASS；target subset 5 PASS；qualified callback 1 PASS；diff-check PASS |
 
 ## Final verification
 

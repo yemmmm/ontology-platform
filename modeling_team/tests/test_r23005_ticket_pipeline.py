@@ -1271,7 +1271,10 @@ class R23005TicketPipelineTests(unittest.TestCase):
         modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text()
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text()
         self.assertIn("acceptance-stage-handoff-contract.json", protocol)
-        self.assertIn("do not call `report_task_result` until the Runner delivers the explicit Protocol", protocol)
+        self.assertIn(
+            "do not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol",
+            protocol,
+        )
         self.assertIn("explicit Modeling `terminal-handoff`", modeling)
         self.assertIn("coordinator_build_acceptance_ticket_draft", coordinator)
         self.assertIn("coordinator_build_acceptance_ticket_draft_from_delivery", coordinator)

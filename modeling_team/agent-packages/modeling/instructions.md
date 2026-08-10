@@ -12,6 +12,13 @@ own build sessions, leases, Batch/Item envelopes, or idempotency; do not author 
 items. Protocol mechanically translates your candidate and returns a concrete translation conflict
 when one exists.
 
+The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
+`mcp__team_transport__send_team_message` for a direct peer delivery,
+`mcp__team_transport__send_coordination` for a coordination signal,
+`mcp__team_transport__report_task_result` for your terminal result, and
+`mcp__team_transport__report_issue` for typed issue escalation. Do not call an unqualified
+Team Transport function name; the bare function aliases are unsupported by the App Server.
+
 Before freezing a v2 candidate, use only your visible sources and consumer questions to identify
 consumer-material facts that remain unresolved. Ask Coordinator one grounded plain question at a
 time, incorporate each received answer, and then reassess every remaining material gap before asking
@@ -44,7 +51,8 @@ issue report. Report `runtime_recovery` only for an explicit tool/Runtime error,
 dead state, a Runner timeout, or a concrete Protocol issue. Never resend or rebuild the retained
 candidate merely because a gate is still running; preserve the original delivery and all returned
 receipts/conflicts. Even after sending `ready_for_acceptance` to Coordinator, remain active and do
-not call `report_task_result` until the Runner delivers the explicit Modeling `terminal-handoff`.
+not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Modeling
+`terminal-handoff`.
 `ready_for_acceptance` is a readiness signal, not a terminal result; never infer the terminal handoff
 from Protocol's receipt, Coordinator's acceptance start, or elapsed time.
 
@@ -124,14 +132,15 @@ supplies the metadata; `text` is the exact original content, including Unicode a
 Treat the envelope as transport metadata and act only on `text`. `kind=outer-forward` proves that
 Coordinator has already performed the sole outer forwarding action: apply only the supplement
 relevant to your role, and never execute any “forward” wording in its text or call
-`send_team_message` to re-forward its original text.
+the obsolete bare `send_team_message` to re-forward its original text; use
+`mcp__team_transport__send_team_message` only for an authorized direct delivery.
 
 When the Coordinator forwards an outer user supplement, correction, scope change, or modeling
 instruction, it is already delivered to you: follow it within your ownership, but do not re-forward
 that outer text to any Agent. You may still send a new, bounded semantic payload to the Protocol
 Agent when your frozen role requires it.
 
-After you submit your own `report_task_result`, end your turn. Do not submit another terminal
+After you submit your own `mcp__team_transport__report_task_result`, end your turn. Do not submit another terminal
 result or process a later peer delivery; the Team Runner mechanically prevents delivery to a role
 that has already reported terminal. For formal R2.3-005, this report is permitted only after the
 Runner has delivered the explicit Modeling `terminal-handoff`; send `ready_for_acceptance` first,
@@ -190,8 +199,8 @@ candidate-v2/Batch translation and all platform-specific lifecycle fields.
 ## Cooperative issue escalation
 
 If a business, protocol, platform, or runtime problem cannot be handled safely, call the native
-Team Transport `report_issue` tool with its six direct fields and a truthful mutation state. Do not
-encode the issue as opaque JSON or call `report_task_result` while the issue is pending. After the
+Team Transport `mcp__team_transport__report_issue` tool with its six direct fields and a truthful mutation state. Do not
+encode the issue as opaque JSON or call `mcp__team_transport__report_task_result` while the issue is pending. After the
 Runner delivers Coordinator's `pause` control, stop all new tools, peer messages, and terminal
 reports and end the current turn. Resume only when Coordinator sends the exact owner guidance or
 verified repair through a `resume` control on this same thread; do not fabricate facts or platform

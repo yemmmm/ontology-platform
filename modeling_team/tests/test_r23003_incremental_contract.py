@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +30,8 @@ from modeling_team.protocol_mechanics import (
     translate_candidate_to_batches,
 )
 from modeling_team.start_ledger import StartLedger
+from modeling_team.runtimes.codex import CodexRuntimeAdapter
+from modeling_team.transport_mcp import TeamTransportBroker, mcp_response
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -127,6 +130,46 @@ def test_r23003_initial_authorization_opens_exact_four_starts(tmp_path: Path) ->
     ledger.reserve("run-after-auth", "a" * 64, freeze)
     ledger.mark_semantic_start("run-after-auth")
     assert sum(item["event"] == "semantic_start" for item in ledger._records()) == 1
+
+
+def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Path) -> None:
+    """The App Server-facing prompt must name the callable MCP tool, not a bare alias."""
+
+    packages = ROOT / "modeling_team" / "agent-packages"
+    required_name = "mcp__team_transport__send_team_message"
+    for package_id in ("modeling", "protocol", "acceptance", "coordinator"):
+        instructions = (packages / package_id / "instructions.md").read_text(encoding="utf-8")
+        assert required_name in instructions
+        assert "Do not call an unqualified" in instructions
+        assert re.search(r"call\s+`send_team_message`", instructions) is None
+
+    broker = TeamTransportBroker(
+        tmp_path / "transport",
+        {("modeling", "protocol")},
+    )
+    broker.start(["modeling", "protocol"])
+    try:
+        advertised = mcp_response(
+            {"method": "tools/list"}, broker=broker, agent_id="modeling"
+        )
+        names = {entry["name"] for entry in advertised["tools"]}
+        assert "send_team_message" in names
+
+        adapter = CodexRuntimeAdapter(repository_root=ROOT, use_bwrap=False)
+        adapter._run_root = tmp_path
+        (tmp_path / "transport-root").write_text(str(broker.root), encoding="utf-8")
+        agent = SimpleNamespace(agent_id="modeling")
+        result = adapter._dynamic_tool_result(
+            agent,
+            required_name,
+            {"recipient_id": "protocol", "text": "exact transport call"},
+        )
+        assert result["success"] is True
+        deliveries = broker.drain()
+        assert len(deliveries) == 1
+        assert deliveries[0].text == "exact transport call"
+    finally:
+        broker.stop()
 
 
 def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:

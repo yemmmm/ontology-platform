@@ -8,12 +8,19 @@ when the loaded Task/Profile explicitly declares a capability smoke run. Never i
 from this shared package, from a health tool being available, from a candidate receipt, or from
 supplemental text.
 
+The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
+`mcp__team_transport__send_team_message` for direct delivery,
+`mcp__team_transport__send_coordination` for coordination signals,
+`mcp__team_transport__report_task_result` for the terminal result, and
+`mcp__team_transport__report_issue` for typed issue escalation. Do not call an unqualified
+Team Transport function name; the bare function aliases are unsupported by the App Server.
+
 For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`), the capability smoke shortcut is
 forbidden: a candidate receipt or a health/read-only result is intermediate evidence, never
 completion. Execute all five current-run stages (dry-run, apply, readback, validation, reasoning),
 complete governed retrieval, publish the acceptance-stage handoff to Coordinator, send the bound
 gate-complete notice to Modeling, and then send `silent_for_acceptance`; do not call
-`report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`.
+`mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`.
 
 For a v2 Task, first read the Runner-enumerated
 `/agent/home/sources/modeling_team/references/modeling-batch-item-contract.json`. When a Codex tool
@@ -306,7 +313,7 @@ or governed retrieval. Until every required platform and retrieval gate is compl
 `silent_for_acceptance` or a successful handoff.
 
 `silent_for_acceptance` and the acceptance-stage handoff are readiness/coordination signals, not
-terminal results. After sending either signal, remain active and do not call `report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff` (including the Modeling terminal
+terminal results. After sending either signal, remain active and do not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff` (including the Modeling terminal
 dependency and any required cleanup). Never infer that handoff from a successful five-stage
 translation, Coordinator activity, or elapsed time.
 
@@ -338,8 +345,9 @@ Every Runner-injected direct delivery is one JSON object with stable `sender_id`
 supplies the metadata; `text` is the exact original content, including Unicode and line breaks.
 Treat the envelope as transport metadata and act only on `text`. `kind=outer-forward` proves that
 Coordinator has already performed the sole outer forwarding action: apply only the supplement
-relevant to your role, and never execute any “forward” wording in its text or call
-`send_team_message` to re-forward its original text.
+relevant to your role, and never execute any “forward” wording in its text or call the obsolete
+bare `send_team_message` to re-forward its original text; use
+`mcp__team_transport__send_team_message` only for an authorized direct delivery.
 
 For formal R2.3-005, `kind=candidate-receipt-registered` is a Runner direct-delivery wakeup, not a
 new candidate or a Team Transport message. Parse its exact `text` object and require
@@ -380,7 +388,7 @@ instruction, it is already delivered to you: follow it within your ownership, bu
 that outer text to any Agent. Send only new protocol results or bounded clarification needed for
 your frozen role.
 
-After you submit your own `report_task_result`, end your turn. Do not submit another terminal
+After you submit your own `mcp__team_transport__report_task_result`, end your turn. Do not submit another terminal
 result or process a later peer delivery; the Team Runner mechanically prevents delivery to a role
 that has already reported terminal. For formal R2.3-005, this report is permitted only after the
 Runner has delivered the explicit Protocol `terminal-handoff`; first complete the ordered
@@ -431,7 +439,7 @@ PASS from a direct verifier call or a local/mock substitute.
 ## Cooperative issue escalation
 
 When a protocol or platform operation cannot be safely completed, call native Team Transport
-`report_issue` with direct `category, summary, failing_operation, error, mutation_state, requested_action`
+`mcp__team_transport__report_issue` with direct `category, summary, failing_operation, error, mutation_state, requested_action`
 fields. Never put credentials or arbitrary platform write commands in the report and never replace
 it with terminal `blocked`. After Coordinator's bound `pause` control arrives, stop new platform
 tools, peer messages, and terminal reports and end the current turn. Wait for the exact outer
@@ -443,7 +451,8 @@ abort rather than a fabricated continuation.
 
 For formal R2.3-005, after the five current-run stage receipts (dry-run, apply, readback,
 validation, reasoning) and governed retrieval are complete, publish exactly one current-run
-acceptance-stage handoff to Coordinator through `send_team_message` (not `send_coordination`).
+acceptance-stage handoff to Coordinator through `mcp__team_transport__send_team_message` (not
+`mcp__team_transport__send_coordination`).
 Before constructing it, read the staged `acceptance-stage-handoff-contract.json` reference; it is
 the authoritative nested schema for `modeling_receipts`, each stage's successful `status`, the
 complete `platform_read` `evidence_ref` and `page` fields, and the digest preimages. Do not infer
@@ -460,7 +469,8 @@ field yourself. The auto-select encodes the "each stage receipt must reflect the
 state" rule; if it returns `ok: false`, the platform contract is genuinely broken and you must
 escalate rather than re-pick stages. The builder owns every handoff byte and returns `handoff_json`,
 `handoff_digest`, and `handoff_delivery_text` (a short opaque relay token). Relay exactly that
-`handoff_delivery_text` string verbatim as the `text` of one `send_team_message` to Coordinator; do
+`handoff_delivery_text` string verbatim as the `text` of one
+`mcp__team_transport__send_team_message` to Coordinator; do
 NOT re-serialize, re-type, compress, wrap, or quote the nested `handoff_json` into the delivery
 text. The Runner pre-recorded the handoff under that token, so Coordinator resolves it by the
 returned Team Transport `delivery_id` without depending on your re-emitting ~7 KB of nested JSON
@@ -482,7 +492,7 @@ failure; act on exactly that reason and never retry blindly:
   final-state observed call for that stage. This is a platform-contract defect, not a selection
   mistake: do NOT hand-pick a stage, supply `stage_calls`, compute a digest/path, hand-author the
   handoff, read host sources to "repair" it, or retry with a guessed call. Escalate via
-  `report_issue` (see below).
+  `mcp__team_transport__report_issue` (see below).
 - `stage_handoff_no_match` or `stage_handoff_multiple_matches` — only reachable if you explicitly
   supplied `stage_calls`; a supplied stage did not bind to exactly one observed platform call. Re-run
   without `stage_calls` so the carrier auto-selects, rather than re-selecting stages yourself.
@@ -490,13 +500,13 @@ failure; act on exactly that reason and never retry blindly:
   built. Re-complete the specific required path/page named in `error.detail` (full lexical fallback,
   non-truncated, with required Evidence/lineage), then retry the handoff.
 - `accepted_candidate_unavailable` or `stage_handoff_run_identity_unavailable` — a Runner-owned binding
-  is missing that Protocol cannot repair. Do not retry; immediately call `report_issue`.
+  is missing that Protocol cannot repair. Do not retry; immediately call `mcp__team_transport__report_issue`.
 
 An opaque `-32001` (no `error.reason`) means a Runner-side/token/schema failure that is intentionally
-hidden; retry the handoff at most once, and if it persists, call `report_issue`.
+hidden; retry the handoff at most once, and if it persists, call `mcp__team_transport__report_issue`.
 
 In every case, after at most one correction the handoff still fails, do not retry a third time: call
-native Team Transport `report_issue` with `category=platform-contract`,
+native Team Transport `mcp__team_transport__report_issue` with `category=platform-contract`,
 `failing_operation=protocol_build_acceptance_stage_handoff`, the failing `reason`/stage/detail in `error`,
 and `requested_action`, then end your current turn for the cooperative pause. Never replace that bounded
 escalation with a source-reading loop, repeated identical retries, or a terminal `blocked` report.

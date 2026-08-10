@@ -267,3 +267,38 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
 - Recommendation: no further requirement-developer repair is requested from Round 2; the main agent may
   proceed to the independent real-run gate when it is ready, preserving the exact four-start budget and
   success-stop rule.
+
+### Round 3 — 2026-08-11 independent retest of start2 prompt-contract repair — PASS
+
+- Stable state: development stopped at HEAD `59d73df0c316ae8e01da403ef3e1ec89e84b037c` with the
+  start2 prompt-contract repair present in the uncommitted worktree. This round did not start or continue
+  a semantic run, call the live platform, or modify retained evidence. `git diff --check` PASS; relevant
+  changed paths are limited to the four role instruction packages and their focused regression tests
+  (the main-agent delivery record remained untouched by this tester).
+- Commands and results:
+  - Focused prompt/transport/005 regressions:
+    `uv run --project backend python -m pytest
+    modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_complete_revision.py
+    modeling_team/tests/test_r23005_ticket_pipeline.py -q`:
+    PASS, 34 tests. The targeted subset for the fully-qualified transport surface, the R2.3-005 formal
+    prompt smoke/full-run guard, nested handoff prompt, ticket-pipeline prompt, and qualified Codex
+    transport callback also passed: 5 tests.
+  - `test_codex_isolation.py::test_dynamic_transport_routes_only_profile_tool_and_blocks_spawn`:
+    PASS, 1 test. The adapter successfully routes the fully-qualified
+    `mcp__team_transport__send_team_message` callable through the broker and preserves the delivery.
+  - Direct role-prompt audit: Coordinator, Modeling, Protocol, and Acceptance each name all four
+    authoritative callables (`mcp__team_transport__send_team_message`, `...send_coordination`,
+    `...report_task_result`, `...report_issue`) and explicitly state that bare aliases are unsupported by
+    the App Server. No executable bare `send_team_message`/`send_coordination`/`report_issue` instruction
+    was found; Acceptance's remaining bare `report_task_result` occurrence is in the explicit prohibition
+    that non-final/FAIL/BLOCKED verdicts must not call it, not a callable instruction.
+  - `git diff --check`: PASS. No runtime adapter source file was changed by the repair; the focused
+    qualified-call regression covers its fully-qualified callback path. The App Server rejection of bare
+    aliases is retained from start2 runtime evidence; the adapter's internal suffix normalization remains
+    a callback compatibility layer and is not the Agent-visible tool surface.
+- Result: **PASS** for the start2 prompt/tool-surface contract. The four-role prompts now expose the exact
+  fully-qualified names required by the Runtime, forbid bare aliases, and preserve the R2.3-005 prompt
+  gates. The direct bare-alias adapter acceptance observed in a temporary unit probe is recorded as
+  non-blocking future hardening only, because it is below the App Server surface and was not the start2
+  failure path. No real L0-L2 semantic run was started or continued in this round.
