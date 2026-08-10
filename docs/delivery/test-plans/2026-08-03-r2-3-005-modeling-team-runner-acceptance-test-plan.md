@@ -326,7 +326,7 @@ start.
   was performed. The retained round-1 run remains `BLOCKED`; this round does not authorize another
   real start.
 - Authority: `requirements-v2.3.md:460-469,1197-1204,1257-1275`; repair plan
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`;
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`;
   this shared test plan.
 - Code version: `git rev-parse HEAD` =
   `8c5c38c62d448ae90fe5f2ddfff63ba10fedb547`; implementation is uncommitted in the six expected
@@ -559,7 +559,7 @@ acceptance.
   retained-evidence rewrite, Producer/Agent launch, platform write, service restart, or semantic
   modeling was performed.
 - Authority: `docs/requirements/requirements-v2.3.md` R2.3-005,
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-live-project-binding-repair.md`, the
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-live-project-binding-repair.md`, the
   latest R2.3-005 delivery record, and this shared test plan. The checkout was at HEAD
   `d8e31b2573d9888f5cd652877c1595694dc0db47` with exactly the two developer files modified.
 - Before testing, the live formal ledger was SHA-256
@@ -623,7 +623,7 @@ acceptance.
   `modeling_team/tests/test_runner_r23005_owner_answer.py`
   `8fb6a23f27d5a4aaa4cd0933db2c9c3f920917875274645f3dd7376d61f3b352`.
 - Authority and reused plan: `docs/requirements/requirements-v2.3.md` R2.3-005,
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`,
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`,
   and this shared test plan (C74-C83/I16). The approved missing-score business response remains
   the literal `未知`; no business semantics were changed.
 - No Producer/Agent was launched. No semantic start, reservation, ledger append, platform write,
@@ -789,7 +789,7 @@ evidence integrity, cleanup, source/display binding, and failure-classification 
 ### Scope, baseline, and safety boundary
 
 - Tester: fresh independent Requirement Tester, reusing this shared plan and the reviewed
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`.
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`.
   Authority was R2.3-005 (including the second exact `+3` section), accepted R2.3-002
   `r2-3-002-t` Task/Profile and Protocol source, and cases C84-C93/I17-I19.
 - Code baseline was `HEAD=efc55eafefab13edba3070f95af9d70f1e066cdf`; the implementation was
@@ -852,7 +852,7 @@ PASS and preserve all live/retained evidence.
 
 - This is the second independent Requirement Tester round for the reviewed complete-candidate
   repair. It reuses this shared plan (C94-C98/I20-I21), the authoritative R2.3-005 start5
-  subsection, and `docs/delivery/implementation-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md`.
+  subsection, and `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md`.
   The test document was the only file edited by this round.
 - The worktree baseline was `HEAD=98b50b8a7aa2b0c1936c8312111be0a5e1a6d710` (implementation still
   uncommitted) with
@@ -919,7 +919,7 @@ evidence boundaries above.
 - This is the third independent Requirement Tester round. It reuses this shared plan's C99-C104
   and I22-I23 cases, the R2.3-005 `start6 neutral candidate authoring closure` subsection in
   `docs/requirements/requirements-v2.3.md`, and the reviewed
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md`.
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md`.
   The allowed implementation surface was limited to the scenario-neutral reference,
   Modeling/Protocol instructions, the R2.3-005 task, and the focused test. No mechanics, MCP,
   Runner, Runtime, platform, Acceptance/lifecycle, backend, frontend, or live-state path was
@@ -1322,7 +1322,7 @@ stop writing the shared test plan after this entry.
   shared test plan. Stable baseline is HEAD `27e8e48484114f5bebe83823b6441bf4145f58b8`; the exact
   supplied six-file diff SHA-256 is
   `44f52425e55db92f64be17fdc7acfced99289d0faad22f06fe09bad7cf4f70b4`.
-- Worktree check: the six supplied files are the only task delta (`docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`,
+- Worktree check: the six supplied files are the only task delta (`docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`,
   `docs/requirements/requirements-v2.3.md`, Protocol instructions, the modeling-batch contract,
   formal task YAML, and the focused Codex isolation test). No product runtime code was modified.
 
@@ -2671,7 +2671,7 @@ implementation before execution and append the result below without rewriting ea
 ### Independent Round 14 — Luna-max Team switch validation (2026-08-10)
 
 - **Scope and boundary:** Independent validation of the frozen implementation plan
-  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-luna-max-team-switch.md`. The Tester verified the six
+  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-provider-transition-and-closure.md`. The Tester verified the six
   formal package declarations, the zero-side-effect `TeamRunner.prepare` model gate, persistent and Examiner
   runtime configuration/auth cleanup, startup-failure cleanup, secret audits, R2.3-005 regressions, complete
   `modeling_team` discovery, Ruff, diff, GitNexus, service health, and one bounded real Luna provider smoke. No
@@ -2751,7 +2751,7 @@ implementation before execution and append the result below without rewriting ea
 ### Independent Round 15 — Luna-max DEVELOPMENT_READY barrier and bounded provider smoke (2026-08-10)
 
 - **Scope and boundary:** Independent validation of the final DEVELOPMENT_READY hashes and the same frozen
-  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-luna-max-team-switch.md` contract. The Tester did not
+  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-provider-transition-and-closure.md` contract. The Tester did not
   edit product code, mutate retained start72 evidence, reserve/append the StartLedger, start semantic modeling,
   call a platform write endpoint, or revoke credentials. Only this shared test plan was appended. The one real
   Luna smoke used an empty business prompt, no source files, no Runner/ledger, and a temporary 0700 root; its

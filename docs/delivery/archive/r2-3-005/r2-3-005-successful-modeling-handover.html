@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="R2.3-005 Start75 成功建模流程、平台架构与运维接手手册">
+  <title>R2.3-005 成功建模流程与接手手册</title>
+  <style>
+    :root {
+      --paper: #f3efe5;
+      --paper-deep: #e8e0cf;
+      --ink: #18252a;
+      --muted: #657176;
+      --navy: #123b48;
+      --navy-2: #1e5665;
+      --rust: #c55432;
+      --gold: #d59c3c;
+      --green: #2e765d;
+      --red: #a53b35;
+      --line: #cfc5b2;
+      --white: #fffdf7;
+      --shadow: 0 18px 44px rgba(32, 43, 45, .12);
+      --radius: 14px;
+      --sans: "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+      --serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(18, 59, 72, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18, 59, 72, .035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      font-family: var(--sans);
+      line-height: 1.78;
+    }
+
+    a { color: var(--navy-2); text-underline-offset: 3px; }
+    a:hover { color: var(--rust); }
+    code, pre { font-family: var(--mono); }
+    code {
+      padding: .08em .35em;
+      border: 1px solid rgba(18,59,72,.13);
+      border-radius: 5px;
+      background: rgba(255,255,255,.58);
+      font-size: .92em;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 72px clamp(24px, 7vw, 110px) 64px;
+      color: #f9f4e8;
+      background: var(--navy);
+      border-bottom: 7px solid var(--rust);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: -40% -10% auto 42%;
+      height: 470px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 50%;
+      transform: rotate(-12deg);
+      box-shadow: 0 0 0 42px rgba(255,255,255,.025), 0 0 0 98px rgba(255,255,255,.018);
+    }
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(260px, .7fr);
+      gap: 44px;
+      max-width: 1380px;
+      margin: auto;
+      align-items: end;
+    }
+    .eyebrow {
+      color: #efbd70;
+      font: 700 .78rem/1.2 var(--mono);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 { font-family: var(--serif); letter-spacing: -.02em; }
+    h1 { max-width: 920px; margin: 14px 0 20px; font-size: clamp(2.6rem, 6vw, 6rem); line-height: 1.03; }
+    .hero-lead { max-width: 850px; margin: 0; color: #d9e4df; font-size: clamp(1.05rem, 1.7vw, 1.35rem); }
+    .stamp {
+      padding: 24px;
+      border: 1px solid rgba(255,255,255,.25);
+      background: rgba(255,255,255,.055);
+      box-shadow: inset 0 0 0 5px rgba(255,255,255,.025);
+    }
+    .stamp strong { display: block; color: #8ee0b6; font: 800 2rem/1 var(--mono); }
+    .stamp dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 18px 0 0; font-size: .82rem; }
+    .stamp dt { color: #9eb8bd; }
+    .stamp dd { margin: 0; overflow-wrap: anywhere; }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 278px minmax(0, 1fr);
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      overflow: auto;
+      padding: 32px 24px;
+      background: rgba(232,224,207,.92);
+      border-right: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .sidebar h2 { margin: 0 0 12px; font-size: 1rem; }
+    .sidebar nav { display: grid; gap: 3px; }
+    .sidebar nav a {
+      display: block;
+      padding: 8px 10px;
+      border-left: 3px solid transparent;
+      color: #435057;
+      text-decoration: none;
+      font-size: .86rem;
+    }
+    .sidebar nav a:hover, .sidebar nav a.active { color: var(--navy); border-color: var(--rust); background: rgba(255,255,255,.46); }
+    .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; }
+    button {
+      border: 1px solid var(--navy);
+      border-radius: 6px;
+      padding: 9px 10px;
+      color: var(--navy);
+      background: transparent;
+      font: 700 .78rem var(--sans);
+      cursor: pointer;
+    }
+    button:hover, button:focus-visible { color: white; background: var(--navy); outline: 3px solid rgba(197,84,50,.2); }
+
+    main { min-width: 0; padding: 48px clamp(22px, 5vw, 76px) 100px; }
+    section { max-width: 1160px; margin: 0 auto 88px; scroll-margin-top: 24px; }
+    .section-head { display: grid; grid-template-columns: 66px 1fr; gap: 18px; align-items: start; margin-bottom: 28px; }
+    .section-no { color: var(--rust); font: 800 1rem var(--mono); padding-top: 10px; border-top: 3px solid var(--rust); }
+    h2 { margin: 0; color: var(--navy); font-size: clamp(2rem, 4vw, 3.45rem); line-height: 1.12; }
+    h3 { margin: 32px 0 10px; color: var(--navy); font-size: 1.35rem; }
+    h4 { margin: 20px 0 7px; color: var(--navy-2); }
+    .lede { max-width: 850px; margin: 10px 0 0; color: var(--muted); font-size: 1.05rem; }
+
+    .callout, .card, .metric, details {
+      border: 1px solid var(--line);
+      background: rgba(255,253,247,.88);
+      box-shadow: 0 8px 24px rgba(31,45,48,.06);
+    }
+    .callout { padding: 22px 24px; border-left: 5px solid var(--gold); }
+    .callout.success { border-left-color: var(--green); }
+    .callout.danger { border-left-color: var(--red); }
+    .callout strong { color: var(--navy); }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+    .card { grid-column: span 4; padding: 22px; border-radius: var(--radius); }
+    .card.wide { grid-column: span 6; }
+    .card.full { grid-column: 1 / -1; }
+    .card .tag, .tag {
+      display: inline-block;
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      color: var(--navy);
+      border: 1px solid rgba(18,59,72,.25);
+      border-radius: 999px;
+      background: rgba(18,59,72,.05);
+      font: 700 .7rem var(--mono);
+      letter-spacing: .03em;
+    }
+    .card h3 { margin: 5px 0 8px; }
+    .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+    .metric { padding: 18px; border-top: 4px solid var(--rust); }
+    .metric b { display: block; color: var(--navy); font: 800 clamp(1.6rem, 4vw, 2.6rem)/1 var(--mono); }
+    .metric span { color: var(--muted); font-size: .82rem; }
+
+    .architecture {
+      padding: 30px;
+      border: 1px solid var(--navy);
+      background: #f8f5ec;
+      box-shadow: var(--shadow);
+    }
+    .arch-row { display: grid; grid-template-columns: 1fr 60px 1.4fr 60px 1fr; align-items: center; gap: 10px; }
+    .arch-box { min-height: 96px; display: grid; place-items: center; padding: 14px; text-align: center; border: 2px solid var(--navy); background: white; }
+    .arch-box.core { color: white; background: var(--navy); }
+    .arch-box.accept { border-color: var(--green); }
+    .arrow { color: var(--rust); text-align: center; font: 900 1.8rem var(--mono); }
+    .role-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+    .role { padding: 16px 10px; text-align: center; border-top: 4px solid var(--gold); background: var(--white); }
+    .role b { display: block; color: var(--navy); }
+    .role small { color: var(--muted); }
+    .arch-caption { color: var(--muted); font-size: .86rem; }
+
+    .timeline { position: relative; margin: 32px 0; }
+    .timeline::before { content: ""; position: absolute; left: 24px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+    .step { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 20px; margin: 0 0 22px; }
+    .step-no { z-index: 1; display: grid; place-items: center; width: 48px; height: 48px; color: white; border-radius: 50%; background: var(--navy); font: 800 .85rem var(--mono); }
+    .step-body { padding: 0 0 18px; border-bottom: 1px dashed var(--line); }
+    .step-body h3 { margin: 4px 0 6px; }
+    .io { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    .io div { padding: 12px 14px; background: rgba(255,255,255,.58); border: 1px solid var(--line); }
+    .io b { display: block; color: var(--navy-2); font-size: .77rem; text-transform: uppercase; letter-spacing: .06em; }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--white); }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td { padding: 13px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: white; background: var(--navy); font-size: .82rem; letter-spacing: .03em; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fff7e7; }
+    .status-pass { color: var(--green); font-weight: 800; }
+    .status-stop { color: var(--red); font-weight: 800; }
+
+    pre {
+      position: relative;
+      overflow-x: auto;
+      margin: 14px 0;
+      padding: 20px;
+      color: #e8efe9;
+      border: 1px solid #31515a;
+      border-radius: 8px;
+      background: #102f38;
+      font-size: .83rem;
+      line-height: 1.65;
+    }
+    .code-wrap { position: relative; }
+    .copy {
+      position: absolute;
+      z-index: 2;
+      top: 9px;
+      right: 9px;
+      color: #cce4dc;
+      border-color: #62818a;
+      background: #102f38;
+    }
+    .copy:hover { background: var(--rust); }
+
+    details { margin: 12px 0; padding: 0 18px; border-radius: 8px; }
+    summary { padding: 15px 0; color: var(--navy); font-weight: 800; cursor: pointer; }
+    details > div { padding: 0 0 18px; }
+    .path { overflow-wrap: anywhere; color: #435057; font-family: var(--mono); font-size: .82rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 14px; color: var(--muted); font-size: .8rem; }
+    .legend i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; background: var(--navy); }
+    .legend .l-agent { background: var(--gold); }
+    .legend .l-platform { background: var(--rust); }
+    .legend .l-evidence { background: var(--green); }
+    .quote { margin: 18px 0; padding: 18px 24px; color: var(--navy); border-left: 4px solid var(--rust); background: #fffaf0; font-family: var(--serif); font-size: 1.08rem; }
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { position: relative; padding: 8px 0 8px 34px; border-bottom: 1px dashed var(--line); }
+    .checklist li::before { content: "✓"; position: absolute; left: 4px; color: var(--green); font-weight: 900; }
+    footer { padding: 44px 24px; color: #b9cccc; text-align: center; background: var(--navy); }
+
+    @media (max-width: 1050px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { position: relative; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .sidebar nav { grid-template-columns: repeat(3, 1fr); }
+      .hero-grid, .arch-row { grid-template-columns: 1fr; }
+      .arch-row .arrow { transform: rotate(90deg); }
+      .card, .card.wide { grid-column: span 6; }
+    }
+    @media (max-width: 720px) {
+      .hero { padding: 46px 22px; }
+      .sidebar nav { grid-template-columns: 1fr 1fr; }
+      main { padding-inline: 18px; }
+      .section-head { grid-template-columns: 44px 1fr; }
+      .metrics, .role-row { grid-template-columns: 1fr 1fr; }
+      .card, .card.wide { grid-column: 1 / -1; }
+      .io { grid-template-columns: 1fr; }
+    }
+    @media print {
+      body { background: white; }
+      .sidebar, .tools, .copy { display: none !important; }
+      .shell { display: block; }
+      main { padding: 20px; }
+      section { page-break-before: auto; }
+      .card, .callout, .architecture, details { break-inside: avoid; box-shadow: none; }
+      details > div { display: block !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Ontology Platform · R2.3-005 · Operator Field Guide</div>
+        <h1>成功建模流程<br>与平台接手手册</h1>
+        <p class="hero-lead">从“几份业务资料”到“可查询、可验证、经独立验收的本体”，用 Start75 的真实成功证据解释每个组件、每次交接、每个质量门，以及下一位维护者应该如何安全操作。</p>
+      </div>
+      <aside class="stamp" aria-label="交付状态">
+        <strong>PASS</strong>
+        <dl>
+          <dt>需求</dt><dd>R2.3-005</dd>
+          <dt>成功运行</dt><dd>Start75</dd>
+          <dt>模型</dt><dd>deepseek-v4-flash / max</dd>
+          <dt>验收</dt><dd>Independent Round 29</dd>
+          <dt>日期</dt><dd>2026-08-10</dd>
+        </dl>
+      </aside>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <h2>阅读路径</h2>
+      <nav aria-label="章节目录">
+        <a href="#mental">01 心智模型</a>
+        <a href="#scenario">02 建模内容</a>
+        <a href="#architecture">03 系统架构</a>
+        <a href="#inputs">04 输入与契约</a>
+        <a href="#components">05 组件词典</a>
+        <a href="#flow">06 完整执行链</a>
+        <a href="#ontology">07 本体结果</a>
+        <a href="#platform">08 五阶段写入</a>
+        <a href="#retrieval">09 检索与溯源</a>
+        <a href="#acceptance">10 双 CQ 验收</a>
+        <a href="#terminal">11 终态与清理</a>
+        <a href="#evidence">12 证据地图</a>
+        <a href="#operate">13 操作手册</a>
+        <a href="#failure">14 故障知识</a>
+        <a href="#glossary">15 术语表</a>
+        <a href="#checklist">16 接手清单</a>
+      </nav>
+      <div class="tools">
+        <button type="button" onclick="window.print()">打印 / PDF</button>
+        <button type="button" id="expandAll">展开全部</button>
+      </div>
+    </aside>
+
+    <main>
+      <section id="mental">
+        <div class="section-head"><div class="section-no">01</div><div><h2>先建立正确的心智模型</h2><p class="lede">这个平台不是“把文档扔给一个大模型，然后相信它的回答”。它是一条把语义判断、确定性写入、独立验收和清理分开的生产线。</p></div></div>
+        <div class="callout success"><strong>一句话：</strong>Modeling 负责“理解业务并提出语义模型”，Protocol 负责“把模型可靠写进平台”，Acceptance 负责“独立判断写进去的东西是否忠于来源并能回答问题”，Runner 负责“让所有机械步骤可重复、可追责、可清理”。</div>
+        <div class="metrics">
+          <div class="metric"><b>4</b><span>持久 Team 角色</span></div>
+          <div class="metric"><b>5</b><span>平台写入阶段</span></div>
+          <div class="metric"><b>7</b><span>受治理检索路径</span></div>
+          <div class="metric"><b>2×2</b><span>两轮 CQ、每轮双 Examiner</span></div>
+        </div>
+        <div class="grid">
+          <article class="card wide"><span class="tag">语义面</span><h3>Agent 做需要判断的事</h3><p>阅读业务来源、识别类/属性/实体/关系、决定哪些事实可以断言、哪些必须保留为“未知”。Agent 不负责生成平台 ID、维护账本、拼接机械请求或决定自己是否验收通过。</p></article>
+          <article class="card wide"><span class="tag">机械面</span><h3>Host 与工具做必须确定的事</h3><p>冻结输入、检查摘要、建立新 Project/Ontology、按依赖顺序提交 Batch、保存 receipts、分页检索、绑定 ticket、串行 CQ、settlement、终态排序和资源清理。</p></article>
+          <article class="card wide"><span class="tag">平台面</span><h3>平台保存“可复用语义事实”</h3><p>平台接收通用的 class/property/entity/relation/shape，而不是写死 Dify 业务逻辑。领域含义留在本体数据中，平台只提供通用验证、推理、查询、Evidence 与 lineage。</p></article>
+          <article class="card wide"><span class="tag">验收面</span><h3>Producer 不能自己给自己打分</h3><p>Acceptance 使用 fresh、隔离、只读的 Source Examiner 与 Platform Examiner：一个只看批准来源，一个只看 ticket 范围内的平台事实。两者报告由 Host 绑定到同一 model state 后才形成 verdict。</p></article>
+        </div>
+      </section>
+
+      <section id="scenario">
+        <div class="section-head"><div class="section-no">02</div><div><h2>Start75 到底建模了什么</h2><p class="lede">场景是 Dify Workflow-as-Tool 的 C → B → A 业务切片。重点不是 Dify 本身，而是证明平台能忠实表达版本、调用、输出字段和来源未说明的未知行为。</p></div></div>
+        <div class="architecture">
+          <div class="role-row">
+            <div class="role"><b>C</b><small>被作为 Tool 调用的 Workflow</small></div>
+            <div class="role"><b>B</b><small>调用 C 并消费输出</small></div>
+            <div class="role"><b>A</b><small>发布 B 的结果</small></div>
+            <div class="role"><b>显式未知</b><small>来源没有说明时不猜</small></div>
+          </div>
+          <p class="arch-caption">业务关系：B <strong>invokesTool</strong> C；A <strong>publishesResultOf</strong> B；B 当前 <strong>currentlyConsumesOutput</strong> Version 2 的 <strong>quality_rating:number</strong>。</p>
+        </div>
+        <h3>批准来源中可以确认的内容</h3>
+        <ul>
+          <li>只有以 User Input 节点开始的 Workflow 可作为 Tool；Chatflow 不能作为 Tool。</li>
+          <li>C 的 Version 2 已发布且标记为最新，输出字段是 <code>quality_rating:number</code>。</li>
+          <li>Version 1 的输出是 <code>quality_score:number</code>；来源没有证明两个字段语义等价或只是改名。</li>
+          <li>B 通过 workflow identity 调用 C，而不是绑定某个 release ID；A 发布 B 的结果。</li>
+          <li>C 的 classifier dependency 不可用时，可以不返回 numeric score 而成功完成，并返回 diagnostic code。</li>
+        </ul>
+        <h3>来源不能确认、因此必须显式保留的内容</h3>
+        <div class="grid">
+          <article class="card wide"><h3>跨版本字段语义未知</h3><p><code>quality_score</code> 与 <code>quality_rating</code> 是否保持相同业务含义，来源没有证明。模型没有建立等价、rename continuity 或 value compatibility。</p></article>
+          <article class="card wide"><h3>B 无分数时的动作未知</h3><p>来源没有说明 B 会 block、continue、retry 还是 mark for review。模型创建 ExplicitUnknown，而不是编造一个看似合理的动作。</p></article>
+        </div>
+        <div class="quote">平台建模质量的关键不只是“写入正确事实”，还包括“拒绝写入没有证据的事实”。</div>
+      </section>
+
+      <section id="architecture">
+        <div class="section-head"><div class="section-no">03</div><div><h2>流程架构总览</h2><p class="lede">下面按控制面、Agent 面、平台面、验收面理解整个系统。箭头表示受控交接，不表示任意组件可以直接越权调用。</p></div></div>
+        <div class="architecture">
+          <div class="arch-row">
+            <div class="arch-box"><strong>操作员 / CLI</strong><br><small>Task · Profile · Scope · Overlay · Run ID</small></div>
+            <div class="arrow">→</div>
+            <div class="arch-box core"><strong>TeamRunner</strong><br><small>preflight · baseline · lifecycle · evidence · cleanup</small></div>
+            <div class="arrow">→</div>
+            <div class="arch-box"><strong>Codex Runtime</strong><br><small>4 persistent Agents + isolated homes</small></div>
+          </div>
+          <div class="role-row">
+            <div class="role"><b>Coordinator</b><small>调度与顺序</small></div>
+            <div class="role"><b>Modeling</b><small>来源到候选</small></div>
+            <div class="role"><b>Protocol</b><small>候选到平台</small></div>
+            <div class="role"><b>Acceptance</b><small>独立验收</small></div>
+          </div>
+          <div class="arch-row">
+            <div class="arch-box"><strong>Team Transport Broker</strong><br><small>消息 · delivery/reply · coordination · terminal</small></div>
+            <div class="arrow">↔</div>
+            <div class="arch-box"><strong>Platform MCP / HTTP</strong><br><small>Build Session · Batch · Readback · Validation · Reasoning · Retrieval</small></div>
+            <div class="arrow">↔</div>
+            <div class="arch-box accept"><strong>Acceptance Carrier</strong><br><small>Ticket · Examiner · Verdict · CAS Settlement</small></div>
+          </div>
+          <div class="legend"><span><i></i> Host 控制</span><span><i class="l-agent"></i> Agent 判断</span><span><i class="l-platform"></i> 平台事实</span><span><i class="l-evidence"></i> 验收/证据</span></div>
+        </div>
+        <h3>三条不能混淆的边界</h3>
+        <div class="grid">
+          <article class="card"><h3>Runner ≠ Agent</h3><p>Runner 不理解 Dify 业务语义，也不回答 CQ；它只验证结构、顺序、身份、摘要、超时和清理。</p></article>
+          <article class="card"><h3>Protocol ≠ Modeling</h3><p>Modeling 不能直接组平台 Batch；Protocol 不能修改候选含义。两者用不可变 candidate digest 交接。</p></article>
+          <article class="card"><h3>Acceptance ≠ Producer</h3><p>验收只读取冻结 ticket、批准来源与平台 read-only surface；不能继续修改模型来“修到 PASS”。</p></article>
+        </div>
+      </section>
+
+      <section id="inputs">
+        <div class="section-head"><div class="section-no">04</div><div><h2>一次正式运行的输入与契约</h2><p class="lede">新维护者最先要学会的不是启动命令，而是辨认每个输入文件的职责。输入冻结错误，后面的 PASS 没有意义。</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>输入</th><th>本次文件</th><th>内容与职责</th><th>谁读取</th></tr></thead>
+          <tbody>
+            <tr><td>Requirement</td><td class="path">docs/requirements/requirements-v2.3.md#R2.3-005</td><td>权威目标、非目标、完成门和运行规则。</td><td>人、Reviewer、Tester</td></tr>
+            <tr><td>Task</td><td class="path">modeling_team/tasks/r2-3-005-formal-acceptance.yaml</td><td>业务目标、角色可见 sources、平台工具、两轮 CQ 与完整终态证据要求。</td><td>Runner + 4 roles</td></tr>
+            <tr><td>Profile</td><td class="path">modeling_team/profiles/r2-3-005-modeling-team.yaml</td><td>固定四角色 roster、允许通信边、Runtime 类型、Acceptance 标准和 timeout。</td><td>Runner</td></tr>
+            <tr><td>Model manifest</td><td class="path">modeling_team/model-manifests/r2-3-005-luna-max.yaml</td><td>文件名保留历史名称，内容才是权威：六个 package 全部使用 <code>deepseek-v4-flash/deepseek/max</code>。</td><td>Runner + Runtime</td></tr>
+            <tr><td>Scope</td><td class="path">modeling_team/scopes/new-scope-create.yaml</td><td><code>mode: create</code>，要求本轮创建并拥有 fresh Project/Ontology，不复用旧 scope。</td><td>Runner</td></tr>
+            <tr><td>Overlay</td><td class="path">modeling_team/.continuations/r23005-start41-deepseek-overlay.yaml</td><td>把已经过来源/Owner 修订的完整候选以只读 continuation 注入 Modeling；绑定 path、SHA-256、mode 0444。</td><td>Runner + Modeling</td></tr>
+            <tr><td>Acceptance standard</td><td class="path">modeling_team/references/r2-3-005-acceptance-standard.json</td><td>8 项质量检查、2 个 CQ、每轮 Source/Platform Examiner 策略与 unknown policy。</td><td>Acceptance Carrier</td></tr>
+            <tr><td>Credential</td><td class="path">~/.config/ontology-platform/modeling-team-deepseek.env</td><td>仓库外、owner-only 0600、单一 assignment；只给 Runner-owned loopback proxy，绝不复制进 run tree。</td><td>Runner preflight + proxy</td></tr>
+          </tbody>
+        </table></div>
+        <div class="callout danger"><strong>安全边界：</strong>凭据值和凭据摘要都不能写进命令、Git、HTML、evidence、Agent env、TOML、session、SQLite 或 stderr。文档只记录固定路径和安全元数据要求。</div>
+      </section>
+
+      <section id="components">
+        <div class="section-head"><div class="section-no">05</div><div><h2>组件词典：谁负责什么</h2><p class="lede">把每个组件想成一名岗位固定、权限受限的同事。出故障时，先定位岗位，不要用 prompt 掩盖 Runtime 缺陷，也不要用 Runtime 规则替代语义判断。</p></div></div>
+        <div class="grid">
+          <article class="card wide"><span class="tag">Host Control</span><h3>TeamRunner</h3><p><strong>输入：</strong>Task/Profile/Overlay/Scope/Run ID。<br><strong>输出：</strong>冻结 baseline、run root、角色进程、evidence、settlement、cleanup state。<br><strong>关键职责：</strong>prepare 前置校验、严格 StartLedger、fresh scope、角色启动、消息泵、阶段门、terminal dependencies、exactly-once cleanup。</p><p class="path">modeling_team/runner.py · TeamRunner</p></article>
+          <article class="card wide"><span class="tag">Runtime</span><h3>CodexRuntimeAdapter</h3><p><strong>职责：</strong>为每个角色创建隔离 home、写无密钥 config、启动 app-server、完成 MCP discovery、发起 thread/turn、泵 notification、规范化 provider/runtime failure、管理 Examiner child 与 stderr drain。</p><p class="path">modeling_team/runtimes/codex.py</p></article>
+          <article class="card wide"><span class="tag">Credential Boundary</span><h3>DeepSeekProviderProxy</h3><p>只监听 loopback 临时端口，接受冻结的 Responses API 路径，丢弃来宾 Authorization，内存中注入真实 provider key，流式转发且不记录 body/header/free text。停止时验证 server/thread/socket 并覆盖 key buffer。</p><p class="path">modeling_team/deepseek_provider_proxy.py</p></article>
+          <article class="card wide"><span class="tag">Communication</span><h3>TeamTransportBroker</h3><p>提供 <code>send_team_message</code>、<code>send_coordination</code>、<code>report_task_result</code> 等能力；保存 delivery/reply/ack，执行角色通信图、generation、依赖和 terminal 顺序。它是邮局，不是语义裁判。</p><p class="path">modeling_team/transport_mcp.py · TeamTransportBroker</p></article>
+          <article class="card"><span class="tag">Persistent Agent</span><h3>Coordinator</h3><p>启动并串行化整体工作：派发 Modeling/Protocol/Acceptance；等待 ready/silent；发布 CQ ticket；确保 cq-001 完成后才启动 cq-002；最后一个 terminal。</p></article>
+          <article class="card"><span class="tag">Persistent Agent</span><h3>Modeling</h3><p>只读取批准业务资料；构造完整、平台中立、不可变 candidate；所有断言带 source-grounding；未知信息建模为 ExplicitUnknown。</p></article>
+          <article class="card"><span class="tag">Persistent Agent</span><h3>Protocol</h3><p>验证 candidate receipt；调用确定性 translator；依次 dry-run/apply；管理 Build Session/Lease；readback、validation、reasoning、governed retrieval；完成后保持 silent。</p></article>
+          <article class="card"><span class="tag">Persistent Agent</span><h3>Acceptance</h3><p>接收冻结 ticket；每轮启动两个 fresh Examiner；组合 source/platform 报告；提交 Host-built verdict；不修改模型。</p></article>
+          <article class="card"><span class="tag">Ephemeral Child</span><h3>Source Examiner</h3><p>只读本 CQ 批准来源，判断答案是否有证据、来源覆盖是否完整。它看不到任意外部 sources，也不读平台。</p></article>
+          <article class="card"><span class="tag">Ephemeral Child</span><h3>Platform Examiner</h3><p>只读 ticket-scoped platform surface，检查实际 entities/facts/relations、validation/reasoning、Evidence/lineage 和 model-state binding。</p></article>
+          <article class="card wide"><span class="tag">Acceptance Host</span><h3>RunnerAcceptanceCarrier</h3><p>冻结 CQ、ticket 与 model state；启动/回收 children；对 report-vs-watchdog 做 exactly-one 仲裁；验证 sequential CQ；构建 verdict；最终执行 settlement CAS 和 readback。</p><p class="path">modeling_team/acceptance.py · RunnerAcceptanceCarrier</p></article>
+          <article class="card wide"><span class="tag">Platform</span><h3>Backend + MCP Tools</h3><p>提供 Project/Ontology、Build Session、Lease、Modeling Batch、read model、validation、reasoning、semantic context、Evidence 与 lineage。平台保持领域中立，不含 Dify 专属分支。</p><p class="path">backend/app/api · backend/app/services · backend/app/mcp/tools</p></article>
+        </div>
+      </section>
+
+      <section id="flow">
+        <div class="section-head"><div class="section-no">06</div><div><h2>Start75 完整执行链</h2><p class="lede">下面按真实发生顺序讲解。每一步都说明“输入是什么、产物是什么、为什么不能跳过”。</p></div></div>
+        <div class="timeline">
+          <article class="step"><div class="step-no">00</div><div class="step-body"><h3>授权与严格账本</h3><p>Delivery 先确认用户授权、预算 tranche 与前一 start 已终态。Start75 只产生一次 reservation 和一次 semantic_start；第一次因缺少临时平台 admin preflight credential 的 CLI 调用在 reservation 前失败，因此没有消耗 start。</p><div class="io"><div><b>输入</b>授权记录、baseline digest、run ID</div><div><b>产物</b>不可追加冲突的 StartLedger 行</div></div></div></article>
+          <article class="step"><div class="step-no">01</div><div class="step-body"><h3>Prepare：副作用前冻结一切</h3><p>Runner 校验 Task/Profile/manifest 六 package exact tuple、overlay SHA、source visibility、credential 文件 owner/regular/non-symlink/0600 与 Scope=create。通过后才创建 run root、平台对象或进程。</p><div class="io"><div><b>输入</b>配置文件与外部 credential 元数据</div><div><b>产物</b><code>baseline-manifest.json</code>、preflight evidence</div></div></div></article>
+          <article class="step"><div class="step-no">02</div><div class="step-body"><h3>创建 fresh 平台作用域</h3><p>Runner 创建本轮独占 Project、Ontology、Build Session/Lease 所需权限。Start75 的 Project 为 <code>7fc146d8…</code>，Ontology 为 <code>fd762f52…</code>。成功后凭据按生命周期撤销，不把旧对象冒充新结果。</p></div></article>
+          <article class="step"><div class="step-no">03</div><div class="step-body"><h3>启动 Proxy、Broker 与四个持久角色</h3><p>一个共享 loopback provider proxy 持有 DeepSeek key；每个 Agent 使用隔离 home 和 secret-free env。Team Transport MCP 暴露固定通信工具；Platform MCP 只给 Protocol，Acceptance capability 只给相应角色。</p></div></article>
+          <article class="step"><div class="step-no">04</div><div class="step-body"><h3>Coordinator 发出有界任务</h3><p>Coordinator 不读取原始业务来源，只负责把 Modeling、Protocol、Acceptance 放到正确轨道，并等待 typed ready/silent/verdict 信号。这样它不能在转述时污染来源。</p></div></article>
+          <article class="step"><div class="step-no">05</div><div class="step-body"><h3>Modeling 形成完整候选</h3><p>Modeling 读取 tools.mdx、release-register、workflow-landscape、exception-handling 与候选写作规范。它发布完整 candidate v2，而不是 patch；每条 relation 有 evidence citation；两处证据不足明确建模为 ExplicitUnknown。</p><div class="io"><div><b>输入</b>批准 sources + staged full candidate</div><div><b>产物</b>candidate digest <code>7a131d3b…</code></div></div></div></article>
+          <article class="step"><div class="step-no">06</div><div class="step-body"><h3>Protocol 验证 Candidate Receipt</h3><p>Protocol 对整个 candidate 做 schema、平台中立性、引用、label、relation citation 和 digest 校验。receipt=accepted 只表示“候选可翻译”，不等于已经写入或验收通过。</p></div></article>
+          <article class="step"><div class="step-no">07</div><div class="step-body"><h3>确定性翻译为五阶段 Batch</h3><p><code>translate_candidate_to_batches</code> 不做业务推理，只按稳定映射把 candidate 拆成 class → property → entity → relation → shape，并把前序生成的 ID/IRI 传给后序阶段。</p></div></article>
+          <article class="step"><div class="step-no">08</div><div class="step-body"><h3>逐阶段 dry_run → apply_atomic</h3><p>每个阶段先 dry-run，确认不会违反 schema/引用/依赖；再独立 atomic apply。Start75 数量依次为 6、18、10、12、1。一个故意无效的 negative probe 被 validation_failed 拒绝且没有应用。</p></div></article>
+          <article class="step"><div class="step-no">09</div><div class="step-body"><h3>Readback、Validation、Reasoning</h3><p>Protocol 不相信写接口自报成功，而是重新读取 model state。validation 得到 <code>conforms=true</code>，reasoning 得到 <code>consistent=true</code>，并冻结 workspace version 与 model-state digest。</p></div></article>
+          <article class="step"><div class="step-no">10</div><div class="step-body"><h3>受治理语义检索</h3><p>候选自己声明 7 条 required path。Protocol 为每条 path 执行 ontology-scoped、单 resource-type、asserted-only 查询；vector index 不可用时用同 path 的 lexical fallback。最终 14 条检索链完整、非截断，并带 Evidence/lineage。</p></div></article>
+          <article class="step"><div class="step-no">11</div><div class="step-body"><h3>Producer 收尾交接</h3><p>Protocol 完成 Build Session checkpoint/complete/release，向 Modeling 发 gate-complete，向 Coordinator 发 acceptance-stage handoff 与 silent_for_acceptance；Modeling 确认同一 digest 后发 ready_for_acceptance。此后两者不再写平台。</p></div></article>
+          <article class="step"><div class="step-no">12</div><div class="step-body"><h3>构建并发布两张冻结 CQ Ticket</h3><p>Coordinator 从同一个 handoff 构建 cq-001、cq-002 ticket，各发布一次。Ticket 绑定 run、task、question、批准 sources、model-state digest、quality standard 和允许的只读平台范围。</p></div></article>
+          <article class="step"><div class="step-no">13</div><div class="step-body"><h3>严格串行双 CQ 验收</h3><p>cq-001 启动两个 fresh Examiner，回收完成并得到 usable PASS 后，Coordinator 才启动已经发布的 cq-002。两轮不重叠、不重建 ticket、不改变 model state，共四个 child。</p></div></article>
+          <article class="step"><div class="step-no">14</div><div class="step-body"><h3>Settlement 与终态链</h3><p>两个 verdict PASS 后 Carrier revalidate model state，执行 settlement CAS，再读回 workspace version/state digest 确认 matched。Acceptance 先 terminal，Runner 依次发 terminal handoff，Coordinator 最后 terminal。</p></div></article>
+          <article class="step"><div class="step-no">15</div><div class="step-body"><h3>两阶段清理与最终安全审计</h3><p>先停止所有 Examiner/角色并删除私有 config，再在 proxy key buffer 尚可比较时做一次 run-wide aggregate audit，最后关闭 proxy、验证 thread/socket、覆盖 key。最终 state=<code>CLEANED</code>。</p></div></article>
+          <article class="step"><div class="step-no">16</div><div class="step-body"><h3>独立只读验收</h3><p>Round 29 不启动模型、不调用平台、不修改账本、不打开 SQLite。它对 804 个文件做前后快照，逐项核对语义、CQ、settlement、terminal 和 cleanup；两次最终 digest 一致后才给 PASS。</p></div></article>
+        </div>
+      </section>
+
+      <section id="ontology">
+        <div class="section-head"><div class="section-no">07</div><div><h2>最终本体里有什么</h2><p class="lede">Candidate 是平台中立的语义清单。平台 Batch 数量与 candidate item 数量不同，是因为 ExplicitUnknown 也会物化为实体，而 consumer_query 与 negative_probe 不直接成为普通本体对象。</p></div></div>
+        <div class="metrics">
+          <div class="metric"><b>6</b><span>Classes</span></div>
+          <div class="metric"><b>18</b><span>Predicates</span></div>
+          <div class="metric"><b>8 + 2</b><span>Entities + ExplicitUnknown</span></div>
+          <div class="metric"><b>12</b><span>Relations</span></div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>类别</th><th>内容</th><th>作用</th></tr></thead>
+          <tbody>
+            <tr><td>Classes</td><td>SemanticResource、Workflow、InvokingWorkflow、WorkflowVersion、OutputField、ExplicitUnknown</td><td>建立可复用的最小类型骨架。</td></tr>
+            <tr><td>Fact predicates</td><td>publicationStatus、versionState、fieldName、fieldDatatype、markedLatest、configurationBinding、noNumericScoreOutcome、diagnosticOutcome、unknownKind、unknownQuestion、unknownRationale</td><td>描述文字、布尔值和显式未知的理由。</td></tr>
+            <tr><td>Relation predicates</td><td>hasVersion、hasOutput、invokesTool、publishesResultOf、currentlyConsumesOutput、unknownAffectsOutput、unknownConcernsWorkflow</td><td>连接 Workflow、版本、输出和未知对象。</td></tr>
+            <tr><td>Business entities</td><td>A、B、C、Version 1、Version 2、Current Draft、quality_score、quality_rating</td><td>可被查询的业务实例。</td></tr>
+            <tr><td>ExplicitUnknown</td><td>跨版本输出含义；B 无分数时的动作</td><td>把“证据缺失”变成一等语义对象，而不是空字段或模型猜测。</td></tr>
+            <tr><td>Shape</td><td>InvokingWorkflowShape：<code>invokesTool</code> min_count=1，range=Workflow</td><td>保证 InvokingWorkflow 至少调用一个 Workflow。</td></tr>
+          </tbody>
+        </table></div>
+        <h3>12 条核心关系</h3>
+        <ol>
+          <li>C hasVersion Version 1 / Version 2 / Current Draft（三条）。</li>
+          <li>Version 1 hasOutput quality_score；Version 2 和 Draft hasOutput quality_rating（三条）。</li>
+          <li>B invokesTool C；A publishesResultOf B；B currentlyConsumesOutput quality_rating（三条）。</li>
+          <li>跨版本未知分别 unknownAffectsOutput quality_score / quality_rating（两条）。</li>
+          <li>“B 无分数行为未知” unknownConcernsWorkflow B（一条）。</li>
+        </ol>
+        <div class="callout"><strong>接手要点：</strong>如果来源只说“低分不可发布”，不能推出“无分数一定阻塞”。本次成功的关键之一，就是把后者保留为 unknown，而不是用常识补齐。</div>
+      </section>
+
+      <section id="platform">
+        <div class="section-head"><div class="section-no">08</div><div><h2>为什么要分五个写入阶段</h2><p class="lede">后面的对象依赖前面的身份：没有 class 就不能可靠创建 property/entity；没有 entity 与 object property 就不能创建 relation；shape 又依赖 property path。</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>顺序</th><th>阶段</th><th>Start75 数量</th><th>代表内容</th><th>依赖</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>class</td><td>6 / 6</td><td>Workflow、WorkflowVersion、ExplicitUnknown 等</td><td>无业务对象前置</td></tr>
+            <tr><td>2</td><td>property</td><td>18 / 18</td><td>事实属性和对象关系谓词</td><td>domain/range class 已存在</td></tr>
+            <tr><td>3</td><td>entity</td><td>10 / 10</td><td>A/B/C、版本、字段、两个未知实体</td><td>class/property 已存在</td></tr>
+            <tr><td>4</td><td>relation</td><td>12 / 12</td><td>B invokes C、B consumes quality_rating 等</td><td>subject/object/property 已有正式 ID</td></tr>
+            <tr><td>5</td><td>shape</td><td>1 / 1</td><td>InvokingWorkflowShape</td><td>target class 与 path property 已存在</td></tr>
+          </tbody>
+        </table></div>
+        <h3>每个阶段的共同小循环</h3>
+        <div class="architecture"><div class="arch-row"><div class="arch-box">Build Batch</div><div class="arrow">→</div><div class="arch-box core">dry_run</div><div class="arrow">→</div><div class="arch-box accept">apply_atomic</div></div><p class="arch-caption">dry_run 通过不代表已经写入；apply receipt 才是平台变更证据。任一阶段失败都不能把后续阶段当作已完成。</p></div>
+        <details><summary>Build Session 与 Lease 是什么？</summary><div><p><strong>Build Session</strong> 是一次建模修改的工作会话，保存 checkpoint、关联 Batch，并在完成后登记 terminal 状态。<strong>Ontology Lease</strong> 防止同一 Ontology 被并发写入。Start75 最终有两个 checkpoint，Session completed，Lease released。</p></div></details>
+      </section>
+
+      <section id="retrieval">
+        <div class="section-head"><div class="section-no">09</div><div><h2>受治理检索与证据溯源</h2><p class="lede">“数据写进去了”不等于“使用者能可靠取出来”。Candidate 的 consumer_query 声明了消费方真正需要的路径，Protocol 必须逐路径证明可检索。</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Query</th><th>Required path</th><th>类型</th><th>证明的问题</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="4">current-c-behavior-consumed-by-b</td><td>invokesTool</td><td>relation</td><td>B 调用哪个 Workflow？</td></tr>
+            <tr><td>currentlyConsumesOutput</td><td>relation</td><td>B 当前消费哪个输出对象？</td></tr>
+            <tr><td>fieldName</td><td>fact</td><td>输出字段名是什么？</td></tr>
+            <tr><td>fieldDatatype</td><td>fact</td><td>字段类型是什么？</td></tr>
+            <tr><td rowspan="3">b-behavior-without-c-score</td><td>unknownConcernsWorkflow</td><td>relation</td><td>这个未知与哪个 Workflow 有关？</td></tr>
+            <tr><td>unknownQuestion</td><td>fact</td><td>未知问题原文是什么？</td></tr>
+            <tr><td>unknownRationale</td><td>fact</td><td>为什么不能回答？</td></tr>
+          </tbody>
+        </table></div>
+        <h3>每条检索链的冻结参数</h3>
+        <p>query 必须精确等于 required path；scope 只能是本轮 Ontology；resource_types 只能是单个 relation 或 fact；assertion_types 固定 asserted；分页时只允许改变一个 cursor。这样可防止 Agent 用宽泛问题或预期答案“搜到自己想看的东西”。</p>
+        <div class="callout"><strong>Start75 的可接受残余：</strong>vector index 不可用，hybrid 返回 <code>vector_index_missing</code>。Protocol 为同一路径执行独立 lexical fallback，得到完整、非截断、带 Evidence/lineage 的 statement chain，因此不是质量失败；但降级事实必须保留。</div>
+      </section>
+
+      <section id="acceptance">
+        <div class="section-head"><div class="section-no">10</div><div><h2>两轮 CQ 如何独立验收</h2><p class="lede">Competency Question（CQ）是“这个本体是否真的能支持业务问答”的验收问题。每轮都必须由来源侧和平台侧两份独立报告支持。</p></div></div>
+        <div class="grid">
+          <article class="card wide"><span class="tag">CQ-001 · PASS</span><h3>最新发布版本和 B 消费的输出是什么？</h3><p><strong>答案：</strong>最新可确认发布版本是 Version 2（published、markedLatest=true）；B 消费 <code>quality_rating</code>，类型 number。</p><p><strong>边界：</strong>Version 1 的 <code>quality_score</code> 与 <code>quality_rating</code> 是否语义等价仍未知；Current Draft 不可被其他 Workflow 调用。</p></article>
+          <article class="card wide"><span class="tag">CQ-002 · PASS</span><h3>C 没有 numeric score 时，B 会做什么？</h3><p><strong>答案：</strong>因缺少相关证据无法回答。来源只说明 C 可无分数成功并返回 diagnostic code，没有说明 B 会 block、continue、retry 或 review。</p><p><strong>PASS 原因：</strong>模型正确保存 ExplicitUnknown，并没有杜撰动作。</p></article>
+        </div>
+        <h3>每个 verdict 的 8 项检查</h3>
+        <div class="grid">
+          <article class="card"><b>source_fidelity</b><p>所有断言与答案忠于批准来源。</p></article>
+          <article class="card"><b>scope</b><p>只覆盖约定的 C→B→A 业务切片。</p></article>
+          <article class="card"><b>ontology_structure</b><p>类、属性、实体、关系、Shape 结构正确。</p></article>
+          <article class="card"><b>explicit_unknowns</b><p>证据不足处没有被猜测填充。</p></article>
+          <article class="card"><b>validation_reasoning</b><p>SHACL/语义验证和推理一致性通过。</p></article>
+          <article class="card"><b>governed_retrieval</b><p>required paths 可按冻结条件完整检索。</p></article>
+          <article class="card"><b>evidence_lineage</b><p>事实能回溯到 Evidence、来源和写入链。</p></article>
+          <article class="card"><b>competency_questions</b><p>CQ 的答案或“不可回答”均被证据支持。</p></article>
+        </div>
+        <details><summary>为什么 cq-001、cq-002 不能并行？</summary><div><p>它们必须绑定同一个 final model state，同时 Acceptance 的上下文与 child cleanup 必须可判定。cq-001 usable PASS、全部 child 回收且 model-state revalidation 通过后，才允许启动预先发布的 cq-002。这样避免两个 CQ 在不同模型状态上给出看似一致的答案。</p></div></details>
+      </section>
+
+      <section id="terminal">
+        <div class="section-head"><div class="section-no">11</div><div><h2>Settlement、终态顺序与清理</h2><p class="lede">Agent 说“我完成了”不等于 Team 已安全结束。终态顺序保证修订路径仍可到达，cleanup 证明进程、凭据和 child 真正消失。</p></div></div>
+        <h3>终态 handoff 顺序</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>序列</th><th>Handoff</th><th>为什么</th></tr></thead>
+          <tbody>
+            <tr><td>1 / ack 2</td><td>Acceptance → Coordinator</td><td>最终 CQ 已通过，Coordinator 可以开始收尾。</td></tr>
+            <tr><td>3 / ack 4</td><td>Acceptance → Modeling</td><td>Modeling 在最终裁决前保持 live，以支持 FAIL 修订；PASS 后才可终止。</td></tr>
+            <tr><td>5 / ack 6</td><td>Modeling → Protocol</td><td>Protocol 的 terminal 依赖 Modeling 完成。</td></tr>
+            <tr><td>7 / ack 8</td><td>Modeling → Coordinator</td><td>Coordinator 收到 Producer 完成链的一部分。</td></tr>
+            <tr><td>9 / ack 10</td><td>Protocol → Coordinator</td><td>平台链彻底结束后，Coordinator 最后 terminal。</td></tr>
+          </tbody>
+        </table></div>
+        <h3>Settlement 的三个确认</h3>
+        <ol><li>两个 rounds 都是 current、usable PASS。</li><li>CAS 绑定 expected model-state digest 与 workspace version，防止最后一刻漂移。</li><li>final readback 的 state digest/workspace version 与 CAS 一致（matched=true）。</li></ol>
+        <h3>Start75 cleanup 最终结果</h3>
+        <div class="metrics">
+          <div class="metric"><b>0</b><span>active children</span></div>
+          <div class="metric"><b>0</b><span>secret matches</span></div>
+          <div class="metric"><b>0</b><span>scan / cleanup errors</span></div>
+          <div class="metric"><b>359</b><span>aggregate scanned files</span></div>
+        </div>
+        <ul class="checklist"><li>四个 persistent roles：private_credentials_destroyed=true，scan_complete=true。</li><li>四个 Examiner children：destroyed，zero_residue=true。</li><li>Provider proxy：shutdown、server_close、thread_join 全部成功，socket_open=false，thread_alive=false。</li><li>Build Session completed、Lease released、临时 admin/protocol/project keys revoked。</li><li>Retained tree 固定 provider key bytes 0 files / 0 occurrences。</li></ul>
+      </section>
+
+      <section id="evidence">
+        <div class="section-head"><div class="section-no">12</div><div><h2>证据地图：出了问题先看哪里</h2><p class="lede">正式运行目录是可复核证据树，不是随手日志目录。Start75 位于 <code>workspaces/modeling-runs/r23005-real-20260810-deepseek-start75/</code>。</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>问题</th><th>首要文件</th><th>你要确认什么</th></tr></thead>
+          <tbody>
+            <tr><td>输入是否冻结正确？</td><td class="path">baseline-manifest.json<br>task.snapshot.yaml<br>profile.snapshot.yaml<br>task-overlay.snapshot.yaml</td><td>路径、摘要、Task/Profile/Overlay 与本轮一致。</td></tr>
+            <tr><td>Candidate 到底是什么？</td><td class="path">inputs/candidate-publication.json<br>candidate-publication-manifest.json</td><td>完整 candidate、items、constraints、citations、accepted digest。</td></tr>
+            <tr><td>五阶段是否真的执行？</td><td class="path">evidence/platform-response-artifacts.jsonl<br>evidence/capability-calls.jsonl</td><td>每阶段 dry-run/apply receipt、数量、negative probe、readback。</td></tr>
+            <tr><td>检索是否完整？</td><td class="path">evidence/protocol-retrieval-gate.jsonl</td><td>7 required paths、hybrid/lexical 链、分页、Evidence/lineage。</td></tr>
+            <tr><td>CQ ticket/verdict？</td><td class="path">acceptance-carrier/acceptance/&lt;round&gt;/ticket.json<br>…/verdict.json</td><td>ticket/model-state binding、8 checks、答案、evidence refs。</td></tr>
+            <tr><td>Examiner 是否 fresh/回收？</td><td class="path">…/&lt;round&gt;/child-start.jsonl<br>…/child-cleanup.jsonl</td><td>source/platform 两 child、attempt、terminal report、destroy receipt。</td></tr>
+            <tr><td>是否 settled？</td><td class="path">acceptance-carrier/evidence/settlement-cas.json<br>acceptance-carrier/evidence/settlement.json</td><td>CAS、rounds、final readback matched。</td></tr>
+            <tr><td>终态顺序？</td><td class="path">evidence/terminal-result-handoff.jsonl<br>evidence/terminal-handoff-ack.jsonl<br>evidence/settled.jsonl</td><td>1/3/5/7/9 handoffs、2/4/6/8/10 ack、one settled。</td></tr>
+            <tr><td>清理是否可信？</td><td class="path">state.json<br>acceptance-carrier/evidence/cleanup.json</td><td>CLEANED、aggregate_secret_audit、zero residue、proxy shutdown。</td></tr>
+            <tr><td>角色最后说了什么？</td><td class="path">state.json → terminal_results</td><td>四个 completed summary 与各自完成边界。</td></tr>
+          </tbody>
+        </table></div>
+        <div class="callout danger"><strong>只读审计规则：</strong>不要用默认 SQLite connection 打开 retained <code>logs_2.sqlite</code>，因为 WAL housekeeping 可能改变 mtime/文件集合。优先读取普通 JSON/JSONL；确需 SQLite 时使用严格 readonly URI，并先冻结前后 tree snapshot。</div>
+      </section>
+
+      <section id="operate">
+        <div class="section-head"><div class="section-no">13</div><div><h2>操作手册：下一位维护者怎么做</h2><p class="lede">R2.3-005 已成功并触发永久停止，不能再运行 Start76/77。下面命令用于验证配置、理解入口，或作为未来新 requirement 的模板；新语义运行必须有新的权威需求和授权。</p></div></div>
+        <h3>A. 日常健康检查</h3>
+        <div class="code-wrap"><button class="copy" data-copy>复制</button><pre><code>systemctl --user --no-pager --full status ontology-platform.service
+curl --fail http://127.0.0.1:8001/api/health
+curl --fail http://127.0.0.1:5173/</code></pre></div>
+        <h3>B. 只验证 Task/Profile/Overlay，不启动模型</h3>
+        <div class="code-wrap"><button class="copy" data-copy>复制</button><pre><code>PYTHONPATH=backend:. uv run --project backend python -m modeling_team validate \
+  --profile modeling_team/profiles/r2-3-005-modeling-team.yaml \
+  --task modeling_team/tasks/r2-3-005-formal-acceptance.yaml \
+  --task-overlay modeling_team/.continuations/r23005-start41-deepseek-overlay.yaml</code></pre></div>
+        <h3>C. 正式运行入口形状（仅作模板，禁止重跑 R2.3-005）</h3>
+        <div class="code-wrap"><button class="copy" data-copy>复制</button><pre><code># 需要：新的 requirement、用户授权、唯一 run-id、严格账本资格、临时平台 admin preflight credential。
+# 不要把任何 credential 写入命令历史或仓库。
+PYTHONPATH=backend:. uv run --project backend python -m modeling_team run \
+  --profile &lt;formal-profile.yaml&gt; \
+  --task &lt;formal-task.yaml&gt; \
+  --task-overlay &lt;reviewed-full-candidate-overlay.yaml&gt; \
+  --run-id &lt;unique-authorized-run-id&gt; \
+  --scope modeling_team/scopes/new-scope-create.yaml \
+  --enable-outer-input-fifo</code></pre></div>
+        <h3>D. 启动前 10 项检查</h3>
+        <ul class="checklist">
+          <li><code>git status --short</code> 为空，HEAD 与 delivery baseline 已记录。</li>
+          <li>权威 requirement 明确当前目标、sources、CQ、完成门和 start 数量。</li>
+          <li>Task/Profile/manifest/overlay/scope 的 path 与 digest 已冻结。</li>
+          <li>候选是完整 immutable revision，不是 patch；关系有 evidence citations。</li>
+          <li>所有 source role visibility 正确；Coordinator 不获得 raw business source。</li>
+          <li>固定 provider credential 文件存在、owner 正确、regular/non-symlink、0600；不读取/输出值。</li>
+          <li>平台 backend/frontend 健康；canonical preflight 所需临时 admin key 可在同进程安全提供。</li>
+          <li>StartLedger 中前一 run 已 terminal，预算和 repair authorization 顺序合法。</li>
+          <li>run ID、Project/Ontology ownership、runtime directory、cleanup owner 唯一。</li>
+          <li>独立 Tester 尚未参与运行生产；其职责是完成后只读验收 retained evidence。</li>
+        </ul>
+        <h3>E. 运行中只看这些信号</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>信号</th><th>正常含义</th><th>异常时动作</th></tr></thead>
+          <tbody>
+            <tr><td>candidate receipt accepted</td><td>完整候选可翻译</td><td>不等于平台已写入；继续看 stage receipts。</td></tr>
+            <tr><td>stage dry_run/apply</td><td>当前阶段验证/应用成功</td><td>失败则定位 platform-contract，不跳阶段。</td></tr>
+            <tr><td>validation/reasoning</td><td>conforms / consistent</td><td>回到 Modeling/Protocol 修订，不能进入 Acceptance。</td></tr>
+            <tr><td>ready + silent + handoff</td><td>Producer 所有门完成且停止写入</td><td>缺任一项都不能发 CQ ticket。</td></tr>
+            <tr><td>cq verdict usable PASS</td><td>当前 ticket/model-state 有效</td><td>FAIL 回到修订；BLOCKED 只结束本轮。</td></tr>
+            <tr><td>settled</td><td>双 CQ + state CAS/readback 成功</td><td>没有 settled 不允许宣称完成。</td></tr>
+            <tr><td>CLEANED + aggregate 0</td><td>凭据/进程/children/proxy 清理完成</td><td>语义 PASS 也必须按 runtime failure 处理。</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="failure">
+        <div class="section-head"><div class="section-no">14</div><div><h2>本次交付留下的故障知识</h2><p class="lede">失败轮次没有删除，因为它们告诉下一位维护者“哪一层坏了”。修复时只动真正的失败层。</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>症状</th><th>真实根因</th><th>层级</th><th>可复用经验</th></tr></thead>
+          <tbody>
+            <tr><td>Luna turn 300s 无 terminal</td><td>隔离 app-server/provider 路径没有形成 matching terminal；多轮诊断仍超时。</td><td>runtime/infrastructure</td><td>不要把 provider 超时改写成 prompt 问题；有界诊断后允许 reviewed rollback。</td></tr>
+            <tr><td>DeepSeek 启动前失败</td><td>formal TOML 重复写 model/provider/reasoning，parser 报 Cannot overwrite a value。</td><td>runtime/config</td><td>配置必须被真实 parser 测试；mock 字符串断言不够。</td></tr>
+            <tr><td>cq-001 PASS 后变 retryable</td><td>Examiner terminal report 已持久化，迟到 watchdog 又写 child-timeout。</td><td>runtime/concurrency</td><td>同一 handle/attempt 的 report 与 failure 必须 exactly-one 仲裁；只有 failure winner 才 kill。</td></tr>
+            <tr><td>语义全 PASS 但 cleanup false</td><td>逐角色审计整个 run root，前三个角色看到 Protocol 尚未删除的合法临时 config。</td><td>runtime/cleanup</td><td>先清所有私有文件，再做一次 aggregate audit，然后 wipe proxy key；结果锁存且幂等。</td></tr>
+            <tr><td>历史 key 出现在 shell/session/SQLite</td><td>旧路径把 provider key 放进 app-server process env，Codex 自行持久化环境快照。</td><td>security/runtime</td><td>正式 provider secret 只能在外部 0600 文件和 loopback proxy memory，不能进入 Agent env。</td></tr>
+            <tr><td>Protocol 把 formal task 当 smoke</td><td>共享 prompt 没有条件化 capability smoke。</td><td>collaboration/routing</td><td>可由提示词预防的错误必须先修 authoritative prompt，再消耗下一 semantic start。</td></tr>
+          </tbody>
+        </table></div>
+        <h3>四层故障分类</h3>
+        <div class="grid">
+          <article class="card"><h3>modeling-quality</h3><p>来源理解、类/关系/unknown、CQ 语义本身有问题。修 Modeling candidate。</p></article>
+          <article class="card"><h3>platform-contract</h3><p>Batch schema、ID/path、dry-run/apply/readback 或 MCP shape 不匹配。修 Protocol/平台边界。</p></article>
+          <article class="card"><h3>collaboration/routing</h3><p>角色误解任务、交接缺失、错误 recipient/phase。修 Task/role instruction/transport contract。</p></article>
+          <article class="card"><h3>runtime/infrastructure</h3><p>provider、进程、timeout、并发、凭据、cleanup。修 Runtime/Host，不能用语义 prompt 隐藏。</p></article>
+        </div>
+      </section>
+
+      <section id="glossary">
+        <div class="section-head"><div class="section-no">15</div><div><h2>新手术语表</h2><p class="lede">先掌握这些词，就能读懂大多数运行证据和错误。</p></div></div>
+        <details open><summary>Candidate / Candidate receipt</summary><div><p><strong>Candidate</strong> 是 Modeling 提出的完整平台中立语义模型。<strong>Receipt</strong> 是 Protocol/Host 对其 schema、引用和 digest 的机械确认，不代表平台写入或最终验收。</p></div></details>
+        <details><summary>Batch / dry_run / apply_atomic</summary><div><p>Batch 是平台写入命令集合；dry_run 只验证，apply_atomic 才写入，且当前 Batch 内要么全部成功要么不写。</p></div></details>
+        <details><summary>Build Session / Lease / Checkpoint</summary><div><p>Build Session 记录一次建模会话；Lease 防并发写；Checkpoint 是阶段性保存点。最终必须 complete/release。</p></div></details>
+        <details><summary>Evidence / lineage / provenance</summary><div><p>Evidence 是支持事实的来源对象；lineage/provenance 说明某条平台事实从哪份来源、哪次 Batch/关联产生，可用于审计和 CQ 引证。</p></div></details>
+        <details><summary>ExplicitUnknown</summary><div><p>来源没有给出答案时创建的语义对象，包含 unknownQuestion、unknownRationale 和它关联的业务对象。它不是失败，而是来源忠实度的一部分。</p></div></details>
+        <details><summary>Competency Question (CQ)</summary><div><p>用于证明本体能支持真实业务消费的问题。R2.3-005 有两个冻结 CQ，必须串行并绑定同一个 final model state。</p></div></details>
+        <details><summary>Ticket / verdict / usable PASS</summary><div><p>Ticket 冻结一个 CQ 的来源、平台范围、模型状态与质量标准。Verdict 是 Host 绑定两类 Examiner 报告形成的 PASS/FAIL/BLOCKED；usable 表示 ticket、state、epoch、cleanup 仍有效。</p></div></details>
+        <details><summary>Settlement / CAS</summary><div><p>Settlement 是 Team 最终接受同一模型状态的机械确认。CAS 确保预期 state digest/workspace version 没被并发改变。</p></div></details>
+        <details><summary>Terminal handoff / terminal result</summary><div><p>handoff 是 Runner 对角色发出的“现在可以终止”许可；result 是角色完成报告。二者分离可以保证 FAIL 修订路径在最终 PASS 前仍然可达。</p></div></details>
+        <details><summary>Retained evidence</summary><div><p>运行结束后保留、供独立 Tester 只读检查的文件树。失败证据同样保留，不允许事后改写成 PASS。</p></div></details>
+      </section>
+
+      <section id="checklist">
+        <div class="section-head"><div class="section-no">16</div><div><h2>30 分钟接手清单</h2><p class="lede">建议按顺序完成。看懂证据路径之后，再阅读 4,000+ 行的 Runner 或 Acceptance 实现会容易很多。</p></div></div>
+        <div class="grid">
+          <article class="card wide"><h3>前 10 分钟：理解合同</h3><ol><li>读本页第 01–04 节。</li><li>打开 requirements-v2.3 的 R2.3-005。</li><li>对照 Task、Profile、manifest、acceptance standard。</li><li>确认 Modeling/Protocol/Acceptance 的职责边界。</li></ol></article>
+          <article class="card wide"><h3>中间 10 分钟：读成功证据</h3><ol><li>看 Start75 <code>state.json</code>。</li><li>看 candidate-publication.json 的 items/constraints。</li><li>看两个 verdict.json 的 answer/checks。</li><li>看 settlement.json 与 terminal handoff evidence。</li></ol></article>
+          <article class="card wide"><h3>最后 10 分钟：建立操作习惯</h3><ol><li>运行 health check 与 <code>modeling_team validate</code>。</li><li>记住 R2.3-005 已 success-stop，不可重跑。</li><li>新需求先冻结来源、CQ、scope、授权与 cleanup owner。</li><li>故障先分类，再修窄层，不要扩大成新框架。</li></ol></article>
+          <article class="card wide"><h3>权威链接</h3><ul><li><a href="../../../requirements/requirements-v2.3.md">需求 v2.3</a></li><li><a href="../../designs/2026-08-03-r2-3-005-modeling-team-runner-acceptance-design.md">最终设计</a></li><li><a href="../../implementation-plans/2026-08-09-r2-3-005-provider-transition-and-closure.md">实施与修复计划</a></li><li><a href="../../test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md">共享测试计划（Round 1–29）</a></li><li><a href="../../records/2026-08-03-r2-3-005-producer-runner-formalization-delivery-record.md">完整交付记录</a></li><li><a href="README.md">R2.3-005 归档索引</a></li></ul></article>
+        </div>
+        <div class="callout success"><strong>最终判断：</strong>Start75 证明当前架构可以把受控业务来源转成通用本体，通过平台写入、查询、验证、推理和独立 CQ 验收，并在不泄漏 provider key 的前提下完成终态和清理。接手后最重要的原则是：沿用这条已验证主链，只替换新需求真正变化的 sources、semantic candidate 与 CQ。</div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    R2.3-005 Delivery Archive · Successful Run Start75 · Independent Round 29 PASS<br>
+    <small>Generated as a self-contained handover document. No provider credential value or digest is embedded.</small>
+  </footer>
+
+  <script>
+    const links = [...document.querySelectorAll('.sidebar nav a')];
+    const sections = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id));
+        }
+      });
+    }, {rootMargin: '-25% 0px -65% 0px'});
+    sections.forEach(section => observer.observe(section));
+
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const text = button.parentElement.querySelector('code').innerText;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (_) {
+          const fallback = document.createElement('textarea');
+          fallback.value = text;
+          fallback.setAttribute('readonly', '');
+          fallback.style.position = 'fixed';
+          fallback.style.opacity = '0';
+          document.body.appendChild(fallback);
+          fallback.select();
+          document.execCommand('copy');
+          fallback.remove();
+        }
+        const prior = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(() => button.textContent = prior, 1200);
+      });
+    });
+
+    let expanded = false;
+    document.getElementById('expandAll').addEventListener('click', event => {
+      expanded = !expanded;
+      document.querySelectorAll('details').forEach(item => item.open = expanded);
+      event.currentTarget.textContent = expanded ? '收起全部' : '展开全部';
+    });
+  </script>
+</body>
+</html>

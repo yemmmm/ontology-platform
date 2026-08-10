@@ -13,6 +13,8 @@
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
 - 当前下一目标：R2.3-005 已完成；按严格成功即停止合同，不再消费已授权但未使用的 Start76–77。
   后续进入依赖顺序中的 R2.3-003，或由用户另行指定新目标。
+- 接手指南：`docs/delivery/archive/r2-3-005/r2-3-005-successful-modeling-handover.html`；阶段性旧计划和
+  会话交接快照统一保存在 `docs/delivery/archive/r2-3-005/`，不再作为当前运行指令。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、

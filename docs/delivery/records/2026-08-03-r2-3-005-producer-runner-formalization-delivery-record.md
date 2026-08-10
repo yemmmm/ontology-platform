@@ -1346,7 +1346,7 @@
 ### 2026-08-04 — D1 schema-v2 outer-answer routing repaired and independently tested offline — Main agent
 
 - The reviewed repair plan is
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`, frozen by
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-schema-v2-outer-answer-routing.md`, frozen by
   commit `8c5c38c62d448ae90fe5f2ddfff63ba10fedb547`. Mandatory review required four revisions before PASS:
   question consumption/failure had to be keyed by `question_delivery_id`, strict JSON object and duplicate-key
   rejection had to retain `cleanup_once`, Modeling had to receive the exact owner ID/release/text rather than a
@@ -1603,7 +1603,7 @@
   `C -> B -> A` slice and freezes the missing-score behavior as an explicit unknown; no new dataset or answer is
   invented.
 - Reviewed-design candidate:
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`. It binds display only
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`. It binds display only
   after successful foreground emission by exact delivery identity, removes Coordinator prose as formal display
   authority, preserves text-only owner input and ambiguity failure, and excludes fuzzy matching, Adapter/SSE/
   transport changes and productization scope.
@@ -1645,7 +1645,7 @@
   failure, direct Modeling release and final-start accounting. Runtime Adapter, Team Transport, SSE/model semantics,
   backend/frontend and business-source scope remain excluded.
 - Development handoff freeze: reviewed plan
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`, shared test plan
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-outer-display-binding-repair.md`, shared test plan
   `docs/delivery/test-plans/2026-08-03-r2-3-005-modeling-team-runner-acceptance-test-plan.md`, baseline clean product
   commit `15f3cd723994ea76aebf32732a4adde7ccbf3c78` plus the main-agent documentation-only worktree changes. Expected
   developer ownership is `modeling_team/runner.py`, `modeling_team/__main__.py`, and focused tests only. The developer
@@ -1846,7 +1846,7 @@
 ### 2026-08-04 — Producer reuse and second-tranche plan review PASS — Plan Reviewer and Main agent
 
 - Reviewed plan:
-  `docs/delivery/implementation-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`;
+  `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-producer-reuse-and-second-tranche.md`;
   shared acceptance additions are C84-C93 and I17-I19 in the existing R2.3-005 test plan.
 - The first review finding was High: the no-start smoke proved candidate translation but did not require the receipt
   to bind a run-owned fresh-create scope, so the start4 prior-scope defect could recur. Main corrected the plan and
@@ -1965,7 +1965,7 @@
 
 ### 2026-08-04 — Complete candidate revision repair plan review PASS — Plan Reviewer and Main agent
 
-- Reviewed `docs/delivery/implementation-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md` and
+- Reviewed `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-complete-candidate-revision-repair.md` and
   C94-C98/I20-I21 against the authoritative start5 evidence and R2.3-005. No Critical/High blocker was found.
 - Approved scope is Modeling/Protocol instructions, R2.3-005 task wording and focused offline retained r5/r6 tests
   only. Runner already projects the task objective; mechanics, Runtime, Acceptance, PlatformScope, lifecycle, smoke,
@@ -2029,7 +2029,7 @@
 
 ### 2026-08-04 — Final-slot neutral authoring closure plan review PASS — Plan Reviewer and Main agent
 
-- Reviewed `docs/delivery/implementation-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md` and
+- Reviewed `docs/delivery/archive/r2-3-005/historical-plans/2026-08-04-r2-3-005-neutral-candidate-authoring-closure.md` and
   C99-C104/I22-I23. No Critical/High blocker was found.
 - Approved scope is one immutable scenario-neutral reference staged to Modeling/Protocol only, their instructions,
   R2.3-005 task and offline fixtures. It freezes string constraints, unique item IDs, object semantics/citations,
@@ -4331,3 +4331,12 @@ the formal builder, or starting another real run before authorization.
   `328d10dbbd6c18842fa999b18bad8622e01106dfb908352b516634e8c5609ae2`, 74 semantic starts, and exactly one
   Start75 reservation plus one Start75 semantic start with no terminal failure or later start. R2.3-005 is accepted
   complete. The unused Start76–77 authorization remains unconsumed and cannot be used after the first complete result.
+- Documentation archive closure moved eight superseded repair plans and one obsolete session-handoff snapshot under
+  `docs/delivery/archive/r2-3-005/`, preserving their audit history while removing them from active plan/report lists.
+  The final chronological provider plan was renamed to
+  `docs/delivery/implementation-plans/2026-08-09-r2-3-005-provider-transition-and-closure.md`; all known references
+  were updated. No product, test, Task/Profile/manifest, retained run, ledger, or credential file was deleted.
+  The self-contained Chinese HTML handover guide at
+  `docs/delivery/archive/r2-3-005/r2-3-005-successful-modeling-handover.html` explains the Start75 architecture,
+  semantic content, five platform stages, governed retrieval, two-CQ Acceptance, evidence map, operations, failure
+  taxonomy and takeover checklist for a reader with no internal platform background.

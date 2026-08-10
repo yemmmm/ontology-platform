@@ -1,4 +1,8 @@
-# R2.3-005 Luna-max Team Model Switch
+# R2.3-005 Provider Transition and Closure Plan
+
+> Status: completed. This plan preserves the Luna investigation, the reviewed DeepSeek rollback,
+> and the Start75 closure in one chronological artifact. Current handover guidance is archived at
+> `docs/delivery/archive/r2-3-005/r2-3-005-successful-modeling-handover.html`.
 
 ## Objective
 
