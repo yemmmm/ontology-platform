@@ -1,9 +1,9 @@
 # R2.3-003 已有 Project/Ontology 增量建模交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
-- Status: in-progress
+- Status: blocked
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T02:59:22+08:00
+- Last updated: 2026-08-11T03:33:07+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -174,6 +174,36 @@
   minimum sufficient 12-24/hard max 32 items、禁止用文件/脚本构造候选、要求 inline fully-qualified MCP
   调用；不在最后一次前扩建通用 watchdog。
 
+### 2026-08-11T03:01:20+08:00 — real semantic start 4 terminal failure — main agent
+
+- Context: bounded-candidate prompt fix commit `2c14b72` 后，run
+  `r23003-real-20260811-deepseek-start5` 消费最后一次授权并进入真实 Modeling/Protocol 协作。
+- Action/decision: Modeling 先交付 28-item rev1 candidate（`delivery-4`）；Protocol 形成并接受
+  `delivery-5` receipt，随后通过 live read 发现四个 existing reference 与 Start75 实际 ID 不一致。主 Agent
+  仅给出四项已读到的精确 ID 映射，不替 Agent 改语义；Modeling 交付完整 rev2 `delivery-7`。Protocol 对
+  rev2 两次调用 typed `protocol_build_candidate_receipt` 均被 Runner 以 foreign/stale delivery identity
+  拒绝。为避免绕过 typed gate 或在最后一次做未测试热修复，主 Agent正式终止该 run。
+- Evidence: accepted rev1 digest
+  `76437a1c013d1cfe5c1389652fb3f7ad9dd5b8f89a6e86133904590c0df52833`；live mappings 为
+  `c-version-1`、`c-version-2`、`unknown-cross-release-output-meaning`、
+  `unknown-b-no-score-behavior`；rev2 `delivery-7` 已纠正四引用；两次 MCP `-32001` 的 capability log 均为
+  `TeamConfigurationError: typed candidate delivery_id is foreign or stale`。没有进入 dry-run/apply/readback、
+  validation/reasoning 或 CQ。
+- Outcome/next step: 4/4 semantic starts consumed；按首个不可绕过阻断登记 `platform-contract` terminal
+  failure。R2.3-003 保持 `blocked`，不得在新用户授权前再启动。
+
+### 2026-08-11T03:20:00+08:00 — independent Round 6 and post-run security cleanup — tester and main agent
+
+- Context: 四次预算耗尽后，独立测试方只读核对 retained evidence、ledger、Start75 状态与 cleanup。
+- Action/decision: Round 6=`FAIL / requirement BLOCKED`。复核同时发现 start2/start4 历史 runtime cleanup
+  `private_credentials_destroyed=false`；主 Agent 不改写历史 state，销毁两 run 下 48 个
+  `logs_2/state_5` SQLite/WAL/SHM 私有缓存，保留 sessions JSONL、Team delivery 与平台证据。
+- Evidence: Start75 before/after workspace version 均为 `0d34f5...ef02`、modeling batch count=6、active
+  Lease/Session/Attempt=0；服务、backend、frontend 均健康；7 个 source manifest hash 一致。销毁后两 run
+  private-cache count=0，源 DeepSeek key exact-match count=0，各保留 4 份 session JSONL。
+- Outcome/next step: 历史 cleanup FAIL 作为原始事实保留；independent Round 7 已确认当前 bounded
+  post-run security remediation PASS，但 requirement 仍由 typed receipt blocker 阻断。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
@@ -185,6 +215,7 @@
 | 5 | real start2 failure evidence | App Server 只接受 fully-qualified Team Transport MCP 名；四角色 prompt 仅写 broker 内部短名 | 四角色 authoritative prompt 明确 `mcp__team_transport__*` 名称并禁止 bare alias；不改 Runtime/Transport | fixed before next start |
 | 6 | real start3 failure evidence | Protocol 在 candidate receipt 前调用 platform；不同 tool 的相同 args/error 响应发生 artifact identity 碰撞 | Protocol startup barrier；artifact request digest 绑定 `{tool, arguments}` | fixed before next start |
 | 7 | real start4 failure evidence | Modeling 过度建模 71 items，并以只读 filesystem/script 构造候选后未发送 | exact 003 prompt target 12-24/max32、source 后禁 exec/files、inline qualified Transport | fixed before final start |
+| 8 | real start5 failure evidence | typed candidate state machine 不接受首个 receipt 后、由 live binding mismatch 触发的完整 candidate revision | 未做同 run bypass/hot patch；保留 rev2 与 capability failure，按 `platform-contract` 终止 | blocked; requires a separately reviewed state transition before any new authorization |
 
 ## Independent test rounds
 
@@ -195,18 +226,39 @@
 | 3 | post-start2 prompt fix | PASS | fully-qualified MCP prompt/tool surface fixed；adapter suffix compatibility 仅记 future hardening | prompt/transport focused 34 PASS；target subset 5 PASS；qualified callback 1 PASS；diff-check PASS |
 | 4 | post-start3 barrier/artifact fix | PASS | 无新确定性缺陷；真实 L0-L2 仍待下一 run | combined focused 109 PASS；backend candidate gate 4 PASS；barrier/namespace 8 PASS；artifact/frozen/prompt 3 PASS；diff-check PASS |
 | 5 | post-start4 bounded-candidate prompt fix | FAIL then recheck PASS | 初测只发现批准 runner 变更的 stale frozen hash；更新精确 digest 后无缺陷 | exact 003/005/frozen 50 PASS；003 focused 13 PASS；005 complete revision 8 PASS；diff-check PASS |
+| 6 | all four retained semantic starts | FAIL；requirement BLOCKED | start5 typed post-receipt revision binding 阻断；start2/start4 历史 credential cleanup FAIL | 四次 ledger、delivery/receipt/issue/capability log、Start75 before/after、process/socket、service health 与 7-source hash 只读复核；见共享 test plan §6 Round 6 |
+| 7 | post-run security remediation | bounded cleanup PASS；requirement remains BLOCKED | 不追溯改写 start2/start4 历史 cleanup FAIL；不覆盖 semantic gate | 两 run 六类 SQLite cache count=0、DeepSeek exact match=0、sessions/evidence retained、process/socket/PID=0、相关 13 keys active=0、service/backend/frontend healthy |
 
 ## Final verification
 
-- Required checks: deterministic PASS；`PYTHONPATH=backend backend/.venv/bin/python -m pytest modeling_team/tests` = 700 passed, 1 skipped；`cd backend && uv run pytest` = 843 passed, 10 skipped；`git diff --check` PASS。
-- Runtime/restart health: pre-live backend `/api/health` PASS、frontend HTTP 200、service active；未改 backend/frontend，无需因本次 modeling_team-only 代码重启。
-- Documentation/status sync: pending
-- Cleanup: pending
-- Residual risks and follow-ups: 真实 L0-L2、增量 mutation/readback、两条 CQ、独立只读 live evidence 验收和最终 cleanup 尚待执行；授权合同已冻结但 ledger 事件尚未写入。
+- Required checks: deterministic implementation gate PASS；最新 exact 003/005/frozen focused set 50 passed；
+  完整 `modeling_team/tests` 最近稳定证据为 704 passed, 1 skipped；`cd backend && uv run pytest` =
+  843 passed, 10 skipped；`git diff --check` PASS。真实 requirement gate=`FAIL / BLOCKED`。
+- Runtime/restart health: 最终 service active；backend `/api/health` HTTP 200；frontend HTTP 200；无遗留
+  Agent process/socket。建模代码进入真实运行前已按仓库规则重启并验证。
+- Documentation/status sync: requirement R2.3-003 保持 `Current Draft`；本记录与共享测试计划明确
+  `blocked`，未把 Agent-authored 但未 apply 的 rev2 候选写成已交付语义。
+- Cleanup: 四 run 的 Platform keys 均 non-active，Start75 scope 无 active Lease/Session/Attempt。start3 cleanup
+  clean；start5 有 compact aborted-cleanup evidence；start2/start4 历史 cleanup FAIL 保留，相关私有 SQLite
+  caches 已事后销毁；independent Round 7 确认当前 remediation PASS：精确目标 count=0、源 DeepSeek key
+  exact-match=0、无 process/socket/PID、13 个相关 Platform key 全部 inactive，sessions/evidence retained。
+- Residual risks and follow-ups: 首要阻断是 typed candidate receipt state machine 缺少“首 receipt 后因 live
+  existing-binding mismatch 接收完整 revision”的受控状态转换；在修复和新用户授权前不可再 run。
+  R2.3-003 尚无任何增量 mutation/readback、validation/reasoning、两条 CQ 或独立 semantic PASS。通用
+  pre-candidate no-delivery watchdog 仍是非阻断 follow-up，本轮按用户要求未扩建。
 
 ## Retrospective
 
-- Scope or design deviations: pending
-- Rework and root causes: pending
-- What shortened or delayed delivery: pending
-- Reusable lessons: pending
+- Scope or design deviations: 基线按用户决定由原 R2.3-002 切到已验收 R2.3-005 Start75；三 CQ 收敛为
+  两条串行 CQ以复用既有 Carrier。业务范围始终保持“解析两个 unknown + 一个 C -> B -> A case”，没有
+  扩展为 A/B 对照、Consumer suite 或产品化治理。
+- Rework and root causes: 四次真实失败依次为 qualified Team Transport prompt 缺口、Protocol startup
+  barrier/artifact identity 缺口、Modeling candidate 边界/发送指令缺口、post-receipt revision 状态机缺口。
+  前三项均在下一次 start 前做窄修复并回归；最后一项没有剩余预算，且不能安全热修。
+- What shortened or delayed delivery: 复用 Start75、既有两 CQ Carrier、现有 PlatformScope/ledger/protocol
+  mechanics 显著缩小了实现面；前置四项 High 与错误系统 Python 导致首次真实语义证据晚于 20 分钟目标。
+  此后只修真实失败层，没有建设通用 watchdog 或额外验收框架。
+- Reusable lessons: existing-scope 增量 candidate 需要把 live IRI binding 当成 receipt 前后的显式状态；如果
+  live read 可以合法要求 candidate revision，typed delivery state machine 必须预先允许并绑定该 revision，
+  不能只覆盖初稿与 conflict revision。Runtime cleanup 不能只依赖终止进程，还必须清除 App Server
+  SQLite/WAL 私有缓存，同时保留经脱敏的交付与语义证据。

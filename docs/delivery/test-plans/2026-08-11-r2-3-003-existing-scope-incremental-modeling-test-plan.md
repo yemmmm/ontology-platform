@@ -410,3 +410,93 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   dry-run/apply/readback, validation/reasoning, governed retrieval, semantic two-CQ verdicts, settlement,
   and production cleanup remain **BLOCKED** and unexecuted by instruction, not PASS. No further developer
   repair is requested; preserve the exact four-start budget and do not launch a real run in this recheck.
+
+### Round 6 — 2026-08-11 independent read-only review of live starts 2–5 — FAIL / requirement BLOCKED
+
+- Stable state and scope: development was stopped at HEAD `2c14b722218f5a3a0356ce48120c8752fd7c2816`.
+  This round only inspected retained evidence under
+  `workspaces/modeling-runs/r23003-real-20260811-deepseek-start{2,3,4,5}`, the append-only start ledger,
+  source manifests, process/service state, and read-only platform responses. No semantic run was started or
+  continued, and no product code, delivery record, or retained evidence was changed. `git diff --check`
+  passed after the test-plan-only append.
+- Start budget and terminal accounting: `.r2-3-003-start-ledger.jsonl` records exactly four semantic starts
+  after the pre-semantic Start1 release: start2 (`collaboration/routing`, terminal failure), start3
+  (`platform-contract`, terminal failure), start4 (`collaboration/routing`, terminal failure), and start5
+  (`platform-contract`, terminal failure). No additional start was created.
+- Start5 partial semantic evidence (the only run with a candidate exchange):
+  - Modeling delivery-4 contained a 28-item candidate, revision
+    `r2-3-003-existing-scope-increment-1`, text SHA-256
+    `d35dc790a48f1e238052863379b25d6d0df918685b22322ac1d0732bddb2bf01`.
+  - Protocol accepted delivery-4 as delivery-5; the formal progress log binds the accepted candidate and
+    semantic digest to `76437a1c013d1cfe5c1389652fb3f7ad9dd5b8f89a6e86133904590c0df52833` and records the
+    receipt as `state=complete`.
+  - Protocol issue-1 fail-closed existing-entity binding identified four incorrect/missing live references
+    (two WorkflowVersion IDs and two ExplicitUnknown/absent-class mappings), with `mutation_state=no writes`.
+    The revised delivery-7 retained the same 28-item business candidate while correcting those four IDs/classes;
+    its text SHA-256 is `1da57f1f0b2a9e562d6d61dec4ed9a9c5aaf46d819c4310c76c6b6df2f84932`.
+  - Two typed `protocol_build_candidate_receipt` attempts for delivery-7 were rejected. The retained issue
+    report records MCP error `-32001` (`Runner capability request rejected`); the capability log records the
+    typed-path error `TeamConfigurationError: typed candidate delivery_id is foreign or stale`. The accepted
+    receipt for delivery-4 could not be safely replaced, so issue-2 aborted the run before any platform write.
+    There is no accepted receipt for delivery-7 and no formal dry-run/apply/readback or semantic acceptance.
+- No-write and retained-scope checks: start5 issue reports explicitly record no Build Session, ontology lease,
+  or submitted batch; its read-only `get_modeling_context` response still reports workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, `lease_active=false`, and six existing
+  batches. Start2–4 preflight before/after scope records likewise remain at zero active lease/session/attempts,
+  six modeling batches, the same graph set `277fd804-e485-5156-b7a7-ca6a1081f950`, and the same workspace
+  version. No mutation evidence was found.
+- Cleanup and residue: start3's retained cleanup aggregate reports revoked/non-active keys,
+  `private_credentials_destroyed=true`, zero secret matches, closed proxy, and zero child residue. Start2 and
+  start4 report closed proxy and zero child residue but **`private_credentials_destroyed=false` with
+  `matched_secret_count=1` (secret scan `match_count=2` in each run)**; therefore their cleanup gates are not
+  PASS. Start5's compact acceptance cleanup reports `status=aborted`, `settled=false`,
+  `credentials_destroyed=true`, `active_handles=0`, and `zero_child_residue=true`, but does not retain the
+  start2/4 aggregate secret-scan proof. A read-only process scan found no start2–5 role/deepseek/r23003
+  processes and no run-root socket or PID files. This does not erase the retained credential residual.
+- Source and service checks: all seven R2.3-003/L3 source files recomputed exactly to the checked-in manifest
+  SHA-256 values (the retained Start75 tree digest remains the previously recorded
+  `22750e36caeedb11bfc3ab9613fe66f85d45df01f63d43188c61205e5ded0634`).
+  `ontology-platform.service` is active; `GET http://127.0.0.1:8001/api/health` returned HTTP 200
+  `{"status":"ok"}`, and `GET http://127.0.0.1:5173/` returned HTTP 200.
+- Primary blocker: **High, platform-contract** — the corrected candidate (delivery-7) cannot obtain the
+  required typed receipt (`-32001`/foreign-or-stale delivery identity). This blocks the receipt-backed
+  existing-entity binding and every downstream dry-run/application, readback, validation/reasoning,
+  governed-retrieval, CQ, settlement, and final cleanup acceptance step. **Additional High cleanup defect:**
+  start2 and start4 retain matched private credential material after abort. All four semantic starts are
+  consumed, so this round cannot obtain a fresh live result.
+- Result: **FAIL / requirement BLOCKED**. The records provide useful partial evidence (candidate delivery,
+  accepted first receipt, corrected revision, fail-closed issue handling, no-write scope preservation, source
+  fidelity, and service health), but no complete R2.3-003 semantic acceptance or PASS verdict. No further run is
+  authorized in this round; repair the typed receipt binding and cleanup residual before requesting any future
+  authorization.
+
+### Round 7 — 2026-08-11 post-run security-remediation recheck — PASS for remediation / requirement remains BLOCKED
+
+- Scope and safety: this was a read-only recheck after the main agent's precise removal of the 48 targeted
+  `logs_2`/`state_5` SQLite/WAL/SHM private-cache artifacts from the start2 and start4 runtime trees. No run was
+  started or continued, and this tester did not modify product code, the delivery record, or retained evidence.
+- Targeted cache deletion: a recursive read-only count over each `runtime/` tree returned **0** files matching
+  all six exact target suffixes (`logs_2.sqlite`, `.sqlite-wal`, `.sqlite-shm`, `state_5.sqlite`, `.sqlite-wal`,
+  `.sqlite-shm`) for both start2 and start4. The retained sessions are still present (4 session JSONL files per
+  run); retained evidence remains present (14 files under start2 evidence trees and 15 under start4 evidence
+  trees).
+- In-process secret scan: `/home/yangxiang/.config/ontology-platform/modeling-team-deepseek.env` has mode `0600`.
+  A backend virtualenv Python process loaded `DEEPSEEK_API_KEY` in memory without printing its value, scanned
+  642 files under each exact start2/start4 `runtime/` tree, and found `exact_occurrences=0` and
+  `matched_files=0` for each. No credential value was emitted.
+- Platform-key status: a read-only database query for the four exact R2.3-003 run model keys plus the related
+  `r2-3-001-team-runner-admin` and `r2-3-003-live-preflight-admin` rows created during the four starts returned
+  13 relevant rows with **0 active** (4 run keys, 4 runner-admin keys, 5 preflight-admin keys). All are revoked
+  or otherwise non-active; no key was created by this recheck.
+- Runtime residue: a `/proc` scan found 0 processes whose command line matched any retained R2.3-003 run name;
+  start2 and start4 each have 0 Unix sockets and 0 `.pid` files in the run tree.
+- Historical cleanup record and interpretation: `state.json` for start2 and start4 remains unchanged with
+  `private_credentials_destroyed=false`, secret-audit `match_count=2` and `matched_secret_count=1`. Round 6's
+  cleanup **FAIL** is intentionally preserved and not rewritten. The current cache deletion and exact in-process
+  secret scan demonstrate a **post-run security-remediation PASS only**; they do not retroactively turn the
+  historical run cleanup gate into PASS.
+- Service health: `ontology-platform.service` is active; backend `GET /api/health` returned HTTP 200 with
+  `{"status":"ok"}`; frontend `GET /` returned HTTP 200.
+- Result: **PASS for the bounded post-run security-remediation checks; requirement remains BLOCKED/FAIL**. The
+  Round 6 typed candidate-receipt blocker and absence of complete L0–L2 semantic acceptance remain in force.
+  No new semantic start or evidence rewrite is authorized by this round.
