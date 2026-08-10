@@ -21,6 +21,12 @@ FORMAL_MODEL_MANIFEST_RELATIVE = Path(
 FORMAL_MODEL_MANIFEST_ID = "r2-3-005-deepseek-v4-flash"
 FORMAL_MODEL_PROFILE_ID = "r2-3-005-modeling-team"
 FORMAL_MODEL_TASK_ID = "r2-3-005-formal-acceptance"
+R2_3_003_MODEL_MANIFEST_RELATIVE = Path(
+    "modeling_team/model-manifests/r2-3-003-deepseek.yaml"
+)
+R2_3_003_MODEL_MANIFEST_ID = "r2-3-003-deepseek-v4-flash"
+R2_3_003_MODEL_PROFILE_ID = "r2-3-003-modeling-team"
+R2_3_003_MODEL_TASK_ID = "r2-3-003-existing-scope-incremental"
 FORMAL_MODEL_SCHEMA_VERSION = 1
 FORMAL_MODEL_TUPLE = ("deepseek-v4-flash", "deepseek", "max")
 FORMAL_MODEL_PACKAGE_IDS = (
@@ -89,11 +95,13 @@ class FormalModelManifest:
         }
 
 
-def _manifest_path(root: Path) -> Path:
+def _manifest_path_for(root: Path, relative: Path) -> Path:
     repository_root = Path(root).resolve()
-    path = repository_root / FORMAL_MODEL_MANIFEST_RELATIVE
+    if relative.is_absolute() or ".." in relative.parts:
+        raise TeamConfigurationError("formal model manifest path is invalid")
+    path = repository_root / relative
     current = repository_root
-    for part in FORMAL_MODEL_MANIFEST_RELATIVE.parts:
+    for part in relative.parts:
         current = current / part
         try:
             metadata = os.lstat(current)
@@ -108,6 +116,12 @@ def _manifest_path(root: Path) -> Path:
     if not stat.S_ISREG(metadata.st_mode):
         raise TeamConfigurationError("formal model manifest is invalid")
     return path
+
+
+def _manifest_path(root: Path) -> Path:
+    """Backward-compatible resolver for the original R2.3-005 manifest."""
+
+    return _manifest_path_for(root, FORMAL_MODEL_MANIFEST_RELATIVE)
 
 
 def _load_manifest(path: Path) -> tuple[dict[str, object], str]:
@@ -125,16 +139,22 @@ def _load_manifest(path: Path) -> tuple[dict[str, object], str]:
     return value, digest
 
 
-def _validate_manifest(value: Mapping[str, object]) -> dict[str, tuple[str, str, str]]:
+def _validate_manifest(
+    value: Mapping[str, object],
+    *,
+    manifest_id: str,
+    profile_id: str,
+    task_id: str,
+) -> dict[str, tuple[str, str, str]]:
     if set(value) != _FORMAL_MANIFEST_KEYS:
         raise TeamConfigurationError("formal model manifest fields drift")
     if value.get("schema_version") != FORMAL_MODEL_SCHEMA_VERSION:
         raise TeamConfigurationError("formal model manifest schema version is unsupported")
-    if value.get("manifest_id") != FORMAL_MODEL_MANIFEST_ID:
+    if value.get("manifest_id") != manifest_id:
         raise TeamConfigurationError("formal model manifest identifier drift")
-    if value.get("profile_id") != FORMAL_MODEL_PROFILE_ID:
+    if value.get("profile_id") != profile_id:
         raise TeamConfigurationError("formal model manifest profile binding drift")
-    if value.get("task_id") != FORMAL_MODEL_TASK_ID:
+    if value.get("task_id") != task_id:
         raise TeamConfigurationError("formal model manifest task binding drift")
     packages = value.get("packages")
     if not isinstance(packages, dict) or set(packages) != set(FORMAL_MODEL_PACKAGE_IDS):
@@ -165,15 +185,57 @@ def _validate_manifest(value: Mapping[str, object]) -> dict[str, tuple[str, str,
     return overrides
 
 
-def load_formal_model_manifest(root: Path) -> FormalModelManifest:
-    """Read and validate the formal manifest without filesystem side effects."""
+def load_formal_model_manifest(
+    root: Path,
+    *,
+    manifest_path: Path | str | None = None,
+    manifest_id: str | None = None,
+    profile_id: str | None = None,
+    task_id: str | None = None,
+) -> FormalModelManifest:
+    """Read and validate one of the two closed formal manifests.
 
-    path = _manifest_path(root)
+    Omitting the optional identity keeps the accepted R2.3-005 API byte-for-byte
+    compatible.  R2.3-003 passes its own fixed path and identity from the formal
+    run registry; arbitrary caller-provided combinations are rejected.
+    """
+
+    if manifest_path is None:
+        selected_path = FORMAL_MODEL_MANIFEST_RELATIVE
+        selected_id = FORMAL_MODEL_MANIFEST_ID
+        selected_profile = FORMAL_MODEL_PROFILE_ID
+        selected_task = FORMAL_MODEL_TASK_ID
+    else:
+        selected_path = Path(manifest_path)
+        selected_id = manifest_id
+        selected_profile = profile_id
+        selected_task = task_id
+        valid_003 = (
+            selected_path == R2_3_003_MODEL_MANIFEST_RELATIVE
+            and selected_id == R2_3_003_MODEL_MANIFEST_ID
+            and selected_profile == R2_3_003_MODEL_PROFILE_ID
+            and selected_task == R2_3_003_MODEL_TASK_ID
+        )
+        valid_005 = (
+            selected_path == FORMAL_MODEL_MANIFEST_RELATIVE
+            and selected_id == FORMAL_MODEL_MANIFEST_ID
+            and selected_profile == FORMAL_MODEL_PROFILE_ID
+            and selected_task == FORMAL_MODEL_TASK_ID
+        )
+        if not (valid_003 or valid_005):
+            raise TeamConfigurationError("formal model manifest identity is unknown")
+    path = _manifest_path(root) if selected_path == FORMAL_MODEL_MANIFEST_RELATIVE else _manifest_path_for(root, selected_path)
     value, digest = _load_manifest(path)
-    overrides = _validate_manifest(value)
+    overrides = _validate_manifest(
+        value,
+        manifest_id=selected_id,
+        profile_id=selected_profile,
+        task_id=selected_task,
+    )
     return FormalModelManifest(
         MappingProxyType(dict(overrides)),
         digest,
+        relative_path=str(selected_path),
     )
 
 
@@ -185,6 +247,10 @@ __all__ = [
     "FORMAL_MODEL_SCHEMA_VERSION",
     "FORMAL_MODEL_TASK_ID",
     "FORMAL_MODEL_TUPLE",
+    "R2_3_003_MODEL_MANIFEST_ID",
+    "R2_3_003_MODEL_MANIFEST_RELATIVE",
+    "R2_3_003_MODEL_PROFILE_ID",
+    "R2_3_003_MODEL_TASK_ID",
     "FormalModelManifest",
     "load_formal_model_manifest",
 ]

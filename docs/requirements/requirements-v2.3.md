@@ -2,7 +2,8 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002、R2.3-005 已交付并通过独立验收。R2.3-005 的 Start75
+- 文档状态：R2.3-001、R2.3-002、R2.3-005 已交付并通过独立验收；R2.3-003 为
+  `Current Draft（功能范围已确认，待 plan review、实现与真实运行）`。R2.3-005 的 Start75
   `r23005-real-20260810-deepseek-start75` 在正式 DeepSeek v4 Flash Team 上完成新作用域建模、五阶段应用、
   validation/reasoning、七条 governed retrieval、两轮 CQ PASS、Acceptance settlement、四角色 terminal
   chain 与零残留清理；Independent Round 29 对 804 个 retained 文件做只读复核，审计前后 digest 一致，
@@ -12,7 +13,8 @@
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
 - 当前下一目标：R2.3-005 已完成；按严格成功即停止合同，不再消费已授权但未使用的 Start76–77。
-  后续进入依赖顺序中的 R2.3-003，或由用户另行指定新目标。
+  R2.3-003 改为继续 Start75 保留本体的 existing-scope 增量建模；用户已于 2026-08-11 授权精确四次
+  R2.3-003 semantic starts，并委托交付侧按已评审建议执行关键决定。首次完整 PASS 后 success-stop。
 - 接手指南：`docs/delivery/archive/r2-3-005/r2-3-005-successful-modeling-handover.html`；阶段性旧计划和
   会话交接快照统一保存在 `docs/delivery/archive/r2-3-005/`，不再作为当前运行指令。
 - 关联交付记录：
@@ -64,7 +66,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
-| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
+| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Current Draft（已细化，待评审/实现/运行）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -74,13 +76,14 @@ R2.3-001 Runner、Package、Codex Adapter
   -> 真实 Agent 能力与互操作冒烟，不实际建模
   -> R2.3-002 从新作用域完成一轮真实业务切片
   -> R2.3-005 Modeling Team Runner 正式化收口与可重复调用
-  -> R2.3-003 用全新团队继续 002 的已有非空 Project/Ontology
+  -> R2.3-003 用全新团队继续 005 Start75 的已有非空 Project/Ontology
   -> R2.3-004 整体切换到 Pi Team Adapter
 ```
 
-R2.3-003 仍然以 R2.3-002 的语义结果和非空 Project/Ontology 作为依赖，但只有在
-R2.3-005 完成其强制运营前置后才可进入实现和真实运行。R2.3-004 必须排在
-R2.3-005、R2.3-003 之后；Pi Adapter 的证据不能替代 Modeling Team Runner 的可重复调用证据。
+R2.3-003 以 R2.3-005 Start75 的语义结果和保留非空 Project/Ontology 作为 existing-scope 基线，
+同时复用 R2.3-002 已批准、随后由 R2.3-005 再次使用的业务来源。R2.3-005 的完成证据同时满足其
+运营启动前置。R2.3-004 必须排在 R2.3-005、R2.3-003 之后；Pi Adapter 的证据不能替代 Modeling
+Team Runner 的可重复调用证据。
 
 后续需求不得仅为了刷过业务语义验收而静默修改已经在 R2.3-001 接受的 Team Runner 核心语义。
 R2.3-002 的预检或真实运行暴露 Runner、Adapter、Profile、Package、Skill 或平台合同缺陷，
@@ -403,7 +406,8 @@ R2.3-001 不写入平台 Modeling Execution Record，也不建设长期审计。
   直接相关优化；
 - 从全新 Project/Ontology 开始完成一个有界业务切片的真实建模；
 - 验证直接 Agent 协作、持续用户对话和 Protocol-only 平台写入；
-- 产生可供 R2.3-003 继续使用的非空 Project/Ontology。
+- 产生一个有意保留的非空 Project/Ontology；该对象原计划供 R2.3-003 继续使用，但后续 R2.3-003
+  已改为连接 R2.3-005 Start75，本对象只保留为 R2.3-002 交付证据，除非未来需求另行指定。
 
 ### 已确认范围
 
@@ -686,8 +690,9 @@ R2.3-002 复现 R2.2-001 L3 已接受的语义与检索结果，不提高业务�
   blocker，不猜测目标或强制清理；
 - 无论 Project 最终保留还是删除，临时凭据、本地秘密和 Agent Runtime 都必须按本轮精确所有权
   完成清理；
-- 成功 Project/Ontology 保留给 R2.3-003；existing 模式不删除它，最终由 R2.3-003 独立验收后的
-  测试收尾负责删除。
+- 成功 Project/Ontology 按原合同保留；原定“交给 R2.3-003 并在其验收后删除”的安排已被当前
+  R2.3-003 Start75 existing-scope 合同 supersede。该对象继续作为 R2.3-002 证据保留，删除需未来
+  明确授权。
 
 ### Scope handoff 与漂移检查
 
@@ -705,10 +710,8 @@ R2.3-002 复现 R2.2-001 L3 已接受的语义与检索结果，不提高业务�
   `scope_disposition`、`owned` 写入不可变文件。`mode`、Session/key 清理状态或任何其他额外字段
   既不得导致首次真实成功 cleanup 失败，也不得进入 handoff 输入；缺少正式字段、非 owned/
   非 retained 状态、非三角色 completed 或目标文件已存在仍须 fail closed；
-- R2.3-003 启动前必须从平台重新确认 Project/Ontology 存在、归属关系正确，并且当前 workspace
-  version 与 handoff 一致；
-- 任一标识、归属或 workspace version 不一致时，R2.3-003 停止并报告漂移，等待人工确认；不得
-  自动改写 handoff、回退平台状态或继续增量建模。
+- 该 handoff 的身份与漂移规则继续作为历史合同和可复用模式保留，但当前 R2.3-003 不消费它；
+  R2.3-003 使用 Start75 新发布的 handoff，并按自身章节执行同等级 live 漂移检查。
 
 ### 独立 Agent 验收
 
@@ -1727,7 +1730,7 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
-当前状态：`待细化`
+当前状态：`Current Draft（功能范围已确认，待 plan review、实现与真实运行）`
 
 优先级：`P0`
 
@@ -1736,26 +1739,85 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 当前：
 
 - R2.3-001 只机械验证空 existing 作用域；
-- R2.3-002 从空作用域完成首轮真实建模，但尚未证明全新团队可以只依赖平台事实继续已有模型。
+- R2.3-005 Start75 已从 fresh create scope 完成 C -> B -> A 业务切片、两个 `ExplicitUnknown`、
+  validation/reasoning、三类语义对象检索、两个 CQ、独立验收与清理，并有意保留非空
+  Project/Ontology；
+- 尚未证明全新四角色团队可以只依赖当前平台事实、非敏感 handoff 和批准的新资料继续该模型。
 
 目标：
 
 - 使用全新的 Runner run 和全新的 Agent Sessions；
-- 通过 existing 模式连接 R2.3-002 明确保留的非空 Project/Ontology；
-- 不继承 R2.3-002 Agent 对话、历史 Prompt、隐藏答案或本地运行目录；
-- 完成一个新的增量建模目标，并证明已有模型保持正确。
+- 通过 existing 模式连接 R2.3-005 Start75 明确保留的非空 Project/Ontology；
+- 不继承 Start75 Agent 对话、历史 Prompt、旧 verdict、隐藏答案或本地运行目录；
+- 用批准的增量资料解析 Start75 的两个 `ExplicitUnknown`，并完成一个相关但独立的
+  “C 评估结果 -> B 可发布性决策 -> A 发布结果”业务切片；
+- 证明既有模型保持正确、旧 unknown 的来源边界仍可解释、当前结论和新增切片均可可靠检索。
 
-R2.3-003 的语义依赖仍是 R2.3-002 的真实业务切片和非空模型；其运营启动前置则必须先满足
-R2.3-005 的 Modeling Team Runner 正式化收口与可重复调用完成门。
+本节经用户确认 supersede 本文此前“R2.3-003 必须继续 R2.3-002 Project/Ontology”的文字。新的精确
+existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建并保留的 Project
+`7fc146d8-c76f-417b-9314-854544f269fc`、Ontology
+`fd762f52-2f5e-4bc0-902a-5583135ab64d`。R2.3-002 仅保留为原批准来源和历史语义链的来源依赖，
+不再是本需求要连接的平台作用域。
 
 ### 已确认范围
 
-- R2.3-003 直接使用 R2.3-002 的 Project/Ontology 和非敏感 scope handoff，不另造独立业务 fixture；
+- R2.3-003 直接使用 Start75 Project/Ontology 和新发布的非敏感 scope handoff；启动前必须通过平台
+  重新读取 Project/Ontology 归属、当前 workspace version、默认 Graph Set、Build Session 与 Lease
+  状态，任一身份、版本或所有权漂移都停止并等待人工处理；
 - Team Runner、Codex Adapter 和基础四 Agent Profile 不因 existing 场景修改核心语义；
 - Protocol 在写入前读取当前平台事实和 workspace context，并创建新的 Build Session/Lease；
-- 本轮只通过新的 Modeling Batch 表达增量变化；
+- 本轮只通过新的不可变 Modeling Batch 表达增量变化；不得删除、重建或覆盖 Start75 的类、属性、
+  实体、关系、Shape、Evidence 或 lineage；
 - existing 模式不删除 Project/Ontology，不抢占历史 Lease，不恢复历史 Agent Session；
-- 增量业务目标、来源、用户问题和尝试预算在 R2.3-003 开始前单独细化。
+- 新 source bundle 固定为
+  `docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json`：复用 manifest
+  中列出的既有批准资料，只新增 `scoring-and-publication-policy.md` 和
+  `manual-review-publication-case.md`；用户已授权由交付侧构造并冻结这些合成业务资料，无需逐条
+  业务确认；
+- source 文档只陈述业务事实，不规定 Class、predicate、IRI、Shape、Modeling Item、平台命令或 CQ
+  预期答案；ontology structure 仍由 Modeling Agent 判断；
+- 用户于 2026-08-11 明确授权四次 fresh semantic starts，授权标识冻结为
+  `user-20260811-r23003-start1-4`。R2.3-003 独立账本从 `cap/count/active=0/0/0` 通过首次授权事件变为
+  `4/0/0`；不得借用或修改 R2.3-005 Start76–77。四次是上限而非必须消费数量，首次完整 PASS 后
+  success-stop。
+- existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
+  apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
+  unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的
+  明确 handoff 后才可继续，不得沿用旧 workspace version、自动删除 Project 或把部分写入冒充 Start75
+  原始基线。
+
+### 已确认的组合建模目标
+
+1. `quality_score` 与 `quality_rating` 的旧 unknown 必须由新来源解析：两者是同一 content quality
+   measure 的跨版本 rename，measure/range/unit/calculation/interpretation 不变，数值存在时可跨版本
+   业务比较；每个 release payload 仍必须使用该 release 实际发布的字段名。
+2. B 无分数动作的旧 unknown 必须由新来源解析：当 C 因 classifier dependency 不可用而无 numeric
+   score、返回 `CLASSIFIER_UNAVAILABLE` 时，B 不自动重试、不报告 publishable，而是形成
+   `manual review required` 决策；A 只发布 B 明确报告 publishable 的结果，因此该决策下 A 持有内容
+   等待 review，不创建 published result。
+3. 原两个 `ExplicitUnknown` 及其旧 Evidence/lineage 不得删除或静默改写。增量模型必须用当前结论、
+   resolution state 和新 Evidence 表达“旧批准来源下未知、当前补充来源已解析”；具体 ontology 结构由
+   Modeling Agent 决定，但查询不得同时把同一问题呈现为无边界的 unresolved 和 resolved。
+4. 新业务切片必须建模 source 中的具体链：`content-review-001` 经 C 得到无 numeric value 与
+   `CLASSIFIER_UNAVAILABLE`，B 形成 `decision-review-001=manual review required`，A 形成
+   `publication-outcome-review-001=held for review`，且没有 published result。该具体事实不得被简化为
+   仅修改 unknown 文本或仅增加一个未连接的状态字段。
+5. 不对普通 numeric score 的阈值/决策、其他 diagnostic、自动重试、人工 review 后续结果或其他
+   Workflow 外推规则；资料未说明的内容继续保留为明确未知或范围外。
+
+### 验收问题与独立性
+
+最终模型回答两条不携带预期答案的 CQ：
+
+1. 当前 B 消费 C 的哪个已发布版本/输出，历史 `quality_score` 与当前 `quality_rating` 的业务连续性和
+   release 内字段使用边界是什么？
+2. C 以 `CLASSIFIER_UNAVAILABLE` 成功结束但没有 numeric score 时，B 和 A 分别采取什么动作；对
+   `content-review-001`，能否沿 C evaluation result、B decision 和 A publication outcome 得到完整、
+   source-grounded、非截断的业务链，且明确哪些后续行为仍未定义？
+
+两条 CQ 使用同一个 fresh Acceptance 的串行独立验收轮，并为该轮创建 fresh Source/Platform Examiner；
+Examiner 不接收上述业务答案、Producer 对话或旧 verdict。Source Examiner 只从该题批准资料推导答案，
+Platform Examiner 只从冻结 model state 的只读平台事实推导答案，Acceptance 比较两侧结果。
 
 ### R2.3-003 最小完成门
 
@@ -1767,9 +1829,11 @@ R2.3-005 的 Modeling Team Runner 正式化收口与可重复调用完成门。
 2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff。
 3. 当前 workspace version 和既有模型在变更前被正确读取；没有历史 Agent 对话泄漏。
 4. 增量 Modeling Batch 完成 dry-run/apply，workspace 前进，既有模型未被错误覆盖或重建。
-5. 最终 validation、reasoning 和查询同时支持 R2.3-002 既有结果与 R2.3-003 新增结果。
+5. 最终 validation、reasoning 和 governed retrieval 同时支持 Start75 既有结果、两个 unknown 的
+   source-bounded resolution，以及新增 decision/publication 切片；两条 CQ 均在同一最终 model state
+   上取得 current/usable PASS。
 6. existing 模式保留 Project/Ontology，只清理本轮 Runtime、Build Session/Lease 和临时凭据。
-7. 独立验收后，测试收尾可以删除明确归属于 R2.3-002/003 的测试 Project；该删除不属于
+7. 本轮不删除 Start75/R2.3-003 Project/Ontology；是否在未来需求后删除必须另行明确授权，不属于
    Team Runner existing 模式。
 8. 自动化回归、真实运行和独立测试 PASS。
 
@@ -1778,6 +1842,8 @@ R2.3-005 的 Modeling Team Runner 正式化收口与可重复调用完成门。
 - 复用或恢复 R2.3-002 Agent Session；
 - 合并两个并发写入团队；
 - 自动解决历史 fenced、冲突或未知所有权状态；
+- 删除旧 ExplicitUnknown 以伪造“从未未知”，或把旧 unknown rationale 当作当前 unresolved 结论；
+- 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
 - 长期 Project 生命周期管理或管理 UI。
 

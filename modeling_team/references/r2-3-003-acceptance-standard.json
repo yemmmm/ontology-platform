@@ -1,0 +1,46 @@
+{
+  "schema_version": "r2-3-003-acceptance-standard/v1",
+  "requirement_ref": "docs/requirements/requirements-v2.3.md#R2.3-003",
+  "checks": [
+    "source_fidelity",
+    "scope",
+    "ontology_structure",
+    "explicit_unknowns",
+    "validation_reasoning",
+    "governed_retrieval",
+    "evidence_lineage",
+    "competency_questions"
+  ],
+  "unknown_policy": "preserve-explicit-unknown",
+  "verdicts": ["PASS", "FAIL", "BLOCKED"],
+  "competency_questions": [
+    {
+      "id": "cq-001",
+      "question": "当前 B 消费 C 的哪个已发布版本或输出，历史 quality_score 与当前 quality_rating 的业务连续性和 release 内字段使用边界是什么？",
+      "approved_source_paths": [
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx",
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/release-register.md",
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/workflow-landscape.md",
+        "docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/sources/scoring-and-publication-policy.md"
+      ]
+    },
+    {
+      "id": "cq-002",
+      "question": "C 以 CLASSIFIER_UNAVAILABLE 成功结束但没有 numeric score 时，B 和 A 分别采取什么动作；content-review-001 是否可沿 evaluation result、decision 和 publication outcome 得到完整的 source-grounded 业务链，哪些后续行为仍未定义？",
+      "approved_source_paths": [
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/exception-handling.md",
+        "docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/sources/scoring-and-publication-policy.md",
+        "docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/sources/manual-review-publication-case.md"
+      ]
+    }
+  ],
+  "failure_layers": ["modeling-quality", "interview", "protocol-delivery", "platform", "runtime"],
+  "blocked_reasons": ["acceptance-evidence", "acceptance-input", "runtime-infrastructure", "source-missing", "state-invalidated"],
+  "question_policy": "two-sequential-cqs-same-final-model-state",
+  "child_policy": {
+    "source": "approved-source-only",
+    "platform": "ticket-scoped-read-only",
+    "retry_attempts": [0, 1],
+    "second_infrastructure_failure": "BLOCKED/runtime-infrastructure"
+  }
+}

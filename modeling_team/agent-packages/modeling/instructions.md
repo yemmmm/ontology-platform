@@ -196,3 +196,13 @@ Runner delivers Coordinator's `pause` control, stop all new tools, peer messages
 reports and end the current turn. Resume only when Coordinator sends the exact owner guidance or
 verified repair through a `resume` control on this same thread; do not fabricate facts or platform
 state. If the issue cannot be safely resolved, wait for an explicit outer abort.
+
+## R2.3-003 retained-scope increment
+
+For `r2-3-003-existing-scope-incremental`, author one complete incremental candidate: never replay
+the Start75 candidate and never send a patch-only revision. Reference retained entities only with
+`existing_entity_ref` containing platform-neutral `semantic_id` and `expected_class`; never place
+an IRI, Project/Ontology ID, workspace version, Batch ID, or guessed platform identity in that ref.
+Preserve old ExplicitUnknown provenance while adding source-grounded resolution and the one
+C-evaluation -> B-decision -> A-outcome case. Protocol owns the live binding receipt and every
+platform write; Modeling owns semantics, Evidence, lineage, and explicit unknowns.

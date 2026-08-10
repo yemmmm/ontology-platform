@@ -26,6 +26,7 @@ from .model_manifest import (
     FormalModelManifest,
     load_formal_model_manifest,
 )
+from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
 from .deepseek_provider_proxy import (
     DeepSeekCredentialBinding,
     DeepSeekCredentialError,
@@ -37,7 +38,11 @@ from .acceptance import (
     CoordinatorPhaseController,
     RunnerAcceptanceCarrier,
 )
-from .preflight import normalize_formal_scope, run_prestart_preflight
+from .preflight import (
+    normalize_scope_for_contract,
+    run_existing_scope_preflight,
+    run_prestart_preflight,
+)
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery
 from .candidate_progress import (
     FormalCandidateError,
@@ -110,6 +115,7 @@ class TeamRun:
     gate_binding: dict[str, str] | None = None
     acceptance: RunnerAcceptanceCarrier | None = None
     model_manifest: FormalModelManifest | None = None
+    formal_contract: FormalRunContract | None = None
     deepseek_credential_binding: DeepSeekCredentialBinding | None = None
 
 
@@ -312,30 +318,47 @@ class TeamRunner:
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
-        # R2.3-005 is the formal Runner entrypoint.  It must fail closed on a
-        # legacy three-role/source-specialist Profile before a scope or Agent
-        # starts.  Historical callers now migrate their fixtures to the same
-        # exact four-role contract.
         config = load_formal_team_configuration(
             profile_path, task_path, root=self.repository_root
         )
-        formal_acceptance = (
-            config.task.schema_version == 2
-            and (
-                config.task.task_id == "r2-3-005-formal-acceptance"
-                or config.profile.profile_id == "r2-3-005-modeling-team"
+        formal_contract = formal_run_contract_for(config)
+        formal_identity = {
+            "r2-3-005-modeling-team",
+            "r2-3-003-modeling-team",
+        }
+        formal_tasks = {
+            "r2-3-005-formal-acceptance",
+            "r2-3-003-existing-scope-incremental",
+        }
+        if formal_contract is None and (
+            config.profile.profile_id in formal_identity or config.task.task_id in formal_tasks
+        ):
+            raise TeamConfigurationError("unknown or cross-wired formal run contract")
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            # Re-read through the closed registry so identity/path/asset checks
+            # are performed before model/credential/preflight side effects.
+            config, formal_contract = load_formal_run_configuration(
+                profile_path, task_path, root=self.repository_root
             )
-        )
+        formal_acceptance = formal_contract is not None
         # The model contract is the first formal gate after configuration
         # loading.  It performs only immutable package reads, so malformed,
         # partial, unsupported, inconsistent, or missing Examiner declarations
         # cannot create a run root, reserve a ledger start, probe the platform,
         # start transport/capabilities, or invoke a process/child factory.
-        model_manifest = (
-            load_formal_model_manifest(self.repository_root)
-            if formal_acceptance
-            else None
-        )
+        model_manifest = None
+        if formal_contract is not None:
+            model_manifest = load_formal_model_manifest(
+                self.repository_root,
+                manifest_path=Path(formal_contract.model_manifest_path),
+                manifest_id=(
+                    "r2-3-003-deepseek-v4-flash"
+                    if formal_contract.requirement_id == "R2.3-003"
+                    else "r2-3-005-deepseek-v4-flash"
+                ),
+                profile_id=formal_contract.profile_id,
+                task_id=formal_contract.task_id,
+            )
         credential_binding: DeepSeekCredentialBinding | None = None
         if formal_acceptance:
             try:
@@ -361,8 +384,8 @@ class TeamRunner:
         if formal_acceptance:
             self._reject_formal_ledger_root_override()
         normalized_scope: dict[str, str] = dict(scope)
-        if formal_acceptance:
-            normalized_scope = normalize_formal_scope(scope)
+        if formal_contract is not None:
+            normalized_scope = normalize_scope_for_contract(scope, formal_contract.scope_mode)
         root = self.repository_root / "workspaces" / "modeling-runs" / run_id
         if root.exists():
             raise TeamConfigurationError("run directory already exists")
@@ -381,12 +404,21 @@ class TeamRunner:
             # This is deliberately before ledger reservation, run-root creation,
             # scope construction, or any Agent start.  A second baseline read
             # closes the TOCTOU gap between inventory and reservation.
-            preflight_evidence = run_prestart_preflight(
-                repository_root=self.repository_root,
-                base_url=self.canonical_base_url,
-                admin_key=self.canonical_admin_key,
-                probe=self.prestart_preflight,
-            )
+            if formal_contract is not None and formal_contract.is_existing:
+                preflight_evidence = run_existing_scope_preflight(
+                    repository_root=self.repository_root,
+                    scope=normalized_scope,
+                    base_url=self.canonical_base_url,
+                    admin_key=self.canonical_admin_key,
+                    probe=self.prestart_preflight,
+                )
+            else:
+                preflight_evidence = run_prestart_preflight(
+                    repository_root=self.repository_root,
+                    base_url=self.canonical_base_url,
+                    admin_key=self.canonical_admin_key,
+                    probe=self.prestart_preflight,
+                )
             if task_overlay_path is not None:
                 task_overlay = load_task_input_overlay(
                     task_overlay_path,
@@ -419,7 +451,9 @@ class TeamRunner:
         )
         if config.task.schema_version == 2:
             ledger_config = resolve_ledger_config(
-                R2_3_005_REQUIREMENT_ID if formal_acceptance else R2_3_002_REQUIREMENT_ID
+                formal_contract.ledger_requirement_id
+                if formal_contract is not None and formal_contract.ledger_requirement_id
+                else R2_3_002_REQUIREMENT_ID
             )
             ledger_root = self._canonical_ledger_root()
             if not formal_acceptance and self.ledger_root is not None:
@@ -441,6 +475,7 @@ class TeamRunner:
             normalized_scope,
             gate_binding=gate_binding,
             model_manifest=model_manifest,
+            formal_contract=formal_contract,
             deepseek_credential_binding=credential_binding,
         )
         self._task_overlay = task_overlay
@@ -568,7 +603,7 @@ class TeamRunner:
         binding = baseline.get("formal_model_manifest")
         if (
             not isinstance(binding, dict)
-            or binding.get("path") != str(FORMAL_MODEL_MANIFEST_RELATIVE)
+            or binding.get("path") != model_manifest.relative_path
             or binding.get("sha256") != model_manifest.digest
         ):
             raise TeamConfigurationError("formal model manifest digest drifted")
@@ -749,17 +784,11 @@ class TeamRunner:
                 files["proof_matrix_artifact"] = matrix
             if p2a.is_file() and not p2a.is_symlink():
                 files["p2a_pass_artifact"] = p2a
-        formal_acceptance_contract = (
-            configuration.task.schema_version == 2
-            and (
-                configuration.task.task_id == "r2-3-005-formal-acceptance"
-                or configuration.profile.profile_id == "r2-3-005-modeling-team"
-            )
-        )
+        formal_contract = formal_run_contract_for(configuration)
+        formal_acceptance_contract = formal_contract is not None
         if formal_acceptance_contract:
-            files["formal_model_manifest"] = (
-                self.repository_root / FORMAL_MODEL_MANIFEST_RELATIVE
-            )
+            assert formal_contract is not None
+            files["formal_model_manifest"] = self.repository_root / formal_contract.model_manifest_path
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
         if task_overlay is not None:
             digests["task_input_overlay"] = task_overlay.sha256
@@ -990,7 +1019,7 @@ class TeamRunner:
         }
         if formal_acceptance_contract:
             baseline["formal_model_manifest"] = {
-                "path": str(FORMAL_MODEL_MANIFEST_RELATIVE),
+                "path": formal_contract.model_manifest_path,
                 "sha256": digests["formal_model_manifest"],
             }
         return baseline
@@ -1011,6 +1040,17 @@ class TeamRunner:
         configuration = load_formal_team_configuration(
             profile_path, task_path, root=repository_root
         )
+        formal_contract = formal_run_contract_for(configuration)
+        if formal_contract is not None:
+            configuration, _ = load_formal_run_configuration(
+                profile_path, task_path, root=repository_root
+            )
+        elif configuration.profile.profile_id in {
+            "r2-3-003-modeling-team", "r2-3-005-modeling-team"
+        } or configuration.task.task_id in {
+            "r2-3-003-existing-scope-incremental", "r2-3-005-formal-acceptance"
+        }:
+            raise TeamConfigurationError("unknown or cross-wired formal run contract")
         probe = object.__new__(cls)
         probe.repository_root = repository_root
         manifest = probe._baseline_manifest(
@@ -1025,13 +1065,18 @@ class TeamRunner:
     def _formal_coordination_enabled(self) -> bool:
         if not self.run:
             return False
-        configuration = self.run.configuration
-        return (
-            getattr(configuration.task, "schema_version", 1) == 2
+        if getattr(self.run, "formal_contract", None) is not None:
+            return True
+        configuration = getattr(self.run, "configuration", None)
+        task = getattr(configuration, "task", None)
+        profile = getattr(configuration, "profile", None)
+        return bool(
+            getattr(task, "schema_version", 1) == 2
             and (
-                getattr(configuration.task, "task_id", None) == "r2-3-005-formal-acceptance"
-                or getattr(configuration.profile, "profile_id", None)
-                == "r2-3-005-modeling-team"
+                getattr(task, "task_id", None)
+                in {"r2-3-005-formal-acceptance", "r2-3-003-existing-scope-incremental"}
+                or getattr(profile, "profile_id", None)
+                in {"r2-3-005-modeling-team", "r2-3-003-modeling-team"}
             )
         )
 
@@ -3874,7 +3919,8 @@ class TeamRunner:
         # requirement-ID check used by the previous implementation.
         if not strict_sequence:
             strict_sequence = (
-                getattr(self._ledger, "requirement_id", None) == R2_3_005_REQUIREMENT_ID
+                getattr(self._ledger, "requirement_id", None)
+                in {R2_3_005_REQUIREMENT_ID, "R2.3-003"}
             )
         if strict_sequence:
             return {"ledger_identity": self._ledger.identity}

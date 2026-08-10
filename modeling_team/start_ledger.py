@@ -28,8 +28,16 @@ _FORMAL_LEDGER_FILENAME = ".r2-3-005-start-ledger.jsonl"
 _FORMAL_LOCK_FILENAME = ".r2-3-005-start-ledger.lock"
 _FORMAL_INITIAL_START_CAP = 1
 _FORMAL_ADDITIONAL_STARTS = 3
+_R2_3_003_REQUIREMENT_ID = "R2.3-003"
+_R2_3_003_LEDGER_FILENAME = ".r2-3-003-start-ledger.jsonl"
+_R2_3_003_LOCK_FILENAME = ".r2-3-003-start-ledger.lock"
+_R2_3_003_INITIAL_START_CAP = 0
+_R2_3_003_ADDITIONAL_STARTS = 4
+_R2_3_003_INITIAL_AUTHORIZATION_ID = "user-20260811-r23003-start1-4"
+_R2_3_003_INITIAL_AUTHORIZATION_REFERENCE = "user-20260811-r23003-start1-4"
 R2_3_002_REQUIREMENT_ID = _DEFAULT_REQUIREMENT_ID
 R2_3_005_REQUIREMENT_ID = _FORMAL_REQUIREMENT_ID
+R2_3_003_REQUIREMENT_ID = _R2_3_003_REQUIREMENT_ID
 _GATE_BINDING_FIELDS = (
     "proof_matrix_path",
     "proof_matrix_digest",
@@ -73,6 +81,16 @@ _LEDGER_CONFIGS = MappingProxyType(
             allow_incomplete_modeling_quality_repair=True,
             allow_variable_authorization=True,
         ),
+        _R2_3_003_REQUIREMENT_ID: StartLedgerConfig(
+            requirement_id=_R2_3_003_REQUIREMENT_ID,
+            ledger_filename=_R2_3_003_LEDGER_FILENAME,
+            lock_filename=_R2_3_003_LOCK_FILENAME,
+            initial_start_cap=_R2_3_003_INITIAL_START_CAP,
+            authorization_increment=_R2_3_003_ADDITIONAL_STARTS,
+            strict_sequence=True,
+            allow_incomplete_modeling_quality_repair=True,
+            allow_variable_authorization=False,
+        ),
     }
 )
 
@@ -101,7 +119,7 @@ def resolve_ledger_config(
     if lock_filename is not None and lock_filename != config.lock_filename:
         raise TeamConfigurationError("lock filename does not match requirement configuration")
     if initial_start_cap is not None:
-        if not isinstance(initial_start_cap, int) or isinstance(initial_start_cap, bool) or initial_start_cap < 1:
+        if not isinstance(initial_start_cap, int) or isinstance(initial_start_cap, bool) or initial_start_cap < 0:
             raise TeamConfigurationError("initial start cap is invalid")
         if initial_start_cap != config.initial_start_cap:
             raise TeamConfigurationError("initial start cap does not match requirement configuration")
@@ -216,6 +234,48 @@ class StartLedger:
                 records, run_id, baseline_hash, freeze_started_at, normalized_gate
             )
         )
+
+    def initial_authorization(
+        self,
+        additional_starts: int = _R2_3_003_ADDITIONAL_STARTS,
+        authorization_id: str = _R2_3_003_INITIAL_AUTHORIZATION_ID,
+        reference: str = _R2_3_003_INITIAL_AUTHORIZATION_REFERENCE,
+    ) -> None:
+        """Record the one user authorization that opens the R2.3-003 budget.
+
+        R2.3-003 deliberately starts with cap zero.  Its first ledger event is
+        therefore a dedicated authorization rather than a normal retry-budget
+        extension (which requires a prior terminal failure).  The exact
+        authorization is requirement-owned and cannot be replayed or varied.
+        """
+
+        if self.requirement_id != _R2_3_003_REQUIREMENT_ID:
+            raise TeamConfigurationError("initial authorization is R2.3-003-only")
+        if (
+            additional_starts != _R2_3_003_ADDITIONAL_STARTS
+            or authorization_id != _R2_3_003_INITIAL_AUTHORIZATION_ID
+            or reference != _R2_3_003_INITIAL_AUTHORIZATION_REFERENCE
+        ):
+            raise TeamConfigurationError("R2.3-003 initial authorization is not exact")
+
+        def write(records: list[dict[str, Any]]) -> None:
+            if records:
+                # This event is valid only as the first immutable ledger record;
+                # it is never a repair or ordinary budget extension.
+                raise TeamConfigurationError("R2.3-003 initial authorization is not first")
+            self._append(
+                {
+                    "event": "initial_authorization",
+                    "additional_starts": _R2_3_003_ADDITIONAL_STARTS,
+                    "authorization_id": _R2_3_003_INITIAL_AUTHORIZATION_ID,
+                    "reference": _R2_3_003_INITIAL_AUTHORIZATION_REFERENCE,
+                }
+            )
+
+        self._locked(write)
+
+    # Descriptive alias used by the CLI and operator-facing tests.
+    authorize_initial = initial_authorization
 
     def authorize_budget(self, additional_starts: int, authorization_id: str, reference: str) -> None:
         """Append one consumed, user-authorized requirement-specific extension."""
@@ -409,6 +469,7 @@ class StartLedger:
         cap = self._initial_start_cap
         semantic_count = 0
         known_events = {
+            "initial_authorization",
             "reservation",
             "semantic_start",
             "presemantic_release",
@@ -420,6 +481,18 @@ class StartLedger:
             if not isinstance(record, dict) or record.get("event") not in known_events:
                 raise TeamConfigurationError("start ledger replay is invalid")
             event = record["event"]
+            if event == "initial_authorization":
+                if (
+                    self.requirement_id != _R2_3_003_REQUIREMENT_ID
+                    or index != 0
+                    or cap != _R2_3_003_INITIAL_START_CAP
+                    or record.get("additional_starts") != _R2_3_003_ADDITIONAL_STARTS
+                    or record.get("authorization_id") != _R2_3_003_INITIAL_AUTHORIZATION_ID
+                    or record.get("reference") != _R2_3_003_INITIAL_AUTHORIZATION_REFERENCE
+                ):
+                    raise TeamConfigurationError("start ledger initial authorization is invalid")
+                cap += _R2_3_003_ADDITIONAL_STARTS
+                continue
             if event == "reservation":
                 run_id = record.get("run_id")
                 baseline = record.get("baseline_hash")
@@ -619,6 +692,17 @@ class StartLedger:
         semantic_start_count = 0
         for record in records:
             event = record.get("event")
+            if event == "initial_authorization":
+                if (
+                    self.requirement_id != _R2_3_003_REQUIREMENT_ID
+                    or semantic_start_count != cap
+                    or record.get("additional_starts") != _R2_3_003_ADDITIONAL_STARTS
+                    or record.get("authorization_id") != _R2_3_003_INITIAL_AUTHORIZATION_ID
+                    or record.get("reference") != _R2_3_003_INITIAL_AUTHORIZATION_REFERENCE
+                ):
+                    raise TeamConfigurationError("budget authorization ledger is invalid")
+                cap += _R2_3_003_ADDITIONAL_STARTS
+                continue
             if event == "semantic_start":
                 semantic_start_count += 1
                 if semantic_start_count > cap:

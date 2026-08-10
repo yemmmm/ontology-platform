@@ -4045,7 +4045,10 @@ class RunnerAcceptanceCarrier:
         # ``acceptance_child_factory`` returns.  Add this Runner-private field only
         # for the formal scope; direct/non-formal fixtures preserve their exact
         # historical resource-spec shape and immediate pump startup.
-        formal_deferred_pump = self.task_id == "r2-3-005-formal-acceptance"
+        formal_deferred_pump = self.task_id in {
+            "r2-3-005-formal-acceptance",
+            "r2-3-003-existing-scope-incremental",
+        }
         if formal_deferred_pump:
             resource_spec["defer_output_pump"] = True
         # Publish the opaque handle before launching the process so an immediately

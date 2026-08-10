@@ -105,3 +105,10 @@ new capability calls, peer messages, and terminal reports and end the current tu
 the same thread only after an exact owner guidance or verified repair is delivered through
 Coordinator's `resume`; an uncertain write, dead process, or unsupported replacement requires
 rebind/abort rather than an invented verdict.
+
+## R2.3-003 question order
+
+For `r2-3-003-existing-scope-incremental`, evaluate exactly two fresh questions in order:
+`cq-001` base continuity, then `cq-002` no-score policy plus the concrete case. Both reports bind
+the same final model state and current retained scope. Do not use Start75 answers, verdicts, or
+Agent transcripts as acceptance evidence.

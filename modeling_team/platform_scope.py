@@ -52,6 +52,8 @@ class PlatformScope:
     mode: str | None = None
     owned: bool = False
     existing_context_before: dict[str, Any] | None = None
+    existing_handoff: dict[str, Any] | None = None
+    existing_strict: bool = False
     terminal_results: dict[str, dict[str, Any]] | None = None
     final_workspace_context: dict[str, Any] | None = None
     final_workspace_version: str | None = None
@@ -144,7 +146,8 @@ class PlatformScope:
         ):
             raise PlatformScopeError("Ontology does not belong to existing Project")
         self.project_id, self.ontology_id, self.owned = project, ontology, False
-        self.existing_context_before = self._empty_context()
+        self.existing_strict = isinstance(scope.get("handoff_path"), str)
+        self.existing_context_before = self._existing_context(strict=self.existing_strict)
 
     def _empty_context(self) -> dict[str, Any]:
         if not self.ontology_id:
@@ -172,6 +175,97 @@ class PlatformScope:
             "workspace_state": context["state"],
             "modeling_batch_count": len(items),
             "recent_session_count": len(active) + len(recent),
+        }
+
+    def _existing_context(self, *, strict: bool | None = None) -> dict[str, Any]:
+        """Read a retained scope while allowing completed history."""
+
+        if not self.ontology_id or not self.project_id:
+            raise PlatformScopeError("existing scope identity is unavailable")
+        context = self._ok("GET", f"/api/ontologies/{self.ontology_id}/workspace-context")
+        if not isinstance(context, dict) or context.get("state") != "ready":
+            raise PlatformScopeError("ontology workspace is not ready")
+        batches = self._ok("GET", f"/api/ontologies/{self.ontology_id}/modeling-batches")
+        items = batches.get("items", batches.get("batches", [])) if isinstance(batches, dict) else batches
+        if not isinstance(items, list):
+            raise PlatformScopeError("Modeling Batch history is invalid")
+        build = self._ok("GET", f"/api/projects/{self.project_id}/build-context")
+        agent_state = build.get("agent_state") if isinstance(build, dict) else None
+        if not isinstance(agent_state, dict):
+            raise PlatformScopeError("Build Context agent state is invalid")
+        active = agent_state.get("active_sessions", [])
+        recent = agent_state.get("recent_sessions", [])
+        if not isinstance(active, list) or not isinstance(recent, list):
+            raise PlatformScopeError("Build Context session state is invalid")
+        leases = agent_state.get("active_leases", agent_state.get("leases", []))
+        attempts = agent_state.get("in_flight_attempts", agent_state.get("inflight_attempts", []))
+        if not isinstance(leases, list) or not isinstance(attempts, list):
+            raise PlatformScopeError("Build Context Lease/Attempt state is invalid")
+        if active or leases or attempts:
+            raise PlatformScopeError("existing scope has active Session, Lease, or Attempt")
+        fence = agent_state.get("fence")
+        if isinstance(fence, dict) and fence.get("active") is True:
+            raise PlatformScopeError("existing scope has an active fence")
+        for summary in recent:
+            if not isinstance(summary, dict):
+                continue
+            session_id = summary.get("id", summary.get("session_id"))
+            if not isinstance(session_id, str) or not session_id:
+                continue
+            detail = self._ok("GET", f"/api/build-sessions/{session_id}")
+            if not isinstance(detail, dict):
+                raise PlatformScopeError("Build Session detail is invalid")
+            session = detail.get("session", detail)
+            if isinstance(session, dict) and session.get("project_id") not in {None, self.project_id}:
+                raise PlatformScopeError("Build Session Project ownership drifted")
+            batches_for_session = detail.get("modeling_batches", [])
+            if any(
+                isinstance(batch, dict)
+                and isinstance(batch.get("latest_attempt"), dict)
+                and batch["latest_attempt"].get("attempt_status") in {"applying", "recovering"}
+                for batch in batches_for_session if isinstance(batches_for_session, list)
+            ):
+                raise PlatformScopeError("existing scope has an in-flight Attempt")
+            leases_for_session = detail.get("leases", [])
+            if isinstance(leases_for_session, list) and any(
+                isinstance(lease, dict)
+                and lease.get("state") not in {"released", "expired", "cancelled"}
+                for lease in leases_for_session
+            ):
+                raise PlatformScopeError("existing scope has an active Lease")
+            session_status = str(session.get("status", "")).lower() if isinstance(session, dict) else ""
+            if session_status in {"active", "running", "in_progress", "applying", "recovering", "leased"}:
+                raise PlatformScopeError("existing scope has an in-flight Build Session")
+        workspace = context.get("workspace") if isinstance(context.get("workspace"), dict) else {}
+        version = workspace.get("workspace_version") or context.get("workspace_version") or context.get("version")
+        if version is None and isinstance(build, dict):
+            platform_state = build.get("platform_state")
+            ontologies = platform_state.get("ontologies", []) if isinstance(platform_state, dict) else []
+            for ontology in ontologies if isinstance(ontologies, list) else []:
+                if not isinstance(ontology, dict) or ontology.get("id") != self.ontology_id:
+                    continue
+                ontology_workspace = ontology.get("workspace")
+                if isinstance(ontology_workspace, dict):
+                    version = ontology_workspace.get("workspace_version")
+                break
+        strict = self.existing_strict if strict is None else strict
+        if strict and (not isinstance(version, str) or not version):
+            raise PlatformScopeError("workspace context has no version")
+        graph_set = context.get("default_graph_set", context.get("graph_set"))
+        graph_set_id = context.get("default_graph_set_id")
+        if graph_set_id is None and isinstance(graph_set, dict):
+            graph_set_id = graph_set.get("id")
+        if strict and graph_set_id is None:
+            raise PlatformScopeError("workspace context has no default Graph Set")
+        return {
+            "workspace_state": context["state"],
+            **({"workspace_version": version} if isinstance(version, str) and version else {}),
+            **({"graph_set_id": graph_set_id} if graph_set_id is not None else {}),
+            "modeling_batch_count": len(items),
+            "recent_session_count": len(recent),
+            "active_session_count": len(active),
+            "active_lease_count": len(leases),
+            "in_flight_attempt_count": len(attempts),
         }
 
     def _create_protocol_key(self) -> None:
@@ -227,7 +321,7 @@ class PlatformScope:
         if not self.owned and self.mode == "existing":
             evidence["existing_context_before"] = self.existing_context_before
             try:
-                evidence["existing_context_after"] = self._empty_context()
+                evidence["existing_context_after"] = self._existing_context(strict=self.existing_strict)
             except PlatformScopeError as exc:
                 evidence["existing_context_after_error"] = str(exc)
         if self.owned and self.project_id and self.admin_key:

@@ -1,0 +1,29 @@
+schema_version: 1
+manifest_id: r2-3-003-deepseek-v4-flash
+profile_id: r2-3-003-modeling-team
+task_id: r2-3-003-existing-scope-incremental
+packages:
+  coordinator:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max
+  modeling:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max
+  protocol:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max
+  acceptance:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max
+  source-examiner:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max
+  platform-examiner:
+    model: deepseek-v4-flash
+    model_provider: deepseek
+    model_reasoning_effort: max

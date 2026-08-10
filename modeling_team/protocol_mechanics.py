@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from collections.abc import Mapping
 from typing import Any
 
 try:
@@ -1163,7 +1164,250 @@ def build_candidate_conflict(
     }
 
 
-def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
+_EXISTING_BINDING_SCHEMA = "r2-3-003-existing-entity-binding/v1"
+_EXISTING_REF_FIELDS = {"semantic_id", "expected_class"}
+
+
+def _existing_ref(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping) or set(value) != _EXISTING_REF_FIELDS:
+        raise ProtocolRetrievalFallbackError(
+            "existing_entity_ref must contain only semantic_id and expected_class"
+        )
+    semantic_id = value.get("semantic_id")
+    expected_class = value.get("expected_class")
+    if not _is_nonempty_string(semantic_id) or not _is_nonempty_string(expected_class):
+        raise ProtocolRetrievalFallbackError("existing_entity_ref identity is invalid")
+    if "://" in semantic_id or "://" in expected_class:
+        raise ProtocolRetrievalFallbackError("existing_entity_ref must remain platform-neutral")
+    return {"semantic_id": semantic_id, "expected_class": expected_class}
+
+
+def _existing_refs(value: Any) -> list[dict[str, str]]:
+    found: list[dict[str, str]] = []
+    if isinstance(value, Mapping):
+        if "existing_entity_ref" in value:
+            ref_value = value["existing_entity_ref"]
+            # Item-kind form uses semantic directly; nested endpoint form uses
+            # {existing_entity_ref: {semantic_id, expected_class}}.
+            if isinstance(ref_value, Mapping):
+                found.append(_existing_ref(ref_value))
+            else:
+                found.append(_existing_ref(value))
+        elif set(value) == _EXISTING_REF_FIELDS:
+            # ``item_kind=existing_entity_ref`` semantic payload.
+            found.append(_existing_ref(value))
+        for child in value.values():
+            if child is not value:
+                found.extend(_existing_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_existing_refs(child))
+    return found
+
+
+def _read_model_entities(read_model: Any) -> list[Mapping[str, Any]]:
+    if isinstance(read_model, Mapping):
+        for key in ("entities", "items", "resources"):
+            value = read_model.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, Mapping)]
+        nested = read_model.get("data")
+        if nested is not read_model:
+            return _read_model_entities(nested)
+    if isinstance(read_model, list):
+        return [item for item in read_model if isinstance(item, Mapping)]
+    raise ProtocolRetrievalFallbackError("existing binding read model is invalid")
+
+
+def _row_semantic_id(row: Mapping[str, Any]) -> str | None:
+    for key in ("semantic_id", "entity_id", "id"):
+        value = row.get(key)
+        if _is_nonempty_string(value):
+            return value
+    return None
+
+
+def _row_class(row: Mapping[str, Any]) -> str | None:
+    for key in ("class", "class_id", "entity_class", "actual_class"):
+        value = row.get(key)
+        if _is_nonempty_string(value):
+            return value
+    return None
+
+
+def _row_iri(row: Mapping[str, Any]) -> str | None:
+    for key in ("entity_iri", "iri", "resource_iri"):
+        value = row.get(key)
+        if _is_nonempty_string(value):
+            return value
+    return None
+
+
+def _row_evidence(row: Mapping[str, Any]) -> Any:
+    for key in ("read_evidence", "evidence", "receipt", "source"):
+        if key in row and row[key] not in (None, "", [], {}):
+            return row[key]
+    return None
+
+
+def build_existing_entity_binding_receipt(
+    candidate: Any,
+    read_model: Any,
+    *,
+    project_id: str,
+    ontology_id: str,
+    workspace_version: str,
+) -> dict[str, Any]:
+    """Bind neutral existing refs to one ontology-scoped live read model."""
+
+    normalized = _validate_translate_candidate(candidate)
+    refs: dict[str, dict[str, str]] = {}
+    for ref in _existing_refs(normalized):
+        prior = refs.get(ref["semantic_id"])
+        if prior is not None and prior != ref:
+            raise ProtocolRetrievalFallbackError("existing_entity_ref expected Class drifts")
+        refs[ref["semantic_id"]] = ref
+    if not refs:
+        raise ProtocolRetrievalFallbackError("candidate has no existing_entity_ref")
+    for field, value in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        if not _is_nonempty_string(value) or "://" in value:
+            raise ProtocolRetrievalFallbackError(f"existing binding {field} is invalid")
+    rows = _read_model_entities(read_model)
+    indexed: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        semantic_id = _row_semantic_id(row)
+        if semantic_id is None:
+            continue
+        if semantic_id in indexed:
+            raise ProtocolRetrievalFallbackError("live read model contains duplicate semantic IDs")
+        indexed[semantic_id] = row
+    bindings: list[dict[str, Any]] = []
+    for semantic_id in sorted(refs):
+        ref = refs[semantic_id]
+        row = indexed.get(semantic_id)
+        if row is None:
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} is missing")
+        actual_class = _row_class(row)
+        entity_iri = _row_iri(row)
+        if actual_class != ref["expected_class"]:
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} Class mismatches")
+        if not isinstance(entity_iri, str) or "://" not in entity_iri:
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} IRI is invalid")
+        evidence_value = _row_evidence(row)
+        if evidence_value in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} read evidence is missing")
+        bindings.append(
+            {
+                "semantic_id": semantic_id,
+                "expected_class": ref["expected_class"],
+                "actual_class": actual_class,
+                "entity_iri": entity_iri,
+                "read_evidence": evidence_value,
+            }
+        )
+    receipt = {
+        "schema_version": _EXISTING_BINDING_SCHEMA,
+        "requirement_id": "R2.3-003",
+        "candidate_digest": _canonical_digest(normalized),
+        "project_id": project_id,
+        "ontology_id": ontology_id,
+        "workspace_version": workspace_version,
+        "bindings": bindings,
+    }
+    receipt["receipt_digest"] = _canonical_digest(receipt)
+    return receipt
+
+
+build_existing_binding_receipt = build_existing_entity_binding_receipt
+
+
+def validate_existing_entity_binding_receipt(
+    candidate: Any,
+    receipt: Any,
+    *,
+    project_id: str | None = None,
+    ontology_id: str | None = None,
+    workspace_version: str | None = None,
+) -> dict[str, Any]:
+    """Validate the frozen binding receipt before translation or mutation."""
+
+    normalized = _validate_translate_candidate(candidate)
+    if not isinstance(receipt, Mapping):
+        raise ProtocolRetrievalFallbackError("existing binding receipt is invalid")
+    expected_keys = {
+        "schema_version",
+        "requirement_id",
+        "candidate_digest",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "bindings",
+        "receipt_digest",
+    }
+    if set(receipt) != expected_keys or receipt.get("schema_version") != _EXISTING_BINDING_SCHEMA:
+        raise ProtocolRetrievalFallbackError("existing binding receipt fields drift")
+    if receipt.get("requirement_id") != "R2.3-003":
+        raise ProtocolRetrievalFallbackError("existing binding receipt requirement drifts")
+    if receipt.get("candidate_digest") != _canonical_digest(normalized):
+        raise ProtocolRetrievalFallbackError("existing binding receipt candidate drifted")
+    for field, expected in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        value = receipt.get(field)
+        if not _is_nonempty_string(value) or (expected is not None and value != expected):
+            raise ProtocolRetrievalFallbackError(f"existing binding receipt {field} drifts")
+    bindings = receipt.get("bindings")
+    if not isinstance(bindings, list) or not bindings:
+        raise ProtocolRetrievalFallbackError("existing binding receipt bindings are invalid")
+    refs = {ref["semantic_id"]: ref for ref in _existing_refs(normalized)}
+    seen: set[str] = set()
+    normalized_bindings: list[dict[str, Any]] = []
+    for item in bindings:
+        if not isinstance(item, Mapping):
+            raise ProtocolRetrievalFallbackError("existing binding receipt item is invalid")
+        required = {"semantic_id", "expected_class", "actual_class", "entity_iri", "read_evidence"}
+        if set(item) != required:
+            raise ProtocolRetrievalFallbackError("existing binding receipt item fields drift")
+        semantic_id = item.get("semantic_id")
+        if not _is_nonempty_string(semantic_id) or semantic_id in seen:
+            raise ProtocolRetrievalFallbackError("existing binding receipt has duplicate IDs")
+        ref = refs.get(semantic_id)
+        if ref is None or item.get("expected_class") != ref["expected_class"]:
+            raise ProtocolRetrievalFallbackError("existing binding receipt ref mismatch")
+        if item.get("actual_class") != item.get("expected_class"):
+            raise ProtocolRetrievalFallbackError("existing binding receipt Class mismatch")
+        if not _is_nonempty_string(item.get("entity_iri")) or "://" not in item["entity_iri"]:
+            raise ProtocolRetrievalFallbackError("existing binding receipt IRI is invalid")
+        if item.get("read_evidence") in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError("existing binding receipt evidence is missing")
+        seen.add(semantic_id)
+        normalized_bindings.append(dict(item))
+    if seen != set(refs):
+        raise ProtocolRetrievalFallbackError("existing binding receipt does not cover candidate refs")
+    if list(sorted(seen)) != [item["semantic_id"] for item in normalized_bindings]:
+        raise ProtocolRetrievalFallbackError("existing binding receipt ordering is not canonical")
+    body = dict(receipt)
+    supplied_digest = body.pop("receipt_digest")
+    if supplied_digest != _canonical_digest(body):
+        raise ProtocolRetrievalFallbackError("existing binding receipt digest is invalid")
+    return json.loads(json.dumps(dict(receipt), ensure_ascii=False))
+
+
+validate_existing_binding_receipt = validate_existing_entity_binding_receipt
+
+
+def translate_candidate_to_batches(
+    candidate: Any,
+    existing_binding_receipt: Any | None = None,
+    *,
+    requirement_id: str | None = None,
+) -> dict[str, Any]:
     """Deterministically translate one frozen candidate into a batch plan.
 
     This is the systemic R2.3-005 fix for Protocol translation variance: the
@@ -1186,6 +1430,30 @@ def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
     item that cannot be translated is omitted and recorded in ``conflicts``.
     """
     normalized = _validate_translate_candidate(candidate)
+    existing_refs = _existing_refs(normalized)
+    if existing_refs:
+        if requirement_id != "R2.3-003":
+            raise ProtocolRetrievalFallbackError(
+                "existing_entity_ref is only accepted by R2.3-003"
+            )
+        if existing_binding_receipt is None:
+            raise ProtocolRetrievalFallbackError("existing binding receipt is required")
+        validated_receipt = validate_existing_entity_binding_receipt(
+            normalized, existing_binding_receipt
+        )
+        existing_bindings = {
+            item["semantic_id"]: item["entity_iri"]
+            for item in validated_receipt["bindings"]
+        }
+    else:
+        if existing_binding_receipt is not None or requirement_id == "R2.3-003":
+            if existing_binding_receipt is not None:
+                raise ProtocolRetrievalFallbackError("existing binding receipt has no candidate refs")
+            # The requirement-specific path must not silently accept a create-only
+            # candidate: callers should make the scope mode explicit.
+            if requirement_id == "R2.3-003":
+                raise ProtocolRetrievalFallbackError("R2.3-003 candidate has no existing refs")
+        existing_bindings = {}
     revision = normalized["candidate_revision"]
     items = normalized["items"]
 
@@ -1215,11 +1483,20 @@ def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
         handler = _TRANSLATE_ITEM_HANDLERS.get(kind)
         if kind in {"consumer_query", "negative_probe"}:
             continue
+        if kind == "existing_entity_ref":
+            # A binding declaration is read-only metadata; it never becomes a
+            # create/update command.  Relations consume the frozen IRI below.
+            continue
         if handler is None:
             conflicts.append(_conflict(item_id, "unsupported_item_kind", kind))
             continue
         try:
-            command_kind, payload = handler(semantic, declared_entity_ids, declared_predicates)
+            if kind == "relation" and existing_bindings:
+                command_kind, payload = _translate_existing_relation(
+                    semantic, declared_entity_ids, declared_predicates, existing_bindings
+                )
+            else:
+                command_kind, payload = handler(semantic, declared_entity_ids, declared_predicates)
         except _TranslateConflict as exc:
             conflicts.append(_conflict(item_id, exc.code, exc.detail))
             continue
@@ -1247,7 +1524,7 @@ def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
             }
         )
 
-    return {
+    result = {
         "candidate_kind": normalized["candidate_kind"],
         "candidate_revision": revision,
         "semantic_digest": _canonical_digest(
@@ -1263,6 +1540,10 @@ def translate_candidate_to_batches(candidate: Any) -> dict[str, Any]:
         "batches": batches,
         "conflicts": conflicts,
     }
+    if existing_refs:
+        result["requirement_id"] = "R2.3-003"
+        result["existing_binding_receipt_digest"] = validated_receipt["receipt_digest"]
+    return result
 
 
 class _TranslateConflict(Exception):
@@ -1452,6 +1733,59 @@ def _translate_relation(
         "target_entity_iri": _platform_resource_iri("entity", obj),
     }
     return "create_relation", payload
+
+
+def _translate_existing_relation(
+    semantic: dict[str, Any],
+    entities: set[str],
+    predicates: dict[str, dict[str, Any]],
+    existing_bindings: Mapping[str, str],
+) -> tuple[str, dict[str, Any]]:
+    """Translate a relation while resolving only receipt-backed endpoints."""
+
+    def endpoint(value: Any, field: str) -> str:
+        if isinstance(value, Mapping) and set(value) == {"existing_entity_ref"}:
+            ref = _existing_ref(value["existing_entity_ref"])
+            try:
+                return existing_bindings[ref["semantic_id"]]
+            except KeyError as exc:
+                raise _TranslateConflict(
+                    f"unbound_existing_relation_{field}",
+                    f"existing entity '{ref['semantic_id']}' has no binding receipt",
+                ) from exc
+        if not _is_nonempty_string(value):
+            raise _TranslateConflict(f"missing_{field}", f"semantic.{field} is not bound")
+        if value in existing_bindings:
+            # A bare semantic ID is not a receipt-backed reference; requiring
+            # the explicit neutral wrapper prevents accidental IRI guessing.
+            raise _TranslateConflict(
+                f"unbound_existing_relation_{field}",
+                f"semantic.{field} must use existing_entity_ref",
+            )
+        if value not in entities:
+            raise _TranslateConflict(
+                f"unbound_relation_{field}", f"{field} '{value}' is not a declared entity"
+            )
+        return _platform_resource_iri("entity", value)
+
+    subject = endpoint(semantic.get("subject"), "subject")
+    target = endpoint(semantic.get("object"), "object")
+    predicate = _require_semantic_string(semantic, "predicate")
+    declared = predicates.get(predicate)
+    if declared is None:
+        raise _TranslateConflict(
+            "unbound_relation_predicate", f"predicate '{predicate}' is not declared"
+        )
+    if declared.get("predicate_kind") != "relation":
+        raise _TranslateConflict(
+            "relation_predicate_not_object_property",
+            f"predicate '{predicate}' is not a relation predicate",
+        )
+    return "create_relation", {
+        "source_entity_iri": subject,
+        "relation_type_iri": _platform_resource_iri("property", predicate),
+        "target_entity_iri": target,
+    }
 
 
 def _translate_shape(

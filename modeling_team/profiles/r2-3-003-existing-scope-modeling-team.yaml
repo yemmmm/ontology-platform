@@ -1,0 +1,29 @@
+schema_version: 1
+profile_id: r2-3-003-modeling-team
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+  - agent_id: acceptance
+    package: acceptance
+communication:
+  - from: coordinator
+    to: [modeling, protocol, acceptance]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+  - from: acceptance
+    to: [coordinator]
+parameters:
+  formal_contract: r2-3-003-existing-incremental
+  acceptance_standard: modeling_team/references/r2-3-003-acceptance-standard.json
+  scope_config: modeling_team/scopes/r2-3-003-existing.yaml
+  source_manifest: docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json
+  child_kinds: [source_examiner, platform_examiner]
+  generic_multi_agent: false
+  candidate_progress_timeout_seconds: 300

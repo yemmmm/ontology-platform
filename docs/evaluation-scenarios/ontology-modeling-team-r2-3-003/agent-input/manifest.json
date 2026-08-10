@@ -1,0 +1,38 @@
+{
+  "manifest_version": 1,
+  "requirement_id": "R2.3-003",
+  "source_bundle_kind": "existing-scope-increment",
+  "base_run_id": "r23005-real-20260810-deepseek-start75",
+  "base_source_files": [
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx",
+      "sha256": "92a97c639fb8d4782e95207cb84ede79b1739ff3abdb9bc1fe384f0741c2c96b"
+    },
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/exception-handling.md",
+      "sha256": "cc0c69ef7428bd63ed7432ee0a9cae6d9acbca8cb267528a23fbaf0602638d9f"
+    },
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/interface-notes.md",
+      "sha256": "9cc479c365404cf8230aeb87e609ce164fb2680a87a5c16f45476d8260870e37"
+    },
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/release-register.md",
+      "sha256": "f5386a00a2a048831ce524ef605aed14c1124a6ac74fb8dc99c5b0a0f777caae"
+    },
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/workflow-landscape.md",
+      "sha256": "9dde79c61d9849776c9140aa5c3be02c17aea7800efa56135fb8dfaa0be7011e"
+    }
+  ],
+  "incremental_source_files": [
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/sources/manual-review-publication-case.md",
+      "sha256": "9fbf5de6822472ba2feb5dc973e191071ba93f4cd3cca3b01cc2065b101a6de2"
+    },
+    {
+      "path": "docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/sources/scoring-and-publication-policy.md",
+      "sha256": "e58b71aff80fd30d5608e4b6e8a28c6a81c091719cf227b6d0637dc7cbaae1ca"
+    }
+  ]
+}

@@ -113,3 +113,11 @@ mutate, or republish either ticket while advancing, and never overlap two rounds
 After the final `cq-002` `PASS`, send no further `acceptance_start`; wait for the normal Acceptance
 terminal handoff and settlement. `FAIL` returns to the existing Modeling repair/revision path;
 `BLOCKED` waits for recovery or revision. Neither non-`PASS` verdict advances to the next CQ.
+
+## Formal R2.3-003 existing-scope acceptance
+
+When the task is `r2-3-003-existing-scope-incremental`, the scope is the retained Project/Ontology
+in the frozen handoff. Do not ask for, infer, or expose Start75 Agent conversation, old verdicts,
+platform IRIs, or prior candidate text. Use exactly `cq-001` then `cq-002`; the second question
+covers both the no-score policy and the concrete case. Existing history is a baseline, not a reason
+to start a replacement scope.

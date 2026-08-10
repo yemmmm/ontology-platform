@@ -91,10 +91,10 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-10 start73 lifecycle repair: formal Examiner output pumping is
     # deferred until Host resource registration and terminal report/failure
     # arbitration; nonformal/P2A request shapes remain unchanged.
-    "modeling_team/runner.py": "8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1",
-    "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
+    "modeling_team/runner.py": "125744d7e7027c4acf08f464e9b331e4f929adb56aba32ecce7630446983b365",
+    "modeling_team/protocol_mechanics.py": "3536ff6e09e6daba05b1af50ec91c836bdc8b5b996fdf52cc195842368a48ef1",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "65eb2adc49b93bbb093ca700409d858f6a7855a9e37cb02b2eb91442596081a3",
+    "modeling_team/runtimes/codex.py": "e732c426b93fb12c95daf620d9df848ea172d9db4d622e07717391a8a91a510b",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

@@ -1510,7 +1510,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("Examiner child kind is invalid")
         formal = bool(
             self._coordination_enabled
-            or spec.get("task_id") == "r2-3-005-formal-acceptance"
+            or spec.get("task_id") in {
+                "r2-3-005-formal-acceptance",
+                "r2-3-003-existing-scope-incremental",
+            }
         )
         child_package_id = f"{kind}-examiner"
         if formal:
@@ -1904,14 +1907,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     @staticmethod
     def _is_formal_acceptance_run(run: Any) -> bool:
+        if getattr(run, "formal_contract", None) is not None:
+            return True
         configuration = getattr(run, "configuration", None)
         task = getattr(configuration, "task", None)
         profile = getattr(configuration, "profile", None)
         return bool(
             getattr(task, "schema_version", 1) == 2
             and (
-                getattr(task, "task_id", None) == "r2-3-005-formal-acceptance"
-                or getattr(profile, "profile_id", None) == "r2-3-005-modeling-team"
+                getattr(task, "task_id", None)
+                in {
+                    "r2-3-005-formal-acceptance",
+                    "r2-3-003-existing-scope-incremental",
+                }
+                or getattr(profile, "profile_id", None)
+                in {"r2-3-005-modeling-team", "r2-3-003-modeling-team"}
             )
         )
 

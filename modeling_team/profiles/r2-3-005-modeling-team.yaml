@@ -20,6 +20,7 @@ communication:
   - from: acceptance
     to: [coordinator]
 parameters:
+  formal_contract: r2-3-005-formal-create
   acceptance_standard: modeling_team/references/r2-3-005-acceptance-standard.json
   child_kinds: [source_examiner, platform_examiner]
   generic_multi_agent: false

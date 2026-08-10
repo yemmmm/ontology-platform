@@ -29,6 +29,13 @@ _REQUIRED_ENV = {
     "SEMANTIC_READ_MODE": "canonical",
 }
 _DELIVERY_ADMIN_ENV = "ONTOLOGY_PLATFORM_ADMIN_API_KEY"
+R2_3_003_PROJECT_ID = "7fc146d8-c76f-417b-9314-854544f269fc"
+R2_3_003_ONTOLOGY_ID = "fd762f52-2f5e-4bc0-902a-5583135ab64d"
+R2_3_003_HANDOFF_RELATIVE = "modeling_team/scopes/r2-3-003-start75-handoff.json"
+_R2_3_003_SCOPE_KEYS = frozenset({"mode", "project_id", "ontology_id", "handoff_path"})
+_R2_3_003_HANDOFF_KEYS = frozenset(
+    {"run_id", "project_id", "ontology_id", "workspace_version", "scope_disposition"}
+)
 
 
 def normalize_formal_scope(value: Any) -> dict[str, str]:
@@ -48,6 +55,78 @@ def normalize_formal_scope(value: Any) -> dict[str, str]:
         names = ", ".join(sorted(str(item) for item in unexpected))
         raise TeamConfigurationError(f"R2.3-005 formal scope contains unsupported fields: {names}")
     return {"mode": "create"}
+
+
+def normalize_existing_scope(value: Any) -> dict[str, str]:
+    """Validate the frozen R2.3-003 Start75 scope identity.
+
+    This is intentionally separate from ``normalize_formal_scope`` so the
+    R2.3-005 create contract cannot be widened by passing IDs through a shared
+    generic scope parser.
+    """
+
+    if not isinstance(value, Mapping):
+        raise TeamConfigurationError("existing scope must be a YAML object")
+    if set(value) != _R2_3_003_SCOPE_KEYS:
+        raise TeamConfigurationError("R2.3-003 existing scope fields drift")
+    if value.get("mode") != "existing":
+        raise TeamConfigurationError("R2.3-003 scope requires mode=existing")
+    if value.get("project_id") != R2_3_003_PROJECT_ID:
+        raise TeamConfigurationError("R2.3-003 Project identity drifts")
+    if value.get("ontology_id") != R2_3_003_ONTOLOGY_ID:
+        raise TeamConfigurationError("R2.3-003 Ontology identity drifts")
+    handoff_path = value.get("handoff_path")
+    if handoff_path != R2_3_003_HANDOFF_RELATIVE:
+        raise TeamConfigurationError("R2.3-003 handoff path drifts")
+    return {
+        "mode": "existing",
+        "project_id": R2_3_003_PROJECT_ID,
+        "ontology_id": R2_3_003_ONTOLOGY_ID,
+        "handoff_path": R2_3_003_HANDOFF_RELATIVE,
+    }
+
+
+def normalize_scope_for_contract(value: Any, scope_mode: str) -> dict[str, str]:
+    if scope_mode == "create":
+        return normalize_formal_scope(value)
+    if scope_mode == "existing":
+        return normalize_existing_scope(value)
+    raise TeamConfigurationError("formal scope mode is unsupported")
+
+
+def load_existing_scope_handoff(scope: Mapping[str, str], *, repository_root: Path) -> dict[str, str]:
+    """Load the exact non-sensitive handoff and reject path/digest drift."""
+
+    normalized = normalize_existing_scope(scope)
+    path = repository_root / normalized["handoff_path"]
+    try:
+        resolved = path.resolve()
+        root = repository_root.resolve()
+        if root not in resolved.parents or path.is_symlink() or not path.is_file():
+            raise TeamConfigurationError("R2.3-003 handoff is unavailable")
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise TeamConfigurationError("R2.3-003 handoff is unreadable") from exc
+    if not isinstance(value, Mapping) or set(value) != _R2_3_003_HANDOFF_KEYS:
+        raise TeamConfigurationError("R2.3-003 handoff fields drift")
+    if (
+        value.get("project_id") != normalized["project_id"]
+        or value.get("ontology_id") != normalized["ontology_id"]
+        or value.get("scope_disposition") != "retained"
+    ):
+        raise TeamConfigurationError("R2.3-003 handoff scope binding drifts")
+    for field in ("run_id", "workspace_version"):
+        item = value.get(field)
+        if not isinstance(item, str) or not item.strip():
+            raise TeamConfigurationError("R2.3-003 handoff value is invalid")
+    version = str(value["workspace_version"])
+    if len(version) != 64:
+        raise TeamConfigurationError("R2.3-003 workspace version is invalid")
+    try:
+        int(version, 16)
+    except ValueError as exc:
+        raise TeamConfigurationError("R2.3-003 workspace version is invalid") from exc
+    return {field: str(value[field]) for field in _R2_3_003_HANDOFF_KEYS}
 
 
 def _run_checked(args: list[str], *, cwd: Path) -> str:
@@ -325,6 +404,22 @@ def _sanitize_evidence(value: Any) -> Any:
         "body_digest",
         "service",
         "process",
+        "project_id",
+        "ontology_id",
+        "run_id",
+        "workspace_version",
+        "graph_set_id",
+        "workspace_state",
+        "modeling_batch_count",
+        "recent_session_count",
+        "active_session_count",
+        "active_lease_count",
+        "in_flight_attempt_count",
+        "scope_disposition",
+        "handoff",
+        "live",
+        "ownership",
+        "default_graph_set",
     }
     if isinstance(value, Mapping):
         output: dict[str, Any] = {}
@@ -378,9 +473,203 @@ def run_prestart_preflight(
     }
 
 
+def _authenticated_json_get(base_url: str, admin_key: str, path: str) -> Any:
+    request = urllib.request.Request(
+        base_url.rstrip("/") + path,
+        method="GET",
+        headers={"Authorization": f"Bearer {admin_key}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if response.status != 200:
+                raise TeamConfigurationError("existing scope live read failed")
+            return json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read()
+        except OSError:
+            pass
+        raise TeamConfigurationError("existing scope live read failed") from exc
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise TeamConfigurationError("existing scope live read failed") from exc
+
+
+def _workspace_version(context: Mapping[str, Any]) -> str | None:
+    for key in ("workspace_version", "version", "workspaceVersion"):
+        value = context.get(key)
+        if isinstance(value, str) and value:
+            return value
+    nested = context.get("workspace")
+    if isinstance(nested, Mapping):
+        for key in ("workspace_version", "version"):
+            value = nested.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return None
+
+
+def canonical_existing_scope_preflight(
+    *,
+    scope: Mapping[str, str],
+    handoff: Mapping[str, str],
+    base_url: str,
+    admin_key: str,
+) -> dict[str, Any]:
+    """Read and validate the live retained Project/Ontology before side effects."""
+
+    normalized = normalize_existing_scope(scope)
+    project_id, ontology_id = normalized["project_id"], normalized["ontology_id"]
+    if not isinstance(admin_key, str) or not admin_key:
+        raise TeamConfigurationError("existing scope credential is unavailable")
+    project = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}")
+    if not isinstance(project, Mapping) or project.get("id", project_id) != project_id:
+        raise TeamConfigurationError("existing Project identity drifts")
+    listed = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}/ontologies")
+    if isinstance(listed, Mapping):
+        listed_items = listed.get("items", listed.get("ontologies", []))
+    else:
+        listed_items = listed
+    if not isinstance(listed_items, list) or not any(
+        isinstance(item, Mapping) and item.get("id") == ontology_id for item in listed_items
+    ):
+        raise TeamConfigurationError("existing Ontology ownership drifts")
+    context = _authenticated_json_get(
+        base_url, admin_key, f"/api/ontologies/{ontology_id}/workspace-context"
+    )
+    if not isinstance(context, Mapping) or context.get("state") != "ready":
+        raise TeamConfigurationError("existing ontology workspace is not ready")
+    graph_set = context.get("default_graph_set", context.get("graph_set"))
+    graph_set_id = context.get("default_graph_set_id")
+    if graph_set_id is None and isinstance(graph_set, Mapping):
+        graph_set_id = graph_set.get("id")
+    if graph_set_id is None:
+        raise TeamConfigurationError("existing default Graph Set is unavailable")
+
+    batches = _authenticated_json_get(
+        base_url, admin_key, f"/api/ontologies/{ontology_id}/modeling-batches"
+    )
+    batch_items = batches.get("items", batches.get("batches", [])) if isinstance(batches, Mapping) else batches
+    if not isinstance(batch_items, list):
+        raise TeamConfigurationError("existing Modeling Batch history is invalid")
+    build = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}/build-context")
+    live_version = _workspace_version(context)
+    if live_version is None and isinstance(build, Mapping):
+        platform_state = build.get("platform_state")
+        ontologies = platform_state.get("ontologies", []) if isinstance(platform_state, Mapping) else []
+        for ontology in ontologies if isinstance(ontologies, list) else []:
+            if not isinstance(ontology, Mapping) or ontology.get("id") != ontology_id:
+                continue
+            workspace = ontology.get("workspace")
+            if isinstance(workspace, Mapping):
+                live_version = workspace.get("workspace_version")
+            break
+    if live_version != handoff.get("workspace_version"):
+        raise TeamConfigurationError("existing workspace version drifts from handoff")
+    agent_state = build.get("agent_state") if isinstance(build, Mapping) else None
+    if not isinstance(agent_state, Mapping):
+        raise TeamConfigurationError("existing Build Context agent state is invalid")
+    active_sessions = agent_state.get("active_sessions", [])
+    recent_sessions = agent_state.get("recent_sessions", [])
+    active_leases = agent_state.get("active_leases", agent_state.get("leases", []))
+    in_flight = agent_state.get("in_flight_attempts", agent_state.get("inflight_attempts", []))
+    if not isinstance(active_sessions, list) or not isinstance(recent_sessions, list):
+        raise TeamConfigurationError("existing Build Session state is invalid")
+    if not isinstance(active_leases, list) or not isinstance(in_flight, list):
+        raise TeamConfigurationError("existing Lease/Attempt state is invalid")
+    if active_sessions or active_leases or in_flight:
+        raise TeamConfigurationError("existing scope has active Session, Lease, or Attempt")
+    fence = agent_state.get("fence")
+    if isinstance(fence, Mapping) and fence.get("active") is True:
+        raise TeamConfigurationError("existing scope has an active fence")
+    for session in recent_sessions:
+        if not isinstance(session, Mapping):
+            continue
+        session_id = session.get("id", session.get("session_id"))
+        if not isinstance(session_id, str) or not session_id:
+            continue
+        details = _authenticated_json_get(base_url, admin_key, f"/api/build-sessions/{session_id}")
+        if not isinstance(details, Mapping):
+            raise TeamConfigurationError("existing Build Session detail is invalid")
+        leases = details.get("leases", [])
+        if isinstance(leases, list) and any(
+            isinstance(lease, Mapping) and lease.get("state") not in {"released", "expired", "cancelled"}
+            for lease in leases
+        ):
+            raise TeamConfigurationError("existing scope has an active Lease")
+        status = str(details.get("status", details.get("state", ""))).lower()
+        if status in {"active", "running", "in_progress", "applying", "recovering", "leased"}:
+            raise TeamConfigurationError("existing scope has an in-flight Build Session")
+    return {
+        "project_id": project_id,
+        "ontology_id": ontology_id,
+        "workspace_state": context.get("state"),
+        "workspace_version": live_version,
+        "graph_set_id": str(graph_set_id),
+        "modeling_batch_count": len(batch_items),
+        "recent_session_count": len(recent_sessions),
+        "active_session_count": len(active_sessions),
+        "active_lease_count": len(active_leases),
+        "in_flight_attempt_count": len(in_flight),
+        "scope_disposition": "retained",
+    }
+
+
+def run_existing_scope_preflight(
+    *,
+    repository_root: Path,
+    scope: Mapping[str, str],
+    base_url: str = "http://127.0.0.1:8001",
+    admin_key: str | None = None,
+    probe: Callable[..., Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run clean-checkout, exact handoff, and live retained-scope checks."""
+
+    checkout = capture_clean_checkout(repository_root)
+    normalized = normalize_existing_scope(scope)
+    handoff = load_existing_scope_handoff(normalized, repository_root=repository_root)
+    if not isinstance(admin_key, str) or not admin_key:
+        raise TeamConfigurationError("existing scope credential is unavailable")
+    if probe is None:
+        live = canonical_existing_scope_preflight(
+            scope=normalized, handoff=handoff, base_url=base_url, admin_key=admin_key
+        )
+    else:
+        try:
+            live = probe(
+                scope=normalized,
+                handoff=handoff,
+                repository_root=repository_root,
+                base_url=base_url,
+                admin_key=admin_key,
+            )
+        except TypeError:
+            live = probe()
+        if not isinstance(live, Mapping):
+            raise TeamConfigurationError("injected existing preflight must return an object")
+        live = dict(live)
+        if live.get("project_id", normalized["project_id"]) != normalized["project_id"]:
+            raise TeamConfigurationError("injected existing Project identity drifts")
+        if live.get("ontology_id", normalized["ontology_id"]) != normalized["ontology_id"]:
+            raise TeamConfigurationError("injected existing Ontology identity drifts")
+        live_version = live.get("workspace_version")
+        if live_version is not None and live_version != handoff["workspace_version"]:
+            raise TeamConfigurationError("injected existing workspace version drifts")
+    return {
+        "checkout": _sanitize_evidence(checkout),
+        "scope": _sanitize_evidence(dict(normalized)),
+        "handoff": _sanitize_evidence(dict(handoff)),
+        "live": _sanitize_evidence(dict(live)),
+    }
+
+
 __all__ = [
     "capture_clean_checkout",
     "canonical_platform_preflight",
+    "canonical_existing_scope_preflight",
+    "load_existing_scope_handoff",
     "normalize_formal_scope",
+    "normalize_existing_scope",
+    "normalize_scope_for_contract",
+    "run_existing_scope_preflight",
     "run_prestart_preflight",
 ]

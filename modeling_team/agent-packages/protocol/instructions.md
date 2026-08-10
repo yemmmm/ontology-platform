@@ -509,3 +509,12 @@ this bound Modeling notice succeed may you send `silent_for_acceptance` to Coord
 this strict order: handoff to Coordinator, bound gate-complete notice to Modeling, then
 `silent_for_acceptance`. Never send the notice or the silent signal more than once for the current
 candidate.
+
+## R2.3-003 existing bindings
+
+For `r2-3-003-existing-scope-incremental`, read the live ontology read model before translation and
+build a binding receipt for every `existing_entity_ref`. The receipt binds candidate digest,
+Project/Ontology, workspace version, semantic ID, actual IRI/Class, and read evidence. Missing,
+duplicate, or Class-mismatched refs fail closed before mutation. Existing refs never become
+create/update commands; only new relations may consume receipt IRIs. The R2.3-005 create-only
+translator path remains byte-compatible and rejects existing binding input.

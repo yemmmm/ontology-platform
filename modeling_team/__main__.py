@@ -11,6 +11,7 @@ from pathlib import Path
 import yaml
 
 from .contracts import TeamConfigurationError, load_formal_team_configuration, repository_root
+from .formal_runs import formal_run_contract_for, load_formal_run_configuration
 from .handoff import publish_offline_scope_handoff
 from .monitor_handoff import (
     HANDOFF_CONTRACT_RELATIVE_PATH,
@@ -22,7 +23,7 @@ from .monitor_handoff import (
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .platform_scope import PlatformScope
-from .preflight import normalize_formal_scope
+from .preflight import normalize_scope_for_contract
 from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
@@ -359,6 +360,11 @@ def main() -> int:
     budget.add_argument("--additional-starts", type=int, required=True)
     budget.add_argument("--authorization-id", required=True)
     budget.add_argument("--reference", required=True)
+    initial = subparsers.add_parser("authorize-initial")
+    initial.add_argument("--requirement-id", default="R2.3-003")
+    initial.add_argument("--additional-starts", type=int, default=4)
+    initial.add_argument("--authorization-id", default="user-20260811-r23003-start1-4")
+    initial.add_argument("--reference", default="user-20260811-r23003-start1-4")
     baseline = subparsers.add_parser("baseline")
     baseline.add_argument("--run-id", required=True)
     baseline.add_argument("--profile", required=True, type=Path)
@@ -415,6 +421,17 @@ def main() -> int:
             print(f"budget authorization failed: {exc}", file=sys.stderr)
             return 2
         return 0
+    if args.command == "authorize-initial":
+        try:
+            StartLedger(
+                root / "workspaces" / "modeling-runs", requirement_id=args.requirement_id
+            ).initial_authorization(
+                args.additional_starts, args.authorization_id, args.reference
+            )
+        except TeamConfigurationError as exc:
+            print(f"initial authorization failed: {exc}", file=sys.stderr)
+            return 2
+        return 0
     if args.command == "baseline":
         try:
             manifest, baseline_hash = TeamRunner.preview_baseline(
@@ -447,6 +464,20 @@ def main() -> int:
         return 0
     try:
         configuration = load_formal_team_configuration(args.profile, args.task, root=root)
+        formal_contract = formal_run_contract_for(configuration)
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            configuration, formal_contract = load_formal_run_configuration(
+                args.profile, args.task, root=root
+            )
+        elif formal_contract is None and (
+            getattr(getattr(configuration, "profile", None), "profile_id", None) in {
+                "r2-3-003-modeling-team", "r2-3-005-modeling-team"
+            }
+            or getattr(getattr(configuration, "task", None), "task_id", None) in {
+                "r2-3-003-existing-scope-incremental", "r2-3-005-formal-acceptance"
+            }
+        ):
+            raise TeamConfigurationError("unknown or cross-wired formal run contract")
         task_overlay = (
             load_task_input_overlay(
                 args.task_overlay,
@@ -491,20 +522,12 @@ def main() -> int:
         if not isinstance(scope, dict):
             raise TeamConfigurationError("scope must be a YAML object")
         schema_version = getattr(getattr(configuration, "task", None), "schema_version", 1)
-        formal_acceptance = (
-            schema_version == 2
-            and (
-                getattr(getattr(configuration, "task", None), "task_id", None)
-                == "r2-3-005-formal-acceptance"
-                or getattr(getattr(configuration, "profile", None), "profile_id", None)
-                == "r2-3-005-modeling-team"
-            )
-        )
-        if formal_acceptance:
+        formal_acceptance = formal_contract is not None
+        if formal_contract is not None:
             # Reject existing identifiers before constructing the scope owner or
             # touching the bootstrap credential path.  TeamRunner repeats this
             # check so non-CLI callers cannot bypass the boundary.
-            scope = normalize_formal_scope(scope)
+            scope = normalize_scope_for_contract(scope, formal_contract.scope_mode)
             scope_factory = None
         else:
             create, revoke = _bootstrap_helpers(root)
@@ -517,6 +540,7 @@ def main() -> int:
             scope_factory=scope_factory,
             freeze_started_at=args.freeze_started_at,
             canonical_base_url=args.base_url,
+            canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),
         )
         runner.prepare(
             run_id=args.run_id,

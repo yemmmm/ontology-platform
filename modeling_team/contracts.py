@@ -57,7 +57,9 @@ SAFE_PROTOCOL_TOOLS = frozenset(
     }
 )
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
-_FORMAL_PROFILE_ID = "r2-3-005-modeling-team"
+_FORMAL_PROFILE_IDS = frozenset(
+    {"r2-3-005-modeling-team", "r2-3-003-modeling-team"}
+)
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
 
@@ -420,7 +422,7 @@ def load_profile(
     if not isinstance(data["parameters"], dict):
         raise TeamConfigurationError("parameters must be an object")
     if _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER in data["parameters"]:
-        if profile_id != _FORMAL_PROFILE_ID:
+        if profile_id not in _FORMAL_PROFILE_IDS:
             raise TeamConfigurationError(
                 "candidate progress timeout is restricted to the formal Profile"
             )
