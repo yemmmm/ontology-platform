@@ -1,29 +1,29 @@
 schema_version: 1
-manifest_id: r2-3-005-luna-max
+manifest_id: r2-3-005-deepseek-v4-flash
 profile_id: r2-3-005-modeling-team
 task_id: r2-3-005-formal-acceptance
 packages:
   coordinator:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max
   modeling:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max
   protocol:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max
   acceptance:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max
   source-examiner:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max
   platform-examiner:
-    model: gpt-5.6-luna
-    model_provider: openai
+    model: deepseek-v4-flash
+    model_provider: deepseek
     model_reasoning_effort: max

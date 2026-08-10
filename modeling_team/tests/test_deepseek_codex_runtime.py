@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,7 +10,13 @@ import pytest
 
 from modeling_team.acceptance_runtime import PLATFORM_PROXY_READ_TOOLS
 from modeling_team.contracts import _load_package, repository_root
-from modeling_team.model_manifest import load_formal_model_manifest
+from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
+from modeling_team.deepseek_provider_proxy import preflight_deepseek_credential
+from modeling_team.model_manifest import (
+    FORMAL_MODEL_PACKAGE_IDS,
+    FORMAL_MODEL_TUPLE,
+    load_formal_model_manifest,
+)
 from modeling_team.runtimes.codex import (
     CodexRuntimeAdapter,
     CodexRuntimeError,
@@ -73,24 +80,27 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
     )
     adapter._coordination_enabled = True
     adapter._formal_model_manifest = load_formal_model_manifest(repo)
+    proxy = DeepSeekProviderProxy(b"formal-secret")
+    proxy.start()
+    adapter._formal_provider_proxy = proxy
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     for role in ("coordinator", "modeling", "protocol", "acceptance"):
         agent = _agent(tmp_path, role)
         adapter._write_config(run, agent)
         config = (agent.home / "config.toml").read_text(encoding="utf-8")
-        assert 'model = "gpt-5.6-luna"' in config
-        assert 'model_provider = "openai"' in config
+        assert 'model = "deepseek-v4-flash"' in config
+        assert 'model_provider = "deepseek"' in config
         assert 'model_reasoning_effort = "max"' in config
-        assert 'model_provider = "deepseek"' not in config
-        assert "DEEPSEEK_API_KEY" not in config
+        assert "base_url = \"http://127.0.0.1:" in config
+        assert 'env_key = "DEEPSEEK_API_KEY"' not in config
         assert "process-secret" not in config
         adapter._start_process(agent)
         env = calls[-1][1]["env"]
         assert "DEEPSEEK_API_KEY" not in env
-        assert (agent.home / "auth.json").stat().st_mode & 0o777 == 0o600
-        adapter._unlink_private_auth(agent.home)
         assert not (agent.home / "auth.json").exists()
+        assert agent.auth_path is None
+        assert agent.credential_mode == "provider_proxy"
 
     assert len(calls) == 4
     for command, kwargs in calls:
@@ -99,6 +109,180 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
         assert kwargs["env"]["TERM"] == "xterm-256color"
         assert kwargs["env"]["LANG"] == "C.UTF-8"
         assert kwargs["env"]["LC_ALL"] == "C.UTF-8"
+    adapter.stop()
+    proxy.stop()
+
+
+def test_formal_config_is_parseable_with_one_model_binding(tmp_path: Path) -> None:
+    repo = repository_root()
+    run = _formal_run(tmp_path / "run")
+    adapter = CodexRuntimeAdapter(repository_root=repo, use_bwrap=False)
+    adapter._coordination_enabled = True
+    adapter._formal_model_manifest = load_formal_model_manifest(repo)
+    proxy = DeepSeekProviderProxy(b"formal-secret")
+    proxy.start()
+    adapter._formal_provider_proxy = proxy
+    agent = _agent(tmp_path, "coordinator")
+    try:
+        adapter._write_config(run, agent)
+        parsed = tomllib.loads((agent.home / "config.toml").read_text(encoding="utf-8"))
+    finally:
+        adapter.stop()
+        proxy.stop()
+
+    assert parsed["model"] == "deepseek-v4-flash"
+    assert parsed["model_provider"] == "deepseek"
+    assert parsed["model_reasoning_effort"] == "max"
+    assert parsed["model_providers"]["deepseek"]["wire_api"] == "responses"
+
+
+def test_formal_startup_exception_unwinds_and_wipes_provider_proxy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = tmp_path / "deepseek.env"
+    credential.write_text("DEEPSEEK_API_KEY=startup-sentinel\n", encoding="utf-8")
+    credential.chmod(0o600)
+    run = _formal_run(tmp_path / "run")
+    run.model_manifest = load_formal_model_manifest(repository_root())
+    run.deepseek_credential_binding = preflight_deepseek_credential(credential)
+    created: list[DeepSeekProviderProxy] = []
+
+    class _SpyProxy(DeepSeekProviderProxy):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            created.append(self)
+
+    monkeypatch.setattr(
+        "modeling_team.runtimes.codex.DeepSeekProviderProxy", _SpyProxy
+    )
+    adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+    monkeypatch.setattr(
+        adapter,
+        "_stage_skills",
+        lambda _agent: (_ for _ in ()).throw(CodexRuntimeError("startup seam")),
+    )
+
+    with pytest.raises(CodexRuntimeError, match="startup seam"):
+        adapter.start_roster(run, [_agent(run.root, "coordinator")])
+
+    assert len(created) == 1
+    assert created[0].secret_snapshot() == b""
+    assert created[0].snapshot()["listening"] is False
+    assert adapter._formal_provider_proxy is None
+    assert adapter._secret_audit_values == []
+
+
+@pytest.mark.parametrize("formal", [True, False])
+def test_thread_start_model_binding_is_formal_only(
+    monkeypatch, tmp_path: Path, formal: bool
+) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=repository_root())
+    adapter._coordination_enabled = formal
+    if formal:
+        adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+    starts: dict[str, dict[str, object]] = {}
+
+    for role in ("coordinator", "modeling", "protocol", "acceptance"):
+        agent = _agent(tmp_path / ("formal" if formal else "legacy"), role)
+
+        def rpc(_agent: _Agent, method: str, params: dict[str, object]) -> dict[str, object]:
+            if method == "skills/list":
+                return {
+                    "data": [
+                        {
+                            "skills": [
+                                {
+                                    "name": path.parent.name,
+                                    "path": f"/skills/{path.parent.name}/SKILL.md",
+                                    "enabled": True,
+                                }
+                                for path in agent.package.required_skills
+                            ]
+                        }
+                    ]
+                }
+            if method == "thread/start":
+                starts[role] = dict(params)
+                return {"thread": {"id": f"thread-{role}"}}
+            return {}
+
+        adapter._rpc = rpc  # type: ignore[method-assign]
+        adapter._require_expected_mcp_servers = lambda _agent: None  # type: ignore[method-assign]
+        adapter._initialize(agent)
+
+    assert set(starts) == {"coordinator", "modeling", "protocol", "acceptance"}
+    if formal:
+        assert {params["model"] for params in starts.values()} == {"deepseek-v4-flash"}
+    else:
+        assert all("model" not in params for params in starts.values())
+
+
+def test_formal_model_binding_covers_all_six_packages() -> None:
+    adapter = CodexRuntimeAdapter(repository_root=repository_root())
+    adapter._coordination_enabled = True
+    adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+
+    assert {
+        package_id: adapter._validated_formal_model_override(package_id)
+        for package_id in FORMAL_MODEL_PACKAGE_IDS
+    } == {package_id: FORMAL_MODEL_TUPLE for package_id in FORMAL_MODEL_PACKAGE_IDS}
+
+
+def test_formal_model_binding_fails_closed_before_process_on_tuple_or_package_drift(
+    tmp_path: Path,
+) -> None:
+    class DriftedManifest:
+        def override_for(self, package_id: str) -> tuple[str, str, str]:
+            if package_id == "coordinator":
+                return ("gpt-5.5", "openai", "max")
+            raise KeyError(package_id)
+
+    calls: list[object] = []
+    adapter = CodexRuntimeAdapter(
+        repository_root=repository_root(),
+        use_bwrap=False,
+        process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    adapter._coordination_enabled = True
+    adapter._formal_model_manifest = DriftedManifest()  # type: ignore[assignment]
+    agent = _agent(tmp_path, "coordinator")
+
+    with pytest.raises(CodexRuntimeError, match="tuple drifted"):
+        adapter._start_process(agent)
+    assert calls == []
+
+    with pytest.raises(CodexRuntimeError, match="package binding"):
+        adapter._validated_formal_model_override("platform-examiner")
+    with pytest.raises(CodexRuntimeError, match="package binding"):
+        adapter._validated_formal_model_override("unknown-package")
+
+
+def test_formal_start_roster_ignores_ambient_deepseek_and_llm_sentinels(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = tmp_path / "formal-deepseek.env"
+    credential.write_text("DEEPSEEK_API_KEY=file-only-sentinel\n", encoding="utf-8")
+    credential.chmod(0o600)
+    binding = preflight_deepseek_credential(credential)
+    run = _formal_run(tmp_path / "run")
+    run.model_manifest = load_formal_model_manifest(repository_root())
+    run.deepseek_credential_binding = binding
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ambient-deepseek-sentinel")
+    monkeypatch.setenv("LLM_API_KEY", "ambient-llm-sentinel")
+    adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_deepseek_api_key",
+        lambda: (_ for _ in ()).throw(AssertionError("formal runtime resolved ambient key")),
+    )
+    assert adapter.start_roster(run, []) == []
+    assert all(
+        sentinel.encode() not in adapter._secret_audit_values
+        for sentinel in ("ambient-deepseek-sentinel", "ambient-llm-sentinel")
+    )
+    assert adapter._formal_provider_proxy is not None
+    assert adapter._formal_provider_proxy.base_url.startswith("http://127.0.0.1:")
+    adapter.stop()
 
 
 @pytest.mark.parametrize("kind", ["source", "platform"])
@@ -122,10 +306,15 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
     )
     adapter._coordination_enabled = True
     adapter._formal_model_manifest = load_formal_model_manifest(repo)
+    proxy = DeepSeekProviderProxy(b"formal-secret")
+    proxy.start()
+    adapter._formal_provider_proxy = proxy
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
+    thread_starts: list[dict[str, object]] = []
 
     def rpc(_agent: _Agent, method: str, _params: dict[str, object]) -> dict[str, object]:
         if method == "thread/start":
+            thread_starts.append(dict(_params))
             return {"thread": {"id": f"{kind}-thread"}}
         if method == "turn/start":
             return {"turn": {"id": f"{kind}-turn"}}
@@ -179,20 +368,28 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
 
     resource = adapter.acceptance_child_factory(spec)
     config = (private_root / "home" / "config.toml").read_text(encoding="utf-8")
-    assert 'model = "gpt-5.6-luna"' in config
-    assert 'model_provider = "openai"' in config
+    assert 'model = "deepseek-v4-flash"' in config
+    assert 'model_provider = "deepseek"' in config
     assert 'model_reasoning_effort = "max"' in config
-    assert "deepseek" not in config.lower()
-    assert "DEEPSEEK_API_KEY" not in config
+    assert "base_url = \"http://127.0.0.1:" in config
+    assert 'env_key = "DEEPSEEK_API_KEY"' not in config
     assert "child-secret" not in config
     command, kwargs = calls[0]
     assert "child-secret" not in " ".join(command)
     assert "DEEPSEEK_API_KEY" not in kwargs["env"]
-    # Auth remains through initialization/MCP discovery; the real first-turn
-    # barrier unlinks it after the synchronous turn/start response.
-    assert (private_root / "home" / "auth.json").exists()
-    adapter._unlink_private_auth(private_root / "home")
+    # Formal first-turn barrier is a provider-proxy readiness transition; no
+    # copied auth file exists and the ambient sentinel is not inspected.
+    assert not (private_root / "home" / "auth.json").exists()
+    assert len(thread_starts) == 1
+    assert thread_starts[0]["model"] == "deepseek-v4-flash"
+    assert "model_provider" not in thread_starts[0]
+    assert "model_reasoning_effort" not in thread_starts[0]
+    assert resource._child_agent is not None
+    assert resource._child_agent.credential_mode == "provider_proxy"
+    adapter._unlink_auth_barrier(resource._child_agent)
+    assert resource._child_agent.provider_proxy_ready_monotonic is not None
     resource.destroy()
+    proxy.stop()
 
 
 def test_examiner_bwrap_inherits_minimal_parent_env_without_clearenv(monkeypatch, tmp_path: Path) -> None:

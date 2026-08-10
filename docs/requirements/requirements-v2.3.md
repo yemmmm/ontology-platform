@@ -17,8 +17,12 @@
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
 - 当前下一目标：提交已通过确定性回归的 formal-only Luna-max manifest、first-turn auth barrier、凭据
   审计、opaque MCP tool-key 兼容与 typed provider/RPC failure liveness 修复；start72 DeepSeek key 已由
-  用户确认撤销，但 Round 19 已证明当前 Luna 空业务 turn 仍以类型化 inactivity failure 结束；在获得
-  matching terminal 前仍不得启动新的语义建模，也不得把该 Runtime 失败计入已授权的语义 start。
+  用户确认撤销，但 Round 19 已证明当前 Luna 空业务 turn 仍以类型化 inactivity failure 结束。后续
+  诊断确认普通 `codex exec` 在 Luna `medium`/`max` 均可完成，而隔离 Team home 没有模型目录缓存、
+  `thread/start` 又未显式传入冻结 model；start42 留存 Runtime 同时存在模型目录刷新与 child-process
+  timeout 证据。下一窄修须让 formal 持久角色和 Examiner 的 `thread/start` 显式携带 manifest 中的
+  `gpt-5.6-luna`，不得复制可变宿主模型缓存或改变 nonformal 路径。在修复后的空业务 app-server
+  获得 matching terminal 前仍不得启动新的语义建模，也不得把 Runtime 诊断计入已授权语义 start。
   用户已额外授权三次 start75–77，但该授权须在当前 start72–74 tranche 消耗并终态后通过严格账本登记，
   不能提前追加或视作已消费。
 - 关联交付记录：
@@ -3116,3 +3120,44 @@ matching `turn/completed|turn/finished`，故 provider gate 仍为 `runtime/infr
 2026-08-10 又明确追加三次授权，冻结标识为 `user-20260810-r23005-start75-77`；严格账本要求当前 tranche
 在 start74 终态后才登记下一笔 authorization，因此当前只记录用户决定，不提前修改账本。概念上未消费
 授权共 5 次（start73–77），但在 key rotation 与 Luna matching-terminal gate 完成前全部暂停。
+
+## 2026-08-10 R2.3-005 formal Team 回退 DeepSeek v4 Flash
+
+用户确认放弃当前 Luna provider gate，正式 R2.3-005 Team 的四个持久角色与 Source/Platform Examiner
+统一回退到精确 tuple `deepseek-v4-flash/deepseek/max`。新的 formal-only manifest 取代 Luna manifest；
+共享 package YAML、非正式运行与 R2.3-002 行为保持不变。Luna Rounds 14–22 的 deterministic 成果与失败/
+BLOCKED 证据继续保留，但不再是后续 semantic start 的前置条件。
+
+回退不得恢复 start72 的 provider key 环境注入。真实 key 只能存在于仓库外固定路径
+`~/.config/ontology-platform/modeling-team-deepseek.env` 的 owner-owned、regular、non-symlink、mode `0600`
+本机凭据文件以及 Runner-owned provider proxy 的内存中。`TeamRunner.prepare`
+必须在平台、账本、run root、transport、capability 或 Agent 进程副作用前校验凭据文件元数据与 exact
+assignment 形状，并冻结仅含 canonical path、device、inode、size 与 mtime-ns 的内存 binding；Runtime
+启动前必须通过 `O_NOFOLLOW` 重新打开、fstat exact binding 后才读取 key，防止 preflight/start TOCTOU。
+不得把 key 或 key digest 写入 baseline、manifest 或 evidence。正式 Codex/App Server 与 Examiner
+进程的 env、argv、TOML、auth、shell snapshot、session JSONL、SQLite/WAL/SHM、stderr 和 Runner evidence
+均不得包含 key bytes。正式路径必须忽略 ambient `DEEPSEEK_API_KEY`/`LLM_API_KEY`，不得把 Host env
+sentinel 读入 Adapter memory；只有固定文件可以为正式 proxy 提供 key。非正式/R2.3-002 旧 provider
+解析兼容性不受此限制。
+
+Runner 为每个正式 Team run 启动一个 loopback-only、临时端口、生命周期受控的 DeepSeek provider
+proxy。正式 Codex config 只获得 proxy base URL、model/provider/reasoning 和无 secret 的 provider 定义；
+不得配置 `env_key`、静态 bearer token 或 key-bearing command。Proxy 只允许冻结的 Responses API 方法/
+路径与有界请求体，移除任意来宾 Authorization 后注入 Host key，流式转发响应，且不记录 header/body/
+provider free text。启动失败、非 allowlist 请求、上游连接失败或 proxy 提前终止均归类为安全的 typed
+`runtime/infrastructure` failure。正式 DeepSeek 仍必须使用现有首轮 notification buffer/ServerRequest
+防死锁路径，但 credential transition 为无文件的 `provider_proxy_ready`，不得要求或模拟 `auth.json`。
+stop 必须先停止所有 Agent/Examiner，再关闭 proxy 网络入口；在 key buffer 仍可用于内存比较时扫描全部
+Runtime 产物。持久角色与 Examiner 的 stderr 必须由 formal-only 有界 drain 持续消费并执行跨 chunk
+sentinel 比较，既避免 pipe backpressure，也不得持久化 stderr 原文或 digest；命中只记录安全计数并令
+credential cleanup 失败。审计 evidence 只记录计数/布尔结果而不记录 key digest，最后覆盖并释放内存 key。
+
+完成门要求六 package manifest/preflight、formal/non-formal request shape、proxy allowlist/streaming/
+lifecycle、secret sentinel 全类扫描、failure/cleanup 和完整回归独立 PASS。随后只允许一次无业务 source、
+无 platform/Runner reservation/StartLedger mutation 的 formal Coordinator 空任务 smoke；只有 matching
+terminal 且 zero-secret/zero-residue 才重新开放 start73。不得把离线或 mock-only PASS 当成 provider PASS。
+
+实施与 Independent Round 25 已满足上述 Runtime/provider 完成门：完整 deterministic 回归、服务健康、
+proxy/auth/streaming/cleanup/secret gate 均通过，唯一真实空任务以精确 `deepseek-v4-flash` 收到 matching
+`turn/completed`，且 key 未进入任何 Runtime 产物。该结果只重新开放 start73，不代表任何业务模型、CQ、
+Acceptance 或 settlement 已通过。

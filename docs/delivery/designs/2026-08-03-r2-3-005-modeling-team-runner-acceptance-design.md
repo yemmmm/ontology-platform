@@ -1220,3 +1220,100 @@ terminal. No new semantic start is allowed until a Luna smoke produces a matchin
 The user-authorized start72–74 tranche is registered and has two numerical starts remaining. A further three starts,
 start75–77, are explicitly authorized but remain a pending strict-ledger extension until start74 is terminal. This
 authorization changes only the future budget; it does not waive the security or provider-terminal gates.
+
+## 2026-08-10 explicit formal model binding at thread start
+
+Post-Round-19 diagnosis distinguishes model availability from app-server cold-start resolution. On the current
+Codex CLI and host auth, isolated `codex exec` calls completed with exact terminal output for both Luna `medium` and
+Luna `max`. By contrast, retained start42 Protocol/Luna artifacts contain two model-catalog refresh failures, two
+child-process exit timeouts, and repeated request-send failures; its isolated home contains no model cache. The
+current persistent and Examiner app-server paths likewise construct fresh homes and write the frozen model only to
+`config.toml`, while their `thread/start` requests omit the `model` field. This matches the upstream app-server cold
+catalog failure boundary and explains why a healthy host CLI path is not evidence that the Team path is healthy.
+
+The narrow repair projects the already validated formal manifest model into every formal persistent-role and
+Examiner `thread/start` request. The value is exactly `gpt-5.6-luna`; provider and reasoning remain bound by the same
+manifest-backed `config.toml`. The Runtime must not read or copy the mutable host `models_cache.json`, infer a model
+from ambient config, or accept a second model source. Formal manifest absence, role/package mismatch, or model drift
+continues to fail before process launch. Non-formal and R2.3-002 request shapes remain byte-compatible and omit the
+new field.
+
+The existing first-turn auth barrier, MCP exact-surface preflight, typed provider/RPC failure handling, inactivity
+watchdog, secret audit, and cleanup semantics remain unchanged. Acceptance requires deterministic request-shape
+tests for all six formal packages, non-formal compatibility tests, and one independently executed empty-business
+app-server smoke from the frozen implementation. The smoke has no business source, platform client, or StartLedger;
+only a matching terminal proves the Luna gate. A typed failure or bounded timeout remains Runtime evidence, not a
+semantic start or provider PASS.
+
+Round 20 confirmed that the exact Luna model field reached live `thread/start` but the turn still ended in typed
+inactivity without a terminal. Its sanitized record omitted notification counts and provider-error projection, so it
+cannot distinguish an auth-recovery failure from a silent app-server/provider path. The next bounded step is therefore
+one diagnostic-only auth-lifetime differential: preserve the private 0600 auth file until terminal/failure cleanup
+while holding every other formal Coordinator input constant. This does not relax the production auth boundary or
+authorize a semantic run. A successful terminal would prove the existing unlink point is too early and trigger a new
+credential design; another identical inactivity result rejects that hypothesis. The probe retains only safe method
+counts/provider categories and destroys/scans the temporary credential at cleanup.
+
+Round 21 failed in the temporary callback before first-turn execution and therefore leaves this hypothesis untested.
+Any corrected probe must first pass a no-process callback preflight that proves the single-variable lifetime change,
+the existing barrier state/evidence transition, and normal credential cleanup. Only then may one independent bounded
+probe run; the blocked invocation remains preserved and is not reclassified.
+
+## 2026-08-10 DeepSeek v4 Flash formal rollback design
+
+The user superseded the Luna provider target after repeated bounded Luna turns produced no matching terminal. The
+formal Team now uses one immutable six-package manifest with the exact tuple
+`deepseek-v4-flash/deepseek/max`. The Luna manifest is replaced rather than layered, so model/provider/reasoning still
+have one source of truth. Shared package declarations, non-formal runs, and R2.3-002 remain unchanged.
+
+The previous DeepSeek process-env path is forbidden because Codex persisted that environment into start72 shell,
+session, and SQLite artifacts. Instead, one Runner-owned `DeepSeekProviderProxy` is created for a formal Team run.
+Before any formal side effect, credential preflight resolves the fixed repository-external path
+`~/.config/ontology-platform/modeling-team-deepseek.env` and requires an owner-owned regular non-symlink `0600` file
+with exactly one `DEEPSEEK_API_KEY=<value>` assignment. Prepare retains only an in-memory binding of canonical path,
+device, inode, size, and mtime-ns. Runtime start reopens with `O_NOFOLLOW`, requires the same fstat binding, and only
+then reads the value, closing the prepare/start TOCTOU window. Neither key nor key digest enters the formal baseline,
+manifest, persisted run state, evidence, or child spec.
+
+The proxy binds an ephemeral `127.0.0.1` port and is the only component that receives the real key. Formal persistent
+and Examiner TOML points the custom DeepSeek provider at that loopback base URL and deliberately omits `env_key`,
+`experimental_bearer_token`, auth commands, and static auth headers. App-server process environments remain the
+existing minimal secret-free set; no OpenAI `auth.json` is staged for this provider. The proxy accepts only the exact
+Responses API request path/method, rejects oversized or malformed requests, discards any inbound Authorization,
+injects `Bearer <key>` upstream, and streams status/body without logging or persisting headers, request/response body,
+or provider text. It forwards only a frozen non-auth request-header allowlist, caps request bodies at 32 MiB, disables
+ambient proxy configuration and redirects for the fixed TLS-verified `https://api.deepseek.com/responses` upstream,
+and applies bounded connect/write/read timeouts compatible with the existing 300-second inactivity watchdog. Evidence
+contains only safe counts, bounded status/category, and lifecycle timestamps.
+
+The proxy starts after formal prepare/preflight but before the first Agent process and is shared by all four
+persistent roles and both Examiner children. Any proxy startup/death/upstream failure is normalized into the existing
+typed Runtime failure queue. Formal DeepSeek keeps the existing first-turn buffer/replay and early ServerRequest typed
+response loop, but its credential barrier mode is `provider_proxy`: completing the barrier records one safe
+`provider_proxy_ready` transition and requires no `auth_path` or file unlink. The file-backed OpenAI auth transition
+remains unchanged for other modes. This avoids both an `auth_path=None` startup failure and reintroduction of the
+early-request deadlock.
+
+Shutdown first terminates children and persistent processes, then closes the proxy network listener. While the
+mutable key buffer is still available for exact in-memory comparison, the Runtime scans argv/env/config/shell
+snapshots/session JSONL/SQLite/WAL/SHM/logs/evidence. Formal DeepSeek audit results persist only scanned-file,
+match, matched-secret and matched-surface counts/booleans; they suppress provider-key digests and raw values. After
+the final audit the proxy overwrites and releases its key buffer. A credential file is Host configuration and is never
+copied into a run root.
+
+Formal persistent and Examiner processes also receive one lifecycle-owned bounded stderr drain. It continuously
+consumes the pipe so provider diagnostics cannot deadlock the child, compares bytes against the provider sentinel with
+an overlap window large enough to detect a value split across chunks, and retains only byte/chunk/match counts. It
+never writes or returns stderr content or a provider-key digest. A match feeds the same credential-cleanup failure;
+drain startup/join failure is a typed Runtime failure. Non-formal stderr behavior is unchanged.
+
+Acceptance requires fake-upstream streaming and header-injection tests, path/method/body-limit rejection, six-package
+formal projection, non-formal compatibility, process/child lifecycle and exactly-once cleanup, secret-bearing negative
+tests across every artifact class, full regression, service restart/health, and one independently executed empty
+Coordinator smoke. That smoke has no business source, platform client, Runner reservation, StartLedger, Examiner, or
+semantic modeling. Only a matching turn terminal plus zero secret/residue passes the provider gate.
+
+Independent Round 25 accepted this design at Runtime/provider scope. The repaired formal config parsed with one exact
+model tuple, the live empty Coordinator turn completed through the loopback proxy, upstream returned 2xx, and all
+credential, stderr, artifact, child and proxy cleanup checks were zero-residue. This opens the existing start73
+authorization only; semantic modeling and Acceptance remain unexecuted under this rollback.

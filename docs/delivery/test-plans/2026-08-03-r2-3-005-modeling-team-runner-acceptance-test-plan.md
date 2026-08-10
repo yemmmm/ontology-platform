@@ -3026,3 +3026,513 @@ implementation before execution and append the result below without rewriting ea
   stopped on Adapter's typed inactivity failure without a matching terminal response. No further diagnostic retry is
   authorized by this round; a later semantic start remains gated on a matching Luna terminal and the documented
   ledger/authorization state.
+
+### Planned Independent Round 20 — Explicit formal model binding
+
+- Bind the stable implementation to the reviewed post-Round-19 plan and verify that all four formal persistent roles
+  send `model=gpt-5.6-luna` in `thread/start`, sourced from the validated formal manifest. Verify the same exact field
+  for Source Examiner and Platform Examiner child thread starts.
+- Assert provider/reasoning remain manifest-backed in generated TOML; no host `models_cache.json` is read, copied,
+  mounted, hashed into the baseline, or exposed to an Agent. Manifest/package/model drift must fail before process or
+  first-turn launch.
+- Assert non-formal and R2.3-002 thread-start payloads remain unchanged and omit `model`. Re-run first-turn auth
+  unlink-before-dispatch, exact MCP discovery, ServerRequest, provider/RPC failure, inactivity, EOF, secret audit, and
+  cleanup regressions.
+- Run the focused Runtime/model-manifest suites, all R2.3-005 tests, full `modeling_team` tests, Ruff, py_compile,
+  diff check, GitNexus detect-changes, service restart, and backend/frontend health checks.
+- Run exactly one empty-business formal Coordinator app-server smoke from the frozen state, with no business source,
+  platform client, Runner reservation, or StartLedger. Pump the public no-argument `receive_messages()` at <=0.25s,
+  freeze the active turn ID, and stop on its matching `turn/completed|turn/finished` or one typed Runtime failure. Use
+  the existing bounded safety deadline and sanitized evidence projection; do not retry. Only a matching terminal is
+  PASS for the Luna provider gate and may unblock start73.
+
+### Planned Independent Round 21 — Auth-lifetime differential diagnosis
+
+- Bind to the frozen Round 20 explicit-model implementation. Reuse its single formal Coordinator empty-business
+  smoke configuration and change only the temporary harness's auth unlink timing: retain the owner-private 0600
+  `auth.json` through terminal/typed failure, then delete and audit it during cleanup. Do not modify product code.
+- Assert captured `thread/start.model=gpt-5.6-luna`, identical manifest/TOML/MCP/task/bwrap inputs, public no-argument
+  receive pumping at <=0.25 seconds, frozen active turn ID, existing inactivity watchdog, and the same absolute cap.
+- Retain sanitized notification method counts, matching terminal identity, process/typed-failure summary, and any
+  Adapter provider-error `variant`, bounded status, `will_retry`, and turn digest. Never retain raw provider/RPC text,
+  stderr, auth bytes, token paths, or additional details.
+- Use no business source, platform client, Runner reservation, or StartLedger; scan all temporary artifacts for host
+  auth leaves before/after cleanup; require zero active children and private credential destruction. Run exactly once
+  with no retry.
+- A matching terminal attributes the Round 20 failure to auth lifetime but does not pass the production provider gate;
+  production still requires a separately reviewed safe credential design. An identical inactivity failure rejects the
+  auth-lifetime hypothesis. Append the result without deleting Round 20.
+
+### Independent Round 20 — Explicit formal model binding (2026-08-10)
+
+- **Scope, baseline, and safety boundary:** This is the same shared Round20 plan after the
+  post-Round-19 implementation handoff. The first deterministic pass used the frozen product
+  hashes `modeling_team/runtimes/codex.py`
+  `8c3bb6a4f030595a4bdd16ef7e01bf8d69e4cae055a58358b39a72ded6d7247e` and
+  `modeling_team/tests/test_deepseek_codex_runtime.py`
+  `fb8d382d23f2c558e2b627dd26f3b36c7391c861b265a06d990d3f19abfeb81c`. It found one stale
+  verification assertion; the developer changed only `modeling_team/tests/test_p2a_codex_runtime.py`
+  to bind its normal-surface baseline to the accepted formal Runtime hash. The repaired test hash is
+  `d9bc42fec3d6255a913ab769b33daf6e3b542279b6b1ef235c78dba1ca43505a`; the two requested product/test
+  hashes remained unchanged. No product code, delivery record, retained start72 artifact, semantic
+  start, Runner reservation, platform endpoint, or StartLedger record was modified by the Tester.
+
+#### Round20 initial deterministic pass (before the test-contract repair)
+
+- **Result: FAIL — D-R20-1, P2 `test-contract` (fixed before the real smoke).**
+  `PYTHONPATH=. backend/.venv/bin/python -m pytest -q` over the focused Runtime/model-manifest,
+  Codex isolation, liveness, P2A, and R2.3-005 suites returned **300 passed, 77 subtests passed,
+  1 failed**. The failure was
+  `modeling_team/tests/test_p2a_codex_runtime.py::test_normal_runtime_and_platform_surfaces_remain_byte_frozen`:
+  its `FROZEN_GLOBAL_SURFACES` expected the previous whole-file Codex hash
+  `e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e`, while the reviewed formal-only
+  thread/start projection necessarily changed that shared file to `8c3bb6a4...d7247e`. The expected
+  result was a non-formal/P2A compatibility assertion that remained valid after the formal-only change;
+  the actual result was a stale whole-file byte-freeze rejection. The failure was a verification-test
+  baseline defect, not a model/provider or non-formal Runtime behavior regression. No smoke was started
+  in this initial pass.
+
+#### Round20 repair retest and deterministic gates
+
+- **D-R20-1: FIXED.** The focused repair retest
+  `...test_normal_runtime_and_platform_surfaces_remain_byte_frozen ...test_thread_start_model_binding_is_formal_only`
+  returned **3 passed**. The full focused command returned **301 passed, 77 subtests passed**. It proves
+  all six formal package bindings, exact formal/non-formal thread-start shapes, manifest tuple/package
+  drift rejection before process launch, provider/reasoning TOML, first-turn auth barrier, opaque MCP
+  discovery, ServerRequest/approval, typed provider/RPC and inactivity failures, EOF, secret audit, and
+  cleanup regressions.
+- **Executed commands:** The focused command was
+  `PYTHONPATH=. backend/.venv/bin/python -m pytest -q modeling_team/tests/test_deepseek_codex_runtime.py modeling_team/tests/test_luna_max_model_manifest.py modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_runtime_failure_boundary.py modeling_team/tests/test_llm_inactivity_timeout.py modeling_team/tests/test_p2a_codex_runtime.py modeling_team/tests/test_r23005_host_receipt_runtime.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_c_settlement.py modeling_team/tests/test_r23005_issue_escalation.py modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_r23005_a_revision.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_r23005_ledger_isolation.py modeling_team/tests/test_r23005_t6_repeatability.py`.
+  Required commands were `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`,
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py'`,
+  `backend/.venv/bin/ruff check modeling_team`, `PYTHONPATH=. backend/.venv/bin/python -m compileall -q modeling_team`,
+  `git diff --check --`, `systemctl --user restart ontology-platform.service`,
+  `systemctl --user --no-pager --full status ontology-platform.service`,
+  `curl --fail http://127.0.0.1:8001/api/health`, and `curl --fail http://127.0.0.1:5173/`.
+- **Required suites:** `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests
+  -p 'test_r23005*.py'` returned **176 tests OK, 1 expected skip**; complete
+  `... -p 'test_*.py'` returned **493 tests OK, 1 expected skip**. `backend/.venv/bin/ruff check
+  modeling_team`, `python -m compileall -q modeling_team`, and `git diff --check --` all passed.
+- **Manifest/cache/non-formal evidence:** The validated manifest digest is
+  `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`; all six packages
+  (`coordinator`, `modeling`, `protocol`, `acceptance`, `source-examiner`, `platform-examiner`) resolve
+  to exactly `gpt-5.6-luna/openai/max`. A static scan found no `models_cache` reference in
+  `modeling_team` runtime/config sources. The formal request-shape tests prove `model` is omitted from
+  non-formal/R2.3-002 starts. GitNexus `detect_changes(scope=unstaged)` reported 8 changed files,
+  4 indexed symbols, risk `low`, and 0 affected processes.
+- **Restart/health:** After `systemctl --user restart ontology-platform.service`, the unit was
+  `active`; backend `/api/health` returned `{"status":"ok"}`/HTTP 200 and frontend `/` returned
+  HTTP 200. The initial immediate health probe raced startup (HTTP 000); the required retry after 10s
+  passed and no service failure remained.
+
+#### Round20 single formal Coordinator app-server smoke
+
+- **Protocol and evidence boundary:** Exactly one direct `CodexRuntimeAdapter` formal Coordinator
+  smoke ran from the frozen state. It used an empty `sources/coordinator` tree, no business source,
+  no platform client or key, no `TeamRunner.prepare/start`, no Runner reservation, no StartLedger
+  open/write, and no retry. The public no-argument `adapter.receive_messages()` pump ran **1,600**
+  times at 0.20s; maximum measured gap was **0.20785s** (<=0.25s). A non-empty active turn was
+  frozen immediately after `start_task` (sanitized turn digest
+  `d817b4e75438a2cb34ca2834f30b7269833ffb5d0bcdc93499f62573f740f1e4`).
+- **Explicit model binding:** The actual app-server `thread/start` request was observed with
+  `model=gpt-5.6-luna`, parameter keys
+  `baseInstructions,config,cwd,developerInstructions,model,sandbox`, and no
+  `model_provider`/`model_reasoning_effort` request fields; those remain TOML/manifest-owned.
+- **Luna terminal gate: FAIL (`runtime/infrastructure`).** No matching
+  `turn/completed` or `turn/finished` was received and no matching completed-turn identity was
+  recorded. Before the existing 420-second safety cap, the Adapter latched the sanitized typed
+  failure `{source: inactivity-watchdog, reason/code: llm-inactivity-timeout}`. This is a valid
+  Runtime liveness failure, not a provider terminal PASS and not the cap-induced BLOCKED branch.
+- **Auth, secret, cleanup, and side effects:** The smoke cleanup projection reported
+  `auth_unlinked=true`, `private_credentials_destroyed=true`, `secret_match_count=0`,
+  `matched_secret_count=0`, `active_children=0`, and `zero_child_residue=true`. It created **0**
+  source files, made **0** platform calls, and left the formal StartLedger byte/digest unchanged at
+  `ed4b2bd95ccc8eed685b566e557fb9fb5b2ea50e4bd4038f25f8bd28c655d3e8` (the R2.3-002 ledger likewise
+  remained `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`). No matching terminal
+  or semantic-start authorization was produced.
+- **Retained evidence and residual risk:** The retained start72 root was not read, rewritten, or
+  deleted by this round. A post-smoke read-only inventory reports 787 files and sanitized file-list
+  digest `deb50044ada30ea98c433534d6f5e1458782c0353cadc840858de98370ba7ed3`; the historical
+  seven-file/21-occurrence credential finding remains preserved, with user-confirmed provider-side
+  revocation but no artifact rewrite. Service health remained active with backend/frontend HTTP 200.
+
+#### Round20 conclusion
+
+**Overall verdict: FAIL.** D-R20-1 is fixed and all deterministic, regression, quality, GitNexus,
+restart, health, auth, secret, cleanup, and no-side-effect gates pass. The required single real Luna
+provider smoke still fails at Runtime liveness without a matching terminal. No semantic start is
+accepted or authorized by this round; start73 remains gated on a future matching Luna terminal.
+
+- **Unexecuted/not claimable:** The six formal package deterministic cases were executed, but no
+  Source/Platform Examiner child was launched in the bounded Coordinator-only smoke; no real semantic
+  modeling, Project/Ontology, Build Session/Lease, Modeling Batch, validation/reasoning, CQ, Acceptance
+  verdict, or settlement case (I01-I14) is claimed. No additional smoke retry is authorized by this
+  round.
+- **Recommended next action:** Keep R2.3-005 in `FAIL/runtime-infrastructure`; have the requirement
+  developer investigate the Luna app-server inactivity boundary (without relaxing the explicit model,
+  auth, no-cache, or no-retry contracts), then run a new independent round only after a new stable
+  handoff and explicit authorization.
+
+### Independent Round 21 — Auth-lifetime differential diagnosis (2026-08-10)
+
+- **Frozen state and scope:** Round21 used the same reviewed implementation as Round20. The product
+  and test hashes were unchanged: `modeling_team/runtimes/codex.py`
+  `8c3bb6a4f030595a4bdd16ef7e01bf8d69e4cae055a58358b39a72ded6d7247e`,
+  `modeling_team/tests/test_deepseek_codex_runtime.py`
+  `fb8d382d23f2c558e2b627dd26f3b36c7391c861b265a06d990d3f19abfeb81c`, and
+  `modeling_team/tests/test_p2a_codex_runtime.py`
+  `d9bc42fec3d6255a913ab769b33daf6e3b542279b6b1ef235c78dba1ca43505`. The validated formal
+  manifest remained `6b3ff6cf969dd57fbf6c927313c732ce54b0d1e41a561d01e9a9d54eb9bc665b`, with all six
+  package tuples `gpt-5.6-luna/openai/max`. No product source, retained start72 artifact, delivery
+  record, ledger, platform endpoint, Runner reservation, or semantic start was modified.
+- **Exactly one bounded smoke, no retry:** One direct `CodexRuntimeAdapter` invocation was started with
+  only `sources/coordinator` present and no business source, platform client/key, Runner, or StartLedger.
+  It used the same formal task text, MCP/bwrap inputs, and cap as Round20. The only harness seam was
+  intended to retain owner-private `auth.json` after the first-turn barrier until normal cleanup. The
+  app-server initialization and `thread/start`/`turn/start` RPCs were reached; the safe request
+  projection captured `model=gpt-5.6-luna`, keys
+  `baseInstructions,config,cwd,developerInstructions,model,sandbox`, no request provider/reasoning
+  fields, and TOML model/provider/reasoning settings present. No public no-argument
+  `receive_messages()` pump call was made because the harness failed at the first-turn barrier seam.
+- **Result: BLOCKED — D-R21-1, P1 `test-harness`.** The temporary `retain_auth` closure contained an
+  accidental `del original_unlink`; invoking the product's first-turn barrier therefore raised an
+  unhandled local `UnboundLocalError` before a turn identity could be frozen. This is a tester-harness
+  defect, not evidence about the provider or product auth lifetime. The one invocation was not retried
+  under the no-retry contract. Consequently there are no matching terminal, typed Runtime failure, or
+  provider-error projections; the auth-lifetime hypothesis is **untested**, and the production provider
+  gate remains **not passed**.
+- **Sanitized lifecycle/side-effect evidence:** Auth was observed before `start_task` as an owner-private,
+  regular, non-symlink `0600` file; normal `adapter.stop()` cleanup removed it (`exists=false` after
+  cleanup). No auth-unlink timing transition was recorded because the seam failed before it could run.
+  The post-cleanup temporary-artifact audit scanned 28 files with `match_count=0` and
+  `matched_secret_count=0`; active children were `0`, zero child residue was `true`, private credentials
+  were destroyed, and no process remained. No source files were created, platform calls were `0`, and
+  the formal StartLedger remained `ed4b2bd95ccc8eed685b566e557fb9fb5b2ea50e4bd4038f25f8bd28c655d3e8`
+  (R2.3-002 remained `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`).
+- **Health/hash/status checks:** After the single invocation, the stable product hashes above were
+  re-verified; `ontology-platform.service` was `active`, backend `/api/health` returned HTTP 200
+  `{"status":"ok"}`, and frontend `/` returned HTTP 200. The retained start72 root was not read,
+  rewritten, or deleted. This append is the only Round21 file change; no commit was made.
+- **Unexecuted and residual risk:** Public receive-pump cadence (`<=0.25s`), frozen active-turn
+  identity, notification method counts beyond startup, matching terminal identity, Adapter provider-error
+  safe projection (`variant`, bounded status, `will_retry`, turn digest), inactivity watchdog, and the
+  intended auth-retention differential are all unexecuted. No Source/Platform Examiner, semantic
+  modeling, Project/Ontology, Build Session/Lease, Modeling Batch, validation/reasoning, CQ, Acceptance
+  verdict, settlement, retry, or start73 authorization is claimed. A new independent round requires an
+  explicitly authorized corrected harness and stable handoff; do not infer either support or rejection of
+  the auth-lifetime hypothesis from this blocked run.
+
+#### Round21 conclusion
+
+**Overall verdict: BLOCKED.** The single smoke reached explicit formal model binding but failed in the
+temporary tester seam before first-turn execution. Deterministic Round20 evidence remains valid; no
+Round21 provider/liveness conclusion or production PASS is claimable.
+
+### Planned Independent Round 22 — Corrected auth-lifetime differential
+
+- Preserve Round21 as `BLOCKED/test-harness`; do not reinterpret it as provider evidence and do not
+  retry its broken callback.
+- Before creating an app-server process or making any model call, exercise the corrected auth-retention
+  callback in a deterministic local fixture. Prove it raises no exception, leaves the owner-private
+  `0600` auth file available, records the existing barrier state/evidence exactly once, and allows the
+  normal cleanup path to remove and audit the file. If this preflight fails, stop Round22 without a real
+  smoke.
+- After a passing preflight, execute exactly one direct formal Coordinator empty-business smoke with the
+  same frozen model, TOML, MCP, task, bwrap, public no-argument receive pump, inactivity watchdog, and
+  absolute cap as Round20/21. The only differential is retaining the private auth file through matching
+  terminal or typed failure; cleanup must then remove and audit it. No retry is allowed.
+- Retain only sanitized notification-method counts, safe Adapter provider-error fields, terminal/typed
+  failure identity, pump cadence, credential audit, cleanup, and zero-side-effect evidence. Never retain
+  raw provider messages/data, stderr, token bytes, or auth contents. Use no source, platform client,
+  TeamRunner reservation, StartLedger mutation, Examiner, or semantic modeling.
+- A matching terminal is diagnostic evidence that auth lifetime matters but does not pass the production
+  gate. Repeated typed inactivity rejects the auth-lifetime hypothesis. Any harness failure remains
+  `BLOCKED/test-harness` and cannot be reported as a Runtime result.
+
+### Planned Independent Round 23 — Formal DeepSeek proxy rollback
+
+- Verify the Luna target is superseded by one exact six-package
+  `deepseek-v4-flash/deepseek/max` manifest; loader, initial baseline and post-preflight digest must match.
+  Shared package YAML, non-formal, and R2.3-002 request/config shapes remain unchanged.
+- Credential preflight uses a sentinel-only temporary owner-private regular `0600` file outside the repository.
+  Success returns no key-bearing baseline/run/evidence value. Missing, symlink, wrong owner/mode, malformed,
+  duplicate, empty, quoted, or newline-bearing values fail before any platform, ledger, run root, proxy, process,
+  child, transport, or capability side effect. Prepare/start replacement, inode/size/mtime drift and symlink swap
+  fail before key consumption or proxy start; the binding contains no key or key digest. With distinct sentinel
+  values deliberately present in ambient `DEEPSEEK_API_KEY` and `LLM_API_KEY`, formal prepare/start must neither read,
+  retain, audit nor inject either value and must use only the fixed credential-file sentinel. Non-formal legacy
+  resolution remains covered separately.
+- Fake-upstream integration proves the loopback proxy accepts only bounded `POST /responses`, removes attacker-
+  supplied Authorization, injects exactly the sentinel bearer upstream, preserves streaming/status, and records no
+  headers/body/provider text. Reject wrong method/path, oversized or malformed lengths, upstream disconnect, and use
+  after stop with safe typed categories only.
+- Start one fake formal roster covering four persistent roles and both Examiner configs. Assert exact model/provider/
+  reasoning, one shared loopback base URL, no `env_key`/token/auth command/static auth, no provider key in process env,
+  argv, TOML, auth, child spec, baseline, or evidence. Test partial startup failure and stop ordering: children/roles,
+  proxy close, audit-before-key-wipe, and exactly-once cleanup. For persistent and both Examiner first turns, cover
+  response-before-notification, buffered notification, and early ServerRequest: `provider_proxy` mode must retain the
+  existing deadlock-safe loop, require no `auth_path`, emit one `provider_proxy_ready` transition, and never attempt a
+  file unlink. Existing file-auth barrier tests remain unchanged.
+- Seed sentinel bytes into each supported artifact class (`.sh`, extensionless snapshot, JSON/JSONL, TOML, SQLite,
+  WAL/SHM, log, evidence and process surfaces) and prove cleanup fails closed; clean fixtures must pass with zero
+  matches. Formal provider-key cleanup output must contain no key bytes or digest; assert the sentinel SHA-256 is
+  absent from evidence and `cleanup_identifiers`. Preserve start72 artifacts unchanged and never use the real
+  credential in deterministic tests.
+- Persistent and both Examiner stderr drains must detect a sentinel wholly inside one chunk and split across adjacent
+  chunks, consume a high-volume nonmatching stream without process backpressure, stop/join exactly once, and expose
+  only byte/chunk/match counts. Inject raw secret/free-text and its SHA-256 into negative fixtures and assert neither
+  appears in Runtime evidence, exceptions, cleanup identifiers, or test output. Drain failure is typed and cleanup
+  remains fail-closed; non-formal stderr behavior is unchanged.
+- Run focused proxy/manifest/Codex tests, all R2.3-005 tests, full `modeling_team`, Ruff, compile/diff, GitNexus,
+  service restart and backend/frontend health. Append results to this plan without deleting Rounds 13–22.
+- Only after deterministic independent PASS and secure operator credential installation, run exactly one bounded
+  formal Coordinator empty-business smoke with public receive pump. No business source, platform, TeamRunner
+  reservation, StartLedger mutation, Examiner, semantic modeling, or retry. Retain only sanitized method/status/
+  terminal/cleanup summaries. Matching terminal and zero secret/residue pass; otherwise keep start73 paused.
+
+### Independent Round 22 — Corrected auth-lifetime differential (2026-08-10)
+
+- **Required preflight boundary:** The no-process deterministic preflight ran first, before any
+  `CodexRuntimeAdapter.start_roster`, app-server, model call, or external process. It bound and invoked
+  the same corrected auth-retention callback implementation intended for the real smoke against a local
+  `_Agent` fixture; this was not a behaviorally similar mock. The callback raised no exception, changed
+  only the expected auth-lifetime fields (`auth_barrier_pending` and the safe monotonic timing), retained
+  the owner-private regular non-symlink `0600` auth file, wrote exactly one sanitized
+  `auth_barrier_released_harness_retained` evidence line, and was idempotent on its second invocation.
+  The normal `adapter.stop()`/`cleanup_identifiers()` path then removed and audited the file, destroyed
+  private credentials, and left zero active children/zero child residue. Sanitized pre/post audits were
+  respectively 2 files/1 match and 1 file/0 matches; no process was constructed.
+- **Result: BLOCKED — D-R22-1, P1 `test-harness`.** The preflight aggregate incorrectly compared the
+  already-sorted `files_after` list against a hard-coded order with the two entries reversed. The
+  callback invariants themselves passed, but the required preflight status was therefore `FAIL` and the
+  contract requires immediate stop. No real app-server was started, so this round contains no provider,
+  liveness, notification, terminal, typed-failure, or auth-lifetime differential evidence. The error is
+  confined to the temporary Tester preflight assertion; no retry was made.
+- **Frozen implementation/hash boundary:** The reviewed product hashes remained
+  `modeling_team/runtimes/codex.py`
+  `8c3bb6a4f030595a4bdd16ef7e01bf8d69e4cae055a58358b39a72ded6d7247e`,
+  `modeling_team/tests/test_deepseek_codex_runtime.py`
+  `fb8d382d23f2c558e2b627dd26f3b36c7391c861b265a06d990d3f19abfeb81c`, and
+  `modeling_team/tests/test_p2a_codex_runtime.py`
+  `d9bc42fec3d6255a913ab769b33daf6e3b542279b6b1ef235c78dba1ca43505`; no product, requirements,
+  design, implementation plan, delivery record, retained evidence, ledger, or commit was changed.
+- **Unexecuted/no-side-effect scope:** Because preflight failed, the one permitted formal Coordinator
+  smoke was not launched. No explicit-model `thread/start`, TOML/MCP/task/bwrap runtime, public
+  no-argument receive pump, watchdog/cap, notification counts, provider-error projection, terminal
+  identity, business source, platform client, Runner reservation, StartLedger operation, Examiner,
+  semantic modeling, or retry is claimed. The auth-lifetime hypothesis remains untested and the
+  production provider gate is not passed.
+- **Post-round checks:** `git diff --check --` passed. After the unchanged-code service restart,
+  `ontology-platform.service` was `active`; backend `/api/health` returned HTTP 200
+  `{"status":"ok"}` and frontend `/` returned HTTP 200. This append is the only Round22 file change.
+
+#### Round22 conclusion
+
+**Overall verdict: BLOCKED.** The corrected callback itself passed its local lifecycle assertions, but
+the mandatory preflight gate was failed by a Tester ordering assertion; per contract no app-server smoke
+was permitted. A future round requires a newly authorized corrected preflight and must preserve this
+blocked record.
+
+### Independent Round 23 — Formal DeepSeek v4 Flash rollback (2026-08-10)
+
+- **Frozen boundary and implementation review:** The reviewed hashes are
+  `modeling_team/model-manifests/r2-3-005-luna-max.yaml`
+  `ba1bb685e88ef58ea5c3aa7160fcdcba3124cb87fad234751033c551ce907f33`,
+  `modeling_team/model_manifest.py`
+  `5d81ec8f0630cdb94b23ec3af91e229cb7aacdea328cf67d6c10ce02b0d47932`,
+  `modeling_team/runner.py`
+  `8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1`,
+  `modeling_team/runtimes/codex.py`
+  `e18105d3cbfd71089b7a528b1242614c9f0597c1d8754f9dc4d453d0f5811b81`, and
+  `modeling_team/deepseek_provider_proxy.py`
+  `b1e56903d03f27cf1b4858bc3fe6dbc3c51c319389d74f7e111268a02130c0b1`. The fixed operator
+  credential path `~/.config/ontology-platform/modeling-team-deepseek.env` was checked by metadata
+  only and is **ABSENT**; no chat key was copied and no credential file was created. The implementation
+  loader has one formal manifest path, validates one exact six-package
+  `deepseek-v4-flash/deepseek/max` tuple, and binds the loader digest before/after preflight. The
+  retained filename `r2-3-005-luna-max.yaml` is stale naming drift: its content/manifest ID and all
+  package declarations are DeepSeek, and no alternate loader or `models_cache` reference exists. It
+  does not create a second runtime source of truth or change behavior at this frozen boundary, but is
+  a P2 documentation/operational clarity defect; it was not renamed under this test scope.
+- **Focused deterministic suites: PASS.**
+  `PYTHONPATH=. backend/.venv/bin/python -m pytest -q modeling_team/tests/test_deepseek_provider_proxy.py modeling_team/tests/test_deepseek_codex_runtime.py modeling_team/tests/test_luna_max_model_manifest.py modeling_team/tests/test_codex_isolation.py modeling_team/tests/test_runtime_failure_boundary.py modeling_team/tests/test_llm_inactivity_timeout.py modeling_team/tests/test_p2a_codex_runtime.py modeling_team/tests/test_r23005_host_receipt_runtime.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_c_settlement.py modeling_team/tests/test_r23005_issue_escalation.py modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_r23005_a_revision.py modeling_team/tests/test_r23005_b_runtime.py modeling_team/tests/test_r23005_contracts.py modeling_team/tests/test_r23005_ledger_isolation.py modeling_team/tests/test_r23005_t6_repeatability.py`
+  returned **311 passed, 77 subtests passed**. This covers exact tuple/package/digest and drift
+  rejection, credential metadata/assignment/symlink/TOCTOU gates, ambient-key exclusion, all four
+  persistent plus both Examiner config/env/argv projections, provider-proxy first-turn transition,
+  barrier and non-formal/R2.3-002 compatibility.
+- **Additional deterministic rollback harness: PASS.** A no-process in-process harness exercised proxy
+  `POST /responses` auth replacement and bounded forwarding (`200`), wrong method/path (`501`/`404`),
+  body cap (`413`), upstream status (`503`), transport failure (`502` with only the fixed typed reason),
+  stop/use-after-stop typed behavior, secret-buffer wipe, and safe counters with no request/provider
+  text. `_StderrDrain` detected whole and split sentinels, drained 409,600 bytes without a match or
+  backpressure, surfaced a typed lifecycle failure, and stopped idempotently with counts only. The
+  provider-proxy barrier handled both early ServerRequest and response-before-notification cases with
+  `auth_path=None`, no `auth.json`, and exactly one `provider_proxy_ready` transition. A synthetic
+  partial roster failure stopped two started/attempted roles and closed the shared proxy. An audit-before-
+  wipe fixture failed closed on a secret artifact while raw bytes and its SHA-256 remained absent from
+  the cleanup projection (`matched_secret_digests=[]`); the proxy buffer was wiped afterward.
+- **Required regression suites: PASS.**
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`
+  returned **176 tests OK, 1 expected skip**; complete
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py'`
+  returned **493 tests OK, 1 expected skip**. `backend/.venv/bin/ruff check modeling_team`,
+  `PYTHONPATH=. backend/.venv/bin/python -m compileall -q modeling_team`, and `git diff --check --`
+  all passed. The only test-run output beyond successful assertions was existing Python resource/runtime
+  warning noise; no failure or secret text was emitted.
+- **GitNexus and service health: PASS.** `mcp__gitnexus__detect_changes(scope=unstaged,
+  repo=ontology-platform)` reported **low** risk, 52 changed symbols across 18 files, and 0 affected
+  processes (the shared worktree includes other agents' pending changes). After restart,
+  `ontology-platform.service` was `active (running)`; the immediate probe raced startup (`HTTP 000`),
+  then the required bounded retry returned backend `/api/health` HTTP **200** and frontend `/` HTTP
+  **200**. No semantic source, platform client, Runner reservation, StartLedger, retained start72
+  artifact, or production code was changed by this tester.
+- **Real smoke:** **BLOCKED — operator credential installation.** The one authorized formal Coordinator
+  empty-business app-server invocation was not started because the required fixed 0600 credential file
+  is absent. Consequently there is no real `thread/start`, TOML/MCP/task/bwrap process, public
+  no-argument receive pump, watchdog/cap, notification count, provider-error projection, terminal/
+  typed-failure, or smoke cleanup evidence in this round. No retry was attempted. Deterministic PASS is
+  not a provider PASS; the production DeepSeek gate remains closed until an operator installs the fixed
+  credential through a non-echoing local channel and a newly authorized single smoke is run.
+
+#### Round23 conclusion
+
+**Deterministic verdict: PASS. Overall provider-gate verdict: BLOCKED (operator credential absent).**
+The stale Luna filename is recorded as non-functional naming drift only; no material multi-source
+binding defect was found. All deterministic, regression, security, cleanup, quality, GitNexus, and
+restart/health gates passed. The real smoke and any semantic acceptance remain unexecuted and must not
+be inferred from this offline evidence.
+
+### Independent Round 24 — Single real DeepSeek Coordinator smoke (2026-08-10)
+
+- **Frozen boundary and credential metadata:** The five reviewed hashes remained unchanged:
+  `modeling_team/model-manifests/r2-3-005-luna-max.yaml`
+  `ba1bb685e88ef58ea5c3aa7160fcdcba3124cb87fad234751033c551ce907f33`,
+  `modeling_team/model_manifest.py`
+  `5d81ec8f0630cdb94b23ec3af91e229cb7aacdea328cf67d6c10ce02b0d47932`,
+  `modeling_team/runner.py`
+  `8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1`,
+  `modeling_team/runtimes/codex.py`
+  `e18105d3cbfd71089b7a528b1242614c9f0597c1d8754f9dc4d453d0f5811b81`, and
+  `modeling_team/deepseek_provider_proxy.py`
+  `b1e56903d03f27cf1b4858bc3fe6dbc3c51c319389d74f7e111268a02130c0b1`. The production fixed
+  credential path was metadata-checked before and after the run only: owner UID/GID `1000:1000`,
+  regular non-symlink file, mode `0600`, size `53` bytes (the credential value and digest were never
+  output or retained in evidence); the operator-owned file was not copied or deleted. The manifest
+  tuple was exactly `deepseek-v4-flash/deepseek/max`.
+- **No-process preflight: PASS.** The formal configuration, manifest, fixed-credential binding, and
+  temporary in-process Coordinator MCP surface were exact before starting any app-server process.
+  The preflight performed no source, platform, Runner, StartLedger, Examiner, semantic, or model work.
+- **Exactly-one smoke result: FAIL — D-R24-1 (`runtime/infrastructure`, P1).** One direct formal
+  Coordinator empty-business `CodexRuntimeAdapter` invocation was launched with the production fixed
+  credential, loopback proxy, bwrap, and the frozen model/TOML/MCP/task contract (including the existing
+  300-second inactivity timeout and 420-second absolute cap). Startup reached the
+  app-server RPC boundary but failed before `thread/start`: sanitized RPC counts were
+  `initialize=1`, `skills/extraRoots/set=1`, `skills/list=1`; `thread/start=0`, `turn/start=0`,
+  `mcpServerStatus/list=0`. The typed result was only `runtime-start-failed`. No public receive pump
+  was started (`pump_count=0`, `message_count=0`, `max_pump_gap_s=0`), so there was no active-turn
+  digest (`turn_digest=null`), matching terminal (`terminal=null`), provider-error projection, or
+  liveness conclusion; `thread_start=[]`. This is a real
+  startup failure, not an operator-credential BLOCKED state; the contract forbids a retry and none was
+  made.
+- **Sanitized cleanup/evidence:** Adapter cleanup reported `private_credentials_destroyed=true`,
+  `children.active=0`, `children.zero_residue=true`, `process_residue=0`, and secret audit
+  `match_count=0`, `matched_secret_count=0`; stderr safe counts were `bytes_drained=167`,
+  `match_count=0`, `lifecycle_failure=false`. The sanitized process/proxy fields were
+  `process_exit=null`, `proxy_counts={}`, and `proxy_secret_wiped=false` because `start_roster` raised
+  before assigning the local agent/proxy reference;
+  its aggregate `cleanup_ok=false` is therefore an observation gap, not evidence of a production
+  cleanup failure. No raw exception, provider text, auth value, stderr, or digest was retained.
+- **Isolation:** Empty source count was `0`, platform calls `0`, and both formal and legacy
+  StartLedger SHA-256 values were unchanged (`ed4b2bd95ccc8eed685b566e557fb9fb5b2ea50e4bd4038f25f8bd28c655d3e8`,
+  `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`). Worktree status digest was
+  unchanged. No TeamRunner reservation, Examiner, semantic modeling, source mutation, or retry
+  occurred.
+- **Unexecuted/residual risk:** Public pump cadence/watchdog, 300-second inactivity timeout, and
+  420-second absolute cap, provider proxy request
+  counts and safe error projection, terminal identity, process exit status, and direct proxy secret-wipe
+  telemetry are unexecuted or unavailable because startup failed before their observation boundary.
+  Deterministic Round23 gates remain PASS, but the production DeepSeek provider gate remains closed;
+  the startup failure must be diagnosed before any future newly authorized smoke.
+- **Post-round checks:** `git diff --check --` passed. After the unchanged-code restart,
+  `ontology-platform.service` was active and backend `/api/health` plus frontend `/` returned HTTP 200
+  on the bounded health probe. This append is the only change made by this tester.
+
+#### Round24 conclusion
+
+**Overall verdict: FAIL (real provider smoke startup).** Deterministic rollback and security evidence
+remain PASS from Round23, but the single authorized live DeepSeek attempt failed at app-server startup
+before thread/turn creation. No retry or semantic acceptance is permitted; preserve the sanitized
+startup evidence and keep the provider gate closed.
+
+### Independent Round 25 — DeepSeek startup repair and provider-gate retest (2026-08-10)
+
+- **Frozen boundary and credential metadata:** The repaired hashes were reverified exactly:
+  `modeling_team/runtimes/codex.py`
+  `1e22dd023d28bca05a7e5854de2121b9444c527823c09314113d15e2dc88a520`,
+  `modeling_team/tests/test_deepseek_codex_runtime.py`
+  `f58fd336c483b52c12f8bb6f92d8f314e73e76ecfc6eeec25071fa5a2b74a7f6`, and
+  `modeling_team/tests/test_p2a_codex_runtime.py`
+  `231c49e108f5fdcd53cbd31008107b186b97e4fe98df73bca5b1bfd161ff7516`. The unchanged manifest,
+  model loader, Runner, and proxy remained respectively
+  `ba1bb685e88ef58ea5c3aa7160fcdcba3124cb87fad234751033c551ce907f33`,
+  `5d81ec8f0630cdb94b23ec3af91e229cb7aacdea328cf67d6c10ce02b0d47932`,
+  `8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1`, and
+  `b1e56903d03f27cf1b4858bc3fe6dbc3c51c319389d74f7e111268a02130c0b1`. The fixed credential was
+  metadata/shape checked before and after only: owner UID/GID `1000:1000`, regular non-symlink,
+  mode `0600`, size `53` bytes, same inode/device; its value and digest were never output or retained,
+  and the operator-owned file was not copied or deleted. The manifest tuple stayed exactly
+  `deepseek-v4-flash/deepseek/max`.
+- **Deterministic startup and repair gates: PASS.** The exact-TOML single-trio parser, formal
+  `thread/start` model projection/non-formal omission, all-six package binding, startup proxy
+  unwind/wipe, and ambient-key rejection tests passed (targeted repair subset: **5 passed**). A
+  real no-model Coordinator app-server probe reached `initialize=1`, `skills/extraRoots/set=1`,
+  `skills/list=1`, and `thread/start=1` with `model=deepseek-v4-flash`, and issued no `turn/start`.
+  Its temporary broker lacked the formal five-tool callback flags and consequently produced only a
+  typed MCP-preflight failure after the target pre-thread boundary; the live smoke below used the
+  corrected formal five-tool broker and passed MCP preflight, so no model evidence is inferred from
+  the probe.
+- **Affected and required deterministic suites: PASS.** Focused proxy/runtime/manifest/isolation/
+  liveness/P2A/R2.3-005 command returned **313 passed, 77 subtests passed**. R2.3-005 discovery
+  returned **176 tests OK, 1 expected skip**; complete `modeling_team` discovery returned
+  **493 tests OK, 1 expected skip**. Ruff, `compileall`, and `git diff --check --` passed. These
+  suites cover proxy allowlist/streaming/failure, exact TOML and model binding, barrier transitions,
+  stderr sentinel drain, cleanup/audit, non-formal and R2.3-002 request compatibility, no model-cache
+  access/copy, and secret-free projections.
+- **GitNexus and service health: PASS.** `detect_changes(scope=unstaged, repo=ontology-platform)`
+  reported low risk, 52 changed symbols across 18 files, and 0 affected processes. After the
+  post-smoke restart, `ontology-platform.service` was active; backend `/api/health` and frontend `/`
+  returned HTTP 200 on the bounded probe.
+- **Exactly-one formal smoke: PASS.** One direct empty-business Coordinator invocation used the
+  production fixed credential, bwrap, loopback proxy, exact DeepSeek manifest/TOML/MCP/task contract,
+  public no-argument `receive_messages()` pumping, and the existing 300-second inactivity/420-second
+  absolute bounds. Sanitized RPC counts were `initialize=1`, `skills/extraRoots/set=1`, `skills/list=1`,
+  `thread/start=1`, `mcpServerStatus/list=1`, `turn/start=1`; `thread_start_model` was
+  `deepseek-v4-flash`. The frozen active-turn digest was
+  `6e15682b02b8f4e069e61515753ecd54f111df88bc32f53c5c37a0e3878ebc0a`, one matching
+  `turn/completed` occurred, and the result stopped immediately as `PASS`. Pump cadence was bounded:
+  `pump_count=139`, sanitized message count `1`, `max_pump_gap_s=0.248` (≤0.25); no retry or second
+  attempt was made.
+- **Sanitized provider/cleanup evidence:** Proxy counts before stop were
+  `requests=1`, `upstream_status_2xx=1`, `rejected=0`, `upstream_errors=0`,
+  `client_disconnects=0`, `listening=true`; after stop the same counts remained with
+  `listening=false`. The proxy held a key before cleanup and reported `proxy_secret_wiped=true`
+  afterward. Process exit was the cleanup SIGTERM class `-15`; stderr safe counts were
+  `bytes_drained=0`, `match_count=0`, `lifecycle_failure=false`; secret audit counts were
+  `match_count=0`, `matched_secret_count=0`. Private credentials were destroyed and children were
+  `active=0`, `zero_residue=true`. No raw provider/auth/stderr text or credential value/digest was
+  retained.
+- **Isolation and residual scope:** Empty source file count was `0`, platform calls `0`, and formal/
+  legacy StartLedger digests stayed exactly
+  `ed4b2bd95ccc8eed685b566e557fb9fb5b2ea50e4bd4038f25f8bd28c655d3e8` and
+  `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`; worktree status digest was
+  unchanged. No business source, platform client, TeamRunner reservation, StartLedger operation,
+  Examiner, semantic modeling, or retry occurred. This proves the repaired provider/startup gate only;
+  it is not semantic R2.3-005 acceptance or authorization to consume a semantic start.
+- **Post-round checks:** `git diff --check --` passed after the smoke and the unchanged-code service
+  restart/health verification. This append is the only file change made by this tester.
+
+#### Round25 conclusion
+
+**Overall verdict: PASS for the repaired DeepSeek provider gate.** The exact model/TOML repair reached
+the real app-server, produced one matching terminal, and left zero secret matches/residue with safe
+proxy/cleanup evidence. Preserve the prior Round24 failure; no semantic modeling acceptance is inferred.

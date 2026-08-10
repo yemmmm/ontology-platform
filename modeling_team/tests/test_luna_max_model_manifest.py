@@ -71,7 +71,7 @@ def test_formal_manifest_requires_the_exact_same_tuple_for_all_six_packages(tmp_
         lambda packages, package_id: packages[package_id].update(model_temperature=0.2),
         lambda packages, package_id: packages[package_id].pop("model_provider"),
         lambda packages, package_id: packages[package_id].update(model="gpt-5.5"),
-        lambda packages, package_id: packages[package_id].update(model_provider="deepseek"),
+        lambda packages, package_id: packages[package_id].update(model_provider="openai"),
         lambda packages, package_id: packages[package_id].update(model_reasoning_effort="high"),
     ],
 )

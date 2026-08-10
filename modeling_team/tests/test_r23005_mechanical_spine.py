@@ -38,6 +38,11 @@ from modeling_team.task_overlay import load_task_input_overlay
 from modeling_team.transport_mcp import TeamTransportBroker
 
 
+_TEST_FORMAL_CREDENTIAL = Path(tempfile.mkdtemp(prefix="r23005-spine-credential-")) / "deepseek.env"
+_TEST_FORMAL_CREDENTIAL.write_text("DEEPSEEK_API_KEY=round23-test-sentinel\n", encoding="utf-8")
+_TEST_FORMAL_CREDENTIAL.chmod(0o600)
+
+
 class R23005MechanicalSpineTests(unittest.TestCase):
     root = repository_root()
     task_path = root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml"
@@ -255,6 +260,7 @@ class R23005MechanicalSpineTests(unittest.TestCase):
             runner = TeamRunner(
                 repository_root=self.root,
                 adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
                 freeze_started_at=datetime.now(UTC).isoformat(),
                 prestart_preflight=lambda **_kwargs: self.fail("preflight must not run"),
             )
@@ -288,6 +294,7 @@ class R23005MechanicalSpineTests(unittest.TestCase):
             runner = TeamRunner(
                 repository_root=self.root,
                 adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
                 freeze_started_at=datetime.now(UTC).isoformat(),
                 prestart_preflight=mutating_preflight,
             )
@@ -600,6 +607,7 @@ class R23005MechanicalSpineTests(unittest.TestCase):
             runner = TeamRunner(
                 repository_root=self.root,
                 adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
                 ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
                 freeze_started_at=datetime.now(UTC).isoformat(),
                 prestart_preflight=lambda **_kwargs: {

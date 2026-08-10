@@ -21,7 +21,19 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..contracts import AgentPackage, digest_file
-from ..model_manifest import FormalModelManifest
+from ..model_manifest import (
+    FORMAL_MODEL_PACKAGE_IDS,
+    FORMAL_MODEL_TUPLE,
+    FormalModelManifest,
+)
+from ..deepseek_provider_proxy import (
+    DEEPSEEK_API_KEY_ENV,
+    DeepSeekCredentialBinding,
+    DeepSeekCredentialError,
+    DeepSeekProviderProxy,
+    DeepSeekProviderProxyError,
+    read_deepseek_credential,
+)
 from ..acceptance_runtime import (
     ReportSinkServer,
     ScopedReadProxy,
@@ -115,7 +127,7 @@ _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES = (
     "runner_capability_mcp.py",
 )
 
-_DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY"
+_DEEPSEEK_API_KEY_ENV = DEEPSEEK_API_KEY_ENV
 _DEEPSEEK_BASE_URL = "https://api.deepseek.com/"
 _DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_PROVIDER = "deepseek"
@@ -274,6 +286,23 @@ def _deepseek_provider_config_lines() -> list[str]:
     ]
 
 
+def _formal_deepseek_provider_config_lines(base_url: str) -> list[str]:
+    """Secret-free TOML projection for the Runner-owned loopback proxy."""
+
+    return [
+        f'model = "{_DEEPSEEK_MODEL}"',
+        f'model_provider = "{_DEEPSEEK_PROVIDER}"',
+        'model_reasoning_effort = "max"',
+        "[model_providers.deepseek]",
+        'name = "DeepSeek"',
+        f'base_url = "{base_url}/"',
+        'wire_api = "responses"',
+        "[shell_environment_policy]",
+        'inherit = "core"',
+        f'exclude = ["{_DEEPSEEK_API_KEY_ENV}", "LLM_API_KEY"]',
+    ]
+
+
 def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[str, str]:
     """Build the explicit environment allowed for a Codex app-server process."""
 
@@ -426,6 +455,95 @@ def _auth_secret_leaf_values(payload: bytes) -> tuple[bytes, ...]:
     return tuple(values)
 
 
+class _StderrDrain:
+    """Bounded, non-blocking stderr consumer with split-sentinel detection."""
+
+    def __init__(
+        self,
+        stream: Any,
+        secret_supplier: Callable[[], tuple[bytes, ...]],
+        on_match: Callable[[], None],
+    ) -> None:
+        self.stream = stream
+        self.secret_supplier = secret_supplier
+        self.on_match = on_match
+        self.stop_event = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.bytes_drained = 0
+        self.match_count = 0
+        self.lifecycle_failure = False
+        self._lock = threading.Lock()
+
+    def start(self) -> None:
+        if self.thread is not None:
+            return
+        self.thread = threading.Thread(
+            target=self._run,
+            name="formal-stderr-drain",
+            daemon=True,
+        )
+        self.thread.start()
+
+    @staticmethod
+    def _bytes(value: Any) -> bytes:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str):
+            return value.encode("utf-8", "replace")
+        return b""
+
+    def _run(self) -> None:
+        # Retain only the largest sentinel-sized tail between reads; stderr is
+        # drained continuously and never accumulated as evidence.
+        tail = b""
+        try:
+            while not self.stop_event.is_set():
+                read = getattr(self.stream, "read", None)
+                binary_stream = getattr(self.stream, "buffer", None)
+                read1 = getattr(binary_stream, "read1", None)
+                if callable(read1):
+                    chunk = self._bytes(read1(4096))
+                elif not callable(read):
+                    raise OSError("stderr stream is unavailable")
+                else:
+                    chunk = self._bytes(read(4096))
+                if not chunk:
+                    return
+                with self._lock:
+                    self.bytes_drained += len(chunk)
+                window = tail + chunk
+                matched = False
+                for secret in self.secret_supplier():
+                    if secret and secret in window:
+                        matched = True
+                        break
+                if matched:
+                    with self._lock:
+                        self.match_count += 1
+                    try:
+                        self.on_match()
+                    except Exception:
+                        pass
+                tail = window[-4095:]
+        except Exception:
+            if not self.stop_event.is_set():
+                self.lifecycle_failure = True
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        thread = self.thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+
+    def snapshot(self) -> dict[str, int | bool]:
+        with self._lock:
+            return {
+                "bytes_drained": self.bytes_drained,
+                "match_count": self.match_count,
+                "lifecycle_failure": self.lifecycle_failure,
+            }
+
+
 @dataclass
 class _Agent:
     agent_id: str
@@ -455,6 +573,9 @@ class _Agent:
     auth_path: Path | None = None
     auth_barrier_pending: bool = False
     auth_unlinked_monotonic: float | None = None
+    credential_mode: str = "file_auth"
+    provider_proxy_ready_monotonic: float | None = None
+    stderr_drain: _StderrDrain | None = None
     first_dispatch_monotonic: float | None = None
     schema_version: int = 1
     proof_gate: bool = False
@@ -700,6 +821,17 @@ class _CodexChildResource:
         if watchdog is not None:
             watchdog.join(timeout=2.0)
         self._terminate_process()
+        if self._child_agent is not None and self._child_agent.stderr_drain is not None:
+            self._child_agent.stderr_drain.stop()
+            if self._adapter is not None:
+                self._adapter._stderr_drain_reports[self._child_agent.agent_id] = (
+                    self._child_agent.stderr_drain.snapshot()
+                )
+                if self._child_agent.stderr_drain.lifecycle_failure:
+                    self._adapter._stderr_drain_failures[self._child_agent.agent_id] = {
+                        "category": "runtime/infrastructure",
+                        "reason_code": "stderr-drain-failed",
+                    }
         if self.proxy is not None:
             self.proxy.revoke()
             self.proxy.stop()
@@ -788,6 +920,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._inactivity_lock = threading.Lock()
         self._runtime_failures: list[tuple[str, dict[str, Any]]] = []
         self._runtime_failure_lock = threading.Lock()
+        self._formal_provider_proxy: DeepSeekProviderProxy | None = None
+        self._formal_credential_binding: DeepSeekCredentialBinding | None = None
+        self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
+        self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
+        self._provider_proxy_failure_latched = False
 
     def _validated_model_override(
         self,
@@ -798,11 +935,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Resolve a package model from the frozen formal manifest when required."""
 
         if formal:
-            manifest = self._formal_model_manifest
-            if manifest is None:
-                raise CodexRuntimeError("formal runtime is missing its validated model manifest")
-            return manifest.override_for(package.package_id)
+            return self._validated_formal_model_override(package.package_id)
         return _codex_package_model_override(package)
+
+    def _validated_formal_model_override(self, package_id: str) -> tuple[str, str, str]:
+        """Resolve one exact formal package tuple from the frozen manifest.
+
+        ``TeamRunner.prepare`` validates the on-disk manifest and binds its digest before
+        any Runtime starts.  Keep this second, Runtime-local guard because thread/start is
+        the last boundary before a model process can execute: a missing package binding or
+        an in-memory tuple drift must fail closed rather than silently falling back to a
+        package default or a host model.
+        """
+
+        if package_id not in FORMAL_MODEL_PACKAGE_IDS:
+            raise CodexRuntimeError("formal model manifest package binding is invalid")
+        manifest = self._formal_model_manifest
+        if manifest is None:
+            raise CodexRuntimeError("formal runtime is missing its validated model manifest")
+        try:
+            override = manifest.override_for(package_id)
+        except Exception as exc:
+            raise CodexRuntimeError("formal model manifest package binding is invalid") from exc
+        if override != FORMAL_MODEL_TUPLE:
+            raise CodexRuntimeError("formal model manifest tuple drifted")
+        return override
 
     def _remember_secret(self, value: object) -> None:
         """Retain only transient credential bytes needed by the cleanup audit.
@@ -820,6 +977,58 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         for candidate in (value, *_auth_secret_leaf_values(value)):
             if candidate and candidate not in self._secret_audit_values:
                 self._secret_audit_values.append(candidate)
+
+    def _secret_values_for_audit(self) -> tuple[bytes, ...]:
+        values = list(self._secret_audit_values)
+        proxy = self._formal_provider_proxy
+        if proxy is not None:
+            key = proxy.secret_snapshot()
+            if key:
+                values.append(key)
+        return tuple(values)
+
+    def _on_stderr_secret_match(self, agent: _Agent) -> None:
+        self._stderr_drain_failures[agent.agent_id] = {
+            "category": "runtime/infrastructure",
+            "reason_code": "provider-secret-on-stderr",
+        }
+
+    def _on_provider_proxy_failure(self, reason_code: str) -> None:
+        # The proxy callback carries only a fixed local reason code; provider
+        # status/text never enters the Runtime failure queue.
+        if self._provider_proxy_failure_latched:
+            return
+        self._provider_proxy_failure_latched = True
+        with self._runtime_failure_lock:
+            self._runtime_failures.append(
+                (
+                    "provider-proxy",
+                    {
+                        "category": "runtime/infrastructure",
+                        "reason_code": reason_code
+                        if isinstance(reason_code, str)
+                        and reason_code
+                        in {
+                            "provider-proxy-upstream-failed",
+                            "provider-proxy-upstream-status",
+                        }
+                        else "provider-proxy-failed",
+                    },
+                )
+            )
+
+    def _start_stderr_drain(self, agent: _Agent) -> None:
+        process = agent.process
+        stream = getattr(process, "stderr", None) if process is not None else None
+        if stream is None:
+            return
+        drain = _StderrDrain(
+            stream,
+            self._secret_values_for_audit,
+            lambda: self._on_stderr_secret_match(agent),
+        )
+        agent.stderr_drain = drain
+        drain.start()
 
     @staticmethod
     def _read_secret_bytes(path: Path) -> bytes | None:
@@ -846,7 +1055,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 target.unlink(missing_ok=True)
             raise CodexRuntimeError("private provider auth staging failed") from exc
 
-    def _audit_process_surfaces(self, agent: _Agent) -> dict[str, Any]:
+    def _audit_process_surfaces(
+        self,
+        agent: _Agent,
+        *,
+        secret_values: tuple[bytes, ...] | None = None,
+    ) -> dict[str, Any]:
         surfaces: list[tuple[str, bytes]] = []
         process = agent.process
         if process is not None:
@@ -877,7 +1091,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     except OSError:
                         pass
         return audit_private_artifacts(
-            (), self._secret_audit_values, process_surfaces=surfaces
+            (),
+            self._secret_values_for_audit() if secret_values is None else secret_values,
+            process_surfaces=surfaces,
         )
 
     def _record_cleanup_audit(
@@ -886,6 +1102,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         result: dict[str, Any],
         *,
         ignore_auth_paths: bool = False,
+        suppress_secret_digests: bool = False,
     ) -> None:
         matches = result.get("match_count", 0)
         if ignore_auth_paths and matches:
@@ -900,7 +1117,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "scanned_files": result.get("scanned_files", 0),
                 "match_count": matches,
                 "matched_secret_count": result.get("matched_secret_count", 0),
-                "matched_secret_digests": list(result.get("matched_secret_digests", [])),
+                "matched_secret_digests": []
+                if suppress_secret_digests
+                else list(result.get("matched_secret_digests", [])),
             }
 
     def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
@@ -1099,7 +1318,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 except Exception:
                     pass
             private_root = spec.get("private_root")
-            if isinstance(private_root, str) and private_root:
+            if self._coordination_enabled and isinstance(private_root, str) and private_root:
                 path = Path(private_root)
                 if not path.is_symlink():
                     shutil.rmtree(path, ignore_errors=True)
@@ -1132,10 +1351,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
         child_package_id = f"{kind}-examiner"
         if formal:
-            manifest = self._formal_model_manifest
-            if manifest is None:
-                raise CodexRuntimeError("formal runtime is missing its validated model manifest")
-            child_model_override = manifest.override_for(child_package_id)
+            child_model_override = self._validated_formal_model_override(child_package_id)
         else:
             child_model_override = None
         # DeepSeek is intentionally retained only for non-formal legacy adapters.
@@ -1164,7 +1380,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         _package_file, instructions, skill = self._child_package_assets(kind, self.root)
         paths = prepare_child_tree(
             private_root=private_root,
-            host_auth=self.preflight_host_auth(),
+            # Formal Examiner children use the shared loopback provider proxy;
+            # they never receive a copied host auth.json.  Legacy/non-formal
+            # child fixtures retain the historical private auth staging.
+            host_auth=None if formal else self.preflight_host_auth(),
             instructions=instructions.read_bytes(),
             skill_name=skill.parent.name,
             skill_bytes=skill.read_bytes(),
@@ -1311,12 +1530,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ]
         )
         if formal:
+            provider_proxy = self._formal_provider_proxy
+            if provider_proxy is None:
+                raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
+            proxy_url = provider_proxy.base_url
             provider_lines = [
                 f'model = "{child_model_override[0]}"',
                 f'model_provider = "{child_model_override[1]}"',
                 f'model_reasoning_effort = "{child_model_override[2]}"',
+                "[model_providers.deepseek]",
+                'name = "DeepSeek"',
+                f'base_url = "{proxy_url}/"',
+                'wire_api = "responses"',
+                "[shell_environment_policy]",
+                'inherit = "core"',
+                'exclude = ["DEEPSEEK_API_KEY", "LLM_API_KEY"]',
             ]
-            config_lines = provider_lines + config_lines
+            config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
             config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
@@ -1360,6 +1590,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             proxy_socket=proxy_socket,
             report_socket=report_socket,
         )
+        # Formal proxy authentication is deliberately absent from process env.
         env = _minimal_codex_process_env(home, deepseek_key)
         process = self.process_factory(
             command,
@@ -1414,21 +1645,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             process=process,
             platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
         )
-        child_agent.auth_path = home / "auth.json"
+        child_agent.auth_path = None if formal else home / "auth.json"
         child_agent.auth_barrier_pending = formal
+        child_agent.credential_mode = "provider_proxy" if formal else "file_auth"
+        if formal:
+            self._start_stderr_drain(child_agent)
+        # Bind the resource to the child even before stdout-pump startup so an
+        # initialize/thread failure can stop the drain during unwind.
+        resource._adapter = self
+        resource._child_agent = child_agent
         try:
             self._rpc(child_agent, "initialize", {"clientInfo": {"name": "modeling-team-examiner", "version": "1"}})
-            thread_result = self._rpc(
-                child_agent,
-                "thread/start",
-                {
-                    "cwd": "/agent/work",
-                    "baseInstructions": "",
-                    "developerInstructions": instructions.read_text(encoding="utf-8"),
-                    "config": {"web_search": "disabled", "default_tools_enabled": False},
-                    "sandbox": "read-only",
-                },
-            )
+            thread_start_params = {
+                "cwd": "/agent/work",
+                "baseInstructions": "",
+                "developerInstructions": instructions.read_text(encoding="utf-8"),
+                "config": {"web_search": "disabled", "default_tools_enabled": False},
+                "sandbox": "read-only",
+            }
+            if formal:
+                # The child Thread must use the exact model selected for its
+                # predeclared Examiner package.  Provider/reasoning stay in the
+                # manifest-backed TOML written above; non-formal child fixtures keep
+                # their historical request shape.
+                thread_start_params["model"] = child_model_override[0]
+            thread_result = self._rpc(child_agent, "thread/start", thread_start_params)
             thread = thread_result.get("thread", thread_result) if isinstance(thread_result, dict) else {}
             thread_id = thread.get("id") if isinstance(thread, dict) else None
             if not isinstance(thread_id, str) or not thread_id:
@@ -1593,6 +1834,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 or process_value != process_value.strip()
                 or any(char in process_value for char in "\x00\r\n")
             ):
+                self._adapter._stderr_drain_reports[self._child_agent.agent_id] = (
+                    self._child_agent.stderr_drain.snapshot()
+                )
                 raise CodexRuntimeError("DeepSeek API key is missing or malformed")
             return process_value
 
@@ -1632,6 +1876,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._run_id = run.run_id
         self._secret_audit_values.clear()
         self._secret_audit_failures.clear()
+        self._stderr_drain_failures.clear()
+        self._stderr_drain_reports.clear()
+        self._provider_proxy_failure_latched = False
         self._child_auth_barriers.clear()
         with self._runtime_failure_lock:
             self._runtime_failures.clear()
@@ -1649,12 +1896,27 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ):
             raise CodexRuntimeError("formal runtime model manifest is unavailable")
         if self._coordination_enabled:
-            # Keep only an in-memory sentinel for the final private-artifact
-            # audit.  It is never resolved into provider configuration or child
-            # environment, and its bytes are cleared after cleanup.
-            host_sentinel = os.environ.get(_DEEPSEEK_API_KEY_ENV)
-            if isinstance(host_sentinel, str) and host_sentinel:
-                self._remember_secret(host_sentinel.encode("utf-8"))
+            binding = getattr(run, "deepseek_credential_binding", None)
+            if not isinstance(binding, DeepSeekCredentialBinding):
+                raise CodexRuntimeError("formal DeepSeek credential binding is unavailable")
+            key_buffer: bytearray | None = None
+            try:
+                key_buffer = bytearray(read_deepseek_credential(binding))
+                proxy = DeepSeekProviderProxy(
+                    key_buffer,
+                    on_failure=self._on_provider_proxy_failure,
+                )
+                proxy.start()
+            except (DeepSeekCredentialError, DeepSeekProviderProxyError) as exc:
+                raise CodexRuntimeError("formal DeepSeek provider proxy startup failed") from exc
+            finally:
+                # Proxy owns its own mutable copy; wipe the read buffer before
+                # returning from the startup gate.
+                if key_buffer is not None:
+                    for index in range(len(key_buffer)):
+                        key_buffer[index] = 0
+            self._formal_credential_binding = binding
+            self._formal_provider_proxy = proxy
         self._candidate_platform_gate_enabled = (
             self._coordination_enabled
             and getattr(
@@ -1718,6 +1980,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 self._initialize(agent)
             except Exception:
                 self._cleanup_startup_auth(agent)
+                # Unwind any already-started roles, children, and the shared
+                # provider proxy before exposing a startup failure.
+                self.stop()
                 raise
             agent.app_server_host_pid = self._app_server_host_pid(agent)
             with agent.state_lock:
@@ -1730,6 +1995,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     @staticmethod
     def _cleanup_startup_auth(agent: _Agent) -> None:
+        if agent.credential_mode == "provider_proxy":
+            agent.auth_barrier_pending = False
+            return
         path = agent.auth_path
         if path is None:
             return
@@ -2142,17 +2410,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
-        # Only the Protocol receives its platform key/config.  Acceptance never gets
-        # platform authentication material or source bytes; formal R2.3-005 Acceptance
-        # receives only a private model-provider auth copy for its own Codex process,
-        # while its sole model-visible capability remains the Runner-owned local carrier.
-        if agent.package.role != "acceptance":
+        # Only the Protocol receives its platform key/config.  Formal roles use
+        # the shared loopback provider proxy and therefore never receive auth.json;
+        # historical/non-formal roles retain private auth staging unchanged.
+        if formal:
+            if self._formal_provider_proxy is None:
+                raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
+            agent.auth_path = None
+            agent.credential_mode = "provider_proxy"
+            agent.auth_barrier_pending = True
+        elif agent.package.role != "acceptance":
             host_auth = self.preflight_host_auth()
             self._remember_secret(self._read_secret_bytes(host_auth))
             auth_path = agent.home / "auth.json"
             self._stage_private_auth(host_auth, auth_path)
             agent.auth_path = auth_path
-            agent.auth_barrier_pending = formal
+            agent.credential_mode = "file_auth"
+            agent.auth_barrier_pending = False
         elif formal_acceptance_auth:
             host_auth = self.preflight_host_auth()
             self._remember_secret(self._read_secret_bytes(host_auth))
@@ -2269,6 +2543,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 f'model_reasoning_effort = "{reasoning}"',
                 *lines,
             ]
+            if formal:
+                proxy = self._formal_provider_proxy
+                if proxy is None:
+                    raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
+                provider_lines = _formal_deepseek_provider_config_lines(proxy.base_url)
+                # ``lines`` already carries the package model trio above.  Keep one
+                # authoritative trio and append only the provider/shell tables;
+                # repeating the scalar keys makes the real app-server reject the
+                # config before initialize with a TOML duplicate-key error.
+                lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
             # Keep scalar settings before the first TOML table; append provider and
@@ -2523,7 +2807,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         command = self.namespace_command(agent)
         descriptors = agent.retrieval_asset_fds
         try:
-            return self.process_factory(
+            process = self.process_factory(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -2534,6 +2818,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 pass_fds=descriptors,
                 env=_minimal_codex_process_env(agent.home, api_key),
             )
+            agent.process = process
+            if formal:
+                self._start_stderr_drain(agent)
+            return process
         finally:
             self._close_retrieval_asset_fds(agent)
 
@@ -2936,6 +3224,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _unlink_auth_barrier(self, agent: _Agent) -> None:
         if not agent.auth_barrier_pending:
             return
+        if agent.credential_mode == "provider_proxy":
+            agent.auth_barrier_pending = False
+            timestamp = time.monotonic()
+            agent.provider_proxy_ready_monotonic = timestamp
+            self._append_runtime_evidence(
+                "auth-barrier",
+                {
+                    "agent_id": agent.agent_id,
+                    "event": "provider_proxy_ready",
+                    "monotonic": timestamp,
+                },
+            )
+            return
         path = agent.auth_path
         if path is None:
             raise CodexRuntimeError("first-turn auth barrier has no private path")
@@ -3176,27 +3477,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError(
                 "Skill discovery did not return exact enabled staged paths"
             )
-        result = self._rpc(
-            agent,
-            "thread/start",
-            {
-                "cwd": "/agent/work",
-                "baseInstructions": "",
-                # Do not leave this null: app-server otherwise retains ambient developer
-                # material from the authenticated interactive Codex environment.
-                "developerInstructions": agent.package.instructions_path.read_text(
+        thread_start_params = {
+            "cwd": "/agent/work",
+            "baseInstructions": "",
+            # Do not leave this null: app-server otherwise retains ambient developer
+            # material from the authenticated interactive Codex environment.
+            "developerInstructions": agent.package.instructions_path.read_text(
+                encoding="utf-8"
+            ),
+            "config": {
+                "web_search": "disabled",
+                "default_tools_enabled": False,
+                "developer_instructions": agent.package.instructions_path.read_text(
                     encoding="utf-8"
                 ),
-                "config": {
-                    "web_search": "disabled",
-                    "default_tools_enabled": False,
-                    "developer_instructions": agent.package.instructions_path.read_text(
-                        encoding="utf-8"
-                    ),
-                },
-                "sandbox": agent.package.runtime["codex"]["sandbox"],
             },
-        )
+            "sandbox": agent.package.runtime["codex"]["sandbox"],
+        }
+        if self._coordination_enabled:
+            # Formal R2.3-005 binds the App Server's Thread to the same validated
+            # package manifest that generated config.toml.  Non-formal and archived
+            # R2.3-002 starts intentionally keep the legacy request shape (no model).
+            thread_start_params["model"] = self._validated_model_override(
+                agent.package, formal=True
+            )[0]
+        result = self._rpc(agent, "thread/start", thread_start_params)
         thread_id = (
             result.get("thread", result).get("id") if isinstance(result, dict) else None
         )
@@ -4261,6 +4566,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         }
 
     def receive_messages(self) -> list[RuntimeMessage]:
+        proxy = self._formal_provider_proxy
+        if self._coordination_enabled and proxy is not None:
+            if not bool(proxy.snapshot().get("listening")):
+                self._on_provider_proxy_failure("provider-proxy-stopped")
         for agent in self.agents.values():
             try:
                 with agent.io_lock:
@@ -4320,11 +4629,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if isinstance(child_agent, _Agent):
                 self._child_auth_barriers[resource_identity] = {
                     "auth_unlinked_monotonic": child_agent.auth_unlinked_monotonic,
+                    "provider_proxy_ready_monotonic": child_agent.provider_proxy_ready_monotonic,
                     "first_dispatch_monotonic": child_agent.first_dispatch_monotonic,
                 }
                 self._record_cleanup_audit(
                     resource_identity,
                     self._audit_process_surfaces(child_agent),
+                    suppress_secret_digests=self._coordination_enabled,
+                )
+            if self._coordination_enabled and isinstance(private_root, str) and private_root:
+                # Capture the artifact surface while the shared provider key is
+                # still mutable and before ``destroy`` wipes the child tree.
+                self._record_cleanup_audit(
+                    resource_identity,
+                    audit_private_artifacts(
+                        Path(private_root), self._secret_values_for_audit()
+                    ),
+                    suppress_secret_digests=self._coordination_enabled,
                 )
             try:
                 stop = getattr(resource, "stop", None)
@@ -4335,17 +4656,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     destroy()
             finally:
                 self._acceptance_children.pop(handle_digest, None)
-            if isinstance(private_root, str) and private_root:
-                self._record_cleanup_audit(
-                    resource_identity,
-                    audit_private_artifacts(
-                        Path(private_root), self._secret_audit_values
-                    ),
-                )
         for agent in self.agents.values():
             self._record_cleanup_audit(
                 agent.agent_id,
                 self._audit_process_surfaces(agent),
+                suppress_secret_digests=self._coordination_enabled,
             )
             agent.inactivity_watchdog_stop.set()
             self._close_retrieval_asset_fds(agent)
@@ -4362,6 +4677,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     except (ProcessLookupError, PermissionError):
                         agent.process.kill()
                     agent.process.wait(timeout=5)
+            if self._coordination_enabled:
+                pre_cleanup_audit = audit_private_artifacts(
+                    self._run_root if self._run_root is not None else agent.home,
+                    self._secret_values_for_audit(),
+                )
+                self._record_cleanup_audit(
+                    agent.agent_id,
+                    pre_cleanup_audit,
+                    suppress_secret_digests=True,
+                )
+            if agent.stderr_drain is not None:
+                agent.stderr_drain.stop()
+                self._stderr_drain_reports[agent.agent_id] = agent.stderr_drain.snapshot()
+                if agent.stderr_drain.lifecycle_failure:
+                    self._stderr_drain_failures[agent.agent_id] = {
+                        "category": "runtime/infrastructure",
+                        "reason_code": "stderr-drain-failed",
+                    }
             artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
             if self._coordination_enabled:
                 artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
@@ -4378,19 +4711,29 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
             post_cleanup_audit = audit_private_artifacts(
                 self._run_root if self._run_root is not None else agent.home,
-                self._secret_audit_values,
+                self._secret_values_for_audit(),
             )
             self._record_cleanup_audit(
                 agent.agent_id,
                 post_cleanup_audit,
                 ignore_auth_paths=False,
+                suppress_secret_digests=self._coordination_enabled,
             )
             self._private_credentials_destroyed[agent.agent_id] = (
                 cleanup_ok
                 and not residual
                 and agent.agent_id not in self._secret_audit_failures
+                and agent.agent_id not in self._stderr_drain_failures
             )
             agent.state = "stopped"
+        # Keep the shared provider proxy alive until all child/persistent process
+        # surfaces and run artifacts have been audited, then close the listener and
+        # overwrite its mutable credential buffer exactly once.
+        proxy = self._formal_provider_proxy
+        if proxy is not None:
+            proxy.stop()
+        self._formal_provider_proxy = None
+        self._formal_credential_binding = None
         # The values are only held transiently to support the post-cleanup audit;
         # never retain credential bytes after the lifecycle boundary.
         self._secret_audit_values.clear()
@@ -4401,6 +4744,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if self._coordination_enabled:
             artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
         for key, value in self.agents.items():
+            stderr_drain = dict(
+                self._stderr_drain_reports.get(
+                    key,
+                    {
+                        "bytes_drained": 0,
+                        "match_count": 0,
+                        "lifecycle_failure": False,
+                    },
+                )
+            )
+            if key in self._stderr_drain_failures:
+                stderr_drain.update(self._stderr_drain_failures[key])
             private_credentials_destroyed = self._private_credentials_destroyed.get(key, False)
             if private_credentials_destroyed:
                 private_credentials_destroyed = not any(
@@ -4412,6 +4767,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "pid": value.process.pid if value.process else None,
                 "auth_barrier": {
                     "auth_unlinked_monotonic": value.auth_unlinked_monotonic,
+                    "provider_proxy_ready_monotonic": value.provider_proxy_ready_monotonic,
                     "first_dispatch_monotonic": value.first_dispatch_monotonic,
                 },
                 "private_credentials_destroyed": private_credentials_destroyed,
@@ -4424,12 +4780,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "matched_secret_digests": [],
                     },
                 ),
+                "stderr_drain": stderr_drain,
             }
         return identifiers | {
             "acceptance_children": {
                 "active": len(self._acceptance_children),
                 "zero_residue": not self._acceptance_children,
                 "auth_barriers": dict(self._child_auth_barriers),
+                "stderr_drain": {
+                    key: value
+                    for key, value in self._stderr_drain_reports.items()
+                    if key.startswith("source-examiner-")
+                    or key.startswith("platform-examiner-")
+                },
                 "secret_audit": {
                     key: value
                     for key, value in self._secret_audit_failures.items()

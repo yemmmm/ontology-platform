@@ -288,3 +288,112 @@ matching-terminal gate remains open. Independent Round 19 consumed the single pe
 post-revocation diagnostic, not a semantic start: setup succeeded, but the Adapter emitted
 typed `inactivity-watchdog/llm-inactivity-timeout` before the 420-second cap and without a
 matching terminal. No retry is authorized by this plan.
+
+## Post-Round-19 cold app-server repair
+
+1. Reuse the existing validated `FormalModelManifest`; do not add another model registry or copy
+   host `models_cache.json`. For formal persistent roles, `_initialize` passes the role's exact
+   manifest model as the `model` field of `thread/start`. For formal Source/Platform Examiner
+   children, the private child launch passes the child package's exact manifest model in the same
+   field. Existing manifest-backed TOML remains the sole provider/reasoning binding.
+2. Keep the projection formal-only. Non-formal and R2.3-002 `thread/start` payloads remain unchanged
+   and omit `model`; missing manifest, unknown package, tuple mismatch, or drift stays fail-closed
+   before launch. Do not broaden Runtime configuration, cache copying, retry policy, or timeout
+   behavior.
+3. Add focused capture tests for Coordinator, Modeling, Protocol, Acceptance, Source Examiner, and
+   Platform Examiner. Assert exact `model=gpt-5.6-luna`, unchanged config/auth/MCP ordering, and no
+   second source of truth. Add non-formal request-shape regression and malformed/drift failure cases.
+4. After deterministic and full regressions pass, an independent tester runs exactly one bounded
+   formal Coordinator empty-business app-server smoke from the frozen state. It uses no source,
+   platform client, Runner reservation, or StartLedger, stops on a matching terminal or typed
+   Runtime failure, retains only sanitized evidence, and does not retry. Only a matching terminal
+   opens start73.
+
+This repair was explicitly approved by the user on 2026-08-10. Implementation remains gated on a
+fresh mandatory plan-review PASS.
+
+## Post-Round-20 auth-lifetime differential probe
+
+Round 20 proved the explicit model reached the live request but did not produce a terminal. Before
+another production change, run one single-variable diagnostic against the same frozen formal
+Coordinator configuration: keep the private 0600 `auth.json` staged through the turn instead of
+unlinking it after the accepted `turn/start`; delete and audit it during cleanup. This is a probe,
+not the proposed production security contract.
+
+The probe must use the same explicit manifest model, TOML provider/reasoning, bwrap namespace, MCP
+surface, instructions, task input, public receive pump, inactivity watchdog, and absolute cap as
+Round 20. It may alter only auth unlink timing in its temporary harness. Retain sanitized
+notification method counts and Adapter provider-error fields (`variant`, bounded `http_status`,
+`will_retry`, turn digest) plus typed failure/terminal summary; never retain provider message/data,
+stderr, token bytes, or auth contents. Use no source, platform client, Runner reservation, or
+StartLedger and do not retry.
+
+A matching terminal would attribute the remaining failure to the current auth lifetime and require
+a separately reviewed production credential-delivery design. The same inactivity failure with no
+safe provider event rejects that hypothesis and leaves app-server/MCP or prompt execution as the
+next diagnostic layer. Either outcome is evidence only and cannot open start73 by itself, because
+retaining auth through model execution violates the currently accepted production boundary.
+
+Round 21 did not reach first-turn execution: the temporary test harness raised a local closure error
+at the auth-retention seam and then cleaned successfully. Preserve that round as `BLOCKED/test-harness`.
+One corrected Round 22 probe is permitted only after the replacement callback passes a deterministic,
+no-process preflight proving that it changes only auth-file lifetime, preserves the barrier state and
+safe evidence transition, and completes cleanup without exception. If that preflight passes, Round 22
+uses the unchanged single-variable contract above exactly once and without retry.
+
+## Superseding implementation — formal DeepSeek v4 Flash rollback
+
+1. Replace the formal-only Luna manifest with one exact six-package DeepSeek artifact and update
+   `model_manifest.py` constants/schema validation to accept only
+   `deepseek-v4-flash/deepseek/max`. Preserve loader/initial-baseline/post-preflight digest equality and
+   formal-only projection; shared packages and non-formal/R2.3-002 behavior do not change.
+2. Add a small Runner-owned loopback provider proxy module. Its production credential path is fixed at
+   `~/.config/ontology-platform/modeling-team-deepseek.env` (constructor injection exists only for tests). It binds
+   `127.0.0.1:0`, accepts only `POST /responses` with a 32 MiB request cap, removes inbound auth,
+   injects the Host bearer token upstream, streams the response, and retains only safe counters/status categories.
+   It forwards a fixed non-auth header allowlist to TLS-verified `https://api.deepseek.com/responses` with ambient
+   proxies and redirects disabled and bounded timeouts. It must not log or persist provider headers/body/free text.
+   The key is held in a mutable buffer and overwritten on idempotent stop.
+3. Move formal credential preflight into `TeamRunner.prepare` beside the current model-manifest no-side-effect gate.
+   Missing, symlinked, non-owner, non-0600, malformed, or multi-assignment files fail before platform, ledger,
+   run-root, transport, capability, proxy, process, or child creation. Store only a non-persisted binding of canonical
+   path/device/inode/size/mtime-ns; Runtime reopens with `O_NOFOLLOW` and requires exact fstat equality before reading.
+   Never store key bytes or key digest in `TeamRun`, baseline, manifest, or evidence. Remove the formal
+   `os.environ[DEEPSEEK_API_KEY]` audit-sentinel read and ignore ambient `DEEPSEEK_API_KEY`/`LLM_API_KEY` completely;
+   preserve the existing non-formal/R2.3-002 resolution path.
+4. In `CodexRuntimeAdapter.start_roster`, resolve the key only after the frozen run is attached, start exactly one
+   proxy before Agent launch, and configure all formal persistent roles and Examiner children with the proxy URL plus
+   exact manifest tuple. Formal configs omit `env_key`, static token, auth command, and OpenAI `auth.json`; process env
+   remains minimal and key-free. Add an explicit `provider_proxy` first-turn credential mode: keep the existing
+   notification buffer/replay and early ServerRequest response logic, but complete a safe no-file transition instead
+   of calling file unlink with `auth_path=None`. Existing file-auth behavior remains unchanged. Startup failure unwinds
+   the proxy and partial roster exactly once.
+5. Extend stop/child cleanup so Agent and Examiner processes terminate before the proxy listener closes. Scan process
+   surfaces and artifacts with the actual mutable key buffer before wiping it; for formal provider-key audits suppress
+   `matched_secret_digests` and persist counts/booleans only. Any match makes credential cleanup fail and the run
+   overall `runtime/infrastructure,false`. After the final scan overwrite/release the proxy key buffer. Preserve typed
+   provider/RPC failure normalization and the 300-second inactivity watchdog.
+6. Add a formal-only lifecycle-owned stderr drain for each persistent and Examiner process. Drain continuously with a
+   bounded overlap buffer that detects a sentinel split across chunks; retain counts/booleans only and never raw stderr
+   or key digest. A match marks credential cleanup failed, while drain lifecycle failure becomes typed Runtime failure.
+   Preserve non-formal behavior.
+7. Add deterministic tests for exact six-package tuple/digest/TOCTOU, credential-file metadata and parsing, zero-side-
+   effect preflight, proxy auth replacement and streaming, method/path/body rejection, early upstream failure,
+   persistent/Examiner config and env, partial-start unwind, idempotent stop, and real-key sentinel absence across
+   argv/TOML/auth/shell snapshot/session/SQLite/WAL/SHM/log/evidence/stderr. Include split-chunk stderr matches,
+   nonmatching high-volume drain/backpressure, no raw/digest output, persistent/Examiner teardown, and non-formal
+   compatibility. Re-run formal and non-formal regression suites, Ruff, compile/diff, GitNexus, restart, and health.
+8. After independent deterministic PASS and secure operator installation of the credential file, execute exactly one
+   bounded formal Coordinator empty-business smoke. It cannot use source/platform/Runner/StartLedger/Examiner or
+   semantic modeling and cannot retry. Matching terminal plus zero secret/residue passes the provider gate; otherwise
+   retain a typed Runtime result and keep start73 paused.
+
+The user approved this rollback and the local proxy boundary on 2026-08-10. The plaintext credential supplied in chat
+must never be copied into repository files, delivery documents, tool commands, logs, or test fixtures. Credential
+installation is an operator step through a non-echoing local channel.
+
+Implementation and Independent Round 25 passed. The initial live attempt exposed and preserved one formal TOML
+duplicate-scalar startup defect; the repair retained one exact tuple and added parser/unwind coverage. The subsequent
+single live empty Coordinator smoke received matching `turn/completed` through the proxy with upstream 2xx and zero
+secret/residue. The DeepSeek Runtime/provider gate is complete; start73 may proceed from the committed rollback, while
+semantic acceptance remains a separate live requirement.

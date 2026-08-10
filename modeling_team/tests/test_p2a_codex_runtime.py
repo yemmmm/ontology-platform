@@ -84,10 +84,14 @@ FROZEN_GLOBAL_SURFACES = {
     # JSON-RPC failures now use closed typed categories; Runtime latches one
     # sanitized provider/watchdog failure, consumes it before/after receive, and
     # Runner finalizes cleanup/terminal reporting exactly once.
-    "modeling_team/runner.py": "2796c938020da5305695f225c559eda2248bb7df2f5da258a7e56db36998372f",
+    # 2026-08-10 explicit formal model binding: formal persistent/Examiner
+    # thread/start requests now carry the validated DeepSeek v4 Flash model;
+    # P2A/nonformal
+    # request and platform-surface behavior remains covered by the assertions below.
+    "modeling_team/runner.py": "8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "e39b3645bad1180b8b4376a662be8522a3dc199b14498c2fdc0747fe23cdb95e",
+    "modeling_team/runtimes/codex.py": "1e22dd023d28bca05a7e5854de2121b9444c527823c09314113d15e2dc88a520",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

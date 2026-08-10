@@ -10,6 +10,7 @@ from modeling_team.candidate_platform_gate import (
 )
 from modeling_team.protocol_mcp_launch import protocol_mcp_launch_spec
 from modeling_team.model_manifest import load_formal_model_manifest
+from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
 from modeling_team.runtimes.codex import _Agent, CodexRuntimeAdapter
 from modeling_team.runtimes.base import RuntimeDelivery
 from modeling_team.contracts import repository_root
@@ -111,6 +112,9 @@ def test_codex_formal_config_and_namespace_bind_gate_read_only(monkeypatch, tmp_
     host_auth.chmod(0o600)
     adapter = CodexRuntimeAdapter(repository_root=root)
     adapter._formal_model_manifest = load_formal_model_manifest(root)
+    proxy = DeepSeekProviderProxy(b"formal-test-sentinel")
+    proxy.start()
+    adapter._formal_provider_proxy = proxy
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     adapter._write_config(run, agent)
@@ -123,6 +127,8 @@ def test_codex_formal_config_and_namespace_bind_gate_read_only(monkeypatch, tmp_
     command = adapter.namespace_command(agent)
     mount = ["--ro-bind", str(base / "candidate-gate"), "/opt/candidate-gate"]
     assert any(command[index : index + 3] == mount for index in range(len(command) - 2))
+    adapter.stop()
+    proxy.stop()
 
 
 def test_codex_nonformal_v2_has_no_candidate_gate_env_or_mount(monkeypatch, tmp_path: Path) -> None:

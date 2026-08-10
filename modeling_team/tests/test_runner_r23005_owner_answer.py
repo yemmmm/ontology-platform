@@ -667,6 +667,9 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             ledger_root = base / "ledger"
+            credential_path = base / "deepseek.env"
+            credential_path.write_text("DEEPSEEK_API_KEY=round23-owner-test\n", encoding="utf-8")
+            credential_path.chmod(0o600)
             adapter = _StartAdapter()
             scopes: list[_LiveProjectScope] = []
 
@@ -679,6 +682,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 repository_root=root,
                 adapter=adapter,
                 scope_factory=scope_factory,
+                deepseek_credential_path=credential_path,
                 freeze_started_at=datetime.now(UTC).isoformat(),
                 prestart_preflight=lambda **_kwargs: {
                     "status_code": 200,

@@ -1,4 +1,4 @@
-"""Validated formal model policy for the R2.3-005 Luna-max Team."""
+"""Validated formal model policy for the R2.3-005 DeepSeek Team."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from .contracts import TeamConfigurationError
 FORMAL_MODEL_MANIFEST_RELATIVE = Path(
     "modeling_team/model-manifests/r2-3-005-luna-max.yaml"
 )
-FORMAL_MODEL_MANIFEST_ID = "r2-3-005-luna-max"
+FORMAL_MODEL_MANIFEST_ID = "r2-3-005-deepseek-v4-flash"
 FORMAL_MODEL_PROFILE_ID = "r2-3-005-modeling-team"
 FORMAL_MODEL_TASK_ID = "r2-3-005-formal-acceptance"
 FORMAL_MODEL_SCHEMA_VERSION = 1
-FORMAL_MODEL_TUPLE = ("gpt-5.6-luna", "openai", "max")
+FORMAL_MODEL_TUPLE = ("deepseek-v4-flash", "deepseek", "max")
 FORMAL_MODEL_PACKAGE_IDS = (
     "coordinator",
     "modeling",

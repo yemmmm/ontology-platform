@@ -18,6 +18,7 @@ from modeling_team.acceptance_runtime import ReportSinkServer
 from modeling_team.report_sink_mcp import report_schema
 from modeling_team.acceptance_runtime import PLATFORM_PROXY_READ_TOOLS
 from modeling_team.model_manifest import load_formal_model_manifest
+from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.contracts import repository_root
 from modeling_team.tests.test_r23005_contracts import _ticket
@@ -372,6 +373,9 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
     )
     adapter._coordination_enabled = True
     adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+    proxy = DeepSeekProviderProxy(b"formal-test-sentinel")
+    proxy.start()
+    adapter._formal_provider_proxy = proxy
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     def rpc(_agent, method: str, _params):
@@ -429,4 +433,5 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
     if kind == "platform":
         assert (socket_root / "platform-proxy.sock").exists()
     resource.destroy()
+    proxy.stop()
     assert not socket_root.exists()

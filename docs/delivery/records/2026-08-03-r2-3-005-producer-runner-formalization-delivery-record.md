@@ -4073,3 +4073,205 @@ the formal builder, or starting another real run before authorization.
   retained start72 evidence remains unchanged. Round 19 consumed no semantic start, so start73–77 remain
   conceptually available under their existing strict-ledger sequencing; all remain paused behind the Luna
   matching-terminal gate. No further diagnostic retry is authorized by this round.
+
+### 2026-08-10 — Luna cold app-server diagnosis and approved narrow repair
+
+- Read-only diagnosis separated model availability from the Team path. Current Codex `0.147.0` completed one empty
+  Luna `medium` and one empty Luna `max` `codex exec` probe in about six seconds each with `turn.completed` and exact
+  `OK`; both temporary roots were moved to trash. These probes used no Team, MCP, platform, source, or StartLedger and
+  consumed no semantic start.
+- Historical evidence shows the earlier Team claim was not a successful Luna baseline: start42 used Luna/max only for
+  Protocol and failed after streamed retries. A safe retained-artifact scan found two exact model-catalog refresh
+  failures, two child-process exit timeouts, and repeated request-send errors. The isolated Protocol home had no
+  `models_cache.json`.
+- Current formal role homes have the same cold-cache boundary. Runtime stages only owner-private auth/config and the
+  persistent/Examiner `thread/start` payloads omit `model`, despite the manifest-backed TOML. The upstream app-server
+  issue documents this cold catalog path and recommends an explicit thread-start model; copying mutable host cache is
+  not accepted.
+- The user approved the narrow repair: project the existing validated formal manifest's exact Luna model into every
+  formal persistent and Examiner `thread/start`; preserve provider/reasoning TOML, auth barrier, MCP/liveness/cleanup,
+  non-formal compatibility, and all semantic-start gates. No semantic run is authorized by this approval. Design and
+  shared test plan were updated; implementation awaits mandatory plan review.
+- GitNexus upstream impact before product edits classified persistent `_initialize` as CRITICAL (98 direct/104 total)
+  and Examiner child launch as CRITICAL (91 direct/98 total), with zero indexed processes; the new manifest helper was
+  absent from the stale index and remains UNKNOWN. This is accepted as shared-Runtime blast radius, so the handoff
+  requires formal six-package request tests, non-formal compatibility, and full Runtime regression rather than a
+  wider redesign.
+- Mandatory plan review returned PASS with no Critical/High. The reviewer verified current Codex `ThreadStartParams`
+  accepts optional `model:string|null`, the formal loader already freezes the exact six-package tuple/digest before
+  side effects, and only persistent `_initialize` plus Examiner child `thread/start` omit the field. The reviewed
+  plan keeps provider/reasoning in TOML, forbids model-cache copying, and treats only a later matching terminal as the
+  provider gate; typed timeout remains Runtime evidence and cannot open a semantic start.
+- Developer implemented the reviewed delta only in `modeling_team/runtimes/codex.py` and
+  `modeling_team/tests/test_deepseek_codex_runtime.py`. Formal persistent and Examiner thread starts now project
+  `model=gpt-5.6-luna` from the validated manifest; provider/reasoning stay in TOML, non-formal payloads omit model,
+  and Runtime-local six-package/tuple drift fails before process launch. No cache, retry, timeout, semantic, ledger,
+  or platform behavior changed.
+- Development verification passed: focused 122 tests plus 48 subtests; R2.3-005 unittest 176 with one skip; full
+  `modeling_team` unittest 493 with one skip; Ruff, compileall, and diff check. GitNexus final scope was LOW, seven
+  changed files including the five delivery documents, four indexed symbols, zero affected processes. Frozen hashes
+  are Codex Runtime `8c3bb6a4f030595a4bdd16ef7e01bf8d69e4cae055a58358b39a72ded6d7247e` and focused test
+  `fb8d382d23f2c558e2b627dd26f3b36c7391c861b265a06d990d3f19abfeb81c`. No smoke, service restart, semantic run,
+  or commit occurred; this is the stable independent-test handoff.
+- Independent Round 20 first deterministic pass found one stale P2A byte-freeze expectation: the test still required
+  the pre-repair whole-file Codex Runtime hash even though the reviewed formal-only delta intentionally changes that
+  file. The tester paused before any live smoke. This was accepted as a test-baseline defect, not provider behavior;
+  R2.3-005 and full modeling-team discovery were otherwise green, and both formal/R2.3-002 ledgers were unchanged.
+- Developer repaired only `test_p2a_codex_runtime.py`: refreshed the approved Runtime hash and documented the formal
+  persistent/Examiner thread-start binding while retaining all P2A/non-formal behavioral assertions. Targeted P2A
+  passed; focused 151 plus 48 subtests, R2.3-005 176 with one skip, full modeling-team 493 with one skip, Ruff,
+  compileall, diff check, and GitNexus LOW/zero processes passed. Product hashes remain unchanged; the repaired P2A
+  test hash is `d9bc42fec3d6255a913ab769b33daf6e3b542279b6b1ef235c78dba1ca43505a`. This is the stable retest handoff.
+- Independent Round 20 repair retest passed the stale P2A and formal/non-formal request-shape cases 3/3, focused 301
+  plus 77 subtests, R2.3-005 176 with one skip, full modeling-team 493 with one skip, Ruff, compileall, diff,
+  GitNexus LOW/zero processes, service restart, backend health, and frontend HTTP 200. Six manifest packages and the
+  frozen digest were exact, and no Runtime/config source referenced `models_cache.json`.
+- The single permitted formal Coordinator smoke proved the new field was live: captured `thread/start` included only
+  the exact `model=gpt-5.6-luna` model binding and no provider/reasoning fields. Nevertheless, 1,600 public pump calls
+  (maximum gap 0.20785 seconds) produced no matching terminal, and the Adapter again emitted typed
+  `inactivity-watchdog/llm-inactivity-timeout`. Auth unlink, private-credential destruction, zero secret matches,
+  zero child residue, and zero source/platform/StartLedger mutation all passed. Round 20 therefore remains
+  `FAIL (runtime/infrastructure)`; explicit model binding closes a real request-shape defect but is not the complete
+  provider-liveness root cause. No retry, semantic start, Examiner live start, CQ, or settlement occurred.
+- Round 20 retained no sanitized notification counts or provider-error projection, only the typed inactivity summary;
+  this is an accepted telemetry gap. The next highest-risk assumption is auth lifetime: current production removes
+  private auth immediately after synchronous first-turn acceptance, while Codex can explicitly reload auth during
+  unauthorized recovery. The next plan therefore permits one diagnostic-only, single-variable probe that retains the
+  temporary 0600 auth file until terminal/failure cleanup. Every other formal input stays frozen, raw provider/auth
+  data remains forbidden, and the probe cannot pass the production gate or consume a semantic start. A matching
+  terminal requires a new credential design; repeated inactivity rejects the auth hypothesis.
+- Mandatory re-review of the Round 21 probe returned PASS with no Critical/High. The reviewer confirmed current Codex
+  AuthManager can explicitly reload disk auth during 401 recovery, so file lifetime is a real high-risk assumption.
+  The one permitted harness invocation may include Codex's internal provider retry but must not start a second probe.
+  The temporary override must change only file lifetime while retaining the barrier state/evidence, then destroy and
+  audit auth at cleanup; all production security gates remain unchanged.
+- Independent Round 21 did not reach first-turn execution. Its temporary auth-retention closure accidentally deleted
+  its captured callback binding and raised a local `UnboundLocalError` at the barrier seam. No public receive pump,
+  terminal, typed Runtime failure, or provider-error projection was produced, so the result is
+  `BLOCKED/test-harness`, not provider evidence. Normal cleanup removed the owner-private auth file, found zero secret
+  matches and zero active children, left both ledgers unchanged, and service health remained HTTP 200. The invocation
+  was not retried.
+- A corrected Round 22 is permitted only after a no-process deterministic preflight proves the replacement callback
+  raises no exception, changes only auth-file lifetime, preserves the barrier state/evidence transition exactly once,
+  and allows normal cleanup to destroy and audit the file. Only then may the independent tester execute the unchanged
+  single-variable empty Coordinator probe exactly once, with no semantic, platform, source, Runner, ledger, or retry
+  scope.
+- Independent Round 22 stopped at that mandatory no-process preflight and created no app-server process. The exact
+  replacement callback passed its substantive invariants: no exception, owner-private `0600` auth retained, barrier
+  timing/evidence recorded exactly once, a second call idempotent, and normal cleanup removed/audited the credential
+  with zero children or residue. The aggregate harness nevertheless failed because its expected file-list order was
+  the reverse of the fixture's lexicographic sort. Per the reviewed contract, the tester did not start the real smoke
+  or retry. Round 22 is therefore `BLOCKED/test-harness` and supplies no Luna/provider or auth-lifetime conclusion.
+  The shared test-plan hash is `8368b4d34f12ad8d12a07d3b8e7c25f6ff614757cbe59a5c4dc0eb23797bd82d`;
+  product hashes and both ledgers remain unchanged, `git diff --check` passed, and backend/frontend health returned
+  HTTP 200 after restart.
+- The user then superseded the Luna target and approved a return to `deepseek-v4-flash` for all four persistent roles
+  and both Examiner packages. The user also approved a Runner-owned loopback credential-injecting proxy so the formal
+  App Server never receives the provider key in env, argv, TOML, auth, child spec, or artifacts. This intentionally
+  does not reuse the start72 environment-injection mechanism. The plaintext credential supplied in chat is classified
+  as operator input and is not copied into repository files, commands, logs, evidence, or this record.
+- The confirmed functional contract uses one new formal-only exact
+  `deepseek-v4-flash/deepseek/max` manifest; fixed repository-external owner-private `0600` credential file
+  `~/.config/ontology-platform/modeling-team-deepseek.env`; pre-side-effect metadata/content-shape validation plus
+  prepare/start fstat binding; one loopback-only proxy per formal Team run; bounded allowlisted Responses
+  API forwarding with auth replacement and no body/header logging; Agent/Examiner-before-proxy shutdown; key-buffer
+  overwrite and whole-artifact real-sentinel audit. Shared package YAML, non-formal, R2.3-002, semantic workflow,
+  ledger authorization counts, and retained start72 evidence remain unchanged. One independent empty Coordinator
+  smoke is permitted only after deterministic PASS and secure credential installation; it is not a semantic start.
+- Plan review identified two accepted High gaps before implementation. First, removing formal `auth.json` while
+  leaving `auth_barrier_pending` unchanged would make persistent and Examiner first turns fail at `auth_path=None`;
+  disabling the whole first-turn path would instead reintroduce early ServerRequest deadlock. The plan now keeps that
+  loop with an explicit no-file `provider_proxy_ready` transition. Second, the generic audit currently persists
+  matched secret digests; formal provider-key scans must suppress the key digest and record counts/booleans only. The
+  stop order is corrected to scan with the mutable key before overwriting it. Both findings are `accepted-high` and
+  require re-review.
+- Re-review confirmed those two findings closed and identified a third accepted High: current process-surface audit
+  scans argv/env but does not consume the persistent/Examiner `stderr=PIPE`, so the requirement's stderr exclusion
+  could falsely report zero matches. The plan now requires a formal-only continuous bounded stderr drain with split-
+  chunk sentinel detection, counts/booleans-only output, no raw/digest persistence, fail-closed cleanup, and coverage
+  for persistent and both Examiner paths. A further plan review is required before implementation.
+- The final review also identified the legacy formal `start_roster` read of ambient `DEEPSEEK_API_KEY` into the
+  Adapter audit set. The fixed-file/proxy-only contract now explicitly removes and tests that formal read, including
+  distinct ambient `DEEPSEEK_API_KEY` and `LLM_API_KEY` sentinels; non-formal/R2.3-002 legacy resolution remains
+  compatible. This accepted clarification preserves the final PASS disposition.
+- Final mandatory re-review returned PASS with no remaining Critical/High. The frozen development handoff includes
+  the exact six-package DeepSeek tuple, fixed-file O_NOFOLLOW/fstat binding, ambient-key ignore, one loopback proxy,
+  no-file first-turn credential transition, digest-suppressed audit-before-wipe, bounded stderr sentinel drain, typed
+  unwind/cleanup, non-formal/R2.3-002 compatibility, and deterministic independent PASS before one no-semantic smoke.
+- Requirement development reached `DEVELOPMENT_READY` without real credentials or model execution. The implementation
+  replaces the formal manifest with the exact DeepSeek tuple, adds `deepseek_provider_proxy.py`, binds formal prepare
+  to the fixed/injected credential preflight, wires one proxy through persistent and Examiner configs, removes formal
+  ambient-key/auth-file exposure, adds the no-file first-turn mode, bounded stderr scanning, audit-before-wipe and
+  digest suppression, and preserves non-formal/R2.3-002 behavior. A reviewed test-seam bypass was removed so every
+  formal `TeamRunner.prepare` performs credential preflight; tests inject owner-private sentinel files explicitly.
+- Development verification passed: P2A 29/29; combined R2.3-005/DeepSeek/P2A 336 passed, 1 skipped, 71 subtests;
+  complete `modeling_team` 677 passed, 1 skipped, 218 subtests; modeling-team Ruff, compileall and diff check passed.
+  GitNexus `detect_changes(scope=all)` reported 18 changed files, 54 symbols, zero affected processes and LOW final
+  risk after the pre-edit CRITICAL shared-Runtime impacts were acknowledged. Frozen product hashes are manifest
+  `ba1bb685e88ef58ea5c3aa7160fcdcba3124cb87fad234751033c551ce907f33`, model loader
+  `5d81ec8f0630cdb94b23ec3af91e229cb7aacdea328cf67d6c10ce02b0d47932`, Runner
+  `8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1`, Codex Runtime
+  `e18105d3cbfd71089b7a528b1242614c9f0597c1d8754f9dc4d453d0f5811b81`, and provider proxy
+  `b1e56903d03f27cf1b4858bc3fe6dbc3c51c319389d74f7e111268a02130c0b1`. No service restart,
+  smoke, semantic run, or commit occurred; this is the stable independent-test handoff.
+- Independent Round 23 passed the deterministic DeepSeek rollback gate. Focused coverage returned 311 passed plus
+  77 subtests; R2.3-005 unittest returned 176 OK with one skip; full modeling-team unittest returned 493 OK with one
+  skip. Ruff, compileall, diff check, GitNexus LOW (52 symbols, 18 files, zero processes), service restart, backend
+  health and frontend HTTP 200 all passed. Additional black-box checks covered proxy 200/501/404/413/503/502 paths,
+  auth replacement/streaming/typed upstream failure/key wipe; stderr single/split/high-volume/lifecycle/idempotence;
+  no-file first-turn early ServerRequest and response ordering; partial roster unwind; and audit-before-wipe with both
+  raw secret and its SHA digest absent from evidence. The initial extra barrier assertion was a tester path mistake and
+  passed after correction without product modification.
+- The fixed credential path is absent, so the tester correctly did not create it from chat content and did not start
+  an app-server/model. The provider smoke remains `BLOCKED/operator credential installation`, separate from the
+  deterministic PASS. The shared test-plan hash is
+  `3a5c0ce4b6c602c5f521756250c6c08ade1fef440f4df4d0a005b79d856469f8`. The retained manifest filename still
+  contains historical `luna-max` wording; independent review classifies this as P2 clarity only because loader,
+  content, tuple and digest form one exact DeepSeek source. No commit or semantic start is claimable yet.
+- After the operator installed the fixed credential through a non-echoing local channel, metadata/shape preflight
+  confirmed one owner-owned regular non-symlink `0600` file with one exact assignment; no key value or digest was
+  emitted. Independent Round 24 then executed the one permitted real empty Coordinator smoke exactly once. App-server
+  returned sanitized successful responses for `initialize`, `skills/extraRoots/set`, and `skills/list`, but formal
+  Runtime startup failed before `thread/start`; pump count was zero and no model turn, proxy upstream request,
+  Examiner, semantic, platform, source, Runner reservation, or ledger mutation occurred. No retry ran.
+- Round 24 is `FAIL/runtime-infrastructure`, not provider/modeling evidence. Cleanup reported 167 stderr bytes with
+  zero secret matches, private credentials destroyed, zero children/residue, unchanged ledgers/source/platform/status,
+  and healthy backend/frontend HTTP 200 after restart. The harness could not retain process-exit or proxy-wipe counts
+  after `start_roster` raised; this is a telemetry gap, not affirmative cleanup failure. Shared test-plan hash is
+  `4d2a4affdd535f68a9b1bfe55aa590a1824ac152be0c64d2c7737ae77a1aa9e4` after the tester clarified that the frozen
+  300-second inactivity and 420-second absolute caps were configured but never exercised and that the operator-owned
+  credential file remained installed but was neither copied nor deleted. The next defect loop must diagnose the
+  post-skills/pre-thread startup boundary without a provider turn and must not consume another real smoke.
+- The repair developer reproduced the failure without a model turn. Formal `_write_config` assembled the
+  model/provider/reasoning scalar trio twice—once from the manifest override and again from formal provider lines—so
+  the real TOML parser failed with `Cannot overwrite a value` at the second trio. A separate no-model diagnostic with
+  the required Team Transport broker reached initialize, exact skills discovery, and a deliberate pre-thread gate,
+  proving there was no remaining Python skill-validation defect. `_write_config` and `_initialize` carried CRITICAL
+  GitNexus upstream impact (104 total, 98 direct), so the fix was limited to retaining one scalar trio and appending
+  only provider/shell tables.
+- Repair verification passed: focused 79; R2.3-005 and related 338 passed, 1 skipped, 71 subtests; full modeling-team
+  679 passed, 1 skipped, 218 subtests; Ruff, compileall and diff check passed; GitNexus final scope was LOW with 53
+  symbols, 18 files, zero affected processes. New regressions parse the real TOML and prove startup exceptions unwind
+  the shared proxy listener, wipe its secret buffer and clear adapter audit values. Frozen repaired hashes are Codex
+  Runtime `1e22dd023d28bca05a7e5854de2121b9444c527823c09314113d15e2dc88a520`, focused DeepSeek test
+  `f58fd336c483b52c12f8bb6f92d8f314e73e76ecfc6eeec25071fa5a2b74a7f6`, and P2A test
+  `231c49e108f5fdcd53cbd31008107b186b97e4fe98df73bca5b1bfd161ff7516`. No provider call, model turn,
+  semantic action, service restart or commit occurred; this is the stable Round 25 retest handoff.
+- Independent Round 25 returned PASS. Repaired hashes were exact; TOML/startup/unwind focused cases passed; focused
+  scope returned 313 plus 77 subtests, R2.3-005 returned 176 OK with one skip, full modeling-team returned 493 OK with
+  one skip, and Ruff, compileall, diff check, GitNexus LOW/zero processes, service restart and backend/frontend health
+  all passed. One bounded no-model diagnostic reached exact skills and thread-start request construction without a
+  turn; its intentionally incomplete MCP surface ended safely and did not affect the provider result.
+- The exactly one post-repair real formal Coordinator smoke completed with exact `deepseek-v4-flash`, one successful
+  initialize/skills/thread/MCP/turn-start chain and a matching `turn/completed`. The public pump ran 139 times with
+  maximum 0.248-second gap. The loopback proxy accepted one request and one upstream 2xx, with zero rejects/errors;
+  stderr was empty, proxy key was wiped, private credentials were destroyed, secret matches were zero, child residue
+  was zero, and process cleanup completed. Both ledgers, source, platform and worktree scope were unchanged. Shared
+  test-plan hash is `5cac3b6158fff98aa04e7b7b5f6c9a88d193f781f448bc3a3ce4c967bf1c578c`.
+- The DeepSeek rollback Runtime/provider gate is accepted. This does not infer semantic modeling, CQ, Acceptance or
+  settlement PASS; it only reopens the already authorized start73 after commit. The operator-owned credential remains
+  outside the repository and is neither copied nor deleted by Runner cleanup.
+- Commit closure uses subject `Switch formal team back to DeepSeek`; `git log -- <this-record>` resolves the immutable
+  commit identity. Final pre-commit checks found zero `sk-`-shaped values in all 18 changed tracked/new files,
+  `git diff --check` passed, GitNexus reported LOW/zero affected processes, the shared test-plan digest matched Round
+  25, and the restarted backend/frontend remained healthy.

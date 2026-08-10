@@ -40,13 +40,19 @@ from modeling_team.acceptance import (
     validate_verdict,
 )
 from modeling_team.contracts import TeamConfigurationError, _load_package, repository_root
+from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
 from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team import preflight as preflight_module
 from modeling_team.runner import TeamRunner
 from modeling_team.preflight import normalize_formal_scope
-from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError, _Agent
+from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
 from modeling_team.start_ledger import StartLedger
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
+
+
+_TEST_FORMAL_CREDENTIAL = Path(tempfile.mkdtemp(prefix="r23005-formal-credential-")) / "deepseek.env"
+_TEST_FORMAL_CREDENTIAL.write_text("DEEPSEEK_API_KEY=round23-test-sentinel\n", encoding="utf-8")
+_TEST_FORMAL_CREDENTIAL.chmod(0o600)
 
 
 def _sha(value: object) -> str:
@@ -352,6 +358,7 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
             scope_factory=scope_factory,
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=failing_preflight,
@@ -387,6 +394,7 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
             ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=lambda **_kwargs: {
@@ -475,6 +483,7 @@ class R23005ContractTests(unittest.TestCase):
                 kwargs = {}
                 if formal:
                     kwargs = {
+                        "deepseek_credential_path": _TEST_FORMAL_CREDENTIAL,
                         "freeze_started_at": datetime.now(UTC).isoformat(),
                         "prestart_preflight": lambda **_kwargs: {
                             "status_code": 200,
@@ -559,6 +568,7 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
             ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=lambda **_kwargs: {
@@ -736,6 +746,7 @@ class R23005ContractTests(unittest.TestCase):
         runner = TeamRunner(
             repository_root=root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
             ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
             freeze_started_at=datetime.now(UTC).isoformat(),
         )
@@ -1736,7 +1747,7 @@ class R23005ContractTests(unittest.TestCase):
             self.assertFalse((home / "runner-capabilities.json").exists())
             self.assertFalse((home / "config.toml").exists())
 
-    def test_formal_acceptance_config_stages_private_provider_auth_without_sources(self) -> None:
+    def test_formal_acceptance_config_uses_shared_provider_proxy_without_sources(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -1759,18 +1770,22 @@ class R23005ContractTests(unittest.TestCase):
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._formal_model_manifest = load_formal_model_manifest(root)
+            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
+            proxy.start()
+            adapter._formal_provider_proxy = proxy
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 adapter._write_config(run, agent)
             auth = home / "auth.json"
-            self.assertEqual(auth.read_text(encoding="utf-8"), "formal-provider-auth")
-            self.assertEqual(stat.S_IMODE(auth.stat().st_mode), 0o600)
+            self.assertFalse(auth.exists())
+            self.assertIn("base_url = \"http://127.0.0.1:", (home / "config.toml").read_text())
             self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o700)
             self.assertEqual(list((home / "sources").iterdir()), [])
             adapter.agents[agent.agent_id] = agent
             adapter.stop()
+            proxy.stop()
             self.assertFalse(auth.exists())
 
-    def test_formal_acceptance_config_rejects_provider_auth_symlink(self) -> None:
+    def test_formal_acceptance_config_ignores_host_provider_auth_symlink(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -1794,9 +1809,12 @@ class R23005ContractTests(unittest.TestCase):
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._formal_model_manifest = load_formal_model_manifest(root)
+            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
+            proxy.start()
+            adapter._formal_provider_proxy = proxy
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
-                with self.assertRaisesRegex(CodexRuntimeError, "authentication is unavailable"):
-                    adapter._write_config(run, agent)
+                adapter._write_config(run, agent)
+            proxy.stop()
             self.assertFalse((home / "auth.json").exists())
 
     def test_formal_protocol_config_stages_role_bound_runner_capability(self) -> None:
@@ -1828,6 +1846,9 @@ class R23005ContractTests(unittest.TestCase):
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._acceptance = carrier
             adapter._formal_model_manifest = load_formal_model_manifest(root)
+            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
+            proxy.start()
+            adapter._formal_provider_proxy = proxy
             with patch.object(adapter, "preflight_host_auth", return_value=host_auth):
                 adapter._write_config(run, agent)
             config = (home / "config.toml").read_text(encoding="utf-8")
@@ -1849,6 +1870,7 @@ class R23005ContractTests(unittest.TestCase):
             adapter.agents[agent.agent_id] = agent
             adapter._coordination_enabled = True
             adapter.stop()
+            proxy.stop()
             carrier.cleanup()
             self.assertFalse((home / "runner-capability.token").exists())
 

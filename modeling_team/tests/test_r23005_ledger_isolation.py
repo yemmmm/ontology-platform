@@ -15,6 +15,11 @@ from modeling_team.runner import TeamRunner
 from modeling_team.start_ledger import StartLedger
 
 
+_TEST_FORMAL_CREDENTIAL = Path(tempfile.mkdtemp(prefix="r23005-ledger-credential-")) / "deepseek.env"
+_TEST_FORMAL_CREDENTIAL.write_text("DEEPSEEK_API_KEY=round23-test-sentinel\n", encoding="utf-8")
+_TEST_FORMAL_CREDENTIAL.chmod(0o600)
+
+
 class R23005LedgerIsolationTests(unittest.TestCase):
     root = repository_root()
 
@@ -74,6 +79,7 @@ class R23005LedgerIsolationTests(unittest.TestCase):
             repository_root=self.root,
             adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
             ledger_root=runner_ledger_root,
+            deepseek_credential_path=_TEST_FORMAL_CREDENTIAL if formal else None,
             ledger_factory=ledger_factory,
             freeze_started_at=datetime.now(UTC).isoformat(),
             prestart_preflight=(
@@ -141,6 +147,7 @@ class R23005LedgerIsolationTests(unittest.TestCase):
             runner = TeamRunner(
                 repository_root=self.root,
                 adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
                 ledger_root=alternate,
                 freeze_started_at=datetime.now(UTC).isoformat(),
                 prestart_preflight=lambda **_kwargs: {"status_code": 200, "product_write_mode": "rdf_primary"},
@@ -171,6 +178,7 @@ class R23005LedgerIsolationTests(unittest.TestCase):
             runner = TeamRunner(
                 repository_root=self.root,
                 adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+                deepseek_credential_path=_TEST_FORMAL_CREDENTIAL,
                 ledger_factory=lambda *, root, config, now: StartLedger(
                     attacker, config=config, now=now
                 ),

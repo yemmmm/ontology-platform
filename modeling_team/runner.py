@@ -26,6 +26,12 @@ from .model_manifest import (
     FormalModelManifest,
     load_formal_model_manifest,
 )
+from .deepseek_provider_proxy import (
+    DeepSeekCredentialBinding,
+    DeepSeekCredentialError,
+    DEEPSEEK_CREDENTIAL_PATH,
+    preflight_deepseek_credential,
+)
 from .acceptance import (
     AcceptanceContractError,
     CoordinatorPhaseController,
@@ -104,6 +110,7 @@ class TeamRun:
     gate_binding: dict[str, str] | None = None
     acceptance: RunnerAcceptanceCarrier | None = None
     model_manifest: FormalModelManifest | None = None
+    deepseek_credential_binding: DeepSeekCredentialBinding | None = None
 
 
 class TeamRunner:
@@ -121,6 +128,7 @@ class TeamRunner:
         canonical_base_url: str = "http://127.0.0.1:8001",
         canonical_admin_key: str | None = None,
         monotonic_clock: Callable[[], float] | None = None,
+        deepseek_credential_path: Path | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -135,6 +143,9 @@ class TeamRunner:
         self.canonical_base_url = canonical_base_url
         self.canonical_admin_key = canonical_admin_key
         self.monotonic_clock = monotonic_clock or time.monotonic
+        # This path is a constructor-only test seam.  Production callers leave it
+        # unset and therefore bind the fixed external credential location.
+        self.deepseek_credential_path = deepseek_credential_path
         self.run: TeamRun | None = None
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
@@ -325,6 +336,14 @@ class TeamRunner:
             if formal_acceptance
             else None
         )
+        credential_binding: DeepSeekCredentialBinding | None = None
+        if formal_acceptance:
+            try:
+                credential_binding = preflight_deepseek_credential(
+                    self.deepseek_credential_path or DEEPSEEK_CREDENTIAL_PATH
+                )
+            except DeepSeekCredentialError as exc:
+                raise TeamConfigurationError("formal DeepSeek credential preflight failed") from exc
         if config.task.schema_version == 2 and not self.freeze_started_at:
             raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
         task_overlay: TaskInputOverlay | None = None
@@ -422,6 +441,7 @@ class TeamRunner:
             normalized_scope,
             gate_binding=gate_binding,
             model_manifest=model_manifest,
+            deepseek_credential_binding=credential_binding,
         )
         self._task_overlay = task_overlay
         self._validated_candidate_publication = validated_publication
