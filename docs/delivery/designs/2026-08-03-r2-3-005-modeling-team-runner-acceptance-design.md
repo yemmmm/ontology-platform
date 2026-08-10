@@ -1317,3 +1317,22 @@ Independent Round 25 accepted this design at Runtime/provider scope. The repaire
 model tuple, the live empty Coordinator turn completed through the loopback proxy, upstream returned 2xx, and all
 credential, stderr, artifact, child and proxy cleanup checks were zero-residue. This opens the existing start73
 authorization only; semantic modeling and Acceptance remain unexecuted under this rollback.
+
+## Start73 terminal report versus watchdog arbitration
+
+Start73 exposed a lifecycle race rather than a modeling defect. Both cq-001 Examiner reports were durable and usable
+before their absolute watchdogs recorded `child-timeout`; the later failure markers kept the otherwise clean PASS
+round retryable and correctly blocked cq-002. Retained run evidence is immutable and the run remains classified
+`runtime/infrastructure,false`.
+
+`RunnerAcceptanceCarrier` owns one lifecycle `RLock` for report, failure, pending-report, recycle and cleanup terminal
+transactions. An active handle/attempt may commit exactly one terminal outcome. A report winner suppresses a later
+watchdog failure and kill; a failure winner rejects a late report. Cleanup uses an in-progress marker so callbacks
+cannot repopulate pending reports or retryable state after resource teardown. Artifact validation/publication and
+in-memory report state share the same serialized transaction and roll back newly written artifacts on failure.
+
+For formal Examiner children only, the Codex resource defers its stdout pump until the Carrier has registered the
+resource and proxy receipt. This removes the production early-report window without changing direct or non-formal
+Runtime behavior. `_CodexChildResource` separately serializes report submission and watchdog failure; timeout kills
+the process only when the failure callback durably wins. A callback persistence exception is promoted to the existing
+typed Runtime failure queue and cleanup path rather than being mistaken for a report conflict.

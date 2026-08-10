@@ -4275,3 +4275,21 @@ the formal builder, or starting another real run before authorization.
   commit identity. Final pre-commit checks found zero `sk-`-shaped values in all 18 changed tracked/new files,
   `git diff --check` passed, GitNexus reported LOW/zero affected processes, the shared test-plan digest matched Round
   25, and the restarted backend/frontend remained healthy.
+- start73 `r23005-real-20260810-deepseek-start73` reached accepted candidate publication, all five Protocol stages,
+  governed retrieval and cq-001 PASS. Both Examiner reports were durable, but late absolute watchdog callbacks wrote
+  two `runtime/child-timeout` failures and left the PASS round `retryable`; cq-002 was correctly rejected with
+  `prior_round_cleanup_required`. Delivery sent a controlled stop, terminated remaining processes and appended
+  `runtime/infrastructure,false`. The retained run and ledger were not rewritten.
+- Mandatory plan review rejected several incomplete race fixes (unconditional watchdog kill, unlocked Carrier
+  mutation, resource-unbound Platform validation, recycle/late-callback pollution and callback persistence errors).
+  Final PASS requires one Carrier lifecycle lock/cleanup marker, formal resource registration before pump activation,
+  one child terminal lock, report/failure exactly-one arbitration, failure-winner kill only, typed callback-error
+  cleanup, and unchanged direct/non-formal behavior.
+- Development implemented that reviewed boundary. Full modeling-team pytest returned 685 passed, 1 skipped and 218
+  subtests; the R2.3-005 scope returned 303 passed, 1 skipped and 71 subtests. Ruff, pycompile, diff check and GitNexus
+  passed. Independent Round 26 passed 6/6 race regressions, 155 affected tests, R2.3-005 176 OK with one skip, full
+  unittest 499 OK with one skip, service restart and backend/frontend HTTP 200. GitNexus reported LOW, 27 changed
+  symbols, four files and zero affected processes. The shared test-plan digest is
+  `1d0192365b809989a7a0ed50c933239f4daa48bc3697df14329ae2a84d0c4442`.
+- Round 26 proves the deterministic repair only. It restores start74 eligibility but does not upgrade start73's
+  partial cq-001 PASS to complete modeling quality or settlement PASS.

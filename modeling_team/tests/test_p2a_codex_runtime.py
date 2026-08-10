@@ -88,10 +88,13 @@ FROZEN_GLOBAL_SURFACES = {
     # thread/start requests now carry the validated DeepSeek v4 Flash model;
     # P2A/nonformal
     # request and platform-surface behavior remains covered by the assertions below.
+    # 2026-08-10 start73 lifecycle repair: formal Examiner output pumping is
+    # deferred until Host resource registration and terminal report/failure
+    # arbitration; nonformal/P2A request shapes remain unchanged.
     "modeling_team/runner.py": "8fb7829ff896419d96b3e0b747d12c5a3f7e7886b847c2f0ce7b28bc094370e1",
     "modeling_team/protocol_mechanics.py": "2a1c0108562c9302b6632cc82ce744755987d0b2685226157cbce5afbb9383ef",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "1e22dd023d28bca05a7e5854de2121b9444c527823c09314113d15e2dc88a520",
+    "modeling_team/runtimes/codex.py": "65eb2adc49b93bbb093ca700409d858f6a7855a9e37cb02b2eb91442596081a3",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

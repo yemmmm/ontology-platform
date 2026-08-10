@@ -3536,3 +3536,50 @@ startup evidence and keep the provider gate closed.
 **Overall verdict: PASS for the repaired DeepSeek provider gate.** The exact model/TOML repair reached
 the real app-server, produced one matching terminal, and left zero secret matches/residue with safe
 proxy/cleanup evidence. Preserve the prior Round24 failure; no semantic modeling acceptance is inferred.
+
+### Independent Round 26 — Start73 report/watchdog race repair (2026-08-10)
+
+- **Frozen boundary:** The final acceptance baseline remained
+  `modeling_team/acceptance.py`
+  `7397ce4ea4ea104024f6808b6394a8a0f22ebb5abc0d1b35a049e28aa8b7811f`; the repaired Runtime remained
+  `modeling_team/runtimes/codex.py`
+  `65eb2adc49b93bbb093ca700409d858f6a7855a9e37cb02b2eb91442596081a`; and the new independent race
+  test remained
+  `modeling_team/tests/test_start73_report_watchdog_race.py`
+  `926222af717af034e3b41ab3f82c0fc028865f0ce1d0e49d6ee2b54df8bef04d`. No product, requirement,
+  design, implementation plan, delivery record, retained start73 evidence, ledger, credential, or
+  commit was changed by this Tester.
+- **Focused race and callback coverage: PASS.** The new race module ran **6/6**: report-first late
+  watchdog is ignored without failure/kill and recycles cleanly; failure-first rejects late report and
+  recycle callbacks; two concurrent report/failure callbacks produce one terminal winner; report append
+  failure rolls back candidate/artifact state; cleanup marks late callbacks as typed contract errors; and
+  formal output-pump activation is deferred until Carrier resource registration. The focused 155-test
+  command also passed the affected acceptance/Runtime/P2A/settlement/isolation/contract suites, including
+  direct/non-formal immediate pump behavior and the prior retry budget. A no-file callback-exception
+  probe additionally produced only typed Runner failure `child-resource/failure-callback-error`, attempted
+  process termination, and no retained raw exception.
+- **Required regression suites: PASS.**
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`
+  returned **176 tests OK, 1 expected skip**; complete
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py'`
+  returned **499 tests OK, 1 expected skip**. Ruff, `compileall`, and `git diff --check --` passed.
+  Expected budget/fixture diagnostic lines remained test output only; no failure or secret text was
+  emitted.
+- **GitNexus and service health: PASS.** `detect_changes(scope=unstaged, repo=ontology-platform)`
+  reported low risk, 27 changed symbols across 4 files, and 0 affected processes. After restart,
+  `ontology-platform.service` was active and backend `/api/health` plus frontend `/` returned HTTP 200
+  on the bounded probe.
+- **Isolation and retained evidence:** Read-only before/after checks left formal StartLedger SHA-256
+  `6aa527832de6a05cc12a35330ce6bdf1f223d486b5b0251c90b1f8a29c084327`, legacy R2.3-002 ledger SHA-256
+  `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`, and retained
+  `r23005-real-20260810-deepseek-start73` digest
+  `12e8eafaf574fc32995b4a539c3d76c6b6736b114df5a2bcc51e3d0794be24f2` across **773 files**.
+  No provider process, real smoke, semantic run, platform call, Runner reservation, or ledger mutation
+  was attempted.
+
+#### Round26 conclusion
+
+**Overall verdict: PASS (deterministic Start73 race repair).** Report/failure arbitration, deferred
+formal pump registration, rollback, cleanup-marker rejection, callback-failure typing, non-formal
+compatibility, and retry regressions passed. This round provides no semantic or provider-smoke result and
+does not consume or authorize a semantic start.

@@ -16,6 +16,7 @@ import re
 import secrets
 import shutil
 import stat
+import threading
 import time
 from dataclasses import dataclass, field as dataclass_field
 from enum import StrEnum
@@ -1190,7 +1191,11 @@ class _NoopChildResource:
     """Default local resource seam used by deterministic tests and preflight paths."""
 
     def __init__(self, spec: Mapping[str, Any]):
-        self.spec = _safe_copy(spec)
+        # ``_terminal_state`` contains a live RLock shared with the carrier
+        # callbacks; deepcopy would fail on the lock and would also sever the
+        # report/failure arbitration seam.  The opaque default resource never
+        # mutates nested spec values, so a shallow private snapshot is sufficient.
+        self.spec = dict(spec)
         self.stopped = False
         self.destroyed = False
 
@@ -1199,6 +1204,14 @@ class _NoopChildResource:
 
     def destroy(self) -> None:
         self.destroyed = True
+
+
+class _ChildTerminalState(dict[str, Any]):
+    """Runner-private terminal state whose lock must stay shared across copies."""
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "_ChildTerminalState":
+        del memo
+        return self
 
 
 def _write_exclusive_json(path: Path, value: Mapping[str, Any], *, mode: int = 0o600) -> None:
@@ -1390,6 +1403,14 @@ class RunnerAcceptanceCarrier:
         self._ticket_draft_bindings: dict[str, dict[str, Any]] = {}
         self._settlement_payload: dict[str, Any] | None = None
         self._cleanup_payload: dict[str, Any] | None = None
+        # Child report/failure callbacks may arrive from the App Server pump or
+        # watchdog while the Host is binding/recycling a resource.  One reentrant
+        # lifecycle lock serializes those state transitions and the cleanup marker;
+        # the per-child terminal lock installed in ``start_child`` arbitrates the
+        # report-versus-failure winner before either callback persists evidence.
+        self._lifecycle_lock = threading.RLock()
+        self._cleanup_started = False
+        self._recycling_tokens: set[str] = set()
         # C-stage integrity state is deliberately kept in the Runner-owned carrier.
         # It is not model-visible and does not introduce a write gate: the carrier only
         # decides whether previously persisted acceptance evidence is still consumable.
@@ -1870,7 +1891,11 @@ class RunnerAcceptanceCarrier:
             value = value["model_state"]
         return validate_model_state(value, allow_runner_bound=False)
 
-    def _destroy_invalidated_child(self, found: ChildHandle, *, state_digest: str) -> None:
+    def _destroy_invalidated_child(self, *args: Any, **kwargs: Any) -> None:
+        with self._lifecycle_lock:
+            self._destroy_invalidated_child_locked(*args, **kwargs)
+
+    def _destroy_invalidated_child_locked(self, found: ChildHandle, *, state_digest: str) -> None:
         """Reclaim an active pair when a passive state boundary drifts.
 
         This path is separate from normal ``recycle_child`` because no terminal or
@@ -1881,13 +1906,7 @@ class RunnerAcceptanceCarrier:
         resource_entry = self._resources.pop(found.token, None)
         resource_receipt, resource = resource_entry if resource_entry is not None else (None, None)
         if resource is not None:
-            for method in ("stop", "destroy"):
-                action = getattr(resource, method, None)
-                if callable(action):
-                    try:
-                        action()
-                    except Exception as exc:
-                        raise AcceptanceContractError("state-invalidation child cleanup failed") from exc
+            self._stop_resource_without_carrier_lock(resource)
         if resource_receipt is not None and resource_receipt.read_key_id is not None:
             self.key_lifecycle.revoke(resource_receipt.read_key_id)
         private_root = self.root / resource_receipt.private_root if resource_receipt is not None else None
@@ -3746,7 +3765,13 @@ class RunnerAcceptanceCarrier:
             _error("projected child input drifted")
         return _safe_copy(projection), digest
 
-    def start_child(
+    def start_child(self, *args: Any, **kwargs: Any) -> ChildHandle:
+        """Start one child while serializing Host lifecycle state."""
+
+        with self._lifecycle_lock:
+            return self._start_child_locked(*args, **kwargs)
+
+    def _start_child_locked(
         self,
         *,
         acceptance_id: str,
@@ -3765,6 +3790,8 @@ class RunnerAcceptanceCarrier:
         ticket_digest_value: str | None = None,
         attempt: int | None = None,
     ) -> ChildHandle:
+        if self._cleanup_started:
+            _error("Acceptance carrier cleanup has started")
         # C2 boundary (a): pair creation is always preceded by a passive complete
         # model-state read when a Provider has supplied one.
         self.revalidate_model_state(boundary="before-pair")
@@ -3923,6 +3950,58 @@ class RunnerAcceptanceCarrier:
                     raise AcceptanceContractError("platform read forwarder start failed") from exc
         ticket = self._tickets[round_id]
         descriptor = self.descriptors[kind]
+        # The child resource and both Host callbacks share this lock.  A report
+        # claim is made only after complete report validation/persistence; a
+        # failure callback that arrives after that claim returns ``None`` so a
+        # watchdog cannot manufacture a competing terminal or kill a healthy
+        # reported child.  The state object is intentionally Runner-private and
+        # never enters a receipt/config artifact.
+        terminal_state: _ChildTerminalState = _ChildTerminalState(
+            lock=threading.RLock(),
+            winner=None,
+        )
+
+        def submit_report(report: Mapping[str, Any]) -> dict[str, Any]:
+            with terminal_state["lock"]:
+                if terminal_state["winner"] == "failure":
+                    _error("child report conflicts with infrastructure failure")
+                result = self.ingest_report(
+                    acceptance_id=self.acceptance_id,
+                    round_id=round_id,
+                    handle=handle,
+                    report=report,
+                )
+                terminal_state["winner"] = "report"
+                return result
+
+        def submit_report_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+            with terminal_state["lock"]:
+                if terminal_state["winner"] == "failure":
+                    _error("child report conflicts with infrastructure failure")
+                result = self.ingest_child_report(
+                    acceptance_id=self.acceptance_id,
+                    round_id=round_id,
+                    handle=handle,
+                    payload=payload,
+                )
+                terminal_state["winner"] = "report"
+                return result
+
+        def submit_failure(failure_category: str, reason_code: str) -> InfrastructureFailure | None:
+            with terminal_state["lock"]:
+                if terminal_state["winner"] == "report":
+                    return None
+                result = self.record_infrastructure_failure(
+                    acceptance_id=self.acceptance_id,
+                    round_id=round_id,
+                    handle=handle,
+                    failure_category=failure_category,
+                    reason_code=reason_code,
+                )
+                if result is not None:
+                    terminal_state["winner"] = "failure"
+                return result
+
         resource_spec = {
             "task_id": self.task_id,
             "acceptance_round_id": round_id,
@@ -3953,30 +4032,22 @@ class RunnerAcceptanceCarrier:
             "read_key_revoke": self.key_lifecycle.revoke,
             "platform_forwarder": platform_forwarder,
             "formal_platform": isinstance(self.key_lifecycle, PlatformApiReadKeyLifecycle),
-            "report_submit": lambda report: self.ingest_report(
-                acceptance_id=self.acceptance_id,
-                round_id=round_id,
-                handle=handle,
-                report=report,
-            ),
+            "report_submit": submit_report,
             # Production Examiner sinks use the strict six-field semantic
             # callback.  Keep ``report_submit`` above as the existing full
             # envelope seam for deterministic resource doubles and retained
             # report replay tests.
-            "report_submit_payload": lambda payload: self.ingest_child_report(
-                acceptance_id=self.acceptance_id,
-                round_id=round_id,
-                handle=handle,
-                payload=payload,
-            ),
-            "record_infrastructure_failure": lambda failure_category, reason_code: self.record_infrastructure_failure(
-                acceptance_id=self.acceptance_id,
-                round_id=round_id,
-                handle=handle,
-                failure_category=failure_category,
-                reason_code=reason_code,
-            ),
+            "report_submit_payload": submit_report_payload,
+            "record_infrastructure_failure": submit_failure,
+            "_terminal_state": terminal_state,
         }
+        # Real formal Examiner stdout may produce its first report before
+        # ``acceptance_child_factory`` returns.  Add this Runner-private field only
+        # for the formal scope; direct/non-formal fixtures preserve their exact
+        # historical resource-spec shape and immediate pump startup.
+        formal_deferred_pump = self.task_id == "r2-3-005-formal-acceptance"
+        if formal_deferred_pump:
+            resource_spec["defer_output_pump"] = True
         # Publish the opaque handle before launching the process so an immediately
         # crashing child can bind its watchdog receipt to the same handle.  Any launch
         # failure removes this provisional entry below.
@@ -4024,7 +4095,11 @@ class RunnerAcceptanceCarrier:
             round_data["retryable_kinds"].discard(kind)
         round_data["retryable"] = bool(round_data["retryable_kinds"])
         self._resources[token] = (receipt, resource)
-        pending_reports = self._pending_reports.pop(token, [])
+        # Keep the pending queue intact until every report has passed the normal
+        # validation/artifact transaction.  The carrier lock prevents an external
+        # callback from observing a half-bound candidate; a failed transaction can
+        # therefore roll the queue and all round/resource state back together.
+        pending_reports = list(self._pending_reports.get(token, ()))
         try:
             for pending in pending_reports:
                 self.ingest_report(
@@ -4033,20 +4108,25 @@ class RunnerAcceptanceCarrier:
                     handle=handle,
                     report=pending,
                 )
+            self._pending_reports.pop(token, None)
+            activate = getattr(resource, "activate_output_pump", None)
+            if bool(resource_spec.get("defer_output_pump")) and callable(activate):
+                activate()
+            start_receipt = {"handle": handle, "input_digest": input_digest, "ticket_digest": ticket_digest_value}
+            self._append(round_id, "child-start.jsonl", {"kind": kind, "attempt": attempt, "handle_digest": digest, "input_digest": input_digest, "ticket_digest": ticket_digest_value, "session_id": session_id, "request_id": request_id, "attempt_lineage": round_data["attempt_lineage"][kind]})
+            self._request_receipts[request_id] = ("start", start_receipt)
         except Exception:
+            self._pending_reports.pop(token, None)
             self._resources.pop(token, None)
             self._handles.pop(token, None)
             round_data["children"].pop(kind, None)
             if round_data["attempts"].get(kind) == attempt:
                 round_data["attempts"].pop(kind, None)
             round_data["attempt_lineage"].get(kind, {}).pop(str(attempt), None)
-            for method in ("stop", "destroy"):
-                action = getattr(resource, method, None)
-                if callable(action):
-                    try:
-                        action()
-                    except Exception:
-                        pass
+            try:
+                self._stop_resource_without_carrier_lock(resource)
+            except Exception:
+                pass
             if read_key is not None:
                 try:
                     self.key_lifecycle.revoke(read_key.key_id)
@@ -4054,9 +4134,6 @@ class RunnerAcceptanceCarrier:
                     pass
             shutil.rmtree(private_root, ignore_errors=True)
             raise
-        start_receipt = {"handle": handle, "input_digest": input_digest, "ticket_digest": ticket_digest_value}
-        self._request_receipts[request_id] = ("start", start_receipt)
-        self._append(round_id, "child-start.jsonl", {"kind": kind, "attempt": attempt, "handle_digest": digest, "input_digest": input_digest, "ticket_digest": ticket_digest_value, "session_id": session_id, "request_id": request_id, "attempt_lineage": round_data["attempt_lineage"][kind]})
         return handle
 
     def _lookup_handle(
@@ -4068,8 +4145,12 @@ class RunnerAcceptanceCarrier:
         ticket_digest_value: str | None = None,
         capability: str | None = None,
     ) -> ChildHandle:
+        if self._cleanup_started:
+            _error("Acceptance carrier cleanup has started")
         self._check_capability("acceptance", acceptance_id, capability)
         token = handle.token if isinstance(handle, ChildHandle) else handle
+        if token in self._recycling_tokens:
+            _error("child handle is being recycled")
         found = self._handles.get(token)
         if found is None or found.acceptance_round_id != round_id or (ticket_digest_value is not None and found.ticket_digest != ticket_digest_value):
             _error("opaque child handle is invalid or replayed")
@@ -4330,7 +4411,11 @@ class RunnerAcceptanceCarrier:
             for locator in payload["evidence_refs"]
         ]
 
-    def ingest_child_report(
+    def ingest_child_report(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        with self._lifecycle_lock:
+            return self._ingest_child_report_locked(*args, **kwargs)
+
+    def _ingest_child_report_locked(
         self,
         *,
         acceptance_id: str,
@@ -4388,9 +4473,18 @@ class RunnerAcceptanceCarrier:
             capability=capability,
         )
 
-    def ingest_report(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, report: Mapping[str, Any], capability: str | None = None) -> dict[str, Any]:
+    def ingest_report(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        with self._lifecycle_lock:
+            return self._ingest_report_locked(*args, **kwargs)
+
+    def _ingest_report_locked(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, report: Mapping[str, Any], capability: str | None = None) -> dict[str, Any]:
         found = self._lookup_handle(acceptance_id=acceptance_id, round_id=round_id, handle=handle, capability=capability)
         _assert_report_persistence_safe(report)
+        if any(
+            item.child_handle_digest == found.digest and item.attempt == found.attempt
+            for item in self._failures.values()
+        ):
+            _error("child report conflicts with infrastructure failure")
         if found.token not in self._resources:
             pending = self._pending_reports.setdefault(found.token, [])
             if pending:
@@ -4402,17 +4496,36 @@ class RunnerAcceptanceCarrier:
         # Runner, not the child, supplies the model-state envelope.
         normalized["model_state"] = _safe_copy(ticket["model_state"])
         normalized["report_digest"] = report_digest({**normalized, "report_digest": None})
-        valid = validate_report(normalized, ticket=ticket, kind=found.kind, handle_digest=found.digest, input_digest=found.input_digest, session_id=found.session_id)
-        self._validate_platform_proxy_evidence(found=found, refs=valid["evidence_refs"], ticket=ticket)
-        self._validate_source_artifacts(round_id=round_id, refs=valid["evidence_refs"], ticket=ticket)
+        before_artifacts = {
+            path
+            for path in self.acceptance_root.rglob("*")
+            if path.is_file() and not path.is_symlink()
+        }
+        try:
+            valid = validate_report(normalized, ticket=ticket, kind=found.kind, handle_digest=found.digest, input_digest=found.input_digest, session_id=found.session_id)
+            self._validate_platform_proxy_evidence(found=found, refs=valid["evidence_refs"], ticket=ticket)
+            self._validate_source_artifacts(round_id=round_id, refs=valid["evidence_refs"], ticket=ticket)
+        except Exception:
+            for path in self.acceptance_root.rglob("*"):
+                if path in before_artifacts or path.is_symlink() or not path.is_file():
+                    continue
+                path.unlink(missing_ok=True)
+            raise
         if found.token in self._reports:
             if self._reports[found.token]["report_digest"] == valid["report_digest"]:
                 return _safe_copy(self._reports[found.token])
             _error("child report is immutable")
+        try:
+            self._append(round_id, f"{found.kind}-report.json", valid)
+        except Exception:
+            for path in self.acceptance_root.rglob("*"):
+                if path in before_artifacts or path.is_symlink() or not path.is_file():
+                    continue
+                path.unlink(missing_ok=True)
+            raise
         self._reports[found.token] = valid
         self._rounds[round_id]["reports"][found.kind] = valid
         self._rounds[round_id]["status"] = "reports_ready" if len(self._rounds[round_id]["reports"]) == 2 else "active"
-        self._append(round_id, f"{found.kind}-report.json", valid)
         return _safe_copy(valid)
 
     def report_sink(
@@ -4529,7 +4642,11 @@ class RunnerAcceptanceCarrier:
             "attempt": failure.attempt,
         }
 
-    def record_infrastructure_failure(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, failure_category: str, reason_code: str, capability: str | None = None) -> InfrastructureFailure:
+    def record_infrastructure_failure(self, *args: Any, **kwargs: Any) -> InfrastructureFailure | None:
+        with self._lifecycle_lock:
+            return self._record_infrastructure_failure_locked(*args, **kwargs)
+
+    def _record_infrastructure_failure_locked(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, failure_category: str, reason_code: str, capability: str | None = None) -> InfrastructureFailure | None:
         found = self._lookup_handle(acceptance_id=acceptance_id, round_id=round_id, handle=handle, capability=capability)
         if not isinstance(failure_category, str) or not failure_category or not isinstance(reason_code, str) or not reason_code:
             _error("infrastructure failure category/reason is invalid")
@@ -4538,6 +4655,11 @@ class RunnerAcceptanceCarrier:
             or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,79}", reason_code)
         ):
             _error("infrastructure failure category/reason is not a sanitized code")
+        if found.token in self._reports:
+            # A child report is the terminal winner; late watchdog/pump failure
+            # callbacks are deliberately ignored rather than persisted as a
+            # contradictory readiness branch or used to kill the process.
+            return None
         for existing in self._failures.values():
             if (
                 existing.child_handle_digest == found.digest
@@ -4547,6 +4669,10 @@ class RunnerAcceptanceCarrier:
         payload = {"task_id": self.task_id, "acceptance_round_id": round_id, "ticket_digest": found.ticket_digest, "child_handle_digest": found.digest, "child_input_digest": found.input_digest, "attempt": found.attempt, "failure_category": failure_category, "reason_code": reason_code, "recorded_at": str(time.time_ns())}
         digest = _sha256_bytes(_canonical_json(payload))
         failure = InfrastructureFailure(**payload, failure_digest=digest)
+        try:
+            self._append(round_id, "infrastructure-failure.jsonl", {**payload, "failure_digest": digest})
+        except Exception:
+            raise
         self._failures[digest] = failure
         if found.attempt == 1:
             # Attempt 0 plus one identical-input retry is the complete
@@ -4559,7 +4685,6 @@ class RunnerAcceptanceCarrier:
             # round remains active while the crashed child is still present.
             self._rounds[round_id]["retryable_kinds"].add(found.kind)
             self._rounds[round_id]["retryable"] = True
-        self._append(round_id, "infrastructure-failure.jsonl", {**payload, "failure_digest": digest})
         return failure
 
     def get_failure_record(self, *, acceptance_id: str, round_id: str, failure_digest: str, capability: str | None = None) -> InfrastructureFailure:
@@ -4612,7 +4737,27 @@ class RunnerAcceptanceCarrier:
         }
         return validate_typed_evidence_ref(ref, expected_ticket=failure.ticket_digest)
 
-    def recycle_child(
+    def _stop_resource_without_carrier_lock(self, resource: Any) -> None:
+        """Stop/destroy a child without joining a callback blocked on the carrier lock."""
+
+        self._lifecycle_lock.release()
+        try:
+            stop = getattr(resource, "stop", None)
+            if callable(stop):
+                stop()
+            destroy = getattr(resource, "destroy", None)
+            if callable(destroy):
+                destroy()
+        except Exception as exc:
+            raise AcceptanceContractError("child resource cleanup failed") from exc
+        finally:
+            self._lifecycle_lock.acquire()
+
+    def recycle_child(self, *args: Any, **kwargs: Any) -> CleanupReceipt:
+        with self._lifecycle_lock:
+            return self._recycle_child_locked(*args, **kwargs)
+
+    def _recycle_child_locked(
         self,
         *,
         acceptance_id: str,
@@ -4666,16 +4811,14 @@ class RunnerAcceptanceCarrier:
             _error("child cleanup is immutable")
         resource_entry = self._resources.get(found.token)
         resource_receipt, resource = resource_entry if resource_entry is not None else (None, None)
+        self._recycling_tokens.add(found.token)
         if resource is not None:
             try:
-                stop = getattr(resource, "stop", None)
-                if callable(stop):
-                    stop()
-                destroy = getattr(resource, "destroy", None)
-                if callable(destroy):
-                    destroy()
-            except Exception as exc:
-                raise AcceptanceContractError("child resource cleanup failed") from exc
+                self._stop_resource_without_carrier_lock(resource)
+            finally:
+                self._recycling_tokens.discard(found.token)
+        else:
+            self._recycling_tokens.discard(found.token)
         read_key_id = resource_receipt.read_key_id if resource_receipt is not None else None
         if read_key_id is not None:
             self.key_lifecycle.revoke(read_key_id)
@@ -5295,6 +5438,20 @@ class RunnerAcceptanceCarrier:
         return self.cleanup()
 
     def cleanup(self) -> dict[str, Any]:
+        with self._lifecycle_lock:
+            if self._cleanup_payload is not None:
+                return _safe_copy(self._cleanup_payload)
+            if self._cleanup_started:
+                _error("Acceptance carrier cleanup is already in progress")
+            if self._recycling_tokens:
+                _error("child recycle is in progress")
+            # Set the marker before stopping any resource.  A late report or
+            # watchdog callback therefore fails closed even while the resource
+            # stop/join runs outside the lock below.
+            self._cleanup_started = True
+            return self._cleanup_locked()
+
+    def _cleanup_locked(self) -> dict[str, Any]:
         if self._cleanup_payload is not None:
             return _safe_copy(self._cleanup_payload)
         try:
@@ -5302,8 +5459,8 @@ class RunnerAcceptanceCarrier:
             # destroys every still-active child before revoking keys and endpoints,
             # but deliberately does not call settle().
             for found in list(self._handles.values()):
-                if found.token in self._handles:
-                    self._destroy_invalidated_child(
+                if found.token in self._handles and found.token not in self._recycling_tokens:
+                    self._destroy_invalidated_child_locked(
                         found,
                         state_digest=(
                             self._model_state_boundary.digest

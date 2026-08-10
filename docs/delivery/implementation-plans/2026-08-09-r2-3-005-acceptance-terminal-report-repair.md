@@ -67,3 +67,26 @@ partial evidence but do not satisfy the four-role terminal/Team settlement compl
 Implemented and independently verified in Round 12. Focused 7/7, R2.3-005 176/176 with one opt-in skip, complete
 modeling-team 493/493 with one opt-in skip, modeling-team Ruff/diff/GitNexus, service restart, backend health, and
 frontend HTTP 200 passed. No semantic start was performed; live completion remains authorization-gated.
+
+## Start73 report/watchdog race repair
+
+Live start73 proved a second, narrower terminal-report defect: both cq-001 reports completed before two late absolute
+`child-timeout` callbacks, leaving one round simultaneously PASS and retryable. The run was stopped and ledgered
+`runtime/infrastructure,false`; no retained evidence is repaired in place.
+
+Implementation adds one Carrier lifecycle `RLock` and cleanup marker across ingest/failure/pending/recycle state,
+plus one child-resource terminal lock. Formal Carrier children set `defer_output_pump`; the Carrier registers the
+resource first and then activates the pump, while direct/non-formal launches remain immediate. Report-first makes a
+late failure callback return an explicit no-op and prevents watchdog kill. Failure-first rejects a late report.
+Unexpected failure-persistence exceptions enter the Adapter's typed Runtime failure queue and terminate safely.
+
+Required regression coverage includes report-first and failure-first orderings, a real two-thread race with exactly
+one winner, late callbacks during recycle, pending validation/artifact rollback, formal pump activation after resource
+registration, direct/non-formal compatibility, callback-error typed cleanup, unchanged retry budget, and sequential
+cq-001 PASS permitting cq-002 child start. Deterministic and independent gates must pass before start74; no extra
+provider smoke or semantic run is part of this repair.
+
+Development passed 685 tests with one skip and 218 subtests; the R2.3-005 scope passed 303 with one skip and 71
+subtests. Independent Round 26 passed the six race tests, 155 affected tests, R2.3-005 176 with one skip, full unittest
+499 with one skip, Ruff/compile/diff/GitNexus, service restart and backend/frontend health. Start73 evidence and both
+ledgers remained byte-frozen.

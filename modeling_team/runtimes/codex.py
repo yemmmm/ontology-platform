@@ -628,10 +628,21 @@ class _CodexChildResource:
         self.submitted_reports: list[Mapping[str, Any]] = []
         self.stopped = False
         self.destroyed = False
+        self._stopping = False
         self.failure_category: str | None = None
         self.failure_reason: str | None = None
         self.infrastructure_failure: Any | None = None
         self._failure_recorded = False
+        terminal_state = self.spec.get("_terminal_state")
+        self._carrier_terminal = isinstance(terminal_state, dict) and hasattr(
+            terminal_state.get("lock"), "__enter__"
+        )
+        if self._carrier_terminal:
+            self._terminal_state = terminal_state
+            self._terminal_lock = terminal_state["lock"]
+        else:
+            self._terminal_state = {"lock": threading.RLock(), "winner": None}
+            self._terminal_lock = self._terminal_state["lock"]
         self.startup_complete = startup_complete
         self._watchdog_stop = threading.Event()
         self._watchdog_thread: threading.Thread | None = None
@@ -640,6 +651,8 @@ class _CodexChildResource:
         # stopped/joined before any descriptor teardown in ``stop``.
         self._pump_stop = threading.Event()
         self._stdout_pump: threading.Thread | None = None
+        self._pump_started = False
+        self._output_pump_deferred = bool(self.spec.get("defer_output_pump"))
         self._child_agent: _Agent | None = None
         self._adapter: CodexRuntimeAdapter | None = None
         self._read_key_revoked = False
@@ -672,11 +685,12 @@ class _CodexChildResource:
                             )
                         return
                 if time.monotonic() >= deadline:
-                    self._record_failure(
+                    failure_won = self._record_failure(
                         "runtime",
                         "child-timeout" if self.startup_complete else "child-start-failed",
                     )
-                    self._terminate_process(grace_seconds=0.5)
+                    if failure_won:
+                        self._terminate_process(grace_seconds=0.5)
                     return
 
         thread = threading.Thread(target=watch, name="acceptance-child-watchdog", daemon=True)
@@ -692,8 +706,12 @@ class _CodexChildResource:
         through ``adapter._notification``; no new read path is introduced.
         """
 
-        self._adapter = adapter
-        self._child_agent = agent
+        with self._terminal_lock:
+            if self._pump_started or self.stopped or self.destroyed:
+                return
+            self._adapter = adapter
+            self._child_agent = agent
+            self._pump_started = True
         thread = threading.Thread(
             target=self._run_stdout_pump,
             name="acceptance-child-stdout-pump",
@@ -701,6 +719,17 @@ class _CodexChildResource:
         )
         self._stdout_pump = thread
         thread.start()
+
+    def activate_output_pump(self) -> None:
+        """Activate a formal pump after the carrier has registered the resource."""
+
+        if not self._output_pump_deferred:
+            return
+        adapter = self._adapter
+        agent = self._child_agent
+        if adapter is None or agent is None:
+            raise CodexRuntimeError("deferred Examiner output pump is unbound")
+        self.start_stdout_pump(adapter, agent)
 
     def _run_stdout_pump(self) -> None:
         adapter = self._adapter
@@ -745,21 +774,50 @@ class _CodexChildResource:
             "reason_code": self.failure_reason,
         }
 
-    def _record_failure(self, category: str, reason: str) -> None:
-        if self._failure_recorded or self.stopped or self.destroyed:
-            return
-        self.failure_category = category
-        self.failure_reason = reason
-        self._failure_recorded = True
-        callback = self.spec.get("record_infrastructure_failure")
-        if callable(callback):
-            try:
-                self.infrastructure_failure = callback(category, reason)
-            except Exception:
-                # The fixed local codes remain available to Acceptance even if a
-                # crashing process races carrier teardown; no raw exception text is
-                # retained in child evidence.
-                self.infrastructure_failure = None
+    def _record_failure(self, category: str, reason: str) -> bool:
+        """Attempt one terminal infrastructure failure; return whether it won."""
+
+        with self._terminal_lock:
+            if self._failure_recorded or self.stopped or self.destroyed or self._stopping:
+                return False
+            if self._terminal_state.get("winner") == "report":
+                return False
+            callback = self.spec.get("record_infrastructure_failure")
+            if callable(callback):
+                try:
+                    recorded = callback(category, reason)
+                except Exception:
+                    # Callback failures are runtime failures in their own right:
+                    # retain only the fixed local code, latch the adapter's typed
+                    # failure queue, and terminate the child.  Never retain raw
+                    # exception text from a carrier/test seam.
+                    self.failure_category = category
+                    self.failure_reason = reason
+                    self._failure_recorded = True
+                    self._terminal_state["winner"] = "failure"
+                    adapter = self._adapter
+                    agent = self._child_agent
+                    if adapter is not None and agent is not None:
+                        try:
+                            adapter._latch_runtime_failure(
+                                agent,
+                                {"source": "child-resource", "reason": "failure-callback-error"},
+                            )
+                        except Exception:
+                            pass
+                    self._terminate_process(grace_seconds=0.5)
+                    return True
+                if recorded is None and self._carrier_terminal:
+                    # The carrier reports a terminal report winner (or a
+                    # cleanup/recycle conflict).  Do not turn that late callback
+                    # into a second failure or kill the already reported child.
+                    return False
+                self.infrastructure_failure = recorded
+            self.failure_category = category
+            self.failure_reason = reason
+            self._failure_recorded = True
+            self._terminal_state["winner"] = "failure"
+            return True
 
     def _terminate_process(self, *, grace_seconds: float = 5.0) -> None:
         process = self.process
@@ -812,8 +870,10 @@ class _CodexChildResource:
         # never reads a closed stdout and a join-timeout EOF cannot misfire as a
         # failure.  ``_watchdog_stop`` is the earliest stop signal (set here at the
         # very start of ``stop``); ``self.stopped`` is only the final state below.
-        self._watchdog_stop.set()
-        self._pump_stop.set()
+        with self._terminal_lock:
+            self._stopping = True
+            self._watchdog_stop.set()
+            self._pump_stop.set()
         pump = self._stdout_pump
         if pump is not None:
             pump.join(timeout=2.0)
@@ -1706,9 +1766,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             resource.startup_complete = True
             # The Examiner child is intentionally not registered in
             # ``self.agents``, so the persistent-role output drains never cover it.
-            # Own its App Server stdout here with one lifecycle-bound pump so the
-            # model's ``submit_examiner_report`` elicitation can complete.
-            resource.start_stdout_pump(self, child_agent)
+            # Formal Acceptance defers this pump until the carrier has registered
+            # the resource and validated any report that arrived during startup;
+            # direct/non-formal fixtures retain immediate startup.
+            if not bool(spec.get("defer_output_pump")):
+                resource.start_stdout_pump(self, child_agent)
             return resource
         except Exception as exc:
             resource.failure_category = "runtime"

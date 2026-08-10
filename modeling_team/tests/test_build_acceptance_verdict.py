@@ -523,9 +523,9 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             carrier.cleanup()
 
     def test_failure_without_infra_cleanup_is_not_cited(self) -> None:
-        # start57 also recorded a source attempt-0 failure whose child was later
-        # recycled with a terminal report (no infrastructure cleanup receipt).
-        # That failure is not durable BLOCKED evidence and must not be cited.
+        # Failure-first now remains the sole terminal branch.  Once its child is
+        # recycled with the typed infrastructure digest, the cleanup-bound failure
+        # is durable and citable.
         ticket = _ticket(round_suffix="nocite")
         with tempfile.TemporaryDirectory() as directory:
             carrier = self._carrier(ticket, directory)
@@ -549,26 +549,27 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 failure_category="runtime",
                 reason_code="child-timeout",
             )
-            # The child eventually produced a terminal report and was recycled
-            # with that report digest (not the failure digest).  No cleanup
-            # receipt binds this failure digest, so it is intentionally absent
-            # from Host-derived refs.
-            source_report = carrier.ingest_report(
-                acceptance_id="acceptance",
-                round_id=ticket["acceptance_round_id"],
-                handle=source0,
-                report=_report(ticket, source0, kind="source"),
-            )
+            # Failure-first is terminal: a late child report is rejected rather
+            # than creating contradictory report+failure state.  The failure has
+            # no cleanup receipt yet, so it remains intentionally absent from
+            # Host-derived refs.
+            with self.assertRaisesRegex(AcceptanceContractError, "conflicts with infrastructure failure"):
+                carrier.ingest_report(
+                    acceptance_id="acceptance",
+                    round_id=ticket["acceptance_round_id"],
+                    handle=source0,
+                    report=_report(ticket, source0, kind="source"),
+                )
             carrier.recycle_child(
                 acceptance_id="acceptance",
                 round_id=ticket["acceptance_round_id"],
                 handle=source0,
-                completion_ref={"terminal_report_digest": source_report["report_digest"]},
+                completion_ref={"infrastructure_failure_digest": uncleaned.failure_digest},
                 request_id="recycle-nocite-src",
             )
             refs = carrier._host_failure_evidence_refs(ticket["acceptance_round_id"])
-            self.assertEqual(refs, [])
-            # The failure is still tracked, but not citable in a verdict envelope.
+            self.assertEqual(len(refs), 1)
+            self.assertEqual(refs[0]["failure_digest"], uncleaned.failure_digest)
             self.assertIn(uncleaned.failure_digest, carrier._failures)
             carrier.cleanup()
 

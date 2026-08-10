@@ -3161,3 +3161,23 @@ terminal 且 zero-secret/zero-residue 才重新开放 start73。不得把离线�
 proxy/auth/streaming/cleanup/secret gate 均通过，唯一真实空任务以精确 `deepseek-v4-flash` 收到 matching
 `turn/completed`，且 key 未进入任何 Runtime 产物。该结果只重新开放 start73，不代表任何业务模型、CQ、
 Acceptance 或 settlement 已通过。
+
+## 2026-08-10 R2.3-005 start73 Examiner 终态仲裁修订
+
+start73 `r23005-real-20260810-deepseek-start73` 完成候选发布、五阶段平台应用、governed retrieval 与
+`cq-001` 双 Examiner PASS，但两个 Examiner 的 terminal report 已持久化后，absolute child watchdog 又迟到
+记录 `runtime/child-timeout`。Carrier 因而同时保留 PASS report 与 retryable failure，`cq-001` 状态落为
+`retryable`，顺序门以 `prior_round_cleanup_required` 正确拒绝 `cq-002`。该运行受控停止并记为
+`runtime/infrastructure,false`；保留运行证据、平台对象和账本不得事后改写。
+
+同一 Examiner handle/attempt 必须恰有一个终态赢家。Terminal report 与 infrastructure failure 的检查、
+持久化、round 状态、pending report、recycle 和 cleanup 必须由 Carrier 的同一互斥边界仲裁：report 先赢时
+迟到 watchdog 不得写 failure、设置 retryable 或终止进程；failure 先赢时 late report 必须 fail-closed。
+Formal Source/Platform Examiner 必须先在 Carrier 注册 resource/proxy receipt，再激活 stdout pump，避免合法
+Platform report 在 resource 尚不可见时被误判。Direct/non-formal Runtime 保持原 immediate-pump 行为。
+只有 failure 真正持久化后 watchdog 才可终止 child；failure callback 的非冲突持久化异常必须进入既有
+typed Runtime failure queue 并 exactly-once 清理，不得静默悬挂或伪造 PASS。
+
+Independent Round 26 已验证 report-first、failure-first、双线程边界、recycle/late callback、formal deferred
+pump、direct/non-formal 兼容与 callback-error typed failure，完整回归和服务健康均通过。该修订只恢复
+start74 的运行资格，不把 start73 的 `cq-001` 局部 PASS 解释为完整 semantic acceptance。
