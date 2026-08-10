@@ -1336,3 +1336,23 @@ resource and proxy receipt. This removes the production early-report window with
 Runtime behavior. `_CodexChildResource` separately serializes report submission and watchdog failure; timeout kills
 the process only when the failure callback durably wins. A callback persistence exception is promoted to the existing
 typed Runtime failure queue and cleanup path rather than being mistaken for a report conflict.
+
+## Start74 final aggregate cleanup audit
+
+Start74 completed semantic modeling and Acceptance, but its retained cleanup projection exposed a sequencing defect:
+the Adapter audited the whole run root once per persistent role while later roles still owned legitimate temporary
+configuration. The corrected formal lifecycle is two-phase. Phase one stops every child and persistent process,
+drains stderr, removes role-owned private files, and accumulates only fixed cleanup reason codes. Phase two performs
+one run-wide exact-secret audit after all role files are gone and before the provider proxy key is wiped.
+
+The final `aggregate_secret_audit` is the single formal cleanup authority. It contains only bounded counts and
+booleans, including scan completeness, scan-error count, match counts, child residue, cleanup-error count, and proxy
+shutdown status; it never contains matched paths, raw text, exception text, or secret digests. Incomplete filesystem
+or live-process scanning fails closed without inventing a match. Proxy shutdown independently verifies server close,
+thread join/liveness and socket closure, then overwrites the mutable credential even on failure.
+
+Cleanup executes under a lifecycle lock and freezes an immutable first result. Repeated stop/identifier calls return
+the same projection. A new roster may reset it only after confirming no active child, role process, or proxy. Child
+destroy residue and per-role failures remain visible even after registry removal. This design is formal-only;
+non-formal and R2.3-002 lifecycle/evidence shapes remain unchanged. It repairs future evidence generation only and
+does not rewrite or promote retained start74.

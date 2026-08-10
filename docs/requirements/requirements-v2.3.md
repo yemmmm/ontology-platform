@@ -3181,3 +3181,25 @@ typed Runtime failure queue 并 exactly-once 清理，不得静默悬挂或伪�
 Independent Round 26 已验证 report-first、failure-first、双线程边界、recycle/late callback、formal deferred
 pump、direct/non-formal 兼容与 callback-error typed failure，完整回归和服务健康均通过。该修订只恢复
 start74 的运行资格，不把 start73 的 `cq-001` 局部 PASS 解释为完整 semantic acceptance。
+
+## 2026-08-10 R2.3-005 start74 最终清理审计修订
+
+start74 `r23005-real-20260810-deepseek-start74` 的候选、五阶段应用、validation/reasoning、governed
+retrieval、两轮 CQ、settlement 和四角色 terminal chain 均形成完整 PASS 证据，但 retained `state.json`
+中 coordinator/modeling/protocol 的 credential cleanup 投影为 false。独立 Round 27 确认最终文件中没有固定
+DeepSeek key bytes 或敏感私有文件；失败来自 Runtime 逐角色清理时反复扫描整个 run root：前三个角色审计时
+Protocol 尚未删除的临时 `config.toml` 仍合法存在，因而被误记为残留。start74 继续保留为 semantic PASS、
+overall `runtime/infrastructure,false`，不得事后改写或追认。
+
+正式 Runtime cleanup 必须采用两阶段边界：先停止所有 Examiner/持久角色并删除各自私有 artifact，再在
+provider proxy 的 mutable key buffer 尚可比较时，对 run root 执行恰好一次最终 aggregate secret audit，
+然后关闭 proxy、验证 listener/thread/socket 已退出并覆盖 key。最终投影只可包含安全计数/布尔值，不得包含
+secret、路径、异常文本或 secret digest。目录遍历、metadata/read、live `/proc` surface 任一失败必须通过
+`scan_complete=false` 与 `scan_error_count` fail-closed，且不得伪造成 secret match。
+
+首次 cleanup 的 aggregate 与 per-role 投影必须在 lifecycle lock 下锁存；重复 stop/读取不得重扫或把失败
+翻成成功。Child destroy 残留、role unlink/stop/stderr 异常、proxy shutdown/close/join/socket/wipe 异常均须
+以安全计数保留并令完成门失败，同时继续清理其余资源。新 run 只能在没有 active role/child/proxy 后重置该
+lifecycle snapshot；non-formal 与 R2.3-002 的 stop 行为和 evidence schema 不变。Independent Round 28 已以
+确定性回归、完整 modeling_team 回归和服务健康验证该修订；该 PASS 只验证未来 cleanup 机械边界，不改变
+start74 retained verdict，也不构成新的 semantic start。

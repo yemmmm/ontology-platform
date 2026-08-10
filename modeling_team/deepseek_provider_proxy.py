@@ -290,6 +290,14 @@ class DeepSeekProviderProxy:
             "upstream_errors": 0,
             "client_disconnects": 0,
         }
+        self._last_stop_report: dict[str, bool | int] = {
+            "shutdown_ok": True,
+            "server_close_ok": True,
+            "thread_joined": True,
+            "thread_alive": False,
+            "socket_open": False,
+            "lifecycle_failure": False,
+        }
 
     @property
     def base_url(self) -> str:
@@ -324,6 +332,19 @@ class DeepSeekProviderProxy:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {**self._counts, "listening": self._server is not None}
+
+    def stop_snapshot(self) -> dict[str, bool | int]:
+        """Return a safe immutable copy of the last shutdown outcome."""
+
+        with self._lock:
+            return dict(self._last_stop_report)
+
+    def clear_secret(self) -> None:
+        """Overwrite the mutable credential buffer, even after teardown errors."""
+
+        with self._lock:
+            for index in range(len(self._credential)):
+                self._credential[index] = 0
 
     def secret_snapshot(self) -> bytes:
         with self._lock:
@@ -401,22 +422,65 @@ class DeepSeekProviderProxy:
                 pass
             raise DeepSeekProviderProxyError("DeepSeek upstream request failed") from exc
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
+        """Best-effort listener teardown with a safe lifecycle result.
+
+        Every shutdown step is attempted independently.  A failed ``shutdown`` or
+        join must not prevent ``server_close`` or credential wiping; the caller
+        can use the returned boolean/``stop_snapshot`` to fail closed.
+        """
+
+        report: dict[str, bool | int] = {
+            "shutdown_ok": True,
+            "server_close_ok": True,
+            "thread_joined": True,
+            "thread_alive": False,
+            "socket_open": False,
+            "lifecycle_failure": False,
+        }
         with self._lock:
             server = self._server
             thread = self._thread
-            self._server = None
-            self._thread = None
-        if server is not None:
+        try:
+            if server is not None:
+                try:
+                    server.shutdown()
+                except Exception:
+                    report["shutdown_ok"] = False
+                try:
+                    server.server_close()
+                except Exception:
+                    report["server_close_ok"] = False
+                socket_obj = getattr(server, "socket", None)
+                try:
+                    report["socket_open"] = bool(
+                        socket_obj is not None and socket_obj.fileno() >= 0
+                    )
+                except Exception:
+                    report["socket_open"] = True
+            if thread is not None and thread is not threading.current_thread():
+                try:
+                    thread.join(timeout=2.0)
+                except Exception:
+                    report["thread_joined"] = False
             try:
-                server.shutdown()
-            finally:
-                server.server_close()
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=2.0)
-        with self._lock:
-            for index in range(len(self._credential)):
-                self._credential[index] = 0
+                report["thread_alive"] = bool(thread is not None and thread.is_alive())
+            except Exception:
+                report["thread_alive"] = True
+        finally:
+            with self._lock:
+                self._server = None
+                self._thread = None
+                self.clear_secret()
+                report["lifecycle_failure"] = not (
+                    bool(report["shutdown_ok"])
+                    and bool(report["server_close_ok"])
+                    and bool(report["thread_joined"])
+                    and not bool(report["thread_alive"])
+                    and not bool(report["socket_open"])
+                )
+                self._last_stop_report = dict(report)
+        return not bool(report["lifecycle_failure"])
 
 
 __all__ = [

@@ -397,3 +397,22 @@ duplicate-scalar startup defect; the repair retained one exact tuple and added p
 single live empty Coordinator smoke received matching `turn/completed` through the proxy with upstream 2xx and zero
 secret/residue. The DeepSeek Runtime/provider gate is complete; start73 may proceed from the committed rollback, while
 semantic acceptance remains a separate live requirement.
+
+## Start74 cleanup-audit ordering repair
+
+1. Extend artifact/process scanning with safe `scan_complete` and `scan_error_count` fields; treat unreadable
+   filesystem and live `/proc` surfaces as incomplete without changing the true secret-match count.
+2. For formal runs only, split Adapter stop into resource teardown/private-file removal followed by one final
+   run-wide audit while the provider key remains available for comparison. Project one digest-free
+   `aggregate_secret_audit` onto all persistent-role cleanup booleans.
+3. Make child/role/proxy cleanup best-effort but fail-closed: continue remaining teardown, preserve fixed reason/count
+   evidence, keep child residue visible, verify proxy thread/socket closure, and wipe the key in an outer `finally`.
+4. Lock and cache the first lifecycle cleanup projection. Repeated stop/read is immutable; a later roster resets only
+   after proving the prior lifecycle owns no active resource. Preserve non-formal/R2.3-002 behavior and schema.
+5. Add regressions for the Protocol temporary-config ordering defect, real retained secret, incomplete scan, child
+   residue, proxy shutdown/join/socket failure, key wipe, idempotence, lifecycle reset and non-formal compatibility.
+   Run focused, R2.3-005, full modeling-team, Ruff/compile/diff/GitNexus and independent restart/health checks. Do not
+   run a provider smoke or semantic model, mutate start74 evidence, or append ledger state during this repair.
+
+Development and Independent Round 28 passed these deterministic gates. Start74 remains an immutable overall failure;
+the repair establishes the cleanup contract for a future authorized run only.

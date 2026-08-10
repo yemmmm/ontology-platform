@@ -4293,3 +4293,17 @@ the formal builder, or starting another real run before authorization.
   `1d0192365b809989a7a0ed50c933239f4daa48bc3697df14329ae2a84d0c4442`.
 - Round 26 proves the deterministic repair only. It restores start74 eligibility but does not upgrade start73's
   partial cq-001 PASS to complete modeling quality or settlement PASS.
+- start74 `r23005-real-20260810-deepseek-start74` produced complete semantic/CQ/settlement/terminal evidence, but
+  Independent Round 27 rejected the overall result because three persistent-role cleanup projections each retained
+  one secret match. The fixed DeepSeek key and private credential basenames were absent from final artifacts. Source
+  review traced the projection to per-role whole-run audits observing Protocol's still-legitimate temporary config.
+  The retained run remains semantic PASS but overall `runtime/infrastructure,false`; it was not rewritten or promoted.
+- The reviewed repair changed formal cleanup to stop/unlink every resource first, run one digest-free aggregate audit
+  while the proxy key is still available, then verify proxy thread/socket shutdown and wipe the key. Scan errors,
+  child residue, cleanup exceptions and proxy failures fail closed through safe counts; lifecycle evidence is locked
+  and idempotent. Non-formal/R2.3-002 output remains unchanged.
+- Independent Round 28 passed 9 cleanup regressions, 138 affected tests plus 71 subtests, R2.3-005 176 OK with one
+  skip, full modeling-team 499 OK with one skip, Ruff, compileall, diff check, GitNexus LOW/zero processes, service
+  restart and backend/frontend HTTP 200. It did not open retained SQLite, call a provider/model, mutate the ledger or
+  consume a semantic start. The shared test-plan digest is
+  `7a96969b640cefcb1e161c45d598715c7735239bc5bf7a39863b835f7fc67b26`.

@@ -3583,3 +3583,128 @@ proxy/cleanup evidence. Preserve the prior Round24 failure; no semantic modeling
 formal pump registration, rollback, cleanup-marker rejection, callback-failure typing, non-formal
 compatibility, and retry regressions passed. This round provides no semantic or provider-smoke result and
 does not consume or authorize a semantic start.
+
+### Independent Round 27 — Start74 retained semantic acceptance (2026-08-10)
+
+- **Read-only boundary and retained evidence:** This round evaluated only the already-finished
+  `r23005-real-20260810-deepseek-start74` tree. No process, model, provider, platform call, Runner
+  reservation, StartLedger operation, semantic start, Examiner, or retry was initiated. The frozen
+  handoff snapshot was `a5d1d828292d6f21e4a7c8503a2467d03a438cbbb8c87952ddc61f53f0d8eda3`
+  (781 files); a final recheck observed `c94c73f4cd5451fa7a9bb7376f4692b636ad6106127581301f1cf56d2342f09d`
+  (789 files). The latter drift occurred while this tester opened retained SQLite logs with a default
+  read connection (SELECT-only; no write SQL); SQLite/WAL housekeeping changed the runtime log
+  surfaces. This is recorded as independent-audit integrity defect **D-R27-1/P1**. The tester did not
+  restore, rewrite, or delete retained evidence.
+- **Fresh scope and lifecycle: PASS.** `state.json` was `CLEANED`; scope was owned `create`,
+  Project/Ontology/Build Session identities were present, the completed session and terminal
+  statuses were recorded, no in-flight attempts remained, protocol/admin/project keys were revoked
+  or non-active, and the retained disposition was `retained-pending-acceptance`. The final
+  `get_build_session` readback was `completed` with two checkpoints and a released lease. No
+  matching run processes or child handles remained.
+- **Candidate publication and five-stage integrity: PASS.** The candidate/semantic digest was
+  `7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998`; stage order was exactly
+  `class, property, entity, relation, shape`, with dry-run/readback counts `6/6, 18/18, 10/10,
+  12/12, 1/1` and apply counts identical. The negative validation probe was rejected and not applied.
+  Candidate delivery was accepted and no conflict was recorded.
+- **Validation/reasoning and governed retrieval: PASS.** Semantic validation returned
+  `succeeded/conforms=true`; reasoning returned `succeeded/consistent=true`. The seven required
+  paths (`invokesTool`, `currentlyConsumesOutput`, `fieldName`, `fieldDatatype`,
+  `unknownConcernsWorkflow`, `unknownQuestion`, `unknownRationale`) each had hybrid and lexical
+  query chains (14 total), complete/non-truncated scope readbacks, supported matches, and retained
+  evidence lineage. The lexical fallback was used where vector indexing was unavailable and is a
+  recorded residual, not a semantic verdict failure.
+- **CQs, child lifecycle, and settlement: PASS.** Tickets were ordered `cq-001` then `cq-002`.
+  Both verdicts were usable `PASS` at current epoch `1` and the same model-state digest
+  `a4622fd2002a24eb7eaf5f84f27400dda1edf6872ebe0dd610f9b49bd11972e5`, with all eight gates
+  passing and empty infrastructure/failure digest lists. Exactly four fresh attempt-0 children
+  (two source, two platform) produced four terminal reports and four destroy/recycle records; active
+  child count was zero. Settlement CAS/readback matched (`status=settled`, `matched=true`).
+- **Terminal ordering and stop semantics: PASS.** The retained handoff chain was exactly
+  Acceptance→Coordinator, Acceptance→Modeling, Modeling→Protocol, Modeling→Coordinator, and
+  Protocol→Coordinator, followed by accepted acknowledgements and one all-role settled record.
+  The formal ledger had one reservation and one `semantic_start`, with no terminal failure or next
+  reservation; formal ledger SHA-256 was
+  `c3a28a486fa45b8db7bfdab3aacccf972e2605c0e6c570199cd563ecb296c206`, and the unchanged legacy
+  R2.3-002 ledger SHA-256 was
+  `bef7e8be0d81e69100ca311591a33ab66a06a4af24783dcab415700e9d94f632`.
+- **Security surface and cleanup: FAIL.** The pre-existing retained `state.json` cleanup evidence
+  has `private_credentials_destroyed=false`, `secret_audit.match_count=1`, and
+  `matched_secret_count=1` for each of `coordinator`, `modeling`, and `protocol`; `acceptance` has
+  no failure projection, and all child stderr/secret projections are zero. No sensitive basename
+  file remains after cleanup (`auth.json`, `config.toml`, `runner-capabilities.json`,
+  `runner-capability.token/.sock`, `runner_capability_mcp.py`, `report-sink.token`,
+  `platform-proxy.token`, child config/credential manifests: zero present). A safe exact fixed
+  DeepSeek-key byte scan found zero files/occurrences. `runner-capability.token` appears only as
+  filename/command markers and token digests in Modeling/Protocol logs/sessions (not as a retained
+  raw capability-token scalar); structured raw token fields are child-handle/lease-token telemetry,
+  not Runner capability values. The narrow source-level explanation is cleanup ordering: adapter
+  stop audits children, then persistent roles in profile order `coordinator → modeling → protocol
+  → acceptance`; each role performs a run-root pre-cleanup audit before unlinking private artifacts,
+  while Protocol `config.toml` still contains the remembered temporary `ONTOLOGY_MCP_API_KEY`.
+  Therefore the one matched surface is most consistent with the temporary Protocol key in
+  `runtime/protocol/home/config.toml` being over-captured before wipe (the retained projection does
+  not preserve `matched_surfaces`, so exact path/category cannot be proven from state alone). This
+  is defect **D-R27-2/P1**: strict zero-secret cleanup is not independently acceptable even though no
+  sensitive file or fixed DeepSeek key remains.
+- **Runtime health: PASS.** Without restarting or mutating the service, the managed unit was active;
+  backend `/api/health` and frontend `/` returned HTTP 200. No new focused/full suites, Ruff,
+  compile, or GitNexus run was performed in this retained-evidence round; prior Round25/26 suite
+  results remain historical only.
+
+#### Round27 conclusion
+
+**Overall verdict: FAIL.** Semantic/modeling evidence, CQs, settlement, terminal ordering, ledger
+boundary, cleanup process/children, and service health are PASS, but strict cleanup/security is a
+P1 failure (D-R27-2), compounded by the tester's retained-SQLite read-audit integrity drift
+(D-R27-1). Do not promote Start74 to final acceptance. The narrow developer follow-up is to perform
+one final run-wide exact-secret audit only after every child/persistent role has stopped and private
+config/token files have been removed (or explicitly classify and exclude the known short-lived
+Protocol config surface while still auditing logs/process surfaces), then require a single aggregate
+`private_credentials_destroyed=true`, `match_count=0`, and `matched_secret_count=0` projection. A
+future retest must use SQLite URI `mode=ro` and must not touch retained evidence.
+
+### Independent Round 28 — cleanup-audit repair deterministic regression (2026-08-10)
+
+- **Frozen implementation boundary:** The repaired files matched the handoff hashes exactly:
+  `modeling_team/runtimes/codex.py`
+  `4b4ced3a016c9979b36f94ce7a0ed39bcd482b1c35083ac88a553c7bc642aa92`,
+  `modeling_team/deepseek_provider_proxy.py`
+  `fc005089f3acddd3531ac3403eb336921b5a1d9c716f479e32ef624266dd0180`, and
+  `modeling_team/tests/test_start74_cleanup_audit.py`
+  `4b3e61d080960290fcc51ceab217aa6942aabbcf74e099c003e3b024fbfed766`. The prior Round27 plan
+  hash was `16398e0e13b52f333979450378b9e45201d5c69e3b583007f870a9d5843b0b1a`. Product code,
+  requirements, design, implementation plan, delivery record, retained Start74 evidence/SQLite,
+  ledger, and credential were not read or changed by this round; no provider smoke or semantic run
+  was started.
+- **Focused cleanup/security regression: PASS.** `test_start74_cleanup_audit.py` ran **9 passed**.
+  It covers: audit read `OSError` as additive fail-closed (`scan_complete=false`); one formal
+  run-wide aggregate audit before proxy wipe with config unlinked, safe counts only, no raw
+  secret/digest/surface projection, and immutable/idempotent snapshot; true residual sentinel
+  detection; proxy stop failure and thread/socket residue failing every role while wiping the key;
+  Protocol temporary config unlink before a clean aggregate; child destroy residue and typed cleanup
+  error; non-formal projection compatibility; next-lifecycle snapshot reset; and active-resource
+  fail-closed startup. The affected focused set (cleanup audit, provider proxy/runtime, isolation,
+  R2.3-005 contract/runtime/repeatability) returned **138 passed, 71 subtests passed**.
+- **Required deterministic suites: PASS.** R2.3-005 discovery
+  `PYTHONPATH=. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_r23005*.py'`
+  returned **176 tests OK, 1 expected skip**. Complete `modeling_team` discovery with
+  `-p 'test_*.py'` returned **499 tests OK, 1 expected skip**. Non-fatal budget diagnostics and
+  existing ResourceWarning/RuntimeWarning lines were test output only; no test failed and no raw
+  credential text was emitted.
+- **Quality gates: PASS.** `backend/.venv/bin/ruff check modeling_team`,
+  `backend/.venv/bin/python -m compileall -q modeling_team`, and `git diff --check --` all passed.
+  GitNexus `detect_changes(scope=unstaged, repo=ontology-platform)` reported **low risk**,
+  11 changed symbols across 3 source/test files, and **0 affected processes**.
+- **Restart and health: PASS.** `ontology-platform.service` was restarted once; after startup
+  completed it was active/running, backend `http://127.0.0.1:8001/api/health` returned HTTP 200 with
+  `{"status":"ok"}`, and frontend `http://127.0.0.1:5173/` returned HTTP 200. No retained Start74
+  SQLite file was opened during Round28.
+
+#### Round28 conclusion
+
+**Overall verdict: PASS for the deterministic cleanup-audit repair and adjacent regressions.** The
+  repaired aggregate audit now observes all role config cleanup before the proxy key wipe, fails
+  closed on incomplete scans/residue/proxy lifecycle errors, projects sanitized immutable evidence,
+  and resets cleanly for a new lifecycle while preserving non-formal behavior. This is deterministic
+  evidence only; no real provider or semantic acceptance is inferred, and the retained Start74
+  semantic/security FAIL from Round27 remains preserved.

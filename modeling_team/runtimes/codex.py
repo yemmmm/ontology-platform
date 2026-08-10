@@ -16,6 +16,7 @@ import stat
 import secrets
 import threading
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -323,7 +324,8 @@ def audit_private_artifacts(
     roots: Path | list[Path] | tuple[Path, ...],
     secret_values: list[bytes] | tuple[bytes, ...] = (),
     *,
-    process_surfaces: list[tuple[str, bytes]] | tuple[tuple[str, bytes], ...] = (),
+    process_surfaces: list[tuple[str, bytes | None]]
+    | tuple[tuple[str, bytes | None], ...] = (),
 ) -> dict[str, Any]:
     """Scan private generated artifacts for secret bytes without returning content.
 
@@ -354,6 +356,8 @@ def audit_private_artifacts(
     matched_surfaces: set[str] = set()
     matched_digest_indices: set[int] = set()
     scanned_files = 0
+    scan_error_count = 0
+    scan_complete = True
 
     def inspect(surface: str, payload: bytes) -> None:
         for index, value in enumerate(unique_values):
@@ -364,13 +368,24 @@ def audit_private_artifacts(
     for root in root_values:
         try:
             path = Path(root)
-            candidates = [path] if path.is_file() else list(path.rglob("*"))
+            if path.is_file():
+                candidates = [path]
+            elif path.is_dir():
+                candidates = list(path.rglob("*"))
+            else:
+                # A missing root is an empty, already-clean surface.  It is not
+                # an I/O failure; an OSError raised while inspecting it is.
+                candidates = []
         except OSError:
+            scan_error_count += 1
+            scan_complete = False
             continue
         for candidate in candidates:
             try:
                 metadata = candidate.lstat()
             except OSError:
+                scan_error_count += 1
+                scan_complete = False
                 continue
             if not stat.S_ISREG(metadata.st_mode):
                 continue
@@ -392,12 +407,22 @@ def audit_private_artifacts(
             try:
                 payload = candidate.read_bytes()
             except OSError:
+                scan_error_count += 1
+                scan_complete = False
                 continue
             scanned_files += 1
             inspect(str(candidate), payload)
     for surface, payload in process_surfaces:
-        if isinstance(surface, str) and isinstance(payload, bytes):
+        if not isinstance(surface, str):
+            continue
+        if isinstance(payload, bytes):
             inspect(surface, payload)
+        else:
+            # ``None`` is the internal marker for a live process surface that
+            # could not be read.  Treat it as an audit failure without retaining
+            # the path or any process contents in the result.
+            scan_error_count += 1
+            scan_complete = False
     return {
         "scanned_files": scanned_files,
         "match_count": len(matched_surfaces),
@@ -406,6 +431,8 @@ def audit_private_artifacts(
             digests[index] for index in sorted(matched_digest_indices)
         ],
         "matched_surfaces": sorted(matched_surfaces),
+        "scan_complete": scan_complete,
+        "scan_error_count": scan_error_count,
     }
 
 
@@ -985,6 +1012,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
         self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
         self._provider_proxy_failure_latched = False
+        # Cleanup is a lifecycle boundary, not a best-effort recomputation.  The
+        # lock serializes stop/cleanup callers and the snapshot makes repeated
+        # evidence reads immutable even if a caller mutates a returned dict or a
+        # private tree is recreated after teardown.
+        self._cleanup_lock = threading.RLock()
+        self._cleanup_snapshot: dict[str, Any] | None = None
+        self._cleanup_errors: dict[str, dict[str, str]] = {}
+        self._formal_cleanup_aggregate: dict[str, Any] | None = None
+        self._proxy_stop_status: dict[str, bool | int] = {}
 
     def _validated_model_override(
         self,
@@ -1121,7 +1157,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         *,
         secret_values: tuple[bytes, ...] | None = None,
     ) -> dict[str, Any]:
-        surfaces: list[tuple[str, bytes]] = []
+        return audit_private_artifacts(
+            (),
+            self._secret_values_for_audit() if secret_values is None else secret_values,
+            process_surfaces=self._process_surface_payloads(agent),
+        )
+
+    @staticmethod
+    def _process_surface_payloads(agent: _Agent) -> list[tuple[str, bytes | None]]:
+        """Capture process argv/env and live ``/proc`` surfaces without secrets."""
+
+        surfaces: list[tuple[str, bytes | None]] = []
         process = agent.process
         if process is not None:
             command = getattr(process, "args", None)
@@ -1145,16 +1191,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             pid = getattr(process, "pid", None)
             if isinstance(pid, int) and pid > 0:
+                poll = getattr(process, "poll", None)
+                try:
+                    process_alive = bool(poll() is None) if callable(poll) else True
+                except Exception:
+                    process_alive = True
                 for name in ("cmdline", "environ"):
                     try:
                         surfaces.append((f"{agent.agent_id}:{name}", Path(f"/proc/{pid}/{name}").read_bytes()))
                     except OSError:
-                        pass
-        return audit_private_artifacts(
-            (),
-            self._secret_values_for_audit() if secret_values is None else secret_values,
-            process_surfaces=surfaces,
-        )
+                        # A dead process naturally loses its /proc surface.  A
+                        # live process whose surface disappears is an audit
+                        # failure and must make the formal aggregate fail closed.
+                        if process_alive:
+                            surfaces.append((f"{agent.agent_id}:{name}", None))
+        return surfaces
 
     def _record_cleanup_audit(
         self,
@@ -1172,15 +1223,67 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 for surface in surfaces
                 if not str(surface).endswith("/auth.json")
             )
-        if matches:
-            self._secret_audit_failures[identity] = {
-                "scanned_files": result.get("scanned_files", 0),
-                "match_count": matches,
-                "matched_secret_count": result.get("matched_secret_count", 0),
-                "matched_secret_digests": []
-                if suppress_secret_digests
-                else list(result.get("matched_secret_digests", [])),
-            }
+        # An incomplete scan is itself a failure even when no match was
+        # observed.  Formal evidence intentionally exposes only bounded counts;
+        # paths, raw values and provider-key digests stay internal.
+        scan_complete = bool(result.get("scan_complete", True))
+        scan_error_count = result.get("scan_error_count", 0)
+        try:
+            scan_error_count = max(0, int(scan_error_count))
+        except (TypeError, ValueError):
+            scan_error_count = 1
+            scan_complete = False
+        if not suppress_secret_digests and not matches and not scan_complete:
+            # Preserve the legacy non-formal evidence shape; formal aggregate
+            # cleanup uses the explicit fail-closed scan fields below.
+            return
+        if matches or not scan_complete:
+            if suppress_secret_digests:
+                self._secret_audit_failures[identity] = {
+                    "scanned_files": max(0, int(result.get("scanned_files", 0) or 0)),
+                    "match_count": max(0, int(matches or 0)),
+                    "matched_secret_count": max(
+                        0, int(result.get("matched_secret_count", 0) or 0)
+                    ),
+                    "scan_complete": scan_complete,
+                    "scan_error_count": scan_error_count,
+                }
+            else:
+                self._secret_audit_failures[identity] = {
+                    "scanned_files": result.get("scanned_files", 0),
+                    "match_count": matches,
+                    "matched_secret_count": result.get("matched_secret_count", 0),
+                    "matched_secret_digests": list(result.get("matched_secret_digests", [])),
+                }
+
+    @staticmethod
+    def _safe_cleanup_audit(result: Mapping[str, Any]) -> dict[str, int | bool]:
+        """Project one audit to safe counts/booleans only."""
+
+        try:
+            scanned_files = max(0, int(result.get("scanned_files", 0) or 0))
+        except (TypeError, ValueError):
+            scanned_files = 0
+        try:
+            match_count = max(0, int(result.get("match_count", 0) or 0))
+        except (TypeError, ValueError):
+            match_count = 1
+        try:
+            matched_secret_count = max(0, int(result.get("matched_secret_count", 0) or 0))
+        except (TypeError, ValueError):
+            matched_secret_count = 1
+        try:
+            scan_error_count = max(0, int(result.get("scan_error_count", 0) or 0))
+        except (TypeError, ValueError):
+            scan_error_count = 1
+        scan_complete = bool(result.get("scan_complete", True)) and scan_error_count == 0
+        return {
+            "scanned_files": scanned_files,
+            "match_count": match_count,
+            "matched_secret_count": matched_secret_count,
+            "scan_complete": scan_complete,
+            "scan_error_count": scan_error_count,
+        }
 
     def acceptance_child_factory(self, spec: dict[str, Any]) -> Any:
         """Create one private Source/Platform Examiner child.
@@ -1933,19 +2036,60 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("DeepSeek API key is unavailable")
         return matches[0]
 
+    def _lifecycle_has_active_resources(self) -> bool:
+        """Return whether a prior lifecycle still owns live process resources."""
+
+        if self._acceptance_children:
+            return True
+        for agent in self.agents.values():
+            process = agent.process
+            if process is None:
+                continue
+            poll = getattr(process, "poll", None)
+            try:
+                if callable(poll) and poll() is None:
+                    return True
+                if not callable(poll):
+                    return True
+            except Exception:
+                return True
+        proxy = self._formal_provider_proxy
+        if proxy is not None:
+            try:
+                if bool(proxy.snapshot().get("listening")):
+                    return True
+            except Exception:
+                return True
+        return False
+
     def start_roster(self, run: Any, agents: Any) -> list[AgentRuntimeIdentity]:
-        self._run_root = run.root
-        self._run_id = run.run_id
-        self._secret_audit_values.clear()
-        self._secret_audit_failures.clear()
-        self._stderr_drain_failures.clear()
-        self._stderr_drain_reports.clear()
-        self._provider_proxy_failure_latched = False
-        self._child_auth_barriers.clear()
-        with self._runtime_failure_lock:
-            self._runtime_failures.clear()
-        with self._inactivity_lock:
-            self._inactivity_failures.clear()
+        with self._cleanup_lock:
+            if self._lifecycle_has_active_resources():
+                raise CodexRuntimeError("runtime lifecycle still owns active resources")
+            if self._cleanup_snapshot is not None and self._cleanup_errors and self._coordination_enabled:
+                raise CodexRuntimeError("previous formal cleanup failed")
+            # A completed cleanup starts a fresh lifecycle.  The previous
+            # immutable snapshot remains available to callers that already
+            # captured it, while this adapter's next run receives clean state.
+            self._cleanup_snapshot = None
+            self._formal_cleanup_aggregate = None
+            self._cleanup_errors.clear()
+            self._proxy_stop_status.clear()
+            self.agents.clear()
+            self._acceptance_children.clear()
+            self._run_root = run.root
+            self._run_id = run.run_id
+            self._secret_audit_values.clear()
+            self._secret_audit_failures.clear()
+            self._private_credentials_destroyed.clear()
+            self._stderr_drain_failures.clear()
+            self._stderr_drain_reports.clear()
+            self._provider_proxy_failure_latched = False
+            self._child_auth_barriers.clear()
+            with self._runtime_failure_lock:
+                self._runtime_failures.clear()
+            with self._inactivity_lock:
+                self._inactivity_failures.clear()
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
         self._formal_model_manifest = (
@@ -4680,76 +4824,116 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def resume(self) -> None:
         return None
 
-    def stop(self) -> None:
-        # Temporary Examiner resources are Runner-owned and must be stopped before
-        # persistent Agent shutdown.  This path is idempotent and uses only the
-        # injected resource seam; it does not create or discover arbitrary children.
-        for handle_digest, resource in list(self._acceptance_children.items()):
-            private_root = resource.spec.get("private_root") if hasattr(resource, "spec") else None
-            resource_identity = f"child:{handle_digest}"
-            child_agent = getattr(resource, "_child_agent", None)
-            if isinstance(child_agent, _Agent):
-                self._child_auth_barriers[resource_identity] = {
-                    "auth_unlinked_monotonic": child_agent.auth_unlinked_monotonic,
-                    "provider_proxy_ready_monotonic": child_agent.provider_proxy_ready_monotonic,
-                    "first_dispatch_monotonic": child_agent.first_dispatch_monotonic,
-                }
-                self._record_cleanup_audit(
-                    resource_identity,
-                    self._audit_process_surfaces(child_agent),
-                    suppress_secret_digests=self._coordination_enabled,
-                )
-            if self._coordination_enabled and isinstance(private_root, str) and private_root:
-                # Capture the artifact surface while the shared provider key is
-                # still mutable and before ``destroy`` wipes the child tree.
-                self._record_cleanup_audit(
-                    resource_identity,
-                    audit_private_artifacts(
-                        Path(private_root), self._secret_values_for_audit()
-                    ),
-                    suppress_secret_digests=self._coordination_enabled,
-                )
+    def _record_cleanup_error(self, identity: str, reason_code: str) -> None:
+        """Retain only a fixed, safe cleanup failure projection."""
+
+        if not isinstance(identity, str) or not identity:
+            identity = "runtime"
+        allowed = {
+            "child-stop-failed",
+            "child-destroy-failed",
+            "role-stop-failed",
+            "role-unlink-failed",
+            "role-residual-check-failed",
+            "stderr-drain-failed",
+            "proxy-stop-failed",
+            "aggregate-audit-failed",
+        }
+        if reason_code not in allowed:
+            reason_code = "cleanup-failed"
+        self._cleanup_errors.setdefault(
+            identity,
+            {"category": "runtime/infrastructure", "reason_code": reason_code},
+        )
+
+    def _stop_child_for_cleanup(
+        self,
+        handle_digest: str,
+        resource: Any,
+        process_surfaces: list[tuple[str, bytes | None]],
+        roots: list[Path],
+    ) -> None:
+        identity = f"child:{handle_digest}"
+        spec = getattr(resource, "spec", None)
+        if isinstance(spec, dict):
+            private_root = spec.get("private_root")
+            if isinstance(private_root, str) and private_root:
+                roots.append(Path(private_root))
+        child_agent = getattr(resource, "_child_agent", None)
+        if isinstance(child_agent, _Agent):
+            self._child_auth_barriers[identity] = {
+                "auth_unlinked_monotonic": child_agent.auth_unlinked_monotonic,
+                "provider_proxy_ready_monotonic": child_agent.provider_proxy_ready_monotonic,
+                "first_dispatch_monotonic": child_agent.first_dispatch_monotonic,
+            }
+        try:
+            stop = getattr(resource, "stop", None)
+            if callable(stop):
+                stop()
+        except Exception:
+            self._record_cleanup_error(identity, "child-stop-failed")
+        try:
+            destroy = getattr(resource, "destroy", None)
+            if callable(destroy):
+                destroy()
+        except Exception:
+            self._record_cleanup_error(identity, "child-destroy-failed")
+        if isinstance(child_agent, _Agent):
             try:
-                stop = getattr(resource, "stop", None)
-                if callable(stop):
-                    stop()
-                destroy = getattr(resource, "destroy", None)
-                if callable(destroy):
-                    destroy()
-            finally:
-                self._acceptance_children.pop(handle_digest, None)
-        for agent in self.agents.values():
-            self._record_cleanup_audit(
-                agent.agent_id,
-                self._audit_process_surfaces(agent),
-                suppress_secret_digests=self._coordination_enabled,
-            )
+                process_surfaces.extend(self._process_surface_payloads(child_agent))
+            except Exception:
+                self._record_cleanup_error(identity, "child-stop-failed")
+        # A resource that did not reach ``destroyed`` remains registered so
+        # cleanup evidence cannot claim zero active child residue.
+        if bool(getattr(resource, "destroyed", False)):
+            self._acceptance_children.pop(handle_digest, None)
+
+    def _stop_agent_for_cleanup(
+        self,
+        agent: _Agent,
+        artifact_names: tuple[str, ...],
+        process_surfaces: list[tuple[str, bytes | None]],
+    ) -> bool:
+        cleanup_ok = True
+        try:
             agent.inactivity_watchdog_stop.set()
             self._close_retrieval_asset_fds(agent)
-            if agent.process and agent.process.poll() is None:
+            process = agent.process
+            if process is not None and process.poll() is None:
                 try:
-                    os.killpg(os.getpgid(agent.process.pid), signal.SIGTERM)
-                except (ProcessLookupError, PermissionError):
-                    agent.process.terminate()
+                    pid = getattr(process, "pid", None)
+                    if isinstance(pid, int) and pid > 0:
+                        os.killpg(os.getpgid(pid), signal.SIGTERM)
+                    else:
+                        process.terminate()
+                except (ProcessLookupError, PermissionError, OSError):
+                    terminate = getattr(process, "terminate", None)
+                    if callable(terminate):
+                        terminate()
                 try:
-                    agent.process.wait(timeout=5)
+                    process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     try:
-                        os.killpg(os.getpgid(agent.process.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        agent.process.kill()
-                    agent.process.wait(timeout=5)
-            if self._coordination_enabled:
-                pre_cleanup_audit = audit_private_artifacts(
-                    self._run_root if self._run_root is not None else agent.home,
-                    self._secret_values_for_audit(),
-                )
-                self._record_cleanup_audit(
-                    agent.agent_id,
-                    pre_cleanup_audit,
-                    suppress_secret_digests=True,
-                )
-            if agent.stderr_drain is not None:
+                        pid = getattr(process, "pid", None)
+                        if isinstance(pid, int) and pid > 0:
+                            os.killpg(os.getpgid(pid), signal.SIGKILL)
+                        else:
+                            process.kill()
+                    except (ProcessLookupError, PermissionError, OSError):
+                        kill = getattr(process, "kill", None)
+                        if callable(kill):
+                            kill()
+                    process.wait(timeout=5)
+        except Exception:
+            cleanup_ok = False
+            self._record_cleanup_error(agent.agent_id, "role-stop-failed")
+        try:
+            process_surfaces.extend(self._process_surface_payloads(agent))
+        except Exception:
+            cleanup_ok = False
+            self._record_cleanup_error(agent.agent_id, "role-stop-failed")
+        if agent.stderr_drain is not None:
+            try:
                 agent.stderr_drain.stop()
                 self._stderr_drain_reports[agent.agent_id] = agent.stderr_drain.snapshot()
                 if agent.stderr_drain.lifecycle_failure:
@@ -4757,53 +4941,265 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "category": "runtime/infrastructure",
                         "reason_code": "stderr-drain-failed",
                     }
-            artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
-            if self._coordination_enabled:
-                artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
-            cleanup_ok = True
-            for name in artifact_names:
-                credential = agent.home / name
-                try:
-                    credential.unlink(missing_ok=True)
-                except OSError:
-                    cleanup_ok = False
+                    self._record_cleanup_error(agent.agent_id, "stderr-drain-failed")
+            except Exception:
+                cleanup_ok = False
+                self._record_cleanup_error(agent.agent_id, "stderr-drain-failed")
+        if agent.auth_path is not None and agent.credential_mode != "provider_proxy":
+            try:
+                agent.auth_path.unlink(missing_ok=True)
+            except OSError:
+                cleanup_ok = False
+                self._record_cleanup_error(agent.agent_id, "role-unlink-failed")
+        for name in artifact_names:
+            try:
+                (agent.home / name).unlink(missing_ok=True)
+            except OSError:
+                cleanup_ok = False
+                self._record_cleanup_error(agent.agent_id, "role-unlink-failed")
+        try:
             residual = any(
                 (agent.home / name).exists() or (agent.home / name).is_symlink()
                 for name in artifact_names
             )
-            post_cleanup_audit = audit_private_artifacts(
-                self._run_root if self._run_root is not None else agent.home,
-                self._secret_values_for_audit(),
-            )
-            self._record_cleanup_audit(
-                agent.agent_id,
-                post_cleanup_audit,
-                ignore_auth_paths=False,
-                suppress_secret_digests=self._coordination_enabled,
-            )
-            self._private_credentials_destroyed[agent.agent_id] = (
-                cleanup_ok
-                and not residual
-                and agent.agent_id not in self._secret_audit_failures
-                and agent.agent_id not in self._stderr_drain_failures
-            )
-            agent.state = "stopped"
-        # Keep the shared provider proxy alive until all child/persistent process
-        # surfaces and run artifacts have been audited, then close the listener and
-        # overwrite its mutable credential buffer exactly once.
-        proxy = self._formal_provider_proxy
-        if proxy is not None:
-            proxy.stop()
-        self._formal_provider_proxy = None
-        self._formal_credential_binding = None
-        # The values are only held transiently to support the post-cleanup audit;
-        # never retain credential bytes after the lifecycle boundary.
-        self._secret_audit_values.clear()
+        except OSError:
+            residual = True
+            cleanup_ok = False
+            self._record_cleanup_error(agent.agent_id, "role-residual-check-failed")
+        if residual:
+            cleanup_ok = False
+        agent.state = "stopped"
+        return cleanup_ok
 
-    def cleanup_identifiers(self) -> dict[str, Any]:
+    def _build_formal_cleanup_aggregate(
+        self,
+        roots: list[Path],
+        process_surfaces: list[tuple[str, bytes | None]],
+    ) -> dict[str, Any]:
+        """Perform the one formal run-wide audit while proxy secret is alive."""
+
+        if self._formal_cleanup_aggregate is not None:
+            return deepcopy(self._formal_cleanup_aggregate)
+        try:
+            secret_values = self._secret_values_for_audit()
+            result = audit_private_artifacts(
+                roots,
+                secret_values,
+                process_surfaces=process_surfaces,
+            )
+            safe_audit = self._safe_cleanup_audit(result)
+        except Exception:
+            safe_audit = {
+                "scanned_files": 0,
+                "match_count": 1,
+                "matched_secret_count": 1,
+                "scan_complete": False,
+                "scan_error_count": 1,
+            }
+            self._record_cleanup_error("aggregate", "aggregate-audit-failed")
+        self._formal_cleanup_aggregate = {
+            "private_credentials_destroyed": False,
+            "secret_audit": safe_audit,
+            "scanned_files": int(safe_audit["scanned_files"]),
+            "match_count": int(safe_audit["match_count"]),
+            "matched_secret_count": int(safe_audit["matched_secret_count"]),
+            "scan_complete": bool(safe_audit["scan_complete"]),
+            "scan_error_count": int(safe_audit["scan_error_count"]),
+            "active_resources": False,
+            "zero_child_residue": not bool(self._acceptance_children),
+            "cleanup_error_count": len(self._cleanup_errors),
+        }
+        return deepcopy(self._formal_cleanup_aggregate)
+
+    def _stop_locked(self) -> None:
+        formal = self._coordination_enabled
+        artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
+        if formal:
+            artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
+        roots: list[Path] = []
+        if self._run_root is not None:
+            roots.append(self._run_root)
+        process_surfaces: list[tuple[str, bytes | None]] = []
+        for handle_digest, resource in list(self._acceptance_children.items()):
+            try:
+                self._stop_child_for_cleanup(handle_digest, resource, process_surfaces, roots)
+            except Exception:
+                self._record_cleanup_error(f"child:{handle_digest}", "child-stop-failed")
+            if not formal:
+                # Legacy cleanup always removed the registry handle in its
+                # ``finally`` block; formal cleanup retains failed-destroy
+                # handles so residue cannot be hidden.
+                self._acceptance_children.pop(handle_digest, None)
+        for agent in list(self.agents.values()):
+            if formal:
+                roots.extend((agent.home, agent.work, agent.skills))
+            if not formal:
+                # Legacy cleanup keeps its per-role evidence shape and audit
+                # timing; formal runs use only the aggregate below.
+                self._record_cleanup_audit(
+                    agent.agent_id,
+                    self._audit_process_surfaces(agent),
+                    suppress_secret_digests=False,
+                )
+            try:
+                cleanup_ok = self._stop_agent_for_cleanup(agent, artifact_names, process_surfaces)
+            except Exception:
+                cleanup_ok = False
+                self._record_cleanup_error(agent.agent_id, "role-stop-failed")
+                agent.state = "stopped"
+            if not formal:
+                post_audit = audit_private_artifacts(
+                    self._run_root if self._run_root is not None else agent.home,
+                    self._secret_values_for_audit(),
+                )
+                self._record_cleanup_audit(agent.agent_id, post_audit)
+                self._private_credentials_destroyed[agent.agent_id] = (
+                    cleanup_ok
+                    and agent.agent_id not in self._secret_audit_failures
+                    and agent.agent_id not in self._stderr_drain_failures
+                )
+        if formal:
+            aggregate = self._build_formal_cleanup_aggregate(roots, process_surfaces)
+            proxy_failed = False
+            proxy = self._formal_provider_proxy
+            try:
+                if proxy is not None:
+                    result = proxy.stop()
+                    proxy_snapshot = getattr(proxy, "stop_snapshot", None)
+                    if callable(proxy_snapshot):
+                        details = proxy_snapshot()
+                        if isinstance(details, dict):
+                            self._proxy_stop_status = {
+                                key: value
+                                for key, value in details.items()
+                                if key
+                                in {
+                                    "shutdown_ok",
+                                    "server_close_ok",
+                                    "thread_joined",
+                                    "thread_alive",
+                                    "socket_open",
+                                    "lifecycle_failure",
+                                }
+                                and isinstance(value, (bool, int))
+                            }
+                        proxy_failed = bool(details.get("lifecycle_failure"))
+                    if result is False:
+                        proxy_failed = True
+            except Exception:
+                proxy_failed = True
+            finally:
+                if proxy_failed:
+                    self._record_cleanup_error("proxy", "proxy-stop-failed")
+                    self._on_provider_proxy_failure("provider-proxy-stop-failed")
+                if proxy is not None:
+                    try:
+                        clear_secret = getattr(proxy, "clear_secret", None)
+                        if callable(clear_secret):
+                            clear_secret()
+                    except Exception:
+                        self._record_cleanup_error("proxy", "proxy-stop-failed")
+                self._formal_provider_proxy = None
+                self._formal_credential_binding = None
+                # The proxy owns its mutable key; this list owns only audit
+                # sentinels.  Both are released at the outer lifecycle edge.
+                self._secret_audit_values.clear()
+            aggregate["proxy"] = dict(self._proxy_stop_status)
+            aggregate["scanned_files"] = int(aggregate["secret_audit"]["scanned_files"])
+            aggregate["match_count"] = int(aggregate["secret_audit"]["match_count"])
+            aggregate["matched_secret_count"] = int(
+                aggregate["secret_audit"]["matched_secret_count"]
+            )
+            aggregate["cleanup_error_count"] = len(self._cleanup_errors)
+            aggregate["zero_child_residue"] = not bool(self._acceptance_children)
+            aggregate["private_credentials_destroyed"] = (
+                bool(aggregate["scan_complete"])
+                and int(aggregate["scan_error_count"]) == 0
+                and int(aggregate["secret_audit"]["match_count"]) == 0
+                and int(aggregate["secret_audit"]["matched_secret_count"]) == 0
+                and bool(aggregate["zero_child_residue"])
+                and not self._cleanup_errors
+                and not proxy_failed
+            )
+            self._formal_cleanup_aggregate = deepcopy(aggregate)
+            for agent in self.agents.values():
+                self._private_credentials_destroyed[agent.agent_id] = bool(
+                    aggregate["private_credentials_destroyed"]
+                )
+        else:
+            self._formal_provider_proxy = None
+            self._formal_credential_binding = None
+            self._secret_audit_values.clear()
+
+    def stop(self) -> None:
+        with self._cleanup_lock:
+            if self._cleanup_snapshot is not None:
+                return
+            try:
+                self._stop_locked()
+            except Exception:
+                self._record_cleanup_error("runtime", "cleanup-failed")
+            finally:
+                # The proxy/key boundary is outermost: even an unexpected
+                # child/role cleanup exception cannot leave the provider key in
+                # memory.  The normal formal path already stopped and detached
+                # the proxy; this is the fail-closed fallback for partial stop.
+                proxy = self._formal_provider_proxy
+                if self._coordination_enabled and proxy is not None:
+                    try:
+                        result = proxy.stop()
+                        if result is False:
+                            self._record_cleanup_error("proxy", "proxy-stop-failed")
+                        snapshot = getattr(proxy, "stop_snapshot", None)
+                        if callable(snapshot):
+                            details = snapshot()
+                            if isinstance(details, dict):
+                                self._proxy_stop_status = {
+                                    key: value
+                                    for key, value in details.items()
+                                    if key
+                                    in {
+                                        "shutdown_ok",
+                                        "server_close_ok",
+                                        "thread_joined",
+                                        "thread_alive",
+                                        "socket_open",
+                                        "lifecycle_failure",
+                                    }
+                                    and isinstance(value, (bool, int))
+                                }
+                                if bool(details.get("lifecycle_failure")):
+                                    self._record_cleanup_error("proxy", "proxy-stop-failed")
+                    except Exception:
+                        self._record_cleanup_error("proxy", "proxy-stop-failed")
+                    finally:
+                        try:
+                            clear_secret = getattr(proxy, "clear_secret", None)
+                            if callable(clear_secret):
+                                clear_secret()
+                        except Exception:
+                            self._record_cleanup_error("proxy", "proxy-stop-failed")
+                    self._formal_provider_proxy = None
+                    self._formal_credential_binding = None
+                if self._coordination_enabled:
+                    self._secret_audit_values.clear()
+                    if self._formal_cleanup_aggregate is not None and self._cleanup_errors:
+                        aggregate = deepcopy(self._formal_cleanup_aggregate)
+                        aggregate["private_credentials_destroyed"] = False
+                        aggregate["cleanup_error_count"] = len(self._cleanup_errors)
+                        self._formal_cleanup_aggregate = aggregate
+                        for agent in self.agents.values():
+                            self._private_credentials_destroyed[agent.agent_id] = False
+                # A cleanup exception must not make a subsequent caller repeat
+                # destructive work.  The projection below records any safe
+                # error and remains immutable for the lifecycle.
+                self._cleanup_snapshot = self._build_cleanup_projection()
+
+    def _build_cleanup_projection(self) -> dict[str, Any]:
+        formal = self._coordination_enabled
         identifiers = {}
         artifact_names = _PRIVATE_AGENT_BASE_ARTIFACT_NAMES
-        if self._coordination_enabled:
+        if formal:
             artifact_names += _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
         for key, value in self.agents.items():
             stderr_drain = dict(
@@ -4819,46 +5215,115 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if key in self._stderr_drain_failures:
                 stderr_drain.update(self._stderr_drain_failures[key])
             private_credentials_destroyed = self._private_credentials_destroyed.get(key, False)
-            if private_credentials_destroyed:
+            if private_credentials_destroyed and self._cleanup_snapshot is None:
                 private_credentials_destroyed = not any(
                     (value.home / name).exists() or (value.home / name).is_symlink()
                     for name in artifact_names
                 )
+            if formal:
+                aggregate_audit = (
+                    self._formal_cleanup_aggregate.get("secret_audit")
+                    if self._formal_cleanup_aggregate is not None
+                    else None
+                )
+                default_audit = deepcopy(aggregate_audit) if isinstance(aggregate_audit, dict) else {
+                    "scanned_files": 0,
+                    "match_count": 0,
+                    "matched_secret_count": 0,
+                    "scan_complete": False,
+                    "scan_error_count": 1,
+                }
+            else:
+                default_audit = {
+                    "scanned_files": 0,
+                    "match_count": 0,
+                    "matched_secret_count": 0,
+                    "matched_secret_digests": [],
+                }
+            raw_audit = self._secret_audit_failures.get(key)
+            projected_audit = (
+                self._safe_cleanup_audit(raw_audit)
+                if formal and isinstance(raw_audit, Mapping)
+                else raw_audit or default_audit
+            )
             identifiers[key] = {
                 "thread_id": value.thread_id,
-                "pid": value.process.pid if value.process else None,
+                "pid": getattr(value.process, "pid", None) if value.process else None,
                 "auth_barrier": {
                     "auth_unlinked_monotonic": value.auth_unlinked_monotonic,
                     "provider_proxy_ready_monotonic": value.provider_proxy_ready_monotonic,
                     "first_dispatch_monotonic": value.first_dispatch_monotonic,
                 },
                 "private_credentials_destroyed": private_credentials_destroyed,
-                "secret_audit": self._secret_audit_failures.get(
-                    key,
-                    {
-                        "scanned_files": 0,
-                        "match_count": 0,
-                        "matched_secret_count": 0,
-                        "matched_secret_digests": [],
-                    },
-                ),
+                "secret_audit": projected_audit,
                 "stderr_drain": stderr_drain,
             }
-        return identifiers | {
-            "acceptance_children": {
-                "active": len(self._acceptance_children),
-                "zero_residue": not self._acceptance_children,
-                "auth_barriers": dict(self._child_auth_barriers),
-                "stderr_drain": {
-                    key: value
-                    for key, value in self._stderr_drain_reports.items()
-                    if key.startswith("source-examiner-")
-                    or key.startswith("platform-examiner-")
-                },
-                "secret_audit": {
+            if formal and key in self._cleanup_errors:
+                identifiers[key]["cleanup_error"] = dict(self._cleanup_errors[key])
+        children = {
+            "active": len(self._acceptance_children),
+            "zero_residue": not self._acceptance_children,
+            "auth_barriers": deepcopy(self._child_auth_barriers),
+            "stderr_drain": {
+                key: value
+                for key, value in self._stderr_drain_reports.items()
+                if key.startswith("source-examiner-")
+                or key.startswith("platform-examiner-")
+            },
+            "secret_audit": (
+                {
+                    key: self._safe_cleanup_audit(value)
+                    for key, value in self._secret_audit_failures.items()
+                    if key.startswith("child:") and isinstance(value, Mapping)
+                }
+                if formal
+                else {
                     key: value
                     for key, value in self._secret_audit_failures.items()
                     if key.startswith("child:")
-                },
-            }
+                }
+            ),
         }
+        if formal:
+            children["errors"] = {
+                key: dict(value)
+                for key, value in self._cleanup_errors.items()
+                if key.startswith("child:")
+            }
+        projection = identifiers | {"acceptance_children": children}
+        if formal:
+            aggregate = deepcopy(
+                self._formal_cleanup_aggregate
+                if self._formal_cleanup_aggregate is not None
+                else {
+                    "private_credentials_destroyed": False,
+                    "secret_audit": {
+                        "scanned_files": 0,
+                        "match_count": 0,
+                        "matched_secret_count": 0,
+                        "scan_complete": False,
+                        "scan_error_count": 1,
+                    },
+                    "scanned_files": 0,
+                    "match_count": 0,
+                    "matched_secret_count": 0,
+                    "scan_complete": False,
+                    "scan_error_count": 1,
+                    "active_resources": bool(self._lifecycle_has_active_resources()),
+                    "zero_child_residue": not bool(self._acceptance_children),
+                    "cleanup_error_count": len(self._cleanup_errors),
+                    "proxy": dict(self._proxy_stop_status),
+                }
+            )
+            if self._lifecycle_has_active_resources():
+                aggregate["active_resources"] = True
+                aggregate["private_credentials_destroyed"] = False
+            projection["aggregate_secret_audit"] = aggregate
+        return projection
+
+    def cleanup_identifiers(self) -> dict[str, Any]:
+        with self._cleanup_lock:
+            if self._cleanup_snapshot is not None:
+                return deepcopy(self._cleanup_snapshot)
+            projection = self._build_cleanup_projection()
+            return deepcopy(projection)
