@@ -3708,3 +3708,68 @@ future retest must use SQLite URI `mode=ro` and must not touch retained evidence
   and resets cleanly for a new lifecycle while preserving non-formal behavior. This is deterministic
   evidence only; no real provider or semantic acceptance is inferred, and the retained Start74
   semantic/security FAIL from Round27 remains preserved.
+
+### Independent Round 29 — Start75 retained semantic acceptance (2026-08-10)
+
+- **Read-only boundary and retained tree:** This round inspected only the completed
+  `workspaces/modeling-runs/r23005-real-20260810-deepseek-start75` tree. No process, model,
+  provider, platform call, Runner/Examiner start, retry, ledger mutation, or credential operation
+  was performed. No SQLite connection (default or otherwise) was opened and no SQLite/WAL metadata
+  was changed. The exact content-list snapshot (sorted relative path, size, and per-file SHA-256)
+  was stable at **804 files**, digest
+  `c5813165f9cc89ad2fd606757de5cf2ed55c5419c00b9834570298c6ba076679` before and after the audit
+  (two consecutive final reads agreed).
+- **Fresh scope and lifecycle:** `state.json` is `CLEANED`; owned `create` scope, Project/Ontology,
+  completed Build Session, workspace version, terminal sessions, no in-flight attempts, revoked
+  admin/protocol/project keys, and `retained-pending-acceptance` disposition are present. Final
+  Build Session readback is `completed` with two checkpoints and lease `released` (revision 2).
+  An earlier readback exposed a transient `expired` lease before the handoff checkpoint; it did not
+  survive the final completed/released lifecycle and is retained as a diagnostic residual.
+- **Candidate and five stages:** Candidate delivery was accepted with one immutable semantic/model
+  state. Platform artifacts show the exact order `class, property, entity, relation, shape`; dry-run
+  and apply item counts are `6/6`, `18/18`, `10/10`, `12/12`, `1/1`, and the final readback is
+  complete. The negative probe was `validation_failed` and was not applied. Semantic validation is
+  `succeeded/conforms=true`; reasoning is `succeeded/consistent=true`.
+- **Governed retrieval and lineage:** The candidate declares exactly seven required paths:
+  `invokesTool`, `currentlyConsumesOutput`, `fieldName`, `fieldDatatype`,
+  `unknownConcernsWorkflow`, `unknownQuestion`, and `unknownRationale`. Each path has hybrid and
+  lexical query chains (14 total), ontology-scoped complete/non-truncated pages with null cursors,
+  and the supported statement chains used by Acceptance carry Evidence/lineage. The vector index
+  was unavailable, so the recorded lexical fallback and degraded hybrid status remain explicit
+  residual evidence; Acceptance's `governed_retrieval` and `evidence_lineage` checks are PASS.
+- **CQs, children, settlement:** Tickets and rounds were strictly `cq-001` then `cq-002`; both
+  verdicts are current/usable `PASS` with all eight checks PASS and no infrastructure/failure
+  references. Exactly four fresh attempt-0 Examiner children (two source, two platform) produced
+  terminal reports and destroy/recycle receipts; all four cleanup records are `destroyed`, with no
+  infrastructure failure, and active child count is zero. Settlement CAS is `settled` and final
+  readback `matched=true`.
+- **Terminal ordering and ledger:** Accepted terminal handoffs are exactly
+  Acceptance→Coordinator, Acceptance→Modeling, Modeling→Protocol, Modeling→Coordinator, and
+  Protocol→Coordinator (sequences 1/3/5/7/9, acknowledgements 2/4/6/8/10), followed by one settled
+  record. The formal ledger contains exactly two Start75 rows: `reservation=1` and
+  `semantic_start=1`; no terminal failure or later start exists. Run-local start-ledger and
+  semantic-start evidence each contain one row.
+- **Cleanup and security:** Aggregate cleanup is `private_credentials_destroyed=true`,
+  `scan_complete=true`, `scan_error_count=0`, `match_count=0`, `matched_secret_count=0`,
+  `active_resources=false`, `zero_child_residue=true`, and `cleanup_error_count=0`. Each of the
+  four persistent roles has the same zero-match, complete audit and zero stderr bytes/matches with
+  no lifecycle failure. Proxy shutdown, server close, thread join, and socket close are all true;
+  thread is not alive and no socket remains. Acceptance children report `active=0`,
+  `zero_residue=true`, and no errors. No retained private credential/config/capability basename
+  remains. The external fixed DeepSeek credential metadata is owner-private regular `0600`; a
+  safe exact-key byte scan (value and digest suppressed) found **0 files / 0 occurrences** in
+  non-SQLite/WAL/SHM artifacts, and the canonical preflight process environment has **0 active
+  temporary keys**.
+- **Health and unexecuted scope:** Without restarting the unchanged service, the managed unit was
+  active; backend `/api/health` and frontend `/` both returned HTTP 200. Focused/R2.3/full suites,
+  Ruff, compile, diff, and GitNexus were not rerun in this retained-evidence round; Round28's
+  deterministic PASS remains historical. No semantic/provider smoke was started or continued.
+
+#### Round29 conclusion
+
+**Overall verdict: PASS for retained Start75 semantic/lifecycle/security acceptance.** Semantic
+evidence, five stages, validation/reasoning, seven governed retrieval paths, sequential CQ PASS,
+four-child cleanup, settlement, terminal order, zero-residue aggregate audit, ledger boundary, and
+service health all satisfy the retained acceptance contract. Preserve the explicit lexical-fallback
+and transient intermediate lease diagnostics; no additional run is authorized by this read-only
+round.

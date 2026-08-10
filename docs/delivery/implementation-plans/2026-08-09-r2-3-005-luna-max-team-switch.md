@@ -416,3 +416,10 @@ semantic acceptance remains a separate live requirement.
 
 Development and Independent Round 28 passed these deterministic gates. Start74 remains an immutable overall failure;
 the repair establishes the cleanup contract for a future authorized run only.
+
+## Completion
+
+The repaired baseline was committed as `6679d1d` and used by Start75. The formal run completed all semantic,
+retrieval, CQ, settlement, terminal and cleanup gates; Independent Round 29 then accepted the retained evidence
+without mutating it. R2.3-005 is complete. No Start76/77 is planned because the strict ledger contract stops after the
+first complete modeling-quality result.

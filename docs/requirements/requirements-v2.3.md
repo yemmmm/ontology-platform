@@ -2,29 +2,17 @@
 
 ## 文档信息
 
-- 文档状态：R2.3-001、R2.3-002 已交付并通过独立验收；R2.3-005 已推进到 start72，仍为
-  `进行中 / NOT_PASSED`。start72 的建模、五阶段写入、两轮 CQ、Acceptance settlement 与四角色 terminal
-  chain 语义证据均为 PASS，但独立审计发现真实 DeepSeek key 残留于保留的 shell snapshot/session/SQLite
-  产物，因此整体按后审计 `runtime/infrastructure,false` 记账，不能作为需求完成证据。后续 formal Team
-  已离线切换为 `gpt-5.6-luna/openai/max`，确定性、隔离和凭据门通过；真实 Luna provider smoke 仍无
-  matching terminal，Rounds 14–19 均明确为 FAIL。用户已于 2026-08-10 确认撤销 start72 历史 key；
-  retained 证据仍保持原样。Round 19 在提交 `5a30826` 上完成唯一一次 post-revocation 空业务诊断：初始化、
-  MCP 与 `turn/start` 均成功，但 Adapter 在约 320 秒后产生类型化 `llm-inactivity-timeout`，未获得 matching
-  terminal，且未触碰业务 source、平台或 StartLedger。
+- 文档状态：R2.3-001、R2.3-002、R2.3-005 已交付并通过独立验收。R2.3-005 的 Start75
+  `r23005-real-20260810-deepseek-start75` 在正式 DeepSeek v4 Flash Team 上完成新作用域建模、五阶段应用、
+  validation/reasoning、七条 governed retrieval、两轮 CQ PASS、Acceptance settlement、四角色 terminal
+  chain 与零残留清理；Independent Round 29 对 804 个 retained 文件做只读复核，审计前后 digest 一致，
+  固定 provider key 在产物中 0 命中。Start72–74 的失败及历史凭据证据继续原样保留，不被 Start75 改写。
   R2.3-003～R2.3-004 仍须按依赖顺序推进。
 - 基础版本：`docs/requirements/requirements-v2.2.md`
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
-- 当前下一目标：提交已通过确定性回归的 formal-only Luna-max manifest、first-turn auth barrier、凭据
-  审计、opaque MCP tool-key 兼容与 typed provider/RPC failure liveness 修复；start72 DeepSeek key 已由
-  用户确认撤销，但 Round 19 已证明当前 Luna 空业务 turn 仍以类型化 inactivity failure 结束。后续
-  诊断确认普通 `codex exec` 在 Luna `medium`/`max` 均可完成，而隔离 Team home 没有模型目录缓存、
-  `thread/start` 又未显式传入冻结 model；start42 留存 Runtime 同时存在模型目录刷新与 child-process
-  timeout 证据。下一窄修须让 formal 持久角色和 Examiner 的 `thread/start` 显式携带 manifest 中的
-  `gpt-5.6-luna`，不得复制可变宿主模型缓存或改变 nonformal 路径。在修复后的空业务 app-server
-  获得 matching terminal 前仍不得启动新的语义建模，也不得把 Runtime 诊断计入已授权语义 start。
-  用户已额外授权三次 start75–77，但该授权须在当前 start72–74 tranche 消耗并终态后通过严格账本登记，
-  不能提前追加或视作已消费。
+- 当前下一目标：R2.3-005 已完成；按严格成功即停止合同，不再消费已授权但未使用的 Start76–77。
+  后续进入依赖顺序中的 R2.3-003，或由用户另行指定新目标。
 - 关联交付记录：
   `docs/delivery/records/2026-07-30-r2-3-001-ontology-modeling-team-standard-delivery-record.md`、
   `docs/delivery/records/2026-07-31-r2-3-002-new-scope-business-slice-delivery-record.md`、
@@ -73,7 +61,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | --- | --- | --- | --- | --- |
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
-| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `start71 双 CQ PASS/Acceptance settled 后缺 terminal report；三次授权耗尽；终态 prompt/guard 修复独立 Round 12 PASS` | R2.3-001；R2.3-002 真实建模与验收证据 |
+| R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `待细化` | R2.3-002（语义依赖）；R2.3-005（强制运营前置） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
@@ -1385,10 +1373,9 @@ Agent/thread/run 内读取上一轮工具调用返回的可行动错误，修正
 
 ## R2.3-005 Modeling Team Runner 正式化收口与可重复调用
 
-当前状态：`进行中 / NOT_PASSED。start68 已真实完成候选、平台阶段、检索、Examiner 和 cq-001 PASS；
-sequential-CQ 修复已通过 Round 8 并提交为 400040c。用户授权 start69～71 后，start69 暴露 Protocol
-共用 prompt 的 smoke/formal 误判，在验收前以 collaboration/routing,false 结束并完成零残留清理。
-该 prompt 修复已通过独立 Round 9；尚余 start70、start71 两次授权用于真实双 CQ、settlement 与 cleanup。`
+当前状态：`已交付（Start75 独立验收 PASS）`。Start75 在一个 fresh create scope 内完成完整建模、
+平台应用、检索、双 CQ、settlement、terminal handoff 和 cleanup；Independent Round 29 保持 retained
+证据不变并确认全部完成门。历史失败仍按 append-only 记录保留。
 
 优先级：`P0`
 
@@ -3203,3 +3190,19 @@ secret、路径、异常文本或 secret digest。目录遍历、metadata/read�
 lifecycle snapshot；non-formal 与 R2.3-002 的 stop 行为和 evidence schema 不变。Independent Round 28 已以
 确定性回归、完整 modeling_team 回归和服务健康验证该修订；该 PASS 只验证未来 cleanup 机械边界，不改变
 start74 retained verdict，也不构成新的 semantic start。
+
+## 2026-08-10 R2.3-005 Start75 最终验收
+
+Start75 `r23005-real-20260810-deepseek-start75` 在已提交的 DeepSeek Runtime、Examiner 终态仲裁和最终
+aggregate cleanup 基线上完成唯一一次正式语义运行。运行创建 fresh Project/Ontology，按
+`class/property/entity/relation/shape` 完成 dry-run/apply，validation conforms、reasoning consistent，
+并保留七条 governed retrieval 路径及 Evidence/lineage。`cq-001`、`cq-002` 均为 current/usable PASS，
+四个 fresh Examiner child 无 infrastructure failure，settlement CAS/readback 与五条 terminal handoff
+顺序完整。
+
+Independent Round 29 仅以普通文件只读方式审计 retained tree，未连接 SQLite、未启动进程或模型、未调用
+平台、未修改账本。804 个文件的审计前后快照一致；最终 aggregate/per-role audit 均为 scan complete、
+zero match、zero error、zero child residue，proxy listener/thread/socket 已关闭且 key buffer 已覆盖。固定
+DeepSeek key bytes 在 retained 非 SQLite 产物中 0 files/0 occurrences。严格账本只记录 Start75 的一次
+reservation 与一次 semantic_start，无 terminal failure 或后续 start。因此 R2.3-005 完成门为 PASS，
+Start76–77 不再执行。

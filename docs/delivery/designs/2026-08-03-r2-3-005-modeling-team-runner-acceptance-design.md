@@ -1356,3 +1356,13 @@ the same projection. A new roster may reset it only after confirming no active c
 destroy residue and per-role failures remain visible even after registry removal. This design is formal-only;
 non-formal and R2.3-002 lifecycle/evidence shapes remain unchanged. It repairs future evidence generation only and
 does not rewrite or promote retained start74.
+
+## Start75 accepted final state
+
+Start75 is the first retained run to satisfy the complete formal design on one fresh model state: five ordered
+platform stages, conforming validation, consistent reasoning, seven governed retrieval paths with lineage, two usable
+CQ PASS verdicts, four clean Examiner terminals, settlement CAS/readback, the complete persistent-role handoff chain,
+and the final aggregate cleanup boundary. Independent Round 29 kept the 804-file snapshot byte-stable and confirmed
+zero provider-key matches, scan errors, cleanup errors, active resources, or child residue. The strict ledger has one
+Start75 reservation and one semantic start with no failure or later start. This closes R2.3-005; the success-stop rule
+prevents Start76–77 from running.

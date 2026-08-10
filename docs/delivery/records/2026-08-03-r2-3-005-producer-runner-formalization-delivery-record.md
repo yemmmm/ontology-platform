@@ -4307,3 +4307,27 @@ the formal builder, or starting another real run before authorization.
   restart and backend/frontend HTTP 200. It did not open retained SQLite, call a provider/model, mutate the ledger or
   consume a semantic start. The shared test-plan digest is
   `7a96969b640cefcb1e161c45d598715c7735239bc5bf7a39863b835f7fc67b26`.
+- The cleanup repair was committed as `6679d1d` (`Fix formal cleanup audit ordering`). The user-authorized Start75–77
+  tranche was then appended only after start74's `runtime/infrastructure,false` terminal record. An initial advisory
+  repair-authorization entry omitted the overlay from its baseline preview; append-only history preserves it, and a
+  following correction binds the exact overlay baseline before reservation. A first CLI invocation lacked the
+  Delivery-only canonical-preflight admin credential and stopped before reservation, run-root creation or semantic
+  start, so it consumed no attempt. The same Start75 identity was then launched with a temporary same-process admin
+  key that was revoked after prepare.
+- Start75 `r23005-real-20260810-deepseek-start75` completed on baseline
+  `bc5287dbfb630c6d4a9da54c97c529c4b4ebbcac5b27664c6d170804e799eb44`. It created fresh Project/Ontology scope,
+  applied class/property/entity/relation/shape stages, passed validation and reasoning, retained all seven governed
+  retrieval paths and lineage, and produced sequential usable PASS verdicts for cq-001 and cq-002. Four fresh
+  Examiner children terminated and recycled without infrastructure failure; settlement readback matched; terminal
+  handoffs and acknowledgements were complete; the run exited successfully and reached `CLEANED`.
+- Independent Round 29 returned **PASS** for retained Start75. Its sorted 804-file content snapshot remained stable at
+  `c5813165f9cc89ad2fd606757de5cf2ed55c5419c00b9834570298c6ba076679`; no SQLite connection, process, model,
+  provider, platform call or ledger mutation occurred. Aggregate and per-role cleanup were complete with zero scan,
+  match, cleanup, active-resource and child-residue counts; proxy shutdown/join/socket checks passed. A safe exact-key
+  scan found zero retained occurrences without recording the key or its digest. Backend/frontend health remained
+  HTTP 200. The shared test-plan digest is
+  `56f20830cff5ab8064011affa9c03d9e14878057a2624cd58778368e9e88c433`.
+- The strict ledger now has 332 records, 80,156 bytes, SHA-256
+  `328d10dbbd6c18842fa999b18bad8622e01106dfb908352b516634e8c5609ae2`, 74 semantic starts, and exactly one
+  Start75 reservation plus one Start75 semantic start with no terminal failure or later start. R2.3-005 is accepted
+  complete. The unused Start76–77 authorization remains unconsumed and cannot be used after the first complete result.
