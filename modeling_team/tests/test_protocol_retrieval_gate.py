@@ -270,6 +270,24 @@ def _register_query(carrier: RunnerAcceptanceCarrier, path: str, *, resource_typ
     )
 
 
+def test_platform_artifact_identity_includes_tool_name(tmp_path: Path) -> None:
+    carrier = _carrier(tmp_path)
+    arguments = {"ontology_id": "ontology-1", "project_id": "project-1"}
+    result = {"structuredContent": {"ok": True, "data": {}}}
+
+    first = carrier.register_platform_tool_result(
+        tool="get_ontology_workspace_context", arguments=arguments, result=result
+    )
+    second = carrier.register_platform_tool_result(
+        tool="get_modeling_context", arguments=arguments, result=result
+    )
+
+    assert first["request_digest"] != second["request_digest"]
+    assert first["artifact_path"] != second["artifact_path"]
+    assert first["artifact_path"].startswith("evidence/platform-responses/")
+    assert second["artifact_path"].startswith("evidence/platform-responses/")
+
+
 def test_candidate_plan_rejects_duplicate_required_path(tmp_path: Path) -> None:
     candidate = _candidate(paths=[("q-one", "invokesTool"), ("q-one", "invokesTool")])
     with pytest.raises(AcceptanceContractError, match="duplicated"):

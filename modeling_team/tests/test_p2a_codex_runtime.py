@@ -91,7 +91,10 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-10 start73 lifecycle repair: formal Examiner output pumping is
     # deferred until Host resource registration and terminal report/failure
     # arbitration; nonformal/P2A request shapes remain unchanged.
-    "modeling_team/runner.py": "8f704bd22ad52245d356f0b062eccb2a5ab772efdc735708c96affd9e1448065",
+    # 2026-08-11 R2.3-003 startup barrier: generated Protocol task text now
+    # waits for Modeling's candidate receipt before any ontology_platform call
+    # and names Team Transport MCP calls fully.
+    "modeling_team/runner.py": "4a775f0b0ffabf9312964f07b7aba175a42d36c642df739a70a16fd4808d6c34",
     "modeling_team/protocol_mechanics.py": "3536ff6e09e6daba05b1af50ec91c836bdc8b5b996fdf52cc195842368a48ef1",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "e732c426b93fb12c95daf620d9df848ea172d9db4d622e07717391a8a91a510b",

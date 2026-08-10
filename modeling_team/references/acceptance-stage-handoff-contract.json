@@ -86,7 +86,7 @@
     "receipt": "canonical compact JSON SHA-256; set the self field receipt_digest to null and set every nested ticket_digest ref to null in the preimage",
     "model_state": "canonical compact JSON SHA-256 over schema_version r2-3-005-model-state/v1 and the six identity fields",
     "delivery": "Runner compares the canonical compact handoff bytes to the exact Protocol->Coordinator Team Transport delivery digest",
-    "platform_artifact": "Runner/Codex Runtime hashes canonical completed ontology_platform MCP arguments as request_digest and canonical result envelope bytes as response_digest; each completion is immutable at evidence/platform-responses/<request_digest>-<response_digest>.json, so repeated requests with changed results remain distinct"
+    "platform_artifact": "Runner/Codex Runtime hashes the canonical completed ontology_platform MCP tool name together with its arguments as request_digest and canonical result envelope bytes as response_digest; each completion is immutable at evidence/platform-responses/<request_digest>-<response_digest>.json, so different tools cannot alias identical arguments/results and repeated requests with changed results remain distinct"
   },
   "forbidden": [
     "raw_source_bytes",

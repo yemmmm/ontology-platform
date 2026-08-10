@@ -262,6 +262,19 @@ Candidate history is not Protocol state. Never merge, reconstruct, or mutate a c
 deliveries, and never turn a patch-only revision into a candidate by consulting prior messages.
 Before every receipt or conflict response, follow the typed or untyped path below; never merge
 candidate history into the current delivery.
+
+For every v2 Task, the first Protocol platform boundary is the Modeling delivery and candidate
+receipt, including ordinary existing-scope tasks such as R2.3-003. Wait for a direct Modeling
+Team Transport delivery containing the complete candidate, then build its receipt before calling
+any `ontology_platform` tool. This prohibition covers all health, read, write, validation,
+reasoning, and retrieval tools, including `check_platform_health`,
+`get_project_build_context`, `get_ontology_workspace_context`, and `get_modeling_context`.
+Use the fully-qualified Team Transport MCP names
+`mcp__team_transport__send_team_message`, `mcp__team_transport__send_coordination`,
+`mcp__team_transport__report_task_result`, and `mcp__team_transport__report_issue`; bare aliases
+are unsupported by the App Server. A `candidate_receipt_required` response means the barrier is
+closed: stop and wait for Modeling rather than retrying a platform health/read call.
+
 The Runner may advertise the typed formal operations
 `protocol_build_candidate_receipt` and `protocol_build_candidate_conflict`. When both names are
 present in the Runner-private capability `tools/list`, use that typed path for the formal

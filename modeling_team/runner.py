@@ -1966,14 +1966,15 @@ class TeamRunner:
                 + "role-private source in this canonical list:\n"
                 + "\n".join(f"- {path}" for path in staged_sources)
                 + "\nRead only these role-private sources. "
-                + "Use Team Transport for direct messages and call report_task_result exactly once before ending. "
+                + "Use `mcp__team_transport__send_team_message` for direct Team Transport messages and call "
+                + "`mcp__team_transport__report_task_result` exactly once before ending. "
                 + "Protocol may use only its configured ontology-platform MCP tools."
             )
             if generation is not None:
                 text += (
                     f"\nCurrent coordination generation: {generation}. "
                     "Include this non-secret generation unchanged in the role's fixed "
-                    "send_coordination call."
+                    "`mcp__team_transport__send_coordination` call."
                 )
             if role == "acceptance":
                 return (
@@ -2031,6 +2032,19 @@ class TeamRunner:
                     "protocol_build_candidate_conflict",
                 }.issubset(protocol_capability_operations)
                 text += (
+                    "\nProtocol startup barrier: wait for a direct Modeling Team Transport delivery containing the "
+                    "complete candidate before making any ontology_platform MCP call. Do not call any "
+                    "ontology_platform health, read, write, validation, reasoning, or retrieval tool before that "
+                    "delivery is received and its candidate receipt is successfully built. This prohibition "
+                    "explicitly includes `check_platform_health`, `get_project_build_context`, "
+                    "`get_ontology_workspace_context`, and `get_modeling_context`; it also covers every other "
+                    "configured ontology_platform tool. First build the receipt with the Runner-private "
+                    "`protocol_build_candidate_receipt` capability when advertised, otherwise with the native "
+                    "`protocol_mechanics`/`build_candidate_receipt` tool using the unchanged delivered candidate. "
+                    "The `candidate_receipt_required` error means this barrier is still closed: stop and wait for "
+                    "Modeling rather than retrying a health/read call. Use fully-qualified Team Transport MCP "
+                    "names (`mcp__team_transport__send_team_message`, `mcp__team_transport__send_coordination`, "
+                    "and `mcp__team_transport__report_task_result`) for all Team Transport calls. "
                     "\nYou must read the enumerated modeling-batch-item-contract.json source. "
                     "You must also read the enumerated acceptance-stage-handoff-contract.json source; it is the "
                     "authoritative nested schema for modeling_receipts, platform_read evidence_ref/page fields, "
@@ -2064,7 +2078,7 @@ class TeamRunner:
                     "query exactly equal to that path, singleton relation/fact resource_types, asserted-only and "
                     "run-owned ontology scope; broad CQ/question queries and expected answers never count. The "
                     "host artifact gate validates each frozen cursor chain and registers the typed receipt. Emit only silent_for_acceptance to coordinator through "
-                    "send_coordination with the current generation after the ordered protocol work is quiet."
+                    "`mcp__team_transport__send_coordination` with the current generation after the ordered protocol work is quiet."
                 )
                 if self._formal_coordination_enabled() and self.acceptance is not None:
                     text += (
@@ -2072,7 +2086,7 @@ class TeamRunner:
                         f"stage-handoff nonce {self.acceptance.stage_handoff_nonce}. After all five current-run "
                         "stages (dry-run, apply, readback, validation, reasoning) and governed retrieval are "
                         "complete, send one canonical compact JSON object directly to Coordinator with "
-                        "send_team_message (not send_coordination), using schema "
+                        "`mcp__team_transport__send_team_message` (not `mcp__team_transport__send_coordination`), using schema "
                         "r2-3-005-acceptance-stage-handoff/v1 and exact fields "
                         "schema_version,handoff_id,handoff_nonce,task_id,producer_run_id,slice_id,slice_revision, "
                         "model_state,model_state_digest,candidate_digest,modeling_receipts,handoff_digest. "
@@ -2189,7 +2203,7 @@ class TeamRunner:
                     "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
                     "read the Acceptance verdict; do not redefine CQs, approved-source paths, or the "
                     "quality standard. After Modeling-ready and Protocol-silent, emit only "
-                    "acceptance_start to acceptance through send_coordination with the current "
+                    "acceptance_start to acceptance through `mcp__team_transport__send_coordination` with the current "
                     "generation and acceptance_round_id as text. Use only the Project/Ontology created for this "
                     "run; never reuse or bind a prior/caller-supplied scope and never initiate a second semantic "
                     "start."
@@ -2201,13 +2215,13 @@ class TeamRunner:
                     + "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
-                    "\nreport_task_result is recorded exactly once only after Modeling, Protocol, and Acceptance "
+                    "\n`mcp__team_transport__report_task_result` is recorded exactly once only after Modeling, Protocol, and Acceptance "
                     "have each reported completed or blocked. A dependency rejection is not recorded; wait for "
                     "their terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
                 )
             if role == "modeling":
                 modeling_text = text + (
-                    "\nEmit only ready_for_acceptance to coordinator through send_coordination with "
+                    "\nEmit only ready_for_acceptance to coordinator through `mcp__team_transport__send_coordination` with "
                     "the current generation once the semantic slice is ready; never emit "
                     "silent_for_acceptance or acceptance_start."
                     "\nSend each platform-neutral candidate or revision with expects_reply=true and retain the "
@@ -2226,7 +2240,7 @@ class TeamRunner:
                         f"semantic_digest {identity.semantic_digest}. Reuse it only by calling the "
                         "Runner-private modeling_publish_staged_candidate capability exactly once with "
                         "modeling_id=modeling. Do not read or parse a carrier, invoke a shell or interpreter, "
-                        "serialize JSON, send the outer continuation envelope, or call send_team_message for this "
+                        "serialize JSON, send the outer continuation envelope, or call `mcp__team_transport__send_team_message` for this "
                         "candidate. The capability owns the exact candidate_text, digest checks, recipient, "
                         "expects_reply flag, and delivery ID. Retain its returned delivery_id and wait for the "
                         "normal Protocol reply bound to that ID."

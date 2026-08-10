@@ -690,7 +690,9 @@ class ProtocolRetrievalGate:
             request_digest = record.get("request_digest")
             if not isinstance(request_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", request_digest):
                 continue
-            if request_digest != _digest(dict(arguments)):
+            if request_digest != _digest(
+                {"tool": "query_semantic_context", "arguments": dict(arguments)}
+            ):
                 continue
             if self._frozen_key(arguments) is None:
                 continue

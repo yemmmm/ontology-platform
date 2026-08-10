@@ -259,6 +259,62 @@ def test_r23003_runner_reads_credential_only_after_existing_live_preflight(
             shutil.rmtree(run_root)
 
 
+def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_calls(
+    tmp_path: Path,
+) -> None:
+    """Generated task text must close every ontology_platform path until receipt binding."""
+
+    ledger_root = tmp_path / "ledger"
+    run_id = "r23003-protocol-startup-barrier"
+    run_root = ROOT / "workspaces" / "modeling-runs" / run_id
+    runner = runner_module.TeamRunner(
+        repository_root=ROOT,
+        adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+        deepseek_credential_path=tmp_path / "deepseek.env",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+        ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
+    )
+    runner._canonical_ledger_root = lambda: ledger_root
+    StartLedger(ledger_root, requirement_id="R2.3-003").initial_authorization()
+    try:
+        with patch.object(
+            runner_module,
+            "run_existing_scope_preflight",
+            lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
+        ), patch.object(runner_module, "preflight_deepseek_credential", lambda _path: object()):
+            runner.prepare(
+                run_id=run_id,
+                profile_path=ROOT
+                / "modeling_team/profiles/r2-3-003-existing-scope-modeling-team.yaml",
+                task_path=ROOT
+                / "modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml",
+                scope=SCOPE,
+            )
+        protocol = runner._task_text("protocol")
+        barrier = protocol.index("Protocol startup barrier")
+        mechanics = protocol.index("Before any platform call, read /opt/mechanics-contract.json")
+        assert barrier < mechanics
+        for tool in (
+            "check_platform_health",
+            "get_project_build_context",
+            "get_ontology_workspace_context",
+            "get_modeling_context",
+        ):
+            assert f"`{tool}`" in protocol
+        assert "wait for a direct Modeling Team Transport delivery" in protocol
+        assert "candidate receipt is successfully built" in protocol
+        assert "`candidate_receipt_required` error means this barrier is still closed" in protocol
+        assert "mcp__team_transport__send_team_message" in protocol
+        assert "mcp__team_transport__send_coordination" in protocol
+        assert "mcp__team_transport__report_task_result" in protocol
+    finally:
+        runner.cleanup()
+        if run_root.exists():
+            import shutil
+
+            shutil.rmtree(run_root)
+
+
 def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None:
     candidate = _candidate()
     receipt = build_existing_entity_binding_receipt(

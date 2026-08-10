@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T02:29:09+08:00
+- Last updated: 2026-08-11T02:40:37+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -146,6 +146,20 @@
 - Outcome/next step: 1/4 semantic starts consumed。下次 start 前修复 authoritative Team Transport tool
   exposure/instruction contract；禁止再用 ordinary `action=user` 作为无问题状态催办。
 
+### 2026-08-11T02:29:42+08:00 — real semantic start 2 terminal failure — main agent
+
+- Context: prompt fix commit `902e862` 后，run `r23003-real-20260811-deepseek-start3` 通过 live preflight 并
+  记录第二个 `semantic_start`。
+- Action/decision: Protocol 在收到 Modeling delivery/candidate receipt 前提前调用四个 platform tool；
+  candidate gate 全部以 `candidate_receipt_required` 拒绝。两个不同 tool 的 arguments/result 相同，host
+  artifact 仅按 arguments+response 生成路径，误判为 identity mutation 并中止。按最终阻断登记
+  `platform-contract`，同时把“Protocol 首动作必须等待 candidate”记为 prompt-contract defect。
+- Evidence: platform response artifacts 只记录 health/build-context/workspace-context；Protocol rollout 显示
+  四次 pre-candidate call 均 `ok=false`；cleanup 前后 batch count=6、workspace version=`0d34f5...ef02`，
+  Session/Lease/Attempt=0，全部 key revoked，run `CLEANED`。
+- Outcome/next step: 2/4 semantic starts consumed。下一轮前同时修复 Protocol 等候指令与跨 tool artifact
+  identity 碰撞；不扩大到其它验收或平台功能。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
@@ -155,6 +169,7 @@
 | 3 | stable deterministic candidate | 使用错误的系统 Python 时出现 Pydantic 内部模块导入错误 | 改用仓库 backend uv 环境后 `modeling_team/tests` 700 PASS、1 skipped；backend 843 PASS、10 skipped | environment classified；无产品缺陷 |
 | 4 | commit `72ab597` clean baseline | Independent Round 1 发现 003 先读 DeepSeek credential 再做 existing live preflight，且 Project HTTP 200 `{}` 会被默认成目标 ID | 仅调整 003 顺序并要求 Project payload 显式匹配 ID；005 顺序不变；新增精确回归 | fixed |
 | 5 | real start2 failure evidence | App Server 只接受 fully-qualified Team Transport MCP 名；四角色 prompt 仅写 broker 内部短名 | 四角色 authoritative prompt 明确 `mcp__team_transport__*` 名称并禁止 bare alias；不改 Runtime/Transport | fixed before next start |
+| 6 | real start3 failure evidence | Protocol 在 candidate receipt 前调用 platform；不同 tool 的相同 args/error 响应发生 artifact identity 碰撞 | Protocol startup barrier；artifact request digest 绑定 `{tool, arguments}` | fixed before next start |
 
 ## Independent test rounds
 
@@ -163,6 +178,7 @@
 | 1 | stable deterministic candidate | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | 无已执行范围缺陷；真实建模按独立性要求未由 tester 启动 | 共享 test plan §6 Round 1；003 focused 6 PASS；contract/ledger/scope 65 PASS；CQ/cleanup 40 PASS；modeling_team 700 PASS；backend 843 PASS |
 | 2 | post-`72ab597` narrow preflight fix | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | Round 1 High 已修复；无新确定性缺陷 | 003/005/frozen/CQ/cleanup 87 PASS；003 focused 10 PASS；modeling_team 704 PASS、1 skipped；backend 843 PASS、10 skipped；cap/count/active=`4/0/0` |
 | 3 | post-start2 prompt fix | PASS | fully-qualified MCP prompt/tool surface fixed；adapter suffix compatibility 仅记 future hardening | prompt/transport focused 34 PASS；target subset 5 PASS；qualified callback 1 PASS；diff-check PASS |
+| 4 | post-start3 barrier/artifact fix | PASS | 无新确定性缺陷；真实 L0-L2 仍待下一 run | combined focused 109 PASS；backend candidate gate 4 PASS；barrier/namespace 8 PASS；artifact/frozen/prompt 3 PASS；diff-check PASS |
 
 ## Final verification
 

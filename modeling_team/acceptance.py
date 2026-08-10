@@ -1769,7 +1769,13 @@ class RunnerAcceptanceCarrier:
         # Keep the sink broad enough to retain deterministic write/read stage
         # results; the stage validator below still restricts which tool/mode
         # can satisfy each receipt.
-        request_digest = _sha256_bytes(_canonical_json(dict(arguments)))
+        # Bind the artifact identity to both the MCP tool and its arguments.  Different
+        # ontology_platform tools may legitimately receive the same argument object and
+        # return the same envelope; hashing arguments alone would alias those immutable
+        # observations to one path and falsely report a mutation on the second tool.
+        request_digest = _sha256_bytes(
+            _canonical_json({"tool": tool, "arguments": dict(arguments)})
+        )
         response_bytes = _canonical_json(result)
         response_digest = _sha256_bytes(response_bytes)
         artifact_path = f"evidence/platform-responses/{request_digest}-{response_digest}.json"

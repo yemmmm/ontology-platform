@@ -302,3 +302,52 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   gates. The direct bare-alias adapter acceptance observed in a temporary unit probe is recorded as
   non-blocking future hardening only, because it is below the App Server surface and was not the start2
   failure path. No real L0-L2 semantic run was started or continued in this round.
+
+### Round 4 — 2026-08-11 independent retest of start3 startup-barrier and artifact-identity repairs — PASS / real run BLOCKED
+
+- Stable state: development stopped at HEAD `902e8622fdfefed82953c4e3b02d53e820f378c9` with the start3
+  repair present in the uncommitted worktree. This round did not start or continue a semantic run, call a
+  live Project/Ontology endpoint, or modify retained evidence. The main-agent delivery-record edit remains
+  present and was not overwritten by this tester. `git diff --check` PASS.
+- Commands and results:
+  - Focused R2.3-003/005, startup-gate, artifact, and frozen-surface regressions:
+    `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_candidate_platform_gate.py modeling_team/tests/test_protocol_retrieval_gate.py
+    modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_p2a_codex_runtime.py
+    modeling_team/tests/test_r23005_candidate_progress.py -q`: **PASS, 109 passed in 1.51s**.
+    This includes the generated Protocol startup-barrier contract, candidate gate lifecycle and receipt
+    wakeup, different-tool/same-arguments result-artifact identity, R2.3-005 complete-revision compatibility,
+    and the frozen normal runtime/platform surface hash check.
+  - Backend formal gate enforcement:
+    `cd backend && uv run pytest tests/test_mcp_candidate_gate.py -q`: **PASS, 4 passed, 3 deprecation
+    warnings**. A closed/malformed/symlinked/oversized gate returns `candidate_receipt_required` before
+    resource acquisition or callback execution; an open gate allows the callback; legacy launches without
+    the gate environment retain the original path.
+  - Explicit barrier sequence and namespace checks:
+    `uv run --project backend python -m pytest
+    modeling_team/tests/test_r23005_candidate_progress.py::test_runner_opens_platform_gate_only_after_registered_receipt
+    modeling_team/tests/test_r23005_candidate_progress.py::test_runner_wakes_protocol_once_after_accepted_receipt_and_not_on_duplicate_drain
+    modeling_team/tests/test_r23005_candidate_progress.py::test_runner_keeps_platform_gate_closed_after_protocol_conflict
+    modeling_team/tests/test_candidate_platform_gate.py::test_codex_formal_config_and_namespace_bind_gate_read_only
+    backend/tests/test_mcp_candidate_gate.py -q`: **PASS, 8 passed, 3 deprecation warnings**.
+    The Runner remains closed after candidate delivery, opens only after the registered accepted receipt,
+    wakes the same Protocol thread once, and closes on conflict; the backend gate prevents every platform
+    call path before that receipt (including resources and callback).
+  - Direct regression spot checks:
+    `uv run --project backend python -m pytest
+    modeling_team/tests/test_protocol_retrieval_gate.py::test_platform_artifact_identity_includes_tool_name
+    modeling_team/tests/test_p2a_codex_runtime.py::test_normal_runtime_and_platform_surfaces_remain_byte_frozen
+    modeling_team/tests/test_r23003_incremental_contract.py::test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_calls -q`:
+    **PASS, 3 passed**; followed by `git diff --check`: **PASS**.
+- Defect status: **FIXED**. For identical argument/result envelopes, `get_ontology_workspace_context` and
+  `get_modeling_context` now produce distinct request digests and immutable artifact paths because the tool
+  name is included in the canonical request identity. The startup barrier is enforced at both Runner gate
+  state and backend `_run_tool` before resource/auth/callback work; no remaining deterministic defect was
+  found in this scope.
+- Result: **PASS for the deterministic implementation gate**. Real L0 start, live retained-scope preflight,
+  Modeling candidate, receipt-backed existing-entity binding, dry-run/apply/readback, validation/reasoning,
+  governed retrieval, semantic two-CQ verdicts, settlement, and production cleanup remain **BLOCKED** and
+  unexecuted by instruction, not PASS. Requirement-level completion remains BLOCKED pending separately
+  authorized real modeling and independent read-only acceptance.
+- Recommendation: no further requirement-developer repair is requested from Round 4. Preserve the exact
+  four-start budget and do not launch a real run as part of this deterministic retest.
