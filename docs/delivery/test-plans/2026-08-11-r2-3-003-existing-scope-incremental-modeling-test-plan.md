@@ -351,3 +351,62 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   authorized real modeling and independent read-only acceptance.
 - Recommendation: no further requirement-developer repair is requested from Round 4. Preserve the exact
   four-start budget and do not launch a real run as part of this deterministic retest.
+
+### Round 5 — 2026-08-11 independent retest of exact R2.3-003 Modeling prompt contract — FAIL / real run BLOCKED
+
+- Stable state: development stopped at HEAD `7c2b5511c31675e21427cb2be469630ee742a7de` with the exact
+  R2.3-003 Modeling package and Runner task-text additions present in the uncommitted worktree. This round
+  did not start or continue a semantic run, call a live Project/Ontology endpoint, or modify retained
+  evidence. `git diff --check` PASS.
+- Commands and results:
+  - R2.3-003 focused contract: `uv run --project backend python -m pytest
+    modeling_team/tests/test_r23003_incremental_contract.py -q`: **PASS, 13 passed in 0.21s**. The package
+    and generated Runner text contain the target 12–24 complete items, hard maximum 32, retained
+    `existing_entity_ref`, bounded-scope wording, post-source prohibition on `exec`/shell/Python/filesystem/
+    temporary paths, and the inline fully-qualified
+    `mcp__team_transport__send_team_message` call with `recipient_id=protocol`, `expects_reply=true`, and
+    candidate JSON as text.
+  - R2.3-005 prompt/complete-revision compatibility: `uv run --project backend python -m pytest
+    modeling_team/tests/test_r23005_complete_revision.py -q`: **PASS, 8 passed in 0.11s**. No 005 test
+    failure was observed in the complete-candidate, protocol, or proof/neutral boundary checks.
+  - Combined frozen-surface check: `uv run --project backend python -m pytest
+    modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23005_complete_revision.py
+    modeling_team/tests/test_p2a_codex_runtime.py -q`: **FAIL, 49 passed, 1 failed**. The sole failure is
+    `test_normal_runtime_and_platform_surfaces_remain_byte_frozen`: current
+    `modeling_team/runner.py` SHA-256 is
+    `d2e6d5a75064756f67843d3ca2144e169175bc60deb426d5019d92e6c270e9ed`, while
+    `FROZEN_GLOBAL_SURFACES` still expects the prior Runner digest
+    `4a775f0b0ffabf9312964f07b7aba175a42d36c642df739a70a16fd4808d6c34`.
+    This drift is caused by the approved R2.3-003 `_task_text("modeling")` prompt addition; the frozen
+    expected hash has not yet been refreshed. The five other frozen surfaces remain unchanged.
+- Defect: **High, deterministic frozen-surface compatibility gate (pending developer hash refresh)**.
+  Expected: the approved R2.3-003 Runner prompt change is represented by the updated expected Runner digest,
+  while the R2.3-005 frozen compatibility test remains green. Actual: the 005/frozen suite fails on the
+  stale expected digest before the final gate can pass. The focused 003 and 005 contract tests pass; no
+  product behavior defect or real-run evidence was found. Developer should update only the frozen Runner
+  expected digest, then request the next independent recheck; do not alter the 003 prompt contract or launch
+  a real run to bypass this deterministic failure.
+- Result: **FAIL for the deterministic implementation gate**. Real L0 start, live retained-scope preflight,
+  Modeling candidate, receipt-backed existing-entity binding, dry-run/apply/readback, validation/reasoning,
+  governed retrieval, semantic two-CQ verdicts, settlement, and production cleanup remain **BLOCKED** and
+  unexecuted by instruction, not PASS. Requirement-level completion remains BLOCKED pending hash repair and
+  a later independent PASS plus separately authorized real modeling/acceptance.
+
+### Round 5 recheck — 2026-08-11 after approved frozen Runner digest refresh — PASS / real run BLOCKED
+
+- Stable state: development stopped at HEAD `7c2b5511c31675e21427cb2be469630ee742a7de`; the only
+  start3-follow-up change is the approved `FROZEN_GLOBAL_SURFACES["modeling_team/runner.py"]` digest refresh
+  to `d2e6d5a75064756f67843d3ca2144e169175bc60deb426d5019d92e6c270e9ed`. No semantic run, live endpoint,
+  or retained-evidence mutation was performed. `git diff --check` PASS.
+- Recheck command:
+  `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+  modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_p2a_codex_runtime.py -q`
+  → **PASS, 50 passed in 0.50s**; followed by `git diff --check` → **PASS**.
+  This revalidates the exact R2.3-003 Modeling package/Runner prompt (12–24 target, max 32, source-after
+  exec/filesystem prohibition, inline fully-qualified transport arguments) and confirms R2.3-005 complete
+  revision plus frozen normal runtime/platform surfaces are green after the hash refresh.
+- Result: **PASS for the deterministic implementation gate**. Round 5's stale digest defect is FIXED. Real
+  L0 start, live retained-scope preflight, Modeling candidate, receipt-backed existing-entity binding,
+  dry-run/apply/readback, validation/reasoning, governed retrieval, semantic two-CQ verdicts, settlement,
+  and production cleanup remain **BLOCKED** and unexecuted by instruction, not PASS. No further developer
+  repair is requested; preserve the exact four-start budget and do not launch a real run in this recheck.

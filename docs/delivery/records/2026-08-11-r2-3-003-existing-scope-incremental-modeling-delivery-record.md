@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T02:40:37+08:00
+- Last updated: 2026-08-11T02:59:22+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -160,6 +160,20 @@
 - Outcome/next step: 2/4 semantic starts consumed。下一轮前同时修复 Protocol 等候指令与跨 tool artifact
   identity 碰撞；不扩大到其它验收或平台功能。
 
+### 2026-08-11T02:41:07+08:00 — real semantic start 3 terminal failure — main agent
+
+- Context: barrier/artifact fix commit `7c2b551` 后，run `r23003-real-20260811-deepseek-start4` 通过 preflight
+  并记录第三个 `semantic_start`；Protocol 正确保持零 platform call 等候 candidate。
+- Action/decision: Modeling 过度建模为 71 items/~29.8 KB，并使用 exec Python 构造/校验，随后尝试写只读
+  `/tmp` 和 `/agent/work`；最终只输出“将发送”文字而未调用 MCP。由于当前 Runner 对 pre-candidate
+  no-delivery 无 watchdog，主 Agent 以正式 `action=stop` 清理并登记 `collaboration/routing`。
+- Evidence: Modeling rollout 保存完整生成过程与零 Team Transport call；无
+  `platform-response-artifacts.jsonl`；cleanup 前后 batch count=6、workspace version=`0d34f5...ef02`，
+  Session/Lease/Attempt=0，全部 key revoked，run `CLEANED`。
+- Outcome/next step: 3/4 semantic starts consumed，仅余最后一次。下次前把 003 Modeling prompt 收窄为
+  minimum sufficient 12-24/hard max 32 items、禁止用文件/脚本构造候选、要求 inline fully-qualified MCP
+  调用；不在最后一次前扩建通用 watchdog。
+
 ## Development and defect history
 
 | Cycle | Stable state | Change or defect | Verification | Outcome |
@@ -170,6 +184,7 @@
 | 4 | commit `72ab597` clean baseline | Independent Round 1 发现 003 先读 DeepSeek credential 再做 existing live preflight，且 Project HTTP 200 `{}` 会被默认成目标 ID | 仅调整 003 顺序并要求 Project payload 显式匹配 ID；005 顺序不变；新增精确回归 | fixed |
 | 5 | real start2 failure evidence | App Server 只接受 fully-qualified Team Transport MCP 名；四角色 prompt 仅写 broker 内部短名 | 四角色 authoritative prompt 明确 `mcp__team_transport__*` 名称并禁止 bare alias；不改 Runtime/Transport | fixed before next start |
 | 6 | real start3 failure evidence | Protocol 在 candidate receipt 前调用 platform；不同 tool 的相同 args/error 响应发生 artifact identity 碰撞 | Protocol startup barrier；artifact request digest 绑定 `{tool, arguments}` | fixed before next start |
+| 7 | real start4 failure evidence | Modeling 过度建模 71 items，并以只读 filesystem/script 构造候选后未发送 | exact 003 prompt target 12-24/max32、source 后禁 exec/files、inline qualified Transport | fixed before final start |
 
 ## Independent test rounds
 
@@ -179,6 +194,7 @@
 | 2 | post-`72ab597` narrow preflight fix | deterministic PASS；requirement completion BLOCKED pending live L0-L2 | Round 1 High 已修复；无新确定性缺陷 | 003/005/frozen/CQ/cleanup 87 PASS；003 focused 10 PASS；modeling_team 704 PASS、1 skipped；backend 843 PASS、10 skipped；cap/count/active=`4/0/0` |
 | 3 | post-start2 prompt fix | PASS | fully-qualified MCP prompt/tool surface fixed；adapter suffix compatibility 仅记 future hardening | prompt/transport focused 34 PASS；target subset 5 PASS；qualified callback 1 PASS；diff-check PASS |
 | 4 | post-start3 barrier/artifact fix | PASS | 无新确定性缺陷；真实 L0-L2 仍待下一 run | combined focused 109 PASS；backend candidate gate 4 PASS；barrier/namespace 8 PASS；artifact/frozen/prompt 3 PASS；diff-check PASS |
+| 5 | post-start4 bounded-candidate prompt fix | FAIL then recheck PASS | 初测只发现批准 runner 变更的 stale frozen hash；更新精确 digest 后无缺陷 | exact 003/005/frozen 50 PASS；003 focused 13 PASS；005 complete revision 8 PASS；diff-check PASS |
 
 ## Final verification
 

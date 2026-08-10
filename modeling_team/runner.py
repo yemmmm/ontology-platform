@@ -2232,6 +2232,19 @@ class TeamRunner:
                     "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
                     "or receipt labels into the platform-neutral candidate."
                 )
+                if task.task_id == "r2-3-003-existing-scope-incremental":
+                    modeling_text += (
+                        "\nR2.3-003 existing-scope candidate limit: target 12-24 complete items and never exceed "
+                        "32 items. Reuse existing_entity_ref for retained entities and model only the new bounded "
+                        "C-evaluation -> B-decision -> A-outcome increment; do not enumerate every source field, "
+                        "historical attribute, or unchanged platform fact. After reading role-private sources, do "
+                        "not use exec, a shell, Python, the filesystem, temporary files, /tmp, /agent/work, or any "
+                        "script to construct, validate, serialize, or persist the candidate. Construct the complete "
+                        "candidate JSON inline and immediately call exactly "
+                        "`mcp__team_transport__send_team_message` with recipient_id=protocol, expects_reply=true, "
+                        "and the candidate JSON as text. Retain the returned delivery_id; never end with prose about "
+                        "sending the candidate or replace the call with a file or tool-intent explanation."
+                    )
                 if self._candidate_publication is not None:
                     identity = self._candidate_publication.identity
                     modeling_text += (

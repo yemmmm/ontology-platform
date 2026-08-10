@@ -315,6 +315,60 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
             shutil.rmtree(run_root)
 
 
+def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
+    tmp_path: Path,
+) -> None:
+    ledger_root = tmp_path / "ledger"
+    run_id = "r23003-modeling-candidate-boundary"
+    run_root = ROOT / "workspaces" / "modeling-runs" / run_id
+    runner = runner_module.TeamRunner(
+        repository_root=ROOT,
+        adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+        deepseek_credential_path=tmp_path / "deepseek.env",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+        ledger_factory=lambda *, root, config, now: StartLedger(root, config=config, now=now),
+    )
+    runner._canonical_ledger_root = lambda: ledger_root
+    StartLedger(ledger_root, requirement_id="R2.3-003").initial_authorization()
+    try:
+        with patch.object(
+            runner_module,
+            "run_existing_scope_preflight",
+            lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
+        ), patch.object(runner_module, "preflight_deepseek_credential", lambda _path: object()):
+            runner.prepare(
+                run_id=run_id,
+                profile_path=ROOT
+                / "modeling_team/profiles/r2-3-003-existing-scope-modeling-team.yaml",
+                task_path=ROOT
+                / "modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml",
+                scope=SCOPE,
+            )
+        generated = runner._task_text("modeling")
+        package = (
+            ROOT / "modeling_team/agent-packages/modeling/instructions.md"
+        ).read_text(encoding="utf-8")
+        for text in (package, generated):
+            assert "12-24" in text or "12–24" in text
+            assert "32 items" in text
+            assert "existing_entity_ref" in text
+            assert "do not enumerate every source field" in text
+            assert "exec" in text
+            assert "the filesystem" in text
+            assert "mcp__team_transport__send_team_message" in text
+            assert "recipient_id=protocol" in text or 'recipient_id="protocol"' in text
+            assert "expects_reply=true" in text
+            assert "candidate JSON" in text
+            assert "message text" in text or "JSON as text" in text
+            assert "never end with prose" in text or "Never finish a turn" in text
+    finally:
+        runner.cleanup()
+        if run_root.exists():
+            import shutil
+
+            shutil.rmtree(run_root)
+
+
 def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None:
     candidate = _candidate()
     receipt = build_existing_entity_binding_receipt(

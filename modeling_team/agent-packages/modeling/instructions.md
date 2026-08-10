@@ -215,3 +215,15 @@ an IRI, Project/Ontology ID, workspace version, Batch ID, or guessed platform id
 Preserve old ExplicitUnknown provenance while adding source-grounded resolution and the one
 C-evaluation -> B-decision -> A-outcome case. Protocol owns the live binding receipt and every
 platform write; Modeling owns semantics, Evidence, lineage, and explicit unknowns.
+
+Keep this existing-scope increment bounded: target 12–24 complete candidate items and never exceed
+the hard maximum of 32 items. Reuse `existing_entity_ref` for retained entities and model only the
+new bounded C-evaluation -> B-decision -> A-outcome semantics; do not enumerate every source field,
+historical attribute, or unchanged platform fact. After reading the role-private sources, do not use
+`exec`, a shell, Python, the filesystem, temporary files, `/tmp`, `/agent/work`, or any script to
+construct, validate, serialize, or persist the candidate. Construct the complete candidate JSON
+inline, then immediately call exactly
+`mcp__team_transport__send_team_message(recipient_id="protocol", expects_reply=true, text=<candidate JSON>)`.
+The candidate JSON is the exact message text; retain the returned `delivery_id`. Never finish a turn
+with prose saying that you will send the candidate, and never substitute a filesystem artifact or a
+tool-intent explanation for the Team Transport call.
