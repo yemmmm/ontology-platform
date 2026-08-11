@@ -1923,8 +1923,13 @@ ticket 都携带 Runner-owned ordinal/count/previous/next/is-final 元数据，�
    delete-impact receipt、两阶段删除与写后对账、N-CQ 串行验收、授权次数和最小凭据撤销。
 
 用户新授权 `user-20260811-r23003-post-revision-contract-start1-3` 已把 cap/count 从 `11/11` 扩为
-`14/11`。start13 已消费一次并在 receipt 前后零写入清理终止；其独立对账与 append-only terminal
-reconciliation 已完成，当前 cap/count/active=`14/12/0`。剩余两次只用于瘦身后主链，首次完整 PASS 即停止。
+`14/11`。start13–start15 均已消费并在平台写入前零写入终止；三次都已完成独立清理、canonical
+reconciliation 和 append-only terminal failure。当前 cap/count/active=`14/14/0`，授权已耗尽。
+start14 证明正整数 revision 到达 Carrier 后被旧 safe-string 合同拒绝；start15 穿过该修复并完成
+revision 1 receipt、standalone typed conflict 和完整 revision 2，但 Carrier 又因旧的全局 immutable
+identity 假设拒绝 replacement。两处合同现均已有 003-only 行为修复和 005/default 隔离回归；真实 Phase
+A/B、readback、validation/reasoning/retrieval 和 N-CQ 仍未完成。任何新 live start 必须获得新的显式授权，
+首次完整 PASS 后停止。
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；

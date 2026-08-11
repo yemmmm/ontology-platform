@@ -1815,3 +1815,55 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   003/005/default contract**. It does not establish S5 semantic modeling acceptance: Phase A/B mutation, readback,
   validation/reasoning/retrieval, N-CQ, and live quality verdict remain **UNEXECUTED**. Start15 was intentionally not
   started; any future start requires Main's commit/health/current-context gate and explicit sequencing decision.
+
+### Round 33 — 2026-08-12 independent start15 post-cleanup audit and replacement-carrier recheck — PASS deterministic; S5 unexecuted
+
+- **Scope and safety.** This round reused the same shared plan after Main's controlled start15 cleanup/reconciliation.
+  The tester only read retained evidence/runtime state and ran local tests against the stable working tree. No product
+  code, ledger, run evidence, residue, ontology, or workspace state was modified; no new run was started.
+- **Candidate/receipt/conflict chain: PASS.** Retained evidence binds delivery-4 revision 1 to accepted receipt
+  delivery-5 with digest `f282e69b88e5c501a3bc6dda4fff0d811da9022d3e9e6c5724bc51ebfe00afde`; standalone conflict
+  delivery-6 has no reply binding, `expects_reply=true`, `conflict_code=existing_relation_endpoint_requires_ref`,
+  and `mutation_state=zero-mutation`; replacement delivery-7 replies to delivery-6 with strictly greater positive
+  integer revision 2 and candidate digest
+  `3c33fecce2fb0be9bca3bb02de32a6ece72e685e77dace0d25158a8ec5e02976`. Formal progress correctly records
+  candidate -> receipt registered -> accepted -> conflict/awaiting revision -> revision/awaiting receipt, while the
+  candidate gate remains closed pending receipt. Nine retained ontology-platform response artifacts are all
+  read-only (`get_modeling_context`, `get_ontology_workspace_context`, `get_ontology_read_model`,
+  `get_entity_statement_context`, and `get_ontology_lineage`); no stateful platform mutation occurred.
+- **Post-cleanup resource audit: PASS.** The only approved generated residue paths are absent:
+  `runtime/modeling/home/read_proxy_mcp.py` (pre-delete SHA-256
+  `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`, 11,439 bytes) and
+  `runtime/modeling/home/modeling-read-proxy.sock` (pre-delete SHA-256
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, zero-byte regular placeholder).
+  Formal auth/config/capability/token/proxy inventory is empty; scoped Unix sockets=0; registered PIDs
+  `2882852`, `2882412`, `2882530`, `2882628` are absent; no targeted process remains. No retained evidence or
+  baseline runtime source was removed.
+- **Scope, keys, final audit, service: PASS.** `existing_context_before == existing_context_after` exactly with the
+  retained Project/Ontology/graph/workspace identity, workspace `ready`, six batches, one recent session, and zero
+  active sessions/leases/in-flight attempts. Admin, Protocol, aggregate, project-scoped, and Modeling-read keys are
+  non-active/revoked; Modeling-read statuses are `revoke=200`, `status_readback=200`, `post_revoke=401`. Retained
+  final provider audit is `scanned_files=123`, `match_count=0`, `matched_secret_count=0`, `scan_complete=true`,
+  `scan_error_count=0`, `named_private_artifact_count=0`, `run_process_count=0`, `unix_socket_count=0`; no secret
+  bytes were emitted. The user service is active and read-only backend/frontend checks returned HTTP `200/200`.
+- **Digest and ledger: PASS.** Recomputed canonical digests match the one-line terminal reconciliation exactly:
+  `issue_digest=f8aac636c1269a4cb8aea883fbe5bcb75ecb5aca57555173d6a8462300fb3327`,
+  `cleanup_digest=663ce74f8bccc1ab44a915420cb9da462f7fc33609c8eb849a964b2b76d5d540`,
+  `evidence_digest=906d7e55a744f667bc0173928cc88a8caaa0821ca9cdc79055d6b16cb9837665`. The ledger-bound
+  `terminal_evidence` has exactly the seven required fields and matches the artifact. Read-only strict replay passes
+  for 49 records (SHA-256
+  `0e2aec8bc8c7565567e776cdc691f5db41c472ca3267a1994849ede082f4b26d`), with `cap/count/active=14/14/0`; the
+  tail is start15 `terminal_failure`, `classification=platform-contract`, `complete_modeling_quality_result=false`,
+  baseline `c5e8ac34b8b4236a7f437933257e4dcabf950b8570c865e353b362abe35d00f2`.
+- **Replacement carrier repair and isolation tests: PASS (FIXED).** The stable R2.3-003-only carrier now requires
+  strictly increasing revision and changed digest for replacement, requires the replacement payload, atomically
+  refreshes candidate identity/payload/retrieval gate and clears the old receipt, and remains idempotent for replay
+  of the same identity. R2.3-005/default retain immutable safe-string behavior. Focused relevant tests covering
+  replacement/stale/equal/reused-digest fences, 003 contracts, 005 candidate/progress/contracts/authoring/mechanical/
+  CQ/B-runtime, P2A/runtime/retrieval, and cleanup returned **200 passed, 41 subtests passed**. Full
+  `uv run --project backend python -m pytest modeling_team/tests -q` returned **745 passed, 1 skipped, 218 subtests
+  passed**. Compileall, `git diff --check`, and focused Ruff checks passed.
+- **Conclusion and handoff.** Round33 is **PASS for start15 zero-mutation reconciliation and the repaired deterministic
+  replacement carrier/003/005/default isolation**. The old start15 acceptance-carrier defect is covered as fixed;
+  no new requirement-developer repair is indicated. S5 semantic modeling acceptance remains **UNEXECUTED** (no
+  Phase-A/B mutation, readback, validation/reasoning/retrieval, N-CQ, or live quality verdict). No new run was started.

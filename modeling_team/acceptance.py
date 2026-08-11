@@ -1711,6 +1711,32 @@ class RunnerAcceptanceCarrier:
             "candidate_revision": candidate_revision,
             "candidate_digest": candidate_digest,
         }
+        if (
+            self.task_id == "r2-3-003-existing-scope-incremental"
+            and self._accepted_candidate_identity is not None
+            and self._accepted_candidate_identity != record
+        ):
+            previous = self._accepted_candidate_identity
+            if candidate_revision <= previous["candidate_revision"]:
+                _error("accepted candidate_revision must strictly increase for replacement")
+            if candidate_digest == previous["candidate_digest"]:
+                _error("accepted candidate_digest must change for replacement")
+            if candidate is None:
+                _error("replacement candidate payload is required")
+            detached = _safe_copy(dict(candidate))
+            try:
+                gate = ProtocolRetrievalGate(
+                    detached,
+                    candidate_revision=candidate_revision,
+                    candidate_digest=candidate_digest,
+                )
+            except ProtocolRetrievalGateError as exc:
+                _error(str(exc))
+            self._accepted_candidate_identity = record
+            self._accepted_candidate = detached
+            self._ordinary_retrieval_gate = gate if gate.enabled else None
+            self._ordinary_retrieval_receipt = None
+            return _safe_copy(record)
         if self._accepted_candidate_identity is not None:
             if self._accepted_candidate_identity != record:
                 _error("accepted candidate identity was mutated")

@@ -1,7 +1,8 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：同步瘦身已实现并独立验证；start13 零写入终止已完成 canonical reconciliation，cap/count/active=
-  `14/12/0`；剩余两次 live starts，首次完整 PASS 后 success-stop
+- 状态：同步瘦身与两处 003 Acceptance Carrier 合同修复已实现并独立验证；start13–start15 的零写入
+  终止均已完成 canonical reconciliation，cap/count/active=`14/14/0`；当前授权已耗尽，真实 Phase A/B、
+  readback 和 N-CQ 尚未完成
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -348,7 +349,7 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - plan review 无未处理 Critical/High；
 - deterministic tests 覆盖两个 formal contract 隔离、003 ledger、existing preflight、source visibility、
   delta candidate、安全硬删除、N-CQ（至少 1/3/5）和写后失败；完整 repository-required suite PASS；
-- 原七次 starts 已耗尽；用户新增授权精确一次。门通过后一个真实 R2.3-003 Team run 在 Start75 Ontology 上完成组合目标与独立验收，
-  首次完整 PASS 后停止；
+- 当前授权已全部消耗并完成 append-only 终态对账；任何后续真实 start 必须先获得新的显式授权。后续
+  一个真实 R2.3-003 Team run 仍须在 Start75 Ontology 上完成组合目标与独立验收，首次完整 PASS 后停止；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。

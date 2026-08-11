@@ -1034,3 +1034,27 @@
   `platform-contract` terminal event. Independent strict replay PASS: 46 records, ledger SHA
   `cc4d1820c3e4bdf475dbb51aff5715fbfe23f8b44ff26d4910ddbc4a42e47fcb`, cap/count/active=`14/13/0`.
   Exactly one authorized live start remains; S5 semantic modeling is still unexecuted.
+
+### 2026-08-12T00:22:35+08:00 — start15 replacement revision carrier repair and final authorized reconciliation
+
+- start15 completed the full pre-mutation collaboration chain through Modeling context reads, a 30-item revision 1
+  candidate, accepted receipt delivery-5, Protocol's complete live binding/delete-impact reads, a zero-mutation typed
+  conflict delivery-6, and Modeling's full revision 2 delivery-7. The nine platform response artifacts are read-only;
+  no Session/Lease/Batch or other stateful call occurred.
+- The run then stopped because `RunnerAcceptanceCarrier` still treated the already accepted revision 1 identity as
+  globally immutable. The 003-only repair now accepts only a strictly increasing positive-integer replacement with a
+  changed digest and complete candidate payload, builds the new retrieval gate before atomically replacing identity/
+  payload/gate, and clears the old retrieval receipt. Same-identity replay remains idempotent; stale/equal/reused
+  digest attempts fail; R2.3-005/default identity remains immutable.
+- Independent Round33 verification passed: focused affected coverage=`200 passed, 41 subtests`; full modeling_team=
+  `745 passed, 1 skipped, 218 subtests`; compileall, Ruff, and diff-check PASS. GitNexus continues to classify the
+  shared Carrier method as CRITICAL, but the product delta remains the isolated R2.3-003 branch and tests.
+- Main removed only the same two fingerprinted generated residues. Final provider-secret audit scanned 123 files
+  with zero matches/errors; processes/sockets/private names were zero; all keys were revoked; scope before/after and
+  workspace version `0d34f5ad...ef02` were unchanged; backend/frontend health=`200/200`.
+- The one-line reconciliation binds issue/cleanup/evidence digests `f8aac636...3327` / `663ce74f...d540` /
+  `906d7e55...7665`. The seven-field `platform-contract` terminal event passes strict replay: 49 records, ledger SHA
+  `0e2aec8bc8c7565567e776cdc691f5db41c472ca3267a1994849ede082f4b26d`, cap/count/active=`14/14/0`.
+- All three newly authorized starts are consumed. Deterministic slimming and Carrier repair are PASS, but the R2.3-003
+  requirement remains BLOCKED because Phase A/B application, readback, validation/reasoning/retrieval, and N-CQ live
+  acceptance were not reached. No further live start is permitted without new explicit user authorization.

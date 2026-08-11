@@ -117,6 +117,134 @@ def test_r23003_rejects_non_positive_integer_candidate_revision(candidate_revisi
             )
 
 
+def _r23003_candidate(revision: int, value: str) -> dict[str, object]:
+    return {
+        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_revision": revision,
+        "scope": "retained",
+        "constraints": ["source-grounded"],
+        "items": [
+            {
+                "item_id": "predicate-field",
+                "item_kind": "predicate",
+                "semantic": {
+                    "predicate": "field",
+                    "predicate_kind": "fact",
+                    "range": "string",
+                },
+            },
+            {
+                "item_id": "entity-a",
+                "item_kind": "entity",
+                "semantic": {
+                    "entity_id": "entity-a",
+                    "class": "Entity",
+                    "values": {"field": value},
+                },
+            },
+            {
+                "item_id": "consumer-q",
+                "item_kind": "consumer_query",
+                "semantic": {
+                    "query_id": "q",
+                    "question": "What is the field?",
+                    "required_paths": ["field"],
+                },
+            },
+        ],
+    }
+
+
+def test_r23003_revision_replacement_refreshes_candidate_and_retrieval_gate() -> None:
+    candidate_v1 = _r23003_candidate(1, "v1")
+    candidate_v2 = _r23003_candidate(2, "v2")
+    digest_v1 = canonical_digest(candidate_v1)
+    digest_v2 = canonical_digest(candidate_v2)
+    with tempfile.TemporaryDirectory(prefix="r23003-revision-replacement-") as directory:
+        carrier = RunnerAcceptanceCarrier(
+            Path(directory) / "r23003",
+            task_id="r2-3-003-existing-scope-incremental",
+            acceptance_id="acceptance",
+        )
+        carrier.register_accepted_candidate(
+            candidate_revision=1,
+            candidate_digest=digest_v1,
+            candidate=candidate_v1,
+        )
+        first_gate = carrier._ordinary_retrieval_gate
+        assert first_gate is not None
+        carrier._ordinary_retrieval_receipt = {"candidate_revision": 1}
+
+        replacement = carrier.register_accepted_candidate(
+            candidate_revision=2,
+            candidate_digest=digest_v2,
+            candidate=candidate_v2,
+        )
+        assert replacement == {"candidate_revision": 2, "candidate_digest": digest_v2}
+        assert carrier._accepted_candidate_identity == replacement
+        assert carrier._accepted_candidate == candidate_v2
+        second_gate = carrier._ordinary_retrieval_gate
+        assert second_gate is not None and second_gate is not first_gate
+        assert second_gate.candidate_revision == 2
+        assert second_gate.candidate_digest == digest_v2
+        assert carrier.ordinary_retrieval_receipt is None
+
+        assert carrier.register_accepted_candidate(
+            candidate_revision=2,
+            candidate_digest=digest_v2,
+            candidate=candidate_v2,
+        ) == replacement
+        assert carrier._ordinary_retrieval_gate is second_gate
+
+
+def test_r23003_revision_replacement_rejects_stale_equal_and_reused_digest() -> None:
+    candidate_v1 = _r23003_candidate(1, "v1")
+    candidate_v2 = _r23003_candidate(2, "v2")
+    candidate_v2_changed = _r23003_candidate(2, "v2-changed")
+    candidate_v3 = _r23003_candidate(3, "v3")
+    digest_v1 = canonical_digest(candidate_v1)
+    digest_v2 = canonical_digest(candidate_v2)
+    digest_v2_changed = canonical_digest(candidate_v2_changed)
+    with tempfile.TemporaryDirectory(prefix="r23003-revision-fence-") as directory:
+        carrier = RunnerAcceptanceCarrier(
+            Path(directory) / "r23003",
+            task_id="r2-3-003-existing-scope-incremental",
+            acceptance_id="acceptance",
+        )
+        carrier.register_accepted_candidate(
+            candidate_revision=1,
+            candidate_digest=digest_v1,
+            candidate=candidate_v1,
+        )
+        carrier.register_accepted_candidate(
+            candidate_revision=2,
+            candidate_digest=digest_v2,
+            candidate=candidate_v2,
+        )
+        with pytest.raises(AcceptanceContractError, match="strictly increase"):
+            carrier.register_accepted_candidate(
+                candidate_revision=1,
+                candidate_digest=digest_v1,
+                candidate=candidate_v1,
+            )
+        with pytest.raises(AcceptanceContractError, match="strictly increase"):
+            carrier.register_accepted_candidate(
+                candidate_revision=2,
+                candidate_digest=digest_v2_changed,
+                candidate=candidate_v2_changed,
+            )
+        with pytest.raises(AcceptanceContractError, match="must change"):
+            carrier.register_accepted_candidate(
+                candidate_revision=3,
+                candidate_digest=digest_v2,
+                candidate=candidate_v3,
+            )
+        assert carrier._accepted_candidate_identity == {
+            "candidate_revision": 2,
+            "candidate_digest": digest_v2,
+        }
+
+
 def test_r23005_and_default_carriers_keep_safe_string_revision_contract() -> None:
     with tempfile.TemporaryDirectory(prefix="acceptance-revision-scope-") as directory:
         for index, task_id in enumerate(("r2-3-005-formal-acceptance", "task-default")):
@@ -133,6 +261,11 @@ def test_r23005_and_default_carriers_keep_safe_string_revision_contract() -> Non
                 carrier.register_accepted_candidate(
                     candidate_revision=1,
                     candidate_digest="b" * 64,
+                )
+            with pytest.raises(AcceptanceContractError, match="accepted candidate identity was mutated"):
+                carrier.register_accepted_candidate(
+                    candidate_revision="revision-2",
+                    candidate_digest="c" * 64,
                 )
 
 
