@@ -377,6 +377,14 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         assert "mcp__team_transport__send_team_message" in protocol
         assert "mcp__team_transport__send_coordination" in protocol
         assert "mcp__team_transport__report_task_result" in protocol
+        assert "unknown-cross-release-output-meaning" in protocol
+        assert "unknown-b-no-score-behavior" in protocol
+        assert "item_kind=delete_existing_entity" in protocol
+        assert "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in protocol
+        assert "protocol_build_candidate_receipt itself fails at the receipt gate" in protocol
+        assert "build_candidate_conflict with the unchanged complete candidate" in protocol
+        assert "reply-bound request for Modeling to send one full revised candidate" in protocol
+        assert "duplicate receipt/reply" in protocol
     finally:
         runner.cleanup()
         if run_root.exists():
@@ -431,6 +439,17 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
             assert "candidate JSON" in text
             assert "message text" in text or "JSON as text" in text
             assert "never end with prose" in text or "Never finish a turn" in text
+            assert "unknown-cross-release-output-meaning" in text
+            assert "unknown-b-no-score-behavior" in text
+            assert "item_kind=delete_existing_entity" in text
+            assert (
+                "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in text
+                or "object containing exactly semantic_id, expected_class, and delete_mode=full_live_impact" in text
+                or "object containing exactly `semantic_id`, `expected_class`, and `delete_mode=full_live_impact" in text
+            )
+            assert "do not use `entity_delete`" in text or "Do not use entity_delete" in text
+        assert "Reply to the delivered conflict `delivery_id`" in package
+        assert "full, self-contained revised candidate" in package
     finally:
         runner.cleanup()
         if run_root.exists():

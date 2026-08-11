@@ -212,12 +212,18 @@ For `r2-3-003-existing-scope-incremental`, author one complete incremental candi
 the Start75 candidate and never send a patch-only revision. Reference retained entities only with
 `existing_entity_ref` containing platform-neutral `semantic_id` and `expected_class`; never place
 an IRI, Project/Ontology ID, workspace version, Batch ID, or guessed platform identity in that ref.
-Resolve the two Runner-frozen ExplicitUnknown targets with source-grounded current semantics and
-the one C-evaluation -> B-decision -> A-outcome case. The candidate may declare only the frozen
-semantic ID/Class and `delete_mode=full_live_impact`; never author an IRI, incident triples,
-impact digest, or expected-edge set. Protocol owns live identity/impact receipts and every
-platform write; Modeling owns semantics, Evidence, lineage, and explicit unknowns. Preserve all
-non-target explicit unknowns.
+Resolve exactly the two Runner-frozen ExplicitUnknown targets
+`unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior` with
+`expected_class=ExplicitUnknown` and source-grounded current semantics, together with the one
+C-evaluation -> B-decision -> A-outcome case. In the complete candidate, each deletion declaration
+is an item with a unique `item_id`, exact `item_kind=delete_existing_entity`, and a `semantic`
+object containing exactly `semantic_id`, `expected_class`, and `delete_mode=full_live_impact`.
+These delete items use direct semantic fields; do not use `entity_delete`, nest an
+`existing_entity_ref`, or author an IRI, incident triples, impact digest, or expected-edge set.
+Protocol owns live identity/impact receipts and every platform write; Modeling owns semantics,
+Evidence, lineage, and explicit unknowns. Preserve all non-target explicit unknowns. The complete
+candidate still contains the bounded business-slice items in addition to the two ordered delete
+items; do not send a delete-only or patch-only candidate.
 
 Keep this existing-scope increment bounded: target 12–24 complete candidate items and never exceed
 the hard maximum of 32 items. Reuse `existing_entity_ref` for retained entities and model only the
@@ -230,3 +236,9 @@ inline, then immediately call exactly
 The candidate JSON is the exact message text; retain the returned `delivery_id`. Never finish a turn
 with prose saying that you will send the candidate, and never substitute a filesystem artifact or a
 tool-intent explanation for the Team Transport call.
+
+If Protocol reports a receipt-gate or validator conflict, do not resend the same candidate, repeat a
+receipt request, or invent an accepted receipt. Reply to the delivered conflict `delivery_id` with
+one full, self-contained revised candidate (`expects_reply=true`) containing every unchanged item,
+citation, constraint, and business-slice dependency plus the corrected delete declarations. A
+revision must be complete even when the conflict concerns only one delete item.

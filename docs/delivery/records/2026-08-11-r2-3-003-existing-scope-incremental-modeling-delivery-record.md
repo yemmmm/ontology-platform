@@ -421,3 +421,42 @@
   tampered replay 全部 byte-stable reject。compileall/diff PASS；live ledger 仍 15 行/hash `fe750a...`、无进程/socket。
 - Outcome/next step: 提交窄修复，之后才重新执行 exact +3 live authorization；首次失败尝试不构成 ledger
   event 或 semantic start。
+
+### 2026-08-11T12:07:27+08:00 — revised live semantic start6 — main agent
+
+- Context: commit `1865c7b` 后 exact authorization
+  `user-20260811-r23003-revision-start1-3` 成功登记 +3，ledger cap/count/active 从 `4/4/0` 变为
+  `7/4/0`。两次 presemantic CLI 检查分别因缺 `freeze_started_at`、缺只读 preflight credential 在
+  reservation 前失败，均未计 start；随后以临时进程内 admin credential 启动
+  `r23003-real-20260811-deepseek-start6`，credential 在进程退出时撤销。
+- Action/decision: start6 进入首个新 semantic start。Modeling delivery-4 交付 22-item 完整业务候选，但把
+  两个 target 写成错误别名并使用 `item_kind=entity_delete` + nested `existing_entity_ref`；确定性
+  `protocol_build_candidate_receipt` 三次 fail-closed 为 `candidate must contain exactly two delete
+  declarations`。Protocol 首次无效 reply 被 quarantine/reopen，redrive 后又重复无效 receipt，Runner 以
+  `formal-reply-slot-reopen-rejected` / `collaboration-routing` 终止。全程未产生 platform write。
+- Evidence: start6 `formal-candidate-progress.jsonl` 保留 candidate、invalid-response quarantine、一次 redrive；
+  `capability-calls.jsonl` 保留三次相同 validator failure；ledger 追加 reservation/semantic_start/
+  terminal_failure，当前 19 行。cleanup 前后 workspace version 均为 `0d34f5ada161...`、modeling batches=6、
+  active lease/session/in-flight attempt=0；所有 protocol/admin/preflight keys revoked、四角色无残留进程；
+  backend/frontend healthy。
+- Outcome/next step: start6 消耗新增额度第 1 次，剩 2 次。分类为 prompt-correctable
+  collaboration/routing；按 AGENTS 在下一 start 前只修 owning prompt contract，不改 mechanics/backend。
+
+### 2026-08-11T12:25:00+08:00 — start6 prompt-contract repair and independent Round 11 — developer and tester
+
+- Context: start6 暴露 Modeling 删除声明 schema 缺失，以及 Protocol receipt-gate failure 后重复占用 reply
+  slot。
+- Action/decision: Task、Modeling/Protocol prompts、003 Runner task text 明确有序 target IDs
+  `unknown-cross-release-output-meaning` / `unknown-b-no-score-behavior`、Class `ExplicitUnknown`、精确
+  `item_kind=delete_existing_entity` 与 direct semantic 三字段，禁止 `entity_delete`/nested ref，并保留完整
+  C→B→A slice。Protocol validator failure 禁止 retry/accepted receipt，必须 native
+  `build_candidate_conflict` 后以 `expects_reply=true`、`reply_to_delivery_id` 请求完整 revised candidate；
+  conflict builder 再失败则 blocked/no reply。005 路径不变。
+- Evidence: developer exact frozen+focused=`64 passed, 3 subtests`；independent tester 直接用 start6
+  delivery-4 调 native builder 与 MCP wrapper，均得到精确六字段 conflict，FormalCandidateProgress 进入
+  `awaiting_revision` 且无 accepted receipt。003/revision/005 focused=`73 passed, 2 subtests`；005 regression=
+  `125 passed, 26 subtests`；frozen runtime=29 PASS；modeling_team full=`718 passed, 1 skipped, 218 subtests`；
+  compileall/diff-check PASS。GitNexus detect=`6 files/5 symbols/204 affected/CRITICAL`，来源为共享 Runner
+  `_task_text` 过宽映射；无 mechanics/validator 变更。
+- Outcome/next step: Round 11 deterministic prompt/receipt-conflict gate=`PASS`，可进入 start7；requirement
+  仍 BLOCKED，直至真实 L0-L2 与 cleanup 独立验收完成。

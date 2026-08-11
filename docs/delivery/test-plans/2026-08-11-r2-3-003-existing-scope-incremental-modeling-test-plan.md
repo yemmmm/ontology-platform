@@ -727,3 +727,55 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   live L0–L2 semantic candidate, receipt-backed binding, dry-run/apply/readback, CQ/settlement, and cleanup
   acceptance remain unexecuted by authorization/scope rules. No live evidence or authorization was consumed by this
   round.
+
+### Round 11 — 2026-08-11 independent start6 prompt-contract repair recheck — PASS deterministic gate / live requirement BLOCKED
+
+- Scope and stable state: this recheck used the shared worktree at HEAD `1865c7b2a33b9d070dd15d4624afc50dd8fe2024`
+  with the prompt/task/Runner repair and its focused tests uncommitted. The tester did not edit product code,
+  requirements, design, delivery record, or retained evidence, and did not start or continue a live run. Parent-owned
+  `test_p2a_codex_runtime.py` has the approved frozen `runner.py` digest update; it was included only as a read-only
+  regression input.
+- Start6 evidence confirmed the repaired failure target: retained `delivery-4` used the wrong target IDs
+  `unknown-quality-score-rating-sameness`/`unknown-b-absent-score-behavior`, `item_kind=entity_delete`, and nested
+  `existing_entity_ref` delete payloads. The complete candidate did contain the bounded business slice, but the
+  Protocol capability log shows three repeated `protocol_build_candidate_receipt` failures with
+  `R2.3-003 candidate must contain exactly two delete declarations`; no conflict response was emitted and progress
+  ended at `formal-reply-slot-reopen-rejected`.
+- Prompt/task contract assertions (**PASS**, read-only): Modeling, Protocol, and the R2.3-003 task now carry the
+  exact ordered IDs `unknown-cross-release-output-meaning`, `unknown-b-no-score-behavior`,
+  `expected_class=ExplicitUnknown`, unique `item_id`, exact `item_kind=delete_existing_entity`, and direct
+  `semantic={semantic_id,expected_class,delete_mode=full_live_impact}`. Modeling explicitly requires the complete
+  candidate to retain both ordered delete items plus the bounded C-evaluation -> B-decision -> A-outcome slice,
+  forbids `entity_delete`/nested refs and delete-only or patch-only revisions, and binds one full revision to the
+  delivered conflict ID. Protocol's generated startup text explicitly forbids retrying a receipt-gate failure or
+  sending an accepted receipt, and directs the native `protocol_mechanics/build_candidate_conflict` path with
+  `expects_reply=true` and `reply_to_delivery_id`.
+- Native conflict API and reply binding (**PASS**, read-only): calling `build_candidate_conflict` on the retained
+  complete start6 candidate returned exactly the six-field conflict envelope
+  (`status,candidate_revision,semantic_digest,candidate_digest,conflict_code,conflict_detail`). With the formal MCP
+  gate enabled, `tools/list` advertised `build_candidate_conflict` and `tools/call` returned the same canonical JSON.
+  Feeding that envelope as a `RuntimeDelivery(reply_to=delivery-4, expects_reply=true)` moved
+  `FormalCandidateProgress` to `awaiting_revision`; no accepted receipt was produced in this path.
+- Focused deterministic results:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py -q` — **73 passed, 2 subtests**.
+  - R2.3-005 regression (`test_r23005_candidate_authoring.py`, `test_r23005_candidate_progress.py`,
+    `test_r23005_complete_revision.py`, `test_r23005_contracts.py`, `test_r23005_c_settlement.py`,
+    `test_r23005_sequential_cq.py`, `test_r23005_ticket_pipeline.py`, `test_r23005_t6_repeatability.py`) —
+    **125 passed, 26 subtests**.
+  - Frozen runtime hash regression `test_p2a_codex_runtime.py` — **29 passed**; full
+    `uv run --project backend python -m pytest modeling_team/tests -q` — **718 passed, 1 skipped, 218 subtests**.
+  - `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests` and
+    `git diff --check` — **PASS**.
+- Read-only live/retained-state boundary: the parent live start6 had already appended the approved `+3`
+  authorization and consumed start6 before/during this recheck. The canonical ledger is now **19 lines**, SHA-256
+  `f31956c27a2c1e4dc38f6c59011dfd27701b3a4cbaf63f491d7134add64eeba3`, containing the initial `+4`, the exact
+  revision `+3`, and start6 reservation/semantic-start/terminal-failure; this tester appended no ledger record.
+  No start7/new reservation, matching start7 run directory, active modeling process, or related Unix socket was
+  found. Read-only start6 fingerprints were `state.json=31925142e7520c0c674ad4889b9af78e7dcfa5bc14666d23158affbe8862ebad`,
+  `formal-candidate-progress.jsonl=09cb25e74ac358525c0875f84494e5031f13aee1677eafe5afabba03c73b6d03`, and
+  `capability-calls.jsonl=a52cda0663a427b9a3547d1bc1c5594f2610803f51f1960c6e9a736f1e4f2520`.
+- Result: **PASS for the repaired deterministic prompt/receipt-conflict gate; overall R2.3-003 remains BLOCKED**
+  until a fresh authorized start completes the semantic candidate, live binding, Phase A/B application/readback,
+  validation/reasoning/retrieval, CQ settlement, and cleanup. No tester defect remains in this narrow scope.
+  Recommendation: the main agent may proceed to the next authorized start (start7) after its normal pre-start
+  ledger/health checks; preserve start6's collaboration/routing failure as historical evidence and do not rewrite it.

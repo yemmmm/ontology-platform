@@ -4,14 +4,19 @@ objective: >-
   Continue the retained non-empty Start75 Project/Ontology in existing mode with one complete,
   source-grounded incremental candidate. Read only the current platform facts, the approved
   Start75 source material, and the approved incremental source documents staged for Modeling.
-  Apply the requirement-owned deletion policy: resolve the two frozen ExplicitUnknown target
-  semantic IDs and declare each target for full live-impact deletion, while preserving every
-  non-target explicit unknown and all unrelated retained scope. Do not recreate, overwrite, or
-  infer any existing platform identity. Existing semantic endpoints use the platform-neutral
-  existing_entity_ref form (semantic_id plus expected_class only); Protocol obtains live canonical
-  identity and complete paginated statement-impact receipts. A candidate may contain only frozen
-  target delete declarations (semantic_id, expected_class, delete_mode) for deletion and never
-  Agent-authored IRIs, triples, expected edges, or impact digests. Add one bounded source-grounded
+  Apply the requirement-owned deletion policy to exactly the frozen ExplicitUnknown semantic IDs
+  `unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`, each with
+  `expected_class=ExplicitUnknown`; preserve every non-target explicit unknown and all unrelated
+  retained scope. Each deletion is an item with a unique `item_id`, exact
+  `item_kind=delete_existing_entity`, and a `semantic` object containing exactly
+  `semantic_id`, `expected_class`, and `delete_mode=full_live_impact` (do not use
+  `entity_delete` or nest an `existing_entity_ref` inside a delete item). Do not recreate,
+  overwrite, or infer any existing platform identity. Existing semantic endpoints use the
+  platform-neutral existing_entity_ref form (semantic_id plus expected_class only); Protocol
+  obtains live canonical identity and complete paginated statement-impact receipts. The complete
+  candidate must include these two ordered delete declarations plus the bounded business-slice
+  items; deletion declarations never carry Agent-authored IRIs, triples, expected edges, or impact
+  digests. Add one bounded source-grounded
   C-evaluation -> B-publishability -> A-publication outcome increment. Coordinator receives no raw
   source. Modeling owns business semantics and explicit unknowns; Protocol alone performs
   deterministic binding, translation, Phase-A readback, delete-only Phase-B application, readback,

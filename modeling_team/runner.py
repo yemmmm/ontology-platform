@@ -2138,7 +2138,12 @@ class TeamRunner:
                 if is_r23003:
                     text += (
                         " For R2.3-003 deletion-aware existing scope, accept only the requirement-owned policy and "
-                        "the frozen target semantic IDs/classes; preserve all non-targets.  Resolve every "
+                        "the frozen target semantic IDs/classes; the exact ordered targets are "
+                        "unknown-cross-release-output-meaning and unknown-b-no-score-behavior, both with "
+                        "expected_class=ExplicitUnknown; preserve all non-targets.  In the complete candidate, "
+                        "each delete declaration is an item with a unique item_id, item_kind=delete_existing_entity, "
+                        "and semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}; do not "
+                        "use entity_delete or nest existing_entity_ref in a delete item.  Resolve every "
                         "existing_entity_ref through the live canonical projection fields semantic_id, entity_iri, "
                         "class_semantic_id, class_iri, project_id, ontology_id, and workspace_version.  Consume "
                         "IRIs exactly as returned and never split, derive, or guess identity from an IRI.  For each "
@@ -2189,6 +2194,17 @@ class TeamRunner:
                         "to the original delivery_id. The typed capability never sends Team Transport; it permits "
                         "one conflict immediately after that receipt build, before either response is sent, but "
                         "rejects duplicate receipt/conflict calls, stale or foreign IDs, and terminal delivery IDs."
+                    )
+                    text += (
+                        " If protocol_build_candidate_receipt itself fails at the receipt gate (including the "
+                        "R2.3-003 exact-delete validator), do not retry that call or send any accepted receipt. "
+                        "Use the native protocol_mechanics build_candidate_conflict with the unchanged complete "
+                        "candidate and a stable validator conflict code/detail, then send only its exact "
+                        "conflict_json with expects_reply=true and reply_to_delivery_id bound to the original "
+                        "candidate delivery. This is the reply-bound request for Modeling to send one full "
+                        "revised candidate bound to the conflict delivery; never send free text, a patch, or a "
+                        "duplicate receipt/reply. If the native conflict builder fails, report blocked and send "
+                        "no receipt/reply."
                     )
                 if proof_gate:
                     text += (
@@ -2326,6 +2342,13 @@ class TeamRunner:
                 )
                 if task.task_id == "r2-3-003-existing-scope-incremental":
                     modeling_text += (
+                        "\nR2.3-003 delete declaration schema is exact: the two ordered target IDs are "
+                        "unknown-cross-release-output-meaning and unknown-b-no-score-behavior, each with "
+                        "expected_class=ExplicitUnknown; each delete item has a unique item_id, "
+                        "item_kind=delete_existing_entity, and semantic exactly "
+                        "{semantic_id, expected_class, delete_mode=full_live_impact}. Do not use entity_delete "
+                        "or nest existing_entity_ref in a delete item. The complete candidate also carries the "
+                        "bounded C-evaluation -> B-decision -> A-outcome business-slice items."
                         "\nR2.3-003 existing-scope candidate limit: target 12-24 complete items and never exceed "
                         "32 items. Reuse existing_entity_ref for retained entities and model only the new bounded "
                         "C-evaluation -> B-decision -> A-outcome increment; do not enumerate every source field, "

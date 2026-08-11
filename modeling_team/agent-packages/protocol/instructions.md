@@ -216,14 +216,17 @@ identifier; never shorten, normalize, replace, or alias it. For example, version
 `c-version-1`, `c-version-2`, and `c-current-draft` must not become `c-v1`, `c-v2`, or `c-draft`, and
 field/meaning IDs such as `quality-score-field`, `quality-rating-field`, and
 For R2.3-003, delete declarations are limited to the Runner-frozen target IDs
-`unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`, and
-`expected_class=ExplicitUnknown` with `delete_mode=full_live_impact`; do not accept Agent-authored
-IRIs, incident triples, impact digests, or expected-edge sets. The Protocol/tool must obtain a
-complete canonical live impact receipt before emitting a delete command. This rule does not
-override binding platform-generated IDs/IRIs from formal receipts or required reads. If the platform
-contract cannot carry an exact candidate-supplied ID, stop before any write and return a concrete
-candidate-to-Batch translation conflict through the typed or native conflict builder; never apply a
-guessed alias or repair the ID locally.
+`unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`, in that order, and
+`expected_class=ExplicitUnknown` with `delete_mode=full_live_impact`. Each declaration must be an
+item with a unique `item_id`, exact `item_kind=delete_existing_entity`, and a `semantic` object
+whose fields are exactly `semantic_id`, `expected_class`, and `delete_mode`; do not accept
+`entity_delete`, a nested `existing_entity_ref` in a delete item, or any other schema. Do not accept
+Agent-authored IRIs, incident triples, impact digests, or expected-edge sets. The Protocol/tool must
+obtain a complete canonical live impact receipt before emitting a delete command. This rule does
+not override binding platform-generated IDs/IRIs from formal receipts or required reads. If the
+platform contract cannot carry an exact candidate-supplied ID, stop before any write and return a
+concrete candidate-to-Batch translation conflict through the typed or native conflict builder;
+never apply a guessed alias or repair the ID locally.
 
 Before the first ordinary-neutral candidate and before every full revision, read the staged
 `/agent/home/sources/modeling_team/references/platform-neutral-candidate-authoring.json` reference
@@ -303,6 +306,16 @@ delivery IDs; one conflict is allowed immediately after that receipt build when 
 before either response is sent. The receipt or conflict is about the current retained candidate
 only; `revision_basis`, `revision_operation`, `replace_item_id`, and other patch/history fields
 cannot supply omitted items, citations, constraints, dependencies, or consumer queries.
+
+If `protocol_build_candidate_receipt` itself fails at the receipt gate (including an R2.3-003
+exact-delete validator failure), this is not an accepted receipt and is not permission to retry the
+same call. Do not send a hand-written/invalid accepted receipt or duplicate the prior reply. Use the
+native `protocol_mechanics` `build_candidate_conflict` with the unchanged complete candidate and a
+stable validator conflict code/detail, then send only its exact `conflict_json` with
+`expects_reply=true` and `reply_to_delivery_id` set to that candidate's original delivery ID. This
+is the reply-bound request for Modeling to send one full revised candidate bound to the conflict's
+delivery ID; do not send free text, a patch, or another receipt. If the native conflict builder also
+fails, report the concrete blocked issue and send no receipt/reply.
 
 If the typed operations are not advertised (ordinary/unbound or legacy paths), invoke the native
 `build_candidate_receipt` tool with the entire current candidate as its sole argument before every
