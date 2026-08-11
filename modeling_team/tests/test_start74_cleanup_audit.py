@@ -104,7 +104,7 @@ def test_formal_cleanup_unlinks_modeling_read_proxy_token_and_audits_token_suffi
     assert after["matched_secret_count"] == 0
 
 
-def test_formal_cleanup_audits_once_before_proxy_wipe_and_projects_safe_counts(
+def test_formal_cleanup_audits_once_after_proxy_stop_and_projects_safe_counts(
     tmp_path: Path, monkeypatch
 ) -> None:
     run_root = tmp_path / "run"
@@ -119,7 +119,7 @@ def test_formal_cleanup_audits_once_before_proxy_wipe_and_projects_safe_counts(
     for agent in agents:
         adapter.agents[agent.agent_id] = agent
         (agent.home / "config.toml").write_bytes(sentinel)
-        (agent.home / "session.jsonl").write_bytes(sentinel)
+        (agent.home / "auth.json").write_bytes(sentinel)
 
     calls = 0
     original_audit = codex_runtime.audit_private_artifacts
@@ -127,8 +127,13 @@ def test_formal_cleanup_audits_once_before_proxy_wipe_and_projects_safe_counts(
     def observe_once(*args, **kwargs):
         nonlocal calls
         calls += 1
-        assert all(not (agent.home / "config.toml").exists() for agent in agents)
-        assert proxy.key == sentinel
+        assert all(
+            not (agent.home / name).exists()
+            for agent in agents
+            for name in ("config.toml", "auth.json")
+        )
+        assert proxy.stop_calls == 1
+        assert proxy.key == b""
         return original_audit(*args, **kwargs)
 
     monkeypatch.setattr(codex_runtime, "audit_private_artifacts", observe_once)
@@ -137,15 +142,15 @@ def test_formal_cleanup_audits_once_before_proxy_wipe_and_projects_safe_counts(
     assert calls == 1
     assert proxy.stop_calls == 1
     assert proxy.key == b""
-    assert evidence["aggregate_secret_audit"]["private_credentials_destroyed"] is False
-    assert evidence["aggregate_secret_audit"]["secret_audit"]["match_count"] == 2
-    assert evidence["aggregate_secret_audit"]["secret_audit"]["matched_secret_count"] == 1
-    assert evidence["aggregate_secret_audit"]["match_count"] == 2
-    assert evidence["aggregate_secret_audit"]["matched_secret_count"] == 1
+    assert evidence["aggregate_secret_audit"]["private_credentials_destroyed"] is True
+    assert evidence["aggregate_secret_audit"]["secret_audit"]["match_count"] == 0
+    assert evidence["aggregate_secret_audit"]["secret_audit"]["matched_secret_count"] == 0
+    assert evidence["aggregate_secret_audit"]["match_count"] == 0
+    assert evidence["aggregate_secret_audit"]["matched_secret_count"] == 0
     assert "matched_secret_digests" not in evidence["aggregate_secret_audit"]["secret_audit"]
     assert "matched_surfaces" not in evidence["aggregate_secret_audit"]["secret_audit"]
     assert all(
-        not evidence[role]["private_credentials_destroyed"]
+        evidence[role]["private_credentials_destroyed"]
         for role in ("coordinator", "modeling")
     )
     assert sentinel.decode() not in repr(evidence)

@@ -597,6 +597,20 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
                 scope=SCOPE,
             )
         protocol = runner._task_text("protocol")
+        objective = runner.run.configuration.task.objective
+        assert protocol.count(objective) == 1
+        # Business semantics stay in the Task objective/package.  Runner adds
+        # only the mechanical startup/revalidation contract, so these literals
+        # must not occur more often than they do in the objective itself.
+        for literal in (
+            "unknown-cross-release-output-meaning",
+            "unknown-b-no-score-behavior",
+            "item_kind=delete_existing_entity",
+            "full_live_impact",
+            "delivery-8 -> delivery-9",
+            "r23003-retained-scope-increment-1",
+        ):
+            assert protocol.count(literal) == objective.count(literal)
         barrier = protocol.index("Protocol startup barrier")
         mechanics = protocol.index("Before any platform call, read /opt/mechanics-contract.json")
         assert barrier < mechanics
@@ -613,15 +627,6 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         assert "mcp__team_transport__send_team_message" in protocol
         assert "mcp__team_transport__send_coordination" in protocol
         assert "mcp__team_transport__report_task_result" in protocol
-        assert "unknown-cross-release-output-meaning" in protocol
-        assert "unknown-b-no-score-behavior" in protocol
-        assert "item_kind=delete_existing_entity" in protocol
-        assert "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in protocol
-        assert "standalone item_kind=existing_entity_ref" in protocol
-        assert "candidate_revision 1" in protocol
-        assert "strictly greater integer" in protocol
-        assert "delivery-8 -> delivery-9" in protocol
-        assert "r23003-retained-scope-increment-1" in protocol
         assert "protocol_build_candidate_receipt itself fails at the receipt gate" in protocol
         assert "build_candidate_conflict with the unchanged complete candidate" in protocol
         assert "native MCP result has only content and structuredContent" in protocol
@@ -674,7 +679,18 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
         package = (
             ROOT / "modeling_team/agent-packages/modeling/instructions.md"
         ).read_text(encoding="utf-8")
-        for text in (package, generated):
+        objective = runner.run.configuration.task.objective
+        assert generated.count(objective) == 1
+        for literal in (
+            "unknown-cross-release-output-meaning",
+            "unknown-b-no-score-behavior",
+            "item_kind=delete_existing_entity",
+            "full_live_impact",
+            "delivery-8 -> delivery-9",
+            "r23003-retained-scope-increment-1",
+        ):
+            assert generated.count(literal) == objective.count(literal)
+        for text in (package,):
             assert "12-24" in text or "12–24" in text
             assert "32 items" in text
             assert "existing_entity_ref" in text
@@ -700,6 +716,15 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
                 or "object containing exactly `semantic_id`, `expected_class`, and `delete_mode=full_live_impact" in text
             )
             assert "do not use `entity_delete`" in text or "Do not use entity_delete" in text
+        for text in (generated,):
+            assert text.count("existing_entity_ref") == objective.count("existing_entity_ref")
+            assert "12-24" not in text
+            assert "32 items" not in text
+            assert "do not enumerate every source field" not in text
+            assert "exec" not in text
+            assert "the filesystem" not in text
+            assert "mcp__team_transport__send_team_message" in text
+            assert "R2.3-003 Modeling has one independent project-scoped read key" in text
         assert "Reply to the delivered conflict `delivery_id`" in package
         assert "full, self-contained revised candidate" in package
     finally:

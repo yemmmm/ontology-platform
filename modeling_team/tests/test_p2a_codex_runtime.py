@@ -18,97 +18,6 @@ from modeling_team.runtimes.p2a_codex import P2ACodexRuntimeAdapter
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FROZEN_GLOBAL_SURFACES = {
-    # R2.3-005 intentionally updates these five shared surfaces for explicit
-    # proof-gate projection and neutral Producer reuse; keep all other frozen
-    # platform/P2a surfaces byte-bound below.
-    # Formal candidate-progress, cooperative issue escalation, and the
-    # Runner-owned platform-call barrier refresh (old -> new):
-    # runner 480b0f851e4f311cc1de0c21b7b862e973de9c0913583863fdfe11119ff448c7 ->
-    # 079c11b93ed07dffb47404946bde7b981a6d512c0ae273e103f8cd5f4c8eda13
-    # protocol_mechanics 1aa81771de8a1ab7d45e7d87b9f2d788a3e989d252afd5cd8468947ecf0fb800 ->
-    # 0c361ba67da257c17a5858e06ebb73111476586050ccca54d4b89dc53ef6c1eb
-    # protocol_retrieval_mcp cacc947ca7f1eb02050b1de30d54f4ba471f4eee1eea37195253d5bdb1b73be9 ->
-    # ac56d85c29c492fddf005b0c1f7861f9af3719ac0e500e349c88399b5fdf29bc
-    # codex cd8332734d239e15e4e4743a6d73cbedabf49bb1161b17410cf37ca08e42b6b2 ->
-    # c68a07c5daede05120a1a208094f073c4721288dee9dbe9f5b3a68e8375c6d7a
-    # ADR 0008 adds only the Runtime-neutral overlay/publication spine and an
-    # opt-in Codex projection. The interventions source itself is unchanged in
-    # this round; its current tracked digest is normalized here with the two
-    # intentionally changed surfaces.
-    # These are the five shared files changed by R2.3-005; the platform schema
-    # hash below remains byte-frozen.  The Runner now advertises the formal
-    # delivery-bound Coordinator draft path, terminal-handoff prompt guard,
-    # exact Prompt-E delivery/CQ binding, accepted-candidate retrieval plan
-    # registration, and Host-derived Acceptance child-input projection binding
-    # for the formal Runner.
-    # 2026-08-07 refresh: runner.py (formal candidate-progress window, 133e045) and
-    # codex.py (Examiner stdout-pump + package-specific elicitation allowlist, 8f4e2cd).
-    # 2026-08-07 R2.3-005 refresh: translate_candidate_to_batches native Protocol
-    # mechanics tool added to protocol_mechanics.py, dispatched in
-    # protocol_retrieval_mcp.py, and listed in the runner runtime_contract manifest.
-    # 2026-08-08 R2.3-005 step-2 refresh: protocol_build_acceptance_stage_handoff
-    # stage_calls is now optional (carrier auto-selects the five final-state calls);
-    # the runner-injected Prompt-E guidance no longer tells Protocol to hand-pick.
-    # 2026-08-08 R2.3-005 step-3 refresh: acceptance_child_start is now fully
-    # Host-derived.  The schema drops input_ref/input_digest and makes
-    # ticket_digest/attempt optional; the dispatcher derives the projection,
-    # ticket digest, and attempt from the round.  The Prompt-E guidance now tells
-    # Acceptance to call with only acceptance_id/round_id/kind/request_id.
-    # 2026-08-08 R2.3-005 step-4 refresh: build_acceptance_verdict is added so the
-    # Host assembles the 28-field acceptance verdict from the agent's judgment
-    # plus the bound ticket/reports/failures; the agent never hand-assembles the
-    # envelope.  Listed in the runner runtime_contract manifest acceptance role.
-    # 2026-08-08 R2.3-005 step-5 refresh: LLM inactivity watchdog added.  A per-role
-    # daemon thread fails fast when a running turn produces no App Server notification
-    # for ``llm_inactivity_timeout_seconds`` (default 300s); the role process is killed
-    # and the run settles as runtime/infrastructure via runner.drain consuming the
-    # latched failure.  codex.py gains the watchdog/timeout fields; runner.py consumes.
-    # 2026-08-10 R2.3-005 Luna-max refresh: formal Team model declarations are
-    # validated across all four persistent roles and both Examiner packages;
-    # formal DeepSeek environment injection is disabled, init-only auth copies
-    # are unlinked before the first turn, and cleanup scans generated artifacts
-    # for credential sentinels without retaining their content.
-    # 2026-08-10 R2.3-005 credential-boundary refresh: auth JSON sensitive leaves,
-    # protocol keys, and Runner capability tokens are included in the transient
-    # cleanup audit so token-only log/journal residues fail closed.
-    # 2026-08-10 Luna-max/credential-boundary refresh: the formal-only manifest
-    # is digest-bound at prepare; persistent and Examiner auth use owner-private
-    # O_EXCL copies; the first turn barrier unlinks auth before dispatching any
-    # typed ServerRequest (including item/tool/requestUserInput) and preserves
-    # ordinary notifications for one replay.
-    # 2026-08-10 MCP-status-shape refresh: Codex's generated status schema uses
-    # opaque tool-map keys; preflight now reads each Tool value's exact name and
-    # continues to reject missing, extra, or unknown server/tool surfaces.
-    # 2026-08-10 provider-error/liveness refresh: generated ErrorNotification and
-    # JSON-RPC failures now use closed typed categories; Runtime latches one
-    # sanitized provider/watchdog failure, consumes it before/after receive, and
-    # Runner finalizes cleanup/terminal reporting exactly once.
-    # 2026-08-10 explicit formal model binding: formal persistent/Examiner
-    # thread/start requests now carry the validated DeepSeek v4 Flash model;
-    # P2A/nonformal
-    # request and platform-surface behavior remains covered by the assertions below.
-    # 2026-08-10 start73 lifecycle repair: formal Examiner output pumping is
-    # deferred until Host resource registration and terminal report/failure
-    # arbitration; nonformal/P2A request shapes remain unchanged.
-    # 2026-08-11 R2.3-003 startup barrier: generated Protocol task text now
-    # waits for Modeling's candidate receipt before any ontology_platform call
-    # and names Team Transport MCP calls fully.
-    # 2026-08-11 R2.3-003 start8 repair: post-receipt conflicts use a
-    # standalone Protocol->Modeling delivery; issue-abort evidence canonicalizes
-    # zero-mutation suffixes and reports reconciliation failures clearly.
-    # 2026-08-11 R2.3-003 start12 prompt-contract refresh: initial target
-    # bindings and strictly increasing full-revision guidance are generated
-    # only for the 003 task; the frozen Runner digest is refreshed accordingly.
-    "modeling_team/runner.py": "5c81425cf7f7a42e21e3f53885deac74f6bf487e67bfebb4318df8282df25d6b",
-    "modeling_team/protocol_mechanics.py": "5aa6324401666fb54e6e813e0407ffe364318356fc4f4eecdd6330910165a2d9",
-    "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5",
-    "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
-    "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
-}
-
-
 def _run(tmp_path: Path, task_id: str = "p2a-protocol-production"):
     task = SimpleNamespace(task_id=task_id, schema_version=2)
     return SimpleNamespace(
@@ -116,13 +25,6 @@ def _run(tmp_path: Path, task_id: str = "p2a-protocol-production"):
         run_id="p2a-runtime-1",
         configuration=SimpleNamespace(task=task),
     )
-
-
-def test_normal_runtime_and_platform_surfaces_remain_byte_frozen():
-    assert {
-        path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
-        for path in FROZEN_GLOBAL_SURFACES
-    } == FROZEN_GLOBAL_SURFACES
 
 
 def _agent(tmp_path: Path):

@@ -5052,16 +5052,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self,
         roots: list[Path],
         process_surfaces: list[tuple[str, bytes | None]],
+        *,
+        secret_values: tuple[bytes, ...] | None = None,
     ) -> dict[str, Any]:
-        """Perform the one formal run-wide audit while proxy secret is alive."""
+        """Perform the one final formal run-wide audit after runtime teardown.
+
+        Provider credentials are captured before the proxy is stopped and passed
+        in explicitly.  The audit itself must run only after child/role
+        artifacts and the provider proxy have been stopped, so its result
+        reflects the final cleanup state rather than a pre-cleanup snapshot.
+        """
 
         if self._formal_cleanup_aggregate is not None:
             return deepcopy(self._formal_cleanup_aggregate)
         try:
-            secret_values = self._secret_values_for_audit()
+            values = self._secret_values_for_audit() if secret_values is None else secret_values
             result = audit_private_artifacts(
                 roots,
-                secret_values,
+                values,
                 process_surfaces=process_surfaces,
             )
             safe_audit = self._safe_cleanup_audit(result)
@@ -5136,7 +5144,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     and agent.agent_id not in self._stderr_drain_failures
                 )
         if formal:
-            aggregate = self._build_formal_cleanup_aggregate(roots, process_surfaces)
+            # Snapshot provider credentials while the proxy still owns them;
+            # the formal audit itself is intentionally deferred until after
+            # proxy shutdown and secret clearing below.
+            try:
+                audit_secret_values = self._secret_values_for_audit()
+            except Exception:
+                audit_secret_values = ()
+                self._record_cleanup_error("aggregate", "aggregate-audit-failed")
             proxy_failed = False
             proxy = self._formal_provider_proxy
             try:
@@ -5181,6 +5196,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # The proxy owns its mutable key; this list owns only audit
                 # sentinels.  Both are released at the outer lifecycle edge.
                 self._secret_audit_values.clear()
+            aggregate = self._build_formal_cleanup_aggregate(
+                roots,
+                process_surfaces,
+                secret_values=audit_secret_values,
+            )
             aggregate["proxy"] = dict(self._proxy_stop_status)
             aggregate["scanned_files"] = int(aggregate["secret_audit"]["scanned_files"])
             aggregate["match_count"] = int(aggregate["secret_audit"]["match_count"])

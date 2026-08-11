@@ -1599,3 +1599,161 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   Modeling regressions, zero-mutation boundary, cleanup, and strict ledger replay.** This does not constitute L0/L1/L2
   semantic acceptance: authorization is exhausted and live L0/L1/L2 remain **BLOCKED**. Do not start another run;
   future work requires the committed positive-decimal revision prompt/fence and a fresh explicit authorization.
+
+## 7. 同步瘦身验证增补
+
+1. **S1 Prompt 单一来源**：003 Task/package 保留完整目标；Runner 最终文本允许并要求 objective 原文恰好
+   投影一次，测试禁止 Runner 自有 suffix 再复制 target ID、delete schema、C→B→A 或 delivery-8/9 示例。
+   真实 003 Modeling 仍须生成正确 candidate；005 standard-owned 两题、顺序和终止行为保持。
+2. **S2 无整文件 SHA 门**：只删除 `FROZEN_GLOBAL_SURFACES` 与对应测试；baseline/source/staged/
+   candidate/receipt/evidence digest 测试继续 PASS。focused 003/005 行为测试和完整 `modeling_team` suite
+   PASS 即可，不再刷新整文件 digest。
+3. **S3 cleanup 最终事实**：构造 pre-cleanup 有匹配、unlink/role-child-proxy stop 后无匹配场景，runtime
+   final verdict 必须 PASS；Runner 只在 Modeling-read/Protocol/admin key revoke+readback+旧 key 401/403 也
+   PASS 后给 run-level cleanup PASS。最终仍有 token、secret、process/socket、active child/proxy、cleanup
+   error 或任一 revoke/readback 失败时必须 FAIL；process/socket 仅指 Runner 已登记的活跃资源，不新增
+   通用文件系统 socket inventory。已停止的零字节普通占位文件按 scoped generated residue 清理，不冒充 secret。
+4. **S4 start13 对账**：独立确认 candidate revision=1、receipt builder 成功、无 stateful call、scope
+   before==after、keys revoked、最终 secret/process/socket scan；只清理 allowlist 中明确生成残留，不删
+   retained evidence。Main 写 canonical reconciliation artifact，并通过 StartLedger API append terminal failure，
+   terminal evidence 必须精确含 run_id、baseline_hash、classification、`mutation_state=zero-mutation`、issue_id、
+   相对 evidence_path、64-hex evidence_digest。该断言验证 Main 实际 reconciliation artifact/event，不修改
+   StartLedger 对其他 terminal path 的可选字段合同。严格 replay 后 cap/count/active=
+   `14/12/0`。
+5. **S5 真实 003 合并验证**：瘦身实现独立 PASS 后使用下一次授权完成 Modeling context→candidate→
+   Protocol receipt/binding→Phase A/Phase B→readback/validation/reasoning/retrieval→全部 N-CQ。完整 PASS 后
+   success-stop；不得为单独验证瘦身再启动第二条等价建模链。
+
+### Round 30 — 2026-08-11 independent sync-slim deterministic recheck and start13 read-only audit — BLOCKED
+
+- **Scope and stable state.** This round used the existing shared plan and the reviewed worktree at HEAD
+  `31074ae3a09d0d97bdd83dddcedab95a379112d7` with the current unstaged R2.3-003 sync-slim changes in
+  `modeling_team/runner.py`, `modeling_team/runtimes/codex.py`, and their focused regressions. The tester
+  changed only this shared test plan. No product code, requirement/design/delivery record, ledger, retained
+  run evidence, generated residue, ontology, or workspace state was modified; no live run was started or
+  resumed.
+- **S1 — single prompt source: PASS.** The affected focused set
+  (`test_r23003_incremental_contract.py`, 005 candidate/contract/progress/mechanical/CQ regressions,
+  `test_protocol_retrieval_mcp.py`, `test_p2a_codex_runtime.py`, and `test_start74_cleanup_audit.py`) passed
+  with **171 passed, 41 subtests passed**. The projection assertions prove the Task objective occurs exactly
+  once in final Protocol/Modeling text and that Runner does not append the frozen target IDs, delete schema,
+  C→B→A business slice, or delivery-8/9 history. A read-only source scan found no such 003 business
+  literals in `runner.py` or `codex.py`. The 005 standard-owned two-question ordering/terminal behavior and
+  candidate/revision behavior remained covered by the same focused set and passed.
+- **S2 — digest gate slimming: PASS.** `FROZEN_GLOBAL_SURFACES` and its whole-file SHA assertion are absent
+  from the affected tests; no replacement global file-hash gate was added. Existing baseline/source/staged/
+  candidate/receipt/evidence digest and 005 behavior checks passed (`test_r23005_t6_repeatability.py`:
+  **1 passed**). `uv run --project backend python -m pytest modeling_team/tests -q` returned **736 passed,
+  1 skipped, 218 subtests passed**. `uv run --project backend python -m compileall -q modeling_team backend/app
+  backend/tests && git diff --check` returned **PASS**.
+- **S3 — final cleanup fact and failure boundaries: PASS (deterministic only).** The ten cleanup tests in
+  `test_start74_cleanup_audit.py` passed inside the focused run, including pre-cleanup secret matches followed
+  by unlink/child-role/proxy stop and a single final audit with zero matches, plus fail-closed proxy-stop,
+  proxy-residue, child-residue, read-proxy-token, and temporary-config paths. Existing Runner key lifecycle
+  and post-revoke denial/readback regressions (`test_r23005_b_runtime.py`) returned **12 passed**. These checks
+  inspect only Runner-registered process/socket/resource surfaces and do not add a general filesystem socket
+  inventory.
+- **S4 — start13 candidate/receipt and zero-mutation audit: BLOCKED for Main-owned reconciliation.** Read-only
+  evidence under `workspaces/modeling-runs/r23003-real-20260811-deepseek-start13` shows:
+  - The private Protocol session's `protocol_build_candidate_receipt` returned `status=accepted` for
+    `delivery-4`, `candidate_revision=1`, **24 items**, and candidate/semantic digest
+    `bf77560ccd22486b17c58943827a2a1554a4a411c7f6da21c3384ad7c02f487c`; Protocol sent accepted receipt
+    `delivery-5` with `reply_to_delivery_id=delivery-4`. The canonical `evidence/formal-candidate-progress.jsonl`
+    still contains only the candidate event with `state=awaiting_receipt`, and `candidate-gate/state.json`
+    remains `state=closed`, `reason_code=candidate_pending_receipt`. This retained private-vs-canonical
+    receipt discrepancy must be reconciled by Main; it is not promoted to a live receipt/application result.
+  - Protocol's retained MCP inventory contains only one `runner_capability/protocol_build_candidate_receipt`
+    and Team Transport calls. No Build Session, Lease, Batch, validation, reasoning, governed retrieval, or
+    other stateful platform call appears. The candidate gate therefore stayed closed and no mutation occurred.
+  - `state.json` is `CLEANED`; `cleanup.scope.existing_context_before == existing_context_after` exactly. Both
+    canonical scope digests are `972d20d435137fd97dcabdd30226471d66373a44b60f77a1fca1225965827be1`, with
+    Project `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, Graph Set
+    `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace version
+    `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, six batches, one recent session,
+    zero active sessions/leases/in-flight attempts, and `workspace_state=ready` before and after.
+  - Key evidence is non-active/revoked: `scope.protocol_key_revoked=true`, `admin_key_revoked=true`,
+    `aggregate_keys_non_active=true`, project-scoped key `293c0afc-ca0c-4906-ac65-90a17e13e373` is non-active,
+    and Modeling-read key `cbfcc6c3-62fa-46a5-bdf0-1b4763e04856` has `revoke_status=200`,
+    `status_readback=200`, and post-revoke HTTP `401`. All four registered role PIDs are absent from `/proc`;
+    a scoped run-tree socket search found zero actual Unix sockets.
+  - The final retained aggregate is not a passing cleanup verdict: `private_credentials_destroyed=false`,
+    `match_count=5`, `matched_secret_count=4`, `scan_complete=true`, `scan_error_count=0`, and
+    `cleanup_error_count=0`; the acceptance carrier's separate `cleanup.json` says
+    `credentials_destroyed=true`. This historical aggregate-vs-carrier mismatch prevents an honest claim that
+    the final secret scan is clean, even though all currently registered keys are revoked and the role PIDs are
+    gone.
+  - The two explicitly generated residues are both still present and were **not deleted**:
+    `runtime/modeling/home/read_proxy_mcp.py` is a regular 11,439-byte non-secret bridge source (SHA-256
+    `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`);
+    `runtime/modeling/home/modeling-read-proxy.sock` is a zero-byte regular file, **not** a Unix socket (SHA-256
+    `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`). A source-only scan found no embedded
+    provider credential in the bridge, but the retained aggregate above is sufficient reason not to assert
+    global secret-free finality.
+  - Canonical ledger read-only replay is structurally **PASS** at
+    `workspaces/modeling-runs/.r2-3-003-start-ledger.jsonl` (42 lines, SHA-256
+    `13d66676c6549797b1a290876ea280064fdd56873f860c30f4066dcb6b614509`, `start_cap=14`,
+    `semantic_start_count=12`, `active_reservations=[]`). The ledger tail has start13 reservation and
+    `semantic_start` but no start13 `terminal_failure` or `evidence/terminal-reconciliation.jsonl`; the
+    expected Main-owned seven-field reconciliation and append-only terminal event remain pending.
+- **S5 — real 003 merged semantic acceptance: UNEXECUTED.** No Phase-A/Phase-B mutation, readback,
+  validation/reasoning/retrieval, N-CQ, or live quality verdict was attempted in this tester round. Do not
+  consume another start or infer semantic PASS from the accepted candidate receipt.
+- **Conclusion: BLOCKED.** The sync-slim implementation gates (S1–S3) are independently PASS, but start13
+  cannot be marked safely reconciled while its canonical receipt state is stale, its final aggregate reports
+  secret matches/`private_credentials_destroyed=false`, the two scoped generated residues remain, and its
+  terminal reconciliation event is absent. Main should perform the canonical seven-field reconciliation and
+  decide any explicitly allowlisted residue cleanup, then route a fresh tester round; no requirement developer
+  repair is indicated by the deterministic tests in this round. A fresh real R2.3-003 run remains blocked until
+  that reconciliation is complete and the post-slim contract is committed/health-verified.
+
+### Round 31 — 2026-08-11 independent start13 reconciliation and start14 readiness recheck — PASS (S4); S5 unexecuted
+
+- **Scope and safety.** This round reused the shared plan and was read-only against product code, the canonical
+  ledger, retained run evidence, ontology/workspace state, and generated residue. The only file changed was this
+  append-only test plan. No live run was started or resumed. S1–S3 are carried forward from Round 30; the focused
+  smoke below covers the affected cleanup/003 contracts without repeating the full Modeling suite.
+- **Start13 residue/process audit: PASS.** In
+  `workspaces/modeling-runs/r23003-real-20260811-deepseek-start13`, both exact generated residue targets are
+  absent: `runtime/modeling/home/read_proxy_mcp.py` and
+  `runtime/modeling/home/modeling-read-proxy.sock`. The formal private generated-name allowlist
+  (`auth.json`, `config.toml`, capability/token/proxy files) has zero present paths; the scoped run tree has zero
+  Unix sockets; all four registered role PIDs (`2192810`, `2192365`, `2192479`, `2192594`) are absent and no
+  targeted start13/proxy process is running. This remains a scoped resource check, not a new general filesystem
+  socket inventory.
+- **Provider-secret/final cleanup audit: PASS with retained-scan accounting noted.** The retained terminal
+  reconciliation's final provider audit is `match_count=0`, `matched_secret_count=0`, `scan_complete=true`,
+  `scan_error_count=0`, `scanned_files=145`; no secret bytes or secret values were emitted. An independent
+  read-only `audit_private_artifacts(run_root, ())` structural scan is complete with zero matches/errors; it sees
+  146 eligible files only because the subsequently appended `terminal-reconciliation.jsonl` is now included.
+  The one-file count delta is therefore expected and does not alter the retained final audit. Acceptance cleanup
+  remains `aborted`, `active_handles=0`, `credentials_destroyed=true`, `zero_child_residue=true`.
+- **Scope/key/service checks: PASS.** Recomputed cleanup evidence proves
+  `existing_context_before == existing_context_after` and `before_after_equal=true`, with zero active
+  sessions/leases/in-flight attempts. Admin, Protocol, aggregate, and project-scoped keys are non-active/revoked;
+  the Modeling-read combination is `revoke_status=200`, `status_readback=200`, `post_revoke_status=401`,
+  `status=revoked`. The user service is active; read-only health checks returned backend `200 {"status":"ok"}`
+  and frontend HTTP `200`.
+- **Digest/terminal evidence: PASS.** Recomputing the exact `canonical_digest` payloads gives
+  `issue_digest=5c696ea726f11380b3e097b78e2057c9156017d11e13717c217ac52c69d68453`,
+  `cleanup_digest=d00e9c8c6682db80de790cb475f5617285e56b1088931b8805847897f72df26f`, and
+  `evidence_digest=ab6896f405206159daa86b3ec086ee4239ee2f83864053d61841e061e4bd96d7`; all match the retained
+  `evidence/terminal-reconciliation.jsonl` line. The file has exactly one JSONL line. Its ledger-bound
+  `terminal_evidence` has exactly the seven fields `run_id`, `baseline_hash`, `classification`, `mutation_state`,
+  `issue_id`, `evidence_path`, and `evidence_digest`, with `mutation_state=zero-mutation` and relative evidence
+  path as required.
+- **Ledger: PASS.** Read-only `StartLedger._validate_strict_replay` succeeds for
+  `.r2-3-003-start-ledger.jsonl` (43 lines; SHA-256
+  `4297e882d69cfab79bf46b327f4a82b82f0d6acbf1440ed4e198e407495289b4`). Replayed
+  `start_cap/semantic_start_count/active_reservations = 14/12/0`; the tail is start13
+  `terminal_failure`, `classification=runtime/infrastructure`, `complete_modeling_quality_result=false`, and its
+  seven-field terminal evidence exactly matches the reconciliation artifact.
+- **Focused verification.**
+  `uv run --project backend python -m pytest modeling_team/tests/test_start74_cleanup_audit.py
+  modeling_team/tests/test_r23003_incremental_contract.py -q` -> **30 passed**. `git diff --check` -> **PASS**.
+  Round 30 remains the evidence for S1–S3 and the full `modeling_team` suite; no backend/runtime restart was
+  needed for this unchanged-code audit.
+- **Conclusion and handoff.** Start13 reconciliation is **PASS** and no requirement-developer repair is indicated.
+  From the independent tester gate, the sync-slim changes are **safe to commit** once Main completes its canonical
+  diff/record closeout. Start14 is **eligible only after that commit plus final health/current-context recheck**;
+  this tester did not start it. S5 (real 003 semantic modeling/Phase A-B/N-CQ acceptance) remains **UNEXECUTED**,
+  so this is not a full semantic requirement PASS.

@@ -1,7 +1,7 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：Implemented — Round 25 deterministic PASS；start9 Runtime MCP approval 缺陷已修复；用户已追加
-  三次 live starts，待首次完整 PASS 后 success-stop
+- 状态：同步瘦身已实现并独立验证；start13 零写入终止已完成 canonical reconciliation，cap/count/active=
+  `14/12/0`；剩余两次 live starts，首次完整 PASS 后 success-stop
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -221,6 +221,31 @@ candidate 加 tool receipt。这样 deterministic identity、分页、解析和�
 只有在新结论、Evidence 和业务链均完整可检索时才算正确删除。
 
 ## 4. 当前最小实现
+
+### 4.0 同步瘦身边界
+
+本轮不是重构 Modeling Team，而是删除已实际干扰 003 的三类重复机制：
+
+- **单一 Prompt 合同**：Task objective 持有业务目标/候选约束；各 role package 持有角色协议；Runner
+  `_task_text` 必须原样投影 objective 一次并只追加运行期机械事实，不再自行复制 003 目标 ID、item schema、
+  业务切片或历史 delivery 文案。005 继续从其 standard/objective 获得当前两题及终止顺序。
+- **行为验证替代字节冻结**：只删除 `FROZEN_GLOBAL_SURFACES` 及对应整文件 SHA 测试；保留 baseline、
+  source/staged asset、candidate、receipt、evidence 等所有内容 digest gate，并补足 003/005 prompt projection、
+  candidate progress、MCP allowlist、N-CQ、cleanup 等精确回归。
+- **最终 cleanup 事实**：Codex formal cleanup 在私密 artifact unlink、child/role stop、proxy stop 后执行唯一
+  最终 runtime audit；pre-cleanup 结果只作诊断，不进入最终 `private_credentials_destroyed`。Runner 在此后
+  完成 Modeling-read/Protocol/admin key revoke、status readback 与旧 key 401/403，再组合唯一 run-level verdict。
+  PASS 同时要求 scan complete/error=0/matches=0、无 Runner 已登记的 active process/socket/child/resource、proxy stopped、全部
+  key 非 active 且 revoke/readback 成功、无 cleanup error；任一 revoke 失败必须 FAIL。
+
+不拆分 Runner/Acceptance/Codex 大类，不新增策略框架，不改变 Ledger、平台 API、delete recovery、N-CQ
+或 005 行为。后续新瘦身项必须有当前真实失败或重复验证证据，并先更新本设计和共享测试计划。
+
+start13 只可在独立证据确认 scope before/after 一致、candidate/receipt 状态、零 stateful call、全部 key revoke、
+最终 secret/process/socket scan 与安全生成残留清理后收口。Main 只删除明确的 staged bridge/零字节 socket
+占位等生成文件，不删除 session/delivery/evidence；写入 canonical `terminal-reconciliation.jsonl` 后，必须以
+StartLedger API append 带完整 terminal evidence 的 retryable failure。本轮不扩展 Ledger 状态机；该证据是
+start13 的 Main-owned reconciliation 交付前置，不推广为所有历史/005 terminal failure 的新机械字段。
 
 ### 4.1 复用基线
 

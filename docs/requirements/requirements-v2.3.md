@@ -1903,6 +1903,28 @@ ticket 都携带 Runner-owned ordinal/count/previous/next/is-final 元数据，�
 - 复用或恢复 R2.3-002 Agent Session；
 - 合并两个并发写入团队；
 - 自动解决历史 fenced、冲突或未知所有权状态；
+
+### R2.3-003 当前主链同步瘦身（2026-08-11 用户确认）
+
+为避免先按冗余主链完成一次建模、再因瘦身重复完整验证，以下改动与 R2.3-003 当前实现同步完成，并由
+同一次后续真实建模验证：
+
+1. 业务/候选合同只以 Task objective 和角色 package 为权威；Runner 只投影 run/scope、能力名、delivery、
+   CQ 顺序等运行期机械字段，不再复制 003 业务规则、目标 ID、候选 item schema 或历史 delivery 示例。
+2. 删除对 `runner.py`、`codex.py`、Protocol 等整文件 SHA-256 的交付门。兼容性由 003/005 的精确行为测试
+   证明，不因无关字节变化刷新哈希。
+3. cleanup 完成门以停止资源、删除私密临时文件之后的最终扫描为准；pre-cleanup 扫描只作诊断历史，不能
+   覆盖最终事实或制造 `实际无残留但 verdict=false`。仍必须证明 key revoked、无真实 process/socket、无
+   当前 secret occurrence。
+4. 后续只有已在真实运行或需求开发中造成候选漂移、错误阻断、重复验证或虚假失败的无用功能才可继续
+   删除，并必须加入本节/设计与同一共享测试计划；普通代码美化、超大类拆分、Ledger 重写、通用插件化、
+   全面清理 002/005 历史兼容均不属于当前范围。
+5. 保留直接保护建模正确性的边界：Modeling 三工具只读查询、workspace revalidation、existing identity/
+   delete-impact receipt、两阶段删除与写后对账、N-CQ 串行验收、授权次数和最小凭据撤销。
+
+用户新授权 `user-20260811-r23003-post-revision-contract-start1-3` 已把 cap/count 从 `11/11` 扩为
+`14/11`。start13 已消费一次并在 receipt 前后零写入清理终止；其独立对账与 append-only terminal
+reconciliation 已完成，当前 cap/count/active=`14/12/0`。剩余两次只用于瘦身后主链，首次完整 PASS 即停止。
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；

@@ -959,3 +959,57 @@
 - Requirement status remains `BLOCKED`，not PASS：no live apply/readback/validation/reasoning/N-CQ settlement was
   completed。The repaired prompt is ready for a future run，but all authorized starts are consumed；a new semantic
   start requires fresh explicit user authorization。
+
+### 2026-08-11T20:45:00+08:00 — user-confirmed synchronous slimming scope
+
+- User confirmed that current requirement/design slimming and R2.3-003 delivery should share one validation cycle，
+  and explicitly approved removing whole-file SHA gates in favor of behavior tests。
+- Frozen scope: Prompt contract single source、whole-file SHA removal、post-cleanup final-fact verdict；retain all
+  modeling-correctness boundaries。Explicit non-goals: giant-class refactor、Ledger redesign、plugin framework、broad
+  002/005 retirement。
+- start13 reached Modeling context、candidate revision=1 and typed receipt build with zero stateful calls，then ended
+  `CLEANED/runner-abort-before-settlement` without a ledger terminal record。It must be independently reconciled before
+  any slimmed-path live start；the two remaining authorized starts are not used during design/development/testing。
+
+### 2026-08-11T21:02:00+08:00 — slimming plan review Round 1 — REVISE
+
+- Accepted-high 1：start13 reconciliation 必须绑定独立 zero-mutation/scope/key/final-cleanup evidence；禁止用无
+  terminal evidence 的 ledger event 解锁后续 starts。设计/S4 已补 canonical seven-field evidence 与安全残留边界。
+- Accepted-high 2：cleanup final fact 必须在 Runtime artifact/child/role/proxy stop 后扫描，并由 Runner 再绑定
+  Modeling-read/Protocol/admin key revoke/readback/401-403；已补 revoke failure 回归和唯一 run-level verdict。
+- Accepted-high 3：Prompt 测试必须允许 objective 原文一次投影，且只移除 whole-file SHA，不能移除 source/
+  candidate/evidence digest；已明确 005 standard-owned CQ 兼容和保留全部内容完整性 gate。修订后送 Round 2。
+
+### 2026-08-11T21:10:00+08:00 — slimming plan review Round 2 — residual findings downgraded
+
+- Downgraded-low：Reviewer 要求新增 003-only Ledger 强制 evidence 状态机。当前真实 start13 由 Main 生成并
+  验证 canonical evidence 即可；为防未来调用者绕过而改变 005/历史 terminal contract 是新增防御和范围扩大。
+- Downgraded-low：Reviewer 要求通用 filesystem socket inventory。当前只需校验 Runner 已登记的 process/
+  proxy/socket lifecycle；零字节普通 placeholder 是 scoped generated residue，不是 secret/active socket。
+  新增全目录设备扫描不能解决新的建模问题，因此不进入实现。
+- Disposition：Round1 三个 High 已修订；Round2 无会阻断当前最小实现的 Critical/High，development handoff
+  冻结为 Prompt 去重、指定 whole-file SHA 删除、最终 runtime scan + Runner key verdict。
+
+### 2026-08-11T23:35:00+08:00 — synchronous slimming implementation and start13 reconciliation
+
+- Implementation removed the duplicated R2.3-003 business suffixes from `TeamRunner._task_text`; the Task objective
+  is projected once and role packages remain authoritative. Generic context/revalidation/receipt mechanics and the
+  R2.3-005 CQ behavior remain unchanged.
+- Removed only `FROZEN_GLOBAL_SURFACES` and its whole-file byte assertion. Baseline/source/staged/candidate/receipt/
+  evidence digests remain enforced by behavior tests.
+- Codex formal cleanup now captures provider audit sentinels before proxy stop but performs the authoritative scan
+  after artifact, child/role, and provider-proxy teardown. Runner key revoke/readback composition remains unchanged.
+- Independent Round30 deterministic evidence: focused=`171 passed, 41 subtests`; T6=`1 passed`; key lifecycle=
+  `12 passed`; full modeling_team=`736 passed, 1 skipped, 218 subtests`; compileall/diff-check PASS. Round31 repeated
+  the affected cleanup/003 smoke (`30 passed`) and approved commit readiness.
+- Main removed only the two verified generated start13 residues: `runtime/modeling/home/read_proxy_mcp.py`
+  (pre-delete SHA `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`) and the zero-byte regular
+  `runtime/modeling/home/modeling-read-proxy.sock` placeholder (pre-delete SHA `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`).
+  Retained session/delivery/evidence files were not removed.
+- Canonical start13 reconciliation was written once at `evidence/terminal-reconciliation.jsonl` with
+  issue/cleanup/evidence digests `5c696ea7...8453` / `d00e9c8c...f26f` / `ab6896f4...96d7`. Provider-secret final
+  audit had 145 scanned files, zero matches/errors; registered processes and Unix sockets were zero; scope
+  before/after and key revoke/readback were independently verified.
+- `StartLedger.terminal_failure` appended one evidence-bound retryable `runtime/infrastructure` terminal event.
+  Independent strict replay PASS: 43 records, ledger SHA `4297e882d69cfab79bf46b327f4a82b82f0d6acbf1440ed4e198e407495289b4`,
+  cap/count/active=`14/12/0`. Two authorized live starts remain; S5 semantic modeling is still unexecuted.
