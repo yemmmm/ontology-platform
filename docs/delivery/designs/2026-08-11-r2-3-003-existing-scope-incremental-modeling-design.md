@@ -1,14 +1,15 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：同步瘦身与两处 003 Acceptance Carrier 合同修复已实现并独立验证；start13–start15 的零写入
-  终止均已完成 canonical reconciliation，cap/count/active=`14/14/0`；当前授权已耗尽，真实 Phase A/B、
-  readback 和 N-CQ 尚未完成
+- 状态：同步瘦身、Carrier 修复与 write-after-apply context fence 窄修均已实现并回归 PASS；
+  start16–start18 新授权三次已全部消耗，cap/count/active=`17/17/0`。start18 完成了首个
+  delete-only apply，但后续围栏自阻断与超时使真实 Phase A/B、最终 readback 和 N-CQ 仍未完成；
+  已按删除前 receipt 精确回补 RDF 语义，平台历史保留；native translator wrapper 的 003 参数缺口也已修复
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
 - Source bundle：
   `docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json`
-- 更新日期：2026-08-11
+- 更新日期：2026-08-12
 
 ## 1. 目标
 
@@ -28,8 +29,8 @@ Project/Ontology，只依赖当前平台事实、非敏感 scope handoff 和批�
 - 不把 Dify、Workflow、Decision、Publication 等业务概念加入平台生产域；
 - 不建设通用多需求编排、长期 Project 生命周期、自动回滚、并发写入或 Pi Adapter；
 - 不建模普通 numeric score 阈值、其他 diagnostic、人工 review 后续或更多案例；
-- 原精确四次、后续三次及 Modeling-read `+1` 均已耗尽；Round25 后新增的精确 `+3` 只用于修复后的
-  live run，完整 PASS 后 success-stop。
+- 不新增或借用未授权的 semantic start；2026-08-12 精确 `+3` 已由 start16–start18 耗尽，
+  任何后续 live run 必须获得新授权。
 
 ## 3. 功能合同
 
@@ -43,9 +44,8 @@ Build Session/Lease 或平台写入前，Runner 必须：
 2. 通过授权平台读取重新确认 Project/Ontology 归属、Ontology 状态、默认 Graph Set、workspace version、
    没有 active Build Session/Lease 或 in-flight Attempt；
 3. 将 live workspace version 与 handoff 比较；不一致时零副作用失败，不自动改写 handoff；
-4. 确认本需求专属 StartLedger 保留初始 `+4`、后续 `+3`、七个已 reconciliation terminal failures；用户
-   本轮 exact `user-20260811-r23003-modeling-read-start1` `+1` authorization 已 append，但实现/独立测试/
-   健康门通过前没有 active reservation 或新的 semantic start。
+4. 确认本需求专属 StartLedger 严格回放，不修改历史授权/终态；当前 59 条记录的
+   cap/count/active 精确为 `17/17/0`，最后一次 `+3` 授权已由 start16–start18 耗尽。
 
 ### 3.2 Agent 输入边界
 
@@ -53,8 +53,8 @@ Build Session/Lease 或平台写入前，Runner 必须：
 - Modeling 得到旧批准业务资料、两个新增 source 文档，以及一个独立、project-scoped、read-only、运行期
   临时 credential。其 ontology-platform allowlist 精确为 `get_modeling_context`、
   `get_ontology_read_model`、`query_semantic_context`：首个 candidate 前必须先调用
-  `get_modeling_context(ontology_id=O)`，确认 Project/Ontology、ready workspace、workspace version、无
-  stale warning，并使用其 query entries 按需读取 `classes`、`entities`、`facts`、`rules` 或业务相关语义
+  `get_modeling_context(ontology_id=O)`，确认 Project/Ontology、ready workspace、workspace version 且无
+  active recovery/issues，并使用其 query entries 按需读取 `classes`、`entities`、`facts`、`rules` 或业务相关语义
   邻域。Modeling 不读取完整历史 Batch 来重放状态，不接收平台写工具，不持有 Protocol/model/admin key，
   不创建 Build Session/Lease/Batch，也不执行 validation/reasoning mutation；
 - Protocol 得到平台 mechanics、当前 scope、Modeling 的完整增量 candidate 和必要只读/写工具；
@@ -93,7 +93,7 @@ secret/residue audit。
 
 Runner 同时维护 requirement-private `ModelingContextGate`，初始为 closed。只有 Modeling 通过 proxy 成功
 调用 exact-O `get_modeling_context`，且 Host 校验 response `ok=true`、P/O 一致、workspace ready、非空
-workspace_version、resource counts 合法、无 issues/stale warning 后，才写一个 immutable receipt（run、P/O、
+workspace_version、resource counts 合法、无 issues/active recovery 后，才写一个 immutable receipt（run、P/O、
 workspace version、canonical response digest、proxy call receipt digest）并转为 `context_observed`。Detailed
 read calls 只能在该入口成功后执行。Modeling 通过 direct Team Transport 或 staged-candidate capability 向
 Protocol 发布 candidate 时，Runner 必须在 broker publication 前验证该 gate；closed/error/wrong scope 时
@@ -102,11 +102,18 @@ Protocol 发布 candidate 时，Runner 必须在 broker publication 前验证该
 
 Protocol receipt 后只开放只读 binding/context 工具；Build Session、Lease、Batch 和所有 mutation 仍由
 第二道 version gate 阻断。Protocol 必须先重新调用 exact-O `get_modeling_context`；Runner 校验其 P/O/state/
-stale 规则，并把 response workspace_version 与 candidate 关联的 ModelingContext receipt 做 exact equality。
+recovery 规则，并把 response workspace_version 与 candidate 关联的 ModelingContext receipt 做 exact equality。
 相同则生成 Protocol revalidation receipt 并开放后续 stateful tools；不同则使 candidate receipt/platform gate
 失效，构造绑定 original delivery、candidate/receipt/context digests、observed/live versions 的 typed
 zero-mutation conflict，进入既有完整 revision 流程。revision 前 Modeling 必须重新成功读取 live context；
 旧 context receipt、旧 candidate receipt、直接 send、capability publish 或 stateful tool replay 均拒绝。
+
+一旦同一 Protocol 进程的 `submit_modeling_batch(mode=apply_atomic)` 响应确认
+`attempt_status=applied`，backend fence 必须校验响应中的 `before_version/expected_version/after_version`
+与当前 receipt 连续，然后将该 candidate 的 revalidation context 前进到 `after_version`。下一个
+stateful call 仍对该前进版本做 live readback；任何外部版本跳变仍在回调前拒绝。当前 run-owned
+Lease 及可通过 validation/reasoning/retrieval 后续修复的 derived stale 不得被误当作 ontology identity
+drift；`recovering.active`、not-ready 或 issues 仍 fail closed。
 
 ### 3.3 增量 candidate 与写入
 
@@ -122,6 +129,13 @@ semantic ID、实际 IRI、Class 和 read evidence；缺失、重复或不匹配
 参数且维持原翻译字节。Protocol 随后按当前 workspace version 对每个依赖阶段执行
 `dry_run -> apply_atomic`。不得从 Start75 文件或 candidate 文本猜测平台 ID。每次成功 apply 后使用
 receipt 的 after-version 作为下一阶段 expected workspace version。
+
+Protocol 必须通过 native MCP `translate_candidate_to_batches` 把 candidate、`requirement_id=R2.3-003`、
+existing-binding receipt、完整 deletion-impact receipts 和 Phase-A readback 状态一次性交给底层 translator；
+不得在 candidate-only 调用被拒后手工拼 Batch。readback=false 时工具可以返回 create stages，但必须以
+`phase_a_readback_required` 阻断 delete-only；Protocol 按返回顺序完成 create stage 的 dry-run/apply 与
+durable readback，刷新 workspace-bound receipts 后再以 readback=true 获取最终 delete-only Phase B。
+R2.3-005/default 继续只接受 candidate，不获得上述扩展参数。
 
 当前 `entity-list` 实际返回 full `id/iri/class_iri`，不得由 Protocol 拆 IRI 尾段猜 semantic ID/Class。平台
 通用 read projection 必须为 canonical entity 同时返回明确的 `semantic_id`、`entity_iri`、
@@ -262,8 +276,9 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
    `delete_existing_entity` 与 read-model binding/deletion-impact receipt；translator 对普通 existing ref
    不发 command，只绑定 live IRI，对经过完整影响核对的删除项发 `delete_entity`。005 的 create-only
    translator 输入/输出保持不变；
-   translator 生成 Phase A semantic batches 与独立 Phase B delete-only batch，且删除永远排在 durable
-   Phase A readback 之后；
+   native MCP wrapper 精确透传 003 的 binding/impact/readback 参数，禁止 Protocol 手工 fallback；translator
+   生成 Phase A semantic batches 与独立 Phase B delete-only batch，且删除永远排在 durable Phase A
+   readback 之后；
 3. 把散落的 R2.3-005 formal Task/Profile 判断收口为两个明确注册的 formal run contract；R2.3-005 继续只
    接受其精确 create 合同，R2.3-003 只接受其精确 existing 合同，未知组合 fail closed；
 4. 为 R2.3-003 增加独立 StartLedger namespace 与 `initial_authorization` 事件：固定初始 cap 0，空账本

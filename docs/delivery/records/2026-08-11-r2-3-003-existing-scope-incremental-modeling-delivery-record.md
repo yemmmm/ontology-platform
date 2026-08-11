@@ -1058,3 +1058,96 @@
 - All three newly authorized starts are consumed. Deterministic slimming and Carrier repair are PASS, but the R2.3-003
   requirement remains BLOCKED because Phase A/B application, readback, validation/reasoning/retrieval, and N-CQ live
   acceptance were not reached. No further live start is permitted without new explicit user authorization.
+
+### 2026-08-12T00:37:14+08:00 — new three-start authorization and start16 lease-fence failure
+
+- User authorization `user-20260812-r23003-post-carrier-start1-3` appended exactly `+3` starts and moved the strict
+  R2.3-003 ledger from cap/count `14/14` to `17/14`. No fourth start is authorized by this tranche.
+- start16 reached a real Build Session, acquired its own Ontology Lease and produced one validated dry-run batch, but
+  the stateful revalidation fence treated that run-owned active Lease as context drift and rejected apply before the
+  write callback. The session was cancelled, the Lease released, keys revoked, and no apply/in-flight attempt or RDF
+  ontology mutation remained. The dry-run Batch metadata remains in platform history and is not called an exact
+  before/after platform rollback.
+- The narrow repair removed only the active-Lease rejection while retaining exact P/O/workspace, ready/issues and
+  active-recovery checks. Backend focused/full and affected 003/005 suites passed; service restart/health passed.
+  Commit `7af559e` records the product fix and `f9a91bb` records the start16 evidence. Independent Round34 verified the
+  evidence-bound start16 terminal reconciliation.
+
+### 2026-08-12T01:03:49+08:00 — start17 numeric candidate failure
+
+- start17 consumed the second start. Modeling could read current context but encoded the required numeric
+  `candidate_revision` as JSON string `"1"`; the formal Carrier rejected it before Protocol receipt or any stateful
+  platform call. The automatic terminal classification is `modeling-quality`, complete result=false.
+- The owning Task/Modeling prompt contract was corrected to require a JSON number and a focused regression verifies
+  the actual candidate shape. Commit `f618c69` contains the prompt-contract repair. The run did not provide semantic
+  acceptance evidence and did not justify another unapproved start.
+
+### 2026-08-12T01:13:35+08:00 — start18 first real delete apply, fence failure and controlled compensation
+
+- start18 consumed the third and final start. Modeling produced numeric revision 1 with 26 items; delivery-5 digest=
+  `13b67c845d3bd6cba9c6e54c69541a1a06e1f47bd07dc9853f643895c2704749` and Protocol registered accepted receipt
+  delivery-6. Existing identities and both complete delete-impact contexts were read before mutation.
+- Protocol created Build Session `0c91883b-d2f3-4f5d-abdd-2697e74c474d`, acquired a Lease, dry-ran and applied
+  delete-only Batch `148425bf-8534-4c13-a27f-a759d1a58c19`. It deleted
+  `unknown-cross-release-output-meaning` and its nine incident statements, advancing workspace
+  `0d34f5ad...ef02 -> d2e0762f...9cad`.
+- The backend stateful fence still compared the next Batch with the pre-apply workspace and rejected it as
+  `modeling_context_revalidation_failed`. Protocol emitted standalone conflict delivery-7. Repairing stale derived
+  state made current context readable, but the 300-second candidate-progress deadline expired before Modeling could
+  publish a replacement. The formal terminal classification is `collaboration/routing`, complete result=false. This
+  run is not zero mutation and did not reach final Phase A/B, readback, validation/reasoning/retrieval or N-CQ.
+- Because the Team had terminated after an actual delete, Main used only the retained pre-delete complete statement
+  receipt to compensate the exact RDF facts. Three preliminary attempts were dry-run/validation failures and did not
+  change RDF. The successful controlled path used three separate dry-run/apply batches:
+  `ef49a152-c397-4637-b8ea-19e178fe1a11` (entity),
+  `4bd0af58-54cc-4ef4-9a1c-41d74865afd5` (rating relation), and
+  `462f467d-a2f8-454b-a358-68b5012afa57` (score relation). Current incident statement count is 9 and its canonical
+  digest exactly matches the pre-delete receipt:
+  `7f1e9b359f9e19da1ddf8d7ce3d652e7d1592b81b070d3df50d899a18d84bc91`. Both original unknowns exist and
+  `content-review-001`, `decision-review-001`, and `publication-outcome-review-001` do not exist.
+- Compensation advanced workspace and Batch history; it is therefore recorded as semantic restoration, not rollback
+  or before/after platform equality. Reasoning run `c1c9f0a6-a215-48c0-addf-61336c849842` succeeded/consistent and
+  retrieval job `ca9ec8ef-7c49-4bc3-bec3-5862113d4655` is current. Modeling Context still reports four stale historical
+  projections (`stale_pointer_count=0`); this is retained history for later final retrieval verification, not an
+  ontology identity/version drift. The Build Session is cancelled and its Lease is released. All start18 keys are
+  revoked. Main removed only the generated staged bridge
+  `read_proxy_mcp.py` (SHA `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`) and zero-byte
+  regular `modeling-read-proxy.sock` placeholder (SHA `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`);
+  retained evidence was not deleted.
+
+### 2026-08-12T01:57:56+08:00 — write-after-apply fence repair and closeout gate
+
+- The R2.3-003 backend fence now advances its process-local candidate revalidation record only after a successful
+  `submit_modeling_batch(mode=apply_atomic)` response whose before/expected/after versions are contiguous. Every next
+  stateful call still reads live context and rejects an external workspace jump before the callback. Modeling and
+  Protocol gates no longer treat a run-owned Lease or repairable derived stale pointer as ontology identity drift;
+  not-ready, issues and active recovery remain fail closed. R2.3-005/default behavior is unchanged.
+- GitNexus pre-edit impact classified the shared `_run_tool` path CRITICAL and the context helpers HIGH; final
+  `detect_changes` reported 4 files / 10 changed symbols / 255 affected flows / CRITICAL. The implementation stayed
+  local and behavior-focused. Commit `7e7494a` contains the four-file code/test change.
+- Verification: backend exact flaky recheck=`1 passed`, backend full=`850 passed, 10 skipped`; modeling_team full=
+  `745 passed, 1 skipped, 218 subtests`; compileall, Ruff and diff-check PASS. The first backend run had one unrelated
+  second-boundary `generated_at` mismatch and passed unchanged on exact/full rerun. The service was restarted and is
+  active; backend `/api/health` and frontend returned HTTP 200.
+- Strict ledger replay is 59 records, SHA
+  `b68a8f9d432c3521d0aec48498a6d6d77534488f592fbd05d044df4b2f7ff744`, cap/count/active=`17/17/0`, tail=start18
+  `collaboration/routing` terminal failure. All authorized starts are consumed. Deterministic repair is PASS, while
+  the requirement remains BLOCKED because no live run completed the semantic target or independent N-CQ acceptance.
+
+### 2026-08-12 — native R2.3-003 translator bridge repair
+
+- Retained start18 transcript showed that native MCP `translate_candidate_to_batches` accepted only `{candidate}`
+  even though the underlying translator already supported the R2.3-003 existing-binding, deletion-impact and
+  Phase-A-readback inputs. The candidate-only call failed on `existing_entity_ref`; Protocol then hand-authored
+  platform Batches and applied a delete-only Batch before the create stages. This was the direct mechanical cause of
+  the partial semantic mutation described above.
+- Commit `57e227c` extends only the native MCP wrapper and Protocol contract: R2.3-003 can pass the exact requirement,
+  binding, impact and readback inputs; missing receipts or false readback keep deletion blocked; the returned plan
+  orders create stages before a final delete-only Phase B. Protocol is explicitly forbidden to hand-author a fallback.
+  R2.3-005/default remain candidate-only and reject the extension.
+- Independent verification passed: wrapper-focused=`12 passed, 13 subtests`, affected focused=`130 passed,
+  13 subtests`, modeling_team full=`746 passed, 1 skipped, 218 subtests`, backend full=`850 passed, 10 skipped`;
+  compileall, Ruff and diff-check passed. Service remained active and backend/frontend returned HTTP 200.
+- This repair is deterministic only. The three authorized starts are exhausted at ledger cap/count/active=`17/17/0`;
+  no fourth run was launched. R2.3-003 remains BLOCKED pending a newly authorized real run that completes Phase A,
+  both target deletions, final readback/validation/reasoning/retrieval and independent N-CQ acceptance.

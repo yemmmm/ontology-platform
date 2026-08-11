@@ -1923,3 +1923,80 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   apply, readback, validation/reasoning/retrieval, N-CQ, or live quality verdict occurred in start16 (S5 remains
   **UNEXECUTED**). Start17 is the authorized current run and must be evaluated independently; do not infer its
   outcome from this terminal audit.
+
+### Round 35 — 2026-08-12 independent start17/start18 closeout audit and native R2.3-003 translation-bridge recheck — PASS deterministic; requirement BLOCKED
+
+- **Scope and safety.** This round reused this shared plan after the stable developer handoff at HEAD `57e227c`
+  (`Expose R2.3-003 batch translation inputs`). The tester only read retained start17/start18 evidence, current
+  platform read models, the strict StartLedger, and local tests. No product code, ledger, run evidence, residue,
+  ontology, workspace, or service state was modified; no live run was started, resumed, or cleaned. The only write
+  in this round is this append.
+- **Start17 terminal audit: PASS for the retained zero-write gate, with an explicit secret-audit limitation.** The
+  run is `CLEANED`; its candidate gate rejected the required numeric `candidate_revision` after Modeling encoded it
+  as JSON string `"1"`, before Protocol receipt or any stateful ontology-platform call. The retained scope snapshot
+  has exact `existing_context_before == existing_context_after`: Project
+  `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, Graph Set
+  `277fd804-e485-5156-b7a7-ca6a1081f950`, ready workspace
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, seven historical batches, two recent
+  sessions, and zero active sessions, leases, or in-flight attempts. All start17 keys are non-active/revoked and
+  the Modeling-read revoke/readback/post-revoke statuses are `200/200/401`; the two approved proxy/socket paths,
+  scoped sockets, registered PIDs, and named private artifacts are absent. The retained aggregate provider-secret
+  scan is complete with 261 files, `scan_error_count=0`, but records `match_count=6`, `matched_secret_count=4`, and
+  `private_credentials_destroyed=false`; therefore this audit does not claim global secret cleanliness for start17.
+- **Start18 candidate/first-apply audit: PASS for evidence classification, not semantic acceptance.** Delivery-5 is
+  the numeric revision-1 candidate (digest
+  `13b67c845d3bd6cba9c6e54c69541a1a06e1f47bd07dc9853f643895c2704749`) and delivery-6 is its accepted receipt.
+  Standalone conflict delivery-7 has no reply binding and records
+  `modeling_context_revalidation_failed` with `mutation_state=zero-mutation` after an observed workspace change.
+  Before that conflict, the first delete-only apply was real: Batch
+  `148425bf-8534-4c13-a27f-a759d1a58c19` deleted `unknown-cross-release-output-meaning` and its nine incident
+  statements, advancing workspace `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02` to
+  `d2e0762f12eb202bc5569a10bd54f349761dd6b470d1bed45cf8266c18ef9cad`. The session was cancelled and its lease
+  released after the next stateful call was blocked; the retained terminal classification is
+  `collaboration/routing` (`candidate-progress-timeout`, `complete_modeling_quality_result=false`). There is no
+  `evidence/terminal-reconciliation.jsonl` for start18, so this run is not misreported as a zero-mutation
+  reconciliation or as exact before/after equality.
+- **Controlled compensation and current semantic state: PASS for restoration, not rollback.** The three preliminary
+  compensation probes (`6b27a451...`, `25c3f64f...`, `55729a1c...`) were dry-run/validation-only failures and made
+  no RDF mutation. Main then applied the three controlled v4 batches
+  `ef49a152-c397-4637-b8ea-19e178fe1a11` (entity),
+  `4bd0af58-54cc-4ef4-9a1c-41d74865afd5` (rating), and
+  `462f467d-a2f8-454b-a358-68b5012afa57` (score), each after a validated dry-run. The current default graph has
+  both original unknowns; its nine outgoing statements for `unknown-cross-release-output-meaning` recompute to
+  exactly `7f1e9b359f9e19da1ddf8d7ce3d652e7d1592b81b070d3df50d899a18d84bc91`, matching the deleted-before complete
+  receipt. `content-review-001`, `decision-review-001`, and `publication-outcome-review-001` are absent. This is
+  RDF semantic restoration only: Batch/workspace/reasoning/retrieval history changed (seven pre-run batches to 15;
+  final workspace is `18b5bfe66d46192847a781c319d330622c9097d5f36babffea9685acadd7320e`), so no before/after platform
+  equality or automatic rollback is claimed. Reasoning run `c1c9f0a6-a215-48c0-addf-61336c849842` is
+  `succeeded/consistent`; retrieval job `ca9ec8ef-7c49-4bc3-bec3-5862113d4655` is current.
+- **Start18 cleanup and service audit: PASS within the retained scope.** All seven start18-created keys are revoked;
+  the exact approved generated `read_proxy_mcp.py` and zero-byte `modeling-read-proxy.sock` paths are absent, and
+  the scoped named private-artifact, process, and Unix-socket inventories are zero. Build Session/Lease/in-flight
+  state is inactive after cancellation. The user service is active; backend health is HTTP 200 with `{"status":"ok"}`
+  and frontend is HTTP 200. This is a scoped resource audit, not an expanded general filesystem socket inventory.
+- **Native 003 translation bridge and ordering repair: PASS (FIXED).** The start18 transcript exposed the current
+  blocker: the native `translate_candidate_to_batches` MCP wrapper forwarded only `candidate`, yielding `-32014`
+  for existing refs/delete declarations; Protocol then hand-built a Batch and deleted an unknown before the durable
+  Phase-A/readback barrier. HEAD `57e227c` exposes the 003-only `requirement_id`, binding receipt,
+  deletion-impact receipt mapping, and `phase_a_readback` arguments; the Protocol prompt now requires this complete
+  native call, prohibits manual Batch/delete/impact-plan construction, requires durable Phase-A readback, and makes
+  the native delete-only Phase-B batch last. Missing binding/impact inputs and false readback remain fail-closed;
+  the ordinary R2.3-005/default path remains candidate-only and rejects extra 003 arguments. The new deterministic
+  tests assert class/create stages precede delete-only Phase B, missing-binding `-32014`, no delete batch before
+  readback, and 005 isolation.
+- **Independent verification.** The exact commands and results were:
+  `uv run --project backend python -m pytest modeling_team/tests/test_protocol_retrieval_mcp.py -q` -> **12 passed,
+  13 subtests**; affected 003/005/protocol/runtime command (`test_protocol_retrieval_mcp.py`,
+  `test_r23003_incremental_contract.py`, `test_r23003_revision_contract.py`, `test_r23003_modeling_readonly.py`,
+  `test_r23005_candidate_progress.py`, `test_r23005_b_runtime.py`, `test_p2a_codex_runtime.py`) -> **130 passed,
+  13 subtests**; full `uv run --project backend python -m pytest modeling_team/tests -q` -> **746 passed, 1 skipped,
+  218 subtests**; backend `cd backend && uv run pytest -q` -> **850 passed, 10 skipped**. Compileall, focused Ruff,
+  and `git diff --check` all passed; service/endpoint checks were active/backend `200`/frontend `200`.
+- **Ledger and conclusion.** Read-only `StartLedger._validate_strict_replay` passes all 59 records (ledger SHA
+  `b68a8f9d432c3521d0aec48498a6d6d77534488f592fbd05d044df4b2f7ff744`), with `cap/count/active=17/17/0`; the tail
+  is start18 `terminal_failure`, `classification=collaboration/routing`, `complete_modeling_quality_result=false`.
+  The authorized start16–start18 tranche is exhausted and no start19/new run is permitted. S1–S3 sync-slim and the
+  deterministic carrier/fence/translation repairs remain **PASS**, but no run completed the required live Phase-A/
+  Phase-B sequence, final readback, validation/reasoning/retrieval, or N-CQ acceptance. The R2.3-003 requirement is
+  therefore honestly **BLOCKED** (budget exhausted), not a semantic PASS; no further testing can promote this evidence
+  without new explicit authorization.

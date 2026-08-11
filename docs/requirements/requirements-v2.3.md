@@ -68,7 +68,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
-| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Current Draft（已细化，待评审/实现/运行）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
+| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Current Draft（确定性实现 PASS；真实验收 BLOCKED、授权耗尽）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -1732,8 +1732,10 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
-当前状态：`Current Draft（2026-08-11 Modeling 只读查询合同及 start9 后 Runtime approval 修复已独立
-测试 PASS；start9 在 candidate 前零写入终止，真实 L0/L1/L2 待重新授权）`
+当前状态：`Current Draft（2026-08-12 start16–start18 三次真实启动已全部消耗；start18 首个
+delete-only Batch 成功 apply 后因上下文围栏未跟随 workspace version 前进而超时，删除前完整语句
+receipt 已受控回补且 RDF 语义精确恢复；围栏窄修与全量回归 PASS，但 L0/L1/L2 未完成、当前授权
+已耗尽）`
 
 优先级：`P0`
 
@@ -1817,6 +1819,29 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   `user-20260811-r23003-post-approval-fix-start1-3`、`additional_starts=3`。该严格 budget extension 已在 start9
   retryable terminal predecessor 后把 cap/count/active 从 `8/8/0` 变为 `11/8/0`；只能用于已通过 Round25
   的 Runtime approval 修复后的 live run，首次完整 PASS 后 success-stop，不为消耗额度继续启动。
+- 用户于 2026-08-12 在 start15 收口后明确追加三次 fresh semantic starts，authorization
+  ID/reference=`user-20260812-r23003-post-carrier-start1-3`。该 `+3` 将 strict ledger 从
+  `cap/count/active=14/14/0` 扩为 `17/14/0`，并已由 start16–start18 全部消耗。start16 暴露 active
+  run-owned Lease 被 context fence 误报 drift；start17 暴露数字 revision 被 Prompt 生成为字符串；start18
+  成功进入真实 Phase B 并 apply 第一个 delete-only Batch，随后因围栏仍绑定写前 workspace version
+  而阻断后续批次，修复派生状态后又在 300 秒 candidate-progress 超时前未来得及发布 revision。
+  本轮终态 strict replay 为 `cap/count/active=17/17/0`，59 条记录，授权已耗尽。
+- start18 超时时已删除 `unknown-cross-release-output-meaning` 及其 9 条 incident statements，
+  因此不得用“零 mutation”或 before/after workspace 相等收口。交付侧只使用删除前完整 receipt
+  受控回补该资源；回补后当前 9 条语句摘要与原 receipt 均为
+  `7f1e9b359f9e19da1ddf8d7ce3d652e7d1592b81b070d3df50d899a18d84bc91`，两个 unknown 均存在，
+  三个新业务实体均不存在。这只证明 RDF 语义已恢复；Batch/workspace/reasoning/retrieval
+  历史仍保留且必须如实记录。
+- R2.3-003 的 stateful context fence 只保护 candidate 身份、exact P/O、workspace version、ready/issues
+  与 active recovery。同一 Protocol 进程成功 `apply_atomic` 后，fence 必须用响应中经核对的
+  `before_version/expected_version/after_version` 机械前进；当前 run-owned Lease 与可修复的 derived stale
+  不是 ontology identity drift，不得因它们自我阻断后续 Batch。外部 workspace drift、wrong P/O、
+  not-ready/issues 或 recovering.active 仍在回调前 fail closed。
+- 原生 `translate_candidate_to_batches` MCP 必须为 R2.3-003 透传 candidate、requirement ID、existing-binding
+  receipt、完整 deletion-impact receipts 与 Phase-A readback 状态；普通/R2.3-005 仍只接受 candidate。
+  Protocol 不得在 native translator 拒绝后手工拼 Batch。工具返回的 create stages 必须先按序完成
+  dry-run/apply 和 durable readback，刷新 workspace-bound receipts 后才允许取得并执行最终 delete-only
+  Phase-B Batch；缺 receipt 或 readback=false 时删除保持 fail closed。
 - existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
   apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的
@@ -1930,6 +1955,22 @@ revision 1 receipt、standalone typed conflict 和完整 revision 2，但 Carrie
 identity 假设拒绝 replacement。两处合同现均已有 003-only 行为修复和 005/default 隔离回归；真实 Phase
 A/B、readback、validation/reasoning/retrieval 和 N-CQ 仍未完成。任何新 live start 必须获得新的显式授权，
 首次完整 PASS 后停止。
+
+2026-08-12 新授权 `user-20260812-r23003-post-carrier-start1-3` 又将 cap/count 从 `14/14`
+扩为 `17/14`。start16–start18 现已全部消耗；strict replay 为 59 条记录、
+cap/count/active=`17/17/0`。start18 第一次证明了 candidate、receipt、live binding、完整
+delete-impact read、Build Session/Lease、dry-run 和一个 delete-only apply 的真实路径，但围栏
+在成功 apply 后没有前进 workspace version，导致后续 Batch 被自我阻断。超时后已用删除前完整
+receipt 精确回补 RDF，不伪称平台历史回滚。当前围栏修复及 003/005/full suites 均 PASS，
+但真实 Phase A、第二个 Phase B 删除、最终 readback/validation/reasoning/retrieval 和 N-CQ 仍未完成。
+当前无剩余启动授权。
+
+start18 transcript 同时暴露 native MCP wrapper 当时只接受 `candidate`，没有把底层 translator 已支持的
+003 binding/impact/readback 参数暴露给 Protocol；Agent 因此绕过工具手工组装并错误地先执行删除。
+commit `57e227c` 已补齐该窄通道并明确禁止手工 fallback，回归证明 create stages 在前、durable Phase-A
+readback 后 delete-only 在最后，且 005/default candidate-only 行为不变。该确定性修复没有新增授权，
+不能替代尚未完成的真实语义验收。
+
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
