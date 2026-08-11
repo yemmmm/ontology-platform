@@ -1,6 +1,6 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：Approved，revised-contract plan review Round 4 PASS
+- 状态：Implemented — independent Round 23 deterministic PASS，one authorized live run pending
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -26,7 +26,8 @@ Project/Ontology，只依赖当前平台事实、非敏感 scope handoff 和批�
 - 不把 Dify、Workflow、Decision、Publication 等业务概念加入平台生产域；
 - 不建设通用多需求编排、长期 Project 生命周期、自动回滚、并发写入或 Pi Adapter；
 - 不建模普通 numeric score 阈值、其他 diagnostic、人工 review 后续或更多案例；
-- 原精确四次 start 已耗尽；新增三次授权只在修订实现/独立测试/健康门通过后使用，首个完整 PASS 后 success-stop。
+- 原精确四次及后续三次 start 已耗尽；新授权一次只在本次 Modeling read-only 修订实现/独立测试/健康门
+  通过后使用，完整 PASS 后 success-stop。
 
 ## 3. 功能合同
 
@@ -40,17 +41,70 @@ Build Session/Lease 或平台写入前，Runner 必须：
 2. 通过授权平台读取重新确认 Project/Ontology 归属、Ontology 状态、默认 Graph Set、workspace version、
    没有 active Build Session/Lease 或 in-flight Attempt；
 3. 将 live workspace version 与 handoff 比较；不一致时零副作用失败，不自动改写 handoff；
-4. 确认本需求专属 StartLedger 保留初始四次授权与四个 terminal failures，并在实现/独立测试/健康门通过后
-   追加 exact `user-20260811-r23003-revision-start1-3` +3 extension，且没有 active reservation。
+4. 确认本需求专属 StartLedger 保留初始 `+4`、后续 `+3`、七个已 reconciliation terminal failures；用户
+   本轮 exact `user-20260811-r23003-modeling-read-start1` `+1` authorization 已 append，但实现/独立测试/
+   健康门通过前没有 active reservation 或新的 semantic start。
 
 ### 3.2 Agent 输入边界
 
 - Coordinator 只得到目标、roster、CQ/验收标准和非敏感 scope identity，不得到 raw business sources；
-- Modeling 得到当前平台只读事实、旧批准业务资料和两个新增 source 文档；
+- Modeling 得到旧批准业务资料、两个新增 source 文档，以及一个独立、project-scoped、read-only、运行期
+  临时 credential。其 ontology-platform allowlist 精确为 `get_modeling_context`、
+  `get_ontology_read_model`、`query_semantic_context`：首个 candidate 前必须先调用
+  `get_modeling_context(ontology_id=O)`，确认 Project/Ontology、ready workspace、workspace version、无
+  stale warning，并使用其 query entries 按需读取 `classes`、`entities`、`facts`、`rules` 或业务相关语义
+  邻域。Modeling 不读取完整历史 Batch 来重放状态，不接收平台写工具，不持有 Protocol/model/admin key，
+  不创建 Build Session/Lease/Batch，也不执行 validation/reasoning mutation；
 - Protocol 得到平台 mechanics、当前 scope、Modeling 的完整增量 candidate 和必要只读/写工具；
 - Acceptance 得到冻结 handoff 与验收标准；每条 CQ 的 Source/Platform Examiner 仍按 R2.3-005 的
   fresh、隔离、只读边界创建和回收；
 - 任一角色都不得看到 Start75 Agent 对话、旧答案、旧 verdict 或 tester-only 内容。
+
+Modeling Context 是当前状态的概览和详细查询入口，不替代固定 semantic read models。Modeling candidate
+继续保持 platform-neutral，不携带 IRI、平台 credential、Batch ID 或 workspace internals；Runner 通过
+role-scoped MCP call evidence 证明 Modeling 确实完成了要求的只读入口调用。Protocol 收到 candidate 后
+独立调用 Modeling Context/read model，并在任何 Build Session/Lease/write 前确认 workspace version 未从
+Modeling 的观察版本漂移；漂移时返回零 mutation conflict，要求 Modeling 基于新状态提交完整 revision。
+Modeling read credential 在角色终态或 run cleanup 时撤销，plaintext secret 必须销毁并进入 aggregate
+secret/residue audit。
+
+上述“精确三工具”必须是机械边界，不依赖 Prompt、Codex `enabled_tools` 或 backend project ownership
+单独保证。Runner 在 existing live preflight 成功后、Modeling 首轮前创建一个 formal R2.3-003-only
+`ModelingReadContext`：
+
+1. Runner-owned key lifecycle 使用 PlatformScope admin API 创建独立 project-scoped `read` key；持久状态只含
+   key ID/digest、P/O、run ID、创建/revoke receipt，plaintext 仅在 Host process memory 中交给本地
+   Modeling read proxy，不写入 Agent home、环境、prompt、artifact 或日志。不得复用 Protocol model key、
+   Acceptance child key 或通用 admin key；
+2. Runner-owned local proxy 只注册三个 MCP tool，并在转发 backend 前验证工具和参数：
+   `get_modeling_context` 只接受 exact O；`get_ontology_read_model` 只接受 exact O 且 model_name 属于
+   `classes|entities|facts|rules`；`query_semantic_context` 只接受 exact P、`scope_mode=ontologies`、
+   `ontology_ids=[O]`，cursor continuation 仍绑定同一初始 scope。任何其他 tool、同 Project 的其他
+   Ontology、history/delta、空/全 Project scope、写/validation/reasoning 调用都在 proxy 前置拒绝，不发送
+   backend 请求；
+3. 该 proxy 可抽取/复用现有 Acceptance read-key/forwarder 的通用 credential、MCP forwarding、revoke 与
+   secret-audit mechanics，但必须有 Modeling 专属 exact-three-tool policy/state；不得直接套用 Acceptance
+   `ScopedReadProxy` 的 validation/reasoning/ticket 假设；
+4. Modeling completed/blocked、Runner abort 或正常 cleanup 均停止 proxy，revoke key、admin readback
+   `revoked_at`，再用旧 plaintext 证明 401/403；最后清除 plaintext并把 socket/thread/process/secret scan
+   汇入 aggregate cleanup。任何 revoke/readback/denial/secret cleanup 失败都使 run cleanup FAIL。
+
+Runner 同时维护 requirement-private `ModelingContextGate`，初始为 closed。只有 Modeling 通过 proxy 成功
+调用 exact-O `get_modeling_context`，且 Host 校验 response `ok=true`、P/O 一致、workspace ready、非空
+workspace_version、resource counts 合法、无 issues/stale warning 后，才写一个 immutable receipt（run、P/O、
+workspace version、canonical response digest、proxy call receipt digest）并转为 `context_observed`。Detailed
+read calls 只能在该入口成功后执行。Modeling 通过 direct Team Transport 或 staged-candidate capability 向
+Protocol 发布 candidate 时，Runner 必须在 broker publication 前验证该 gate；closed/error/wrong scope 时
+拒绝且不生成 delivery。成功发布后把 context receipt digest 与 candidate delivery/digest 关联，不把机械
+字段塞进 platform-neutral candidate。
+
+Protocol receipt 后只开放只读 binding/context 工具；Build Session、Lease、Batch 和所有 mutation 仍由
+第二道 version gate 阻断。Protocol 必须先重新调用 exact-O `get_modeling_context`；Runner 校验其 P/O/state/
+stale 规则，并把 response workspace_version 与 candidate 关联的 ModelingContext receipt 做 exact equality。
+相同则生成 Protocol revalidation receipt 并开放后续 stateful tools；不同则使 candidate receipt/platform gate
+失效，构造绑定 original delivery、candidate/receipt/context digests、observed/live versions 的 typed
+zero-mutation conflict，进入既有完整 revision 流程。revision 前 Modeling 必须重新成功读取 live context；
+旧 context receipt、旧 candidate receipt、直接 send、capability publish 或 stateful tool replay 均拒绝。
 
 ### 3.3 增量 candidate 与写入
 
@@ -210,6 +264,15 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
     revision -> replacement receipt；用 start5 的真实失败顺序做回归，并保持 005 初稿/conflict revision 路径。
 11. 扩展 ModelingBatch delete-only recovery observation/resume branch，基于 impact receipt 区分
     `not_applied/applied/partial_or_drifted`，partial/drifted 永不自动重试。
+12. 把 Modeling package 从 `platform:none` 调整为 requirement-gated read-only surface；Runner/Adapter 仅在
+    formal R2.3-003 为 Modeling 创建独立 project-scoped `read` key并注册三工具 ontology-platform MCP，
+    对 Coordinator/Acceptance/005/default 不扩大权限。增加 Modeling-first `get_modeling_context` 调用门、
+    read-model 参数/scope 约束、Protocol workspace revalidation、call evidence、key revoke/secret cleanup；
+    复用已有 MCP tools/service，不新增业务专用 API。
+13. 新增 Runner-owned `ModelingContextGate` 与 Modeling read proxy：gate 覆盖 direct Team Transport 和
+    staged-candidate capability 两条发布路径；proxy 在 backend 前执行 exact tool/P/O/model/scope allowlist。
+    Candidate receipt 关联 Modeling context receipt；Protocol 只读 revalidation receipt 匹配后才开放 Session/
+    Lease/write，drift 复用 post-receipt standalone typed conflict/revision，不新增第三套 revision 协议。
 
 “formal run contract” 只是两个已知需求的确定性身份/资产/作用域策略映射，不是动态插件系统、后台调度器
 或通用 orchestration framework。
@@ -247,6 +310,11 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
    `semantic_id/class`；现有单测不代表 live contract。必须由平台显式投影 neutral IDs。
 10. 当前 statement-list 默认/最大结果受限且没有 entity-scoped complete cursor；wildcard `delete_entity`
     会删除所有 subject/object triples。没有完整分页证据时不能安全启用删除。
+11. 既有 `get_modeling_context` 已由 R-004 实现并同时提供 REST/MCP，真实 Start8 返回 workspace identity、
+    资源计数、stale/lease/recovery、recent batches 和 fixed read-model query entries；三个目标工具在 backend
+    policy 中均为 Project-owned `read`、`mutates_state=False`。缺口仅是 Modeling runtime 当前
+    `platform:none` 且没有 role-private live state，不能只改 prompt，必须实现 credential/tool wiring 与
+    cleanup，同时保持 Protocol-only writer。
 
 ## 7. 完成标准
 
@@ -254,7 +322,7 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - plan review 无未处理 Critical/High；
 - deterministic tests 覆盖两个 formal contract 隔离、003 ledger、existing preflight、source visibility、
   delta candidate、安全硬删除、N-CQ（至少 1/3/5）和写后失败；完整 repository-required suite PASS；
-- 原四次 starts 已耗尽；用户新增授权精确三次。门通过后一个真实 R2.3-003 Team run 在 Start75 Ontology 上完成组合目标与独立验收，
+- 原七次 starts 已耗尽；用户新增授权精确一次。门通过后一个真实 R2.3-003 Team run 在 Start75 Ontology 上完成组合目标与独立验收，
   首次完整 PASS 后停止；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。

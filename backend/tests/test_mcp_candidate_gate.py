@@ -12,6 +12,36 @@ def _write_gate(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def _r23003_gate(candidate_digest: str = "candidate-v1") -> dict[str, Any]:
+    return {
+        "schema_version": "r2-3-005-candidate-platform-gate/v1",
+        "state": "open",
+        "run_id": "run-r23003",
+        "candidate_digest": candidate_digest,
+        "modeling_context": {
+            "project_id": "project-1",
+            "ontology_id": "ontology-1",
+            "workspace_version": "workspace-v1",
+            "context_receipt_digest": "context-receipt",
+            "response_digest": "modeling-response",
+            "call_receipt_digest": "modeling-call",
+        },
+        "protocol_revalidation": {"state": "required"},
+    }
+
+
+def _context(version: str = "workspace-v1") -> dict[str, Any]:
+    return {
+        "project": {"id": "project-1"},
+        "ontology": {"id": "ontology-1"},
+        "workspace": {"state": "ready", "workspace_version": version, "issues": []},
+        "resource_counts": {"classes": 1},
+        "derived_state": {"stale_count": 0, "warning": None},
+        "lease": {"active": False},
+        "recovering": {"active": False},
+    }
+
+
 def test_formal_candidate_gate_closed_blocks_resources_and_tool(monkeypatch, tmp_path: Path) -> None:
     gate = tmp_path / "state.json"
     _write_gate(
@@ -139,3 +169,67 @@ def test_formal_candidate_gate_rejects_malformed_or_oversized_state(
     gate.symlink_to(target)
     assert call_tool()["error_code"] == "candidate_receipt_required"
     assert effects == []
+
+
+def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_drift(
+    monkeypatch, tmp_path: Path
+) -> None:
+    gate = tmp_path / "state.json"
+    _write_gate(gate, _r23003_gate())
+    monkeypatch.setenv("FORMAL_CANDIDATE_GATE_PATH", str(gate))
+    effects: list[str] = []
+
+    @contextmanager
+    def session_factory():
+        yield object()
+
+    monkeypatch.setattr(mcp_runtime, "get_resources", lambda: (session_factory, None, None))
+    monkeypatch.setattr(mcp_runtime, "_authorize_tool", lambda *_args: None)
+    monkeypatch.setattr(mcp_runtime, "scan_domain_payload", lambda *_args: None)
+    live_context = {"value": _context()}
+    monkeypatch.setattr(
+        mcp_runtime,
+        "_read_live_modeling_context",
+        lambda _session, _ontology_id: live_context["value"],
+    )
+
+    def submit_modeling_batch() -> dict[str, Any]:
+        return mcp_runtime._run_tool(
+            lambda _session, _driver, _embedding: effects.append("stateful") or {"submitted": True}
+        )
+
+    def get_modeling_context(value: dict[str, Any]) -> dict[str, Any]:
+        return mcp_runtime._run_tool(
+            lambda _session, _driver, _embedding: value
+        )
+
+    def get_ontology_read_model() -> dict[str, Any]:
+        return mcp_runtime._run_tool(
+            lambda _session, _driver, _embedding: effects.append("read") or {"read": True}
+        )
+
+    blocked = submit_modeling_batch()
+    assert blocked["error_code"] == "modeling_context_revalidation_required"
+    assert effects == []
+    assert get_ontology_read_model() == {"ok": True, "data": {"read": True}}
+    assert effects == ["read"]
+
+    wrong = get_modeling_context(_context("workspace-v2"))
+    assert wrong["error_code"] == "modeling_context_revalidation_failed"
+    assert effects == ["read"]
+    assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
+    assert effects == ["read"]
+
+    assert get_modeling_context(_context()) == {"ok": True, "data": _context()}
+    assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
+    assert effects == ["read", "stateful"]
+
+    live_context["value"] = _context("workspace-v2")
+    drifted = submit_modeling_batch()
+    assert drifted["error_code"] == "modeling_context_revalidation_failed"
+    assert drifted["data"]["mutation_state"] == "zero-mutation"
+    assert effects == ["read", "stateful"]
+
+    _write_gate(gate, _r23003_gate("candidate-v2"))
+    assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
+    assert effects == ["read", "stateful"]

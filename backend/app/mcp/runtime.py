@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import inspect
 import os
 import stat
@@ -32,6 +33,8 @@ _embedding_client: EmbeddingClient | None = None
 _principal: AuthPrincipal | None = None
 _context_cursor_codec: ContextCursorCodec | None = None
 _context_cursor_codec_lock = threading.Lock()
+_protocol_revalidation_lock = threading.Lock()
+_protocol_revalidations: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 class McpOwnership(StrEnum):
@@ -224,6 +227,8 @@ def reset_resources() -> None:
     _principal = None
     with _context_cursor_codec_lock:
         _context_cursor_codec = None
+    with _protocol_revalidation_lock:
+        _protocol_revalidations.clear()
 
 
 def get_context_cursor_codec() -> ContextCursorCodec:
@@ -364,61 +369,303 @@ def _set_runtime_principal(principal: AuthPrincipal) -> None:
     _principal = principal
 
 
-def _candidate_platform_gate_error() -> dict[str, str] | None:
-    """Return the fixed formal-candidate denial envelope, when the gate is closed.
-
-    The environment variable is absent for every legacy/non-formal launch, so that
-    path intentionally performs no additional filesystem or runtime work.  Formal
-    Protocol launches inject a read-only carrier path; any missing, malformed,
-    symlinked, or closed state fails before resources, authorization, or the tool
-    callback are touched.
-    """
+def _read_candidate_platform_gate() -> tuple[str | None, dict[str, Any] | None]:
+    """Read the Runner-owned candidate gate without following links."""
 
     gate_path = os.environ.get("FORMAL_CANDIDATE_GATE_PATH")
     if gate_path is None:
+        return None, None
+    if not gate_path:
+        return gate_path, None
+    descriptor: int | None = None
+    try:
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(gate_path, flags)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024:
+            return gate_path, None
+        payload = os.read(descriptor, 64 * 1024 + 1)
+        value = json.loads(payload.decode("utf-8"))
+        if not isinstance(value, dict):
+            return gate_path, None
+        if value.get("schema_version") != "r2-3-005-candidate-platform-gate/v1":
+            return gate_path, None
+        return gate_path, value
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return gate_path, None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _context_binding(state: dict[str, Any]) -> dict[str, str] | None:
+    """Return the exact R2.3-003 Modeling context bound to a candidate gate."""
+
+    value = state.get("modeling_context")
+    if value is None:
         return None
-    allowed = False
-    if gate_path:
-        descriptor: int | None = None
-        try:
-            flags = os.O_RDONLY
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
-            descriptor = os.open(gate_path, flags)
-            metadata = os.fstat(descriptor)
-            if stat.S_ISREG(metadata.st_mode) and metadata.st_size <= 64 * 1024:
-                payload = os.read(descriptor, 64 * 1024 + 1)
-                value = json.loads(payload.decode("utf-8"))
-                allowed = (
-                    isinstance(value, dict)
-                    and value.get("schema_version") == "r2-3-005-candidate-platform-gate/v1"
-                    and value.get("state") == "open"
-                )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
-            allowed = False
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-    if allowed:
-        return None
-    return {
-        "ok": False,
-        "error": "candidate receipt required before platform call",
-        "error_code": "candidate_receipt_required",
+    required = {
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "context_receipt_digest",
+        "response_digest",
+        "call_receipt_digest",
     }
+    if not isinstance(value, dict) or set(value) != required:
+        return {}
+    if any(not isinstance(value.get(field), str) or not value[field] for field in required):
+        return {}
+    return {field: str(value[field]) for field in required}
+
+
+def _gate_denial(
+    error: str,
+    error_code: str,
+    *,
+    detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"ok": False, "error": error, "error_code": error_code}
+    if detail is not None:
+        result["data"] = detail
+    return result
+
+
+def _candidate_platform_gate_error(
+    tool_name: str | None = None,
+    fn: Callable[..., Any] | None = None,
+) -> dict[str, Any] | None:
+    """Return the formal gate denial, including the R2.3-003 stateful fence.
+
+    A legacy/default or R2.3-005 gate has no ``modeling_context`` member and
+    therefore retains the original all-tools-open behavior.  The 003 gate keeps
+    read-only tools available after the candidate receipt but requires a
+    process-local exact-O revalidation record before any mutating Protocol tool.
+    """
+
+    gate_path, state = _read_candidate_platform_gate()
+    if gate_path is None:
+        return None
+    if state is None or state.get("state") != "open":
+        return _gate_denial(
+            "candidate receipt required before platform call",
+            "candidate_receipt_required",
+        )
+    context = _context_binding(state)
+    if context == {}:
+        policy = MCP_TOOL_POLICIES.get(tool_name) if tool_name is not None else None
+        if policy is None or not policy.mutates_state:
+            # Keep exact-O/context reads available so a malformed binding can
+            # still be diagnosed; no stateful callback can pass this branch.
+            return None
+        return _gate_denial(
+            "candidate Modeling context binding is invalid",
+            "modeling_context_binding_invalid",
+            detail={
+                "candidate_digest": state.get("candidate_digest"),
+                "mutation_state": "zero-mutation",
+            },
+        )
+    if context is None or tool_name is None:
+        return None
+    policy = MCP_TOOL_POLICIES.get(tool_name)
+    if policy is None or not policy.mutates_state:
+        return None
+    candidate_digest = state.get("candidate_digest")
+    key = (gate_path, str(candidate_digest))
+    with _protocol_revalidation_lock:
+        record = _protocol_revalidations.get(key)
+    if record is None:
+        return _gate_denial(
+            "exact-O Modeling context revalidation is required before stateful platform calls",
+            "modeling_context_revalidation_required",
+            detail={
+                "run_id": state.get("run_id"),
+                "candidate_digest": candidate_digest,
+                "project_id": context["project_id"],
+                "ontology_id": context["ontology_id"],
+                "expected_workspace_version": context["workspace_version"],
+                "mutation_state": "zero-mutation",
+                "conflict_code": "modeling_context_revalidation_required",
+            },
+        )
+    return None
+
+
+def _context_value(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    if value.get("ok") is False:
+        return None
+    if "data" in value:
+        value = value.get("data")
+    elif isinstance(value.get("result"), dict):
+        value = value.get("result")
+    return value if isinstance(value, dict) else None
+
+
+def _context_is_valid(value: Any, context: dict[str, str]) -> bool:
+    value = _context_value(value)
+    if value is None:
+        return False
+    project = value.get("project")
+    ontology = value.get("ontology")
+    workspace = value.get("workspace")
+    derived = value.get("derived_state")
+    return bool(
+        isinstance(project, dict)
+        and project.get("id") == context["project_id"]
+        and isinstance(ontology, dict)
+        and ontology.get("id") == context["ontology_id"]
+        and isinstance(workspace, dict)
+        and workspace.get("state") == "ready"
+        and workspace.get("workspace_version") == context["workspace_version"]
+        and workspace.get("issues") == []
+        and isinstance(derived, dict)
+        and isinstance(derived.get("stale_count"), int)
+        and not isinstance(derived.get("stale_count"), bool)
+        and derived.get("stale_count") == 0
+        and derived.get("warning") in (None, "")
+        and not (isinstance(value.get("lease"), dict) and value["lease"].get("active") is True)
+        and not (
+            isinstance(value.get("recovering"), dict)
+            and value["recovering"].get("active") is True
+        )
+    )
+
+
+def _context_digest(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _protocol_revalidation_error(
+    state: dict[str, Any],
+    context: dict[str, str],
+    *,
+    reason: str,
+    observed: Any = None,
+) -> dict[str, Any]:
+    observed_value = _context_value(observed)
+    workspace = observed_value.get("workspace") if observed_value else None
+    observed_version = workspace.get("workspace_version") if isinstance(workspace, dict) else None
+    return _gate_denial(
+        "Protocol Modeling context revalidation failed; stateful call remains closed",
+        "modeling_context_revalidation_failed",
+        detail={
+            "run_id": state.get("run_id"),
+            "candidate_digest": state.get("candidate_digest"),
+            "project_id": context["project_id"],
+            "ontology_id": context["ontology_id"],
+            "expected_workspace_version": context["workspace_version"],
+            "observed_workspace_version": observed_version,
+            "reason_code": reason,
+            "mutation_state": "zero-mutation",
+            "conflict_code": "modeling_context_revalidation_failed",
+        },
+    )
+
+
+def _record_protocol_revalidation(
+    gate_path: str,
+    state: dict[str, Any],
+    value: Any,
+) -> dict[str, Any] | None:
+    context = _context_binding(state)
+    if context in (None, {}):
+        return None
+    if not _context_is_valid(value, context):
+        key = (gate_path, str(state.get("candidate_digest")))
+        with _protocol_revalidation_lock:
+            _protocol_revalidations.pop(key, None)
+        return _protocol_revalidation_error(state, context, reason="context_shape_or_scope", observed=value)
+    normalized = _context_value(value)
+    assert normalized is not None
+    response_digest = _context_digest(normalized)
+    call_digest = _context_digest(
+        {"tool": "get_modeling_context", "ontology_id": context["ontology_id"]}
+    )
+    payload = {
+        "candidate_digest": state.get("candidate_digest"),
+        "project_id": context["project_id"],
+        "ontology_id": context["ontology_id"],
+        "workspace_version": context["workspace_version"],
+        "context_receipt_digest": context["context_receipt_digest"],
+        "response_digest": response_digest,
+        "call_receipt_digest": call_digest,
+    }
+    record = {**payload, "revalidation_receipt_digest": _context_digest(payload)}
+    key = (gate_path, str(state.get("candidate_digest")))
+    with _protocol_revalidation_lock:
+        existing = _protocol_revalidations.get(key)
+        if existing is None:
+            _protocol_revalidations[key] = record
+    return None
+
+
+def _read_live_modeling_context(session: Session, ontology_id: str) -> dict[str, Any]:
+    """Read current context for the stateful fence without invoking a write tool."""
+
+    from app.repositories.rdf_store import RdfStoreRepository
+    from app.services.modeling_batches import ModelingBatchService
+
+    settings = Settings()
+    return ModelingBatchService(
+        session,
+        settings,
+        RdfStoreRepository(settings.oxigraph_url),
+    ).get_modeling_context(ontology_id)
+
+
+def _check_live_protocol_context(
+    gate_path: str,
+    state: dict[str, Any],
+    session: Session,
+) -> dict[str, Any] | None:
+    context = _context_binding(state)
+    if context in (None, {}):
+        return None
+    try:
+        current = _read_live_modeling_context(session, context["ontology_id"])
+    except Exception:
+        key = (gate_path, str(state.get("candidate_digest")))
+        with _protocol_revalidation_lock:
+            _protocol_revalidations.pop(key, None)
+        return _protocol_revalidation_error(state, context, reason="live_context_read_failed")
+    if not _context_is_valid(current, context):
+        key = (gate_path, str(state.get("candidate_digest")))
+        with _protocol_revalidation_lock:
+            _protocol_revalidations.pop(key, None)
+        return _protocol_revalidation_error(state, context, reason="workspace_or_context_drift", observed=current)
+    return None
 
 
 def _run_tool(fn: Callable[[Session, Any, EmbeddingClient], T]) -> dict[str, Any]:
-    gate_error = _candidate_platform_gate_error()
+    tool_name = inspect.currentframe().f_back.f_code.co_name
+    gate_error = _candidate_platform_gate_error(tool_name, fn)
     if gate_error is not None:
         return gate_error
     session_factory, _driver, embedding_client = get_resources()
-    tool_name = inspect.currentframe().f_back.f_code.co_name
+    gate_path, gate_state = _read_candidate_platform_gate()
     try:
         with session_factory() as session:
             _authorize_tool(session, tool_name, fn)
+            if gate_path is not None and gate_state is not None:
+                context = _context_binding(gate_state)
+                policy = MCP_TOOL_POLICIES.get(tool_name)
+                if context and policy is not None and policy.mutates_state:
+                    live_error = _check_live_protocol_context(gate_path, gate_state, session)
+                    if live_error is not None:
+                        return live_error
             scan_domain_payload(_closure_values(fn))
-            return {"ok": True, "data": _jsonable(fn(session, _driver, embedding_client))}
+            value = fn(session, _driver, embedding_client)
+            if gate_path is not None and gate_state is not None and tool_name == "get_modeling_context":
+                revalidation_error = _record_protocol_revalidation(gate_path, gate_state, value)
+                if revalidation_error is not None:
+                    return revalidation_error
+            return {"ok": True, "data": _jsonable(value)}
     except Exception as exc:
         code, message = map_exception(exc)
         return {"ok": False, "error": message, "error_code": code}

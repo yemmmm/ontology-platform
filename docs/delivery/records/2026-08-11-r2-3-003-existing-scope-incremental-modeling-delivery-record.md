@@ -575,3 +575,189 @@
 - Outcome/next step: 无悬挂 reservation、mutation-unknown 或 cleanup residue；用户授权三次已全部消费，
   R2.3-003 requirement 仍 `BLOCKED`：两个 target 未删除、业务切片未 apply、CQ/Acceptance 未执行。禁止
   start9，需新的显式授权后才可用 `55ab43c` 已修 standalone revision path 继续。
+
+### 2026-08-11T14:21:51+08:00 — Modeling 只读查询合同变更启动 — user and main agent
+
+- Context: 用户确认 Modeling 应具备查询当前已建模状态的能力，并要求复用此前需求已经实现的
+  Ontology Modeling Context；现行 R2.3-003 只向 Modeling 暴露业务资料与 platform-neutral candidate
+  合同，live `get_modeling_context`/read model 只由 Protocol 在 candidate receipt 后读取，已在 start7/start8
+  分别造成 existing Class 误判和缺失 Class 依赖晚发现。
+- Confirmed direction: 恢复早期 R-004/R1.1 合同：Modeling 在候选建模前读取当前 authoritative Modeling
+  Context，并拥有最小、read-only、Project/Ontology-bound 查询面；Protocol 仍是唯一 Build Session/Lease/
+  Batch/dry-run/apply/validation/reasoning 执行者，并在写入前重新绑定同一 workspace version。不得向
+  Modeling 暴露任何写工具、model/admin credential 或平台身份构造职责。
+- Current/target: 当前 Modeling package=`platform:none`，真实 role-private sources 中没有当前模型快照；
+  目标为 Modeling 先读取概览，再按需读取详细 semantic read model/相关语义上下文，以 live state 设计
+  platform-neutral candidate。`get_modeling_context` 继续作为概览和 query-entry index，不把整个本体塞进
+  单次响应。
+- Non-goals: 不合并 Modeling/Protocol；不让 Modeling 写平台、持有 Lease、提交 Batch、运行 mutation 型
+  validation/reasoning；不新增领域专用 read API；不改变两个冻结 delete target、bounded C→B→A slice、
+  deletion policy 或 N-CQ 合同。
+- Authorization: 用户同时明确新增授权恰好一次 fresh semantic start；该额度只在本次合同修改、plan
+  review、开发、独立测试、restart/health 全部 PASS 后使用，不在设计/测试阶段 reserve 或启动。授权账本
+  ID/reference 采用 `user-20260811-r23003-modeling-read-start1`，additional_starts=`1`。
+- Unresolved refinement: 确认 Modeling 详细只读面是仅 `get_modeling_context`，还是采用推荐的三工具最小
+  集合 `get_modeling_context + get_ontology_read_model + query_semantic_context`；该选择直接决定是否能在
+  candidate 前发现 Class/实体类型/相关邻域冲突。
+- Authorization evidence: strict `authorize-budget` 已成功 append 第 26 行，ledger SHA-256=
+  `fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`；当前只增加 cap，未创建 start9
+  run directory、reservation 或 semantic_start。
+
+### 2026-08-11T14:24:00+08:00 — Modeling 只读查询功能合同冻结 — main agent
+
+- Refinement disposition: 用户对上一轮明确建议整体回复“同意，按照这个方向设计并实施”，因此确认推荐
+  三工具最小集合，不再把工具范围作为未决问题：`get_modeling_context`、受限
+  `get_ontology_read_model`、`query_semantic_context`。
+- Functional contract: 仅 formal R2.3-003 Modeling 使用独立 project-scoped read key；candidate 前读取
+  authoritative Modeling Context 和必要 details，Protocol 仍独立重读并唯一负责全部写操作。Modeling
+  candidate 保持 platform-neutral，禁止 IRI/key/Batch/Lease/写工具；状态漂移零 mutation conflict。
+- Artifact update: requirement、design 和唯一 shared test plan 已同步本轮权限、版本绑定、credential
+  cleanup、003/005 隔离和 exact `+1` 真实运行门，准备进入 mandatory plan review。
+
+### 2026-08-11T14:35:00+08:00 — Modeling read-only plan review Round 1 — plan reviewer and main agent
+
+- Result: `REVISE`；无 Critical，两个 High，ledger `+1` 合同 PASS。
+- Finding 1 disposition=`accepted-high`: 当前 Modeling=`platform:none`，PlatformScope/TeamRun 只管理 Protocol
+  model key，backend read key 只限制 Project/read scope，不能阻止同项目其他 Ontology 或额外 read tools。
+  设计已补 Runner-owned independent read-key lifecycle、Host-memory plaintext、Modeling local proxy exact
+  three-tool/P/O/model/scope enforcement、terminal/abort revoke/readback/post-revoke denial 和 cleanup；明确不能
+  把 Acceptance ticket proxy 原样视为 Modeling 合同。
+- Finding 2 disposition=`accepted-high`: 当前 candidate direct/capability publication 与 CandidatePlatformGate
+  不验证 Modeling 已读取 context，Protocol receipt 后也没有 observed/live workspace mechanical binding。
+  设计已补 Runner-owned ModelingContextGate、immutable context receipt、两条 candidate publication preflight、
+  Protocol read-only revalidation gate、stateful tool fence 和 drift typed zero-mutation full-revision 路径。
+- Ledger disposition=`PASS`: 003 variable positive extension 与 strict predecessor 支持 exact `+1`；现有第26行
+  合法，无需修改 ledger implementation。
+- Next: revised requirement/design/test plan 送回同一 Reviewer；未开始产品代码实现，未消费授权 start。
+
+### 2026-08-11T14:47:00+08:00 — Modeling read-only plan review Round 2 — plan reviewer and main agent
+
+- Result: `PASS`；Round 1 两个 High 均关闭，无新增 Critical/High。
+- Evidence: design §3.2 已冻结 Runner-owned project read key、exact-three-tool/P/O/model/scope proxy、revoke/
+  readback/post-revoke denial/secret cleanup；ModelingContextGate 覆盖 direct/capability candidate publication，
+  Protocol candidate 后 exact-O context reread/version equality 与 stateful fence。`query_semantic_context` 使用
+  backend resolver 支持的 exact `scope_mode=ontologies, ontology_ids=[O]`。
+- Disposition: reviewed design/test plan 标记 Approved；冻结开发范围。授权 ledger 仍只有 budget extension，
+  未产生 reservation/semantic_start。
+
+### 2026-08-11T15:05:00+08:00 — Modeling read-only development-ready handoff — requirement developer
+
+- Changed surfaces: 新增 `modeling_team/modeling_readonly.py`（exact three-tool proxy、参数/scope policy、read-key
+  lifecycle、ModelingContextGate/context/candidate/version receipts）；扩展 Runner、Codex Adapter、Team
+  Transport pre-send validator 和 generic read-proxy MCP mode；增加 R2.3-003 focused regressions，并更新本次
+  批准共享文件的 frozen hashes。
+- Isolation/decision: 所有 runtime wiring 以 formal R2.3-003 Modeling 为条件；Protocol/005/default 路径保持，
+  candidate 仍 platform-neutral。Protocol revalidation 比较 authoritative P/O/state/stale/workspace version，
+  不要求 recent-batch 等无害概览字段字节相同；原 Modeling response/call digest 仍进入 immutable receipt。
+- GitNexus: edit 前 TeamRunner、TeamTransportBroker.send、Codex roster/config/namespace/initialize 为 CRITICAL
+  （最高 380 impacted、83 processes）；实现使用 requirement-gated 分支。最终 detect_changes=
+  54 changed symbols/213 affected/9 tracked files，risk CRITICAL，符合已审查共享入口范围。
+- Verification: focused R2.3=`21 passed`；final targeted=`51 passed`；legacy Transport/Codex=`96 passed` 后仅
+  approved frozen drift，最终 frozen runner SHA=`191f266b77945248704bb06e1ea47a222576c6ce323db09017e22432bdd1394e`、
+  Codex SHA=`265fed50f2ef0bb4152646c5fcb598ca01d01d0187e60eb3033c65444b3fab49`；
+  full modeling_team=`728 passed, 1 skipped, 218 subtests`；backend=`848 passed, 10 skipped`；compileall、
+  `git diff --check` PASS。
+- Stable state: `DEVELOPMENT-READY`；未 restart、未 live run、未 reserve/修改 canonical ledger、未改 retained
+  ontology、未提交。下一步为独立 Round 21，先审查 package/runtime permission 与 T4M 全合同，再执行 full/
+  runtime/cleanup gates。
+
+### 2026-08-11T15:08:00+08:00 — independent-test baseline correction — main agent
+
+- Context: Tester handoff 后 developer 又完成一次 pre-send tightening；这属于稳定基线之后的文件变化，先前
+  handoff 中 Runner SHA `191f...` 不再是独立测试目标。
+- Action: 立即要求 developer 停止写入，并通知 Tester 丢弃/不计并发期间结果，从最新稳定 worktree 重跑。
+- New stable evidence: Runner SHA=`16473470cc39540540ab3faecd0e5e92d656bb66941e0c44b5a84ae3649c72e9`；
+  Codex SHA=`265fed50f2ef0bb4152646c5fcb598ca01d01d0187e60eb3033c65444b3fab49`；developer 重跑 full
+  modeling_team=`728 passed, 1 skipped, 218 subtests`、compileall/diff-check PASS，detect_changes=
+  53 changed/213 affected/CRITICAL。该更正不消费 ledger，不启动 live run。
+
+### 2026-08-11T15:20:00+08:00 — independent Round 21 — FAIL/BLOCKED — requirement tester
+
+- Stable checks PASS: focused=`51 passed`；legacy=`143 + 71 passed`；full modeling_team=`728 passed, 1 skipped,
+  218 subtests`；targeted backend=`73 passed`；compile/frozen/diff-check PASS，service/backend/frontend healthy。
+- Defect 1 disposition=`confirmed-high`: real MCP `get_modeling_context` returns `{ok:true,data:{...}}` but
+  ModelingContextGate only unwraps `result`; retained Start75 response is rejected and gate remains closed. Existing
+  tests used flattened fake payload. Repair must normalize the real MCP envelope and add retained-shape regression.
+- Defect 2 disposition=`confirmed-high`: Runner pre-send validator rejects every Modeling→Protocol candidate carrying
+  `reply_to`, including the required full revision reply to standalone conflict delivery. Broker-only test bypassed the
+  validator. Repair must permit only the typed/validated R2.3-003 awaiting-revision conflict binding while retaining
+  fresh reply slot for initial candidate and rejecting foreign/stale replies.
+- Defect 3 disposition=`confirmed-high`: Codex writes `modeling-read-proxy.token` into Modeling home, but private
+  cleanup names and secret-audit suffixes omit it/`.token`; plaintext may remain while aggregate audit reports clean.
+  Repair must explicitly unlink and audit the token, with residue/secret regression.
+- Ledger/live boundary: read-only ledger=26 lines, SHA=`fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`，
+  cap/count/active=`8/7/0`，tail only exact `+1` authorization；no start9/reservation/semantic_start or ontology mutation。
+- Outcome: implementation gate FAIL；live run remains prohibited。进入窄 repair + Round 22，不修改 reviewed scope。
+
+### 2026-08-11T15:34:00+08:00 — Round 21 High repair development-ready — requirement developer
+
+- Fix 1: ModelingContextGate 正确解包并严格校验真实 `{ok:true,data:{...}}` MCP envelope，同时保留 malformed/
+  error reject；新增 retained Start75 shape regression。
+- Fix 2: Runner pre-send 仅允许 fresh initial candidate，或 progress=`awaiting_revision` 且 reply_to=current
+  standalone conflict delivery 的完整 formal revision；receipt/foreign/stale/partial reply 均拒绝。新增完整
+  Runner+broker+gate receipt-v1→standalone conflict→revision-v2 集成回归。
+- Fix 3: Codex private formal artifact/secret audit 显式覆盖 `modeling-read-proxy.token` 和 `.token`，cleanup
+  unlink/residue regression 防止 plaintext 留存或 false-clean。
+- Verification: focused=`63 passed`；broader related=`215 passed, 75 subtests`；full modeling_team=
+  `731 passed, 1 skipped, 218 subtests`；compileall/diff-check PASS。Approved frozen hashes: Runner=
+  `e58fe4f0050a5581f574f34cbb17ead509287cb0c3f526f9bfa4af03c83897e2`，Codex=
+  `957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379`。GitNexus detect=
+  57 symbols/213 affected/11 files/CRITICAL，均在已审查共享范围。
+- Stable state: developer 已停止写入并明确 `DEVELOPMENT-READY`；未 restart/live/ledger/record/test-plan/commit。
+  进入独立 Round 22。
+
+### 2026-08-11T15:46:00+08:00 — independent Round 22 — FAIL/BLOCKED — requirement tester
+
+- Fixed/PASS: Round21 三项 High 已独立关闭。真实 retained `{ok:true,data}` Start75 context 正确进入
+  `context_observed`；Runner+broker initial→accepted receipt→standalone conflict→full revision 链通过且 stale/
+  foreign/receipt reply 拒绝；exact proxy matrix 6 valid/11 denied 无 backend leakage；token audit/unlink
+  before=1→after=0。
+- Regression PASS: focused=`63 passed`；legacy=`143 passed, 71 subtests`；full modeling_team=
+  `731 passed, 1 skipped, 218 subtests`；targeted backend=`73 passed`；compile/frozen/CLI/health PASS。
+- Remaining defect disposition=`confirmed-high`: Protocol post-receipt exact-O workspace-version revalidation 与
+  stateful fence 仍是 prompt-only。Runner validator 只拦 Modeling→Protocol；`ModelingContextGate.revalidate`
+  只由 Modeling proxy callback 调用；backend `_run_tool` 在 candidate gate open 后没有 context receipt/version
+  校验。独立 synthetic probe 证明 open carrier 下 `submit_modeling_batch` 可直接授权并执行 callback。
+- Required repair: 在 Protocol/backend 实际授权边界让 `get_modeling_context` 的 exact P/O/ready/stale/version
+  result 形成 revalidation receipt；该 receipt 与 candidate 关联的 Modeling observed version 相同前，所有
+  Session/Lease/Batch/validation/reasoning/stateful tools fail closed。Drift 关闭 gate并走 typed zero-mutation
+  revision；保持 ordinary/005/default 兼容。
+- Ledger/live boundary unchanged: 26 lines, SHA=`fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`，
+  cap/count/active=`8/7/0`；无 reservation/start9/live mutation。进入窄 repair + Round23。
+
+### 2026-08-11T16:02:00+08:00 — Round 22 stateful-fence repair development-ready — requirement developer
+
+- Implementation: CandidatePlatformGate open payload 对 003 绑定 Modeling context P/O/version、candidate/
+  receipt/response/call digests 和 `protocol_revalidation=required`。Backend MCP `_run_tool` 允许必要 read tools，
+  但在 exact-O `get_modeling_context` 校验 P/O、ready/no issues/no stale、workspace version 相同并形成 immutable
+  process-local receipt 前，所有 stateful callback 均拒绝；每次 mutation 前再读 live context，drift 返回 typed
+  zero-mutation details 且不执行 callback。Candidate digest/revision 改变使旧 receipt 失效。005/default 无
+  context payload 行为保持。
+- Tests: backend candidate gate=`5 passed`；modeling focused=`46 passed`；full modeling_team=
+  `732 passed, 1 skipped, 218 subtests`；full backend=`849 passed, 10 skipped`；compileall/diff-check PASS。
+  Frozen Runner SHA=`ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7`，Codex SHA=
+  `957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379`。
+- Risk/runtime: pre-edit four shared symbols均 CRITICAL；final detect_changes=72 symbols/220 affected/15 files/
+  CRITICAL。`ontology-platform.service` 已重启，backend `/api/health` 和 frontend `5173` healthy。
+- Stable state: `DEVELOPMENT-READY`；无 live run/reservation/ledger/ontology/record/test-plan/commit。进入独立
+  Round23，必须复现 open candidate carrier + no revalidation deny/no callback 及 same-version allow/drift deny。
+
+### 2026-08-11T16:18:00+08:00 — independent Round 23 — PASS deterministic gate — requirement tester and main agent
+
+- Fence PASS: actual backend carrier 在 revalidation 前拒绝 stateful callback（count=0），read context 可用；
+  malformed/wrong P/O/version/stale/issues 拒绝；same-version receipt 后允许；live drift 返回
+  `modeling_context_revalidation_failed`、canonical zero-mutation、callback=0；candidate digest/revision 变化使旧
+  receipt 失效；005/default carrier 保持兼容。
+- Prior paths remain PASS: native Start75 `{ok,data}` context、direct/staged candidate gate、standalone conflict→
+  full revision、exact proxy matrix、read key/token/socket/thread cleanup。
+- Full evidence: focused=`63 passed`；legacy=`144 passed, 71 subtests`；modeling_team=`732 passed, 1 skipped,
+  218 subtests`；backend=`849 passed, 10 skipped`；compile/diff/frozen/CLI/service health PASS。Runner SHA=
+  `ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7`；Codex SHA=
+  `957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379`；backend runtime SHA=
+  `e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade`。
+- Residual=`accepted-low`: Protocol revalidation 不重新校验 missing/bool/negative resource_counts；candidate 前
+  ModelingContextGate 已校验 counts，stateful fence 身份/并发判断只依赖 exact P/O/version、ready/no issues/
+  no stale，因此不阻断本轮。
+- Main-agent correction: Tester 原结论将 cap=8/count=7 写成 exhausted；算术上仍有恰好一次授权。共享测试
+  计划用 append-only addendum 更正，不删除原记录。Ledger 仍 26 lines/SHA=`fea60dd2...`、active=0，未
+  reserve/start9。确定性门 PASS；live L0/L1/L2 尚未执行，下一步提交 clean baseline 后使用唯一额度。

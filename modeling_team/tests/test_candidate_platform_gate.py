@@ -53,6 +53,26 @@ def test_candidate_platform_gate_reuses_existing_state(tmp_path: Path) -> None:
     assert _state(same.state_path)["state"] == "open"
 
 
+def test_candidate_platform_gate_binds_modeling_context_for_r23003_only(tmp_path: Path) -> None:
+    gate = CandidatePlatformGate.ensure(tmp_path / "candidate-gate")
+    identity = {
+        **_identity(),
+        "modeling_context": {
+            "project_id": "project-1",
+            "ontology_id": "ontology-1",
+            "workspace_version": "workspace-v1",
+            "context_receipt_digest": "context-receipt",
+            "response_digest": "modeling-response",
+            "call_receipt_digest": "modeling-call",
+        },
+    }
+    gate.open(identity)
+    state = _state(gate.state_path)
+    assert state["modeling_context"]["project_id"] == "project-1"
+    assert state["modeling_context"]["workspace_version"] == "workspace-v1"
+    assert state["protocol_revalidation"] == {"state": "required"}
+
+
 def test_launch_contract_injects_gate_only_when_requested(tmp_path: Path) -> None:
     formal = protocol_mcp_launch_spec(
         frozenset({"check_platform_health"}),

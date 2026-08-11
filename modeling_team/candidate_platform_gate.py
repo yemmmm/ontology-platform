@@ -112,20 +112,38 @@ class CandidatePlatformGate:
             or (isinstance(revision, str) and bool(revision))
         ):
             raise CandidatePlatformGateError("candidate platform gate revision is invalid")
-        self._ensure_directory()
-        self._write(
-            {
-                "schema_version": CANDIDATE_PLATFORM_GATE_SCHEMA,
-                "state": "open",
-                "run_id": identity["run_id"],
-                "protocol_agent_id": identity["protocol_agent_id"],
-                "protocol_thread_id": identity["protocol_thread_id"],
-                "original_delivery_id": identity["original_delivery_id"],
-                "candidate_revision": revision,
-                "semantic_digest": identity["semantic_digest"],
-                "candidate_digest": identity["candidate_digest"],
+        context_binding = identity.get("modeling_context")
+        if context_binding is not None:
+            required_context = {
+                "project_id",
+                "ontology_id",
+                "workspace_version",
+                "context_receipt_digest",
+                "response_digest",
+                "call_receipt_digest",
             }
-        )
+            if not isinstance(context_binding, Mapping) or set(context_binding) != required_context:
+                raise CandidatePlatformGateError("candidate Modeling context binding is incomplete")
+            for field in required_context:
+                value = context_binding.get(field)
+                if not isinstance(value, str) or not value:
+                    raise CandidatePlatformGateError("candidate Modeling context binding is invalid")
+        self._ensure_directory()
+        payload: dict[str, Any] = {
+            "schema_version": CANDIDATE_PLATFORM_GATE_SCHEMA,
+            "state": "open",
+            "run_id": identity["run_id"],
+            "protocol_agent_id": identity["protocol_agent_id"],
+            "protocol_thread_id": identity["protocol_thread_id"],
+            "original_delivery_id": identity["original_delivery_id"],
+            "candidate_revision": revision,
+            "semantic_digest": identity["semantic_digest"],
+            "candidate_digest": identity["candidate_digest"],
+        }
+        if context_binding is not None:
+            payload["modeling_context"] = dict(context_binding)
+            payload["protocol_revalidation"] = {"state": "required"}
+        self._write(payload)
 
     def _ensure_directory(self) -> None:
         if self.directory.is_symlink():

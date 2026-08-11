@@ -11,6 +11,7 @@ import pytest
 
 from modeling_team import runner as runner_module
 from modeling_team import preflight as preflight_module
+from modeling_team.candidate_progress import FormalCandidateProgress, formal_candidate_digests
 from modeling_team.contracts import TeamConfigurationError
 from modeling_team.formal_runs import load_formal_run_configuration
 from modeling_team.model_manifest import load_formal_model_manifest
@@ -221,6 +222,127 @@ def _candidate() -> dict:
             },
         ],
     }
+
+
+def test_runner_validator_allows_only_bound_post_receipt_revision_via_broker(
+    tmp_path: Path,
+) -> None:
+    """A 003 receipt-v1 conflict opens exactly one bound full-revision slot."""
+
+    runner = runner_module.TeamRunner(repository_root=tmp_path, adapter=SimpleNamespace())
+    runner.run = SimpleNamespace(configuration=SimpleNamespace())
+    runner._is_r23003_modeling_run = lambda: True
+    runner._formal_coordination_role_ids = lambda: {"modeling": "modeling", "protocol": "protocol"}
+    runner._modeling_context_gate = runner_module.ModelingContextGate(
+        run_id="run-r23003", project_id="P", ontology_id="O"
+    )
+    runner._modeling_context_gate.observe(
+        {"ok": True, "data": {
+            "project": {"id": "P"},
+            "ontology": {"id": "O"},
+            "workspace": {"state": "ready", "workspace_version": "v1", "issues": []},
+            "resource_counts": {"classes": 1},
+            "derived_state": {"stale_count": 0, "warning": None},
+        }},
+        call_receipt={"ordinal": 0},
+    )
+    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
+    runner._candidate_progress = progress
+    broker = TeamTransportBroker(
+        tmp_path / "broker",
+        {("modeling", "protocol"), ("protocol", "modeling")},
+        pre_send_validator=runner._validate_modeling_transport_send,
+    )
+
+    candidate = _candidate()
+    initial = broker.send("modeling", "protocol", json.dumps(candidate), expects_reply=True)
+    assert progress.observe_delivery(
+        initial,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="run-r23003",
+        protocol_thread_id="protocol-thread",
+    ) == "candidate"
+    candidate_digest, semantic_digest = formal_candidate_digests(candidate)
+    receipt_value = {
+        "status": "accepted",
+        "candidate_revision": candidate["candidate_revision"],
+        "semantic_digest": semantic_digest,
+        "candidate_digest": candidate_digest,
+    }
+    receipt = broker.send(
+        "protocol",
+        "modeling",
+        json.dumps(receipt_value),
+        expects_reply=True,
+        reply_to_delivery_id=initial.delivery_id,
+    )
+    assert progress.observe_delivery(
+        receipt,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="run-r23003",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    assert progress.pending is not None
+    conflict_value = {
+        "status": "conflict",
+        "candidate_revision": candidate["candidate_revision"],
+        "semantic_digest": semantic_digest,
+        "candidate_digest": candidate_digest,
+        "conflict_code": "live-binding-mismatch",
+        "conflict_detail": "Workflow vs InvokingWorkflow",
+        "original_delivery_id": initial.delivery_id,
+        "receipt_digest": progress.pending.accepted_receipt_digest,
+        "workspace_version": "v1",
+        "mutation_state": "zero-mutation",
+    }
+    conflict = broker.send(
+        "protocol", "modeling", json.dumps(conflict_value), expects_reply=True
+    )
+    assert progress.observe_delivery(
+        conflict,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="run-r23003",
+        protocol_thread_id="protocol-thread",
+    ) == "conflict"
+
+    revised = {**candidate, "candidate_revision": 2}
+    revision = broker.send(
+        "modeling",
+        "protocol",
+        json.dumps(revised),
+        expects_reply=True,
+        reply_to_delivery_id=conflict.delivery_id,
+    )
+    assert progress.observe_delivery(
+        revision,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="run-r23003",
+        protocol_thread_id="protocol-thread",
+    ) == "revision"
+    with pytest.raises(runner_module.RoutingError, match="current standalone Protocol conflict"):
+        broker.send(
+            "modeling",
+            "protocol",
+            json.dumps({**revised, "candidate_revision": 3}),
+            expects_reply=True,
+            reply_to_delivery_id=conflict.delivery_id,
+        )
+    with pytest.raises(runner_module.RoutingError, match="current standalone Protocol conflict"):
+        broker.send(
+            "modeling",
+            "protocol",
+            json.dumps({**revised, "candidate_revision": 4}),
+            expects_reply=True,
+            reply_to_delivery_id="delivery-foreign",
+        )
+    with pytest.raises(runner_module.RoutingError, match="complete candidate"):
+        broker.send(
+            "modeling", "protocol", json.dumps(receipt_value), expects_reply=True
+        )
 
 
 def test_formal_r23003_pair_and_manifest_are_closed() -> None:

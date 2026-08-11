@@ -1732,7 +1732,7 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
-当前状态：`Current Draft（2026-08-11 合同变更已通过 plan review，待实现、独立测试与重新授权真实运行）`
+当前状态：`Current Draft（2026-08-11 Modeling 只读查询合同已独立测试 PASS，待一次授权真实运行）`
 
 优先级：`P0`
 
@@ -1767,7 +1767,17 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   重新读取 Project/Ontology 归属、当前 workspace version、默认 Graph Set、Build Session 与 Lease
   状态，任一身份、版本或所有权漂移都停止并等待人工处理；
 - Team Runner、Codex Adapter 和基础四 Agent Profile 不因 existing 场景修改核心语义；
-- Protocol 在写入前读取当前平台事实和 workspace context，并创建新的 Build Session/Lease；
+- Modeling 在构造首个 candidate 前通过独立 project-scoped read credential 调用
+  `get_modeling_context`，并按需调用受限的 `get_ontology_read_model` 与
+  `query_semantic_context`，以当前 workspace version、类/实体/事实和相关语义邻域作为建模依据；它不得
+  获得任何写工具、Build Session/Lease、Batch、validation/reasoning mutation 或 Protocol credential；
+- Modeling 的 read credential 与精确三工具/P/O/model/scope allowlist 必须由 Runner-owned local proxy 在
+  backend 转发前机械执行，不能只依赖 Prompt、MCP tools/list、客户端 enabled_tools 或 Project ownership；
+  成功 context response 形成绑定 run/P/O/workspace version/response digest 的不可变 receipt。没有该 receipt
+  时 direct Team Transport 与 candidate capability 均不得发布候选；
+- Protocol 在收到 candidate 后独立重读当前平台事实和 workspace context，验证 Modeling 观察后未发生
+  workspace drift；只有 exact version revalidation receipt 成立才可创建新的 Build Session/Lease 或调用任何
+  stateful tool，drift 通过 typed zero-mutation conflict 请求完整 revision；
 - Platform/Protocol 必须通过显式 canonical identity 字段绑定 existing entity；不得从 full IRI 尾段猜
   semantic ID/Class。硬删除前必须用 scope/entity/workspace-bound opaque cursor 读取完整的 subject/object
   statement page chain，并取得显式 completeness/snapshot digest；未完整时禁止删除；
@@ -1790,6 +1800,11 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   ledger 的严格 budget extension 追加，使 cap 从 4 变为 7，不重写初始授权/四次失败；必须校验最新
   retryable terminal predecessor、ID/reference 唯一性与 lock/replay。只有修订实现、独立确定性验收、
   restart/health 全部 PASS 后才可 reserve；首次完整 semantic PASS 后剩余额度不再消费。
+- 上述 `+3` 也已全部以零 mutation terminal failure 结束并完成 append-only reconciliation。用户于
+  2026-08-11 再追加精确一次 fresh semantic start，authorization ID/reference=
+  `user-20260811-r23003-modeling-read-start1`、`additional_starts=1`；该事件把 cap 从 7 增至 8，不重写
+  前 25 行。它只可在 Modeling read-only 合同完成 plan review、实现、独立测试、restart/health 后 reserve，
+  不得在设计或测试阶段启动。
 - existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
   apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的
@@ -1856,8 +1871,10 @@ ticket 都携带 Runner-owned ordinal/count/previous/next/is-final 元数据，�
 
 1. 使用全新的 Team Runner run、Coordinator、Modeling、Protocol、Acceptance Sessions、Build Session
    和 Lease。
-2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff。
-3. 当前 workspace version 和既有模型在变更前被正确读取；没有历史 Agent 对话泄漏。
+2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff；Modeling 的平台面精确限制为
+   `get_modeling_context`、`get_ontology_read_model`、`query_semantic_context`，Protocol 保持唯一写入者。
+3. Modeling 在 candidate 前读取当前 Modeling Context 和必要详细 read model；Protocol 在 candidate 后、
+   写入前独立重读并验证同一 workspace version。既有模型被正确读取且没有历史 Agent 对话泄漏。
 4. Phase A 增量 Batch 和 Phase B delete-only Batch 均完成 dry-run/apply/readback，workspace 单调前进，
    既有模型未被错误覆盖或重建。Acceptance freeze 前必须证明新结论/Evidence/业务切片 durable、两个目标
    及其声明的级联边不存在、所有非目标资源保持。

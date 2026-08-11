@@ -46,9 +46,16 @@ def main() -> int:
         token = open(args.token_file, encoding="utf-8").read().strip()
     except OSError:
         return 2
+    modeling_mode = os.environ.get("PLATFORM_PROXY_MODE") == "modeling"
     scope = {
         key: os.environ.get(key, "")
-        for key in ("PLATFORM_PROXY_PROJECT_ID", "PLATFORM_PROXY_ONTOLOGY_ID", "PLATFORM_PROXY_GRAPH_SET_ID", "PLATFORM_PROXY_TICKET_DIGEST", "PLATFORM_PROXY_MODEL_STATE_DIGEST")
+        for key in (
+            "PLATFORM_PROXY_PROJECT_ID",
+            "PLATFORM_PROXY_ONTOLOGY_ID",
+            "PLATFORM_PROXY_GRAPH_SET_ID",
+            "PLATFORM_PROXY_TICKET_DIGEST",
+            "PLATFORM_PROXY_MODEL_STATE_DIGEST",
+        )
     }
     for line in sys.stdin:
         try:
@@ -64,13 +71,20 @@ def main() -> int:
                 params = request.get("params", {}) if isinstance(request, dict) else {}
                 name = params.get("name")
                 arguments = dict(params.get("arguments") or {})
-                mapping = {
-                    "project_id": "PLATFORM_PROXY_PROJECT_ID",
-                    "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
-                    "graph_set_id": "PLATFORM_PROXY_GRAPH_SET_ID",
-                    "ticket_digest": "PLATFORM_PROXY_TICKET_DIGEST",
-                    "model_state_digest": "PLATFORM_PROXY_MODEL_STATE_DIGEST",
-                }
+                mapping = (
+                    {
+                        "project_id": "PLATFORM_PROXY_PROJECT_ID",
+                        "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
+                    }
+                    if modeling_mode
+                    else {
+                        "project_id": "PLATFORM_PROXY_PROJECT_ID",
+                        "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
+                        "graph_set_id": "PLATFORM_PROXY_GRAPH_SET_ID",
+                        "ticket_digest": "PLATFORM_PROXY_TICKET_DIGEST",
+                        "model_state_digest": "PLATFORM_PROXY_MODEL_STATE_DIGEST",
+                    }
+                )
                 for field, env_name in mapping.items():
                     arguments.setdefault(field, scope[env_name])
                 response = _proxy_call(args.socket, {"token": token, "operation": "tools/call", "tool": name, "arguments": arguments})

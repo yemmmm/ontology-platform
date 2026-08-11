@@ -97,10 +97,10 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-11 R2.3-003 start8 repair: post-receipt conflicts use a
     # standalone Protocol->Modeling delivery; issue-abort evidence canonicalizes
     # zero-mutation suffixes and reports reconciliation failures clearly.
-    "modeling_team/runner.py": "c53a1d83b030f1983696fdc50324fc279d831f718654bf16feccba4c1c1e4163",
+    "modeling_team/runner.py": "ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7",
     "modeling_team/protocol_mechanics.py": "5aa6324401666fb54e6e813e0407ffe364318356fc4f4eecdd6330910165a2d9",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "e732c426b93fb12c95daf620d9df848ea172d9db4d622e07717391a8a91a510b",
+    "modeling_team/runtimes/codex.py": "957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

@@ -79,6 +79,31 @@ def test_audit_oserror_is_additive_and_fail_closed(tmp_path: Path, monkeypatch) 
     assert result["scan_error_count"] == 1
 
 
+def test_formal_cleanup_unlinks_modeling_read_proxy_token_and_audits_token_suffix(
+    tmp_path: Path,
+) -> None:
+    sentinel = b"modeling-read-proxy-secret"
+    adapter = CodexRuntimeAdapter(repository_root=repository_root())
+    agent = _agent(tmp_path, "modeling")
+    token_path = agent.home / "modeling-read-proxy.token"
+    token_path.write_bytes(sentinel)
+
+    before = audit_private_artifacts(agent.home, [sentinel])
+    assert before["match_count"] == 1
+    assert "modeling-read-proxy.token" in codex_runtime._PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES
+    assert ".token" in codex_runtime._SECRET_AUDIT_SUFFIXES
+
+    assert adapter._stop_agent_for_cleanup(
+        agent,
+        codex_runtime._PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES,
+        [],
+    )
+    assert not token_path.exists()
+    after = audit_private_artifacts(agent.home, [sentinel])
+    assert after["match_count"] == 0
+    assert after["matched_secret_count"] == 0
+
+
 def test_formal_cleanup_audits_once_before_proxy_wipe_and_projects_safe_counts(
     tmp_path: Path, monkeypatch
 ) -> None:

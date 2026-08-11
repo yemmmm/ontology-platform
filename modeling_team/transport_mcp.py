@@ -139,6 +139,7 @@ class TeamTransportBroker:
         coordinator_agent_id: str | None = None,
         issue_escalation_enabled: bool = False,
         issue_event_callback: Callable[[dict[str, object]], object] | None = None,
+        pre_send_validator: Callable[[str, str, str, bool, str | None], object] | None = None,
     ):
         self.evidence_root = root
         requested_root = root
@@ -155,6 +156,7 @@ class TeamTransportBroker:
         self.coordinator_agent_id = coordinator_agent_id
         self.issue_escalation_enabled = issue_escalation_enabled is True
         self.issue_event_callback = issue_event_callback
+        self.pre_send_validator = pre_send_validator
         self._issue_lock = threading.Lock()
         self._issues: RecoverableIssueLedger | None = None
         if self.issue_escalation_enabled:
@@ -416,6 +418,14 @@ class TeamTransportBroker:
             or (reply_to_delivery_id is not None and not isinstance(reply_to_delivery_id, str))
         ):
             raise RoutingError("recipient is not allowed by frozen Profile")
+        if self.pre_send_validator is not None:
+            self.pre_send_validator(
+                sender_id,
+                recipient_id,
+                text,
+                expects_reply,
+                reply_to_delivery_id,
+            )
         with self._lock:
             if reply_to_delivery_id is not None:
                 original = self._delivery_by_id.get(reply_to_delivery_id)

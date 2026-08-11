@@ -42,6 +42,7 @@ from ..acceptance_runtime import (
     child_config_digest,
     prepare_child_tree,
 )
+from ..modeling_readonly import MODELING_READ_TOOLS
 from ..capability_mcp import ROLE_OPERATIONS
 from ..candidate_platform_gate import (
     CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
@@ -126,6 +127,7 @@ _PRIVATE_FORMAL_AGENT_ARTIFACT_NAMES = (
     "runner-capability.token",
     "runner-capability.sock",
     "runner_capability_mcp.py",
+    "modeling-read-proxy.token",
 )
 
 _DEEPSEEK_API_KEY_ENV = DEEPSEEK_API_KEY_ENV
@@ -148,6 +150,7 @@ _SECRET_AUDIT_SUFFIXES = frozenset(
         ".yaml",
         ".yml",
         ".sh",
+        ".token",
     }
 )
 
@@ -993,6 +996,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._messages: list[RuntimeMessage] = []
         self._run_root: Path | None = None
         self._run_id: str | None = None
+        self._active_run: Any | None = None
         self._acceptance: Any | None = None
         self._coordination_enabled = False
         self._candidate_platform_gate_enabled = False
@@ -1925,6 +1929,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
         )
 
+    @staticmethod
+    def _is_r23003_run(run: Any) -> bool:
+        contract = getattr(run, "formal_contract", None)
+        if contract is not None:
+            return getattr(contract, "requirement_id", None) == "R2.3-003"
+        configuration = getattr(run, "configuration", None)
+        task = getattr(configuration, "task", None)
+        profile = getattr(configuration, "profile", None)
+        return bool(
+            getattr(task, "task_id", None) == "r2-3-003-existing-scope-incremental"
+            or getattr(profile, "profile_id", None) == "r2-3-003-modeling-team"
+        )
+
     @classmethod
     def _candidate_platform_gate_enabled_for_run(cls, run: Any) -> bool:
         configuration = getattr(run, "configuration", None)
@@ -2089,6 +2106,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._acceptance_children.clear()
             self._run_root = run.root
             self._run_id = run.run_id
+            self._active_run = run
             self._secret_audit_values.clear()
             self._secret_audit_failures.clear()
             self._private_credentials_destroyed.clear()
@@ -2167,6 +2185,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             tools = (
                 frozenset(run.configuration.task.protocol_tools)
                 if package.role == "protocol" and run.configuration.task.schema_version == 2
+                else frozenset(MODELING_READ_TOOLS)
+                if package.role == "modeling" and self._is_r23003_run(run)
                 else frozenset()
                 if package.role == "acceptance"
                 else frozenset({"check_platform_health"})
@@ -2699,6 +2719,36 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "[mcp_servers.team_transport.env]",
             f'TEAM_TRANSPORT_SOCKET = "/agent/transport/{agent.agent_id}.sock"',
         ]
+        modeling_read_proxy = (
+            getattr(run, "modeling_read_proxy", None)
+            if agent.package.role == "modeling" and self._is_r23003_run(run)
+            else None
+        )
+        if agent.package.role == "modeling" and self._is_r23003_run(run):
+            if modeling_read_proxy is None or not getattr(modeling_read_proxy, "active", False):
+                raise CodexRuntimeError("R2.3-003 Modeling read proxy is unavailable")
+            proxy_token_path = agent.home / "modeling-read-proxy.token"
+            self._remember_secret(modeling_read_proxy.token.encode("utf-8"))
+            self._write_child_private(
+                proxy_token_path, modeling_read_proxy.token.encode("utf-8"), 0o400
+            )
+            shutil.copyfile(
+                self.root / "modeling_team" / "read_proxy_mcp.py",
+                agent.home / "read_proxy_mcp.py",
+            )
+            os.chmod(agent.home / "read_proxy_mcp.py", 0o444)
+            lines.extend(
+                [
+                    "[mcp_servers.modeling_read_proxy]",
+                    'command = "/usr/bin/python3"',
+                    'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/modeling-read-proxy.sock", "--token-file", "/agent/home/modeling-read-proxy.token"]',
+                    "required = true",
+                    "[mcp_servers.modeling_read_proxy.env]",
+                    'PLATFORM_PROXY_MODE = "modeling"',
+                    f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(str(run.scope["project_id"]))}',
+                    f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(str(run.scope["ontology_id"]))}',
+                ]
+            )
         if agent.package.role == "protocol":
             key = run.protocol_key
             if not key:
@@ -2883,6 +2933,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "--bind",
                 str(self._acceptance.capability_socket_path(agent.package.role)),
                 "/agent/home/runner-capability.sock",
+            ]
+        if agent.package.role == "modeling" and self._is_r23003_run(self._active_run):
+            proxy = getattr(self._active_run, "modeling_read_proxy", None)
+            socket_path = getattr(proxy, "socket_path", None)
+            if not isinstance(socket_path, Path) or not socket_path.exists():
+                raise CodexRuntimeError("R2.3-003 Modeling read proxy socket is unavailable")
+            command[command.index("--chdir") : command.index("--chdir")] = [
+                "--bind",
+                str(socket_path),
+                "/agent/home/modeling-read-proxy.sock",
             ]
         app_server_command = [
             "--config",
@@ -3751,6 +3811,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     expected["protocol_mechanics"].add("build_candidate_conflict")
                 if agent.proof_gate:
                     expected["protocol_mechanics"].add("write_candidate_item_evidence_map")
+        if agent.package.role == "modeling" and self._is_r23003_run(getattr(self, "_active_run", None)):
+            expected["modeling_read_proxy"] = set(MODELING_READ_TOOLS)
         capability_operations = self._role_capability_operations(agent.package.role)
         if capability_operations:
             expected["runner_capability"] = set(capability_operations)

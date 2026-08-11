@@ -1,6 +1,6 @@
 # R2.3-003 Existing-scope 增量建模共享测试计划
 
-- 状态：Approved；revised-contract plan review Round 4 PASS，待实现/独立复测
+- 状态：Approved；Modeling read-only revision plan review Round 2 PASS，待实现/独立复测
 - 需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 设计：
   `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
@@ -14,7 +14,8 @@
 
 1. requirement/source/design/test artifacts 一致且 digest 稳定；
 2. R2.3-005 formal create 合同无回归，R2.3-003 formal existing 合同 fail closed；
-3. R2.3-003 专属 ledger、零 cap 和 `user-20260811-r23003-start1-4` 精确四 start 授权边界正确；
+3. R2.3-003 专属 ledger、历史 `+4/+3`、本轮 `user-20260811-r23003-modeling-read-start1` 精确 `+1`
+   授权边界正确；
 4. existing-scope live drift preflight 在任何副作用前完成；
 5. 真实增量 Batch 不覆盖 Start75 既有模型，workspace 单调前进；
 6. validation/reasoning、governed retrieval、Evidence/lineage、目标 unknown 硬删除和 standard 的全部 N 条 CQ 在同一最终 model state PASS；
@@ -58,6 +59,9 @@
   `user-20260811-r23003-revision-start1-3` +3 strict extension，使 cap/count/active=`7/4/0`；提前追加、
   重复 ID/reference、错误数量、缺 retryable predecessor 均拒绝；
 - replay、append、locking、baseline binding 与 previous terminal 顺序稳定。
+- 历史 cap/count=`7/7` 且 start8 terminal reconciliation 后只接受一次 exact
+  `user-20260811-r23003-modeling-read-start1` `+1`，得到 cap/count/active=`8/7/0`；实现、独立测试和健康门
+  前不得出现 reservation/semantic_start，重复或不同数量授权 byte-stable reject。
 
 ### T4 — Existing preflight
 
@@ -66,6 +70,35 @@
 - missing、wrong owner、wrong Ontology、workspace drift、active Lease/Session、in-flight Attempt、fence 任一情况
   在 ledger/run root/credential/Agent/Build Session 副作用前失败；
 - retained state 文件不能替代 live API 回执；credential/error 原文不进入 evidence。
+
+### T4M — Modeling read-only current-state access
+
+- 仅 formal R2.3-003 Modeling 获得独立 project-scoped `read` credential 和精确三工具 allowlist：
+  `get_modeling_context`、`get_ontology_read_model`、`query_semantic_context`；Coordinator、Acceptance、
+  R2.3-005/default Modeling 不新增 ontology-platform surface，Protocol 仍保留原完整工具面；
+- exact allowlist 在 Runner-owned local proxy/backend forwarding boundary 强制，而非只检查 prompt、tools/list
+  或 Codex enabled_tools；直接请求任一其他 backend read/write tool、同 Project 其他 Ontology、
+  `history|delta` model、空/全 Project semantic scope 均在转发前拒绝，backend request log 证明零调用；
+- Modeling 在首个 candidate delivery 前必须成功调用 exact O 的 `get_modeling_context`，绑定 P/O、ready
+  workspace、workspace version、resource counts/stale state；missing/wrong scope、stale/error/credential
+  failure均在 candidate/write 前 BLOCKED；
+- Modeling 可按需读取 classes/entities/facts/rules 和相关 semantic context，从真实 Start75 response 明确
+  识别 `workflow-b` actual Class=`InvokingWorkflow` 且不存在 `Content` Class；越权 model name、scope、工具、
+  write/validation/reasoning 调用在转发前拒绝并记录，无平台 mutation；
+- Modeling candidate 仍不携带 IRI/key/Batch ID；Protocol 收到 candidate 后独立重读 Modeling Context，
+  workspace version 相同才继续，drift 时零 mutation conflict/full revision；Modeling 的读结果不能替代
+  Protocol binding、impact receipt 或写前 readback；
+- Runner-owned ModelingContextGate 初始 closed；无 context read、错误/错 O/P、not-ready、issues、stale、空
+  version 时，direct Team Transport 与 staged-candidate capability 两条路径均在 broker publication 前拒绝，
+  没有 candidate delivery/receipt/platform call。有效 response 生成绑定 run/P/O/version/response+call digest
+  的 immutable receipt；candidate delivery/digest 必须关联该 receipt；
+- Protocol candidate receipt 后可做必要只读 binding/revalidation，但 create session/acquire lease/submit batch/
+  validation/reasoning 等 stateful tools 继续关闭。Protocol exact-O Modeling Context revalidation 版本相同才
+  开门；版本 drift 使旧 candidate receipt/context receipt 失效并形成 typed zero-mutation conflict。Modeling
+  revision 必须先刷新 context；stale receipt/revision/replay 全部拒绝；
+- Modeling terminal/abort/run cleanup 撤销其 read key并销毁 secret，aggregate audit 证明 key non-active、
+  status readback 有 revoked_at、旧 key 请求 401/403、plaintext 无残留、无 socket/thread/process；创建失败、
+  revoke/readback/denial/secret cleanup 任一失败均 fail closed。Protocol/Acceptance key lifecycle 回归不变。
 
 ### T5 — Delta candidate and application
 
@@ -127,15 +160,17 @@
 
 ## 3. 真实运行测试
 
-原四次 R2.3-003 semantic starts 已耗尽；用户新增授权精确三次。真实运行只在修订实现、独立
-deterministic PASS、clean committed baseline、service restart/health PASS 且 exact +3 ledger extension
-登记后进行；首个完整 PASS 后 success-stop。
+原七次 R2.3-003 semantic starts 已耗尽；用户新增授权精确一次。真实运行只在本次 Modeling read-only
+修订、独立 deterministic PASS、clean committed baseline、service restart/health PASS 且 exact +1 ledger
+extension 已登记后进行；首个完整 PASS 后 success-stop。
 
 ### L0 — Start and scope
 
 - 20 分钟内进入第一个真实 semantic modeling start；只做安全启动所需最小 preflight；
 - 使用 exact Start75 Project/Ontology 和 live workspace version；全新 Team/Agent/Session/Lease/run root；
 - 首次 Agent turn 前 source visibility、Protocol-only MCP 和 forbidden-path probe PASS。
+- Modeling 首轮可用精确三工具只读 MCP，先读取 current Modeling Context/必要 read model；其他角色权限
+  与 Protocol-only write 边界保持。
 
 ### L1 — Modeling quality
 
@@ -1067,3 +1102,185 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   requirement's live L0/L1/L2 acceptance**. All seven semantic starts are consumed, and no further live modeling run
   or start9 is authorized under the exhausted cap. Deterministic contract/full-suite evidence remains valid, but it
   must not be promoted to live semantic acceptance or repeatability/productization evidence.
+
+### Round 21 — 2026-08-11 independent T4M current-state read-only revision — FAIL/BLOCKED
+
+- Scope and safety: independently re-reviewed R2.3-003, the reviewed design, this test plan, and `AGENTS.md` against
+  the latest stable uncommitted worktree. Frozen runtime hashes are `runner.py=
+  16473470cc39540540ab3faecd0e5e92d656bb66941e0c44b5a84ae3649c72e9` and `runtimes/codex.py=
+  265fed50f2ef0bb4152646c5fcb598ca01d01d0187e60eb3033c65444b3fab49`; no developer/test process or file churn was
+  observed during the audit. The tester changed no product code, delivery record, retained evidence, ontology, live
+  run, reservation, or ledger; only this append-only test-plan round was written.
+- Deterministic and adjacent regression gates are green:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_modeling_readonly.py
+    modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_p2a_codex_runtime.py -q` ->
+    **51 passed**.
+  - Legacy/isolation command covering R2.3-005 contracts/revisions/progress plus Codex and candidate gates ->
+    **143 passed, 71 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` -> **728 passed, 1 skipped, 218 subtests
+    passed**.
+  - Proportionate backend semantic/API/MCP command (`tests/test_api_keys.py`, `test_authorized_scope_discovery.py`,
+    `test_mcp_surface.py`, `test_semantic_context_query.py`, `test_semantic_context_cursor.py`,
+    `test_semantic_context_query_mcp.py`) -> **73 passed** (13 deprecation warnings only).
+  - `compileall` for `modeling_team backend/app backend/tests` and `git diff --check` pass. Formal 003 and 005 CLI
+    validation and matching baselines pass; cross-wired 003/005 profile-task pairs reject with rc2. The managed
+    service was already active and read-only backend/frontend health checks returned HTTP 200; no restart was needed
+    because backend/frontend product sources were not changed.
+- Read-only contract probes pass for the narrow static surface: the proxy exposes exactly
+  `get_modeling_context`, `get_ontology_read_model`, and `query_semantic_context`; six valid P/O/model/scope calls
+  forward unchanged and eleven wrong-project/ontology/scope, stale, history/delta, other-read, and write cases reject
+  without backend calls. A staged candidate is blocked before a valid context receipt and allowed afterward; same
+  version revalidation passes, version drift closes the gate with a typed conflict, and stale candidate binding is
+  rejected. Unix-socket lifecycle is clean (mode `0600`, post-revoke denial, socket removed, thread stopped). Retained
+  Start75 read-only artifacts show the expected project/ontology/version and classes/entities visibility.
+- **High — live MCP envelope is rejected by the ModelingContextGate.** The retained real
+  `get_modeling_context` artifact and `backend/app/mcp/runtime.py:421` use the native
+  `{"ok": true, "data": {...}}` envelope. `McpReadForwarder` passes that structured content through, but
+  `ModelingContextGate._context` only unwraps `result`; an actual proxy replay therefore returns
+  `context-gate-rejected`, leaves the gate closed, and records no context receipt. Expected: unwrap native `data` (while
+  preserving the formal contract) and open the gate for a valid current context. This blocks every real T4M modeling
+  read/candidate path despite green unit tests.
+- **High — Runner pre-send rejects the required full revision reply.** An independent `TeamRunner` probe with a valid
+  flattened context, revision candidate, `expects_reply=true`, and `reply_to=conflict-delivery-1` returns
+  `RoutingError: R2.3-003 candidate publication must open a fresh reply slot` from `runner.py:1999-2026`. Expected:
+  allow the full revision only when bound to the standalone typed conflict delivery, while rejecting a stale original
+  receipt reply. The existing broker regression bypasses this Runner validator, so it does not cover the real send
+  path; required drift/conflict/revision cannot complete end to end.
+- **High — Modeling proxy secret cleanup/audit omits the actual token artifact.** `runtimes/codex.py` writes
+  `modeling-read-proxy.token` and `read_proxy_mcp.py` into the Modeling Agent home, but the private cleanup artifact
+  names and secret suffix audit contain only the generic `runner-capability.*` names and do not include the Modeling
+  token or `.token`. An independent static probe confirms both omissions. Expected: unlink and audit the actual
+  Modeling proxy token/script, report cleanup failure if residue remains, and preserve socket/thread cleanup. Current
+  behavior can retain a plaintext proxy token while claiming clean cleanup.
+- Read-only ledger/live boundary: `.r2-3-003-start-ledger.jsonl` is **26 lines**, SHA-256
+  `fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`. The final line is the pre-existing exact
+  `budget_authorization` `user-20260811-r23003-modeling-read-start1` with `additional_starts=1`; strict replay reports
+  `start_cap=8`, `semantic_start_count=7`, `active_reservations=[]`, and `last_event=budget_authorization`. No
+  reservation, semantic start, start9, process, socket, or live modeling activity was created by this round.
+- Unexecuted/blocked: no live L0/L1/L2 semantic run, real key create/revoke against a modeling run, retained ontology
+  mutation, or full proxy-to-backend Agent session was attempted by policy and because the three High defects block a
+  meaningful end-to-end read path. The full backend suite was not rerun; targeted backend coverage above is green and
+  backend/frontend source was unchanged. Residual risk remains that deterministic tests do not prove native-envelope
+  acceptance, real revision transport, or secret cleanup.
+- Result: **FAIL/BLOCKED for T4M and R2.3-003 completion; PASS only for deterministic/static and adjacent regressions**.
+  Developer must repair all three High defects, freeze hashes again, and the tester should execute a same-plan Round22
+  focused/native-envelope/revision/cleanup recheck before any live authorization is considered. Do not infer live
+  semantic acceptance or start9 eligibility from this deterministic pass.
+
+### Round 22 — 2026-08-11 independent post-repair T4M recheck — FAIL/BLOCKED
+
+- Scope and safety: rechecked the latest stopped worktree after the Round21 repair, with frozen
+  `runner.py=e58fe4f0050a5581f574f34cbb17ead509287cb0c3f526f9bfa4af03c83897e2` and
+  `runtimes/codex.py=957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379`. No developer or pytest
+  process/file churn was observed before or after testing. The tester did not edit product code, delivery record,
+  ledger, retained ontology/evidence, or any live run; only this append-only Round22 was written.
+- The three Round21 High defects are **FIXED/PASS** on independent probes:
+  - The retained real Start75 context artifact
+    `r23003-real-20260811-deepseek-start8/evidence/platform-responses/f7f4ccc...-5c528ce...json` has native
+    structured content keys `ok,data`. `ModelingContextGate` now unwraps it and reaches `context_observed` with the
+    exact Project `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, workspace
+    version `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, inactive lease, and visible
+    `classes=6/entities=10`.
+  - An independent real `TeamRunner` pre-send plus `TeamTransportBroker` sequence succeeds as
+    `delivery-1` candidate -> `delivery-2` accepted receipt -> `delivery-3` standalone typed conflict -> `delivery-4`
+    complete revision, with progress `awaiting_receipt`. Reusing the conflict ID, a foreign reply anchor, or a receipt
+    payload as a revision each rejects before a delivery is created.
+  - Independent proxy/lifecycle checks pass: exact three tools, six valid P/O/model/scope forwards and eleven
+    wrong-tool/scope/history/delta/stale/write denials with backend calls unchanged; closed direct Transport and closed
+    staged publication both reject, then valid context opens both paths and binds the staged delivery. Token cleanup
+    proves `modeling-read-proxy.token` is in the private artifact list and `.token` is audited; temporary audit is
+    `before_matches=1 -> token_exists_after=false -> after_matches=0`, scan complete.
+- Deterministic and adjacent gates are green:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_modeling_readonly.py
+    modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_p2a_codex_runtime.py
+    modeling_team/tests/test_start74_cleanup_audit.py -q` -> **63 passed**.
+  - Legacy/isolation command covering R2.3-005 contracts/revisions/progress, Codex isolation, and candidate gate ->
+    **143 passed, 71 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` -> **731 passed, 1 skipped, 218 subtests
+    passed**.
+  - Targeted backend API/MCP/semantic command -> **73 passed, 13 deprecation warnings**. `compileall` and `git
+    diff --check` pass. Formal 003 and 005 validation return rc0 with exact four-role rosters; cross-wired 003-profile/
+    005-task returns rc2. Frozen hashes remain equal to `test_p2a_codex_runtime.py` expectations.
+  - `ontology-platform.service` is already active; read-only backend health is HTTP 200 `{"status":"ok"}` and
+    frontend `/` is HTTP 200. No restart was required because backend/frontend product sources were unchanged.
+- **High — Protocol post-receipt version/stateful fence is not mechanically enforced.** The reviewed T4M/design
+  contract requires Protocol to re-read exact-O Modeling Context after the candidate receipt and to keep Session,
+  Lease, Batch, validation, and reasoning tools closed until same-version revalidation; drift must close the old
+  receipt and produce a zero-mutation typed conflict. Current call-path evidence shows `TeamRunner.start()` wires a
+  pre-send validator only for Modeling -> Protocol candidate messages; `ModelingContextGate.revalidate()` is reached
+  only by the Modeling proxy callback; Protocol's `ontology_platform` MCP server has no Runner-owned revalidation or
+  stateful-tool validator. `backend/app/mcp/runtime.py:_run_tool` checks only the open candidate-receipt carrier, then
+  calls authorization and the requested tool. A no-live-side-effect synthetic probe with an open carrier records
+  `authorized_tool=['submit_modeling_batch']`, executes the stateful callback, returns `ok=true`, and observes no
+  context revalidation. This is a platform-contract High blocker, not a prompt defect: Protocol can comply by prompt,
+  but an early/stale stateful MCP call is not fail-closed or guaranteed zero mutation.
+- Read-only ledger/live boundary remains unchanged: `.r2-3-003-start-ledger.jsonl` is **26 lines**, SHA-256
+  `fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`; strict replay reports
+  `start_cap=8`, `semantic_start_count=7`, `active_reservations=[]`, and `last_event=budget_authorization`. No
+  reservation, semantic start, start9, process, socket, or live modeling activity was created by this round.
+- Unexecuted/blocked: no live L0/L1/L2 run, real new-run key create/revoke, retained ontology mutation, or full Agent
+  session was attempted. The full backend suite was not rerun; targeted backend coverage is green. Residual risk is
+  specifically stale Protocol stateful calls and mutation safety until the mechanical fence exists.
+- Result: **FAIL/BLOCKED for T4M and R2.3-003 completion; Round21 native-envelope, revision/broker, and token-cleanup
+  defects are FIXED/PASS, but the remaining High Protocol stateful-fence gap prevents live authorization or semantic
+  acceptance.** Developer must add/freeze a Runner/backend-owned exact-O same-version gate for Protocol stateful tools,
+  then the tester should repeat the focused/native-envelope/revision/fence/cleanup checks in Round23. Do not infer live
+  acceptance or start9 eligibility from the deterministic pass.
+
+### Round 23 — 2026-08-11 independent post-fence T4M recheck — PASS deterministic contract / BLOCKED live semantic acceptance
+
+- Scope and safety: independently retested the stopped DEVELOPMENT-READY worktree after the Round22 stateful-fence
+  repair. Frozen hashes are `modeling_team/runner.py=
+  ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7`,
+  `modeling_team/runtimes/codex.py=957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379`, and
+  `backend/app/mcp/runtime.py=e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade`. No developer,
+  pytest, modeling-run, or file churn was observed during the audit. The tester changed no product code, delivery
+  record, ledger, retained ontology/evidence, reservation, or live run; only this append-only Round23 was written.
+- Protocol fence carrier probe (actual backend `_run_tool` boundary) passes mechanically: a stateful call before
+  revalidation returns `modeling_context_revalidation_required` with callback count zero; read context is allowed;
+  malformed, wrong Project, wrong Ontology, wrong workspace version, stale-count, and non-empty-issues contexts return
+  typed `modeling_context_revalidation_failed`; same-version receipt revalidation allows the stateful call; a later
+  live-version drift returns `modeling_context_revalidation_failed` with canonical `mutation_state=zero-mutation` and
+  no callback; changing the candidate/revision digest invalidates the receipt and returns the required revalidation
+  error. A 005/default carrier without a Modeling Context remains allowed, proving adjacent isolation.
+- The three Round21 High paths remain fixed: native `{ok:true,data}` Start75 context reaches `context_observed` with
+  exact P/O/version and classes/entities visibility; the Runner pre-send plus standalone broker sequence accepts a
+  receipt-bound full revision and rejects stale/foreign anchors; Modeling proxy token unlink, `.token` secret audit,
+  socket/thread cleanup, direct Team Transport, and staged candidate publication all pass. The exact proxy surface is
+  `get_modeling_context`, `get_ontology_read_model`, and `query_semantic_context`; six valid forwards and eleven
+  wrong-tool/P/O/model/scope/history/delta/stale/write denials leave backend call counts unchanged.
+- Test commands and results:
+  - `cd backend && uv run pytest -q tests/test_mcp_candidate_gate.py` -> **5 passed**.
+  - Focused R2.3-003/read-only/runtime/cleanup command (`test_r23003_modeling_readonly.py`,
+    `test_r23003_incremental_contract.py`, `test_p2a_codex_runtime.py`, `test_start74_cleanup_audit.py`) ->
+    **63 passed**.
+  - Legacy/005/isolation/candidate-gate command -> **144 passed, 71 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` -> **732 passed, 1 skipped, 218 subtests
+    passed**; `cd backend && uv run pytest -q` -> **849 passed, 10 skipped** (188 warnings).
+  - `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests` and `git diff --check`
+    pass; frozen runner/Codex expectations pass. Formal 003/005 CLI validation returns rc0 with exact four-role
+    rosters, while the cross-wired 003-profile/005-task returns rc2. `ontology-platform.service` is active and
+    read-only backend/frontend checks return HTTP 200 (`{"status":"ok"}` and `/`).
+- Low residual robustness observation (non-blocking): an isolated Protocol revalidation probe accepts missing, boolean,
+  or negative `resource_counts`. ModelingContextGate validates resource-count shape before candidate publication, and
+  the mechanical Protocol fence identity is exact P/O, workspace version, ready/no-issues/no-stale state; therefore this
+  does not weaken the required stateful fence. Keep this as a follow-up hardening item, not a T4M blocker.
+- Read-only live boundary is unchanged: `.r2-3-003-start-ledger.jsonl` remains **26 lines**, SHA-256
+  `fea60dd212a8452be12c29a8057baefcf22fe418e3abd630c8e567b2334f7d9d`; strict replay reports `start_cap=8`,
+  `semantic_start_count=7`, `active_reservations=[]`, and tail `budget_authorization` (no reservation, semantic_start,
+  or start9). No modeling process or Unix socket remains. No new live L0/L1/L2 semantic run, new key lifecycle, or
+  retained model mutation was attempted; authorization is exhausted.
+- Result: **PASS for the deterministic T4M/runtime contract and adjacent 005/default regressions; BLOCKED for live
+  R2.3-003 semantic L0/L1/L2 acceptance because the authorized start cap is exhausted and no new live start is
+  permitted.** The repaired stateful fence is ready for any future authorized run; do not promote deterministic PASS to
+  live modeling quality, repeatability, or productization evidence.
+
+#### Round 23 addendum — authorization arithmetic correction — main agent
+
+- The Round 23 deterministic PASS and all test evidence remain unchanged. Its final authorization sentence was
+  incorrect: strict replay `start_cap=8`, `semantic_start_count=7`, `active_reservations=[]` means **exactly one
+  authorized start remains**, not that the cap is exhausted. Line 26 is the user-approved `+1` budget extension and
+  has not been consumed.
+- Correct live status: L0/L1/L2 are **BLOCKED only because they are unexecuted**, while the deterministic/restart/
+  health gates now permit one fresh start9 reservation. The run must consume no more than that one remaining start and
+  must success-stop after a complete PASS.

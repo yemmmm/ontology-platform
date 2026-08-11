@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import secrets
 import shutil
 import threading
 import time
@@ -12,7 +13,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 
 from .contracts import (
@@ -99,6 +100,15 @@ from .start_ledger import (
 )
 from .transport_mcp import RoutingError, TeamTransportBroker, _call_terminal_report_guard
 from .task_overlay import TaskInputOverlay, load_task_input_overlay
+from .modeling_readonly import (
+    MODELING_READ_TOOLS,
+    ModelingContextGate,
+    ModelingReadKeyLifecycle,
+    ModelingReadProxy,
+    ModelingReadError,
+    canonical_digest as modeling_canonical_digest,
+    _candidate_value as modeling_candidate_value,
+)
 
 
 _PROOF_MATRIX_RELATIVE = "modeling_team/references/r2-3-002-proof-v2-assertion-matrix.json"
@@ -124,6 +134,8 @@ class TeamRun:
     model_manifest: FormalModelManifest | None = None
     formal_contract: FormalRunContract | None = None
     deepseek_credential_binding: DeepSeekCredentialBinding | None = None
+    modeling_read_key_id: str | None = None
+    modeling_read_proxy: ModelingReadProxy | None = None
 
 
 class TeamRunner:
@@ -196,6 +208,9 @@ class TeamRunner:
         self._task_overlay: TaskInputOverlay | None = None
         self._validated_candidate_publication: ValidatedCandidatePublication | None = None
         self._candidate_publication: StagedCandidatePublication | None = None
+        self._modeling_read_lifecycle: ModelingReadKeyLifecycle | None = None
+        self._modeling_read_proxy: ModelingReadProxy | None = None
+        self._modeling_context_gate: ModelingContextGate | None = None
         self._formal_failure_latched = False
         # Issue callbacks are invoked by the Broker/App-Server side.  They only
         # append to this queue; Runtime dispatch and evidence writes happen in
@@ -509,6 +524,15 @@ class TeamRunner:
             formal_contract=formal_contract,
             deepseek_credential_binding=credential_binding,
         )
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            try:
+                self._modeling_context_gate = ModelingContextGate(
+                    run_id=run_id,
+                    project_id=normalized_scope["project_id"],
+                    ontology_id=normalized_scope["ontology_id"],
+                )
+            except (KeyError, ModelingReadError) as exc:
+                raise TeamConfigurationError("R2.3-003 Modeling context gate scope is invalid") from exc
         self._task_overlay = task_overlay
         self._validated_candidate_publication = validated_publication
         self._candidate_publication = (
@@ -841,6 +865,8 @@ class TeamRunner:
         if formal_acceptance_contract:
             assert formal_contract is not None
             files["formal_model_manifest"] = self.repository_root / formal_contract.model_manifest_path
+            if formal_contract.requirement_id == "R2.3-003":
+                files["modeling_readonly"] = self.repository_root / "modeling_team/modeling_readonly.py"
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
         if task_overlay is not None:
             digests["task_input_overlay"] = task_overlay.sha256
@@ -909,6 +935,11 @@ class TeamRunner:
                 "runner.candidate_publication": digests["candidate_publication"],
                 "runner.acceptance_child_runtime": digests["acceptance_runtime"],
                 "runner.acceptance_read_proxy": digests["read_proxy_mcp"],
+                **(
+                    {"runner.modeling_read_surface": digests["modeling_readonly"]}
+                    if formal_contract is not None and formal_contract.requirement_id == "R2.3-003"
+                    else {}
+                ),
                 "runner.acceptance_report_sink": digests["report_sink_mcp"],
                 "runner.coordination_phase_callback": digests["runner"],
                 "p2_protocol_driver.main": digests["p2_protocol_driver"],
@@ -1074,6 +1105,18 @@ class TeamRunner:
                 "path": formal_contract.model_manifest_path,
                 "sha256": digests["formal_model_manifest"],
             }
+            if formal_contract.requirement_id == "R2.3-003":
+                baseline["runtime_contract"]["modeling_read_proxy"] = {
+                    "server": "modeling_read_proxy",
+                    "source_path": "modeling_team/modeling_readonly.py",
+                    "bridge_source_path": "modeling_team/read_proxy_mcp.py",
+                    "sha256": digests["modeling_readonly"],
+                    "bridge_sha256": digests["read_proxy_mcp"],
+                    "tools": list(MODELING_READ_TOOLS),
+                    "socket_mode": "0600",
+                    "token_file_mode": "0400",
+                    "scope": "exact-project-ontology",
+                }
         return baseline
 
     @classmethod
@@ -1381,6 +1424,8 @@ class TeamRunner:
                 self.run.protocol_key = self.scope.protocol_key
                 if self.run.configuration.task.schema_version == 2:
                     self.run.protocol_context = self.scope.read_protocol_context()
+                if self._is_r23003_modeling_run():
+                    self._ensure_modeling_read_surface()
             role_agents = {
                 agent.package.role: agent.agent_id for agent in self.run.configuration.profile.agents
             }
@@ -1428,6 +1473,11 @@ class TeamRunner:
                 ),
                 issue_escalation_enabled=formal_coordination,
                 issue_event_callback=issue_event_callback if formal_coordination else None,
+                pre_send_validator=(
+                    self._validate_modeling_transport_send
+                    if self._is_r23003_modeling_run()
+                    else None
+                ),
             )
             self.transport.start(
                 [agent.agent_id for agent in self.run.configuration.profile.agents]
@@ -1930,12 +1980,184 @@ class TeamRunner:
 
         if self._candidate_publication is None or self.transport is None:
             raise CandidatePublicationError("staged candidate publication is unavailable")
+        if self._modeling_context_gate is not None:
+            self._modeling_context_gate.assert_open()
         role_ids = self._formal_coordination_role_ids()
-        return self._candidate_publication.publish(
+        receipt = self._candidate_publication.publish(
             actor_id=modeling_id,
             modeling_id=role_ids["modeling"],
             protocol_id=role_ids["protocol"],
             send=self.transport.send,
+        )
+        identity = modeling_candidate_value(self._candidate_publication.candidate_text)
+        if identity is not None and self._modeling_context_gate is not None:
+            self._modeling_context_gate.bind_candidate(
+                str(receipt.get("delivery_id")), modeling_canonical_digest(identity)
+            )
+        return receipt
+
+    def _validate_modeling_transport_send(
+        self,
+        sender_id: str,
+        recipient_id: str,
+        text: str,
+        expects_reply: bool,
+        reply_to_delivery_id: str | None,
+    ) -> None:
+        """Keep an R2.3-003 candidate behind the immutable context receipt gate."""
+
+        if not self._is_r23003_modeling_run() or self.run is None:
+            return
+        role_ids = self._formal_coordination_role_ids()
+        if sender_id != role_ids.get("modeling") or recipient_id != role_ids.get("protocol"):
+            return
+        if self._modeling_context_gate is None:
+            raise RoutingError("R2.3-003 Modeling context gate is unavailable")
+        try:
+            self._modeling_context_gate.assert_open()
+        except ModelingReadError as exc:
+            raise RoutingError("candidate publication requires an accepted Modeling context receipt") from exc
+
+        # Modeling may open the first candidate request with a fresh reply slot,
+        # or replace an accepted receipt only by replying to the currently
+        # validated standalone Protocol conflict.  A receipt/conflict payload,
+        # foreign reply anchor, stale conflict anchor, and partial revision are
+        # all rejected before Team Transport can mutate its reply table.
+        candidate: Mapping[str, Any] | None = None
+        if isinstance(text, str):
+            try:
+                decoded = json.loads(text)
+            except (TypeError, json.JSONDecodeError):
+                decoded = None
+            if isinstance(decoded, Mapping):
+                candidate = decoded if modeling_candidate_value(text) is not None else None
+
+        if not expects_reply:
+            if candidate is not None:
+                raise RoutingError("R2.3-003 candidate publication must open a fresh reply slot")
+            return
+        if candidate is None:
+            raise RoutingError("R2.3-003 Modeling reply must be a complete candidate")
+
+        progress = self._candidate_progress
+        pending = progress.pending if progress is not None else None
+        if reply_to_delivery_id is None:
+            # The initial candidate is the only fresh Modeling->Protocol
+            # candidate request.  Once FormalCandidateProgress has an identity,
+            # a second fresh request is stale rather than a new slot.
+            if pending is not None:
+                raise RoutingError("R2.3-003 fresh candidate slot is already occupied")
+            try:
+                formal_candidate_digests(candidate)
+            except FormalCandidateError as exc:
+                raise RoutingError("R2.3-003 candidate is not a complete formal candidate") from exc
+            return
+
+        if (
+            pending is None
+            or progress is None
+            or progress.state != "awaiting_revision"
+            or pending.conflict_delivery_id != reply_to_delivery_id
+        ):
+            raise RoutingError(
+                "R2.3-003 revision must reply to the current standalone Protocol conflict"
+            )
+        try:
+            formal_candidate_digests(candidate)
+        except FormalCandidateError as exc:
+            raise RoutingError("R2.3-003 revision is not a complete formal candidate") from exc
+
+    def _is_r23003_modeling_run(self) -> bool:
+        if self.run is None:
+            return False
+        contract = formal_run_contract_for(self.run.configuration)
+        return contract is not None and contract.requirement_id == "R2.3-003"
+
+    def _observe_modeling_context(
+        self, response: Mapping[str, Any], call_receipt: Any
+    ) -> None:
+        gate = self._modeling_context_gate
+        if gate is None:
+            raise ModelingReadError("R2.3-003 Modeling context gate is unavailable")
+        if gate.receipt is None or gate.state == "closed":
+            gate.observe(response, call_receipt=call_receipt)
+        else:
+            gate.revalidate(response, call_receipt=call_receipt)
+        self._append_evidence(
+            "modeling-context-receipt",
+            {
+                "receipt_digest": gate.receipt.receipt_digest if gate.receipt else None,
+                "workspace_version": gate.receipt.workspace_version if gate.receipt else None,
+                "revalidation_receipt_digest": (
+                    gate.revalidation_receipt.get("revalidation_receipt_digest")
+                    if gate.revalidation_receipt
+                    else None
+                ),
+                "project_id": gate.project_id,
+                "ontology_id": gate.ontology_id,
+            },
+        )
+
+    def _ensure_modeling_read_surface(self) -> None:
+        """Create the short-lived Modeling read key and local policy proxy."""
+
+        if not self._is_r23003_modeling_run() or self.run is None:
+            return
+        if self.scope is None:
+            raise ModelingReadError("Modeling read surface requires a prepared PlatformScope")
+        if self._modeling_read_lifecycle is not None:
+            return
+        lifecycle = ModelingReadKeyLifecycle(self.scope, repository_root=self.repository_root)
+        self._modeling_read_lifecycle = lifecycle
+        record = None
+        proxy = None
+        try:
+            record = lifecycle.create(
+                project_id=self.run.scope["project_id"],
+                ontology_id=self.run.scope["ontology_id"],
+                run_id=self.run.run_id,
+            )
+            socket_path = self.run.root / "modeling-read-proxy.sock"
+            if len(str(socket_path)) >= 100:
+                import hashlib as _hashlib
+
+                socket_path = Path("/tmp") / (
+                    "mt-mr-" + _hashlib.sha256(str(socket_path).encode()).hexdigest()[:24] + ".sock"
+                )
+            proxy = ModelingReadProxy(
+                socket_path=socket_path,
+                token=secrets.token_urlsafe(24),
+                read_key=lifecycle.plaintext_for(record.key_id),
+                project_id=record.project_id,
+                ontology_id=record.ontology_id,
+                forward=lifecycle.forwarder_for(record.key_id),
+                on_context=self._observe_modeling_context,
+            )
+            proxy.start()
+        except Exception:
+            if proxy is not None:
+                proxy.destroy()
+            if record is not None:
+                try:
+                    lifecycle.revoke(record.key_id)
+                except Exception:
+                    pass
+            self._modeling_read_lifecycle = None
+            raise
+        assert record is not None and proxy is not None
+        self._modeling_read_proxy = proxy
+        self.run.modeling_read_key_id = record.key_id
+        self.run.modeling_read_proxy = proxy
+        self._append_evidence(
+            "modeling-read-key",
+            {
+                "key_id": record.key_id,
+                "key_digest": record.key_digest,
+                "project_id": record.project_id,
+                "ontology_id": record.ontology_id,
+                "allowed_tools": list(MODELING_READ_TOOLS),
+                "proxy": proxy.receipt.__dict__,
+            },
         )
 
     def _active_protocol_candidate(
@@ -2092,8 +2314,11 @@ class TeamRunner:
             )
         except FormalCandidateError as exc:
             raise TeamConfigurationError("canonical candidate conflict does not match active identity") from exc
+        prior_response = self._protocol_candidate_responses.get(delivery_id)
         self._protocol_candidate_responses[delivery_id] = "conflict"
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            if prior_response == "receipt" and self._modeling_context_gate is not None:
+                self._modeling_context_gate.invalidate("post_receipt_context_drift")
             if self._candidate_platform_gate is not None:
                 self._candidate_platform_gate.close("pre_mutation_binding_conflict")
         return {
@@ -2285,6 +2510,13 @@ class TeamRunner:
                 )
                 if is_r23003:
                     text += (
+                        " Before invoking any Session, Lease, batch, validation, reasoning, or other stateful "
+                        "ontology_platform tool after an accepted candidate receipt, call the exact-O "
+                        "`get_modeling_context` read through the configured Protocol surface and verify the same "
+                        "Project/Ontology, ready workspace, non-empty workspace_version, no issues, and no stale "
+                        "derived state. An unequal workspace_version invalidates the old context and candidate "
+                        "receipt; make the typed zero-mutation full-revision conflict path and wait for a complete "
+                        "revised candidate before any mutation. Never reuse a stale receipt or send a patch."
                         " For R2.3-003 deletion-aware existing scope, accept only the requirement-owned policy and "
                         "the frozen target semantic IDs/classes; the exact ordered targets are "
                         "unknown-cross-release-output-meaning and unknown-b-no-score-behavior, both with "
@@ -2499,6 +2731,21 @@ class TeamRunner:
                     "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
                     "or receipt labels into the platform-neutral candidate."
                 )
+                if is_r23003:
+                    modeling_text += (
+                        "\nR2.3-003 Modeling has one independent project-scoped read key and exactly three "
+                        "read tools through the local `modeling_read_proxy`: `get_modeling_context`, "
+                        "`get_ontology_read_model`, and `query_semantic_context`. Use the exact Project/Ontology "
+                        "scope supplied by the proxy; read only model_name classes, entities, facts, or rules, "
+                        "and use ontologies scope with ontology_ids containing exactly this ontology. Do not call "
+                        "history/delta, writes, validation, reasoning, or any other platform tool. First call "
+                        "`get_modeling_context` and require a ready workspace, non-empty workspace_version, "
+                        "non-negative resource counts, no issues, and no stale derived state. The Runner keeps an "
+                        "immutable context receipt; direct candidate Transport and the staged candidate capability "
+                        "remain closed until that exact context call succeeds. After a receipt or before any later "
+                        "Protocol stateful action, re-read the exact context; a workspace-version drift is a typed "
+                        "zero-mutation conflict requiring one complete revised candidate, never a patch or stale receipt."
+                    )
                 if task.task_id == "r2-3-003-existing-scope-incremental":
                     modeling_text += (
                         "\nR2.3-003 delete declaration schema is exact: the two ordered target IDs are "
@@ -2898,6 +3145,14 @@ class TeamRunner:
             raise
         if result is not None:
             identity = self._candidate_progress.identity
+            if (
+                result in {"candidate", "revision"}
+                and identity is not None
+                and self._modeling_context_gate is not None
+            ):
+                self._modeling_context_gate.bind_candidate(
+                    str(getattr(delivery, "delivery_id", "")), identity.candidate_digest
+                )
             if result == "accepted" and identity is not None and self.acceptance is not None:
                 self.acceptance.register_accepted_candidate(
                     candidate_revision=identity.candidate_revision,
@@ -2915,7 +3170,26 @@ class TeamRunner:
                     if self._candidate_progress.paused or self._formal_failure_latched:
                         self._candidate_platform_gate.close("receipt_notification_suppressed")
                     else:
-                        self._candidate_platform_gate.open(identity.__dict__)
+                        gate_identity = dict(identity.__dict__)
+                        if self._is_r23003_modeling_run():
+                            context_gate = self._modeling_context_gate
+                            context_receipt = context_gate.receipt if context_gate is not None else None
+                            if context_gate is None or context_receipt is None:
+                                self._candidate_platform_gate.close(
+                                    "modeling_context_receipt_missing"
+                                )
+                                raise TeamConfigurationError(
+                                    "R2.3-003 candidate receipt lacks the Modeling context binding"
+                                )
+                            gate_identity["modeling_context"] = {
+                                "project_id": context_gate.project_id,
+                                "ontology_id": context_gate.ontology_id,
+                                "workspace_version": context_receipt.workspace_version,
+                                "context_receipt_digest": context_receipt.receipt_digest,
+                                "response_digest": context_receipt.response_digest,
+                                "call_receipt_digest": context_receipt.call_receipt_digest,
+                            }
+                        self._candidate_platform_gate.open(gate_identity)
                         self._notify_candidate_receipt_registered(
                             identity,
                             getattr(delivery, "delivery_id", None),
@@ -4122,6 +4396,21 @@ class TeamRunner:
                 else:
                     evidence["acceptance"] = self.acceptance.cleanup()
         finally:
+            if self._modeling_read_lifecycle is not None and self.run is not None:
+                key_id = self.run.modeling_read_key_id
+                if isinstance(key_id, str) and key_id:
+                    try:
+                        revoked = self._modeling_read_lifecycle.revoke(key_id)
+                        evidence["modeling_read_key"] = {
+                            "key_id": revoked.key_id,
+                            "status": revoked.status,
+                            "revoked_at": revoked.revoked_at,
+                            **self._modeling_read_lifecycle.evidence(key_id),
+                        }
+                    except Exception as exc:
+                        evidence["modeling_read_key_cleanup_error"] = type(exc).__name__
+                if self._modeling_read_proxy is not None:
+                    self._modeling_read_proxy.destroy()
             if self.scope:
                 if self.run and self.run.terminal_results:
                     self.scope.terminal_results = self.run.terminal_results
