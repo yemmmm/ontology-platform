@@ -367,7 +367,8 @@ def test_r23003_scope_handoff_is_exact() -> None:
     assert normalize_existing_scope(SCOPE) == SCOPE
     handoff = load_existing_scope_handoff(SCOPE, repository_root=ROOT)
     assert handoff["scope_disposition"] == "retained"
-    assert handoff["workspace_version"] == "0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02"
+    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start18"
+    assert handoff["workspace_version"] == "18b5bfe66d46192847a781c319d330622c9097d5f36babffea9685acadd7320e"
     with pytest.raises(ValueError):
         normalize_existing_scope({**SCOPE, "project_id": "wrong"})
 
