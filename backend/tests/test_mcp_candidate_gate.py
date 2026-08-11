@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -233,3 +234,65 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
     _write_gate(gate, _r23003_gate("candidate-v2"))
     assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
     assert effects == ["read", "stateful"]
+
+
+def test_r23003_revalidation_normalizes_recent_batch_datetimes_and_keeps_005_gate_isolated(
+    monkeypatch, tmp_path: Path
+) -> None:
+    gate = tmp_path / "state.json"
+    _write_gate(gate, _r23003_gate())
+    monkeypatch.setenv("FORMAL_CANDIDATE_GATE_PATH", str(gate))
+    effects: list[str] = []
+
+    @contextmanager
+    def session_factory():
+        yield object()
+
+    monkeypatch.setattr(mcp_runtime, "get_resources", lambda: (session_factory, None, None))
+    monkeypatch.setattr(mcp_runtime, "_authorize_tool", lambda *_args: None)
+    monkeypatch.setattr(mcp_runtime, "scan_domain_payload", lambda *_args: None)
+    recent_batch_time = datetime(2026, 8, 11, 11, 0, tzinfo=timezone.utc)
+    observed = _context()
+    observed["recent_batches"] = [
+        {"batch_id": "batch-1", "created_at": recent_batch_time, "completed_at": recent_batch_time}
+    ]
+    live_context = {"value": observed}
+    monkeypatch.setattr(
+        mcp_runtime,
+        "_read_live_modeling_context",
+        lambda _session, _ontology_id: live_context["value"],
+    )
+
+    def get_modeling_context() -> dict[str, Any]:
+        return mcp_runtime._run_tool(lambda _session, _driver, _embedding: observed)
+
+    def submit_modeling_batch() -> dict[str, Any]:
+        return mcp_runtime._run_tool(
+            lambda _session, _driver, _embedding: effects.append("stateful") or {"submitted": True}
+        )
+
+    revalidated = get_modeling_context()
+    assert revalidated["ok"] is True
+    assert revalidated["data"]["recent_batches"][0]["created_at"] == str(recent_batch_time)
+    assert (str(gate), "candidate-v1") in mcp_runtime._protocol_revalidations
+    assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
+    assert effects == ["stateful"]
+
+    live_context["value"] = _context("workspace-v2")
+    drifted = submit_modeling_batch()
+    assert drifted["error_code"] == "modeling_context_revalidation_failed"
+    assert drifted["data"]["mutation_state"] == "zero-mutation"
+    assert effects == ["stateful"]
+
+    legacy_gate = tmp_path / "legacy-state.json"
+    _write_gate(
+        legacy_gate,
+        {
+            "schema_version": "r2-3-005-candidate-platform-gate/v1",
+            "state": "open",
+            "candidate_digest": "legacy-candidate",
+        },
+    )
+    monkeypatch.setenv("FORMAL_CANDIDATE_GATE_PATH", str(legacy_gate))
+    assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
+    assert effects == ["stateful", "stateful"]

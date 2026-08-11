@@ -857,3 +857,57 @@
   3 bridge symbols and no affected process flow。No live run、ledger、retained evidence、backend or commit change。
 - Stable state=`DEVELOPMENT-READY`。Independent Round26 must retest start10 cleanup/zero mutation and the exact
   staged bridge path before ledger reconciliation or start11。
+
+### 2026-08-11T19:05:20+08:00 — Round26 PASS, start10 reconciliation and start11 live pause
+
+- Independent Round26 PASS: staged bridge→real proxy all three calls、foreign/malformed no-forward denial、005
+  isolation、zero mutation、key revocation and operator cleanup all passed；focused/full results include
+  `735 passed, 1 skipped, 218 subtests`。The stale pre-cleanup aggregate secret flag was distinguished from the current
+  scan，which found zero raw-secret occurrence、token/config、Unix socket or process。
+- Owner appended exact start10 `evidence/terminal-reconciliation.jsonl`，digest=
+  `6dcfa19f6db0968b0654322f5fe62994a6b45c1efcb09175556e0d4dfa24ccdb`，then strict StartLedger API appended
+  one retryable `platform-contract` terminal failure。Replay PASS：33 records，cap/count=`11/9`，active=0。
+  Repair/docs/test changes were committed as `a597d8f` (`Fix scoped modeling read projection`)。
+- Live start11 reserved baseline=`53610ee5778be34dcbecf72d334e0ae2cf7e3da322af49e60f178777d87e9cd3`
+  and entered semantic execution；cap/count=`11/10`，one unused start remains。Modeling successfully called live
+  `get_modeling_context` and all four read models，then sent complete candidate delivery-4；Protocol's typed exact-
+  delete gate accepted it and sent receipt delivery-5。No stateful call had occurred。
+- Protocol exact-O revalidation then returned `ok=false / Object of type datetime is not JSON serializable`。The
+  retained non-empty ontology has recent batches with datetime values；backend MCP response normalization handles them，
+  but `_record_protocol_revalidation -> _context_digest` uses strict JSON encoding before the stateful fence receipt。
+  Protocol reported issue-1=`platform_repair` with canonical zero-mutation and Runner entered `waiting_repair`。
+- Decision: do not abort or consume the final authorization。Repair only backend context-digest normalization，run
+  backend/full regressions and independent retest，restart service，then send one FIFO repair resolution to resume the
+  accepted start11 candidate from its receipt-bound state。
+
+### 2026-08-11T19:27:42+08:00 — Round27 PASS and start11 fail-closed rebind boundary
+
+- Backend repair changed only `_context_digest` to canonicalize through existing `_jsonable` before hashing；datetime
+  recent-batch values now match the public MCP response representation。Regression proves successful context receipt +
+  stateful callback，workspace drift zero-mutation denial，and 005 compatibility。GitNexus pre-edit impact=CRITICAL
+  (77 symbols/1 process/5 modules)；focused=`168 passed, 24 subtests`，backend=`850 passed, 10 skipped`，
+  modeling_team=`735 passed, 1 skipped, 218 subtests`，compile/diff PASS。
+- Independent Round27 PASS and verified start11 still waiting_repair with delivery-4/receipt-5，only read artifacts，no
+  Session/Lease/Batch/validation/reasoning/retrieval。Main restarted `ontology-platform.service`；backend/frontend HTTP
+  200，then FIFO repair_completed issue-1 bound before=`e314a82c...`/after=`624e0bd4...` and confirmed_no_write。
+- Protocol immediately detected its private ontology MCP subprocess still held the old per-run staged module；systemd
+  restart cannot replace an already-running Agent-private MCP process。It reported issue-2 with zero mutation。Main
+  patched only the exact start11 staged runtime to the reviewed one-line normalization and terminated the verified stale
+  child so App Server could respawn it，then sent exact repair_completed for issue-2。
+- Runner rejected live capability replacement with `issue repair requires rebind` and terminated start11 fail closed。
+  This is the intended safety boundary：the accepted candidate cannot silently change its Protocol runtime binding。
+  Cleanup reached `CLEANED`，all keys revoked，scope before/after unchanged，and no platform write occurred。One final
+  authorized start remains；it may run only from a committed fixed baseline after independent cleanup/reconciliation。
+
+### 2026-08-11T19:34:00+08:00 — Round28 cleanup and start11 terminal reconciliation
+
+- Independent Round28 PASS verified delivery-4/receipt-5 retained，issue-1/issue-2 canonical zero-mutation，and only
+  four context、four read-model、one workspace and one build read；there were no Session/Lease/Batch/validation/
+  reasoning/retrieval calls。All keys revoked，scope before/after exact，service healthy。
+- Operator removed only the two generated non-secret regular artifacts identified by Round28：Modeling staged
+  `read_proxy_mcp.py` and the zero-byte socket placeholder。No session、delivery、issue or platform evidence was removed；
+  configured-key scan remained zero。
+- Owner wrote exact start11 terminal reconciliation evidence digest=
+  `406f7a83010c26f73c5d4fd20f9f365d681d8be50d2b814eaca3bd468e499825` and appended one strict
+  `platform-contract` terminal failure bound to issue-2/baseline `53610ee...`。Replay PASS：36 records，
+  cap/count=`11/10`，active=0。The final authorized start12 is now mechanically available。

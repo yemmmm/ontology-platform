@@ -1439,3 +1439,101 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   mutation, key revocation, cleanup, and service health; BLOCKED pending owner append-only start10 terminal
   reconciliation.** After that exact reconciliation and a strict-replay PASS, main may proceed to one fresh start11
   reservation under the remaining authorized cap (no semantic PASS should be inferred from this deterministic run).
+
+### Round 27 — 2026-08-11 independent start11 datetime-digest repair retest — PASS deterministic; resume pending bound repair resolution
+
+- Scope and safety: independently reviewed the backend `_context_digest` repair and retained start11 evidence. The
+  tester did not restart the service, resume or stop the run, mutate the ledger/evidence/ontology, edit product code, or
+  touch the delivery record. Read-only service checks remained healthy (`ontology-platform.service` active, backend
+  `/api/health` HTTP 200 `{"status":"ok"}`, frontend `/` HTTP 200).
+- Defect repair and focused proof: `backend/app/mcp/runtime.py::_context_digest` now canonicalizes through the
+  existing `_jsonable` helper before strict sorted JSON hashing. The focused datetime regression
+  (`test_r23003_revalidation_normalizes_recent_batch_datetimes_and_keeps_005_gate_isolated`) -> **1 passed, 5
+  deselected**; the complete backend candidate-gate file -> **6 passed**. The proof includes retained
+  `recent_batches.created_at/completed_at` datetime values, immutable exact-O revalidation receipt creation,
+  stateful callback allow after the receipt, workspace drift rejection with `mutation_state=zero-mutation` and no
+  callback, and legacy/R2.3-005 gate behavior unchanged.
+- Deterministic regressions: affected 003/005/candidate-gate/modeling set -> **168 passed, 24 subtests passed**;
+  `cd backend && uv run pytest -q` -> **850 passed, 10 skipped, 188 warnings**; full modeling
+  `uv run --project backend python -m pytest modeling_team/tests -q` -> **735 passed, 1 skipped, 218 subtests
+  passed**; compileall and `git diff --check` -> **PASS**. Pre-fix runtime/HEAD SHA is
+  `e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade`; verified worktree repair SHA is
+  `624e0bd4f4eeab18736203d17f96fc34ec569f9629abff60563d13c629147e80`. No source churn was observed during these
+  checks.
+- Start11 live boundary: run `r23003-real-20260811-deepseek-start11` remains `WAITING_REPAIR` on `issue-1`; the
+  candidate gate is open with `protocol_revalidation.state=required`, candidate revision
+  `r2-3-003-existing-scope-increment-1`, candidate digest
+  `6e82f5ad49ee6b6cc1f3aaf231ed6f867db09a36a223c79e7d9f8c5f643b496b`, original candidate delivery `delivery-4`,
+  and bound Protocol receipt reply `delivery-5`. Modeling context receipt digest is
+  `eb7e8a594938945e1facf37fc40210ad40bc1d176e557c05b4c45f2aabcc0f18`; the retained revalidation receipt digest is
+  `77eab9fea1a2f04f6b8e0aaa0aa0725ebd479cee2b10820c2af58639b12e05f6`. `capability-calls.jsonl` contains only
+  `protocol_build_candidate_receipt`; platform response artifacts are limited to workspace/build/read-model reads.
+  No Session, Lease, Modeling Batch, validation, reasoning, governed retrieval, or other stateful call occurred.
+  Issue evidence explicitly records zero mutation (read-only calls only so far).
+- Repair-resolution binding and recommendation: the defect was reported by Protocol as `issue-1`, `control_epoch=1`,
+  with candidate identity and thread binding preserved. Because the existing Runner resume path permits in-place
+  repair only for shared service/data, the safe outer resolution must be exactly `repair_completed` with
+  `repair_component=shared_backend_service`, `before_digest=e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade`,
+  `after_digest=624e0bd4f4eeab18736203d17f96fc34ec569f9629abff60563d13c629147e80`, a verification reference to this
+  Round27 datetime test plus the full backend/modeling gates, and `mutation_reconciliation=confirmed_no_write`.
+  Main must first restart the shared backend service and verify health/current context, then persist that exact outer
+  resolution for run `r23003-real-20260811-deepseek-start11`, issue `issue-1`, reporter `protocol`, epoch `1`; only
+  after Coordinator sends the bound resume may the existing Protocol thread continue. Do not create a new reservation
+  or semantic start for this repair; do not clean the retained run while its issue is pending.
+- Ledger and live semantic status: read-only strict replay passes on the canonical ledger at **35 lines**, SHA-256
+  `d72f99250d46d639731f609d0f69610a7d6eea8d4cac9ff3b268ec9b4b85c966`, with `start_cap=11`,
+  `semantic_start_count=10`, `active_reservations=[]`, and tail `start11 semantic_start`. This is an existing
+  waiting-repair start, not a new budget authorization. No live candidate application, semantic quality, or
+  repeatability result is claimed.
+- Result: **PASS for the datetime-digest repair, exact-O/stateful fence regression, 003/005 isolation, backend/full
+  modeling suites, and zero-mutation retained start11 boundary; BLOCKED for live continuation until the shared backend
+  service is restarted and the exact run/issue/candidate-bound repair resolution is persisted and resumed.**
+
+### Round 28 — 2026-08-11 independent start11 terminal/rebind cleanup audit — PASS zero-mutation cleanup; terminal reconciliation required
+
+- Scope and safety: read-only audit after the owner attempted the start11 repair continuation. The tester did not run
+  suites, restart/resume/stop a run, mutate product code, retained evidence, ontology/workspace state, or the canonical
+  ledger. No process or Unix socket remains. `state.json` is `CLEANED`; acceptance cleanup is aborted before settlement
+  with `active_handles=0`, `zero_child_residue=true`, and no terminal result in the run state.
+- Candidate/receipt and issue binding remain immutable: `formal-candidate-progress.jsonl` retains candidate delivery
+  `delivery-4`, `candidate-receipt-registered`, and accepted Protocol reply `delivery-5`, all bound to candidate digest
+  `6e82f5ad49ee6b6cc1f3aaf231ed6f867db09a36a223c79e7d9f8c5f643b496b` and revision
+  `r2-3-003-existing-scope-increment-1`. Issue-1 (`platform_repair`) and issue-2 (`runtime_recovery`) both explicitly
+  record `zero-mutation` and only context/workspace/build/read-model reads; `capability-calls.jsonl` contains only
+  `protocol_build_candidate_receipt`, and platform artifacts contain only four `get_modeling_context`, four
+  `get_ontology_read_model`, one workspace-context, and one project-build-context call. No Session, Lease, Modeling
+  Batch, validation, reasoning, governed retrieval, or other stateful call occurred.
+- Rebind failure evidence: issue-1's `shared_backend_service` repair was persisted and resumed, but the live context
+  call still returned the old datetime serialization error. Issue-2 then recorded the stale private
+  `ontology_platform` MCP runtime and was given `repair_component=protocol_private_ontology_mcp_runtime`; Runner
+  correctly failed closed with `issue repair requires rebind` because this component is outside the in-place resume
+  allowlist. The final path therefore ended in normal abort cleanup rather than a fabricated resume; this is a
+  **High runtime/infrastructure + platform-contract/rebind-required** terminal boundary, not a modeling-quality result.
+- Scope/keys/cleanup: `existing_context_before == existing_context_after` exactly for Project
+  `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, graph
+  `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, six batches, one recent session, zero active
+  sessions/leases/in-flight attempts, and workspace `ready`. Modeling-read, project/model, and admin keys are revoked
+  with post-revoke/status evidence. No token, config, capability manifest/script, actual Unix socket, or process remains.
+  The aggregate audit retains historical `private_credentials_destroyed=false`, `match_count=6`,
+  `matched_secret_count=4`; direct configured-key scan is zero matches. The only current named residues are two
+  non-secret regular files, both safe scoped-cleanup targets: `runtime/modeling/home/read_proxy_mcp.py` (11,439-byte
+  staged bridge source) and `runtime/modeling/home/modeling-read-proxy.sock` (zero-byte regular empty file, not a Unix
+  socket). Remove only these two generated paths; do not delete logs, evidence, candidate gate, or retained ontology.
+- Ledger/reconciliation: canonical `.r2-3-003-start-ledger.jsonl` remains **35 lines**, SHA-256
+  `d72f99250d46d639731f609d0f69610a7d6eea8d4cac9ff3b268ec9b4b85c966`; strict replay is read-only **PASS** with
+  `start_cap=11`, `semantic_start_count=10`, `active_reservations=[]`, and tail `start11 semantic_start` with no
+  start11 terminal failure. After the two-file scoped cleanup, owner must append exactly one retryable
+  `platform-contract` terminal failure for start11, bound to baseline
+  `53610ee5778be34dcbecf72d334e0ae2cf7e3da322af49e60f178777d87e9cd3`, issue-2, canonical
+  `mutation_state=zero-mutation`, and retained `evidence/terminal-reconciliation.jsonl` evidence. Using the current
+  issue-2 report and cleanup snapshot verbatim yields issue digest `249309f744c4da3bcc1a2f69e05a150563e807a2b2f5c6b38fe7424d56126c13`,
+  cleanup digest `9be86b2510059bcf96e2dff7ae6fd2476de5393365df0377909641c890689e5f`, and terminal evidence digest
+  `76dab9743f8c2073b6e567eaaa1413c2ced1ebe3c39d19bfb6755488c1afe739`; owner must recompute if the final retained
+  cleanup payload differs. Rerun strict replay and verify `cap/count/active=11/10/0` after the append.
+- Start12 decision: **yes, the last already-authorized start12 may run only after** the exact two-file cleanup, terminal
+  evidence plus append-only ledger reconciliation, strict-replay PASS, and the approved backend/runtime/test changes
+  are committed and health/current-context are rechecked. No additional budget authorization is needed; do not start
+  before commit or treat this terminal/rebind cleanup as semantic acceptance evidence.
+- Result: **PASS for retained candidate/receipt binding, zero-mutation and scope integrity, key/process/socket cleanup,
+  and fail-closed rebind behavior; BLOCKED until owner performs the exact cleanup and start11 terminal reconciliation.**
