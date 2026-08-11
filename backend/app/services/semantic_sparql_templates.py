@@ -279,7 +279,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # derived graphs do not need to repeat labels or owl:NamedIndividual.
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?entity ?label ?class ?class_label ?graph WHERE {
+        SELECT DISTINCT ?entity ?semantic_id ?label ?class ?class_semantic_id ?class_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           VALUES ?ig { {graph_iris} }
           GRAPH ?g {
@@ -288,6 +288,20 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             FILTER(?class != owl:NamedIndividual)
           }
           GRAPH ?ig { ?entity a owl:NamedIndividual . }
+          GRAPH ?g {
+            ?entity ?entity_id_pred ?semantic_id .
+            FILTER(STRENDS(STR(?entity_id_pred), "/vocab/id"))
+          }
+          # Class identity metadata is authored in the asserted ontology
+          # graph, while the entity/class assertion itself lives in the
+          # asserted data graph.  Keep the two graph bindings independent so
+          # malformed rows without explicit class IDs fail closed instead of
+          # reaching Protocol as an incomplete identity projection.
+          VALUES ?class_graph { {graph_iris} }
+          GRAPH ?class_graph {
+            ?class ?class_id_pred ?class_semantic_id .
+            FILTER(STRENDS(STR(?class_id_pred), "/vocab/id"))
+          }
           OPTIONAL {
             VALUES ?lg { {graph_iris} }
             GRAPH ?lg { ?entity rdfs:label ?label . }

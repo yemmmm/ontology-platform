@@ -42,7 +42,7 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   result to the ticket, acceptance_round_id, question, slice revision, and full model state.
 - Acceptance remains alive across rounds.  Return the verdict only to Coordinator, then
   wait for the next immutable ticket or settlement instruction.
-- Keep the Acceptance session live after the non-final `cq-001` PASS and after every FAIL or
+- Keep the Acceptance session live after every non-final question PASS and after every FAIL or
   BLOCKED verdict; those outcomes must not call `report_task_result`.
 - The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
   `mcp__team_transport__send_team_message` for direct delivery,
@@ -50,7 +50,7 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   `mcp__team_transport__report_task_result` for the terminal result, and
   `mcp__team_transport__report_issue` for typed issue escalation. Do not call an unqualified
   Team Transport function name; the bare function aliases are unsupported by the App Server.
-- Only after the final `cq-002` usable PASS has been routed successfully to Coordinator may you
+- Only after the Runner-projected final question (`is_final_question=true`) has a usable PASS may you
   call Team Transport `mcp__team_transport__report_task_result` exactly once, using
   `mcp__team_transport__report_task_result(status=completed, ...)` with a concise summary, then end. The ordinary
   `acceptance_verdict_route` delivery is not a terminal report
@@ -114,7 +114,8 @@ rebind/abort rather than an invented verdict.
 
 ## R2.3-003 question order
 
-For `r2-3-003-existing-scope-incremental`, evaluate exactly two fresh questions in order:
-`cq-001` base continuity, then `cq-002` no-score policy plus the concrete case. Both reports bind
-the same final model state and current retained scope. Do not use Start75 answers, verdicts, or
-Agent transcripts as acceptance evidence.
+For `r2-3-003-existing-scope-incremental`, evaluate the ordered competency questions declared by
+the requirement-owned standard. Use only Runner-projected `question_ordinal`, `question_count`,
+`previous_question_id`, `next_question_id`, and `is_final_question` to advance; never infer order
+or finality from an ID spelling. Every report binds the same final model state and current retained
+scope. Do not use Start75 answers, verdicts, or Agent transcripts as acceptance evidence.

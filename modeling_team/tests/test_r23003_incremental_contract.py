@@ -87,6 +87,24 @@ def _candidate() -> dict:
                     },
                 },
             },
+            {
+                "item_id": "delete-unknown-a",
+                "item_kind": "delete_existing_entity",
+                "semantic": {
+                    "semantic_id": "unknown-cross-release-output-meaning",
+                    "expected_class": "ExplicitUnknown",
+                    "delete_mode": "full_live_impact",
+                },
+            },
+            {
+                "item_id": "delete-unknown-b",
+                "item_kind": "delete_existing_entity",
+                "semantic": {
+                    "semantic_id": "unknown-b-no-score-behavior",
+                    "expected_class": "ExplicitUnknown",
+                    "delete_mode": "full_live_impact",
+                },
+            },
         ],
     }
 
@@ -377,8 +395,12 @@ def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None
             "entities": [
                 {
                     "semantic_id": "review-001",
-                    "class": "Review",
                     "entity_iri": "http://ontology-platform.local/semantic/entity/review-001",
+                    "class_semantic_id": "Review",
+                    "class_iri": "http://ontology-platform.local/semantic/class/Review",
+                    "project_id": R2_3_003_PROJECT_ID,
+                    "ontology_id": R2_3_003_ONTOLOGY_ID,
+                    "workspace_version": "v1",
                     "read_evidence": {"source": "live-read"},
                 }
             ]

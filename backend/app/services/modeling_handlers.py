@@ -129,7 +129,17 @@ ALLOWED_FIELDS: dict[str, set[str]] = {
     "delete_shape": {"shape_id", "shape_iri"},
     "create_entity": {"entity_id", "class_iri_or_legacy_id", "label", "aliases", "properties"},
     "update_entity": {"entity_id", "entity_iri", "label", "aliases", "properties"},
-    "delete_entity": {"entity_id", "entity_iri"},
+    "delete_entity": {
+        "entity_id",
+        "entity_iri",
+        # R2.3-003 Phase-B delete-only commands carry a tool-owned impact
+        # receipt.  The semantic compiler intentionally ignores these protocol
+        # fields; ModelingBatchService persists them for receipt-bound recovery.
+        "impact_receipt_digest",
+        "impact_receipt",
+        "semantic_id",
+        "expected_class",
+    },
     "create_relation": {"source_entity_iri", "relation_type_iri", "target_entity_iri"},
     "delete_relation": {"source_entity_iri", "relation_type_iri", "target_entity_iri"},
     "update_fact": {

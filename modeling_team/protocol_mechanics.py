@@ -4,8 +4,266 @@ from __future__ import annotations
 
 import json
 import hashlib
+import base64
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
+
+try:
+    from .r23003_contract import (
+        R2_3_003_TARGET_CLASS,
+        R2_3_003_TARGET_SET,
+        build_delete_impact_receipt,
+        classify_delete_only_recovery,
+        get_entity_statement_context,
+        validate_candidate_delete_declaration,
+        validate_r23003_candidate_declarations,
+        validate_canonical_entity_projection,
+    )
+except ImportError:  # pragma: no cover - stdio/staged facade has no package sibling
+    try:
+        from r23003_contract import (  # type: ignore[no-redef]
+            R2_3_003_TARGET_CLASS,
+            R2_3_003_TARGET_SET,
+            build_delete_impact_receipt,
+            classify_delete_only_recovery,
+            get_entity_statement_context,
+            validate_candidate_delete_declaration,
+            validate_r23003_candidate_declarations,
+            validate_canonical_entity_projection,
+        )
+    except ImportError:  # staged Protocol asset intentionally contains no package files
+        R2_3_003_TARGET_CLASS = "ExplicitUnknown"
+        R2_3_003_TARGET_IDS = (
+            "unknown-cross-release-output-meaning",
+            "unknown-b-no-score-behavior",
+        )
+        R2_3_003_TARGET_SET = frozenset(R2_3_003_TARGET_IDS)
+
+        def _003_bytes(value: Any) -> bytes:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+        def _003_digest(value: Any) -> str:
+            return hashlib.sha256(_003_bytes(value)).hexdigest()
+
+        def validate_candidate_delete_declaration(value: Any) -> dict[str, str]:
+            if not isinstance(value, Mapping) or set(value) != {"semantic_id", "expected_class", "delete_mode"}:
+                raise ValueError("delete_existing_entity fields drift")
+            if value.get("semantic_id") not in R2_3_003_TARGET_SET or value.get("expected_class") != R2_3_003_TARGET_CLASS:
+                raise ValueError("delete_existing_entity target is not frozen")
+            if value.get("delete_mode") != "full_live_impact":
+                raise ValueError("delete_existing_entity delete_mode is invalid")
+            return {
+                "semantic_id": str(value["semantic_id"]),
+                "expected_class": R2_3_003_TARGET_CLASS,
+                "delete_mode": "full_live_impact",
+            }
+
+        def validate_r23003_candidate_declarations(candidate: Any) -> tuple[dict[str, str], ...]:
+            if not isinstance(candidate, Mapping) or not isinstance(candidate.get("items"), list):
+                raise ValueError("R2.3-003 candidate items are invalid")
+            declarations = [
+                validate_candidate_delete_declaration(item.get("semantic"))
+                for item in candidate["items"]
+                if isinstance(item, Mapping) and item.get("item_kind") == "delete_existing_entity"
+            ]
+            if len(declarations) != 2:
+                raise ValueError("R2.3-003 candidate must contain exactly two delete declarations")
+            ids = tuple(item["semantic_id"] for item in declarations)
+            if ids != tuple(R2_3_003_TARGET_IDS) or len(set(ids)) != 2:
+                raise ValueError("R2.3-003 candidate delete declarations drift")
+            return tuple(declarations)
+
+        def validate_canonical_entity_projection(
+            value: Any,
+            *,
+            project_id: str,
+            ontology_id: str,
+            workspace_version: str,
+        ) -> dict[str, str]:
+            required = {
+                "semantic_id", "entity_iri", "class_semantic_id", "class_iri",
+                "project_id", "ontology_id", "workspace_version",
+            }
+            if not isinstance(value, Mapping) or not required.issubset(value):
+                raise ValueError("canonical entity projection fields are incomplete")
+            for field in ("semantic_id", "class_semantic_id"):
+                item = value.get(field)
+                if not isinstance(item, str) or not item.strip() or "://" in item:
+                    raise ValueError(f"canonical entity {field} is invalid")
+            for field in ("entity_iri", "class_iri"):
+                parsed = urlparse(value.get(field)) if isinstance(value.get(field), str) else None
+                if parsed is None or not parsed.scheme or not parsed.netloc:
+                    raise ValueError(f"canonical entity {field} is invalid")
+            for field, expected in (
+                ("project_id", project_id), ("ontology_id", ontology_id),
+                ("workspace_version", workspace_version),
+            ):
+                if value.get(field) != expected:
+                    raise ValueError(f"canonical entity {field} drifts")
+            return {field: str(value[field]) for field in required}
+
+        def _003_cursor_encode(value: Mapping[str, Any]) -> str:
+            return "esc1." + base64.urlsafe_b64encode(_003_bytes(value)).decode("ascii").rstrip("=")
+
+        def _003_cursor_decode(value: Any) -> dict[str, Any]:
+            if not isinstance(value, str) or not value.startswith("esc1."):
+                raise ValueError("entity statement cursor is invalid")
+            try:
+                padded = value[5:] + "=" * (-len(value[5:]) % 4)
+                decoded = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise ValueError("entity statement cursor is invalid") from exc
+            if not isinstance(decoded, dict):
+                raise ValueError("entity statement cursor is invalid")
+            return decoded
+
+        def get_entity_statement_context(
+            statements: Any,
+            *,
+            project_id: str,
+            ontology_id: str,
+            entity_iri: str,
+            workspace_version: str,
+            page_size: int = 100,
+            cursor: str | None = None,
+        ) -> dict[str, Any]:
+            parsed = urlparse(entity_iri) if isinstance(entity_iri, str) else None
+            if (
+                parsed is None
+                or not parsed.scheme
+                or not parsed.netloc
+                or isinstance(page_size, bool)
+                or not isinstance(page_size, int)
+                or not 0 < page_size <= 1000
+            ):
+                raise ValueError("entity statement scope/page is invalid")
+            raw_rows = list(statements)
+            if not all(isinstance(item, Mapping) for item in raw_rows):
+                raise ValueError("entity statement projection contains a malformed statement")
+            rows = [dict(item) for item in raw_rows]
+            encoded = [_003_bytes(item) for item in rows]
+            if len(set(encoded)) != len(encoded):
+                raise ValueError("entity statement projection contains duplicate statements")
+            ordered = [json.loads(item.decode("utf-8")) for item in sorted(encoded)]
+            snapshot_digest = _003_digest(ordered)
+            offset = 0
+            if cursor is not None:
+                token = _003_cursor_decode(cursor)
+                for key, expected in {
+                    "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
+                    "workspace_version": workspace_version, "snapshot_digest": snapshot_digest,
+                }.items():
+                    if token.get(key) != expected:
+                        raise ValueError("entity statement cursor scope or snapshot drifted")
+                offset = token.get("offset")
+                if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                    raise ValueError("entity statement cursor offset is invalid")
+            if offset > len(ordered):
+                raise ValueError("entity statement cursor is beyond snapshot")
+            page = ordered[offset:offset + page_size]
+            next_offset = offset + len(page)
+            complete = next_offset >= len(ordered)
+            next_cursor = None if complete else _003_cursor_encode({
+                "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
+                "workspace_version": workspace_version, "snapshot_digest": snapshot_digest,
+                "offset": next_offset,
+            })
+            return {
+                "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
+                "workspace_version": workspace_version, "statements": page,
+                "page_digest": _003_digest(page), "snapshot_digest": snapshot_digest,
+                "next_cursor": next_cursor, "complete": complete,
+            }
+
+        def build_delete_impact_receipt(
+            pages: Any,
+            *,
+            target_semantic_id: str,
+            candidate_digest: str,
+            project_id: str,
+            ontology_id: str,
+            workspace_version: str,
+        ) -> dict[str, Any]:
+            raw_pages = list(pages)
+            if not raw_pages or not all(isinstance(page, Mapping) for page in raw_pages):
+                raise ValueError("delete impact page chain is empty")
+            page_list = [dict(page) for page in raw_pages]
+            if not page_list or page_list[-1].get("complete") is not True:
+                raise ValueError("delete impact page chain is incomplete")
+            if any(page.get("complete") is True or not page.get("next_cursor") for page in page_list[:-1]):
+                raise ValueError("delete impact page chain is incomplete")
+            entity_iri = page_list[0].get("entity_iri")
+            if not isinstance(entity_iri, str) or not entity_iri:
+                raise ValueError("delete impact entity identity is missing")
+            snapshots = {page.get("snapshot_digest") for page in page_list}
+            if len(snapshots) != 1 or not isinstance(next(iter(snapshots)), str):
+                raise ValueError("delete impact snapshot drifts")
+            rows: list[dict[str, Any]] = []
+            previous_next = None
+            page_digests = []
+            for index, page in enumerate(page_list):
+                if index == 0:
+                    if page.get("cursor") not in (None, ""):
+                        raise ValueError("delete impact page chain starts at a non-root cursor")
+                elif page.get("cursor") != previous_next:
+                    raise ValueError("delete impact page cursor chain is out of order")
+                if (
+                    page.get("project_id") != project_id
+                    or page.get("ontology_id") != ontology_id
+                    or page.get("workspace_version") != workspace_version
+                    or page.get("entity_iri") != entity_iri
+                ):
+                    raise ValueError("delete impact scope/entity drifts")
+                values = page.get("statements")
+                if not isinstance(values, list):
+                    raise ValueError("delete impact statements are invalid")
+                if any(not isinstance(item, Mapping) for item in values):
+                    raise ValueError("delete impact statements are malformed")
+                digest = _003_digest(values)
+                if page.get("page_digest") != digest:
+                    raise ValueError("delete impact page digest is invalid")
+                page_digests.append(digest)
+                rows.extend(dict(item) for item in values)
+                previous_next = page.get("next_cursor")
+            if page_list[-1].get("next_cursor") not in (None, ""):
+                raise ValueError("delete impact terminal page has a cursor")
+            encoded = [_003_bytes(item) for item in rows]
+            if len(set(encoded)) != len(encoded):
+                raise ValueError("delete impact page chain repeats a statement")
+            ordered = [json.loads(item.decode("utf-8")) for item in sorted(encoded)]
+            if next(iter(snapshots)) != _003_digest(ordered):
+                raise ValueError("delete impact snapshot digest is invalid")
+            receipt = {
+                "schema_version": "r2-3-003-delete-impact/v1", "target_semantic_id": target_semantic_id,
+                "project_id": project_id, "ontology_id": ontology_id, "workspace_version": workspace_version,
+                "candidate_digest": candidate_digest, "entity_iri": entity_iri,
+                "snapshot_digest": next(iter(snapshots)), "page_digests": page_digests, "statements": ordered,
+                "complete": True,
+            }
+            if not isinstance(receipt["snapshot_digest"], str) or not receipt["snapshot_digest"]:
+                raise ValueError("delete impact snapshot digest is missing")
+            receipt["receipt_digest"] = _003_digest(receipt)
+            return receipt
+
+        def classify_delete_only_recovery(receipt: Mapping[str, Any], after: Mapping[str, Any]) -> str:
+            if not isinstance(receipt, Mapping) or not isinstance(after, Mapping):
+                return "partial_or_drifted"
+            if receipt.get("complete") is not True or after.get("complete") is not True:
+                return "partial_or_drifted"
+            before = receipt.get("statements")
+            observed = after.get("statements")
+            if not isinstance(before, list) or not isinstance(observed, list):
+                return "partial_or_drifted"
+            before_bytes = {_003_bytes(item) for item in before if isinstance(item, Mapping)}
+            after_bytes = {_003_bytes(item) for item in observed if isinstance(item, Mapping)}
+            before_targets = set(receipt.get("target_semantic_ids", [])) or {receipt.get("target_semantic_id")}
+            after_targets = set(after.get("target_semantic_ids", []))
+            if after_bytes.issubset(before_bytes) and after_bytes == before_bytes and after_targets == before_targets:
+                return "not_applied"
+            if not after_targets and not after_bytes:
+                return "applied"
+            return "partial_or_drifted"
 
 try:
     from .candidate_progress import (
@@ -1164,6 +1422,41 @@ def build_candidate_conflict(
     }
 
 
+def build_existing_scope_candidate_conflict(
+    candidate: Any,
+    conflict_code: str,
+    conflict_detail: str,
+    *,
+    original_delivery_id: str,
+    receipt_digest: str,
+    workspace_version: str,
+) -> dict[str, Any]:
+    """Build a typed pre-mutation 003 binding conflict.
+
+    The normal six-field conflict remains unchanged for R2.3-005.  Existing
+    scope live drift adds only receipt/delivery/workspace attribution and the
+    explicit zero-mutation assertion needed to safely permit a full revision.
+    """
+
+    base = build_candidate_conflict(candidate, conflict_code, conflict_detail)
+    for name, value in (
+        ("original_delivery_id", original_delivery_id),
+        ("receipt_digest", receipt_digest),
+        ("workspace_version", workspace_version),
+    ):
+        if not _is_nonempty_string(value):
+            raise ProtocolRetrievalFallbackError(f"typed candidate conflict {name} is invalid")
+    base.update(
+        {
+            "original_delivery_id": original_delivery_id,
+            "receipt_digest": receipt_digest,
+            "workspace_version": workspace_version,
+            "mutation_state": "zero-mutation",
+        }
+    )
+    return base
+
+
 _EXISTING_BINDING_SCHEMA = "r2-3-003-existing-entity-binding/v1"
 _EXISTING_REF_FIELDS = {"semantic_id", "expected_class"}
 
@@ -1228,7 +1521,13 @@ def _row_semantic_id(row: Mapping[str, Any]) -> str | None:
 
 
 def _row_class(row: Mapping[str, Any]) -> str | None:
-    for key in ("class", "class_id", "entity_class", "actual_class"):
+    for key in (
+        "class",
+        "class_id",
+        "class_semantic_id",
+        "entity_class",
+        "actual_class",
+    ):
         value = row.get(key)
         if _is_nonempty_string(value):
             return value
@@ -1250,6 +1549,39 @@ def _row_evidence(row: Mapping[str, Any]) -> Any:
     return None
 
 
+def _canonical_row_scope(
+    row: Mapping[str, Any],
+    *,
+    project_id: str,
+    ontology_id: str,
+    workspace_version: str,
+) -> dict[str, str]:
+    """Validate the explicit backend entity projection without guessing IRIs."""
+
+    canonical_markers = {
+        "semantic_id",
+        "entity_iri",
+        "class_semantic_id",
+        "class_iri",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+    }
+    if not canonical_markers.issubset(row):
+        raise ProtocolRetrievalFallbackError(
+            "canonical entity projection fields are incomplete"
+        )
+    try:
+        return validate_canonical_entity_projection(
+            row,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            workspace_version=workspace_version,
+        )
+    except ValueError as exc:
+        raise ProtocolRetrievalFallbackError(str(exc)) from exc
+
+
 def build_existing_entity_binding_receipt(
     candidate: Any,
     read_model: Any,
@@ -1257,10 +1589,31 @@ def build_existing_entity_binding_receipt(
     project_id: str,
     ontology_id: str,
     workspace_version: str,
+    requirement_id: str = "R2.3-003",
 ) -> dict[str, Any]:
     """Bind neutral existing refs to one ontology-scoped live read model."""
 
+    if requirement_id != "R2.3-003":
+        raise ProtocolRetrievalFallbackError(
+            "existing entity binding is restricted to R2.3-003"
+        )
     normalized = _validate_translate_candidate(candidate)
+    try:
+        validate_r23003_candidate_declarations(normalized)
+    except ValueError as exc:
+        raise ProtocolRetrievalFallbackError(str(exc)) from exc
+    if any(item.get("item_kind") == "delete_existing_entity" for item in normalized["items"]):
+        if requirement_id != "R2.3-003":
+            raise ProtocolRetrievalFallbackError(
+                "delete_existing_entity is restricted to R2.3-003"
+            )
+        declarations = [
+            validate_candidate_delete_declaration(item.get("semantic"))
+            for item in normalized["items"]
+            if item.get("item_kind") == "delete_existing_entity"
+        ]
+        if {item["semantic_id"] for item in declarations} != set(R2_3_003_TARGET_SET):
+            raise ProtocolRetrievalFallbackError("R2.3-003 delete target set drifts")
     refs: dict[str, dict[str, str]] = {}
     for ref in _existing_refs(normalized):
         prior = refs.get(ref["semantic_id"])
@@ -1279,6 +1632,12 @@ def build_existing_entity_binding_receipt(
     rows = _read_model_entities(read_model)
     indexed: dict[str, Mapping[str, Any]] = {}
     for row in rows:
+        _canonical_row_scope(
+            row,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            workspace_version=workspace_version,
+        )
         semantic_id = _row_semantic_id(row)
         if semantic_id is None:
             continue
@@ -1300,18 +1659,33 @@ def build_existing_entity_binding_receipt(
         evidence_value = _row_evidence(row)
         if evidence_value in (None, "", [], {}):
             raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} read evidence is missing")
-        bindings.append(
-            {
+        binding = {
                 "semantic_id": semantic_id,
                 "expected_class": ref["expected_class"],
                 "actual_class": actual_class,
                 "entity_iri": entity_iri,
                 "read_evidence": evidence_value,
             }
+        canonical = _canonical_row_scope(
+            row,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            workspace_version=workspace_version,
         )
+        if canonical is not None:
+            binding.update(
+                {
+                    "class_semantic_id": canonical["class_semantic_id"],
+                    "class_iri": canonical["class_iri"],
+                    "project_id": canonical["project_id"],
+                    "ontology_id": canonical["ontology_id"],
+                    "workspace_version": canonical["workspace_version"],
+                }
+            )
+        bindings.append(binding)
     receipt = {
         "schema_version": _EXISTING_BINDING_SCHEMA,
-        "requirement_id": "R2.3-003",
+        "requirement_id": requirement_id,
         "candidate_digest": _canonical_digest(normalized),
         "project_id": project_id,
         "ontology_id": ontology_id,
@@ -1372,7 +1746,8 @@ def validate_existing_entity_binding_receipt(
         if not isinstance(item, Mapping):
             raise ProtocolRetrievalFallbackError("existing binding receipt item is invalid")
         required = {"semantic_id", "expected_class", "actual_class", "entity_iri", "read_evidence"}
-        if set(item) != required:
+        canonical_fields = {"class_semantic_id", "class_iri", "project_id", "ontology_id", "workspace_version"}
+        if set(item) not in (required, required | canonical_fields):
             raise ProtocolRetrievalFallbackError("existing binding receipt item fields drift")
         semantic_id = item.get("semantic_id")
         if not _is_nonempty_string(semantic_id) or semantic_id in seen:
@@ -1386,6 +1761,16 @@ def validate_existing_entity_binding_receipt(
             raise ProtocolRetrievalFallbackError("existing binding receipt IRI is invalid")
         if item.get("read_evidence") in (None, "", [], {}):
             raise ProtocolRetrievalFallbackError("existing binding receipt evidence is missing")
+        if set(item) == required | canonical_fields:
+            try:
+                validate_canonical_entity_projection(
+                    item,
+                    project_id=str(receipt["project_id"]),
+                    ontology_id=str(receipt["ontology_id"]),
+                    workspace_version=str(receipt["workspace_version"]),
+                )
+            except ValueError as exc:
+                raise ProtocolRetrievalFallbackError(str(exc)) from exc
         seen.add(semantic_id)
         normalized_bindings.append(dict(item))
     if seen != set(refs):
@@ -1407,6 +1792,8 @@ def translate_candidate_to_batches(
     existing_binding_receipt: Any | None = None,
     *,
     requirement_id: str | None = None,
+    deletion_impact_receipts: Mapping[str, Any] | None = None,
+    phase_a_readback: bool = False,
 ) -> dict[str, Any]:
     """Deterministically translate one frozen candidate into a batch plan.
 
@@ -1430,6 +1817,11 @@ def translate_candidate_to_batches(
     item that cannot be translated is omitted and recorded in ``conflicts``.
     """
     normalized = _validate_translate_candidate(candidate)
+    if requirement_id == "R2.3-003":
+        try:
+            validate_r23003_candidate_declarations(normalized)
+        except ValueError as exc:
+            raise ProtocolRetrievalFallbackError(str(exc)) from exc
     existing_refs = _existing_refs(normalized)
     if existing_refs:
         if requirement_id != "R2.3-003":
@@ -1473,6 +1865,7 @@ def translate_candidate_to_batches(
             declared_predicates[name] = semantic
 
     staged: dict[str, list[dict[str, Any]]] = {stage: [] for stage in _TRANSLATE_STAGE_ORDER}
+    delete_items: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
     for item in items:
         kind = item["item_kind"]
@@ -1486,6 +1879,87 @@ def translate_candidate_to_batches(
         if kind == "existing_entity_ref":
             # A binding declaration is read-only metadata; it never becomes a
             # create/update command.  Relations consume the frozen IRI below.
+            continue
+        if kind == "delete_existing_entity":
+            if requirement_id != "R2.3-003":
+                conflicts.append(_conflict(item_id, "delete_requires_existing_contract", requirement_id))
+                continue
+            try:
+                declaration = validate_candidate_delete_declaration(semantic)
+                if not existing_refs:
+                    raise _TranslateConflict(
+                        "delete_requires_existing_binding",
+                        "delete-only target requires an existing_entity_ref binding",
+                    )
+                if not phase_a_readback:
+                    raise _TranslateConflict(
+                        "phase_a_readback_required",
+                        "delete-only Phase B requires a durable Phase A readback",
+                    )
+                if not isinstance(deletion_impact_receipts, Mapping):
+                    raise _TranslateConflict("delete_impact_receipt_required", "tool-owned impact receipt is required")
+                impact = deletion_impact_receipts.get(declaration["semantic_id"])
+                if not isinstance(impact, Mapping):
+                    raise _TranslateConflict("delete_impact_receipt_required", "target impact receipt is missing")
+                if impact.get("target_semantic_id") != declaration["semantic_id"]:
+                    raise _TranslateConflict("delete_impact_target_drift", "impact receipt target drifts")
+                if any(
+                    impact.get(field) != validated_receipt.get(field)
+                    for field in ("project_id", "ontology_id", "workspace_version")
+                ):
+                    raise _TranslateConflict("delete_impact_scope_drift", "impact receipt scope drifts")
+                if impact.get("candidate_digest") != _canonical_digest(normalized):
+                    raise _TranslateConflict("delete_impact_candidate_drift", "impact receipt candidate digest drifts")
+                if impact.get("complete") is not True:
+                    raise _TranslateConflict("delete_impact_incomplete", "impact receipt is incomplete")
+                if (
+                    not isinstance(impact.get("statements"), list)
+                    or not isinstance(impact.get("page_digests"), list)
+                    or not _is_nonempty_string(impact.get("snapshot_digest"))
+                ):
+                    raise _TranslateConflict("delete_impact_incomplete", "impact receipt statement pages are incomplete")
+                supplied_digest = impact.get("receipt_digest")
+                body = dict(impact)
+                body.pop("receipt_digest", None)
+                if supplied_digest != _canonical_digest(body):
+                    raise _TranslateConflict("delete_impact_digest_invalid", "impact receipt digest is invalid")
+                target_iri = next(
+                    (
+                        row.get("entity_iri")
+                        for row in validated_receipt["bindings"]
+                        if row.get("semantic_id") == declaration["semantic_id"]
+                    ),
+                    None,
+                )
+                if not isinstance(target_iri, str) or "://" not in target_iri:
+                    raise _TranslateConflict("delete_binding_missing", "delete target has no live IRI binding")
+                if impact.get("entity_iri") != target_iri:
+                    raise _TranslateConflict("delete_impact_entity_drift", "impact receipt entity IRI drifts")
+                delete_items.append(
+                    {
+                        "client_item_id": item_id,
+                        "command_kind": "delete_entity",
+                        "payload": {
+                            "entity_iri": target_iri,
+                            "semantic_id": declaration["semantic_id"],
+                            "expected_class": declaration["expected_class"],
+                            "impact_receipt_digest": str(supplied_digest),
+                            # Persist the complete tool-owned before-set with the
+                            # delete command.  Recovery must compare the exact
+                            # receipt-bound incident statements; a digest alone
+                            # cannot distinguish a full delete from a partial or
+                            # drifted delete after an uncertain SQL commit.
+                            "impact_receipt": json.loads(
+                                json.dumps(dict(impact), ensure_ascii=False)
+                            ),
+                        },
+                        "evidence": evidence,
+                    }
+                )
+            except _TranslateConflict as exc:
+                conflicts.append(_conflict(item_id, exc.code, exc.detail))
+            except (ValueError, KeyError, TypeError) as exc:
+                conflicts.append(_conflict(item_id, "delete_impact_invalid", exc))
             continue
         if handler is None:
             conflicts.append(_conflict(item_id, "unsupported_item_kind", kind))
@@ -1524,6 +1998,18 @@ def translate_candidate_to_batches(
             }
         )
 
+    if delete_items:
+        batches.append(
+            {
+                "stage_kind": "delete-only",
+                "client_batch_id": f"{revision}-phase-b-delete-only",
+                "idempotency_key": f"{revision}-phase-b-delete-only-v1",
+                "phase": "B",
+                "delete_only": True,
+                "items": sorted(delete_items, key=lambda value: value["client_item_id"]),
+            }
+        )
+
     result = {
         "candidate_kind": normalized["candidate_kind"],
         "candidate_revision": revision,
@@ -1543,6 +2029,9 @@ def translate_candidate_to_batches(
     if existing_refs:
         result["requirement_id"] = "R2.3-003"
         result["existing_binding_receipt_digest"] = validated_receipt["receipt_digest"]
+    if delete_items:
+        result["phase_a_readback"] = True
+        result["delete_only_batch"] = True
     return result
 
 

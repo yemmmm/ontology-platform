@@ -14,6 +14,7 @@ from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.schemas import ModelingBatchSubmit
 from app.core.config import Settings
 from app.repositories.models import (
+    OntologyModel,
     SemanticGraphSetModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
@@ -24,6 +25,7 @@ from app.services.modeling_batches import (
     ModelingBatchError,
     ModelingBatchService,
 )
+from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
@@ -225,6 +227,27 @@ def get_ontology_read_model(
             q=q,
             search_mode=search_mode,
         )
+        if canonical_name == "entity-list":
+            # Protocol consumes an explicit, scope-bound identity projection.
+            # Do not derive semantic IDs or class IDs by splitting IRIs; the
+            # SPARQL projection supplies those values and this adapter only
+            # binds the authenticated Project/Ontology/workspace envelope.
+            ontology = session.get(OntologyModel, ontology_id)
+            if ontology is None:
+                raise HTTPException(status_code=404, detail="Ontology not found")
+            workspace_version = ModelingWorkspaceVersionService(
+                session, settings
+            ).version_for(ontology_id)
+            for item in response.get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                item.update(
+                    {
+                        "project_id": ontology.project_id,
+                        "ontology_id": ontology_id,
+                        "workspace_version": workspace_version,
+                    }
+                )
         if no_delta_baseline:
             response["warnings"] = [
                 *response.get("warnings", []),

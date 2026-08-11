@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import TeamConfiguration, TeamConfigurationError, load_formal_team_configuration
+from .r23003_contract import (
+    R2_3_003_TARGET_CLASS,
+    R2_3_003_TARGET_IDS,
+    deletion_policy,
+    validate_deletion_policy,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +33,7 @@ class FormalRunContract:
     scope_config_path: str | None = None
     source_manifest_path: str | None = None
     ledger_requirement_id: str | None = None
+    deletion_policy: dict[str, Any] | None = None
 
     @property
     def is_existing(self) -> bool:
@@ -55,6 +62,7 @@ R2_3_003_CONTRACT = FormalRunContract(
     scope_config_path="modeling_team/scopes/r2-3-003-existing.yaml",
     source_manifest_path="docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json",
     ledger_requirement_id="R2.3-003",
+    deletion_policy=deletion_policy(),
 )
 
 FORMAL_RUN_CONTRACTS: tuple[FormalRunContract, ...] = (
@@ -93,6 +101,23 @@ def require_formal_run_contract(configuration: TeamConfiguration) -> FormalRunCo
     return contract
 
 
+def validate_formal_run_contract_assets(contract: FormalRunContract) -> None:
+    """Validate requirement-owned deletion policy before any run side effect."""
+
+    if contract.requirement_id != "R2.3-003":
+        if contract.deletion_policy is not None:
+            raise TeamConfigurationError("deletion policy is restricted to R2.3-003")
+        return
+    try:
+        policy = validate_deletion_policy(contract.deletion_policy)
+    except ValueError as exc:
+        raise TeamConfigurationError(str(exc)) from exc
+    if tuple(item["semantic_id"] for item in policy["targets"]) != R2_3_003_TARGET_IDS:
+        raise TeamConfigurationError("R2.3-003 target IDs drift")
+    if any(item["expected_class"] != R2_3_003_TARGET_CLASS for item in policy["targets"]):
+        raise TeamConfigurationError("R2.3-003 target Class drifts")
+
+
 def _relative(root: Path, path: Path, field: str) -> str:
     try:
         return path.resolve().relative_to(root.resolve()).as_posix()
@@ -117,6 +142,7 @@ def load_formal_run_configuration(
     root = (root or Path(__file__).resolve().parents[1]).resolve()
     configuration = load_formal_team_configuration(profile_path, task_path, root=root)
     contract = require_formal_run_contract(configuration)
+    validate_formal_run_contract_assets(contract)
     expected_profile = root / ("modeling_team/profiles/" + contract.profile_id + ".yaml")
     # The 003 profile has a descriptive filename; identity is still exact.
     if contract is R2_3_003_CONTRACT:
@@ -177,4 +203,5 @@ __all__ = [
     "formal_run_contract_for",
     "load_formal_run_configuration",
     "require_formal_run_contract",
+    "validate_formal_run_contract_assets",
 ]

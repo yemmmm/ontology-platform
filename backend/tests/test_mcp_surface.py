@@ -28,6 +28,7 @@ ALLOWED_TOOLS = {
     "list_session_modeling_batches",
     "list_ontology_modeling_batches",
     "get_modeling_context",
+    "get_entity_statement_context",
     "get_ontology_read_model",
     "create_modeling_workflow_artifact",
     "get_modeling_workflow_artifact",

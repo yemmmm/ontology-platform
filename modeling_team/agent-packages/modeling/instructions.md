@@ -212,9 +212,12 @@ For `r2-3-003-existing-scope-incremental`, author one complete incremental candi
 the Start75 candidate and never send a patch-only revision. Reference retained entities only with
 `existing_entity_ref` containing platform-neutral `semantic_id` and `expected_class`; never place
 an IRI, Project/Ontology ID, workspace version, Batch ID, or guessed platform identity in that ref.
-Preserve old ExplicitUnknown provenance while adding source-grounded resolution and the one
-C-evaluation -> B-decision -> A-outcome case. Protocol owns the live binding receipt and every
-platform write; Modeling owns semantics, Evidence, lineage, and explicit unknowns.
+Resolve the two Runner-frozen ExplicitUnknown targets with source-grounded current semantics and
+the one C-evaluation -> B-decision -> A-outcome case. The candidate may declare only the frozen
+semantic ID/Class and `delete_mode=full_live_impact`; never author an IRI, incident triples,
+impact digest, or expected-edge set. Protocol owns live identity/impact receipts and every
+platform write; Modeling owns semantics, Evidence, lineage, and explicit unknowns. Preserve all
+non-target explicit unknowns.
 
 Keep this existing-scope increment bounded: target 12–24 complete candidate items and never exceed
 the hard maximum of 32 items. Reuse `existing_entity_ref` for retained entities and model only the

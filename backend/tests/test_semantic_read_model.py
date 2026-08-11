@@ -166,6 +166,36 @@ def test_full_working_view_includes_reasoning_and_rule_graphs():
     assert "http://op/s/graph/rule-result/run-2" in store.last_graph_iris
 
 
+def test_entity_list_exposes_explicit_canonical_identity_projection():
+    """Protocol receives semantic IDs and IRIs as independent backend fields."""
+
+    data_iri = "https://example/graph/data/r23003"
+    entity_iri = "https://example/entity/unknown-a"
+    class_iri = "https://example/class/ExplicitUnknown"
+    resolution = _resolution([data_iri])
+    store = FakeStore(
+        {
+            "entity-list": [
+                {
+                    "entity": {"value": entity_iri, "type": "uri"},
+                    "semantic_id": {"value": "unknown-a", "type": "literal"},
+                    "class": {"value": class_iri, "type": "uri"},
+                    "class_semantic_id": {"value": "ExplicitUnknown", "type": "literal"},
+                    "graph": {"value": data_iri, "type": "uri"},
+                }
+            ]
+        }
+    )
+    service = SemanticReadModelService(rdf_store=store, scope_resolver=FakeScopeResolver(resolution))
+
+    item = service.read_model("gs-1", "entity-list")["items"][0]
+
+    assert item["semantic_id"] == "unknown-a"
+    assert item["entity_iri"] == entity_iri
+    assert item["class_semantic_id"] == "ExplicitUnknown"
+    assert item["class_iri"] == class_iri
+
+
 def test_visibility_policy_filters_restricted_graphs():
     from app.services.semantic_visibility import SemanticVisibilityPolicy
 

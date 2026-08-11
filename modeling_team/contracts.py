@@ -56,6 +56,10 @@ SAFE_PROTOCOL_TOOLS = frozenset(
         "inspect_semantic_statement_provenance",
     }
 )
+# R2.3-003 extends the ordinary read allowlist with the generic, opaque-cursor
+# entity statement projection.  Keep the historical SAFE_PROTOCOL_TOOLS value
+# byte-compatible for 005/legacy task and P2 driver contracts.
+SAFE_PROTOCOL_TOOLS_R23003 = SAFE_PROTOCOL_TOOLS | {"get_entity_statement_context"}
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
 _FORMAL_PROFILE_IDS = frozenset(
     {"r2-3-005-modeling-team", "r2-3-003-modeling-team"}
@@ -571,7 +575,12 @@ def load_task(
     )
     if not sources:
         raise TeamConfigurationError("v2 Task requires role-private sources")
-    if not all(isinstance(tool, str) and tool in SAFE_PROTOCOL_TOOLS for tool in tools):
+    allowed_tools = (
+        SAFE_PROTOCOL_TOOLS_R23003
+        if data.get("task_id") == "r2-3-003-existing-scope-incremental"
+        else SAFE_PROTOCOL_TOOLS
+    )
+    if not all(isinstance(tool, str) and tool in allowed_tools for tool in tools):
         raise TeamConfigurationError("v2 Task Protocol tool is not permitted")
     if len(set(tools)) != len(tools) or not tools:
         raise TeamConfigurationError("v2 Task Protocol tools must be unique and non-empty")

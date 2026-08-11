@@ -20,6 +20,11 @@ from typing import Any
 
 from .acceptance import AcceptanceContractError, canonical_mode_preflight
 from .contracts import TeamConfigurationError
+from .r23003_contract import (
+    R2_3_003_TARGET_CLASS,
+    R2_3_003_TARGET_IDS,
+    validate_deletion_policy,
+)
 
 
 _FORMAL_SCOPE_KEYS = frozenset({"mode"})
@@ -34,7 +39,14 @@ R2_3_003_ONTOLOGY_ID = "fd762f52-2f5e-4bc0-902a-5583135ab64d"
 R2_3_003_HANDOFF_RELATIVE = "modeling_team/scopes/r2-3-003-start75-handoff.json"
 _R2_3_003_SCOPE_KEYS = frozenset({"mode", "project_id", "ontology_id", "handoff_path"})
 _R2_3_003_HANDOFF_KEYS = frozenset(
-    {"run_id", "project_id", "ontology_id", "workspace_version", "scope_disposition"}
+    {
+        "run_id",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "scope_disposition",
+        "deletion_policy",
+    }
 )
 
 
@@ -115,6 +127,14 @@ def load_existing_scope_handoff(scope: Mapping[str, str], *, repository_root: Pa
         or value.get("scope_disposition") != "retained"
     ):
         raise TeamConfigurationError("R2.3-003 handoff scope binding drifts")
+    try:
+        policy = validate_deletion_policy(value.get("deletion_policy"))
+    except ValueError as exc:
+        raise TeamConfigurationError(str(exc)) from exc
+    if tuple(item["semantic_id"] for item in policy["targets"]) != R2_3_003_TARGET_IDS:
+        raise TeamConfigurationError("R2.3-003 handoff target IDs drift")
+    if any(item["expected_class"] != R2_3_003_TARGET_CLASS for item in policy["targets"]):
+        raise TeamConfigurationError("R2.3-003 handoff target Class drifts")
     for field in ("run_id", "workspace_version"):
         item = value.get(field)
         if not isinstance(item, str) or not item.strip():
@@ -126,7 +146,14 @@ def load_existing_scope_handoff(scope: Mapping[str, str], *, repository_root: Pa
         int(version, 16)
     except ValueError as exc:
         raise TeamConfigurationError("R2.3-003 workspace version is invalid") from exc
-    return {field: str(value[field]) for field in _R2_3_003_HANDOFF_KEYS}
+    return {
+        "run_id": str(value["run_id"]),
+        "project_id": str(value["project_id"]),
+        "ontology_id": str(value["ontology_id"]),
+        "workspace_version": str(value["workspace_version"]),
+        "scope_disposition": "retained",
+        "deletion_policy": policy,
+    }
 
 
 def _run_checked(args: list[str], *, cwd: Path) -> str:

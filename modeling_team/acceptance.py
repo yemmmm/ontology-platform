@@ -38,6 +38,7 @@ from .protocol_retrieval_gate import (
     ProtocolRetrievalGate,
     ProtocolRetrievalGateError,
 )
+from .r23003_contract import validate_deletion_policy
 
 
 class AcceptanceContractError(ValueError):
@@ -797,7 +798,18 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
     fields = {
         "schema_version", "ticket_id", "acceptance_round_id", "task_id", "producer_run_id", "slice_id", "slice_revision", "question_id", "question", "approved_sources", "source_bundle_digest", "platform_read_scope", "model_state", "model_state_digest", "competency_questions", "allowed_read_tools", "modeling_receipts", "timeout_seconds", "quality_standard_ref", "quality_standard_digest", "quality_standard_artifact", "unknown_policy", "ticket_revision", "ticket_digest",
     }
-    data = _require_exact_keys(ticket, fields, "acceptance ticket")
+    optional_progress_fields = {
+        "question_ordinal",
+        "question_count",
+        "previous_question_id",
+        "next_question_id",
+        "is_final_question",
+    }
+    if not isinstance(ticket, Mapping):
+        _error("acceptance ticket fields drift")
+    if set(ticket) - fields - optional_progress_fields:
+        _error("acceptance ticket fields drift")
+    data = _require_fields(ticket, fields, "acceptance ticket")
     if data["schema_version"] != "r2-3-005-slice-acceptance-ticket/v1":
         _error("ticket schema_version is unsupported")
     for field in ("ticket_id", "acceptance_round_id", "task_id", "producer_run_id", "slice_id", "slice_revision", "question_id"):
@@ -822,6 +834,25 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
         cq_by_id[cq_id] = item["question"]
     if data["question_id"] not in cq_by_id or cq_by_id[data["question_id"]] != data["question"]:
         _error("ticket question projection does not match competency_questions")
+    progress_present = set(ticket) & optional_progress_fields
+    deletion_aware = isinstance(data["unknown_policy"], Mapping)
+    if deletion_aware and progress_present != optional_progress_fields:
+        _error("deletion-aware ticket must carry complete Runner question progress")
+    if progress_present and progress_present != optional_progress_fields:
+        _error("ticket question progress projection is incomplete")
+    if progress_present:
+        ordinal = data["question_ordinal"]
+        count = data["question_count"]
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 1 or ordinal > len(cqs):
+            _error("ticket question_ordinal is invalid")
+        if isinstance(count, bool) or not isinstance(count, int) or count != len(cqs) or count < 1:
+            _error("ticket question_count is invalid")
+        expected_prev = cqs[ordinal - 2]["id"] if ordinal > 1 else None
+        expected_next = cqs[ordinal]["id"] if ordinal < len(cqs) else None
+        if data["previous_question_id"] != expected_prev or data["next_question_id"] != expected_next:
+            _error("ticket question adjacency projection drifts")
+        if data["is_final_question"] is not (ordinal == count):
+            _error("ticket is_final_question projection drifts")
     tools = data["allowed_read_tools"]
     if not isinstance(tools, list) or not tools or any(not isinstance(tool, str) for tool in tools) or list(dict.fromkeys(tools)) != tools:
         _error("ticket allowed_read_tools is invalid")
@@ -857,7 +888,13 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
     _safe_digest(artifact["digest"], "ticket quality_standard_artifact.digest")
     if not isinstance(data["quality_standard_ref"], str) or not data["quality_standard_ref"]:
         _error("ticket quality_standard_ref is invalid")
-    if data["unknown_policy"] != "preserve-explicit-unknown" or not isinstance(data["ticket_revision"], int) or data["ticket_revision"] <= 0:
+    policy = data["unknown_policy"]
+    if policy != "preserve-explicit-unknown":
+        try:
+            validate_deletion_policy(policy)
+        except ValueError as exc:
+            _error(str(exc))
+    if not isinstance(data["ticket_revision"], int) or data["ticket_revision"] <= 0:
         _error("ticket unknown policy/revision is invalid")
     if expected_owner_revision is not None and data["quality_standard_ref"] != expected_owner_revision:
         _error("ticket owner revision mismatch")
@@ -1495,14 +1532,14 @@ class RunnerAcceptanceCarrier:
 
         policy = self._ticket_policy
         questions = policy.get("competency_questions") if isinstance(policy, Mapping) else None
-        if not isinstance(questions, list) or len(questions) != 2:
-            _error("acceptance policy must freeze exactly two competency question IDs")
+        if not isinstance(questions, list) or not questions:
+            _error("acceptance policy must freeze at least one competency question ID")
         ids: list[str] = []
         for question in questions:
             if not isinstance(question, Mapping) or not isinstance(question.get("id"), str) or not question["id"]:
                 _error("acceptance policy competency question ID is invalid")
             ids.append(question["id"])
-        if len(set(ids)) != 2:
+        if len(set(ids)) != len(ids):
             _error("acceptance policy competency question IDs are duplicated")
         return tuple(ids)
 
@@ -2048,8 +2085,8 @@ class RunnerAcceptanceCarrier:
             question_ids = self.frozen_question_ids()
         except AcceptanceContractError:
             raise
-        if len(question_ids) != 2:
-            _error("formal acceptance must freeze exactly two competency questions")
+        if not question_ids:
+            _error("formal acceptance must freeze at least one competency question")
 
         selected_ticket = self._tickets.get(round_id)
         selected_round = self._rounds.get(round_id)
@@ -2097,9 +2134,9 @@ class RunnerAcceptanceCarrier:
                     )
                 break
         else:
-            # Both frozen questions have a usable PASS in this state epoch;
-            # there is no legal third round or replay after final PASS.
-            _error("all frozen Acceptance questions already have usable PASS verdicts")
+            # Every standard-owned question has a usable PASS; there is no
+            # legal replay after the final question.
+            _error("all standard-owned Acceptance questions already have usable PASS verdicts")
 
         expected_question_id = question_ids[expected_index]
         if selected_ticket.get("question_id") != expected_question_id:
@@ -2123,20 +2160,20 @@ class RunnerAcceptanceCarrier:
         if selected_ticket.get("model_state_digest") != current_digest:
             _error("Coordinator acceptance ticket is bound to stale model state")
 
-        if expected_index == 1:
+        if expected_index > 0:
             if prior_round is None:
-                _error("Coordinator acceptance CQ1 PASS is unavailable")
+                _error("Coordinator acceptance previous-question PASS is unavailable")
             if prior_round.get("verdict_usable") is not True:
-                _error("Coordinator acceptance CQ1 PASS is not usable")
+                _error("Coordinator acceptance previous-question PASS is not usable")
             prior_verdict = prior_round.get("verdict")
             if not isinstance(prior_verdict, Mapping) or prior_verdict.get("verdict") != "PASS":
-                _error("Coordinator acceptance CQ1 verdict is not PASS")
+                _error("Coordinator acceptance previous-question verdict is not PASS")
             if prior_verdict.get("model_state_digest") != self._model_state_boundary.digest:
-                _error("Coordinator acceptance CQ1 verdict is bound to stale model state")
+                _error("Coordinator acceptance previous-question verdict is bound to stale model state")
             if prior_round.get("state_epoch") != self._state_epoch:
-                _error("Coordinator acceptance CQ1 PASS belongs to a stale model-state epoch")
+                _error("Coordinator acceptance previous-question PASS belongs to a stale model-state epoch")
             if prior_round.get("state_digest") != self._model_state_boundary.digest:
-                _error("Coordinator acceptance CQ1 PASS digest is stale")
+                _error("Coordinator acceptance previous-question PASS digest is stale")
             prior_round_id = next(
                 candidate_id
                 for candidate_id, candidate in self._rounds.items()
@@ -2144,46 +2181,46 @@ class RunnerAcceptanceCarrier:
             )
             prior_ticket = self._tickets.get(prior_round_id)
             if not isinstance(prior_ticket, Mapping) or prior_ticket.get("ticket_digest") != prior_round.get("ticket_digest"):
-                _error("Coordinator acceptance CQ1 ticket binding is invalid")
+                _error("Coordinator acceptance previous-question ticket binding is invalid")
             if (
                 prior_verdict.get("acceptance_round_id") != prior_round_id
                 or prior_verdict.get("ticket_digest") != prior_ticket.get("ticket_digest")
             ):
-                _error("Coordinator acceptance CQ1 verdict ticket binding is invalid")
+                _error("Coordinator acceptance previous-question verdict ticket binding is invalid")
             prior_receipt = self._verdicts.get(prior_round_id)
             if (
                 prior_receipt is None
                 or prior_receipt.verdict_digest != prior_verdict.get("verdict_digest")
             ):
-                _error("Coordinator acceptance CQ1 verdict receipt is unavailable")
+                _error("Coordinator acceptance previous-question verdict receipt is unavailable")
             if prior_ticket.get("model_state_digest") != self._model_state_boundary.digest:
-                _error("Coordinator acceptance CQ1 ticket is bound to stale model state")
+                _error("Coordinator acceptance previous-question ticket is bound to stale model state")
             if prior_round.get("children"):
-                _error("Coordinator acceptance CQ1 children are still active")
+                _error("Coordinator acceptance previous-question children are still active")
             if prior_round.get("cleanup") != EXAMINER_KINDS:
-                _error("Coordinator acceptance CQ1 child pair was not fully recycled")
+                _error("Coordinator acceptance previous-question child pair was not fully recycled")
             if any(
                 handle.acceptance_round_id == prior_round_id
                 for handle in self._handles.values()
             ):
-                _error("Coordinator acceptance CQ1 child handle is still active")
+                _error("Coordinator acceptance previous-question child handle is still active")
 
-            # CQ2 is the only advancement path.  Re-read the live Producer
+            # The next question is the only advancement path. Re-read the live Producer
             # snapshot after all ordinary ticket/round checks have passed so a
             # write after PASS invalidates the old evidence and cannot enqueue
             # CQ2.  A stable revalidation is the existing durable boundary;
             # drift is allowed to append only its normal invalidation records.
-            revalidation = self.revalidate_model_state(boundary="before-cq-002")
+            revalidation = self.revalidate_model_state(boundary="before-next-question")
             if revalidation.get("status") != "valid":
-                _error("Coordinator acceptance CQ1 PASS was invalidated by model-state drift")
+                _error("Coordinator acceptance previous-question PASS was invalidated by model-state drift")
             if prior_round.get("state_epoch") != self._state_epoch:
-                _error("Coordinator acceptance CQ1 PASS belongs to a stale model-state epoch")
+                _error("Coordinator acceptance previous-question PASS belongs to a stale model-state epoch")
             if prior_round.get("state_digest") != self._model_state_boundary.digest:
-                _error("Coordinator acceptance CQ1 PASS digest is stale")
+                _error("Coordinator acceptance previous-question PASS digest is stale")
             if selected_round.get("state_epoch") != self._state_epoch:
-                _error("Coordinator acceptance CQ2 ticket belongs to a stale model-state epoch")
+                _error("Coordinator acceptance next-question ticket belongs to a stale model-state epoch")
             if selected_ticket.get("model_state_digest") != self._model_state_boundary.digest:
-                _error("Coordinator acceptance CQ2 ticket is bound to stale model state")
+                _error("Coordinator acceptance next-question ticket is bound to stale model state")
 
         # No selected ID is returned and no dispatch occurs here.  The caller
         # may now invoke the unchanged phase controller and enqueue the exact
@@ -2780,6 +2817,21 @@ class RunnerAcceptanceCarrier:
             "ticket_revision": ticket_revision,
             "ticket_digest": None,
         }
+        # Deletion-aware 003 tickets carry mechanical N-CQ progress metadata.
+        # The 005 create-only ticket remains byte-compatible because its
+        # preserve policy does not opt into this projection.
+        if policy.get("deletion_policy") is not None:
+            ordered_ids = [item["id"] for item in expected_questions]
+            ordinal = ordered_ids.index(question_id) + 1
+            ticket.update(
+                {
+                    "question_ordinal": ordinal,
+                    "question_count": len(ordered_ids),
+                    "previous_question_id": ordered_ids[ordinal - 2] if ordinal > 1 else None,
+                    "next_question_id": ordered_ids[ordinal] if ordinal < len(ordered_ids) else None,
+                    "is_final_question": ordinal == len(ordered_ids),
+                }
+            )
         draft_digest = ticket_digest(ticket)
         ticket["ticket_digest"] = draft_digest
         for receipt in ticket["modeling_receipts"]:
@@ -5213,18 +5265,24 @@ class RunnerAcceptanceCarrier:
         if verdict.get("verdict") == "PASS":
             # C2 boundary (b): a PASS is never persisted against a state that changed
             # after the child reports were accepted.
-            prior_passes = sum(
-                1
-                for item in self._rounds.values()
-                if isinstance(item.get("verdict"), Mapping)
-                and item["verdict"].get("verdict") == "PASS"
-                and item.get("verdict_usable", True) is not False
-            )
-            boundary = (
-                "after-pass-before-next-cq"
-                if prior_passes == 0
-                else "after-pass-before-settlement"
-            )
+            # The Runner-owned progress projection determines whether this is
+            # the final standard question.  In particular, N=1 records the
+            # settlement boundary on its sole PASS instead of requiring a
+            # nonexistent next CQ.
+            ordinal = ticket.get("question_ordinal")
+            count = ticket.get("question_count")
+            if (
+                isinstance(ordinal, int)
+                and not isinstance(ordinal, bool)
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+            ):
+                is_final = ordinal == count
+            else:
+                questions = ticket.get("competency_questions")
+                ids = [item.get("id") for item in questions or [] if isinstance(item, Mapping)]
+                is_final = bool(ids) and ticket.get("question_id") == ids[-1]
+            boundary = "after-pass-before-settlement" if is_final else "after-pass-before-next-cq"
             revalidation = self.revalidate_model_state(boundary=boundary)
             if revalidation.get("status") != "valid":
                 # The invalidation record is durable, but this request must not
@@ -5288,7 +5346,7 @@ class RunnerAcceptanceCarrier:
         }
 
     def _settlement_prerequisites_ready(self, *, require_settlement_boundary: bool) -> bool:
-        """Check the exact two-CQ, cleanup, ordering, and boundary contract."""
+        """Check standard-owned N-CQ cleanup, ordering, and boundary contract."""
 
         if self.is_settled:
             return True
@@ -5297,15 +5355,14 @@ class RunnerAcceptanceCarrier:
         current_epoch = self._state_epoch
         current_digest = self._model_state_boundary.digest
         # State invalidation deliberately retains old rounds and receipts as
-        # evidence.  Settlement considers only the fresh epoch; requiring the
-        # complete current-epoch set to be exactly two prevents a stale PASS or an
-        # extra retry from being mistaken for the CQ1 -> CQ2 pair.
+        # evidence. Settlement considers only the fresh epoch and the complete
+        # standard-owned question set, preventing stale PASS/retry reuse.
         rounds = [
             (round_id, data)
             for round_id, data in self._rounds.items()
             if data.get("state_epoch") == current_epoch
         ]
-        if len(rounds) != 2 or self._handles:
+        if self._handles:
             return False
         first_ticket = self._tickets.get(rounds[0][0])
         if not isinstance(first_ticket, Mapping):
@@ -5313,12 +5370,14 @@ class RunnerAcceptanceCarrier:
         standard_questions = first_ticket.get("competency_questions")
         if (
             not isinstance(standard_questions, list)
-            or len(standard_questions) != 2
+            or not standard_questions
             or any(not isinstance(item, Mapping) for item in standard_questions)
         ):
             return False
         expected_question_ids = tuple(str(item["id"]) for item in standard_questions)
-        if len(set(expected_question_ids)) != 2:
+        if len(set(expected_question_ids)) != len(expected_question_ids):
+            return False
+        if len(rounds) != len(expected_question_ids):
             return False
         passes: list[Mapping[str, Any]] = []
         for index, (round_id, data) in enumerate(rounds):
@@ -5339,7 +5398,7 @@ class RunnerAcceptanceCarrier:
                 and verdict.get("usable", True) is not False
             ):
                 passes.append(verdict)
-        if len(passes) != 2:
+        if len(passes) != len(expected_question_ids):
             return False
         state_digests = {str(item.get("model_state_digest")) for item in passes}
         if len(state_digests) != 1 or state_digests != {current_digest}:
@@ -5356,7 +5415,9 @@ class RunnerAcceptanceCarrier:
         ]
         if sum(event.get("boundary") == "before-pair" for event in valid_events) < 2:
             return False
-        required_after_pass = {"after-pass-before-next-cq", "after-pass-before-settlement"}
+        required_after_pass = {"after-pass-before-settlement"}
+        if len(expected_question_ids) > 1:
+            required_after_pass.add("after-pass-before-next-cq")
         if not required_after_pass.issubset({event.get("boundary") for event in valid_events}):
             return False
         if require_settlement_boundary and not any(
@@ -5366,7 +5427,7 @@ class RunnerAcceptanceCarrier:
         return True
 
     def settlement_ready(self) -> bool:
-        """Return whether the carrier has the two same-state PASS CQs and no residue."""
+        """Return whether all standard-owned same-state PASS CQs have settled."""
 
         return self._settlement_prerequisites_ready(require_settlement_boundary=False)
 
@@ -5375,10 +5436,10 @@ class RunnerAcceptanceCarrier:
             return _safe_copy(self._settlement_payload)
         if self._model_state_reader is None:
             _error("settlement requires an explicit model-state reader")
-        # C3/C4: child cleanup and two persistent PASS verdicts are prerequisites;
+        # C3/C4: child cleanup and persistent PASS verdicts are prerequisites;
         # calling carrier cleanup must never satisfy this method implicitly.
         if not self._settlement_prerequisites_ready(require_settlement_boundary=False):
-            _error("settlement requires two same-state PASS verdicts and durable child cleanup")
+            _error("settlement requires all same-state PASS verdicts and durable child cleanup")
         self.revalidate_model_state(boundary="before-settlement")
         if not self._settlement_prerequisites_ready(require_settlement_boundary=True):
             _error("settlement model state was invalidated")

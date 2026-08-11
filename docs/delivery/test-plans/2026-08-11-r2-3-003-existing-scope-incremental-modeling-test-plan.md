@@ -541,3 +541,151 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
 - Result: **PASS for the bounded post-run security-remediation checks; requirement remains BLOCKED/FAIL**. The
   Round 6 typed candidate-receipt blocker and absence of complete L0–L2 semantic acceptance remain in force.
   No new semantic start or evidence rewrite is authorized by this round.
+
+### Round 8 — 2026-08-11 independent deterministic implementation gate — FAIL / live requirement BLOCKED
+
+- Scope and safety: the worktree was reviewed at base commit `8f958b778c9bfe4960d5f46e96b52ac4e7eb7c9f` with the
+  approved uncommitted implementation/test changes and the main-owned delivery-record edit. This round only
+  inspected and exercised deterministic code paths. It did not edit product code, requirements, design, delivery
+  record, retained evidence, Start75 scope, or the start ledger; it did not register/use the proposed `+3`
+  authorization and did not start or continue a semantic modeling run.
+- Deterministic regression commands and results:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23003_revision_contract.py backend/tests/test_modeling_batches_delete_recovery.py -q`:
+    **20 passed**, 3 warnings.
+  - `uv run --project backend python -m pytest modeling_team/tests -q`: **713 passed, 1 skipped, 218 subtests
+    passed** (42.92s).
+  - `cd backend && uv run pytest`: **846 passed, 10 skipped** (856 collected; 188 warnings; 37.96s).
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23005_candidate_progress.py
+    modeling_team/tests/test_r23005_ticket_pipeline.py modeling_team/tests/test_r23005_complete_revision.py -q`:
+    **55 passed**. This covers the accepted-receipt -> typed conflict -> complete revision -> replacement receipt/
+    gate lifecycle and the R2.3-005 preserve/two-CQ regression paths.
+  - `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests`: **PASS**;
+    `git diff --check`: **PASS**; `cd backend && uv run python ../scripts/sync-interface-docs.py --check`:
+    **PASS** (`Interface documentation is synchronized.`).
+- Frozen policy/asset isolation: reversed, wrong-pair, wrong-Class, count-1/count-3, wrong delete mode, and
+  Agent-supplied IRI/field variants were rejected by `validate_deletion_policy`/
+  `validate_candidate_delete_declaration`. However, the exact candidate target gate is incomplete: a candidate
+  containing **three** delete declarations (one duplicate frozen target) was accepted by
+  `build_existing_entity_binding_receipt` and `translate_candidate_to_batches`, which emitted three delete
+  commands; a candidate with **zero** delete declarations and a non-003 `review-001` existing reference was also
+  accepted under `requirement_id="R2.3-003"` and emitted ordinary non-delete batches. Expected: the formal contract,
+  handoff, standard, and candidate must all fail closed unless the exact two-target set and count are present before
+  any live impact read or mutation. Actual: duplicate/zero/wrong-pair candidate variants can pass the translator.
+  **High, platform-contract defect.**
+- Canonical live backend entity shape: after restart, a read-only authenticated GET of
+  `/api/ontologies/fd762f52-2f5e-4bc0-902a-5583135ab64d/semantic-read-models/entities?include=asserted&field_set=full&limit=2000`
+  returned HTTP 200 with 10 entities. All 10 had `semantic_id`, `entity_iri`, and `class_iri`, but **all 10 lacked
+  the required `class_semantic_id`** (`missing_by_field={'semantic_id':0,'entity_iri':0,'class_semantic_id':10,
+  'class_iri':0}`). Expected: the canonical real backend projection contains all four explicit identity fields;
+  actual: Protocol binding cannot consume the returned shape and fails closed with incomplete projection. **High,
+  platform-contract defect**; the focused service projection test passes only its in-memory fixture and does not
+  erase this live-shape failure.
+- Entity statement pagination itself passed the 1001-statement two-page/snapshot-drift deterministic test, and
+  `page_size`/opaque cursor/scope checks are covered by the focused suite. Tool-owned impact receipt integrity did
+  not pass the adversarial chain check: `build_delete_impact_receipt` accepted two pages with `page_digest` values
+  `wrong1/wrong2` and different snapshot values `s1/s2`, returning `ACCEPTED s1 ['wrong1','wrong2']` instead of
+  recomputing/validating page digests and one common snapshot. Expected: any page/snapshot/cursor mismatch rejects
+  before delete; actual: a canonically rehashed but forged receipt is accepted downstream. **High,
+  platform-contract defect.**
+- Phase ordering and delete-only gating: an instrumented candidate with one predicate, two frozen existing refs,
+  two delete declarations, and a relation produced Phase-A `property`, then `relation`, then Phase-B
+  `delete-only (phase=B, delete_only=true)` batches when `phase_a_readback=true`; with readback false both deletes
+  returned `phase_a_readback_required` and no delete batch. This deterministic ordering check **PASS**. Recovery
+  observer tests cover `not_applied`, `applied`, strict partial/new-edge states and no-retry classification, but a
+  real post-RDF/pre-SQL injected delete transaction was not executed because no live mutation is authorized;
+  that SQL/receipt injection branch remains **BLOCKED/unexecuted**, not PASS.
+- N-CQ acceptance: arbitrary-ID synthetic carriers produced `N=3` and `N=5` ordered rounds with
+  `settlement_ready=True`, while `N=1` completed its PASS round but returned `settlement_ready=False` (boundaries:
+  `before-pair` x2 and `after-pass-before-next-cq`, with no `after-pass-before-settlement`). The implementation has
+  a hard-coded requirement for both after-pass boundaries, so the required arbitrary positive N contract is
+  impossible for N=1. **High, platform-contract defect.** Additionally, `validate_ticket` accepted a deletion-aware
+  policy ticket with no `question_ordinal/question_count/previous_question_id/next_question_id/is_final_question`
+  fields; expected every 003 ticket to carry Runner-owned progress metadata. **Medium, platform-contract defect.**
+- Prompt/task and R2.3-005 isolation checks remain PASS in the focused/full suites: 003 uses ordered standard-owned
+  IDs and generic N-CQ wording, while 005 retains `preserve-explicit-unknown` and its two-question behavior. The
+  current 003 standard still has its approved two CQs; no prompt-only PASS is promoted to a real semantic result.
+- Authorization/scope/residue readback: `.r2-3-003-start-ledger.jsonl` remains 15 lines with the original exact
+  initial `+4`, four reservations, four semantic starts (`start2`–`start5`) and four terminal failures; no
+  `budget_authorization`/revision `+3` event or new reservation was added. The current Start75 handoff still has
+  only the approved structured deletion-policy addition relative to the reviewed baseline. No R2.3-003 run process
+  or Unix socket was found. Existing retained Round 6 cleanup-failure facts were not rewritten.
+- Service verification: `systemctl --user restart ontology-platform.service` completed and the unit is active. The
+  first immediate backend curl raced the startup build and failed to connect; after the unit completed startup,
+  `GET http://127.0.0.1:8001/api/health` returned HTTP 200 `{"status":"ok"}`, and `GET http://127.0.0.1:5173/`
+  returned HTTP 200. The initial connection race is an environment startup timing observation, not a product test
+  PASS/FAIL.
+- Unexecuted live scope and residual risk: no new semantic start, Phase-A/Phase-B real dry-run/apply/readback,
+  final live validation/reasoning/retrieval, N-CQ Examiner settlement, or live cleanup was attempted. Those L0–L2
+  gates remain **BLOCKED** by the deterministic High defects above and by the already-consumed four-start evidence;
+  this round cannot claim R2.3-003 completion.
+- Result: **FAIL / requirement BLOCKED**. The deterministic regression suites, docs/compile/diff checks, service
+  health, policy rejection matrix, Phase-A/B ordering, and 005 lifecycle are useful PASS evidence. Before any future
+  authorization is used, repair the canonical live entity projection, exact candidate target/count gate, impact-page
+  receipt binding, and N=1 settlement/progress enforcement; then rerun this plan as a new independent round.
+
+### Round 9 — 2026-08-11 independent recheck after Round 8 repairs — PASS deterministic gate / requirement BLOCKED
+
+- Scope and safety: development was stopped in the shared worktree at base `8f958b778c9bfe4960d5f46e96b52ac4e7eb7c9f`
+  with the approved uncommitted implementation/test changes and the main-owned delivery-record append. This round
+  only read and exercised deterministic paths plus read-only live entity projection/service checks. It did not edit
+  product code, requirements, design, delivery record, retained evidence, Start75 scope, or the start ledger; it did
+  not register/use a `+3` authorization and did not start or continue a semantic modeling run.
+- Round 8 failure retests:
+  - Read-only authenticated GET of
+    `/api/ontologies/fd762f52-2f5e-4bc0-902a-5583135ab64d/semantic-read-models/entities?include=asserted&field_set=full&limit=2000`
+    returned HTTP 200 and 10 items. Required `semantic_id`, `entity_iri`, `class_semantic_id`, `class_iri`,
+    `project_id`, `ontology_id`, and `workspace_version` were present and non-empty for all 10
+    (`missing` count 0 for every field; **PASS**).
+  - Exact frozen target gate matrix (**PASS**): zero declarations → rejected (`exactly two delete declarations`);
+    wrong pair → rejected (`target is not frozen`); duplicate target → rejected (`delete declarations drift`);
+    extra declaration → rejected (`exactly two delete declarations`); exact two unique frozen targets → accepted.
+    The gate is applied before translation/impact evidence, while the existing non-delete review-reference test
+    remains covered by its generic read-only contract.
+  - Tool-owned impact receipt chain (**PASS**): a valid two-page chain was accepted. Seven adversarial variants were
+    each rejected: forged page digest (`page digest is invalid`), differing snapshot (`snapshot drifts`), wrong
+    entity, wrong scope, cursor-chain mismatch, incomplete final page, and terminal page retaining a cursor. The
+    chain now requires one entity/scope/workspace/snapshot, ordered opaque cursors, complete terminal page, unique
+    statements, recomputed page digests, and recomputed aggregate snapshot digest. Backend receipt validation was
+    also inspected and includes the canonical `entity_iri` field.
+  - Arbitrary positive N-CQ settlement (**PASS**): synthetic ordered IDs settled for N=1 (`one`), N=3
+    (`alpha,beta,gamma`), and N=5 (`north,east,south,west,center`), with the expected before-pair, between-CQ,
+    and after-final settlement boundaries. Deletion-aware ticket metadata mutations for ordinal, count,
+    previous/next adjacency, and `is_final_question` were rejected; a ticket missing all five progress fields was
+    rejected. This verifies the ticket cannot bypass Runner-owned progress accounting.
+  - Recovery and typed-receipt paths (**PASS**):
+    `uv run --project backend python -m pytest backend/tests/test_modeling_batches_delete_recovery.py -q`
+    → **3 passed**. The injected post-RDF/pre-SQL failure first returned recovery/pending with the graph empty,
+    then converged to applied on retry with exactly one persisted delta and no duplicate RDF; all-present,
+    all-absent, partial, and new-edge drift classifications are covered. Typed receipt/candidate progress
+    `modeling_team/tests/test_r23005_candidate_progress.py` → **32 passed**, with the receipt/conflict/gate/revision
+    subset → **12 passed**; foreign/stale IDs cannot bypass typed receipt validation.
+- Required regressions:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23003_revision_contract.py -q` → **21 passed**.
+  - R2.3-005 lifecycle/preserve/two-CQ suite (`test_r23005_candidate_progress.py`, `test_r23005_ticket_pipeline.py`,
+    `test_r23005_complete_revision.py`, `test_r23005_c_settlement.py`) → **67 passed**. Preserve-explicit-unknown
+    policy and the two-CQ compatibility path remain green.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` → **716 passed, 1 skipped, 218 subtests
+    passed** (42.85s); `cd backend && uv run pytest` → **848 passed, 10 skipped** (858 collected, 188 warnings,
+    38.13s).
+  - `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests`, `git diff --check`,
+    and `cd backend && uv run python ../scripts/sync-interface-docs.py --check` all **PASS**; interface output was
+    `Interface documentation is synchronized.`
+- Runtime and authorization invariants:
+  - `ontology-platform.service` restart completed and remained active. The first immediate health poll raced the
+    startup build; after startup, backend `/api/health` returned HTTP 200 `{"status":"ok"}` and frontend `/`
+    returned HTTP 200. No service failure is inferred from the transient startup connection race.
+  - `.r2-3-003-start-ledger.jsonl` remains exactly 15 lines with the original `+4` authorization, four reservations,
+    starts 2–5, and four terminal failures; SHA-256 remains
+    `fe750aaccd426e9d77212f934547224e5cab6ebd470bbc9598cb5657cbd3d977`. No revision `+3`/budget authorization or
+    new reservation was created. Start75 handoff SHA-256 remains
+    `aa20bcb28665fb069475450dc125ecf69d30ff4721ba52d7c775977f56b9e0aa`; only the approved structured deletion
+    policy is present relative to the reviewed baseline. No retained run process or socket was found.
+- Result: **PASS for the deterministic implementation gate; overall R2.3-003 requirement remains BLOCKED**. All
+  Round 8 deterministic failures are fixed and the required regression/runtime checks pass. Real L0–L2 semantic
+  acceptance remains unexecuted and cannot be promoted to PASS: no live candidate/delivery, receipt-backed binding,
+  Phase-A/Phase-B dry-run/apply/readback, validation/reasoning, governed retrieval, N-CQ semantic verdict,
+  settlement, or production cleanup was performed in this round. The four previously authorized semantic starts
+  are consumed; no additional authorization or run was permitted. Residual live risk is therefore the unverified
+  end-to-end modeling and cleanup evidence, not a remaining deterministic defect.

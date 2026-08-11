@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -12,9 +15,12 @@ from app.api.modeling_batches import get_ontology_read_model as read_model_adapt
 from app.api.schemas import ModelingBatchSubmit, ModelingItemInput
 from app.core.config import Settings
 from app.mcp.runtime import _run_tool, runtime_actor
+from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
+from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.ontology_workspace import OntologyWorkspaceService
 
 
 # The MCP schema must reflect the commands the Modeling Batch Handler accepts,
@@ -40,6 +46,34 @@ class McpModelingItemInput(ModelingItemInput):
 
     command_kind: ModelingBatchCommandKind
     payload: dict[str, Any] = Field(description=MODELING_BATCH_PAYLOAD_GUIDANCE)
+
+
+def _canonical_json_digest(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _statement_cursor_encode(value: dict[str, Any]) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return "esc1." + base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _statement_cursor_decode(value: str) -> dict[str, Any]:
+    if not isinstance(value, str) or not value.startswith("esc1."):
+        raise ValueError("entity statement cursor is invalid")
+    try:
+        raw = value[5:]
+        raw += "=" * (-len(raw) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(raw.encode("ascii")))
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("entity statement cursor is invalid") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("entity statement cursor is invalid")
+    return decoded
 
 
 def _service(session) -> ModelingBatchService:
@@ -122,6 +156,144 @@ def register_modeling_batches(server: FastMCP) -> None:
         return _run_tool(
             lambda session, _driver, _embedding: _service(session).get_modeling_context(ontology_id)
         )
+
+    @server.tool()
+    def get_entity_statement_context(
+        ontology_id: str,
+        entity_iri: str,
+        workspace_version: str,
+        page_size: int = 100,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Read the complete incident statement set for one exact live entity IRI.
+
+        This is intentionally a generic read projection.  The opaque cursor binds
+        Project/Ontology, exact entity IRI, workspace version, and a snapshot digest;
+        callers must consume every page through ``complete=true`` before using the
+        response as delete-impact evidence.
+        """
+
+        def execute(session, _driver, _embedding):
+            from urllib.parse import urlparse
+
+            if isinstance(page_size, bool) or not isinstance(page_size, int) or not 0 < page_size <= 1000:
+                raise ValueError("entity statement page_size must be between 1 and 1000")
+            parsed = urlparse(entity_iri) if isinstance(entity_iri, str) else None
+            if parsed is None or not parsed.scheme or not parsed.netloc:
+                raise ValueError("entity statement entity_iri is invalid")
+            ontology = session.get(OntologyModel, ontology_id)
+            if ontology is None:
+                raise ValueError("ontology_not_found")
+            workspace = OntologyWorkspaceService(session, Settings()).context(ontology_id)
+            if workspace.get("state") != "ready" or not workspace.get("default_graph_set_id"):
+                raise ValueError("ontology workspace is incomplete")
+            current_version = ModelingWorkspaceVersionService(session, Settings()).version_for(ontology_id)
+            if workspace_version != current_version:
+                raise ValueError("entity statement workspace version drifted")
+            data_graphs = [
+                member["graph_iri"]
+                for member in workspace.get("members", [])
+                if member.get("role") == "asserted_data" and isinstance(member.get("graph_iri"), str)
+            ]
+            if not data_graphs:
+                raise ValueError("asserted data graph is unavailable")
+            escaped_entity = entity_iri.replace("\\", "\\\\").replace(">", "\\>")
+            graph_values = " ".join(f"<{graph}>" for graph in data_graphs)
+            query = (
+                "SELECT DISTINCT ?subject ?predicate ?object ?graph WHERE { "
+                f"VALUES ?graph {{ {graph_values} }} "
+                "GRAPH ?graph { ?subject ?predicate ?object . "
+                f"FILTER(?subject = <{escaped_entity}> || (isIRI(?object) && ?object = <{escaped_entity}>)) "
+                "} } LIMIT 100000"
+            )
+            result = RdfStoreRepository(Settings().oxigraph_url).query_read_model(
+                query=query,
+                graph_iris=data_graphs,
+                timeout_seconds=10,
+                limit=100000,
+            )
+            result_obj = getattr(result, "result", result)
+            if hasattr(result, "bindings"):
+                rows = list(result.bindings)
+            elif isinstance(result_obj, dict):
+                rows = list(result_obj.get("results", {}).get("bindings", []))
+            else:
+                rows = []
+
+            def cell(row: dict[str, Any], key: str) -> tuple[str, str | None]:
+                value = row.get(key)
+                if isinstance(value, dict):
+                    return str(value.get("value", "")), value.get("type")
+                return (str(value) if value is not None else ""), None
+
+            statements: list[dict[str, Any]] = []
+            for row in rows:
+                subject, subject_kind = cell(row, "subject")
+                predicate, predicate_kind = cell(row, "predicate")
+                obj, object_kind = cell(row, "object")
+                graph, graph_kind = cell(row, "graph")
+                if not subject or not predicate or not obj or not graph:
+                    continue
+                statements.append(
+                    {
+                        "subject": subject,
+                        "predicate": predicate,
+                        "object": obj,
+                        "object_kind": object_kind or "literal",
+                        "graph": graph,
+                    }
+                )
+            encoded = [json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for item in statements]
+            if len(set(encoded)) != len(encoded):
+                raise ValueError("entity statement projection contains duplicate statements")
+            ordered = [json.loads(item) for item in sorted(encoded)]
+            snapshot_digest = _canonical_json_digest(ordered)
+            offset = 0
+            if cursor is not None:
+                token = _statement_cursor_decode(cursor)
+                expected = {
+                    "project_id": ontology.project_id,
+                    "ontology_id": ontology_id,
+                    "entity_iri": entity_iri,
+                    "workspace_version": workspace_version,
+                    "snapshot_digest": snapshot_digest,
+                }
+                if any(token.get(key) != value for key, value in expected.items()):
+                    raise ValueError("entity statement cursor scope or snapshot drifted")
+                offset = token.get("offset")
+                if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                    raise ValueError("entity statement cursor offset is invalid")
+            if offset > len(ordered):
+                raise ValueError("entity statement cursor is beyond snapshot")
+            page = ordered[offset : offset + page_size]
+            next_offset = offset + len(page)
+            complete = next_offset >= len(ordered)
+            next_cursor = None
+            if not complete:
+                next_cursor = _statement_cursor_encode(
+                    {
+                        "project_id": ontology.project_id,
+                        "ontology_id": ontology_id,
+                        "entity_iri": entity_iri,
+                        "workspace_version": workspace_version,
+                        "snapshot_digest": snapshot_digest,
+                        "offset": next_offset,
+                    }
+                )
+            return {
+                "project_id": ontology.project_id,
+                "ontology_id": ontology_id,
+                "entity_iri": entity_iri,
+                "workspace_version": workspace_version,
+                "cursor": cursor,
+                "statements": page,
+                "page_digest": _canonical_json_digest(page),
+                "snapshot_digest": snapshot_digest,
+                "next_cursor": next_cursor,
+                "complete": complete,
+            }
+
+        return _run_tool(execute)
 
     @server.tool()
     def get_ontology_read_model(

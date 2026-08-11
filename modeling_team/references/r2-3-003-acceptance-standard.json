@@ -11,7 +11,20 @@
     "evidence_lineage",
     "competency_questions"
   ],
-  "unknown_policy": "preserve-explicit-unknown",
+  "unknown_policy": {
+    "mode": "resolve-and-delete-targets",
+    "targets": [
+      {
+        "semantic_id": "unknown-cross-release-output-meaning",
+        "expected_class": "ExplicitUnknown"
+      },
+      {
+        "semantic_id": "unknown-b-no-score-behavior",
+        "expected_class": "ExplicitUnknown"
+      }
+    ],
+    "preserve_non_targets": true
+  },
   "verdicts": ["PASS", "FAIL", "BLOCKED"],
   "competency_questions": [
     {
@@ -36,7 +49,7 @@
   ],
   "failure_layers": ["modeling-quality", "interview", "protocol-delivery", "platform", "runtime"],
   "blocked_reasons": ["acceptance-evidence", "acceptance-input", "runtime-infrastructure", "source-missing", "state-invalidated"],
-  "question_policy": "two-sequential-cqs-same-final-model-state",
+  "question_policy": "ordered-sequential-cqs-same-final-model-state",
   "child_policy": {
     "source": "approved-source-only",
     "platform": "ticket-scoped-read-only",

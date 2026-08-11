@@ -3,20 +3,22 @@ task_id: r2-3-003-existing-scope-incremental
 objective: >-
   Continue the retained non-empty Start75 Project/Ontology in existing mode with one complete,
   source-grounded incremental candidate. Read only the current platform facts, the approved
-  Start75 source material, and the two approved incremental source documents staged for Modeling.
-  Preserve both historical ExplicitUnknown resources and their old Evidence/lineage; express a
-  source-bounded resolution as additive semantic state. Add exactly one bounded C evaluation -> B
-  publishability decision -> A publication outcome case. Do not recreate, delete, overwrite, or
-  infer any existing platform identity. Existing semantic endpoints must be declared with the
-  platform-neutral existing_entity_ref form (semantic_id plus expected_class only); Protocol obtains
-  the live IRI and class through its read-model binding receipt. A candidate is the complete
-  increment for this run, never a patch and never a replay of the Start75 candidate. Coordinator
-  receives no raw source. Modeling owns business semantics and explicit unknowns; Protocol alone
-  performs deterministic binding, translation, dry-run, apply_atomic, readback, validation,
-  reasoning, and governed retrieval. Acceptance receives exactly the two frozen CQs in the
-  requirement-owned standard and runs the same two sequential fresh Examiner rounds as the
-  accepted formal runner. The existing Project/Ontology is retained after cleanup; any mutation
-  uncertainty or failed readback stops new starts and preserves the scope for human handling.
+  Start75 source material, and the approved incremental source documents staged for Modeling.
+  Apply the requirement-owned deletion policy: resolve the two frozen ExplicitUnknown target
+  semantic IDs and declare each target for full live-impact deletion, while preserving every
+  non-target explicit unknown and all unrelated retained scope. Do not recreate, overwrite, or
+  infer any existing platform identity. Existing semantic endpoints use the platform-neutral
+  existing_entity_ref form (semantic_id plus expected_class only); Protocol obtains live canonical
+  identity and complete paginated statement-impact receipts. A candidate may contain only frozen
+  target delete declarations (semantic_id, expected_class, delete_mode) for deletion and never
+  Agent-authored IRIs, triples, expected edges, or impact digests. Add one bounded source-grounded
+  C-evaluation -> B-publishability -> A-publication outcome increment. Coordinator receives no raw
+  source. Modeling owns business semantics and explicit unknowns; Protocol alone performs
+  deterministic binding, translation, Phase-A readback, delete-only Phase-B application, readback,
+  validation, reasoning, and governed retrieval. Acceptance consumes the ordered positive N-CQ set
+  projected by the requirement-owned standard, using Runner-provided ordinal/count/previous/next/
+  final metadata and advancing only after a usable PASS. Any mutation uncertainty or failed
+  readback stops new starts and preserves the scope for human handling.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx
     classification: business-source
@@ -72,6 +74,7 @@ protocol_tools:
   - list_ontology_modeling_batches
   - get_modeling_context
   - get_ontology_read_model
+  - get_entity_statement_context
   - query_semantic_context
   - run_semantic_validation
   - run_semantic_reasoning
@@ -83,7 +86,7 @@ expected_terminal_evidence:
   - existing-binding-receipts
   - dry-run-and-apply-receipts
   - readback-validation-reasoning-receipts
-  - two-sequential-cq-verdicts-bound-to-final-model-state
+  - ordered-N-cq-verdicts-bound-to-final-model-state
   - four-role-settlement-and-child-cleanup
 retain_nonempty: true
 semantic_start_evidence:

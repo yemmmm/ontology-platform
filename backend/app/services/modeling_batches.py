@@ -118,6 +118,62 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
+    """Validate the opaque, tool-owned before-set persisted with a Phase-B delete.
+
+    ModelingBatchService does not interpret domain semantics here.  It only
+    verifies the receipt envelope and its canonical digest before allowing the
+    command into an operation plan; the recovery observer later compares the
+    exact statement set against the live graph.
+    """
+
+    if not isinstance(value, dict):
+        raise InvalidCommandPayload("delete-only impact_receipt must be an object")
+    required = {
+        "schema_version",
+        "target_semantic_id",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "candidate_digest",
+        "entity_iri",
+        "snapshot_digest",
+        "page_digests",
+        "statements",
+        "complete",
+        "receipt_digest",
+    }
+    if set(value) != required:
+        raise InvalidCommandPayload(
+            "delete-only impact_receipt has an invalid field set"
+        )
+    if value.get("schema_version") != "r2-3-003-delete-impact/v1":
+        raise InvalidCommandPayload("delete-only impact_receipt schema is unsupported")
+    if value.get("complete") is not True:
+        raise InvalidCommandPayload("delete-only impact_receipt must be complete")
+    for field in (
+        "target_semantic_id",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "candidate_digest",
+        "entity_iri",
+        "snapshot_digest",
+        "receipt_digest",
+    ):
+        if not isinstance(value.get(field), str) or not value[field]:
+            raise InvalidCommandPayload(f"delete-only impact_receipt {field} is required")
+    if not isinstance(value.get("page_digests"), list) or not value["page_digests"]:
+        raise InvalidCommandPayload("delete-only impact_receipt page_digests are required")
+    if not isinstance(value.get("statements"), list):
+        raise InvalidCommandPayload("delete-only impact_receipt statements are required")
+    body = dict(value)
+    digest = body.pop("receipt_digest")
+    if digest != _hash(body):
+        raise InvalidCommandPayload("delete-only impact_receipt digest is invalid")
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
 def _finding(
     code: str,
     severity: str,
@@ -372,6 +428,26 @@ class ModelingBatchService:
                 "actor": auth.actor,
                 "evidence": self._evidence_plan(attempt, batch, selected),
             }
+            delete_receipts = []
+            for item_id in sorted(selected):
+                command = prepared[item_id]
+                if command.command_kind != "delete_entity":
+                    continue
+                receipt = command.payload.get("impact_receipt")
+                if receipt is None:
+                    continue
+                delete_receipts.append(
+                    {
+                        "client_item_id": item_id,
+                        "entity_iri": command.payload.get("entity_iri"),
+                        "impact_receipt": receipt,
+                    }
+                )
+            if delete_receipts:
+                plan["delete_only_recovery"] = {
+                    "schema_version": "r2-3-003-delete-impact/v1",
+                    "receipts": delete_receipts,
+                }
             findings = self._fingerprint_findings(attempt.id, findings)
             attempt.findings = findings
             attempt.groups = groups
@@ -692,6 +768,12 @@ class ModelingBatchService:
                     command_kind=item.command_kind,
                     payload=resolved,
                 )
+                if item.command_kind == "delete_entity" and "impact_receipt" in command.payload:
+                    receipt = _validate_delete_only_impact_receipt(command.payload["impact_receipt"])
+                    if command.payload.get("impact_receipt_digest") != receipt["receipt_digest"]:
+                        raise InvalidCommandPayload(
+                            "delete-only impact_receipt_digest does not match receipt"
+                        )
                 prepared[item.client_item_id] = command
                 item.resource_outputs = command.outputs
             except (InvalidCommandPayload, KeyError, TypeError, ValueError) as exc:
@@ -1410,14 +1492,18 @@ class ModelingBatchService:
             }
             self.session.commit()
             return self._attempt_response(attempt, False, False)
-        if observation["state"] == "unexpected":
+        if observation["state"] in {"unexpected", "partial_or_drifted"}:
             attempt.status = "recovering"
             attempt.batch.status = "recovering"
             attempt.recovery_state = "recovery_requires_intervention"
             attempt.recovery_detail = {
                 **(attempt.recovery_detail or {}),
                 "safe_to_retry": False,
-                "message": "RDF state contains effects outside the persisted operation plan",
+                "message": (
+                    "Delete-only RDF state is partial or drifted"
+                    if observation["state"] == "partial_or_drifted"
+                    else "RDF state contains effects outside the persisted operation plan"
+                ),
                 "observation": observation,
             }
             self.session.commit()
@@ -1452,7 +1538,129 @@ class ModelingBatchService:
             rdf_already_applied=observation["state"] == "applied",
         )
 
+    def _observe_delete_only_recovery(self, attempt) -> dict[str, Any] | None:
+        """Observe a receipt-bound Phase-B delete without inferring semantics.
+
+        A generic graph-hash observation cannot distinguish a fully unapplied
+        delete from one that removed only part of an entity's incident edge
+        set.  When the persisted operation plan carries a complete impact
+        receipt, compare the exact before statement set with the current
+        subject/object incident set.  Any mixed, malformed, or newly observed
+        edge is explicitly ``partial_or_drifted`` and therefore never retried.
+        """
+
+        metadata = (attempt.operation_plan or {}).get("delete_only_recovery")
+        if not isinstance(metadata, dict):
+            return None
+        entries = metadata.get("receipts")
+        if metadata.get("schema_version") != "r2-3-003-delete-impact/v1" or not isinstance(entries, list):
+            return {"state": "partial_or_drifted", "reason": "delete_only_receipt_metadata_invalid"}
+        if self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
+            return {"state": "partial_or_drifted", "reason": "rdf_observation_unavailable"}
+
+        def canonical_statement(subject, predicate, obj, graph_iri) -> dict[str, Any]:
+            if isinstance(subject, URIRef):
+                subject_value = str(subject)
+            else:
+                subject_value = str(subject)
+            if isinstance(obj, URIRef):
+                object_value = str(obj)
+                object_kind = "uri"
+            elif hasattr(obj, "datatype"):
+                object_value = str(obj)
+                object_kind = "literal"
+            else:
+                object_value = str(obj)
+                object_kind = "bnode"
+            return {
+                "subject": subject_value,
+                "predicate": str(predicate),
+                "object": object_value,
+                "object_kind": object_kind,
+                "graph": graph_iri,
+            }
+
+        states: list[str] = []
+        details: list[dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return {"state": "partial_or_drifted", "reason": "delete_only_receipt_entry_invalid"}
+            receipt = entry.get("impact_receipt")
+            target_iri = entry.get("entity_iri")
+            if (
+                not isinstance(receipt, dict)
+                or not isinstance(target_iri, str)
+                or not target_iri
+                or receipt.get("complete") is not True
+            ):
+                return {"state": "partial_or_drifted", "reason": "delete_only_receipt_entry_invalid"}
+            before = receipt.get("statements")
+            if not isinstance(before, list):
+                return {"state": "partial_or_drifted", "reason": "delete_only_before_set_invalid"}
+            graph_iris = {
+                item.get("graph")
+                for item in before
+                if isinstance(item, dict) and isinstance(item.get("graph"), str)
+            }
+            if not graph_iris:
+                graph_iris = {
+                    graph.get("graph_iri")
+                    for graph in (attempt.target_snapshot or {}).get("graphs", [])
+                    if isinstance(graph, dict) and isinstance(graph.get("graph_iri"), str)
+                }
+            graphs: dict[str, Graph] = {}
+            try:
+                for graph_iri in sorted(graph_iris):
+                    graph = Graph()
+                    content = self.rdf_store.get_graph(graph_iri, "turtle")
+                    if content:
+                        graph.parse(data=content, format="turtle")
+                    graphs[graph_iri] = graph
+            except Exception as exc:
+                return {
+                    "state": "partial_or_drifted",
+                    "reason": "delete_only_observation_failed",
+                    "error": str(exc),
+                }
+            after: list[dict[str, Any]] = []
+            for graph_iri, graph in graphs.items():
+                for subject, predicate, obj in graph:
+                    if str(subject) == target_iri or str(obj) == target_iri:
+                        after.append(canonical_statement(subject, predicate, obj, graph_iri))
+            before_hashes = {_hash(item) for item in before if isinstance(item, dict)}
+            after_hashes = {_hash(item) for item in after}
+            target_present = bool(after_hashes)
+            if target_present and after_hashes == before_hashes:
+                state = "not_applied"
+            elif not target_present and not after_hashes:
+                state = "applied"
+            else:
+                state = "partial_or_drifted"
+            states.append(state)
+            details.append(
+                {
+                    "client_item_id": entry.get("client_item_id"),
+                    "state": state,
+                    "before_statement_count": len(before_hashes),
+                    "after_statement_count": len(after_hashes),
+                }
+            )
+        if not states:
+            return {"state": "partial_or_drifted", "reason": "delete_only_receipts_empty"}
+        if any(state == "partial_or_drifted" for state in states):
+            state = "partial_or_drifted"
+        elif all(state == "applied" for state in states):
+            state = "applied"
+        elif all(state == "not_applied" for state in states):
+            state = "not_applied"
+        else:
+            state = "partial_or_drifted"
+        return {"state": state, "delete_only": True, "entries": details}
+
     def _observe_recovery_state(self, attempt) -> dict[str, Any]:
+        delete_only = self._observe_delete_only_recovery(attempt)
+        if delete_only is not None:
+            return delete_only
         delta = (attempt.operation_plan or {}).get("delta", {})
         inserts = [tuple(quad) for quad in delta.get("inserts", [])]
         deletes = [tuple(quad) for quad in delta.get("deletes", [])]

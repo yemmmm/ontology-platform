@@ -68,6 +68,9 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     ),
     "get_modeling_context": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "get_ontology_read_model": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
+    "get_entity_statement_context": _policy(
+        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
     "list_evidence_references": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "get_evidence_reference": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "get_build_context": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),

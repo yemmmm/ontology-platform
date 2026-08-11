@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress (contract revision after blocked Round 7)
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T09:22:28+08:00
+- Last updated: 2026-08-11T11:40:33+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -348,3 +348,61 @@
 - Evidence: 用户当前明确指令；`git status` 在 developer capacity error 后 clean。
 - Outcome/next step: 重新触发 requirement developer；开发/测试阶段不 reserve、不创建 run root、不消费
   新额度。
+
+### 2026-08-11T10:28:50+08:00 — revised-contract implementation development-ready — requirement developer
+
+- Context: 开发从 clean `8f958b7` 实现 plan-review PASS 的 hard-delete/N-CQ 合同；两次中途模型容量退出
+  只中断 Agent turn，工作树和测试结果持续保留。
+- Action/decision: 新增集中 003 contract，冻结 target/policy；实现 canonical entity projection、完整分页
+  statement context/impact receipt、Phase B delete recovery；扩展 formal assets、candidate progress replacement
+  receipt、Protocol translator、Runner/Carrier N-CQ 和四角色 prompts。共享 005 preserve policy/当前两题
+  行为保留；新增 tool 仅在 003 formal task allowlist 中启用。
+- Evidence: modeling_team full=`713 passed, 1 skipped, 218 subtests`；focused frozen+003/005=`85 passed,
+  23 subtests`；backend full=`846 passed, 10 skipped`；compileall、`git diff --check` PASS。GitNexus
+  detect_changes=`25 files/84 symbols/204 affected/CRITICAL`，符合已评审 Runner/Protocol/ModelingBatch 共享
+  入口；index invalid-UTF8 仍使部分 ID 乱码。service restart 成功，backend health=`{"status":"ok"}`，
+  frontend HTTP 200。
+- Outcome/next step: `DEVELOPMENT-READY=YES`；开发者未改 delivery record、未提交、未登记/消费新增 +3、
+  未启动 live modeling。冻结当前工作树，交 independent requirement tester 追加共享计划新 Round。
+
+### 2026-08-11T10:52:10+08:00 — independent revised-contract test Round 8 — requirement tester and main agent
+
+- Context: tester 在稳定未提交工作树独立审实现并追加共享计划 Round 8；禁止授权/真实运行。
+- Action/decision: Round 8=`FAIL / requirement BLOCKED`。主 Agent确认四项 High：真实 Start75 entity response
+  缺 `class_semantic_id`；003 candidate 可接受 duplicate/zero/wrong target deletes；impact receipt 不校验 page
+  digest/单一 snapshot；N=1 PASS 无法 settlement。ticket 缺 ordinal/count/prev/next/is-final 的 Medium 发现因
+  直接违反 N-CQ 推进合同，一并进入修复。post-RDF/pre-SQL recovery injection 尚未执行，继续保持 blocked。
+- Evidence: focused=20 PASS；modeling_team=`713 passed, 1 skipped, 218 subtests`；backend=`846 passed,
+  10 skipped`；005/lifecycle=55 PASS；compile/diff/docs/service health PASS。直接 probes 复现上述绕过；live
+  Start75 read 返回 10 entities 且 `class_semantic_id` 全缺。
+- Outcome/next step: 将五项确定性缺陷和 recovery injection 交 developer Round 8 repair；保留 FAIL round，
+  不放宽测试。ledger 仍 15 行、只含原 +4/四 starts/四 terminal failures；新增 +3 未登记、未 reserve。
+
+### 2026-08-11T11:30:00+08:00 — Round 8 defect repair development-ready — requirement developer
+
+- Context: developer 复现 Round 8 四项 High、一项 ticket metadata 缺陷及缺失的真实 recovery injection。
+- Action/decision: 修复真实 entity-list canonical fields；在 typed receipt/translator 前强制 frozen exact
+  deletes；对每页 canonical digest、单一 snapshot/cursor chain 做 impact receipt 校验；移除 N=1 settlement
+  固定 boundary；deletion-aware ticket 强制 ordinal/count/prev/next/final；补 backend-local receipt-bound
+  recovery integration。005 分支和现有两题行为保持。
+- Evidence: targeted 003 revision=8 PASS；backend read/retrieval=26 PASS；recovery integration=3 PASS；
+  modeling_team full=`716 passed, 1 skipped, 218 subtests`；backend full=`848 passed, 10 skipped`；compileall、
+  diff-check、frozen hash PASS。GitNexus detect=`29 files/98 symbols/204 affected/CRITICAL`，符合已评审共享面。
+  service restart active，backend health HTTP 200，frontend HTTP 200；live Start75 10 entity rows 均包含
+  `semantic_id/entity_iri/class_semantic_id/class_iri`。
+- Outcome/next step: `DEVELOPMENT-READY`；未 live-run、未登记/消费 +3、未提交/改 delivery record。交同一
+  independent tester Round 9，先复测 Round 8 failures。
+
+### 2026-08-11T11:40:33+08:00 — independent revised-contract test Round 9 — requirement tester and main agent
+
+- Context: tester 先复测 Round 8 五项失败，再执行 003/005、完整 suites、runtime/ledger/scope 只读核对。
+- Action/decision: Round 9 deterministic gate=`PASS`。真实 Start75 10/10 entity rows 均含 canonical+scope
+  fields；exact delete gate 只接受冻结二元集合；impact receipt 合法两页通过且七种 adversarial 变体拒绝；
+  N=1/3/5 arbitrary IDs 均 settlement；ticket metadata mutation/缺失拒绝；post-RDF/pre-SQL recovery 无重复
+  RDF delta；typed receipt 与 005 preserve/two-CQ 回归通过。
+- Evidence: focused 003=21 PASS；typed progress=32 PASS（receipt/conflict subset=12）；005=67 PASS；
+  recovery=3 PASS；modeling_team=`716 passed, 1 skipped, 218 subtests`；backend=`848 passed, 10 skipped`；
+  compileall/diff/docs PASS。service restart active，backend/frontend HTTP 200。ledger 仍 15 行、hash
+  `fe750a...`，Start75 retained hash `aa20...`，无 +3/auth/run/socket。
+- Outcome/next step: deterministic implementation independently accepted。Requirement 仍未完成，因为 L0-L2
+  未运行；按用户门条件先提交 clean implementation baseline，再登记 exact +3 并进入第一轮新 semantic start。

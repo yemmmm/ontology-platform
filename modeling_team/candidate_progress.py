@@ -32,6 +32,14 @@ FORMAL_CONFLICT_FIELDS = frozenset(
         "conflict_detail",
     }
 )
+FORMAL_TYPED_CONFLICT_FIELDS = frozenset(
+    {
+        "original_delivery_id",
+        "receipt_digest",
+        "workspace_version",
+        "mutation_state",
+    }
+)
 
 
 class FormalCandidateError(ValueError):
@@ -174,7 +182,10 @@ def validate_formal_conflict(
 ) -> dict[str, Any]:
     """Validate the exact six-field formal conflict against pending identity."""
 
-    if not isinstance(conflict, dict) or set(conflict) != FORMAL_CONFLICT_FIELDS:
+    if not isinstance(conflict, dict) or set(conflict) not in (
+        FORMAL_CONFLICT_FIELDS,
+        FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS,
+    ):
         raise FormalCandidateError("formal candidate conflict fields are not exact")
     if conflict.get("status") != "conflict":
         raise FormalCandidateError("formal candidate conflict status is not conflict")
@@ -188,6 +199,15 @@ def validate_formal_conflict(
         raise FormalCandidateError("formal candidate conflict code is not bound")
     if not _nonempty_string(conflict.get("conflict_detail")):
         raise FormalCandidateError("formal candidate conflict detail is not bound")
+    if set(conflict) == FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS:
+        if not _nonempty_string(conflict.get("original_delivery_id")):
+            raise FormalCandidateError("formal candidate conflict original delivery is not bound")
+        if not _nonempty_string(conflict.get("receipt_digest")):
+            raise FormalCandidateError("formal candidate conflict receipt digest is not bound")
+        if not _nonempty_string(conflict.get("workspace_version")):
+            raise FormalCandidateError("formal candidate conflict workspace version is not bound")
+        if conflict.get("mutation_state") != "zero-mutation":
+            raise FormalCandidateError("formal candidate conflict mutation state is invalid")
     return dict(conflict)
 
 
@@ -488,6 +508,8 @@ class FormalCandidateProgress:
                     candidate_digest=identity.candidate_digest,
                 )
             except FormalCandidateError:
+                return None
+            if "original_delivery_id" in value and value.get("original_delivery_id") != identity.original_delivery_id:
                 return None
             self.pending.state = "awaiting_revision"
             self.pending.conflict_delivery_id = self._delivery_id(delivery)

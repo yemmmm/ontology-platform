@@ -73,7 +73,7 @@ messages while the issue is pending.
 
 ## Prompt E acceptance ticket pipeline
 
-For formal R2.3-005, Protocol's direct Team Transport handoff is the only input to ticket creation.
+For a formal task, Protocol's direct Team Transport handoff is the only input to ticket creation.
 When that delivery arrives, preserve its exact `delivery_id`. Prefer the Runner-private
 `coordinator_build_acceptance_ticket_draft_from_delivery` capability when it is present in the
 Coordinator `tools/list` result: pass exactly `coordinator_id`, the original
@@ -85,12 +85,13 @@ model state, canonical read allowlist, staged source digests, and frozen accepta
 Do not call either typed draft operation when only the handoff, only Modeling
 `ready_for_acceptance`, or only Protocol `silent_for_acceptance` has arrived. Wait until both
 readiness signals for the current run are received, while preserving the original handoff delivery
-ID. Before any typed draft, read the task text's Runner-provided frozen-question list and use exactly the
-two IDs supplied there, once each; do not guess an abbreviated ID (such as `cq-1`), derive an ID
-from Protocol, or ask Protocol to provide the IDs. After both readiness signals arrive, build the
-`cq-001` draft first and wait for that call to finish successfully before calling `cq-002`. Never
-issue the two draft calls in parallel or through `Promise.all`. Both frozen questions may use
-revision 1; do not treat the second question as a duplicate. If the typed
+ID. Before any typed draft, read the task text's Runner-provided ordered question list and use each
+standard-owned ID once with its positive revision and projected ordinal/count/previous/next/final
+metadata; do not infer order or finality from an ID spelling, derive an ID from Protocol, or ask
+Protocol to provide the IDs; do not guess an abbreviated ID. After both readiness signals arrive, build drafts in the Runner-projected
+order and wait for each call to finish successfully before calling the next. Never issue draft calls
+in parallel or through `Promise.all`. A revision may be reused only when the Runner's ticket policy
+allows it; do not treat an ordered question as a duplicate. If the typed
 operation is not advertised by a legacy/unbound carrier, use the compatibility
 `coordinator_build_acceptance_ticket_draft` operation with the unchanged canonical handoff object
 and digest, plus the same frozen question/revision fields; never fill absent fields, guess a
@@ -111,6 +112,9 @@ Only after unchanged publication succeeds send `acceptance_start` with the draft
 ## Formal R2.3-005 sequential CQ acceptance
 
 For the formal R2.3-005 task only, the frozen question order is `cq-001`, then `cq-002`.
+The Runner-provided frozen-question list is authoritative: build the `cq-001` draft first and
+wait for it to finish successfully before calling `cq-002`; both may use revision 1. Never issue the
+two draft calls in parallel.
 After Acceptance returns and you confirm a usable `cq-001` `PASS` through the Runner-private
 verdict capability, immediately send exactly one `acceptance_start` for the already published
 `cq-002` ticket, using that ticket's exact `acceptance_round_id`. Do not wait for a `cq-002`
@@ -125,6 +129,8 @@ terminal handoff and settlement. `FAIL` returns to the existing Modeling repair/
 
 When the task is `r2-3-003-existing-scope-incremental`, the scope is the retained Project/Ontology
 in the frozen handoff. Do not ask for, infer, or expose Start75 Agent conversation, old verdicts,
-platform IRIs, or prior candidate text. Use exactly `cq-001` then `cq-002`; the second question
-covers both the no-score policy and the concrete case. Existing history is a baseline, not a reason
-to start a replacement scope.
+platform IRIs, or prior candidate text. Use the ordered standard-owned question projection and
+Runner-provided ordinal/count/previous/next/is-final fields; never infer order or finality from an
+ID name. Existing history is a baseline, not a reason to start a replacement scope. The structured
+unknown policy resolves and hard-deletes only the two frozen ExplicitUnknown targets, preserves
+non-target unknowns, and leaves all live IRI/impact details to Protocol receipts.

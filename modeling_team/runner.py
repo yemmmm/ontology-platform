@@ -27,6 +27,11 @@ from .model_manifest import (
     load_formal_model_manifest,
 )
 from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
+from .r23003_contract import (
+    R2_3_003_TARGET_IDS,
+    validate_r23003_candidate_declarations,
+    validate_deletion_policy,
+)
 from .deepseek_provider_proxy import (
     DeepSeekCredentialBinding,
     DeepSeekCredentialError,
@@ -640,30 +645,46 @@ class TeamRunner:
         if not isinstance(standard, dict):
             raise TeamConfigurationError("acceptance standard is not an object")
         questions = standard.get("competency_questions")
-        if not isinstance(questions, list) or len(questions) != 2:
-            raise TeamConfigurationError("acceptance standard must freeze two competency questions")
+        if not isinstance(questions, list) or not questions:
+            raise TeamConfigurationError("acceptance standard must declare at least one competency question")
         normalized_questions: list[dict[str, str]] = []
         source_paths_by_question: dict[str, list[str]] = {}
+        question_ids: set[str] = set()
         for item in questions:
             if not isinstance(item, dict) or set(item) != {"id", "question", "approved_source_paths"}:
                 raise TeamConfigurationError("acceptance standard competency question fields drift")
             if not isinstance(item["id"], str) or not isinstance(item["question"], str) or not item["id"] or not item["question"]:
                 raise TeamConfigurationError("acceptance standard competency question is invalid")
+            if item["id"] in question_ids:
+                raise TeamConfigurationError("acceptance standard competency question IDs are duplicated")
             paths = item["approved_source_paths"]
             if not isinstance(paths, list) or not paths or any(not isinstance(path, str) for path in paths):
                 raise TeamConfigurationError("acceptance standard source paths are invalid")
+            question_ids.add(item["id"])
             normalized_questions.append({"id": item["id"], "question": item["question"]})
             source_paths_by_question[item["id"]] = sorted(paths)
-        if [item["id"] for item in normalized_questions] != ["cq-001", "cq-002"]:
-            raise TeamConfigurationError("acceptance standard CQ ordering is invalid")
+        requirement_id = formal_run_contract_for(configuration).requirement_id if formal_run_contract_for(configuration) else None
+        unknown_policy = standard.get("unknown_policy")
+        deletion = None
+        if requirement_id == "R2.3-003":
+            try:
+                deletion = validate_deletion_policy(unknown_policy)
+            except ValueError as exc:
+                raise TeamConfigurationError(str(exc)) from exc
+            if tuple(item["semantic_id"] for item in deletion["targets"]) != R2_3_003_TARGET_IDS:
+                raise TeamConfigurationError("R2.3-003 acceptance target IDs drift")
+        elif unknown_policy != "preserve-explicit-unknown":
+            raise TeamConfigurationError("formal create acceptance unknown policy drifts")
         artifact = {"path": parameter, "digest": digest_file(standard_path)}
         return {
             "quality_standard_ref": str(standard.get("requirement_ref", "")),
             "quality_standard_digest": artifact["digest"],
             "quality_standard_artifact": artifact,
-            "unknown_policy": standard.get("unknown_policy"),
+            "unknown_policy": deletion if deletion is not None else unknown_policy,
+            "deletion_policy": deletion,
             "competency_questions": normalized_questions,
             "approved_source_paths_by_question": source_paths_by_question,
+            "question_count": len(normalized_questions),
         }
 
     def _stage_sources(self) -> None:
@@ -1872,6 +1893,12 @@ class TeamRunner:
             delivery_id,
             response_kind="receipt",
         )
+        formal_contract = formal_run_contract_for(self.run.configuration)
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            try:
+                validate_r23003_candidate_declarations(candidate)
+            except ValueError as exc:
+                raise TeamConfigurationError(str(exc)) from exc
         try:
             receipt = build_candidate_receipt(candidate)
         except ProtocolRetrievalFallbackError as exc:
@@ -1929,7 +1956,7 @@ class TeamRunner:
         }
 
     def _frozen_acceptance_question_ids(self) -> tuple[str, ...]:
-        """Resolve the two exact requirement-owned CQ IDs for Coordinator text."""
+        """Resolve the ordered standard-owned CQ IDs for Coordinator text."""
 
         if not self._formal_coordination_enabled() or self.run is None:
             return ()
@@ -1938,8 +1965,8 @@ class TeamRunner:
         else:
             policy = self._acceptance_ticket_policy(self.run.configuration)
             ids = tuple(item["id"] for item in policy["competency_questions"])
-        if len(ids) != 2 or len(set(ids)) != 2:
-            raise TeamConfigurationError("formal acceptance must expose exactly two frozen question IDs")
+        if not ids or len(set(ids)) != len(ids):
+            raise TeamConfigurationError("formal acceptance must expose unique ordered question IDs")
         return ids
 
     def _task_text(self, role: str | None = None) -> str:
@@ -1955,6 +1982,15 @@ class TeamRunner:
                 if self._formal_coordination_enabled() and self.coordinator_phase
                 else None
             )
+            formal_contract = formal_run_contract_for(self.run.configuration)
+            is_r23003 = formal_contract is not None and formal_contract.requirement_id == "R2.3-003"
+            formal_requirement_label = "R2.3-003" if is_r23003 else "R2.3-005"
+            standard_policy = (
+                self._acceptance_ticket_policy(self.run.configuration)
+                if self._formal_coordination_enabled()
+                else {}
+            )
+            question_count = int(standard_policy.get("question_count", 0) or 0)
             staged_sources = sorted(
                 f"/agent/home/sources/{source.relative_path.as_posix()}"
                 for source in task.role_sources
@@ -1977,6 +2013,21 @@ class TeamRunner:
                     "`mcp__team_transport__send_coordination` call."
                 )
             if role == "acceptance":
+                report_projection = (
+                    f"an ordered standard-owned set of {question_count} competency questions"
+                    if is_r23003
+                    else "exactly two terminal Examiner reports per round"
+                )
+                final_projection = (
+                    "Only after the Runner-projected final question (is_final_question=true) has a current, usable PASS "
+                    if is_r23003
+                    else "Only after the final cq-002 usable PASS has been routed successfully "
+                )
+                live_round_instruction = (
+                    "Acceptance remains live after every non-final PASS, and "
+                    if is_r23003
+                    else "Acceptance remains live after every non-final cq-001 PASS, and "
+                )
                 return (
                     task.objective
                     + (
@@ -1985,7 +2036,9 @@ class TeamRunner:
                         else ""
                     )
                     + "\nYou are the persistent Acceptance role. The Runner supplies an immutable ticket, "
-                    "a versioned standard, and exactly two terminal Examiner reports per round. Do not "
+                    "a versioned standard, and "
+                    + report_projection
+                    + ". Do not "
                     "read staged source paths, call platform tools, spawn Agents, or use generic multi-agent "
                     "features. Use only the Runner-owned Acceptance capability to acknowledge the ticket, "
                     "retrieve child reports, and submit one canonical PASS/FAIL/BLOCKED verdict to Coordinator. "
@@ -2010,9 +2063,11 @@ class TeamRunner:
                     "Team Transport. Bind question, acceptance_round_id, slice revision, ticket digest, typed "
                     "evidence, and complete model-state identity in every verdict. Route only "
                     "acceptance_verdict_route to coordinator with the current generation and canonical "
-                    "verdict JSON as text. Acceptance remains live after the non-final cq-001 PASS, and "
-                    "after any FAIL or BLOCKED verdict; do not call report_task_result for those outcomes. "
-                    "Only after the final cq-002 usable PASS has been routed successfully may you call Team "
+                    "verdict JSON as text. "
+                    + live_round_instruction
+                    + "after any FAIL or BLOCKED verdict; do not call report_task_result for those outcomes. "
+                    + final_projection
+                    + "may you call Team "
                     "Transport report_task_result exactly once, using report_task_result(status=completed, ...) "
                     "with a concise summary "
                     "before ending. The ordinary acceptance_verdict_route delivery is not a terminal report "
@@ -2061,7 +2116,7 @@ class TeamRunner:
                     "the Batch/Item envelope, not as a conflict or missing input. Modeling sends a platform-neutral "
                     "semantic candidate; Protocol alone translates it into the envelope and must not require Modeling "
                     "to author exact items. The public tool remains the final execution and validation authority."
-                    " In the formal R2.3-005 gate, first obtain the current candidate and mechanical receipt: use "
+                    f" In the formal {formal_requirement_label} gate, first obtain the current candidate and mechanical receipt: use "
                     "the Runner-typed candidate receipt path when it is advertised below, otherwise call "
                     "build_candidate_receipt. This builder step does not send Team Transport. Complete the full "
                     "platform-translation decision before any response: if translation conflicts, call the "
@@ -2080,9 +2135,23 @@ class TeamRunner:
                     "host artifact gate validates each frozen cursor chain and registers the typed receipt. Emit only silent_for_acceptance to coordinator through "
                     "`mcp__team_transport__send_coordination` with the current generation after the ordered protocol work is quiet."
                 )
+                if is_r23003:
+                    text += (
+                        " For R2.3-003 deletion-aware existing scope, accept only the requirement-owned policy and "
+                        "the frozen target semantic IDs/classes; preserve all non-targets.  Resolve every "
+                        "existing_entity_ref through the live canonical projection fields semantic_id, entity_iri, "
+                        "class_semantic_id, class_iri, project_id, ontology_id, and workspace_version.  Consume "
+                        "IRIs exactly as returned and never split, derive, or guess identity from an IRI.  For each "
+                        "delete_existing_entity declaration, obtain the complete paginated statement-impact context "
+                        "with get_entity_statement_context using its opaque cursor and bind the resulting receipt to "
+                        "the candidate digest and live workspace.  Do not ask Modeling for IRIs, triples, expected "
+                        "edges, or impact digests.  Complete Phase A resolution/readback before emitting the "
+                        "delete-only Phase B batch; a partial, drifted, truncated, or mixed recovery observation "
+                        "must stop and must not be retried or start a new run."
+                    )
                 if self._formal_coordination_enabled() and self.acceptance is not None:
                     text += (
-                        " For the formal R2.3-005 acceptance gate, the Runner has issued the exact non-secret "
+                        f" For the formal {formal_requirement_label} acceptance gate, the Runner has issued the exact non-secret "
                         f"stage-handoff nonce {self.acceptance.stage_handoff_nonce}. After all five current-run "
                         "stages (dry-run, apply, readback, validation, reasoning) and governed retrieval are "
                         "complete, send one canonical compact JSON object directly to Coordinator with "
@@ -2148,13 +2217,27 @@ class TeamRunner:
                 frozen_question_instruction = ""
                 if frozen_question_ids:
                     rendered_ids = ", ".join(f"`{question_id}`" for question_id in frozen_question_ids)
-                    frozen_question_instruction = (
-                        " Before any typed ticket draft, read the task's Runner-provided frozen-question list; "
-                        f"the exact two IDs are {rendered_ids}. Use only these IDs, once each, with a positive "
-                        "ticket_revision (revision 1 for the first draft). Never guess an abbreviated ID such as "
-                        "`cq-1`, derive an ID from Protocol, or ask Protocol to provide the IDs. If the task does "
-                        "not expose exactly these two IDs, do not call the draft capability."
-                    )
+                    if is_r23003:
+                        frozen_question_instruction = (
+                            " Before any typed ticket draft, read the Runner-provided ordered standard list; "
+                            f"the question IDs in order are {rendered_ids} (question_count={len(frozen_question_ids)}). "
+                            "Use each ID once with a positive ticket_revision and use Runner-projected ordinal/count/"
+                            "previous/next/is_final metadata. Never infer order or finality from an ID name."
+                        )
+                    else:
+                        frozen_question_instruction = (
+                            " Before any typed ticket draft, read the task's Runner-provided frozen-question list; "
+                            f"the exact two IDs are {rendered_ids}. Use only these IDs, once each, with a positive "
+                            "ticket_revision (revision 1 for the first draft). Never guess an abbreviated ID such as "
+                            "`cq-1`, derive an ID from Protocol, or ask Protocol to provide the IDs. If the task does "
+                            "not expose exactly these two IDs, do not call the draft capability."
+                        )
+                draft_revision_instruction = (
+                    " The Runner projects ordinal/count/previous/next/is_final metadata for each ordered "
+                    "standard question; use that metadata and never infer finality or order from an ID."
+                    if is_r23003
+                    else " Both frozen questions may use revision 1; do not treat the second question as a duplicate."
+                )
                 if typed_ticket_binding:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, retain only the "
@@ -2166,8 +2249,9 @@ class TeamRunner:
                         "model_state, stage receipts, source paths, recipient, or transport fields. The "
                         "Runner resolves the exact registered Protocol delivery and owns nonce, current-run "
                         "stage receipts, authenticated live model state, canonical read allowlist, staged "
-                        "source digests, and frozen policy. Both frozen questions may use revision 1; do not "
-                        "treat the second question as a duplicate. Publish only the complete returned draft "
+                        "source digests, and frozen policy."
+                        + draft_revision_instruction
+                        + " Publish only the complete returned draft "
                         "exactly once through coordinator_publish_acceptance_ticket."
                         + frozen_question_instruction
                     )
@@ -2187,17 +2271,25 @@ class TeamRunner:
                     )
                 sequential_instruction = ""
                 if self._formal_coordination_enabled():
-                    sequential_instruction = (
-                        "\nFormal R2.3-005 sequential acceptance is mandatory: after you receive and confirm the "
-                        "cq-001 PASS verdict through the Runner-private verdict capability, immediately send "
-                        "exactly one acceptance_start for the already published cq-002 ticket, using that "
-                        "ticket's exact acceptance_round_id. Do not wait for a cq-002 verdict before starting "
-                        "cq-002; no such verdict can exist until its round is started. Do not rebuild, mutate, "
-                        "or republish either ticket while advancing. A final cq-002 PASS starts no further "
-                        "round and waits for the normal Acceptance terminal handoff and settlement. FAIL returns "
-                        "to the existing Modeling repair/revision path; BLOCKED waits for recovery or revision; "
-                        "neither non-PASS verdict advances to the next CQ, and never overlap two rounds."
-                    )
+                    if is_r23003:
+                        sequential_instruction = (
+                            "\nFormal ordered N-CQ acceptance is mandatory: after each current question receives a usable PASS, "
+                            "start exactly the Runner-projected next_question_id only after the prior round's children are "
+                            "reclaimed. A question with is_final_question=true starts no further round and waits for normal "
+                            "settlement. FAIL/BLOCKED never advances, and rounds never overlap."
+                        )
+                    else:
+                        sequential_instruction = (
+                            "\nFormal R2.3-005 sequential acceptance is mandatory: after you receive and confirm the "
+                            "cq-001 PASS verdict through the Runner-private verdict capability, immediately send "
+                            "exactly one acceptance_start for the already published cq-002 ticket, using that "
+                            "ticket's exact acceptance_round_id. Do not wait for a cq-002 verdict before starting "
+                            "cq-002; no such verdict can exist until its round is started. Do not rebuild, mutate, "
+                            "or republish either ticket while advancing. A final cq-002 PASS starts no further "
+                            "round and waits for the normal Acceptance terminal handoff and settlement. FAIL returns "
+                            "to the existing Modeling repair/revision path; BLOCKED waits for recovery or revision; "
+                            "neither non-PASS verdict advances to the next CQ, and never overlap two rounds."
+                        )
                 return text + (
                     "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
                     "Runner-private capability MCP to publish the fixed requirement-owned ticket and "

@@ -353,6 +353,11 @@ class SemanticReadModelService:
         source_graph_iri = self._cell(row, "graph")
         if not source_graph_iri:
             source_graph_iri = scope.source_graph_iris[0] if scope.source_graph_iris else ""
+        display_fields = self._graph_display_fields(row)
+        if template.name == "entity-list":
+            # Keep the existing id/iri aliases for compatibility, while making
+            # the canonical identity projection explicit for Protocol callers.
+            display_fields["entity_iri"] = iri
         return {
             "id": iri,
             "iri": iri,
@@ -372,14 +377,16 @@ class SemanticReadModelService:
                 "is_stale": self._is_stale(source_graph_iri, scope),
                 "reason": self._staleness_reason(source_graph_iri, scope),
             },
-            **self._graph_display_fields(row),
+            **display_fields,
         }
 
     def _graph_display_fields(self, row: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}
         for key in (
+            "semantic_id",
             "parent",
             "class",
+            "class_semantic_id",
             "class_label",
             "source",
             "target",
@@ -1620,18 +1627,33 @@ class SemanticReadModelService:
                 for item in semantic_items
                 if class_iri in item.get("data", {}).get("rdf_types", [])
             ]
-        semantic_rows = [
-            self._public_list_semantic_row(candidate, scope, template)
-            for candidate in [
-                *semantic_items,
-                *governed_mapping_lexical_candidates(
-                    self.session,
-                    ontology_ids=[ontology_id],
-                    query=q,
-                    resource_kinds={resource_kind},
-                ),
-            ]
-        ]
+        canonical_by_iri = {
+            str(item.get("iri")): item
+            for item in items
+            if isinstance(item, dict)
+            and all(
+                isinstance(item.get(field), str) and item.get(field)
+                for field in ("semantic_id", "entity_iri", "class_semantic_id", "class_iri")
+            )
+        }
+        semantic_rows = []
+        for candidate in [
+            *semantic_items,
+            *governed_mapping_lexical_candidates(
+                self.session,
+                ontology_ids=[ontology_id],
+                query=q,
+                resource_kinds={resource_kind},
+            ),
+        ]:
+            row = self._public_list_semantic_row(
+                candidate,
+                scope,
+                template,
+                canonical=canonical_by_iri.get(str(candidate.get("iri") or candidate.get("id"))),
+            )
+            if row is not None:
+                semantic_rows.append(row)
         fused = fuse_context_candidates(lexical_items, semantic_rows)
         fused.sort(key=_entity_search_sort_key)
         return fused[:limit], retrieval
@@ -1671,8 +1693,12 @@ class SemanticReadModelService:
 
     @staticmethod
     def _public_list_semantic_row(
-        candidate: dict[str, Any], scope: ScopeResolution, template: ReadModelTemplate
-    ) -> dict[str, Any]:
+        candidate: dict[str, Any],
+        scope: ScopeResolution,
+        template: ReadModelTemplate,
+        *,
+        canonical: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         rdf_types = list(candidate.get("data", {}).get("rdf_types", []))
         item = {
             **candidate,
@@ -1689,10 +1715,22 @@ class SemanticReadModelService:
             "staleness": {"is_stale": False, "reason": None},
         }
         if template.name == "entity-list":
+            projection = canonical or candidate
+            if not all(
+                isinstance(projection.get(field), str) and projection.get(field)
+                for field in ("semantic_id", "entity_iri", "class_semantic_id", "class_iri")
+            ):
+                # Retrieval rows are ranking hints, not an identity authority.
+                # Never return a Protocol-facing entity without the explicit
+                # backend projection that binds IDs and class identity.
+                return None
             item.update(
                 {
-                    "class_iri": rdf_types[0] if rdf_types else None,
-                    "class_label": None,
+                    "semantic_id": projection["semantic_id"],
+                    "entity_iri": projection["entity_iri"],
+                    "class_semantic_id": projection["class_semantic_id"],
+                    "class_iri": projection["class_iri"],
+                    "class_label": projection.get("class_label"),
                 }
             )
         return item

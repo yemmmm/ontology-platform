@@ -24,7 +24,17 @@ class _Result:
 class _Store:
     def query_read_model(self, query, graph_iris, timeout_seconds, limit):  # noqa: ARG002
         if "# template: entity-list" in query:
-            return _Result([])
+            return _Result(
+                [
+                    {
+                        "entity": {"type": "uri", "value": "https://example.test/entity/unknown-a"},
+                        "semantic_id": {"type": "literal", "value": "unknown-a"},
+                        "class": {"type": "uri", "value": "https://example.test/class/ExplicitUnknown"},
+                        "class_semantic_id": {"type": "literal", "value": "ExplicitUnknown"},
+                        "graph": {"type": "uri", "value": graph_iris[0]},
+                    }
+                ]
+            )
         if "# template: statement-list" in query:
             return _Result(
                 [
@@ -93,11 +103,15 @@ def test_public_entity_and_class_read_models_filter_q_and_merge_scoped_recall(
             return {
                 "candidates": [
                     {
-                        "id": "https://example.test/CustomerSupportWorkflowInstance",
-                        "kind": "instance",
-                        "ontology_id": ontology_id,
-                        "iri": "https://example.test/CustomerSupportWorkflowInstance",
-                        "label": "Customer Support Workflow Instance",
+                            "id": "https://example.test/CustomerSupportWorkflowInstance",
+                            "kind": "instance",
+                            "ontology_id": ontology_id,
+                            "iri": "https://example.test/CustomerSupportWorkflowInstance",
+                            "semantic_id": "CustomerSupportWorkflowInstance",
+                            "entity_iri": "https://example.test/CustomerSupportWorkflowInstance",
+                            "class_semantic_id": "Workflow",
+                            "class_iri": "https://example.test/Workflow",
+                            "label": "Customer Support Workflow Instance",
                         "labels": [
                             {
                                 "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
@@ -216,3 +230,23 @@ def test_public_ontology_facts_read_model_preserves_statement_bindings(in_memory
     assert item["predicate"] == "https://example.test/hasContract"
     assert item["object"] == "https://example.test/ContractV2"
     assert item["object_kind"] == "iri"
+
+
+def test_entity_endpoint_returns_scope_bound_canonical_identity(in_memory_session) -> None:
+    settings = Settings(semantic_graph_iri_prefix="https://public-search.test/graphs")
+    ontology_id = _seed_ready_workspace(in_memory_session, settings)
+
+    response = _client(in_memory_session, settings).get(
+        f"/api/ontologies/{ontology_id}/semantic-read-models/entities",
+        params={"field_set": "full"},
+    )
+
+    assert response.status_code == 200, response.text
+    item = response.json()["items"][0]
+    assert item["semantic_id"] == "unknown-a"
+    assert item["entity_iri"] == "https://example.test/entity/unknown-a"
+    assert item["class_semantic_id"] == "ExplicitUnknown"
+    assert item["class_iri"] == "https://example.test/class/ExplicitUnknown"
+    assert item["project_id"] == "project-public-search"
+    assert item["ontology_id"] == ontology_id
+    assert isinstance(item["workspace_version"], str) and item["workspace_version"]

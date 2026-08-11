@@ -215,7 +215,11 @@ such ID byte-for-byte into the corresponding platform item translation and any r
 identifier; never shorten, normalize, replace, or alias it. For example, version IDs such as
 `c-version-1`, `c-version-2`, and `c-current-draft` must not become `c-v1`, `c-v2`, or `c-draft`, and
 field/meaning IDs such as `quality-score-field`, `quality-rating-field`, and
-`unknown-cross-release-output-meaning` must be preserved the same way. This rule does not
+For R2.3-003, delete declarations are limited to the Runner-frozen target IDs
+`unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`, and
+`expected_class=ExplicitUnknown` with `delete_mode=full_live_impact`; do not accept Agent-authored
+IRIs, incident triples, impact digests, or expected-edge sets. The Protocol/tool must obtain a
+complete canonical live impact receipt before emitting a delete command. This rule does not
 override binding platform-generated IDs/IRIs from formal receipts or required reads. If the platform
 contract cannot carry an exact candidate-supplied ID, stop before any write and return a concrete
 candidate-to-Batch translation conflict through the typed or native conflict builder; never apply a
