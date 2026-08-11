@@ -225,15 +225,20 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
     assert effects == ["read", "stateful"]
 
+    live_context["value"] = _context()
+    live_context["value"]["lease"] = {"active": True, "lease_id": "run-owned-lease"}
+    assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
+    assert effects == ["read", "stateful", "stateful"]
+
     live_context["value"] = _context("workspace-v2")
     drifted = submit_modeling_batch()
     assert drifted["error_code"] == "modeling_context_revalidation_failed"
     assert drifted["data"]["mutation_state"] == "zero-mutation"
-    assert effects == ["read", "stateful"]
+    assert effects == ["read", "stateful", "stateful"]
 
     _write_gate(gate, _r23003_gate("candidate-v2"))
     assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
-    assert effects == ["read", "stateful"]
+    assert effects == ["read", "stateful", "stateful"]
 
 
 def test_r23003_revalidation_normalizes_recent_batch_datetimes_and_keeps_005_gate_isolated(

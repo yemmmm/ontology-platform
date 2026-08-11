@@ -528,7 +528,6 @@ def _context_is_valid(value: Any, context: dict[str, str]) -> bool:
         and not isinstance(derived.get("stale_count"), bool)
         and derived.get("stale_count") == 0
         and derived.get("warning") in (None, "")
-        and not (isinstance(value.get("lease"), dict) and value["lease"].get("active") is True)
         and not (
             isinstance(value.get("recovering"), dict)
             and value["recovering"].get("active") is True
