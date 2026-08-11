@@ -55,6 +55,7 @@ from .candidate_progress import (
     FormalCandidateProgress,
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
+    canonical_digest,
     formal_candidate_digests,
     validate_formal_conflict,
     validate_formal_receipt,
@@ -86,6 +87,7 @@ from .protocol_mechanics import (
     build_candidate_conflict,
     build_candidate_receipt,
     build_candidate_item_evidence_map,
+    build_existing_scope_candidate_conflict,
 )
 from .matrix_artifact import MatrixArtifactError, verify_matrix as verify_proof_matrix
 from .start_ledger import (
@@ -189,6 +191,8 @@ class TeamRunner:
         # Modeling delivery.  The set is Runner-owned so a capability retry
         # cannot emit a second receipt/conflict for the same delivery.
         self._protocol_candidate_responses: dict[str, str] = {}
+        self._protocol_candidate_receipt_digests: dict[str, str] = {}
+        self._formal_workspace_version: str | None = None
         self._task_overlay: TaskInputOverlay | None = None
         self._validated_candidate_publication: ValidatedCandidatePublication | None = None
         self._candidate_publication: StagedCandidatePublication | None = None
@@ -207,6 +211,7 @@ class TeamRunner:
         self._coordination_runtime_message_ids: set[str] = set()
         self._coordination_runtime_signal_keys: set[str] = set()
         self._issue_abort_requested = False
+        self._issue_abort_terminal_failure_recorded = False
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -422,6 +427,11 @@ class TeamRunner:
                     admin_key=self.canonical_admin_key,
                     probe=self.prestart_preflight,
                 )
+                live_scope = preflight_evidence.get("live") if isinstance(preflight_evidence, dict) else None
+                if isinstance(live_scope, dict) and isinstance(
+                    live_scope.get("workspace_version"), str
+                ):
+                    self._formal_workspace_version = live_scope["workspace_version"]
             else:
                 preflight_evidence = run_prestart_preflight(
                     repository_root=self.repository_root,
@@ -512,6 +522,10 @@ class TeamRunner:
                 timeout_seconds=config.profile.parameters.get(
                     "candidate_progress_timeout_seconds", 120.0
                 ),
+                allow_post_receipt_revision=(
+                    formal_contract is not None
+                    and formal_contract.requirement_id == "R2.3-003"
+                ),
             )
             if formal_acceptance
             else None
@@ -522,6 +536,7 @@ class TeamRunner:
             else None
         )
         self._protocol_candidate_responses = {}
+        self._protocol_candidate_receipt_digests = {}
         self._candidate_receipt_wakeup_sent = set()
         self._formal_failure_latched = False
         acceptance_child_factory = getattr(self.adapter, "acceptance_child_factory", None)
@@ -1797,6 +1812,7 @@ class TeamRunner:
         classification: str,
         complete_modeling_quality_result: bool,
         repair_baseline_hash: str | None = None,
+        terminal_evidence: dict[str, Any] | None = None,
     ) -> None:
         if not self.run or not self._ledger:
             return
@@ -1805,6 +1821,7 @@ class TeamRunner:
             classification,
             complete_modeling_quality_result,
             repair_baseline_hash,
+            terminal_evidence,
         )
         self._append_evidence(
             "terminal-classification",
@@ -1812,8 +1829,87 @@ class TeamRunner:
                 "classification": classification,
                 "complete_modeling_quality_result": complete_modeling_quality_result,
                 "repair_baseline_hash": repair_baseline_hash,
+                **({"terminal_evidence": terminal_evidence} if terminal_evidence is not None else {}),
             },
         )
+
+    def _record_issue_abort_terminal_failure(
+        self,
+        issue: Any,
+        cleanup: dict[str, Any],
+    ) -> None:
+        """Reconcile a zero-mutation 003 issue abort into the append-only ledger."""
+
+        if self._issue_abort_terminal_failure_recorded:
+            return
+        if not self.run or not self._ledger:
+            return
+        contract = formal_run_contract_for(self.run.configuration)
+        if contract is None or contract.requirement_id != "R2.3-003":
+            # R2.3-005 retains its existing issue/cleanup path; this narrow
+            # reconciliation is only needed for the existing-scope ledger.
+            return
+        if issue is None or getattr(issue, "run_id", None) != self.run.run_id:
+            raise TeamConfigurationError("issue abort run binding is invalid")
+        if getattr(issue, "mutation_state", None) != "zero-mutation":
+            raise TeamConfigurationError("issue abort lacks zero-mutation evidence")
+        if not isinstance(cleanup, dict):
+            raise TeamConfigurationError("issue abort cleanup evidence is invalid")
+        acceptance = cleanup.get("acceptance")
+        scope = cleanup.get("scope")
+        if (
+            not isinstance(acceptance, dict)
+            or acceptance.get("status") != "aborted"
+            or acceptance.get("zero_child_residue") is not True
+            or not isinstance(scope, dict)
+            or scope.get("cleanup_blocker")
+            or scope.get("no_in_flight_attempts") is not True
+        ):
+            raise TeamConfigurationError("issue abort cleanup is not zero-mutation clean")
+        before = scope.get("existing_context_before")
+        after = scope.get("existing_context_after")
+        if isinstance(before, dict) and isinstance(after, dict) and before != after:
+            raise TeamConfigurationError("issue abort existing scope changed during cleanup")
+        baseline_hash = self.run.baseline_hash
+        if not isinstance(baseline_hash, str) or not baseline_hash:
+            raise TeamConfigurationError("issue abort baseline binding is unavailable")
+        issue_payload = {
+            "run_id": self.run.run_id,
+            "issue_id": issue.issue_id,
+            "mutation_state": issue.mutation_state,
+            "failing_operation": issue.failing_operation,
+            "error": issue.error,
+        }
+        evidence_payload = {
+            "run_id": self.run.run_id,
+            "baseline_hash": baseline_hash,
+            "classification": "platform-contract",
+            "mutation_state": "zero-mutation",
+            "issue_id": issue.issue_id,
+            "issue_digest": canonical_digest(issue_payload),
+            "cleanup_digest": canonical_digest(cleanup),
+            "evidence_path": "evidence/terminal-reconciliation.jsonl",
+        }
+        evidence_digest = canonical_digest(evidence_payload)
+        terminal_evidence = {
+            "run_id": self.run.run_id,
+            "baseline_hash": baseline_hash,
+            "classification": "platform-contract",
+            "mutation_state": "zero-mutation",
+            "issue_id": issue.issue_id,
+            "evidence_path": evidence_payload["evidence_path"],
+            "evidence_digest": evidence_digest,
+        }
+        self._append_evidence(
+            "terminal-reconciliation",
+            {**evidence_payload, "evidence_digest": evidence_digest},
+        )
+        self.record_terminal_failure(
+            "platform-contract",
+            False,
+            terminal_evidence=terminal_evidence,
+        )
+        self._issue_abort_terminal_failure_recorded = True
 
     def _publish_staged_candidate(self, modeling_id: str) -> dict[str, Any]:
         """Publish one prevalidated candidate through ordinary Team Transport."""
@@ -1857,7 +1953,19 @@ class TeamRunner:
             raise TeamConfigurationError("typed candidate protocol identity drifts from progress")
         if identity.original_delivery_id != delivery_id:
             raise TeamConfigurationError("typed candidate delivery_id is foreign or stale")
-        if progress.state not in {"awaiting_receipt", "redrive_sent"} or progress.paused:
+        formal_contract = formal_run_contract_for(self.run.configuration)
+        post_receipt_conflict = (
+            response_kind == "conflict"
+            and formal_contract is not None
+            and formal_contract.requirement_id == "R2.3-003"
+            and progress.state == "complete"
+            and self._protocol_candidate_responses.get(delivery_id) == "receipt"
+            and progress.post_receipt_revision_enabled
+        )
+        if (
+            progress.state not in {"awaiting_receipt", "redrive_sent"}
+            and not post_receipt_conflict
+        ) or progress.paused:
             raise TeamConfigurationError("typed candidate is not awaiting a Protocol response")
         if progress.timeout_latched or progress.terminal_failure_latched:
             raise TeamConfigurationError("typed candidate progress is terminal")
@@ -1913,6 +2021,7 @@ class TeamRunner:
         except FormalCandidateError as exc:
             raise TeamConfigurationError("canonical candidate receipt does not match active identity") from exc
         self._protocol_candidate_responses[delivery_id] = "receipt"
+        self._protocol_candidate_receipt_digests[delivery_id] = canonical_digest(normalized)
         return {
             "delivery_id": delivery_id,
             "candidate": candidate,
@@ -1934,10 +2043,32 @@ class TeamRunner:
             delivery_id,
             response_kind="conflict",
         )
-        try:
-            conflict = build_candidate_conflict(candidate, conflict_code, conflict_detail)
-        except ProtocolRetrievalFallbackError as exc:
-            raise TeamConfigurationError(str(exc)) from exc
+        formal_contract = formal_run_contract_for(self.run.configuration)
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            receipt_digest = self._protocol_candidate_receipt_digests.get(delivery_id)
+            workspace_version = self._formal_workspace_version or self.run.scope.get(
+                "workspace_version"
+            )
+            if not isinstance(receipt_digest, str) or not receipt_digest:
+                raise TeamConfigurationError("typed candidate conflict has no accepted receipt digest")
+            if not isinstance(workspace_version, str) or not workspace_version:
+                raise TeamConfigurationError("typed candidate conflict has no workspace version")
+            try:
+                conflict = build_existing_scope_candidate_conflict(
+                    candidate,
+                    conflict_code,
+                    conflict_detail,
+                    original_delivery_id=identity.original_delivery_id,
+                    receipt_digest=receipt_digest,
+                    workspace_version=workspace_version,
+                )
+            except ProtocolRetrievalFallbackError as exc:
+                raise TeamConfigurationError(str(exc)) from exc
+        else:
+            try:
+                conflict = build_candidate_conflict(candidate, conflict_code, conflict_detail)
+            except ProtocolRetrievalFallbackError as exc:
+                raise TeamConfigurationError(str(exc)) from exc
         try:
             normalized = validate_formal_conflict(
                 conflict,
@@ -1948,6 +2079,9 @@ class TeamRunner:
         except FormalCandidateError as exc:
             raise TeamConfigurationError("canonical candidate conflict does not match active identity") from exc
         self._protocol_candidate_responses[delivery_id] = "conflict"
+        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+            if self._candidate_platform_gate is not None:
+                self._candidate_platform_gate.close("pre_mutation_binding_conflict")
         return {
             "delivery_id": delivery_id,
             "candidate": candidate,
@@ -3483,6 +3617,7 @@ class TeamRunner:
         if self._issue_abort_requested:
             cleanup = self.cleanup()
             issue = self._issue_ledger().active_issue if self._issue_ledger() is not None else None
+            self._record_issue_abort_terminal_failure(issue, cleanup)
             output.append(
                 {
                     "type": "issue-aborted",

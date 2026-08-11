@@ -12,6 +12,7 @@ from modeling_team.candidate_progress import (
     FormalCandidateProgress,
     FormalCandidateProgressTimeout,
     FormalCandidateRoutingError,
+    canonical_digest,
     formal_candidate_digests,
 )
 from modeling_team.candidate_platform_gate import (
@@ -20,7 +21,12 @@ from modeling_team.candidate_platform_gate import (
 )
 from modeling_team.contracts import TeamConfigurationError, load_profile, repository_root
 from modeling_team.interventions import IssueResolution
-from modeling_team.protocol_mechanics import ProtocolRetrievalFallbackError, build_candidate_conflict
+from modeling_team.protocol_mechanics import (
+    ProtocolRetrievalFallbackError,
+    build_candidate_conflict,
+    build_candidate_receipt,
+    build_existing_scope_candidate_conflict,
+)
 from modeling_team.runner import TeamRunner
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 from modeling_team.runtimes.base import AgentState, RuntimeDelivery, RuntimeDispatchReceipt
@@ -214,6 +220,133 @@ def test_conflict_requires_full_revision_and_rebinds_pending_identity() -> None:
         _delivery("protocol", "modeling", json.dumps(receipt), "r2", reply_to="d2"),
         modeling_agent_id="modeling", protocol_agent_id="protocol", run_id="run-1", protocol_thread_id="thread-1"
     ) == "accepted"
+
+
+def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revision_v2() -> None:
+    """A live Workflow/InvokingWorkflow mismatch must reopen only the bound revision path."""
+
+    now = [0.0]
+    progress = FormalCandidateProgress(
+        clock=lambda: now[0],
+        allow_post_receipt_revision=True,
+    )
+    candidate = _candidate()
+    candidate["items"][0]["item_id"] = "workflow-b"
+    candidate["items"][0]["item_kind"] = "existing_entity_ref"
+    candidate["items"][0]["semantic"] = {
+        "semantic_id": "workflow-b",
+        "expected_class": "Workflow",
+        "actual_class": "InvokingWorkflow",
+    }
+    assert progress.observe_delivery(
+        _delivery("modeling", "protocol", json.dumps(candidate), "delivery-5"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "candidate"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    identity = progress.identity
+    assert identity is not None
+    receipt = build_candidate_receipt(candidate)
+    receipt_delivery = _delivery(
+        "protocol",
+        "modeling",
+        json.dumps(receipt),
+        "delivery-6",
+        reply_to="delivery-5",
+    )
+    assert progress.observe_delivery(
+        receipt_delivery,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    assert progress.state == "complete"
+
+    conflict = build_existing_scope_candidate_conflict(
+        candidate,
+        "existing_entity_binding_mismatch",
+        "workflow-b expected Workflow but live projection is InvokingWorkflow",
+        original_delivery_id="delivery-5",
+        receipt_digest=canonical_digest(receipt),
+        workspace_version="workspace-v1",
+    )
+    assert progress.observe_delivery(
+        _delivery(
+            "protocol",
+            "modeling",
+            json.dumps(conflict),
+            "delivery-7",
+            reply_to="delivery-5",
+        ),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "conflict"
+    assert progress.state == "awaiting_revision"
+
+    # Receipt-v1 is invalidated and cannot be replayed after the conflict.
+    assert progress.observe_delivery(
+        _delivery(
+            "protocol",
+            "modeling",
+            json.dumps(receipt),
+            "delivery-6-replay",
+            reply_to="delivery-5",
+        ),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) is None
+
+    revised = _candidate(2)
+    revised["items"][0]["item_id"] = "workflow-b"
+    revised["items"][0]["item_kind"] = "existing_entity_ref"
+    revised["items"][0]["semantic"] = {
+        "semantic_id": "workflow-b",
+        "expected_class": "InvokingWorkflow",
+        "actual_class": "InvokingWorkflow",
+    }
+    assert progress.observe_delivery(
+        _delivery(
+            "modeling",
+            "protocol",
+            json.dumps(revised),
+            "delivery-8",
+            reply_to="delivery-7",
+        ),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "revision"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-2"))
+    revised_identity = progress.identity
+    assert revised_identity is not None
+    revised_receipt = {
+        "status": "accepted",
+        "candidate_revision": revised_identity.candidate_revision,
+        "semantic_digest": revised_identity.semantic_digest,
+        "candidate_digest": revised_identity.candidate_digest,
+    }
+    assert progress.observe_delivery(
+        _delivery(
+            "protocol",
+            "modeling",
+            json.dumps(revised_receipt),
+            "delivery-9",
+            reply_to="delivery-8",
+        ),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start7-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    assert progress.state == "complete"
 
 
 def test_turn_barrier_allows_one_redrive_then_exhausts() -> None:

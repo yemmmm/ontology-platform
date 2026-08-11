@@ -45,6 +45,17 @@ _GATE_BINDING_FIELDS = (
     "p2a_pass_digest",
     "source_run_id",
 )
+_TERMINAL_EVIDENCE_FIELDS = frozenset(
+    {
+        "run_id",
+        "baseline_hash",
+        "classification",
+        "mutation_state",
+        "issue_id",
+        "evidence_path",
+        "evidence_digest",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -380,15 +391,28 @@ class StartLedger:
         return self._locked(write)
 
     def terminal_failure(
-        self, run_id: str, classification: str, complete_modeling_quality_result: bool, repair_baseline_hash: str | None = None
+        self,
+        run_id: str,
+        classification: str,
+        complete_modeling_quality_result: bool,
+        repair_baseline_hash: str | None = None,
+        terminal_evidence: dict[str, Any] | None = None,
     ) -> None:
         if classification not in _RETRYABLE | {"modeling-quality"}:
             raise TeamConfigurationError("failure classification is invalid")
+        if terminal_evidence is not None and not self.config.strict_sequence:
+            raise TeamConfigurationError("terminal evidence requires strict sequence")
         if self.config.strict_sequence:
             if not isinstance(run_id, str) or not run_id.strip():
                 raise TeamConfigurationError("failed run ID is invalid")
             if not isinstance(complete_modeling_quality_result, bool):
                 raise TeamConfigurationError("complete modeling-quality result is invalid")
+            if terminal_evidence is not None:
+                self._validate_terminal_evidence(
+                    terminal_evidence,
+                    run_id=run_id,
+                    classification=classification,
+                )
 
         def write(records: list[dict[str, Any]]) -> None:
             if self.config.strict_sequence:
@@ -398,15 +422,16 @@ class StartLedger:
                     raise TeamConfigurationError("terminal failure must classify the latest semantic start")
             if self._latest(records, run_id, "terminal_failure"):
                 raise TeamConfigurationError("terminal failure classification is immutable")
-            self._append(
-                {
-                    "event": "terminal_failure",
-                    "run_id": run_id,
-                    "classification": classification,
-                    "complete_modeling_quality_result": complete_modeling_quality_result,
-                    "repair_baseline_hash": repair_baseline_hash,
-                }
-            )
+            record = {
+                "event": "terminal_failure",
+                "run_id": run_id,
+                "classification": classification,
+                "complete_modeling_quality_result": complete_modeling_quality_result,
+                "repair_baseline_hash": repair_baseline_hash,
+            }
+            if terminal_evidence is not None:
+                record["terminal_evidence"] = dict(terminal_evidence)
+            self._append(record)
 
         self._locked(write)
 
@@ -581,6 +606,20 @@ class StartLedger:
                 ]
                 if not prior_starts or prior_starts[-1].get("run_id") != run_id:
                     raise TeamConfigurationError("terminal failure must classify the latest semantic start")
+                terminal_evidence = record.get("terminal_evidence")
+                if terminal_evidence is not None:
+                    self._validate_terminal_evidence(
+                        terminal_evidence,
+                        run_id=run_id,
+                        classification=classification,
+                    )
+                    reservation = reservations.get(run_id)
+                    if (
+                        reservation is None
+                        or terminal_evidence.get("baseline_hash")
+                        != reservation[1].get("baseline_hash")
+                    ):
+                        raise TeamConfigurationError("terminal evidence baseline drifts from reservation")
                 failures[run_id] = (index, record)
                 continue
             if event == "budget_authorization":
@@ -744,6 +783,36 @@ class StartLedger:
         return self.config.allow_variable_authorization or (
             additional_starts == self._authorization_increment
         )
+
+    @staticmethod
+    def _validate_terminal_evidence(
+        value: Any,
+        *,
+        run_id: str,
+        classification: str,
+    ) -> None:
+        if not isinstance(value, dict) or set(value) != _TERMINAL_EVIDENCE_FIELDS:
+            raise TeamConfigurationError("terminal evidence binding is invalid")
+        if (
+            value.get("run_id") != run_id
+            or value.get("classification") != classification
+            or value.get("mutation_state") != "zero-mutation"
+            or not isinstance(value.get("issue_id"), str)
+            or not value.get("issue_id", "").strip()
+            or not isinstance(value.get("baseline_hash"), str)
+            or not value.get("baseline_hash", "").strip()
+            or not isinstance(value.get("evidence_path"), str)
+            or not value.get("evidence_path", "").strip()
+            or value["evidence_path"].startswith("/")
+            or ".." in Path(value["evidence_path"]).parts
+            or not isinstance(value.get("evidence_digest"), str)
+            or len(value["evidence_digest"]) != 64
+        ):
+            raise TeamConfigurationError("terminal evidence binding is invalid")
+        try:
+            int(value["evidence_digest"], 16)
+        except ValueError as exc:
+            raise TeamConfigurationError("terminal evidence binding is invalid") from exc
 
     @staticmethod
     def _semantic_start_count(records: list[dict[str, Any]]) -> int:

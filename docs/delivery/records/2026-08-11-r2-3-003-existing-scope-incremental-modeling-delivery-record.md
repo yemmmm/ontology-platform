@@ -478,3 +478,39 @@
   directory/reservation/process/socket。
 - Outcome/next step: Round 15 deterministic gate=`PASS`，start7 可在正常 credential/health/ledger gates 下
   使用剩余两次授权之一；requirement 仍 BLOCKED，直到真实语义写入、CQ 与 cleanup 独立验收。
+
+### 2026-08-11T12:57:52+08:00 — revised live semantic start7 — main agent
+
+- Context: commits `a220b76`、`9e55c31` 及 independent Round 15 PASS 后，启动
+  `r23003-real-20260811-deepseek-start7`；新增授权第二次 semantic start，启动后仅余一次。
+- Action/decision: Modeling delivery-5 交付精确有序两个 `delete_existing_entity` 及 bounded C→B→A slice，
+  Protocol delivery-6 accepted receipt digest=`ac863afba7be5aca215ca9ae6a6f5e467570df65fc64c32b1b019e71579aa4a4`。
+  随后 Phase-A live binding 发现 `workflow-b` candidate expected Class=`Workflow`、canonical actual Class=
+  `InvokingWorkflow`；严格 equality 正确 fail-closed。因为 receipt 已 complete，typed conflict 返回
+  `typed candidate is not awaiting a Protocol response` / `-32001`，无法请求 full revision。主 Agent 拒绝
+  放宽为 subclass match，以 outer issue resolution 显式 abort。
+- Evidence: issue-1 明确 `mutation_state=zero-mutation` 且只发生 workspace/modeling/build/read-model/lineage
+  reads；无 dry-run/submit/apply/Phase-B。cleanup 前后 workspace version=`0d34f5ada161...`、batches=6，
+  active lease/session/in-flight=0；credentials destroyed、zero child residue、keys revoked、服务健康。
+  start7 state=`TERMINAL_REPORT_COMPLETE`。ledger 追加 reservation+semantic_start 后停在 21 行，未追加
+  terminal_failure，暴露第二个 issue-abort ledger closure 缺陷。
+- Outcome/next step: start7 消耗新增授权第二次，剩最后一次；Round 16=`FAIL/BLOCKED`。修复 receipt-v1→
+  live mismatch→conflict→full revision-v2→replacement receipt-v2 与 zero-mutation abort append-only terminal
+  reconciliation 后，独立 PASS 且正式补记 start7 terminal failure 才允许 start8。
+
+### 2026-08-11T13:20:00+08:00 — post-receipt revision and abort-ledger repair — developer and tester
+
+- Context: start7 证明 startup gate 与 one-response state 组合成闭环：平台 read 只能在 receipt 后发生，但 receipt
+  后不能 conflict/revise；同时 issue abort cleanup 未闭合 strict ledger。
+- Action/decision: 仅对 R2.3-003 启用 post-receipt typed conflict：receipt-v1 digest/workspace/candidate identity
+  全绑定，live mismatch 后关闭 platform gate、失效旧 receipt，允许 reply-bound complete revision-v2 与
+  replacement receipt-v2；stale v1 replay 拒绝。Issue-abort 仅在 zero-mutation、aborted acceptance、无 child/
+  in-flight、existing before==after 时写 canonical terminal reconciliation evidence，再通过 StartLedger lock
+  append `platform-contract` terminal_failure；005/default 保持原终态。
+- Evidence: independent serial focused=`105 passed, 2 subtests`；native MCP=`11 passed, 13 subtests`；ledger+
+  005=`45 passed, 22 subtests`；sequence regression=3 PASS；abort evidence=1 PASS；modeling_team full=
+  `722 passed, 1 skipped, 218 subtests`；compileall/diff/frozen PASS，Runner SHA=`eaea70c12e8c...ea01d7`。
+  Temp-ledger copy 上严格 terminal_evidence append 成为第22行并允许 start8 probe reservation；live ledger 未由
+  test 改动。GitNexus detect CRITICAL（共享 progress/Runner/ledger 入口），所有新分支 requirement-gated。
+- Outcome/next step: deterministic repair PASS；live start8 仍 blocked，直到 operator 从 start7 已持久化
+  state/issue/cleanup 生成 canonical reconciliation evidence 并通过同一严格 API append，不允许手改旧行。

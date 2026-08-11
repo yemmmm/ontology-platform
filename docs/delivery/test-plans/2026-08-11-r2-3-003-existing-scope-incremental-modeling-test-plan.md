@@ -881,3 +881,81 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   consistent with its actual MCP response shape, the full R2.3-005 regression remains green, and the approved hash
   is stable. The live R2.3-003 semantic acceptance is still unexecuted; start7 may proceed only under the existing
   authorization and normal live-run/cleanup controls, with its independent semantic result still to be tested.
+
+### Round 16 — 2026-08-11 independent start7 evidence/ledger audit — FAIL/BLOCKED
+
+- Scope and safety: this audit was read-only against the retained `r23003-real-20260811-deepseek-start7` evidence,
+  shared R2.3-003 ledger, and cleanup artifacts. The tester did not start or continue a run, mutate retained
+  evidence, append the ledger, edit product code, or edit the delivery record. Prestart scope evidence remains
+  retained and exact (`project_id=7fc146d8-c76f-417b-9314-854544f269fc`,
+  `ontology_id=fd762f52-2f5e-4bc0-902a-5583135ab64d`, `workspace_version=0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`);
+  runtime core hashes before/after cleanup are unchanged.
+- Accepted receipt followed by live-binding failure: `evidence/formal-candidate-progress.jsonl` records candidate
+  revision `r2-3-003-existing-scope-incremental-v1`, delivery-5 digest
+  `ac863afba7be5aca215ca9ae6a6f5e467570df65fc64c32b1b019e71579aa4a4`, receipt delivery-6 registered and state
+  `accepted`. Only afterward, `evidence/issue-report.jsonl` records Phase-A binding failing closed because
+  `relation-decision-produced-by` declared `workflow-b` with `expected_class=Workflow`, while the live canonical
+  projection resolved `workflow-b` to actual `class_semantic_id=InvokingWorkflow`. The exact-Class contract correctly
+  rejects the subclass as a mismatch; the candidate was not translated and no Phase-B delete batch was emitted.
+- Conflict lifecycle defect: `evidence/capability-calls.jsonl` records `protocol_build_candidate_conflict` rejected
+  with `TeamConfigurationError: typed candidate is not awaiting a Protocol response`; the issue report classifies
+  the Runner request as **-32001** because the accepted receipt for original delivery-5 had already closed the
+  conflict path. Expected repair sequence is receipt-v1 -> live binding mismatch -> typed conflict -> full revision-v2
+  -> replacement receipt-v2, with stale receipt-v1 rejected and no duplicate accepted response.
+- Mutation and cleanup: issue report/resolution state **zero-mutation** (only read-only workspace/modeling/project,
+  entity/class/fact, and lineage calls), with abort reason `runner-abort-before-settlement`. Cleanup evidence reports
+  `credentials_destroyed=true`, `active_handles=0`, `zero_child_residue=true`, `status=aborted`, and
+  `settled=false`; state is `TERMINAL_REPORT_COMPLETE`. No retained start7 process or Unix socket remains. This is
+  safe zero-mutation abort evidence, but it is not a successful semantic acceptance or settlement.
+- Strict ledger defect and gate: `.r2-3-003-start-ledger.jsonl` is now **21 lines**, SHA-256
+  `fc3f4cfb3d068b24ae974762c6e5039ae4063bba32f96c35aded44fa2204865c`. Its final records are start7 reservation
+  and `semantic_start` only; no terminal-failure record follows the aborted run. The abandoned active reservation
+  therefore remains unreconciled. Expected append-only repair is a retryable `platform-contract` terminal failure
+  for start7 (without rewriting prior lines); until that reconciliation and the receipt-v2 lifecycle repair are
+  independently verified, **start8 is blocked**.
+- Result: **FAIL/BLOCKED** for live R2.3-003 acceptance and start8 admission. The exact-Class binding behavior and
+  zero-mutation cleanup are correct safeguards, but the accepted-receipt/live-binding lifecycle rejects the needed
+  typed conflict and the strict ledger lacks the required terminal-failure reconciliation. Developer must repair
+  those narrow surfaces, then tester will re-run the receipt-v1 -> conflict -> revision-v2 -> receipt-v2 flow, stale
+  receipt rejection, R2.3-005 compatibility/full suite, and final start8 gate.
+
+### Round 17 — 2026-08-11 post-receipt lifecycle/ledger-repair recheck — PASS deterministic repair / BLOCKED start8
+
+- Stable handoff and safety: the developer's final uncommitted repair was rechecked at HEAD `9e55c31545e50d4f64636543525c0fa13dfafcc5`; Runner SHA-256 is
+  `eaea70c12e8c6d134ae609a45c84868f7174af883d3abd8d18956c6930ea01d7`, matching the updated frozen surface. The
+  tester did not start a live run, append the real ledger, alter retained start7 evidence, or edit product code;
+  only this test-plan round was appended.
+- Post-receipt lifecycle regression: the new formal-progress test passes the required sequence receipt-v1 accepted
+  -> live `Workflow`/`InvokingWorkflow` binding conflict -> typed zero-mutation conflict -> full revision-v2 with
+  corrected `expected_class=InvokingWorkflow` -> replacement receipt-v2 accepted. Replay of stale receipt-v1 is
+  rejected, and the existing conflict/revision/routing regressions remain green: **3 focused tests passed**.
+- Focused deterministic commands (run serially to avoid the fixed credential-order fixture's shared run ID):
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py
+    modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py
+    modeling_team/tests/test_p2a_codex_runtime.py -q` -> **105 passed, 2 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests/test_protocol_retrieval_mcp.py -q` -> **11
+    passed, 13 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_ledger_isolation.py -q`
+    -> **45 passed, 22 subtests passed**; R2.3-002/R2.3-005 policy and namespace regressions remain green.
+  - Full `uv run --project backend python -m pytest modeling_team/tests -q` -> **722 passed, 1 skipped, 218
+    subtests passed**. `compileall` and `git diff --check` pass.
+- Abort reconciliation contract: the new strict temporary-ledger test passes a zero-mutation abort terminal failure
+  with canonical seven-field evidence and permits the next reservation (**1 test passed**). A read-only probe using
+  a temporary copy of the real 21-line ledger, the real start7 run ID/baseline, and canonical hashes of retained
+  issue/cleanup evidence accepted `StartLedger.terminal_failure(..., terminal_evidence=...)` and then a probe start8
+  reservation. This demonstrates that one controlled historical reconciliation is mechanically safe; it did not
+  write the real ledger or launch a run.
+- Live ledger gate remains blocked: the actual `.r2-3-003-start-ledger.jsonl` is still **21 lines**, SHA-256
+  `fc3f4cfb3d068b24ae974762c6e5039ae4063bba32f96c35aded44fa2204865c`, ending with start7 reservation/semantic-start
+  and no terminal failure. Start7's retained evidence still shows accepted receipt-v1, exact-Class binding mismatch,
+  typed `-32001` on the old lifecycle, zero-mutation abort, `credentials_destroyed=true`,
+  `active_handles=0`, `zero_child_residue=true`, `settled=false`, and no process/socket. The repair handles future
+  issue aborts; it does not retroactively append this historical record.
+- Result: **PASS for the repaired deterministic receipt/conflict/ledger API and R2.3-005 regression; BLOCKED for
+  start8**. The parent/operator should perform exactly one append-only historical reconciliation through the strict
+  `StartLedger` API (preferably a reviewed CLI/operator action) after appending canonical
+  `evidence/terminal-reconciliation.jsonl` bound to start7 issue/cleanup hashes. Do not hand-edit or rewrite ledger
+  lines, and do not let tests perform this mutation. Re-audit the resulting line/hash and reservation eligibility,
+  then the final start8 gate may proceed under authorization.

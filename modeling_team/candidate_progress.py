@@ -261,6 +261,9 @@ class _PendingCandidate:
     attribution: CandidateRuntimeAttribution
     state: str
     accepted_at: float | None = None
+    accepted_receipt_delivery_id: str | None = None
+    accepted_receipt_digest: str | None = None
+    receipt_invalidated: bool = False
     conflict_delivery_id: str | None = None
     dispatch_mode: str | None = None
     dispatch_turn_id: str | None = None
@@ -279,10 +282,22 @@ class FormalCandidateProgress:
     into one pending candidate and one optional redrive.
     """
 
-    def __init__(self, *, clock: Any, timeout_seconds: float = 120.0):
+    def __init__(
+        self,
+        *,
+        clock: Any,
+        timeout_seconds: float = 120.0,
+        allow_post_receipt_revision: bool = False,
+    ):
         self.clock = clock
         self.timeout_seconds = float(timeout_seconds)
+        # R2.3-003 existing-scope runs have one additional, explicitly
+        # bounded transition: a receipt accepted before a live binding read
+        # may be invalidated by a typed zero-mutation conflict.  R2.3-005 and
+        # all legacy callers retain the original complete terminal latch.
+        self._allow_post_receipt_revision = bool(allow_post_receipt_revision)
         self.pending: _PendingCandidate | None = None
+        self._invalidated_original_delivery_ids: set[str] = set()
         self._timeout_latched = False
         self._terminal_failure_latched = False
 
@@ -311,6 +326,10 @@ class FormalCandidateProgress:
     @property
     def terminal_failure_latched(self) -> bool:
         return self._terminal_failure_latched
+
+    @property
+    def post_receipt_revision_enabled(self) -> bool:
+        return self._allow_post_receipt_revision
 
     @property
     def paused(self) -> bool:
@@ -421,6 +440,32 @@ class FormalCandidateProgress:
             state=state,
         )
 
+    @staticmethod
+    def _revision_is_newer(previous: Any, current: Any) -> bool:
+        """Require a strictly increasing revision without guessing ordering."""
+
+        if isinstance(previous, bool) or isinstance(current, bool):
+            return False
+        if isinstance(previous, int) and isinstance(current, int):
+            return current > previous
+        if isinstance(previous, str) and isinstance(current, str):
+            if previous.isdigit() and current.isdigit():
+                return int(current) > int(previous)
+        return False
+
+    def _post_receipt_conflict_envelope(self, delivery: Any, value: Any) -> bool:
+        pending = self.pending
+        return bool(
+            self._allow_post_receipt_revision
+            and pending is not None
+            and pending.state == "complete"
+            and getattr(delivery, "sender_id", None) == pending.identity.protocol_agent_id
+            and getattr(delivery, "reply_to_delivery_id", None)
+            == pending.identity.original_delivery_id
+            and isinstance(value, dict)
+            and value.get("status") == "conflict"
+        )
+
     def observe_delivery(
         self,
         delivery: Any,
@@ -433,18 +478,19 @@ class FormalCandidateProgress:
         """Observe one TeamTransport delivery; invalid receipts never clear pending."""
 
         # A terminal progress decision wins over every late transport delivery.
-        # Check this before decoding or binding anything so timeout/exhaustion
-        # cannot be resurrected by an accepted receipt, conflict, or revision.
-        if self._timeout_latched or self._terminal_failure_latched:
-            return None
-        if self.pending is not None and self.pending.state in self._TERMINAL_STATES:
-            return None
-
+        # The one exception is the explicit R2.3-003 pre-mutation replacement
+        # transition, where a typed conflict is allowed to invalidate the
+        # accepted receipt and reopen exactly one revision slot.
         sender_id = getattr(delivery, "sender_id", None)
         recipient_id = getattr(delivery, "recipient_id", None)
         expects_reply = getattr(delivery, "expects_reply", False)
         reply_to = getattr(delivery, "reply_to_delivery_id", None)
         value = self._decode_candidate(getattr(delivery, "text", None))
+        if self._timeout_latched or self._terminal_failure_latched:
+            return None
+        if self.pending is not None and self.pending.state in self._TERMINAL_STATES:
+            if not self._post_receipt_conflict_envelope(delivery, value):
+                return None
 
         initial = (
             sender_id == modeling_agent_id
@@ -465,6 +511,20 @@ class FormalCandidateProgress:
                 raise FormalCandidateError("formal candidate delivery is not canonical JSON")
             if not self._is_candidate_like(value):
                 return None
+            if revision:
+                assert self.pending is not None
+                revised_digest, _ = formal_candidate_digests(value)
+                if not self._revision_is_newer(
+                    self.pending.identity.candidate_revision,
+                    value.get("candidate_revision"),
+                ):
+                    raise FormalCandidateError(
+                        "formal candidate revision is not strictly newer than the invalidated receipt"
+                    )
+                if revised_digest == self.pending.identity.candidate_digest:
+                    raise FormalCandidateError(
+                        "formal candidate revision reuses the invalidated candidate digest"
+                    )
             self._new_pending(
                 value,
                 delivery=delivery,
@@ -488,6 +548,10 @@ class FormalCandidateProgress:
         identity = self.pending.identity
         status = value.get("status")
         if status == "accepted":
+            # A receipt cannot be accepted twice.  In particular, an old
+            # receipt arriving after a 003 conflict must not reopen the gate.
+            if self.pending.state == "complete" or self.pending.receipt_invalidated:
+                return None
             try:
                 validate_formal_receipt(
                     value,
@@ -498,8 +562,21 @@ class FormalCandidateProgress:
             except FormalCandidateError:
                 return None
             self.pending.state = "complete"
+            self.pending.accepted_receipt_delivery_id = self._delivery_id(delivery)
+            self.pending.accepted_receipt_digest = canonical_digest(value)
             return "accepted"
         if status == "conflict":
+            if self.pending.receipt_invalidated:
+                return None
+            if self.pending.state == "complete":
+                if not self._post_receipt_conflict_envelope(delivery, value):
+                    return None
+                if set(value) != FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS:
+                    return None
+                if value.get("original_delivery_id") != identity.original_delivery_id:
+                    return None
+                if value.get("receipt_digest") != self.pending.accepted_receipt_digest:
+                    return None
             try:
                 validate_formal_conflict(
                     value,
@@ -513,6 +590,8 @@ class FormalCandidateProgress:
                 return None
             self.pending.state = "awaiting_revision"
             self.pending.conflict_delivery_id = self._delivery_id(delivery)
+            self.pending.receipt_invalidated = True
+            self._invalidated_original_delivery_ids.add(identity.original_delivery_id)
             self.pending.accepted_at = self.clock()
             self.pending.dispatch_turn_id = None
             self.pending.turn_barrier_complete = False
@@ -534,17 +613,23 @@ class FormalCandidateProgress:
         bound response with an invalid payload and is therefore included.
         """
 
-        if (
-            self._timeout_latched
-            or self._terminal_failure_latched
-            or self.pending is None
-            or self.pending.state in self._TERMINAL_STATES
+        if self._timeout_latched or self._terminal_failure_latched or self.pending is None:
+            return False
+        if self.pending.state in self._TERMINAL_STATES and not (
+            self._allow_post_receipt_revision and self.pending.state == "complete"
         ):
             return False
         sender_id = getattr(delivery, "sender_id", None)
         recipient_id = getattr(delivery, "recipient_id", None)
         reply_to = getattr(delivery, "reply_to_delivery_id", None)
         delivery_id = getattr(delivery, "delivery_id", None)
+        if (
+            sender_id == protocol_agent_id
+            and recipient_id == modeling_agent_id
+            and reply_to in self._invalidated_original_delivery_ids
+            and delivery_id != self.pending.conflict_delivery_id
+        ):
+            return True
         if (
             sender_id != protocol_agent_id
             or recipient_id != modeling_agent_id
@@ -558,6 +643,23 @@ class FormalCandidateProgress:
             return True
         identity = self.pending.identity
         status = value.get("status")
+        if self.pending.receipt_invalidated:
+            if status == "accepted":
+                return True
+            if status == "conflict":
+                return getattr(delivery, "delivery_id", None) != self.pending.conflict_delivery_id
+        if self.pending.state in self._TERMINAL_STATES:
+            if (
+                status == "accepted"
+                and getattr(delivery, "delivery_id", None)
+                == self.pending.accepted_receipt_delivery_id
+            ):
+                return False
+            # Complete is normally terminal.  For 003, only a correctly bound
+            # typed conflict is valid; any late receipt or malformed response
+            # is quarantined as stale rather than delivered as ordinary text.
+            if not self._post_receipt_conflict_envelope(delivery, value):
+                return True
         if status == "accepted":
             try:
                 validate_formal_receipt(
@@ -579,6 +681,12 @@ class FormalCandidateProgress:
                 )
             except FormalCandidateError:
                 return True
+            if self.pending.state == "complete":
+                return not (
+                    set(value) == FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS
+                    and value.get("original_delivery_id") == identity.original_delivery_id
+                    and value.get("receipt_digest") == self.pending.accepted_receipt_digest
+                )
             return False
         return True
 

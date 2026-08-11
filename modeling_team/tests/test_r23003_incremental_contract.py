@@ -43,6 +43,84 @@ SCOPE = {
 }
 
 
+def test_issue_abort_zero_mutation_terminal_failure_unlocks_next_r23003_reservation(tmp_path: Path) -> None:
+    """A cleanup-only abort is a retryable failure, never an implicit semantic PASS."""
+
+    now = datetime(2026, 8, 11, 5, 0, tzinfo=UTC)
+    ledger = StartLedger(tmp_path, requirement_id="R2.3-003", now=lambda: now)
+    ledger.initial_authorization()
+    freeze = now.isoformat()
+    ledger.reserve("r23003-start7-fixture", "baseline-start7", freeze)
+    ledger.mark_semantic_start("r23003-start7-fixture")
+    evidence = {
+        "run_id": "r23003-start7-fixture",
+        "baseline_hash": "baseline-start7",
+        "classification": "platform-contract",
+        "mutation_state": "zero-mutation",
+        "issue_id": "issue-1",
+        "evidence_path": "evidence/terminal-reconciliation.jsonl",
+        "evidence_digest": "a" * 64,
+    }
+    ledger.terminal_failure(
+        "r23003-start7-fixture",
+        "platform-contract",
+        False,
+        terminal_evidence=evidence,
+    )
+    ledger.reserve("r23003-start8-fixture", "baseline-start8", freeze)
+    records = ledger._records()
+    assert records[-1]["event"] == "reservation"
+    assert any(
+        record.get("event") == "terminal_failure"
+        and record.get("run_id") == "r23003-start7-fixture"
+        and record.get("terminal_evidence", {}).get("mutation_state") == "zero-mutation"
+        for record in records
+    )
+
+
+def test_runner_issue_abort_reconciliation_appends_bound_terminal_failure(tmp_path: Path) -> None:
+    now = datetime(2026, 8, 11, 5, 0, tzinfo=UTC)
+    ledger = StartLedger(tmp_path / "ledger", requirement_id="R2.3-003", now=lambda: now)
+    ledger.initial_authorization()
+    ledger.reserve("r23003-run", "baseline-run", now.isoformat())
+    ledger.mark_semantic_start("r23003-run")
+    run_root = tmp_path / "run"
+    (run_root / "evidence").mkdir(parents=True)
+    runner = object.__new__(runner_module.TeamRunner)
+    runner.run = SimpleNamespace(
+        run_id="r23003-run",
+        root=run_root,
+        baseline_hash="baseline-run",
+        configuration=SimpleNamespace(
+            task=SimpleNamespace(task_id="r2-3-003-existing-scope-incremental", schema_version=2),
+            profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),
+        ),
+    )
+    runner._ledger = ledger
+    runner._issue_abort_terminal_failure_recorded = False
+    issue = SimpleNamespace(
+        run_id="r23003-run",
+        issue_id="issue-1",
+        mutation_state="zero-mutation",
+        failing_operation="existing binding",
+        error="Workflow vs InvokingWorkflow",
+    )
+    cleanup = {
+        "acceptance": {"status": "aborted", "zero_child_residue": True},
+        "scope": {
+            "no_in_flight_attempts": True,
+            "existing_context_before": {"workspace_version": "workspace-v1"},
+            "existing_context_after": {"workspace_version": "workspace-v1"},
+        },
+    }
+    runner._record_issue_abort_terminal_failure(issue, cleanup)
+    terminal = [record for record in ledger._records() if record.get("event") == "terminal_failure"]
+    assert len(terminal) == 1
+    assert terminal[0]["terminal_evidence"]["baseline_hash"] == "baseline-run"
+    assert terminal[0]["terminal_evidence"]["mutation_state"] == "zero-mutation"
+    ledger.reserve("r23003-next", "baseline-next", now.isoformat())
+
+
 def _candidate() -> dict:
     return {
         "candidate_kind": "platform-neutral-candidate-v2",
