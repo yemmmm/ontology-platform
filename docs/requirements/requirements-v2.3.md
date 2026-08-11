@@ -1812,7 +1812,11 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   均未发生。独立 Round24 证明 retained scope 无漂移并完成 key/private-artifact cleanup，ledger 以
   `runtime/infrastructure`、canonical `zero-mutation` append-only reconciliation 收口为 cap/count=`8/8`。
   Round25 已独立证明窄修只允许 active R2.3-003 Modeling read proxy，005/default/foreign role/unknown server
-  继续 fail closed。该确定性 PASS 不等于 live L0/L1/L2；任何下一次真实运行都需要新的用户授权。
+  继续 fail closed。该确定性 PASS 不等于 live L0/L1/L2。
+- 用户随后于 2026-08-11 明确追加三次 fresh semantic starts，authorization ID/reference=
+  `user-20260811-r23003-post-approval-fix-start1-3`、`additional_starts=3`。该严格 budget extension 已在 start9
+  retryable terminal predecessor 后把 cap/count/active 从 `8/8/0` 变为 `11/8/0`；只能用于已通过 Round25
+  的 Runtime approval 修复后的 live run，首次完整 PASS 后 success-stop，不为消耗额度继续启动。
 - existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
   apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的

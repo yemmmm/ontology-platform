@@ -1,7 +1,7 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：Implemented — Round 25 deterministic PASS；授权 live start9 在候选前因 Runtime MCP approval
-  缺陷零写入终止，修复已独立 PASS，新的 live 运行待重新授权
+- 状态：Implemented — Round 25 deterministic PASS；start9 Runtime MCP approval 缺陷已修复；用户已追加
+  三次 live starts，待首次完整 PASS 后 success-stop
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -27,8 +27,8 @@ Project/Ontology，只依赖当前平台事实、非敏感 scope handoff 和批�
 - 不把 Dify、Workflow、Decision、Publication 等业务概念加入平台生产域；
 - 不建设通用多需求编排、长期 Project 生命周期、自动回滚、并发写入或 Pi Adapter；
 - 不建模普通 numeric score 阈值、其他 diagnostic、人工 review 后续或更多案例；
-- 原精确四次及后续三次 start 已耗尽；新授权一次只在本次 Modeling read-only 修订实现/独立测试/健康门
-  通过后使用，完整 PASS 后 success-stop。
+- 原精确四次、后续三次及 Modeling-read `+1` 均已耗尽；Round25 后新增的精确 `+3` 只用于修复后的
+  live run，完整 PASS 后 success-stop。
 
 ## 3. 功能合同
 

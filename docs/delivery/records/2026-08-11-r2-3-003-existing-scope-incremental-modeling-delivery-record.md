@@ -811,3 +811,12 @@
   Approved Codex SHA=`0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5`。
 - Outcome: deterministic repair、adjacent isolation、cleanup/reconciliation PASS；授权已耗尽，不启动 start10。
   R2.3-003 仍缺 live candidate/receipt/apply/readback/CQ evidence，任何下一次真实运行必须由用户重新授权。
+
+### 2026-08-11T18:39:18+08:00 — post-approval-fix `+3` authorization — main agent
+
+- User explicitly authorized three fresh semantic starts after the start9 Runtime approval repair。Canonical
+  authorization ID/reference=`user-20260811-r23003-post-approval-fix-start1-3`，`additional_starts=3`。
+- Strict StartLedger accepted the append-only extension only after start9's retryable `runtime/infrastructure`
+  terminal predecessor；ledger cap/count/active 从 `8/8/0` 变为 `11/8/0`，未产生 reservation 或 run root。
+- Operating decision: these starts are an upper bound。Round25 repair baseline、clean checkout、service health 和
+  existing-scope preflight 通过后立即使用；首次完整 semantic/Acceptance PASS 后 success-stop。
