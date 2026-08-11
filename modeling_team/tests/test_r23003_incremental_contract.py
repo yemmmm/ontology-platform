@@ -758,6 +758,17 @@ def test_r23003_initial_target_refs_and_revision_sequence_are_explicitly_bound()
         assert "candidate_revision" in text
         assert "r23003-retained-scope-increment-1" in text
         assert "delivery-8 -> delivery-9" in text
+    for phrase in (
+        'requirement_id="R2.3-003"',
+        "existing_binding_receipt",
+        "deletion_impact_receipts",
+        "phase_a_readback=true",
+        "phase_a_readback_required",
+        "durable Phase-A readback",
+        "final `delete-only` Phase-B batch last",
+        "never be sent on the R2.3-005 candidate-only path",
+    ):
+        assert phrase in protocol
 
 
 

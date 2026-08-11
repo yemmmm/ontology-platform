@@ -913,22 +913,68 @@ def _translate_candidate_tool() -> dict[str, Any]:
             "ordered, submit-ready batch plan (class -> property -> entity -> relation -> "
             "shape). Pure candidate-bound mechanics: no platform calls, no receipts. Every "
             "create_* payload binds the candidate's own ID so the platform emits readable "
-            "resource IRIs; object predicates always use create_property+object_class_id."
+            "resource IRIs; object predicates always use create_property+object_class_id. "
+            "R2.3-005 and ordinary candidates pass only candidate; R2.3-003 may additionally "
+            "pass its requirement ID, existing binding receipt, deletion-impact receipts, and "
+            "Phase-A readback flag so the native plan owns the final delete-only Phase-B batch."
         ),
         "inputSchema": {
             "type": "object",
             "required": ["candidate"],
             "additionalProperties": False,
-            "properties": {"candidate": _neutral_candidate_schema()},
+            "properties": {
+                "candidate": _neutral_candidate_schema(),
+                "requirement_id": {
+                    "type": "string",
+                    "enum": ["R2.3-003"],
+                    "description": "The only requirement-specific extension is R2.3-003.",
+                },
+                "existing_binding_receipt": {
+                    "type": "object",
+                    "description": "Protocol-owned canonical identity/read receipt for existing refs.",
+                },
+                "deletion_impact_receipts": {
+                    "type": "object",
+                    "additionalProperties": {"type": "object"},
+                    "description": "Complete tool-owned live incident-statement receipts keyed by semantic ID.",
+                },
+                "phase_a_readback": {
+                    "type": "boolean",
+                    "description": "True only after durable Phase-A write/readback; required before Phase B.",
+                },
+            },
         },
     }
 
 
 def _validate_translate_candidate_arguments(arguments: object) -> str | None:
-    if not isinstance(arguments, dict) or set(arguments) != {"candidate"}:
-        return "translate candidate arguments must contain exactly candidate"
+    if not isinstance(arguments, dict):
+        return "translate candidate arguments must be an object"
+    allowed = {
+        "candidate",
+        "requirement_id",
+        "existing_binding_receipt",
+        "deletion_impact_receipts",
+        "phase_a_readback",
+    }
+    if not set(arguments).issubset(allowed):
+        return "translate candidate arguments contain unsupported fields"
     if not isinstance(arguments.get("candidate"), dict):
         return "translate candidate candidate must be an object"
+    if set(arguments) == {"candidate"}:
+        return None
+    if arguments.get("requirement_id") != "R2.3-003":
+        return "translate candidate extensions are restricted to R2.3-003"
+    if "existing_binding_receipt" in arguments and not isinstance(
+        arguments["existing_binding_receipt"], dict
+    ):
+        return "translate candidate existing_binding_receipt must be an object"
+    if "deletion_impact_receipts" in arguments and not isinstance(
+        arguments["deletion_impact_receipts"], dict
+    ):
+        return "translate candidate deletion_impact_receipts must be an object"
+    if "phase_a_readback" in arguments and not isinstance(arguments["phase_a_readback"], bool):
+        return "translate candidate phase_a_readback must be a boolean"
     return None
 
 
@@ -1234,7 +1280,16 @@ def handle(request: object) -> dict[str, Any] | None:
         candidate = arguments["candidate"]
         assert isinstance(candidate, dict)
         try:
-            plan = translate_candidate_to_batches(candidate)
+            if set(arguments) == {"candidate"}:
+                plan = translate_candidate_to_batches(candidate)
+            else:
+                plan = translate_candidate_to_batches(
+                    candidate,
+                    arguments.get("existing_binding_receipt"),
+                    requirement_id=arguments.get("requirement_id"),
+                    deletion_impact_receipts=arguments.get("deletion_impact_receipts"),
+                    phase_a_readback=arguments.get("phase_a_readback", False),
+                )
         except ProtocolRetrievalFallbackError as exc:
             return _error(request_id, -32014, f"candidate translation failed: {exc}")
         payload = json.dumps(plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

@@ -32,18 +32,20 @@ exact items, session/lease fields, or idempotency details. The public platform t
 execution and validation authority; return only its mechanical receipt or a concrete translation
 conflict to the relevant Agent.
 
-For translating the candidate into platform Batches, you MUST first call the native
-`protocol_mechanics` tool `translate_candidate_to_batches` with the frozen candidate as its sole
-argument. It returns the complete, dependency-ordered batch plan with every class/property/entity/
-relation/shape command, every `resource_id` bound to the candidate's own IDs (so the platform emits
-readable IRIs, not generated UUIDs), object predicates via `create_property`+`object_class_id` (never
-`create_relation_type`), relation-statement subjects/objects/predicates bound to candidate IDs,
-evidence carried, and digests computed. Apply each returned batch verbatim in the returned order via
-`submit_modeling_batch` (its `dry_run` then `apply_atomic`); do not hand-author, reorder, rebind,
-rename, or choose `command_kind` yourself, and never omit the candidate IDs the plan supplies. If the
-plan returns any `conflicts`, send a concrete translation conflict instead of improvising. The
-schedule and bindings below describe what the tool produces deterministically; you apply it, you do
-not re-derive it.
+For translating an ordinary or R2.3-005 candidate into platform Batches, you MUST first call the
+native `protocol_mechanics` tool `translate_candidate_to_batches` with the frozen candidate as its
+sole argument. For R2.3-003, use the native MCP extension described in the R2.3-003 section below;
+never silently fall back to the candidate-only call when the candidate contains existing refs or
+delete declarations. The native tool returns the complete, dependency-ordered batch plan with every
+class/property/entity/relation/shape command, every `resource_id` bound to the candidate's own IDs
+(so the platform emits readable IRIs, not generated UUIDs), object predicates via
+`create_property`+`object_class_id` (never `create_relation_type`), relation-statement
+subjects/objects/predicates bound to candidate IDs, evidence carried, and digests computed. Apply
+each returned batch verbatim in the returned order via `submit_modeling_batch` (its `dry_run` then
+`apply_atomic`); do not hand-author, reorder, rebind, rename, or choose `command_kind` yourself,
+and never omit the candidate IDs the plan supplies. If the plan returns any `conflicts`, send a
+concrete translation conflict instead of improvising. The schedule and bindings below describe
+what the tool produces deterministically; you apply it, you do not re-derive it.
 
 For cross-Batch application, use that contract's platform-mechanical schedule exactly: class, then
 property/relation type, then entity, then receipt/read binding of generated IDs/IRIs, then relation,
@@ -574,7 +576,8 @@ For `r2-3-003-existing-scope-incremental`, read the live ontology read model bef
 build a binding receipt for every `existing_entity_ref`. The receipt binds candidate digest,
 Project/Ontology, workspace version, semantic ID, actual IRI/Class, and read evidence. Missing,
 duplicate, or Class-mismatched refs fail closed before mutation. Existing refs never become
-The initial candidate must contain two independent standalone items with unique `item_id` and
+create/update commands; only new relations may consume receipt IRIs. The initial candidate must contain
+two independent standalone items with unique `item_id` and
 `item_kind=existing_entity_ref` for the exact frozen delete targets
 `unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`; each semantic object is
 exactly `{semantic_id, expected_class}`.
@@ -583,5 +586,18 @@ semantic object remains exactly `{semantic_id, expected_class, delete_mode}` wit
 For a conflict-bound full revision, require a strictly greater deterministic positive-decimal
 `candidate_revision` (`1` -> `2` -> `3` ...), never the invalidated revision or candidate digest;
 the observed delivery-8 -> delivery-9 path must not reuse
-`r23003-retained-scope-increment-1`. Existing refs never become create/update commands; only new relations may consume receipt IRIs. The R2.3-005 create-only
-translator path remains byte-compatible and rejects existing binding input.
+`r23003-retained-scope-increment-1`. The R2.3-005 create-only translator path remains byte-compatible
+and rejects existing binding input.
+
+For the R2.3-003 existing-scope path, the native `translate_candidate_to_batches` call must carry the
+complete mechanical argument object: `candidate`, `requirement_id="R2.3-003"`, the current
+`existing_binding_receipt`, the complete tool-owned `deletion_impact_receipts` mapping, and the
+boolean `phase_a_readback`. Do not hand-construct a Batch, delete command, impact receipt, or plan
+field after a candidate-only call is rejected. The native translator is the only source of the
+ordered plan: an initial pre-barrier plan may report `phase_a_readback_required` for its delete
+items; apply only its returned create stages in order, obtain durable Phase-A readback, refresh
+the binding/impact receipts against the new workspace version, then call it with
+`phase_a_readback=true` and apply its final `delete-only` Phase-B batch last. Missing binding or
+impact receipts and a false Phase-A readback must remain fail-closed (no delete batch); do not
+override those conflicts or delete before the durable readback barrier. Extra R2.3-003 arguments
+must never be sent on the R2.3-005 candidate-only path.

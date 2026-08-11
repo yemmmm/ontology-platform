@@ -17,6 +17,8 @@ from modeling_team.p2a_protocol_driver import (
     _validate_candidate_receipt,
 )
 from modeling_team.proof_v2 import canonical_digest
+from modeling_team.protocol_mechanics import build_existing_entity_binding_receipt
+from modeling_team.r23003_contract import build_delete_impact_receipt
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
 from modeling_team.transport_mcp import Delivery
@@ -447,6 +449,219 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
             ],
         )
         self.assertIn("direct arguments", schema["description"].lower())
+
+    def test_translate_tool_uses_full_r23003_mechanics_and_isolates_005(self) -> None:
+        wrapper = self._wrapper()
+        tools = wrapper.handle({"jsonrpc": "2.0", "id": 39, "method": "tools/list"})["result"]["tools"]
+        translate_tool = next(item for item in tools if item["name"] == wrapper.TRANSLATE_CANDIDATE_TOOL_NAME)
+        schema = translate_tool["inputSchema"]
+        self.assertEqual(schema["required"], ["candidate"])
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(
+            set(schema["properties"]),
+            {
+                "candidate",
+                "requirement_id",
+                "existing_binding_receipt",
+                "deletion_impact_receipts",
+                "phase_a_readback",
+            },
+        )
+        self.assertEqual(schema["properties"]["requirement_id"]["enum"], ["R2.3-003"])
+        project_id = "project-003"
+        ontology_id = "ontology-003"
+        workspace_version = "workspace-v1"
+        target_ids = (
+            "unknown-cross-release-output-meaning",
+            "unknown-b-no-score-behavior",
+        )
+        candidate = {
+            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_revision": 1,
+            "scope": "retained",
+            "constraints": ["source-grounded"],
+            "items": [
+                {
+                    "item_id": "new-class",
+                    "item_kind": "class",
+                    "semantic": {"class_id": "ReviewOutcome"},
+                },
+                {
+                    "item_id": "existing-b",
+                    "item_kind": "existing_entity_ref",
+                    "semantic": {
+                        "semantic_id": target_ids[1],
+                        "expected_class": "ExplicitUnknown",
+                    },
+                },
+                {
+                    "item_id": "existing-cross",
+                    "item_kind": "existing_entity_ref",
+                    "semantic": {
+                        "semantic_id": target_ids[0],
+                        "expected_class": "ExplicitUnknown",
+                    },
+                },
+                {
+                    "item_id": "delete-cross",
+                    "item_kind": "delete_existing_entity",
+                    "semantic": {
+                        "semantic_id": target_ids[0],
+                        "expected_class": "ExplicitUnknown",
+                        "delete_mode": "full_live_impact",
+                    },
+                },
+                {
+                    "item_id": "delete-b",
+                    "item_kind": "delete_existing_entity",
+                    "semantic": {
+                        "semantic_id": target_ids[1],
+                        "expected_class": "ExplicitUnknown",
+                        "delete_mode": "full_live_impact",
+                    },
+                },
+            ],
+        }
+        rows = [
+            {
+                "semantic_id": semantic_id,
+                "entity_iri": f"http://ontology-platform.local/semantic/entity/{semantic_id}",
+                "class_semantic_id": "ExplicitUnknown",
+                "class_iri": "http://ontology-platform.local/semantic/class/ExplicitUnknown",
+                "project_id": project_id,
+                "ontology_id": ontology_id,
+                "workspace_version": workspace_version,
+                "read_evidence": {"source": "live-read"},
+            }
+            for semantic_id in sorted(target_ids)
+        ]
+        binding = build_existing_entity_binding_receipt(
+            candidate,
+            {"entities": rows},
+            project_id=project_id,
+            ontology_id=ontology_id,
+            workspace_version=workspace_version,
+        )
+        candidate_digest = canonical_digest(candidate)
+        impact_receipts = {}
+        for semantic_id in target_ids:
+            entity_iri = next(row["entity_iri"] for row in rows if row["semantic_id"] == semantic_id)
+            empty_statements_digest = canonical_digest([])
+            impact_receipts[semantic_id] = build_delete_impact_receipt(
+                [
+                    {
+                        "project_id": project_id,
+                        "ontology_id": ontology_id,
+                        "entity_iri": entity_iri,
+                        "workspace_version": workspace_version,
+                        "statements": [],
+                        "page_digest": empty_statements_digest,
+                        "snapshot_digest": empty_statements_digest,
+                        "next_cursor": None,
+                        "complete": True,
+                    }
+                ],
+                target_semantic_id=semantic_id,
+                candidate_digest=candidate_digest,
+                project_id=project_id,
+                ontology_id=ontology_id,
+                workspace_version=workspace_version,
+            )
+
+        def call(arguments: dict[str, object]) -> dict[str, object]:
+            response = wrapper.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 40,
+                    "method": "tools/call",
+                    "params": {
+                        "name": wrapper.TRANSLATE_CANDIDATE_TOOL_NAME,
+                        "arguments": arguments,
+                    },
+                }
+            )
+            assert response is not None
+            return response
+
+        complete = call(
+            {
+                "candidate": candidate,
+                "requirement_id": "R2.3-003",
+                "existing_binding_receipt": binding,
+                "deletion_impact_receipts": impact_receipts,
+                "phase_a_readback": True,
+            }
+        )
+        self.assertNotIn("error", complete)
+        plan = complete["result"]["structuredContent"]
+        self.assertEqual([batch["stage_kind"] for batch in plan["batches"]], ["class", "delete-only"])
+        self.assertTrue(plan["batches"][-1]["delete_only"])
+        self.assertEqual(plan["batches"][-1]["phase"], "B")
+
+        missing_binding = call(
+            {
+                "candidate": candidate,
+                "requirement_id": "R2.3-003",
+                "deletion_impact_receipts": impact_receipts,
+                "phase_a_readback": True,
+            }
+        )
+        self.assertEqual(missing_binding["error"]["code"], -32014)
+        self.assertIn("existing binding receipt is required", missing_binding["error"]["message"])
+
+        missing_impact = call(
+            {
+                "candidate": candidate,
+                "requirement_id": "R2.3-003",
+                "existing_binding_receipt": binding,
+                "phase_a_readback": True,
+            }
+        )
+        self.assertNotIn("error", missing_impact)
+        self.assertEqual(
+            {conflict["code"] for conflict in missing_impact["result"]["structuredContent"]["conflicts"]},
+            {"delete_impact_receipt_required"},
+        )
+        self.assertNotIn(
+            "delete-only",
+            [batch["stage_kind"] for batch in missing_impact["result"]["structuredContent"]["batches"]],
+        )
+
+        before_phase_b = call(
+            {
+                "candidate": candidate,
+                "requirement_id": "R2.3-003",
+                "existing_binding_receipt": binding,
+                "deletion_impact_receipts": impact_receipts,
+                "phase_a_readback": False,
+            }
+        )
+        self.assertNotIn("error", before_phase_b)
+        blocked_plan = before_phase_b["result"]["structuredContent"]
+        self.assertEqual(blocked_plan["batches"], [{"stage_kind": "class", "client_batch_id": "1-stage1-class", "idempotency_key": "1-stage1-class-v1", "items": [{"client_item_id": "new-class", "command_kind": "create_class", "payload": {"class_id": "ReviewOutcome", "name": "ReviewOutcome"}, "evidence": []}]}])
+        self.assertEqual(
+            {conflict["code"] for conflict in blocked_plan["conflicts"]},
+            {"phase_a_readback_required"},
+        )
+        candidate_005 = {
+            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_revision": 1,
+            "scope": "new",
+            "constraints": [],
+            "items": [{"item_id": "class-005", "item_kind": "class", "semantic": {"class_id": "Tool"}}],
+        }
+        ordinary = call({"candidate": candidate_005})
+        self.assertNotIn("error", ordinary)
+        self.assertEqual(ordinary["result"]["structuredContent"]["batches"][0]["stage_kind"], "class")
+        extra_005 = call(
+            {
+                "candidate": candidate_005,
+                "requirement_id": "R2.3-005",
+                "phase_a_readback": True,
+            }
+        )
+        self.assertEqual(extra_005["error"]["code"], -32602)
+        self.assertIn("restricted to R2.3-003", extra_005["error"]["message"])
 
     def test_candidate_map_tool_emits_exact_map_and_is_idempotent(self) -> None:
         wrapper = self._wrapper()
