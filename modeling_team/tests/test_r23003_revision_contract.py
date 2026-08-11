@@ -86,6 +86,56 @@ def test_deletion_aware_ticket_requires_runner_owned_question_progress() -> None
         validate_ticket(ticket)
 
 
+def test_r23003_accepted_candidate_revision_is_a_positive_integer() -> None:
+    with tempfile.TemporaryDirectory(prefix="r23003-revision-") as directory:
+        carrier = RunnerAcceptanceCarrier(
+            Path(directory) / "r23003",
+            task_id="r2-3-003-existing-scope-incremental",
+            acceptance_id="acceptance",
+        )
+        assert carrier.register_accepted_candidate(
+            candidate_revision=1,
+            candidate_digest="a" * 64,
+        ) == {
+            "candidate_revision": 1,
+            "candidate_digest": "a" * 64,
+        }
+
+
+@pytest.mark.parametrize("candidate_revision", [True, False, 0, -1, "1"])
+def test_r23003_rejects_non_positive_integer_candidate_revision(candidate_revision: object) -> None:
+    with tempfile.TemporaryDirectory(prefix="r23003-revision-invalid-") as directory:
+        carrier = RunnerAcceptanceCarrier(
+            Path(directory) / "r23003",
+            task_id="r2-3-003-existing-scope-incremental",
+            acceptance_id="acceptance",
+        )
+        with pytest.raises(AcceptanceContractError, match="positive integer"):
+            carrier.register_accepted_candidate(
+                candidate_revision=candidate_revision,
+                candidate_digest="a" * 64,
+            )
+
+
+def test_r23005_and_default_carriers_keep_safe_string_revision_contract() -> None:
+    with tempfile.TemporaryDirectory(prefix="acceptance-revision-scope-") as directory:
+        for index, task_id in enumerate(("r2-3-005-formal-acceptance", "task-default")):
+            carrier = RunnerAcceptanceCarrier(
+                Path(directory) / str(index),
+                task_id=task_id,
+                acceptance_id="acceptance",
+            )
+            assert carrier.register_accepted_candidate(
+                candidate_revision="revision-1",
+                candidate_digest="b" * 64,
+            )["candidate_revision"] == "revision-1"
+            with pytest.raises(AcceptanceContractError, match="safe stable identifier"):
+                carrier.register_accepted_candidate(
+                    candidate_revision=1,
+                    candidate_digest="b" * 64,
+                )
+
+
 def test_single_question_pass_reaches_settlement_without_next_cq_boundary() -> None:
     with tempfile.TemporaryDirectory(prefix="r23003-n1-") as directory:
         carrier = RunnerAcceptanceCarrier(

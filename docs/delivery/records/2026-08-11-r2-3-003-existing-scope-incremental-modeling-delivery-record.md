@@ -1013,3 +1013,24 @@
 - `StartLedger.terminal_failure` appended one evidence-bound retryable `runtime/infrastructure` terminal event.
   Independent strict replay PASS: 43 records, ledger SHA `4297e882d69cfab79bf46b327f4a82b82f0d6acbf1440ed4e198e407495289b4`,
   cap/count/active=`14/12/0`. Two authorized live starts remain; S5 semantic modeling is still unexecuted.
+
+### 2026-08-12T00:00:41+08:00 — start14 numeric revision carrier repair and reconciliation
+
+- start14 produced a complete 24-item candidate with positive integer `candidate_revision=1`, the two exact delete
+  declarations, and both standalone existing-resource bindings. The run stopped before receipt registration because
+  `RunnerAcceptanceCarrier` still applied the R2.3-005 safe-string revision check. No ontology-platform or stateful
+  call occurred; the existing scope remained byte-for-byte equivalent at workspace version `0d34f5ad...ef02`.
+- The repair is deliberately local: only the R2.3-003 task ID accepts an `int > 0` revision and explicitly rejects
+  bool, zero, negative values, and strings. R2.3-005/default carriers keep the prior safe-string contract. GitNexus
+  classified the shared method as CRITICAL (`503` impacted / `371` direct / `19` processes / `11` modules), so the
+  branch and compatibility regressions were kept requirement-specific.
+- Independent Round32 verification passed: focused affected coverage=`198 passed, 41 subtests`; full modeling_team=
+  `743 passed, 1 skipped, 218 subtests`; compileall, Ruff, and diff-check PASS.
+- Main removed only the two fingerprinted generated start14 residues and retained all candidate/session/evidence
+  material. Final provider-secret audit scanned 115 files with zero matches/errors; processes and Unix sockets were
+  zero; Modeling-read revoke/readback/post-revoke=`200/200/401`; backend/frontend health=`200/200`.
+- The one-line start14 reconciliation binds issue/cleanup/evidence digests `27daa995...7a11` /
+  `e30d5d76...5a17` / `23543c7b...1ac0`. `StartLedger.terminal_failure` appended the seven-field evidence-bound
+  `platform-contract` terminal event. Independent strict replay PASS: 46 records, ledger SHA
+  `cc4d1820c3e4bdf475dbb51aff5715fbfe23f8b44ff26d4910ddbc4a42e47fcb`, cap/count/active=`14/13/0`.
+  Exactly one authorized live start remains; S5 semantic modeling is still unexecuted.

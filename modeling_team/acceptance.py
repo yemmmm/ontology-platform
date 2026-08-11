@@ -1691,13 +1691,21 @@ class RunnerAcceptanceCarrier:
         """Bind the one formal candidate accepted by the Modeling/Protocol gate.
 
         The identity comes from :class:`FormalCandidateProgress` in TeamRunner,
-        never from a Protocol handoff or Coordinator argument.  R2.3-005 uses a
-        safe string revision because it is also the immutable ticket slice
-        revision; integer/boolean revisions from archived fixtures cannot enter
-        this formal binding.
+        never from a Protocol handoff or Coordinator argument.  R2.3-003 uses a
+        strictly positive integer revision for its incremental candidate sequence;
+        R2.3-005 and non-formal carriers retain the historical safe-string
+        revision contract.
         """
 
-        _safe_id(candidate_revision, "accepted candidate_revision")
+        if self.task_id == "r2-3-003-existing-scope-incremental":
+            if (
+                isinstance(candidate_revision, bool)
+                or not isinstance(candidate_revision, int)
+                or candidate_revision <= 0
+            ):
+                _error("accepted candidate_revision must be a positive integer")
+        else:
+            _safe_id(candidate_revision, "accepted candidate_revision")
         _safe_digest(candidate_digest, "accepted candidate_digest")
         record = {
             "candidate_revision": candidate_revision,

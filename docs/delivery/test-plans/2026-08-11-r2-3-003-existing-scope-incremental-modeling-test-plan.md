@@ -1757,3 +1757,61 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   diff/record closeout. Start14 is **eligible only after that commit plus final health/current-context recheck**;
   this tester did not start it. S5 (real 003 semantic modeling/Phase A-B/N-CQ acceptance) remains **UNEXECUTED**,
   so this is not a full semantic requirement PASS.
+
+### Round 32 — 2026-08-11 independent start14 post-cleanup audit and positive-integer carrier recheck — PASS deterministic; S5 unexecuted
+
+- **Scope and safety.** This round reused the same shared plan after Main's controlled start14 cleanup/reconciliation.
+  The tester performed read-only inspection of start14 evidence, runtime surfaces, service endpoints, and the
+  canonical ledger; no product code, ledger, run evidence, residue, ontology, or workspace state was modified. No
+  start15 was launched. The only documentation change is this append.
+- **Start14 candidate and call boundary: PASS for deterministic contract, zero-mutation terminal.** The retained
+  private Modeling delivery-4 candidate has positive integer `candidate_revision=1`, 24 items, exactly two ordered
+  `delete_existing_entity` declarations and two standalone `existing_entity_ref` bindings with the required schemas.
+  Canonical formal progress remains `state=awaiting_receipt`, `candidate_gate=closed/candidate_pending_receipt`; the
+  terminal reconciliation records `receipt_capability_succeeded=false` and the issue as
+  `accepted-candidate-revision-contract-start14` (`classification=platform-contract`, `mutation_state=zero-mutation`).
+  Evidence inventory shows only the Runner capability receipt operation and Team Transport elicitation; no
+  ontology-platform MCP tool, session/lease/batch, validation, reasoning, retrieval, or other stateful platform call
+  occurred. Thus the old acceptance-carrier contract failure is correctly retained as a platform-contract terminal,
+  not semantic acceptance or a mutation.
+- **Post-cleanup resource audit: PASS.** The only approved generated residues from the pre-cleanup audit are now
+  absent: `runtime/modeling/home/read_proxy_mcp.py` (pre-delete SHA-256
+  `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`, 11,439 bytes) and
+  `runtime/modeling/home/modeling-read-proxy.sock` (pre-delete SHA-256
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, zero-byte regular placeholder).
+  The formal auth/config/capability/token/proxy-name inventory is empty, the scoped run tree has zero Unix sockets,
+  all four registered PIDs (`2798376`, `2797985`, `2798092`, `2798191`) are absent, and no targeted start14/proxy
+  process is running. No retained evidence or baseline runtime source was removed.
+- **Scope, keys, final audit, and service: PASS.** Recomputed `existing_context_before == existing_context_after`
+  exactly (Project `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, graph
+  `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, ready, six batches, one recent session,
+  zero active sessions/leases/in-flight attempts). Admin, Protocol, aggregate, project-scoped, and Modeling-read
+  keys are non-active/revoked; Modeling-read revoke/readback/post-revoke statuses are `200/200/401`.
+  Retained runtime-final provider audit is `scanned_files=115`, `match_count=0`, `matched_secret_count=0`,
+  `scan_complete=true`, `scan_error_count=0`, `named_private_artifact_count=0`, `run_process_count=0`, and
+  `unix_socket_count=0`; no secret bytes were output. A current structural scan also completed with zero matches and
+  zero errors (its file count is not used to rewrite the retained final fact). The user service is active and
+  read-only endpoint checks returned backend `200 {"status":"ok"}` and frontend HTTP `200`.
+- **Digest and ledger reconciliation: PASS.** Recomputed canonical digests exactly match the one-line
+  `evidence/terminal-reconciliation.jsonl`: `issue_digest=27daa9954b0f74c2c75394404c92c6bb1d2ac6a08b1a7c2aab706992e2ac7a11`,
+  `cleanup_digest=e30d5d768e73bb83e6febd9a96d3c86c2cf059957abe8aca993f56c6fd025a17`, and
+  `evidence_digest=23543c7bd658377e0145b62bc669cc71bf76555941773d2b1c352f471d0b1ac0`. The ledger-bound
+  `terminal_evidence` has exactly the seven required fields (`run_id`, `baseline_hash`, `classification`,
+  `mutation_state`, `issue_id`, relative `evidence_path`, `evidence_digest`) and matches the artifact. Read-only
+  `StartLedger._validate_strict_replay` passes for 46 lines (SHA-256
+  `cc4d1820c3e4bdf475dbb51aff5715fbfe23f8b44ff26d4910ddbc4a42e47fcb`), with `cap/count/active=14/13/0`; the tail
+  is start14 `terminal_failure`, `classification=platform-contract`, `complete_modeling_quality_result=false`,
+  baseline `2164e37732da806ba8bb4b1e1f52b65397a440d6c78308ed0b0fff25cbc3ff84`.
+- **Repair and isolation tests: PASS (FIXED).** The stable acceptance-carrier repair accepts R2.3-003 positive
+  integer revisions and rejects bool/zero/negative/string values while preserving R2.3-005/default safe-string
+  revisions. Focused relevant command covering `test_r23003_revision_contract.py`, 003 incremental contracts,
+  005 candidate/progress/contracts/authoring/mechanical/CQ/B-runtime, P2A/runtime/retrieval, and cleanup regressions
+  returned **198 passed, 41 subtests passed**. Full `uv run --project backend python -m pytest modeling_team/tests -q`
+  returned **743 passed, 1 skipped, 218 subtests passed**. Compileall, `git diff --check`, and focused Ruff checks
+  all passed. No new requirement-developer defect is observed; the start14 historical acceptance-carrier defect is
+  covered as fixed by the stable tests, without rerunning a real start.
+- **Conclusion and handoff.** Round32 is **PASS for start14 zero-mutation reconciliation and the repaired deterministic
+  003/005/default contract**. It does not establish S5 semantic modeling acceptance: Phase A/B mutation, readback,
+  validation/reasoning/retrieval, N-CQ, and live quality verdict remain **UNEXECUTED**. Start15 was intentionally not
+  started; any future start requires Main's commit/health/current-context gate and explicit sequencing decision.
