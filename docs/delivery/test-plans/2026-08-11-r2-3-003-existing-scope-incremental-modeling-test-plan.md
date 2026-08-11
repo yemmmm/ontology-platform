@@ -1867,3 +1867,59 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   replacement carrier/003/005/default isolation**. The old start15 acceptance-carrier defect is covered as fixed;
   no new requirement-developer repair is indicated. S5 semantic modeling acceptance remains **UNEXECUTED** (no
   Phase-A/B mutation, readback, validation/reasoning/retrieval, N-CQ, or live quality verdict). No new run was started.
+
+### Round 34 — 2026-08-12 independent start16 lease-deadlock reconciliation and narrow-fix recheck — PASS cleanup/deterministic; S5 unexecuted
+
+- **Scope and safety.** This round appended only this shared test plan and did not start, resume, or clean a run. The
+  retained `r23003-real-20260812-deepseek-start16` run is `TERMINAL_REPORT_COMPLETE`; the next authorized
+  `start17` is an independent in-progress run and its active credentials/processes are explicitly outside this
+  start16 audit. Product code, ledger, retained evidence, ontology, workspace, and generated residue were not
+  modified by the tester.
+- **Historical start16 failure (confirmed).** The retained issue report and platform responses show the exact
+  `acquire_ontology_lease` (active lease) -> `submit_modeling_batch` (`apply_atomic`) path rejected by the old
+  `_context_is_valid` lease-active check. Both rejected responses carry
+  `error_code/conflict_code=modeling_context_revalidation_failed`, `reason_code=workspace_or_context_drift`,
+  equal expected/observed workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, and `mutation_state=zero-mutation`;
+  `evidence/issue-report.jsonl` identifies this as the platform-contract deadlock. The only persisted batch for
+  this session is a `dry_run`/`validated` attempt; no apply attempt reached the stateful backend.
+- **Narrow repair deterministic PASS.** HEAD `7af559eaee13dc5ac09c53684c338d4364299457` removes the active-lease
+  rejection while retaining workspace-drift zero-mutation rejection. The independent checks were:
+  `uv run --project backend python -m pytest backend/tests/test_mcp_candidate_gate.py -q` -> **6 passed**;
+  `cd backend && uv run pytest -q` -> **850 passed, 10 skipped**;
+  relevant R2.3-003/R2.3-005 isolation -> **131 passed, 25 subtests passed**;
+  `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests`, `git diff --check`,
+  and focused Ruff -> **PASS**. No additional developer defect is indicated.
+- **Session/lease and ontology-state audit.** Read-only PostgreSQL checks show Build Session
+  `6481c32b-d868-4a84-b737-683d6ce93e81` is `cancelled` with the recorded abort reason; its lease is expired and
+  released, and project active-session/active-lease/in-flight-apply counts are all zero. The preflight snapshot had
+  six historical batches; start16 adds exactly one persisted `1-stage1-class` `dry_run`/`validated` batch row
+  (metadata only, not an ontology write), so the auditable batch count is **6 -> 7**. Project/Ontology/Graph Set,
+  workspace state `ready`, workspace version, and applied ontology state remain unchanged; this metadata increment
+  is intentionally not reported as an exact before/after object equality or as semantic mutation.
+- **Keys, residue, and process audit.** All four start16-created API keys (bootstrap/admin, Protocol/model, and
+  Modeling-read) are revoked in the database; the two active start17 key pairs are excluded as in-flight next-run
+  resources. The two approved start16 residues
+  `runtime/modeling/home/read_proxy_mcp.py` and `runtime/modeling/home/modeling-read-proxy.sock` are absent;
+  targeted `auth.json`/`config.toml`/token/socket/read-proxy names under the start16 tree are empty, and no process
+  command references the start16 run root. This is a scoped named-resource check, not a general filesystem socket
+  inventory; start17 proxy/socket processes are not counted as start16 residue.
+- **Terminal reconciliation and ledger.** `evidence/terminal-reconciliation.jsonl` contains exactly one line;
+  its nested `terminal_evidence` has exactly the required seven fields (`run_id`, `baseline_hash`, `classification`,
+  `mutation_state`, `issue_id`, `evidence_path`, `evidence_digest`) with `classification=platform-contract` and
+  `mutation_state=zero-mutation`. Recomputing the canonical issue payload reproduces
+  `issue_digest=d83ce7f41857c6ca1c82e28e4490084b06b08c68f8ded2f6959611f24a8bc777`; recomputing the visible
+  evidence payload reproduces `evidence_digest=c36148b1bc6ab36e6f2b5568b99f28d71f989b2bf9b12eca31fea4a28556f1b4`.
+  The retained `cleanup_digest=2fe42227cdbc611b3ddb7a17ec29176cbb457c45b8329cb80fd6b9a1f3dae127` is a valid
+  64-hex digest bound by the artifact; the full Runner cleanup preimage is not retained in the run tree, so no
+  stronger byte-for-byte recomputation claim is made from the visible acceptance-only cleanup summary.
+  Read-only strict replay through the start16 terminal record (ledger line 53) is **PASS** with
+  `cap/count/active=17/15/0` and prefix SHA-256
+  `98684b105b56295f04c818f954db7eb231a8241e11c574a52f30a49392506ab4`. The current ledger additionally contains
+  start17 reservation/semantic-start records and therefore reads `17/16/0`; this later in-flight authorization is
+  excluded from the start16 terminal result.
+- **Conclusion and handoff.** Round34 is **PASS for start16 historical lease-conflict classification, zero ontology
+  mutation, controlled cleanup, and deterministic lease-gate repair**. It is not semantic acceptance: no Phase-A/B
+  apply, readback, validation/reasoning/retrieval, N-CQ, or live quality verdict occurred in start16 (S5 remains
+  **UNEXECUTED**). Start17 is the authorized current run and must be evaluated independently; do not infer its
+  outcome from this terminal audit.
