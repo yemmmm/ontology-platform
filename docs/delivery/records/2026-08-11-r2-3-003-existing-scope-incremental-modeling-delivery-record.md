@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress (contract revision after blocked Round 7)
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T11:40:33+08:00
+- Last updated: 2026-08-11T11:54:52+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -406,3 +406,18 @@
   `fe750a...`，Start75 retained hash `aa20...`，无 +3/auth/run/socket。
 - Outcome/next step: deterministic implementation independently accepted。Requirement 仍未完成，因为 L0-L2
   未运行；按用户门条件先提交 clean implementation baseline，再登记 exact +3 并进入第一轮新 semantic start。
+
+### 2026-08-11T11:54:52+08:00 — +3 authorization gate defect and independent Round 10 — main agent and tester
+
+- Context: clean `195aa7d` 上第一次执行 exact +3 `authorize-budget` 在写文件前返回
+  `budget authorization is invalid`；live ledger 保持 15 行。根因是 003 将后续授权数量错误耦合到初始 +4。
+- Action/decision: 保留 dedicated initial authorization exact +4；仅把 003 后续 explicit user authorization
+  改为任意正整数，并继续执行 consumed-cap、latest retryable terminal、unique ID/reference、strict replay/
+  locking。因 requirement developer/tester 多次容量退出，主 Agent 完成两行窄实现/测试，最终由原 tester
+  独立 Round 10 复测 PASS。
+- Evidence: main focused=43 PASS/22 subtests、modeling_team=`718 passed, 1 skipped, 218 subtests`；tester
+  focused=81 PASS/63 subtests。独立 temp matrix 证明 initial +4 first-only，四 start/failure 后 +3 =>
+  cap/count/active=`7/4/0`；premature/unconsumed/no predecessor/non-retryable、bool/0/negative、duplicate ID/ref、
+  tampered replay 全部 byte-stable reject。compileall/diff PASS；live ledger 仍 15 行/hash `fe750a...`、无进程/socket。
+- Outcome/next step: 提交窄修复，之后才重新执行 exact +3 live authorization；首次失败尝试不构成 ledger
+  event 或 semantic start。

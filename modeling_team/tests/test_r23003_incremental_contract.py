@@ -150,6 +150,58 @@ def test_r23003_initial_authorization_opens_exact_four_starts(tmp_path: Path) ->
     assert sum(item["event"] == "semantic_start" for item in ledger._records()) == 1
 
 
+def test_r23003_consumed_initial_budget_accepts_explicit_plus_three_extension(
+    tmp_path: Path,
+) -> None:
+    ledger = StartLedger(tmp_path, requirement_id="R2.3-003")
+    freeze = datetime.now(UTC).isoformat()
+    ledger.initial_authorization()
+    for index in range(1, 5):
+        run_id = f"run-{index}"
+        ledger.reserve(run_id, f"baseline-{index}", freeze)
+        ledger.mark_semantic_start(run_id)
+        ledger.terminal_failure(run_id, "platform-contract", False)
+
+    ledger.authorize_budget(
+        3,
+        "user-20260811-r23003-revision-start1-3",
+        "user-20260811-r23003-revision-start1-3",
+    )
+    records = ledger._records()
+    assert ledger._start_cap(records) == 7
+    assert ledger._semantic_start_count(records) == 4
+    reservations = {
+        item["run_id"] for item in records if item.get("event") == "reservation"
+    }
+    inactive = {
+        item["run_id"]
+        for item in records
+        if item.get("event") in {"semantic_start", "presemantic_release"}
+    }
+    assert reservations - inactive == set()
+
+    for amount in (True, 0, -1):
+        with pytest.raises(ValueError):
+            ledger.authorize_budget(amount, f"invalid-{amount}", f"invalid-ref-{amount}")
+    with pytest.raises(ValueError):
+        ledger.authorize_budget(
+            3,
+            "user-20260811-r23003-revision-start1-3",
+            "different-reference",
+        )
+    with pytest.raises(ValueError):
+        ledger.authorize_budget(3, "different-id", "user-20260811-r23003-revision-start1-3")
+
+
+def test_r23003_budget_extension_still_requires_consumed_cap_and_retryable_predecessor(
+    tmp_path: Path,
+) -> None:
+    ledger = StartLedger(tmp_path, requirement_id="R2.3-003")
+    ledger.initial_authorization()
+    with pytest.raises(ValueError):
+        ledger.authorize_budget(3, "premature", "premature-reference")
+
+
 def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Path) -> None:
     """The App Server-facing prompt must name the callable MCP tool, not a bare alias."""
 

@@ -689,3 +689,41 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   settlement, or production cleanup was performed in this round. The four previously authorized semantic starts
   are consumed; no additional authorization or run was permitted. Residual live risk is therefore the unverified
   end-to-end modeling and cleanup evidence, not a remaining deterministic defect.
+
+### Round 10 — 2026-08-11 independent StartLedger `+3` recheck — PASS narrow ledger gate / live requirement BLOCKED
+
+- Scope and stable state: the worktree was at `195aa7d` with exactly the two-file uncommitted diff
+  (`modeling_team/start_ledger.py` and its R2.3-003 contract test). This round did not edit product code,
+  requirements, design, delivery record, retained evidence, or the real ledger; it did not register/use a new
+  authorization and did not start or continue a live run.
+- Exact R2.3-003 authorization matrix (all exercised against temporary ledgers, with rejected operations byte-stable):
+  - Initial authorization is first-only and exact: cap is `4`, persisted amount is `4`; duplicate and wrong-amount
+    calls reject without changing bytes.
+  - After four semantic starts, each with a retryable terminal failure, authorization ID/reference
+    `user-20260811-r23003-revision-start1-3` succeeds; replayed state is `cap=7`, `semantic_start_count=4`,
+    `active_reservations=0`.
+  - Premature, unconsumed, true no-predecessor (fourth start has no terminal failure), and non-retryable predecessor
+    attempts reject. Boolean, zero, and negative amounts reject. Duplicate authorization ID and duplicate reference
+    reject as immutable. Tampered initial amount and appended unknown-event replay both reject without further byte
+    mutation.
+  - Focused command
+    `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_ledger_isolation.py
+    modeling_team/tests/test_r23002.py -q` → **81 passed, 63 subtests passed in 2.62s**.
+- Policy isolation: resolved fixed policies remain R2.3-002 `(initial=2, increment=2, strict=false,
+  variable=false)`, R2.3-005 `(initial=1, increment=3, strict=true, variable=true)`, and R2.3-003
+  `(initial=0, increment=4, strict=true, variable=true)`. Existing R2.3-005 budget/isolation tests are included
+  in the focused result; no 002/005 policy or ledger namespace changed.
+- Supplemental gates: `uv run --project backend python -m compileall -q modeling_team` and `git diff --check`
+  both passed. Full `modeling_team` was not repeated independently in this narrow ledger-only round; the prior
+  independent Round 9 result remains **716 passed, 1 skipped, 218 subtests passed**, and the current product diff
+  is confined to StartLedger plus its tests. That prior result is supplementary rather than a new Round 10 run.
+- Real-ledger no-mutation check: `workspaces/modeling-runs/.r2-3-003-start-ledger.jsonl` remains exactly 15 lines,
+  SHA-256 `fe750aaccd426e9d77212f934547224e5cab6ebd470bbc9598cb5657cbd3d977`. It still contains only the original
+  exact initial `+4` authorization, four semantic starts, and four terminal failures; no `budget_authorization`,
+  `revision-start1-3`, additional `+3`, or new reservation was present. No retained R2.3-003 process or Unix socket
+  was found.
+- Result: **PASS for the narrow StartLedger `+3` deterministic gate; overall R2.3-003 remains BLOCKED** because
+  live L0–L2 semantic candidate, receipt-backed binding, dry-run/apply/readback, CQ/settlement, and cleanup
+  acceptance remain unexecuted by authorization/scope rules. No live evidence or authorization was consumed by this
+  round.

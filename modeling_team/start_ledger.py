@@ -89,7 +89,11 @@ _LEDGER_CONFIGS = MappingProxyType(
             authorization_increment=_R2_3_003_ADDITIONAL_STARTS,
             strict_sequence=True,
             allow_incomplete_modeling_quality_repair=True,
-            allow_variable_authorization=False,
+            # The first R2.3-003 authorization remains the dedicated exact +4
+            # event above.  Later extensions represent new, explicit user
+            # authorizations and may therefore carry a different positive
+            # amount while retaining the strict consumed-cap/predecessor gates.
+            allow_variable_authorization=True,
         ),
     }
 )
