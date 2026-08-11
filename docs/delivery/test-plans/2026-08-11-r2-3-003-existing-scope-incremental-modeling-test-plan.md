@@ -54,6 +54,9 @@
 - 空账本只接受一次 exact `initial_authorization +4`；prior-failure 不适用于该事件，重复/伪造/顺序错误
   授权失败；后续普通 budget extension 仍执行严格 predecessor；
 - success-stop 后剩余 start 不消费；mutation 后 terminal 未对账时新 start 被拒绝；
+- 原 cap/count/active=`4/4/0` 与四次 terminal failures 保持；修订门通过后只接受一次 exact
+  `user-20260811-r23003-revision-start1-3` +3 strict extension，使 cap/count/active=`7/4/0`；提前追加、
+  重复 ID/reference、错误数量、缺 retryable predecessor 均拒绝；
 - replay、append、locking、baseline binding 与 previous terminal 顺序稳定。
 
 ### T4 — Existing preflight
@@ -124,8 +127,9 @@
 
 ## 3. 真实运行测试
 
-用户已授权精确四次 R2.3-003 semantic starts。真实运行只在 clean committed baseline 和 deterministic
-PASS 后进行；首个完整 PASS 后 success-stop。
+原四次 R2.3-003 semantic starts 已耗尽；用户新增授权精确三次。真实运行只在修订实现、独立
+deterministic PASS、clean committed baseline、service restart/health PASS 且 exact +3 ledger extension
+登记后进行；首个完整 PASS 后 success-stop。
 
 ### L0 — Start and scope
 

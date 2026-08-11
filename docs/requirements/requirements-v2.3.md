@@ -13,8 +13,10 @@
 - 关联版本：`docs/requirements/requirements-v2.0.md`、
   `docs/requirements/requirements-v2.1.md`、`docs/requirements/requirements-v1.1.md`
 - 当前下一目标：R2.3-005 已完成；按严格成功即停止合同，不再消费已授权但未使用的 Start76–77。
-  R2.3-003 改为继续 Start75 保留本体的 existing-scope 增量建模；用户已于 2026-08-11 授权精确四次
-  R2.3-003 semantic starts，并委托交付侧按已评审建议执行关键决定。首次完整 PASS 后 success-stop。
+  R2.3-003 改为继续 Start75 保留本体的 existing-scope 增量建模；最初授权的四次 semantic starts 已全部
+  终止。用户于 2026-08-11 在修订合同 plan review PASS 后追加授权三次，精确 authorization ID/reference
+  为 `user-20260811-r23003-revision-start1-3`；只能在实现完成、独立 deterministic PASS、服务重启和健康
+  检查通过后使用。首次完整 semantic PASS 后 success-stop。
 - 接手指南：`docs/delivery/archive/r2-3-005/r2-3-005-successful-modeling-handover.html`；阶段性旧计划和
   会话交接快照统一保存在 `docs/delivery/archive/r2-3-005/`，不再作为当前运行指令。
 - 关联交付记录：
@@ -1783,6 +1785,11 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   `user-20260811-r23003-start1-4`。R2.3-003 独立账本从 `cap/count/active=0/0/0` 通过首次授权事件变为
   `4/0/0`；不得借用或修改 R2.3-005 Start76–77。四次是上限而非必须消费数量，首次完整 PASS 后
   success-stop。
+- 上述四次现已全部以 terminal failure 结束。用户随后追加精确三次 fresh semantic starts，authorization
+  ID/reference=`user-20260811-r23003-revision-start1-3`、`additional_starts=3`。该事件必须作为现有 003
+  ledger 的严格 budget extension 追加，使 cap 从 4 变为 7，不重写初始授权/四次失败；必须校验最新
+  retryable terminal predecessor、ID/reference 唯一性与 lock/replay。只有修订实现、独立确定性验收、
+  restart/health 全部 PASS 后才可 reserve；首次完整 semantic PASS 后剩余额度不再消费。
 - existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
   apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的

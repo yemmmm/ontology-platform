@@ -3,7 +3,7 @@
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
 - Status: in-progress (contract revision after blocked Round 7)
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T09:17:42+08:00
+- Last updated: 2026-08-11T09:22:28+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -11,8 +11,8 @@
 
 ## Confirmed contract
 
-- Current behavior: R2.3-003 仍规定连接 R2.3-002 保留的非空 Project/Ontology，增量业务目标、来源、
-  用户问题和尝试预算尚未细化。
+- Current behavior: revised contract 已通过 plan review；现有 runtime assets 尚未实现安全硬删除与 N-CQ，
+  原四次 semantic starts 已耗尽。
 - Target behavior: 改为通过 `existing` 模式连接 R2.3-005 Start75 保留的非空 Project/Ontology，
   以全新 Team run 和 Modeling Batch 完成增量建模。
 - In scope: 解析 Start75 已建模的两个 `ExplicitUnknown`；额外建模一个与 C -> B -> A 场景相关的
@@ -21,11 +21,11 @@
   Pi Runtime、并发写入团队或长期 Project 生命周期产品化。
 - Acceptance summary: 当前 003 standard 仍是两条业务 CQ，但共享 Carrier 支持 standard 声明的任意正整数
   N-CQ；严格串行，每题 fresh Examiner，settlement 覆盖全部 N 题。同时保护 source fidelity、两个目标
-  unknown 的原子硬删除、增量 dry-run/apply、既有结果回归、validation/reasoning、governed retrieval 和
+  unknown 的 Phase A durable semantics -> Phase B delete-only 安全迁移、增量 dry-run/apply、既有结果回归、validation/reasoning、governed retrieval 和
   Evidence/lineage。
 - Refinement: 用户已确认将 R2.3-003 的 existing-scope 基线切换到 R2.3-005 Start75，并确认解析两个
   unknown 只占部分目标，还需增加一个相关业务切片。用户随后授权主 Agent 构造版本化资料，无需逐项确认；
-  source、具体 case、两条 CQ 与精确四 start 授权现已冻结。
+  source、具体 case 与当前两条 CQ 已冻结；原四次授权已耗尽，修订实现完成后新增三次授权已登记。
 
 ## Timeline
 
@@ -336,3 +336,15 @@
 - Evidence: 当前 requirement/design/shared test plan；reviewer Round 4 record-ready conclusion。
 - Outcome/next step: 冻结开发 handoff。运营层仅剩 4/4 starts 已耗尽；实现和 deterministic/independent
   testing 可继续，但无新用户授权不得启动 live semantic run。
+
+### 2026-08-11 — revised implementation live-start authorization — user and main agent
+
+- Context: revised-contract plan review Round 4 PASS；开发尚未成功启动，上一 developer turn 因模型容量
+  退出且工作树无代码改动。
+- Action/decision: 用户追加授权三次建模次数，要求修改完成后使用。冻结 authorization ID/reference=
+  `user-20260811-r23003-revision-start1-3`、`additional_starts=3`；作为 003 现有账本的严格 extension，使
+  cap 4 -> 7，不改写已消费四次。使用门为 revised implementation + independent deterministic PASS +
+  service restart/health PASS；首次 semantic PASS 后 success-stop。
+- Evidence: 用户当前明确指令；`git status` 在 developer capacity error 后 clean。
+- Outcome/next step: 重新触发 requirement developer；开发/测试阶段不 reserve、不创建 run root、不消费
+  新额度。

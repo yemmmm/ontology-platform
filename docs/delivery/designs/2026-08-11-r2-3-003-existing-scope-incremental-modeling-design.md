@@ -26,7 +26,7 @@ Project/Ontology，只依赖当前平台事实、非敏感 scope handoff 和批�
 - 不把 Dify、Workflow、Decision、Publication 等业务概念加入平台生产域；
 - 不建设通用多需求编排、长期 Project 生命周期、自动回滚、并发写入或 Pi Adapter；
 - 不建模普通 numeric score 阈值、其他 diagnostic、人工 review 后续或更多案例；
-- 不把精确四次 start 授权解释为必须运行四次；首个完整 PASS 后 success-stop。
+- 原精确四次 start 已耗尽；新增三次授权只在修订实现/独立测试/健康门通过后使用，首个完整 PASS 后 success-stop。
 
 ## 3. 功能合同
 
@@ -40,7 +40,8 @@ Build Session/Lease 或平台写入前，Runner 必须：
 2. 通过授权平台读取重新确认 Project/Ontology 归属、Ontology 状态、默认 Graph Set、workspace version、
    没有 active Build Session/Lease 或 in-flight Attempt；
 3. 将 live workspace version 与 handoff 比较；不一致时零副作用失败，不自动改写 handoff；
-4. 确认本需求专属 StartLedger 已登记精确四次用户授权且没有 active reservation。
+4. 确认本需求专属 StartLedger 保留初始四次授权与四个 terminal failures，并在实现/独立测试/健康门通过后
+   追加 exact `user-20260811-r23003-revision-start1-3` +3 extension，且没有 active reservation。
 
 ### 3.2 Agent 输入边界
 
@@ -253,7 +254,7 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - plan review 无未处理 Critical/High；
 - deterministic tests 覆盖两个 formal contract 隔离、003 ledger、existing preflight、source visibility、
   delta candidate、安全硬删除、N-CQ（至少 1/3/5）和写后失败；完整 repository-required suite PASS；
-- 用户已授权精确四次 starts；一个真实 R2.3-003 Team run 在 Start75 Ontology 上完成组合目标与独立验收，
+- 原四次 starts 已耗尽；用户新增授权精确三次。门通过后一个真实 R2.3-003 Team run 在 Start75 Ontology 上完成组合目标与独立验收，
   首次完整 PASS 后停止；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。
