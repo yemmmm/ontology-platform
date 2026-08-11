@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
+import sys
+from subprocess import PIPE
 from pathlib import Path
 
 import pytest
@@ -89,6 +95,133 @@ def test_modeling_proxy_exact_tools_scope_and_zero_backend_request() -> None:
     assert len(calls) == 2
     assert calls[1][1]["allow_stale_derived"] is False
     assert gate.state == "context_observed"
+
+
+def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_schema(
+    tmp_path: Path,
+) -> None:
+    socket_path = tmp_path / "modeling-read-proxy.sock"
+    token_path = tmp_path / "modeling-read-proxy.token"
+    staged_bridge = tmp_path / "read_proxy_mcp.py"
+    shutil.copyfile(Path(__file__).resolve().parents[1] / "read_proxy_mcp.py", staged_bridge)
+    token_path.write_text("proxy-token\n", encoding="utf-8")
+    forwarded: list[tuple[str, dict[str, object], str]] = []
+
+    def forward(tool: str, arguments: dict[str, object], key: str) -> dict[str, object]:
+        forwarded.append((tool, dict(arguments), key))
+        if tool == "get_modeling_context":
+            return {"ok": True, "data": _context()}
+        return {"ok": True, "data": {"tool": tool, "arguments": dict(arguments)}}
+
+    proxy = ModelingReadProxy(
+        socket_path=socket_path,
+        token="proxy-token",
+        read_key="read-key",
+        project_id="P",
+        ontology_id="O",
+        forward=forward,
+    )
+    proxy.start()
+    env = {
+        **os.environ,
+        "PLATFORM_PROXY_MODE": "modeling",
+        "PLATFORM_PROXY_PROJECT_ID": "P",
+        "PLATFORM_PROXY_ONTOLOGY_ID": "O",
+    }
+    process = subprocess.Popen(
+        [sys.executable, str(staged_bridge), "--stdio", "--socket", str(socket_path), "--token-file", str(token_path)],
+        stdin=PIPE,
+        stdout=PIPE,
+        text=True,
+        env=env,
+    )
+
+    def request(request_id: int, method: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        assert process.stdin is not None
+        assert process.stdout is not None
+        process.stdin.write(
+            json.dumps(
+                {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}},
+                separators=(",", ":"),
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+        line = process.stdout.readline()
+        assert line
+        return json.loads(line)
+
+    try:
+        listed = request(1, "tools/list")["result"]["tools"]
+        assert {item["name"] for item in listed} == set(MODELING_READ_TOOLS)
+        schemas = {item["name"]: item["inputSchema"] for item in listed}
+        assert schemas["get_modeling_context"]["required"] == ["ontology_id"]
+        assert schemas["get_ontology_read_model"]["required"] == ["ontology_id", "model_name"]
+        assert schemas["query_semantic_context"]["required"] == ["project_id", "scope_mode"]
+        assert schemas["query_semantic_context"]["properties"]["scope_mode"]["const"] == "ontologies"
+
+        context_response = request(
+            2,
+            "tools/call",
+            {"name": "get_modeling_context", "arguments": {}},
+        )
+        assert "error" not in context_response
+        model_response = request(
+            3,
+            "tools/call",
+            {"name": "get_ontology_read_model", "arguments": {"model_name": "classes"}},
+        )
+        assert "error" not in model_response
+        query_response = request(
+            4,
+            "tools/call",
+            {
+                "name": "query_semantic_context",
+                "arguments": {
+                    "query": "quality",
+                    "project_id": "P",
+                    "scope_mode": "ontologies",
+                    "ontology_ids": ["O"],
+                },
+            },
+        )
+        assert "error" not in query_response
+        assert [item[0] for item in forwarded] == list(MODELING_READ_TOOLS)
+        assert forwarded[0][1] == {"ontology_id": "O"}
+        assert forwarded[1][1] == {
+            "model_name": "classes",
+            "ontology_id": "O",
+            "allow_stale_derived": False,
+        }
+        assert forwarded[2][1] == {
+            "query": "quality",
+            "project_id": "P",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["O"],
+        }
+
+        denied = (
+            {"name": "get_modeling_context", "arguments": {"ontology_id": "foreign-ontology"}},
+            {"name": "get_ontology_read_model", "arguments": {"model_name": "classes", "project_id": "foreign-project"}},
+            {"name": "query_semantic_context", "arguments": {"query": "quality", "ontology_ids": ["foreign-ontology"]}},
+        )
+        for request_id, arguments in enumerate(denied, start=5):
+            response = request(request_id, "tools/call", arguments)
+            assert response["error"]["code"] == -32000
+        malformed = (
+            {"name": "get_modeling_context", "arguments": {"ontology_id": None}},
+            {"name": "get_ontology_read_model", "arguments": {}},
+            {"name": "query_semantic_context", "arguments": {"query": ""}},
+        )
+        for request_id, arguments in enumerate(malformed, start=8):
+            response = request(request_id, "tools/call", arguments)
+            assert response["error"]["code"] == -32000
+        assert len(forwarded) == 3
+    finally:
+        if process.stdin is not None:
+            process.stdin.close()
+        process.wait(timeout=2)
+        proxy.destroy()
 
 
 def test_modeling_context_receipt_is_immutable_and_version_drift_closes_gate() -> None:

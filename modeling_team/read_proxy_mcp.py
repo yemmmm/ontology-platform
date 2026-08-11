@@ -15,6 +15,128 @@ import sys
 from typing import Any
 
 
+_MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "get_modeling_context": {
+        "name": "get_modeling_context",
+        "description": "Read the authoritative current state for the bound Ontology.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ontology_id": {
+                    "type": "string",
+                    "description": "The Runner-bound Ontology ID; the bridge injects the exact value.",
+                },
+            },
+            "required": ["ontology_id"],
+            "additionalProperties": False,
+        },
+    },
+    "get_ontology_read_model": {
+        "name": "get_ontology_read_model",
+        "description": "Read one fixed, asserted Ontology semantic model.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ontology_id": {
+                    "type": "string",
+                    "description": "The Runner-bound Ontology ID; the bridge injects the exact value.",
+                },
+                "model_name": {
+                    "type": "string",
+                    "enum": ["classes", "entities", "facts", "rules"],
+                },
+                "include": {"type": "string", "enum": ["asserted"], "default": "asserted"},
+                "allow_stale_derived": {"const": False, "default": False},
+                "field_set": {"type": "string", "enum": ["summary", "full"], "default": "summary"},
+                "limit": {"type": "integer", "minimum": 1},
+                "entity_iri": {"type": "string", "minLength": 1},
+                "class_iri": {"type": "string", "minLength": 1},
+                "kind": {"type": "string", "minLength": 1},
+                "q": {"type": "string", "minLength": 1},
+            },
+            "required": ["ontology_id", "model_name"],
+            "additionalProperties": False,
+        },
+    },
+    "query_semantic_context": {
+        "name": "query_semantic_context",
+        "description": "Recall structured semantic context from the bound Ontology.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "The Runner-bound Project ID; the bridge injects the exact value.",
+                },
+                "scope_mode": {"const": "ontologies", "default": "ontologies"},
+                "query": {"type": "string", "minLength": 1},
+                "queries": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "ontology_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                    "description": "The Runner-bound Ontology ID; the bridge injects the exact singleton list.",
+                },
+                "resource_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "assertion_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "search_mode": {"type": "string", "default": "hybrid"},
+                "depth": {"type": "integer", "minimum": 1, "default": 1},
+                "limit": {"type": "integer", "minimum": 1, "default": 20},
+                "context_limit": {"type": "integer", "minimum": 1, "default": 100},
+                "match_cursor": {"type": "string", "minLength": 1},
+                "context_cursor": {"type": "string", "minLength": 1},
+            },
+            "required": ["project_id", "scope_mode"],
+            "anyOf": [{"required": ["query"]}, {"required": ["queries"]}],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+_MODELING_SCOPE_FIELDS: dict[str, dict[str, str]] = {
+    "get_modeling_context": {"ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID"},
+    "get_ontology_read_model": {"ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID"},
+    "query_semantic_context": {
+        "project_id": "PLATFORM_PROXY_PROJECT_ID",
+        "scope_mode": "ontologies",
+        "ontology_ids": "PLATFORM_PROXY_ONTOLOGY_ID",
+    },
+}
+
+
+def _modeling_tool_schema(name: str) -> dict[str, Any]:
+    schema = _MODELING_TOOL_SCHEMAS.get(name)
+    if schema is None:
+        return {
+            "name": name,
+            "description": "ticket-bound read-only platform query",
+            "inputSchema": {"type": "object", "additionalProperties": False},
+        }
+    return json.loads(json.dumps(schema))
+
+
+def _project_modeling_arguments(
+    name: str, arguments: dict[str, Any], scope: dict[str, str]
+) -> dict[str, Any]:
+    fields = _MODELING_SCOPE_FIELDS.get(name)
+    if fields is None:
+        return arguments
+    projected = dict(arguments)
+    for field, source in fields.items():
+        expected = source if source == "ontologies" else scope[source]
+        normalized_expected = [expected] if field == "ontology_ids" else expected
+        if field in projected and projected[field] != normalized_expected:
+            raise ValueError(f"modeling proxy scope mismatch for {field}")
+        projected[field] = normalized_expected
+    return projected
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -66,27 +188,36 @@ def main() -> int:
                 result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "serverInfo": {"name": "platform_read_proxy", "version": "1"}}
             elif method == "tools/list":
                 tools = _proxy_call(args.socket, {"token": token, "operation": "tools/list"}).get("tools", [])
-                result = {"tools": [{"name": name, "description": "ticket-bound read-only platform query", "inputSchema": {"type": "object"}} for name in tools]}
+                result = {
+                    "tools": (
+                        [_modeling_tool_schema(name) for name in tools]
+                        if modeling_mode
+                        else [
+                            {
+                                "name": name,
+                                "description": "ticket-bound read-only platform query",
+                                "inputSchema": {"type": "object"},
+                            }
+                            for name in tools
+                        ]
+                    )
+                }
             elif method == "tools/call":
                 params = request.get("params", {}) if isinstance(request, dict) else {}
                 name = params.get("name")
                 arguments = dict(params.get("arguments") or {})
-                mapping = (
-                    {
-                        "project_id": "PLATFORM_PROXY_PROJECT_ID",
-                        "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
-                    }
-                    if modeling_mode
-                    else {
+                if modeling_mode:
+                    arguments = _project_modeling_arguments(name, arguments, scope)
+                else:
+                    mapping = {
                         "project_id": "PLATFORM_PROXY_PROJECT_ID",
                         "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
                         "graph_set_id": "PLATFORM_PROXY_GRAPH_SET_ID",
                         "ticket_digest": "PLATFORM_PROXY_TICKET_DIGEST",
                         "model_state_digest": "PLATFORM_PROXY_MODEL_STATE_DIGEST",
                     }
-                )
-                for field, env_name in mapping.items():
-                    arguments.setdefault(field, scope[env_name])
+                    for field, env_name in mapping.items():
+                        arguments.setdefault(field, scope[env_name])
                 response = _proxy_call(args.socket, {"token": token, "operation": "tools/call", "tool": name, "arguments": arguments})
                 if not response.get("ok"):
                     # Surface the platform's full error detail instead of a single opaque

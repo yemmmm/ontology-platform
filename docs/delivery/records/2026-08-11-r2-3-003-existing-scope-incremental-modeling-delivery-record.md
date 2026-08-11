@@ -820,3 +820,40 @@
   terminal predecessor；ledger cap/count/active 从 `8/8/0` 变为 `11/8/0`，未产生 reservation 或 run root。
 - Operating decision: these starts are an upper bound。Round25 repair baseline、clean checkout、service health 和
   existing-scope preflight 通过后立即使用；首次完整 semantic/Acceptance PASS 后 success-stop。
+
+### 2026-08-11T18:40:07+08:00 — authorized live semantic start10 — FAIL/BLOCKED — main agent
+
+- Run `r23003-real-20260811-deepseek-start10` used the first of the new three starts；ledger appended reservation
+  baseline=`418c2cb18a300854d097e1816c86f96024282684b86487b9c016fefbbf13bd53` and semantic_start，so
+  cap/count became `11/9`。The launch enabled the outer-input FIFO, avoiding start9's stdin/cleanup defect。
+- The Round25 approval repair worked: Modeling's three read-only MCP tools reached the scoped proxy rather than
+  being declined by App Server。However every call failed deterministically with `read-scope-denied` before any
+  backend read or candidate publication。
+- Confirmed root cause: the staged Modeling `read_proxy_mcp.py` injects both `project_id` and `ontology_id` into
+  every tool call，while the owning proxy contract requires three different exact argument projections:
+  `get_modeling_context={ontology_id}`；`get_ontology_read_model` allows `ontology_id` but not `project_id`；
+  `query_semantic_context` requires `project_id + scope_mode=ontologies + ontology_ids=[O]` and rejects the
+  injected singular `ontology_id`。No possible Agent-authored argument shape can overcome those bridge defaults。
+- Main Agent stopped the unproductive parameter-probing loop through the formal outer FIFO。Runner cleanup reached
+  `CLEANED`；modeling-read/protocol/admin keys were revoked and before/after existing context stayed identical at
+  workspace version `0d34f5ada161...`，batches=6，active Session/Lease/in-flight=`0/0/0`。No candidate、receipt、
+  Build Session、Lease、Batch or ontology mutation occurred。Independent cleanup/ledger reconciliation remains
+  required before start11。
+- Defect disposition=`confirmed-high runtime/platform contract`。Repair scope is limited to per-tool Modeling
+  argument projection plus truthful tool schemas and exact staged-bridge integration regressions；preserve
+  Acceptance proxy and R2.3-005/default behavior。The other two authorized starts remain unused pending repair PASS。
+
+### 2026-08-11T18:52:00+08:00 — start10 read-proxy projection repair — development-ready
+
+- Changed only the Modeling branch of `read_proxy_mcp.py`: tool-specific scope projection now emits O-only for
+  context/read-model and P + `scope_mode=ontologies` + singleton `ontology_ids=[O]` for semantic query；the
+  Acceptance/non-Modeling mapping is unchanged。The bridge also publishes non-empty exact input schemas so the
+  Agent no longer has to guess parameter names。
+- Added an AF_UNIX subprocess integration regression using the staged bridge, real token/socket, and the real
+  `ModelingReadProxy` validator。It proves all three valid calls and their normalized forwarded arguments，and
+  verifies malformed/foreign requests are denied without forwarding。
+- Verification: focused 003/005/bridge=`170 passed, 48 subtests`；full modeling_team=`735 passed, 1 skipped,
+  218 subtests`；Ruff、compileall、diff-check PASS。Pre-edit impact and final detect both LOW；final detect reports
+  3 bridge symbols and no affected process flow。No live run、ledger、retained evidence、backend or commit change。
+- Stable state=`DEVELOPMENT-READY`。Independent Round26 must retest start10 cleanup/zero mutation and the exact
+  staged bridge path before ledger reconciliation or start11。

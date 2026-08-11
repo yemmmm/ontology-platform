@@ -1385,3 +1385,57 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   deterministic gates, cleanup, and operator reconciliation.** No live candidate/receipt or ontology mutation was
   attempted in this round; L0/L1/L2 semantic quality and repeatability remain **UNEXECUTED**, so deterministic PASS
   must not be promoted to live semantic acceptance.
+
+### Round 26 — 2026-08-11 independent start10 staged read-proxy and cleanup recheck — PASS deterministic; reconciliation pending
+
+- Scope and safety: independently rechecked the stopped `r23003-real-20260811-deepseek-start10` worktree after the
+  operator's scoped cleanup. The tester did not modify product code, this delivery record, retained evidence,
+  ontology/workspace state, or the canonical ledger, and did not start/resume a live run. The only pre-existing
+  product/test changes remain the reviewed staged read-proxy implementation and its test.
+- Staged bridge contract: `uv run --project backend python -m pytest
+  modeling_team/tests/test_r23003_modeling_readonly.py -q -k staged_modeling_bridge` -> **1 passed, 5 deselected**;
+  the complete read-only file -> **6 passed**. The real staged subprocess starts `read_proxy_mcp.py --stdio` against
+  a real `ModelingReadProxy` and advertises exactly `get_modeling_context`, `get_ontology_read_model`, and
+  `query_semantic_context` with the required schemas. Valid calls forward exactly once with injected Project/Ontology
+  scope; malformed, foreign, write/history/delta scope inputs are rejected with no extra backend forward. Affected
+  R2.3-005 runtime/contract/isolation/budget regressions -> **90 passed, 45 subtests passed**; focused 003/read-only/
+  incremental/P2A -> **54 passed**.
+- Full deterministic gates: `uv run --project backend python -m pytest modeling_team/tests -q` -> **735 passed,
+  1 skipped, 218 subtests passed**. `uv run --project backend python -m compileall -q modeling_team backend/app
+  backend/tests && git diff --check` -> **PASS**. Stable source hashes read-only-bridge `e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44`,
+  Runner `ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7`, Codex adapter
+  `0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5`, and backend MCP runtime
+  `e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade` were unchanged during testing.
+- Start10 evidence and zero mutation: `evidence/mcp-elicitations.jsonl` contains only four accepted Team Transport
+  requests; no Modeling read-proxy elicitation, candidate, receipt, or platform write occurred. Candidate gate remains
+  closed (`awaiting_candidate_receipt`), and `state.json` is `CLEANED` with `runner-abort-before-settlement`, no
+  terminal result, zero active handles/children, and `scope.existing_context_before == existing_context_after`:
+  Project `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, graph
+  `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, six batches, one recent session, and zero
+  active sessions/leases/in-flight attempts. All start10 read/model/admin keys are revoked and post-revoke checks
+  returned unauthorized; no process, Unix socket, token/config/capability artifact, or matching secret value remains.
+- Cleanup recheck: the prior fingerprint found only two generated files and the owner then removed them without
+  touching evidence/ledger: `runtime/modeling/home/read_proxy_mcp.py` (5,871-byte staged bridge source; non-secret) and
+  `runtime/modeling/home/modeling-read-proxy.sock` (zero-byte regular-file placeholder, not a Unix socket; non-secret).
+  Current scoped scan finds **zero** named private artifacts and **zero** Unix sockets. The captured aggregate audit still
+  reports `private_credentials_destroyed=false`, `match_count=6`, `matched_secret_count=4` from the pre-remediation
+  scan; direct configured-key secret scan after cleanup finds zero matching files/occurrences. This is therefore a
+  cleanup/audit evidence distinction, not evidence that a raw credential remains. Do not delete retained logs/evidence;
+  the exact safe remediation targets were only the two paths above, now absent.
+- Ledger/reconciliation: `.r2-3-003-start-ledger.jsonl` remains **32 lines**, SHA-256
+  `0cf7a1d4d7ff400f0698b1aabbe0f98e0ec121a2ca8c93634ddb897ac3a6ad2f`. The tail is the +3 authorization, start10
+  reservation with baseline `418c2cb18a300854d097e1816c86f96024282684b86487b9c016fefbbf13bd53`, and start10
+  `semantic_start`; there is still no start10 terminal failure. Strict replay remains structurally valid with
+  `start_cap=11`, `semantic_start_count=9`, and `active_reservations=[]` only because the stopped semantic start is
+  currently unreconciled. Append-only reconciliation is now safe after the operator cleanup: append exactly one
+  retryable terminal failure for start10, classified `runtime/infrastructure` (or the captured platform-contract
+  classification), with canonical `mutation_state=zero-mutation`, the exact baseline above, and a retained
+  evidence path/digest; then rerun strict replay before reserving start11. No reconciliation was performed by this
+  tester.
+- Runtime health: `ontology-platform.service` is active; backend `/api/health` returns HTTP 200 `{"status":"ok"}` and
+  frontend `/` returns HTTP 200. No live L0/L1/L2 semantic candidate/receipt/quality evidence was produced.
+- Result: **PASS for staged three-tool forwarding, 003-only scope/005 isolation, deterministic regressions, zero
+  mutation, key revocation, cleanup, and service health; BLOCKED pending owner append-only start10 terminal
+  reconciliation.** After that exact reconciliation and a strict-replay PASS, main may proceed to one fresh start11
+  reservation under the remaining authorized cap (no semantic PASS should be inferred from this deterministic run).
