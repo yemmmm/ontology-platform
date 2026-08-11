@@ -7,7 +7,8 @@
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
-- Delivery commits: `553f81f` (Modeling read-only context baseline); start9 Runtime approval repair pending
+- Delivery commits: `553f81f` (Modeling read-only context baseline); `5d141fe` (start9 Runtime approval repair,
+  Round24/25 reconciliation and records)
 
 ## Confirmed contract
 
