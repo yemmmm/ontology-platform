@@ -1732,7 +1732,8 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
-当前状态：`Current Draft（2026-08-11 Modeling 只读查询合同已独立测试 PASS，待一次授权真实运行）`
+当前状态：`Current Draft（2026-08-11 Modeling 只读查询合同及 start9 后 Runtime approval 修复已独立
+测试 PASS；start9 在 candidate 前零写入终止，真实 L0/L1/L2 待重新授权）`
 
 优先级：`P0`
 
@@ -1805,6 +1806,13 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   `user-20260811-r23003-modeling-read-start1`、`additional_starts=1`；该事件把 cap 从 7 增至 8，不重写
   前 25 行。它只可在 Modeling read-only 合同完成 plan review、实现、独立测试、restart/health 后 reserve，
   不得在设计或测试阶段启动。
+- 上述 `+1` 已由 `r23003-real-20260811-deepseek-start9` 消费。Modeling 正确构造了完整 24-item candidate，
+  但 App Server 因 `modeling_read_proxy` 缺少专用 MCP approval/trust 配置而在 proxy/backend 前拒绝四次
+  `get_modeling_context`；pre-candidate gate 因而保持关闭，candidate/receipt/Session/Lease/Batch/mutation
+  均未发生。独立 Round24 证明 retained scope 无漂移并完成 key/private-artifact cleanup，ledger 以
+  `runtime/infrastructure`、canonical `zero-mutation` append-only reconciliation 收口为 cap/count=`8/8`。
+  Round25 已独立证明窄修只允许 active R2.3-003 Modeling read proxy，005/default/foreign role/unknown server
+  继续 fail closed。该确定性 PASS 不等于 live L0/L1/L2；任何下一次真实运行都需要新的用户授权。
 - existing scope 不提供自动回滚。第一次平台 mutation 前的失败可以在剩余授权内 fresh retry；任一
   apply 后优先由同一存活 Team 读取当前状态并用新 Batch 修复。apply 后 Team terminal、mutation state
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的

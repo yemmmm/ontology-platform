@@ -1,6 +1,7 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：Implemented — independent Round 23 deterministic PASS，one authorized live run pending
+- 状态：Implemented — Round 25 deterministic PASS；授权 live start9 在候选前因 Runtime MCP approval
+  缺陷零写入终止，修复已独立 PASS，新的 live 运行待重新授权
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`

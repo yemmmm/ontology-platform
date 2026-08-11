@@ -1516,6 +1516,64 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertNotIn("default_tools_enabled", config)
             self.assertIn("required = true", config)
 
+    def test_r23003_modeling_read_proxy_config_approves_only_the_scoped_server(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            codex_home = base / "codex-home"
+            codex_home.mkdir()
+            (codex_home / "auth.json").write_text("{}", encoding="utf-8")
+            (codex_home / "auth.json").chmod(0o600)
+            run = SimpleNamespace(
+                root=base,
+                protocol_key=None,
+                scope={"project_id": "project-1", "ontology_id": "ontology-1"},
+                modeling_read_proxy=SimpleNamespace(active=True, token="proxy-token"),
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2),
+                    profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),
+                ),
+            )
+            agent = _Agent(
+                "modeling",
+                _load_package(root, "modeling"),
+                base / "modeling-home",
+                base / "modeling-work",
+                base / "modeling-skills",
+            )
+            for path in (agent.home, agent.work, agent.skills):
+                path.mkdir(mode=0o700)
+            (base / "sources" / "modeling").mkdir(parents=True)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            # Keep this fixture non-formal while selecting the same 003 branch
+            # used by the real Modeling role; no provider or Platform key is needed.
+            adapter._is_formal_acceptance_run = lambda _run: False  # type: ignore[method-assign]
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                adapter._write_config(run, agent)
+            config = (agent.home / "config.toml").read_text(encoding="utf-8")
+            self.assertIn("[mcp_servers.modeling_read_proxy]", config)
+            self.assertIn('default_tools_approval_mode = "approve"', config)
+
+            ordinary = SimpleNamespace(
+                root=base / "ordinary",
+                protocol_key=None,
+                configuration=SimpleNamespace(task=SimpleNamespace(schema_version=1)),
+            )
+            ordinary_agent = _Agent(
+                "modeling-ordinary",
+                _load_package(root, "modeling"),
+                base / "ordinary-home",
+                base / "ordinary-work",
+                base / "ordinary-skills",
+            )
+            for path in (ordinary_agent.home, ordinary_agent.work, ordinary_agent.skills):
+                path.mkdir(mode=0o700)
+            (ordinary.root / "sources").mkdir(parents=True)
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                adapter._write_config(ordinary, ordinary_agent)
+            ordinary_config = (ordinary_agent.home / "config.toml").read_text(encoding="utf-8")
+            self.assertNotIn("modeling_read_proxy", ordinary_config)
+
     def test_protocol_config_uses_the_single_canonical_launch_spec(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
@@ -1796,6 +1854,73 @@ class CodexIsolationTests(unittest.TestCase):
             event = json.loads((base / "evidence" / "mcp-elicitations.jsonl").read_text())
             self.assertEqual(event["action"], "decline")
             self.assertNotIn("do not retain", json.dumps(event))
+
+    def test_r23003_modeling_read_proxy_elicitation_requires_active_modeling_run(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._run_root = base
+            agent = _Agent(
+                "modeling",
+                _load_package(root, "modeling"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                schema_version=2,
+            )
+            request = {
+                "id": 7,
+                "method": "mcpServer/elicitation/request",
+                "params": {
+                    "serverName": "modeling_read_proxy",
+                    "mode": "form",
+                    "requestedSchema": {"type": "object", "properties": {}},
+                },
+            }
+            adapter._active_run = SimpleNamespace(
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        task_id="r2-3-003-existing-scope-incremental", schema_version=2
+                    ),
+                    profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),
+                )
+            )
+            agent.process = SimpleNamespace(stdin=StringIO())
+            adapter._notification(agent, request)
+            self.assertEqual(
+                json.loads(agent.process.stdin.getvalue())["result"],
+                {"action": "accept", "content": {}},
+            )
+
+            adapter._active_run = SimpleNamespace(
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(task_id="r2-3-005-formal-acceptance", schema_version=2),
+                    profile=SimpleNamespace(profile_id="r2-3-005-modeling-team"),
+                )
+            )
+            agent.process = SimpleNamespace(stdin=StringIO())
+            adapter._notification(agent, request)
+            self.assertEqual(
+                json.loads(agent.process.stdin.getvalue())["result"],
+                {"action": "decline", "content": {}},
+            )
+
+            agent.package = _load_package(root, "protocol")
+            adapter._active_run = SimpleNamespace(
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        task_id="r2-3-003-existing-scope-incremental", schema_version=2
+                    ),
+                    profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),
+                )
+            )
+            agent.process = SimpleNamespace(stdin=StringIO())
+            adapter._notification(agent, request)
+            self.assertEqual(
+                json.loads(agent.process.stdin.getvalue())["result"],
+                {"action": "decline", "content": {}},
+            )
 
     def test_protocol_mechanics_elicitation_is_v2_protocol_only_with_sanitized_evidence(self) -> None:
         root = repository_root()

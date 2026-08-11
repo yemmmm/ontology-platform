@@ -100,7 +100,7 @@ FROZEN_GLOBAL_SURFACES = {
     "modeling_team/runner.py": "ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7",
     "modeling_team/protocol_mechanics.py": "5aa6324401666fb54e6e813e0407ffe364318356fc4f4eecdd6330910165a2d9",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
-    "modeling_team/runtimes/codex.py": "957bcb783d8c9e807c17a30cfbcb1527d75122ce4c2195edf9bf50eb25935379",
+    "modeling_team/runtimes/codex.py": "0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5",
     "modeling_team/interventions.py": "8107923faef13d97f369a7ec154ef6fd84a414be22f874741e02e1ee002fded6",
     "backend/app/api/schemas.py": "bce7e92dffa6d07a43cba87f60d5436b8a9fd91bed7793928500a529821bdef6",
 }

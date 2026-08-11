@@ -1,13 +1,13 @@
 # R2.3-003 已有 Project/Ontology 增量建模交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
-- Status: in-progress (contract revision after blocked Round 7)
+- Status: blocked (start9 zero-mutation Runtime failure repaired; live L0/L1/L2 requires new authorization)
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T11:54:52+08:00
+- Last updated: 2026-08-11T18:11:54+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
-- Delivery commit: pending
+- Delivery commits: `553f81f` (Modeling read-only context baseline); start9 Runtime approval repair pending
 
 ## Confirmed contract
 
@@ -761,3 +761,52 @@
 - Main-agent correction: Tester 原结论将 cap=8/count=7 写成 exhausted；算术上仍有恰好一次授权。共享测试
   计划用 append-only addendum 更正，不删除原记录。Ledger 仍 26 lines/SHA=`fea60dd2...`、active=0，未
   reserve/start9。确定性门 PASS；live L0/L1/L2 尚未执行，下一步提交 clean baseline 后使用唯一额度。
+
+### 2026-08-11T17:32:09+08:00 — authorized live semantic start9 — FAIL/BLOCKED — main agent
+
+- Clean baseline `553f81f` 已通过 compare-main GitNexus 检查（72 changed symbols / 220 affected / 15 files /
+  CRITICAL，均为已评审 Runner/Codex/Transport/backend MCP 边界）后提交。前两次 launch 命令分别因缺少
+  `freeze_started_at` 和 Delivery-only preflight credential 在 reservation 前 fail closed；ledger 保持 26 行，
+  未消费次数。随后用 backend uv 环境和既有 create -> run -> finally revoke helper 启动
+  `r23003-real-20260811-deepseek-start9`；ledger lines 27–28 为 reservation/semantic_start，唯一 `+1` 授权被消费。
+- Modeling 读取全部 8 个 role-private source/reference，并 inline 构造完整 24-item candidate（两个有序
+  `delete_existing_entity` + bounded C evaluation -> B decision -> A outcome）。它按新合同调用
+  `get_modeling_context` 四次，并尝试另外两项 read proxy；所有调用在 App Server 前返回
+  `user rejected MCP tool call`。pre-candidate gate 正确保持关闭，Team Transport candidate 发送两次均
+  `-32000`，没有 delivery ID、candidate receipt、Session、Lease、Batch 或 mutation。
+- Modeling 以 issue-1=`runtime_recovery`、truthful zero-mutation 上报并进入 WAITING_OWNER。外层 bootstrap
+  wrapper 的 stdin 是 heredoc pipe，未启用 outer FIFO；owner abort 文本无法进入 Runner。主 Agent 为避免
+  永久挂起对前台进程发 SIGINT；这绕过了 Runner 正常 abort cleanup，成为独立的 Delivery launch/cleanup
+  缺陷，不改变零写入结论。
+
+### 2026-08-11T17:46:57+08:00 — start9 independent audit, cleanup and terminal reconciliation
+
+- Independent Round24 读取 live P/O：workspace version=`0d34f5ada161...`、graph/batches=`same/6`、active
+  Session/Lease/in-flight=`0/0/0`，resource counts 与 preflight 一致；source manifest 12/12，确认零平台漂移。
+  首次审计发现 3 个 start9 key 与私有 Runtime artifacts 因 SIGINT 留存。主 Agent 只针对精确 ID 撤销
+  preflight/admin/protocol/modeling-read keys，并删除 normal cleanup 集合中的 token/socket/config/capability
+  私有文件；未删除 session、delivery、issue 或其他 retained evidence。Round24 复核所有 key revoked、
+  private artifact/raw-secret/process/socket residue=0、backend/frontend HTTP 200，cleanup/scope integrity PASS。
+- Owner 以 Round24 证据追加 `evidence/terminal-reconciliation.jsonl`，canonical evidence digest=
+  `caf526a676700e9b089aee6e87f3cf1eab2c063646ea104836e3abff6f51f7c7`，随后通过 strict StartLedger API
+  追加唯一 `runtime/infrastructure` terminal_failure；不改写前 28 行。独立 Round25 replay：ledger=29 行，
+  SHA=`1c6d664ac328f02caef57408ed8407d85b166d36ed0939d2acd8c5f84b8c0add`，cap/count/active=`8/8/0`。
+- Result: cleanup/reconciliation PASS；live L0/L1/L2 FAIL/BLOCKED。没有 candidate receipt、平台 mutation 或
+  semantic acceptance，不得把 constructed candidate 或 zero-mutation 当作建模 PASS。
+
+### 2026-08-11T18:05:00+08:00 — start9 Runtime approval repair and independent Round25 — PASS deterministic
+
+- Root cause: retained Modeling `turn_context` 为 `approval_policy=on-request`；generated config 的
+  `[mcp_servers.modeling_read_proxy]` 缺少 `default_tools_approval_mode="approve"`，Runner elicitation allowlist
+  也未包含该 server。`mcp-elicitations.jsonl` 对 read proxy 记录 decline、对 Team Transport 记录 accept，证明
+  请求从未到 proxy/backend。该缺陷与 R2.2 已记录的 MCP launcher approval failure 同类。
+- Narrow repair: Codex config 只为 active R2.3-003 Modeling read proxy 写入 approval mode；
+  `_dispatch_server_request` 也只允许该 role/run/server 组合。R2.3-005、foreign role 和 unknown server 仍
+  decline；proxy/backend/gate/prompts/业务候选均未改。GitNexus pre-edit `_write_config` 与
+  `_dispatch_server_request` 均 CRITICAL，已明确接受共享 Runtime 风险；最终 product delta 为 5 行。
+- Independent Round25 PASS：real elicitation shape=`4 passed, 5 subtests`；isolation=`54 passed, 48 subtests`；
+  focused 003/005=`113 passed, 2 subtests`；ledger/policy=`47 passed, 22 subtests`；cleanup audit=`10 passed`；
+  frozen=`29 passed`；full modeling_team=`734 passed, 1 skipped, 218 subtests`；compileall/diff-check PASS。
+  Approved Codex SHA=`0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5`。
+- Outcome: deterministic repair、adjacent isolation、cleanup/reconciliation PASS；授权已耗尽，不启动 start10。
+  R2.3-003 仍缺 live candidate/receipt/apply/readback/CQ evidence，任何下一次真实运行必须由用户重新授权。

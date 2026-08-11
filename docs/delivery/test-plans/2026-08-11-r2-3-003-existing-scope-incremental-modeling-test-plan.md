@@ -1284,3 +1284,104 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
 - Correct live status: L0/L1/L2 are **BLOCKED only because they are unexecuted**, while the deterministic/restart/
   health gates now permit one fresh start9 reservation. The run must consume no more than that one remaining start and
   must success-stop after a complete PASS.
+
+### Round 24 — 2026-08-11 independent start9 read-only audit — FAIL/BLOCKED live acceptance; cleanup PASS, reconciliation pending
+
+- Scope and safety: audited the stopped `r23003-real-20260811-deepseek-start9` run after the owner cleanup. The tester
+  did not modify product code, delivery record, retained ontology/evidence, or the ledger, and did not start/resume a
+  run. The live run is `WAITING_OWNER`; candidate-gate state is `closed` with `awaiting_candidate_receipt`.
+- Failure evidence and root cause: `evidence/mcp-elicitations.jsonl` records four Modeling `modeling_read_proxy`
+  `decline` events for the required context/read calls, while Team Transport elicitation requests were accepted but
+  the send returned `-32000` twice with no delivery ID. `evidence/issue-report.jsonl` records issue-1,
+  `runtime_recovery`, failing `get_modeling_context`/`send_team_message`, and no candidate/receipt/platform write.
+  The captured start9 Modeling runtime config (audited before owner cleanup) had no default MCP approval setting;
+  the mandatory read gate therefore never opened. This is a **High runtime/infrastructure/platform-contract defect**,
+  not a modeling-quality result. The outer heredoc wrapper's stdin pipe bypassed Runner abort handling; operator
+  Ctrl-C left `WAITING_OWNER` and no terminal failure after the already-recorded semantic start.
+- Zero-mutation and scope comparison: preflight `live` and post-run read-only API agree on Project
+  `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology `fd762f52-2f5e-4bc0-902a-5583135ab64d`, graph set
+  `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace `ready`, version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, six modeling batches, one recent completed
+  session, zero active sessions/leases/in-flight attempts, no issues, and retained scope. Modeling context remains
+  `classes=6`, `entities=10`, `facts=10`, `relations=8`, `properties=11`, `relation_types=7`, `shapes=1`, stale
+  counts zero, lease inactive/unfenced; no new batch/session/lease or ontology mutation is visible.
+- Key/secret/process cleanup recheck: exact start9 Modeling-read, Protocol/model, and Admin IDs
+  `f1427116-bcaa-4e36-aaae-61432da2e51f`, `fae13cda-bfb5-43d5-b51a-1fc6b84143eb`,
+  `c469ce90-d601-42bc-beae-25842699662b` are revoked at `2026-08-11T09:46:57Z`; preflight Admin
+  `7d412e07-1724-4e43-9ab0-5a664e73f2eb` was already revoked at `2026-08-11T09:40:21Z`. No private
+  `*.token`, `*.sock`, `config.toml`, `runner-capabilities.json`, or `runner_capability_mcp.py` remains under the
+  run; the owner removed exactly eight initial artifacts (three runner token/socket pairs plus Modeling token/socket)
+  and fourteen remaining private artifacts (four configs, four capability manifests, three capability scripts, three
+  acceptance-carrier tokens). No Unix socket, run process, raw secret pattern, or socket listener remains. This is
+  **PASS after owner remediation**; retained sanitized evidence contains digests/config metadata only.
+- Read-only commands/results: `StartLedger._validate_strict_replay` plus `_start_cap/_semantic_start_count` -> **PASS**,
+  `records=28`, `start_cap=8`, `semantic_start_count=8`, `active_reservations=[]`, tail `semantic_start` for start9;
+  ledger SHA remains `66e3ca3644d5ff9ca9c46d8972fd01ff99c71ae47df809b0776401adc8b1d000`. Selected run/evidence
+  hashes remain unchanged (`state.json=9989a8565017e5391a53293deac56552e99db3e9a2df092c87c1a49c70ffabdd`,
+  `candidate-gate/state.json=7ab7444881adf35e0ad66cddd4ed33532c3283ad2e8e11b8f1723d738b15224b`,
+  `issue-report.jsonl=0d011467d00bce644c5bba53c83c421f612d1b5195ef499dd96e20a51685038e`,
+  `runtime-core-hashes.jsonl=390869c33dbf1a49091f3e5e73e6e65e8e0d08670faa3848c6fbf22d20d61e7a`); source manifest is **12/12** current
+  hashes with no mismatch. `ontology-platform.service` is active; backend health is HTTP 200 `{"status":"ok"}`;
+  frontend `/` is HTTP 200.
+- Reconciliation decision: cleanup and zero-mutation evidence now make one append-only historical reconciliation safe,
+  but it has **not** been performed by this tester. Owner must append exactly one R2.3-003 retryable terminal failure
+  for start9, classified `runtime/infrastructure` (or `platform-contract` if the owner preserves the transport-gate
+  classification), with the exact baseline `95616be120cd2a4ce220fe7b8bf9b1fb54f34c793d187832811ab88dbbbf361c`,
+  issue-1, canonical `mutation_state=zero-mutation`, and a retained evidence path/digest; then rerun strict replay.
+  Until that append-only reconciliation is verified, the ledger/state gap is a **High acceptance blocker** and live
+  semantic acceptance remains **BLOCKED**. No new start, budget reservation, or retained-model mutation is allowed.
+- Result: **PASS for read-only cleanup/safety and retained-scope integrity; FAIL/BLOCKED for start9 runtime and R2.3-003
+  live L0/L1/L2 acceptance**. Unexecuted: no candidate delivery, protocol receipt, modeling mutation, or semantic
+  quality/repeatability/productization evidence. Repair the Modeling MCP approval/trust path and complete the owner
+  reconciliation before any further authorized semantic attempt.
+
+### Round 25 — 2026-08-11 independent narrow-fix/reconciliation recheck — PASS deterministic and reconciliation; live semantic acceptance remains unexecuted
+
+- Scope and safety: independently tested the stopped worktree after the start9 narrow repair. The only pre-existing
+  changes were the reviewed Codex adapter/test/frozen-hash files plus this append-only plan; the tester changed no
+  product code, delivery record, ledger, evidence, retained ontology, or live run. No developer/test process or file
+  churn was observed beyond test-owned temporary directories.
+- Native MCP elicitation contract passes on the actual `mcpServer/elicitation/request` envelope. The focused shape
+  selection (`test_r23003_modeling_read_proxy_config_approves_only_the_scoped_server`,
+  `test_r23003_modeling_read_proxy_elicitation_requires_active_modeling_run`,
+  `test_protocol_mechanics_elicitation_is_v2_protocol_only_with_sanitized_evidence`, and
+  `test_unknown_mcp_elicitation_is_declined_with_sanitized_evidence`) -> **4 passed, 5 subtests**. Real R2.3-003
+  Modeling + `modeling_read_proxy` returns `{"action":"accept","content":{}}`; R2.3-005/foreign-role/unknown
+  server cases return `{"action":"decline","content":{}}`, with no request message/schema secret retained in
+  evidence. Generated config includes `default_tools_approval_mode = "approve"` only in the active R2.3-003 Modeling
+  proxy block; ordinary/non-003 Modeling config does not expose `modeling_read_proxy`.
+- Focused deterministic gates:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_codex_isolation.py -q` -> **54 passed, 48
+    subtests passed**; `test_p2a_codex_runtime.py -q` -> **29 passed**, including the updated frozen Codex digest.
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_modeling_readonly.py
+    modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23003_revision_contract.py
+    modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_mechanical_spine.py
+    modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_p2a_codex_runtime.py -q` ->
+    **113 passed, 2 subtests passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_ledger_isolation.py -q` ->
+    **47 passed, 22 subtests passed**; exact initial +4/first-only, consumed-cap/predecessor, explicit +3,
+    duplicate/tampered/invalid authorization and 005/legacy isolation remain green. Cleanup audit
+    (`test_start74_cleanup_audit.py -q`) -> **10 passed**.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` -> **734 passed, 1 skipped, 218 subtests
+    passed**. `uv run --project backend python -m compileall -q modeling_team backend/app backend/tests` and
+    `git diff --check` -> **PASS**.
+- Frozen source hashes are stable and match the updated test expectations: Codex adapter
+  `0ab5ab09027636654eb94003c22ffb22ff2387f8d7c3c3e0216b38e17c84e7c5`, Runner
+  `ec39ef1a44c3183eb3687ee958c8defea8d98abc8768ea9e14b92334b9c541e7`, and backend MCP runtime
+  `e314a82c556d41e18682d9af1f0f6a57a202749ff742aa0c935a1d9eba0edade`.
+- Operator reconciliation is independently valid: `.r2-3-003-start-ledger.jsonl` is **29 lines**, SHA-256
+  `1c6d664ac328f02caef57408ed8407d85b166d36ed0939d2acd8c5f84b8c0add`; the tail is start9 `terminal_failure`
+  classified `runtime/infrastructure`, with terminal evidence digest
+  `caf526a676700e9b089aee6e87f3cf1eab2c063646ea104836e3abff6f51f7c7`. Strict replay -> **PASS**:
+  `start_cap=8`, `semantic_start_count=8`, `active_reservations=[]`, last event `terminal_failure`, canonical
+  baseline `95616be...`, issue-1, and `mutation_state=zero-mutation`.
+- Read-only post-reconciliation state remains clean: exact start9/preflight keys are all revoked; run contains zero
+  private token/socket/config/capability artifacts, zero Unix sockets and matching processes; Project/Ontology/graph,
+  workspace version/state, six batches, one recent session, zero active sessions/leases/in-flight attempts, retained
+  scope, resource counts (`classes=6`, `entities=10`, `facts=10`, `relations=8`) and stale count zero are unchanged.
+  `ontology-platform.service` is active, backend health is HTTP 200 `{"status":"ok"}`, and frontend `/` is HTTP 200.
+- Result: **PASS for the narrow runtime contract, 003-only elicitation/config isolation, focused/005/default/frozen/full
+  deterministic gates, cleanup, and operator reconciliation.** No live candidate/receipt or ontology mutation was
+  attempted in this round; L0/L1/L2 semantic quality and repeatability remain **UNEXECUTED**, so deterministic PASS
+  must not be promoted to live semantic acceptance.

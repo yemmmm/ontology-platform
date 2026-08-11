@@ -2742,6 +2742,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "[mcp_servers.modeling_read_proxy]",
                     'command = "/usr/bin/python3"',
                     'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/modeling-read-proxy.sock", "--token-file", "/agent/home/modeling-read-proxy.token"]',
+                    'default_tools_approval_mode = "approve"',
                     "required = true",
                     "[mcp_servers.modeling_read_proxy.env]",
                     'PLATFORM_PROXY_MODE = "modeling"',
@@ -3620,6 +3621,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 agent.package.role == "protocol"
                 and agent.schema_version == 2
                 and server_name == "protocol_mechanics"
+            ) or (
+                agent.package.role == "modeling"
+                and self._is_r23003_run(self._active_run)
+                and server_name == "modeling_read_proxy"
             ) or (
                 bool(self._role_capability_operations(agent.package.role))
                 and server_name == "runner_capability"
