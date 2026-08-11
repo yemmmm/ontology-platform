@@ -1,6 +1,6 @@
 # R2.3-003 Existing-scope 增量建模共享测试计划
 
-- 状态：Approved；plan review PASS；deterministic Round 1 PASS，真实 L0-L2 待执行
+- 状态：Approved；revised-contract plan review Round 4 PASS，待实现/独立复测
 - 需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 设计：
   `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
@@ -17,7 +17,7 @@
 3. R2.3-003 专属 ledger、零 cap 和 `user-20260811-r23003-start1-4` 精确四 start 授权边界正确；
 4. existing-scope live drift preflight 在任何副作用前完成；
 5. 真实增量 Batch 不覆盖 Start75 既有模型，workspace 单调前进；
-6. validation/reasoning、governed retrieval、Evidence/lineage 和两条 CQ 在同一最终 model state PASS；
+6. validation/reasoning、governed retrieval、Evidence/lineage、目标 unknown 硬删除和 standard 的全部 N 条 CQ 在同一最终 model state PASS；
 7. 独立 tester 完成只读复核，清理完成，服务健康；
 8. 文档、状态、delivery record 与 commit closure 完成。
 
@@ -37,6 +37,15 @@
 - 005/003 交叉 Task/Profile/manifest、未知 requirement、任意 IDs/path、symlink、digest drift 全部在副作用前
   拒绝；
 - 005 的 candidate/Acceptance/settlement/provider/cleanup 回归不变。
+- 003 Task 与四角色 authoritative prompts 不含 preserve-old-unknown、exactly-two、固定 `cq-001/cq-002`
+  或 final-CQ2 指令；Acceptance/Coordinator 使用 Runner 投影的 ordinal/count/next/is-final 元数据。
+- 005 `unknown_policy=preserve-explicit-unknown` 保持字节/行为；003 只接受结构化
+  `resolve-and-delete-targets`、精确两个 target IDs、`preserve_non_targets=true`；缺失/额外 target、跨 contract
+  policy、删除非目标 unknown 均 fail closed。
+- FormalRunContract、003 handoff、acceptance standard 与 candidate 的 target 集合必须完全等于
+  `{unknown-cross-release-output-meaning, unknown-b-no-score-behavior}` 且 Class=`ExplicitUnknown`；替换任一
+  ID/Class、只给一个、增加第三个、asset cross-wire 均在 credential/Build Session/mutation 前拒绝；IRI 只
+  接受 live canonical projection，不允许静态 handoff/candidate 提供。
 
 ### T3 — StartLedger
 
@@ -60,29 +69,57 @@
 - candidate 是完整本轮增量，不重发 Start75 全 candidate，不接受 patch-only revision；
 - `existing_entity_ref` 只含平台中立 semantic ID/expected Class，不含 IRI；binding receipt 从 live read
   生成并绑定 candidate/scope/workspace，missing/duplicate/class mismatch fail closed；
-- 005 translator 拒绝 existing binding 输入且 create plan 字节不变；003 translator 不为 existing ref 发
-  create/update，只用 receipt IRI 生成新 relation；所有新增关系有 source citation；
+- backend real entity-list fixture 明确返回 `semantic_id/entity_iri/class_semantic_id/class_iri`；Protocol 对
+  缺字段、full IRI 冒充 semantic ID、非 canonical IRI 和 synthetic-only shape 均拒绝，不拆 IRI 猜 ID；
+- 005 translator 拒绝 existing binding/delete 输入且 create plan 字节不变；003 translator 不为普通
+  existing ref 发 create/update，只用 receipt IRI 生成新 relation；仅对 impact receipt 完整匹配的
+  `delete_existing_entity` 生成 `delete_entity`；所有新增关系有 source citation；
 - 每阶段先 dry_run 再 apply_atomic，expected workspace version 严格串联；
-- old ExplicitUnknown、label/question/rationale/relations/Evidence/lineage 前后保持；
-- resolution、新 policy 和 concrete case 均有新 Evidence/lineage；
+- live read 枚举两个目标 unknown 的完整入边/出边；读取不完整、IRI/Class/version drift 均在 dry-run 前
+  fail closed；candidate 只允许 `full_live_impact`，拒绝 Agent-authored IRI/triples/impact
+  digest/expected-edge 集合；
+- entity-statement projection 用 exact IRI 和 opaque cursor 分页；1 页、多页、>1000 statements 均取得
+  显式 complete/snapshot digest，cursor scope/entity/workspace drift、漏页、重复页、truncated without cursor、
+  未完成链全部禁止 delete；
+- tool-owned impact receipt 绑定完整 page chain/snapshot/statements/candidate digest；增删一条 live edge、
+  candidate drift、workspace drift 或伪造 impact digest 均使 translator 拒绝，Modeling 无法选择性遗漏边；
+- start5 回归：rev1 receipt -> live binding mismatch -> typed conflict/旧 receipt invalidated/gate closed ->
+  full rev2 reply -> replacement receipt/gate reopened；foreign/stale、无 reply_to、并行 rev、旧 receipt 复用、
+  mutation 后 revision 均 fail closed；
+- Phase A Batch 先写 resolution、新 policy、concrete case、新 Evidence/lineage 并取得 durable readback；
+  Phase B 才以 delete-only Batch 删除两个目标，workspace version 严格串联；任一中间态不能冻结 Acceptance；
+- readback 证明两个目标 semantic ID 及其级联关系不存在、非目标 Start75 资源保持；
+- Acceptance `explicit_unknowns` check 证明目标删除且新结论/Evidence 完整，同时证明全部非目标 unknown 保持；
 - invalid probe 被 validation_failed 拒绝且零 mutation；任一 apply 不确定时 fail closed。
+- 注入 Phase B RDF apply 后/SQL commit 前失败：readback 为“均存在”时允许同 Team 新 Batch 重试，
+  “均不存在”时只恢复机械记录且禁止重建，“部分删除/不完整”时阻止新 start 并请求人工对账；Phase A
+  durable 语义在所有分支保持。
+- delete-only recovery 精确回归：before statements 全在且无新边=`not_applied`；目标/全部 before statements
+  均不在=`applied`；严格子集、目标与边混合、出现新 incident triple、cursor/snapshot 不完整=
+  `partial_or_drifted`。`_resume_attempt` 仅前两态分别 retry/skip-RDF，第三态不得 retry；005 非删除路径回归。
 
-### T6 — Acceptance and settlement
+### T6 — N-CQ Acceptance and settlement
 
-- 两条 CQ 顺序固定，第二条合并 no-score policy 与 concrete case；两轮各自 fresh Source/Platform Examiner，
-  上一轮 child 已回收后才启动下一轮；
+- standard 接受任意正整数 N 个、唯一且有序的 CQ；空列表、重复 ID、字段/来源错误 fail closed；实现没有
+  `len==2`、`cq-001/cq-002` 或“final CQ2”分支；
+- 以 1/3/5 CQ standards 验证 ticket、串行推进、每题 fresh Source/Platform Examiner、上一轮 child 回收后
+  才启动下一轮；当前 003/005 两题 standard 保持原顺序与问题字节；
+- loader/task/prompt/ticket 全链使用 standard-owned ordered IDs 和 Runner-owned ordinal/count/next/is-final；
+  非 `cq-NNN` 的合法唯一 ID 也可运行，证明未按名称推断顺序/final；
 - ticket 不含预期答案、Producer 对话或旧 verdict；
-- Source/Platform 两侧独立得出答案；两份 CQ Acceptance verdict 与四份 Examiner report 绑定同一
+- Source/Platform 两侧独立得出答案；N 份 CQ Acceptance verdict 与 2N 份 Examiner report 绑定同一
   最终 model state；
 - 任一新 write 使全部旧 verdict 失效；
-- terminal 顺序、settlement CAS/readback、Team settled 和 aggregate cleanup 保持 005 已验收合同。
+- 非最终 PASS 只推进恰好下一题，final PASS 不再启动新轮；任一非 PASS 停止推进；
+- settlement 要求当前 epoch 恰好覆盖 standard 的完整有序 N 题、全部 usable PASS、无 active handles；
+  terminal 顺序、settlement CAS/readback、Team settled 和 aggregate cleanup 保持 005 两题回归。
 
 ### T7 — Failure and cleanup
 
 - mutation 前失败允许在剩余授权内 fresh retry；
 - mutation 后同一 Team 的修订使用新 Batch 和新 final model state；
 - mutation unknown、terminal-after-apply 或 readback 不一致阻止新 start 和自动删除；
-- existing Project/Ontology 永远保留；本轮 Session/Lease/key/Agent/Examiner/proxy/run-private secret 精确清理；
+- existing Project/Ontology 永远保留；只允许删除两个目标 unknown；本轮 Session/Lease/key/Agent/Examiner/proxy/run-private secret 精确清理；
 - cleanup failure 作为附加事实保留，不覆盖第一阻断分类。
 
 ## 3. 真实运行测试
@@ -99,13 +136,13 @@ PASS 后进行；首个完整 PASS 后 success-stop。
 ### L1 — Modeling quality
 
 - 直接检查 Modeling 完整增量 candidate、Protocol receipt 与每阶段 dry-run/apply/readback；
-- 核对两个 unknown 的 source-bounded resolution、新 decision/publication slice、旧模型回归、显式范围外；
+- 核对两个 unknown 对应的新结论、两个旧资源及级联边已删除、新 decision/publication slice、旧模型回归、显式范围外；
 - validation conforms、reasoning consistent、required path retrieval 完整、非截断、有 Evidence/lineage；
 - 不使用本次专用硬编码验收程序替代直接证据。
 
 ### L2 — Independent semantic acceptance
 
-- 两轮 fresh Examiner 均形成终态；两条 CQ current/usable PASS 且绑定同一 final model state；
+- standard 声明的全部 N 轮 fresh Examiner 均形成终态；全部 CQ current/usable PASS 且绑定同一 final model state；
 - 独立 tester 在 Producer settled 后只读核验 source、platform receipts、query results、verdict、settlement 和
   cleanup，不创建/继续 run、不修改 retained evidence。
 

@@ -1,9 +1,9 @@
 # R2.3-003 已有 Project/Ontology 增量建模交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md`，R2.3-003
-- Status: blocked
+- Status: in-progress (contract revision after blocked Round 7)
 - Started: 2026-08-11T00:23:23+08:00
-- Last updated: 2026-08-11T03:33:07+08:00
+- Last updated: 2026-08-11T09:17:42+08:00
 - Design: `docs/delivery/designs/2026-08-11-r2-3-003-existing-scope-incremental-modeling-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-11-r2-3-003-existing-scope-incremental-modeling-test-plan.md`
 - Delivery baseline: `84b0abf655e7cac8068e634c4cb90cb2932be6d0`，初始工作树干净
@@ -19,9 +19,10 @@
   有界业务切片；最终同时验证既有模型与全部新增语义。
 - Non-goals: 复用历史 Agent Session；重建或覆盖 Start75 模型；把 Dify 业务语义写入平台生产代码；
   Pi Runtime、并发写入团队或长期 Project 生命周期产品化。
-- Acceptance summary: 两条串行 CQ；CQ1 验证跨版本字段连续性，CQ2 合并 no-score policy 与具体
-  decision/publication case；同时保护 source fidelity、增量 dry-run/apply、既有结果回归、
-  validation/reasoning、governed retrieval 和 Evidence/lineage。
+- Acceptance summary: 当前 003 standard 仍是两条业务 CQ，但共享 Carrier 支持 standard 声明的任意正整数
+  N-CQ；严格串行，每题 fresh Examiner，settlement 覆盖全部 N 题。同时保护 source fidelity、两个目标
+  unknown 的原子硬删除、增量 dry-run/apply、既有结果回归、validation/reasoning、governed retrieval 和
+  Evidence/lineage。
 - Refinement: 用户已确认将 R2.3-003 的 existing-scope 基线切换到 R2.3-005 Start75，并确认解析两个
   unknown 只占部分目标，还需增加一个相关业务切片。用户随后授权主 Agent 构造版本化资料，无需逐项确认；
   source、具体 case、两条 CQ 与精确四 start 授权现已冻结。
@@ -262,3 +263,76 @@
   live read 可以合法要求 candidate revision，typed delivery state machine 必须预先允许并绑定该 revision，
   不能只覆盖初稿与 conflict revision。Runtime cleanup 不能只依赖终止进程，还必须清除 App Server
   SQLite/WAL 私有缓存，同时保留经脱敏的交付与语义证据。
+
+### 2026-08-11 — user contract revision after blocked closure — user and main agent
+
+- Context: R2.3-003 已按 4/4 次真实失败和 Round 7 安全收尾记录为 blocked；用户随后修改两项关键决定。
+- Action/decision: 两个目标 `ExplicitUnknown` 不再保留，改为在新结论/Evidence 同一原子 Batch 中硬删除；
+  Acceptance 从固定两 CQ 改为 standard-owned N-CQ，后续 CQ 数量可以任意变化。为保护非目标 Start75，
+  删除前必须核对 live 完整入边/出边，未知影响 fail closed。当前 003 两个业务问题不变，不虚构第三题；
+  用 1/3/5 CQ 回归证明载体通用性。
+- Evidence: 用户当前指令；平台已有 `delete_entity` 且会级联删除实体作为 subject/object 的全部 triples；
+  当前 Runner/Carrier 在 standard loader、frozen IDs、task text、round advance、revalidation、settlement 多处
+  硬编码两题。
+- Outcome/next step: 需求重新进入 in-progress；更新 requirement/design/shared test plan，执行 mandatory
+  plan review 后再开发。此前四次授权已耗尽，本次合同变更不构成新的真实 semantic start 授权。
+
+### 2026-08-11 — revised-contract plan review Round 1 — plan reviewer and main agent
+
+- Context: reviewer 对硬删除与 N-CQ 草案核对真实 Task/prompts、Runner/Carrier、Protocol/backend read shape
+  和 start5 retained failure。
+- Action/decision: Round 1=`REVISE`，五项 High 全部 `accepted-high`：(1) authoritative assets 仍要求保留
+  unknown/固定两题；(2) start5 post-receipt revision typed state 缺口未纳入；(3) Protocol 合成 binding shape
+  不兼容 backend full IRI response；(4) statement-list 无完整分页证明却要 wildcard delete；(5) acceptance
+  unknown policy 只允许 preserve。方案新增全 surfaces 参数化、replacement receipt lifecycle、canonical
+  identity projection、完整分页 entity-statement projection和 deletion-aware policy。
+- Evidence: Task/四角色 prompts 与 `runner.py:627-659,1932-1942`；
+  `acceptance.py:1497,5290-5371`；`candidate_progress.py:404-498`；
+  `protocol_mechanics.py:1174-1299`；backend `semantic_read_model.py:345-394`；
+  `semantic_command_compiler.py:1393-1424`；003 acceptance standard `unknown_policy`。
+- Outcome/next step: 更新 requirement/design/test plan 后交同一 reviewer Round 2；未通过前不开发共享
+  CRITICAL symbols。
+
+### 2026-08-11 — revised-contract plan review Round 2 — plan reviewer and main agent
+
+- Context: Round 1 五项 High 已进入方案，reviewer 复核 deletion-aware policy 的可执行身份边界。
+- Action/decision: Round 2=`REVISE`，一项 High `accepted-high`：文档只写精确两个 target，却未在 formal
+  assets 冻结实际 IDs，若只校验 count 可删除错误资源。现冻结
+  `unknown-cross-release-output-meaning`、`unknown-b-no-score-behavior` 与 Class `ExplicitUnknown`，并要求
+  FormalRunContract/handoff/standard/candidate 四方一致；candidate 无权选择删除目标。
+- Evidence: 当前 `FormalRunContract`、003 profile/task/handoff/standard 没有 target ID 字段；IDs 只存在于
+  retained Start75 evidence。
+- Outcome/next step: 增加 wrong-pair/class/count/cross-wire regression，实际 IRI 仍只来自 live canonical
+  projection；交同一 reviewer Round 3。
+
+- Additional finding/disposition: reviewer 发现平台 `apply_atomic` 先提交 RDF delta，再写 PostgreSQL
+  rule/evidence/lineage；SQL rollback 不能撤销已应用 RDF，因此“新增语义+删除跨存储原子”是另一项 High，
+  `accepted-high`。合同改为单调 Phase A（新增语义 durable）-> Phase B（delete-only），并要求注入
+  post-RDF/pre-SQL failure 后按目标均在/均不在/部分删除三种 live readback 分支恢复，任何中间态不进入
+  Acceptance。
+
+### 2026-08-11 — revised-contract plan review Round 3 — plan reviewer and main agent
+
+- Context: Round 2 身份与两阶段迁移已修订，reviewer 核对 candidate/tool 责任边界。
+- Action/decision: Round 3=`REVISE`，一项 High `accepted-high`：让 Modeling 声明完整 live 入边/出边集合
+  与其不可见 IRI、可能 >1000 triples 及 AGENTS deterministic-mechanics 边界冲突。现改为 candidate 只声明
+  frozen target + `full_live_impact`；Protocol/tool 分页读取并独占生成 canonical impact receipt/digest，用户
+  的 target hard-delete 决定授权全部 incident triples。
+- Evidence: 设计 §3.2 的 Modeling 输入边界；AGENTS deterministic mechanics 规则；完整分页风险。
+- Outcome/next step: 测试拒绝 Agent-authored IRI/triples/digest，并验证 tool receipt 对 candidate/scope/
+  workspace/page-chain/snapshot/statements 全绑定；交同一 reviewer Round 4。
+
+- Additional finding/disposition: 当前 ModelingBatch delete-only recovery 只要仍有任一 delete match 就判
+  `not_applied`，会把 partial wildcard deletion 当成可重试，属于 High `accepted-high`。方案新增 receipt-bound
+  before-set 三态 observation：全在=`not_applied`、全不在=`applied`、子集/混合/新边/不完整=
+  `partial_or_drifted`；最后一态禁止自动 retry/new start，并增加注入式回归。
+
+### 2026-08-11 — revised-contract plan review Round 4 — plan reviewer and main agent
+
+- Context: Round 3 已把完整影响作者收回工具层，并补齐 delete-only partial recovery。
+- Action/decision: Round 4=`PASS`，reviewer 对 frozen target + `full_live_impact`、tool-owned complete impact
+  receipt、>1000/page-chain binding、`not_applied/applied/partial_or_drifted` recovery 做 spot-check，未发现新
+  Critical/High。此前 Round 1–3 findings 全部保持 accepted-high 与可执行修订。
+- Evidence: 当前 requirement/design/shared test plan；reviewer Round 4 record-ready conclusion。
+- Outcome/next step: 冻结开发 handoff。运营层仅剩 4/4 starts 已耗尽；实现和 deterministic/independent
+  testing 可继续，但无新用户授权不得启动 live semantic run。

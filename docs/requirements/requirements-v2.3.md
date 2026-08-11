@@ -1730,7 +1730,7 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 
 ## R2.3-003 已有 Project/Ontology 增量建模
 
-当前状态：`Current Draft（功能范围已确认，待 plan review、实现与真实运行）`
+当前状态：`Current Draft（2026-08-11 合同变更已通过 plan review，待实现、独立测试与重新授权真实运行）`
 
 优先级：`P0`
 
@@ -1751,7 +1751,7 @@ clean commit `6c9bf4a` 已独立证明 Runner/ledger/CLI 的离线确定性、�
 - 不继承 Start75 Agent 对话、历史 Prompt、旧 verdict、隐藏答案或本地运行目录；
 - 用批准的增量资料解析 Start75 的两个 `ExplicitUnknown`，并完成一个相关但独立的
   “C 评估结果 -> B 可发布性决策 -> A 发布结果”业务切片；
-- 证明既有模型保持正确、旧 unknown 的来源边界仍可解释、当前结论和新增切片均可可靠检索。
+- 证明既有模型保持正确、两个已解析 unknown 资源已安全删除、当前结论和新增切片均可可靠检索。
 
 本节经用户确认 supersede 本文此前“R2.3-003 必须继续 R2.3-002 Project/Ontology”的文字。新的精确
 existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建并保留的 Project
@@ -1766,8 +1766,11 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   状态，任一身份、版本或所有权漂移都停止并等待人工处理；
 - Team Runner、Codex Adapter 和基础四 Agent Profile 不因 existing 场景修改核心语义；
 - Protocol 在写入前读取当前平台事实和 workspace context，并创建新的 Build Session/Lease；
-- 本轮只通过新的不可变 Modeling Batch 表达增量变化；不得删除、重建或覆盖 Start75 的类、属性、
-  实体、关系、Shape、Evidence 或 lineage；
+- Platform/Protocol 必须通过显式 canonical identity 字段绑定 existing entity；不得从 full IRI 尾段猜
+  semantic ID/Class。硬删除前必须用 scope/entity/workspace-bound opaque cursor 读取完整的 subject/object
+  statement page chain，并取得显式 completeness/snapshot digest；未完整时禁止删除；
+- 本轮只通过新的不可变 Modeling Batch 表达增量变化；除两个目标 `ExplicitUnknown` 及其级联关系外，
+  不得删除、重建或覆盖 Start75 的类、属性、实体、关系、Shape、Evidence 或 lineage；
 - existing 模式不删除 Project/Ontology，不抢占历史 Lease，不恢复历史 Agent Session；
 - 新 source bundle 固定为
   `docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json`：复用 manifest
@@ -1785,6 +1788,9 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
   unknown 或正式 readback 无法对账时，停止新的 start 并保留平台状态；只有完成状态对账并形成新的
   明确 handoff 后才可继续，不得沿用旧 workspace version、自动删除 Project 或把部分写入冒充 Start75
   原始基线。
+- 首个 candidate receipt 后、首次 mutation 前如 live identity/deletion-impact read 发现 mismatch，Runner
+  必须使旧 receipt 失效并允许一次绑定 typed conflict 的完整 candidate revision，再由 replacement receipt
+  重新开放 platform gate；foreign/stale、并行或 mutation 后的 binding revision 一律拒绝。
 
 ### 已确认的组合建模目标
 
@@ -1795,9 +1801,15 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
    score、返回 `CLASSIFIER_UNAVAILABLE` 时，B 不自动重试、不报告 publishable，而是形成
    `manual review required` 决策；A 只发布 B 明确报告 publishable 的结果，因此该决策下 A 持有内容
    等待 review，不创建 published result。
-3. 原两个 `ExplicitUnknown` 及其旧 Evidence/lineage 不得删除或静默改写。增量模型必须用当前结论、
-   resolution state 和新 Evidence 表达“旧批准来源下未知、当前补充来源已解析”；具体 ontology 结构由
-   Modeling Agent 决定，但查询不得同时把同一问题呈现为无边界的 unresolved 和 resolved。
+3. 原两个 `ExplicitUnknown`（semantic IDs 精确为 `unknown-cross-release-output-meaning` 和
+   `unknown-b-no-score-behavior`，expected Class 精确为 `ExplicitUnknown`）在当前结论、新 Evidence 和所需关系已写入后必须硬删除，不保留 tombstone、
+   resolution wrapper 或“历史 unknown”实体。迁移采用单调两阶段：Phase A 先用不可变 Batch 写入并
+   readback 当前结论、新 Evidence/lineage 和业务切片；Phase B 只有在 Phase A durable 后，才从 live read
+   model 枚举目标的全部入边/出边、生成 tool-owned 完整 impact receipt，并用独立 delete-only Batch 删除
+   目标。candidate 只声明冻结目标与 `delete_mode=full_live_impact`，不声明 IRI、triples 或预期边集合；
+   用户对目标资源的硬删除决定同时授权删除其全部 incident triples。发现身份漂移、读取不完整或 receipt/
+   workspace 漂移时 Phase B fail closed，Phase A 的正确新增语义可以保留但不得
+   进入最终 Acceptance。删除历史 unknown 不等于删除其来源文档；新结论仍必须直接引用批准 source。
 4. 新业务切片必须建模 source 中的具体链：`content-review-001` 经 C 得到无 numeric value 与
    `CLASSIFIER_UNAVAILABLE`，B 形成 `decision-review-001=manual review required`，A 形成
    `publication-outcome-review-001=held for review`，且没有 published result。该具体事实不得被简化为
@@ -1807,7 +1819,7 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
 
 ### 验收问题与独立性
 
-最终模型回答两条不携带预期答案的 CQ：
+最终模型当前回答以下两条不携带预期答案的 CQ：
 
 1. 当前 B 消费 C 的哪个已发布版本/输出，历史 `quality_score` 与当前 `quality_rating` 的业务连续性和
    release 内字段使用边界是什么？
@@ -1815,9 +1827,20 @@ existing-scope 基线是 Start75 `r23005-real-20260810-deepseek-start75` 创建�
    `content-review-001`，能否沿 C evaluation result、B decision 和 A publication outcome 得到完整、
    source-grounded、非截断的业务链，且明确哪些后续行为仍未定义？
 
-两条 CQ 使用同一个 fresh Acceptance 的串行独立验收轮，并为该轮创建 fresh Source/Platform Examiner；
-Examiner 不接收上述业务答案、Producer 对话或旧 verdict。Source Examiner 只从该题批准资料推导答案，
-Platform Examiner 只从冻结 model state 的只读平台事实推导答案，Acceptance 比较两侧结果。
+CQ 数量由 versioned acceptance standard 声明，为任意正整数 N；Runner/Carrier 不得硬编码 2 或特定
+`cq-001/cq-002` 集合。当前 003 standard 仍声明上述两题，不为证明 N-CQ 虚构第三个业务问题。所有 CQ
+使用同一个 fresh Acceptance，严格按 standard 顺序串行执行；每题创建 fresh Source/Platform Examiner，
+上一题终态 cleanup 后才能开始下一题。Examiner 不接收业务答案、Producer 对话或旧 verdict。Source
+Examiner 只从该题批准资料推导答案，Platform Examiner 只从冻结 model state 的只读平台事实推导答案，
+Acceptance 比较两侧结果。任一题非 current/usable PASS 时不推进；settlement 只在同一 model-state epoch
+下全部 N 题 PASS 且全部 child cleanup 后成立。后续仅修改 acceptance standard 即可使用不同 N，无需修改
+Runner/Carrier 代码；实现只保留通用输入大小和运行资源安全限制，不设业务 CQ 数量上限。
+
+003 acceptance standard 必须使用 deletion-aware unknown policy，精确绑定
+`unknown-cross-release-output-meaning`、`unknown-b-no-score-behavior` 两个待删 semantic IDs 与
+`ExplicitUnknown` expected Class，并要求
+所有非目标 explicit unknown 保持；005 原 `preserve-explicit-unknown` policy 和两题行为保持兼容。每张
+ticket 都携带 Runner-owned ordinal/count/previous/next/is-final 元数据，角色不得从 CQ ID 名称推断顺序。
 
 ### R2.3-003 最小完成门
 
@@ -1828,10 +1851,12 @@ Platform Examiner 只从冻结 model state 的只读平台事实推导答案，A
    和 Lease。
 2. Agent 只读取当前平台事实、允许的新业务资料和非敏感 scope handoff。
 3. 当前 workspace version 和既有模型在变更前被正确读取；没有历史 Agent 对话泄漏。
-4. 增量 Modeling Batch 完成 dry-run/apply，workspace 前进，既有模型未被错误覆盖或重建。
-5. 最终 validation、reasoning 和 governed retrieval 同时支持 Start75 既有结果、两个 unknown 的
-   source-bounded resolution，以及新增 decision/publication 切片；两条 CQ 均在同一最终 model state
-   上取得 current/usable PASS。
+4. Phase A 增量 Batch 和 Phase B delete-only Batch 均完成 dry-run/apply/readback，workspace 单调前进，
+   既有模型未被错误覆盖或重建。Acceptance freeze 前必须证明新结论/Evidence/业务切片 durable、两个目标
+   及其声明的级联边不存在、所有非目标资源保持。
+5. 最终 validation、reasoning 和 governed retrieval 同时支持 Start75 既有结果、两个 unknown 对应的
+   source-grounded 当前结论，以及新增 decision/publication 切片；两个旧 unknown 资源查询不存在；
+   acceptance standard 声明的全部 N 条 CQ 均在同一最终 model state 上取得 current/usable PASS。
 6. existing 模式保留 Project/Ontology，只清理本轮 Runtime、Build Session/Lease 和临时凭据。
 7. 本轮不删除 Start75/R2.3-003 Project/Ontology；是否在未来需求后删除必须另行明确授权，不属于
    Team Runner existing 模式。
@@ -1842,7 +1867,7 @@ Platform Examiner 只从冻结 model state 的只读平台事实推导答案，A
 - 复用或恢复 R2.3-002 Agent Session；
 - 合并两个并发写入团队；
 - 自动解决历史 fenced、冲突或未知所有权状态；
-- 删除旧 ExplicitUnknown 以伪造“从未未知”，或把旧 unknown rationale 当作当前 unresolved 结论；
+- 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
 - 长期 Project 生命周期管理或管理 UI。
