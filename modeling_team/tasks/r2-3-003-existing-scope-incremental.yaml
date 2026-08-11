@@ -21,7 +21,8 @@ objective: >-
   The candidate must include these two ordered delete declarations plus the bounded business-slice
   items; delete declarations keep exactly `semantic_id`, `expected_class`, and `delete_mode` and
   never nest an `existing_entity_ref` or carry Agent-authored IRIs, triples, expected edges, or
-  impact digests. The initial `candidate_revision` is the positive decimal integer `1`; every
+  impact digests. The initial `candidate_revision` is the JSON number `1`, not the quoted string
+  `"1"`; every
   conflict-bound full revision must use the next strictly greater integer (`2`, then `3`, ...),
   never the invalidated revision or candidate digest. In the observed delivery-8 -> delivery-9
   path, do not reuse `r23003-retained-scope-increment-1`; delivery-9 must carry the next

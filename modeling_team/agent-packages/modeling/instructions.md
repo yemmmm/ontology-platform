@@ -224,7 +224,8 @@ The initial candidate must also contain two independent standalone items with a 
 and `item_kind=existing_entity_ref`, one for each of those exact delete targets; each such item's
 semantic object contains only `semantic_id` and `expected_class=ExplicitUnknown`. These binding
 items are separate from, and are not nested in, the two delete items. Use deterministic positive
-decimal `candidate_revision` values: initial `1`, then the next strictly greater integer for
+integer `candidate_revision` values encoded as JSON numbers, never strings: initial `1` (not
+`"1"`), then the next strictly greater integer for
 each conflict-bound full revision (`2`, then `3`, ...); never reuse the invalidated revision or
 candidate digest. In the observed delivery-8 -> delivery-9 sequence, do not reuse
 `r23003-retained-scope-increment-1`; send the next deterministic revision instead.

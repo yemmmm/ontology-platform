@@ -681,6 +681,10 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
         ).read_text(encoding="utf-8")
         objective = runner.run.configuration.task.objective
         assert generated.count(objective) == 1
+        assert 'JSON number `1`, not the quoted string `"1"`' in objective
+        assert 'JSON numbers, never strings: initial `1` (not `"1"`)' in " ".join(
+            package.split()
+        )
         for literal in (
             "unknown-cross-release-output-meaning",
             "unknown-b-no-score-behavior",
