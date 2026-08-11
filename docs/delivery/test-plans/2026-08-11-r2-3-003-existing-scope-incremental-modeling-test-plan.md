@@ -2000,3 +2000,58 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   Phase-B sequence, final readback, validation/reasoning/retrieval, or N-CQ acceptance. The R2.3-003 requirement is
   therefore honestly **BLOCKED** (budget exhausted), not a semantic PASS; no further testing can promote this evidence
   without new explicit authorization.
+
+### Round 36 — 2026-08-12 independent start19 Phase-A/combined-delete audit and split-delete continuation recheck — PASS deterministic; L0-L2 incomplete
+
+- **Scope and safety.** This round reused the same shared plan after the stable developer handoff (the eight intended
+  modeling/protocol source, prompt, scope/task, and test files remain the only working-tree implementation changes).
+  The tester performed read-only evidence/DB/RDF/resource inspection and local tests only: no product, ledger, live
+  evidence, residue, ontology, workspace, or service state was changed, and no start20 was launched. The only write
+  in this round is this plan append.
+- **Start19 Phase-A audit: PASS for the applied prefix.** The retained run is `CLEANED`; its accepted numeric
+  revision-1 candidate is delivery-4/receipt delivery-5 (candidate digest
+  `abd9ad6a28ef480303dfc43aa190e6806db7e4566ffcc79d86ea28a04de0c0ed`). PostgreSQL shows four ordered Phase-A
+  Batches, each with a validated dry-run and an applied `apply_atomic`: `1-stage1-class` (4 items),
+  `1-stage2-property` (10), `1-stage3-entity` (4), and `1-stage4-relation` (4). The final Phase-A workspace is
+  exactly `1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3`; the four source-grounded entities
+  `content-review-001`/Content, `evaluation-review-001`/ContentEvaluation,
+  `decision-review-001`/PublishabilityDecision, and `publication-outcome-review-001`/PublicationOutcome are present
+  in the scoped asserted-data graph. This is real platform mutation and is not a zero-mutation terminal.
+- **Start19 Phase-B block: PASS for fail-closed behavior, not deletion acceptance.** The combined native plan created
+  one `1-phase-b-delete-only` Batch (`34531807-a785-4de2-9984-1d894ed10b2e`) containing both target deletes. Its
+  dry-run ended `validation_failed` with blocking `conflicting_item_effects`; the normalized delta was empty and no
+  delete `apply_atomic` attempt exists. Both `unknown-cross-release-output-meaning` and
+  `unknown-b-no-score-behavior` remain present in the scoped graph (both typed `ExplicitUnknown`, with 9 and 8
+  outgoing statements respectively). Build Session `3e10691d-23ca-494a-b051-f3d17f096885` is `cancelled` with the
+  recorded fail-closed reason, its Lease has `released_at`, and current project counts are zero active sessions,
+  leases, and in-flight apply attempts. The retained run has no `evidence/terminal-reconciliation.jsonl`; the ledger
+  terminal is therefore classified `platform-contract`, `complete_modeling_quality_result=false`, rather than being
+  represented as a zero-mutation reconciliation. The retained aggregate provider-secret audit is complete (289
+  files, scan errors 0) but records `match_count=3`, `matched_secret_count=3`, and
+  `private_credentials_destroyed=false`; no global secret-clean claim is made.
+- **Keys and residue: PASS within the scoped audit.** All nine start19-created API-key rows are revoked/non-active.
+  The approved generated `runtime/modeling/home/read_proxy_mcp.py` and zero-byte
+  `runtime/modeling/home/modeling-read-proxy.sock` are absent; the scoped run tree contains zero Unix sockets and
+  zero formal private-artifact names, and the registered runtime PIDs are absent. No broad filesystem/socket
+  inventory or evidence deletion was performed.
+- **Deterministic split-delete/continuation repair: PASS (FIXED).** `translate_candidate_to_batches` now emits one
+  receipt-bound `delete-only` Phase-B Batch per target, in frozen target order, with deterministic target-specific
+  `client_batch_id`/idempotency-key suffixes and the complete impact receipt embedded on its single delete item.
+  The native prompt requires applying multiple returned single-target batches in order and forbids combining or
+  reordering them. The continuation contract test constructs exactly eight items (four Phase-A entity refs, two
+  frozen target refs, and two ordered delete declarations), translates to two delete-only batches with no create
+  stage, and preserves target identity/receipt binding. The MCP wrapper test covers the two-batch order, unique
+  stable IDs, receipt-bound semantic IDs, fail-closed missing-impact/readback paths, and R2.3-005/default
+  candidate-only isolation.
+- **Independent verification.** The affected focused command (protocol MCP, R2.3-003 incremental/revision/read-only,
+  R2.3-005 progress/runtime, and translator tests) returned **119 passed, 13 subtests**; the two direct split-delete
+  and MCP bridge tests returned **2 passed**. Full `uv run --project backend python -m pytest modeling_team/tests -q`
+  returned **747 passed, 1 skipped, 218 subtests**. Compileall, focused Ruff, and `git diff --check` passed. The
+  user service remains active; backend `/api/health` returned HTTP 200 and frontend HTTP 200.
+- **Ledger and handoff conclusion.** Read-only `StartLedger._validate_strict_replay` passes all 63 records (SHA-256
+  `e1655bd9895104d8100bd633deedbcb31d498101ea8376b0a181cae8af4bdb66`), with `cap/count/active=20/18/0`; the tail
+  is start19 `terminal_failure`, `classification=platform-contract`, `complete_modeling_quality_result=false`. The
+  deterministic translator/split-delete and continuation repairs are **PASS**, but start19 did not complete the
+  second Phase-B delete, final readback, validation/reasoning/retrieval, or N-CQ. Semantic L0-L2 acceptance remains
+  **incomplete** and must not be promoted to PASS. Start20 is eligible only after Main commits the stable working-tree
+  changes and rechecks the live current-context/health gate; this tester did not start it.

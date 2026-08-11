@@ -1151,3 +1151,27 @@
 - This repair is deterministic only. The three authorized starts are exhausted at ledger cap/count/active=`17/17/0`;
   no fourth run was launched. R2.3-003 remains BLOCKED pending a newly authorized real run that completes Phase A,
   both target deletions, final readback/validation/reasoning/retrieval and independent N-CQ acceptance.
+
+### 2026-08-12 — new three-start authorization, start19 durable Phase A and split-delete repair
+
+- User authorization `user-20260812-r23003-post-translation-bridge-start1-3` appended exactly three starts and moved
+  the strict ledger from cap/count `17/17` to `20/17`. start19 consumed the first start; no fourth start is authorized
+  by this tranche and the first complete semantic PASS remains the stop condition.
+- Modeling and Protocol completed the candidate/receipt/live-binding path and applied four Phase-A Batches: class,
+  property, entity and relation. Workspace advanced to
+  `1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3`; the four bounded business-slice entities
+  are present. The native plan then placed both wildcard target deletes in one Batch, whose dry-run failed closed with
+  `conflicting_item_effects`. No delete apply occurred and both frozen ExplicitUnknown targets remain present.
+- Main stopped the run before any hand-authored delete fallback, cancelled its Build Session, released its Lease,
+  revoked all run keys and removed only the two known generated non-secret bridge placeholders. The retained runtime
+  secret aggregate is a stale pre-remediation diagnostic and is not reported as the final cleanup fact. Strict ledger
+  replay is 63 records, cap/count/active=`20/18/0`, tail=start19 `platform-contract` terminal failure.
+- Commit `79cf4a4` changes only the deterministic delta: the translator preserves candidate target order but emits two
+  stable, receipt-bound, single-target Phase-B delete-only Batches; Protocol must not combine or reorder them. Because
+  Phase A is already durable, the next candidate is an eight-item continuation containing four Phase-A entity refs,
+  two target refs and two ordered delete declarations, with no create items. The handoff now binds start19/current
+  workspace. R2.3-005/default behavior is unchanged.
+- Independent Round36 verification passed: focused=`119 passed, 13 subtests`; direct split-delete checks=`2 passed`;
+  modeling_team full=`747 passed, 1 skipped, 218 subtests`; compileall, Ruff, diff-check and service health passed.
+  Deterministic repair is PASS, while live final deletion/readback/validation/reasoning/retrieval/N-CQ remains
+  incomplete. Exactly two authorized starts remain.

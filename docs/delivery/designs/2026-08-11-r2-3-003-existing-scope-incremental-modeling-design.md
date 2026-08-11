@@ -1,9 +1,10 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：同步瘦身、Carrier 修复与 write-after-apply context fence 窄修均已实现并回归 PASS；
-  start16–start18 新授权三次已全部消耗，cap/count/active=`17/17/0`。start18 完成了首个
-  delete-only apply，但后续围栏自阻断与超时使真实 Phase A/B、最终 readback 和 N-CQ 仍未完成；
-  已按删除前 receipt 精确回补 RDF 语义，平台历史保留；native translator wrapper 的 003 参数缺口也已修复
+- 状态：同步瘦身、Carrier、context fence 与 native translator bridge 均已实现并回归 PASS；新授权
+  `user-20260812-r23003-post-translation-bridge-start1-3` 将 cap 扩至 20。start19 已完成 durable Phase A，
+  但合并双目标删除在 dry-run 被 `conflicting_item_effects` 阻断；当前 cap/count/active=`20/18/0`，
+  两个 unknown 未删除，剩余两次授权。Phase B 已改为两个有序单目标 delete-only Batch，后续 run 复用
+  start19 的四个 Phase-A 实体并以 8-item continuation 完成删除、readback 与 N-CQ
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -151,7 +152,8 @@ ID/Class 和 `delete_mode=full_live_impact`。Modeling 不声明 IRI、triple �
 分页链异常或 receipt 不匹配时零 mutation 冲突。纯 translator 只在 receipt 证明完整影响后生成
 `delete_entity`。写入采用单调两阶段，不声称跨 RDF/PostgreSQL 原子：Phase A 的
 不可变 Batch 只写解析结论、新 Evidence/lineage 和业务切片，完成 apply/readback 后形成 durable
-resolution boundary；Phase B 再以 delete-only Batch 删除两个目标。Phase B 前重新绑定 workspace version
+resolution boundary；Phase B 再以两个按冻结目标顺序排列、各含一个目标的 delete-only Batch 删除两个
+目标。Phase B 前重新绑定 workspace version
 并重读完整影响集合。最终 readback 必须证明两个 semantic ID 不存在、已声明级联边消失、非目标 Start75
 资源仍存在，且新结论直接引用批准 source。两阶段未全部完成时不得冻结 Acceptance model state。
 
@@ -364,7 +366,8 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - plan review 无未处理 Critical/High；
 - deterministic tests 覆盖两个 formal contract 隔离、003 ledger、existing preflight、source visibility、
   delta candidate、安全硬删除、N-CQ（至少 1/3/5）和写后失败；完整 repository-required suite PASS；
-- 当前授权已全部消耗并完成 append-only 终态对账；任何后续真实 start 必须先获得新的显式授权。后续
-  一个真实 R2.3-003 Team run 仍须在 Start75 Ontology 上完成组合目标与独立验收，首次完整 PASS 后停止；
+- start19 已完成 append-only 终态对账，当前三次授权剩余两次；提交本轮确定性修复并通过 current-context/
+  health gate 后可继续。后续 R2.3-003 Team run 须复用 durable Phase A，完成两个单目标 Phase-B 删除与
+  独立验收，首次完整 PASS 后停止；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。

@@ -1971,6 +1971,19 @@ commit `57e227c` 已补齐该窄通道并明确禁止手工 fallback，回归证
 readback 后 delete-only 在最后，且 005/default candidate-only 行为不变。该确定性修复没有新增授权，
 不能替代尚未完成的真实语义验收。
 
+2026-08-12 用户再次明确授权三次 fresh semantic starts，authorization ID/reference=
+`user-20260812-r23003-post-translation-bridge-start1-3`、`additional_starts=3`，把 strict ledger 从
+`cap/count/active=17/17/0` 扩为 `20/17/0`。start19 已消费第一次：四个 Phase-A create Batch 均完成
+dry-run/apply，业务切片在 workspace `1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3`
+durable；两个目标被放入同一 delete-only Batch 时，平台以 `conflicting_item_effects` 在 dry-run 阶段
+fail closed，因此没有执行删除且两个 unknown 仍存在。该运行已以 `platform-contract` terminal failure
+收口，strict replay 为 `cap/count/active=20/18/0`，剩余两次授权。
+
+Phase B 现在必须把两个冻结目标分别放入两个按候选顺序排列、单目标且 receipt-bound 的 delete-only
+Batch，禁止合并或重排。后续 start 在 readback 确认 start19 的四个 Phase-A 实体均存在时，使用完整的
+8-item continuation candidate：四个 Phase-A existing refs、两个目标 refs 和两个有序 delete declarations，
+不得重新创建 Phase-A 资源。首次完整 semantic PASS 后停止，不为消耗剩余额度继续启动。
+
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
