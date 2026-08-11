@@ -187,6 +187,47 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         _validate_candidate_receipt(delivery, candidate, "delivery-1")
 
+    def test_candidate_conflict_tool_exposes_only_canonical_content_and_structured_content(self) -> None:
+        wrapper = self._wrapper()
+        candidate = {
+            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_revision": 1,
+            "scope": "retained",
+            "constraints": ["source-grounded"],
+            "items": [{"item_id": "item-1", "item_kind": "class", "semantic": {"label": "Tool"}}],
+        }
+        with patch.dict(os.environ, {wrapper.FORMAL_CANDIDATE_GATE_ENV: "1"}, clear=False):
+            response = wrapper.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {
+                        "name": wrapper.CANDIDATE_CONFLICT_TOOL_NAME,
+                        "arguments": {
+                            "candidate": candidate,
+                            "conflict_code": "candidate_translation_conflict",
+                            "conflict_detail": "delete declaration requires revision",
+                        },
+                    },
+                }
+            )
+        assert response is not None
+        self.assertNotIn("error", response)
+        result = response["result"]
+        self.assertEqual(set(result), {"content", "structuredContent"})
+        self.assertNotIn("conflict_json", result)
+        self.assertEqual(
+            result["content"],
+            [{"type": "text", "text": json.dumps(
+                result["structuredContent"], ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )}],
+        )
+        self.assertEqual(
+            json.loads(result["content"][0]["text"]),
+            result["structuredContent"],
+        )
+
     def test_proof_gate_rejects_neutral_candidate_at_raw_mcp_boundary(self) -> None:
         wrapper = self._wrapper()
         neutral = {

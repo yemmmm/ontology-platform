@@ -383,6 +383,10 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         assert "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in protocol
         assert "protocol_build_candidate_receipt itself fails at the receipt gate" in protocol
         assert "build_candidate_conflict with the unchanged complete candidate" in protocol
+        assert "native MCP result has only content and structuredContent" in protocol
+        assert "content[0].text parses to structuredContent" in protocol
+        assert "canonical JSON serialization" in protocol
+        assert "no conflict_json" in protocol
         assert "reply-bound request for Modeling to send one full revised candidate" in protocol
         assert "duplicate receipt/reply" in protocol
     finally:

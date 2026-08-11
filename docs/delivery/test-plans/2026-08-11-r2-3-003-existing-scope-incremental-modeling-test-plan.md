@@ -756,6 +756,16 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   gate enabled, `tools/list` advertised `build_candidate_conflict` and `tools/call` returned the same canonical JSON.
   Feeding that envelope as a `RuntimeDelivery(reply_to=delivery-4, expects_reply=true)` moved
   `FormalCandidateProgress` to `awaiting_revision`; no accepted receipt was produced in this path.
+- Defect 1 — **Medium, collaboration/routing + platform-contract prompt/API mismatch**: the repaired Protocol
+  receipt-gate branch says to send the native builder's exact `conflict_json`, but the native MCP API does not expose
+  that field. Reproduction (formal gate enabled): `build_candidate_conflict` `tools/call` returned a result whose
+  keys were exactly `content` and `structuredContent`; `conflict_json` was absent, while
+  `content[0].text` was the canonical JSON serialization of `structuredContent`. Expected: the native branch must
+  explicitly send the returned structured content/canonical text (or otherwise name the real API shape), while the
+  `conflict_json` name remains reserved for the typed Runner capability. Actual: the instruction's literal
+  `conflict_json` reference can leave Protocol without a payload and repeat the receipt/redrive failure observed in
+  start6. Evidence: direct read-only MCP wrapper probe and the current `protocol_retrieval_mcp.py` response shape.
+  Add a native MCP shape regression and revise the receipt-gate prompt before consuming start7.
 - Focused deterministic results:
   - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py -q` — **73 passed, 2 subtests**.
   - R2.3-005 regression (`test_r23005_candidate_authoring.py`, `test_r23005_candidate_progress.py`,
@@ -774,8 +784,100 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   found. Read-only start6 fingerprints were `state.json=31925142e7520c0c674ad4889b9af78e7dcfa5bc14666d23158affbe8862ebad`,
   `formal-candidate-progress.jsonl=09cb25e74ac358525c0875f84494e5031f13aee1677eafe5afabba03c73b6d03`, and
   `capability-calls.jsonl=a52cda0663a427b9a3547d1bc1c5594f2610803f51f1960c6e9a736f1e4f2520`.
-- Result: **PASS for the repaired deterministic prompt/receipt-conflict gate; overall R2.3-003 remains BLOCKED**
-  until a fresh authorized start completes the semantic candidate, live binding, Phase A/B application/readback,
-  validation/reasoning/retrieval, CQ settlement, and cleanup. No tester defect remains in this narrow scope.
-  Recommendation: the main agent may proceed to the next authorized start (start7) after its normal pre-start
-  ledger/health checks; preserve start6's collaboration/routing failure as historical evidence and do not rewrite it.
+- Result: **FAIL for the repaired deterministic prompt/receipt-conflict gate; overall R2.3-003 remains BLOCKED**
+  until Defect 1 is repaired and independently retested, then a fresh authorized start completes the semantic
+  candidate, live binding, Phase A/B application/readback, validation/reasoning/retrieval, CQ settlement, and cleanup.
+  The underlying native conflict builder and all listed regression suites pass, but the prompt/API naming mismatch
+  is a release-blocking narrow routing defect. Recommendation: do **not** consume start7 until the developer updates
+  the native-branch instruction and adds the MCP response-shape regression; preserve start6's collaboration/routing
+  failure as historical evidence and do not rewrite it.
+
+### Round 12 — 2026-08-11 recheck after native conflict result-shape prompt repair — FAIL / start7 remains blocked
+
+- Scope and safety: the developer changed only the Protocol native-result instructions and generated Runner task text
+  after Round11's API-shape defect. This recheck did not start/continue a live run, mutate the ledger, or edit retained
+  start6 evidence; the tester changed only this test-plan record. HEAD remained `a220b766f42b67722ceb7b4b06d3faabea18a3b1`
+  with the narrow repair uncommitted.
+- Repair behavior probe: the native MCP wrapper still returns the real shape (`content` + `structuredContent`,
+  canonical `content[0].text`), and the updated prompt now describes that shape. However, the required focused
+  recheck command
+  `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_p2a_codex_runtime.py -q`
+  returned **99 passed, 3 failed, 2 subtests**.
+- Defect 2 — **High, frozen-surface/regression contract**: `test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_calls`
+  still expects the approved phrase `native MCP result has only content and structuredContent`, but generated Runner
+  text says `MCP result has only...`; `test_r23005_complete_revision::test_c95_protocol_never_merges_history_and_builds_each_current_receipt`
+  still expects the frozen `exactly one of those two responses` wording, which the broad Runner rewrite removed; and
+  `test_p2a_codex_runtime::test_normal_runtime_and_platform_surfaces_remain_byte_frozen` rejects actual
+  `runner.py` SHA-256 `ee74babc1e24e75f7a4e94b300bf733bac080d929231591a35ff932fbd1c7667` against stale approved
+  expectation `095f99a15933c16980b0de52e1e7f19007ee4607af8b671a97ec42d42a01a967`. Expected: preserve all 005
+  frozen prompt assertions and update the approved Runner hash only after review of the intended generated-text
+  delta. Actual: the narrow repair is not regression-clean.
+- Other recheck evidence: the same command's 003/revision/005 candidate-progress/mechanical tests passed; the
+  native MCP shape probe remains PASS. No start7/new reservation/process/socket was created. This round therefore
+  remains **FAIL**, and the developer must repair the three regression failures (including an explicit MCP response
+  shape regression) before another recheck or any start7 use.
+
+### Round 13 — 2026-08-11 recheck after MCP shape regression addition — FAIL / start7 remains blocked
+
+- The developer added the native MCP response-shape regression and updated the 003 generated-text assertions. No
+  live run, ledger append, retained-evidence mutation, or product change was performed by the tester.
+- Recheck command
+  `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py modeling_team/tests/test_protocol_retrieval_mcp.py -q`
+  → **83 passed, 1 failed, 15 subtests**. The new `test_candidate_conflict_tool_exposes_only_canonical_content_and_structured_content`
+  passed and proves the native result shape; 003/revision/candidate-progress/mechanical tests also passed.
+- Defect 3 — **Medium, R2.3-005 frozen prompt regression**: `test_r23005_complete_revision::test_c95_protocol_never_merges_history_and_builds_each_current_receipt`
+  still fails because the broad Runner text rewrite removed the required frozen phrase
+  `exactly one of those two responses`. Expected: preserve the accepted R2.3-005 wording/behavior while adding the
+  native `content[0].text` branch. Actual: generated R2.3-005 Protocol text contains the new verified-response wording
+  but not the frozen compatibility phrase. The approved Runner hash must also be refreshed only after this intended
+  text is restored and the frozen-surface test passes.
+- Result: **FAIL**, with start7 still blocked. Repair the single 005 prompt compatibility regression, refresh the
+  reviewed frozen hash, and rerun this same focused set plus the full modeling-team suite before any live start.
+
+### Round 14 — 2026-08-11 recheck after 005 wording restoration — FAIL / frozen hash drift
+
+- The 005 generic wording was restored and the native MCP shape regression remained present. The exact focused
+  contract command now passed **102 tests, 2 subtests**; the standalone native MCP regression file passed **11 tests,
+  13 subtests**. No live run, ledger append, or retained-evidence mutation occurred.
+- Full `uv run --project backend python -m pytest modeling_team/tests -q` reached **718 passed, 1 skipped, 218
+  subtests** but failed the frozen-surface gate: actual `modeling_team/runner.py` SHA-256 was
+  `47dbd1b81ea0203ff8b34889714f6166165b60d0f0259e5dbf042bb13dce04a6`, while the updated test still expected
+  `05fb9e2f109f0c3541550588433b0124d8b8abb49514974d53fbbd20ba241060`. This is a release-blocking frozen-hash
+  drift caused by the final Runner wording whitespace change, not a behavior-test failure.
+- Result: **FAIL** for the deterministic gate; update the reviewed frozen hash to the final Runner bytes, rerun
+  `test_p2a_codex_runtime.py` and the full modeling suite, then append a PASS recheck. Start7 remains blocked.
+
+### Round 15 — 2026-08-11 final native-result/frozen-hash recheck — PASS deterministic gate / start7 may proceed
+
+- Scope and safety: the final reviewed Runner bytes and frozen digest were rechecked in the shared worktree at
+  HEAD `a220b766f42b67722ceb7b4b06d3faabea18a3b1`. `modeling_team/runner.py` SHA-256 is
+  `47dbd1b81ea0203ff8b34889714f6166165b60d0f0259e5dbf042bb13dce04a6`, matching the approved frozen test. This
+  tester edited only this append-only test plan; no product code, delivery record, retained evidence, real ledger,
+  authorization state, or live modeling run was changed or started.
+- Final focused gates all pass:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py
+    modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py
+    modeling_team/tests/test_p2a_codex_runtime.py -q` -> **102 passed, 2 subtests passed**.
+  - Native MCP result-shape regression, `uv run --project backend python -m pytest
+    modeling_team/tests/test_protocol_retrieval_mcp.py -q` -> **11 passed, 13 subtests passed**. The native
+    `build_candidate_conflict` result remains exactly `content` + `structuredContent`, with canonical JSON text;
+    no `conflict_json` field is assumed.
+  - Required ledger/policy focused command
+    `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_ledger_isolation.py -q`,
+    covering R2.3-003 plus R2.3-005 budget/isolation, -> **43 passed, 22 subtests passed**. Initial authorization remains exact first-only `+4`; after four semantic starts and
+    retryable terminal failures, explicit `+3` ID/reference replays to `cap=7`, `semantic_start_count=4`,
+    `active_reservations=0`; premature/unconsumed/no-predecessor, boolean/zero/negative, duplicate ID/reference,
+    and tampered replay cases reject. R2.3-002 and R2.3-005 fixed policy/namespace assertions remain unchanged.
+- Full deterministic regression: `uv run --project backend python -m pytest modeling_team/tests -q` -> **719
+  passed, 1 skipped, 218 subtests passed**. `uv run --project backend python -m compileall -q modeling_team
+  backend/app backend/tests` and `git diff --check` both pass.
+- Read-only live boundary: `workspaces/modeling-runs/.r2-3-003-start-ledger.jsonl` remains **19 lines**, SHA-256
+  `f31956c27a2c1e4dc38f6c59011dfd27701b3a4cbaf63f491d7134add64eeba3`, ending with start6 terminal failure. No
+  R2.3-003 start7 directory, new reservation, active modeling process, or Unix socket was found; existing
+  R2.3-005 start7-named directories are unrelated and were not modified.
+- Result: **PASS for the repaired deterministic prompt/API/frozen gate**. The native conflict path is mechanically
+  consistent with its actual MCP response shape, the full R2.3-005 regression remains green, and the approved hash
+  is stable. The live R2.3-003 semantic acceptance is still unexecuted; start7 may proceed only under the existing
+  authorization and normal live-run/cleanup controls, with its independent semantic result still to be tested.

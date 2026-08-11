@@ -2195,17 +2195,20 @@ class TeamRunner:
                         "one conflict immediately after that receipt build, before either response is sent, but "
                         "rejects duplicate receipt/conflict calls, stale or foreign IDs, and terminal delivery IDs."
                     )
-                    text += (
-                        " If protocol_build_candidate_receipt itself fails at the receipt gate (including the "
-                        "R2.3-003 exact-delete validator), do not retry that call or send any accepted receipt. "
-                        "Use the native protocol_mechanics build_candidate_conflict with the unchanged complete "
-                        "candidate and a stable validator conflict code/detail, then send only its exact "
-                        "conflict_json with expects_reply=true and reply_to_delivery_id bound to the original "
-                        "candidate delivery. This is the reply-bound request for Modeling to send one full "
-                        "revised candidate bound to the conflict delivery; never send free text, a patch, or a "
-                        "duplicate receipt/reply. If the native conflict builder fails, report blocked and send "
-                        "no receipt/reply."
-                    )
+                    if is_r23003:
+                        text += (
+                            " If protocol_build_candidate_receipt itself fails at the receipt gate (including the "
+                            "R2.3-003 exact-delete validator), do not retry that call or send any accepted receipt. "
+                            "Use the native protocol_mechanics build_candidate_conflict with the unchanged complete "
+                            "candidate and a stable validator conflict code/detail. The native MCP result has only content "
+                            "and structuredContent (no conflict_json): verify content[0].text parses to structuredContent "
+                            "and equals its canonical JSON serialization (ensure_ascii=false, sorted keys, compact "
+                            "separators), then send only content[0].text with expects_reply=true and "
+                            "reply_to_delivery_id bound to the original candidate delivery. This is the reply-bound "
+                            "request for Modeling to send one full revised candidate bound to the conflict delivery; "
+                            "never send free text, a patch, or a duplicate receipt/reply. If the native conflict builder "
+                            "or result-shape check fails, report blocked and send no receipt/reply."
+                        )
                 if proof_gate:
                     text += (
                         " For this proof-gated task, before the first submit_modeling_batch call, validate assertion "

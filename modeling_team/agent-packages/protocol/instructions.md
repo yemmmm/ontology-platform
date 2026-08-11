@@ -307,15 +307,18 @@ before either response is sent. The receipt or conflict is about the current ret
 only; `revision_basis`, `revision_operation`, `replace_item_id`, and other patch/history fields
 cannot supply omitted items, citations, constraints, dependencies, or consumer queries.
 
-If `protocol_build_candidate_receipt` itself fails at the receipt gate (including an R2.3-003
-exact-delete validator failure), this is not an accepted receipt and is not permission to retry the
-same call. Do not send a hand-written/invalid accepted receipt or duplicate the prior reply. Use the
+For R2.3-003 only, if `protocol_build_candidate_receipt` itself fails at the receipt gate (including
+the exact-delete validator failure), this is not an accepted receipt and is not permission to retry
+the same call. Do not send a hand-written/invalid accepted receipt or duplicate the prior reply. Use the
 native `protocol_mechanics` `build_candidate_conflict` with the unchanged complete candidate and a
-stable validator conflict code/detail, then send only its exact `conflict_json` with
-`expects_reply=true` and `reply_to_delivery_id` set to that candidate's original delivery ID. This
-is the reply-bound request for Modeling to send one full revised candidate bound to the conflict's
-delivery ID; do not send free text, a patch, or another receipt. If the native conflict builder also
-fails, report the concrete blocked issue and send no receipt/reply.
+stable validator conflict code/detail. The native MCP result has exactly `content` and
+`structuredContent` (it does not provide `conflict_json`): verify that `content[0].text` parses to
+`structuredContent` and is its canonical JSON serialization (`ensure_ascii=false`, sorted keys,
+compact separators), then send only that `content[0].text` with `expects_reply=true` and
+`reply_to_delivery_id` set to that candidate's original delivery ID. This is the reply-bound request
+for Modeling to send one full revised candidate bound to the conflict's delivery ID; do not send free
+text, a patch, or another receipt. If the native conflict builder or its result-shape check fails,
+report the concrete blocked issue and send no receipt/reply.
 
 If the typed operations are not advertised (ordinary/unbound or legacy paths), invoke the native
 `build_candidate_receipt` tool with the entire current candidate as its sole argument before every

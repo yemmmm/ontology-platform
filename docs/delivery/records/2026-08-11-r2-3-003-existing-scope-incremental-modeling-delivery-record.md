@@ -460,3 +460,21 @@
   `_task_text` 过宽映射；无 mechanics/validator 变更。
 - Outcome/next step: Round 11 deterministic prompt/receipt-conflict gate=`PASS`，可进入 start7；requirement
   仍 BLOCKED，直至真实 L0-L2 与 cleanup 独立验收完成。
+
+### 2026-08-11T12:40:00+08:00 — Round 11 late API-shape correction through independent Round 15 — developer and tester
+
+- Context: Round 11 初始 PASS 后，tester 继续检查 native MCP envelope，发现
+  `build_candidate_conflict` native result 只有 `content` 与 `structuredContent`；`conflict_json` 仅属于 typed
+  capability。初始提示把 typed 字段名误用于 native 分支，因此 Round 11 被追记为 FAIL，start7 继续 blocked。
+- Action/decision: 仅修 R2.3-003 native conflict prompt：验证 `content[0].text` 可解析且等于
+  `structuredContent` 的 canonical JSON（UTF-8、sorted keys、compact separators），再原样作为
+  `expects_reply=true`、`reply_to_delivery_id=original candidate` 的消息发送。保留 005 typed
+  `conflict_json` 文案和 `exactly one of those two responses` 兼容合同。Round 12–14 保留 phrase/hash 漂移的
+  FAIL 历史，最终不再修改 Runner，批准 frozen SHA=`47dbd1b81ea0203ff8b34889714f6166165b60d0f0259e5dbf042bb13dce04a6`。
+- Evidence: 新 MCP shape 回归验证 result keys、无 `conflict_json`、canonical equality；independent Round 15：
+  p2a=29 PASS；exact focused=`102 passed, 2 subtests`；native MCP=`11 passed, 13 subtests`；ledger/005
+  budget-isolation=`43 passed, 22 subtests`；modeling_team full=`719 passed, 1 skipped, 218 subtests`；compileall/
+  diff-check PASS。live ledger 仍 19 行、SHA `f31956c2...4eeba3`，尾部为 start6 terminal failure；无 start7
+  directory/reservation/process/socket。
+- Outcome/next step: Round 15 deterministic gate=`PASS`，start7 可在正常 credential/health/ledger gates 下
+  使用剩余两次授权之一；requirement 仍 BLOCKED，直到真实语义写入、CQ 与 cleanup 独立验收。
