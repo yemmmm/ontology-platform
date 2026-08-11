@@ -16,6 +16,7 @@ from modeling_team.contracts import TeamConfigurationError
 from modeling_team.formal_runs import load_formal_run_configuration
 from modeling_team.model_manifest import load_formal_model_manifest
 from modeling_team.platform_scope import PlatformScope
+from modeling_team.proof_v2 import canonical_digest
 from modeling_team.preflight import (
     R2_3_003_HANDOFF_RELATIVE,
     R2_3_003_ONTOLOGY_ID,
@@ -30,6 +31,7 @@ from modeling_team.protocol_mechanics import (
     build_existing_entity_binding_receipt,
     translate_candidate_to_batches,
 )
+from modeling_team.r23003_contract import build_delete_impact_receipt
 from modeling_team.start_ledger import StartLedger
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.transport_mcp import TeamTransportBroker, mcp_response
@@ -367,8 +369,8 @@ def test_r23003_scope_handoff_is_exact() -> None:
     assert normalize_existing_scope(SCOPE) == SCOPE
     handoff = load_existing_scope_handoff(SCOPE, repository_root=ROOT)
     assert handoff["scope_disposition"] == "retained"
-    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start18"
-    assert handoff["workspace_version"] == "18b5bfe66d46192847a781c319d330622c9097d5f36babffea9685acadd7320e"
+    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start19"
+    assert handoff["workspace_version"] == "1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3"
     with pytest.raises(ValueError):
         normalize_existing_scope({**SCOPE, "project_id": "wrong"})
 
@@ -491,11 +493,11 @@ def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytes
         probe=lambda **_: {
             "project_id": R2_3_003_PROJECT_ID,
             "ontology_id": R2_3_003_ONTOLOGY_ID,
-            "workspace_version": "0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02",
+            "workspace_version": "1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3",
             "secret": "must-not-be-retained",
         },
     )
-    assert evidence["live"]["workspace_version"].startswith("0d34")
+    assert evidence["live"]["workspace_version"].startswith("1dc069")
     assert "secret" not in json.dumps(evidence)
 
 
@@ -805,6 +807,119 @@ def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None
         translate_candidate_to_batches(candidate)
     with pytest.raises(ProtocolRetrievalFallbackError):
         translate_candidate_to_batches(candidate, receipt, requirement_id="R2.3-005")
+
+
+def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches() -> None:
+    """A post-Phase-A continuation binds retained entities and emits deletes only."""
+
+    target_ids = (
+        "unknown-cross-release-output-meaning",
+        "unknown-b-no-score-behavior",
+    )
+    retained_refs = (
+        ("content-review-001", "Content"),
+        ("evaluation-review-001", "ContentEvaluation"),
+        ("decision-review-001", "PublishabilityDecision"),
+        ("publication-outcome-review-001", "PublicationOutcome"),
+    )
+    candidate = {
+        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_revision": 2,
+        "scope": "retained-continuation",
+        "constraints": ["source-grounded", "phase-a-readback-continuation"],
+        "items": [
+            {
+                "item_id": f"existing-{semantic_id}",
+                "item_kind": "existing_entity_ref",
+                "semantic": {"semantic_id": semantic_id, "expected_class": expected_class},
+            }
+            for semantic_id, expected_class in retained_refs
+            + tuple((semantic_id, "ExplicitUnknown") for semantic_id in target_ids)
+        ]
+        + [
+            {
+                "item_id": f"delete-{semantic_id}",
+                "item_kind": "delete_existing_entity",
+                "semantic": {
+                    "semantic_id": semantic_id,
+                    "expected_class": "ExplicitUnknown",
+                    "delete_mode": "full_live_impact",
+                },
+            }
+            for semantic_id in target_ids
+        ],
+    }
+    rows = [
+        {
+            "semantic_id": semantic_id,
+            "entity_iri": f"http://ontology-platform.local/semantic/entity/{semantic_id}",
+            "class_semantic_id": expected_class,
+            "class_iri": f"http://ontology-platform.local/semantic/class/{expected_class}",
+            "project_id": R2_3_003_PROJECT_ID,
+            "ontology_id": R2_3_003_ONTOLOGY_ID,
+            "workspace_version": "phase-a-v1",
+            "read_evidence": {"source": "durable-phase-a-readback"},
+        }
+        for semantic_id, expected_class in retained_refs
+        + tuple((semantic_id, "ExplicitUnknown") for semantic_id in target_ids)
+    ]
+    binding = build_existing_entity_binding_receipt(
+        candidate,
+        {"entities": rows},
+        project_id=R2_3_003_PROJECT_ID,
+        ontology_id=R2_3_003_ONTOLOGY_ID,
+        workspace_version="phase-a-v1",
+    )
+    candidate_digest = canonical_digest(candidate)
+    impact_receipts = {}
+    for semantic_id in target_ids:
+        entity_iri = next(row["entity_iri"] for row in rows if row["semantic_id"] == semantic_id)
+        empty_digest = canonical_digest([])
+        impact_receipts[semantic_id] = build_delete_impact_receipt(
+            [
+                {
+                    "project_id": R2_3_003_PROJECT_ID,
+                    "ontology_id": R2_3_003_ONTOLOGY_ID,
+                    "entity_iri": entity_iri,
+                    "workspace_version": "phase-a-v1",
+                    "statements": [],
+                    "page_digest": empty_digest,
+                    "snapshot_digest": empty_digest,
+                    "next_cursor": None,
+                    "complete": True,
+                }
+            ],
+            target_semantic_id=semantic_id,
+            candidate_digest=candidate_digest,
+            project_id=R2_3_003_PROJECT_ID,
+            ontology_id=R2_3_003_ONTOLOGY_ID,
+            workspace_version="phase-a-v1",
+        )
+
+    translated = translate_candidate_to_batches(
+        candidate,
+        binding,
+        requirement_id="R2.3-003",
+        deletion_impact_receipts=impact_receipts,
+        phase_a_readback=True,
+    )
+    assert [batch["stage_kind"] for batch in translated["batches"]] == [
+        "delete-only",
+        "delete-only",
+    ]
+    delete_batches = translated["batches"]
+    assert [len(batch["items"]) for batch in delete_batches] == [1, 1]
+    assert [
+        batch["items"][0]["payload"]["semantic_id"] for batch in delete_batches
+    ] == list(target_ids)
+    assert len({batch["client_batch_id"] for batch in delete_batches}) == 2
+    assert len({batch["idempotency_key"] for batch in delete_batches}) == 2
+    assert all(batch["phase"] == "B" and batch["delete_only"] for batch in delete_batches)
+    assert all(
+        item["command_kind"] == "delete_entity"
+        for batch in delete_batches
+        for item in batch["items"]
+    )
 
 
 def test_existing_platform_scope_allows_completed_history_without_delete() -> None:

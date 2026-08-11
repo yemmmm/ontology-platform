@@ -597,7 +597,9 @@ field after a candidate-only call is rejected. The native translator is the only
 ordered plan: an initial pre-barrier plan may report `phase_a_readback_required` for its delete
 items; apply only its returned create stages in order, obtain durable Phase-A readback, refresh
 the binding/impact receipts against the new workspace version, then call it with
-`phase_a_readback=true` and apply its final `delete-only` Phase-B batch last. Missing binding or
+`phase_a_readback=true` and apply its final `delete-only` Phase-B batch last. If the native plan
+returns multiple delete-only Phase-B batches, apply each single-target batch in the returned order;
+never combine or reorder them. Missing binding or
 impact receipts and a false Phase-A readback must remain fail-closed (no delete batch); do not
 override those conflicts or delete before the durable readback barrier. Extra R2.3-003 arguments
 must never be sent on the R2.3-005 candidate-only path.

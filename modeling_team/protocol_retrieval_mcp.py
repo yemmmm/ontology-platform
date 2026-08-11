@@ -916,7 +916,7 @@ def _translate_candidate_tool() -> dict[str, Any]:
             "resource IRIs; object predicates always use create_property+object_class_id. "
             "R2.3-005 and ordinary candidates pass only candidate; R2.3-003 may additionally "
             "pass its requirement ID, existing binding receipt, deletion-impact receipts, and "
-            "Phase-A readback flag so the native plan owns the final delete-only Phase-B batch."
+            "Phase-A readback flag so the native plan owns the final ordered delete-only Phase-B batches."
         ),
         "inputSchema": {
             "type": "object",

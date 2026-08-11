@@ -34,6 +34,15 @@ objective: >-
   projected by the requirement-owned standard, using Runner-provided ordinal/count/previous/next/
   final metadata and advancing only after a usable PASS. Any mutation uncertainty or failed
   readback stops new starts and preserves the scope for human handling.
+  If the Runner/Protocol handoff explicitly confirms that the Phase-A create stages are already
+  durable and the current read model contains the exact source-grounded entities
+  `content-review-001` (Content), `evaluation-review-001` (ContentEvaluation),
+  `decision-review-001` (PublishabilityDecision), and `publication-outcome-review-001`
+  (PublicationOutcome), do not recreate them. Send a complete eight-item continuation candidate
+  containing standalone existing_entity_ref items for those four entities and the two frozen
+  targets, followed by the two ordered delete declarations; it contains no create resources and
+  is the explicit exception to the initial candidate-size target. Reuse the same native receipt,
+  durable readback, and ordered single-target delete mechanics.
 role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx
     classification: business-source

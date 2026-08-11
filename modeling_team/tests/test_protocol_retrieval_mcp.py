@@ -594,9 +594,26 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         self.assertNotIn("error", complete)
         plan = complete["result"]["structuredContent"]
-        self.assertEqual([batch["stage_kind"] for batch in plan["batches"]], ["class", "delete-only"])
-        self.assertTrue(plan["batches"][-1]["delete_only"])
-        self.assertEqual(plan["batches"][-1]["phase"], "B")
+        self.assertEqual(
+            [batch["stage_kind"] for batch in plan["batches"]],
+            ["class", "delete-only", "delete-only"],
+        )
+        delete_batches = plan["batches"][1:]
+        self.assertTrue(all(batch["delete_only"] for batch in delete_batches))
+        self.assertTrue(all(batch["phase"] == "B" for batch in delete_batches))
+        self.assertEqual([len(batch["items"]) for batch in delete_batches], [1, 1])
+        self.assertEqual(
+            [batch["items"][0]["payload"]["semantic_id"] for batch in delete_batches],
+            list(target_ids),
+        )
+        self.assertEqual(
+            len({batch["client_batch_id"] for batch in delete_batches}),
+            2,
+        )
+        self.assertEqual(
+            len({batch["idempotency_key"] for batch in delete_batches}),
+            2,
+        )
 
         missing_binding = call(
             {

@@ -234,8 +234,20 @@ Evidence, lineage, and explicit unknowns. Preserve all non-target explicit unkno
 candidate still contains the bounded business-slice items in addition to the two ordered delete
 items; do not send a delete-only or patch-only candidate.
 
+If the Runner/Protocol handoff explicitly says the Phase-A create stages are already durable and
+the current read model contains the exact source-grounded entities `content-review-001`,
+`evaluation-review-001`, `decision-review-001`, and `publication-outcome-review-001`, author a
+bounded continuation candidate instead of recreating those resources. It must contain one
+standalone `existing_entity_ref` for each of those four entities (with their observed Class), the
+two standalone target refs, and the two ordered delete declarations; it must contain no create
+class/property/entity/relation items. This eight-item continuation is a complete continuation
+envelope, not a patch-only or delete-only candidate, and is the explicit exception to the initial
+candidate's business-slice size target. Keep the exact target refs/deletes and all receipt-bound
+identity mechanics unchanged.
+
 Keep this existing-scope increment bounded: target 12–24 complete candidate items and never exceed
-the hard maximum of 32 items. Reuse `existing_entity_ref` for retained entities and model only the
+the hard maximum of 32 items for the initial candidate. The exact eight-item Phase-A continuation
+above is exempt from that initial size target. Reuse `existing_entity_ref` for retained entities and model only the
 new bounded C-evaluation -> B-decision -> A-outcome semantics; do not enumerate every source field,
 historical attribute, or unchanged platform fact. After reading the role-private sources, do not use
 `exec`, a shell, Python, the filesystem, temporary files, `/tmp`, `/agent/work`, or any script to

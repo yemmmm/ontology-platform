@@ -1999,16 +1999,25 @@ def translate_candidate_to_batches(
         )
 
     if delete_items:
-        batches.append(
-            {
-                "stage_kind": "delete-only",
-                "client_batch_id": f"{revision}-phase-b-delete-only",
-                "idempotency_key": f"{revision}-phase-b-delete-only-v1",
-                "phase": "B",
-                "delete_only": True,
-                "items": sorted(delete_items, key=lambda value: value["client_item_id"]),
-            }
-        )
+        # Keep each wildcard delete in its own Phase-B batch.  The platform's
+        # conflict validator treats wildcard delete effects for separate
+        # targets as overlapping when they share a batch, even though each
+        # command carries its own receipt-bound target.  Candidate validation
+        # fixes the target order, so preserve that order here and bind each
+        # retry identity to the frozen target semantic ID.
+        for delete_item in delete_items:
+            target_semantic_id = delete_item["payload"]["semantic_id"]
+            batch_suffix = f"phase-b-delete-only-{target_semantic_id}"
+            batches.append(
+                {
+                    "stage_kind": "delete-only",
+                    "client_batch_id": f"{revision}-{batch_suffix}",
+                    "idempotency_key": f"{revision}-{batch_suffix}-v1",
+                    "phase": "B",
+                    "delete_only": True,
+                    "items": [delete_item],
+                }
+            )
 
     result = {
         "candidate_kind": normalized["candidate_kind"],
