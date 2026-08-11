@@ -193,10 +193,11 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
         "_read_live_modeling_context",
         lambda _session, _ontology_id: live_context["value"],
     )
+    stateful_result: dict[str, Any] = {"submitted": True}
 
     def submit_modeling_batch() -> dict[str, Any]:
         return mcp_runtime._run_tool(
-            lambda _session, _driver, _embedding: effects.append("stateful") or {"submitted": True}
+            lambda _session, _driver, _embedding: effects.append("stateful") or stateful_result
         )
 
     def get_modeling_context(value: dict[str, Any]) -> dict[str, Any]:
@@ -225,20 +226,43 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
     assert effects == ["read", "stateful"]
 
-    live_context["value"] = _context()
-    live_context["value"]["lease"] = {"active": True, "lease_id": "run-owned-lease"}
+    stateful_result.clear()
+    stateful_result.update(
+        {
+            "mode": "apply_atomic",
+            "attempt_status": "applied",
+            "workspace": {
+                "before_version": "workspace-v1",
+                "expected_version": "workspace-v1",
+                "after_version": "workspace-v2",
+            },
+        }
+    )
+    assert submit_modeling_batch()["ok"] is True
+    stateful_result.clear()
+    stateful_result["submitted"] = True
+    live_context["value"] = _context("workspace-v2")
+    live_context["value"]["derived_state"] = {
+        "stale_count": 1,
+        "warning": "derived_state_stale",
+    }
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
-    assert effects == ["read", "stateful", "stateful"]
+    assert effects == ["read", "stateful", "stateful", "stateful"]
 
     live_context["value"] = _context("workspace-v2")
+    live_context["value"]["lease"] = {"active": True, "lease_id": "run-owned-lease"}
+    assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
+    assert effects == ["read", "stateful", "stateful", "stateful", "stateful"]
+
+    live_context["value"] = _context("workspace-v3")
     drifted = submit_modeling_batch()
     assert drifted["error_code"] == "modeling_context_revalidation_failed"
     assert drifted["data"]["mutation_state"] == "zero-mutation"
-    assert effects == ["read", "stateful", "stateful"]
+    assert effects == ["read", "stateful", "stateful", "stateful", "stateful"]
 
     _write_gate(gate, _r23003_gate("candidate-v2"))
     assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
-    assert effects == ["read", "stateful", "stateful"]
+    assert effects == ["read", "stateful", "stateful", "stateful", "stateful"]
 
 
 def test_r23003_revalidation_normalizes_recent_batch_datetimes_and_keeps_005_gate_isolated(

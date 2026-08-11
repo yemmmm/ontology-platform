@@ -234,7 +234,13 @@ def test_modeling_context_receipt_is_immutable_and_version_drift_closes_gate() -
     assert gate.state == "closed"
     with pytest.raises(ModelingReadError):
         gate.bind_candidate("delivery-2", "candidate-digest")
-    refreshed = gate.observe(_context("v2"), call_receipt={"ordinal": 2})
+    refreshed_context = _context("v2")
+    refreshed_context["lease"] = {"active": True, "lease_id": "run-owned-lease"}
+    refreshed_context["derived_state"] = {
+        "stale_count": 1,
+        "warning": "derived_state_stale",
+    }
+    refreshed = gate.observe(refreshed_context, call_receipt={"ordinal": 2})
     assert refreshed.workspace_version == "v2"
     assert gate.state == "context_observed"
 

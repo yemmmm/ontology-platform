@@ -526,8 +526,7 @@ def _context_is_valid(value: Any, context: dict[str, str]) -> bool:
         and isinstance(derived, dict)
         and isinstance(derived.get("stale_count"), int)
         and not isinstance(derived.get("stale_count"), bool)
-        and derived.get("stale_count") == 0
-        and derived.get("warning") in (None, "")
+        and derived.get("stale_count") >= 0
         and not (
             isinstance(value.get("recovering"), dict)
             and value["recovering"].get("active") is True
@@ -540,6 +539,22 @@ def _context_digest(value: Any) -> str:
         _jsonable(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _current_revalidation_context(
+    gate_path: str,
+    state: dict[str, Any],
+    context: dict[str, str],
+) -> dict[str, str]:
+    """Return the candidate context advanced by successful Protocol writes."""
+
+    key = (gate_path, str(state.get("candidate_digest")))
+    with _protocol_revalidation_lock:
+        record = _protocol_revalidations.get(key)
+    workspace_version = record.get("workspace_version") if record is not None else None
+    if not isinstance(workspace_version, str) or not workspace_version:
+        return context
+    return {**context, "workspace_version": workspace_version}
 
 
 def _protocol_revalidation_error(
@@ -577,6 +592,7 @@ def _record_protocol_revalidation(
     context = _context_binding(state)
     if context in (None, {}):
         return None
+    context = _current_revalidation_context(gate_path, state, context)
     if not _context_is_valid(value, context):
         key = (gate_path, str(state.get("candidate_digest")))
         with _protocol_revalidation_lock:
@@ -606,6 +622,43 @@ def _record_protocol_revalidation(
     return None
 
 
+def _advance_protocol_revalidation_after_apply(
+    gate_path: str,
+    state: dict[str, Any],
+    value: Any,
+) -> None:
+    """Advance the stateful fence after this Protocol process applies a batch."""
+
+    normalized = _jsonable(value)
+    if not isinstance(normalized, dict) or normalized.get("mode") != "apply_atomic":
+        return
+    if normalized.get("attempt_status") != "applied":
+        return
+    workspace = normalized.get("workspace")
+    if not isinstance(workspace, dict):
+        return
+    before_version = workspace.get("before_version")
+    expected_version = workspace.get("expected_version")
+    after_version = workspace.get("after_version")
+    if not all(isinstance(item, str) and item for item in (before_version, after_version)):
+        return
+    key = (gate_path, str(state.get("candidate_digest")))
+    with _protocol_revalidation_lock:
+        record = _protocol_revalidations.get(key)
+        if record is None or record.get("workspace_version") != before_version:
+            return
+        if expected_version not in (None, before_version):
+            return
+        payload = {
+            **{key: item for key, item in record.items() if key != "revalidation_receipt_digest"},
+            "workspace_version": after_version,
+        }
+        _protocol_revalidations[key] = {
+            **payload,
+            "revalidation_receipt_digest": _context_digest(payload),
+        }
+
+
 def _read_live_modeling_context(session: Session, ontology_id: str) -> dict[str, Any]:
     """Read current context for the stateful fence without invoking a write tool."""
 
@@ -628,6 +681,7 @@ def _check_live_protocol_context(
     context = _context_binding(state)
     if context in (None, {}):
         return None
+    context = _current_revalidation_context(gate_path, state, context)
     try:
         current = _read_live_modeling_context(session, context["ontology_id"])
     except Exception:
@@ -666,6 +720,12 @@ def _run_tool(fn: Callable[[Session, Any, EmbeddingClient], T]) -> dict[str, Any
                 revalidation_error = _record_protocol_revalidation(gate_path, gate_state, value)
                 if revalidation_error is not None:
                     return revalidation_error
+            if (
+                gate_path is not None
+                and gate_state is not None
+                and tool_name == "submit_modeling_batch"
+            ):
+                _advance_protocol_revalidation_after_apply(gate_path, gate_state, value)
             return {"ok": True, "data": _jsonable(value)}
     except Exception as exc:
         code, message = map_exception(exc)

@@ -553,9 +553,7 @@ class ModelingContextGate:
             or not isinstance(derived, Mapping)
             or isinstance(derived.get("stale_count"), bool)
             or not isinstance(derived.get("stale_count"), int)
-            or derived.get("stale_count") != 0
-            or derived.get("warning") not in (None, "")
-            or (isinstance(value.get("lease"), Mapping) and value["lease"].get("active") is True)
+            or derived.get("stale_count") < 0
             or (isinstance(value.get("recovering"), Mapping) and value["recovering"].get("active") is True)
         ):
             raise ModelingReadError("get_modeling_context is not a valid current ready context")
