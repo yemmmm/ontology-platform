@@ -574,5 +574,14 @@ For `r2-3-003-existing-scope-incremental`, read the live ontology read model bef
 build a binding receipt for every `existing_entity_ref`. The receipt binds candidate digest,
 Project/Ontology, workspace version, semantic ID, actual IRI/Class, and read evidence. Missing,
 duplicate, or Class-mismatched refs fail closed before mutation. Existing refs never become
-create/update commands; only new relations may consume receipt IRIs. The R2.3-005 create-only
+The initial candidate must contain two independent standalone items with unique `item_id` and
+`item_kind=existing_entity_ref` for the exact frozen delete targets
+`unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior`; each semantic object is
+exactly `{semantic_id, expected_class}`.
+Those binding items are separate from the two ordered `delete_existing_entity` items, whose
+semantic object remains exactly `{semantic_id, expected_class, delete_mode}` with no nested ref.
+For a conflict-bound full revision, require a strictly greater deterministic positive-decimal
+`candidate_revision` (`1` -> `2` -> `3` ...), never the invalidated revision or candidate digest;
+the observed delivery-8 -> delivery-9 path must not reuse
+`r23003-retained-scope-increment-1`. Existing refs never become create/update commands; only new relations may consume receipt IRIs. The R2.3-005 create-only
 translator path remains byte-compatible and rejects existing binding input.

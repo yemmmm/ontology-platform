@@ -1537,3 +1537,65 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   before commit or treat this terminal/rebind cleanup as semantic acceptance evidence.
 - Result: **PASS for retained candidate/receipt binding, zero-mutation and scope integrity, key/process/socket cleanup,
   and fail-closed rebind behavior; BLOCKED until owner performs the exact cleanup and start11 terminal reconciliation.**
+
+### Round 29 — 2026-08-11 independent start12 terminal/revision-contract audit — FAIL historical prompt contract; deterministic repair PASS; live stage blocked
+
+- Scope and safety: the tester performed a read-only audit of the retained
+  `r23003-real-20260811-deepseek-start12` evidence and canonical ledger, then ran only the affected revision/003/005
+  regressions and the full `modeling_team` suite. No product code, delivery record, retained evidence, ontology/workspace,
+  canonical ledger, or live run was modified or started. The tester's only documentation change is this Round 29 append.
+- Candidate/receipt/conflict chain: `evidence/deliveries.jsonl` retains Modeling candidate **delivery-6** followed by the
+  accepted Protocol receipt **delivery-7** (`reply_to_delivery_id=delivery-6`, same candidate digest/revision). Protocol's
+  typed **standalone** conflict **delivery-8** has `expects_reply=true`, no `reply_to_delivery_id`,
+  `conflict_code=delete_target_binding_missing`, and `mutation_state=zero-mutation`; `formal-candidate-progress.jsonl`
+  remains at `awaiting_revision` for the invalidated delivery-6 receipt. The private Modeling session/MCP output retains
+  an attempted full **delivery-9** reply to delivery-8 (not a canonical `evidence/deliveries.jsonl` row): it contains both
+  independent `existing_entity_ref` items for the frozen targets and the exact two `delete_existing_entity` item schemas,
+  but uses string revision `r23003-retained-scope-increment-2`. Thus the retained evidence does **not** show an unchanged
+  `...increment-1` value; it shows a non-decimal replacement that was rejected by the strict newer-revision fence.
+- Defect classification: **High, confirmed prompt-contract defect (historical start12)**. The prior R2.3-003 Modeling
+  task/package allowed the `r23003-retained-scope-increment-*` form instead of mechanically requiring a positive decimal
+  revision strictly greater than the invalidated receipt. The owning surfaces are the R2.3-003 Modeling task and role
+  instructions (`modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml` and
+  `modeling_team/agent-packages/modeling/instructions.md`), with the matching Protocol contract in
+  `modeling_team/agent-packages/protocol/instructions.md`. The required rule is now explicit: initial revision `1`,
+  conflict-bound full revisions `2`, `3`, ...; delivery-9 must reply to the standalone conflict and must not reuse the
+  invalidated revision or digest. The terminal evidence records `classification=modeling-quality`,
+  `reason_code=candidate-envelope-invalid`, and the exact strict-newer rejection; this was an avoidable prompt failure,
+  not a platform mutation.
+- Independent repair proof:
+  - `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+    modeling_team/tests/test_r23005_candidate_progress.py modeling_team/tests/test_p2a_codex_runtime.py
+    modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_protocol_retrieval_mcp.py -q`
+    -> **105 passed, 15 subtests passed**. This covers the two standalone target refs, exact delete schema, positive-decimal
+    revision sequence and same-revision rejection/new-revision acceptance, plus 005/mechanical/frozen isolation.
+  - Explicit contract selections -> **5 passed** (`3 passed, 17 deselected` in the 003 prompt/broker selections and
+    `2 passed, 33 deselected` in the post-receipt revision selections).
+  - Read-only `FormalCandidateProgress` probe with two standalone conflict cycles -> **PASS** for positive-decimal
+    `candidate_revision` sequence `1 -> 2 -> 3`; same-revision rejection remains covered by the focused test above.
+  - `uv run --project backend python -m pytest modeling_team/tests -q` -> **737 passed, 1 skipped, 218 subtests passed**.
+    No backend full suite or service restart was needed for this unchanged backend/runtime audit.
+- Zero-mutation and cleanup audit: `state.json` is `CLEANED`; acceptance status is `aborted` with
+  `runner-abort-before-settlement`, `active_handles=0`, and `zero_child_residue=true`. The recorded existing context is
+  byte-for-byte unchanged before/after: Project `7fc146d8-c76f-417b-9314-854544f269fc`, Ontology
+  `fd762f52-2f5e-4bc0-902a-5583135ab64d`, graph `277fd804-e485-5156-b7a7-ca6a1081f950`, workspace version
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`, workspace `ready`, six batches, one recent
+  session, and zero active sessions/leases/in-flight attempts. The 15 platform artifacts are only read calls
+  (`get_modeling_context`, `get_ontology_workspace_context`, `get_ontology_read_model`, and
+  `get_entity_statement_context`); no Session/Lease/Batch, validation, reasoning, governed retrieval, or write call
+  occurred. Modeling-read key `56ad80f2-d699-417c-b303-2f76da282389` was revoked with post-revoke 401; project,
+  Protocol, and admin keys are non-active/revoked. The two previously fingerprinted generated non-secret paths
+  (`runtime/modeling/home/read_proxy_mcp.py` and the zero-byte regular-file
+  `runtime/modeling/home/modeling-read-proxy.sock`) are now absent; scoped scans find zero token/config/capability files,
+  zero Unix sockets, and zero matching processes. The historical aggregate cleanup snapshot still reports its pre-cleanup
+  `match_count=6`/`matched_secret_count=4`; the owner's post-remediation configured-key scan reported zero matching
+  files/occurrences, so this is stale audit metadata rather than a remaining credential.
+- Ledger: `.r2-3-003-start-ledger.jsonl` is **39 lines**, SHA-256
+  `62fb4ff8643ec6b2334e897eedff41d3d70e80a2cd6608893343fce1d8cfd4f7`. Read-only `StartLedger._validate_strict_replay`
+  -> **PASS** with `start_cap=11`, `semantic_start_count=11`, and active reservations `0`; the tail is the
+  auto-recorded start12 `terminal_failure` classified `modeling-quality`. No manual reconciliation is safe or needed
+  because the terminal record already exists, and all authorized starts are consumed.
+- Result: **FAIL for the historical start12 prompt contract; PASS for the repaired deterministic contract, focused/full
+  Modeling regressions, zero-mutation boundary, cleanup, and strict ledger replay.** This does not constitute L0/L1/L2
+  semantic acceptance: authorization is exhausted and live L0/L1/L2 remain **BLOCKED**. Do not start another run;
+  future work requires the committed positive-decimal revision prompt/fence and a fresh explicit authorization.

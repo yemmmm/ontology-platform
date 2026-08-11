@@ -439,6 +439,74 @@ def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_repl
     ) == "revision"
 
 
+def test_r23003_post_receipt_revision_rejects_same_revision_and_accepts_next() -> None:
+    """A standalone conflict invalidates receipt-v1 and requires a strictly newer full candidate."""
+
+    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
+    candidate = _candidate(1)
+    assert progress.observe_delivery(
+        _delivery("modeling", "protocol", json.dumps(candidate), "delivery-6"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start12-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "candidate"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    receipt = build_candidate_receipt(candidate)
+    assert progress.observe_delivery(
+        _delivery("protocol", "modeling", json.dumps(receipt), "delivery-7", reply_to="delivery-6"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start12-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+
+    conflict = build_existing_scope_candidate_conflict(
+        candidate,
+        "delete_target_binding_missing",
+        "each delete target needs a standalone existing_entity_ref binding",
+        original_delivery_id="delivery-6",
+        receipt_digest=canonical_digest(receipt),
+        workspace_version="workspace-v1",
+    )
+    assert progress.observe_delivery(
+        _delivery("protocol", "modeling", json.dumps(conflict), "delivery-8"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start12-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "conflict"
+
+    with pytest.raises(FormalCandidateError, match="strictly newer"):
+        progress.observe_delivery(
+            _delivery(
+                "modeling",
+                "protocol",
+                json.dumps(_candidate(1)),
+                "delivery-9-same-revision",
+                reply_to="delivery-8",
+            ),
+            modeling_agent_id="modeling",
+            protocol_agent_id="protocol",
+            run_id="start12-fixture",
+            protocol_thread_id="protocol-thread",
+        )
+
+    assert progress.observe_delivery(
+        _delivery(
+            "modeling",
+            "protocol",
+            json.dumps(_candidate(2)),
+            "delivery-9-next-revision",
+            reply_to="delivery-8",
+        ),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start12-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "revision"
+
+
 def test_turn_barrier_allows_one_redrive_then_exhausts() -> None:
     now = [0.0]
     progress = _progress(lambda: now[0])

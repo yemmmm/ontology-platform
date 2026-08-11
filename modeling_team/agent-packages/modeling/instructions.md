@@ -220,6 +220,14 @@ is an item with a unique `item_id`, exact `item_kind=delete_existing_entity`, an
 object containing exactly `semantic_id`, `expected_class`, and `delete_mode=full_live_impact`.
 These delete items use direct semantic fields; do not use `entity_delete`, nest an
 `existing_entity_ref`, or author an IRI, incident triples, impact digest, or expected-edge set.
+The initial candidate must also contain two independent standalone items with a unique `item_id`
+and `item_kind=existing_entity_ref`, one for each of those exact delete targets; each such item's
+semantic object contains only `semantic_id` and `expected_class=ExplicitUnknown`. These binding
+items are separate from, and are not nested in, the two delete items. Use deterministic positive
+decimal `candidate_revision` values: initial `1`, then the next strictly greater integer for
+each conflict-bound full revision (`2`, then `3`, ...); never reuse the invalidated revision or
+candidate digest. In the observed delivery-8 -> delivery-9 sequence, do not reuse
+`r23003-retained-scope-increment-1`; send the next deterministic revision instead.
 Protocol owns live identity/impact receipts and every platform write; Modeling owns semantics,
 Evidence, lineage, and explicit unknowns. Preserve all non-target explicit unknowns. The complete
 candidate still contains the bounded business-slice items in addition to the two ordered delete

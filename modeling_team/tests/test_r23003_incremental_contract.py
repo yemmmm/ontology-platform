@@ -617,6 +617,11 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         assert "unknown-b-no-score-behavior" in protocol
         assert "item_kind=delete_existing_entity" in protocol
         assert "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in protocol
+        assert "standalone item_kind=existing_entity_ref" in protocol
+        assert "candidate_revision 1" in protocol
+        assert "strictly greater integer" in protocol
+        assert "delivery-8 -> delivery-9" in protocol
+        assert "r23003-retained-scope-increment-1" in protocol
         assert "protocol_build_candidate_receipt itself fails at the receipt gate" in protocol
         assert "build_candidate_conflict with the unchanged complete candidate" in protocol
         assert "native MCP result has only content and structuredContent" in protocol
@@ -685,6 +690,10 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
             assert "unknown-cross-release-output-meaning" in text
             assert "unknown-b-no-score-behavior" in text
             assert "item_kind=delete_existing_entity" in text
+            assert "independent standalone" in text
+            assert "r23003-retained-scope-increment-1" in text
+            assert "delivery-8 -> delivery-9" in text
+            assert "strictly greater" in text
             assert (
                 "semantic exactly {semantic_id, expected_class, delete_mode=full_live_impact}" in text
                 or "object containing exactly semantic_id, expected_class, and delete_mode=full_live_impact" in text
@@ -699,6 +708,28 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
             import shutil
 
             shutil.rmtree(run_root)
+
+
+def test_r23003_initial_target_refs_and_revision_sequence_are_explicitly_bound() -> None:
+    """The prompt contract names both standalone target refs and the next revision rule."""
+
+    task = (ROOT / "modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml").read_text(
+        encoding="utf-8"
+    )
+    modeling = (ROOT / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+        encoding="utf-8"
+    )
+    protocol = (ROOT / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+        encoding="utf-8"
+    )
+    for text in (task, modeling, protocol):
+        assert "unknown-cross-release-output-meaning" in text
+        assert "unknown-b-no-score-behavior" in text
+        assert "standalone" in text and "existing_entity_ref" in text
+        assert "candidate_revision" in text
+        assert "r23003-retained-scope-increment-1" in text
+        assert "delivery-8 -> delivery-9" in text
+
 
 
 def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None:

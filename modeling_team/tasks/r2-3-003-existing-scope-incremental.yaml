@@ -14,9 +14,18 @@ objective: >-
   overwrite, or infer any existing platform identity. Existing semantic endpoints use the
   platform-neutral existing_entity_ref form (semantic_id plus expected_class only); Protocol
   obtains live canonical identity and complete paginated statement-impact receipts. The complete
-  candidate must include these two ordered delete declarations plus the bounded business-slice
-  items; deletion declarations never carry Agent-authored IRIs, triples, expected edges, or impact
-  digests. Add one bounded source-grounded
+  initial candidate must also include two independent standalone `existing_entity_ref` items, one
+  for each frozen delete target, each with a unique `item_id`, `item_kind=existing_entity_ref`, and
+  semantic exactly `semantic_id` plus `expected_class`; these binding items are separate from the
+  delete items.
+  The candidate must include these two ordered delete declarations plus the bounded business-slice
+  items; delete declarations keep exactly `semantic_id`, `expected_class`, and `delete_mode` and
+  never nest an `existing_entity_ref` or carry Agent-authored IRIs, triples, expected edges, or
+  impact digests. The initial `candidate_revision` is the positive decimal integer `1`; every
+  conflict-bound full revision must use the next strictly greater integer (`2`, then `3`, ...),
+  never the invalidated revision or candidate digest. In the observed delivery-8 -> delivery-9
+  path, do not reuse `r23003-retained-scope-increment-1`; delivery-9 must carry the next
+  deterministic revision. Add one bounded source-grounded
   C-evaluation -> B-publishability -> A-publication outcome increment. Coordinator receives no raw
   source. Modeling owns business semantics and explicit unknowns; Protocol alone performs
   deterministic binding, translation, Phase-A readback, delete-only Phase-B application, readback,

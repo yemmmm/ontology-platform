@@ -911,3 +911,51 @@
   `406f7a83010c26f73c5d4fd20f9f365d681d8be50d2b814eaca3bd468e499825` and appended one strict
   `platform-contract` terminal failure bound to issue-2/baseline `53610ee...`。Replay PASS：36 records，
   cap/count=`11/10`，active=0。The final authorized start12 is now mechanically available。
+
+### 2026-08-11T19:47:08+08:00 — authorized live semantic start12 — FAIL/BLOCKED — main agent
+
+- Run `r23003-real-20260811-deepseek-start12` consumed the third and final start in authorization
+  `user-20260811-r23003-post-approval-fix-start1-3`。Ledger appended reservation baseline=
+  `dfd38e0e7c39f39c17f7518f33781d75be8b22f2fd01fd516d55549f3060a227`、semantic_start and an automatic
+  retryable `modeling-quality` terminal failure；strict replay PASS at 39 records，cap/count=`11/11`，active=0。
+- The revised Modeling read path worked end to end：live `get_modeling_context`、all four ontology read models and one
+  semantic-context query succeeded。Modeling published a complete 27-item candidate at delivery-6，revision=
+  `r23003-retained-scope-increment-1`，digest=
+  `c99043dac8141cd98df4a74406a8e1cc0dc25c9be990a3c0b7d18ea0f0b65f06`；Protocol accepted receipt delivery-7，
+  exact-O context revalidation passed，five retained references resolved，and both target ExplicitUnknown delete-impact
+  scans completed with `complete=true`/`next_cursor=null`。No stateful platform call had begun。
+- Translation then correctly failed closed because the delete targets lacked standalone `existing_entity_ref` binding
+  items。Protocol sent the typed standalone zero-mutation conflict at delivery-8；Modeling returned a full revised
+  candidate at delivery-9 and added the two required binding items，but changed the revision from the non-orderable
+  string `r23003-retained-scope-increment-1` to another non-orderable string
+  `r23003-retained-scope-increment-2`。`FormalCandidateProgress` only permits mechanically comparable positive-decimal
+  revisions and rejected it before Protocol with
+  `formal candidate revision is not strictly newer than the invalidated receipt`。
+- Outcome is truthful zero mutation：no Build Session、Lease、Batch、validation、reasoning、retrieval or ontology write；
+  cleanup reached `CLEANED`，keys revoked，before/after workspace version remained
+  `0d34f5ada161d2c6deb4a7b117c6b1469b540eef7eb1f04c8bdce97e5100ef02`，modeling batches=6，active
+  Session/Lease/in-flight=`0/0/0`。The two generated non-secret regular files were fingerprinted then removed：
+  `read_proxy_mcp.py` SHA=`e1bffc5373cddae03a2ce5c1b1b641bb3e6b1437992aae3eaff862da5a372a44` and zero-byte
+  `modeling-read-proxy.sock` SHA=`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`；retained sessions/evidence remain。
+- Defect classification=`prompt-contract / modeling-quality`。Before any future authorization, the authoritative 003
+  Task/Modeling/Protocol/Runner surfaces must require both standalone target bindings in the initial candidate and
+  mechanically orderable positive-decimal `candidate_revision` values (`1 -> 2 -> 3`) for every conflict-bound full
+  revision，with independent regression coverage。
+  All three authorized starts are consumed；no further live start is permitted without new user authorization。
+
+### 2026-08-11T20:06:00+08:00 — start12 prompt-contract repair and independent Round29 — deterministic PASS / live BLOCKED
+
+- Narrow repair updated only R2.3-003 Task、Modeling/Protocol package prompts and Runner-generated task text。The
+  initial candidate must now carry two unique standalone `item_kind=existing_entity_ref` declarations for the frozen
+  delete targets，separate from exact three-field `delete_existing_entity` items；revision values are mechanically
+  orderable positive decimals `1 -> 2 -> 3` and never reuse an invalidated revision/digest。R2.3-005 remains unchanged。
+- GitNexus pre-edit `_task_text` impact=`HIGH`（33 upstream/16 direct/2 processes），so the Runner change was kept in
+  the formal 003 branch。Final detect_changes=`15 changed symbols / 0 affected processes / low`。Approved Runner SHA=
+  `5c81425cf7f7a42e21e3f53885deac74f6bf487e67bfebb4318df8282df25d6b`。
+- Independent Round29 PASS for the repair：focused=`105 passed, 15 subtests`；explicit selections=`5 passed`；full
+  modeling_team=`737 passed, 1 skipped, 218 subtests`；compileall/diff-check PASS。It independently confirmed start12
+  `CLEANED`、15 read-only calls、no stateful/mutation、scope before==after、keys revoked、no secret/socket/process
+  residue，and strict ledger replay at 39 records / cap-count-active=`11/11/0`。
+- Requirement status remains `BLOCKED`，not PASS：no live apply/readback/validation/reasoning/N-CQ settlement was
+  completed。The repaired prompt is ready for a future run，but all authorized starts are consumed；a new semantic
+  start requires fresh explicit user authorization。
