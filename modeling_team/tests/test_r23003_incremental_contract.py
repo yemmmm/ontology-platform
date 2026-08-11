@@ -101,7 +101,7 @@ def test_runner_issue_abort_reconciliation_appends_bound_terminal_failure(tmp_pa
     issue = SimpleNamespace(
         run_id="r23003-run",
         issue_id="issue-1",
-        mutation_state="zero-mutation",
+        mutation_state="zero-mutation; only read-only platform calls",
         failing_operation="existing binding",
         error="Workflow vs InvokingWorkflow",
     )
@@ -119,6 +119,42 @@ def test_runner_issue_abort_reconciliation_appends_bound_terminal_failure(tmp_pa
     assert terminal[0]["terminal_evidence"]["baseline_hash"] == "baseline-run"
     assert terminal[0]["terminal_evidence"]["mutation_state"] == "zero-mutation"
     ledger.reserve("r23003-next", "baseline-next", now.isoformat())
+
+
+def test_issue_abort_reconciliation_rejects_nonzero_mutation_state_without_ledger_write(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 8, 11, 5, 0, tzinfo=UTC)
+    ledger = StartLedger(tmp_path / "ledger", requirement_id="R2.3-003", now=lambda: now)
+    ledger.initial_authorization()
+    ledger.reserve("r23003-run", "baseline-run", now.isoformat())
+    ledger.mark_semantic_start("r23003-run")
+    runner = object.__new__(runner_module.TeamRunner)
+    runner.run = SimpleNamespace(
+        run_id="r23003-run",
+        root=tmp_path / "run",
+        baseline_hash="baseline-run",
+        configuration=SimpleNamespace(
+            task=SimpleNamespace(task_id="r2-3-003-existing-scope-incremental", schema_version=2),
+            profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),
+        ),
+    )
+    runner._ledger = ledger
+    runner._issue_abort_terminal_failure_recorded = False
+    issue = SimpleNamespace(
+        run_id="r23003-run",
+        issue_id="issue-1",
+        mutation_state="mutation-started",
+        failing_operation="existing binding",
+        error="write may have occurred",
+    )
+    cleanup = {
+        "acceptance": {"status": "aborted", "zero_child_residue": True},
+        "scope": {"no_in_flight_attempts": True},
+    }
+    with pytest.raises(TeamConfigurationError, match="zero-mutation"):
+        runner._record_issue_abort_terminal_failure(issue, cleanup)
+    assert not [record for record in ledger._records() if record.get("event") == "terminal_failure"]
 
 
 def _candidate() -> dict:
@@ -467,6 +503,9 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         assert "no conflict_json" in protocol
         assert "reply-bound request for Modeling to send one full revised candidate" in protocol
         assert "duplicate receipt/reply" in protocol
+        assert "new standalone Protocol-to-Modeling delivery" in protocol
+        assert "reply_to_delivery_id=None" in protocol
+        assert "Pre-receipt conflicts and all R2.3-005 candidates keep" in protocol
     finally:
         runner.cleanup()
         if run_root.exists():

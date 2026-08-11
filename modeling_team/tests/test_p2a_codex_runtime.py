@@ -94,7 +94,10 @@ FROZEN_GLOBAL_SURFACES = {
     # 2026-08-11 R2.3-003 startup barrier: generated Protocol task text now
     # waits for Modeling's candidate receipt before any ontology_platform call
     # and names Team Transport MCP calls fully.
-    "modeling_team/runner.py": "eaea70c12e8c6d134ae609a45c84868f7174af883d3abd8d18956c6930ea01d7",
+    # 2026-08-11 R2.3-003 start8 repair: post-receipt conflicts use a
+    # standalone Protocol->Modeling delivery; issue-abort evidence canonicalizes
+    # zero-mutation suffixes and reports reconciliation failures clearly.
+    "modeling_team/runner.py": "c53a1d83b030f1983696fdc50324fc279d831f718654bf16feccba4c1c1e4163",
     "modeling_team/protocol_mechanics.py": "5aa6324401666fb54e6e813e0407ffe364318356fc4f4eecdd6330910165a2d9",
     "modeling_team/protocol_retrieval_mcp.py": "21196da962eee22bc96d0f808d1f3da379c44ebd03d828777ef548a375d97365",
     "modeling_team/runtimes/codex.py": "e732c426b93fb12c95daf620d9df848ea172d9db4d622e07717391a8a91a510b",

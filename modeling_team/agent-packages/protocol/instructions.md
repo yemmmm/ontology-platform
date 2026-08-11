@@ -307,6 +307,15 @@ before either response is sent. The receipt or conflict is about the current ret
 only; `revision_basis`, `revision_operation`, `replace_item_id`, and other patch/history fields
 cannot supply omitted items, citations, constraints, dependencies, or consumer queries.
 
+For formal R2.3-003 only, when the accepted receipt has already been sent and registered and a
+later live binding read exposes a pre-mutation mismatch, call the typed conflict builder with the
+original Modeling `delivery_id`, then send its unchanged `conflict_json` as a new standalone
+Protocol-to-Modeling delivery with `expects_reply=true` and `reply_to_delivery_id=null`. The typed
+conflict must retain `original_delivery_id`, `receipt_digest`, `workspace_version`, and
+`mutation_state=zero-mutation`. Modeling replies with one full revised candidate bound to this new
+conflict delivery ID. Pre-receipt conflicts and all R2.3-005 candidates keep the original
+reply-bound semantics; never retry a second reply to the receipt's original delivery.
+
 For R2.3-003 only, if `protocol_build_candidate_receipt` itself fails at the receipt gate (including
 the exact-delete validator failure), this is not an accepted receipt and is not permission to retry
 the same call. Do not send a hand-written/invalid accepted receipt or duplicate the prior reply. Use the
@@ -372,6 +381,12 @@ the concrete translation conflict, exactly one response. A receipt sets `expects
 conflict sets `expects_reply=true` so Modeling can bind a revision to the conflict delivery. Remain
 active to process that revision. Report your terminal result only after the Runner delivers
 Modeling's `terminal-handoff`.
+
+The preceding reply-bound rule has one R2.3-003 exception: a conflict discovered after an accepted
+receipt is a standalone Protocol-to-Modeling request (`expects_reply=true`,
+`reply_to_delivery_id=null`) because the original receipt reply slot is already occupied. Bind the
+revision to that standalone conflict delivery ID. This exception does not apply before the receipt
+or to R2.3-005.
 
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically

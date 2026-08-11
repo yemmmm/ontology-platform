@@ -959,3 +959,83 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   `evidence/terminal-reconciliation.jsonl` bound to start7 issue/cleanup hashes. Do not hand-edit or rewrite ledger
   lines, and do not let tests perform this mutation. Re-audit the resulting line/hash and reservation eligibility,
   then the final start8 gate may proceed under authorization.
+
+### Round 18 — 2026-08-11 independent start8 evidence audit — FAIL/BLOCKED
+
+- Scope and safety: this round only read retained `r23003-real-20260811-deepseek-start8` evidence and the shared
+  ledger. No live run was started or continued, no ledger line was appended, and no product or retained evidence
+  file was edited by the tester. Worktree HEAD is `64dc9e6619129a7607dc1128a8037932b2149e59`.
+- Candidate and accepted receipt: `formal-candidate-progress.jsonl` records complete candidate revision
+  `r2-3-003-incremental-1`, delivery-5 and delivery-6 accepted receipt, candidate/semantic digest
+  `84ca5f468de332788215fb178ca0ae6c3df171a613215f51226010077a2c4a08`. The candidate contains the two frozen
+  ordered delete declarations and the bounded business slice, but its business slice declares class `Content` and
+  `Content`-typed predicates/entities; the retained ontology read model lists no `Content` class (only
+  `ExplicitUnknown`, `InvokingWorkflow`, `OutputField`, `SemanticResource`, `Workflow`, and `WorkflowVersion`).
+- Read-only impact evidence: both required delete-target statement contexts are complete with `next_cursor=null`:
+  `unknown-cross-release-output-meaning` response digest
+  `5f59350310730d1ed73de7085700041cff1418c9b47e435fcb7c0b12c478d5c6` (page/snapshot
+  `7f1e9b359f9e19da1ddf8d7ce3d652e7d1592b81b070d3df50d899a18d84bc91`) and
+  `unknown-b-no-score-behavior` response digest
+  `e26363f6b741e554fbcca583e743f853205bd6c963f3209b0036d5841ab0bdde` (page/snapshot
+  `de860a2476470b30b49f69c23a1c6a8cc6eaadf111e8c1deba14515395f58d15`). No Build Session, lease, batch, or
+  mutation occurred.
+- Typed conflict/transport failure: `capability-calls.jsonl` confirms `protocol_build_candidate_conflict` itself
+  returned `ok=true` for `missing_class_dependency`. The subsequent exact typed conflict reply to Modeling, bound
+  to `reply_to=delivery-5` and `expects_reply=true`, was rejected by Team Transport with **MCP -32000** after two
+  attempts because delivery-6 had already been accepted for delivery-5; no replacement conflict delivery reached
+  Modeling. This is a broker/progress second-reply defect, not a candidate-gate or mutation failure.
+- Zero mutation and cleanup: `issue-report.jsonl` records mutation state as prose-prefixed
+  `zero-mutation; only read-only platform calls performed (...)`, and the issue resolution/abort explicitly state
+  zero mutation. Cleanup is clean: `state.json` is `CLEANED`; acceptance cleanup has
+  `credentials_destroyed=true`, `active_handles=0`, `zero_child_residue=true`, `status=aborted`, and
+  `settled=false`; scope before/after context is identical with no active leases/sessions/in-flight attempts and
+  project/admin keys revoked. No start8 process or Unix socket remains.
+- Automatic reconciliation failure and ledger state: the strict future-abort reconciler requires the canonical
+  mutation-state value `zero-mutation`, so the prose-prefixed issue field was rejected and no start8 terminal-failure
+  record was appended. The real `.r2-3-003-start-ledger.jsonl` is now **24 lines**, SHA-256
+  `517c2688f7de25fc14ec63247fc04aa494ca1b5cb4b8e15c9d65d21729104d63`; line 22 is the corrected start7
+  `platform-contract` terminal failure, lines 23–24 are start8 reservation/semantic-start, and the tail has no
+  start8 terminal failure. Read-only `StartLedger` replay reports `start_cap=7`, `semantic_start_count=7`, and no
+  active reservation; strict next-start eligibility is nevertheless blocked because the latest semantic start lacks
+  its required terminal failure and the cap is consumed.
+- Result: **FAIL/BLOCKED** for start8 and any start9/further semantic start. Developer must repair the standalone
+  conflict broker path so a valid typed post-receipt conflict can reach Modeling exactly once, normalize/extract the
+  canonical `mutation_state=zero-mutation` before automatic reconciliation, and preserve R2.3-005 behavior. After
+  that handoff, tester will independently run the standalone conflict-broker/canonical-mutation-state tests plus
+  the R2.3-005 compatibility and full modeling suite. No new live start is authorized while this blocker remains.
+
+### Round 19 — 2026-08-11 standalone broker/mutation-prefix repair recheck — PASS deterministic / BLOCKED live budget
+
+- Scope and safety: independently tested the stable uncommitted repair at HEAD `64dc9e6619129a7607dc1128a8037932b2149e59`.
+  The tester did not start a live run, append the real ledger, alter retained evidence, edit product code, or edit the
+  delivery record; only this append-only test-plan round was changed. Runner SHA-256 is
+  `c53a1d83b030f1983696fdc50324fc279d831f718654bf16feccba4c1c1e4163`, matching the reviewed frozen test.
+- Standalone post-receipt broker sequence: the focused R2.3-005 candidate-progress tests pass **2 tests** (32
+  deselected), including receipt-v1 acceptance -> live binding mismatch -> one standalone Protocol-to-Modeling
+  typed conflict (`reply_to=None`) -> full revision-v2 -> replacement receipt-v2, with stale receipt-v1 rejected.
+  The conflict reply is now bound to the standalone conflict delivery rather than attempting a second reply to the
+  accepted receipt; no duplicate accepted response is produced.
+- Mutation-state/reconciliation contract: focused R2.3-003 tests pass **3 tests** (15 deselected), proving the exact
+  canonical `zero-mutation` and the accepted `zero-mutation; ...` prefix normalize to strict ledger evidence, while
+  nonzero/invalid mutation state is rejected without ledger mutation. The prompt wait-boundary assertion passes **1
+  test** (17 deselected). Native `build_candidate_conflict` result shape remains canonical: **11 tests, 13 subtests**
+  passed, with only `content` and `structuredContent` and canonical JSON content.
+- Focused deterministic gates (run serially to avoid the fixed credential-order fixture's shared run ID) pass:
+  `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+  modeling_team/tests/test_r23003_revision_contract.py modeling_team/tests/test_r23005_candidate_progress.py
+  modeling_team/tests/test_r23005_mechanical_spine.py modeling_team/tests/test_r23005_complete_revision.py
+  modeling_team/tests/test_p2a_codex_runtime.py -q` -> **107 passed, 2 subtests passed**; and
+  `uv run --project backend python -m pytest modeling_team/tests/test_r23003_incremental_contract.py
+  modeling_team/tests/test_r23005_budget_extension.py modeling_team/tests/test_r23005_ledger_isolation.py -q`
+  -> **46 passed, 22 subtests passed**. R2.3-005 budget/namespace policy and frozen runtime surfaces remain green.
+- Full deterministic regression: `uv run --project backend python -m pytest modeling_team/tests -q` -> **724
+  passed, 1 skipped, 218 subtests passed**. `uv run --project backend python -m compileall -q modeling_team
+  backend/app backend/tests` and `git diff --check` pass. The frozen Runner digest above matches
+  `modeling_team/tests/test_p2a_codex_runtime.py`.
+- Read-only live boundary: `.r2-3-003-start-ledger.jsonl` remains **24 lines**, SHA-256
+  `517c2688f7de25fc14ec63247fc04aa494ca1b5cb4b8e15c9d65d21729104d63`. Its tail is unchanged: corrected start7
+  `platform-contract` terminal failure, then start8 reservation and `semantic_start`, with no start8 terminal failure.
+  The cap is consumed (`start_cap=7`, `semantic_start_count=7`, no active reservation); no new reservation, process,
+  socket, or ledger write was made by this round. Therefore live start8/start9 acceptance remains **BLOCKED** pending
+  the operator-controlled append-only reconciliation of the historical start8 zero-mutation abort; deterministic
+  repair and all R2.3-005/full-suite gates are **PASS**.

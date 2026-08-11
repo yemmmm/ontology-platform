@@ -1851,8 +1851,17 @@ class TeamRunner:
             return
         if issue is None or getattr(issue, "run_id", None) != self.run.run_id:
             raise TeamConfigurationError("issue abort run binding is invalid")
-        if getattr(issue, "mutation_state", None) != "zero-mutation":
+        raw_mutation_state = getattr(issue, "mutation_state", None)
+        if not (
+            isinstance(raw_mutation_state, str)
+            and (
+                raw_mutation_state == "zero-mutation"
+                or raw_mutation_state.startswith("zero-mutation;")
+            )
+        ):
             raise TeamConfigurationError("issue abort lacks zero-mutation evidence")
+        # Keep explanatory issue prose outside the strict ledger field.
+        mutation_state = "zero-mutation"
         if not isinstance(cleanup, dict):
             raise TeamConfigurationError("issue abort cleanup evidence is invalid")
         acceptance = cleanup.get("acceptance")
@@ -1876,7 +1885,7 @@ class TeamRunner:
         issue_payload = {
             "run_id": self.run.run_id,
             "issue_id": issue.issue_id,
-            "mutation_state": issue.mutation_state,
+            "mutation_state": mutation_state,
             "failing_operation": issue.failing_operation,
             "error": issue.error,
         }
@@ -1904,11 +1913,16 @@ class TeamRunner:
             "terminal-reconciliation",
             {**evidence_payload, "evidence_digest": evidence_digest},
         )
-        self.record_terminal_failure(
-            "platform-contract",
-            False,
-            terminal_evidence=terminal_evidence,
-        )
+        try:
+            self.record_terminal_failure(
+                "platform-contract",
+                False,
+                terminal_evidence=terminal_evidence,
+            )
+        except Exception as exc:
+            raise TeamConfigurationError(
+                "issue-abort terminal reconciliation failed after cleanup evidence was persisted"
+            ) from exc
         self._issue_abort_terminal_failure_recorded = True
 
     def _publish_staged_candidate(self, modeling_id: str) -> dict[str, Any]:
@@ -2331,6 +2345,14 @@ class TeamRunner:
                     )
                     if is_r23003:
                         text += (
+                            " For R2.3-003 only, when an accepted receipt has already been sent and registered and a "
+                            "later live binding read exposes a pre-mutation mismatch, call the typed conflict builder "
+                            "with the original delivery_id, then send its unchanged conflict_json as a new standalone "
+                            "Protocol-to-Modeling delivery with expects_reply=true and reply_to_delivery_id=None. The "
+                            "typed conflict must retain original_delivery_id, receipt_digest, workspace_version, and "
+                            "mutation_state=zero-mutation; Modeling replies with one full revised candidate bound to "
+                            "this standalone conflict delivery_id. Pre-receipt conflicts and all R2.3-005 candidates keep "
+                            "the original reply-bound semantics. "
                             " If protocol_build_candidate_receipt itself fails at the receipt gate (including the "
                             "R2.3-003 exact-delete validator), do not retry that call or send any accepted receipt. "
                             "Use the native protocol_mechanics build_candidate_conflict with the unchanged complete "
@@ -3688,6 +3710,24 @@ class TeamRunner:
                         raise FormalCandidateError(
                             "formal invalid response has no active candidate identity"
                         )
+                    standalone_response = (
+                        delivery.sender_id == protocol
+                        and delivery.recipient_id == modeling
+                        and delivery.expects_reply is True
+                        and delivery.reply_to_delivery_id is None
+                    )
+                    if standalone_response:
+                        self.transport.ack_delivery(delivery.delivery_id)
+                        self._append_evidence(
+                            "formal-candidate-progress",
+                            {
+                                "event": "invalid-standalone-conflict-quarantined",
+                                "state": self._candidate_progress.state,
+                                "original_delivery_id": identity.original_delivery_id,
+                                "invalid_reply_delivery_id": delivery.delivery_id,
+                            },
+                        )
+                        continue
                     try:
                         self.transport.reopen_formal_reply_slot(
                             original_delivery_id=identity.original_delivery_id,

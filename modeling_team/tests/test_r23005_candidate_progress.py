@@ -279,7 +279,6 @@ def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revi
             "modeling",
             json.dumps(conflict),
             "delivery-7",
-            reply_to="delivery-5",
         ),
         modeling_agent_id="modeling",
         protocol_agent_id="protocol",
@@ -347,6 +346,97 @@ def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revi
         protocol_thread_id="protocol-thread",
     ) == "accepted"
     assert progress.state == "complete"
+
+
+def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_reply(
+    tmp_path: Path,
+) -> None:
+    """A receipt-occupied request gets one independent conflict/revision reply chain."""
+
+    broker = TeamTransportBroker(
+        tmp_path / "transport",
+        {("modeling", "protocol"), ("protocol", "modeling")},
+        modeling_agent_id="modeling",
+    )
+    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
+    candidate = _candidate()
+    original = broker.send(
+        "modeling", "protocol", json.dumps(candidate), expects_reply=True
+    )
+    assert progress.observe_delivery(
+        original,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start8-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "candidate"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    receipt = build_candidate_receipt(candidate)
+    receipt_delivery = broker.send(
+        "protocol", "modeling", json.dumps(receipt), reply_to_delivery_id=original.delivery_id
+    )
+    assert progress.observe_delivery(
+        receipt_delivery,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start8-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    broker.ack_delivery(receipt_delivery.delivery_id)
+
+    conflict = build_existing_scope_candidate_conflict(
+        candidate,
+        "missing_class_dependency",
+        "candidate references a class absent from the retained ontology",
+        original_delivery_id=original.delivery_id,
+        receipt_digest=canonical_digest(receipt),
+        workspace_version="workspace-v1",
+    )
+    standalone = broker.send(
+        "protocol", "modeling", json.dumps(conflict), expects_reply=True
+    )
+    assert standalone.reply_to_delivery_id is None
+    assert progress.is_invalid_response(
+        standalone, modeling_agent_id="modeling", protocol_agent_id="protocol"
+    ) is False
+    assert progress.observe_delivery(
+        standalone,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start8-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "conflict"
+    assert progress.pending is not None
+    assert progress.pending.conflict_delivery_id == standalone.delivery_id
+
+    # The old receipt reply chain is stale; the revised candidate must bind to
+    # the standalone conflict request instead.
+    stale_receipt = _delivery(
+        "protocol", "modeling", json.dumps(receipt), "receipt-v1-replay", reply_to=original.delivery_id
+    )
+    assert progress.observe_delivery(
+        stale_receipt,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start8-fixture",
+        protocol_thread_id="protocol-thread",
+    ) is None
+    revised = _candidate(2)
+    revision = broker.send(
+        "modeling",
+        "protocol",
+        json.dumps(revised),
+        expects_reply=True,
+        reply_to_delivery_id=standalone.delivery_id,
+    )
+    assert revision.reply_to_delivery_id == standalone.delivery_id
+    assert progress.observe_delivery(
+        revision,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start8-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "revision"
 
 
 def test_turn_barrier_allows_one_redrive_then_exhausts() -> None:

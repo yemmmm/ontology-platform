@@ -460,8 +460,12 @@ class FormalCandidateProgress:
             and pending is not None
             and pending.state == "complete"
             and getattr(delivery, "sender_id", None) == pending.identity.protocol_agent_id
-            and getattr(delivery, "reply_to_delivery_id", None)
-            == pending.identity.original_delivery_id
+            and getattr(delivery, "recipient_id", None) == pending.attribution.sender_id
+            and getattr(delivery, "expects_reply", None) is True
+            # The original candidate reply slot is occupied by receipt-v1.  A
+            # post-receipt conflict therefore gets its own Protocol->Modeling
+            # request and binds the revision to this new delivery ID.
+            and getattr(delivery, "reply_to_delivery_id", None) is None
             and isinstance(value, dict)
             and value.get("status") == "conflict"
         )
@@ -543,6 +547,13 @@ class FormalCandidateProgress:
             and isinstance(expects_reply, bool)
             and reply_to == self.pending.identity.original_delivery_id
         )
+        # R2.3-003 post-receipt conflicts are standalone requests because the
+        # original Modeling->Protocol reply slot is already occupied by the
+        # accepted receipt.  Their typed payload still binds the original
+        # delivery and receipt digest below; the revision replies to this new
+        # conflict delivery ID.
+        post_receipt_conflict = self._post_receipt_conflict_envelope(delivery, value)
+        response = response or post_receipt_conflict
         if not response or value is None or self.pending is None:
             return None
         identity = self.pending.identity
@@ -621,6 +632,7 @@ class FormalCandidateProgress:
             return False
         sender_id = getattr(delivery, "sender_id", None)
         recipient_id = getattr(delivery, "recipient_id", None)
+        expects_reply = getattr(delivery, "expects_reply", None)
         reply_to = getattr(delivery, "reply_to_delivery_id", None)
         delivery_id = getattr(delivery, "delivery_id", None)
         if (
@@ -630,6 +642,33 @@ class FormalCandidateProgress:
             and delivery_id != self.pending.conflict_delivery_id
         ):
             return True
+        standalone_post_receipt = (
+            self._allow_post_receipt_revision
+            and self.pending.state == "complete"
+            and sender_id == protocol_agent_id
+            and recipient_id == modeling_agent_id
+            and expects_reply is True
+            and reply_to is None
+        )
+        if standalone_post_receipt:
+            value = self._decode_candidate(getattr(delivery, "text", None))
+            if not isinstance(value, dict) or value.get("status") != "conflict":
+                return True
+            identity = self.pending.identity
+            try:
+                validate_formal_conflict(
+                    value,
+                    candidate_revision=identity.candidate_revision,
+                    semantic_digest=identity.semantic_digest,
+                    candidate_digest=identity.candidate_digest,
+                )
+            except FormalCandidateError:
+                return True
+            return not (
+                set(value) == FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS
+                and value.get("original_delivery_id") == identity.original_delivery_id
+                and value.get("receipt_digest") == self.pending.accepted_receipt_digest
+            )
         if (
             sender_id != protocol_agent_id
             or recipient_id != modeling_agent_id

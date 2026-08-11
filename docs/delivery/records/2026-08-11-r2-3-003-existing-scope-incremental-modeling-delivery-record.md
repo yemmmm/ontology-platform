@@ -514,3 +514,49 @@
   test 改动。GitNexus detect CRITICAL（共享 progress/Runner/ledger 入口），所有新分支 requirement-gated。
 - Outcome/next step: deterministic repair PASS；live start8 仍 blocked，直到 operator 从 start7 已持久化
   state/issue/cleanup 生成 canonical reconciliation evidence 并通过同一严格 API append，不允许手改旧行。
+
+### 2026-08-11T13:23:51+08:00 — start7 operator reconciliation — main agent
+
+- Context: start7 cleanup 已持久化零写入 issue/acceptance evidence，但旧进程未自动写 terminal failure。
+- Action/decision: operator 重新执行 authenticated read-only retained-scope preflight，要求 fresh live context 与
+  start7 prestart byte-equal；验证 issue/run/baseline、aborted acceptance、zero residue、无 in-flight、未有既存
+  terminal failure。先 exclusive 写 `evidence/terminal-reconciliation.jsonl`，再通过 strict StartLedger lock
+  append `platform-contract` terminal failure；不改写前 21 行。
+- Evidence: ledger line 22，evidence digest=`1c683ce1f4f9895955f7ee0d7ce7114c0d7a067786fe1a07d31c439828acc97a`；
+  workspace=`0d34f5ada161...`、batches=6、active session/lease/in-flight=0；temporary read credential revoked；
+  strict replay PASS。
+- Outcome/next step: start8 reservation gate 合法开放；仅剩最后一次授权。
+
+### 2026-08-11T13:34:42+08:00 — revised live semantic start8 — main agent
+
+- Context: commit `64dc9e6`、Round 17 PASS、start7 reconciliation 后启动最后授权
+  `r23003-real-20260811-deepseek-start8`。
+- Action/decision: Modeling delivery-5 交付精确两个 delete targets 与 bounded business slice，Protocol
+  delivery-6 accepted receipt digest=`84ca5f468de332788215fb178ca0ae6c3df171a613215f51226010077a2c4a08`。
+  两个 target 的 paginated impact context 均 `complete=true/next_cursor=null`。随后 live binding 发现 slice
+  引用不存在的 Class `Content`，typed `missing_class_dependency` conflict 构造成功；但 Protocol 按旧提示以
+  `reply_to=delivery-5` 发送，Team Transport 因该 reply slot 已被 accepted receipt 使用而两次 `-32000`
+  拒绝。主 Agent 以 outer issue resolution abort，未放宽或绕过 delivery identity。
+- Evidence: issue-1 明确 `zero-mutation; only read-only platform calls`，无 Build Session/lease/batch/dry-run/
+  apply；cleanup state=CLEANED，scope before==after（workspace `0d34f5...`、batches=6）、credentials destroyed、
+  keys revoked、zero child residue、服务健康。ledger lines 23–24 为 start8 reservation/semantic_start；cap/count=
+  `7/7`，授权耗尽。旧 auto reconciliation 因 mutation_state 含说明后缀而未写 terminal failure。
+- Outcome/next step: Round 18=`FAIL/BLOCKED`；不得 start9。只修 standalone post-receipt conflict transport 与
+  mutation-state canonicalization，完成 deterministic acceptance 后做 start8 append-only reconciliation。
+
+### 2026-08-11T13:50:00+08:00 — standalone post-receipt conflict repair and Round 19 — developer and tester
+
+- Context: Runner/progress 已允许 post-receipt conflict，但 broker one-reply slot 不允许它作为原 candidate 的
+  第二个 reply。
+- Action/decision: 仅 R2.3-003 post-receipt typed conflict 改为新的 Protocol→Modeling standalone delivery：
+  `expects_reply=true`、`reply_to=None`；typed payload 仍绑定 original delivery、accepted receipt digest、live
+  workspace、canonical zero-mutation。完整 revision 回复新的 conflict delivery ID；pre-receipt/005 reply
+  语义、stale receipt reject 保持。Abort reconciliation 仅接受 exact `zero-mutation` 或
+  `zero-mutation;...` 并写 canonical enum；其它值 fail-closed，cleanup evidence 不被掩盖。
+- Evidence: independent standalone broker=2 PASS；mutation suffix/exact/invalid=3 PASS；focused=
+  `107 passed, 2 subtests`；ledger/005=`46 passed, 22 subtests`；native MCP=`11 passed, 13 subtests`；
+  modeling_team full=`724 passed, 1 skipped, 218 subtests`；compileall/diff/frozen PASS，Runner SHA=
+  `c53a1d83b030f1983696fdc50324fc279d831f718654bf16feccba4c1c1e4163`。GitNexus detect CRITICAL，
+  requirement-gated shared progress/Runner 影响已报告。
+- Outcome/next step: deterministic Round 19=`PASS`；真实 +3 预算已全部耗尽，不能再启动。operator 只可闭合
+  start8 terminal reconciliation；后续 live L0-L2 需要新的显式用户授权。
