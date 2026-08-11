@@ -1039,3 +1039,31 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   socket, or ledger write was made by this round. Therefore live start8/start9 acceptance remains **BLOCKED** pending
   the operator-controlled append-only reconciliation of the historical start8 zero-mutation abort; deterministic
   repair and all R2.3-005/full-suite gates are **PASS**.
+
+### Round 20 — 2026-08-11 operator reconciliation/read-only closure audit — PASS reconciliation / BLOCKED requirement budget
+
+- Scope and safety: the operator's append-only reconciliation was present before this read-only audit. The tester did
+  not append or rewrite the ledger, start a run, mutate retained evidence, edit product code, or edit the delivery
+  record; only this test-plan round was appended.
+- Ledger reconciliation: `.r2-3-003-start-ledger.jsonl` is **25 lines**, SHA-256
+  `84a51c3677ad33ad0a4a19cb254da77e72467ae24f623ab7002556477cfab814`. Line 25 is the start8
+  `platform-contract` `terminal_failure` for run `r23003-real-20260811-deepseek-start8`, bound to baseline
+  `bf590cb4cf92369c1499efd554ec63ef1b6170a17a4d05a0f57641b81de136f1`, canonical `mutation_state=zero-mutation`,
+  `issue_id=issue-1`, and `evidence/terminal-reconciliation.jsonl`; its terminal evidence digest is
+  `4bdfe746f0cb8a4187190c10ad9da94fbaa5cfc3c8802b2322434461e18a3084`. Read-only `StartLedger` replay passes with
+  `start_cap=7`, `semantic_start_count=7`, and `active_reservations=[]`; the strict ledger is now reconciled, but
+  the budget is exhausted and no next semantic reservation is eligible.
+- Canonical evidence/cleanup binding: recomputation from the retained terminal-reconciliation record passes all three
+  canonical SHA-256 bindings: `issue_digest=78ac79955455da89c0d20074bbd3d2b345cf4c99d0c9c0c8c6e8082cff1439f0`,
+  `cleanup_digest=8310dc920c97f49a70feded5e7a18b27b997673bd6dee46ea75b4019eab2c5fb`, and the terminal
+  `evidence_digest=4bdfe746f0cb8a4187190c10ad9da94fbaa5cfc3c8802b2322434461e18a3084`. Cleanup is canonical and
+  zero-mutation: `existing_context_before == existing_context_after`, `status=aborted`,
+  `credentials_destroyed=true`, `active_handles=0`, `zero_child_residue=true`, and `no_in_flight_attempts=true`.
+  No run process or Unix socket remains for start8.
+- Service boundary: `ontology-platform.service` is active/running; read-only endpoint checks return backend
+  `GET /api/health` **200** (`{"status":"ok"}`) and frontend `/` **200**. Service health does not create or extend
+  semantic-start authorization.
+- Result: **PASS for the historical append-only reconciliation and cleanup/evidence binding; BLOCKED for the R2.3-003
+  requirement's live L0/L1/L2 acceptance**. All seven semantic starts are consumed, and no further live modeling run
+  or start9 is authorized under the exhausted cap. Deterministic contract/full-suite evidence remains valid, but it
+  must not be promoted to live semantic acceptance or repeatability/productization evidence.

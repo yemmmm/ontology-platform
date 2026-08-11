@@ -560,3 +560,18 @@
   requirement-gated shared progress/Runner 影响已报告。
 - Outcome/next step: deterministic Round 19=`PASS`；真实 +3 预算已全部耗尽，不能再启动。operator 只可闭合
   start8 terminal reconciliation；后续 live L0-L2 需要新的显式用户授权。
+
+### 2026-08-11T14:00:00+08:00 — start8 operator reconciliation and authorization exhaustion — main agent
+
+- Context: Round 19 PASS 后，start8 已 clean 但 ledger 尾部仍为 semantic_start；无剩余授权。
+- Action/decision: 从 start8 持久化 `state.cleanup`、issue-report、reservation 读取证据；仅接受
+  `zero-mutation;...` 并 canonicalize 为 `zero-mutation`。验证 aborted acceptance/credential destruction/
+  zero child residue、scope before==after、无 in-flight/blocker、无既存 terminal failure；exclusive 写
+  terminal reconciliation evidence，再通过 strict ledger API append，不改写前 24 行。
+- Evidence: ledger line 25=`platform-contract` terminal failure；terminal evidence digest=
+  `4bdfe746f0cb8a4187190c10ad9da94fbaa5cfc3c8802b2322434461e18a3084`；ledger SHA=
+  `84a51c3677ad33ad0a4a19cb254da77e72467ae24f623ab7002556477cfab814`；strict replay PASS，cap/count=
+  `7/7`。workspace version=`0d34f5ada161...`、batches=6；service active，backend health/frontend HTTP 200。
+- Outcome/next step: 无悬挂 reservation、mutation-unknown 或 cleanup residue；用户授权三次已全部消费，
+  R2.3-003 requirement 仍 `BLOCKED`：两个 target 未删除、业务切片未 apply、CQ/Acceptance 未执行。禁止
+  start9，需新的显式授权后才可用 `55ab43c` 已修 standalone revision path 继续。
