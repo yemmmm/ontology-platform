@@ -39,6 +39,23 @@ PAGE_FIELDS = ["ordinal", "input_cursor", "output_cursor", "has_more", "sequence
 def report_schema(kind: str) -> dict[str, Any]:
     """Return the strict, non-secret input schema for one Examiner kind."""
 
+    if kind == "acceptance":
+        fields = ["status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"]
+        return {
+            "type": "object",
+            "required": fields,
+            "additionalProperties": False,
+            "properties": {
+                "status": {"type": "string", "enum": ["PASS", "FAIL", "BLOCKED"]},
+                "answer": {"type": "string", "minLength": 1},
+                "evidence_ref_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "current": {"type": "boolean"},
+                "usable": {"type": "boolean"},
+                "failure_layer": {"type": ["string", "null"]},
+                "blocked_reason": {"type": ["string", "null"]},
+            },
+            "description": "Strict fresh Acceptance typed verdict payload.",
+        }
     if kind not in {"source", "platform"}:
         raise ValueError("invalid Examiner kind")
     if kind == "source":
@@ -110,6 +127,17 @@ def report_schema(kind: str) -> dict[str, Any]:
 
 
 def _validate_payload(value: Any, *, kind: str) -> dict[str, Any]:
+    if kind == "acceptance":
+        expected = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
+        if not isinstance(value, Mapping) or set(value) != expected:
+            raise ValueError("acceptance verdict fields drift")
+        if value["status"] not in {"PASS", "FAIL", "BLOCKED"} or not isinstance(value["answer"], str) or not value["answer"]:
+            raise ValueError("acceptance verdict is invalid")
+        if not isinstance(value["evidence_ref_ids"], list) or any(not isinstance(item, str) or not item for item in value["evidence_ref_ids"]):
+            raise ValueError("acceptance verdict evidence refs are invalid")
+        if not isinstance(value["current"], bool) or not isinstance(value["usable"], bool):
+            raise ValueError("acceptance verdict flags are invalid")
+        return dict(value)
     if not isinstance(value, Mapping) or set(value) != set(SEMANTIC_FIELDS):
         raise ValueError("report payload fields drift")
     if value["answerability"] not in {"answerable", "insufficient-evidence", "unavailable"}:
@@ -179,7 +207,7 @@ def _json(value: Any) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stdio", action="store_true")
-    parser.add_argument("--kind", choices=("source", "platform"), required=True)
+    parser.add_argument("--kind", choices=("source", "platform", "acceptance"), required=True)
     parser.add_argument("--socket", required=True)
     parser.add_argument("--token-file", required=True)
     args = parser.parse_args()

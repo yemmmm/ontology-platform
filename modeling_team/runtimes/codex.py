@@ -16,6 +16,7 @@ import stat
 import secrets
 import threading
 import time
+import tempfile
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +25,7 @@ from typing import Any, Callable, Mapping
 from ..contracts import AgentPackage, digest_file
 from ..model_manifest import (
     FORMAL_MODEL_PACKAGE_IDS,
+    FORMAL_MODEL_TASK_ID,
     FORMAL_MODEL_TUPLE,
     FormalModelManifest,
 )
@@ -36,8 +38,17 @@ from ..deepseek_provider_proxy import (
     read_deepseek_credential,
 )
 from ..acceptance_runtime import (
+    ExaminerRolePacket,
+    ExaminerRunMetrics,
+    ExaminerRuntimeBlocked,
     ReportSinkServer,
     ScopedReadProxy,
+    _source_report_evidence_ids,
+    _validate_acceptance_evidence_ids,
+    _validate_platform_report_receipts,
+    examiner_proxy_schemas,
+    _packet_canonical,
+    _unfreeze_packet,
     _copy_private,
     child_config_digest,
     prepare_child_tree,
@@ -656,6 +667,7 @@ class _CodexChildResource:
         self.thread_id = thread_id
         self.first_turn_input = list(first_turn_input or [])
         self.submitted_reports: list[Mapping[str, Any]] = []
+        self.terminal_event = False
         self.stopped = False
         self.destroyed = False
         self._stopping = False
@@ -783,7 +795,40 @@ class _CodexChildResource:
                         if not self._watchdog_stop.is_set():
                             self._record_failure("runtime", "child-output-malformed")
                         return
-                    adapter._notification(agent, value)
+                    metrics = getattr(self, "metrics", None)
+                    if metrics is not None:
+                        try:
+                            metrics.observe_notification(value)
+                        except ExaminerRuntimeBlocked as blocked:
+                            self.blocked = blocked
+                            self._record_failure("runtime", blocked.reason)
+                            self._terminate_process(grace_seconds=0.5)
+                            return
+                        if value.get("method") in {"turn/completed", "turn/finished"}:
+                            self.terminal_event = bool(metrics.terminal_event)
+                    elif value.get("method") in {"turn/completed", "turn/finished"}:
+                        self.terminal_event = True
+                    # Lean Examiner output is a typed-report runtime surface.  Do
+                    # not leak model-message deltas/completions into the generic
+                    # adapter message accumulator; lifecycle, provider-error, and
+                    # terminal notifications still use the established dispatcher.
+                    method = value.get("method")
+                    params = value.get("params")
+                    item = params.get("item") if isinstance(params, Mapping) else None
+                    lean_message = (
+                        bool(self.spec.get("lean_examiner"))
+                        and isinstance(method, str)
+                        and (
+                            method.startswith("item/agentMessage/")
+                            or (
+                                method in {"item/completed", "item/updated"}
+                                and isinstance(item, Mapping)
+                                and item.get("type") == "agentMessage"
+                            )
+                        )
+                    )
+                    if not lean_message:
+                        adapter._notification(agent, value)
                     if getattr(agent, "runtime_failure", None) is not None:
                         return
             except CodexRuntimeError:
@@ -962,6 +1007,10 @@ class _CodexChildResource:
         self.spec.pop("report_submit", None)
         self.spec.pop("record_infrastructure_failure", None)
         self.spec.pop("platform_forwarder", None)
+        self.spec.pop("_packet", None)
+        self.spec.pop("_metrics", None)
+        self.spec.pop("first_turn_input", None)
+        self.spec.pop("_submitted_reports", None)
         self.spec.pop("_runtime_socket_root", None)
         self.submitted_reports.clear()
         registry_remove = self.spec.get("_registry_remove")
@@ -1323,16 +1372,215 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._acceptance_children[spec["child_handle_digest"]] = resource
         return resource
 
+    def launch_lean_examiner_child(
+        self,
+        packet: ExaminerRolePacket,
+        metrics: ExaminerRunMetrics,
+        *,
+        read_key: str | None = None,
+        platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
+        timeout_seconds: float = 90.0,
+    ) -> Any:
+        """Launch one R2.3-006 fresh child through the existing Codex child factory.
+
+        This is the production wiring seam used by independent local acceptance checks;
+        it does not reuse a persistent role.  Platform scope/key are read only from the
+        immutable packet, and the child callback receives one typed terminal payload.
+        """
+
+        if not isinstance(packet, ExaminerRolePacket) or packet.kind not in {"source", "platform", "acceptance"}:
+            raise CodexRuntimeError("lean Examiner packet is invalid")
+        if not isinstance(metrics, ExaminerRunMetrics):
+            raise CodexRuntimeError("lean Examiner metrics object is invalid")
+        if packet.kind == "platform" and (
+            not isinstance(read_key, str)
+            or not read_key
+            or not callable(platform_forwarder)
+        ):
+            # A Platform Examiner is only runnable with the ticket-bound host
+            # proxy.  Reject before child creation so no proxy/backend call can
+            # occur on an incomplete capability envelope.
+            raise ExaminerRuntimeBlocked(
+                "acceptance-input",
+                role="platform",
+                evidence={"read_key": bool(read_key), "forwarder": callable(platform_forwarder)},
+            )
+        payload = _unfreeze_packet(packet.payload)
+        private_root = Path(tempfile.mkdtemp(prefix="r23006-examiner-", dir="/tmp"))
+        os.chmod(private_root, 0o700)
+        private_input = private_root / "input.json"
+        self._write_child_private(private_input, _packet_canonical(payload), 0o400)
+        # The lean child has no filesystem/tools capability by design.  Inject the
+        # complete immutable packet into its first turn so the source bytes and
+        # binding fields are available without widening the role's MCP inventory.
+        # ``_packet_canonical`` encodes bytes as explicit base64 objects; source
+        # bytes remain separately accounted from host packet tokens in metrics.
+        packet_json = _packet_canonical(payload).decode("utf-8")
+        source_text_json = ""
+        if packet.kind == "source":
+            source_text = []
+            for source in payload.get("approved_sources", ()):
+                if not isinstance(source, Mapping) or not isinstance(source.get("bytes"), bytes):
+                    raise ExaminerRuntimeBlocked("source-missing", role="source")
+                try:
+                    text = source["bytes"].decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ExaminerRuntimeBlocked("source-missing", role="source") from exc
+                source_text.append({"path": source.get("path"), "sha256": source.get("sha256"), "text": text})
+            source_text_json = " SOURCE_TEXT_JSON=" + json.dumps(
+                source_text, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+        first_turn_text = (
+            "R2.3-006 fresh immutable packet. Use only this serialized packet and submit "
+            "one typed terminal report through the report-only examiner MCP server. "
+            "Do not use any other context or contact other roles. PACKET_JSON="
+            + packet_json
+            + source_text_json
+            + f" PACKET_DIGEST={packet.canonical_digest}"
+        )
+        handle_digest = hashlib.sha256((packet.canonical_digest + metrics.role).encode()).hexdigest()
+        binding = payload.get("ticket_binding") if isinstance(payload.get("ticket_binding"), Mapping) else {}
+        ticket_digest = str(binding.get("ticket_digest", "0" * 64)) if packet.kind in {"platform", "acceptance"} else str(payload.get("ticket_digest", "0" * 64))
+        model_state = payload.get("model_state", {}) if isinstance(payload.get("model_state"), Mapping) else {}
+        scope = payload.get("platform_read_scope", {}) if isinstance(payload.get("platform_read_scope"), Mapping) else {}
+        reports: list[Mapping[str, Any]] = []
+        report_kind = packet.kind
+        spec: dict[str, Any] = {
+            # Reuse the reviewed formal model/provider binding.  The task id is
+            # deliberately independent from the persistent Runner workflow; only
+            # model selection is inherited here.
+            "task_id": FORMAL_MODEL_TASK_ID,
+            "acceptance_round_id": str(payload.get("acceptance_round_id", "r23006-round")),
+            "kind": report_kind,
+            "attempt": 0,
+            "session_id": f"lean-{handle_digest[:16]}",
+            "child_handle_digest": handle_digest,
+            "ticket_digest": ticket_digest if re.fullmatch(r"[0-9a-f]{64}", ticket_digest) else "0" * 64,
+            "input_digest": packet.canonical_digest,
+            "private_root": str(private_root),
+            "private_input": str(private_input),
+            "platform_read_scope": dict(scope),
+            "model_state_digest": str(model_state.get("state_digest", "0" * 64)),
+            "allowed_read_tools": list(payload.get("allowed_read_tools", ())) if packet.kind == "platform" else [],
+            "timeout_seconds": timeout_seconds,
+            "read_key_plaintext": read_key,
+            "formal_platform": packet.kind == "platform",
+            "platform_forwarder": platform_forwarder,
+            "lean_examiner": True,
+            "report_submit_payload": reports.append,
+            "_metrics": metrics,
+            "_packet": packet,
+            "_submitted_reports": reports,
+            "first_turn_input": [
+                {
+                    "type": "text",
+                    "text": first_turn_text,
+                }
+            ],
+        }
+        if packet.kind == "platform" and read_key is None:
+            shutil.rmtree(private_root, ignore_errors=True)
+            raise ExaminerRuntimeBlocked("acceptance-input", role="platform")
+        try:
+            resource = self.acceptance_child_factory(spec)
+        except Exception:
+            shutil.rmtree(private_root, ignore_errors=True)
+            raise
+        return resource
+
+    def run_lean_examiner_child(
+        self,
+        packet: ExaminerRolePacket,
+        metrics: ExaminerRunMetrics,
+        *,
+        read_key: str | None = None,
+        platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
+        timeout_seconds: float = 90.0,
+    ) -> Mapping[str, Any]:
+        """Execute one fresh Examiner child and return its validated terminal payload.
+
+        The caller owns the metrics object; the real App Server thread identity and
+        notification accounting are bound during launch.  This method waits for the
+        private report sink, then destroys the child before returning so no resource
+        or temporary key survives a Source/Platform/Acceptance turn.
+        """
+
+        resource = self.launch_lean_examiner_child(
+            packet,
+            metrics,
+            read_key=read_key,
+            platform_forwarder=platform_forwarder,
+            timeout_seconds=timeout_seconds,
+        )
+        report: Mapping[str, Any] | None = None
+        try:
+            deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+            while time.monotonic() < deadline:
+                blocked = getattr(resource, "blocked", None)
+                if isinstance(blocked, ExaminerRuntimeBlocked):
+                    raise blocked
+                evidence = getattr(resource, "failure_evidence", None)
+                failure = evidence() if callable(evidence) else None
+                if isinstance(failure, Mapping):
+                    raise ExaminerRuntimeBlocked(
+                        "runtime-infrastructure",
+                        role=packet.kind,
+                        evidence={key: value for key, value in failure.items() if key in {"failure_category", "reason_code"}},
+                    )
+                reports = getattr(resource, "submitted_reports", None)
+                if report is None and isinstance(reports, list) and reports:
+                    candidate = reports[0]
+                    if not isinstance(candidate, Mapping):
+                        raise ExaminerRuntimeBlocked("acceptance-evidence", role=packet.kind)
+                    report = dict(candidate)
+                    if packet.kind == "source":
+                        _source_report_evidence_ids(packet, report)
+                    elif packet.kind == "platform":
+                        _validate_platform_report_receipts(report, resource)
+                    if packet.kind == "acceptance":
+                        allowed_ids = set()
+                        for field in ("source_evidence_ref_ids", "platform_evidence_ref_ids"):
+                            values = packet.payload.get(field)
+                            if isinstance(values, (list, tuple)):
+                                allowed_ids.update(str(value) for value in values)
+                        _validate_acceptance_evidence_ids(report, allowed_ids)
+                        metrics.record_terminal_verdict(report)
+                    else:
+                        metrics.record_terminal_report(report)
+                # A report callback is not the provider terminal event.  Real
+                # resources expose this latch from the private stdout observer;
+                # keep checking it after the one-time report validation.
+                if report is not None and getattr(resource, "terminal_event", False):
+                    return report
+                process = getattr(resource, "process", None)
+                poll = getattr(process, "poll", None)
+                if callable(poll) and poll() is not None and not getattr(resource, "destroyed", False):
+                    raise ExaminerRuntimeBlocked("runtime-infrastructure", role=packet.kind)
+                time.sleep(0.01)
+            raise ExaminerRuntimeBlocked("runtime-infrastructure", role=packet.kind)
+        finally:
+            destroy = getattr(resource, "destroy", None)
+            if callable(destroy):
+                destroy()
+
     @staticmethod
     def _child_package_assets(kind: str, root: Path) -> tuple[Path, Path, Path]:
-        if kind not in {"source", "platform"}:
+        if kind not in {"source", "platform", "acceptance"}:
             raise CodexRuntimeError("Examiner child kind is invalid")
-        package = root / "modeling_team" / "agent-packages" / f"{kind}-examiner"
+        package = root / "modeling_team" / "agent-packages" / (
+            f"{kind}-examiner" if kind != "acceptance" else "acceptance-examiner"
+        )
         instructions = package / "instructions.md"
         skill = (
             root
             / "skills"
-            / ("source-examiner" if kind == "source" else "platform-examiner")
+            / (
+                "source-examiner"
+                if kind == "source"
+                else "platform-examiner"
+                if kind == "platform"
+                else "lean-acceptance-examiner"
+            )
             / "SKILL.md"
         )
         for path in (instructions, skill):
@@ -1510,7 +1758,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _launch_acceptance_child_impl(self, spec: dict[str, Any]) -> _CodexChildResource:
         """Stage and launch a real private child; no platform call is made here."""
         kind = spec.get("kind")
-        if kind not in {"source", "platform"}:
+        if kind not in {"source", "platform", "acceptance"}:
             raise CodexRuntimeError("Examiner child kind is invalid")
         formal = bool(
             self._coordination_enabled
@@ -1519,7 +1767,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "r2-3-003-existing-scope-incremental",
             }
         )
-        child_package_id = f"{kind}-examiner"
+        child_package_id = f"{kind}-examiner" if kind != "acceptance" else "acceptance"
         if formal:
             child_model_override = self._validated_formal_model_override(child_package_id)
         else:
@@ -1548,15 +1796,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ):
             raise CodexRuntimeError("Examiner private root is not 0700")
         _package_file, instructions, skill = self._child_package_assets(kind, self.root)
+        instruction_bytes = instructions.read_bytes()
+        skill_bytes = skill.read_bytes()
         paths = prepare_child_tree(
             private_root=private_root,
             # Formal Examiner children use the shared loopback provider proxy;
             # they never receive a copied host auth.json.  Legacy/non-formal
             # child fixtures retain the historical private auth staging.
             host_auth=None if formal else self.preflight_host_auth(),
-            instructions=instructions.read_bytes(),
+            instructions=instruction_bytes,
             skill_name=skill.parent.name,
-            skill_bytes=skill.read_bytes(),
+            skill_bytes=skill_bytes,
         )
         home, work, skills = paths["home"], paths["work"], paths["skills"]
         auth_payload = self._read_secret_bytes(home / "auth.json")
@@ -1593,7 +1843,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             spec["_runtime_socket_root"] = str(socket_root)
         report_socket = socket_root / "report.sock"
         # The resource owns this callback; the carrier remains the only report validator.
-        submitted_reports: list[Mapping[str, Any]] = []
+        submitted_reports = spec.get("_submitted_reports")
+        if not isinstance(submitted_reports, list):
+            submitted_reports = []
         # The private sink must receive the strict six-field child payload.  The
         # full-envelope callback remains available only to deterministic resource
         # doubles and is never installed behind a production socket.
@@ -1625,6 +1877,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if spec.get("formal_platform") is True and not callable(forward):
                 report_sink.stop()
                 raise CodexRuntimeError("formal Platform Examiner forwarder is unavailable")
+            metrics = spec.get("_metrics")
+            if callable(forward) and isinstance(metrics, ExaminerRunMetrics):
+                raw_forward = forward
+
+                def timed_forward(tool: str, arguments: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+                    started = time.monotonic()
+                    try:
+                        result = raw_forward(tool, arguments, key)
+                        if isinstance(result, Mapping):
+                            metrics.record_platform_response(result)
+                        return result
+                    finally:
+                        metrics.record_proxy_time((time.monotonic() - started) * 1000)
+
+                forward = timed_forward
             proxy_token = secrets.token_urlsafe(24)
             self._remember_secret(proxy_token.encode("utf-8"))
             self._remember_secret(read_key.encode("utf-8"))
@@ -1646,6 +1913,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 forward=forward if callable(forward) else None,
                 acceptance_round_id=str(spec["acceptance_round_id"]),
                 child_handle_digest=str(spec["child_handle_digest"]),
+                exact_schemas=examiner_proxy_schemas(spec.get("allowed_read_tools") or ()),
             )
             spec["_runtime_proxy"] = proxy
             proxy.start()
@@ -1783,8 +2051,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         spec.pop("_runtime_proxy", None)
         spec.pop("_runtime_report_sink", None)
         child_package = AgentPackage(
-            package_id=f"{kind}-examiner",
-            role="source-specialist",
+            package_id=f"{kind}-examiner" if kind != "acceptance" else "acceptance",
+            role=(
+                "source-specialist"
+                if kind == "source"
+                else "platform-specialist"
+                if kind == "platform"
+                else "acceptance"
+            ),
             description=f"Private {kind} Examiner",
             instructions_path=home / "instructions.md",
             required_skills=(skills / skill.parent.name / "SKILL.md",),
@@ -1848,20 +2122,36 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # turn.  This makes a missing/extra wrapper a startup contract failure,
             # rather than an ambiguous semantic report.
             child_agent.thread_id = thread_id
-            self._require_expected_mcp_servers(child_agent)
-            first_turn_input = [
-                {
-                    "type": "text",
-                    "text": (
-                        "Read only /agent/home/input.json. Call the MCP tool "
-                        "submit_examiner_report exactly once with one bounded terminal "
-                        "report. Do not use raw sockets or any other capability."
-                    ),
-                }
-            ]
+            if bool(spec.get("lean_examiner")):
+                self._require_lean_examiner_mcp_servers(child_agent)
+            else:
+                self._require_expected_mcp_servers(child_agent)
+            first_turn_input = spec.get("first_turn_input")
+            if not isinstance(first_turn_input, list) or not first_turn_input:
+                first_turn_input = [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Read only /agent/home/input.json. Call the MCP tool "
+                            "submit_examiner_report exactly once with one bounded terminal "
+                            "report. Do not use raw sockets or any other capability."
+                        ),
+                    }
+                ]
             turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
             resource.thread_id = thread_id
             resource.first_turn_input = first_turn_input
+            metrics = spec.get("_metrics")
+            if not isinstance(metrics, ExaminerRunMetrics) or metrics.role != kind:
+                metrics = ExaminerRunMetrics(kind)
+            metrics.bind_thread(thread_id)
+            metrics.record_turn_start()
+            packet = spec.get("_packet")
+            metrics.bind_first_turn_input(
+                first_turn_input,
+                packet=packet if isinstance(packet, ExaminerRolePacket) else None,
+            )
+            resource.metrics = metrics
             resource.spec["turn_id"] = self._turn_id(turn_result)
             resource.spec["proxy_receipt"] = proxy.receipt.__dict__ if proxy is not None else None
             resource.spec["config_digest"] = child_config_digest(
@@ -3821,6 +4111,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         capability_operations = self._role_capability_operations(agent.package.role)
         if capability_operations:
             expected["runner_capability"] = set(capability_operations)
+        self._require_mcp_surface(agent, expected)
+
+    def _require_lean_examiner_mcp_servers(self, agent: _Agent) -> None:
+        """Check the deliberately tiny R2.3-006 surface for all three fresh roles."""
+
+        expected = {"examiner_report": {"submit_examiner_report"}}
+        if agent.package.package_id == "platform-examiner":
+            expected["platform_read_proxy"] = set(agent.platform_tools)
         self._require_mcp_surface(agent, expected)
 
     def _require_mcp_surface(self, agent: _Agent, expected: dict[str, set[str]]) -> None:

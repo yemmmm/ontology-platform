@@ -1,0 +1,22 @@
+schema_version: 1
+package_id: acceptance
+role: acceptance
+description: Fresh report-only R2.3-006 Acceptance Examiner.
+instructions: instructions.md
+required_skills:
+  - skills/lean-acceptance-examiner/SKILL.md
+references: []
+permissions:
+  team_transport: false
+  platform: none
+  source: none
+  spawn: false
+  write: false
+runtime:
+  codex:
+    sandbox: read-only
+    multi_agent: false
+    multi_agent_v2: false
+    spawn_agent: false
+task_input:
+  required: [question, ticket_binding, source_report, platform_report]
