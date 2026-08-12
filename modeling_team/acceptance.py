@@ -361,6 +361,33 @@ def _safe_id(value: Any, field: str) -> str:
     return value
 
 
+_R23003_TASK_ID = "r2-3-003-existing-scope-incremental"
+
+
+def _project_slice_revision(task_id: str, candidate_revision: Any) -> Any:
+    """Project the accepted revision into the stage/ticket identifier contract."""
+
+    if task_id == _R23003_TASK_ID:
+        if (
+            isinstance(candidate_revision, bool)
+            or not isinstance(candidate_revision, int)
+            or candidate_revision <= 0
+        ):
+            _error("accepted candidate_revision must be a positive integer")
+        return str(candidate_revision)
+    return candidate_revision
+
+
+def _safe_slice_revision(value: Any, *, task_id: Any, field: str) -> str:
+    """Validate a stage/ticket revision without widening the 005 identifier contract."""
+
+    if task_id == _R23003_TASK_ID:
+        if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]*", value):
+            _error(f"{field} must be a safe stable identifier")
+        return value
+    return _safe_id(value, field)
+
+
 def _safe_platform_id(value: Any, field: str) -> str:
     """Validate a concrete platform identifier without imposing role-ID rules.
 
@@ -723,14 +750,13 @@ def validate_stage_handoff(
     data = _require_exact_keys(value, fields, "acceptance stage handoff")
     if data["schema_version"] != STAGE_HANDOFF_SCHEMA:
         _error("acceptance stage handoff schema_version is unsupported")
-    for field in (
-        "handoff_id",
-        "task_id",
-        "producer_run_id",
-        "slice_id",
-        "slice_revision",
-    ):
+    for field in ("handoff_id", "task_id", "producer_run_id", "slice_id"):
         _safe_id(data[field], f"stage handoff.{field}")
+    _safe_slice_revision(
+        data["slice_revision"],
+        task_id=data["task_id"],
+        field="stage handoff.slice_revision",
+    )
     _safe_digest(data["handoff_nonce"], "stage handoff.handoff_nonce")
     _safe_digest(data["candidate_digest"], "stage handoff.candidate_digest")
     _safe_digest(data["handoff_digest"], "stage handoff.handoff_digest")
@@ -812,8 +838,16 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
     data = _require_fields(ticket, fields, "acceptance ticket")
     if data["schema_version"] != "r2-3-005-slice-acceptance-ticket/v1":
         _error("ticket schema_version is unsupported")
-    for field in ("ticket_id", "acceptance_round_id", "task_id", "producer_run_id", "slice_id", "slice_revision", "question_id"):
+    for field in (
+        "ticket_id",
+        "acceptance_round_id",
+        "task_id",
+        "producer_run_id",
+        "slice_id",
+        "question_id",
+    ):
         _safe_id(data[field], f"ticket.{field}")
+    _safe_slice_revision(data["slice_revision"], task_id=data["task_id"], field="ticket.slice_revision")
     if not isinstance(data["question"], str) or not data["question"]:
         _error("ticket question is invalid")
     sources = _validate_sources(data["approved_sources"])
@@ -993,8 +1027,9 @@ def validate_verdict(verdict: Any, *, ticket: Mapping[str, Any], source_report: 
     data = _require_exact_keys(verdict, fields, "Acceptance verdict")
     if data["schema_version"] != "r2-3-005-acceptance-verdict/v1":
         _error("verdict schema_version is unsupported")
-    for field in ("task_id", "acceptance_round_id", "question_id", "slice_id", "slice_revision", "ticket_id"):
+    for field in ("task_id", "acceptance_round_id", "question_id", "slice_id", "ticket_id"):
         _safe_id(data[field], f"verdict.{field}")
+    _safe_slice_revision(data["slice_revision"], task_id=data["task_id"], field="verdict.slice_revision")
     for field, expected in (("task_id", ticket["task_id"]), ("acceptance_round_id", ticket["acceptance_round_id"]), ("question_id", ticket["question_id"]), ("slice_id", ticket["slice_id"]), ("slice_revision", ticket["slice_revision"]), ("ticket_id", ticket["ticket_id"]), ("ticket_digest", ticket["ticket_digest"]), ("quality_standard_digest", ticket["quality_standard_digest"]), ("model_state_digest", ticket["model_state_digest"]), ("source_bundle_digest", ticket["source_bundle_digest"])):
         if data[field] != expected:
             _error(f"verdict {field} mismatch")
@@ -2756,8 +2791,11 @@ class RunnerAcceptanceCarrier:
         accepted_candidate = self._accepted_candidate_identity
         if accepted_candidate is None:
             _error("formal accepted candidate identity is unavailable")
+        expected_slice_revision = _project_slice_revision(
+            self.task_id, accepted_candidate["candidate_revision"]
+        )
         if (
-            normalized["slice_revision"] != accepted_candidate["candidate_revision"]
+            normalized["slice_revision"] != expected_slice_revision
             or normalized["candidate_digest"] != accepted_candidate["candidate_digest"]
         ):
             _error("stage handoff candidate binding does not match accepted candidate")
@@ -3187,6 +3225,9 @@ class RunnerAcceptanceCarrier:
                 "formal stage handoff run identity is unavailable",
                 data={"reason": "stage_handoff_run_identity_unavailable"},
             )
+        slice_revision = _project_slice_revision(
+            self.task_id, accepted["candidate_revision"]
+        )
         state = self._observed_model_state(None)
         if stage_calls is None:
             by_stage = self._auto_select_stage_calls(state)
@@ -3227,7 +3268,7 @@ class RunnerAcceptanceCarrier:
                 "run_id": run_id,
                 "project_id": state["project_id"],
                 "ontology_id": state["ontology_id"],
-                "slice_revision": accepted["candidate_revision"],
+                "slice_revision": slice_revision,
                 "model_state_digest": state["state_digest"],
                 "evidence_ref": {
                     "type": "platform_read",
@@ -3261,7 +3302,7 @@ class RunnerAcceptanceCarrier:
             "task_id": self.task_id,
             "producer_run_id": run_id,
             "slice_id": f"slice-{accepted['candidate_revision']}",
-            "slice_revision": accepted["candidate_revision"],
+            "slice_revision": slice_revision,
             "model_state": _safe_copy(state),
             "model_state_digest": state["state_digest"],
             "candidate_digest": accepted["candidate_digest"],

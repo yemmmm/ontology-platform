@@ -18,6 +18,7 @@ from modeling_team.acceptance import (
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.runtimes.base import RuntimeDelivery
+from modeling_team.r23003_contract import deletion_policy
 
 
 def _digest(value: object) -> str:
@@ -282,6 +283,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 self.assertEqual(delivery["text_digest"], _digest(handoff))
+                self.assertEqual(handoff["slice_revision"], "revision-1")
                 draft = carrier.coordinator_build_acceptance_ticket_draft(
                     handoff,
                     handoff_delivery_id="delivery-1",
@@ -291,6 +293,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     capability=carrier.capability_token("coordinator"),
                 )
                 self.assertEqual(draft["question_id"], "cq-001")
+                self.assertEqual(draft["slice_revision"], "revision-1")
                 self.assertEqual(len(draft["modeling_receipts"]), 5)
                 published = carrier.coordinator_publish_acceptance_ticket(
                     draft,
@@ -298,6 +301,60 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     capability=carrier.capability_token("coordinator"),
                 )
                 self.assertEqual(published["ticket_digest"], draft["ticket_digest"])
+            finally:
+                carrier.cleanup()
+
+    def test_r23003_numeric_revision_projects_to_decimal_handoff_and_ticket(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "modeling-runs" / "run-r23003-e"
+            run_root.mkdir(parents=True)
+            source = run_root / "source.md"
+            source.write_text("approved source", encoding="utf-8")
+            policy = _policy()
+            policy["quality_standard_ref"] = "docs/requirements/requirements-v2.3.md#R2.3-003"
+            policy["unknown_policy"] = deletion_policy()
+            policy["deletion_policy"] = deletion_policy()
+            carrier = RunnerAcceptanceCarrier(
+                run_root / "acceptance-carrier",
+                task_id="r2-3-003-existing-scope-incremental",
+                acceptance_id="acceptance",
+                source_materials={"source.md": source},
+                ticket_policy=policy,
+            )
+            state = _handoff(
+                carrier.stage_handoff_nonce,
+                run_id="run-r23003-e",
+                task_id="r2-3-003-existing-scope-incremental",
+            )["model_state"]
+            carrier.bind_model_state(state)
+            carrier.register_accepted_candidate(candidate_revision=2, candidate_digest="e" * 64)
+            try:
+                artifacts = _register_stage_artifacts(carrier)
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    _stage_call_selection(carrier, artifacts),
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                handoff = built["handoff_json"]
+                self.assertEqual(handoff["slice_revision"], "2")
+                self.assertTrue(all(receipt["slice_revision"] == "2" for receipt in handoff["modeling_receipts"]))
+                text = json.dumps(handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                carrier.register_stage_handoff_delivery(
+                    delivery_id="delivery-003",
+                    text=text,
+                    sender_role="protocol",
+                    recipient_role="coordinator",
+                )
+                draft = carrier.coordinator_build_acceptance_ticket_draft(
+                    handoff,
+                    handoff_delivery_id="delivery-003",
+                    handoff_digest=handoff["handoff_digest"],
+                    question_id="cq-001",
+                    ticket_revision=1,
+                    capability=carrier.capability_token("coordinator"),
+                )
+                self.assertEqual(draft["slice_revision"], "2")
+                self.assertTrue(all(receipt["slice_revision"] == "2" for receipt in draft["modeling_receipts"]))
             finally:
                 carrier.cleanup()
 
