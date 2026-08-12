@@ -346,6 +346,19 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                 {"path": "docs/source.md"},
                 {"path": "docs/source.md"},
             ),
+            (
+                "acceptance-evidence",
+                {
+                    "binding_code": "receipt-count-mismatch",
+                    "report_ref_count": 2,
+                    "proxy_receipt_count": 1,
+                },
+                {
+                    "binding_code": "receipt-count-mismatch",
+                    "report_ref_count": 2,
+                    "proxy_receipt_count": 1,
+                },
+            ),
         )
         for reason, blocked_evidence, expected_evidence in cases:
             with self.subTest(reason=reason, blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:
@@ -392,6 +405,10 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
             {"proxy_receipt_count": True},
             {"proxy_receipt_count": -1},
             {"proxy_receipt_count": "2"},
+            {"binding_code": "provider-text", "report_ref_count": 2, "proxy_receipt_count": 1},
+            {"binding_code": "receipt-count-mismatch", "report_ref_count": True, "proxy_receipt_count": 1},
+            {"binding_code": "receipt-count-mismatch", "report_ref_count": -1, "proxy_receipt_count": 1},
+            {"binding_code": "receipt-count-mismatch", "report_ref_count": "2", "proxy_receipt_count": 1},
         )
         for blocked_evidence in cases:
             with self.subTest(blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:

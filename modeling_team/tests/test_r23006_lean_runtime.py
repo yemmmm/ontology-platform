@@ -31,6 +31,7 @@ from modeling_team.acceptance_runtime import (
     examiner_proxy_schemas,
     validate_examiner_proxy_arguments,
     _packet_canonical,
+    _validate_platform_report_receipts,
 )
 from modeling_team.contracts import repository_root
 from modeling_team.runtimes.codex import CodexRuntimeAdapter, _CodexChildResource
@@ -555,11 +556,15 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         )
         for marker in (
             "first inference",
-            "all independent, likely-needed read-only",
+            "minimum sufficient",
+            "minimum-sufficient",
             "one parallel assistant tool-call wave",
-            "Send independent proxy calls in parallel",
+            "no more than 6 successful proxy calls",
+            "each allowed tool at most once",
+            "exactly one evidence_refs locator",
+            "proxy receipt count",
             "serialize independent exploration",
-            "repeat a read",
+            "re-read a result",
             "next inference must submit",
             "Do not start another retrieval wave",
             "follow a cursor",
@@ -568,6 +573,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "explicit gap",
         ):
             self.assertIn(marker, prompt)
+        self.assertNotIn("likely-needed", prompt)
         self.assertNotIn("Follow every pagination cursor", prompt)
 
     def test_lean_stdout_pump_does_not_leak_agent_messages(self) -> None:
@@ -1115,6 +1121,33 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(empty_blocked.exception.reason, "acceptance-evidence")
         self.assertTrue(empty_resource.destroyed)
+
+    def test_platform_receipt_gate_reports_safe_binding_counts(self) -> None:
+        cases = (
+            (
+                {"answerability": "answerable"},
+                (object(), object()),
+                {"binding_code": "report-refs-invalid", "report_ref_count": 0, "proxy_receipt_count": 2},
+            ),
+            (
+                {"evidence_refs": [{"ref_id": "ref-1"}]},
+                (),
+                {"binding_code": "receipts-empty", "report_ref_count": 1, "proxy_receipt_count": 0},
+            ),
+            (
+                {"evidence_refs": [{"ref_id": "ref-1"}, {"ref_id": "ref-2"}]},
+                (object(),),
+                {"binding_code": "receipt-count-mismatch", "report_ref_count": 2, "proxy_receipt_count": 1},
+            ),
+        )
+        for report, receipts, expected in cases:
+            with self.subTest(expected=expected):
+                resource = SimpleNamespace(proxy=SimpleNamespace(receipt_snapshot=receipts))
+                with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
+                    _validate_platform_report_receipts(report, resource)
+                self.assertEqual(blocked.exception.reason, "acceptance-evidence")
+                self.assertEqual(blocked.exception.role, "platform")
+                self.assertEqual(blocked.exception.evidence, expected)
 
     def test_lean_runtime_acceptance_rejects_invented_or_empty_pass_evidence(self) -> None:
         def source(packet, metrics):

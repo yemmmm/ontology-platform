@@ -1044,3 +1044,98 @@ provider/child，未执行或修改真实 N=2/live-4；因此不代表 semantic 
 
 本轮无新 finding。该 deterministic scope 已允许在相同代码完成 clean commit 后消耗剩余授权 `2/3` 进行唯一
 真实 operation；仍需把真实 semantic execution、ordered PASS、六 role metrics 和最终 retention 结果单独验收。
+
+## 19. 独立测试 Round 19（2026-08-12，live-5 read-only failure audit，HEAD `4dea660`）
+
+结论：`FAIL`（真实 semantic operation 仍 `BLOCKED`；failure-path cleanup/invariance 通过，但有 `P1`
+observability gap，且 prompt 有界性需要在最后一次 operation 前窄修）。本轮只读审计 live-5，未创建/使用 key、
+未启动 provider/child、未执行 N=2、未修改 product/record。
+
+### Live-5 artifact 与 failure layer
+
+- Artifact `workspaces/modeling-acceptance/r23006-retained-n2-live-5/r23006-retained-acceptance.json` sha256
+  `a4fabb1a420e4b06dafad1d7ba6331bd23011117bf7acfcde0977756c7cbd1b5`，mode `0600`；父目录 mode `0700`，
+  仅有该文件，无 temp/output/socket/process residue。
+- Top-level/result 均为 `BLOCKED`，`role=platform`、`blocked_reason=acceptance-evidence`，未进入 Acceptance/CQ-002，
+  因而无 semantic PASS。当前代码 line 957 的
+  `len(report.evidence_refs) != len(receipts) or not receipts` gate 会 fail-closed，符合一一 receipt binding；
+  但 `result.evidence={}`，未保存安全 receipt/ref 计数或 mismatch code。
+- Partial metrics exactly `source, platform`：Source `metrics_complete=true`, terminal report true, 2 steps,
+  `terminal_wall_ms≈25904.7`; Platform 2 steps, `metrics_complete=false`, `terminal_report=false`,
+  `ttft_ms≈833.98`, `proxy_time_ms≈9602.31`, `total_tokens=48741`, `output_tokens=12076`。这与 callback 已到达、
+  locator 校验失败后的 metrics 状态一致；不把 callback 当 terminal。
+- 真实服务日志确认该 operation 的 key create `201` 与 revoke `200`，旧 key readback `401`；artifact key lifecycle
+  create/revoke `1/1`, post-revoke denied/status `401`, status readback revoked `true`。cleanup 六项均 true，
+  invariance equal true，ledger 66 条及 SHA、platform digest 前后一致。
+- Artifact 无 plaintext key、Authorization/Bearer、raw report/response/provider exception；只保留 key id/digest
+  等非秘密 lifecycle evidence。systemd service active，backend/frontend health `200/200`；未发现 operation child、
+  retained socket 或额外输出残留。
+
+### P1 observability finding 与 prompt overbreadth
+
+`acceptance-evidence` 的安全拒绝本身正确，但没有保留 `report_ref_count`、`proxy_receipt_count` 或固定
+`receipt-count-mismatch` code；本次日志只证明 receipts 非空，artifact 无法区分“数量不等”与 locator/tool/digest/page
+不匹配。最可信（但不能从 retained artifact 精确证明）的原因是
+`len(report.evidence_refs) != len(receipts)`；应在下一次前加入非敏感、固定类型的 count/mismatch evidence，仍保持
+一一 binding，不写 raw report/receipt/provider text。该缺口阻碍独立复盘，判定 `P1`。
+
+Prompt 当前要求 “every independent, likely-needed read” 并允许首波自由选择，没有 generic minimum-sufficient
+上限或每 tool 一次约束。live-5 的 Platform metrics 显示 `evidence_tokens=42394`, `output_tokens=12076`,
+`total_tokens=48741`, `proxy_time≈9.6s`；这构成大 payload/过宽检索的证据，但因 exact receipt count 未 retained，
+不能断言具体调用数或重复调用。最后一次 operation 前的推荐窄修为通用规则：最多六个成功 proxy calls、每个
+allowed tool 最多一次、每个成功 call 恰好一个 locator、只发当前问题最小充分单波；不得注入 CQ 答案或专属 tool plan，
+不得放宽 receipt/cursor/三步/90 秒 gates。
+
+### 命令与未执行范围
+
+1. 只读 artifact JSON/mode/hash/inventory/secret scan：上述结果，未写入 live-5。
+2. `systemctl --user ... status ontology-platform.service`、backend `/api/health`、frontend `/`：service active，
+   `200/200`。
+3. 相关 deterministic regressions：Platform locator/receipt binding 与 prompt contract `2/2 PASS`；当前 clean HEAD
+   无 product diff，未重跑全量套件。
+4. 未执行最后一次 authorization `3/3`、real provider/child、N=2、Acceptance/CQ-002 或 semantic PASS。
+
+授权状态：live-5 消费 `2/3`，剩余 `1/3`。本轮不得把 cleanup/invariance PASS 或 deterministic binding PASS
+升级为 R2.3-006 semantic acceptance；需先落地并独立复测上述 safe mismatch evidence 与 minimum-sufficient prompt，
+再决定是否消耗最后一次 operation。
+
+## 20. 独立测试 Round 20（2026-08-13，receipt observability / minimum-sufficient prompt 窄修复测，HEAD `4dea660`）
+
+结论：`PASS`（deterministic receipt-binding、safe retained evidence、Prompt/Skill contract 及回归范围）。本轮
+未创建/使用 key，未启动 provider/child/N=2，未修改 product/record；因此不代表真实 semantic acceptance PASS。
+未发现新的 P0/P1。
+
+### Receipt gate 与安全持久化
+
+直接调用 `_validate_platform_report_receipts` 的三种 gate 均返回固定 typed evidence：
+
+| gate | binding_code | report_ref_count | proxy_receipt_count |
+| --- | --- | ---: | ---: |
+| report refs 非 list | `report-refs-invalid` | 0 | 2 |
+| receipts 为空 | `receipts-empty` | 1 | 0 |
+| count 不等 | `receipt-count-mismatch` | 2 | 1 |
+
+三种 evidence 分别通过 operation seam 持久化为 top-level/result `BLOCKED`，mode `0600`，evidence 字段与
+上述 code/count 完全相等，未含 raw report/provider text/secret。未知 binding code、bool/负数/字符串/错误类型
+count 共 7 个 adversarial cases 均在写盘前拒绝，artifact 不存在。
+
+### Prompt/Skill minimum-sufficient contract
+
+对 `modeling_team/agent-packages/platform-examiner/instructions.md` 与 `skills/platform-examiner/SKILL.md` 做
+空白归一化的 deterministic marker audit：13/13 markers 通过，包括 minimum-sufficient、单一并行 wave、成功
+proxy calls `<=6`、每 allowed tool 最多一次、每成功 call 恰好一个 `evidence_refs` locator、locator/receipt
+count 相等、下一 inference typed report、禁止第二波/retry/re-read/follow cursor，以及六次不足时同一 report
+保留 unknown/explicit gap。旧的 `likely-needed` 与 `Follow every pagination cursor` 均不存在。真实 child 尚未执行，
+故这里只证明 prompt contract 文本，不证明模型实际遵守。
+
+### 回归、命令与边界
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_acceptance_operation modeling_team.tests.test_r23006_lean_runtime -q`：`44/44 PASS`。
+2. Receipt gate direct（3）+ operation persistence（3）+ malformed evidence no-artifact（7）：`13/13 PASS`；Prompt/Skill marker audit：`13/13 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`。
+4. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test*.py' -q`：`548 tests OK`, `1 skipped`。
+5. changed-file Ruff、`compileall`、`git diff --check`：全部 PASS。
+
+既有 Source/Platform/Acceptance evidence binding、metrics、cleanup、success contract 均由 focused/affected/full
+回归覆盖。live-5 仍是历史 `BLOCKED/acceptance-evidence`，最后授权剩余 `1/3`；只有在 clean commit 后进行一次新的
+真实 operation，才可验证实际 receipt count、六角色 metrics、ordered PASS 和 semantic acceptance。

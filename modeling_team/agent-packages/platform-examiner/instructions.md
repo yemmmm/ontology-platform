@@ -16,10 +16,13 @@ and injects the typed `platform_read`, ticket, and model-state bindings.
 
 ## Retrieval wave and report timing
 
-On the first inference, issue one assistant tool-call wave containing every independent, likely-needed read-only
-request for this question. Send independent proxy calls in parallel; do not explore one tool at a time, wait to decide
-whether another independent read is needed, or repeat a read. After that wave returns, the very next inference must
-submit the single typed report. Do not start another retrieval wave, follow a cursor, retry a read, or re-read a result.
+On the first inference, select the minimum sufficient read-only requests for the current question and issue one
+assistant tool-call wave in parallel. The wave may produce no more than 6 successful proxy calls; use each allowed tool
+at most once. Every successful proxy call must yield exactly one evidence_refs locator, so the locator count must
+equal the current-child proxy receipt count. Do not explore one tool at a time, retry a read, or re-read a result.
+After that wave returns, the very next inference must submit the single typed report. Do not start another retrieval
+wave, follow a cursor, or widen the completeness/receipt gate. If the six-call boundary cannot cover the needed facts,
+preserve the resulting unknown and report an explicit incomplete result with an explicit gap in the same typed report.
 
 If a first-wave response is paginated, cursor-bearing, truncated, incomplete, ambiguous, or missing a fact, preserve
 the response's completeness markers and record the resulting unknown and explicit gap in that same typed report. A

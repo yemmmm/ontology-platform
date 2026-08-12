@@ -954,8 +954,36 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
         raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
     receipts = tuple(snapshots)
     refs = report.get("evidence_refs") if isinstance(report, Mapping) else None
-    if not isinstance(refs, list) or len(refs) != len(receipts) or not receipts:
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+    if not isinstance(refs, list):
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence",
+            role="platform",
+            evidence={
+                "binding_code": "report-refs-invalid",
+                "report_ref_count": 0,
+                "proxy_receipt_count": len(receipts),
+            },
+        )
+    if not receipts:
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence",
+            role="platform",
+            evidence={
+                "binding_code": "receipts-empty",
+                "report_ref_count": len(refs),
+                "proxy_receipt_count": 0,
+            },
+        )
+    if len(refs) != len(receipts):
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence",
+            role="platform",
+            evidence={
+                "binding_code": "receipt-count-mismatch",
+                "report_ref_count": len(refs),
+                "proxy_receipt_count": len(receipts),
+            },
+        )
     result: set[str] = set()
     previous_ref: Mapping[str, Any] | None = None
     previous_page: Mapping[str, Any] | None = None

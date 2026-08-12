@@ -339,3 +339,37 @@
   见 shared plan §18。
 - Boundary：Round18 不等于 semantic PASS，也没有创建 key/provider/child。三次授权尚余 `2/3`；可在该修复的
   clean commit 上执行 live-5，以真实保留 timeout 当刻 partial metrics 与 report/terminal/proxy 状态。
+
+### 2026-08-12 — authorization 2/3 live-5 — main agent
+
+- Baseline：clean `4dea660 Retain partial Examiner diagnostics`；live-5 output root 不存在；service active、
+  backend/frontend 200；冻结 ticket/N=2/six-tool allowlist preflight PASS。
+- Real result：Source 完成，Platform 在两个 inference steps 内完成单波读取并提交 typed report callback；随后
+  `_validate_platform_report_receipts` 在 receipt-count/nonempty gate fail-closed 为
+  `BLOCKED/acceptance-evidence`。没有 runtime-budget 或 child-timeout，没有进入 Acceptance/CQ-002，不是 semantic
+  PASS。
+- Partial metrics：Source `metrics_complete=true`、2 steps、terminal约25.9s；Platform 2 steps、TTFT约0.83s、
+  proxy time约9.6s、total tokens `48741`、output tokens `12076`，但 report locator 校验失败，所以
+  `metrics_complete=false`、`terminal_report=false`。artifact 没有保留 report ref/receipt 精确计数；真实日志显示
+  receipts 非空，因此最可信原因是 report `evidence_refs` 数量与 proxy receipts 数量不等。
+- Cleanup/invariance：mode `0600` BLOCKED artifact；Project read key create/revoke `1/1`、旧 key 401、全部 cleanup
+  flags true；ledger SHA/66 records 与 platform digest 前后相同，service/backend/frontend 健康。
+- Disposition：三次授权已消费 `2/3`，剩余 `1/3`。最后一次前先把 receipt-count mismatch 的安全 code/count 写入
+  typed failure evidence，并修 Platform 通用 Prompt/Skill：只发回答当前问题所需的最小充分单波、最多六个成功
+  proxy calls、每个 allowed tool 最多一次、每个成功 call 恰好一个 locator。不得注入 CQ 答案/专属 tool plan，
+  不放宽一一 receipt binding、cursor、三步或 90 秒门。
+
+### 2026-08-13 — live-5 receipt diagnostics / retrieval-bound repair and independent Round 20 — developer / tester
+
+- Repair：Platform report receipt gate 对 `report-refs-invalid`、`receipts-empty` 与
+  `receipt-count-mismatch` 保留固定 `binding_code`、`report_ref_count`、`proxy_receipt_count`；operation 仅接受
+  这三个 code 与非 bool 非负整数计数，未知 code、错误类型或 secret 继续 fail-closed 且不写 artifact。
+- Prompt contract：Platform package 与 Skill 改为当前问题的 minimum-sufficient 单一并行波；最多六个成功 proxy
+  calls、每个 allowed tool 最多一次、每个成功 call 恰好一个 evidence locator，locator 数必须等于 current-child
+  receipt 数。若上限内不足，必须在同一 typed report 保留 incomplete/unknown/gap；禁止第二波、重试、re-read、
+  cursor follow 或放宽 completeness/receipt gate。
+- Independent Round 20：PASS（deterministic scope），无 P0/P1。三种 gate 的 exact code/count、安全 mode `0600`
+  persistence、7 个非法输入 no-artifact 与 13 项 Prompt/Skill marker 均通过；focused `44/44`、affected
+  `86/86`、full modeling_team `548 PASS + 1 SKIP`，Ruff、compileall、diff-check PASS。详细证据见 shared plan §20。
+- Boundary：本轮没有创建 key/provider/child 或执行 N=2，live-5 历史结论仍为 semantic BLOCKED。三次授权剩余
+  `1/3`；仅在本修复形成 clean commit 后从全新 live-6 目录执行最后一次，禁止第 4 次 operation。

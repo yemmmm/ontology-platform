@@ -478,16 +478,21 @@ _BLOCKED_ROLES = frozenset({"source", "platform", "acceptance"})
 _BLOCKED_EVIDENCE_FIELDS = frozenset({
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id",
     "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
-    "report_received", "terminal_event", "proxy_receipt_count",
+    "report_received", "terminal_event", "proxy_receipt_count", "binding_code", "report_ref_count",
 })
 _BLOCKED_CODE_FIELDS = frozenset({
     # Keep this allowlist synchronized with every production
     # ExaminerRuntimeBlocked(..., evidence={...}) key (currently confirmed by
     # rg across acceptance_runtime.py and runtimes/codex.py).
-    "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path",
+    "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path", "binding_code",
 })
-_BLOCKED_INTEGER_FIELDS = frozenset({"steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count"})
+_BLOCKED_INTEGER_FIELDS = frozenset({
+    "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count",
+})
 _BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
+_PLATFORM_BINDING_CODES = frozenset({
+    "report-refs-invalid", "receipts-empty", "receipt-count-mismatch",
+})
 _PACKET_LABELS = {
     "source Examiner packet": "source-examiner-packet",
     "platform Examiner packet": "platform-examiner-packet",
@@ -538,6 +543,8 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
         _reject_secret_evidence({field: value}, field=f"blocked.evidence.{field}")
         if field in _BLOCKED_CODE_FIELDS:
             if not isinstance(value, str):
+                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+            if field == "binding_code" and value not in _PLATFORM_BINDING_CODES:
                 raise R23006OperationError("typed Examiner blocked evidence value is invalid")
             if field == "packet":
                 if value not in _PACKET_LABELS:
