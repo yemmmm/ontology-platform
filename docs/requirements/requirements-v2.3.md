@@ -69,7 +69,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
-| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `Development-ready（plan review Round2 PASS，待授权实施）` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
+| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；真实验收 BLOCKED/runtime-budget（清理 PASS，prompt 修复待新 operation 授权复验）` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -2068,7 +2068,9 @@ R2.3-003 非目标继续包括：
 
 ## R2.3-006 精简隔离 Examiner Runtime
 
-当前状态：`Development-ready（plan review Round2 PASS，待授权实施）`
+当前状态：`已实现；唯一真实 operation 在 CQ-001 Platform 第 4 次 inference 前按合同
+BLOCKED/runtime-budget，撤钥/不变性/零残留独立 PASS；并行单波读取 prompt 修复已通过 deterministic
+独立验收，待新的 operation authorization 做真实 N=2 复验`
 
 ### 背景与问题
 

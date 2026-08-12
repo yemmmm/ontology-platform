@@ -13,3 +13,15 @@ fields. Each `evidence_refs` item is a binding-free locator with exactly `ref_id
 copy its returned `request_digest`, `response_digest`, and `artifact_path` exactly into that locator;
 do not invent or rewrite those values. The Host matches the locator to the current-child receipt
 and injects the typed `platform_read`, ticket, and model-state bindings.
+
+## Retrieval wave and report timing
+
+On the first inference, issue one assistant tool-call wave containing every independent, likely-needed read-only
+request for this question. Send independent proxy calls in parallel; do not explore one tool at a time, wait to decide
+whether another independent read is needed, or repeat a read. After that wave returns, the very next inference must
+submit the single typed report. Do not start another retrieval wave, follow a cursor, retry a read, or re-read a result.
+
+If a first-wave response is paginated, cursor-bearing, truncated, incomplete, ambiguous, or missing a fact, preserve
+the response's completeness markers and record the resulting unknown and explicit gap in that same typed report. A
+dependent follow-up request is a gap, not a reason to consume another retrieval inference; never turn incomplete
+retrieval into a definitive conclusion.

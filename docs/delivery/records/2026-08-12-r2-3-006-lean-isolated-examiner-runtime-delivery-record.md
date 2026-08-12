@@ -1,13 +1,14 @@
 # R2.3-006 精简隔离 Examiner Runtime Delivery Record
 
 - Requirement source：`docs/requirements/requirements-v2.3.md#r23-006-精简隔离-examiner-runtime`
-- Status：implementation in progress（用户已授权，真实 App Server probe PASS）
+- Status：implementation repair（唯一真实 operation 为 `BLOCKED/runtime-budget`；清理 PASS，语义完成门未通过）
 - Started：2026-08-12T16:34:22+08:00
-- Last updated：2026-08-12T22:04:00+08:00
+- Last updated：2026-08-12T20:24:56+08:00
 - Design：`docs/delivery/designs/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-design.md`
 - Shared test plan：`docs/delivery/test-plans/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-test-plan.md`
 - Delivery baseline：`8b3ae42 Accept R2.3-003 retained-scope modeling`
-- Delivery commit：`Define R2.3-006 lean Examiner runtime`（`git log -- <本文件>` 可解析 immutable hash）
+- Delivery commits：`d5410ad Add lean isolated Examiner runtime`、`a32409f Fix retained acceptance snapshot`、
+  `Repair Platform Examiner retrieval wave`（最后一项由 `git log -- <本文件>` 解析 immutable hash）
 
 ## Confirmed contract
 
@@ -78,6 +79,9 @@
 | 13 | independent Round 6 and in-round closure | Production forwarder was narrowed from the global inventory to the retained six tools; bool/NaN/inconsistent token metrics were rejected; empty partial-create inventory became an explicit cleanup failure and cleanup errors take precedence | focused 30/30; affected 62/62; full modeling_team 534 PASS + 1 SKIP; changed Ruff/compile/diff checks PASS | deterministic operation boundary PASS; authorized real retained N=2 operation may start |
 | 14 | `d5410ad` clean implementation commit; first real operation preflight | The authorized production operation started the provider/bootstrap-admin boundary, then failed closed before Project read-key creation because `workspace-context` does not expose `workspace_version`; finally cleanup revoked the bootstrap admin key and stopped the provider | no Examiner thread or Project key created; active `r23006-retained-admin`=0, active Project keys=0, output root contains no evidence file; service active/200/200 | authorization was not consumed; field ownership defect returned for narrow repair |
 | 15 | `d5410ad` + snapshot-only diff; independent Round 7 | Snapshot now reads `modeling-context` and validates its nested workspace version while retaining workspace state/default graph checks on `workspace-context`; build-context index and volatile `generated_at` exclusion remain correct | operation+lean 30/30; backend context API 21 PASS; platform scope 9/9; Ruff/compile/diff PASS; direct read-only live service values match retained state/version | snapshot repair independently PASS; ready for a fresh-output real operation |
+| 16 | clean `a32409f`; unique authorized retained N=2 operation | CQ-001 Source completed, but Platform emitted a fourth positive App Server usage increment before a terminal report and was mechanically stopped as `BLOCKED/runtime-budget`; operation returned exit 1 and wrote no acceptance evidence | Project read key create/revoke/readback/old-key-401 each exactly once; bootstrap admin revoked; live inventory/model/ledger unchanged; no operation process/socket/temp/secret residue; service active/200/200 | real semantic acceptance BLOCKED, not PASS/FAIL; no rerun authorized |
+| 17 | independent Round 8 and root-cause audit | Failure-path implementation behaved as designed. The Platform prompt allowed serial exploratory read waves even though a report-tool call and provider completion must also fit inside three model inferences | independent cleanup/failure-path PASS; deterministic operation+lean 30/30; GitNexus trace plus source review bound the fourth positive usage to the metrics gate | prompt-contract defect returned for a no-key/no-provider repair before any future start |
+| 18 | Platform prompt repair and independent Round 9 | Platform instructions/Skill now require one first-inference parallel read wave and next-inference typed report; cursor/truncated/incomplete/missing facts remain explicit gaps/unknowns instead of triggering another wave | Lean 24/24; operation+Lean 31/31; affected 86/86; full modeling_team 535 PASS + 1 SKIP; Ruff/compile/diff PASS | deterministic repair PASS; real provider behavior and ordered N=2 remain blocked pending new operation authorization |
 
 ## Independent test rounds
 
@@ -91,22 +95,32 @@
 | 5 | callable operation first implementation | FAIL | partial key lifecycle, retained ticket/inventory, metrics and secret evidence gates | shared plan §9 |
 | 6 | callable operation defect closure | PASS (deterministic scope) | real provider/key/N=2 still unexecuted | shared plan §10 |
 | 7 | production snapshot field-ownership repair | PASS (narrow scope) | real provider/key/N=2 still unexecuted | shared plan §11 |
+| 8 | unique real operation failure-path audit | PASS (cleanup and fail-closed path) | real semantic acceptance `BLOCKED/runtime-budget`; no ordered N=2 PASS evidence | shared plan §12 |
+| 9 | Platform retrieval-wave prompt repair | PASS (deterministic scope) | actual provider parallel wave and real ordered N=2 unexecuted | shared plan §13 |
 
 ## Final verification
 
-- Required checks：pending plan review；当前只需 docs diff/check。
-- Runtime/restart health：baseline active/200/200；无 runtime code change。
-- Documentation/status sync：requirements/design/test plan/record 已起草，待 review 后冻结。
-- Cleanup：无新 runtime/live artifact。
-- Residual risks and follow-ups：能否机械移除 inherited history/collaboration tools 需实施阶段以真实 context inventory
-  证明；不能只依赖 `fork_turns=none` 声明。
+- Required checks：mandatory plan review Round 2 PASS；main agent 在最终稳定状态重跑 operation+Lean 31/31、
+  full modeling_team 535 PASS + 1 SKIP、changed Ruff、compileall、diff check，全部 PASS；independent Round 9
+  另有 Lean 24/24、affected 86/86 PASS。
+- Runtime/restart health：唯一真实 operation 的 failure-path/cleanup 独立 PASS；service active，backend/frontend
+  200。modeling_team-only prompt/docs 变更不要求 backend/frontend restart，但最终仍复核 unit/endpoint health。
+- Documentation/status sync：requirement/design/test plan/record 均明确“implemented、real acceptance
+  BLOCKED/runtime-budget、prompt repair 待新授权”，不把 cleanup PASS 或 deterministic PASS 写成 semantic PASS。
+- Cleanup：本次 operation-owned Project/admin keys active=0；workspace/model/ledger/live inventory 不变；`live-2`
+  output 0700 且为空；无 operation process/socket/temp/secret residue。
+- Residual gate：需要新的 operation authorization 才能验证修复后的 actual parallel tool wave、六条完整 metrics 和
+  ordered `PASS,current=true,usable=true` N=2。该门直接属于 acceptance criteria，因此当前不能关闭需求。
 
 ## Retrospective
 
-- Scope/design deviations：none yet。
-- Rework/root cause：R2.3-003 的两分钟级延迟主要来自大 cached prefix、多轮消息和人工转发，而非 backend。
+- Scope/design deviations：新增 standalone callable retained operation 作为真实完成边界；未接入通用 Runner 默认
+  dispatcher，也未扩展 backend。真实运行后把 Platform retrieval 形态进一步收敛为 single parallel wave。
+- Rework/root cause：确定性测试曾漏掉真实 API 字段归属和 provider tool-loop step shape；第一次 preflight 在 key
+  创建前暴露前者，唯一 N=2 operation 以第 4 inference budget gate 暴露后者。两次都 fail-closed 且清理完整。
 - What shortened delivery：复用 003 final workspace、strict proxy、typed report/verdict 和 positive-N 证据。
-- Reusable lesson：fresh role 的独立性必须由输入清单和 transport/tool gate 证明，不能只靠 Agent 名称或 prompt。
+- Reusable lesson：fresh role 的独立性必须由输入清单和 transport/tool gate 证明；模型调用预算还必须把 terminal
+  report tool 之后的 provider completion 算入，并在 prompt 中明确 retrieval wave timing。
 
 ### 2026-08-12T16:49:00+08:00 — mandatory plan review Round 1 — plan reviewer
 
@@ -209,3 +223,48 @@
   Ruff/compile/diff PASS；wrong modeling version 与 live-count drift 均 fail-closed，`generated_at` 变化不改变
   digest。详细证据见 shared plan §11。
 - Outcome：修复稳定，可先形成干净提交，再从全新输出目录执行唯一授权真实 retained N=2 operation。
+
+### 2026-08-12 — unique authorized real operation and independent Round 8 — main agent / requirement tester
+
+- Stable baseline：clean `a32409f Fix retained acceptance snapshot`；新目录
+  `workspaces/modeling-acceptance/r23006-retained-n2-live-2` 不存在；service active，backend/frontend 200，
+  retained ticket digest、CQ count=2、six-tool allowlist、provider credential preflight 均 PASS；operation-owned
+  active admin/Project keys 均为 0。
+- Real result：operation 越过 live snapshot，创建一个临时 Project read key，并开始 CQ-001 fresh Examiner。
+  Source 完成后，Platform 在收到第四个 positive cumulative `thread/tokenUsage/updated` 时由
+  `ExaminerRunMetrics.observe_notification` 在 append/继续前抛 `BLOCKED/runtime-budget`；CLI exit 1，未形成
+  typed Platform report、ordered verdict 或 acceptance evidence。没有执行 CQ-002，也没有 semantic start/write。
+- Exactly-once/cleanup：read key `0c289d42-…` create/revoke audit 各 1，revoke readback 1，旧 key protected GET
+  返回 401；bootstrap admin `f28544a3-…` 随后撤销。operation-owned active keys=0；output root 0700 且为空，
+  无 operation process/socket/temp/secret residue。
+- Invariance：workspace state/default graph/version 保持 retained 值；live inventory 精确为
+  `1,0,0,0,0,22`；ledger SHA `af6417…dcc`、66 records 不变；service active/200/200。
+- Independent Round 8：failure-path/cleanup audit PASS，但真实 semantic acceptance 明确为
+  `BLOCKED/runtime-budget`，不是 PASS/FAIL；deterministic operation+lean 30/30、Ruff/compile/diff PASS。详细证据见
+  shared plan §12。唯一 Project-key operation 已消耗，不得无新授权重跑。
+
+### 2026-08-12 — post-operation root-cause disposition — main agent
+
+- Method：使用 `gitnexus-debugging` 重建 stale local index，再核对
+  `ExaminerRunMetrics -> _CodexChildResource._run_stdout_pump -> run_lean_examiner_child` 真实异常链、operation
+  window journal 与 Platform package/Skill。
+- Conclusion：预算门没有误计或放行；每个 positive usage 增量代表一次真实 provider inference。现有 Platform
+  prompt 强调完整检索/分页，却未要求把独立 read calls 合并进首个 tool wave；report MCP 后仍需 provider
+  completion，因此串行第二轮探索会把终态推到第四次 inference。
+- Disposition：这是 prompt-contract defect。任何未来 start 前只允许补通用“首轮并行读取、下一轮提交 typed
+  report、incomplete/cursor 作为 gaps/unknown 报告”的边界；不得增加三步预算、注入 CQ 答案/专属工具计划或
+  在无新 operation authorization 时重跑。
+
+### 2026-08-12 — Platform prompt repair and independent Round 9 — requirement developer / tester
+
+- Change：Platform package instructions 与 Skill 要求首个 inference 把所有独立、可能需要的 read calls 放进
+  单一 parallel tool wave；wave 返回后的下一 inference 必须提交 typed report，禁止串行探索、重复读取、第二
+  retrieval wave、cursor follow 或 retry。首轮 cursor/truncated/incomplete/ambiguous/missing fact 在同一报告中
+  保留 completeness markers、unknown 和 explicit gap。
+- Guardrails：未改变三步 budget、runtime/proxy/report schema、Source/Acceptance package 或 backend；未注入
+  CQ-001/CQ-002 答案或专属 tool plan，未创建 key/provider/child。
+- Independent Round 9：prompt-contract deterministic PASS；Lean 24/24、operation+Lean 31/31、affected 86/86、
+  full modeling_team 535 PASS + 1 SKIP，Ruff/compile/diff PASS。既有 evidence locator/page-chain/scope/source
+  binding 未放宽。详细证据见 shared plan §13。
+- Outcome：实现处于稳定、可提交的阻断点；真实 provider 是否执行 parallel wave、六条完整 metrics 与 ordered
+  N=2 PASS 仍需新的 operation authorization。当前不得标记 requirement complete，也不得自动重跑。

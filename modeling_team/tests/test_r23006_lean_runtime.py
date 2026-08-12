@@ -414,6 +414,29 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             self.assertNotIn("/agent/home/input.json", prompt)
             self.assertNotIn("staged in your private home", prompt)
 
+    def test_platform_examiner_prompt_requires_parallel_wave_then_report(self) -> None:
+        adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+        _, instructions, skill = adapter._child_package_assets("platform", repository_root())
+        prompt = " ".join(
+            (instructions.read_text(encoding="utf-8") + skill.read_text(encoding="utf-8")).split()
+        )
+        for marker in (
+            "first inference",
+            "all independent, likely-needed read-only",
+            "one parallel assistant tool-call wave",
+            "Send independent proxy calls in parallel",
+            "serialize independent exploration",
+            "repeat a read",
+            "next inference must submit",
+            "Do not start another retrieval wave",
+            "follow a cursor",
+            "same typed report",
+            "resulting unknown",
+            "explicit gap",
+        ):
+            self.assertIn(marker, prompt)
+        self.assertNotIn("Follow every pagination cursor", prompt)
+
     def test_lean_stdout_pump_does_not_leak_agent_messages(self) -> None:
         adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
         resource = _CodexChildResource({"lean_examiner": True})

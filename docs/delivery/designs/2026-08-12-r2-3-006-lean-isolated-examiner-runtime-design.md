@@ -1,6 +1,6 @@
 # R2.3-006 精简隔离 Examiner Runtime 设计
 
-- 状态：Development-ready；plan review Round2 PASS，待授权实施
+- 状态：Implemented；真实 N=2 `BLOCKED/runtime-budget`，prompt 修复待新 operation authorization 复验
 - 权威需求：`docs/requirements/requirements-v2.3.md#r23-006-精简隔离-examiner-runtime`
 - 交付记录：`docs/delivery/records/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-delivery-record.md`
 - 共享测试计划：`docs/delivery/test-plans/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-test-plan.md`
@@ -54,8 +54,10 @@ wrong-type 字段并记录 `backend_calls=0`。无需修改 backend API。
 
 ### 3.4 Turns and metrics
 
-正常 Source/Platform/Acceptance 路径最多 3 个可观测 inference steps：理解/发起读取、消费证据、typed final。
-预装 source bytes 的 Source 和预装 reports 的 Acceptance 可以一次完成；Platform 通常为 tool call + final 两次。
+正常 Source/Platform/Acceptance 路径最多 3 个可观测 inference steps：理解/发起读取、消费证据并调用 typed
+report tool、provider terminal completion。预装 source bytes 的 Source 和预装 reports 的 Acceptance 可以更早提交；
+Platform 必须把所有独立 read calls 合并到首个 parallel tool wave，下一 inference 提交 typed report。首轮出现
+cursor/truncation/incomplete/missing fact 时保留 completeness/unknown/gap，不发起第二 retrieval wave。
 Runner operation 为每个 child 记录独立 `ExaminerRunMetrics/v1`：fresh thread identity、Host 发出的 canonical
 `first_turn_input` 字段清单/digest、`turn/start` 次数、每个 cumulative token-usage（或 provider 等价精确事件）
 增量、first/total/cached/task/evidence/output/reasoning tokens、TTFT、terminal wall time、proxy time 和拒绝次数。
@@ -94,3 +96,17 @@ backend、Modeling/Protocol 语义、全局 Codex 指令或所有 subagent。只
 
 未来可把已证明的 role packet/transport 机制复用于 Pi Adapter 或其他 formal acceptance；跨机器调度、策略中心、
 长期审计和通用 Agent sandbox 另立需求，当前不实现。
+
+## 8. 实施与真实验证结果（2026-08-12）
+
+- 已实现 per-CQ fresh Source/Platform/Acceptance child、inline immutable packets、report-only transport、
+  exact-schema direct proxy、typed report/evidence binding、ordered aggregation、完整 metrics 与 callable retained
+  operation；R2.3-005/default 路径保持兼容。deterministic 独立测试最终为 full modeling_team 535 PASS、1 SKIP。
+- 唯一授权真实 operation 在 CQ-001 Platform 第四个 positive App Server usage increment 到达前正确返回
+  `BLOCKED/runtime-budget`，没有 typed Platform report 或 ordered N=2 verdict，因此不能宣称本需求 semantic PASS。
+  operation 的 read key create/revoke/readback/old-key 401 各一次，bootstrap admin 撤销，model/ledger/live inventory
+  不变，output/process/socket/secret 零残留；独立 failure-path audit PASS。
+- 根因是 Platform 角色指令允许串行探索/追 cursor，未把 report-tool 后的 provider completion 计入三步执行形态。
+  prompt/Skill 已收敛为首轮单一并行 read wave、下一 inference typed report、incomplete 作为 gap/unknown；独立
+  deterministic Round 9 PASS。该修复仍需新的 operation authorization 证明 provider 实际 call wave、六条完整
+  metrics 和 ordered N=2 PASS；在此之前状态保持真实验收 BLOCKED。

@@ -568,3 +568,153 @@ operation authorization），所以 live API snapshot、真实 provider、new ke
 401/403、N=2 typed metrics、model/ledger before-after 与 zero residue 仍为 `BLOCKED/未执行`。
 API 路由形状由源码和 21 个 backend contract tests 覆盖，fixture preparation 与上述 snapshot
 对抗共同证明当前窄修没有新的 P0/P1；可以交回主 agent 继续唯一真实 operation 前置流程。
+
+## 12. 独立测试 Round 8（2026-08-12，唯一真实 operation failure-path audit，HEAD `a32409fe`）
+
+结论：`PASS`（真实 operation 的失败路径、撤销清理、快照不变性与残留审计）。本轮只读审查
+已结束的唯一 retained operation `workspaces/modeling-acceptance/r23006-retained-n2-live-2`，
+未创建/使用 key、未启动 provider/child、未重跑或继续 N=2，也未修改产品代码。真实 semantic
+acceptance 结论为 `BLOCKED/runtime-budget`，不是 semantic PASS/FAIL；该 operation 因预算阻断
+没有生成 evidence file，故不能据此宣称 R2.3-006 完成。
+
+### 真实 operation 与预算门证据
+
+- 主代理执行的唯一 CLI 形态为
+  `PYTHONPATH=backend:. backend/.venv/bin/python -m modeling_team.r23006_acceptance_operation
+  --repository-root . --output-root workspaces/modeling-acceptance/r23006-retained-n2-live-2`，
+  exit code `1`。真实 trace 在第一个 question 的 Platform child 通过
+  `ExaminerRunMetrics.observe_notification` 接收前三个 positive cumulative `tokenUsage` event；
+  第四个 inference step 到达前抛出 `ExaminerRuntimeBlocked: BLOCKED/runtime-budget`，child 被
+  中止/销毁，operation finally 执行清理，未写 evidence file。
+- `modeling_team/acceptance_runtime.py:415-487` 在第四个 positive step append 之前 fail-closed；
+  R2.3-006 requirement/design D1 要求 `<=3` inference steps 且第 4 个必须返回
+  `BLOCKED/runtime-budget`。`_CodexChildResource`/`CodexRuntimeAdapter` 保留 typed blocked
+  cause 并销毁 child；没有发现预算 gate 绕过、错误 PASS 或继续调用 backend 的新缺陷。
+- 该真实失败路径与 deterministic regression 一致，但没有把 deterministic fake seam 当作真实
+  semantic evidence；无 typed terminal reports、六条完整 metrics 或 semantic verdict 属于本轮预期
+  的 `BLOCKED/未执行`。
+
+### exactly-once key lifecycle 与 post-revoke denial
+
+只读数据库查询（`PYTHONPATH=backend:. backend/.venv/bin/python`、`Settings(_env_file=backend/.env)`、
+仅 SELECT）显示 operation-owned read key `0c289d42-a052-447c-8f6f-136b13711bcd` 于
+`11:58:43.994Z` 创建、`11:59:52.904Z` 撤销；bootstrap admin `f28544a3-...` 于
+`11:58:43.840Z` 创建、`11:59:53.622Z` 撤销。对应 read-key audit 记录各一条
+`api_key_created`/`api_key_revoked`，均 success。operation window journal 计数为：
+
+| 检查 | 次数 | 证据 |
+| --- | ---: | --- |
+| create POST | 1 | `POST /api/api-keys` → 201 |
+| revoke POST | 1 | `POST /api/api-keys/<read-key>:revoke` → 200 |
+| post-revoke readback | 1 | `GET /api/api-keys/<read-key>` → 200（撤销记录） |
+| old read-key protected request | 1 | project GET → 401 |
+| post-revoke 403 | 0 | 未出现错误授权绕过 |
+
+operation-owned read/admin key 的 active 数均为 `0`；数据库中另有 20 个历史 org-admin active
+keys，均非本 operation 的 key，未将其误报为本轮残留。
+
+### model / ledger / live inventory 不变性
+
+- 只读 workspace/context 查询得到 `state=ready`、default graph set
+  `277fd804-e485-5156-b7a7-ca6a1081f950`，retained workspace version
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`。
+- live inventory 与 retained before snapshot 完全相等：`ontology_count_in_project=1`、
+  `active_session_count=0`、`active_lease_count=0`、`active_attempt_count=0`、
+  `active_project_key_count=0`、`modeling_batch_count=22`。
+- `.r2-3-003-start-ledger.jsonl` SHA-256 为
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`，记录数 `66`，与 retained
+  ticket/before snapshot 一致；本轮没有写 API、模型、ledger 或 workspace。
+
+### process/socket/output/secret residue 与服务健康
+
+- `workspaces/modeling-acceptance/r23006-retained-n2-live-2` 权限为 `0700` 且为空；无 evidence
+  file。operation window 内没有 `r23006-examiner-*`/`mt-ex-*` 临时目录、socket、匹配的存活
+  process 或 output entry。当前 output secret scan 为空。
+- 预先存在且早于 operation window 的 `/tmp/r23006-examiner-*`、`/tmp/r23006-codex-*` 测试/legacy
+  artifacts 未归因于本 operation，未删除或改写。
+- `systemctl --user ... status ontology-platform.service` 为 active/running；
+  `curl --fail http://127.0.0.1:8001/api/health` 返回 200 `{"status":"ok"}`；
+  `curl --fail http://127.0.0.1:5173/` 返回 frontend HTML。
+
+### deterministic regressions 与未执行项
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation
+   modeling_team.tests.test_r23006_lean_runtime -v`：`30/30 PASS`。
+2. `backend/.venv/bin/ruff check modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/tests/test_r23006_acceptance_operation.py
+   modeling_team/tests/test_r23006_lean_runtime.py`：PASS。
+3. `backend/.venv/bin/python -m compileall -q modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py`：PASS。
+4. `git diff --check`：PASS。
+
+本轮没有重跑真实 N=2、没有新 operation authorization/key/provider/child，也没有继续失败 run；
+因此真实六 metrics、typed PASS、semantic acceptance 和完整 evidence 仍是 `BLOCKED/未执行`。在
+本轮审计范围内没有新增 P0/P1；failure layer 明确为 contract 要求的 runtime budget gate，
+cleanup、exactly-once lifecycle、live/model/ledger invariants 与服务健康均通过。
+
+## 13. 独立测试 Round 9（2026-08-12，Platform prompt-contract repair，HEAD `a32409fe`）
+
+结论：`PASS`（本轮限定为 Platform Examiner prompt/skill contract 与 deterministic regression）。
+当前稳定状态的 developer-owned implementation diff 仅包含对
+`modeling_team/agent-packages/platform-examiner/instructions.md`、`skills/platform-examiner/SKILL.md`
+及其 focused test 的窄修（delivery record/test-plan 由主代理维护），未改 runtime budget、proxy、report
+schema、source/acceptance package 或 R2.3-005/default 路径；本轮未创建/使用 key、未启动
+provider/child、未执行真实 N=2。因此真实 semantic acceptance、provider 的实际 parallel tool-call
+wave、完整 metrics/typed PASS 仍为 `BLOCKED/未执行`。
+
+### 修复合同审查与对抗结论
+
+- 两个实际 child package asset 均要求：首个 inference 发出覆盖所有独立且可能需要 reads 的单一
+  parallel assistant tool-call wave；wave 返回后下一 inference 立即提交唯一 typed report；禁止串行
+  探索、按结果决定下一独立 read、重复/re-read、第二 retrieval wave、cursor follow、retry。
+- 两个 asset 均要求首轮 cursor-bearing、paginated、truncated、incomplete、ambiguous 或 missing fact
+  原样保留 completeness markers，并在同一 report 写明 unknown 与 explicit gap；不把 incomplete retrieval
+  变成 definitive conclusion。原来的 `Follow every pagination cursor` 文案已移除。
+- `git diff` 新增 prompt/skill 内容不含 CQ-001/CQ-002 答案、预置答案或工具计划，也没有改变 `<=3`
+  inference gate；runtime 文件 `acceptance_runtime.py`、`runtimes/codex.py`、operation host 无 diff。
+- source fidelity 未放宽：Platform asset 仍要求每个 successful proxy call 原样复制
+  `request_digest`/`response_digest`/`artifact_path`，保持 ticket Project/Ontology/graph/model-state
+  binding；Source asset 未改动。semantic report 顶层仍仅允许既定六字段，`coverage.complete` 与
+  `gaps` 仍是显式字段。
+- typed BLOCKED 边界无矛盾：现有 `_validate_report_sink_payload` 保持
+  `answerability={answerable,insufficient-evidence,unavailable}`、显式 `coverage/gaps` 和 exact
+  `evidence_refs`；平台 locator 的 unfinished cursor chain、missing terminal page、reorder/cross-tool
+  continuation 仍由 `_validate_platform_report_receipts` fail-closed 为
+  `BLOCKED/acceptance-evidence`，不会形成 PASS 证据。若首轮事实不完整，prompt 要求 report 保留 gap，
+  不要求模型猜测或越过报告边界。
+- 仍有明确残余风险但非本轮缺陷：parallel wave 是 provider/model 行为，focused test 只能证明实际
+  注入的两份 asset 含 timing/parallel/gap contract，不能替代真实 App Server notification/turn trace；
+  真实 operation 受本轮授权约束未执行，须在唯一后续 operation 中观察 actual first-wave call shape。
+
+### 已执行命令与结果
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_lean_runtime -v`：`24/24 PASS`，包含
+   `test_platform_examiner_prompt_requires_parallel_wave_then_report`、receipt/page chain、scope、
+   typed BLOCKED、budget 与 report timing tests。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation
+   modeling_team.tests.test_r23006_lean_runtime -v`：`31/31 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation
+   modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -v`：`86/86 PASS`。
+4. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests
+   -p 'test*.py'`：`535 tests OK`，`1 skipped`；输出中的 ResourceWarning/RuntimeWarning 为既有
+   test subprocess/framework warnings，不构成 failure。
+5. `backend/.venv/bin/ruff check modeling_team/agent-packages/platform-examiner/instructions.md
+   skills/platform-examiner/SKILL.md modeling_team/tests/test_r23006_lean_runtime.py`：PASS。
+6. `backend/.venv/bin/python -m compileall -q modeling_team/tests/test_r23006_lean_runtime.py`：PASS；
+   `git diff --check`：PASS。
+7. 只读 diff assertions：parallel wave、next-report、no cursor/retry/re-read、gap/unknown markers 均
+   present；old serial cursor directive、CQ answer/tool-plan injection 均 absent。当前 `git status` 仅
+   预期 delivery record/test-plan 与两份 Platform asset/focused test 修改；无 runtime product diff。
+
+### 未执行与发布边界
+
+本轮没有 real provider、new authorization/key、child、retained N=2 或 semantic start；故不能把本轮
+`PASS` 当作 R2.3-006 real semantic acceptance。若主代理继续唯一真实 operation，应重点收集首次
+Platform child 的 `turn/start`、一波内各 tool calls、下一 inference report、completeness/gap markers、
+第 4 usage gate 与 cleanup/evidence；若实际 provider 仍串行第二波或以 incomplete page 产出 PASS，应
+立即记录为新的 production finding，而不是用本轮 prompt marker PASS 覆盖。

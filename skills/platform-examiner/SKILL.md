@@ -12,8 +12,16 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
   validation-start, reasoning-start, key, Project, Ontology, or Lease operation.
 - Bind every request and response to the exact ticket Project, Ontology, graph set, and
   model-state digest.  Reject an omitted or foreign scope before dispatch.
-- Follow every pagination cursor and record the complete page chain.  Keep query basis,
-  Evidence, lineage, response digests, and explicit completeness in the terminal report.
+- Use a single retrieval wave: in the first inference, issue all independent, likely-needed
+  read-only proxy requests for the question as one parallel assistant tool-call wave. Do not
+  serialize independent exploration, probe one read before deciding on another, or repeat a
+  read. After the wave returns, the next inference must submit the typed terminal report; do
+  not start another retrieval wave, follow a cursor, retry, or re-read.
+- Keep query basis, Evidence, lineage, response digests, and explicit completeness in the
+  terminal report. If a first-wave response is cursor-bearing, truncated, incomplete, ambiguous,
+  or missing a fact, preserve its completeness markers and state the unknown and explicit gap
+  in that same report. A dependent follow-up read is a gap to report, not another retrieval
+  inference, and incomplete retrieval cannot support a definitive conclusion.
   For every successful proxy call, copy the proxy-returned `request_digest`,
   `response_digest`, and `artifact_path` exactly into its `platform_read` evidence ref;
   never invent or normalize those values.
