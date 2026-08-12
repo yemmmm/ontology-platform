@@ -9,6 +9,7 @@ or calls a semantic write API.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -314,6 +315,8 @@ class R23006OperationHost(Protocol):
 
     def run_examiner(self, prepared: PreparedR23006Operation) -> Mapping[str, Any]: ...
 
+    def failure_metrics(self) -> tuple[Mapping[str, Any], ...]: ...
+
     def revoke_read_key(self) -> None: ...
 
     def key_evidence(self) -> Mapping[str, Any]: ...
@@ -475,6 +478,7 @@ _BLOCKED_ROLES = frozenset({"source", "platform", "acceptance"})
 _BLOCKED_EVIDENCE_FIELDS = frozenset({
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id",
     "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
+    "report_received", "terminal_event", "proxy_receipt_count",
 })
 _BLOCKED_CODE_FIELDS = frozenset({
     # Keep this allowlist synchronized with every production
@@ -482,8 +486,8 @@ _BLOCKED_CODE_FIELDS = frozenset({
     # rg across acceptance_runtime.py and runtimes/codex.py).
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path",
 })
-_BLOCKED_INTEGER_FIELDS = frozenset({"steps", "host_packet_tokens", "inherited_turns"})
-_BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder"})
+_BLOCKED_INTEGER_FIELDS = frozenset({"steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count"})
+_BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
 _PACKET_LABELS = {
     "source Examiner packet": "source-examiner-packet",
     "platform Examiner packet": "platform-examiner-packet",
@@ -523,7 +527,11 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
                 _reject_secret_evidence({field: value}, field=f"blocked.evidence.{field}")
                 raise R23006OperationError("typed Examiner blocked evidence value is invalid")
             safe_details[
-                "read_key_present" if field == "read_key" else "forwarder_callable"
+                "read_key_present"
+                if field == "read_key"
+                else "forwarder_callable"
+                if field == "forwarder"
+                else field
             ] = value
             continue
 
@@ -577,6 +585,80 @@ def _blocked_outer_error(result: Mapping[str, Any]) -> R23006OperationError:
         "Examiner blocked: "
         f"role={role} reason={reason} category={category} code={reason_code}"
     )
+
+
+_EXAMINER_METRIC_FIELDS = frozenset({
+    "schema_version", "role", "fresh_thread_id", "fresh_thread", "metrics_complete",
+    "inherited_turns", "first_turn_input", "turn_start_count", "inference_steps",
+    "token_usage_increments", "first_input_tokens", "total_tokens", "cached_input_tokens",
+    "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens",
+    "model_context_window", "token_estimate_algorithm", "estimated_task_tokens",
+    "estimated_evidence_tokens", "task_tokens", "evidence_tokens", "ttft_ms",
+    "terminal_wall_ms", "proxy_time_ms", "collaboration_rejections", "terminal_report", "blocked",
+})
+_EXAMINER_METRIC_BOOL_FIELDS = frozenset({"fresh_thread", "metrics_complete", "terminal_report"})
+_EXAMINER_METRIC_ROLE_ORDER = ("source", "platform", "acceptance") * 2
+
+
+def _validate_partial_metrics(
+    value: Any,
+    expected_blocked: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Accept only bounded, internal ``ExaminerRunMetrics/v1`` snapshots."""
+
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)) or len(value) > len(_EXAMINER_METRIC_ROLE_ORDER):
+        raise R23006OperationError("partial Examiner metrics are invalid")
+    retained: list[dict[str, Any]] = []
+    for index, raw_metric in enumerate(value):
+        if not isinstance(raw_metric, Mapping) or set(raw_metric) != _EXAMINER_METRIC_FIELDS:
+            raise R23006OperationError("partial Examiner metrics are invalid")
+        metric = deepcopy(dict(raw_metric))
+        if (
+            metric.get("schema_version") != "ExaminerRunMetrics/v1"
+            or metric.get("role") != _EXAMINER_METRIC_ROLE_ORDER[index]
+        ):
+            raise R23006OperationError("partial Examiner metric role order drifted")
+        for field in _EXAMINER_METRIC_BOOL_FIELDS:
+            if not isinstance(metric.get(field), bool):
+                raise R23006OperationError("partial Examiner metric value is invalid")
+        blocked = metric.pop("blocked")
+        if blocked is None:
+            sanitized_blocked = None
+        else:
+            if not isinstance(blocked, Mapping) or set(blocked) != {
+                "schema_version", "status", "blocked_reason", "role", "evidence"
+            }:
+                raise R23006OperationError("partial Examiner metric blocked value is invalid")
+            blocked_reason = blocked.get("blocked_reason")
+            blocked_role = blocked.get("role")
+            blocked_evidence = blocked.get("evidence")
+            if (
+                blocked.get("schema_version") != "ExaminerBlocked/v1"
+                or blocked.get("status") != "BLOCKED"
+                or not isinstance(blocked_reason, str)
+                or not _SAFE_BLOCKED_CODE.fullmatch(blocked_reason)
+                or (blocked_role is not None and blocked_role not in _BLOCKED_ROLES)
+                or not isinstance(blocked_evidence, Mapping)
+            ):
+                raise R23006OperationError("partial Examiner metric blocked value is invalid")
+            sanitized_blocked = _blocked_result(
+                ExaminerRuntimeBlocked(
+                    blocked_reason,
+                    role=blocked_role,
+                    evidence=dict(blocked_evidence),
+                )
+            )
+        if index < len(value) - 1:
+            if sanitized_blocked is not None:
+                raise R23006OperationError("partial Examiner metric blocked stage is invalid")
+        elif sanitized_blocked != dict(expected_blocked):
+            raise R23006OperationError("partial Examiner metric does not match outer block")
+        _reject_secret_evidence(metric, field=f"partial_metrics[{index}]")
+        metric["blocked"] = sanitized_blocked
+        retained.append(metric)
+    return retained
 
 
 class R23006AcceptanceOperation:
@@ -650,6 +732,12 @@ class R23006AcceptanceOperation:
             raise R23006OperationError("operation cleanup evidence is incomplete")
         if blocked_error is not None:
             blocked_result = _blocked_result(blocked_error)
+            failure_metrics = getattr(host, "failure_metrics", ())
+            try:
+                partial_metrics = failure_metrics() if callable(failure_metrics) else failure_metrics
+            except BaseException as exc:
+                raise R23006OperationError("partial Examiner metrics are unavailable") from exc
+            partial_metrics = _validate_partial_metrics(partial_metrics, blocked_result)
             evidence = {
                 "schema_version": OPERATION_SCHEMA,
                 "status": "BLOCKED",
@@ -657,6 +745,7 @@ class R23006AcceptanceOperation:
                 "scope": dict(EXPECTED_SCOPE),
                 "operation_limits": dict(EXPECTED_LIMITS),
                 "result": blocked_result,
+                "partial_metrics": partial_metrics,
                 "key_lifecycle": key_evidence,
                 "invariance": {"before": dict(before), "after": dict(after), "equal": True},
                 "cleanup": dict(cleanup),
@@ -719,6 +808,7 @@ class _ProductionOperationHost:
         self.revoke_attempted = False
         self.preexisting_key_ids: set[str] = set()
         self._key_evidence: dict[str, Any] = {}
+        self._failure_metrics: tuple[Mapping[str, Any], ...] = ()
 
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None, key: str) -> tuple[int, Any]:
         payload = None if body is None else _canonical(body)
@@ -932,6 +1022,7 @@ class _ProductionOperationHost:
             platform_forwarder=forward,
             child_timeout_seconds=90,
         )
+        self._failure_metrics = ()
         try:
             return runtime.run(
                 prepared.questions,
@@ -940,10 +1031,16 @@ class _ProductionOperationHost:
                 ticket_binding=prepared.ticket_binding,
                 verdict_schema=prepared.verdict_schema,
             )
+        except ExaminerRuntimeBlocked:
+            self._failure_metrics = runtime.failure_metrics
+            raise
         finally:
             del runtime
             del forward
             del plaintext
+
+    def failure_metrics(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(deepcopy(row) for row in self._failure_metrics)
 
     def revoke_read_key(self) -> None:
         if self.lifecycle is None:

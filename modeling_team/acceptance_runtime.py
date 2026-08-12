@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import asyncio
 import base64
+from copy import deepcopy
 import json
 import os
 import queue
@@ -676,13 +677,34 @@ class LeanExaminerRuntime:
         self.source_executor = source_executor
         self.platform_executor = platform_executor
         self.acceptance_executor = acceptance_executor
+        self._failure_metrics: tuple[dict[str, Any], ...] = ()
+
+    @property
+    def failure_metrics(self) -> tuple[dict[str, Any], ...]:
+        """Return copied per-role snapshots captured by the last failed run."""
+
+        return tuple(deepcopy(row) for row in self._failure_metrics)
+
+    def _capture_failure_metrics(
+        self,
+        metrics: Sequence[ExaminerRunMetrics],
+        error: BaseException,
+    ) -> None:
+        """Retain only recomputable metrics for a failed role stage."""
+
+        snapshots = list(metrics)
+        if isinstance(error, ExaminerRuntimeBlocked) and snapshots and snapshots[-1].blocked is None:
+            snapshots[-1].blocked = error
+        self._failure_metrics = tuple(metric.as_dict() for metric in snapshots)
 
     def run(self, questions: Sequence[Mapping[str, Any]], *, source_packets: Sequence[Mapping[str, Any]], platform_packets: Sequence[Mapping[str, Any]], ticket_binding: Mapping[str, Any], verdict_schema: Mapping[str, Any]) -> dict[str, Any]:
         count = len(questions)
         if count <= 0 or len(source_packets) != count or len(platform_packets) != count:
             raise ChildRuntimeError("Lean Examiner question/packet count is invalid")
+        self._failure_metrics = ()
         verdicts: list[dict[str, Any]] = []
         metrics: list[dict[str, Any]] = []
+        completed_metrics: list[ExaminerRunMetrics] = []
         for ordinal, question in enumerate(questions):
             source_payload = dict(source_packets[ordinal])
             platform_payload = dict(platform_packets[ordinal])
@@ -698,36 +720,49 @@ class LeanExaminerRuntime:
             source_packet = build_source_examiner_packet(**source_payload)
             platform_packet = build_platform_examiner_packet(**platform_payload)
             source_metrics = ExaminerRunMetrics("source")
-            source_metrics.bind_first_turn_input([{"type": "packet", "digest": source_packet.canonical_digest}], packet=source_packet)
-            source_report = self.source_executor(source_packet, source_metrics)
-            source_evidence_ids = _source_report_evidence_ids(source_packet, source_report)
+            try:
+                source_metrics.bind_first_turn_input([{"type": "packet", "digest": source_packet.canonical_digest}], packet=source_packet)
+                source_report = self.source_executor(source_packet, source_metrics)
+                source_evidence_ids = _source_report_evidence_ids(source_packet, source_report)
+                source_metrics.record_terminal_report(source_report)
+            except BaseException as exc:
+                self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
+                raise
             platform_metrics = ExaminerRunMetrics("platform")
-            platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
-            platform_report = self.platform_executor(platform_packet, platform_metrics)
-            platform_evidence_ids = _platform_report_ref_ids(platform_report)
-            source_metrics.record_terminal_report(source_report)
-            platform_metrics.record_terminal_report(platform_report)
+            try:
+                platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
+                platform_report = self.platform_executor(platform_packet, platform_metrics)
+                platform_evidence_ids = _platform_report_ref_ids(platform_report)
+                platform_metrics.record_terminal_report(platform_report)
+            except BaseException as exc:
+                self._capture_failure_metrics([*completed_metrics, source_metrics, platform_metrics], exc)
+                raise
             source_digest, platform_digest = _packet_digest(source_report), _packet_digest(platform_report)
-            acceptance_packet = build_acceptance_examiner_packet(
-                question=question.get("question"), ticket_binding=dict(ticket_binding), ordinal=question_ordinal, count=count,
-                source_report=dict(source_report), platform_report=dict(platform_report),
-                source_report_digest=source_digest, platform_report_digest=platform_digest,
-                source_evidence_ref_ids=sorted(source_evidence_ids),
-                platform_evidence_ref_ids=sorted(platform_evidence_ids),
-                verdict_schema=dict(verdict_schema),
-            )
             acceptance_metrics = ExaminerRunMetrics("acceptance")
-            acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
-            verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
-            _validate_acceptance_evidence_ids(verdict, source_evidence_ids | platform_evidence_ids)
-            verdict.setdefault("question_ordinal", question_ordinal)
-            verdict.setdefault("question_count", count)
-            verdict.setdefault("previous_question_ordinal", question_ordinal - 1 if question_ordinal > 1 else None)
-            verdict.setdefault("next_question_ordinal", question_ordinal + 1 if question_ordinal < count else None)
-            verdict.setdefault("final", question_ordinal == count)
-            acceptance_metrics.record_terminal_verdict(verdict)
+            try:
+                acceptance_packet = build_acceptance_examiner_packet(
+                    question=question.get("question"), ticket_binding=dict(ticket_binding), ordinal=question_ordinal, count=count,
+                    source_report=dict(source_report), platform_report=dict(platform_report),
+                    source_report_digest=source_digest, platform_report_digest=platform_digest,
+                    source_evidence_ref_ids=sorted(source_evidence_ids),
+                    platform_evidence_ref_ids=sorted(platform_evidence_ids),
+                    verdict_schema=dict(verdict_schema),
+                )
+                acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
+                verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
+                _validate_acceptance_evidence_ids(verdict, source_evidence_ids | platform_evidence_ids)
+                verdict.setdefault("question_ordinal", question_ordinal)
+                verdict.setdefault("question_count", count)
+                verdict.setdefault("previous_question_ordinal", question_ordinal - 1 if question_ordinal > 1 else None)
+                verdict.setdefault("next_question_ordinal", question_ordinal + 1 if question_ordinal < count else None)
+                verdict.setdefault("final", question_ordinal == count)
+                acceptance_metrics.record_terminal_verdict(verdict)
+            except BaseException as exc:
+                self._capture_failure_metrics([*completed_metrics, source_metrics, platform_metrics, acceptance_metrics], exc)
+                raise
             verdicts.append(verdict)
             metrics.extend([source_metrics.as_dict(), platform_metrics.as_dict(), acceptance_metrics.as_dict()])
+            completed_metrics.extend([source_metrics, platform_metrics, acceptance_metrics])
             if not (
                 verdict.get("status", verdict.get("verdict")) == "PASS"
                 and verdict.get("current") is True

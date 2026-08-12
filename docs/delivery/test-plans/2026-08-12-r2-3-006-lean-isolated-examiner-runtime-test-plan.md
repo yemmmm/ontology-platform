@@ -955,3 +955,92 @@ BLOCKED evidence after gates; no provider text or credential bytes were retained
 本轮 PASS 只证明 typed failure projection、artifact safety 和 deterministic lifecycle gates；真实 provider
 并行 wave、完整六角色 metrics、ordered N=2 PASS、semantic acceptance 与 live retained operation 仍未执行，
 不能据此关闭 R2.3-006 real acceptance。
+
+## 17. 独立测试 Round 17（2026-08-12，live-4 diagnostics / partial-metrics binding，HEAD `5949a0f`）
+
+结论：`FAIL`（`P1` persistence binding defect；以下失败证据来自本轮初始稳定 diff，随后 developer 已提交窄修，
+该窄修不在本轮独立结论内，须由下一轮复测）。本轮未创建/使用 key，未启动 provider/child，未重跑或修改
+live-4，也未执行真实 N=2。
+
+### 通过项和 retained live-4 只读证据
+
+- Codex failure-winner deterministic repro 通过：typed child failure 先于 report return，report callback 不被返回，
+  `finally` destroy 必达；`report_received`、`terminal_event`、`proxy_receipt_count` 仅保留安全布尔/计数，
+  不含 raw report/response/secret。
+- Source/Platform/Acceptance 及第二个 CQ 的 failure prefix 矩阵通过：快照 role 前缀依次为 1/2/3/4/5/6，
+  仅当前失败项为 BLOCKED；metric 深拷贝不可变；失败后成功 N=2 得到六条 metrics 且 `failure_metrics` 重置为空。
+- 只读 live-4 artifact 未变（sha256 `1945db4d899e0df943f38b2343b547ab856cb4e318c208c7edbae6e57eef2676`），
+  mode `0600`、output dir `0700`，typed `platform/runtime/child-timeout`，create/revoke `1/1`、post-revoke
+  `401`、cleanup/invariance 全部通过，ledger 66 条/sha `af6417...` 不变，未推断其不存在的 `partial_metrics`。
+  backend/frontend health 均 HTTP 200，未发现残留 process/socket/output/secret。
+
+### P1 精确复现（初始稳定 diff）
+
+对 `R23006AcceptanceOperation` 注入外层
+`ExaminerRuntimeBlocked(role=platform, failure_category=runtime, reason_code=child-timeout)`，并提供合法
+`ExaminerRunMetrics/v1` 快照，结果如下：
+
+1. 末条失败 metric `blocked=None`（`metrics_complete=False`, `terminal_report=False`）仍写出 mode `0600`
+   BLOCKED artifact；应 fail-closed，末条必须存在且与外层 sanitized BLOCKED 完全一致。
+2. 末条 nested blocked 的 role=`source`、reason=`runtime-budget` 或 receipt count 与外层不一致仍写出 artifact；
+   应拒绝 mismatch，避免把 platform failure 持久化为错误 role/reason。
+3. 前序已完成 metric 携带 blocked 仍可写出 artifact；应要求所有前序 snapshot `blocked=None`。
+
+因此该 artifact 能通过 cleanup/key/invariance gate，却可能误导失败阶段和当前故障归属，属于 `P1`；不产生
+PASS 或 secret，但会污染 retained failure evidence。随后 developer 的窄修新增了上述三类 no-artifact assertions，
+应由 Round 18 复测，不在本轮将其视为已验收。
+
+### 命令与结果
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_acceptance_operation modeling_team.tests.test_r23006_lean_runtime -q`：修复后 smoke `43/43 PASS`（仅记录修复后状态，非本轮 FAIL 的抵消证据）。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test*.py' -q`：`547 tests OK`, `1 skipped`。
+4. changed-file Ruff、`compileall`、`git diff --check`：全部 PASS。
+
+GitNexus 对未编辑的 private 方法名存在聚合命中噪声；本轮证据按精确的 `CodexRuntimeAdapter.run_lean_examiner_child`、
+`_CodexChildResource` 和 operation validator/class seam 审查，不把聚合命中当作额外调用者或生产影响。剩余授权
+`2/3`；本轮结论仅覆盖 deterministic diagnostics 与 live-4 failure audit，不代表 semantic N=2 acceptance。
+
+## 18. 独立测试 Round 18（2026-08-12，partial-metrics binding 修复复测，HEAD `5949a0f`）
+
+结论：`PASS`（deterministic diagnostics / retained live-4 failure audit scope）。未创建/使用 key，未启动
+provider/child，未执行或修改真实 N=2/live-4；因此不代表 semantic N=2 PASS。
+
+### §17 失败项复测
+
+使用合法 `ExaminerRunMetrics/v1` rows 和外层
+`platform/runtime/child-timeout` BLOCKED 对每个 case 独立运行 operation：
+
+- 前序 non-empty row 的 `blocked != None`：拒绝，`partial Examiner metric blocked stage is invalid`，无 artifact。
+- 末条 nested blocked role=`source`、reason=`runtime-budget`、receipt count 不同于 outer：均拒绝，
+  `partial Examiner metric does not match outer block`，无 artifact。
+- 末条 `blocked=None` 且 `metrics_complete=False`/`terminal_report=False`：同样拒绝，无 artifact。
+- 合法 prefix 的末条 sanitized blocked 与 outer 完全相等：写出 2-row BLOCKED artifact，mode `0600`，
+  final block equality 为 true。
+- empty `partial_metrics=[]` 的 pre-stage typed block 仍允许写出 0600 BLOCKED artifact（rows=0），保持
+  Source 尚未生成 metrics 时的合法失败路径。
+
+### diagnostics、stage、immutability 和 lifecycle 回归
+
+- Codex failure-winner/report race：failure 先赢，report 不返回，`destroy()` 必达；diagnostics 只含
+  `report_received`、`terminal_event`、`proxy_receipt_count` 安全值，无 raw report/response/secret。
+- Source/Platform/Acceptance × CQ ordinal 1/2 的 prefix 分别为 1/2/3/4/5/6；仅末条为 BLOCKED，前序
+  metrics 完成且 `blocked=None`。返回的 `failure_metrics` 深拷贝不可变；同一 runtime 后续成功 N=2 返回
+  六条 `source/platform/acceptance` metrics，并清空 `failure_metrics`。
+- secret/unknown/wrong-type evidence、cleanup incomplete、snapshot drift、revoke/stop exception、
+  incomplete key lifecycle 均继续 fail-closed 且不写 artifact；success artifact 契约不变。
+- live-4 只读 artifact sha256 仍为
+  `1945db4d899e0df943f38b2343b547ab856cb4e318c208c7edbae6e57eef2676`，0600/dir 0700，typed
+  `platform/runtime/child-timeout`，create/revoke `1/1`、401 readback、cleanup/invariance 完整、ledger
+  66 条不变，artifact 未新增 `partial_metrics`；backend/frontend health 仍 HTTP 200，未发现残留。
+
+### 命令与结果
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_acceptance_operation modeling_team.tests.test_r23006_lean_runtime -q`：`43/43 PASS`。
+2. focused deterministic diagnostic/stage/lifecycle selection：`12/12 PASS`（7 lean/Codex + 5 operation）。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`。
+4. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test*.py' -q`：`547 tests OK`, `1 skipped`。
+5. changed-file Ruff、`compileall`、`git diff --check`：全部 PASS。
+
+本轮无新 finding。该 deterministic scope 已允许在相同代码完成 clean commit 后消耗剩余授权 `2/3` 进行唯一
+真实 operation；仍需把真实 semantic execution、ordered PASS、六 role metrics 和最终 retention 结果单独验收。

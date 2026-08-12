@@ -104,6 +104,7 @@ class FakeHost:
         self.revoked = 0
         self.stopped = False
         self.snapshots = 0
+        self.partial_metrics: list[Mapping[str, Any]] = []
 
     def start(self, _prepared) -> None:
         self.started = True
@@ -123,6 +124,9 @@ class FakeHost:
         if self.fail_run:
             raise RuntimeError("provider failed")
         return _result()
+
+    def failure_metrics(self) -> tuple[Mapping[str, Any], ...]:
+        return tuple(self.partial_metrics)
 
     def revoke_read_key(self) -> None:
         self.revoked += 1
@@ -204,10 +208,28 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
 
         class TimeoutHost(FakeHost):
             def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                platform = _metric("platform", 1)
+                platform["metrics_complete"] = False
+                platform["terminal_report"] = False
+                platform["ttft_ms"] = None
+                platform["terminal_wall_ms"] = None
+                blocked_evidence = {
+                    "failure_category": "runtime",
+                    "reason_code": "child-timeout",
+                    "report_received": True,
+                    "terminal_event": False,
+                    "proxy_receipt_count": 2,
+                }
+                platform["blocked"] = ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role="platform",
+                    evidence=blocked_evidence,
+                ).as_dict()
+                self.partial_metrics = [_metric("source", 1), platform]
                 raise ExaminerRuntimeBlocked(
                     "runtime-infrastructure",
                     role="platform",
-                    evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+                    evidence=blocked_evidence,
                 )
 
         def factory(root: Path, output: Path) -> FakeHost:
@@ -229,6 +251,16 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
             self.assertEqual(evidence["result"]["role"], "platform")
             self.assertEqual(evidence["result"]["reason_code"], "child-timeout")
             self.assertFalse(evidence["result"]["complete"])
+            self.assertEqual(
+                [metric["role"] for metric in evidence["partial_metrics"]],
+                ["source", "platform"],
+            )
+            self.assertTrue(evidence["partial_metrics"][0]["metrics_complete"])
+            self.assertFalse(evidence["partial_metrics"][1]["metrics_complete"])
+            self.assertEqual(evidence["result"]["evidence"]["report_received"], True)
+            self.assertEqual(evidence["result"]["evidence"]["terminal_event"], False)
+            self.assertEqual(evidence["result"]["evidence"]["proxy_receipt_count"], 2)
+            self.assertNotIn("secret", path.read_text(encoding="utf-8").lower())
         host = holder["host"]
         self.assertEqual((host.created, host.revoked), (1, 1))
         self.assertTrue(host.stopped)
@@ -355,6 +387,11 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
             {"path": "provider report text"},
             {"steps": True},
             {"read_key": "true"},
+            {"report_received": 1},
+            {"terminal_event": "false"},
+            {"proxy_receipt_count": True},
+            {"proxy_receipt_count": -1},
+            {"proxy_receipt_count": "2"},
         )
         for blocked_evidence in cases:
             with self.subTest(blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:
@@ -370,6 +407,103 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
 
                 def factory(root: Path, target: Path) -> FakeHost:
                     return InvalidEvidenceHost(root, target)
+
+                with self.assertRaises(R23006OperationError):
+                    R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+                self.assertFalse((output / "r23006-retained-acceptance.json").exists())
+
+    def test_partial_metrics_reject_extra_role_bool_secret_and_invalid_blocked(self) -> None:
+        cases: list[dict[str, Any]] = []
+        extra = _metric("source", 1)
+        extra["unexpected"] = True
+        cases.append(extra)
+        wrong_role = _metric("source", 1)
+        wrong_role["role"] = "platform"
+        cases.append(wrong_role)
+        wrong_bool = _metric("source", 1)
+        wrong_bool["metrics_complete"] = 1
+        cases.append(wrong_bool)
+        secret = _metric("source", 1)
+        secret["fresh_thread_id"] = "sk_read_partial_secret"
+        cases.append(secret)
+        invalid_blocked = _metric("source", 1)
+        invalid_blocked["blocked"] = {
+            "schema_version": "ExaminerBlocked/v1",
+            "status": "BLOCKED",
+            "blocked_reason": "provider text",
+            "role": "source",
+            "evidence": {},
+        }
+        cases.append(invalid_blocked)
+        for metric in cases:
+            with self.subTest(metric=metric), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+
+                class InvalidPartialHost(FakeHost):
+                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                        self.partial_metrics = [metric]
+                        raise ExaminerRuntimeBlocked(
+                            "runtime-infrastructure",
+                            role="platform",
+                            evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+                        )
+
+                def factory(root: Path, target: Path) -> FakeHost:
+                    return InvalidPartialHost(root, target)
+
+                with self.assertRaises(R23006OperationError):
+                    R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+                self.assertFalse((output / "r23006-retained-acceptance.json").exists())
+
+    def test_partial_metrics_must_end_with_matching_outer_block(self) -> None:
+        outer_evidence = {
+            "failure_category": "runtime",
+            "reason_code": "child-timeout",
+            "report_received": True,
+            "terminal_event": False,
+            "proxy_receipt_count": 2,
+        }
+
+        def blocked(*, role: str = "platform", reason: str = "runtime-infrastructure", evidence=None):
+            return ExaminerRuntimeBlocked(
+                reason,
+                role=role,
+                evidence=dict(outer_evidence if evidence is None else evidence),
+            ).as_dict()
+
+        def rows(last_blocked, *, first_blocked=None):
+            source = _metric("source", 1)
+            source["blocked"] = first_blocked
+            platform = _metric("platform", 1)
+            platform["metrics_complete"] = False
+            platform["terminal_report"] = False
+            platform["ttft_ms"] = None
+            platform["terminal_wall_ms"] = None
+            platform["blocked"] = last_blocked
+            return [source, platform]
+
+        cases = {
+            "role mismatch": rows(blocked(role="source")),
+            "reason mismatch": rows(blocked(reason="runtime-budget")),
+            "evidence mismatch": rows(blocked(evidence={**outer_evidence, "proxy_receipt_count": 1})),
+            "prior completed blocked": rows(blocked(), first_blocked=blocked()),
+            "last missing blocked": rows(None),
+        }
+        for label, partial_metrics in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+
+                class InvalidTerminalBlockHost(FakeHost):
+                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                        self.partial_metrics = partial_metrics
+                        raise ExaminerRuntimeBlocked(
+                            "runtime-infrastructure",
+                            role="platform",
+                            evidence=outer_evidence,
+                        )
+
+                def factory(root: Path, target: Path) -> FakeHost:
+                    return InvalidTerminalBlockHost(root, target)
 
                 with self.assertRaises(R23006OperationError):
                     R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()

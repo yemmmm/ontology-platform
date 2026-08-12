@@ -101,6 +101,28 @@ def _platform_report() -> dict:
     }
 
 
+def _complete_metrics(metrics: ExaminerRunMetrics, role: str) -> None:
+    metrics.bind_thread(f"{role}-thread")
+    metrics.observe_notification({
+        "method": "thread/tokenUsage/updated",
+        "params": {
+            "threadId": f"{role}-thread",
+            "turnId": f"{role}-turn",
+            "tokenUsage": {"total": {
+                "inputTokens": 10,
+                "cachedInputTokens": 0,
+                "cacheWriteInputTokens": 0,
+                "outputTokens": 2,
+                "reasoningOutputTokens": 0,
+                "totalTokens": 12,
+                "modelContextWindow": 1000,
+            }},
+        },
+    })
+    metrics.observe_notification({"method": "item/agentMessage/delta", "params": {"delta": "ok"}})
+    metrics.observe_notification({"method": "turn/completed", "params": {}})
+
+
 class R23006LeanRuntimeTests(unittest.TestCase):
     def test_packets_are_immutable_and_recomputable(self) -> None:
         packet = build_source_examiner_packet(**_source_payload())
@@ -310,6 +332,117 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(calls, [1])
         self.assertFalse(result["complete"])
         self.assertEqual(result["stopped_at"], 1)
+
+    def test_failure_metrics_capture_source_stage_and_are_copied(self) -> None:
+        def source(_packet, _metrics):
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure",
+                role="source",
+                evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+            )
+
+        runtime = LeanExaminerRuntime(
+            source_executor=source,
+            platform_executor=lambda _packet, _metrics: _platform_report(),
+            acceptance_executor=lambda _packet, _metrics: {},
+        )
+        with self.assertRaises(ExaminerRuntimeBlocked):
+            runtime.run(
+                [{"question": "q1"}],
+                source_packets=[_source_payload()],
+                platform_packets=[_platform_payload()],
+                ticket_binding={"ticket_digest": "a" * 64},
+                verdict_schema={"type": "verdict"},
+            )
+        snapshots = runtime.failure_metrics
+        self.assertEqual([row["role"] for row in snapshots], ["source"])
+        self.assertFalse(snapshots[0]["metrics_complete"])
+        self.assertIsNotNone(snapshots[0]["blocked"])
+        snapshots[0]["role"] = "tampered"
+        self.assertEqual(runtime.failure_metrics[0]["role"], "source")
+        self.assertNotIn("report", snapshots[0])
+
+    def test_failure_metrics_capture_source_and_incomplete_platform(self) -> None:
+        def source(_packet, metrics):
+            _complete_metrics(metrics, "source")
+            return {
+                "answerability": "answerable", "conclusion": "source", "evidence": [],
+                "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [],
+                "evidence_refs": [{"location": "source.md"}],
+            }
+
+        def platform(_packet, metrics):
+            metrics.bind_thread("platform-thread")
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure",
+                role="platform",
+                evidence={
+                    "failure_category": "runtime",
+                    "reason_code": "child-timeout",
+                    "report_received": True,
+                    "terminal_event": False,
+                    "proxy_receipt_count": 2,
+                },
+            )
+
+        runtime = LeanExaminerRuntime(
+            source_executor=source,
+            platform_executor=platform,
+            acceptance_executor=lambda _packet, _metrics: {},
+        )
+        with self.assertRaises(ExaminerRuntimeBlocked):
+            runtime.run(
+                [{"question": "q1"}],
+                source_packets=[_source_payload()],
+                platform_packets=[_platform_payload()],
+                ticket_binding={"ticket_digest": "a" * 64},
+                verdict_schema={"type": "verdict"},
+            )
+        snapshots = runtime.failure_metrics
+        self.assertEqual([row["role"] for row in snapshots], ["source", "platform"])
+        self.assertTrue(snapshots[0]["metrics_complete"])
+        self.assertTrue(snapshots[0]["terminal_report"])
+        self.assertFalse(snapshots[1]["metrics_complete"])
+        self.assertFalse(snapshots[1]["terminal_report"])
+        self.assertEqual(snapshots[1]["blocked"]["evidence"]["proxy_receipt_count"], 2)
+
+    def test_failure_metrics_capture_acceptance_stage_after_completed_source_platform(self) -> None:
+        def source(_packet, metrics):
+            _complete_metrics(metrics, "source")
+            return {
+                "answerability": "answerable", "conclusion": "source", "evidence": [],
+                "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [],
+                "evidence_refs": [{"location": "source.md"}],
+            }
+
+        def platform(_packet, metrics):
+            _complete_metrics(metrics, "platform")
+            return _platform_report()
+
+        def acceptance(_packet, metrics):
+            metrics.bind_thread("acceptance-thread")
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure", role="acceptance",
+                evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+            )
+
+        runtime = LeanExaminerRuntime(
+            source_executor=source,
+            platform_executor=platform,
+            acceptance_executor=acceptance,
+        )
+        with self.assertRaises(ExaminerRuntimeBlocked):
+            runtime.run(
+                [{"question": "q1"}],
+                source_packets=[_source_payload()],
+                platform_packets=[_platform_payload()],
+                ticket_binding={"ticket_digest": "a" * 64},
+                verdict_schema={"type": "verdict"},
+            )
+        snapshots = runtime.failure_metrics
+        self.assertEqual([row["role"] for row in snapshots], ["source", "platform", "acceptance"])
+        self.assertTrue(all(row["metrics_complete"] for row in snapshots[:2]))
+        self.assertFalse(snapshots[2]["metrics_complete"])
 
     def test_aggregate_rejects_received_out_of_order_rows(self) -> None:
         rows = [
@@ -556,6 +689,90 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(blocked.exception.reason, "runtime-budget")
         self.assertFalse(metrics.terminal_report)
+        self.assertTrue(resource.destroyed)
+
+    def test_codex_executor_failure_diagnostics_are_mechanical_and_destroy(self) -> None:
+        packet = build_source_examiner_packet(**_source_payload())
+
+        class Proxy:
+            def __init__(self, receipts):
+                self.receipts = receipts
+
+            @property
+            def receipt_snapshot(self):
+                if self.receipts is None:
+                    raise RuntimeError("receipt unavailable")
+                return self.receipts
+
+        class Resource:
+            def __init__(self, reports, terminal, receipts):
+                self.submitted_reports = reports
+                self.terminal_event = terminal
+                self.proxy = Proxy(receipts)
+                self.blocked = None
+                self.process = None
+                self.destroyed = False
+
+            def failure_evidence(self):
+                return {"failure_category": "runtime", "reason_code": "child-timeout"}
+
+            def destroy(self):
+                self.destroyed = True
+
+        cases = (
+            ([{"unvalidated": "report"}], False, (object(), object()), True, False, 2),
+            ([], False, None, False, False, 0),
+        )
+        for reports, terminal, receipts, report_received, terminal_event, receipt_count in cases:
+            with self.subTest(report_received=report_received, receipt_count=receipt_count):
+                resource = Resource(reports, terminal, receipts)
+                adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+                adapter.launch_lean_examiner_child = mock.Mock(return_value=resource)
+                with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
+                    adapter.run_lean_examiner_child(packet, ExaminerRunMetrics("source"), timeout_seconds=1)
+                self.assertEqual(
+                    blocked.exception.evidence,
+                    {
+                        "failure_category": "runtime",
+                        "reason_code": "child-timeout",
+                        "report_received": report_received,
+                        "terminal_event": terminal_event,
+                        "proxy_receipt_count": receipt_count,
+                    },
+                )
+                self.assertTrue(resource.destroyed)
+
+    def test_codex_executor_failure_wins_report_race_before_validation(self) -> None:
+        report = {
+            "answerability": "answerable",
+            "conclusion": "source",
+            "evidence": [],
+            "coverage": {"queries_or_sections": [], "complete": True},
+            "gaps": [],
+            "evidence_refs": [{"location": "not-approved.md"}],
+        }
+
+        class Resource:
+            submitted_reports = [report]
+            terminal_event = True
+            proxy = SimpleNamespace(receipt_snapshot=(object(),))
+            blocked = None
+            process = None
+            destroyed = False
+
+            def failure_evidence(self):
+                return {"failure_category": "runtime", "reason_code": "child-timeout"}
+
+            def destroy(self):
+                self.destroyed = True
+
+        resource = Resource()
+        adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+        adapter.launch_lean_examiner_child = mock.Mock(return_value=resource)
+        with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
+            adapter.run_lean_examiner_child(packet=build_source_examiner_packet(**_source_payload()), metrics=ExaminerRunMetrics("source"), timeout_seconds=1)
+        self.assertEqual(blocked.exception.reason, "runtime-infrastructure")
+        self.assertEqual(blocked.exception.evidence["report_received"], True)
         self.assertTrue(resource.destroyed)
 
     def test_codex_executor_rejects_unapproved_source_locator_and_destroys(self) -> None:

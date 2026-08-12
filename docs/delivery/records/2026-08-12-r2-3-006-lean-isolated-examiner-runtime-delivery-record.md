@@ -302,3 +302,40 @@
 - Boundary：本修复没有改 timeout、provider、Prompt、runtime budget、backend 或语义门；没有创建 key/provider/child，
   没有执行真实 N=2。deterministic observability 已闭环，但真实 semantic acceptance 仍是
   `BLOCKED/runtime-infrastructure`，必须获得新的 operation authorization 才可继续。
+
+### 2026-08-12 — three-operation authorization and live-4 — main agent
+
+- Authorization：用户明确“授权三次”。该授权只覆盖最多三次新的 R2.3-006 retained-workspace read-only
+  operations；每次允许一个新的临时 Project read key exactly-once create/revoke，继续禁止 semantic start、
+  ontology/ledger write、超过三次的自动重跑或把 cleanup PASS 当作 semantic PASS。
+- Preflight：stable clean HEAD `5949a0f Preserve Examiner failure evidence`；live-4 output root 不存在；service
+  active、backend/frontend 200；冻结 ticket digest、N=2、six-tool allowlist 与 retained scope 匹配。
+- Authorization 1/3 — live-4：Source 完成，Platform 再次执行大量单一并行 read wave；operation 在约 90 秒
+  watchdog 后返回 `BLOCKED/runtime-infrastructure`，CLI 与新 mode `0600` artifact 均保留
+  `failure_category=runtime`、`reason_code=child-timeout`。Acceptance/CQ-002 未执行，不是 semantic PASS。
+- Cleanup/invariance：artifact 证明 Project read key create/revoke `1/1`、revoke readback 200、旧 key 401、全部
+  cleanup flags true；ledger SHA `af6417…dcc`/66 records 与 platform digest `3606c7…f95` 前后相同；service、
+  backend、frontend 继续健康。
+- New evidence gap：typed terminal reason 已真实闭环，但失败 artifact 尚未保存 Source/Platform partial metrics、
+  report-received/terminal-event 状态或 proxy receipt count，无法从 retained evidence 区分 report 已提交但 provider
+  未 terminal 与 tool wave 未完成。剩余授权为 `2/3`；先修该只读 observability gap，不修改 timeout、Prompt、
+  provider、budget 或语义门，也不立即消耗下一次。
+
+### 2026-08-12 — live-4 diagnostic repair and independent Rounds 17-18 — developer / tester
+
+- Repair：private Codex child failure branch 在现有 category/code 上增加 `report_received`、`terminal_event` 与
+  `proxy_receipt_count` 三个机械标量；`LeanExaminerRuntime` 保留 Source/Platform/Acceptance 各阶段已完成和当前
+  `ExaminerRunMetrics/v1` 的深拷贝快照；operation 只在撤钥、cleanup 与 invariance 全部通过后写入最多六条有序
+  `partial_metrics`。未改 generic carrier/notification/resource winner、90 秒 timeout、Prompt、provider、budget 或
+  semantic gate。
+- Round 17：FAIL/P1。初版 persistence gate 允许末条 `blocked=None`、nested block 与 outer role/reason/evidence
+  不一致或前序 metric 携带 blocked，可能污染 retained failure-stage attribution；详细证据保留在 shared plan §17。
+- Fix：非空 partial metrics 的前序记录必须全部 `blocked=None`，最后一条 sanitized block 必须与 outer typed
+  BLOCKED 完全一致；空列表仍用于 metric 创建前的 typed stop。secret、额外字段、错误 role/bool/nested evidence
+  或 cleanup/key/invariance failure 继续无 artifact。
+- Round 18：PASS（deterministic diagnostics + retained live-4 audit）。focused `43/43`、deterministic selection
+  `12/12`、affected `86/86`、full modeling_team `547 PASS + 1 SKIP`，Ruff、compileall、diff-check PASS；live-4
+  artifact hash 未变，typed child-timeout、key lifecycle `1/1`/401、cleanup/invariance 与服务健康仍 PASS。详细证据
+  见 shared plan §18。
+- Boundary：Round18 不等于 semantic PASS，也没有创建 key/provider/child。三次授权尚余 `2/3`；可在该修复的
+  clean commit 上执行 live-5，以真实保留 timeout 当刻 partial metrics 与 report/terminal/proxy 状态。

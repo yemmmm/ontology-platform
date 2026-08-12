@@ -1522,10 +1522,42 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 evidence = getattr(resource, "failure_evidence", None)
                 failure = evidence() if callable(evidence) else None
                 if isinstance(failure, Mapping):
+                    try:
+                        submitted_reports = getattr(resource, "submitted_reports", ())
+                        report_received = isinstance(submitted_reports, (list, tuple)) and bool(submitted_reports)
+                    except Exception:
+                        report_received = False
+                    try:
+                        terminal_value = getattr(resource, "terminal_event", False)
+                        terminal_event = terminal_value if isinstance(terminal_value, bool) else False
+                    except Exception:
+                        terminal_event = False
+                    try:
+                        proxy = getattr(resource, "proxy", None)
+                        receipt_snapshot = getattr(proxy, "receipt_snapshot", ()) if proxy is not None else ()
+                        if callable(receipt_snapshot):
+                            receipt_snapshot = receipt_snapshot()
+                        proxy_receipt_count = (
+                            len(receipt_snapshot)
+                            if isinstance(receipt_snapshot, (list, tuple))
+                            else 0
+                        )
+                    except Exception:
+                        proxy_receipt_count = 0
+                    safe_failure = {
+                        key: value
+                        for key, value in failure.items()
+                        if key in {"failure_category", "reason_code"}
+                    }
+                    safe_failure.update(
+                        report_received=report_received,
+                        terminal_event=terminal_event,
+                        proxy_receipt_count=proxy_receipt_count,
+                    )
                     raise ExaminerRuntimeBlocked(
                         "runtime-infrastructure",
                         role=packet.kind,
-                        evidence={key: value for key, value in failure.items() if key in {"failure_category", "reason_code"}},
+                        evidence=safe_failure,
                     )
                 reports = getattr(resource, "submitted_reports", None)
                 if report is None and isinstance(reports, list) and reports:
