@@ -369,8 +369,8 @@ def test_r23003_scope_handoff_is_exact() -> None:
     assert normalize_existing_scope(SCOPE) == SCOPE
     handoff = load_existing_scope_handoff(SCOPE, repository_root=ROOT)
     assert handoff["scope_disposition"] == "retained"
-    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start19"
-    assert handoff["workspace_version"] == "1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3"
+    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start20"
+    assert handoff["workspace_version"] == "18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0"
     with pytest.raises(ValueError):
         normalize_existing_scope({**SCOPE, "project_id": "wrong"})
 
@@ -493,11 +493,11 @@ def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytes
         probe=lambda **_: {
             "project_id": R2_3_003_PROJECT_ID,
             "ontology_id": R2_3_003_ONTOLOGY_ID,
-            "workspace_version": "1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3",
+            "workspace_version": "18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0",
             "secret": "must-not-be-retained",
         },
     )
-    assert evidence["live"]["workspace_version"].startswith("1dc069")
+    assert evidence["live"]["workspace_version"].startswith("18e491")
     assert "secret" not in json.dumps(evidence)
 
 
