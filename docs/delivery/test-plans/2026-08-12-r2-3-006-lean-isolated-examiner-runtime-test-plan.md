@@ -504,3 +504,67 @@ PlatformApiReadKeyLifecycle -> exact McpReadForwarder -> LeanExaminerRuntime`，
 和真实 read key 均按授权冻结未使用。因此 retained N=2 的六条 real metrics、typed PASS、HTTP
 401/403、数据库 key readback、model/ledger before/after、process/socket/secret residue 仍记为
 `BLOCKED/未执行`，但没有新增 P0/P1，且当前修复态可交给主 agent 发起唯一真实 operation。
+
+## 11. 独立测试 Round 7（2026-08-12，HEAD `d5410ad9` + 唯一未提交 snapshot diff）
+
+结论：`PASS`（仅 `_ProductionOperationHost.snapshot` 的 `workspace-context` /
+`modeling-context` 字段归属窄修）。本轮未创建 key、未启动 provider、未执行 N=2，也未修改产品代码；
+因此该窄范围 PASS 不替代真实 retained operation 的 provider、key lifecycle、typed verdict 和
+before/after invariant 证据。
+
+### 稳定状态与 API/schema 复核
+
+- `git rev-parse --show-toplevel` 为 `/home/yangxiang/projects/ontology-platform`；HEAD 为
+  `d5410ad9ee5949a1469807ca2cef5e1eb41cae83`，`git diff --name-status` 仅列出
+  `M modeling_team/r23006_acceptance_operation.py`。未提交 diff 只新增
+  `GET /api/ontologies/{ontology_id}/modeling-context` snapshot 请求，并把 build-context
+  的 `generated_at` 去重与 workspace-version 校验移到正确响应位置。
+- API 代码与 backend contract tests 证明：`workspace-context` (`backend/app/api/ontologies.py:120-132`)
+  的 `OntologyWorkspaceContextRead` 只有 `state/default_graph_set_id/members/issues` 等字段，
+  不提供 `workspace_version`；`modeling-context` (`backend/app/api/modeling_batches.py:118-120`)
+  由 `ModelingBatchService.get_modeling_context` (`backend/app/services/modeling_batches.py:539-614`)
+  返回 `workspace.state` 与 `workspace.workspace_version`；`build-context`
+  (`backend/app/api/build_sessions.py:46-59`) 是独立的 Project 查询并带分页参数。修复后的
+  `snapshot` (`modeling_team/r23006_acceptance_operation.py:670-710`) 按该顺序读取六个路径，
+  仅从 modeling-context 校验 workspace version/state，从 workspace-context 校验 state/graph set，
+  并只剥离 build-context 的 `generated_at`。
+
+### 已执行命令与结果
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation
+   modeling_team.tests.test_r23006_lean_runtime -v`：`30/30 PASS`，退出码 0。
+2. `PYTHONPATH=backend backend/.venv/bin/python -m pytest -q
+   backend/tests/test_modeling_batches_api.py backend/tests/test_ontology_workspace.py
+   backend/tests/test_build_session_api.py`：`21 passed`，退出码 0；仅 3 个已知 framework deprecation warnings。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_platform_scope -v`：
+   `9/9 PASS`，退出码 0；其中 retained producer 使用 modeling-context version 的既有回归通过。
+4. `backend/.venv/bin/ruff check modeling_team/r23006_acceptance_operation.py`：PASS。
+5. `backend/.venv/bin/python -m compileall -q modeling_team/r23006_acceptance_operation.py &&
+   git diff --check`：PASS。
+6. 只读 fixture preparation：`prepare_r23006_operation(Path('.'))` 成功；ticket digest 为
+   `6134dcf7…963190b0` 且与 pinned digest 相等，CQ 顺序为 `cq-001,cq-002`，allowlist 恰为 6 项
+   （含 `get_entity_statement_context`），retained before counts 为 ontology=1、active
+   session/lease/attempt/project-key=0、modeling batches=22，ledger record_count=66。
+
+### Snapshot 对抗证据
+
+- 独立 fake read-only production host 按真实 API 形状返回：workspace-context 不含 version，
+  modeling-context 含 expected `state=ready` 与 retained `workspace_version`；两次 snapshot
+  唯一改变 build-context `generated_at`，两次 `platform_digest` 均为
+  `e2c5218856b0a3ec6a960e7dd2f8088f9fba75baf9bb42cb470dc1fd13f08bdf`，证明时间字段不造成漂移。
+- 将 modeling-context 的 workspace version 改为 `wrong-version`，得到
+  `R23006OperationError: retained modeling workspace version drifted`；将 live ontology count
+  从 retained 1 改为 2，得到 `retained live inventory drifted: ontology_count_in_project`。
+- 真实路径序列按 `project -> project/ontologies -> workspace-context -> modeling-context ->
+  build-context?recent_session_limit=100&recent_session_cursor=0 -> modeling-batches?limit=100`
+  发出，未调用任何写 API。fixture source/ticket/ledger 仅读，未改变 digest 或 record count。
+
+### Service / real-vs-deterministic 范围
+
+`ontology-platform.service` 当时为 active/running，`curl --fail http://127.0.0.1:8001/api/health`
+返回 HTTP 200 `{"status":"ok"}`。未使用旧 key；未对受保护的 retained API 做 live admin GET（无本轮
+operation authorization），所以 live API snapshot、真实 provider、new key create/revoke、post-revoke
+401/403、N=2 typed metrics、model/ledger before-after 与 zero residue 仍为 `BLOCKED/未执行`。
+API 路由形状由源码和 21 个 backend contract tests 覆盖，fixture preparation 与上述 snapshot
+对抗共同证明当前窄修没有新的 P0/P1；可以交回主 agent 继续唯一真实 operation 前置流程。

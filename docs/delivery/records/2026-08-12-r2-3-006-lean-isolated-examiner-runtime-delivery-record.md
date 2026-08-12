@@ -76,6 +76,8 @@
 | 11 | callable operation and independent Round 5 | Added a standalone retained-workspace N=2 operation seam and deterministic cleanup tests. Independent review found incomplete retained ticket/inventory binding, partial-create cleanup, repeated revoke after post-side-effect proof failure, permissive metrics, and secret-bearing injected evidence | operation/lean 27/27; affected 59/59; full modeling_team 531 PASS + 1 SKIP; production adversarial seams FAIL | returned to main for narrow operation-boundary repair; no key/provider/N=2 executed |
 | 12 | Round 5 defect repair, no live operation | Operation now binds the immutable ticket digest, its six-tool request allowlist, before inventory/model state, live counts and ledger; create attempts reconcile residue, one revoke attempt is never replayed, metrics are strict, and secret-bearing evidence is rejected before persistence | operation/lean 30/30; affected runtime/R2.3-005 104/104; Ruff/compile/diff checks PASS | independent Round 6 pending |
 | 13 | independent Round 6 and in-round closure | Production forwarder was narrowed from the global inventory to the retained six tools; bool/NaN/inconsistent token metrics were rejected; empty partial-create inventory became an explicit cleanup failure and cleanup errors take precedence | focused 30/30; affected 62/62; full modeling_team 534 PASS + 1 SKIP; changed Ruff/compile/diff checks PASS | deterministic operation boundary PASS; authorized real retained N=2 operation may start |
+| 14 | `d5410ad` clean implementation commit; first real operation preflight | The authorized production operation started the provider/bootstrap-admin boundary, then failed closed before Project read-key creation because `workspace-context` does not expose `workspace_version`; finally cleanup revoked the bootstrap admin key and stopped the provider | no Examiner thread or Project key created; active `r23006-retained-admin`=0, active Project keys=0, output root contains no evidence file; service active/200/200 | authorization was not consumed; field ownership defect returned for narrow repair |
+| 15 | `d5410ad` + snapshot-only diff; independent Round 7 | Snapshot now reads `modeling-context` and validates its nested workspace version while retaining workspace state/default graph checks on `workspace-context`; build-context index and volatile `generated_at` exclusion remain correct | operation+lean 30/30; backend context API 21 PASS; platform scope 9/9; Ruff/compile/diff PASS; direct read-only live service values match retained state/version | snapshot repair independently PASS; ready for a fresh-output real operation |
 
 ## Independent test rounds
 
@@ -88,6 +90,7 @@
 | 4 | page-sequence fix | PASS (narrow scope) | retained real N=2/key operation deliberately unexecuted | shared plan §8 |
 | 5 | callable operation first implementation | FAIL | partial key lifecycle, retained ticket/inventory, metrics and secret evidence gates | shared plan §9 |
 | 6 | callable operation defect closure | PASS (deterministic scope) | real provider/key/N=2 still unexecuted | shared plan §10 |
+| 7 | production snapshot field-ownership repair | PASS (narrow scope) | real provider/key/N=2 still unexecuted | shared plan §11 |
 
 ## Final verification
 
@@ -182,3 +185,27 @@
   report callback 时过早冻结。
 - Decision：三项作为同一 defect cycle 返回 requirement developer；修复后由同一 tester Round 2
   复测。本轮未创建 key、未读 retained workspace、未启动 semantic start、未改 ontology/ledger。
+
+### 2026-08-12 — first authorized production-operation preflight — main agent
+
+- Baseline：clean commit `d5410ad Add lean isolated Examiner runtime`；service active，backend/frontend 200。
+- Result：operation 在首次 retained snapshot fail-closed：`workspace-context` 不包含被冻结校验使用的
+  `workspace_version`。失败发生在 Project read key 创建和任何 Examiner thread 之前；没有 semantic write、
+  modeling start 或 evidence publication。
+- Cleanup evidence：active `r23006-retained-admin`=0，retained Project active key=0，provider 已停止，首次输出目录
+  不含文件；backend/frontend 继续 200。由于 exactly-one Project key 尚未创建，本次 preflight 不消耗真实
+  read-key/N=2 授权。
+- Disposition：确认是 operation snapshot 对真实 API 字段归属的实现缺陷；只修该边界，不改变 backend API、
+  ticket、scope、provider、proxy 或 Examiner semantics。
+
+### 2026-08-12 — snapshot repair and independent Round 7 — main agent / requirement tester
+
+- Repair：`workspace-context` 继续校验 retained state/default graph；新增只读 `modeling-context`，从其 nested
+  workspace 校验 state/version；`build-context.generated_at` 的 volatile-field 排除同步到新路径索引。
+- Main verification：operation focused 7/7，Ruff、py_compile、diff check PASS；直接只读 service 检查确认
+  workspace-context 无 version，modeling-context version 与 retained `18e491…157c0` 相等；active bootstrap/
+  Project keys 均为 0，service active/200/200。
+- Independent Round 7：PASS；operation+lean 30/30、backend context API 21 PASS、platform scope 9/9、
+  Ruff/compile/diff PASS；wrong modeling version 与 live-count drift 均 fail-closed，`generated_at` 变化不改变
+  digest。详细证据见 shared plan §11。
+- Outcome：修复稳定，可先形成干净提交，再从全新输出目录执行唯一授权真实 retained N=2 operation。

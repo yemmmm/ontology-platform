@@ -674,6 +674,7 @@ class _ProductionOperationHost:
             f"/api/projects/{EXPECTED_SCOPE['project_id']}",
             f"/api/projects/{EXPECTED_SCOPE['project_id']}/ontologies",
             f"/api/ontologies/{EXPECTED_SCOPE['ontology_id']}/workspace-context",
+            f"/api/ontologies/{EXPECTED_SCOPE['ontology_id']}/modeling-context",
             f"/api/projects/{EXPECTED_SCOPE['project_id']}/build-context?recent_session_limit=100&recent_session_cursor=0",
             f"/api/ontologies/{EXPECTED_SCOPE['ontology_id']}/modeling-batches?limit=100",
         )
@@ -683,7 +684,7 @@ class _ProductionOperationHost:
             if status != 200:
                 raise R23006OperationError(f"retained snapshot failed with HTTP {status}")
             platform[path] = value
-        build_context_path = paths[3]
+        build_context_path = paths[4]
         build_context = platform.get(build_context_path)
         if isinstance(build_context, Mapping):
             platform[build_context_path] = {
@@ -692,10 +693,21 @@ class _ProductionOperationHost:
         workspace = platform.get(paths[2])
         if not isinstance(workspace, Mapping) or (
             workspace.get("state") != EXPECTED_SCOPE["workspace_state"]
-            or workspace.get("workspace_version") != EXPECTED_SCOPE["workspace_version"]
             or workspace.get("default_graph_set_id") != EXPECTED_SCOPE["graph_set_id"]
         ):
             raise R23006OperationError("retained workspace state drifted")
+        modeling_context = platform.get(paths[3])
+        modeling_workspace = (
+            modeling_context.get("workspace")
+            if isinstance(modeling_context, Mapping)
+            else None
+        )
+        if not isinstance(modeling_workspace, Mapping) or (
+            modeling_workspace.get("state") != EXPECTED_SCOPE["workspace_state"]
+            or modeling_workspace.get("workspace_version")
+            != EXPECTED_SCOPE["workspace_version"]
+        ):
+            raise R23006OperationError("retained modeling workspace version drifted")
         from datetime import UTC, datetime
 
         from sqlalchemy import func, select
