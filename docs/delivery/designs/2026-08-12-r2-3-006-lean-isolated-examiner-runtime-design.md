@@ -101,12 +101,17 @@ backend、Modeling/Protocol 语义、全局 Codex 指令或所有 subagent。只
 
 - 已实现 per-CQ fresh Source/Platform/Acceptance child、inline immutable packets、report-only transport、
   exact-schema direct proxy、typed report/evidence binding、ordered aggregation、完整 metrics 与 callable retained
-  operation；R2.3-005/default 路径保持兼容。deterministic 独立测试最终为 full modeling_team 535 PASS、1 SKIP。
-- 唯一授权真实 operation 在 CQ-001 Platform 第四个 positive App Server usage increment 到达前正确返回
-  `BLOCKED/runtime-budget`，没有 typed Platform report 或 ordered N=2 verdict，因此不能宣称本需求 semantic PASS。
-  operation 的 read key create/revoke/readback/old-key 401 各一次，bootstrap admin 撤销，model/ledger/live inventory
-  不变，output/process/socket/secret 零残留；独立 failure-path audit PASS。
-- 根因是 Platform 角色指令允许串行探索/追 cursor，未把 report-tool 后的 provider completion 计入三步执行形态。
-  prompt/Skill 已收敛为首轮单一并行 read wave、下一 inference typed report、incomplete 作为 gap/unknown；独立
-  deterministic Round 9 PASS。该修复仍需新的 operation authorization 证明 provider 实际 call wave、六条完整
-  metrics 和 ordered N=2 PASS；在此之前状态保持真实验收 BLOCKED。
+  operation；R2.3-005/default 路径保持兼容。最新 deterministic 独立测试为 full modeling_team 540 PASS、1 SKIP。
+- 首次授权真实 operation 在 CQ-001 Platform 第四个 positive App Server usage increment 到达前正确返回
+  `BLOCKED/runtime-budget`。修复 Platform prompt/Skill 后，下一次授权 operation 确认首轮单一并行 read wave，
+  但 Platform child 在约 90 秒 watchdog 到期时仍未 terminal completion，最终为
+  `BLOCKED/runtime-infrastructure`，底层安全 reason 为 `runtime/child-timeout`；没有 ordered N=2 verdict，
+  因此不能宣称本需求 semantic PASS。
+- 两次 operation 的 read key 都完成 exactly-once create/revoke/readback/old-key 401，bootstrap admin 撤销，
+  model/ledger/live inventory 不变，output/process/socket/secret 零残留；独立 failure-path audit PASS。第二次运行
+  暴露 outer operation 丢失 typed reason 且不保留失败 evidence 的 P1，现已在 cleanup、key lifecycle、invariance
+  全部成立后写入 `0600`、明确 `BLOCKED` 的安全证据；secret、未知/错误类型 evidence 或不完整 cleanup 继续
+  fail-closed 且不落盘。Round 12 deterministic observability 独立 PASS。
+- 不根据单次 timeout 猜测或修改 timeout/provider/prompt；下一次真实 operation 必须另获授权，并直接保留完整
+  failure/performance evidence。只有真实 N=2 得到六角色完整 metrics 与 ordered PASS 才能完成本需求；当前状态
+  保持真实验收 `BLOCKED/runtime-infrastructure`。

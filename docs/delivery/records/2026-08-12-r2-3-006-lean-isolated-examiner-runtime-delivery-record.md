@@ -268,3 +268,37 @@
   binding 未放宽。详细证据见 shared plan §13。
 - Outcome：实现处于稳定、可提交的阻断点；真实 provider 是否执行 parallel wave、六条完整 metrics 与 ordered
   N=2 PASS 仍需新的 operation authorization。当前不得标记 requirement complete，也不得自动重跑。
+
+### 2026-08-12 — authorized real operation live-3 and independent Round 10 — main agent / requirement tester
+
+- Authorization：用户明确“同意，继续”，只授权一次新的 R2.3-006 retained-workspace read-only operation；允许
+  一个新的临时 Project read key exactly-once create/revoke，不允许 semantic start、ontology/ledger write 或失败后
+  自动重跑。Stable baseline 为 clean `6c1258a Repair Platform Examiner retrieval wave`。
+- Real result：Source 约 28 秒完成；Platform 确实执行首轮单一并行 read wave 和 report/tool calls，没有第四个
+  positive usage increment。约 90 秒 child watchdog 到期，operation 为 `BLOCKED/runtime-infrastructure`；代码与
+  operation window 共同绑定的最可信底层 reason 是 `runtime/child-timeout`。Acceptance/CQ-002 未执行，没有
+  ordered N=2 verdict 或 semantic PASS。
+- Cleanup/invariance：Project read key 与 bootstrap admin 均撤销；read-key create/revoke/readback/old-key 401 各一次，
+  operation-owned active keys=0。live inventory `1,0,0,0,0,22`、workspace/default graph/version、ledger SHA/66
+  records 前后不变；output root `0700` 且为空，无 operation process/socket/temp/secret residue；service、backend、
+  frontend 健康。
+- Independent Round 10：FAIL/P1。typed child failure 在 runtime 内保留 `failure_category=runtime`、
+  `reason_code=child-timeout`，但 outer operation 固定包装成 `retained acceptance operation failed`，CLI 和 retained
+  artifact 均不显示安全 reason。详细证据见 shared test plan §14。本次唯一 operation 已消费，不得自动重跑。
+
+### 2026-08-12 — typed failure evidence repair and independent Rounds 11-12 — developer / tester
+
+- Repair：`R23006AcceptanceOperation` 只在 read-key lifecycle、全部 cleanup 与 model/ledger invariance 均完整时，
+  把 `ExaminerRuntimeBlocked` 投影为 provider/credential-free typed `BLOCKED` result，并原子写入 mode `0600` 的
+  `r23006-retained-acceptance.json`；outer `R23006OperationError` 同时显示安全 role/reason/category/code。success
+  artifact 契约不变；secret、未知字段、自由文本、错误类型、绝对/遍历路径、cleanup/key/invariance failure 均不
+  生成可误解 artifact。
+- Round 11：live-3 child-timeout 路径通过，但独立测试发现 initial allowlist 漏掉 `runtime-budget.steps` 等合法 typed
+  evidence，结论 FAIL/P1；详细证据见 shared plan §15。
+- Round 12：生产代码中全部 10 类 typed evidence key 与 `failure_category/reason_code` 均受有限 schema/type 校验；
+  14/14 合法投影、runtime-budget、runtime-metrics、acceptance-input、Source path、child-timeout、exact packet label
+  与全部对抗分支 PASS。focused operation+lean `36/36`、affected `86/86`、full modeling_team `540 PASS + 1 SKIP`，
+  Ruff、compileall、`git diff --check` PASS。详细证据见 shared plan §16。
+- Boundary：本修复没有改 timeout、provider、Prompt、runtime budget、backend 或语义门；没有创建 key/provider/child，
+  没有执行真实 N=2。deterministic observability 已闭环，但真实 semantic acceptance 仍是
+  `BLOCKED/runtime-infrastructure`，必须获得新的 operation authorization 才可继续。

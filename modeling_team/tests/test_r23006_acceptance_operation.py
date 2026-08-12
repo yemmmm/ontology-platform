@@ -12,6 +12,7 @@ from modeling_team.r23006_acceptance_operation import (
     R23006OperationError,
     prepare_r23006_operation,
 )
+from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -197,6 +198,217 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         host = holder["host"]
         self.assertEqual((host.created, host.revoked), (1, 1))
         self.assertTrue(host.stopped)
+
+    def test_typed_child_timeout_writes_blocked_evidence_and_safe_outer_error(self) -> None:
+        holder: dict[str, FakeHost] = {}
+
+        class TimeoutHost(FakeHost):
+            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role="platform",
+                    evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+                )
+
+        def factory(root: Path, output: Path) -> FakeHost:
+            holder["host"] = TimeoutHost(root, output)
+            return holder["host"]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "blocked"
+            with self.assertRaisesRegex(
+                R23006OperationError,
+                r"role=platform reason=runtime-infrastructure category=runtime code=child-timeout",
+            ):
+                R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+            path = output / "r23006-retained-acceptance.json"
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            evidence = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["status"], "BLOCKED")
+            self.assertEqual(evidence["result"]["status"], "BLOCKED")
+            self.assertEqual(evidence["result"]["role"], "platform")
+            self.assertEqual(evidence["result"]["reason_code"], "child-timeout")
+            self.assertFalse(evidence["result"]["complete"])
+        host = holder["host"]
+        self.assertEqual((host.created, host.revoked), (1, 1))
+        self.assertTrue(host.stopped)
+
+    def test_secret_failure_evidence_is_rejected_and_not_written(self) -> None:
+        holder: dict[str, FakeHost] = {}
+
+        class SecretFailureHost(FakeHost):
+            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role="platform",
+                    evidence={
+                        "failure_category": "runtime",
+                        "reason_code": "child-timeout",
+                        "read_key": "sk_read_secret",
+                    },
+                )
+
+        def factory(root: Path, output: Path) -> FakeHost:
+            holder["host"] = SecretFailureHost(root, output)
+            return holder["host"]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            with self.assertRaisesRegex(R23006OperationError, "secret-bearing evidence") as raised:
+                R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+            self.assertNotIn("sk_read_secret", str(raised.exception))
+            self.assertFalse((output / "r23006-retained-acceptance.json").exists())
+        host = holder["host"]
+        self.assertEqual((host.created, host.revoked), (1, 1))
+        self.assertTrue(host.stopped)
+
+    def test_typed_runtime_and_launch_evidence_is_safely_projected(self) -> None:
+        cases = (
+            (
+                "runtime-budget",
+                {"steps": 4},
+                {"steps": 4},
+            ),
+            (
+                "runtime-metrics",
+                {"field": "inputTokens"},
+                {"field": "inputTokens"},
+            ),
+            (
+                "runtime-metrics",
+                {"thread_id": "thread-1"},
+                {"thread_id": "thread-1"},
+            ),
+            (
+                "runtime-metrics",
+                {"turn_id": "turn-1"},
+                {"turn_id": "turn-1"},
+            ),
+            (
+                "acceptance-input",
+                {"inherited_turns": 0},
+                {"inherited_turns": 0},
+            ),
+            (
+                "acceptance-input",
+                {"host_packet_tokens": 12},
+                {"host_packet_tokens": 12},
+            ),
+            (
+                "acceptance-input",
+                {"read_key": True},
+                {"read_key_present": True},
+            ),
+            (
+                "acceptance-input",
+                {"forwarder": False},
+                {"forwarder_callable": False},
+            ),
+            (
+                "acceptance-input",
+                {"packet": "platform Examiner packet"},
+                {"packet": "platform-examiner-packet"},
+            ),
+            (
+                "acceptance-evidence",
+                {"path": "docs/source.md"},
+                {"path": "docs/source.md"},
+            ),
+        )
+        for reason, blocked_evidence, expected_evidence in cases:
+            with self.subTest(reason=reason, blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+
+                class TypedBlockedHost(FakeHost):
+                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                        raise ExaminerRuntimeBlocked(
+                            reason,
+                            role="platform",
+                            evidence=blocked_evidence,
+                        )
+
+                def factory(root: Path, target: Path) -> FakeHost:
+                    return TypedBlockedHost(root, target)
+
+                with self.assertRaisesRegex(
+                    R23006OperationError,
+                    rf"role=platform reason={reason} category=unspecified code=unspecified",
+                ):
+                    R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+                evidence = json.loads(
+                    (output / "r23006-retained-acceptance.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(evidence["status"], "BLOCKED")
+                self.assertEqual(evidence["result"]["status"], "BLOCKED")
+                self.assertEqual(evidence["result"]["evidence"], expected_evidence)
+                self.assertIsNone(evidence["result"]["failure_category"])
+                self.assertIsNone(evidence["result"]["reason_code"])
+
+    def test_unknown_provider_text_or_wrong_typed_failure_evidence_is_not_written(self) -> None:
+        cases = (
+            {"provider_text": "provider timed out"},
+            {"reason_code": "provider timed out"},
+            {"packet": "other-packet"},
+            {"path": "/etc/passwd"},
+            {"path": "../secret"},
+            {"path": "platform Examiner packet"},
+            {"path": "provider report text"},
+            {"steps": True},
+            {"read_key": "true"},
+        )
+        for blocked_evidence in cases:
+            with self.subTest(blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+
+                class InvalidEvidenceHost(FakeHost):
+                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                        raise ExaminerRuntimeBlocked(
+                            "runtime-infrastructure",
+                            role="platform",
+                            evidence=blocked_evidence,
+                        )
+
+                def factory(root: Path, target: Path) -> FakeHost:
+                    return InvalidEvidenceHost(root, target)
+
+                with self.assertRaises(R23006OperationError):
+                    R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+                self.assertFalse((output / "r23006-retained-acceptance.json").exists())
+
+    def test_blocked_failure_does_not_write_artifact_when_cleanup_or_invariance_is_incomplete(self) -> None:
+        cases: tuple[str, type[FakeHost]] = ()
+
+        class CleanupFailureHost(FakeHost):
+            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role="platform",
+                    evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+                )
+
+            def stop(self) -> Mapping[str, Any]:
+                cleanup = dict(super().stop())
+                cleanup["children_stopped"] = False
+                return cleanup
+
+        class InvarianceFailureHost(CleanupFailureHost):
+            def snapshot(self, prepared) -> Mapping[str, Any]:
+                snapshot = dict(super().snapshot(prepared))
+                if self.snapshots > 1:
+                    snapshot["platform_digest"] = "c" * 64
+                return snapshot
+
+        cases = (("cleanup", CleanupFailureHost), ("invariance", InvarianceFailureHost))
+        for label, host_type in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary)
+
+                def factory(root: Path, target: Path, host_type=host_type) -> FakeHost:
+                    return host_type(root, target)
+
+                with self.assertRaises(R23006OperationError):
+                    R23006AcceptanceOperation(ROOT, output, host_factory=factory).run()
+                self.assertFalse((output / "r23006-retained-acceptance.json").exists())
 
     def test_partial_key_create_side_effect_still_invokes_revoke_cleanup(self) -> None:
         holder: dict[str, FakeHost] = {}

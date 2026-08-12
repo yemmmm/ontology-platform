@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -25,6 +26,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .acceptance import PlatformApiReadKeyLifecycle
 from .acceptance_runtime import (
+    ExaminerRuntimeBlocked,
     PLATFORM_PROXY_READ_TOOLS,
     LeanExaminerRuntime,
     McpReadForwarder,
@@ -468,6 +470,115 @@ def _reject_secret_evidence(value: Any, *, field: str = "root") -> None:
         raise R23006OperationError(f"secret-bearing evidence value is forbidden: {field}")
 
 
+_SAFE_BLOCKED_CODE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}")
+_BLOCKED_ROLES = frozenset({"source", "platform", "acceptance"})
+_BLOCKED_EVIDENCE_FIELDS = frozenset({
+    "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id",
+    "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
+})
+_BLOCKED_CODE_FIELDS = frozenset({
+    # Keep this allowlist synchronized with every production
+    # ExaminerRuntimeBlocked(..., evidence={...}) key (currently confirmed by
+    # rg across acceptance_runtime.py and runtimes/codex.py).
+    "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path",
+})
+_BLOCKED_INTEGER_FIELDS = frozenset({"steps", "host_packet_tokens", "inherited_turns"})
+_BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder"})
+_PACKET_LABELS = {
+    "source Examiner packet": "source-examiner-packet",
+    "platform Examiner packet": "platform-examiner-packet",
+    "acceptance Examiner packet": "acceptance-examiner-packet",
+}
+
+
+def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
+    """Project one typed Examiner stop into a provider- and credential-free result."""
+
+    raw = blocked.as_dict()
+    if raw.get("schema_version") != "ExaminerBlocked/v1" or raw.get("status") != "BLOCKED":
+        raise R23006OperationError("typed Examiner blocked evidence is invalid")
+
+    reason = raw.get("blocked_reason")
+    role = raw.get("role")
+    if (
+        not isinstance(reason, str)
+        or not _SAFE_BLOCKED_CODE.fullmatch(reason)
+        or (role is not None and (not isinstance(role, str) or role not in _BLOCKED_ROLES))
+    ):
+        raise R23006OperationError("typed Examiner blocked identity is invalid")
+
+    details = raw.get("evidence")
+    if not isinstance(details, Mapping):
+        raise R23006OperationError("typed Examiner blocked evidence is invalid")
+    safe_details: dict[str, Any] = {}
+    for field, value in details.items():
+        if not isinstance(field, str) or field not in _BLOCKED_EVIDENCE_FIELDS:
+            raise R23006OperationError("typed Examiner blocked evidence fields are unsupported")
+
+        # The two boolean launch flags are deliberately accepted only as bools,
+        # then renamed so the retained artifact cannot be mistaken for a key or
+        # callable handle.  Every other field is checked as a fixed scalar below.
+        if field in _BLOCKED_BOOLEAN_FIELDS:
+            if not isinstance(value, bool):
+                _reject_secret_evidence({field: value}, field=f"blocked.evidence.{field}")
+                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+            safe_details[
+                "read_key_present" if field == "read_key" else "forwarder_callable"
+            ] = value
+            continue
+
+        _reject_secret_evidence({field: value}, field=f"blocked.evidence.{field}")
+        if field in _BLOCKED_CODE_FIELDS:
+            if not isinstance(value, str):
+                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+            if field == "packet":
+                if value not in _PACKET_LABELS:
+                    raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                value = _PACKET_LABELS[value]
+            if (
+                not _SAFE_BLOCKED_CODE.fullmatch(value)
+                or (field == "path" and (Path(value).is_absolute() or ".." in Path(value).parts))
+            ):
+                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+            safe_details[field] = value
+            continue
+        if (
+            field in _BLOCKED_INTEGER_FIELDS
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+        ):
+            safe_details[field] = value
+            continue
+        raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+
+    failure_category = safe_details.get("failure_category")
+    reason_code = safe_details.get("reason_code")
+    return {
+        "schema_version": "ExaminerBlocked/v1",
+        "status": "BLOCKED",
+        "complete": False,
+        "blocked_reason": reason,
+        "role": role,
+        "failure_category": failure_category,
+        "reason_code": reason_code,
+        "evidence": safe_details,
+    }
+
+
+def _blocked_outer_error(result: Mapping[str, Any]) -> R23006OperationError:
+    """Build a safe CLI-visible summary without retaining provider exception text."""
+
+    role = result.get("role") or "unspecified"
+    reason = result.get("blocked_reason") or "unspecified"
+    category = result.get("failure_category") or "unspecified"
+    reason_code = result.get("reason_code") or "unspecified"
+    return R23006OperationError(
+        "Examiner blocked: "
+        f"role={role} reason={reason} category={category} code={reason_code}"
+    )
+
+
 class R23006AcceptanceOperation:
     """Host-owned exactly-once lifecycle around one retained N=2 run."""
 
@@ -491,6 +602,7 @@ class R23006AcceptanceOperation:
         key_create_attempted = False
         cleanup: Mapping[str, Any] = {}
         operation_error: BaseException | None = None
+        blocked_error: ExaminerRuntimeBlocked | None = None
         try:
             host.start(prepared)
             before = dict(host.snapshot(prepared))
@@ -500,6 +612,8 @@ class R23006AcceptanceOperation:
             _validate_result(result)
         except BaseException as exc:
             operation_error = exc
+            if isinstance(exc, ExaminerRuntimeBlocked):
+                blocked_error = exc
         finally:
             if key_create_attempted:
                 try:
@@ -515,7 +629,7 @@ class R23006AcceptanceOperation:
                 cleanup = dict(host.stop())
             except BaseException as exc:
                 operation_error = exc
-        if operation_error is not None:
+        if operation_error is not None and blocked_error is not operation_error:
             if isinstance(operation_error, R23006OperationError):
                 raise operation_error
             raise R23006OperationError("retained acceptance operation failed") from operation_error
@@ -534,6 +648,22 @@ class R23006AcceptanceOperation:
             "runtime_root_removed", "admin_key_revoked", "plaintext_released",
         )):
             raise R23006OperationError("operation cleanup evidence is incomplete")
+        if blocked_error is not None:
+            blocked_result = _blocked_result(blocked_error)
+            evidence = {
+                "schema_version": OPERATION_SCHEMA,
+                "status": "BLOCKED",
+                "ticket_digest": prepared.ticket["ticket_digest"],
+                "scope": dict(EXPECTED_SCOPE),
+                "operation_limits": dict(EXPECTED_LIMITS),
+                "result": blocked_result,
+                "key_lifecycle": key_evidence,
+                "invariance": {"before": dict(before), "after": dict(after), "equal": True},
+                "cleanup": dict(cleanup),
+            }
+            _reject_secret_evidence(evidence)
+            self._write_evidence(evidence)
+            raise _blocked_outer_error(blocked_result) from blocked_error
         assert result is not None
         evidence = {
             "schema_version": OPERATION_SCHEMA,

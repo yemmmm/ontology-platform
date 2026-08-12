@@ -718,3 +718,240 @@ wave、完整 metrics/typed PASS 仍为 `BLOCKED/未执行`。
 Platform child 的 `turn/start`、一波内各 tool calls、下一 inference report、completeness/gap markers、
 第 4 usage gate 与 cleanup/evidence；若实际 provider 仍串行第二波或以 incomplete page 产出 PASS，应
 立即记录为新的 production finding，而不是用本轮 prompt marker PASS 覆盖。
+
+## 14. 独立测试 Round 10（2026-08-12，真实 operation `live-3` failure-path audit，HEAD `6c1258a`）
+
+结论：`FAIL`（发现一个 P1 failure-observability/performance release blocker；cleanup、授权生命周期、
+model/ledger/live invariants 与残留审计 PASS）。真实 semantic acceptance 为
+`BLOCKED/runtime-infrastructure`，最可信的底层 reason code 是 `runtime/child-timeout`，不是
+`runtime-budget`；没有产生 ordered N=2 PASS 或 acceptance evidence。本轮只读审查已结束的唯一
+`workspaces/modeling-acceptance/r23006-retained-n2-live-3`，未创建/使用 key、未启动 provider/child、
+未重跑/继续 N=2、未修改产品代码或 delivery record。
+
+### 真实 trace、parallel wave 与失败层
+
+- 主代理提供的唯一真实 CLI 结果为 exit code `1`。第一题 Source 完成（约 28s）；随后 Platform
+  child 实际发出大量并行 read wave，并出现 proxy/report tool calls；真实 trace 没有第四个 positive
+  `tokenUsage` increment，因此没有触发 `BLOCKED/runtime-budget`。Acceptance 未启动，CQ-002 未执行。
+- Platform child 在约 90s absolute watchdog deadline 停止。当前 `_CodexChildResource._start_watchdog`
+  (`modeling_team/runtimes/codex.py:704-736`) 到 deadline 记录 sanitized `failure_category=runtime`,
+  `reason_code=child-timeout` 并终止 process；`run_lean_examiner_child` (`:1519-1529`) 将它转换为
+  `ExaminerRuntimeBlocked("runtime-infrastructure", role="platform", evidence={...})`。因此
+  `runtime-infrastructure/child-timeout` 是最可信 failure layer/reason，而不是预算 gate 或 report
+  schema rejection。
+- Report/tool callback 的存在由真实 trace 可见，但 retained output 没有逐事件 ordering/terminal
+  metrics；无法独立证明它是否早于 watchdog 或是否收到 `turn/completed`。实现当前先检查
+  `resource.failure_evidence`，再读取 submitted report，并且只有 `report != None` 且
+  `resource.terminal_event=True` 才返回 (`codex.py:1519-1554`)；因此 report 在 completed 前到达时不会
+  被错误地当成 PASS，timeout 也不会被 report 覆盖，属于 fail-closed。
+- `ExaminerRunMetrics.record_terminal_report` 仍只在真实 terminal event 后冻结 `terminal_wall_ms`
+  (`acceptance_runtime.py:500-509`)；本轮没有证据表明 terminal wall 被 callback 提前冻结。
+
+### P1 failure observability finding
+
+- **P1：底层 sanitized reason 没有被 outer operation/CLI 结构化保留。** `run_lean_examiner_child`
+  确实构造 `ExaminerRuntimeBlocked`，其 `as_dict()` 含 `failure_category=runtime` 与
+  `reason_code=child-timeout`；但 `R23006AcceptanceOperation.run` (`r23006_acceptance_operation.py:518-521`)
+  将非 `R23006OperationError` 包装成固定字符串 `retained acceptance operation failed`。真实 CLI
+  exit 1/trace 未展示 reason_code，output 目录也没有 failure evidence file。独立 deterministic
+  repro 的 outer error 为 `R23006OperationError("retained acceptance operation failed")`，cause
+  仅显示 `BLOCKED/runtime-infrastructure`；只有直接访问 cause.as_dict() 才能看到 `child-timeout`。
+- 这不是 P0：安全边界、typed fail-closed、撤钥、child cleanup 和 model/ledger invariants 均保持；但
+  是 P1，因为运维/验收无法从一次失败直接区分 child timeout、child crash、output-close 或 provider
+  failure，也无法保留可审计的 sanitized terminal failure reason。下一次真实 operation 前应由
+  developer 仅修复 failure reason 的结构化传播（不放宽 retry/budget/semantic gate），并增加 CLI/失败
+  evidence 的 deterministic assertion。
+
+### 90s timeout 与单波 prompt 风险判断
+
+- 本次 Platform 首轮单波行为满足 Round9 prompt contract：没有证据表明它串行追 cursor、重复读取或
+  消费第四个 inference。故未发现新的 prompt-contract P0。
+- 但是 child 在 90s watchdog hard ceiling 到达时仍未完成 terminal completion，触及“通常 <=60s、不得 >90s”
+  的性能门，因此真实运行仍是 `BLOCKED`（不能把恰到 hard ceiling 的 timeout 当作性能 PASS）。现有 retained output 没有 first/total/cached/task/evidence token、
+  per-call proxy time、tool-call count 或 turn event ordering；不能证明是“单波 prompt 造成首轮过大”，
+  也不能排除 provider/tool forwarding latency。把 prompt marker PASS 当成性能 PASS 会是证据越界。
+  该缺口与上面的 P1 observability 共同阻止 real acceptance closure。
+
+### exactly-once cleanup、不变性与残留
+
+- 只读 DB：read key `b0b95c61-7441-49cc-9011-233e384f6cf8` created
+  `2026-08-12T13:59:49.803730Z`、revoked `14:01:48.062623Z`；bootstrap admin
+  `94739d10-2a66-4dbf-bb59-4fcbde7396c6` created `13:59:49.599834Z`、revoked
+  `14:01:49.025538Z`。operation-owned active project/admin keys 均为 `0`；read-key create/revoke
+  audit 各一条且 outcome=success。
+- service journal (local `21:59:49–22:01:48+08:00`) 计数：create POST `1`、revoke POST `1`、
+  post-revoke readback `1`、旧 read key project GET `401` `1`、`403` `0`。没有第二次 revoke。
+- live inventory 与 retained before 完全相等：ontology `1`、active session/lease/attempt/project key
+  `0/0/0/0`、modeling batches `22`；workspace `ready`、default graph
+  `277fd804-e485-5156-b7a7-ca6a1081f950`、version
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`；ledger SHA
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`、66 records unchanged。
+- `workspaces/modeling-acceptance/r23006-retained-n2-live-3` mode `0700`, empty, no evidence file。
+  Current process/socket scan finds no matching live-3/r23006 Examiner child residue; the only matching
+  `r23006-examiner-*` temp root predates this operation (18:30 local, before 21:59 operation window) and
+  is not attributed to live-3. Service remained active/running; backend health 200 `{"status":"ok"}` and
+  frontend returned HTML.
+
+### Deterministic commands/results and unexecuted scope
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation
+   modeling_team.tests.test_r23006_lean_runtime -v`：`31/31 PASS`。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation
+   modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`；仅
+   既有 ResourceWarning/RuntimeWarning 输出。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests
+   -p 'test*.py'`：`535 tests OK`, `1 skipped`。
+4. `backend/.venv/bin/ruff check modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/r23006_acceptance_operation.py modeling_team/agent-packages/platform-examiner/instructions.md
+   skills/platform-examiner/SKILL.md modeling_team/tests/test_r23006_lean_runtime.py`：PASS；compileall 与
+   `git diff --check`：PASS。
+5. Read-only deterministic failure repro confirmed direct cause preserves
+   `ExaminerRuntimeBlocked.as_dict()={blocked_reason:runtime-infrastructure, role:platform,
+   evidence:{failure_category:runtime,reason_code:child-timeout}}`, while outer operation message omits the
+   evidence. No product files were changed by this repro.
+
+本轮没有继续真实 operation、没有新 key/provider/child、没有 CQ-002/Acceptance execution、没有完整 six-role
+metrics 或 ordered PASS evidence。建议先修复 P1 failure reason propagation/retained failure evidence，再由主
+代理决定是否申请唯一下一次真实 operation；不要用本轮 cleanup PASS 或 deterministic PASS 宣称需求完成。
+
+## 15. 独立测试 Round 11（2026-08-12，failure-observability typed BLOCKED 修复复核，HEAD `6c1258a`）
+
+结论：`FAIL`。本轮确认 live-3 形态的 `runtime-infrastructure`/`runtime`/`child-timeout`
+失败可以在完整 cleanup、撤钥和不变性证明后安全落盘；secret、cleanup、snapshot、撤钥/停止异常和
+不完整 key lifecycle 均 fail-closed 且不生成误导 artifact，success evidence contract 未变。但发现一个
+新的 P1 typed-BLOCKED observability regression：runtime-budget 以及若干 runtime-metrics/acceptance-input
+的合法 typed evidence 字段被 operation 拒绝，导致没有 BLOCKED artifact，CLI 错误也丢失 role/reason/category/code。
+
+### live-3-shaped BLOCKED、secret 和 lifecycle 对抗证据
+
+- 只读 inline `FakeHost` repro 让 `run_examiner` 抛出：
+  `ExaminerRuntimeBlocked("runtime-infrastructure", role="platform", evidence={"failure_category":"runtime", "reason_code":"child-timeout"})`。
+  operation 外层错误精确为
+  `Examiner blocked: role=platform reason=runtime-infrastructure category=runtime code=child-timeout`，
+  不含 provider exception/plaintext。`r23006-retained-acceptance.json` mode 为 `0600`，输出目录只有
+  最终文件、没有临时文件；top-level 和 `result` 均为 `status=BLOCKED`，`result.complete=False`，
+  `role/platform`、`failure_category/runtime`、`reason_code/child-timeout` 全部存在；cleanup 六项均为
+  `True`，invariance `equal=True`，create/revoke 均为 `1` 且 host stopped。写入发生在
+  `r23006_acceptance_operation.py:568-617` 的 finally cleanup、snapshot、lifecycle gate 之后。
+- secret-bearing typed evidence（`read_key: sk_read_secret`）被 `_reject_secret_evidence` 拒绝；外层
+  错误不回显 secret，artifact 不存在，host 仍 create/revoke `1/1` 并停止。对应 focused test
+  `test_secret_failure_evidence_is_rejected_and_not_written` 通过。
+- cleanup children 不完整、snapshot drift、partial create/revoke exception、stop exception 和
+  incomplete key lifecycle 均未产生 `r23006-retained-acceptance.json`；cleanup/lifecycle 错误优先于
+  typed BLOCKED，避免写入可误解结果。`test_blocked_failure_does_not_write_artifact_when_cleanup_or_invariance_is_incomplete`、
+  `test_partial_key_create_side_effect_still_invokes_revoke_cleanup`、`test_snapshot_drift_fails_after_cleanup`
+  以及只读异常 host repro 均通过。
+- `test_success_writes_non_secret_evidence_after_cleanup` 通过：success 仍为原有 operation schema/result，
+  mode `0600`，cleanup/lifecycle/invariance gate 保持，未发现 secret 写入或成功契约回归。
+
+### P1：其他合法 typed BLOCKED evidence 被错误拒绝
+
+`r23006_acceptance_operation.py:473-504` 将 `_BLOCKED_EVIDENCE_FIELDS` 限定为只有
+`failure_category`、`reason_code`。然而 runtime 真实产生的 typed evidence 还包括：
+
+- `acceptance_runtime.py:476-478` 的 `runtime-budget`：`{"steps": 4}`；
+- `acceptance_runtime.py:437-447`、`:468` 的 runtime-metrics：`thread_id`、`turn_id`、`field`；
+- `acceptance_runtime.py:402`、`:284` 的 acceptance-input：`inherited_turns`、`host_packet_tokens`。
+
+只读 inline repro（`runtime-budget`, role `platform`, evidence `{"steps":4}`）实际结果：
+
+```text
+outer_type=R23006OperationError
+outer=typed Examiner blocked evidence fields are unsupported
+artifact=False
+lifecycle=1 1 True
+```
+
+同类 `runtime-metrics` (`field`/`thread_id`/`turn_id`) 和 `acceptance-input` (`inherited_turns`/
+`host_packet_tokens`) 也复现相同结果；只有空 evidence 的 `acceptance-evidence` 和 category/code
+形态能落盘。该行为违反 typed BLOCKED 的安全可观测性合同：失败已 cleanup，但既没有 BLOCKED retained
+artifact，也没有包含 `role/reason/category/code` 的安全外层摘要，且误报为 unsupported schema。判定为
+`P1`（不绕过安全边界、不产生 PASS 或 secret，但会隐藏真实 runtime-budget/metrics/input failure，阻止
+运维和独立验收定位失败层）。应由 developer 以不放宽 secret rejection 的方式投影/允许这些非敏感 typed
+字段，并为各 typed reason 增加 deterministic assertions；本轮不修改产品代码。
+
+### 实际命令和结果
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation modeling_team.tests.test_r23006_lean_runtime -v`：
+   `34/34 PASS`。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation
+   modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test*.py'`：
+   `538 tests OK`, `1 skipped`。
+4. `backend/.venv/bin/ruff check modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/tests/test_r23006_acceptance_operation.py modeling_team/tests/test_r23006_lean_runtime.py`：
+   `All checks passed`。
+5. `backend/.venv/bin/python -m compileall -q modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/tests/test_r23006_acceptance_operation.py modeling_team/tests/test_r23006_lean_runtime.py`：
+   PASS。
+6. `git diff --check`：PASS。
+
+本轮未创建/使用 key，未启动 provider/child，未重跑真实 N=2；因此没有新增真实 semantic acceptance、
+ordered PASS 或六-role metrics 证据。应先修复并复测上述 P1，再考虑唯一真实 operation。
+
+## 16. 独立测试 Round 12（2026-08-12，typed BLOCKED evidence projection follow-up，HEAD `6c1258a`）
+
+结论：`PASS`（仅 deterministic failure-observability scope；不等同于真实 N=2 semantic acceptance）。
+本轮复测 Round11 P1 修复：所有当前生产 `ExaminerRuntimeBlocked` evidence key 均有严格、无 secret 的投影；
+live-3-shaped child-timeout、runtime-budget、cleanup/lifecycle/invariance gate、secret rejection 和 success
+contract 均通过。未创建/使用 key，未启动 provider/child，未执行真实 N=2。
+
+### typed projection matrix 与生产覆盖
+
+对 `modeling_team/acceptance_runtime.py`、`modeling_team/runtimes/codex.py` 中全部生产构造点做 AST/`rg`
+交叉核对，得到 10 个 distinct evidence keys：
+
+| key | 生产来源 | projection |
+| --- | --- | --- |
+| `field`, `thread_id`, `turn_id` | runtime metrics | safe code string |
+| `steps`, `host_packet_tokens`, `inherited_turns` | budget/input gates | non-bool non-negative integer |
+| `packet` | packet validator | only three exact labels, normalized to `source-examiner-packet`, `platform-examiner-packet`, `acceptance-examiner-packet` |
+| `path` | source evidence locator | safe relative code/path; absolute and `..` rejected |
+| `read_key`, `forwarder` | platform launch gate | bool only, renamed to `read_key_present`/`forwarder_callable` |
+
+`failure_category`/`reason_code` are additionally accepted as safe code strings. Matrix 14/14 valid cases all wrote
+BLOCKED evidence after gates; no provider text or credential bytes were retained.
+
+### 必须路径和对抗结果
+
+- `runtime-budget` with `evidence={"steps":4}` now writes mode `0600` atomic
+  `r23006-retained-acceptance.json`: top-level/result `BLOCKED`, `complete=False`, role `platform`, blocked reason
+  `runtime-budget`, category/code `None`/`unspecified` in outer message, projected `steps=4`; cleanup six fields
+  true, invariance equal true, create/revoke exactly `1/1`, stopped true.
+- live-3-shaped `failure_category=runtime, reason_code=child-timeout` still writes 0600 BLOCKED artifact and
+  outer safe `role/reason/category/code` message; success evidence remains mode 0600 and unchanged schema.
+- Unknown key, unknown packet label (`other-packet`), provider/free-text strings, secret-bearing values, absolute
+  paths (`/etc/passwd`), parent traversal (`../secret`, `docs/../secret`), bool/negative/float/string integer,
+  non-bool launch flags, wrong scalar type and packet list all reject before write; every case had no retained
+  artifact. Secret rejection remains fail-closed and does not echo the supplied value.
+- Cleanup children false, snapshot drift, revoke exception, stop exception and incomplete key lifecycle all remain
+  no-artifact gates. Deterministic repros showed revoke/stop attempted once and cleanup completed/failed visibly;
+  no misleading BLOCKED file was produced.
+
+### 命令与计数
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_r23006_acceptance_operation modeling_team.tests.test_r23006_lean_runtime -v`：`36/36 PASS`。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest
+   modeling_team.tests.test_platform_scope modeling_team.tests.test_codex_isolation
+   modeling_team.tests.test_examiner_stdout_pump modeling_team.tests.test_transport -q`：`86/86 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test*.py'`：
+   `540 tests OK`, `1 skipped`。
+4. `backend/.venv/bin/ruff check modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/tests/test_r23006_acceptance_operation.py modeling_team/tests/test_r23006_lean_runtime.py`：
+   `All checks passed`。
+5. `backend/.venv/bin/python -m compileall -q modeling_team/r23006_acceptance_operation.py
+   modeling_team/acceptance_runtime.py modeling_team/runtimes/codex.py
+   modeling_team/tests/test_r23006_acceptance_operation.py modeling_team/tests/test_r23006_lean_runtime.py`：PASS。
+6. `git diff --check`：PASS。
+
+本轮 PASS 只证明 typed failure projection、artifact safety 和 deterministic lifecycle gates；真实 provider
+并行 wave、完整六角色 metrics、ordered N=2 PASS、semantic acceptance 与 live retained operation 仍未执行，
+不能据此关闭 R2.3-006 real acceptance。
