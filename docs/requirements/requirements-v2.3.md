@@ -69,6 +69,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
+| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `Development-ready（plan review Round2 PASS，待授权实施）` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -79,6 +80,7 @@ R2.3-001 Runner、Package、Codex Adapter
   -> R2.3-002 从新作用域完成一轮真实业务切片
   -> R2.3-005 Modeling Team Runner 正式化收口与可重复调用
   -> R2.3-003 用全新团队继续 005 Start75 的已有非空 Project/Ontology
+  -> R2.3-006 精简并隔离 Source/Platform/Acceptance Examiner 上下文与查询通道
   -> R2.3-004 整体切换到 Pi Team Adapter
 ```
 
@@ -2057,10 +2059,96 @@ CQ-001/CQ-002 均为 `PASS,current=true,usable=true`。独立 Round43 重放 tic
 read audit、单一 Project read key create/revoke、撤销后旧 key HTTP 401、DB revoke、model/ledger 不变量、
 cleanup 与 service health 后全部 PASS。该 operational continuation 未消费 semantic start，未修改本体。
 
+R2.3-003 非目标继续包括：
+
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
 - 长期 Project 生命周期管理或管理 UI。
+
+## R2.3-006 精简隔离 Examiner Runtime
+
+当前状态：`Development-ready（plan review Round2 PASS，待授权实施）`
+
+### 背景与问题
+
+R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两道 CQ，但实际 Examiner 运行暴露了
+编排和上下文边界问题，而不是主要的平台查询性能问题：
+
+- Platform Examiner 单次模型调用输入约 26k–33k tokens，其中绝大多数是可缓存的系统、项目、memory、
+  skills、插件和协作说明；每题又经历 13–17 次模型调用，累计 token 被重复计算；
+- 两个 `get_ontology_read_model` HTTP 请求各在约 1 秒内完成，说明接近两分钟的 Examiner 墙钟时间主要来自
+  大上下文、多轮澄清、协作消息和 Host 人工转发；
+- Platform Examiner 启动时缺少完整 CQ、P/O/G、请求 envelope 或 digest 规则时，会向主 Agent/Acceptance
+  追问；Platform 与其他 Examiner 的协作通道也未机械关闭。这削弱了 fresh Examiner 的独立性；
+- Source/Platform Examiner 继承了大量与单题语义判断无关的工程历史。约 25k cached prefix 不是 25k 份不同
+  数据，但仍说明 role runtime 没有按最小任务包隔离。
+
+### 目标行为
+
+1. 每个 Source Examiner 和 Platform Examiner 都是 fresh、无主线程对话继承的独立运行实例。Host 注入的
+   role task packet 必须显式且完整；平台强制的 system/safety 指令可以保留，但主会话历史、memory summary、
+   插件目录、无关 skills、开发/提交规则和其他 CQ 记录不得成为 role task context。
+2. Source Examiner 只获得当前 CQ、该题 approved source bytes/path+digest、source-report schema 和最小角色
+   约束；不得读取平台结果、其他 CQ、历史答案或 tester verdict。
+3. Platform Examiner 只获得当前 CQ、冻结 P/O/G/workspace/model-state digest、operation-local read proxy
+   capability、exact request schema 和 platform-report schema。它直接调用 proxy；proxy 返回 structured
+   response、canonical request digest 和 response digest。Examiner 永远不获得 plaintext key。
+4. Platform Examiner 不得向主 Agent、Acceptance、Source Examiner 或其他 Agent询问 CQ 语义、scope、schema
+   或查询结果。Source Examiner 同样不得联系 Platform Examiner。必要输入缺失或不合法时立即返回 typed
+   `BLOCKED/acceptance-input`；平台读取失败返回 `BLOCKED/platform`，source 不可读返回
+   `BLOCKED/source-missing`。
+5. 每题启动一个 fresh Acceptance Agent，只获得 ticket/standard、当前题两份 typed reports 及其 digests、
+   question ordinal/count 和 verdict schema；不得读取批准 source bytes、平台 raw response、主线程历史、前题
+   report 或已有结论。Host 在前一题 typed PASS 后机械启动下一题并聚合 ordered verdicts；Acceptance 不积累
+   persistent thread，不补问或修复 Examiner 输出。
+6. Host/Delivery 只承担确定性机械：构造最小 task packet、关闭横向协作路由、提供 strict proxy、收集 typed
+   output、校验 digest/order、撤销 key 和清理。Host 不解释 CQ、不人工转述查询结果、不替 Agent 生成报告。
+
+### 当前最小范围
+
+- 先只覆盖 formal semantic Acceptance 的 Source/Platform/Acceptance 三类 Agent；不重构 Modeling、Protocol、
+  Coordinator 或通用 Codex 会话。
+- 优先复用 R2.3-003 operation-local strict read proxy、typed report/verdict 和 positive-N 机制；不增加 backend
+  API、领域专属 read model 或通用 Agent 编排框架。
+- 不使用本次对话的 collaboration subagent 作为正式 Examiner；使用 Runner-owned、fresh thread/process 的受限
+  role runtime。每个 child 的工具面只含其 role-private source/report 或 platform-proxy/report capability。
+- `fork_turns=none` 只是候选机制，不单独作为验收证据。实现必须以实际首轮上下文清单/turn 记录证明没有
+  主线程历史继承，并分别记录不可移除 platform prefix、role packet、source/read-response token 数。
+- proxy 必须为每个允许 tool 固定 exact JSON argument schema；在进入 `McpReadForwarder`/backend 前拒绝未知、
+  缢余、缺失或错误类型字段，禁止 schema-property filtering 后继续调用。拒绝证据必须显示 backend_calls=0。
+- 每个 Examiner 正常路径最多 3 个可观测 inference steps；缺输入不得通过协作追问增加轮次。role packet（不含批准 source
+  bytes、平台 response 和不可移除 system/safety prefix）目标不超过 4k tokens。
+- 本地 accepted baseline 的性能目标是单个 Examiner 通常不超过 60 秒、不得超过 90 秒；外部 provider 故障或
+  限流必须单独分类，不可用放宽语义/隔离边界来换取速度。确定性完成门以无历史继承、无横向询问、最多
+  3 turns 和直接 proxy 调用为主，墙钟时间作为必须报告的性能门。
+- 先修上下文与编排。只有在精简后 Platform Examiner 仍因事实缺失或关联表达不清无法在 3 turns 内完成时，
+  才评估通用 `query_semantic_context`/关联事实投影；不得为某个 CQ 添加业务专属 API 或返回字段。
+
+### 验收
+
+- 使用 R2.3-003 retained final workspace 的 CQ-001/CQ-002 做只读验证，不创建 semantic start，不修改 ontology
+  或 ledger；需要新的 operation authorization，但不消耗 003 已关闭的剩余授权。
+- 对每题证明 Source/Platform fresh、上下文输入清单符合角色边界、横向协作请求在发送前被拒、缺字段得到
+  typed BLOCKED、Platform 直接通过 proxy 获得 structured response+digests、Acceptance 只基于 typed reports
+  裁决。
+- 正常 N=2 必须产生 ordered `PASS,current=true,usable=true`，并通过 N=1/3/5 的机械顺序测试；旧 R2.3-003
+  结论只能作为预期回归事实，不能注入 Examiner task packet。
+- 记录每个 Agent 的 first-call/total/cached/task/evidence tokens、模型调用次数、time-to-first-token、总墙钟时间、
+  proxy HTTP 时间和协作拒绝证据，以区分模型、编排和接口耗时。
+- Runner-owned operation metrics 必须记录：fresh thread identity、Host 发出的 canonical `first_turn_input` 清单/
+  digest、`turn/start` 数量、每次累计 token-usage 增量（或 provider 等价精确事件）、TTFT 和 terminal time。
+  未收到完整 metrics 时不得宣称本需求性能 PASS；第 4 个 inference step 到达前必须中断并返回
+  `BLOCKED/runtime-budget`。实现前先以真实 Codex App Server 小探针确认 token-usage 事件名与粒度。
+- key create/revoke exactly once、post-revoke 401/403、零 plaintext/process/socket residue、model/ledger 前后不变，
+  且 R2.3-005/default Agent 路径无行为变化。
+
+### 非目标
+
+- 不把项目 AGENTS、安全规则或系统指令全局删减；只控制 Examiner role task context。
+- 不追求跨机器调度、多租户策略、通用 Agent 沙箱、长期审计服务或新的管理 UI。
+- 不因性能目标减少 source fidelity、model-state binding、fresh Examiner、typed report 或独立 Acceptance。
+- 不重新执行 R2.3-003 语义建模，不恢复已删除 unknown，不使用其未消费授权启动新需求。
 
 ## R2.3-004 Pi Team Adapter
 
