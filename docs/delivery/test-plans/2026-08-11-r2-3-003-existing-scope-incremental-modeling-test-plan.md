@@ -2134,3 +2134,336 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`), with current batch/session counts `22/5`
   and active session/lease/attempt counts `0/0/0`. `git diff --check` passed. No run, ledger, evidence, residue, or
   product state was changed by this recheck.
+
+## 8. Acceptance-only continuation 验证增补
+
+本节验证用户批准的 `r23003-acceptance-only-start20-1`，不启动 start21，不消费 StartLedger，不重复本体写入。
+它复用 R2.3-002 Round 77/78 operational acceptance，仅为 start20 retained final state 补齐 formal Acceptance。
+
+### A1 — frozen ticket 与 preflight
+
+- ticket 必须精确绑定 start20 run、candidate revision `"2"`、candidate digest
+  `a5e1c2752b24a321e8aa8aa5e12664cf0dfdf0935c42c2ef4960785b0336b8cc`、P/O/G/workspace
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`、acceptance standard digest、source
+  manifest digest 和 evidence root；
+- live read 必须确认 P/O owner、Graph Set、ready workspace、active Session/Lease/in-flight attempt=`0/0/0`，并与
+  ticket 完全相同；source manifest 的七个文件逐一重算 digest；
+- 任一 identity/state/source/candidate binding 漂移必须在 read key/Agent 启动前 `BLOCKED/state-invalidated`；
+- 启动前后 canonical R2.3-003 ledger bytes、record count、cap/count/active 必须完全不变，不得出现 reservation、
+  semantic_start 或 terminal event。
+- ticket 必须为 operation-local `r2-3-003-acceptance-only-ticket/v1`，不得调用 Producer publish/handoff/五阶段
+  receipt validator；错误复用、缺 candidate digest、伪造 handoff/receipt 必须拒绝。
+
+### A2 — positive-N 与角色隔离
+
+- ticket 从 standard 原样投影 ordered positive-N question list；当前应为两个问题，但 generic deterministic
+  fixture 还要证明 N=1/3/5 的顺序、previous/next/final 与 settlement，禁止按 CQ ID 或固定两题分支；
+- 整轮只存在一个 fresh persistent Acceptance Agent；每题 fresh Source Examiner 和 fresh Platform Examiner，
+  下一题不得复用前题 Examiner；
+- Source 输入只含当前 question/ticket binding/approved source paths+bytes；Platform 输入只含当前 question、
+  model binding、operation-local proxy capability 和 exact request allowlist，绝不包含明文 read key；Acceptance
+  输入只含 standard/ticket 与两份 typed
+  reports。禁止向任一角色泄漏已有 Round37 答案、tester verdict、对方原始材料或 Producer transcript；
+- CQ i 只有在 CQ i-1 verdict=`PASS,current=true,usable=true`、两个 Examiner terminal+cleanup、model-state digest
+  未变时才可启动；FAIL/BLOCKED 立即停止。
+
+### A3 — read-only 平台证据与验收产物
+
+- Delivery 全 continuation exactly once 创建一个 host-owned Project-scoped `scopes=["read"]` key；fresh Platform
+  child 只拿 operation proxy capability、不拿明文 key。每个请求先记录实际 pre-send method/path/body digest，
+  allowlist item 精确绑定 `tool,method,path_template,body_schema/body_digest,P/O/G`，只允许冻结 P/O/G 的
+  context/read-model/SPARQL/validation-run/reasoning-run/evidence/lineage read；未知字段不得静默丢弃。任何 stateful、
+  allowlist 外、跨 Ontology 请求使本轮 `BLOCKED/runtime|platform`；
+- negative tests 必须证明 proxy 在 backend callback 前拒绝 unknown tool/path/field、错误 P/O/G/body 和 stateful
+  请求（backend call count 保持 0），Platform child 输入/env/home/evidence 中均不存在 plaintext key；
+- 每题保存 Source/Platform typed report、输入/输出 digest、raw platform response 和完整分页链；Acceptance 保存
+  typed verdict，绑定 ticket/model/source/two-report digests，并明确
+  verdict/current/usable/failure_layer/blocked_reason；
+- 独立 tester 不采信 Agent 自述：必须重放 request audit、验证 evidence refs/digests、按批准 source 与冻结图
+  抽查每题关键断言，并验证最终恰好 N 份标准顺序的 current/usable PASS；
+- Acceptance result 若 PASS，只能关闭 retained start20 formal Acceptance gate；start20 historical in-run handoff
+  仍保留 FAIL 事实。
+
+### A4 — cleanup、state invariance 与 settlement
+
+- 全部 CQ 及所有 child 结束后 exactly once 撤销该唯一临时 key，status readback 为 revoked/non-active，旧 key
+  请求为 401/403；key create/revoke count 必须均为 1；无 Agent
+  process/socket/token/config/private secret residue；
+- after inventory 与 before 对 P/O/G/workspace、batch/session counts、active lease/attempt、asserted graph digest
+  完全一致；不得出现 Build Session/Lease/Batch、validation/reasoning mutation 或其他 stateful request；
+- `output/acceptance-result.json` 只有在 A1–A4 全部成立时 settlement=`PASS`；否则保留 typed FAIL/BLOCKED 和责任层，
+  不启动建模修复、不消费最后一个 semantic start。
+
+### Round 38 — 2026-08-12 Acceptance-only preparation-gate audit — FAIL / live continuation BLOCKED
+
+- **范围与安全。** 本轮复用本文 §8 的唯一 operation-local 测试方案，只验证
+  `workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/` 的确定性准备门、冻结资产、只读 live
+  preflight、ledger/service 不变量和资源边界。未创建真实 key，未启动 Acceptance/Examiner/Producer Agent，未
+  发起平台读请求，未调用 StartLedger API，未创建 Session/Lease/Batch，未执行 validation/reasoning 或本体
+  写入；本轮唯一写入是本测试计划追加。
+- **Operation tests。**
+  `uv run --project backend python -m pytest
+  workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/runtime/test_operation.py -q`
+  -> **9 passed**。覆盖 ticket digest/identity、N=1/3/5 ordinal-driven projection、ticket/verdict typed
+  report digest、strict proxy unknown field/backend=0、capability 无明文 key、以及 exactly-one key
+  create/revoke/plaintext cleanup。独立 negative matrix 也 **PASS**：no-key constructor、unknown tool、wrong
+  method/path、wrong P/O/G、unknown body field、stateful path、post-revoke 请求全部在 callback 前拒绝，
+  backend calls 保持 0。
+- **Defect D1 — High，operation/platform-contract：冻结 ticket 被自身 validator 错误拒绝。**
+  复现：从 `runtime/acceptance-ticket.json` 读取 ticket，调用
+  `operation.validate_ticket(ticket)`；期望完整冻结 ticket 通过，实际在
+  `runtime/operation.py:118` 抛出 `ContractError: evidence root binding drifted`。ticket 的
+  `evidence_root.path` 是仓库相对路径
+  `workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/evidence`，而 validator 强制比较
+  绝对路径 `str(OPERATION_ROOT / "evidence")`。因此 A1 ticket gate 不能通过。
+- **Defect D2 — High，operation/platform-contract：allowlist 模板路径不能转发合法动态 read。**
+  复现：通过 `StrictReadProxy` 使用冻结 P/O/G 和 callback，发送合法的
+  `get_ontology_read_model` (`.../semantic-read-models/entities`)、
+  `list_semantic_validation_runs` (`offset=0`) 和 `list_semantic_reasoning_runs` (`offset=0`) 请求；期望按
+  `path_template` 占位符展开后通过 pre-send，实际 `runtime/operation.py:306` 只做字面
+  `path == path_template`，三个请求均在 backend 前报 `method/path is outside frozen allowlist`。这会阻断
+  A3 要求的平台 read-model/validation/reasoning evidence。
+- **Defect D3 — Medium，operation/platform-contract：model_name 值未按 allowlist 枚举 fail closed。**
+  复现：以字面模板路径
+  `/api/ontologies/<O>/semantic-read-models/{model_name}`、合法 P/O/G scope 和
+  `{"ontology_id": O, "model_name": "admin"}` 调用 proxy；期望未知 model name 在 callback 前拒绝且
+  backend=0，实际请求被接受并转发（backend calls=1）。代码仅检查 body key 子集，未验证
+  `classes|entities|facts|rules` 值。
+- **冻结 hash / source：PASS。** 独立重算结果：standard
+  `d56febc762f60adfc3cfb039fa16e0b3a84775965a52071d3cb04f62a2984b5e`；source manifest
+  `32ffa9e0d9f477eea0630b7983c93adf75eacdec3c5266114f4822ed966455cd`；before inventory
+  `9ddeae4b0315719d95d3f6330dcbf1e157feaae3c7d7b0ea615bbf0eb31fda77`；ticket canonical digest
+  `cd672caf8494147adeefac2178aab8123f3bf86a8edd86751c840e011167ea84`；ledger
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`。Manifest 的 7 个 source 文件均为
+  regular non-symlink 且逐一匹配：`tools.mdx`
+  `92a97c639fb8d4782e95207cb84ede79b1739ff3abdb9bc1fe384f0741c2c96`、`exception-handling.md`
+  `cc0c69ef7428bd63ed7432ee0a9cae6d9acbca8cb267528a23fbaf0602638d9f`、`interface-notes.md`
+  `9cc479c365404cf8230aeb87e609ce164fb2680a87a5c16f45476d8260870e37`、`release-register.md`
+  `f5386a00a2a048831ce524ef605aed14c1124a6ac74fb8dc99c5b0a0f777caae`、`workflow-landscape.md`
+  `9dde79c61d9849776c9140aa5c3be02c17aea7800efa56135fb8dfaa0be7011e`、`manual-review-publication-case.md`
+  `9fbf5de6822472ba2feb5dc973e191071ba93f4cd3cca3b01cc2065b101a6de2`、
+  `scoring-and-publication-policy.md`
+  `e58b71aff80fd30d5608e4b6e8a28c6a81c091719cf227b6d0637dc7cbaae1ca`。
+- **Ledger 不变量：PASS。** 只读 `StartLedger._validate_strict_replay` 通过；文件 17,966 bytes、66
+  non-empty records，`cap/count/active=20/19/0`，无 active reservation，尾部为 start20
+  `terminal_failure/platform-contract`。启动前后未产生任何 ledger byte/record/reservation/semantic-start
+  变化。
+- **Live preflight：PASS（只读 DB）。** SQLAlchemy read-only snapshot 确认 Project
+  `7fc146d8-c76f-417b-9314-854544f269fc`、Ontology
+  `fd762f52-2f5e-4bc0-902a-5583135ab64d` 且 owner/project 一致；默认 Graph Set
+  `277fd804-e485-5156-b7a7-ca6a1081f950` 为 ontology-scoped/active/default；workspace `ready` 且计算版本
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0` 与 ticket 完全一致；active
+  Session/Lease/in-flight Attempt=`0/0/0`，历史批次/Session 总数=`22/5`，故 existing scope preflight
+  通过。
+- **Service/package boundary：PASS。** `ontology-platform.service` active；
+  `curl --fail http://127.0.0.1:8001/api/health` 返回 `200 {"status":"ok"}`，frontend
+  `http://127.0.0.1:5173/` 返回 HTTP `200`。对 operation package 的只读 grep 未发现 Producer
+  validator、`publish_ticket`、`build_acceptance_verdict`、handoff/receipt 调用或平台产品实现；package
+  位于 gitignored `workspaces/`，`git diff --name-only` 仅有 root 已有 docs edits，无 product/operation
+  文件改动。
+- **未执行/阻塞。** 因 D1–D3，未创建 continuation ticket evidence、read key、Platform Examiner read
+  request、Source/Platform typed reports、Acceptance verdict、cleanup 或 settlement；A3/A4 不能标记 PASS。
+- **结论：FAIL（准备门）；live continuation BLOCKED。** D1–D3 均为 operation/platform-contract 缺陷，
+  不属于 modeling-quality；建议 Main 让 requirement developer 修复相对 evidence-root binding、模板路径
+  展开/严格枚举校验后，在同一测试计划追加下一轮，优先复测 `validate_ticket`、动态 allowlist 与 backend=0
+  negative matrix，再决定是否允许真实 Acceptance-only continuation。不得以本轮 frozen-hash/live-preflight
+  PASS 推断 Acceptance settlement PASS。
+
+### Round 39 — 2026-08-12 post-D1-D3 repair preparation-gate recheck — PASS / live continuation intentionally unexecuted
+
+- **范围与安全。** 本轮复用 Round 38 的失败用例和同一 operation package；只验证修复后的 ticket validator、
+  dynamic read allowlist、严格 negative boundary、冻结资产、ledger/live preflight 和 service/package 边界。
+  未创建 key，未启动 Acceptance/Examiner/Producer Agent，未发起平台读请求，未调用 StartLedger API，未创建
+  Session/Lease/Batch，未执行 validation/reasoning 或本体写入；本轮唯一写入是本文追加。
+- **D1 FIXED — ticket validator。**
+  `operation.validate_ticket(json.loads(runtime/acceptance-ticket.json))` 现在 **PASS**；
+  `evidence_root.path` 以 ticket 约定的仓库相对路径校验，`initial_file_count=2` 保持一致，ticket canonical
+  digest 未变化。
+- **D2 FIXED — dynamic path resolution。** 自定义 callback 矩阵中，合法
+  `get_ontology_read_model(.../semantic-read-models/entities)`、
+  `list_semantic_validation_runs(...offset=0)`、
+  `list_semantic_reasoning_runs(...offset=0)` 及 entity-statement context 均成功 pre-send，累计
+  `backend_calls=4`；不再被模板字面比较错误阻断。
+- **D3 FIXED — strict enum/body/offset rejection。** `model_name=admin`、未知 body 字段、offset `01`、
+  offset `-1` 和 GET body 均在 callback 前抛出 `ContractError`，backend call count 无增加；post-revoke
+  请求仍拒绝且 backend delta=0。no-key constructor、unknown tool、wrong method/path、wrong P/O/G scope、
+  unknown body 和 stateful path negative 全部保持 backend=0。
+- **Focused operation tests：PASS。**
+  `uv run --project backend python -m pytest
+  workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/runtime/test_operation.py -q`
+  -> **10 passed**。独立脚本另外确认 N=1/3/5 ordinal projection、ticket validator、dynamic positive/negative
+  path、single create/revoke/plaintext cleanup 均 PASS。
+- **冻结 hash / source：PASS（与 Round 38 完全稳定）。** standard
+  `d56febc762f60adfc3cfb039fa16e0b3a84775965a52071d3cb04f62a2984b5e`；source manifest
+  `32ffa9e0d9f477eea0630b7983c93adf75eacdec3c5266114f4822ed966455cd`；before inventory
+  `9ddeae4b0315719d95d3f6330dcbf1e157feaae3c7d7b0ea615bbf0eb31fda77`；ticket canonical
+  `cd672caf8494147adeefac2178aab8123f3bf86a8edd86751c840e011167ea84`；ledger
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`。Manifest 七个 source 文件均再次
+  regular/non-symlink 且逐一匹配 Round 38 所列 SHA-256；无 source drift。
+- **Ledger 不变量：PASS。** 只读 strict replay 通过；ledger 仍为 17,966 bytes、66 non-empty records，
+  `cap/count/active=20/19/0`，无 active reservation；启动前后 digest/bytes/record/reservation/
+  semantic-start 均不变。
+- **Live preflight：PASS（只读 DB）。** Project/Ontology/owner、default Graph Set
+  `277fd804-e485-5156-b7a7-ca6a1081f950`、`ready` workspace 和版本
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0` 与 ticket 完全一致；active
+  Session/Lease/in-flight Attempt=`0/0/0`，历史批次/Session=`22/5`。
+- **Service/package boundary：PASS。** `ontology-platform.service` active；backend/frontend health
+  HTTP=`200/200`。operation package 只读 grep 未发现 Producer validator、publish/handoff/receipt 调用；
+  `git diff --name-only` 仍只有 root 已有 docs edits，无 product/operation 实现改动；`git diff --check` PASS。
+- **结论：PASS（Acceptance-only preparation gate，D1–D3 FIXED）。** 本轮没有执行真实 A3/A4 continuation，
+  因此 typed reports/verdict、实际 read-key revoke、after inventory 和 settlement 仍为 **UNEXECUTED**，不能
+  把本轮 PASS 解释为 formal Acceptance settlement PASS。主 agent 可在保持 ticket/hash/ledger/live preflight
+  不变的前提下决定后续真实 continuation；本轮不需要 requirement-developer 再修复。
+
+### Round 40 — 2026-08-12 independent Acceptance-only evidence audit — BLOCKED / settlement not proven
+
+- **范围与安全。** 本轮只读审计已保留的 Acceptance-only evidence/output、operation package、数据库 key 状态、
+  retained start20 cleanup/state、ledger 与 service；未重放任何平台请求，未创建 key，未启动 Agent，未修改
+  retained evidence/ledger/ontology/workspace。唯一写入是本文追加。
+- **CQ verdicts and bindings：PASS。** `output/cq-001-verdict.json` 与 `output/cq-002-verdict.json` 均通过
+  `validate_verdict`，`verdict=PASS,current=true,usable=true`，同一 ticket digest
+  `cd672caf8494147adeefac2178aab8123f3bf86a8edd86751c840e011167ea84`、model-state digest
+  `a59e3e5f4d240c18c0a09cfee85da6d6a720a674a88e308fbe3d2e5c3dcc0ee6`、source manifest digest
+  `32ffa9e0d9f477eea0630b7983c93adf75eacdec3c5266114f4822ed966455cd`。问题顺序为 ordinal 1/2、
+  `cq-001 -> cq-002`、final 仅为 cq-002；两题 report digests 与实际 source/platform report canonical digests
+  逐一相等。Source reports 只引用各题 approved source paths；Platform reports 未包含 source 文本，且其
+  model state 均绑定 P/O/G/workspace `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`。
+  独立抽查确认 CQ-001 的 release/field continuity 与 CQ-002 的 `CLASSIFIER_UNAVAILABLE -> manual review
+  required -> held for review/no published result` 链及后续未知均与批准 source 一致。
+- **Read-only request audit：PASS。** `evidence/request-audit.json` 记录 3 个 unique read requests、5 次
+  calls（entities×2、facts×2、modeling-context×1），所有 `pre_send=true`，`stateful_request_count=0`、
+  `allowlist_rejection_count=0`、`cross_scope_request_count=0`。Platform report 中的 request/response digests
+  均可回指该 audit；未发现 plaintext key、Authorization/Bearer 或 Producer/handoff 调用。
+- **Key lifecycle：部分 PASS，完成门 BLOCKER。** `evidence/read-key-lifecycle.json` 证明唯一 Project read key
+  create/revoke 为 `1/1`，HTTP `201/200`，admin readback `200` 且 `readback_revoked=true`，children 未获明文
+  key，proxy request `5`/unique `3`。数据库只读查询确认 read key
+  `d27cc8f3-802c-4614-bee4-cd8e48f26345` 与 operation admin key 均 `revoked_at != null`，当前 active project
+  keys=`0`。
+- **Defect D4 — High，A4 cleanup/security evidence：旧 key 401/403 denial 未被实际证明。** 需求/测试 §8 要求
+  revoke 后用旧 plaintext 发请求并保留 HTTP `401/403` 证据；但 `runtime/live_host.py:102-112` revoke 分支只
+  调用 revoke 与 admin readback，然后 `proxy.revoke_once()` 清除 plaintext，输出中没有 post-revoke request/status。
+  文件注释声称 denial “proven by platform receipt/readback”，但 `readback_revoked=true` 不是旧 key 请求的
+  401/403 证明。明文已销毁后无法补做同一 continuation 的 denial proof。该缺口直接阻止 A4 cleanup PASS。
+- **State/ledger/service/residue：PASS（不抵消 D4）。** 当前 DB P/O/G/ready/workspace、ontology count、active
+  session/lease/attempt、batch count `22` 与 acceptance before inventory 完全相等；ledger 仍 17,966 bytes、66
+  records、SHA-256 `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`，strict replay
+  `cap/count/active=20/19/0`。retained run/state 显示 `active_handles=0`, `zero_child_residue=true`；scoped
+  process/socket/private-artifact audit 未发现运行进程、Unix socket 或 key/token/config residue。service active，
+  backend/frontend health `200/200`。Acceptance before inventory 的 `modeling_batch_count=22` 与当前 DB 一致；
+  retained start20 的 broader producer before/after mutation snapshot（`20/4 -> 22/5`）属于历史 semantic
+  run，不能被误读为本 continuation mutation。
+- **Settlement artifacts：未形成。** `output/acceptance-result.json`、`evidence/after-inventory.json` 和
+  `evidence/cleanup.json` 均不存在；两个 typed CQ verdict 不能替代 A4 settlement envelope。
+- **结论：BLOCKED。** CQ 语义、报告绑定、只读请求边界、撤钥数据库状态、ledger/state invariance、清理残留和
+  健康检查均 PASS；但 D4 是直接违反 A4 的 High 缺陷，无法诚实宣布 formal Acceptance-only settlement PASS。
+  建议 requirement developer/operation owner 修复 live host：在 revoke 后、销毁 plaintext 前使用旧 key 进行
+  一次冻结 read request，记录 `401/403` status/request digest，再清除 secret；随后在同一测试计划追加复测。
+  不应创建新 semantic start、重做本体写入或改写本轮 retained verdict。
+
+### Round 41 — 2026-08-12 retry `start20-2` independent audit — BLOCKED / fresh typed evidence not settled
+
+- **范围与安全。** 本轮只读审计 retry `r23003-acceptance-only-start20-2` 的 result/cleanup/after-inventory、数据库
+  key 状态、operation package、ledger、live service 与残留；未创建 key、未启动 Agent、未发起平台请求、未调用
+  StartLedger、未写入本体/Session/Lease/Batch。唯一写入是本文追加。
+- **Operation and retry result：PASS (operational envelope).**
+  `uv run --project backend python -m pytest
+  workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/runtime/test_operation.py -q`
+  -> **10 passed**。`output/acceptance-result.json` 的 continuation=`r23003-acceptance-only-start20-2`、retained
+  run=`r23003-real-20260812-deepseek-start20`、candidate revision/digest 与 workspace version 均为 frozen values；
+  `ordered_questions` 恰好 N=2 且顺序 `cq-001`, `cq-002`，两题 `verdict=PASS,current=true,usable=true`，
+  `semantic_start_consumed=false`，`request_audit.calls/unique/stateful=4/2/0`。Envelope 还记录唯一 retry read key
+  `2e1a1f34-be49-4008-8b6e-c3266c915178` 的 `create/revoke=1/1`、HTTP `201/200`、admin readback `200` revoked、
+  post-revoke old-key status `401`/denied=true，故此前 D4 的旧 key denial 动作已在 retry 的 reported run 中发生。
+- **Key DB and cleanup：PASS (read-only corroboration).** SQLAlchemy read-only query found retry read key
+  `2e1a1f34-be49-4008-8b6e-c3266c915178` (`r23003-acceptance-only-start20-2-read`, scope `read`) and temporary admin
+  key `88f1d629-28af-4788-96ea-c216f61e73ab` (`r23003-acceptance-only-start20-2-admin`, scope `admin`), both with
+  non-null `revoked_at` (`2026-08-12 03:52:12Z`). `evidence/cleanup.json` reports `temporary_read_key_revoked=true`,
+  `admin_key_revoked=true`, `post_revoke_status=401`, terminal children/host, zero Unix socket/plaintext residue, and
+  ledger/model unchanged. No current project active key remains.
+- **State, ledger, health and residue：PASS.** `evidence/after-inventory.json` retains exact P/O/G/workspace, ready state,
+  batch/session `22/5`, active Session/Lease/Attempt `0/0/0`, ledger SHA
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`, 66 records, semantic-start delta `0`,
+  stateful requests `0`, process/socket/plaintext counts `0/0/0`. Independent hash check found ledger bytes `17,966`,
+  SHA and 66 non-empty records unchanged. `ontology-platform.service` is active and backend/frontend health are HTTP
+  `200/200`. No product/operation files are changed (`git status` contains only the pre-existing root docs edits).
+- **Defect D5 — High, acceptance evidence-integrity/platform-contract: retry reports/verdicts are not persisted as a
+  fresh typed bundle.** The only `acceptance-result.json` is the retry envelope above, and it contains no Source/Platform
+  report digests or evidence paths. On disk, `evidence/cq-001/002-{source,platform}-report.json` and
+  `output/cq-001/002-verdict.json` remain bound to `r23003-acceptance-only-start20-1`; `evidence/read-key-lifecycle.json`
+  and `evidence/request-audit.json` also remain start20-1 with 5 calls/3 unique requests. There are no separate persisted
+  start20-2 Source/Platform typed reports, fresh verdicts, retry request audit, or retry lifecycle artifact. Collaboration
+  output summarized into the result is not a retained typed evidence reference that an independent tester can replay or
+  digest-bind under §8 A3. Consequently, the reported N=2 PASS and post-revoke 401 cannot be independently bound to fresh
+  retry reports; accepting the envelope's `settlement=PASS` would violate the explicit independent-evidence gate.
+- **结论：BLOCKED（formal Acceptance settlement not proven）。** Retry operation behavior, N=2 ordering, DB key revocation,
+  post-revoke denial report, cleanup, state/ledger invariance, service health and residue all pass. D5 nevertheless blocks
+  formal settlement: operation owner must retain fresh start20-2 typed Source/Platform reports and typed verdicts, each
+  bound by ticket/model/source/report digests, plus retry request-audit/read-key evidence (or one immutable equivalent
+  bundle), before another independent audit. Do not start a new semantic attempt, mutate ontology state, or overwrite the
+  historical start20-1 BLOCKED record.
+
+### Round 42 — 2026-08-12 retry typed-evidence recheck — FAIL / verdict ticket binding drift
+
+- **范围与安全。** 本轮只复核 D5 修复新增的 `retry-cq-001/002-{source,platform}-report.json` 与
+  `output/retry-cq-001/002-verdict.json`，以及已有 retry result/cleanup/read-key/401 evidence；未创建 key、未启动
+  Agent、未发起平台请求、未调用 StartLedger 或修改本体。唯一写入是本文追加。
+- **Fresh report digests：PASS。** 四个 retry typed reports 均为独立 JSON，source/platform schema 与 question ID
+  正确，无 plaintext key；独立 canonical digest 与 retry verdict 的 `report_digests` 逐题相等：CQ-001
+  `63bc73398d6523ac4eaa84d7a27fb187f2869a693bf7ee48de620c8c2e46ecdd` /
+  `4ecda672f613d32c9de1238ce308bccf1296588c16f764e6654f3f37f114602d`；CQ-002
+  `ef7cc662b46204cdba8c643c6c39bd38a1bf22f025d51704b2b8005f0e61eccc` /
+  `85794f1484a756ad332706f191d90f8f1eed849fa8f799e318ddd0ce9335588b`。
+- **Defect D6 — High, operation/platform-contract: `validate_verdict` rejects both persisted retry verdicts.**
+  Reproduction loaded frozen `runtime/acceptance-ticket.json` and called
+  `operation.validate_verdict(verdict, ticket=ticket, reports=[source_report,platform_report])` for each retry CQ;
+  expected PASS because report digests and the original ticket digest are present, actual both raise
+  `ContractError: verdict ticket binding drifted`. Frozen ticket continuation is
+  `r23003-acceptance-only-start20-1`, while both new verdicts claim `continuation_id=r23003-acceptance-only-start20-2`
+  (their `ticket_digest` remains the start20-1 digest). No persisted start20-2 ticket exists, and changing the ticket
+  in memory would not establish a retained ticket/digest binding. Therefore the fresh typed verdicts cannot pass the
+  operation validator required by §8 A3.
+- **Retry result/security carry-forward：PASS but non-sufficient.** Result still reports ordered N=2 PASS/current/usable,
+  `stateful_request_count=0`, read-key create/revoke exactly `1/1`, admin readback revoked, and post-revoke old-key
+  `401`; prior Round41 read-only DB check confirmed both retry read/admin keys revoked and cleanup/state/ledger/service
+  invariants. These facts do not override D6 because settlement requires validator-valid verdicts, not only envelope claims.
+- **结论：FAIL / formal Acceptance settlement remains BLOCKED.** D5 artifact persistence is fixed, but D6 is a fresh
+  high-severity binding defect. Operation owner must either persist the exact retry continuation ticket (with a coherent
+  canonical digest and all frozen bindings) or regenerate retry verdicts against the persisted ticket without changing
+  the continuation identity, then rerun `validate_verdict` and append another independent round. Do not start another
+  semantic attempt or mutate ontology/ledger state.
+
+### Round 43 — 2026-08-12 final retry typed-evidence recheck — PASS / formal retry settlement proven
+
+- **范围与安全。** 本轮只复测权威更新后的 operation package、`start20-2` ticket/verdict/report/audit/lifecycle/result
+  绑定及既有只读 cleanup/state/ledger/service/residue evidence；未创建 key、未启动 Agent、未发起平台请求、未调用
+  StartLedger、未写入本体或产品代码。唯一写入是本文追加。
+- **Operation gate：PASS。**
+  `uv run --project backend python -m pytest
+  workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/runtime/test_operation.py -q`
+  -> **10 passed**。`operation.validate_ticket(runtime/acceptance-ticket.json)` PASS；权威 ticket 的
+  `continuation_id=r23003-acceptance-only-start20-2`，canonical `ticket_digest=
+  6134dcf73d9b46f86bc81afd1574c70a2c316fcf1973a81e275f23a5963190b0`，重算相同；`operation.CONTINUATION_ID` 同步。
+- **Fresh report/verdict binding：PASS。** 四个 `retry-cq-{001,002}-{source,platform}-report.json` 的 canonical
+  digests 与对应 verdict `report_digests` 逐一相等；两份 retry verdict 均由
+  `operation.validate_verdict(verdict, ticket=ticket, reports=[source, platform])` 独立通过，且
+  `verdict=PASS,current=true,usable=true`。CQ-001/CQ-002 ordinal 为 `1/2`，previous/next/final 链正确，
+  model-state digest 与 source-manifest digest 与 frozen ticket 一致；source evidence 仅引用 approved source，
+  platform evidence request/response digests 可回指 retry audit，未发现 plaintext key。
+- **Retry audit/lifecycle/result：PASS。** `retry-request-audit.json` 与 result 均绑定 start20-2，记录实体/事实两条
+  read 请求各两次（`calls=4`, `unique=2`, `stateful=0`, allowlist/cross-scope=`0/0`）。
+  `retry-read-key-lifecycle.json` 记录唯一 Project read key
+  `2e1a1f34-be49-4008-8b6e-c3266c915178` create/revoke=`1/1`, HTTP `201/200`, admin readback revoked，
+  post-revoke old-key `401`/denied=true，children 未获 plaintext；result 的 continuation/ticket digest、ordered N=2
+  PASS/current/usable、settlement=`PASS` 与 ticket/verdict 完全一致。
+- **DB/state/ledger/cleanup/health：PASS（只读）。** DB query 确认 retry read key 与
+  `r23003-acceptance-only-start20-2-admin`（`88f1d629-28af-4788-96ea-c216f61e73ab`）均 `revoked_at != null`，
+  当前无 active project key。before/after/cleanup 保持 P/O/G、workspace `ready`/version、batch/session `22/5`、
+  active Session/Lease/Attempt `0/0/0`、semantic/stateful delta `0`、process/socket/plaintext `0/0/0` 与 model/ledger
+  unchanged。独立 ledger hash 仍为 17,966 bytes、66 records、SHA-256
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`；service active，backend/frontend HTTP
+  `200/200`；未发现 retry process/socket/token residue。
+- **结论：PASS。** `r23003-acceptance-only-start20-2` 的 formal Acceptance-only settlement 现已由独立 tester
+  证明：operation gate、fresh typed reports/verdicts、ticket/model/source/report digest binding、ordered N=2
+  PASS、read-only request boundary、single-key lifecycle + post-revoke denial、state/ledger invariance、cleanup
+  与 service/residue checks 全部通过。历史 `start20-1` 的 D4 BLOCKED 事实保留在 Round40，不影响本次 retry 的
+  独立 settlement；不得重写历史记录或启动新的 semantic attempt。

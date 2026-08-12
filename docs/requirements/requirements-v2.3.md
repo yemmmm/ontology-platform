@@ -68,7 +68,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-001 | Team Runner、Agent Package 与 Codex Team Adapter | P0 | `已交付（独立验收 PASS）` | R2.2-001 L0/L1/L3；Codex 多 Agent；平台认证与 MCP |
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
-| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Current Draft（确定性实现 PASS；真实验收 BLOCKED、授权耗尽）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
+| R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -1993,6 +1993,69 @@ current/usable PASS。形式化 Acceptance Agent 未启动：旧 Runner 进程�
 `8b1a999` 修复，但运行中进程不能热加载。start20 以 `platform-contract`、非零 mutation 终态收口，strict
 ledger=`cap/count/active=20/19/0`。剩余一次授权不再用于重复建模；正式 in-run Acceptance handoff 仍是
 未完成的机械门，不得把独立语义/CQ PASS 改写为完整 formal-run PASS。
+
+### R2.3-003 Acceptance-only continuation
+
+用户已确认不再重复 start20 的 Modeling/Protocol 写入链，而以一次独立 Acceptance-only continuation
+补齐形式化验收。首次 `r23003-acceptance-only-start20-1` 因缺少撤钥后旧 key denial 证据而保留为
+BLOCKED 历史轮；权威成功 continuation ID 为 `r23003-acceptance-only-start20-2`，复用 R2.3-002 Round 77/78
+已证明的一次性 operational acceptance，不新增 Runner 模式、Task/Profile/Package、sidecar、backend API
+或通用验收框架。
+
+本轮精确绑定：
+
+- retained run=`r23003-real-20260812-deepseek-start20`；candidate revision=`"2"`；candidate digest=
+  `a5e1c2752b24a321e8aa8aa5e12664cf0dfdf0935c42c2ef4960785b0336b8cc`；
+- Project=`7fc146d8-c76f-417b-9314-854544f269fc`；Ontology=
+  `fd762f52-2f5e-4bc0-902a-5583135ab64d`；Graph Set=
+  `277fd804-e485-5156-b7a7-ca6a1081f950`；workspace version=
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`；
+- acceptance standard=`modeling_team/references/r2-3-003-acceptance-standard.json`；source manifest=
+  `docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json`；
+- question order 只由 standard 的 ordered positive-N `competency_questions` 决定；当前 N=2，但流程、票据、
+  轮次推进和 settlement 不得依赖 `cq-001/cq-002` 名称或固定数量。
+
+操作边界：
+
+1. 不调用 StartLedger，不 reserve，不产生 `semantic_start`，不启动 Modeling、Protocol 或 Producer
+   Coordinator，不创建 Build Session/Lease/Batch，不执行 validation/reasoning mutation，不修改本体；最后一个
+   已授权 semantic start 保持未使用。
+2. 在 repo-local、gitignored 目录
+   `workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/` 冻结 operation-local
+   `r2-3-003-acceptance-only-ticket/v1` ticket、standard/source
+   digests、exact read request allowlist、before inventory 和唯一 evidence/output 目录。任何 live P/O/G/workspace、
+   candidate binding 或 source digest 漂移都在 Agent 启动前 `BLOCKED/state-invalidated`。
+3. 该 ticket 不调用 Producer `publish_ticket`、`build_acceptance_verdict` 或其 R2.3-005 handoff/五阶段 receipt
+   validator；不得伪造 start20 未产生的 handoff。它必须直接包含 continuation/retained-run/candidate、P/O/G/
+   workspace、model-state、standard、source-manifest、ordered CQ、request-allowlist 和 evidence-root digests。
+   operation-local `r2-3-003-acceptance-only-verdict/v1` 必须绑定 ticket/model/source/two-report digests，并显式
+   提供 `verdict,current,usable,failure_layer,blocked_reason` 与 question ordinal/count/previous/next/final。
+4. Delivery 在 preflight 后只创建一把 host-owned、Project-scoped `read` 临时 key；所有 fresh Platform Examiner
+   只获得 operation-local proxy capability，不获得明文 key。代理只暴露冻结的最小 read operations：Ontology
+   modeling context/read model/entity statement context、P/O-scoped semantic context query，以及 G-scoped validation/
+   reasoning run read。每条 allowlist 固定 `tool,method,path_template,body_schema 或 body_digest,P/O/G scope`；代理
+   在 backend 调用前拒绝未知 tool/path/字段和 scope 漂移，禁止静默参数裁剪，并持久化真实 pre-send request
+   digest、response digest 与 artifact。最后一题完成后 exactly-once revoke，验证旧 key 401/403。
+5. 一个 fresh、持久的 Acceptance Agent 按 standard 顺序处理全部 N-CQ。同一题的 Source Examiner 只能读取
+   ticket question 与该题 approved source bytes；Platform Examiner 只能读取 ticket 与上述冻结 model state，
+   不得看到 source bytes、历史答案或 tester verdict。Acceptance 只接收两份 typed report 与 standard/ticket，
+   不直接读取 source 或平台，不修复模型。
+6. 每题必须在前一题 `PASS` 且 `current=true,usable=true`、两个 fresh Examiner 已清理、model-state digest 未变后
+   才能进入下一题。`FAIL` 或 `BLOCKED` 立即停止；最终 settlement 要求按 standard 顺序恰好 N 份 typed verdict，
+   每份绑定 ticket/model/source/report digests，并且全为 current/usable PASS。
+7. 主协调者只核对 operation-local envelope schema、identity/digest、request allowlist、轮次顺序、exactly-one
+   key create/revoke、before/after 不变和清理；
+   不把已有独立 CQ 结论预填给 Agent，不以脚本判断业务答案，不把 start20 的 historical handoff failure 改写。
+
+该 Acceptance-only continuation 的 PASS 可以关闭 R2.3-003 的 formal Acceptance 完成门，但只证明 retained
+start20 final state 上的独立 N-CQ 验收；它不证明旧 Producer 进程内 handoff 热加载成功，也不把 operational
+流程提升为 L3 产品能力。
+
+2026-08-12 最终结果：`r23003-acceptance-only-start20-2` 以 canonical ticket digest
+`6134dcf73d9b46f86bc81afd1574c70a2c316fcf1973a81e275f23a5963190b0` 完成 N=2 ordered settlement；
+CQ-001/CQ-002 均为 `PASS,current=true,usable=true`。独立 Round43 重放 ticket/verdict/report digest、exact
+read audit、单一 Project read key create/revoke、撤销后旧 key HTTP 401、DB revoke、model/ledger 不变量、
+cleanup 与 service health 后全部 PASS。该 operational continuation 未消费 semantic start，未修改本体。
 
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；

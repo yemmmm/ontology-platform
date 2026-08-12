@@ -1210,3 +1210,47 @@
 - Commit `909c0ac` advances the authoritative retained-scope handoff to start20/final workspace. Independent focused
   tests=`2 passed`; live Project/Ontology/Graph Set/state/version match exactly, with 22 Batches, five recent Sessions
   and zero active Session/Lease/attempt.
+
+### 2026-08-12 — Acceptance-only continuation decision and design freeze
+
+- The user approved continuing R2.3-003 without another Modeling/Protocol run. The remaining authorized semantic start
+  is not consumed; start21 is not launched. The closure target is the formal Acceptance result over the retained start20
+  final workspace, not another ontology mutation.
+- The current-minimal design reuses the accepted R2.3-002 Round 77/78 operational pattern: one gitignored frozen ticket,
+  one temporary Project read key, one persistent independent Acceptance Agent, and fresh Source/Platform Examiners for
+  every standard-owned ordered CQ. It adds no Runner mode, sidecar, Task/Profile/Package, backend API or generic
+  acceptance framework.
+- The frozen continuation identity is `r23003-acceptance-only-start20-1`; it binds start20 candidate revision `"2"`,
+  digest `a5e1c2752b24a321e8aa8aa5e12664cf0dfdf0935c42c2ef4960785b0336b8cc`, exact P/O/G/workspace
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`, the R2.3-003 acceptance standard and the
+  seven-file approved source manifest.
+- The flow is generic over the standard's positive N. The current standard has two questions, but orchestration and
+  settlement may not infer order/finality from IDs or hard-code two. Each round advances only after a current/usable
+  PASS, fresh Examiner cleanup and unchanged model-state digest.
+- No StartLedger event, semantic start, Build Session, Lease, Batch, stateful tool or ontology write is permitted.
+  Completion requires independent evidence replay, exact request audit, temporary-key revocation/post-revoke denial,
+  before/after invariance and exactly N typed current/usable PASS verdicts. The historical start20 in-run handoff failure
+  remains recorded even if this operational formal continuation passes.
+- Plan review found that the Producer R2.3-005 ticket/verdict validators cannot honestly represent this continuation,
+  broad MCP forwarding cannot enforce the exact request contract, and the integrated carrier creates one key per child.
+  The accepted minimal correction is operation-local: dedicated ticket/verdict envelopes, one host-owned strict proxy
+  with pre-send request audit, and exactly one Project read key shared through proxy capabilities across all fresh
+  Platform Examiners. No Producer handoff/receipt is fabricated and no product surface is added.
+
+### 2026-08-12 — Acceptance-only retry Round43 — PASS / R2.3-003 accepted
+
+- Historical `r23003-acceptance-only-start20-1` remains BLOCKED because its read-key lifecycle did not retain an
+  old-key post-revoke 401/403 request. It is not rewritten or counted as successful.
+- Authoritative retry `r23003-acceptance-only-start20-2` uses canonical ticket digest
+  `6134dcf73d9b46f86bc81afd1574c70a2c316fcf1973a81e275f23a5963190b0`. Fresh Source/Platform reports and
+  CQ-001/CQ-002 typed verdicts pass the operation-local validators with exact report, model-state and source-manifest
+  digests; both verdicts are `PASS,current=true,usable=true` in standard order.
+- Request audit is read-only (`4` calls / `2` unique / `0` stateful). Exactly one Project read key is created and
+  revoked; admin readback reports revoked and the old key receives HTTP 401. Both temporary read/admin keys are revoked
+  in DB, no plaintext key reaches a child, and cleanup finds no scoped process/socket/private residue.
+- Independent Round43 confirms ontology/workspace, batch/session counts and ledger remain unchanged. Ledger is still
+  17,966 bytes / 66 records / SHA-256
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`, strict replay
+  `cap/count/active=20/19/0`; backend/frontend health are HTTP 200/200.
+- Outcome: retained start20 semantic result plus independent start20-2 formal Acceptance settlement satisfy R2.3-003.
+  No start21 or ontology write was performed and one authorized semantic slot remains unused.

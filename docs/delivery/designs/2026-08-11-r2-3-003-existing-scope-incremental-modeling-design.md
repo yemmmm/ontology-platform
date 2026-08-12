@@ -1,10 +1,9 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：start20 已通过 8-item continuation 完成两个单目标 Phase-B 删除、最终 readback、validation、
-  reasoning、governed retrieval；独立 CQ-001/CQ-002 在同一最终图上 current/usable PASS。formal Acceptance
-  handoff 因运行中 Carrier 未把 numeric revision 投影为 decimal string 而失败，该窄修已回归并提交但不能
-  热加载到旧进程。当前 cap/count/active=`20/19/0`，保留最后一次授权且不重复建模；语义/CQ PASS，
-  formal in-run Acceptance 仍未完成
+- 状态：Accepted。start20 已通过 8-item continuation 完成两个单目标 Phase-B 删除、最终 readback、
+  validation、reasoning、governed retrieval；`r23003-acceptance-only-start20-2` 在同一最终图上完成
+  CQ-001/CQ-002 ordered formal settlement，均为 current/usable PASS。历史 in-run handoff 与 start20-1
+  BLOCKED 证据保留。cap/count/active=`20/19/0`，最后一次授权未使用；Acceptance-only 未写 ontology/ledger
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -237,7 +236,41 @@ candidate 加 tool receipt。这样 deterministic identity、分页、解析和�
 最终查询仍返回目标 unknown semantic ID、旧 rationale 或其关系时为 modeling-quality FAIL；不存在结果
 只有在新结论、Evidence 和业务链均完整可检索时才算正确删除。
 
+start20 语义写入已完成、旧进程又无法热加载 decimal revision 修复后，当前最小验收不再重启四角色 Producer。
+采用 operation root `r23003-acceptance-only-start20-1` 承载历史轮与权威 retry
+`r23003-acceptance-only-start20-2`：复用 R2.3-002 Round 77/78 的冻结票据、
+临时 Project read key、请求审计、撤钥和前后 inventory 模式；不新增产品 surface。它精确绑定 start20 candidate
+digest/revision、P/O/G/workspace、acceptance standard 和 source manifest。任何 binding drift 都在 Agent 启动前
+停止。
+
+同一个 fresh Acceptance Agent 持续处理 standard-owned ordered positive-N CQ；每题分别启动 fresh Source
+Examiner 与 fresh Platform Examiner。Source 只见该题 approved source，Platform 只见冻结 model state 和 exact
+read allowlist，Acceptance 只见 typed reports。每题 PASS/current/usable 且 Examiner cleanup、model-state digest
+复核通过后才推进下一题；最终 settlement 按 standard 的实际 N 计数，不依赖题目 ID 或固定两题。
+
+该 continuation 不触发 StartLedger、semantic start、Build Session/Lease/Batch 或任何 stateful tool，最后一个已授权
+建模次数保持未使用。它补齐 formal Acceptance 结果，不声称旧 start20 进程内 handoff 成功。
+
 ## 4. 当前最小实现
+
+Acceptance-only continuation 的实现是一次性操作资产，不是产品代码：
+
+- gitignored root：`workspaces/modeling-acceptance/r23003-acceptance-only-start20-1/`；
+- `runtime/acceptance-ticket.json` 冻结身份、candidate/model/source/standard digest、ordered N-CQ、exact request
+  allowlist、evidence root；
+- `evidence/` 保存 before/after inventory、read-key create/revoke/post-revoke、每个请求的 canonical digest 和 raw
+  response、每题两份 typed Examiner report、Acceptance verdict 与 cleanup；
+- `output/acceptance-result.json` 只汇总标准顺序、每题 binding/verdict/current/usable 和 settlement，不包含脚本生成的
+  业务判断；
+- ticket/verdict 使用 operation-local `r2-3-003-acceptance-only-ticket/v1` 与
+  `r2-3-003-acceptance-only-verdict/v1` envelope，不调用 Producer `publish_ticket`、`build_acceptance_verdict`、
+  handoff 或五阶段 receipt validator，不伪造 start20 未生成的 handoff。child report 保留现有 typed payload 与
+  host binding；
+- 一个 host-owned operation proxy 在所有 CQ 前创建且只持有一把 Project read key。Platform child 只拿 proxy
+  capability。allowlist 每项冻结 `tool,method,path_template,body_schema/body_digest,P/O/G`；代理 pre-send 严格
+  拒绝未知字段、路径和 scope，记录真实 request/response/artifact digest，不使用会静默裁剪参数的宽泛转发；
+- 最后一题后 proxy exactly-once revoke/readback/post-revoke 并清理。只有 operation-local 资产证明不足时才考虑
+  产品代码；当前不得增加 Runner/Carrier/backend surface。
 
 ### 4.0 同步瘦身边界
 
@@ -369,5 +402,14 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - start20 已以实际 mutation 状态和 `platform-contract` terminal failure 完成 append-only 收口；当前授权
   剩余一次但不用于重复语义建模。若未来继续，只能针对 formal handoff/Acceptance 机械门，必须复用当前
   final workspace，不得重建 Phase A 或重新引入已删除 unknown；
+- `r23003-acceptance-only-start20-2` 在同一冻结 final workspace 上通过 exact identity/source/model preflight；
+  一个 persistent Acceptance Agent 按 standard 顺序消费全部 N-CQ，每题 fresh Source/Platform Examiner，最终
+  恰好 N 份 current/usable PASS，且 request audit、before/after、key revoke/post-revoke 和 cleanup 全部 PASS；
+- continuation 全程无 StartLedger/semantic start/Build Session/Lease/Batch/stateful tool；最后一个授权保持未使用；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。
+
+最终实现结果：start20-1 因未保留撤钥后旧 key 401/403 证据而 BLOCKED；start20-2 使用 ticket digest
+`6134dcf73d9b46f86bc81afd1574c70a2c316fcf1973a81e275f23a5963190b0` 重试。Round43 独立验证两个
+typed verdict 与四份 fresh report、N=2 顺序、4 次/2 个唯一只读请求、单 key create/revoke=1/1、旧 key
+401、DB revoke、model/ledger 不变量和 cleanup，formal Acceptance-only settlement PASS。
