@@ -1175,3 +1175,38 @@
   modeling_team full=`747 passed, 1 skipped, 218 subtests`; compileall, Ruff, diff-check and service health passed.
   Deterministic repair is PASS, while live final deletion/readback/validation/reasoning/retrieval/N-CQ remains
   incomplete. Exactly two authorized starts remain.
+
+### 2026-08-12 — start20 final semantic state and independent CQ acceptance
+
+- start20 consumed the second authorized start and delivered numeric revision 2 as the exact eight-item continuation:
+  four durable Phase-A entity refs, two frozen target refs and two ordered delete declarations, with no create items.
+  Protocol accepted digest `a5e1c2752b24a321e8aa8aa5e12664cf0dfdf0935c42c2ef4960785b0336b8cc`.
+- Protocol applied the two single-target Phase-B delete-only Batches in order. Final workspace is
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`: the four Phase-A business entities remain,
+  both frozen ExplicitUnknown targets and their incident statements are absent, validation conforms, reasoning is
+  consistent and governed retrieval is complete. Build Session `82a5f9dd-82ed-4f2f-87e9-ae5758b6394b` completed
+  and its Lease was released.
+- The run then exposed one mechanical mismatch: R2.3-003 candidate revision is a positive integer, while the reused
+  handoff validator accepts a safe string. `protocol_build_acceptance_stage_handoff` projected integer `2` directly
+  and failed twice (`stage handoff.slice_revision must be a safe stable identifier`, surfaced as MCP `-32001`). The
+  Runner process could not hot-load a repair, so formal Acceptance Agent rounds did not start.
+- Commit `8b1a999` projects only R2.3-003 revisions to canonical decimal strings across handoff/receipts/ticket/verdict;
+  R2.3-005/default retain their original safe-string behavior. Independent regression passed: focused=`135 passed,
+  13 subtests`; modeling_team full=`748 passed, 1 skipped, 218 subtests`; compileall, Ruff, diff-check and service health
+  passed. GitNexus reports the shared Carrier hub as CRITICAL, but the branch is task-specific and behavior-tested.
+- Independent Round37 queried the same final 83-triple graph and compared it with the approved source bundle. CQ-001
+  proved the `quality_score`/`quality_rating` continuity plus release-local field boundary; CQ-002 proved the
+  CLASSIFIER_UNAVAILABLE -> manual-review-required -> held-for-review chain with no retry, publishable report or
+  published result. Both are current/usable PASS. The retained retrieval artifact is complete/supported/lineage-bound,
+  with lexical stale-index and derived-result warnings recorded as a caveat rather than hidden.
+- Cleanup removed only two fingerprinted generated non-secret bridge files; all run keys are revoked and no process,
+  Unix socket, token/config or named private residue remains. Because the ontology was intentionally mutated, no
+  zero-mutation reconciliation was fabricated. Canonical CLI appended start20 `platform-contract`, complete=false.
+  Strict ledger replay is 66 records, SHA-256
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`, cap/count/active=`20/19/0`.
+- Outcome: semantic model and both CQs independently PASS; formal in-run Acceptance handoff FAIL remains explicit.
+  One authorized start remains unused. Per success-stop and the project's pragmatic modeling priority, start21 is not
+  launched merely to repeat already accepted semantics or exercise orchestration.
+- Commit `909c0ac` advances the authoritative retained-scope handoff to start20/final workspace. Independent focused
+  tests=`2 passed`; live Project/Ontology/Graph Set/state/version match exactly, with 22 Batches, five recent Sessions
+  and zero active Session/Lease/attempt.

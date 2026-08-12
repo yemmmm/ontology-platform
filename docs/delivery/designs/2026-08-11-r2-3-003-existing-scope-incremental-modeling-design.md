@@ -1,10 +1,10 @@
 # R2.3-003 Existing-scope 增量建模设计
 
-- 状态：同步瘦身、Carrier、context fence 与 native translator bridge 均已实现并回归 PASS；新授权
-  `user-20260812-r23003-post-translation-bridge-start1-3` 将 cap 扩至 20。start19 已完成 durable Phase A，
-  但合并双目标删除在 dry-run 被 `conflicting_item_effects` 阻断；当前 cap/count/active=`20/18/0`，
-  两个 unknown 未删除，剩余两次授权。Phase B 已改为两个有序单目标 delete-only Batch，后续 run 复用
-  start19 的四个 Phase-A 实体并以 8-item continuation 完成删除、readback 与 N-CQ
+- 状态：start20 已通过 8-item continuation 完成两个单目标 Phase-B 删除、最终 readback、validation、
+  reasoning、governed retrieval；独立 CQ-001/CQ-002 在同一最终图上 current/usable PASS。formal Acceptance
+  handoff 因运行中 Carrier 未把 numeric revision 投影为 decimal string 而失败，该窄修已回归并提交但不能
+  热加载到旧进程。当前 cap/count/active=`20/19/0`，保留最后一次授权且不重复建模；语义/CQ PASS，
+  formal in-run Acceptance 仍未完成
 - 权威需求：`docs/requirements/requirements-v2.3.md#R2.3-003-已有-projectontology-增量建模`
 - 交付记录：
   `docs/delivery/records/2026-08-11-r2-3-003-existing-scope-incremental-modeling-delivery-record.md`
@@ -366,8 +366,8 @@ Acceptance Carrier/Examiner、settlement、DeepSeek proxy/credential 和 aggrega
 - plan review 无未处理 Critical/High；
 - deterministic tests 覆盖两个 formal contract 隔离、003 ledger、existing preflight、source visibility、
   delta candidate、安全硬删除、N-CQ（至少 1/3/5）和写后失败；完整 repository-required suite PASS；
-- start19 已完成 append-only 终态对账，当前三次授权剩余两次；提交本轮确定性修复并通过 current-context/
-  health gate 后可继续。后续 R2.3-003 Team run 须复用 durable Phase A，完成两个单目标 Phase-B 删除与
-  独立验收，首次完整 PASS 后停止；
+- start20 已以实际 mutation 状态和 `platform-contract` terminal failure 完成 append-only 收口；当前授权
+  剩余一次但不用于重复语义建模。若未来继续，只能针对 formal handoff/Acceptance 机械门，必须复用当前
+  final workspace，不得重建 Phase A 或重新引入已删除 unknown；
 - Runtime/credential/Build Session/Lease/child/proxy 清理为零残留，Project/Ontology 保留；
 - 需求状态、设计结果、测试轮次、runtime health、cleanup 和 commit 全部同步。

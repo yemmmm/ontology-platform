@@ -2055,3 +2055,82 @@ modeling_team，不把前端测试设为无关完成门。代码变更完成后�
   second Phase-B delete, final readback, validation/reasoning/retrieval, or N-CQ. Semantic L0-L2 acceptance remains
   **incomplete** and must not be promoted to PASS. Start20 is eligible only after Main commits the stable working-tree
   changes and rechecks the live current-context/health gate; this tester did not start it.
+
+### Round 37 — 2026-08-12 independent start20 final-state/CQ audit and decimal carrier regression — semantic/CQ PASS; formal handoff FAIL
+
+- **Scope and safety.** This round reused this shared test plan and did not start, resume, or mutate a modeling run.
+  The tester did not change product code, ledger, retained run evidence, ontology/workspace state, or residue. Main's
+  controlled cleanup removed only the pre-approved two generated non-secret paths; the post-cleanup audit below is
+  read-only. The working tree contains only the expected stable developer diff (`modeling_team/acceptance.py` and
+  `modeling_team/tests/test_r23005_ticket_pipeline.py`) in addition to this plan append.
+- **Decimal slice projection and regression checks: PASS (FIXED).** The R2.3-003-only acceptance carrier accepts a
+  positive integer candidate revision and projects it to the decimal string `"2"` for handoff/ticket/verdict and all
+  receipt bindings; R2.3-005 and default candidates retain their immutable safe-string behavior. The independent
+  focused suite covering this projection, 003 contracts/read-only/revision gates, 005 isolation, protocol retrieval,
+  translation, and runtime returned **135 passed, 13 subtests passed**. Full `uv run --project backend python -m
+  pytest modeling_team/tests -q` returned **748 passed, 1 skipped, 218 subtests passed**. Compileall, focused Ruff,
+  `git diff --check`, and the affected service checks passed; `ontology-platform.service` is active and backend and
+  frontend endpoints returned HTTP `200/200`.
+- **Candidate and applied model state: PASS for the retained semantic result.** Start20 delivery-5 is candidate
+  revision `2` (delivery-6 receipt status `accepted`; candidate/semantic digest
+  `a5e1c2752b24a321e8aa8aa5e12664cf0dfdf0935c42c2ef4960785b0336b8cc`) with exactly eight items: four retained
+  `existing_entity_ref` items (`content-review-001`, `evaluation-review-001`, `decision-review-001`, and
+  `publication-outcome-review-001`), two frozen explicit-unknown references, and two ordered
+  `delete_existing_entity` declarations for `unknown-cross-release-output-meaning` then
+  `unknown-b-no-score-behavior`, both `delete_mode=full_live_impact`; no create item is present. PostgreSQL read-only
+  inspection shows Build Session `82a5f9dd-82ed-4f2f-87e9-ae5758b6394b` completed at revision 4 and its lease released.
+  Both ordered Phase-B batches have validated dry-runs and applied `apply_atomic` attempts, advancing
+  `1dc0698513e253e72c282eedb8b234d2b5764c7ddaf9326bb8181160669adce3` to the final workspace
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`. The scoped asserted graph retains all four
+  Phase-A entities with their expected classes and has zero statements for both delete targets. Validation run
+  `5ea82d32-8272-457e-afc5-70b45f34457b` is `succeeded/conforms=true`; reasoning run
+  `1f689427-e4c8-4982-b281-969e459f2fa9` is `succeeded/consistent=true`.
+- **Independent competency-question verification: PASS on the same frozen final model state.** A read-only SPARQL
+  query against the final graph returned 83 asserted triples. For `cq-001`, the graph binds B to the current
+  `quality_rating` output, preserves published C Version 1 -> `quality_score` and published/latest C Version 2 ->
+  `quality_rating`, records workflow-identity (not release-ID) binding, and keeps the two field names distinct. For
+  `cq-002`, it records C's successful no-numeric-score/`CLASSIFIER_UNAVAILABLE` outcome, the evaluation -> content
+  link, B's `manual review required` decision with `retriedEvaluation=false` and `reportedPublishable=false`, and
+  A's `held for review` outcome with `createdPublishedResult=false`; both unknown targets are absent. These facts
+  agree with the approved source paths `release-register.md`, `workflow-landscape.md`, `scoring-and-publication-policy.md`,
+  `exception-handling.md`, and `manual-review-publication-case.md` (the latter explicitly leaves later human-review
+  behavior undefined). The retained final `query_semantic_context` artifact is digest
+  `7f6490eedbd3f6a1c821d4594fee8744b76a69039e347ddf8dc3758a218d40d4`, with exact final workspace scope,
+  `result_status=matched`, complete recall, supported rows, complete lineage, and no truncation. It also reports a
+  lexical/stale-index and derived-result-missing/ambiguous-match warning; this is recorded as a retrieval caveat,
+  not hidden. The direct asserted-graph CQ result is therefore **PASS/current/usable**, independently of the failed
+  in-run Acceptance handoff.
+- **Formal handoff failure and classification recommendation: FAIL, platform-contract.** The retained issue report
+  identifies `protocol_build_acceptance_stage_handoff` (`issue-1`, category `platform_repair`) failing twice with
+  opaque MCP `-32001 "Runner capability request rejected"`, sent with `protocol_id=protocol` and no `stage_calls`.
+  This occurred after both deletes, readback, validation, reasoning, and governed retrieval; it is a Runner-local
+  acceptance projection/capability failure, not a modeling-quality or ontology-write failure. The main command exited
+  2 and the run was aborted before formal settlement; no `evidence/terminal-reconciliation.jsonl` or Acceptance
+  handoff/silent-for-acceptance verdict was retained. Recommend terminal classification `platform-contract` and a
+  mutation state describing **applied model / zero pending mutation** with the two applied batches and final readback;
+  do **not** call this `zero-mutation`. `complete_modeling_quality_result=false` remains appropriate for the formal
+  handoff gate.
+- **Cleanup, scope, and service audit: PASS within retained scope.** Main removed exactly
+  `runtime/modeling/home/read_proxy_mcp.py` (11,439-byte regular file) and the zero-byte regular
+  `runtime/modeling/home/modeling-read-proxy.sock` placeholder. Recheck found both absent, no Unix sockets under the
+  run tree, no targeted private/token/credential/auth/config names, and all recorded runtime PIDs absent. Start20
+  Modeling-read revoke/status-readback/post-revoke were `200/200/401`; all project/admin/Protocol keys are non-active
+  or revoked. The retained scope snapshot correctly records mutation: batch count `20 -> 22`, recent sessions
+  `4 -> 5`, final workspace as above, and active sessions/leases/in-flight attempts `0/0/0`; it must not be reported as
+  exact before/after equality. The aggregate provider scan is complete (`scanned_files=250`, scan errors `0`) but has
+  `match_count=3`, `matched_secret_count=3`, and `private_credentials_destroyed=false`; no global secret-clean claim
+  is made. The user service remains active with backend/frontend HTTP `200/200`.
+- **Ledger and conclusion.** After Main's canonical append, read-only strict replay passes **66 records** with ledger
+  SHA-256 `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`, `cap/count/active=20/19/0`, and tail
+  `start20 terminal_failure, classification=platform-contract, complete_modeling_quality_result=false`. The count is
+  19 because start1 was a pre-semantic release; one authorized slot remains, but no new run was started because this
+  first retained semantic/CQ result is independently PASS and no continuation was authorized. Round37 therefore
+  concludes **semantic/CQ PASS and deterministic code PASS, formal in-run Acceptance handoff FAIL**. The requirement's
+  formal completion gate is not promoted to PASS; any future formal handoff repair requires explicit coordination and
+  must not rewrite this retained evidence.
+- **Final narrow post-update recheck: PASS.** The two authoritative handoff/preflight tests returned **2 passed**;
+  a read-only live `OntologyWorkspaceService`/workspace-version check matched the handoff exactly (`project_id`,
+  `ontology_id`, Graph Set `277fd804-e485-5156-b7a7-ca6a1081f950`, `state=ready`, and workspace
+  `18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0`), with current batch/session counts `22/5`
+  and active session/lease/attempt counts `0/0/0`. `git diff --check` passed. No run, ledger, evidence, residue, or
+  product state was changed by this recheck.

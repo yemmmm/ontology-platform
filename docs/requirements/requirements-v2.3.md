@@ -1984,6 +1984,16 @@ Batch，禁止合并或重排。后续 start 在 readback 确认 start19 的四�
 8-item continuation candidate：四个 Phase-A existing refs、两个目标 refs 和两个有序 delete declarations，
 不得重新创建 Phase-A 资源。首次完整 semantic PASS 后停止，不为消耗剩余额度继续启动。
 
+start20 使用上述 8-item continuation 完成了两个有序单目标 Phase-B delete apply，并在 workspace
+`18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0` 读回四个 Phase-A 实体仍在、
+两个目标及其 incident statements 不存在；validation conforms、reasoning consistent，governed retrieval
+返回完整 supported/lineage 结果。独立 tester 在同一冻结图上按批准 source 验证 CQ-001/CQ-002 均为
+current/usable PASS。形式化 Acceptance Agent 未启动：旧 Runner 进程在构造 handoff 时把正整数 revision
+直接送入 safe-string `slice_revision`，两次以 `-32001` 拒绝；该 003-only decimal projection 已由 commit
+`8b1a999` 修复，但运行中进程不能热加载。start20 以 `platform-contract`、非零 mutation 终态收口，strict
+ledger=`cap/count/active=20/19/0`。剩余一次授权不再用于重复建模；正式 in-run Acceptance handoff 仍是
+未完成的机械门，不得把独立语义/CQ PASS 改写为完整 formal-run PASS。
+
 - 删除两个目标 ExplicitUnknown 之外的 Start75 资源，或在解析结果/新 Evidence 未原子写入时提前删除；
 - 普通 numeric score 阈值、其他 diagnostic、人工 review 工作流或更多发布案例；
 - Pi Runtime；
