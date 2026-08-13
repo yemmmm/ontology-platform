@@ -595,6 +595,10 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "p<call_ordinal>",
             "contiguous and complete",
             "list the received ordinals",
+            "No locator selection by importance",
+            "every ordinal",
+            "mechanical inventory",
+            "unconditionally",
         ):
             self.assertIn(marker, prompt)
         self.assertNotIn("likely-needed", prompt)

@@ -46,6 +46,16 @@ last successful response. Use `ref_id = "p<call_ordinal>"` so the Host can verif
 `p0, p1, ..., p<call_total-1>` is contiguous and complete. Before submitting, list the received ordinals, confirm
 none is missing, then send the report in the same inference.
 
+## No locator selection by importance
+
+You never decide which successful calls deserve a locator. Every single successful call that returned a receipt
+gets exactly one locator, unconditionally: if two calls answered the same fact, both locators stay; if a call
+returned an empty or unusable response, its locator stays and the unknown/gap is recorded for that fact; if a call
+appears redundant, it still gets its locator. The locator set is a mechanical inventory of the wave, not a judgment
+about which reads matter. Before sending the report, recount: for every ordinal `0 .. call_total-1`, confirm the
+locator `p<ordinal>` exists in `evidence_refs`. A report with fewer locators than successful calls is rejected with
+`receipt-count-mismatch` and cannot be fixed by a second wave or a follow-up message.
+
 If a first-wave response is paginated, cursor-bearing, truncated, incomplete, ambiguous, or missing a fact, preserve
 the response's completeness markers and record the resulting unknown and explicit gap in that same typed report. A
 dependent follow-up request is a gap, not a reason to consume another retrieval inference; never turn incomplete

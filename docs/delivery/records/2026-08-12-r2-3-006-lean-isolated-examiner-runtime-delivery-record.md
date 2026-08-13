@@ -548,3 +548,23 @@
 - Repair：`_ref_id_summary` 在源头用 `[^A-Za-z0-9_:\-]` 清洗并截断 200 字符，摘要永不携带引号/控制字符；
   投影路径与 hostile 字符集经压力验证通过。focused `45/45`、full `549 PASS + 1 SKIP` 无 regression。
 - Disposition：授权 `2/3` 已消费。修复后消耗第 3 轮（live-12）。
+
+### 2026-08-13 — authorization 1/5 live-12 real N=2 — main agent
+
+- Authorization：用户新授权 5 轮（live-12/13/14/15/16）；每轮允许一个新的临时 Project read key exactly-once
+  create/revoke，禁止 semantic start、ontology/ledger write 或自动重跑。
+- Preflight：stable clean HEAD `6e6e45a Sanitize ref summary and record live-11 evidence`；live-12 output root
+  不存在；service active、backend/frontend 200；DeepSeek credential 可用；冻结 ticket/N=2/six-tool allowlist
+  与 retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `28908`）；
+  Platform 在单一并行 read wave 内完成读取并提交 typed report callback（2 steps、TTFT 约 1.4s、proxy 约
+  10.6s、evidence tokens `36224`、total tokens `39328`），随后 receipt-count gate fail-closed 为
+  `BLOCKED/acceptance-evidence`（`binding_code=receipt-count-mismatch`、`proxy_receipt_count=5`、
+  `report_ref_count=3`、`proxy_receipt_ordinals="0,1,2,3,4"`、`report_ref_ids="p0,p1,p2"`）。
+- 关键观察：本次诊断（新增强的 ref/ordinal 摘要）证明 ordinal 契约已生效——模型使用 `p<ordinal>` 命名且
+  p0..p2 连续正确，但只写了前 3 个 locator，遗漏了 p3、p4。模型确实发起了 5 次真实读取（proxy 10.6s、
+  evidence 36224 tokens），提交时仍漏写 locator。这是 count-mismatch 连续第 5 次（live-5/7/8/10/12），
+  失败模式收敛为"模型会读、会命名，但 report 中 locator 数少于成功调用数"。
+- Repair（live-13 前完成）：prompt 机械步骤强化——提交前把"收到 N 个成功调用（ordinal 0..N-1）"显式写入
+  思考并按 1..N 逐条核销 locator，缺失即补齐后同一 inference 提交；继续禁止二次波/补问。
+- Disposition：授权 `1/5` 已消费。

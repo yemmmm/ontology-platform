@@ -1375,3 +1375,47 @@ deterministic 复验；真实 semantic acceptance 仍 `BLOCKED`）。live-9 消�
 
 live-9 消费本次授权 `2/2`，2 轮授权全部耗尽。typed failure 诊断已增强，下一次失败（若发生）可精确定位
 branch；执行 live-10 需要新的 operation authorization。
+
+## 26. 独立测试 Round 26（2026-08-13，live-10/11/12 audit + no-importance locator contract，HEAD `6e6e45a`）
+
+结论：`PASS`（live-10/11/12 failure-path/lifecycle/invariance audit + "No locator selection by importance"
+prompt 契约修复的 deterministic 复验；真实 semantic acceptance 仍 `BLOCKED`）。live-10/11/12 已消费授权
+（1/3、2/3、新授权 1/5）；本轮未创建/使用 key、未启动 provider/child、未继续 N=2。未发现新的 P0/P1。
+
+### Real stage progress (live-10/11/12)
+
+- live-10：`BLOCKED/acceptance-evidence`（`receipt-count-mismatch`，`proxy_receipt_count=2`、
+  `report_ref_count=1`）。Source 完成 2 steps/terminal true/`25927` tokens；Platform 2 steps、proxy `8664ms`、
+  evidence `18075`、total `26661`。
+- live-11：Source/Platform 实跑完成，但 operation 在写 artifact 前的 `_blocked_result` 证据投影处 fail-closed
+  （`R23006OperationError: typed Examiner blocked evidence value is invalid`），未生成 artifact。Root cause 为
+  `report_ref_ids` 摘要未在源头清洗字符集（platform-contract 诊断投影缺口），已修复并压力验证。
+- live-12：`BLOCKED/acceptance-evidence`（`receipt-count-mismatch`，`proxy_receipt_count=5`、
+  `report_ref_count=3`、`proxy_receipt_ordinals="0,1,2,3,4"`、`report_ref_ids="p0,p1,p2"`）。Source 完成 2
+  steps/terminal true/`28908` tokens；Platform 2 steps、proxy `10557ms`、evidence `36224`、total `39328`。
+- 诊断结论：ordinal 契约已生效（模型使用 `p<ordinal>` 且 p0..p2 连续），但模型按"重要性"取舍 locator——
+  count-mismatch 连续第 5 次（live-5/7/8/10/12），模式收敛为"模型会读、会命名，但 report 中 locator 数少于
+  成功调用数"。
+
+### Repair (deterministic)
+
+- live-10 后：`receipt-count-mismatch` evidence 追加脱敏 `report_ref_ids` 与 `proxy_receipt_ordinals` 摘要；
+  `_BLOCKED_FIELD_SET_FIELDS` 白名单同步；focused `45/45`、full `549+1`。
+- live-11 后：`_ref_id_summary` 源头清洗（`[^A-Za-z0-9_:\-]` 过滤 + 200 字符截断），hostile 字符集压力验证
+  通过；投影路径确认安全。
+- live-12 后：instructions.md 与 SKILL.md 新增 "No locator selection by importance" 契约——每个成功调用
+  **无条件**恰好一个 locator（同事实/空响应/冗余调用均保留），locator 集合是 wave 的机械清单而非重要性
+  判断；提交前对 `0..call_total-1` 逐条核销。marker 测试新增 4 个 marker；focused `31/31`、full `549+1`。
+
+### Commands and boundary
+
+1. Read-only artifact JSON/hash/mode/inventory/secret scan 与 token-increment 重算：live-10/12 PASS；live-11
+   无 artifact（投影缺口，已修复）。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_lean_runtime -q`：
+   `31/31 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py' -q`：
+   `549 PASS + 1 SKIP`，退出码 0。
+4. `systemctl --user ... status ontology-platform.service`、backend `/api/health`、frontend `/`：active、`200/200`。
+
+live-12 消费新授权 `1/5`。prompt 契约修复已 deterministic 复验；第 2 轮（live-13）授权允许执行新的真实
+N=2。若仍 count-mismatch，将按精确 ref/ordinal 摘要继续收敛 prompt。

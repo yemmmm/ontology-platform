@@ -40,6 +40,16 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
   can verify the ordinal sequence `p0, p1, ..., p<call_total-1>` is contiguous and complete.
   Before submitting, list the received ordinals, confirm none is missing, then send the
   report in the same inference.
+- No locator selection by importance: you never decide which successful calls deserve a
+  locator. Every single successful call that returned a receipt gets exactly one locator,
+  unconditionally: if two calls answered the same fact, both locators stay; if a call
+  returned an empty or unusable response, its locator stays and the unknown/gap is recorded
+  for that fact; if a call appears redundant, it still gets its locator. The locator set is
+  a mechanical inventory of the wave, not a judgment about which reads matter. Before
+  sending, recount: for every ordinal `0 .. call_total-1`, confirm the locator
+  `p<ordinal>` exists in `evidence_refs`. A report with fewer locators than successful
+  calls is rejected with `receipt-count-mismatch` and cannot be fixed by a second wave or a
+  follow-up message.
 - Keep query basis, Evidence, lineage, response digests, and explicit completeness in the
   terminal report. If a first-wave response is cursor-bearing, truncated, incomplete, ambiguous,
   or missing a fact, preserve its completeness markers and state the unknown and explicit gap
