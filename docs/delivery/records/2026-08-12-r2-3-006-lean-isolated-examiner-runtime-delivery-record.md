@@ -609,3 +609,18 @@
   `has_more=false`/`sequence_complete=true`、禁止跨调用发明 ordinal 序列；marker 测试新增 4 个 marker；
   focused `31/31`、full `549 PASS + 1 SKIP` 无 regression。
 - Disposition：授权 `4/5` 已消费。修复后消耗第 5 轮（live-16）。
+
+### 2026-08-13 — authorization 5/5 live-16 real N=2 — main agent
+
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `27675`）；
+  Platform 发出 5 次成功 proxy 调用（proxy 约 4.9s、5 receipts、evidence tokens `26240`）后未产生第二个
+  inference step（`inference_steps=1`、total tokens `13183`、output tokens `4463`），未提交 report
+  （`report_received=false`、`terminal_event=false`），约 90 秒 child watchdog 到期，operation 为
+  `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- Failure layer：`runtime/infrastructure`（与 live-4、live-14 同模式：Platform 单波读取后未产生 terminal
+  report）。不是 count-mismatch（无 report 提交）、不是伪造 PASS；清理/不变性/typed failure 证据正常。
+- 5/5 授权全部消费：live-12（count-mismatch 5→3）、live-13（count-mismatch 5→3）、live-14（child-timeout）、
+  live-15（count 通过、page-sequence-invalid）、live-16（child-timeout）。
+- 趋势：locator 数量问题已通过（live-15 count 通过），page 语义契约已新增（live-15 后）；剩余卡点为
+  Platform 偶发单波读取后不产生第二步（child-timeout，与 live-4/14 同 runtime 模式）。后续需要新的 operation
+  authorization 执行 live-17。
