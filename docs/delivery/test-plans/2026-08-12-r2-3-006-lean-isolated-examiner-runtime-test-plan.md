@@ -1139,3 +1139,57 @@ count 相等、下一 inference typed report、禁止第二波/retry/re-read/fol
 既有 Source/Platform/Acceptance evidence binding、metrics、cleanup、success contract 均由 focused/affected/full
 回归覆盖。live-5 仍是历史 `BLOCKED/acceptance-evidence`，最后授权剩余 `1/3`；只有在 clean commit 后进行一次新的
 真实 operation，才可验证实际 receipt count、六角色 metrics、ordered PASS 和 semantic acceptance。
+
+## 21. 独立测试 Round 21（2026-08-13，live-6 final authorization read-only audit，HEAD `1515807`）
+
+结论：`PASS`（failure-path/lifecycle/invariance audit scope；真实 semantic acceptance 仍 `BLOCKED`，不是
+R2.3-006 semantic PASS）。这是授权 `3/3` 的最后一次真实 operation；本轮未创建/使用 key、未启动 provider/child、
+未继续 N=2、未修改 live-6、product 或 record，禁止第 4 次 operation。未发现新的 P0/P1。
+
+### Real stage progress and metrics
+
+- Artifact `workspaces/modeling-acceptance/r23006-retained-n2-live-6/r23006-retained-acceptance.json` SHA-256
+  `a775b7a72baa762c6c07eb023123967a15e9be10d432aa1ad97877c8c2510114`，mode `0600`；父目录 mode `0700`，
+  仅有该 artifact。
+- Top-level/result 为 `BLOCKED`，`role=acceptance`，`failure_category=runtime`、`reason_code=child-timeout`；
+  `report_received=false`、`terminal_event=false`、`proxy_receipt_count=0`。Acceptance child 正好 3 inference
+  steps 后未产生 terminal report，符合第 4 step 前中断门；不存在 ordered verdict/count/final result，CQ-002
+  未执行，因此不得宣称 semantic PASS。
+- Partial metrics 正好 `source, platform, acceptance`：Source 2 steps、`metrics_complete=true`、terminal report
+  true、wall `21204.89ms`；Platform 3 steps、`metrics_complete=true`、terminal report true、wall
+  `70083.03ms`、proxy `4169.87ms`；Acceptance 3 steps、`metrics_complete=false`、terminal report false、
+  wall `null`、blocked 与 outer 完全一致。三角色 increments 均可重算 cumulative token totals；Acceptance
+  失败是 typed runtime/infrastructure，而非伪造 PASS 或 report-first terminal。
+- Platform wall time 约 70s，低于硬 90s 门但高于“通常不超过 60s”目标；本轮记录为性能观察，不构成新的 P1，
+  因失败发生在后续 Acceptance child 且 failure layer/cleanup 均明确。
+
+### Key, DB/audit and residue evidence
+
+- Artifact key lifecycle：Project read key create/revoke `1/1`，revoke status `200`，status readback revoked `true`，
+  post-revoke status `401`/denied `true`；operation limits semantic writes/start-ledger/build-session/lease/producer
+  handoff/validation-reasoning mutations 全部为 `0`。
+- Read-only SQL against live PostgreSQL：operation project key `4cd6279a-855f-4aff-898e-3790cbfc60f2` has
+  scopes `['read']` and revoked timestamp; bootstrap admin row `r23006-retained-admin` id
+  `2885791c-dfa7-4341-8325-71a548842cb9` has scopes `['admin']` and revoked timestamp. Active project keys=`0`;
+  the 20 active org-admin rows are pre-existing `r2-3-001-team-runner-admin`/operator identities, not operation residue.
+  Security audit has exactly project-key `api_key_created` + `api_key_revoked` success rows in the operation window;
+  bootstrap admin is created/revoked through the host's direct DB helper and is verified by its revoked DB row plus
+  `cleanup.admin_key_revoked=true` (no plaintext is queried or printed).
+- Invariance before/after is equal: platform digest `3606c7...f95`, ledger SHA
+  `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`, ledger records `66`.
+  Cleanup flags `provider_stopped`, `children_stopped`, `forwarder_stopped`, `runtime_root_removed`,
+  `admin_key_revoked`, `plaintext_released` are all true.
+- Secret scan finds no plaintext key, Authorization/Bearer, `sk_read_`/`sk_admin_`, raw report/response or provider
+  exception text. `ps`/Unix-socket checks find no live-6 operation child, runner process, retained proxy socket or temp
+  root; only unrelated long-lived host Codex app-server daemon remains. Service is active; backend/frontend health are
+  HTTP `200/200`.
+
+### Commands and boundary
+
+1. Read-only artifact JSON/hash/mode/inventory/secret scan and token-increment recomputation: PASS; roles `source/platform/acceptance`, steps `2/3/3`, token totals match all increments, ordered verdict keys absent as required for BLOCKED.
+2. Read-only SQL (`ApiKeyModel`, `SecurityAuditEventModel`) for operation window/project: project active keys `0`, operation project/admin rows revoked, project audit create/revoke `2` success rows; no mutation.
+3. `systemctl --user ... status ontology-platform.service`, backend `/api/health`, frontend `/`: active, `200/200`.
+4. `ps`, Unix-socket and live-6 directory scans: no operation child/process/socket/temp residue; artifact only.
+
+No further operation is authorized. Final real semantic outcome remains `BLOCKED/runtime-infrastructure` at Acceptance
+child-timeout with no ordered N=2 verdict; this audit does not convert cleanup/lifecycle/invariance PASS into semantic PASS.

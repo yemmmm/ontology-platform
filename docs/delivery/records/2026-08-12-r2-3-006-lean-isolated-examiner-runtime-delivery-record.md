@@ -1,9 +1,10 @@
 # R2.3-006 精简隔离 Examiner Runtime Delivery Record
 
 - Requirement source：`docs/requirements/requirements-v2.3.md#r23-006-精简隔离-examiner-runtime`
-- Status：implementation repair（唯一真实 operation 为 `BLOCKED/runtime-budget`；清理 PASS，语义完成门未通过）
+- Status：implementation repair（三次真实 operation live-4/5/6 均为 `BLOCKED`；最后一次为
+  `BLOCKED/runtime-infrastructure`（child-timeout），清理/不变性/typed failure 证据独立 PASS，语义完成门未通过）
 - Started：2026-08-12T16:34:22+08:00
-- Last updated：2026-08-12T20:24:56+08:00
+- Last updated：2026-08-13T09:30:00+08:00
 - Design：`docs/delivery/designs/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-design.md`
 - Shared test plan：`docs/delivery/test-plans/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-test-plan.md`
 - Delivery baseline：`8b3ae42 Accept R2.3-003 retained-scope modeling`
@@ -373,3 +374,25 @@
   `86/86`、full modeling_team `548 PASS + 1 SKIP`，Ruff、compileall、diff-check PASS。详细证据见 shared plan §20。
 - Boundary：本轮没有创建 key/provider/child 或执行 N=2，live-5 历史结论仍为 semantic BLOCKED。三次授权剩余
   `1/3`；仅在本修复形成 clean commit 后从全新 live-6 目录执行最后一次，禁止第 4 次 operation。
+
+### 2026-08-13 — authorization 3/3 live-6 and independent Round 21 — main agent / tester
+
+- Baseline：clean `1515807 Bound Platform Examiner receipt wave`；live-6 output root 不存在；service active、
+  backend/frontend 200；冻结 ticket/N=2/six-tool allowlist preflight PASS。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、wall 约 21.2s）；Platform 在
+  单一并行 read wave 内完成读取并提交 typed report（3 steps、terminal report true、wall 约 70.1s、proxy 约 4.2s）；
+  Acceptance child 正好 3 inference steps 后未产生 terminal report，约 90 秒 child watchdog 到期，operation 为
+  `BLOCKED/runtime-infrastructure`（reason_code=`child-timeout`、`report_received=false`、`terminal_event=false`、
+  `proxy_receipt_count=0`）。Acceptance/CQ-002 未执行，没有 ordered N=2 verdict 或 semantic PASS。
+- Partial metrics：artifact 保留 `source, platform, acceptance` 三角色快照；Source 2 steps、Platform 3 steps、
+  Acceptance 3 steps `metrics_complete=false`。token increments 可重算 cumulative totals；失败是 typed
+  runtime/infrastructure，而非伪造 PASS 或 report-first terminal。
+- Cleanup/invariance：Project read key create/revoke `1/1`、旧 key 401、全部 cleanup flags true、operation-owned
+  active keys=0、plaintext released；ledger SHA `af6417…dcc`/66 records 与 platform digest `3606c7…f95` 前后相同；
+  secret/process/socket/temp residue 扫描干净；service、backend、frontend 健康。
+- Independent Round 21：PASS（failure-path/lifecycle/invariance read-only audit scope），无新 P0/P1。artifact
+  hash/mode、token increment 重算、有序 verdict 缺失（BLOCKED 正确形态）、DB 只读审计（project/admin 行均 revoked、
+  active project keys=0、audit 仅 2 条 success 行）、清理 flag 与 `ps`/socket 扫描均通过；详细证据见 shared plan §21。
+- Final disposition：三次授权 `3/3` 已全部消费，不再有 R2.3-006 自动重跑额度。最终真实语义结果为
+  `BLOCKED/runtime-infrastructure`（Acceptance child-timeout，无 ordered N=2 verdict）；cleanup/lifecycle/invariance
+  与 typed failure evidence 均独立 PASS，但这不构成 semantic PASS。
