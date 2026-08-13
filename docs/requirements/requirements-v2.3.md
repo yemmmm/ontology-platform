@@ -69,7 +69,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
-| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；真实验收 BLOCKED/runtime-infrastructure（child-timeout，清理 PASS）；失败证据修复待新 operation 授权复验` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
+| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；三次授权 operation（live-4/5/6）均为 BLOCKED（最后一次 live-6 为 Acceptance child-timeout）；清理/不变性/typed failure 证据独立 PASS，语义完成门未通过，待新 operation 授权复验` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -2068,9 +2068,10 @@ R2.3-003 非目标继续包括：
 
 ## R2.3-006 精简隔离 Examiner Runtime
 
-当前状态：`已实现；最新真实 operation 在 CQ-001 Platform 单波读取后触发 90 秒 child watchdog，
-BLOCKED/runtime-infrastructure（reason_code=child-timeout）；撤钥/不变性/零残留独立 PASS，typed failure
-证据与安全 reason 传播修复已通过 deterministic 独立验收，待新的 operation authorization 做真实 N=2 复验`
+当前状态：`已实现；三次授权 operation（live-4/5/6）已全部消耗：live-4 为 Platform 单波读取后 90 秒 child
+watchdog（child-timeout），live-5 为 Platform report receipt-count mismatch（acceptance-evidence），live-6 为
+Acceptance child 3 steps 后无 terminal report 触发 child-timeout；清理/不变性/零残留与 typed failure 证据
+独立 PASS，语义完成门（ordered N=2）未通过，需新的 operation authorization 做真实 N=2 复验`
 
 ### 背景与问题
 
