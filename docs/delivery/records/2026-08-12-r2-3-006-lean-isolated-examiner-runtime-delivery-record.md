@@ -396,3 +396,30 @@
 - Final disposition：三次授权 `3/3` 已全部消费，不再有 R2.3-006 自动重跑额度。最终真实语义结果为
   `BLOCKED/runtime-infrastructure`（Acceptance child-timeout，无 ordered N=2 verdict）；cleanup/lifecycle/invariance
   与 typed failure evidence 均独立 PASS，但这不构成 semantic PASS。
+
+### 2026-08-13 — new authorization live-7 real N=2 — main agent
+
+- Authorization：用户明确“授权一次建模执行次数”，只覆盖一次新的 R2.3-006 retained-workspace read-only
+  operation（live-7）；允许一个新的临时 Project read key exactly-once create/revoke，继续禁止 semantic start、
+  ontology/ledger write 或超过一次的自动重跑。本次为非常规需求续作，不走 requirement-delivery 流程。
+- Preflight：stable clean HEAD `454e804 Refresh R2.3-006 status after live-6 consumption`；live-7 output root
+  不存在；`ontology-platform.service` 曾因项目迁移后 systemd 单元/venv shebang 指向旧路径而无法启动，已修复
+  单元 WorkingDirectory、重建 backend `.venv` 并验证 backend/frontend 200；冻结 ticket/N=2/six-tool allowlist
+  与 retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、wall 约 25.6s）；Platform 在
+  单一并行 read wave 内完成读取并提交 typed report callback（2 steps、TTFT 约 1.4s、proxy 约 11.6s、total
+  tokens `33656`、output `8684`），随后 `_validate_platform_report_receipts` 在 receipt-count gate fail-closed 为
+  `BLOCKED/acceptance-evidence`（`binding_code=receipt-count-mismatch`、`proxy_receipt_count=5`、
+  `report_ref_count=3`）。Acceptance/CQ-002 未启动，没有 ordered N=2 verdict，不是 semantic PASS。
+- Partial metrics：artifact 保留 `source, platform` 两角色快照；Source `metrics_complete=true`，Platform
+  `metrics_complete=false`、`terminal_report=false`；token increments 与累计 totals 一致。失败是 typed
+  evidence 层（report 只含 3 个 evidence locator，而 proxy 收到 5 个成功 call receipt），不是伪造 PASS。
+- Cleanup/invariance：Project read key create/revoke `1/1`、旧 key 401、全部 cleanup flags true、
+  operation-owned active keys=0；ledger SHA `af6417…dcc`/66 records 与 platform digest `3606c7…f95` 前后相同；
+  `ps`/socket 扫描无 live-7 残留。
+- Failure layer：`modeling-quality/prompt-contract`。Platform 指令已声明“每个成功 proxy call 恰好一个
+  evidence_refs locator、locator 数必须等于 receipt 数”，但模型在真实运行中仍只提交 3 个 locator 对应 5 个
+  receipt，与 live-5 同一模式。裁决/诊断/清理均正确 fail-closed，不构成平台或 runtime 缺陷；修复责任面是
+  Platform Examiner 指令（`modeling_team/agent-packages/platform-examiner/instructions.md`）及其 Skill 契约。
+- Disposition：本次授权 `1/1` 已消费，未再启动第二次 operation。需先按 prompt-contract 缺陷修复 Platform
+  指令并完成 deterministic 复验，之后请求新的 operation authorization 才可执行 live-8。

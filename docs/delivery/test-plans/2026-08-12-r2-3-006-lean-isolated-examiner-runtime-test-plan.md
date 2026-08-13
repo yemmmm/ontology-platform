@@ -1193,3 +1193,57 @@ R2.3-006 semantic PASS）。这是授权 `3/3` 的最后一次真实 operation�
 
 No further operation is authorized. Final real semantic outcome remains `BLOCKED/runtime-infrastructure` at Acceptance
 child-timeout with no ordered N=2 verdict; this audit does not convert cleanup/lifecycle/invariance PASS into semantic PASS.
+
+## 22. 独立测试 Round 22（2026-08-13，live-7 new-authorization read-only audit，HEAD `454e804`）
+
+结论：`PASS`（failure-path/lifecycle/invariance audit scope；真实 semantic acceptance 仍 `BLOCKED`，不是
+R2.3-006 semantic PASS）。live-7 是用户重新授权的唯一一次真实 operation（`1/1` 已消费）；本轮未创建/使用 key、
+未启动 provider/child、未继续 N=2、未修改 live-7、product 或 record，禁止未授权的新 operation。未发现新的 P0/P1。
+
+### Real stage progress and metrics
+
+- Artifact `workspaces/modeling-acceptance/r23006-retained-n2-live-7/r23006-retained-acceptance.json` SHA-256
+  `a517435a77e088a56b510a84c5abe409b8a6878034ba79fe7b798e5f0be8324e`，mode `0600`；
+  父目录 mode `0700`，仅有该 artifact。
+- Top-level/result 为 `BLOCKED`，`role=platform`、`blocked_reason=acceptance-evidence`、`binding_code=
+  receipt-count-mismatch`、`proxy_receipt_count=5`、`report_ref_count=3`；`failure_category`/`reason_code` 为
+  null（Platform 报告证据门，不是 runtime 中断）。不存在 ordered verdict/count/final result，CQ-002 未执行，
+  因此不得宣称 semantic PASS。
+- Partial metrics 为 `source, platform` 两角色：Source 2 steps、`metrics_complete=true`、terminal report true、
+  wall `25556.18ms`、total tokens `24773`；Platform 2 steps、TTFT `1367.07ms`、proxy `11618.40ms`、total tokens
+  `33656`、output tokens `8684`、`metrics_complete=false`、terminal report false、blocked 与 outer 完全一致。
+  三角色 increments 均可重算 cumulative token totals；Platform 失败是 typed acceptance-evidence 层（report 只有
+  3 个 evidence locator，而 proxy 有 5 个成功 call receipt），与 live-5 同一失败模式。
+- Failure layer：`modeling-quality/prompt-contract`。Platform 指令/Skill 已声明“每个成功 proxy call 恰好一个
+  evidence_refs locator、locator 数必须等于 receipt 数”，但模型在真实运行中仍只提交 3 个 locator；裁决/诊断/
+  清理均正确 fail-closed，不构成平台或 runtime 缺陷。修复责任面是 `modeling_team/agent-packages/platform-examiner/
+  instructions.md` 与 `skills/platform-examiner/SKILL.md`。
+
+### Key, DB/audit and residue evidence
+
+- Artifact key lifecycle：Project read key create/revoke `1/1`（key `4bd4e44e-64a3-42b6-b745-716047497ca5`），
+  revoke status `200`、post-revoke status `401`/denied `true`；operation limits semantic writes/start-ledger/
+  build-session/lease/producer handoff/validation-reasoning mutations 全部为 `0`。
+- Read-only SQL against live PostgreSQL：operation project key scopes `['read']`、revoked；bootstrap admin
+  `r23006-retained-admin` scopes `['admin']`、revoked；active project keys=`0`；project audit
+  `api_key_created`+`api_key_revoked` 成功行在 operation window 内；`cleanup.admin_key_revoked=true`。
+- Invariance before/after equal：platform digest `3606c76ab235e3981bfa5da5fa560eff81587e54896ca77e7d3ef259ec0aef95`、
+  ledger SHA `af64172206eeef68c89dd1e5bdbde240d7e031e13914ae44ce69177d86080dcc`、ledger records `66`。Cleanup
+  flags `provider_stopped`、`children_stopped`、`forwarder_stopped`、`runtime_root_removed`、`admin_key_revoked`、
+  `plaintext_released` 全部 true。
+- Secret scan 未发现 plaintext key/Authorization/Bearer/`sk_read_`/`sk_admin_`/raw report/provider exception。
+  `ps`/Unix-socket 扫描无 live-7 child/runner/proxy socket/temp 残留；service active、backend/frontend
+  HTTP `200/200`。
+
+### Commands and boundary
+
+1. Read-only artifact JSON/hash/mode/inventory/secret scan 与 token-increment 重算：PASS；roles `source/platform`、
+   steps `2/2`、token totals 与全部 increments 一致，ordered verdict keys 按 BLOCKED 缺失。
+2. Read-only SQL（`ApiKeyModel`、`SecurityAuditEventModel`）operation window/project：project active keys `0`、
+   operation project/admin rows revoked、audit create/revoke success rows；无 mutation。
+3. `systemctl --user ... status ontology-platform.service`、backend `/api/health`、frontend `/`：active、`200/200`。
+4. `ps`、Unix-socket、live-7 目录扫描：无 operation child/process/socket/temp 残留；artifact 仅存。
+
+live-7 已消费本次唯一授权（`1/1`），未再启动 operation。最终真实语义结果仍为 `BLOCKED/acceptance-evidence`
+（Platform receipt-count-mismatch，无 ordered N=2 verdict）；在修复 Platform prompt-contract 缺陷并通过
+deterministic 复验、且获得新的 operation authorization 前，禁止执行 live-8。

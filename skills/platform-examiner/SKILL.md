@@ -22,6 +22,16 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
   retrieval wave, follow a cursor, or widen the completeness/receipt gate. If six calls cannot
   cover the needed facts, preserve the resulting unknown and report an explicit incomplete
   result with an explicit gap.
+- Mandatory locator count check before submission: mechanically count the successful proxy
+  calls in the returned wave and compare with the `evidence_refs` array about to be sent. The
+  number of `evidence_refs` items must be exactly equal to the number of successful proxy
+  calls; there is no permitted reason to omit, merge, or drop a locator. Every successful call
+  that returned a receipt must appear as its own locator with its exact `request_digest`,
+  `response_digest`, and `artifact_path`. A report whose locator count differs from the
+  successful-call count is automatically rejected by the Host with `receipt-count-mismatch`
+  and cannot be repaired by a second wave or a follow-up message. Re-count immediately before
+  sending; when the counts differ, add the missing locators in the same report and send it in
+  that same inference.
 - Keep query basis, Evidence, lineage, response digests, and explicit completeness in the
   terminal report. If a first-wave response is cursor-bearing, truncated, incomplete, ambiguous,
   or missing a fact, preserve its completeness markers and state the unknown and explicit gap
