@@ -568,3 +568,17 @@
 - Repair（live-13 前完成）：prompt 机械步骤强化——提交前把"收到 N 个成功调用（ordinal 0..N-1）"显式写入
   思考并按 1..N 逐条核销 locator，缺失即补齐后同一 inference 提交；继续禁止二次波/补问。
 - Disposition：授权 `1/5` 已消费。
+
+### 2026-08-13 — authorization 2/5 live-13 real N=2 — main agent
+
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `28714`）；
+  Platform 2 steps（TTFT 约 1.4s、proxy 约 10.8s、evidence tokens `22906`、total tokens `37989`）提交 report
+  后被 `receipt-count-mismatch` 拒绝：`proxy_receipt_count=5`、`report_ref_count=3`、
+  `proxy_receipt_ordinals="0,1,2,3,4"`、`report_ref_ids="p0,p1,p2"`。
+- 关键观察：live-13 与 live-12 失败形态几乎完全相同（5→3、p0..p2）——"No locator selection by importance"
+  契约（live-12 后新增）未改变模型行为。模型确实发起 5 次真实读取（proxy 10.8s），仍只写前 3 个 locator。
+- Repair（live-14 前完成）：count-mismatch evidence 追加 `report_ref_tools`（模型 locator 的工具名）与
+  `proxy_receipt_tools`（Host receipts 的工具名），可精确对比"模型漏掉了哪个工具的 locator"（如是否丢弃了
+  特定工具如 query_semantic_context 或 get_build_session），以区分"模型按工具取舍"还是"截断/遗漏"。
+  focused `45/45`、full `549 PASS + 1 SKIP` 无 regression。
+- Disposition：授权 `2/5` 已消费。诊断增强后消耗第 3 轮（live-14）。

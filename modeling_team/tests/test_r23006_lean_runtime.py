@@ -1170,7 +1170,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
                     "report_ref_count": 2,
                     "proxy_receipt_count": 1,
                     "report_ref_ids": "ref-1,ref-2",
+                    "report_ref_tools": "",
                     "proxy_receipt_ordinals": "None",
+                    "proxy_receipt_tools": "",
                 },
             ),
         )

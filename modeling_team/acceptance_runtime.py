@@ -1033,6 +1033,42 @@ def _ref_id_summary(refs: Any) -> str:
     return ",".join(parts)[:200]
 
 
+def _ref_tool_summary(refs: Any) -> str:
+    """Join report-local locator tool names into one safe diagnostic string."""
+
+    if not isinstance(refs, (list, tuple)):
+        return ""
+    safe = re.compile(r"[^A-Za-z0-9_:\-]")
+    parts: list[str] = []
+    for ref in refs:
+        if not isinstance(ref, Mapping):
+            continue
+        tool = ref.get("tool")
+        if not isinstance(tool, str) or not tool:
+            continue
+        cleaned = safe.sub("", tool)
+        if cleaned and len(cleaned) <= 64:
+            parts.append(cleaned)
+    return ",".join(parts)[:200]
+
+
+def _receipt_tool_summary(receipts: Any) -> str:
+    """Join proxy receipt tool names into one safe diagnostic string."""
+
+    if not isinstance(receipts, (list, tuple)):
+        return ""
+    safe = re.compile(r"[^A-Za-z0-9_:\-]")
+    parts: list[str] = []
+    for receipt in receipts:
+        tool = getattr(receipt, "tool", None)
+        if not isinstance(tool, str) or not tool:
+            continue
+        cleaned = safe.sub("", tool)
+        if cleaned and len(cleaned) <= 64:
+            parts.append(cleaned)
+    return ",".join(parts)[:200]
+
+
 def _receipt_ordinal_summary(receipts: Any) -> str:
     """Join proxy receipt ordinals into one safe diagnostic string."""
 
@@ -1084,7 +1120,9 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
                 "report_ref_count": len(refs),
                 "proxy_receipt_count": len(receipts),
                 "report_ref_ids": _ref_id_summary(refs),
+                "report_ref_tools": _ref_tool_summary(refs),
                 "proxy_receipt_ordinals": _receipt_ordinal_summary(receipts),
+                "proxy_receipt_tools": _receipt_tool_summary(receipts),
             },
         )
     result: set[str] = set()

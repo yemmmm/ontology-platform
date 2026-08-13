@@ -492,6 +492,7 @@ _BLOCKED_INTEGER_FIELDS = frozenset({
 })
 _BLOCKED_FIELD_SET_FIELDS = frozenset({
     "report_field_set", "verdict_field_set", "report_ref_ids", "proxy_receipt_ordinals",
+    "report_ref_tools", "proxy_receipt_tools",
 })
 _BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
 _PLATFORM_BINDING_CODES = frozenset({
