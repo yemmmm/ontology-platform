@@ -624,3 +624,20 @@
 - 趋势：locator 数量问题已通过（live-15 count 通过），page 语义契约已新增（live-15 后）；剩余卡点为
   Platform 偶发单波读取后不产生第二步（child-timeout，与 live-4/14 同 runtime 模式）。后续需要新的 operation
   authorization 执行 live-17。
+
+### 2026-08-14 — authorization 1/5 live-17 real N=2 — main agent
+
+- Authorization：用户新增 5 轮授权（live-17/18/19/20/21）；每轮允许一个新的临时 Project read key
+  exactly-once create/revoke，禁止 semantic start、ontology/ledger write 或自动重跑。
+- Preflight：stable clean HEAD `019e7f5 Record live-16 child-timeout evidence`；live-17 output root 不存在；
+  service active、backend/frontend 200；DeepSeek credential 可用；冻结 ticket/N=2/six-tool allowlist 与
+  retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `25719`）；
+  Platform 发出 5 次成功 proxy 调用（proxy 约 9.4s、5 receipts、evidence tokens `34694`）后未产生第二个
+  inference step（`inference_steps=1`、`turn_start_count=1`、total tokens `15567`、output tokens `7248`），
+  未提交 report（`report_received=false`、`terminal_event=false`），约 90 秒 child watchdog 到期，operation
+  为 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- Failure layer：`runtime/infrastructure`。child-timeout 已是第 4 次出现（live-4/14/16/17），模式一致：
+  Platform 在单一并行 wave 完成读取后停止生成，未提交 report。live-15 曾成功产生 2 steps 并提交 report
+  （page-sequence-invalid），说明运行时路径可行，本轮属模型停止生成行为。
+- Disposition：授权 `1/5` 已消费。剩余 live-18/19/20/21。
