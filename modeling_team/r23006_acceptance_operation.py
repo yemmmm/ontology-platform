@@ -480,6 +480,7 @@ _BLOCKED_EVIDENCE_FIELDS = frozenset({
     "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
     "report_received", "terminal_event", "proxy_receipt_count", "binding_code", "report_ref_count",
     "index", "report_field_set", "verdict_field_set", "report_ref_ids", "proxy_receipt_ordinals",
+    "report_ref_tools", "proxy_receipt_tools",
 })
 _BLOCKED_CODE_FIELDS = frozenset({
     # Keep this allowlist synchronized with every production
