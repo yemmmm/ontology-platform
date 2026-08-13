@@ -595,10 +595,21 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
                         f"typed Examiner blocked evidence value is invalid: {field}"
                     )
                 value = _PACKET_LABELS[value]
-            if (
-                not _SAFE_BLOCKED_CODE.fullmatch(value)
-                or (field == "path" and (Path(value).is_absolute() or ".." in Path(value).parts))
-            ):
+            if field == "path":
+                if (
+                    not value
+                    or len(value) > 200
+                    or Path(value).is_absolute()
+                    or ".." in Path(value).parts
+                    or "/" not in value
+                    or re.search(r"\s{2,}", value)
+                ):
+                    raise R23006OperationError(
+                        f"typed Examiner blocked evidence value is invalid: {field}"
+                    )
+                safe_details[field] = value
+                continue
+            if not _SAFE_BLOCKED_CODE.fullmatch(value):
                 raise R23006OperationError(
                     f"typed Examiner blocked evidence value is invalid: {field}"
                 )

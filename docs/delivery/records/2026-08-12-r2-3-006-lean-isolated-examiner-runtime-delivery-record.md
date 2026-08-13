@@ -665,3 +665,19 @@
 - Failure layer：`runtime/infrastructure`。Platform 停止生成行为再现（live-14/16/17/20 同模式，4 次）；与
   live-19 成功形成对照：模型在 wave 后是否继续生成具有随机性。
 - Disposition：授权 `4/5` 已消费。剩余 live-21 最后一轮。
+
+### 2026-08-14 — authorization 5/5 live-21 real N=2 — main agent
+
+- Real result：operation 在写 artifact 前的 `_blocked_result` 证据投影处 fail-closed 为
+  `R23006OperationError: typed Examiner blocked evidence value is invalid: path`，未生成 artifact。Source/
+  Platform 实跑已发生（授权已消费）。Root cause：Source 报告 location 路径含空格/锚点等字符时，投影的
+  `path` 字段被 `_SAFE_BLOCKED_CODE` 拒绝。
+- Failure layer：`platform-contract`（诊断投影缺口，非语义失败）。
+- Repair：`path` 投影改为"必须含 `/`、无绝对路径/`..`/连续多空格、长度 ≤200"的宽松但 fail-closed 校验，
+  允许空格与锚点（真实路径特征），继续拒绝 provider 文本（"platform Examiner packet"、"/etc/passwd"、
+  "provider report text" 等测试保持拒绝）；focused `45/45`、full `549 PASS + 1 SKIP` 无 regression。
+- 5/5 授权全部消费：live-17（Platform child-timeout）、live-18（投影拒绝）、live-19（Platform 首次成功、
+  Acceptance child-timeout）、live-20（Platform child-timeout）、live-21（投影拒绝）。
+- 趋势总结：count/page 契约已收敛（live-19 Platform 交付被接受的 typed report，3 steps/terminal true）；
+  Platform 停止生成行为（child-timeout，live-14/16/17/20 共 4 次）与投影缺口（live-11/18/21 共 3 次）为
+  当前主要 runtime/contract 卡点。后续需要新的 operation authorization 执行 live-22。
