@@ -641,3 +641,16 @@
   Platform 在单一并行 wave 完成读取后停止生成，未提交 report。live-15 曾成功产生 2 steps 并提交 report
   （page-sequence-invalid），说明运行时路径可行，本轮属模型停止生成行为。
 - Disposition：授权 `1/5` 已消费。剩余 live-18/19/20/21。
+
+### 2026-08-14 — authorization 3/5 live-19 real N=2 — main agent
+
+- Real result：**Source 完成（2 steps、`metrics_complete=true`、terminal report true）；Platform 首次成功
+  （3 steps、`metrics_complete=true`、terminal report true、proxy 约 264ms、evidence tokens `7001`、total
+  tokens `71988`）**——count 与 page 契约全部通过，report 被 Host 接受；Acceptance child 启动后 2 steps 未
+  产生 terminal report，约 90 秒 child watchdog 到期，operation 为 `BLOCKED/runtime-infrastructure`
+  （`reason_code=child-timeout`、`role=acceptance`）。CQ-002 未执行，无 ordered N=2 verdict。
+- 关键进展：prompt 修复（page-per-call + no-importance + ordinal 对齐）组合生效，Platform 首次交付被接受的
+  typed report。失败前移到 Acceptance 阶段（child-timeout，与 live-4/6 同模式：Acceptance 2-3 steps 后未
+  提交 verdict）。
+- Failure layer：`runtime/infrastructure`（Acceptance child-timeout）。清理/不变性/typed failure 证据正常。
+- Disposition：授权 `3/5` 已消费。剩余 live-20/21。Platform 已验证可达；后续聚焦 Acceptance 阶段。
