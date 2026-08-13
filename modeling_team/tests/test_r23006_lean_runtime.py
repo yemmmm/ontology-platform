@@ -571,6 +571,13 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "same typed report",
             "resulting unknown",
             "explicit gap",
+            "mechanically count",
+            "exactly equal to",
+            "receipt-count-mismatch",
+            "cannot be repaired by a second wave",
+            "add the missing locators",
+            "same inference",
+            "Re-count immediately before sending",
         ):
             self.assertIn(marker, prompt)
         self.assertNotIn("likely-needed", prompt)

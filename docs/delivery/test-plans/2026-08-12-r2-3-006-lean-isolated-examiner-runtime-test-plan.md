@@ -1247,3 +1247,43 @@ R2.3-006 semantic PASS）。live-7 是用户重新授权的唯一一次真实 op
 live-7 已消费本次唯一授权（`1/1`），未再启动 operation。最终真实语义结果仍为 `BLOCKED/acceptance-evidence`
 （Platform receipt-count-mismatch，无 ordered N=2 verdict）；在修复 Platform prompt-contract 缺陷并通过
 deterministic 复验、且获得新的 operation authorization 前，禁止执行 live-8。
+
+## 23. 独立测试 Round 23（2026-08-13，Platform prompt-contract 修复 deterministic 复验，HEAD `450bbe6`）
+
+结论：`PASS`（deterministic prompt-contract 修复复验 scope；不等同于真实 N=2 semantic acceptance）。本轮未创建/
+使用 key、未启动 provider/child、未执行 operation，仅复验 `450bbe6` 的 Platform Examiner 指令/Skill 修复是否
+按 marker 固化并保持全部 deterministic 回归。未发现新的 P0/P1。
+
+### Prompt-contract 修复完整性
+
+- 修复 commit `450bbe6` 同时更新两个权威 prompt 表面：`modeling_team/agent-packages/platform-examiner/
+  instructions.md` 新增 "Mandatory locator count check before submission" 小节，`skills/platform-examiner/
+  SKILL.md` 新增同名 bullet；两处文本在空白归一化后语义一致（逐项比对：mechanically count、exactly equal
+  to、receipt-count-mismatch、cannot be repaired by a second wave、add the missing locators、Re-count
+  immediately before sending、same inference 全部双面命中）。
+- 修复目标直指 live-5/live-7 同一失败模式（report 3 locators vs proxy 5 receipts）：明确"没有允许理由省略/
+  合并/丢弃 locator"、"计数不等自动被 Host 拒绝且不可二次波修复"、"发送前立即重数、同一 inference 内补齐"。
+  不修改产品代码、不放松 schema/预算/隔离边界。
+
+### Marker 固化与 regression
+
+- 更新 `modeling_team/tests/test_r23006_lean_runtime.py` 的
+  `test_platform_examiner_prompt_requires_parallel_wave_then_report`，新增 7 个 marker：
+  `mechanically count`、`exactly equal to`、`receipt-count-mismatch`、`cannot be repaired by a second wave`、
+  `add the missing locators`、`same inference`、`Re-count immediately before sending`；改后单测 `30/30 PASS`
+  （首次因大小写/连字符形式修正，最终全绿）。
+- focused：`python -m unittest modeling_team.tests.test_r23006_lean_runtime` `30/30 PASS`。
+- full：`python -m unittest discover -s modeling_team/tests -p 'test_*.py'` `548 PASS + 1 SKIP`，退出码 0。
+  修复未引入任何 regression。
+
+### Commands and boundary
+
+1. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_lean_runtime -q`：
+   `30/30 PASS`。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py' -q`：
+   `548 PASS + 1 SKIP`，退出码 0。
+3. 空白归一化 marker 双向比对（instructions + SKILL 拼接文本 vs 7 个新 marker）：全部命中。
+
+本轮 PASS 只证明 prompt-contract 修复已按 marker 固化且无 deterministic 回归；真实 semantic acceptance 仍需
+新的 operation authorization 执行 live-8，届时按验收要求产生 ordered N=2 verdict 后才可宣称 R2.3-006 semantic
+PASS。

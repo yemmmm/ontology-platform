@@ -423,3 +423,16 @@
   Platform Examiner 指令（`modeling_team/agent-packages/platform-examiner/instructions.md`）及其 Skill 契约。
 - Disposition：本次授权 `1/1` 已消费，未再启动第二次 operation。需先按 prompt-contract 缺陷修复 Platform
   指令并完成 deterministic 复验，之后请求新的 operation authorization 才可执行 live-8。
+
+### 2026-08-13 — prompt-contract 修复与 Round 23 deterministic 复验 — main agent / tester
+
+- Repair commit `450bbe6`：Platform Examiner 指令与 Skill 同时新增 "Mandatory locator count check before
+  submission" 契约——提交前机械重数成功 proxy calls 与 `evidence_refs`，计数不等时同一 inference 内补齐 locator，
+  不省略/合并/丢弃；明确 Host 将自动以 `receipt-count-mismatch` 拒绝且不可二次波修复。
+- Round 23 deterministic 复验：PASS。两处权威 prompt 表面空白归一化后语义一致；marker 固化测试新增 7 个 marker
+  （mechanically count、exactly equal to、receipt-count-mismatch、cannot be repaired by a second wave、add the
+  missing locators、same inference、Re-count immediately before sending）后 focused `30/30`、full `548 PASS +
+  1 SKIP`，无 regression。
+- Boundary：本轮未创建/使用 key、未启动 provider/child、未执行 operation；live-7 授权结论不变（`1/1` 已消费）。
+- Next gate：真实 semantic acceptance 仍需新的 operation authorization 执行 live-8，届时以 ordered N=2
+  verdict 完成验收；禁止未授权 operation。
