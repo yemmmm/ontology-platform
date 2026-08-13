@@ -1287,3 +1287,48 @@ deterministic 复验、且获得新的 operation authorization 前，禁止执�
 本轮 PASS 只证明 prompt-contract 修复已按 marker 固化且无 deterministic 回归；真实 semantic acceptance 仍需
 新的 operation authorization 执行 live-8，届时按验收要求产生 ordered N=2 verdict 后才可宣称 R2.3-006 semantic
 PASS。
+
+## 24. 独立测试 Round 24（2026-08-13，live-8 new-authorization audit + ordinal-alignment repair，HEAD `8991104`）
+
+结论：`PASS`（live-8 failure-path/lifecycle/invariance audit + ordinal-alignment prompt/proxy repair 的
+deterministic 复验；真实 semantic acceptance 仍 `BLOCKED`）。live-8 消费本次授权 `1/2`；本轮未创建/使用 key、
+未启动 provider/child、未继续 N=2、未修改 live-8、product 或 record。未发现新的 P0/P1。
+
+### Real stage progress and metrics
+
+- Artifact `workspaces/modeling-acceptance/r23006-retained-n2-live-8/r23006-retained-acceptance.json` SHA-256
+  `0b090b1b1795cbcb6ce397741e1b2b1ecc0fdf7ffb6f096e11fd51e1d3c7f64e`，mode `0600`；父目录 mode `0700`，仅有该
+  artifact。
+- Top-level/result 为 `BLOCKED`，`role=platform`、`blocked_reason=acceptance-evidence`、`binding_code=
+  receipt-count-mismatch`、`proxy_receipt_count=5`、`report_ref_count=4`；不存在 ordered verdict/count/final
+  result，CQ-002 未执行，不得宣称 semantic PASS。
+- Partial metrics 为 `source, platform` 两角色：Source 2 steps、`metrics_complete=true`、terminal report true、
+  wall `23615.14ms`、total tokens `24557`；Platform 2 steps、TTFT `1530.22ms`、proxy `6337.99ms`、total tokens
+  `44545`、output tokens `12707`、`metrics_complete=false`、terminal report false、blocked 与 outer 完全一致。
+  token increments 与累计 totals 一致；失败是 typed acceptance-evidence 层（4 locators vs 5 receipts）。
+- Failure layer：`modeling-quality/prompt-contract`。同一失败模式第三次出现（live-5/7/8），从 3→5 改善到
+  4→5 但仍不匹配，说明纯文字计数指令不足以机械对齐。
+
+### Repair (deterministic)
+
+- Proxy：`ScopedReadProxy` 成功响应新增 `call_ordinal`（zero-based）与 `call_total`（运行中成功调用计数），
+  focused 断言验证第 1/2 次调用 ordinal/total 为 `0/1`、`1/2` 且 receipts 数正确。
+- Prompt：`modeling_team/agent-packages/platform-examiner/instructions.md` 与
+  `skills/platform-examiner/SKILL.md` 同步新增 "Mandatory ordinal alignment" 契约（逐条对齐、`ref_id =
+  "p<call_ordinal>"`、`call_total` 一致、提交前核对 ordinal 列表）。
+- Marker：`test_platform_examiner_prompt_requires_parallel_wave_then_report` 新增 `call_ordinal`、`call_total`、
+  `p<call_ordinal>`、`contiguous and complete`、`list the received ordinals` 5 个 marker。
+- Regressions：focused `30/30 PASS`；full `548 PASS + 1 SKIP`，退出码 0。
+
+### Commands and boundary
+
+1. Read-only artifact JSON/hash/mode/inventory/secret scan 与 token-increment 重算：PASS；roles `source/platform`、
+   steps `2/2`、token totals 与全部 increments 一致，ordered verdict keys 按 BLOCKED 缺失。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_lean_runtime -q`：
+   `30/30 PASS`（含新 ordinal markers 与 proxy ordinal/total 断言）。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py' -q`：
+   `548 PASS + 1 SKIP`，退出码 0。
+4. `systemctl --user ... status ontology-platform.service`、backend `/api/health`、frontend `/`：active、`200/200`。
+
+live-8 消费本次授权 `1/2`，修复已 deterministic 复验；第 2 轮（live-9）授权允许执行一次新的真实 N=2。若
+live-9 仍因 ordinal/count 不一致 BLOCKED，则失败层仍为 prompt-contract，禁止再次无授权重跑。

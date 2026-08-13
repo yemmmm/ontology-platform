@@ -226,6 +226,18 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         })
         self.assertTrue(accepted["ok"])
         self.assertEqual(proxy.backend_calls, 1)
+        self.assertEqual(accepted["call_ordinal"], 0)
+        self.assertEqual(accepted["call_total"], 1)
+        second = proxy.handle({
+            "token": "proxy-token",
+            "operation": "tools/call",
+            "tool": "query_semantic_context",
+            "arguments": {**query_arguments, "ontology_ids": ["ontology-1"]},
+        })
+        self.assertTrue(second["ok"])
+        self.assertEqual(second["call_ordinal"], 1)
+        self.assertEqual(second["call_total"], 2)
+        self.assertEqual(len(proxy.receipt_snapshot), 2)
 
     def test_metrics_use_cumulative_increments_and_step_budget(self) -> None:
         metrics = ExaminerRunMetrics("platform")
@@ -578,6 +590,11 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "add the missing locators",
             "same inference",
             "Re-count immediately before sending",
+            "call_ordinal",
+            "call_total",
+            "p<call_ordinal>",
+            "contiguous and complete",
+            "list the received ordinals",
         ):
             self.assertIn(marker, prompt)
         self.assertNotIn("likely-needed", prompt)

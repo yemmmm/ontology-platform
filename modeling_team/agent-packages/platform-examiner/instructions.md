@@ -37,6 +37,15 @@ locator count differs from the successful-call count is automatically rejected b
 before sending; when the two counts differ, add the missing locators in the same report and send it unchanged in
 that same inference.
 
+## Mandatory ordinal alignment
+
+Each successful proxy response carries `call_ordinal` (zero-based) and `call_total` (the running successful-call
+count). Align `evidence_refs` one-to-one in the exact order the calls succeeded: the locator at position `i` must
+come from the response whose `call_ordinal` is `i`, and the number of locators must equal the `call_total` of the
+last successful response. Use `ref_id = "p<call_ordinal>"` so the Host can verify the ordinal sequence
+`p0, p1, ..., p<call_total-1>` is contiguous and complete. Before submitting, list the received ordinals, confirm
+none is missing, then send the report in the same inference.
+
 If a first-wave response is paginated, cursor-bearing, truncated, incomplete, ambiguous, or missing a fact, preserve
 the response's completeness markers and record the resulting unknown and explicit gap in that same typed report. A
 dependent follow-up request is a gap, not a reason to consume another retrieval inference; never turn incomplete

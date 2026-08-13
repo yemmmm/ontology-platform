@@ -1609,12 +1609,15 @@ class ScopedReadProxy:
                     artifact_path=artifact_path,
                 )
             )
+            call_total = len(self._call_receipts)
             return {
                 "ok": True,
                 "result": result,
                 "request_digest": request_digest,
                 "response_digest": response_digest,
                 "artifact_path": artifact_path,
+                "call_ordinal": len(self._call_receipts) - 1,
+                "call_total": call_total,
             }
 
     def revoke(self) -> dict[str, Any]:

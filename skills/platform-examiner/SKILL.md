@@ -32,6 +32,14 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
   and cannot be repaired by a second wave or a follow-up message. Re-count immediately before
   sending; when the counts differ, add the missing locators in the same report and send it in
   that same inference.
+- Mandatory ordinal alignment: each successful proxy response carries `call_ordinal`
+  (zero-based) and `call_total` (running successful-call count). Align `evidence_refs`
+  one-to-one in the exact order the calls succeeded; the locator at position `i` must come
+  from the response whose `call_ordinal` is `i`, and the number of locators must equal the
+  `call_total` of the last successful response. Use `ref_id = "p<call_ordinal>"` so the Host
+  can verify the ordinal sequence `p0, p1, ..., p<call_total-1>` is contiguous and complete.
+  Before submitting, list the received ordinals, confirm none is missing, then send the
+  report in the same inference.
 - Keep query basis, Evidence, lineage, response digests, and explicit completeness in the
   terminal report. If a first-wave response is cursor-bearing, truncated, incomplete, ambiguous,
   or missing a fact, preserve its completeness markers and state the unknown and explicit gap

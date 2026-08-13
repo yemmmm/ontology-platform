@@ -436,3 +436,31 @@
 - Boundary：本轮未创建/使用 key、未启动 provider/child、未执行 operation；live-7 授权结论不变（`1/1` 已消费）。
 - Next gate：真实 semantic acceptance 仍需新的 operation authorization 执行 live-8，届时以 ordered N=2
   verdict 完成验收；禁止未授权 operation。
+
+### 2026-08-13 — authorization 1/2 live-8 real N=2 — main agent
+
+- Authorization：用户授权 2 轮新的 R2.3-006 retained-workspace read-only operation（live-8/live-9）；每轮允许
+  一个新的临时 Project read key exactly-once create/revoke，继续禁止 semantic start、ontology/ledger write 或
+  超过一轮的自动重跑。非常规需求续作，不走 requirement-delivery 流程。
+- Preflight：stable clean HEAD `8991104 Verify R2.3-006 locator contract via Round 23`；live-8 output root 不
+  存在；service active、backend/frontend 200；DeepSeek credential binding 可用；冻结 ticket/N=2/six-tool
+  allowlist 与 retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、wall 约 23.6s、total tokens
+  `24557`）；Platform 在单一并行 read wave 内完成读取并提交 typed report callback（2 steps、TTFT 约 1.5s、
+  proxy 约 6.3s、total tokens `44545`），随后 `_validate_platform_report_receipts` 在 receipt-count gate
+  fail-closed 为 `BLOCKED/acceptance-evidence`（`binding_code=receipt-count-mismatch`、
+  `proxy_receipt_count=5`、`report_ref_count=4`）。Acceptance/CQ-002 未启动，没有 ordered N=2 verdict。
+- Partial metrics：artifact 保留 `source, platform` 两角色快照；Source `metrics_complete=true`，Platform
+  `metrics_complete=false`、`terminal_report=false`；token increments 与累计 totals 一致。失败是 typed evidence
+  层（report 只含 4 个 evidence locator，而 proxy 收到 5 个成功 call receipt），从 live-5/7 的 3→5 改善到
+  4→5，但 gate 仍严格 fail-closed，不是伪造 PASS。
+- Cleanup/invariance：Project read key create/revoke `1/1`、旧 key 401、全部 cleanup flags true、
+  operation-owned active keys=0；ledger SHA `af6417…dcc`/66 records 与 platform digest `3606c7…f95` 前后相同。
+- Failure layer：`modeling-quality/prompt-contract`。同一失败模式（locator 数少于 receipt 数）连续第三次出现
+  （live-5/7/8），纯文字计数指令不足以让模型机械对齐。
+- Repair（live-9 前完成）：proxy 成功响应新增 `call_ordinal`（zero-based）与 `call_total`（运行中成功调用
+  计数）；Platform instructions.md 与 SKILL.md 新增 "Mandatory ordinal alignment" 契约——按成功顺序逐条对齐
+  `evidence_refs`、`ref_id = "p<call_ordinal>"`、locator 数必须等于最后一次响应的 `call_total`、提交前列出
+  收到的 ordinals 并确认无缺失。marker 测试新增 5 个 marker，proxy ordinal/total 有聚焦断言；focused
+  `30/30`、full `548 PASS + 1 SKIP` 无 regression。
+- Disposition：授权 `1/2` 已消费。修复完成 deterministic 复验后，消耗第 2 轮（live-9）执行真实 N=2。
