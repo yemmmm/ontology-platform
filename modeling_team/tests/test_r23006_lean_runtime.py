@@ -599,6 +599,10 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "every ordinal",
             "mechanical inventory",
             "unconditionally",
+            "Page field is per-call",
+            "page-sequence-invalid",
+            "has_more = false",
+            "never permits a second page read",
         ):
             self.assertIn(marker, prompt)
         self.assertNotIn("likely-needed", prompt)

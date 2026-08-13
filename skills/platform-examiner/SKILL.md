@@ -50,6 +50,16 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
   `p<ordinal>` exists in `evidence_refs`. A report with fewer locators than successful
   calls is rejected with `receipt-count-mismatch` and cannot be fixed by a second wave or a
   follow-up message.
+- Page field is per-call, not a wave-wide sequence: the `page` object in a locator
+  describes only that one call's own pagination, never a sequence across different calls.
+  Each distinct successful call has its own locator whose `page.ordinal` starts at `0`. A
+  complete response uses `{"ordinal": 0, "input_cursor": null, "output_cursor": null,
+  "has_more": false, "sequence_complete": true}`. Only when the same call itself returns
+  `has_more: true` with a cursor would that same call's next page use `ordinal: 1` and
+  carry the returned cursor; the frozen allowlist never permits a second page read in this
+  wave, so every locator in this report has `page.ordinal = 0` and `has_more = false`.
+  Never invent ordinal `1, 2, ...` across different tool calls: a report whose locator
+  pages form an invented sequence is rejected with `page-sequence-invalid`.
 - Keep query basis, Evidence, lineage, response digests, and explicit completeness in the
   terminal report. If a first-wave response is cursor-bearing, truncated, incomplete, ambiguous,
   or missing a fact, preserve its completeness markers and state the unknown and explicit gap

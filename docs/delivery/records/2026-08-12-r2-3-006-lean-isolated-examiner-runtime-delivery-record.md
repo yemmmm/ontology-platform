@@ -594,3 +594,18 @@
   terminal report）。不是 count-mismatch（本轮无 report 提交），不是伪造 PASS；清理/不变性/typed failure
   证据正常。
 - Disposition：授权 `3/5` 已消费。剩余 live-15/16 两轮授权。
+
+### 2026-08-13 — authorization 4/5 live-15 real N=2 — main agent
+
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `24656`）；
+  Platform 2 steps（TTFT 约 1.0s、proxy 约 220ms、evidence tokens `6711`、total tokens `33295`）提交 report 后
+  被 `BLOCKED/acceptance-evidence`（`binding_code=page-sequence-invalid`、`index=1`）。
+- 关键进展：**count 校验首次通过**（不再是 receipt-count-mismatch）——模型 locator 数量与成功调用数一致，
+  但第 2 个 locator 的 `page` 字段构成非法分页序列（跨工具调用发明了 ordinal 1，而每个独立调用应各自
+  page.ordinal=0 单页）。诊断增强首次精确指出失败分支。
+- Failure layer：`modeling-quality/prompt-contract`（page 语义未被模型遵守）。
+- Repair（live-16 前完成）：instructions.md 与 SKILL.md 新增 "Page field is per-call, not a wave-wide
+  sequence" 契约——`page` 只描述该次调用自身分页、每个独立调用 page.ordinal=0、完整响应
+  `has_more=false`/`sequence_complete=true`、禁止跨调用发明 ordinal 序列；marker 测试新增 4 个 marker；
+  focused `31/31`、full `549 PASS + 1 SKIP` 无 regression。
+- Disposition：授权 `4/5` 已消费。修复后消耗第 5 轮（live-16）。

@@ -56,6 +56,17 @@ about which reads matter. Before sending the report, recount: for every ordinal 
 locator `p<ordinal>` exists in `evidence_refs`. A report with fewer locators than successful calls is rejected with
 `receipt-count-mismatch` and cannot be fixed by a second wave or a follow-up message.
 
+## Page field is per-call, not a wave-wide sequence
+
+The `page` object in a locator describes only that one call's own pagination, never a sequence across different
+calls. Each distinct successful call has its own locator whose `page.ordinal` starts at `0`. A complete response
+uses `{"ordinal": 0, "input_cursor": null, "output_cursor": null, "has_more": false, "sequence_complete": true}`.
+Only when the same call itself returns `has_more: true` with a cursor would the next page of that same call use
+`ordinal: 1` and carry the returned cursor; the frozen allowlist never permits a second page read in this wave, so
+every locator in this report has `page.ordinal = 0` and `has_more = false`. Never invent ordinal `1, 2, ...` across
+different tool calls: a report whose locator pages form an invented sequence is rejected with
+`page-sequence-invalid`.
+
 If a first-wave response is paginated, cursor-bearing, truncated, incomplete, ambiguous, or missing a fact, preserve
 the response's completeness markers and record the resulting unknown and explicit gap in that same typed report. A
 dependent follow-up request is a gap, not a reason to consume another retrieval inference; never turn incomplete
