@@ -654,3 +654,14 @@
   提交 verdict）。
 - Failure layer：`runtime/infrastructure`（Acceptance child-timeout）。清理/不变性/typed failure 证据正常。
 - Disposition：授权 `3/5` 已消费。剩余 live-20/21。Platform 已验证可达；后续聚焦 Acceptance 阶段。
+
+### 2026-08-14 — authorization 4/5 live-20 real N=2 — main agent
+
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `25768`）；
+  Platform 发出 5 次成功 proxy 调用（proxy 约 7.5s、5 receipts、evidence tokens `34932`）后未产生第二个
+  inference step（`inference_steps=1`、total tokens `17464`），未提交 report
+  （`report_received=false`、`terminal_event=false`），约 90 秒 child watchdog 到期，operation 为
+  `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- Failure layer：`runtime/infrastructure`。Platform 停止生成行为再现（live-14/16/17/20 同模式，4 次）；与
+  live-19 成功形成对照：模型在 wave 后是否继续生成具有随机性。
+- Disposition：授权 `4/5` 已消费。剩余 live-21 最后一轮。
