@@ -1563,7 +1563,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if report is None and isinstance(reports, list) and reports:
                     candidate = reports[0]
                     if not isinstance(candidate, Mapping):
-                        raise ExaminerRuntimeBlocked("acceptance-evidence", role=packet.kind)
+                        raise ExaminerRuntimeBlocked(
+                            "acceptance-evidence",
+                            role=packet.kind,
+                            evidence={"binding_code": "submitted-report-shape"},
+                        )
                     report = dict(candidate)
                     if packet.kind == "source":
                         _source_report_evidence_ids(packet, report)

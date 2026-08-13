@@ -359,6 +359,39 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                     "proxy_receipt_count": 1,
                 },
             ),
+            (
+                "acceptance-evidence",
+                {
+                    "binding_code": "report-fields-invalid",
+                    "report_field_set": "answerability,conclusion,evidence",
+                },
+                {
+                    "binding_code": "report-fields-invalid",
+                    "report_field_set": "answerability,conclusion,evidence",
+                },
+            ),
+            (
+                "acceptance-evidence",
+                {
+                    "binding_code": "locator-key-mismatch",
+                    "index": 2,
+                },
+                {
+                    "binding_code": "locator-key-mismatch",
+                    "index": 2,
+                },
+            ),
+            (
+                "acceptance-evidence",
+                {
+                    "binding_code": "source-path-unauthorized",
+                    "path": "docs/other.md",
+                },
+                {
+                    "binding_code": "source-path-unauthorized",
+                    "path": "docs/other.md",
+                },
+            ),
         )
         for reason, blocked_evidence, expected_evidence in cases:
             with self.subTest(reason=reason, blocked_evidence=blocked_evidence), tempfile.TemporaryDirectory() as temporary:

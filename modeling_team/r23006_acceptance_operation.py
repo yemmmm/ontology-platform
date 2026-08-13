@@ -479,6 +479,7 @@ _BLOCKED_EVIDENCE_FIELDS = frozenset({
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id",
     "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
     "report_received", "terminal_event", "proxy_receipt_count", "binding_code", "report_ref_count",
+    "index", "report_field_set", "verdict_field_set",
 })
 _BLOCKED_CODE_FIELDS = frozenset({
     # Keep this allowlist synchronized with every production
@@ -489,12 +490,25 @@ _BLOCKED_CODE_FIELDS = frozenset({
 _BLOCKED_INTEGER_FIELDS = frozenset({
     "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count", "index",
 })
+_BLOCKED_FIELD_SET_FIELDS = frozenset({"report_field_set", "verdict_field_set"})
 _BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
 _PLATFORM_BINDING_CODES = frozenset({
     "report-refs-invalid", "receipts-empty", "receipt-count-mismatch",
     "locator-shape", "ordinal-mismatch", "locator-key-mismatch", "page-shape",
     "page-first-invalid", "page-sequence-invalid", "page-has-more-invalid",
     "page-truncated-locator", "page-final-invalid", "ref-id-invalid",
+    "platform-refs-invalid", "receipt-snapshot-invalid",
+})
+_SOURCE_BINDING_CODES = frozenset({
+    "approved-sources-missing", "approved-source-shape", "approved-source-invalid",
+    "source-refs-invalid", "source-locator-shape", "source-path-unauthorized",
+})
+_ACCEPTANCE_BINDING_CODES = frozenset({
+    "report-object-invalid", "report-digest-invalid", "report-sink-invalid",
+    "report-digest-mismatch", "evidence-ref-ids-invalid", "report-fields-invalid",
+    "verdict-fields-invalid", "verdict-status-invalid", "verdict-answer-invalid",
+    "verdict-evidence-refs-invalid", "verdict-flags-invalid", "submitted-report-shape",
+    "verdict-ref-ids-shape", "verdict-ref-ids-not-allowed", "verdict-pass-without-evidence",
 })
 _PACKET_LABELS = {
     "source Examiner packet": "source-examiner-packet",
@@ -544,10 +558,24 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
             continue
 
         _reject_secret_evidence({field: value}, field=f"blocked.evidence.{field}")
+        if field in _BLOCKED_FIELD_SET_FIELDS:
+            if (
+                not isinstance(value, str)
+                or not value
+                or len(value) > 200
+                or any(character in value for character in ";\n\r\"'")
+            ):
+                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+            safe_details[field] = value
+            continue
         if field in _BLOCKED_CODE_FIELDS:
             if not isinstance(value, str):
                 raise R23006OperationError("typed Examiner blocked evidence value is invalid")
-            if field == "binding_code" and value not in _PLATFORM_BINDING_CODES:
+            if field == "binding_code" and (
+                value not in _PLATFORM_BINDING_CODES
+                and value not in _SOURCE_BINDING_CODES
+                and value not in _ACCEPTANCE_BINDING_CODES
+            ):
                 raise R23006OperationError("typed Examiner blocked evidence value is invalid")
             if field == "packet":
                 if value not in _PACKET_LABELS:

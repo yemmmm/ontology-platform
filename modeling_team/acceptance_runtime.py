@@ -235,20 +235,32 @@ class ExaminerRolePacket:
         else:
             for field in ("ticket_binding", "source_report", "platform_report"):
                 if not isinstance(normalized[field], Mapping):
-                    raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+                    raise ExaminerRuntimeBlocked(
+                        "acceptance-evidence", role="acceptance",
+                        evidence={"binding_code": "report-object-invalid", "field": field},
+                    )
             for field in ("source_report_digest", "platform_report_digest"):
                 if not isinstance(normalized[field], str) or not re.fullmatch(r"[0-9a-f]{64}", normalized[field]):
-                    raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+                    raise ExaminerRuntimeBlocked(
+                        "acceptance-evidence", role="acceptance",
+                        evidence={"binding_code": "report-digest-invalid", "field": field},
+                    )
             try:
                 source_report = _validate_report_sink_payload(normalized["source_report"], kind="source")
                 platform_report = _validate_report_sink_payload(normalized["platform_report"], kind="platform")
             except ChildRuntimeError as exc:
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance") from exc
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="acceptance",
+                    evidence={"binding_code": "report-sink-invalid", "field": str(exc)},
+                ) from exc
             if (
                 normalized["source_report_digest"] != _packet_digest(source_report)
                 or normalized["platform_report_digest"] != _packet_digest(platform_report)
             ):
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="acceptance",
+                    evidence={"binding_code": "report-digest-mismatch"},
+                )
             if not isinstance(normalized["ticket_binding"].get("ticket_digest"), str) or re.fullmatch(
                 r"[0-9a-f]{64}", normalized["ticket_binding"]["ticket_digest"]
             ) is None:
@@ -263,7 +275,10 @@ class ExaminerRolePacket:
                     or any(not isinstance(item, str) or not item for item in values)
                     or len(set(values)) != len(values)
                 ):
-                    raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+                    raise ExaminerRuntimeBlocked(
+                        "acceptance-evidence", role="acceptance",
+                        evidence={"binding_code": "evidence-ref-ids-invalid", "field": field},
+                    )
             if "approved_sources" in normalized or "platform_response" in normalized or "history" in normalized:
                 raise ExaminerRuntimeBlocked("acceptance-input", role="acceptance")
         frozen = _freeze_packet(normalized)
@@ -500,7 +515,14 @@ class ExaminerRunMetrics:
 
     def record_terminal_report(self, report: Mapping[str, Any]) -> None:
         if not isinstance(report, Mapping) or set(report) != _REPORT_SEMANTIC_FIELDS:
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={
+                    "binding_code": "report-fields-invalid",
+                    "report_field_set": ",".join(sorted(report)) if isinstance(report, Mapping) else "",
+                },
+            )
             raise self.blocked
         self.terminal_report = True
         # A report-sink callback can arrive before the provider's terminal turn
@@ -515,21 +537,44 @@ class ExaminerRunMetrics:
         required = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
         sequence = {"question_ordinal", "question_count", "previous_question_ordinal", "next_question_ordinal", "final"}
         if not isinstance(verdict, Mapping) or not required.issubset(verdict) or set(verdict) - required - sequence:
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={
+                    "binding_code": "verdict-fields-invalid",
+                    "verdict_field_set": ",".join(sorted(verdict)) if isinstance(verdict, Mapping) else "",
+                },
+            )
             raise self.blocked
         if verdict["status"] not in {"PASS", "FAIL", "BLOCKED"}:
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={"binding_code": "verdict-status-invalid"},
+            )
             raise self.blocked
         if not isinstance(verdict["answer"], str) or not verdict["answer"]:
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={"binding_code": "verdict-answer-invalid"},
+            )
             raise self.blocked
         if not isinstance(verdict["evidence_ref_ids"], list) or not all(
             isinstance(item, str) and item for item in verdict["evidence_ref_ids"]
         ):
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={"binding_code": "verdict-evidence-refs-invalid"},
+            )
             raise self.blocked
         if not isinstance(verdict["current"], bool) or not isinstance(verdict["usable"], bool):
-            self.blocked = ExaminerRuntimeBlocked("acceptance-evidence", role=self.role)
+            self.blocked = ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role=self.role,
+                evidence={"binding_code": "verdict-flags-invalid"},
+            )
             raise self.blocked
         self.terminal_report = True
         if self.terminal_event and self.terminal_wall_ms is None:
@@ -902,26 +947,42 @@ def _source_report_evidence_ids(packet: ExaminerRolePacket, report: Mapping[str,
     approved: dict[str, str] = {}
     sources = packet.payload.get("approved_sources")
     if not isinstance(sources, (list, tuple)):
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="source")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="source",
+            evidence={"binding_code": "approved-sources-missing"},
+        )
     for source in sources:
         if not isinstance(source, Mapping):
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="source")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="source",
+                evidence={"binding_code": "approved-source-shape"},
+            )
         path, digest = source.get("path"), source.get("sha256")
         if not isinstance(path, str) or not isinstance(digest, str) or path in approved:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="source")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="source",
+                evidence={"binding_code": "approved-source-invalid"},
+            )
         approved[path] = digest
     refs = report.get("evidence_refs") if isinstance(report, Mapping) else None
     if not isinstance(refs, list) or not refs:
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="source")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="source",
+            evidence={"binding_code": "source-refs-invalid"},
+        )
     seen_paths: set[str] = set()
     result: set[str] = set()
     for ref in refs:
         if not isinstance(ref, Mapping) or not isinstance(ref.get("location"), str):
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="source")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="source",
+                evidence={"binding_code": "source-locator-shape"},
+            )
         path = ref["location"].split("#", 1)[0]
         if path not in approved or path in seen_paths:
             raise ExaminerRuntimeBlocked(
-                "acceptance-evidence", role="source", evidence={"path": path}
+                "acceptance-evidence", role="source",
+                evidence={"binding_code": "source-path-unauthorized", "path": path},
             )
         seen_paths.add(path)
         result.add(f"source:{_packet_digest({'path': path, 'sha256': approved[path]})}")
@@ -933,12 +994,18 @@ def _platform_report_ref_ids(report: Mapping[str, Any]) -> set[str]:
 
     refs = report.get("evidence_refs") if isinstance(report, Mapping) else None
     if not isinstance(refs, list) or not refs:
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="platform",
+            evidence={"binding_code": "platform-refs-invalid"},
+        )
     result: set[str] = set()
-    for ref in refs:
+    for index, ref in enumerate(refs):
         ref_id = ref.get("ref_id") if isinstance(ref, Mapping) else None
         if not isinstance(ref_id, str) or not ref_id or ref_id in result:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "ref-id-invalid", "index": index},
+            )
         result.add(ref_id)
     return result
 
@@ -951,7 +1018,10 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
     if callable(snapshots):
         snapshots = snapshots()
     if not isinstance(snapshots, (list, tuple)):
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="platform",
+            evidence={"binding_code": "receipt-snapshot-invalid"},
+        )
     receipts = tuple(snapshots)
     refs = report.get("evidence_refs") if isinstance(report, Mapping) else None
     if not isinstance(refs, list):
@@ -1074,11 +1144,20 @@ def _validate_acceptance_evidence_ids(verdict: Mapping[str, Any], allowed_ids: s
 
     ids = verdict.get("evidence_ref_ids") if isinstance(verdict, Mapping) else None
     if not isinstance(ids, list) or any(not isinstance(item, str) or not item for item in ids):
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="acceptance",
+            evidence={"binding_code": "verdict-ref-ids-shape"},
+        )
     if len(ids) != len(set(ids)) or any(item not in allowed_ids for item in ids):
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="acceptance",
+            evidence={"binding_code": "verdict-ref-ids-not-allowed"},
+        )
     if verdict.get("status") == "PASS" and not ids:
-        raise ExaminerRuntimeBlocked("acceptance-evidence", role="acceptance")
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence", role="acceptance",
+            evidence={"binding_code": "verdict-pass-without-evidence"},
+        )
 
 
 def _private_dir(path: Path, *, create: bool = False) -> None:

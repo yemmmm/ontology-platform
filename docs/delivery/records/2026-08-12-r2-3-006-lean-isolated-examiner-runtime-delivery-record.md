@@ -489,3 +489,27 @@
   `record_terminal_report` 字段集校验补充精确 `binding_code`/`index` evidence，同步更新 operation
   `_PLATFORM_BINDING_CODES` 白名单，使下一次失败可精确定位分支；完成后 deterministic 复验。
 - Disposition：授权 `2/2` 已消费。需要新的 operation authorization 才可执行 live-10。
+
+### 2026-08-13 — all acceptance-evidence failures carry precise reason codes — main agent
+
+- 用户指出"平台报错应该返回具体报错原因"。审查确认 live-9 的 `evidence={}` 属于诊断缺口：`acceptance-evidence`
+  类失败曾有多处 raise 不带 evidence。
+- 修复：`acceptance-evidence` 全部失败分支现在携带精确 `binding_code`（+ `index`/`field`/`path`/
+  `report_field_set`/`verdict_field_set` 等定位字段）：
+  - Platform：`platform-refs-invalid`、`receipt-snapshot-invalid`、`locator-shape`、`ordinal-mismatch`、
+    `locator-key-mismatch`、`page-shape`、`page-first-invalid`、`page-sequence-invalid`、
+    `page-has-more-invalid`、`page-truncated-locator`、`page-final-invalid`、`ref-id-invalid`；
+  - Source：`approved-sources-missing`、`approved-source-shape`、`approved-source-invalid`、
+    `source-refs-invalid`、`source-locator-shape`、`source-path-unauthorized`；
+  - Acceptance：`report-object-invalid`、`report-digest-invalid`、`report-sink-invalid`、
+    `report-digest-mismatch`、`evidence-ref-ids-invalid`、`report-fields-invalid`、`verdict-fields-invalid`、
+    `verdict-status-invalid`、`verdict-answer-invalid`、`verdict-evidence-refs-invalid`、`verdict-flags-invalid`、
+    `verdict-ref-ids-shape`、`verdict-ref-ids-not-allowed`、`verdict-pass-without-evidence`、
+    `submitted-report-shape`。
+- Operation 投影白名单同步：`_PLATFORM_BINDING_CODES`/`_SOURCE_BINDING_CODES`/`_ACCEPTANCE_BINDING_CODES`
+  三组集合 + `_BLOCKED_INTEGER_FIELDS`（`index`）+ 新增 `_BLOCKED_FIELD_SET_FIELDS`
+  （`report_field_set`/`verdict_field_set` 逗号分隔字段集安全投影）。
+- 新增测试：`test_typed_runtime_and_launch_evidence_is_safely_projected` 增补
+  `report-fields-invalid`+field_set、`locator-key-mismatch`+index、`source-path-unauthorized`+path 三个案例；
+  focused `45/45 PASS`、full `549 PASS + 1 SKIP`，无 regression。
+- 后续 live-10 若仍 BLOCKED，artifact 将直接给出精确失败分支与定位字段，不再出现空 evidence。
