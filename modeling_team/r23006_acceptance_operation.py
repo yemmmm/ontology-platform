@@ -487,11 +487,14 @@ _BLOCKED_CODE_FIELDS = frozenset({
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path", "binding_code",
 })
 _BLOCKED_INTEGER_FIELDS = frozenset({
-    "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count",
+    "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count", "index",
 })
 _BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
 _PLATFORM_BINDING_CODES = frozenset({
     "report-refs-invalid", "receipts-empty", "receipt-count-mismatch",
+    "locator-shape", "ordinal-mismatch", "locator-key-mismatch", "page-shape",
+    "page-first-invalid", "page-sequence-invalid", "page-has-more-invalid",
+    "page-truncated-locator", "page-final-invalid", "ref-id-invalid",
 })
 _PACKET_LABELS = {
     "source Examiner packet": "source-examiner-packet",

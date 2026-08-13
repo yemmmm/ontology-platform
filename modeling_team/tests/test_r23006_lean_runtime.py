@@ -1173,6 +1173,62 @@ class R23006LeanRuntimeTests(unittest.TestCase):
                 self.assertEqual(blocked.exception.role, "platform")
                 self.assertEqual(blocked.exception.evidence, expected)
 
+    def test_platform_receipt_gate_identifies_loop_binding_branch(self) -> None:
+        def receipt(ordinal: int, tool: str = "get_ontology_read_model", digest: str = "d" * 64) -> SimpleNamespace:
+            return SimpleNamespace(
+                ordinal=ordinal, tool=tool, request_digest="a" * 64, response_digest=digest,
+                artifact_path=f"acceptance/r/platform-read/child/{ordinal}.json",
+            )
+
+        def page(ordinal: int = 0, **overrides: Any) -> dict:
+            value = {
+                "ordinal": ordinal, "input_cursor": None, "output_cursor": None,
+                "has_more": False, "sequence_complete": True,
+            }
+            value.update(overrides)
+            return value
+
+        def ref(ordinal: int, **overrides: Any) -> dict:
+            value = {
+                "ref_id": f"p{ordinal}", "tool": "get_ontology_read_model",
+                "request_digest": "a" * 64, "response_digest": "d" * 64,
+                "artifact_path": f"acceptance/r/platform-read/child/{ordinal}.json",
+                "page": page(ordinal),
+            }
+            value.update(overrides)
+            return value
+
+        cases = (
+            ([ref(0), [receipt(0), receipt(1)][0]], {"binding_code": "locator-shape", "index": 1}),
+            ([ref(0, page=page(0, has_more=True))], {"binding_code": "page-has-more-invalid", "index": 0}),
+            ([ref(0, page=page(0, sequence_complete=False))], {"binding_code": "page-final-invalid", "index": 0}),
+            ([ref(0, page=page(0, input_cursor="cursor"))], {"binding_code": "page-first-invalid", "index": 0}),
+            ([ref(0), ref(1, page=page(1, input_cursor="cursor"))], {"binding_code": "page-sequence-invalid", "index": 1}),
+            (
+                [ref(0, page=page(0, has_more=True, output_cursor="cursor", sequence_complete=False)),
+                 ref(1, ref_id="p0", page=page(1, input_cursor="cursor", has_more=False))],
+                {"binding_code": "ref-id-invalid", "index": 1},
+            ),
+        )
+        for refs, expected in cases:
+            with self.subTest(expected=expected):
+                report = _platform_report()
+                report["evidence_refs"] = refs
+                resource = SimpleNamespace(
+                    proxy=SimpleNamespace(receipt_snapshot=tuple(receipt(i) for i in range(len(refs))))
+                )
+                with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
+                    _validate_platform_report_receipts(report, resource)
+                self.assertEqual(blocked.exception.reason, "acceptance-evidence")
+                self.assertEqual(blocked.exception.evidence, expected)
+
+        locator_key_report = _platform_report()
+        locator_key_report["evidence_refs"] = [ref(0, response_digest="e" * 64)]
+        key_resource = SimpleNamespace(proxy=SimpleNamespace(receipt_snapshot=(receipt(0),)))
+        with self.assertRaises(ExaminerRuntimeBlocked) as key_blocked:
+            _validate_platform_report_receipts(locator_key_report, key_resource)
+        self.assertEqual(key_blocked.exception.evidence, {"binding_code": "locator-key-mismatch", "index": 0})
+
     def test_lean_runtime_acceptance_rejects_invented_or_empty_pass_evidence(self) -> None:
         def source(packet, metrics):
             metrics.bind_thread("source-1")

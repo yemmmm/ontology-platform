@@ -1332,3 +1332,46 @@ deterministic 复验；真实 semantic acceptance 仍 `BLOCKED`）。live-8 消�
 
 live-8 消费本次授权 `1/2`，修复已 deterministic 复验；第 2 轮（live-9）授权允许执行一次新的真实 N=2。若
 live-9 仍因 ordinal/count 不一致 BLOCKED，则失败层仍为 prompt-contract，禁止再次无授权重跑。
+
+## 25. 独立测试 Round 25（2026-08-13，live-9 new-authorization audit + binding-branch diagnostics，HEAD `98f38a7`）
+
+结论：`PASS`（live-9 failure-path/lifecycle/invariance audit + binding-branch typed failure 诊断增强的
+deterministic 复验；真实 semantic acceptance 仍 `BLOCKED`）。live-9 消费本次授权 `2/2`；本轮未创建/使用 key、
+未启动 provider/child、未继续 N=2、未修改 live-9、product 或 record。未发现新的 P0/P1。
+
+### Real stage progress and metrics
+
+- Artifact `workspaces/modeling-acceptance/r23006-retained-n2-live-9/r23006-retained-acceptance.json` SHA-256
+  `2bc3d9a26636ec2a9c2e5a2e21e273de6fde2a7aee44e9d2ae32aafd0e7c6e9d`，mode `0600`；父目录 mode `0700`，仅有该
+  artifact。
+- Top-level/result 为 `BLOCKED`，`role=platform`、`blocked_reason=acceptance-evidence`、`evidence={}`；不存在
+  ordered verdict/count/final result，CQ-002 未执行，不得宣称 semantic PASS。
+- Partial metrics 为 `source, platform` 两角色：Source 2 steps、`metrics_complete=true`、terminal report true、
+  wall `31014.03ms`、total tokens `26676`；Platform 2 steps、TTFT `1089.73ms`、proxy `196.43ms`、total tokens
+  `33917`、`metrics_complete=false`、terminal report false、blocked 与 outer 完全一致。token increments 与累计
+  totals 一致。
+- 关键差异：Platform `proxy_time_ms=196.4`、`evidence_tokens=6711`（live-8 为 6338ms/26862），模型本次几乎
+  未发起 proxy 读取波即提交 report；失败点位于 count 匹配之后的 locator/page/ref-id 循环校验，artifact 空
+  evidence 无法定位具体分支。
+
+### Diagnostic repair (deterministic)
+
+- `_validate_platform_report_receipts` 循环内 9 个失败分支全部补充精确 typed evidence（`locator-shape`、
+  `ordinal-mismatch`、`locator-key-mismatch`、`page-shape`、`page-first-invalid`、`page-sequence-invalid`、
+  `page-has-more-invalid`、`page-truncated-locator`、`page-final-invalid`、`ref-id-invalid`，均含 `index`）。
+- Operation `_PLATFORM_BINDING_CODES` 与 `_BLOCKED_INTEGER_FIELDS`（新增 `index`）白名单同步更新，保证
+  fail-closed 投影接受新 code；新增 `test_platform_receipt_gate_identifies_loop_binding_branch` 覆盖 7 个分支。
+- Regressions：focused `45/45 PASS`；full `549 PASS + 1 SKIP`，退出码 0。
+
+### Commands and boundary
+
+1. Read-only artifact JSON/hash/mode/inventory/secret scan 与 token-increment 重算：PASS；roles `source/platform`、
+   steps `2/2`、token totals 与全部 increments 一致，ordered verdict keys 按 BLOCKED 缺失。
+2. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest modeling_team.tests.test_r23006_lean_runtime
+   modeling_team.tests.test_r23006_acceptance_operation -q`：`45/45 PASS`。
+3. `PYTHONPATH=backend:. backend/.venv/bin/python -m unittest discover -s modeling_team/tests -p 'test_*.py' -q`：
+   `549 PASS + 1 SKIP`，退出码 0。
+4. `systemctl --user ... status ontology-platform.service`、backend `/api/health`、frontend `/`：active、`200/200`。
+
+live-9 消费本次授权 `2/2`，2 轮授权全部耗尽。typed failure 诊断已增强，下一次失败（若发生）可精确定位
+branch；执行 live-10 需要新的 operation authorization。

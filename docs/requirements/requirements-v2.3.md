@@ -69,7 +69,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
-| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；三次授权 operation（live-4/5/6）与续作 live-7 均为 BLOCKED（最后一次 live-7 为 Platform receipt-count-mismatch，prompt-contract 缺陷）；修复已按 marker 固化并通过 Round 23 deterministic 复验，语义完成门未通过，待新 operation 授权执行 live-8` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
+| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；三次授权 operation（live-4/5/6）与续作 live-7/8/9（用户两次各 1/2 轮授权）均为 BLOCKED：live-5/7/8 为 Platform receipt-count-mismatch（prompt-contract），live-9 为 Platform 空 evidence 的绑定循环校验失败（诊断已增强可精确定位）；清理/不变性/typed failure 证据独立 PASS，语义完成门未通过，待新 operation 授权执行 live-10` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -2068,13 +2068,14 @@ R2.3-003 非目标继续包括：
 
 ## R2.3-006 精简隔离 Examiner Runtime
 
-当前状态：`已实现；三次授权 operation（live-4/5/6）与续作 live-7 均已消费：live-4 为 Platform 单波读取后 90 秒 child
-watchdog（child-timeout），live-5 为 Platform report receipt-count mismatch（acceptance-evidence），live-6 为
-Acceptance child 3 steps 后无 terminal report 触发 child-timeout，live-7 为 Platform 再次 receipt-count mismatch
-（3 locators vs 5 receipts，与 live-5 同一 prompt-contract 失败模式）；清理/不变性/零残留与 typed failure 证据
-独立 PASS。live-7 后已收紧 Platform Examiner 指令/Skill locator 契约并按 marker 固化，Round 23 deterministic
-复验 PASS（focused 30/30、full 548+1），语义完成门（ordered N=2）仍未通过，需新的 operation authorization 执行
-live-8`
+当前状态：`已实现；三次授权 operation（live-4/5/6）与续作 live-7/8/9（用户两次各 1/2 轮授权）均已消费：
+live-4 为 Platform 单波读取后 90 秒 child watchdog（child-timeout），live-5 为 Platform report
+receipt-count mismatch（acceptance-evidence），live-6 为 Acceptance child 3 steps 后无 terminal report 触发
+child-timeout，live-7 为 Platform 再次 receipt-count mismatch（3 locators vs 5 receipts），live-8 为 Platform
+receipt-count mismatch 改善至 4 vs 5（prompt-contract 连续三次同一模式），live-9 为 Platform 空 evidence 的
+绑定循环校验失败（proxy 仅 196ms，模型几乎未发起读取波即提交 report，失败分支诊断已增强）；清理/不变性/零残留
+与 typed failure 证据独立 PASS。live-10 前已具备精确定位 binding-branch 的 typed failure 诊断，语义完成门
+（ordered N=2）仍未通过，需新的 operation authorization 执行 live-10`
 
 ### 背景与问题
 

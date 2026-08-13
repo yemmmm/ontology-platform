@@ -989,17 +989,26 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
     previous_page: Mapping[str, Any] | None = None
     for index, ref in enumerate(refs):
         if not isinstance(ref, Mapping):
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "locator-shape", "index": index},
+            )
         receipt = receipts[index]
         if getattr(receipt, "ordinal", None) != index:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "ordinal-mismatch", "index": index},
+            )
         key = tuple(ref.get(name) for name in ("tool", "request_digest", "response_digest", "artifact_path"))
         receipt_key = tuple(
             getattr(receipt, name, None)
             for name in ("tool", "request_digest", "response_digest", "artifact_path")
         )
         if key != receipt_key:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "locator-key-mismatch", "index": index},
+            )
         page = ref.get("page")
         if (
             not isinstance(page, Mapping)
@@ -1010,10 +1019,16 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
             or not isinstance(page.get("has_more"), bool)
             or not isinstance(page.get("sequence_complete"), bool)
         ):
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "page-shape", "index": index},
+            )
         if page["ordinal"] == 0:
             if page["input_cursor"] is not None or (previous_page is not None and previous_page.get("has_more")):
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="platform",
+                    evidence={"binding_code": "page-first-invalid", "index": index},
+                )
         else:
             if (
                 previous_ref is None
@@ -1023,17 +1038,32 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
                 or page["ordinal"] != previous_page.get("ordinal", -1) + 1
                 or page["input_cursor"] != previous_page.get("output_cursor")
             ):
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="platform",
+                    evidence={"binding_code": "page-sequence-invalid", "index": index},
+                )
         if page["has_more"]:
             if page["sequence_complete"] or not isinstance(page["output_cursor"], str) or not page["output_cursor"]:
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="platform",
+                    evidence={"binding_code": "page-has-more-invalid", "index": index},
+                )
             if index == len(refs) - 1:
-                raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="platform",
+                    evidence={"binding_code": "page-truncated-locator", "index": index},
+                )
         elif page["sequence_complete"] is not True or page["output_cursor"] is not None:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "page-final-invalid", "index": index},
+            )
         ref_id = ref.get("ref_id")
         if not isinstance(ref_id, str) or not ref_id or ref_id in result:
-            raise ExaminerRuntimeBlocked("acceptance-evidence", role="platform")
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence", role="platform",
+                evidence={"binding_code": "ref-id-invalid", "index": index},
+            )
         result.add(ref_id)
         previous_ref, previous_page = ref, page
     return result

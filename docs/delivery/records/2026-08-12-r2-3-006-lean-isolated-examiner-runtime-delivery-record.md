@@ -464,3 +464,28 @@
   收到的 ordinals 并确认无缺失。marker 测试新增 5 个 marker，proxy ordinal/total 有聚焦断言；focused
   `30/30`、full `548 PASS + 1 SKIP` 无 regression。
 - Disposition：授权 `1/2` 已消费。修复完成 deterministic 复验后，消耗第 2 轮（live-9）执行真实 N=2。
+
+### 2026-08-13 — authorization 2/2 live-9 real N=2 — main agent
+
+- Authorization：延续用户 2 轮授权中的第 2 轮，覆盖一次新的 R2.3-006 retained-workspace read-only operation
+  （live-9）；允许一个新的临时 Project read key exactly-once create/revoke，禁止 semantic start、ontology/ledger
+  write 或自动重跑。
+- Preflight：stable clean HEAD `98f38a7 Record live-8 evidence and add ordinal alignment`；live-9 output root
+  不存在；service active、backend/frontend 200；DeepSeek credential 可用；冻结 ticket/N=2/six-tool allowlist
+  与 retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、wall 约 31.0s、total tokens
+  `26676`）；Platform 2 steps（TTFT 约 1.1s、proxy 仅约 196ms、total tokens `33917`），随后 Platform report
+  在 receipt-binding 校验链 fail-closed 为 `BLOCKED/acceptance-evidence`，但 `evidence={}` 为空（不再是
+  count-mismatch 形式）。Acceptance/CQ-002 未启动，没有 ordered N=2 verdict。
+- Partial metrics：artifact 保留 `source, platform` 两角色快照；Source `metrics_complete=true`、terminal report
+  true；Platform `metrics_complete=false`、`terminal_report=false`。token increments 与累计 totals 一致。
+- Cleanup/invariance：Project read key create/revoke `1/1`、旧 key 401、全部 cleanup flags true、
+  operation-owned active keys=0；ledger SHA `af6417…dcc`/66 records 与 platform digest `3606c7…f95` 前后相同。
+- 关键差异：live-9 的 Platform `proxy_time_ms=196.4`、`evidence_tokens=6711`（live-8 为 6338ms/26862），模型
+  本次几乎未发起 proxy 读取波即提交 report，且失败点在 count 匹配之后的循环/结构校验（空 evidence），失败
+  分支当前无法从 artifact 精确定位。Failure layer 候选为 `modeling-quality/prompt-contract` 或
+  `platform-contract` 诊断缺口，待增强 typed failure 证据后确认。
+- Repair（live-10 前完成）：给 `_validate_platform_report_receipts` 循环内每个失败分支与
+  `record_terminal_report` 字段集校验补充精确 `binding_code`/`index` evidence，同步更新 operation
+  `_PLATFORM_BINDING_CODES` 白名单，使下一次失败可精确定位分支；完成后 deterministic 复验。
+- Disposition：授权 `2/2` 已消费。需要新的 operation authorization 才可执行 live-10。
