@@ -479,7 +479,7 @@ _BLOCKED_EVIDENCE_FIELDS = frozenset({
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id",
     "path", "steps", "host_packet_tokens", "inherited_turns", "read_key", "forwarder",
     "report_received", "terminal_event", "proxy_receipt_count", "binding_code", "report_ref_count",
-    "index", "report_field_set", "verdict_field_set",
+    "index", "report_field_set", "verdict_field_set", "report_ref_ids", "proxy_receipt_ordinals",
 })
 _BLOCKED_CODE_FIELDS = frozenset({
     # Keep this allowlist synchronized with every production
@@ -490,7 +490,9 @@ _BLOCKED_CODE_FIELDS = frozenset({
 _BLOCKED_INTEGER_FIELDS = frozenset({
     "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count", "index",
 })
-_BLOCKED_FIELD_SET_FIELDS = frozenset({"report_field_set", "verdict_field_set"})
+_BLOCKED_FIELD_SET_FIELDS = frozenset({
+    "report_field_set", "verdict_field_set", "report_ref_ids", "proxy_receipt_ordinals",
+})
 _BLOCKED_BOOLEAN_FIELDS = frozenset({"read_key", "forwarder", "report_received", "terminal_event"})
 _PLATFORM_BINDING_CODES = frozenset({
     "report-refs-invalid", "receipts-empty", "receipt-count-mismatch",

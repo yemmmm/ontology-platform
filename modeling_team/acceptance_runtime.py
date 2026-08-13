@@ -1010,6 +1010,29 @@ def _platform_report_ref_ids(report: Mapping[str, Any]) -> set[str]:
     return result
 
 
+def _ref_id_summary(refs: Any) -> str:
+    """Join report-local ref_ids (or tool names) into one safe diagnostic string."""
+
+    if not isinstance(refs, (list, tuple)):
+        return ""
+    parts: list[str] = []
+    for ref in refs:
+        if not isinstance(ref, Mapping):
+            continue
+        ref_id = ref.get("ref_id")
+        if isinstance(ref_id, str) and ref_id and len(ref_id) <= 64:
+            parts.append(ref_id)
+    return ",".join(parts)
+
+
+def _receipt_ordinal_summary(receipts: Any) -> str:
+    """Join proxy receipt ordinals into one safe diagnostic string."""
+
+    if not isinstance(receipts, (list, tuple)):
+        return ""
+    return ",".join(str(getattr(item, "ordinal", None)) for item in receipts)
+
+
 def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any) -> set[str]:
     """Bind every Platform locator to one current-child proxy receipt and page."""
 
@@ -1052,6 +1075,8 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
                 "binding_code": "receipt-count-mismatch",
                 "report_ref_count": len(refs),
                 "proxy_receipt_count": len(receipts),
+                "report_ref_ids": _ref_id_summary(refs),
+                "proxy_receipt_ordinals": _receipt_ordinal_summary(receipts),
             },
         )
     result: set[str] = set()

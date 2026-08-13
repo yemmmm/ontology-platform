@@ -513,3 +513,25 @@
   `report-fields-invalid`+field_set、`locator-key-mismatch`+index、`source-path-unauthorized`+path 三个案例；
   focused `45/45 PASS`、full `549 PASS + 1 SKIP`，无 regression。
 - 后续 live-10 若仍 BLOCKED，artifact 将直接给出精确失败分支与定位字段，不再出现空 evidence。
+
+### 2026-08-13 — authorization 1/3 live-10 real N=2 — main agent
+
+- Authorization：用户授权 3 轮新的 R2.3-006 retained-workspace read-only operation（live-10/11/12）；每轮允许
+  一个新的临时 Project read key exactly-once create/revoke，继续禁止 semantic start、ontology/ledger write 或
+  超过一轮的自动重跑。
+- Preflight：stable clean HEAD `64ac3fb Return precise reasons for every acceptance-evidence failure`；live-10
+  output root 不存在；service active、backend/frontend 200；DeepSeek credential 可用；冻结 ticket/N=2/six-tool
+  allowlist 与 retained scope 匹配。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `25927`）；
+  Platform 在单一并行 read wave 内完成读取并提交 typed report callback（2 steps、TTFT 约 1.4s、proxy 约 8.7s、
+  evidence tokens `18075`、total tokens `26661`），随后 receipt-count gate fail-closed 为
+  `BLOCKED/acceptance-evidence`（`binding_code=receipt-count-mismatch`、`proxy_receipt_count=2`、
+  `report_ref_count=1`）。Acceptance/CQ-002 未启动，没有 ordered N=2 verdict。
+- 关键观察：本次模型实际发起了 2 次成功 proxy 调用（proxy 8.7s、evidence 18075 tokens，读取真实发生），但
+  report 只含 1 个 evidence_refs locator。这是 count-mismatch 连续第 4 次出现（live-5/7/8/10），模式为
+  "模型确实调用但提交时漏写 locator"。
+- Repair（live-11 前完成）：`receipt-count-mismatch` evidence 追加脱敏 `report_ref_ids`（模型提交的 ref_id
+  列表）与 `proxy_receipt_ordinals`（Host 侧 receipt ordinal 列表），使下一次失败可直接对比模型漏写/合并了
+  哪一项；operation 白名单同步（`_BLOCKED_FIELD_SET_FIELDS` 增加两个 summary 字段）。focused `45/45`、full
+  `549 PASS + 1 SKIP` 无 regression。
+- Disposition：授权 `1/3` 已消费。修复 deterministic 复验后消耗第 2 轮（live-11）。

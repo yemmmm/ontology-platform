@@ -1161,7 +1161,13 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             (
                 {"evidence_refs": [{"ref_id": "ref-1"}, {"ref_id": "ref-2"}]},
                 (object(),),
-                {"binding_code": "receipt-count-mismatch", "report_ref_count": 2, "proxy_receipt_count": 1},
+                {
+                    "binding_code": "receipt-count-mismatch",
+                    "report_ref_count": 2,
+                    "proxy_receipt_count": 1,
+                    "report_ref_ids": "ref-1,ref-2",
+                    "proxy_receipt_ordinals": "None",
+                },
             ),
         )
         for report, receipts, expected in cases:
