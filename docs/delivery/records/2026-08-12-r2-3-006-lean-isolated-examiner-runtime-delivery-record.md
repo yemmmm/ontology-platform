@@ -582,3 +582,15 @@
   特定工具如 query_semantic_context 或 get_build_session），以区分"模型按工具取舍"还是"截断/遗漏"。
   focused `45/45`、full `549 PASS + 1 SKIP` 无 regression。
 - Disposition：授权 `2/5` 已消费。诊断增强后消耗第 3 轮（live-14）。
+
+### 2026-08-13 — authorization 3/5 live-14 real N=2 — main agent
+
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `26179`）；
+  Platform 发出 5 次成功 proxy 调用（proxy 约 10.1s、5 receipts、evidence tokens `36352`）后未产生第二个
+  inference step（`inference_steps=1`、`turn_start_count=1`、total tokens `11996`、output tokens `3899`），
+  未提交 report（`report_received=false`、`terminal_event=false`），约 90 秒 child watchdog 到期，operation
+  为 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。Acceptance/CQ-002 未启动。
+- Failure layer：`runtime/infrastructure`（child-timeout；与 live-4 同模式：Platform 单波读取后未产生
+  terminal report）。不是 count-mismatch（本轮无 report 提交），不是伪造 PASS；清理/不变性/typed failure
+  证据正常。
+- Disposition：授权 `3/5` 已消费。剩余 live-15/16 两轮授权。
