@@ -8,7 +8,7 @@ Type=simple
 Environment=SEMANTIC_CANONICAL_STORE=rdf
 Environment=SEMANTIC_PRODUCT_WRITE_MODE=rdf_primary
 Environment=SEMANTIC_READ_MODE=canonical
-WorkingDirectory=/home/yangxiang/projects/ontology-platform
+WorkingDirectory=/home/yangxiang/ontology-platform
 ExecStart=/usr/bin/bash -lc 'exec ./scripts/start-local.sh'
 Restart=on-failure
 RestartSec=10
