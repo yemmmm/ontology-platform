@@ -251,7 +251,7 @@ class ExaminerRolePacket:
             except ChildRuntimeError as exc:
                 raise ExaminerRuntimeBlocked(
                     "acceptance-evidence", role="acceptance",
-                    evidence={"binding_code": "report-sink-invalid", "field": str(exc)},
+                    evidence={"binding_code": "report-sink-invalid", "field": "sink-rejected"},
                 ) from exc
             if (
                 normalized["source_report_digest"] != _packet_digest(source_report)

@@ -543,7 +543,9 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
     safe_details: dict[str, Any] = {}
     for field, value in details.items():
         if not isinstance(field, str) or field not in _BLOCKED_EVIDENCE_FIELDS:
-            raise R23006OperationError("typed Examiner blocked evidence fields are unsupported")
+            raise R23006OperationError(
+                f"typed Examiner blocked evidence fields are unsupported: {field}"
+            )
 
         # The two boolean launch flags are deliberately accepted only as bools,
         # then renamed so the retained artifact cannot be mistaken for a key or
@@ -569,27 +571,37 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
                 or len(value) > 200
                 or any(character in value for character in ";\n\r\"'")
             ):
-                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                raise R23006OperationError(
+                    f"typed Examiner blocked evidence value is invalid: {field}"
+                )
             safe_details[field] = value
             continue
         if field in _BLOCKED_CODE_FIELDS:
             if not isinstance(value, str):
-                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                raise R23006OperationError(
+                    f"typed Examiner blocked evidence value is invalid: {field}"
+                )
             if field == "binding_code" and (
                 value not in _PLATFORM_BINDING_CODES
                 and value not in _SOURCE_BINDING_CODES
                 and value not in _ACCEPTANCE_BINDING_CODES
             ):
-                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                raise R23006OperationError(
+                    f"typed Examiner blocked evidence value is invalid: {field}"
+                )
             if field == "packet":
                 if value not in _PACKET_LABELS:
-                    raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                    raise R23006OperationError(
+                        f"typed Examiner blocked evidence value is invalid: {field}"
+                    )
                 value = _PACKET_LABELS[value]
             if (
                 not _SAFE_BLOCKED_CODE.fullmatch(value)
                 or (field == "path" and (Path(value).is_absolute() or ".." in Path(value).parts))
             ):
-                raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+                raise R23006OperationError(
+                    f"typed Examiner blocked evidence value is invalid: {field}"
+                )
             safe_details[field] = value
             continue
         if (
@@ -600,7 +612,9 @@ def _blocked_result(blocked: ExaminerRuntimeBlocked) -> dict[str, Any]:
         ):
             safe_details[field] = value
             continue
-        raise R23006OperationError("typed Examiner blocked evidence value is invalid")
+        raise R23006OperationError(
+            f"typed Examiner blocked evidence value is invalid: {field}"
+        )
 
     failure_category = safe_details.get("failure_category")
     reason_code = safe_details.get("reason_code")
