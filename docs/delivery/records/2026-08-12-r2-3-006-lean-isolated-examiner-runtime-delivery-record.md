@@ -535,3 +535,16 @@
   哪一项；operation 白名单同步（`_BLOCKED_FIELD_SET_FIELDS` 增加两个 summary 字段）。focused `45/45`、full
   `549 PASS + 1 SKIP` 无 regression。
 - Disposition：授权 `1/3` 已消费。修复 deterministic 复验后消耗第 2 轮（live-11）。
+
+### 2026-08-13 — authorization 2/3 live-11 real N=2（artifact 投影失败）— main agent
+
+- Authorization：延续 3 轮授权中的第 2 轮（live-11）。
+- Real result：Source 与 Platform 实跑均完成（Platform 在读取后提交 report 被 receipt-count gate 拒绝），
+  但 operation 在写 artifact 前的 `_blocked_result` 证据投影处 fail-closed 为
+  `R23006OperationError: typed Examiner blocked evidence value is invalid`，未生成 artifact。root cause：
+  新增 `report_ref_ids` 摘要未在源头清洗字符集，模型真实 ref_id 含投影白名单之外的字符（如引号/分号/
+  控制字符）时被拒绝。
+- Failure layer：`platform-contract`（诊断投影缺口，非语义失败；source/platform 实跑已发生，授权已消费）。
+- Repair：`_ref_id_summary` 在源头用 `[^A-Za-z0-9_:\-]` 清洗并截断 200 字符，摘要永不携带引号/控制字符；
+  投影路径与 hostile 字符集经压力验证通过。focused `45/45`、full `549 PASS + 1 SKIP` 无 regression。
+- Disposition：授权 `2/3` 已消费。修复后消耗第 3 轮（live-12）。

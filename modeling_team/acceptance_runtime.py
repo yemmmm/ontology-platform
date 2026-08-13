@@ -1011,18 +1011,26 @@ def _platform_report_ref_ids(report: Mapping[str, Any]) -> set[str]:
 
 
 def _ref_id_summary(refs: Any) -> str:
-    """Join report-local ref_ids (or tool names) into one safe diagnostic string."""
+    """Join report-local ref_ids into one safe diagnostic string.
+
+    Only printable safe characters survive; anything else is dropped so the
+    summary can never carry secrets, quotes, or control characters.
+    """
 
     if not isinstance(refs, (list, tuple)):
         return ""
+    safe = re.compile(r"[^A-Za-z0-9_:\-]")
     parts: list[str] = []
     for ref in refs:
         if not isinstance(ref, Mapping):
             continue
         ref_id = ref.get("ref_id")
-        if isinstance(ref_id, str) and ref_id and len(ref_id) <= 64:
-            parts.append(ref_id)
-    return ",".join(parts)
+        if not isinstance(ref_id, str) or not ref_id:
+            continue
+        cleaned = safe.sub("", ref_id)
+        if cleaned and len(cleaned) <= 64:
+            parts.append(cleaned)
+    return ",".join(parts)[:200]
 
 
 def _receipt_ordinal_summary(receipts: Any) -> str:
