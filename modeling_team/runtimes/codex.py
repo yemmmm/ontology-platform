@@ -1608,6 +1608,22 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # keep checking it after the one-time report validation.
                 if report is not None and getattr(resource, "terminal_event", False):
                     return report
+                # Acceptance models often end their turn with the verdict written
+                # in reply text instead of calling the submit tool.  When the
+                # turn is over and no typed report arrived, extract a strict
+                # verdict object from the agent's message deltas.
+                if (
+                    report is None
+                    and packet.kind == "acceptance"
+                    and getattr(resource, "terminal_event", False)
+                    and not getattr(resource, "_text_verdict_tried", False)
+                ):
+                    resource._text_verdict_tried = True
+                    agent = getattr(resource, "_child_agent", None)
+                    text_verdict = _extract_verdict_from_text(agent)
+                    if text_verdict is not None:
+                        resource.submitted_reports.append(text_verdict)
+                        continue
                 # The model sometimes ends its turn after the retrieval wave
                 # without submitting the report (a DeepSeek reasoning behavior),
                 # or goes idle without a terminal event.  One mechanical
@@ -4384,6 +4400,52 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if isinstance(turn, dict) and isinstance(turn.get("id"), str)
             else None
         )
+
+    @staticmethod
+    def _extract_verdict_from_text(agent: Any) -> dict[str, Any] | None:
+        """Recover a strict Acceptance verdict from the child's reply text.
+
+        The Acceptance model often writes the verdict in its final message
+        instead of calling the submit tool.  Only a complete verdict object
+        with the exact seven required fields is accepted; anything else is
+        ignored so the typed gate stays authoritative.
+        """
+
+        deltas = getattr(agent, "message_deltas", None)
+        if not isinstance(deltas, dict):
+            return None
+        text = "".join(
+            "".join(parts) if isinstance(parts, (list, tuple)) else str(parts)
+            for parts in deltas.values()
+        )
+        if not text:
+            return None
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            candidate = json.loads(match.group(0))
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(candidate, dict):
+            return None
+        required = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
+        if not required.issubset(candidate) or set(candidate) - required:
+            return None
+        if candidate["status"] not in {"PASS", "FAIL", "BLOCKED"}:
+            return None
+        if not isinstance(candidate["answer"], str) or not candidate["answer"]:
+            return None
+        if not isinstance(candidate["evidence_ref_ids"], list) or not all(
+            isinstance(item, str) and item for item in candidate["evidence_ref_ids"]
+        ):
+            return None
+        if not isinstance(candidate["current"], bool) or not isinstance(candidate["usable"], bool):
+            return None
+        return {
+            key: candidate[key]
+            for key in ("status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason")
+        }
 
     @staticmethod
     def _expected_active_turn_id(error: str | CodexRuntimeRPCError) -> str | None:

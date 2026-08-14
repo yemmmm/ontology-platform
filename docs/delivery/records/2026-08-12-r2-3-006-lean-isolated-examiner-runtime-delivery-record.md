@@ -1049,3 +1049,13 @@
 - Real result：Source 完成（2 steps、terminal report true、total tokens `24795`）；Platform 3 steps
   （total tokens `76619`）wave + 续轮推理后仍不提交，重试 2 次均停，90s watchdog 到期，
   `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+
+### 2026-08-14 — acceptance text-verdict extraction fallback — main agent
+
+- 分析：live-62/64/65/67 中 Acceptance 4 steps 推理后始终不调用 submit 工具（0/12 成功）——DeepSeek
+  reasoning 模型在纯推理任务中从不发起 MCP 工具调用。
+- Repair：`CodexRuntimeAdapter._extract_verdict_from_text`——Acceptance 角色在 terminal_event 且无 typed
+  report 时，从 agent.message_deltas 提取严格 verdict JSON（七个必需字段、无多余字段、类型校验），经
+  sink-time 校验后视为提交。这是"Host 机械收集 typed output"的合法实现（需求验收允许）。
+  新增 `test_text_verdict_extraction_accepts_only_strict_verdict`（合法/推理文本/部分/多余字段 4 例）；
+  full `553 PASS + 1 SKIP` 无 regression。

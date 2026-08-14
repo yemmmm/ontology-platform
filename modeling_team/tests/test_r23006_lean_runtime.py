@@ -261,6 +261,37 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(blocked.exception.reason, "runtime-metrics")
         self.assertEqual(metrics.inference_steps, 2)
 
+    def test_text_verdict_extraction_accepts_only_strict_verdict(self) -> None:
+        valid = {
+            "status": "FAIL",
+            "answer": "no match found",
+            "evidence_ref_ids": ["source:abc"],
+            "current": True,
+            "usable": False,
+            "failure_layer": None,
+            "blocked_reason": None,
+        }
+        class Agent:
+            message_deltas = {"m1": ["my verdict: ", '{"status": "FAIL", "answer": "no match found", "evidence_ref_ids": ["source:abc"], "current": true, "usable": false, "failure_layer": null, "blocked_reason": null}']}
+
+        extracted = CodexRuntimeAdapter._extract_verdict_from_text(Agent())
+        self.assertEqual(extracted, valid)
+
+        class EmptyAgent:
+            message_deltas = {"m1": ["just reasoning, no verdict"]}
+
+        self.assertIsNone(CodexRuntimeAdapter._extract_verdict_from_text(EmptyAgent()))
+
+        class PartialAgent:
+            message_deltas = {"m1": ['{"status": "PASS"}']}
+
+        self.assertIsNone(CodexRuntimeAdapter._extract_verdict_from_text(PartialAgent()))
+
+        class BadAgent:
+            message_deltas = {"m1": ['{"status": "PASS", "answer": "x", "evidence_ref_ids": [], "current": true, "usable": true, "failure_layer": null, "blocked_reason": null, "extra": 1}']}
+
+        self.assertIsNone(CodexRuntimeAdapter._extract_verdict_from_text(BadAgent()))
+
     def test_metrics_use_cumulative_increments_and_step_budget(self) -> None:
         metrics = ExaminerRunMetrics("platform")
         metrics.bind_thread("thread-1")
