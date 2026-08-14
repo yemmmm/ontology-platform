@@ -889,3 +889,13 @@
   续轮恰好 1 次、续轮后 report 被接受、resource 销毁）；full `550 PASS + 1 SKIP` 无 regression。
 - 说明：续轮是 Host 确定性机制（AGENTS.md：Tools 拥有协议格式化），不属于模型语义推理；不增加 wave、
   不改变隔离或 typed evidence 语义。
+
+### 2026-08-14 — live-43 evidence + continuation turn_id acceptance — main agent
+
+- Real result：Source 完成（2 steps、terminal report true）；**Platform 完成（3 steps、terminal report true、
+  `metrics_complete=true`、total tokens `61938`）——续轮机制使 Platform 首次在 live-35~42 六连败后成功提交**；
+  Acceptance 3 steps 后续轮触发新 turn_id，metrics 校验 `runtime-metrics`（turn_id 变化）抛错。
+- Repair：`ExaminerRunMetrics` 增加 `allow_continuation_turn()`——允许 1 次 Host 机械续轮产生的新 turn_id
+  （同一 thread、非新 Agent）；run_lean_examiner_child 在续轮前调用。新增
+  `test_metrics_allow_one_continuation_turn_change`（turn-1→turn-2 接受、turn-3 拒绝）；
+  full `551 PASS + 1 SKIP` 无 regression。

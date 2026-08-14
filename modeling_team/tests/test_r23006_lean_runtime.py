@@ -239,6 +239,28 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(second["call_total"], 2)
         self.assertEqual(len(proxy.receipt_snapshot), 2)
 
+    def test_metrics_allow_one_continuation_turn_change(self) -> None:
+        metrics = ExaminerRunMetrics("acceptance")
+        metrics.bind_thread("thread-1")
+        metrics.bind_first_turn_input([{"type": "text", "text": "packet"}])
+        def usage(turn_id: str, total: int) -> dict:
+            return {
+                "method": "thread/tokenUsage/updated",
+                "params": {"threadId": "thread-1", "turnId": turn_id, "tokenUsage": {"total": {
+                    "inputTokens": total, "cachedInputTokens": 0, "cacheWriteInputTokens": 0,
+                    "outputTokens": 1, "reasoningOutputTokens": 0, "totalTokens": total + 1,
+                    "modelContextWindow": 1000,
+                }}},
+            }
+        self.assertTrue(metrics.observe_notification(usage("turn-1", 10)))
+        metrics.allow_continuation_turn()
+        self.assertTrue(metrics.observe_notification(usage("turn-2", 20)))
+        self.assertIsNone(metrics.blocked)
+        with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
+            metrics.observe_notification(usage("turn-3", 30))
+        self.assertEqual(blocked.exception.reason, "runtime-metrics")
+        self.assertEqual(metrics.inference_steps, 2)
+
     def test_metrics_use_cumulative_increments_and_step_budget(self) -> None:
         metrics = ExaminerRunMetrics("platform")
         metrics.bind_thread("thread-1")

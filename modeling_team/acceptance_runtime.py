@@ -401,6 +401,8 @@ class ExaminerRunMetrics:
     _totals: dict[str, int] = field(default_factory=lambda: {name: 0 for name in _TOKEN_FIELDS}, repr=False)
     _first_input_tokens: int | None = field(default=None, repr=False)
     _turn_id: str | None = field(default=None, repr=False)
+    _accepted_turn_ids: set[str] = field(default_factory=set, repr=False)
+    _allow_continuation_turn: bool = False
     terminal_event: bool = False
 
     def record_turn_start(self) -> None:
@@ -408,6 +410,15 @@ class ExaminerRunMetrics:
 
         if self.turn_start_count == 0:
             self.turn_start_count = 1
+
+    def allow_continuation_turn(self) -> None:
+        """Permit one Host-issued mechanical continuation turn to change turn_id.
+
+        The continuation is the Runner's deterministic nudge after the model ends
+        its turn without submitting; it is not a new Agent thread or history.
+        """
+
+        self._allow_continuation_turn = True
 
     def bind_thread(self, thread_id: str) -> None:
         if not isinstance(thread_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}", thread_id):
@@ -462,11 +473,17 @@ class ExaminerRunMetrics:
                 self.blocked = ExaminerRuntimeBlocked("runtime-metrics", role=self.role)
                 raise self.blocked
             if self._turn_id is not None and event_turn_id != self._turn_id:
-                self.blocked = ExaminerRuntimeBlocked(
-                    "runtime-metrics", role=self.role, evidence={"turn_id": self._turn_id}
-                )
-                raise self.blocked
-            self._turn_id = event_turn_id
+                if self._allow_continuation_turn and len(self._accepted_turn_ids) < 2:
+                    self._accepted_turn_ids.add(event_turn_id)
+                    self._turn_id = event_turn_id
+                else:
+                    self.blocked = ExaminerRuntimeBlocked(
+                        "runtime-metrics", role=self.role, evidence={"turn_id": self._turn_id}
+                    )
+                    raise self.blocked
+            else:
+                self._accepted_turn_ids.add(event_turn_id)
+                self._turn_id = event_turn_id
         usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), Mapping) else params.get("token_usage")
         if not isinstance(usage, Mapping):
             return False

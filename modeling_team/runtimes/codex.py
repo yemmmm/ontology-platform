@@ -1625,6 +1625,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     agent = getattr(resource, "_child_agent", None)
                     if agent is not None and getattr(agent, "thread_id", None):
                         resource._continuation_used = True
+                        allow = getattr(metrics, "allow_continuation_turn", None)
+                        if callable(allow):
+                            try:
+                                allow()
+                            except Exception:
+                                pass
                         try:
                             self._rpc(
                                 agent,
