@@ -856,3 +856,12 @@
   （`role=platform`、`reason_code=child-timeout`）。
 - 分析：工具提交契约（live-36 后新增）未改变模型行为——模型在 tool wave 后直接结束 turn，属 DeepSeek
   provider 行为（live-28/34 证明偶发可继续）。Platform 成功率 ~3/17。
+
+### 2026-08-14 — live-38 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `25396`）；Platform 1 step（proxy
+  约 7.7s、evidence tokens `25882`、total tokens `15673`）wave 后未提交 report，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 统计：live-4~38 共 18 次真实 operation，Platform 成功 3 次（live-19/28/34，~17%），失败 11 次
+  （child-timeout 停止生成 10 次 + child-start 1 次）；Acceptance 阶段 5 次（live-6/19/28/34 + live-4）全部
+  child-timeout 未提交 verdict。成功概率低但链路可达，继续系统化重试。
