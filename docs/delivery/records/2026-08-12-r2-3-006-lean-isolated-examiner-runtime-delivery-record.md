@@ -985,3 +985,12 @@
   响应单次提示。
 - Repair：续轮改为最多 2 次（`_continuation_count < 2`），每次间隔窗口触发；budget 允许续轮步。
   full `551 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-55 real N=2: Platform two continuations still no submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `24931`）；Platform 2 steps（total
+  tokens `39633`）wave 后 2 次续轮均发出（`continuation="sent"`、5 receipts）但模型未提交，90s watchdog
+  到期，`BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 分析：2 次续轮仍无法让模型提交。成功 case（live-28/34/43）均为模型自发性 wave→推理→提交，失败 case
+  模型 wave 后完全停止——DeepSeek provider 行为（Codex responses wire 集成层，非 R2.3-006 代码可修）。
+- Disposition：继续系统重试（Platform 自发成功率 ~15%，链路可达）。
