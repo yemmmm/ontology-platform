@@ -1215,3 +1215,9 @@
 - Real result（重跑）：Source 完成（1 step、terminal report true、total 10852）；Platform 4 steps
   （total 127834）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
   Platform 坏时段延续（live-83~86、88 连续 5 次；live-87 Source 偶发停止）。
+
+### 2026-08-14 — live-89 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total 13187）；Platform 5 steps（total 117537）
+  后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。Platform 坏时段
+  连续 6 次（live-83~86、88、89）。
