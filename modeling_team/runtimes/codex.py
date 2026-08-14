@@ -1601,14 +1601,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if report is not None and getattr(resource, "terminal_event", False):
                     return report
                 # The model sometimes ends its turn after the retrieval wave
-                # without submitting the report (a DeepSeek reasoning behavior).
-                # One mechanical continuation is allowed so the child can complete
-                # the submission; it is never a second retrieval wave or a
-                # collaboration channel.
+                # without submitting the report (a DeepSeek reasoning behavior),
+                # or goes idle without a terminal event.  One mechanical
+                # continuation is allowed so the child can complete the
+                # submission; it is never a second retrieval wave or a
+                # collaboration channel.  Trigger it when the wave has produced
+                # at least one inference and the deadline is approaching but the
+                # report is still missing.
                 if (
                     report is None
-                    and getattr(resource, "terminal_event", False)
                     and not getattr(resource, "_continuation_used", False)
+                    and (
+                        getattr(resource, "terminal_event", False)
+                        or (
+                            getattr(metrics, "inference_steps", 0) >= 1
+                            and time.monotonic() >= deadline - max(10.0, float(timeout_seconds) * 0.2)
+                        )
+                    )
                 ):
                     agent = getattr(resource, "_child_agent", None)
                     if agent is not None and getattr(agent, "thread_id", None):
