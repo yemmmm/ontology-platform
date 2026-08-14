@@ -19,6 +19,12 @@ query tool.
   facts and completeness markers, then decide the next query from what came back.  Follow
   returned cursors and referenced IRIs.  There is no single-wave limit; a follow-up query
   driven by returned information is normal.  Do not guess facts you did not receive.
+- Batch independent queries: in each round you may issue several independent queries together
+  in one inference; only queries that depend on an earlier answer must wait.  Prefer 2-4
+  batched rounds over 8 single-query rounds.
+- Converge and submit: iterate only until the retrieved facts answer the question or an
+  explicit unknown is warranted; if the last round already answered it, the very next
+  inference must submit.  Do not re-query the same fact with slightly different wording.
 - The report is ONLY accepted through the `submit_examiner_report` tool call of the
   `examiner_report` MCP server; writing the report in your reply text is not a submission
   and will not be counted.

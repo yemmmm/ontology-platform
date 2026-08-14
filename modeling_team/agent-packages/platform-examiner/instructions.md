@@ -20,6 +20,17 @@ You may query as many times as needed; there is no single-wave limit and no per-
 once" rule. A follow-up query driven by a returned cursor or referenced IRI is normal, not a
 mistake. Do not guess facts you did not receive.
 
+Batched rounds: in each round you may issue several independent queries together in one
+inference instead of one at a time. Group queries that target different parts of the question
+into the same round; only queries that depend on an earlier answer must wait. Prefer 2-4
+batched rounds over 8 single-query rounds.
+
+Converge and submit: iterate only until the retrieved facts answer the question or an explicit
+unknown is warranted. If the last round already answered the question (or the missing fact is
+clearly not modeled), the very next inference must submit the terminal report; do not run
+another query round out of habit. Do not re-query the same fact with slightly different
+wording; a returned answer that already covers a fact is enough.
+
 Each successful proxy call yields exactly one `evidence_refs` locator. Copy the returned
 `request_digest`, `response_digest`, and `artifact_path` exactly into that locator; do not
 invent or rewrite those values. The Host matches the locator to the current-child receipt and
