@@ -1009,3 +1009,10 @@
   fresh child + fresh metrics 重试一次（read key/forwarder Host-owned 不变，不消耗新授权、不重复读取）。
   新增 `test_platform_executor_is_retried_once_on_stop_generation`（首次抛错、重试成功、attempts=2）；
   full `552 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-60 evidence: platform retry limit 2 still failing — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `24425`）；Platform 重试 2 次后仍
+  child-timeout（2 steps、total tokens `46259`、`continuation="sent"`、5 receipts）。
+- 统计（live-43 后）：Platform 成功 1/11（43）；Acceptance 成功 0/10。续轮与重试均无法克服 DeepSeek
+  wave 后停止生成行为。
