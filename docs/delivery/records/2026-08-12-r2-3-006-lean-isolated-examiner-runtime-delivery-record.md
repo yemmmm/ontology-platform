@@ -753,3 +753,15 @@
   `~/.codex/packages/standalone/current/bin/codex` 与 `.../current/codex`，再回退到传入路径本身。
   解析后 `codex_binary=/home/yangxiang/.codex/packages/standalone/current/bin/codex`（exists+exec 验证）。
   focused `52/52`、full `549 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-28 real N=2: Source/Platform both pass, Acceptance child-timeout — main agent
+
+- Real result：**Source 完成（2 steps、terminal report true、`metrics_complete=true`）；Platform 完成
+  （3 steps、terminal report true、`metrics_complete=true`、proxy 约 4.0s、evidence tokens `15113`、total
+  tokens `58941`）**——child-start-failed 修复后两条读取管线全部通过；Acceptance 3 steps（total tokens
+  `40565`、TTFT 约 1.1s）后未提交 verdict，90s child watchdog 到期，operation 为
+  `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`、`role=acceptance`）。CQ-002 未执行。
+- Failure layer：`modeling-quality/prompt-contract`（Acceptance 在 3 步内未提交 verdict；live-6/19/28 同模式）。
+- Repair（live-29 前完成）：Acceptance instructions.md 与 SKILL.md 新增 turn budget 契约——第二 inference 前
+  必须提交、最多 3 步、被拒时只修 named field 立即重提、禁止重读/重推导；focused `31/31`、full
+  `549 PASS + 1 SKIP` 无 regression。
