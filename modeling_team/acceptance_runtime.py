@@ -716,6 +716,7 @@ class LeanExaminerRuntime:
         platform_read_key: str | None = None,
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         child_timeout_seconds: float = 90.0,
+        platform_retry_limit: int = 1,
     ):
         if codex_adapter is not None:
             if any(executor is not None for executor in (source_executor, platform_executor, acceptance_executor)):
@@ -751,6 +752,7 @@ class LeanExaminerRuntime:
         self.source_executor = source_executor
         self.platform_executor = platform_executor
         self.acceptance_executor = acceptance_executor
+        self._platform_retry_limit = max(0, int(platform_retry_limit))
         self._failure_metrics: tuple[dict[str, Any], ...] = ()
 
     @property
@@ -803,9 +805,22 @@ class LeanExaminerRuntime:
                 self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
                 raise
             platform_metrics = ExaminerRunMetrics("platform")
+            platform_retry_used = False
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
-                platform_report = self.platform_executor(platform_packet, platform_metrics)
+                try:
+                    platform_report = self.platform_executor(platform_packet, platform_metrics)
+                except ExaminerRuntimeBlocked as exc:
+                    # A Platform child that stops generating after the retrieval
+                    # wave (DeepSeek provider behavior) is retried once with a
+                    # fresh child and fresh metrics; the read key and forwarder
+                    # remain Host-owned and unchanged.
+                    if not getattr(self, "_platform_retry_limit", 1) or platform_retry_used:
+                        raise
+                    platform_retry_used = True
+                    platform_metrics = ExaminerRunMetrics("platform")
+                    platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
+                    platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)
                 platform_metrics.record_terminal_report(platform_report)
             except BaseException as exc:

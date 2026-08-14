@@ -397,6 +397,52 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.failure_metrics[0]["role"], "source")
         self.assertNotIn("report", snapshots[0])
 
+    def test_platform_executor_is_retried_once_on_stop_generation(self) -> None:
+        attempts = {"count": 0}
+
+        def source(_packet, metrics):
+            _complete_metrics(metrics, "source")
+            return {
+                "answerability": "answerable", "conclusion": "source", "evidence": [],
+                "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [],
+                "evidence_refs": [{"location": "source.md"}],
+            }
+
+        def platform(_packet, metrics):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role="platform",
+                    evidence={"failure_category": "runtime", "reason_code": "child-timeout"},
+                )
+            _complete_metrics(metrics, "platform")
+            return _platform_report()
+
+        def acceptance(_packet, metrics):
+            _complete_metrics(metrics, "acceptance")
+            return {
+                "status": "FAIL", "answer": "no match",
+                "evidence_ref_ids": [_source_evidence_id()],
+                "current": True, "usable": False, "failure_layer": None, "blocked_reason": None,
+            }
+
+        runtime = LeanExaminerRuntime(
+            source_executor=source,
+            platform_executor=platform,
+            acceptance_executor=acceptance,
+            platform_retry_limit=1,
+        )
+        result = runtime.run(
+            [{"question": "q1"}],
+            source_packets=[_source_payload()],
+            platform_packets=[_platform_payload()],
+            ticket_binding={"ticket_digest": "a" * 64},
+            verdict_schema={"type": "verdict"},
+        )
+        self.assertEqual(attempts["count"], 2)
+        self.assertEqual(result["status"], "FAIL")
+
     def test_failure_metrics_capture_source_and_incomplete_platform(self) -> None:
         def source(_packet, metrics):
             _complete_metrics(metrics, "source")

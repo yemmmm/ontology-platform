@@ -1000,3 +1000,12 @@
 - Real result：Source 完成（2 steps、terminal report true、total tokens `23231`）；Platform 1 step（total
   tokens `16410`）wave 后 2 次续轮发出但模型无响应，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
   （`role=platform`、`reason_code=child-timeout`、5 receipts）。
+
+### 2026-08-14 — platform stop-generation retried once in-operation — main agent
+
+- 分析：live-52~58 连续 7 次 Platform 停止生成（wave 后模型不响应任何续轮）。续轮机制对 DeepSeek 无效
+  （成功 case 均为模型自发性提交）。
+- Repair：`LeanExaminerRuntime` 增加 `platform_retry_limit=1`——Platform executor 抛 child-timeout 时用
+  fresh child + fresh metrics 重试一次（read key/forwarder Host-owned 不变，不消耗新授权、不重复读取）。
+  新增 `test_platform_executor_is_retried_once_on_stop_generation`（首次抛错、重试成功、attempts=2）；
+  full `552 PASS + 1 SKIP` 无 regression。
