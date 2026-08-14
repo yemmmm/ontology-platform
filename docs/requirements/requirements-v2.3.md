@@ -2124,11 +2124,16 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
   主线程历史继承，并分别记录不可移除 platform prefix、role packet、source/read-response token 数。
 - proxy 必须为每个允许 tool 固定 exact JSON argument schema；在进入 `McpReadForwarder`/backend 前拒绝未知、
   缢余、缺失或错误类型字段，禁止 schema-property filtering 后继续调用。拒绝证据必须显示 backend_calls=0。
-- 每个 Examiner 正常路径最多 3 个可观测 inference steps；缺输入不得通过协作追问增加轮次。role packet（不含批准 source
+- 每个 Examiner 正常路径有步数预算：Source/Acceptance 最多 3 个可观测 inference steps；Platform（迭代式
+  语义查询）最多 8 步。缺输入不得通过协作追问增加轮次。role packet（不含批准 source
   bytes、平台 response 和不可移除 system/safety prefix）目标不超过 4k tokens。
-- 本地 accepted baseline 的性能目标是单个 Examiner 通常不超过 60 秒、不得超过 90 秒；外部 provider 故障或
-  限流必须单独分类，不可用放宽语义/隔离边界来换取速度。确定性完成门以无历史继承、无横向询问、最多
-  3 turns 和直接 proxy 调用为主，墙钟时间作为必须报告的性能门。
+- Platform Examiner 是消费角色：只使用通用语义查询接口（`query_semantic_context`），不读取建模上下文、
+  build-session、read-model、projection 或 Producer 内部；通过每轮返回的 facts/cursor/completeness 迭代
+  查询直至足够或显式 unknown，然后提交 typed report。
+- 本地 accepted baseline 的性能目标是单个 Examiner 通常不超过 60 秒；Platform（迭代式查询）允许到 180 秒，
+  Source/Acceptance 不得超过 90 秒；外部 provider 故障或限流必须单独分类，不可用放宽语义/隔离边界来换取
+  速度。确定性完成门以无历史继承、无横向询问、步数预算内提交和直接 proxy 调用为主，墙钟时间作为必须报告
+  的性能门。
 - 先修上下文与编排。只有在精简后 Platform Examiner 仍因事实缺失或关联表达不清无法在 3 turns 内完成时，
   才评估通用 `query_semantic_context`/关联事实投影；不得为某个 CQ 添加业务专属 API 或返回字段。
 

@@ -717,6 +717,7 @@ class LeanExaminerRuntime:
         platform_read_key: str | None = None,
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         child_timeout_seconds: float = 90.0,
+        platform_child_timeout_seconds: float | None = None,
         platform_retry_limit: int = 1,
         acceptance_retry_limit: int = 0,
     ):
@@ -738,7 +739,11 @@ class LeanExaminerRuntime:
                     metrics,
                     read_key=platform_read_key,
                     platform_forwarder=platform_forwarder,
-                    timeout_seconds=child_timeout_seconds,
+                    timeout_seconds=(
+                        platform_child_timeout_seconds
+                        if platform_child_timeout_seconds is not None
+                        else child_timeout_seconds
+                    ),
                 )
 
             def run_acceptance(packet: ExaminerRolePacket, metrics: ExaminerRunMetrics) -> Mapping[str, Any]:
@@ -756,6 +761,14 @@ class LeanExaminerRuntime:
         self.acceptance_executor = acceptance_executor
         self._platform_retry_limit = max(0, int(platform_retry_limit))
         self._acceptance_retry_limit = max(0, int(acceptance_retry_limit))
+        if platform_child_timeout_seconds is not None:
+            try:
+                platform_child_timeout_seconds = float(platform_child_timeout_seconds)
+            except (TypeError, ValueError) as exc:
+                raise ChildRuntimeError("platform child timeout is invalid") from exc
+            if platform_child_timeout_seconds <= 0:
+                raise ChildRuntimeError("platform child timeout is invalid")
+        self._platform_child_timeout_seconds = platform_child_timeout_seconds
         self._failure_metrics: tuple[dict[str, Any], ...] = ()
 
     @property

@@ -1097,6 +1097,7 @@ class _ProductionOperationHost:
             platform_read_key=plaintext,
             platform_forwarder=forward,
             child_timeout_seconds=90,
+            platform_child_timeout_seconds=180,
             platform_retry_limit=2,
             acceptance_retry_limit=2,
         )
