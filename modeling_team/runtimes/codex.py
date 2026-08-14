@@ -1605,8 +1605,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         metrics.record_terminal_report(report)
                 # A report callback is not the provider terminal event.  Real
                 # resources expose this latch from the private stdout observer;
-                # keep checking it after the one-time report validation.
-                if report is not None and getattr(resource, "terminal_event", False):
+                # keep checking it after the one-time report validation.  The
+                # validated typed report is itself the terminal payload, so a
+                # missing provider terminal event must not turn a successful
+                # submission into a timeout.
+                if report is not None:
                     return report
                 # Acceptance models often end their turn with the verdict written
                 # in reply text instead of calling the submit tool.  When the

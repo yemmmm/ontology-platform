@@ -1085,3 +1085,13 @@
 - Real result：Source 完成（2 steps、terminal report true、total tokens `24501`）；Platform 2 steps（total
   tokens `46104`）wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
   （`role=platform`、`reason_code=child-timeout`）。Platform 坏时段延续（live-68~71 连续 4 次失败）。
+
+### 2026-08-14 — live-72 evidence + report-is-terminal fix — main agent
+
+- Real result：Source 完成（2 steps、terminal report true）；**Platform 提交成功但卡在等待**——
+  `report_received=true`、platform `terminal_report=True` 但 `terminal_event=false`、child-timeout。模型提交
+  report 后未产生 provider terminal event，Host 一直等到 90s watchdog。
+- Root cause：`run_lean_examiner_child` 的 return 条件要求 `report is not None AND terminal_event`；模型
+  提交 report 后 turn 未正常结束（DeepSeek 行为）→ 永远等不到。
+- Repair：**校验通过的 typed report 本身就是 terminal payload**——report 非 None 即 return（不再等
+  terminal_event）。测试语义更新；full `553 PASS + 1 SKIP` 无 regression。

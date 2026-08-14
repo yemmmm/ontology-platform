@@ -786,9 +786,10 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         completion.join(timeout=1)
         self.assertEqual(result, report)
-        self.assertGreaterEqual(elapsed, 0.16)
-        self.assertIsNotNone(metrics.terminal_wall_ms)
-        self.assertGreaterEqual(metrics.terminal_wall_ms or 0.0, 160.0)
+        # The validated typed report is itself the terminal payload, so a valid
+        # submission returns immediately instead of waiting for the provider's
+        # terminal event (which may never arrive).
+        self.assertLess(elapsed, 0.16)
         self.assertTrue(resource.destroyed)
 
     def test_codex_executor_report_and_budget_block_prefers_blocked(self) -> None:
