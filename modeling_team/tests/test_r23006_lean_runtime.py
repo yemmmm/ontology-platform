@@ -860,6 +860,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
 
         class Agent:
             thread_id = "thread-1"
+            active_turn_id = "turn-1"
 
         class Resource:
             terminal_event = True
@@ -891,7 +892,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         adapter.launch_lean_examiner_child = mock.Mock(return_value=resource)
 
         def fake_rpc(agent, method, params):
-            if method == "turn/start":
+            if method in ("turn/start", "turn/steer"):
                 resource.continuation_calls += 1
                 resource.submitted_reports.append(report)
                 resource.terminal_event = True

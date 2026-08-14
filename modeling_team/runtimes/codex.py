@@ -1639,26 +1639,44 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                             except Exception:
                                 pass
                         try:
-                            self._rpc(
-                                agent,
-                                "turn/start",
-                                {
-                                    "threadId": agent.thread_id,
-                                    "input": [
-                                        {
-                                            "type": "text",
-                                            "text": (
-                                                "STOP analyzing. You must NOW call the "
-                                                "submit_examiner_report tool exactly once with "
-                                                "your typed terminal report built from what you "
-                                                "already have. Do not reason further, do not "
-                                                "re-read anything, do not plan. The tool call "
-                                                "itself is the only valid final action."
-                                            ),
-                                        }
-                                    ],
-                                },
+                            input_text = (
+                                "STOP analyzing. You must NOW call the "
+                                "submit_examiner_report tool exactly once with "
+                                "your typed terminal report built from what you "
+                                "already have. Do not reason further, do not "
+                                "re-read anything, do not plan. The tool call "
+                                "itself is the only valid final action."
                             )
+                            active_turn_id = getattr(agent, "active_turn_id", None)
+                            if isinstance(active_turn_id, str) and active_turn_id:
+                                try:
+                                    self._rpc(
+                                        agent,
+                                        "turn/steer",
+                                        {
+                                            "threadId": agent.thread_id,
+                                            "expectedTurnId": active_turn_id,
+                                            "input": [{"type": "text", "text": input_text}],
+                                        },
+                                    )
+                                except Exception:
+                                    self._rpc(
+                                        agent,
+                                        "turn/start",
+                                        {
+                                            "threadId": agent.thread_id,
+                                            "input": [{"type": "text", "text": input_text}],
+                                        },
+                                    )
+                            else:
+                                self._rpc(
+                                    agent,
+                                    "turn/start",
+                                    {
+                                        "threadId": agent.thread_id,
+                                        "input": [{"type": "text", "text": input_text}],
+                                    },
+                                )
                             resource._continuation_reason = "sent"
                         except Exception:
                             resource._continuation_reason = "rpc-failed"

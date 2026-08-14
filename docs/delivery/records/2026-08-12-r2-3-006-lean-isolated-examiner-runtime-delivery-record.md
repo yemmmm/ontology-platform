@@ -970,3 +970,11 @@
   tokens `44609`）wave 后续轮已发送（`continuation="sent"`、5 receipts）但模型未提交，90s watchdog 到期，
   `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
 - 统计（live-43 后）：Platform 成功 1/7（43）、Acceptance 成功 0/9；Source 100%。继续重试。
+
+### 2026-08-14 — continuation switches to turn/steer — main agent
+
+- 分析：live-49/51/52/53 中续轮（turn/start 新 turn）已发送（continuation="sent"）但模型无响应——新
+  turn 没有活动 wave 上下文，模型不继续。
+- Repair：续轮改用 `turn/steer`（对活动 turn 注入提示，保持 wave 上下文；失败回退 turn/start）。
+  `agent.active_turn_id` 存在时优先 steer；测试同步（Agent 加 active_turn_id、接受 steer/start）；
+  full `551 PASS + 1 SKIP` 无 regression。
