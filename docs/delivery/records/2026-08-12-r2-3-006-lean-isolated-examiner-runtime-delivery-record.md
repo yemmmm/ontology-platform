@@ -1027,3 +1027,12 @@
   R2.3-006 不得修改）下，收到任何续轮文本都会继续推理而非调用工具。续轮机制已证伪（成功 case 均为模型
   自发性提交）。R2.3-006 平台机制（proxy、typed report、sink-time 校验、详细拒绝、budget、隔离、续轮、
   重试）全部实现并通过 deterministic 验证；语义完成门受 provider 行为限制。
+
+### 2026-08-14 — live-62/63 evidence — main agent
+
+- live-62：**Source + Platform 均完成**（Platform 3 steps、terminal report true、metrics complete、total
+  tokens `104465`）——Platform 重试机制首次在真实运行中成功；Acceptance 4 steps 推理后
+  `BLOCKED/runtime-budget`（`steps=5`、total tokens `63963`），模型持续推理不调用 submit 工具。
+- live-63：Platform 1 step 停止生成（重试 2 次均停），`BLOCKED/runtime-infrastructure`。
+- Repair：Acceptance 续轮提示补充 verdict 模板（status/answer/evidence_ref_ids 字段说明），消除
+  "不知道如何调用"障碍；full `552 PASS + 1 SKIP` 无 regression。
