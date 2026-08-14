@@ -1152,3 +1152,12 @@
 - Repair：`ExaminerRunMetrics` 增加 `max_inference_steps`（默认 3）；Platform 设为 8（迭代查询 + 提交，
   重试 metrics 同步）；operation 校验按角色接受 platform ≤8、其余 ≤3。full `553 PASS + 1 SKIP` 无
   regression。
+
+### 2026-08-14 — live-78/79/80 evidence: iterative querying works but does not converge — main agent
+
+- live-78：Platform 6 steps、7 次 proxy 调用（30.7s、evidence 103k）后 90s 超时未提交。
+- live-79：Platform 8 steps（proxy 39.7s、evidence 119k）后第 9 步 budget 拦截；每步仅 1 次小查询。
+- live-80：批量查询生效——Platform 8 steps、**17 次 proxy 调用**（64.2s、evidence 206.7k、total 321.6k）
+  后 180s 超时仍未提交。模型持续"再查一点"，8 步预算用满不收敛。
+- 分析：迭代查询行为正确（17 次调用、多轮），但收敛性差——模型无限探索。上下文 206k 已很大，可能
+  逼近模型限制导致后续推理退化。需更强的收敛约束 + 收紧步数上限。
