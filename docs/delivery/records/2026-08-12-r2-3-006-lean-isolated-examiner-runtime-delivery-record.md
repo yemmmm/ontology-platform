@@ -837,3 +837,14 @@
   `reason_code=child-timeout`）。Acceptance/CQ-002 未启动。
 - Failure layer：`runtime/infrastructure`（Platform 停止生成行为，live-29~33/35 共 6 次；live-19/28/34
   成功 3/15）。
+
+### 2026-08-14 — live-36 evidence + platform tool-submission contract — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `40371`）；Platform 2 steps（proxy
+  约 16.5s、evidence tokens `24379`、total tokens `37295`）后未提交 report，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 分析：Platform/Acceptance 共同模式——模型把输出写进推理/回复文本而不调用 `submit_examiner_report`
+  工具。live-19/28/34 成功 3/16。
+- Repair（live-37 前完成）：Platform instructions.md/SKILL.md 明确"report 仅通过 submit_examiner_report
+  工具调用生效，回复文本不算提交；wave 后下一 inference 必须调用工具"。focused `31/31`、full
+  `549 PASS + 1 SKIP` 无 regression。

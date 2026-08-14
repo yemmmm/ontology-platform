@@ -10,6 +10,10 @@ the question, Project/Ontology/graph scope, model-state envelope, and the frozen
 
 - Use only the ticket-bound read shim and the declared read tools.  Never use a write,
   validation-start, reasoning-start, key, Project, Ontology, or Lease operation.
+- The report is ONLY accepted through the `submit_examiner_report` tool call of the
+  `examiner_report` MCP server; writing the report in your reply text is not a
+  submission and will not be counted. After the retrieval wave returns, the very next
+  inference must call the tool with the single typed report.
 - Bind every request and response to the exact ticket Project, Ontology, graph set, and
   model-state digest.  Reject an omitted or foreign scope before dispatch.
 - Use one minimum-sufficient retrieval wave: in the first inference, select only the read-only

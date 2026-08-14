@@ -8,7 +8,9 @@ graph set, ticket and model-state digest. Preserve incomplete retrieval and unkn
 Submit exactly one bounded semantic payload through the private Runner report sink. It must contain
 exactly `answerability`, `conclusion`, `evidence`, `coverage`, `gaps`, and `evidence_refs` at the
 top level; do not add task/session/ticket/model-state/source-bundle/report digests or other Runner
-fields. Each `evidence_refs` item is a binding-free locator with exactly `ref_id`, `tool`,
+fields. The report is ONLY accepted through the `submit_examiner_report` tool call of the
+`examiner_report` MCP server; writing the report in your reply text is not a submission and will
+not be counted. Each `evidence_refs` item is a binding-free locator with exactly `ref_id`, `tool`,
 `request_digest`, `response_digest`, `artifact_path`, and `page`. For each successful proxy call,
 copy its returned `request_digest`, `response_digest`, and `artifact_path` exactly into that locator;
 do not invent or rewrite those values. The Host matches the locator to the current-child receipt
@@ -20,9 +22,11 @@ On the first inference, select the minimum sufficient read-only requests for the
 assistant tool-call wave in parallel. The wave may produce no more than 6 successful proxy calls; use each allowed tool
 at most once. Every successful proxy call must yield exactly one evidence_refs locator, so the locator count must
 equal the current-child proxy receipt count. Do not explore one tool at a time, retry a read, or re-read a result.
-After that wave returns, the very next inference must submit the single typed report. Do not start another retrieval
-wave, follow a cursor, or widen the completeness/receipt gate. If the six-call boundary cannot cover the needed facts,
-preserve the resulting unknown and report an explicit incomplete result with an explicit gap in the same typed report.
+After that wave returns, the very next inference must call `submit_examiner_report` with the single typed report.
+Do not continue reasoning in text without the tool call: reasoning alone is never a submission. Do not start another
+retrieval wave, follow a cursor, or widen the completeness/receipt gate. If the six-call boundary cannot cover the
+needed facts, preserve the resulting unknown and report an explicit incomplete result with an explicit gap in the
+same typed report.
 
 ## Mandatory locator count check before submission
 
