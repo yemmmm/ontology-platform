@@ -514,6 +514,10 @@ class ExaminerRunMetrics:
             # (a model that keeps reasoning after submitting) must not turn a
             # successful submission into a budget failure.
             if not self.terminal_report:
+                if self._allow_continuation_turn and self.inference_steps < 4:
+                    self.inference_steps += 1
+                    self._increments.append(increments)
+                    return True
                 self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps + 1})
                 raise self.blocked
             return True

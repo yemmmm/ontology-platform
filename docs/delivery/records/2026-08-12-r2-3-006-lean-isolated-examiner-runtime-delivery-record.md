@@ -953,3 +953,13 @@
   `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
 - 统计：live-43 后 Platform 成功率 ~1/5（43 成功、44/47/49 失败、45/46/48 在 Acceptance/Source 阶段）。
   继续重试。
+
+### 2026-08-14 — live-50a evidence + continuation step allowance — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `25287`）；Platform 完成
+  （3 steps、terminal report true、total tokens `69863`）；Acceptance 3 steps 推理后（total tokens
+  `47906`）模型自身继续第 4 步 → `BLOCKED/runtime-budget`（`steps=4`、`role=acceptance`）。
+- 分析：Acceptance 纯推理任务中模型在续轮后仍推理不调用 submit 工具；budget 在第 4 步拦截
+  （terminal_report=False）。"正常路径 ≤3 steps"与"续轮恢复"的步数语义需分离。
+- Repair：`_allow_continuation_turn` 设置后允许 1 个额外推理步（正常 3 步 + 续轮恢复 1 步 = 4），第 5 步
+  才 budget；report 提交后仍豁免。full `551 PASS + 1 SKIP` 无 regression。
