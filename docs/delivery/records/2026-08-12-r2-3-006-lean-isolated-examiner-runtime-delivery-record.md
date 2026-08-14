@@ -848,3 +848,11 @@
 - Repair（live-37 前完成）：Platform instructions.md/SKILL.md 明确"report 仅通过 submit_examiner_report
   工具调用生效，回复文本不算提交；wave 后下一 inference 必须调用工具"。focused `31/31`、full
   `549 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-37 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `45520`）；Platform 1 step（total
+  tokens `13464`）wave 后未提交 report，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
+  （`role=platform`、`reason_code=child-timeout`）。
+- 分析：工具提交契约（live-36 后新增）未改变模型行为——模型在 tool wave 后直接结束 turn，属 DeepSeek
+  provider 行为（live-28/34 证明偶发可继续）。Platform 成功率 ~3/17。
