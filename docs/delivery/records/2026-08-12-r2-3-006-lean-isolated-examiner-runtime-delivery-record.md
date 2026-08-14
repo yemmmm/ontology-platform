@@ -1185,3 +1185,8 @@
   9 次 proxy 调用（total 135k）后停止生成，续轮已发未响应，180s 窗口 `BLOCKED/runtime-infrastructure`
   （`reason_code=child-timeout`）。首次运行 operation-level 瞬时失败，重跑正常 blocked。
 - 趋势：Platform 成功率波动（live-82 成功、live-83 失败）；迭代查询 + 收敛约束已让链路可达 Acceptance。
+
+### 2026-08-14 — live-84 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total 30477）；Platform 4 steps（32.7s proxy、
+  total 63675）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
