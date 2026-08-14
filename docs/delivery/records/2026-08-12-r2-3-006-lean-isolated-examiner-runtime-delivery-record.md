@@ -1101,3 +1101,9 @@
 - Real result：Source 完成（3 steps、terminal report true）；Platform 2 steps（`report_received=false`）
   wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
   `reason_code=child-timeout`、5 receipts）。report-is-terminal 修复（live-72 后）未涉及本轮（无提交发生）。
+
+### 2026-08-14 — live-74 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（terminal report true）；Platform 1 step（`report_received=false`）wave 后重试
+  2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`、5 receipts）。
