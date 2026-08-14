@@ -805,3 +805,15 @@
   （function_call 返回）；provider proxy 为无状态透明转发。`model_reasoning_effort="max"` 下模型可能在
   tool-call 后陷入长推理或直接结束 turn，属 provider 行为随机性（live-19/28 成功 2/11）。
 - Disposition：继续重试。
+
+### 2026-08-14 — live-33 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `40383`）；Platform 2 steps
+  （wave 后第二次推理 `reasoning_output_tokens=6421`、total tokens `47601`、proxy 约 4.0s、evidence tokens
+  `19102`）后仍未提交 report，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`）。
+- 分析：live-33 较 29-32 有进展（2 steps 而非 1 step），但模型在第二次长推理（6421 reasoning tokens）后
+  未产生 report 提交调用。`model_reasoning_effort="max"` 为 R2.3-003/005 modeling manifest 冻结契约，
+  R2.3-006 不得修改（AGENTS.md 边界）；"推理完成当作回答"是 DeepSeek reasoning 模型行为。live-28 成功
+  模式（3 steps、提交步 reasoning 仅 78 tokens）说明提交是概率性的。
+- Disposition：继续重试。
