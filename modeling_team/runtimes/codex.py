@@ -1652,14 +1652,26 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                             except Exception:
                                 pass
                         try:
-                            input_text = (
-                                "STOP analyzing. You must NOW call the "
-                                "submit_examiner_report tool exactly once with "
-                                "your typed terminal report built from what you "
-                                "already have. Do not reason further, do not "
-                                "re-read anything, do not plan. The tool call "
-                                "itself is the only valid final action."
-                            )
+                            if packet.kind == "acceptance":
+                                input_text = (
+                                    "STOP analyzing. You must NOW call the "
+                                    "submit_examiner_report tool exactly once. Use "
+                                    "status = PASS/FAIL/BLOCKED, answer = one bounded "
+                                    "sentence, evidence_ref_ids = the Host-provided IDs "
+                                    "you cited, current/usable = booleans, and "
+                                    "failure_layer/blocked_reason = null when PASS. "
+                                    "Do not reason further, do not re-read the packet. "
+                                    "The tool call itself is the only valid final action."
+                                )
+                            else:
+                                input_text = (
+                                    "STOP analyzing. You must NOW call the "
+                                    "submit_examiner_report tool exactly once with "
+                                    "your typed terminal report built from what you "
+                                    "already have. Do not reason further, do not "
+                                    "re-read anything, do not plan. The tool call "
+                                    "itself is the only valid final action."
+                                )
                             active_turn_id = getattr(agent, "active_turn_id", None)
                             if isinstance(active_turn_id, str) and active_turn_id:
                                 try:
