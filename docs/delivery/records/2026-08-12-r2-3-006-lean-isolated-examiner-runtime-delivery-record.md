@@ -1161,3 +1161,11 @@
   后 180s 超时仍未提交。模型持续"再查一点"，8 步预算用满不收敛。
 - 分析：迭代查询行为正确（17 次调用、多轮），但收敛性差——模型无限探索。上下文 206k 已很大，可能
   逼近模型限制导致后续推理退化。需更强的收敛约束 + 收紧步数上限。
+
+### 2026-08-14 — live-81 evidence: convergence tightening reduces rounds — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total tokens `12059`）；Platform 4 steps、
+  8 次 proxy 调用（proxy 33.6s、evidence 103k、total 107k）后停止生成，续轮已发（`continuation="sent"`）
+  未响应，180s 窗口内 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- 趋势：收敛约束（3 轮上限）将查询轮数从 live-79/80 的 8 步降到 4 步（8 次调用）——约束生效；模型
+  "查完即停"行为仍在。继续迭代。
