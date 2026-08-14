@@ -935,3 +935,13 @@
   `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
 - 分析：续轮已发但模型第二轮仍不调用 submit——模型行为随机性（live-43 成功、live-44/47 失败）。
 - Disposition：继续重试。
+
+### 2026-08-14 — live-48 evidence + report-submitted budget exemption — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `49046`）但模型提交 report 后仍
+  继续推理触发第 4 步 → `BLOCKED/runtime-budget`（`steps=4`、`role=source`）。
+- 分析：Source report 已提交（terminal_report=True）后，模型后续 usage 通知仍触发 budget 检查——成功提交
+  被"提交后继续推理"误判为 budget 失败。
+- Repair：`observe_notification` 在 `terminal_report=True` 后不再抛 runtime-budget（提交后的多余推理只
+  计数不失败）；测试语义同步更新（report 提交后 usage(40) 接受且 steps=3）；full `551 PASS + 1 SKIP`
+  无 regression。

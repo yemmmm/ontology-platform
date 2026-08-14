@@ -296,9 +296,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "evidence_refs": [{"location": "source.md"}],
         })
         self.assertIsNone(metrics.as_dict()["terminal_wall_ms"])
-        with self.assertRaises(ExaminerRuntimeBlocked) as blocked_after_report:
-            metrics.observe_notification(usage(40))
-        self.assertEqual(blocked_after_report.exception.reason, "runtime-budget")
+        self.assertTrue(metrics.observe_notification(usage(40)))
+        self.assertIsNone(metrics.blocked)
+        self.assertEqual(metrics.inference_steps, 3)
 
     def test_transport_rejects_lateral_collaboration_with_receipt(self) -> None:
         transport = ExaminerTransport(owner_id="acceptance")

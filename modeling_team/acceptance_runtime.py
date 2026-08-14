@@ -510,8 +510,13 @@ class ExaminerRunMetrics:
         if not positive:
             return False
         if self.inference_steps >= 3:
-            self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps + 1})
-            raise self.blocked
+            # Once the terminal report is recorded, later usage notifications
+            # (a model that keeps reasoning after submitting) must not turn a
+            # successful submission into a budget failure.
+            if not self.terminal_report:
+                self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps + 1})
+                raise self.blocked
+            return True
         self.inference_steps += 1
         self._increments.append(increments)
         # Bind the first positive inference usage only.  A zero/no-op cumulative
