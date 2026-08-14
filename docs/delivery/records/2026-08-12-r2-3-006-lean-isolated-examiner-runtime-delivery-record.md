@@ -765,3 +765,12 @@
 - Repair（live-29 前完成）：Acceptance instructions.md 与 SKILL.md 新增 turn budget 契约——第二 inference 前
   必须提交、最多 3 步、被拒时只修 named field 立即重提、禁止重读/重推导；focused `31/31`、full
   `549 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-29 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `27240`）；Platform 发出 5 次成功
+  proxy 调用（proxy 约 6.9s、evidence tokens `25926`、1 step、total tokens `12895`）后未产生第二个
+  inference 提交 report，90s child watchdog 到期，`BLOCKED/runtime-infrastructure`
+  （`reason_code=child-timeout`、`role=platform`）。Acceptance/CQ-002 未启动。
+- Failure layer：`runtime/infrastructure`（Platform 停止生成行为，与 live-14/16/17/20/22 同模式；live-19/28
+  曾成功证明链路可达）。非 prompt 或契约缺陷，继续重试。
