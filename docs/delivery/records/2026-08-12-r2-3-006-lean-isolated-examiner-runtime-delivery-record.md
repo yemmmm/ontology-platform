@@ -1169,3 +1169,12 @@
   未响应，180s 窗口内 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
 - 趋势：收敛约束（3 轮上限）将查询轮数从 live-79/80 的 8 步降到 4 步（8 次调用）——约束生效；模型
   "查完即停"行为仍在。继续迭代。
+
+### 2026-08-14 — live-82 evidence: Source+Platform complete, acceptance budget — main agent
+
+- Real result：**Source 完成（1 step、terminal report true、total 12230）；Platform 完成（4 steps、
+  20.3s proxy、evidence 69k、terminal report true）——迭代式语义查询 + 3 轮收敛约束首次让 Platform 提交
+  成功**；Acceptance 4 steps（推理 3454→1914→49 收敛、total 80k）后第 5 步 `runtime-budget`（`steps=5`）。
+- 分析：Acceptance 模型推理收敛（第 3 步 reasoning 仅 49）但从未调用 submit 工具；文本 verdict 提取此前
+  需 terminal_event（模型 turn 未结束所以未触发）。
+- Repair：文本提取触发条件放宽为"terminal_event 或 inference_steps>=3"（模型推理收敛即尝试提取）。
