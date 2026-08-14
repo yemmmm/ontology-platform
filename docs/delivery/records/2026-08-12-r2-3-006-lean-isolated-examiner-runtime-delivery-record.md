@@ -963,3 +963,10 @@
   （terminal_report=False）。"正常路径 ≤3 steps"与"续轮恢复"的步数语义需分离。
 - Repair：`_allow_continuation_turn` 设置后允许 1 个额外推理步（正常 3 步 + 续轮恢复 1 步 = 4），第 5 步
   才 budget；report 提交后仍豁免。full `551 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-51 real N=2: Platform continuation-sent but no submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `26855`）；Platform 2 steps（total
+  tokens `44609`）wave 后续轮已发送（`continuation="sent"`、5 receipts）但模型未提交，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 统计（live-43 后）：Platform 成功 1/7（43）、Acceptance 成功 0/9；Source 100%。继续重试。
