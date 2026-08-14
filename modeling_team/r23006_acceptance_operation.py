@@ -487,6 +487,7 @@ _BLOCKED_CODE_FIELDS = frozenset({
     # ExaminerRuntimeBlocked(..., evidence={...}) key (currently confirmed by
     # rg across acceptance_runtime.py and runtimes/codex.py).
     "failure_category", "reason_code", "packet", "field", "thread_id", "turn_id", "path", "binding_code",
+    "continuation",
 })
 _BLOCKED_INTEGER_FIELDS = frozenset({
     "steps", "host_packet_tokens", "inherited_turns", "proxy_receipt_count", "report_ref_count", "index",

@@ -1566,6 +1566,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         terminal_event=terminal_event,
                         proxy_receipt_count=proxy_receipt_count,
                     )
+                    continuation = getattr(resource, "_continuation_reason", None)
+                    if isinstance(continuation, str) and continuation in {"sent", "rpc-failed"}:
+                        safe_failure["continuation"] = continuation
                     raise ExaminerRuntimeBlocked(
                         "runtime-infrastructure",
                         role=packet.kind,
@@ -1641,14 +1644,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                     ],
                                 },
                             )
+                            resource._continuation_reason = "sent"
                         except Exception:
-                            pass
+                            resource._continuation_reason = "rpc-failed"
                 process = getattr(resource, "process", None)
                 poll = getattr(process, "poll", None)
                 if callable(poll) and poll() is not None and not getattr(resource, "destroyed", False):
                     raise ExaminerRuntimeBlocked("runtime-infrastructure", role=packet.kind)
                 time.sleep(0.01)
-            raise ExaminerRuntimeBlocked("runtime-infrastructure", role=packet.kind)
+            timeout_evidence: dict[str, Any] = {}
+            continuation = getattr(resource, "_continuation_reason", None)
+            if isinstance(continuation, str) and continuation in {"sent", "rpc-failed"}:
+                timeout_evidence["continuation"] = continuation
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure", role=packet.kind, evidence=timeout_evidence
+            )
         finally:
             destroy = getattr(resource, "destroy", None)
             if callable(destroy):
