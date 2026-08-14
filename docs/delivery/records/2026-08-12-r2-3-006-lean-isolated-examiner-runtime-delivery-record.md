@@ -774,3 +774,13 @@
   （`reason_code=child-timeout`、`role=platform`）。Acceptance/CQ-002 未启动。
 - Failure layer：`runtime/infrastructure`（Platform 停止生成行为，与 live-14/16/17/20/22 同模式；live-19/28
   曾成功证明链路可达）。非 prompt 或契约缺陷，继续重试。
+
+### 2026-08-14 — live-30 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `41192`）；Platform 发出 5 次成功
+  proxy 调用（proxy 约 8.9s、evidence tokens `25741`、1 step、total tokens `12505`、output tokens `4186`）
+  后未产生第二个 inference，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`）。Acceptance/CQ-002 未启动。
+- 分析：与 live-28 成功（3 increments: wave→推理→report）对比，live-30 只有 1 个 increment——模型在 tool
+  结果返回后未继续生成。属 provider/Codex 行为随机性（live-19/28 证明链路可达），非 prompt 缺陷。
+- Disposition：继续重试（无需授权）。
