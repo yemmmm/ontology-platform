@@ -865,3 +865,12 @@
 - 统计：live-4~38 共 18 次真实 operation，Platform 成功 3 次（live-19/28/34，~17%），失败 11 次
   （child-timeout 停止生成 10 次 + child-start 1 次）；Acceptance 阶段 5 次（live-6/19/28/34 + live-4）全部
   child-timeout 未提交 verdict。成功概率低但链路可达，继续系统化重试。
+
+### 2026-08-14 — live-39 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `46952`）；Platform 2 steps（proxy
+  约 14.6s、evidence tokens `29537`、total tokens `42426`）后未提交 report，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 分析：MCP surface 校验确认 `submit_examiner_report` 对所有角色可见（模型能看到工具）；停止生成是
+  DeepSeek provider 在 tool wave 后结束 turn 的行为（Codex app-server 自动续轮依赖模型继续标记）。
+  成功间隔约 5-6 次（live-28 成功后 29-33 失败、34 成功、35-39 失败）。继续系统化重试。
