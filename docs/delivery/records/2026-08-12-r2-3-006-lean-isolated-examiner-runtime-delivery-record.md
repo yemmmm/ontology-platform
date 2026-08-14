@@ -927,3 +927,11 @@
   推进第 4 步被 budget 拦截。
 - Repair：续轮扩展至 acceptance，且 acceptance 在 `inference_steps >= 2` 时提前续轮（第 3 步成为提交步，
   避免第 4 步 budget 拦截）；Source 仍不续轮（会超预算）。full `551 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-47 real N=2: Platform continuation-sent but no submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `25527`）；Platform 2 steps（total
+  tokens `42434`）wave 后续轮已发送（`continuation="sent"`、5 receipts）但模型未提交，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 分析：续轮已发但模型第二轮仍不调用 submit——模型行为随机性（live-43 成功、live-44/47 失败）。
+- Disposition：继续重试。
