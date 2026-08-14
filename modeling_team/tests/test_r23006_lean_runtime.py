@@ -838,11 +838,24 @@ class R23006LeanRuntimeTests(unittest.TestCase):
     def test_codex_executor_sends_one_mechanical_continuation_when_turn_ends_without_report(self) -> None:
         report = {
             "answerability": "answerable",
-            "conclusion": "source",
+            "conclusion": "platform",
             "evidence": [],
             "coverage": {"queries_or_sections": [], "complete": True},
             "gaps": [],
-            "evidence_refs": [{"location": "source.md"}],
+            "evidence_refs": [{
+                "ref_id": "p0",
+                "tool": "get_ontology_read_model",
+                "request_digest": "c" * 64,
+                "response_digest": "d" * 64,
+                "artifact_path": "acceptance/r23006/platform-read/child/0.json",
+                "page": {
+                    "ordinal": 0,
+                    "input_cursor": None,
+                    "output_cursor": None,
+                    "has_more": False,
+                    "sequence_complete": True,
+                },
+            }],
         }
 
         class Agent:
@@ -851,7 +864,15 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         class Resource:
             terminal_event = True
             submitted_reports = []
-            proxy = None
+            proxy = SimpleNamespace(receipt_snapshot=(
+                SimpleNamespace(
+                    ordinal=0,
+                    tool="get_ontology_read_model",
+                    request_digest="c" * 64,
+                    response_digest="d" * 64,
+                    artifact_path="acceptance/r23006/platform-read/child/0.json",
+                ),
+            ))
             blocked = None
             process = None
             destroyed = False
@@ -879,8 +900,10 @@ class R23006LeanRuntimeTests(unittest.TestCase):
 
         adapter._rpc = fake_rpc
         result = adapter.run_lean_examiner_child(
-            packet=build_source_examiner_packet(**_source_payload()),
-            metrics=ExaminerRunMetrics("source"),
+            packet=build_platform_examiner_packet(**_platform_payload()),
+            metrics=ExaminerRunMetrics("platform"),
+            read_key="temporary-key",
+            platform_forwarder=lambda _tool, _arguments, _key: {},
             timeout_seconds=1,
         )
         self.assertEqual(result, report)

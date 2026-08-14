@@ -1610,9 +1610,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # submission; it is never a second retrieval wave or a
                 # collaboration channel.  Trigger it when the wave has produced
                 # at least one inference and the deadline is approaching but the
-                # report is still missing.
+                # report is still missing.  Only Platform needs this nudge
+                # (Source/Acceptance submit directly from reasoning and a
+                # continuation would push them past the 3-step budget).
                 if (
-                    report is None
+                    packet.kind == "platform"
+                    and report is None
                     and not getattr(resource, "_continuation_used", False)
                     and (
                         getattr(resource, "terminal_event", False)

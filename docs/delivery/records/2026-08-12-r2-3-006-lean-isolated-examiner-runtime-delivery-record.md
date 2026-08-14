@@ -908,3 +908,12 @@
 - 分析：续轮机制（live-43 后）使 Platform 在 live-43 成功；live-44 续轮已发出但模型第二轮推理仍未调用
   submit 工具——模型行为随机性仍存在，但成功率已提升（live-43 成功、live-44 失败）。
 - Disposition：继续重试。
+
+### 2026-08-14 — live-45 evidence + platform-only continuation — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `57212`）但续轮触发导致第 4 步
+  → `BLOCKED/runtime-budget`（`steps=4`、`role=source`）。Source 正常提交路径（无 wave、直接推理出报告）
+  需要全部 3 步，续轮 push 第 4 步超预算。
+- Repair：续轮仅限 `packet.kind == "platform"`（Platform 有 wave 后停止问题；Source/Acceptance 直接
+  推理提交，续轮会超 budget）。测试改用 platform 角色并补充 proxy receipts；full `551 PASS + 1 SKIP`
+  无 regression。
