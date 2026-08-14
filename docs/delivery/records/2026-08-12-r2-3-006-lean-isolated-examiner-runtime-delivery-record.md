@@ -784,3 +784,13 @@
 - 分析：与 live-28 成功（3 increments: wave→推理→report）对比，live-30 只有 1 个 increment——模型在 tool
   结果返回后未继续生成。属 provider/Codex 行为随机性（live-19/28 证明链路可达），非 prompt 缺陷。
 - Disposition：继续重试（无需授权）。
+
+### 2026-08-14 — live-31 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `39121`）；Platform 发出 5 次成功
+  proxy 调用（proxy 约 20.6s、evidence tokens `34693`、1 step、total tokens `14181`）后未产生第二个
+  inference，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`）。
+- 分析：live-29/30/31 连续 3 次同模式（Platform wave 后停止生成，1 increment）。对比 live-28 成功
+  （3 increments：wave→推理→report 421 tokens）。`thread/start` 无 max_turns；模型在 tool 结果返回后是否
+  继续生成属 DeepSeek provider 行为，非 prompt/代码缺陷。策略：继续重试。
