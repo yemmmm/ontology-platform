@@ -740,3 +740,16 @@
 - Disposition：授权 `3/3` 已全部消费：live-22（Platform 2 steps 后未提交 report，child-timeout）、live-23
   （Source child-start-failed）、live-24（Source child-start-failed）。后续需要新的 operation authorization
   执行 live-25。
+
+### 2026-08-14 — root cause: codex binary resolution (child-start-failed) — main agent
+
+- 症状：live-23/24/25/25a/26 连续 6 次 Source `child-start-failed`（0 steps、0 tokens），而早期 probe 看似
+  成功。
+- 根因：`CodexRuntimeAdapter` 默认 `codex_binary="codex"`，启动 child 时 `shutil.which("codex")` 在 opencode
+  环境 PATH 中找不到 → `binary="codex"` → bwrap 或 Popen 阶段
+  `FileNotFoundError: No such file or directory: 'codex'` → `_launch_acceptance_child` except 分支标记
+  `child-start-failed`。真实异常被 typed-failure 包装掩盖，artifact 只见 `reason_code=child-start-failed`。
+- 修复：`CodexRuntimeAdapter.__init__` 解析 codex 二进制为绝对路径——先 `shutil.which`，回退到
+  `~/.codex/packages/standalone/current/bin/codex` 与 `.../current/codex`，再回退到传入路径本身。
+  解析后 `codex_binary=/home/yangxiang/.codex/packages/standalone/current/bin/codex`（exists+exec 验证）。
+  focused `52/52`、full `549 PASS + 1 SKIP` 无 regression。

@@ -1034,12 +1034,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
         acceptance_child_factory: Callable[[dict[str, Any]], Any] | None = None,
     ):
-        self.root, self.codex_binary, self.use_bwrap, self.process_factory = (
+        self.root, self.use_bwrap, self.process_factory = (
             repository_root,
-            codex_binary,
             use_bwrap,
             process_factory,
         )
+        resolved = shutil.which(codex_binary)
+        if resolved is None:
+            for candidate in (
+                Path.home() / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex",
+                Path.home() / ".codex" / "packages" / "standalone" / "current" / "codex",
+            ):
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    resolved = str(candidate)
+                    break
+        if resolved is None and (Path(codex_binary).is_absolute() or "/" in codex_binary):
+            resolved = codex_binary
+        self.codex_binary = resolved or codex_binary
         self._acceptance_child_factory = acceptance_child_factory
         self._acceptance_children: dict[str, Any] = {}
         self.agents: dict[str, _Agent] = {}
