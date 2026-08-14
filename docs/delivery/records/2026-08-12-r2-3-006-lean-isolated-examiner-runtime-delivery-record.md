@@ -1197,3 +1197,9 @@
   total 109k）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
 - 统计：live-77 起 Platform 成功 1/8（live-82）；迭代查询 + 收敛约束链路可达 Acceptance，Platform 停止
   生成仍为主卡点（模型行为随机性）。
+
+### 2026-08-14 — live-86 real N=2: platform stop-generation — main agent
+
+- Real result（重跑）：Source 完成（1 step、terminal report true、total 12557）；Platform 5 steps
+  （total 139950）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+  首次运行 operation-level 瞬时失败，重跑正常 blocked。Platform 坏时段延续（live-83~86 连续 4 次）。
