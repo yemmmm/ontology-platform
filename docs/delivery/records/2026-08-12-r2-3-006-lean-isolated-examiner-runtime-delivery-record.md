@@ -899,3 +899,12 @@
   （同一 thread、非新 Agent）；run_lean_examiner_child 在续轮前调用。新增
   `test_metrics_allow_one_continuation_turn_change`（turn-1→turn-2 接受、turn-3 拒绝）；
   full `551 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-44 real N=2: Platform continuation-sent but no submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `27174`）；Platform 2 steps（total
+  tokens `40975`）wave 后续轮已发送（`continuation="sent"`）但模型仍未提交 report，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`、5 receipts）。
+- 分析：续轮机制（live-43 后）使 Platform 在 live-43 成功；live-44 续轮已发出但模型第二轮推理仍未调用
+  submit 工具——模型行为随机性仍存在，但成功率已提升（live-43 成功、live-44 失败）。
+- Disposition：继续重试。
