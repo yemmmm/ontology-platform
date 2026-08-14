@@ -1630,7 +1630,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         )
                         or (
                             packet.kind == "acceptance"
-                            and getattr(metrics, "inference_steps", 0) >= 2
+                            and getattr(metrics, "inference_steps", 0) >= 1
                         )
                     )
                     and (
