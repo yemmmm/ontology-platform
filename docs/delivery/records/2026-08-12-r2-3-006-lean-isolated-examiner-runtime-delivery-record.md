@@ -794,3 +794,14 @@
 - 分析：live-29/30/31 连续 3 次同模式（Platform wave 后停止生成，1 increment）。对比 live-28 成功
   （3 increments：wave→推理→report 421 tokens）。`thread/start` 无 max_turns；模型在 tool 结果返回后是否
   继续生成属 DeepSeek provider 行为，非 prompt/代码缺陷。策略：继续重试。
+
+### 2026-08-14 — live-32 real N=2: Platform stop-generation child-timeout — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `25190`）；Platform 发出 5 次成功
+  proxy 调用（proxy 约 8.6s、evidence tokens `22115`、1 step、total tokens `18338`）后未产生第二个
+  inference，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`）。
+- 分析：live-29~32 连续 4 次同模式（Platform wave 后停止生成，仅 1 increment）。DeepSeek 直连探针正常
+  （function_call 返回）；provider proxy 为无状态透明转发。`model_reasoning_effort="max"` 下模型可能在
+  tool-call 后陷入长推理或直接结束 turn，属 provider 行为随机性（live-19/28 成功 2/11）。
+- Disposition：继续重试。
