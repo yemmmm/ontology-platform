@@ -1950,6 +1950,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             child_model_override = self._validated_formal_model_override(child_package_id)
         else:
             child_model_override = None
+        # R2.3-006 Examiner children are lean retrieval/verdict tasks.  A max
+        # reasoning effort makes the model over-reason after tool results instead
+        # of submitting; lower it one notch (high) for these children only.  The
+        # frozen formal manifest contract for modeling roles is unchanged.
+        if formal and bool(spec.get("lean_examiner")) and child_model_override is not None:
+            child_model_override = (
+                child_model_override[0],
+                child_model_override[1],
+                "high",
+            )
         # DeepSeek is intentionally retained only for non-formal legacy adapters.
         # A formal run never resolves or injects the legacy provider key, even if
         # the Host environment still carries the historical sentinel.

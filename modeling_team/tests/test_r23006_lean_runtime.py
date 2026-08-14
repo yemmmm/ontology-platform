@@ -161,31 +161,34 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(blocked.exception.reason, "source-missing")
 
     def test_exact_proxy_schema_rejects_extra_missing_wrong_type(self) -> None:
-        schema = examiner_proxy_schemas(["get_ontology_read_model"])["get_ontology_read_model"]
+        schema = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
         scope = {
             "project_id": "project-1", "ontology_id": "ontology-1", "graph_set_id": "graph-1",
             "ticket_digest": "a" * 64, "model_state_digest": "b" * 64,
         }
-        valid = {**scope, "model_name": "entities"}
-        self.assertEqual(validate_examiner_proxy_arguments("get_ontology_read_model", valid, schema, scope=scope), valid)
+        valid = {**scope, "query": "release", "scope_mode": "ontologies", "ontology_ids": ["ontology-1"]}
+        self.assertEqual(
+            validate_examiner_proxy_arguments("query_semantic_context", valid, schema, scope=scope),
+            valid,
+        )
         for changed in (
             {**valid, "extra": True},
-            {key: value for key, value in valid.items() if key != "model_name"},
-            {**valid, "limit": "10"},
+            {key: value for key, value in valid.items() if key != "query"},
+            {**valid, "depth": "10"},
         ):
             with self.assertRaises(ChildRuntimeError):
-                validate_examiner_proxy_arguments("get_ontology_read_model", changed, schema, scope=scope)
+                validate_examiner_proxy_arguments("query_semantic_context", changed, schema, scope=scope)
 
-        nullable = examiner_proxy_schemas(["get_build_session"])["get_build_session"]
-        nullable_valid = {**scope, "session_id": "session-1", "checkpoint_cursor": None}
+        nullable = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
+        nullable_valid = {**scope, "scope_mode": "ontologies", "ontology_ids": ["ontology-1"], "queries": ["a", "b"]}
         self.assertEqual(
-            validate_examiner_proxy_arguments("get_build_session", nullable_valid, nullable, scope=scope),
+            validate_examiner_proxy_arguments("query_semantic_context", nullable_valid, nullable, scope=scope),
             nullable_valid,
         )
         with self.assertRaises(ChildRuntimeError):
             validate_examiner_proxy_arguments(
-                "get_build_session",
-                {**nullable_valid, "checkpoint_cursor": {"bad": True}},
+                "query_semantic_context",
+                {**nullable_valid, "queries": {"bad": True}},
                 nullable,
                 scope=scope,
             )
@@ -659,53 +662,41 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             self.assertNotIn("/agent/home/input.json", prompt)
             self.assertNotIn("staged in your private home", prompt)
 
-    def test_platform_examiner_prompt_requires_parallel_wave_then_report(self) -> None:
+    def test_platform_examiner_prompt_requires_iterative_semantic_querying(self) -> None:
         adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
         _, instructions, skill = adapter._child_package_assets("platform", repository_root())
         prompt = " ".join(
             (instructions.read_text(encoding="utf-8") + skill.read_text(encoding="utf-8")).split()
         )
         for marker in (
-            "first inference",
-            "minimum sufficient",
-            "minimum-sufficient",
-            "one parallel assistant tool-call wave",
-            "no more than 6 successful proxy calls",
-            "each allowed tool at most once",
-            "exactly one evidence_refs locator",
-            "proxy receipt count",
-            "serialize independent exploration",
-            "re-read a result",
-            "next inference must submit",
-            "Do not start another retrieval wave",
-            "follow a cursor",
-            "same typed report",
-            "resulting unknown",
-            "explicit gap",
-            "mechanically count",
-            "exactly equal to",
+            "query_semantic_context",
+            "generic semantic query",
+            "Query iteratively",
+            "querying iteratively",
+            "decide the next query",
+            "returned information",
+            "follow the returned matches",
+            "Follow returned cursors",
+            "no single-wave limit",
+            "Do not guess facts",
+            "yields exactly one",
             "receipt-count-mismatch",
-            "cannot be repaired by a second wave",
-            "add the missing locators",
-            "same inference",
-            "Re-count immediately before sending",
-            "call_ordinal",
-            "call_total",
             "p<call_ordinal>",
             "contiguous and complete",
-            "list the received ordinals",
-            "No locator selection by importance",
-            "every ordinal",
-            "mechanical inventory",
-            "unconditionally",
-            "Page field is per-call",
             "page-sequence-invalid",
-            "has_more = false",
-            "never permits a second page read",
+            "submit_examiner_report",
+            "writing the report in your reply text is not a submission",
+            "explicit unknown",
+            "explicit gap",
+            "distinguish",
+            "not modeled",
+            "do not use raw platform sockets",
         ):
             self.assertIn(marker, prompt)
-        self.assertNotIn("likely-needed", prompt)
-        self.assertNotIn("Follow every pagination cursor", prompt)
+        self.assertNotIn("one parallel assistant tool-call wave", prompt)
+        self.assertNotIn("no more than 6 successful proxy calls", prompt)
+        self.assertNotIn("each allowed tool at most once", prompt)
+        self.assertNotIn("Do not start another retrieval wave", prompt)
 
     def test_lean_stdout_pump_does_not_leak_agent_messages(self) -> None:
         adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)

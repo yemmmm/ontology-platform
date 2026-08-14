@@ -1412,6 +1412,11 @@ def _copy_private(source: Path, target: Path, mode: int) -> None:
     _write_private(target, payload, mode)
 
 
+# R2.3-006 Platform Examiner consumes only the generic semantic query interface.
+# It must not read modeling-context, build-session, read-model, or projection
+# internals; those are modeling/Producer concerns, not consumer retrieval.  The
+# full read-tool catalog below remains shared with R2.3-005; the R2.3-006
+# operation narrows the child to semantic query only.
 PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
     "check_platform_health",
     "get_project_build_context",

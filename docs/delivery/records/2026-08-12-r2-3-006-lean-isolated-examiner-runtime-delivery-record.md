@@ -1124,3 +1124,21 @@
   隔离、续轮、角色重试、文本 verdict 提取、report-is-terminal）；Source 100% 稳定；Platform 与
   Acceptance 的完成依赖 DeepSeek 模型自发提交（时段性波动）。语义完成门（ordered N=2 PASS）仍受 provider
   行为限制。
+
+### 2026-08-14 — Platform Examiner becomes iterative semantic consumer — main agent
+
+- 用户指示：不要求最小步骤/单次 wave；消费 agent 不接触建模上下文等 Producer 信息，只用语义查询接口，
+  按每轮返回信息迭代查询；若思考过长仍存在，reasoning effort 降一档。
+- 修改：
+  1. `PLATFORM_PROXY_READ_TOOLS` 保持完整目录（R2.3-005 共用），R2.3-006 operation 将 child 收窄为
+     `query_semantic_context` 单一工具（`prepare_r23006_operation` 从 ticket allowlist 中筛选 semantic
+     query，缺则拒绝）。
+  2. Platform instructions.md/SKILL.md 重写：从"单次最小 wave + 一次提交"改为"迭代式语义查询——每轮
+     查询后根据返回 facts/cursor/completeness 决定下一轮；无 wave 上限、无 per-tool at-most-once；
+     事实足够后下一推理必须提交"。保留 locator/ordinal/page/receipt-count 机械契约与
+     submit_examiner_report 工具提交要求。
+  3. reasoning effort：lean examiner child（R2.3-006）在 child 配置层从 `max` 降为 `high`（不动
+     R2.3-003/005 manifest 冻结契约）。
+  4. marker 测试更新为迭代式契约（含否定断言：不再有 wave/6-call/at-most-once 文本）；schema 测试改用
+     `query_semantic_context`。
+- 验证：full `553 PASS + 1 SKIP`、pytest start44 `12/12` 无 regression。

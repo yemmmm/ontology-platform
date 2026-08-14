@@ -205,20 +205,25 @@ def prepare_r23006_operation(repository_root: Path) -> PreparedR23006Operation:
     request_allowlist = ticket.get("request_allowlist")
     if not isinstance(request_allowlist, list) or not request_allowlist:
         raise R23006OperationError("retained request allowlist is invalid")
-    allowed_tools = tuple(
+    ticket_tools = tuple(
         item.get("tool") for item in request_allowlist if isinstance(item, Mapping)
     )
-    if (
-        len(allowed_tools) != len(request_allowlist)
-        or len(set(allowed_tools)) != len(allowed_tools)
-        or any(tool not in PLATFORM_PROXY_READ_TOOLS for tool in allowed_tools)
-    ):
-        raise R23006OperationError("retained request allowlist is unsupported")
+    if len(ticket_tools) != len(request_allowlist) or len(set(ticket_tools)) != len(ticket_tools):
+        raise R23006OperationError("retained request allowlist is invalid")
     for item in request_allowlist:
         if item.get("scope") != {
             key: EXPECTED_SCOPE[key] for key in ("project_id", "ontology_id", "graph_set_id")
         }:
             raise R23006OperationError("retained request allowlist scope drifted")
+    # The Platform Examiner is a semantic consumer: it uses only the generic
+    # semantic query interface, never modeling-context/build-session/read-model
+    # internals.  The frozen ticket may carry wider Producer-era tools; only the
+    # semantic query surface is exposed to the consumer role.
+    allowed_tools = tuple(
+        tool for tool in ticket_tools if tool in PLATFORM_PROXY_READ_TOOLS
+    )
+    if not allowed_tools or "query_semantic_context" not in allowed_tools:
+        raise R23006OperationError("retained request allowlist lacks semantic query")
     schemas = examiner_proxy_schemas(allowed_tools)
     scope = dict(EXPECTED_SCOPE)
     ticket_digest = str(ticket["ticket_digest"])
