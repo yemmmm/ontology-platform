@@ -721,3 +721,11 @@
   生成并提交 report 具有明显随机性（live-19 曾成功）。
 - Failure layer：`runtime/infrastructure`（模型停止生成行为，非 prompt 或契约缺陷）。
 - Disposition：授权 `1/3` 已消费。剩余 live-23/24。
+
+### 2026-08-14 — authorization 2/3 live-23 real N=2 — main agent
+
+- Real result：Source child 启动失败（`reason_code=child-start-failed`、`inference_steps=0`、`total_tokens=0`、
+  `proxy_receipt_count=0`），operation 为 `BLOCKED/runtime-infrastructure`。Acceptance/CQ-002 未启动。
+- Failure layer：`runtime/infrastructure`（child 启动瞬时异常，如 provider/Codex 启动竞态；服务后端健康、
+  DeepSeek credential 可用，非持久故障）。
+- Disposition：授权 `2/3` 已消费。剩余 live-24 最后一轮。
