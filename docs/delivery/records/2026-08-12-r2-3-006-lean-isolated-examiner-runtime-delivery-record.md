@@ -1016,3 +1016,14 @@
   child-timeout（2 steps、total tokens `46259`、`continuation="sent"`、5 receipts）。
 - 统计（live-43 后）：Platform 成功 1/11（43）；Acceptance 成功 0/10。续轮与重试均无法克服 DeepSeek
   wave 后停止生成行为。
+
+### 2026-08-14 — live-61 evidence: platform reasoning-not-submitting — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `24171`）；Platform 3 steps
+  （wave + 2 次续轮推理，increments reasoning 1923→2622→2209，total tokens `54744`）持续推理但始终不调用
+  submit_examiner_report，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`、5 receipts）。
+- 结论性分析：DeepSeek reasoning 模型在 `model_reasoning_effort="max"`（R2.3-003/005 manifest 冻结契约，
+  R2.3-006 不得修改）下，收到任何续轮文本都会继续推理而非调用工具。续轮机制已证伪（成功 case 均为模型
+  自发性提交）。R2.3-006 平台机制（proxy、typed report、sink-time 校验、详细拒绝、budget、隔离、续轮、
+  重试）全部实现并通过 deterministic 验证；语义完成门受 provider 行为限制。
