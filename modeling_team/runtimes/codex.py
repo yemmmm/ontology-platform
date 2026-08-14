@@ -845,10 +845,15 @@ class _CodexChildResource:
         """Return only fixed sanitized infrastructure codes for the carrier."""
         if not self.failure_category or not self.failure_reason:
             return None
-        return {
+        evidence: dict[str, Any] = {
             "failure_category": self.failure_category,
             "reason_code": self.failure_reason,
         }
+        sink = self.report_sink
+        rejections = getattr(sink, "_rejections", None)
+        if isinstance(rejections, (list, tuple)):
+            evidence["report_sink_rejections"] = len(rejections)
+        return evidence
 
     def _record_failure(self, category: str, reason: str) -> bool:
         """Attempt one terminal infrastructure failure; return whether it won."""
