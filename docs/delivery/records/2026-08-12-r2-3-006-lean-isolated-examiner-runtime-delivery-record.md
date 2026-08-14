@@ -1095,3 +1095,9 @@
   提交 report 后 turn 未正常结束（DeepSeek 行为）→ 永远等不到。
 - Repair：**校验通过的 typed report 本身就是 terminal payload**——report 非 None 即 return（不再等
   terminal_event）。测试语义更新；full `553 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-73 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（3 steps、terminal report true）；Platform 2 steps（`report_received=false`）
+  wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`、5 receipts）。report-is-terminal 修复（live-72 后）未涉及本轮（无提交发生）。
