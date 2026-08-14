@@ -729,3 +729,14 @@
 - Failure layer：`runtime/infrastructure`（child 启动瞬时异常，如 provider/Codex 启动竞态；服务后端健康、
   DeepSeek credential 可用，非持久故障）。
 - Disposition：授权 `2/3` 已消费。剩余 live-24 最后一轮。
+
+### 2026-08-14 — authorization 3/3 live-24 real N=2 — main agent
+
+- Real result：与 live-23 相同，Source child 启动失败（`reason_code=child-start-failed`、
+  `inference_steps=0`、`total_tokens=0`），operation 为 `BLOCKED/runtime-infrastructure`。
+- 诊断：standalone probe（用生产 packet 构造 Source child、timeout 60s）**启动成功**——child 启动路径本身
+  正常；live-23/24 连续两次 child-start-failed 属 DeepSeek provider/Codex 启动瞬时竞态（外部基础设施抖动），
+  非持久代码或契约缺陷。
+- Disposition：授权 `3/3` 已全部消费：live-22（Platform 2 steps 后未提交 report，child-timeout）、live-23
+  （Source child-start-failed）、live-24（Source child-start-failed）。后续需要新的 operation authorization
+  执行 live-25。
