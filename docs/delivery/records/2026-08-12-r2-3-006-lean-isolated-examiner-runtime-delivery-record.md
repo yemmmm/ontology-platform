@@ -1114,3 +1114,13 @@
   （`report_received=false`）wave 后重试 2 次均停止生成，90s watchdog 到期，
   `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`、5 receipts）。首次运行
   operation-level 瞬时失败（无 artifact），重跑正常 blocked。Platform 坏时段延续（live-68~75 连续 8 次）。
+
+### 2026-08-14 — live-76 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（1 step、terminal report true）；Platform 2 steps（`report_received=false`）
+  wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=platform`、
+  `reason_code=child-timeout`）。Platform 坏时段连续 9 次（live-68~76）。
+- 阶段性结论：R2.3-006 平台机制全部实现并验证（proxy、typed report、sink-time 校验+详细拒绝、budget、
+  隔离、续轮、角色重试、文本 verdict 提取、report-is-terminal）；Source 100% 稳定；Platform 与
+  Acceptance 的完成依赖 DeepSeek 模型自发提交（时段性波动）。语义完成门（ordered N=2 PASS）仍受 provider
+  行为限制。
