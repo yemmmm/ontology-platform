@@ -817,3 +817,15 @@
   R2.3-006 不得修改（AGENTS.md 边界）；"推理完成当作回答"是 DeepSeek reasoning 模型行为。live-28 成功
   模式（3 steps、提交步 reasoning 仅 78 tokens）说明提交是概率性的。
 - Disposition：继续重试。
+
+### 2026-08-14 — live-34 real N=2: Source/Platform pass, Acceptance no-tool child-timeout — main agent
+
+- Real result：Source 完成（2 steps、terminal report true）；Platform 完成（3 steps、terminal report true、
+  proxy 约 5.0s、evidence tokens `18414`、total tokens `61332`）；Acceptance 3 steps
+  （`metrics_complete=True`、increments reasoning 1039→595→373 递减收敛、total tokens `31540`）后未调用
+  `submit_examiner_report`，90s watchdog 到期，`BLOCKED/runtime-infrastructure`（`role=acceptance`、
+  `reason_code=child-timeout`）。
+- 分析：Acceptance 是纯推理任务（无读取工具），模型在 max reasoning 下把裁决写进推理文本而非调用
+  `examiner_report` MCP 工具——"文本答案不算提交"。
+- Repair（live-35 前完成）：Acceptance instructions.md/SKILL.md 明确"verdict 仅通过 submit_examiner_report
+  工具调用生效，回复文本不算提交"；focused `31/31`、full `549 PASS + 1 SKIP` 无 regression。
