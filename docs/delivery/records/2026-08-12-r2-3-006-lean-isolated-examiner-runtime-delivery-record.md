@@ -1043,3 +1043,9 @@
   Acceptance 4 steps 推理后 budget（`steps=5`），模型持续推理不调用 submit 工具（0/11 成功）。
 - Repair：`LeanExaminerRuntime` 增加 `acceptance_retry_limit`（operation 设为 2），Acceptance 失败时用
   fresh child + 相同 immutable packet 重试；full `552 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-66 real N=2: platform 3-step no-submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `24795`）；Platform 3 steps
+  （total tokens `76619`）wave + 续轮推理后仍不提交，重试 2 次均停，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
