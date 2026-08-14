@@ -945,3 +945,11 @@
 - Repair：`observe_notification` 在 `terminal_report=True` 后不再抛 runtime-budget（提交后的多余推理只
   计数不失败）；测试语义同步更新（report 提交后 usage(40) 接受且 steps=3）；full `551 PASS + 1 SKIP`
   无 regression。
+
+### 2026-08-14 — live-49 real N=2: Platform continuation-sent but no submission — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `28030`）；Platform 2 steps（total
+  tokens `45348`）wave 后续轮已发送（`continuation="sent"`、4 receipts）但模型未提交，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+- 统计：live-43 后 Platform 成功率 ~1/5（43 成功、44/47/49 失败、45/46/48 在 Acceptance/Source 阶段）。
+  继续重试。
