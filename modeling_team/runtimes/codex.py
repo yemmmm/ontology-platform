@@ -1648,10 +1648,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                         {
                                             "type": "text",
                                             "text": (
-                                                "Your analysis turn ended without a submission. "
-                                                "Now call submit_examiner_report exactly once with "
-                                                "your typed terminal report; do not start a new "
-                                                "retrieval wave or analysis."
+                                                "STOP analyzing. You must NOW call the "
+                                                "submit_examiner_report tool exactly once with "
+                                                "your typed terminal report built from what you "
+                                                "already have. Do not reason further, do not "
+                                                "re-read anything, do not plan. The tool call "
+                                                "itself is the only valid final action."
                                             ),
                                         }
                                     ],
