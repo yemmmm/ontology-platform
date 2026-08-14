@@ -1065,3 +1065,9 @@
 - Real result：Source 完成（3 steps、terminal report true、total tokens `46974`）；Platform 2 steps（total
   tokens `44010`）wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
   （`role=platform`、`reason_code=child-timeout`）。
+
+### 2026-08-14 — live-69 real N=2: platform 3-step no-submission — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `38006`）；Platform 3 steps（total
+  tokens `59221`）wave + 续轮推理后仍不提交，重试 2 次均停，90s watchdog 到期，
+  `BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
