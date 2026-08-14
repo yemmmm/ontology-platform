@@ -1221,3 +1221,10 @@
 - Real result：Source 完成（1 step、terminal report true、total 13187）；Platform 5 steps（total 117537）
   后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。Platform 坏时段
   连续 6 次（live-83~86、88、89）。
+
+### 2026-08-14 — live-90 real N=2: platform budget exhausted without submit — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total 14413）；Platform 6 steps（38.2s proxy、
+  total 107823）用满预算后第 7 步 `runtime-budget`（`steps=7`、`role=platform`、terminal_report false）。
+- 分析：迭代查询在 4-6 步间，模型要么停止（timeout）要么用满预算不提交；live-82 成功（4 steps 自发提交）
+  证明链路可达。平台机制已最优，剩余为模型行为随机性。
