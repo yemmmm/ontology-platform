@@ -42,6 +42,9 @@ class ExaminerRuntimeBlocked(ChildRuntimeError):
         self.evidence = dict(evidence or {})
         super().__init__(f"BLOCKED/{reason}")
 
+    def __str__(self) -> str:
+        return _blocked_detail(self)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "ExaminerBlocked/v1",
@@ -1231,6 +1234,72 @@ def _validate_acceptance_evidence_ids(verdict: Mapping[str, Any], allowed_ids: s
         )
 
 
+def _blocked_detail(blocked: ExaminerRuntimeBlocked) -> str:
+    """Turn one typed binding rejection into an actionable child-readable message."""
+
+    evidence = blocked.evidence if isinstance(blocked.evidence, Mapping) else {}
+    code = evidence.get("binding_code")
+    index = evidence.get("index")
+    prefix = f"binding_code={code}" if isinstance(code, str) else "binding-rejected"
+    location = f" at locator index {index}" if isinstance(index, int) else ""
+    details: list[str] = []
+    for key in ("report_ref_count", "proxy_receipt_count", "report_ref_ids", "proxy_receipt_ordinals"):
+        value = evidence.get(key)
+        if isinstance(value, (int, str)) and str(value):
+            details.append(f"{key}={value}")
+    message = prefix + location
+    if details:
+        message += " (" + ", ".join(details) + ")"
+    return message
+
+
+def _make_report_validator(kind: str, packet: ExaminerRolePacket, resource: Any | None = None) -> Callable[[Mapping[str, Any]], None] | None:
+    """Return a sink-time validator that gives the child precise rejection reasons."""
+
+    if kind == "source":
+        def validate_source(report: Mapping[str, Any]) -> None:
+            try:
+                _source_report_evidence_ids(packet, report)
+            except ExaminerRuntimeBlocked as exc:
+                raise ExaminerRuntimeBlocked(
+                    exc.reason, role="source",
+                    evidence=dict(exc.evidence) if isinstance(exc.evidence, Mapping) else {},
+                ) from exc
+        return validate_source
+    if kind == "platform":
+        def validate_platform(report: Mapping[str, Any]) -> None:
+            if resource is None or getattr(resource, "proxy", None) is None:
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-evidence", role="platform",
+                    evidence={"binding_code": "receipt-snapshot-invalid"},
+                )
+            try:
+                _validate_platform_report_receipts(report, resource)
+            except ExaminerRuntimeBlocked as exc:
+                raise ExaminerRuntimeBlocked(
+                    exc.reason, role="platform",
+                    evidence=dict(exc.evidence) if isinstance(exc.evidence, Mapping) else {},
+                ) from exc
+        return validate_platform
+    if kind == "acceptance":
+        allowed_ids = set()
+        for field in ("source_evidence_ref_ids", "platform_evidence_ref_ids"):
+            values = packet.payload.get(field)
+            if isinstance(values, (list, tuple)):
+                allowed_ids.update(str(value) for value in values)
+
+        def validate_acceptance(verdict: Mapping[str, Any]) -> None:
+            try:
+                _validate_acceptance_evidence_ids(verdict, allowed_ids)
+            except ExaminerRuntimeBlocked as exc:
+                raise ExaminerRuntimeBlocked(
+                    exc.reason, role="acceptance",
+                    evidence=dict(exc.evidence) if isinstance(exc.evidence, Mapping) else {},
+                ) from exc
+        return validate_acceptance
+    return None
+
+
 def _private_dir(path: Path, *, create: bool = False) -> None:
     if create:
         path.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -2062,7 +2131,13 @@ class McpReadForwarder:
 
 
 class ReportSinkServer:
-    """Write-only private child report endpoint; never Team Transport."""
+    """Write-only private child report endpoint; never Team Transport.
+
+    The sink runs the full kind-specific binding validation at submit time so a
+    rejected report returns a detailed, actionable reason to the child.  The child
+    may correct and resubmit within a bounded attempt budget; once accepted, no
+    further submissions are honored.
+    """
 
     def __init__(
         self,
@@ -2070,6 +2145,8 @@ class ReportSinkServer:
         token: str,
         submit: Callable[[Mapping[str, Any]], Any],
         kind: str | None = None,
+        validator: Callable[[Mapping[str, Any]], None] | None = None,
+        max_attempts: int = 3,
     ):
         self.socket_path = socket_path
         self.token = token
@@ -2077,10 +2154,15 @@ class ReportSinkServer:
         if kind is not None and kind not in {"source", "platform", "acceptance"}:
             raise ChildRuntimeError("report sink kind is invalid")
         self.kind = kind
+        self.validator = validator
+        if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
+            raise ChildRuntimeError("report sink attempt budget is invalid")
+        self.max_attempts = max_attempts
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._submitted = False
+        self._rejections: list[str] = []
 
     def start(self) -> None:
         self.socket_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -2121,15 +2203,49 @@ class ReportSinkServer:
                         response = {"ok": False, "code": "report-token-invalid"}
                     elif self._submitted:
                         response = {"ok": False, "code": "report-already-submitted"}
+                    elif len(self._rejections) >= self.max_attempts:
+                        response = {
+                            "ok": False,
+                            "code": "report-attempts-exceeded",
+                            "detail": (
+                                "report rejected "
+                                + str(self.max_attempts)
+                                + " times; no further resubmission is allowed"
+                            ),
+                            "attempts_remaining": 0,
+                        }
                     elif not isinstance(request.get("report"), Mapping):
                         response = {"ok": False, "code": "report-invalid"}
                     else:
                         report = request["report"]
-                        if self.kind is not None:
-                            report = _validate_report_sink_payload(report, kind=self.kind)
-                        self._submit(report)
-                        self._submitted = True
-                        response = {"ok": True}
+                        try:
+                            if self.kind is not None:
+                                report = _validate_report_sink_payload(report, kind=self.kind)
+                            if self.validator is not None:
+                                self.validator(report)
+                        except (ChildRuntimeError, ExaminerRuntimeBlocked) as exc:
+                            detail = str(exc)
+                            self._rejections.append(detail)
+                            attempts_remaining = max(0, self.max_attempts - len(self._rejections))
+                            response = {
+                                "ok": False,
+                                "code": "report-binding-rejected",
+                                "detail": detail,
+                                "attempts_remaining": attempts_remaining,
+                            }
+                        except Exception:
+                            self._rejections.append("report-rejected")
+                            attempts_remaining = max(0, self.max_attempts - len(self._rejections))
+                            response = {
+                                "ok": False,
+                                "code": "report-rejected",
+                                "detail": "report rejected by the Host validator",
+                                "attempts_remaining": attempts_remaining,
+                            }
+                        else:
+                            self._submit(report)
+                            self._submitted = True
+                            response = {"ok": True}
                     conn.sendall(_canonical(response))
                 except Exception:
                     try:

@@ -43,6 +43,7 @@ from ..acceptance_runtime import (
     ExaminerRuntimeBlocked,
     ReportSinkServer,
     ScopedReadProxy,
+    _make_report_validator,
     _source_report_evidence_ids,
     _validate_acceptance_evidence_ids,
     _validate_platform_report_receipts,
@@ -1889,11 +1890,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if not callable(report_submit):
             report_submit = spec.get("report_submit")
         report_callback = report_submit if callable(report_submit) else submitted_reports.append
+
+        def sink_validator(report: Mapping[str, Any]) -> None:
+            # Bind the child report against the live resource at submit time so a
+            # rejected report returns an actionable reason and can be corrected.
+            packet = spec.get("_packet")
+            if not isinstance(packet, ExaminerRolePacket):
+                return
+            validator = _make_report_validator(kind, packet, spec.get("_runtime_resource"))
+            if validator is not None:
+                validator(report)
+
         report_sink = ReportSinkServer(
             report_socket,
             report_token,
             report_callback,
             kind=kind,
+            validator=sink_validator,
         )
         spec["_runtime_report_sink"] = report_sink
         report_sink.start()
@@ -2084,6 +2097,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             report_sink=report_sink,
             startup_complete=False,
         )
+        spec["_runtime_resource"] = resource
         spec.pop("_runtime_proxy", None)
         spec.pop("_runtime_report_sink", None)
         child_package = AgentPackage(

@@ -681,3 +681,27 @@
 - 趋势总结：count/page 契约已收敛（live-19 Platform 交付被接受的 typed report，3 steps/terminal true）；
   Platform 停止生成行为（child-timeout，live-14/16/17/20 共 4 次）与投影缺口（live-11/18/21 共 3 次）为
   当前主要 runtime/contract 卡点。后续需要新的 operation authorization 执行 live-22。
+
+### 2026-08-14 — self-correction loop: sink-time binding validation with detailed rejection — main agent
+
+- 用户指示：平台报错/接口拒绝必须在返回信息中详细描述，使 agent 能根据错误信息自我纠正。
+- 根因分析：binding 校验（`_validate_platform_report_receipts` 等）此前只在 Host 轮询 `submitted_reports`
+  时执行，模型提交 report 后立刻收到 `report-submitted`，永远不知道 report 为何被拒——无法自我纠正。
+- 修复：
+  1. `ReportSinkServer` 新增 sink-time `validator` + 有界重试（`max_attempts=3`）：提交时立即执行
+     kind-specific binding 校验，失败返回 `{"ok": false, "code": "report-binding-rejected", "detail": <精确
+     原因>, "attempts_remaining": N}`；成功后锁定（后续提交返回 `report-already-submitted`）；耗尽预算返回
+     `report-attempts-exceeded`。
+  2. 新增 `_blocked_detail`（把 `ExaminerRuntimeBlocked` evidence 转成可读文本，如
+     `binding_code=receipt-count-mismatch at locator index 1 (report_ref_count=1, proxy_receipt_count=2)`）与
+     `_make_report_validator`（source/platform/acceptance 三角色 sink-time 校验器，packet/resource 延迟绑定）；
+     `ExaminerRuntimeBlocked.__str__` 返回该 detail。
+  3. `codex.py` 的 `launch_lean_examiner_child` 安装 `sink_validator`（`spec["_packet"]` +
+     `spec["_runtime_resource"]`），report sink 拒绝时详细原因经 MCP 返回模型。
+  4. `report_sink_mcp.py` 的 `submit_examiner_report` 把 `code`/`detail`/`attempts_remaining` 拼入 MCP
+     error message，模型可据此修正后重提。
+- 测试：新增 `test_report_sink_returns_detailed_rejection_and_allows_bounded_retry`（拒绝 detail 断言 +
+  修正后接受 + 重复提交拒绝）与 `test_report_sink_exhausts_attempt_budget`（预算耗尽）；`_semantic_payload`
+  支持多 ref。full `549 PASS + 1 SKIP`、pytest start44 `12/12` 无 regression。
+- 说明：此为用户对 R2.3-006 行为契约的显式修改（原验收"report 不可二次波修复"改为"允许有限次提交内
+  自我纠正"）；仅改变 report 提交尝试边界，不改变 wave 数量上限、fresh 隔离或 typed evidence 语义。

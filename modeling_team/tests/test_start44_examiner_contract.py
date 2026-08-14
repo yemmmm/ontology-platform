@@ -41,14 +41,15 @@ def _source_ticket(suffix: str, source_digest: str) -> dict:
     return ticket
 
 
-def _semantic_payload(ref: dict) -> dict:
+def _semantic_payload(ref: dict | list) -> dict:
+    refs = ref if isinstance(ref, list) else [ref]
     return {
         "answerability": "answerable",
         "conclusion": "confirmed",
         "evidence": [{"summary": "bound evidence"}],
         "coverage": {"queries_or_sections": ["cq1"], "complete": True},
         "gaps": [],
-        "evidence_refs": [ref],
+        "evidence_refs": refs,
     }
 
 
@@ -122,6 +123,136 @@ def test_report_sink_rejects_missing_and_extra_fields_even_on_raw_socket(
         missing = dict(payload)
         missing.pop("gaps")
         assert _socket_request(socket_path, {"token": "token", "report": missing})["ok"] is False
+    finally:
+        sink.stop()
+
+
+def test_report_sink_returns_detailed_rejection_and_allows_bounded_retry(tmp_path: Path) -> None:
+    socket_path = tmp_path / "report.sock"
+    accepted: list[dict] = []
+
+    def validator(report: dict) -> None:
+        refs = report.get("evidence_refs") or []
+        if len(refs) != 2:
+            from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
+
+            raise ExaminerRuntimeBlocked(
+                "acceptance-evidence",
+                role="platform",
+                evidence={
+                    "binding_code": "receipt-count-mismatch",
+                    "report_ref_count": len(refs),
+                    "proxy_receipt_count": 2,
+                    "report_ref_ids": ",".join(r.get("ref_id", "") for r in refs),
+                    "proxy_receipt_ordinals": "0,1",
+                },
+            )
+
+    sink = ReportSinkServer(socket_path, "token", accepted.append, kind="platform", validator=validator)
+    sink.start()
+    try:
+        one_ref = _semantic_payload({
+            "ref_id": "p0",
+            "tool": "get_modeling_context",
+            "request_digest": "a" * 64,
+            "response_digest": "b" * 64,
+            "artifact_path": "acceptance/round/platform-read/handle/0.json",
+            "page": {
+                "ordinal": 0,
+                "input_cursor": None,
+                "output_cursor": None,
+                "has_more": False,
+                "sequence_complete": True,
+            },
+        })
+        rejected = _socket_request(socket_path, {"token": "token", "report": one_ref})
+        assert rejected["ok"] is False
+        assert rejected["code"] == "report-binding-rejected"
+        assert "receipt-count-mismatch" in rejected["detail"]
+        assert "report_ref_count=1" in rejected["detail"]
+        assert "proxy_receipt_count=2" in rejected["detail"]
+        assert rejected["attempts_remaining"] == 2
+        assert accepted == []
+
+        two_refs = _semantic_payload([
+            {
+                "ref_id": "p0",
+                "tool": "get_modeling_context",
+                "request_digest": "a" * 64,
+                "response_digest": "b" * 64,
+                "artifact_path": "acceptance/round/platform-read/handle/0.json",
+                "page": {
+                    "ordinal": 0,
+                    "input_cursor": None,
+                    "output_cursor": None,
+                    "has_more": False,
+                    "sequence_complete": True,
+                },
+            },
+            {
+                "ref_id": "p1",
+                "tool": "query_semantic_context",
+                "request_digest": "a" * 64,
+                "response_digest": "b" * 64,
+                "artifact_path": "acceptance/round/platform-read/handle/1.json",
+                "page": {
+                    "ordinal": 0,
+                    "input_cursor": None,
+                    "output_cursor": None,
+                    "has_more": False,
+                    "sequence_complete": True,
+                },
+            },
+        ])
+        accepted_response = _socket_request(socket_path, {"token": "token", "report": two_refs})
+        assert accepted_response == {"ok": True}
+        assert len(accepted) == 1
+
+        after = _socket_request(socket_path, {"token": "token", "report": two_refs})
+        assert after["code"] == "report-already-submitted"
+    finally:
+        sink.stop()
+
+
+def test_report_sink_exhausts_attempt_budget(tmp_path: Path) -> None:
+    socket_path = tmp_path / "report.sock"
+    accepted: list[dict] = []
+
+    def validator(report: dict) -> None:
+        from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
+
+        raise ExaminerRuntimeBlocked(
+            "acceptance-evidence",
+            role="platform",
+            evidence={"binding_code": "page-shape", "index": 0},
+        )
+
+    sink = ReportSinkServer(socket_path, "token", accepted.append, kind="platform", validator=validator, max_attempts=2)
+    sink.start()
+    try:
+        bad = _semantic_payload({
+            "ref_id": "p0",
+            "tool": "get_modeling_context",
+            "request_digest": "a" * 64,
+            "response_digest": "b" * 64,
+            "artifact_path": "acceptance/round/platform-read/handle/0.json",
+            "page": {
+                "ordinal": 0,
+                "input_cursor": None,
+                "output_cursor": None,
+                "has_more": False,
+                "sequence_complete": True,
+            },
+        })
+        first = _socket_request(socket_path, {"token": "token", "report": bad})
+        assert first["code"] == "report-binding-rejected"
+        assert first["attempts_remaining"] == 1
+        second = _socket_request(socket_path, {"token": "token", "report": bad})
+        assert second["code"] == "report-binding-rejected"
+        assert second["attempts_remaining"] == 0
+        third = _socket_request(socket_path, {"token": "token", "report": bad})
+        assert third["code"] == "report-attempts-exceeded"
+        assert accepted == []
     finally:
         sink.stop()
 

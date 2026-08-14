@@ -250,7 +250,15 @@ def main() -> int:
                     )
                     response = json.loads(client.recv(65536).decode("utf-8"))
                 if not response.get("ok"):
-                    raise RuntimeError(str(response.get("code", "report-rejected")))
+                    code = str(response.get("code", "report-rejected"))
+                    detail = str(response.get("detail", ""))
+                    remaining = response.get("attempts_remaining")
+                    message = f"report rejected: {code}"
+                    if detail:
+                        message += f"; {detail}"
+                    if isinstance(remaining, int):
+                        message += f"; attempts_remaining={remaining}"
+                    raise RuntimeError(message)
                 result = {"content": [{"type": "text", "text": "report-submitted"}], "isError": False}
             else:
                 raise RuntimeError("report-method-denied")
