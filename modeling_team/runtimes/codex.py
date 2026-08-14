@@ -1616,7 +1616,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if (
                     packet.kind in {"platform", "acceptance"}
                     and report is None
-                    and not getattr(resource, "_continuation_used", False)
+                    and getattr(resource, "_continuation_count", 0) < 2
                     and (
                         getattr(resource, "terminal_event", False)
                         or (
@@ -1631,7 +1631,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 ):
                     agent = getattr(resource, "_child_agent", None)
                     if agent is not None and getattr(agent, "thread_id", None):
-                        resource._continuation_used = True
+                        resource._continuation_count = getattr(resource, "_continuation_count", 0) + 1
                         allow = getattr(metrics, "allow_continuation_turn", None)
                         if callable(allow):
                             try:

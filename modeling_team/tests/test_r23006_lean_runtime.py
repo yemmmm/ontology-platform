@@ -877,7 +877,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             blocked = None
             process = None
             destroyed = False
-            _continuation_used = False
+            _continuation_count = 0
             _child_agent = Agent()
             continuation_calls = 0
 
@@ -909,7 +909,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(result, report)
         self.assertEqual(resource.continuation_calls, 1)
-        self.assertTrue(resource._continuation_used)
+        self.assertEqual(resource._continuation_count, 1)
         self.assertTrue(resource.destroyed)
 
     def test_codex_executor_rejects_unapproved_source_locator_and_destroys(self) -> None:

@@ -978,3 +978,10 @@
 - Repair：续轮改用 `turn/steer`（对活动 turn 注入提示，保持 wave 上下文；失败回退 turn/start）。
   `agent.active_turn_id` 存在时优先 steer；测试同步（Agent 加 active_turn_id、接受 steer/start）；
   full `551 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — continuation raised to two nudges — main agent
+
+- 分析：live-54 后单次续轮（start/steer）不足以让模型提交（live-43 曾成功一次）。模型 wave 后持续不
+  响应单次提示。
+- Repair：续轮改为最多 2 次（`_continuation_count < 2`），每次间隔窗口触发；budget 允许续轮步。
+  full `551 PASS + 1 SKIP` 无 regression。
