@@ -1621,17 +1621,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         getattr(resource, "terminal_event", False)
                         or (
                             getattr(metrics, "inference_steps", 0) >= 1
-                            and time.monotonic() >= deadline - max(10.0, float(timeout_seconds) * 0.2)
+                            and time.monotonic() >= deadline - max(10.0, float(timeout_seconds) * 0.35)
                         )
                         or (
                             packet.kind == "acceptance"
                             and getattr(metrics, "inference_steps", 0) >= 2
                         )
                     )
+                    and (
+                        getattr(resource, "_continuation_count", 0) == 0
+                        or (
+                            getattr(resource, "_continuation_count", 0) == 1
+                            and time.monotonic() - getattr(resource, "_continuation_at", 0.0) >= 15.0
+                        )
+                    )
                 ):
                     agent = getattr(resource, "_child_agent", None)
                     if agent is not None and getattr(agent, "thread_id", None):
                         resource._continuation_count = getattr(resource, "_continuation_count", 0) + 1
+                        resource._continuation_at = time.monotonic()
                         allow = getattr(metrics, "allow_continuation_turn", None)
                         if callable(allow):
                             try:
