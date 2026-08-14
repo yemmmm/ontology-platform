@@ -1610,11 +1610,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # submission; it is never a second retrieval wave or a
                 # collaboration channel.  Trigger it when the wave has produced
                 # at least one inference and the deadline is approaching but the
-                # report is still missing.  Only Platform needs this nudge
-                # (Source/Acceptance submit directly from reasoning and a
-                # continuation would push them past the 3-step budget).
+                # report is still missing.  Platform (wave-then-stop) and
+                # Acceptance (reasoning-without-submit) both need the nudge;
+                # Source submits directly and would exceed the 3-step budget.
                 if (
-                    packet.kind == "platform"
+                    packet.kind in {"platform", "acceptance"}
                     and report is None
                     and not getattr(resource, "_continuation_used", False)
                     and (
@@ -1622,6 +1622,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         or (
                             getattr(metrics, "inference_steps", 0) >= 1
                             and time.monotonic() >= deadline - max(10.0, float(timeout_seconds) * 0.2)
+                        )
+                        or (
+                            packet.kind == "acceptance"
+                            and getattr(metrics, "inference_steps", 0) >= 2
                         )
                     )
                 ):

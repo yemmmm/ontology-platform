@@ -917,3 +917,13 @@
 - Repair：续轮仅限 `packet.kind == "platform"`（Platform 有 wave 后停止问题；Source/Acceptance 直接
   推理提交，续轮会超 budget）。测试改用 platform 角色并补充 proxy receipts；full `551 PASS + 1 SKIP`
   无 regression。
+
+### 2026-08-14 — live-46 evidence + acceptance continuation at 2 steps — main agent
+
+- Real result：Source 完成（2 steps、terminal report true）；Platform 完成（3 steps、terminal report true、
+  total tokens `58316`）；Acceptance 3 steps 后自身推理启动第 4 步 → `BLOCKED/runtime-budget`（`steps=4`、
+  `role=acceptance`、total tokens `51234`）。
+- 分析：Acceptance 纯推理任务 3 步内不调用 submit 工具（live-6/19/28/34/46 一致），且 3 步后模型仍自行
+  推进第 4 步被 budget 拦截。
+- Repair：续轮扩展至 acceptance，且 acceptance 在 `inference_steps >= 2` 时提前续轮（第 3 步成为提交步，
+  避免第 4 步 budget 拦截）；Source 仍不续轮（会超预算）。full `551 PASS + 1 SKIP` 无 regression。
