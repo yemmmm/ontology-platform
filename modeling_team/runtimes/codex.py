@@ -1613,12 +1613,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     return report
                 # Acceptance models often end their turn with the verdict written
                 # in reply text instead of calling the submit tool.  When the
-                # turn is over and no typed report arrived, extract a strict
-                # verdict object from the agent's message deltas.
+                # turn is over (or the model has already reasoned several steps
+                # without submitting) and no typed report arrived, extract a
+                # strict verdict object from the agent's message deltas.
                 if (
                     report is None
                     and packet.kind == "acceptance"
-                    and getattr(resource, "terminal_event", False)
+                    and (
+                        getattr(resource, "terminal_event", False)
+                        or getattr(metrics, "inference_steps", 0) >= 3
+                    )
                     and not getattr(resource, "_text_verdict_tried", False)
                 ):
                     resource._text_verdict_tried = True
