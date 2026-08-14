@@ -1142,3 +1142,13 @@
   4. marker 测试更新为迭代式契约（含否定断言：不再有 wave/6-call/at-most-once 文本）；schema 测试改用
      `query_semantic_context`。
 - 验证：full `553 PASS + 1 SKIP`、pytest start44 `12/12` 无 regression。
+
+### 2026-08-14 — live-77 evidence + platform 8-step budget — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `27178`）；Platform 3 steps
+  （proxy 约 23.1s、evidence tokens `66885`、total tokens `77881`）——模型确实在**迭代查询**（多轮 proxy
+  调用），但 3 步后未提交且第 4 步被 budget 拦截（`runtime-budget`、`steps=4`、`role=platform`）。
+- 分析：迭代式查询需要更多推理步；旧 3 步 budget（+1 continuation）对"查询→分析→再查询→提交"不够。
+- Repair：`ExaminerRunMetrics` 增加 `max_inference_steps`（默认 3）；Platform 设为 8（迭代查询 + 提交，
+  重试 metrics 同步）；operation 校验按角色接受 platform ≤8、其余 ≤3。full `553 PASS + 1 SKIP` 无
+  regression。

@@ -382,6 +382,7 @@ class ExaminerRunMetrics:
     thread_id: str | None = None
     turn_start_count: int = 0
     inference_steps: int = 0
+    max_inference_steps: int = 3
     ttft_ms: float | None = None
     terminal_wall_ms: float | None = None
     proxy_time_ms: float = 0.0
@@ -509,12 +510,12 @@ class ExaminerRunMetrics:
         self._last_usage.update(current)
         if not positive:
             return False
-        if self.inference_steps >= 3:
+        if self.inference_steps >= self.max_inference_steps:
             # Once the terminal report is recorded, later usage notifications
             # (a model that keeps reasoning after submitting) must not turn a
             # successful submission into a budget failure.
             if not self.terminal_report:
-                if self._allow_continuation_turn and self.inference_steps < 4:
+                if self._allow_continuation_turn and self.inference_steps < self.max_inference_steps + 1:
                     self.inference_steps += 1
                     self._increments.append(increments)
                     return True
@@ -612,7 +613,7 @@ class ExaminerRunMetrics:
     def allow_inference(self) -> None:
         if self.blocked is not None:
             raise self.blocked
-        if self.inference_steps >= 3:
+        if self.inference_steps >= self.max_inference_steps:
             self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps})
             raise self.blocked
 
@@ -806,7 +807,7 @@ class LeanExaminerRuntime:
             except BaseException as exc:
                 self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
                 raise
-            platform_metrics = ExaminerRunMetrics("platform")
+            platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=8)
             platform_retry_used = False
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
@@ -820,7 +821,7 @@ class LeanExaminerRuntime:
                     if not getattr(self, "_platform_retry_limit", 1) or platform_retry_used:
                         raise
                     platform_retry_used = True
-                    platform_metrics = ExaminerRunMetrics("platform")
+                    platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=8)
                     platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)
