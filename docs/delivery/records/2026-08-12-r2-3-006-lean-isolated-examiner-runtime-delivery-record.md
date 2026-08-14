@@ -1059,3 +1059,9 @@
   sink-time 校验后视为提交。这是"Host 机械收集 typed output"的合法实现（需求验收允许）。
   新增 `test_text_verdict_extraction_accepts_only_strict_verdict`（合法/推理文本/部分/多余字段 4 例）；
   full `553 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-68 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（3 steps、terminal report true、total tokens `46974`）；Platform 2 steps（total
+  tokens `44010`）wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
+  （`role=platform`、`reason_code=child-timeout`）。
