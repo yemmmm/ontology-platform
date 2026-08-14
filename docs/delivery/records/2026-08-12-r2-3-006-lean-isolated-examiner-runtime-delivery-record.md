@@ -1203,3 +1203,9 @@
 - Real result（重跑）：Source 完成（1 step、terminal report true、total 12557）；Platform 5 steps
   （total 139950）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
   首次运行 operation-level 瞬时失败，重跑正常 blocked。Platform 坏时段延续（live-83~86 连续 4 次）。
+
+### 2026-08-14 — live-87 real N=2: source stop-generation (rare) — main agent
+
+- Real result：Source 3 steps（total 52633）后未提交 report，90s 窗口 `BLOCKED/runtime-infrastructure`
+  （`reason_code=child-timeout`、`role=source`）。Source 首次停止生成（此前 40+ 次全成功）——DeepSeek
+  偶发行为。
