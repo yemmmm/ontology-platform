@@ -813,6 +813,59 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(blocked.exception.evidence["report_received"], True)
         self.assertTrue(resource.destroyed)
 
+    def test_codex_executor_sends_one_mechanical_continuation_when_turn_ends_without_report(self) -> None:
+        report = {
+            "answerability": "answerable",
+            "conclusion": "source",
+            "evidence": [],
+            "coverage": {"queries_or_sections": [], "complete": True},
+            "gaps": [],
+            "evidence_refs": [{"location": "source.md"}],
+        }
+
+        class Agent:
+            thread_id = "thread-1"
+
+        class Resource:
+            terminal_event = True
+            submitted_reports = []
+            proxy = None
+            blocked = None
+            process = None
+            destroyed = False
+            _continuation_used = False
+            _child_agent = Agent()
+            continuation_calls = 0
+
+            def failure_evidence(self):
+                return None
+
+            def destroy(self):
+                self.destroyed = True
+
+        resource = Resource()
+        adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+        adapter.launch_lean_examiner_child = mock.Mock(return_value=resource)
+
+        def fake_rpc(agent, method, params):
+            if method == "turn/start":
+                resource.continuation_calls += 1
+                resource.submitted_reports.append(report)
+                resource.terminal_event = True
+                return {"id": "turn-2"}
+            raise AssertionError(f"unexpected rpc {method}")
+
+        adapter._rpc = fake_rpc
+        result = adapter.run_lean_examiner_child(
+            packet=build_source_examiner_packet(**_source_payload()),
+            metrics=ExaminerRunMetrics("source"),
+            timeout_seconds=1,
+        )
+        self.assertEqual(result, report)
+        self.assertEqual(resource.continuation_calls, 1)
+        self.assertTrue(resource._continuation_used)
+        self.assertTrue(resource.destroyed)
+
     def test_codex_executor_rejects_unapproved_source_locator_and_destroys(self) -> None:
         report = {
             "answerability": "answerable",

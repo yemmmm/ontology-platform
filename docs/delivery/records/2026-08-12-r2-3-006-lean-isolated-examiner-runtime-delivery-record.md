@@ -874,3 +874,18 @@
 - 分析：MCP surface 校验确认 `submit_examiner_report` 对所有角色可见（模型能看到工具）；停止生成是
   DeepSeek provider 在 tool wave 后结束 turn 的行为（Codex app-server 自动续轮依赖模型继续标记）。
   成功间隔约 5-6 次（live-28 成功后 29-33 失败、34 成功、35-39 失败）。继续系统化重试。
+
+### 2026-08-14 — mechanical continuation for turn-ends-without-report — main agent
+
+- 症状：live-35~40 连续 6 次 Platform 停止生成（wave 后模型结束 turn 未提交 report），重试成功率趋零。
+- 根因：DeepSeek reasoning 模型在 tool wave 后常把 turn 自然结束（live-28/34 证明偶发可继续，
+  ~17% 成功）。Codex app-server 只在模型发出继续信号时续轮；Host 侧 run_lean_examiner_child 只等 report
+  或 90s watchdog，无续轮机制。
+- 修复：run_lean_examiner_child 检测到 `terminal_event=True` 且 report 未提交时，通过 `turn/start` 发起
+  **一轮机械续轮**（提示"submit_examiner_report 提交报告，禁止新 wave/分析"），每 child 最多 1 次
+  （`_continuation_used` 锁）。3-step budget 由 metrics `observe_notification`（`inference_steps >= 3` 抛
+  runtime-budget）硬性保护，续轮不突破。
+- 测试：新增 `test_codex_executor_sends_one_mechanical_continuation_when_turn_ends_without_report`（验证
+  续轮恰好 1 次、续轮后 report 被接受、resource 销毁）；full `550 PASS + 1 SKIP` 无 regression。
+- 说明：续轮是 Host 确定性机制（AGENTS.md：Tools 拥有协议格式化），不属于模型语义推理；不增加 wave、
+  不改变隔离或 typed evidence 语义。
