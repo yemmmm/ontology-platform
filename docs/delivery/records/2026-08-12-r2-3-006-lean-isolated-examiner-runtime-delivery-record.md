@@ -1079,3 +1079,9 @@
   （`role=platform`、`reason_code=child-timeout`）。
 - 时段统计：live-62~67 Platform 曾连续 4 次到 Acceptance（好时段），live-68~70 连续 3 次失败（坏时段）——
   DeepSeek provider 时段性波动，非代码回归。
+
+### 2026-08-14 — live-71 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（2 steps、terminal report true、total tokens `24501`）；Platform 2 steps（total
+  tokens `46104`）wave 后重试 2 次均停止生成，90s watchdog 到期，`BLOCKED/runtime-infrastructure`
+  （`role=platform`、`reason_code=child-timeout`）。Platform 坏时段延续（live-68~71 连续 4 次失败）。
