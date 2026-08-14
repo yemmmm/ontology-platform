@@ -705,3 +705,19 @@
   支持多 ref。full `549 PASS + 1 SKIP`、pytest start44 `12/12` 无 regression。
 - 说明：此为用户对 R2.3-006 行为契约的显式修改（原验收"report 不可二次波修复"改为"允许有限次提交内
   自我纠正"）；仅改变 report 提交尝试边界，不改变 wave 数量上限、fresh 隔离或 typed evidence 语义。
+
+### 2026-08-14 — authorization 1/3 live-22 real N=2 — main agent
+
+- Authorization：用户授权 3 轮（live-22/23/24），并要求平台报错/接口拒绝必须返回详细原因使 agent 可
+  自我纠正（self-correction loop 已实现）。
+- Preflight：stable clean HEAD `bb50d41 Add sink-time validation with self-correction feedback`；live-22
+  output root 不存在；service active、backend/frontend 200；DeepSeek credential 可用。
+- Real result：Source 完成（2 steps、`metrics_complete=true`、terminal report true、total tokens `23513`）；
+  Platform 2 steps（TTFT 约 1.4s、proxy 约 22.2s、evidence tokens `35064`、total tokens `36968`）后未提交
+  report（`report_received=false`、`terminal_event=false`），约 90 秒 child watchdog 到期，operation 为
+  `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- 关键观察：本轮 Platform 有 2 个 inference steps 且 proxy 22.2s（真实读取完成），但依然未产生 terminal
+  report——与 live-14/16/17/20（1 step 停止）不同，本轮模型在第二步后仍未提交。模型在 wave 后是否继续
+  生成并提交 report 具有明显随机性（live-19 曾成功）。
+- Failure layer：`runtime/infrastructure`（模型停止生成行为，非 prompt 或契约缺陷）。
+- Disposition：授权 `1/3` 已消费。剩余 live-23/24。
