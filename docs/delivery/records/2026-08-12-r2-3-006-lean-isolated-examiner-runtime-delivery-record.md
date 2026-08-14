@@ -1190,3 +1190,10 @@
 
 - Real result：Source 完成（2 steps、terminal report true、total 30477）；Platform 4 steps（32.7s proxy、
   total 63675）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+
+### 2026-08-14 — live-85 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total 14588）；Platform 5 steps（22.1s proxy、
+  total 109k）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- 统计：live-77 起 Platform 成功 1/8（live-82）；迭代查询 + 收敛约束链路可达 Acceptance，Platform 停止
+  生成仍为主卡点（模型行为随机性）。
