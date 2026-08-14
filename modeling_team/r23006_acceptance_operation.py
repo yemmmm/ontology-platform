@@ -1091,6 +1091,7 @@ class _ProductionOperationHost:
             platform_forwarder=forward,
             child_timeout_seconds=90,
             platform_retry_limit=2,
+            acceptance_retry_limit=2,
         )
         self._failure_metrics = ()
         try:

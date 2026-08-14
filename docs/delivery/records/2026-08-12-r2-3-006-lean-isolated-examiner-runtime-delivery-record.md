@@ -1036,3 +1036,10 @@
 - live-63：Platform 1 step 停止生成（重试 2 次均停），`BLOCKED/runtime-infrastructure`。
 - Repair：Acceptance 续轮提示补充 verdict 模板（status/answer/evidence_ref_ids 字段说明），消除
   "不知道如何调用"障碍；full `552 PASS + 1 SKIP` 无 regression。
+
+### 2026-08-14 — live-64/65 evidence + acceptance retry — main agent
+
+- live-64/65：**Source + Platform 均完成**（连续 3 次全链路：62/64/65）——Platform 重试机制稳定生效；
+  Acceptance 4 steps 推理后 budget（`steps=5`），模型持续推理不调用 submit 工具（0/11 成功）。
+- Repair：`LeanExaminerRuntime` 增加 `acceptance_retry_limit`（operation 设为 2），Acceptance 失败时用
+  fresh child + 相同 immutable packet 重试；full `552 PASS + 1 SKIP` 无 regression。

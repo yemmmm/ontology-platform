@@ -717,6 +717,7 @@ class LeanExaminerRuntime:
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         child_timeout_seconds: float = 90.0,
         platform_retry_limit: int = 1,
+        acceptance_retry_limit: int = 0,
     ):
         if codex_adapter is not None:
             if any(executor is not None for executor in (source_executor, platform_executor, acceptance_executor)):
@@ -753,6 +754,7 @@ class LeanExaminerRuntime:
         self.platform_executor = platform_executor
         self.acceptance_executor = acceptance_executor
         self._platform_retry_limit = max(0, int(platform_retry_limit))
+        self._acceptance_retry_limit = max(0, int(acceptance_retry_limit))
         self._failure_metrics: tuple[dict[str, Any], ...] = ()
 
     @property
@@ -828,6 +830,7 @@ class LeanExaminerRuntime:
                 raise
             source_digest, platform_digest = _packet_digest(source_report), _packet_digest(platform_report)
             acceptance_metrics = ExaminerRunMetrics("acceptance")
+            acceptance_retry_used = False
             try:
                 acceptance_packet = build_acceptance_examiner_packet(
                     question=question.get("question"), ticket_binding=dict(ticket_binding), ordinal=question_ordinal, count=count,
@@ -838,7 +841,18 @@ class LeanExaminerRuntime:
                     verdict_schema=dict(verdict_schema),
                 )
                 acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
-                verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
+                try:
+                    verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
+                except ExaminerRuntimeBlocked as exc:
+                    # The Acceptance model frequently reasons without calling the
+                    # submit tool (DeepSeek behavior).  Retry with a fresh child
+                    # and fresh metrics; the packet is immutable and unchanged.
+                    if not getattr(self, "_acceptance_retry_limit", 0) or acceptance_retry_used:
+                        raise
+                    acceptance_retry_used = True
+                    acceptance_metrics = ExaminerRunMetrics("acceptance")
+                    acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
+                    verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
                 _validate_acceptance_evidence_ids(verdict, source_evidence_ids | platform_evidence_ids)
                 verdict.setdefault("question_ordinal", question_ordinal)
                 verdict.setdefault("question_count", count)
