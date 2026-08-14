@@ -1178,3 +1178,10 @@
 - 分析：Acceptance 模型推理收敛（第 3 步 reasoning 仅 49）但从未调用 submit 工具；文本 verdict 提取此前
   需 terminal_event（模型 turn 未结束所以未触发）。
 - Repair：文本提取触发条件放宽为"terminal_event 或 inference_steps>=3"（模型推理收敛即尝试提取）。
+
+### 2026-08-14 — live-83 evidence: platform stop-generation — main agent
+
+- Real result（重跑）：Source 完成（1 step、terminal report true、total 11959）；Platform 5 steps、
+  9 次 proxy 调用（total 135k）后停止生成，续轮已发未响应，180s 窗口 `BLOCKED/runtime-infrastructure`
+  （`reason_code=child-timeout`）。首次运行 operation-level 瞬时失败，重跑正常 blocked。
+- 趋势：Platform 成功率波动（live-82 成功、live-83 失败）；迭代查询 + 收敛约束已让链路可达 Acceptance。
