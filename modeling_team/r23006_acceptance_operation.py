@@ -767,7 +767,11 @@ class R23006AcceptanceOperation:
             key_create_attempted = True
             host.create_read_key(prepared)
             result = dict(host.run_examiner(prepared, stage=stage))
-            _validate_result(result)
+            if stage == "platform":
+                if result.get("status") != "PLATFORM-ONLY" or result.get("platform_report") is None:
+                    raise R23006OperationError("platform-only stage produced no report")
+            else:
+                _validate_result(result)
         except BaseException as exc:
             operation_error = exc
             if isinstance(exc, ExaminerRuntimeBlocked):

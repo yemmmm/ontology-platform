@@ -1241,3 +1241,23 @@
 - Real result：Source 完成（1 step、terminal report true、total 11890）；Platform 7 steps（48.6s proxy、
   total 212309）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
 - 统计：live-77 起 Platform 成功 1/10（live-82）；其余为停止生成或 budget 用满不提交。
+
+### 2026-08-14 — temporary close-out: standalone examiner iteration becomes next direction — main agent
+
+- 用户指示：暂停需求实现，完成临时收尾；将当前方向作为 R2.3-006 接下来的主要方向。
+- 已完成（本轮）：
+  1. **独立测试设施**：`--stage platform`（只跑 Platform，跳过 Source/Acceptance，复用完整 Host wiring）；
+     `standalone_platform_probe.py`（直接调语义接口检查返回）；`standalone_platform_examiner.py`（占位，
+     实际用 stage 模式）。
+  2. **语义接口返回精简**：`query_semantic_context` proxy schema 上限 `depth≤1`、`limit≤5`、
+     `context_limit≤3`；validator 新增 maximum 检查。
+  3. **召回逻辑优化**：proxy 层默认注入 `resource_types=["instance","relation","fact","rule"]`，过滤
+     无关概念类（Content/ContentEvaluation/ExplicitUnknown 噪声），调用方传 concept 则 fail-closed。
+  4. **提示词优化**：Platform 指令新增"每查询保持小（limit≤5/context_limit≤3/depth=1）、用 cursor 翻页
+     替代大拉取、命中无关概念时用更具体词重查"；移除固定轮数强制（模型自主决定收敛）。
+- 验证：standalone-probe-02a Platform 提交成功——`answerability=answerable`、结论回答 CQ-001 核心
+  （B 消费 C 的 quality_rating 字段）、22 evidence refs、coverage complete、4 个诚实 gaps（字段级
+  literal 未取到明确标注）。evidence tokens 从优化前 ~181k 降至 73.6k。
+- 测试：full `554 PASS + 1 SKIP`、pytest start44 `12/12`。
+- 待办（下一方向）：Acceptance 阶段仍 0 成功；Platform 上下文仍偏大（569k 累计）；ontology 结构建议
+  （字段 literal 缺失导致 gaps）未实施。
