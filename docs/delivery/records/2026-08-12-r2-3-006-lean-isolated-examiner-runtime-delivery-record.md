@@ -1235,3 +1235,9 @@
   total 160734）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
 - 修改（live-93 前）：移除 Platform 固定轮数强制（3 轮 MUST submit），改为模型根据返回证据自主决定；
   步数上限放宽到 10（防死循环安全边界）。
+
+### 2026-08-14 — live-94 real N=2: platform stop-generation — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total 11890）；Platform 7 steps（48.6s proxy、
+  total 212309）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- 统计：live-77 起 Platform 成功 1/10（live-82）；其余为停止生成或 budget 用满不提交。
