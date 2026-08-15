@@ -19,6 +19,10 @@ query tool.
   facts and completeness markers, then decide the next query from what came back.  Follow
   returned cursors and referenced IRIs.  There is no single-wave limit; a follow-up query
   driven by returned information is normal.  Do not guess facts you did not receive.
+- Keep each query small: `limit` ≤ 5, `context_limit` ≤ 3, `depth` = 1; prefer several focused
+  queries over one big pull, and page with `match_cursor`/`context_cursor` instead of raising
+  the limit.  If a query returns irrelevant concept matches, rephrase with specific entity,
+  relation, or property names.
 - Batch independent queries: in each round you may issue several independent queries together
   in one inference; only queries that depend on an earlier answer must wait.
 - Converge and submit: iterate until the retrieved facts answer the question or an explicit

@@ -167,24 +167,24 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "ticket_digest": "a" * 64, "model_state_digest": "b" * 64,
         }
         valid = {**scope, "query": "release", "scope_mode": "ontologies", "ontology_ids": ["ontology-1"]}
-        self.assertEqual(
-            validate_examiner_proxy_arguments("query_semantic_context", valid, schema, scope=scope),
-            valid,
-        )
+        normalized = validate_examiner_proxy_arguments("query_semantic_context", valid, schema, scope=scope)
+        self.assertEqual(normalized["query"], "release")
+        self.assertEqual(normalized["resource_types"], ["fact", "instance", "relation", "rule"])
         for changed in (
             {**valid, "extra": True},
             {key: value for key, value in valid.items() if key != "query"},
             {**valid, "depth": "10"},
+            {**valid, "depth": 2},
+            {**valid, "resource_types": ["concept"]},
         ):
             with self.assertRaises(ChildRuntimeError):
                 validate_examiner_proxy_arguments("query_semantic_context", changed, schema, scope=scope)
 
         nullable = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
         nullable_valid = {**scope, "scope_mode": "ontologies", "ontology_ids": ["ontology-1"], "queries": ["a", "b"]}
-        self.assertEqual(
-            validate_examiner_proxy_arguments("query_semantic_context", nullable_valid, nullable, scope=scope),
-            nullable_valid,
-        )
+        normalized_nullable = validate_examiner_proxy_arguments("query_semantic_context", nullable_valid, nullable, scope=scope)
+        self.assertEqual(normalized_nullable["queries"], ["a", "b"])
+        self.assertEqual(normalized_nullable["resource_types"], ["fact", "instance", "relation", "rule"])
         with self.assertRaises(ChildRuntimeError):
             validate_examiner_proxy_arguments(
                 "query_semantic_context",

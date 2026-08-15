@@ -1534,8 +1534,9 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "ontology_ids": {"type": "array", "items": {"type": "string"}},
         "resource_types": {"type": ["array", "null"], "items": {"type": "string"}},
         "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string"},
-        "depth": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1},
-        "context_limit": {"type": "integer", "minimum": 1},
+        "depth": {"type": "integer", "minimum": 1, "maximum": 1},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 5},
+        "context_limit": {"type": "integer", "minimum": 0, "maximum": 3},
         "match_cursor": {"type": "string"}, "context_cursor": {"type": "string"},
     },
     "semantic_sparql_query": {
@@ -1672,6 +1673,8 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
                     raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         if isinstance(value, (int, float)) and "minimum" in rule and value < rule["minimum"]:
             raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+        if isinstance(value, (int, float)) and "maximum" in rule and value > rule["maximum"]:
+            raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         pattern = rule.get("pattern")
         if isinstance(pattern, str) and (not isinstance(value, str) or re.fullmatch(pattern, value) is None):
             raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
@@ -1683,6 +1686,20 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
         or ("query" not in arguments and "queries" not in arguments)
     ):
         raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+    if tool == "query_semantic_context":
+        # The consumer needs modeled facts, not ontology scaffolding: default the
+        # resource filter to instance/relation/fact/rule so concept noise and
+        # unrelated class matches stay out of the context.  A caller-supplied
+        # filter must remain within that consumer set.
+        allowed_types = {"instance", "relation", "fact", "rule"}
+        caller_types = arguments.get("resource_types")
+        if caller_types is not None:
+            if not isinstance(caller_types, list) or not caller_types or any(
+                not isinstance(item, str) or item not in allowed_types for item in caller_types
+            ):
+                raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+        else:
+            arguments = {**arguments, "resource_types": sorted(allowed_types)}
     return dict(arguments)
 
 

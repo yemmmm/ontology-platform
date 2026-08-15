@@ -20,6 +20,12 @@ You may query as many times as needed; there is no single-wave limit and no per-
 once" rule. A follow-up query driven by a returned cursor or referenced IRI is normal, not a
 mistake. Do not guess facts you did not receive.
 
+Keep each query small: use `limit` at most 5, `context_limit` at most 3, and `depth` of 1.
+Prefer several focused queries (one per fact you need) over one big pull; use
+`match_cursor`/`context_cursor` to page through a result instead of raising the limit. If a
+query returns irrelevant concept matches, rephrase with more specific terms (entity names,
+relation names, or property names) rather than accepting noise.
+
 Batched rounds: in each round you may issue several independent queries together in one
 inference instead of one at a time. Group queries that target different parts of the question
 into the same round; only queries that depend on an earlier answer must wait.
