@@ -1228,3 +1228,10 @@
   total 107823）用满预算后第 7 步 `runtime-budget`（`steps=7`、`role=platform`、terminal_report false）。
 - 分析：迭代查询在 4-6 步间，模型要么停止（timeout）要么用满预算不提交；live-82 成功（4 steps 自发提交）
   证明链路可达。平台机制已最优，剩余为模型行为随机性。
+
+### 2026-08-14 — live-93 evidence: model-driven rounds, platform stop — main agent
+
+- Real result：Source 完成（1 step、terminal report true、total 14006）；Platform 6 steps（54.3s proxy、
+  total 160734）后停止生成，180s 窗口 `BLOCKED/runtime-infrastructure`（`reason_code=child-timeout`）。
+- 修改（live-93 前）：移除 Platform 固定轮数强制（3 轮 MUST submit），改为模型根据返回证据自主决定；
+  步数上限放宽到 10（防死循环安全边界）。
