@@ -120,7 +120,7 @@ class FakeHost:
     def create_read_key(self, _prepared) -> None:
         self.created += 1
 
-    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+    def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
         if self.fail_run:
             raise RuntimeError("provider failed")
         return _result()
@@ -207,7 +207,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         holder: dict[str, FakeHost] = {}
 
         class TimeoutHost(FakeHost):
-            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+            def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                 platform = _metric("platform", 1)
                 platform["metrics_complete"] = False
                 platform["terminal_report"] = False
@@ -269,7 +269,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         holder: dict[str, FakeHost] = {}
 
         class SecretFailureHost(FakeHost):
-            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+            def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                 raise ExaminerRuntimeBlocked(
                     "runtime-infrastructure",
                     role="platform",
@@ -398,7 +398,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                 output = Path(temporary)
 
                 class TypedBlockedHost(FakeHost):
-                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                    def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                         raise ExaminerRuntimeBlocked(
                             reason,
                             role="platform",
@@ -448,7 +448,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                 output = Path(temporary)
 
                 class InvalidEvidenceHost(FakeHost):
-                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                    def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                         raise ExaminerRuntimeBlocked(
                             "runtime-infrastructure",
                             role="platform",
@@ -490,7 +490,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                 output = Path(temporary)
 
                 class InvalidPartialHost(FakeHost):
-                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                    def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                         self.partial_metrics = [metric]
                         raise ExaminerRuntimeBlocked(
                             "runtime-infrastructure",
@@ -544,7 +544,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
                 output = Path(temporary)
 
                 class InvalidTerminalBlockHost(FakeHost):
-                    def run_examiner(self, _prepared) -> Mapping[str, Any]:
+                    def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                         self.partial_metrics = partial_metrics
                         raise ExaminerRuntimeBlocked(
                             "runtime-infrastructure",
@@ -563,7 +563,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         cases: tuple[str, type[FakeHost]] = ()
 
         class CleanupFailureHost(FakeHost):
-            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+            def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                 raise ExaminerRuntimeBlocked(
                     "runtime-infrastructure",
                     role="platform",
@@ -631,7 +631,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         holder: dict[str, FakeHost] = {}
 
         class BadMetricsHost(FakeHost):
-            def run_examiner(self, _prepared) -> Mapping[str, Any]:
+            def run_examiner(self, _prepared, stage: str = "all") -> Mapping[str, Any]:
                 result = _result()
                 result["metrics"][0]["first_turn_input"]["digest"] = "x"
                 result["metrics"][0]["token_usage_increments"] = [{"garbage": -1}]

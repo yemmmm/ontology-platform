@@ -789,7 +789,9 @@ class LeanExaminerRuntime:
             snapshots[-1].blocked = error
         self._failure_metrics = tuple(metric.as_dict() for metric in snapshots)
 
-    def run(self, questions: Sequence[Mapping[str, Any]], *, source_packets: Sequence[Mapping[str, Any]], platform_packets: Sequence[Mapping[str, Any]], ticket_binding: Mapping[str, Any], verdict_schema: Mapping[str, Any]) -> dict[str, Any]:
+    def run(self, questions: Sequence[Mapping[str, Any]], *, source_packets: Sequence[Mapping[str, Any]], platform_packets: Sequence[Mapping[str, Any]], ticket_binding: Mapping[str, Any], verdict_schema: Mapping[str, Any], stage: str = "all") -> dict[str, Any]:
+        if stage not in {"all", "platform"}:
+            raise ChildRuntimeError("Lean Examiner stage is invalid")
         count = len(questions)
         if count <= 0 or len(source_packets) != count or len(platform_packets) != count:
             raise ChildRuntimeError("Lean Examiner question/packet count is invalid")
@@ -811,15 +813,31 @@ class LeanExaminerRuntime:
             )
             source_packet = build_source_examiner_packet(**source_payload)
             platform_packet = build_platform_examiner_packet(**platform_payload)
-            source_metrics = ExaminerRunMetrics("source")
-            try:
-                source_metrics.bind_first_turn_input([{"type": "packet", "digest": source_packet.canonical_digest}], packet=source_packet)
-                source_report = self.source_executor(source_packet, source_metrics)
-                source_evidence_ids = _source_report_evidence_ids(source_packet, source_report)
+            if stage == "platform":
+                source_report: Mapping[str, Any] = {
+                    "answerability": "answerable",
+                    "conclusion": "standalone-platform-probe",
+                    "evidence": [],
+                    "coverage": {"queries_or_sections": [], "complete": True},
+                    "gaps": [],
+                    "evidence_refs": [{"location": "standalone.md"}],
+                }
+                source_metrics = ExaminerRunMetrics("source")
+                source_evidence_ids: set[str] = set()
+            else:
+                source_metrics = ExaminerRunMetrics("source")
+            if stage == "platform":
                 source_metrics.record_terminal_report(source_report)
-            except BaseException as exc:
-                self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
-                raise
+                source_evidence_ids = set()
+            else:
+                try:
+                    source_metrics.bind_first_turn_input([{"type": "packet", "digest": source_packet.canonical_digest}], packet=source_packet)
+                    source_report = self.source_executor(source_packet, source_metrics)
+                    source_evidence_ids = _source_report_evidence_ids(source_packet, source_report)
+                    source_metrics.record_terminal_report(source_report)
+                except BaseException as exc:
+                    self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
+                    raise
             platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=10)
             platform_retry_used = False
             try:
@@ -842,6 +860,21 @@ class LeanExaminerRuntime:
             except BaseException as exc:
                 self._capture_failure_metrics([*completed_metrics, source_metrics, platform_metrics], exc)
                 raise
+            if stage == "platform":
+                metrics.extend([source_metrics.as_dict(), platform_metrics.as_dict()])
+                completed_metrics.extend([source_metrics, platform_metrics])
+                return {
+                    "schema_version": "ExaminerOrderedVerdicts/v1",
+                    "count": count,
+                    "verdicts": [],
+                    "status": "PLATFORM-ONLY",
+                    "complete": False,
+                    "stopped_at": question_ordinal,
+                    "next": question_ordinal + 1 if question_ordinal < count else None,
+                    "final": question_ordinal == count,
+                    "platform_report": dict(platform_report),
+                    "metrics": metrics,
+                }
             source_digest, platform_digest = _packet_digest(source_report), _packet_digest(platform_report)
             acceptance_metrics = ExaminerRunMetrics("acceptance")
             acceptance_retry_used = False

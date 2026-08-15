@@ -402,6 +402,38 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertEqual(result["stopped_at"], 1)
 
+    def test_platform_only_stage_skips_source_and_acceptance(self) -> None:
+        source_calls = {"count": 0}
+        acceptance_calls = {"count": 0}
+
+        def source(packet, metrics):
+            source_calls["count"] += 1
+            metrics.bind_thread(f"source-{packet.payload['ordinal']}")
+            return {"answerability": "answerable", "conclusion": "source", "evidence": [], "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [], "evidence_refs": [{"location": "source.md"}]}
+
+        def platform(packet, metrics):
+            metrics.bind_thread(f"platform-{packet.payload['ordinal']}")
+            return _platform_report()
+
+        def acceptance(packet, metrics):
+            acceptance_calls["count"] += 1
+            metrics.bind_thread(f"acceptance-{packet.payload['ordinal']}")
+            return {}
+
+        runtime = LeanExaminerRuntime(source_executor=source, platform_executor=platform, acceptance_executor=acceptance)
+        result = runtime.run(
+            [{"question": "q1"}],
+            source_packets=[_source_payload()],
+            platform_packets=[_platform_payload()],
+            ticket_binding={"ticket_digest": "a" * 64}, verdict_schema={"type": "verdict"},
+            stage="platform",
+        )
+        self.assertEqual(source_calls["count"], 0)
+        self.assertEqual(acceptance_calls["count"], 0)
+        self.assertEqual(result["status"], "PLATFORM-ONLY")
+        self.assertIn("platform_report", result)
+        self.assertEqual([row["role"] for row in result["metrics"]], ["source", "platform"])
+
     def test_failure_metrics_capture_source_stage_and_are_copied(self) -> None:
         def source(_packet, _metrics):
             raise ExaminerRuntimeBlocked(

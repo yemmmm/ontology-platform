@@ -318,7 +318,7 @@ class R23006OperationHost(Protocol):
 
     def create_read_key(self, prepared: PreparedR23006Operation) -> None: ...
 
-    def run_examiner(self, prepared: PreparedR23006Operation) -> Mapping[str, Any]: ...
+    def run_examiner(self, prepared: PreparedR23006Operation, stage: str = "all") -> Mapping[str, Any]: ...
 
     def failure_metrics(self) -> tuple[Mapping[str, Any], ...]: ...
 
@@ -751,7 +751,7 @@ class R23006AcceptanceOperation:
         self.output_root = Path(output_root).resolve()
         self.host_factory = host_factory or _ProductionOperationHost
 
-    def run(self) -> dict[str, Any]:
+    def run(self, stage: str = "all") -> dict[str, Any]:
         prepared = prepare_r23006_operation(self.repository_root)
         host = self.host_factory(self.repository_root, self.output_root)
         before: Mapping[str, Any] | None = None
@@ -766,7 +766,7 @@ class R23006AcceptanceOperation:
             before = dict(host.snapshot(prepared))
             key_create_attempted = True
             host.create_read_key(prepared)
-            result = dict(host.run_examiner(prepared))
+            result = dict(host.run_examiner(prepared, stage=stage))
             _validate_result(result)
         except BaseException as exc:
             operation_error = exc
@@ -1085,7 +1085,7 @@ class _ProductionOperationHost:
         self.read_key_id = record.key_id
         self.create_count += 1
 
-    def run_examiner(self, prepared: PreparedR23006Operation) -> Mapping[str, Any]:
+    def run_examiner(self, prepared: PreparedR23006Operation, stage: str = "all") -> Mapping[str, Any]:
         if self.lifecycle is None or self.adapter is None or self.read_key_id is None:
             raise R23006OperationError("production Examiner runtime is unavailable")
         plaintext = self.lifecycle.plaintext_for(self.read_key_id)
@@ -1109,6 +1109,7 @@ class _ProductionOperationHost:
                 platform_packets=prepared.platform_packets,
                 ticket_binding=prepared.ticket_binding,
                 verdict_schema=prepared.verdict_schema,
+                stage=stage,
             )
         except ExaminerRuntimeBlocked:
             self._failure_metrics = runtime.failure_metrics
@@ -1250,19 +1251,22 @@ def run_r23006_acceptance_operation(
     output_root: Path,
     *,
     host_factory: Callable[[Path, Path], R23006OperationHost] | None = None,
+    stage: str = "all",
 ) -> dict[str, Any]:
     return R23006AcceptanceOperation(
         repository_root, output_root, host_factory=host_factory
-    ).run()
+    ).run(stage=stage)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run retained R2.3-006 N=2 acceptance")
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--stage", choices=("all", "platform"), default="all")
     arguments = parser.parse_args(argv)
     evidence = run_r23006_acceptance_operation(
-        arguments.repository_root, arguments.output_root
+        arguments.repository_root, arguments.output_root,
+        stage=arguments.stage,
     )
     print(json.dumps({
         "schema_version": evidence["schema_version"],
