@@ -400,7 +400,7 @@ def _validate_result(result: Mapping[str, Any]) -> None:
             or not isinstance(metric.get("inference_steps"), int)
             or isinstance(metric.get("inference_steps"), bool)
             or not 1 <= metric["inference_steps"] <= (
-                6 if metric.get("role") == "platform" else 3
+                4 if metric.get("role") == "platform" else 3
             )
             or not increments_valid
             or any(

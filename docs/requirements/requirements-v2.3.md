@@ -2125,7 +2125,8 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 - proxy 必须为每个允许 tool 固定 exact JSON argument schema；在进入 `McpReadForwarder`/backend 前拒绝未知、
   缢余、缺失或错误类型字段，禁止 schema-property filtering 后继续调用。拒绝证据必须显示 backend_calls=0。
 - 每个 Examiner 正常路径有步数预算：Source/Acceptance 最多 3 个可观测 inference steps；Platform（迭代式
-  语义查询）最多 8 步。缺输入不得通过协作追问增加轮次。role packet（不含批准 source
+  语义查询）最多 4 步（2-3 轮批量查询 + 提交，控制上下文膨胀）。缺输入不得通过协作追问增加轮次。role
+  packet（不含批准 source
   bytes、平台 response 和不可移除 system/safety prefix）目标不超过 4k tokens。
 - Platform Examiner 是消费角色：只使用通用语义查询接口（`query_semantic_context`），不读取建模上下文、
   build-session、read-model、projection 或 Producer 内部；通过每轮返回的 facts/cursor/completeness 迭代
