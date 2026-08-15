@@ -820,7 +820,7 @@ class LeanExaminerRuntime:
             except BaseException as exc:
                 self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
                 raise
-            platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=4)
+            platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=10)
             platform_retry_used = False
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
@@ -834,7 +834,7 @@ class LeanExaminerRuntime:
                     if not getattr(self, "_platform_retry_limit", 1) or platform_retry_used:
                         raise
                     platform_retry_used = True
-                    platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=4)
+                    platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=10)
                     platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)

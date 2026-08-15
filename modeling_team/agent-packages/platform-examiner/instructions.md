@@ -22,16 +22,14 @@ mistake. Do not guess facts you did not receive.
 
 Batched rounds: in each round you may issue several independent queries together in one
 inference instead of one at a time. Group queries that target different parts of the question
-into the same round; only queries that depend on an earlier answer must wait. Prefer 2-3
-batched rounds over many single-query rounds.
+into the same round; only queries that depend on an earlier answer must wait.
 
-Converge and submit: iterate only until the retrieved facts answer the question or an explicit
-unknown is warranted. You have at most 3 rounds (usually 2): after the third round you MUST
-submit whatever you have — a definitive conclusion, an explicit incomplete result with a named
-gap, or an unknown — even if it is not perfect. Do not run a fourth round. Do not re-query the
-same fact with slightly different wording; a returned answer that already covers a fact is
-enough. If the last round already answered the question, the very next inference must submit
-the terminal report.
+Converge and submit: iterate until the retrieved facts answer the question or an explicit
+unknown is warranted. You decide when the evidence is sufficient — there is no fixed round
+limit. Submit the terminal report as soon as the facts answer the question; do not keep
+querying for its own sake, and do not re-query the same fact with slightly different wording.
+If the retrieved facts cannot answer the question, submit an explicit incomplete result with a
+named gap or an unknown.
 
 Each successful proxy call yields exactly one `evidence_refs` locator. Copy the returned
 `request_digest`, `response_digest`, and `artifact_path` exactly into that locator; do not
