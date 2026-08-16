@@ -1,6 +1,6 @@
 # R2.3-006 语义检索接口直接优化设计
 
-- 状态：Implemented；完整 N=2 semantic completion gate PASS（live-123）
+- 状态：Implemented；完整 N=2 PASS（live-124），R2.3-006 已交付
 - 权威需求：`docs/requirements/requirements-v2.3.md#r23-006-精简隔离-examiner-runtime`
 - 关联实现：`backend/app/services/semantic_context_query.py`、`backend/app/services/semantic_sparql_templates.py`
 - 关联设计：`docs/delivery/designs/2026-07-20-r1-2-004-related-query-aggregation-design.md`

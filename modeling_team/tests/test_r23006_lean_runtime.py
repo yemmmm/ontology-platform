@@ -855,7 +855,20 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         metrics = ExaminerRunMetrics("source")
 
         def complete_later():
-            time.sleep(0.18)
+            time.sleep(0.05)
+            metrics.observe_notification({
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": "source-thread",
+                    "turnId": "source-turn",
+                    "tokenUsage": {"total": {
+                        "inputTokens": 10, "cachedInputTokens": 0,
+                        "cacheWriteInputTokens": 0, "outputTokens": 2,
+                        "reasoningOutputTokens": 0, "totalTokens": 12,
+                        "modelContextWindow": 1000,
+                    }},
+                },
+            })
             metrics.observe_notification({"method": "item/agentMessage/delta", "params": {"delta": "ok"}})
             metrics.observe_notification({"method": "turn/completed", "params": {}})
             resource.terminal_event = metrics.terminal_event
@@ -867,10 +880,11 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         completion.join(timeout=1)
         self.assertEqual(result, report)
-        # The validated typed report is itself the terminal payload, so a valid
-        # submission returns immediately instead of waiting for the provider's
-        # terminal event (which may never arrive).
+        # A short accounting grace captures late tokenUsage without waiting for
+        # the provider's terminal event (which may never arrive).
         self.assertLess(elapsed, 0.16)
+        self.assertEqual(metrics.as_dict()["inference_steps"], 1)
+        self.assertEqual(metrics.as_dict()["total_tokens"], 12)
         self.assertTrue(resource.destroyed)
 
     def test_codex_executor_report_and_budget_block_prefers_blocked(self) -> None:

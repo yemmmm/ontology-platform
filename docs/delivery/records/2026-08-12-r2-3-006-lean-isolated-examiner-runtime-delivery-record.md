@@ -1443,3 +1443,18 @@
 - 证据：
   `workspaces/modeling-acceptance/r23006-retained-n2-live-123/r23006-retained-acceptance.json`
 - 状态：R2.3-006 的 ordered N=2 semantic completion gate 已通过。仍需按需求完成独立复核/文档收口。
+
+### 2026-08-16 — full N=2 live-124 PASS with complete six-role tokenUsage — main agent
+
+- 修复：`run_lean_examiner_child` 在校验通过 report 后增加 3 秒 accounting grace；晚到的
+  `thread/tokenUsage/updated` 可以入账，Host 不再等待 provider `turn/completed`。
+- 结果：**status PASS**，`complete=true`，`final=true`。
+  - CQ-001/CQ-002：`PASS,current=true,usable=true`。
+- 六角色 metrics 全部有真实 tokenUsage 增量：
+  - CQ-001：Source 1 step / Platform 5 steps / Acceptance 3 steps；
+  - CQ-002：Source 1 step / Platform 4 steps / Acceptance 3 steps；
+  - 全部 `metrics_complete=true`，无零 usage 例外。
+- key/cleanup/invariance 全部通过；model/ledger 不变。
+- 证据：
+  `workspaces/modeling-acceptance/r23006-retained-n2-live-124/r23006-retained-acceptance.json`
+- 结论：R2.3-006 ordered N=2 semantic + metrics completion gate 均通过，可关闭需求。

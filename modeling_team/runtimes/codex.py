@@ -1675,8 +1675,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # keep checking it after the one-time report validation.  The
                 # validated typed report is itself the terminal payload, so a
                 # missing provider terminal event must not turn a successful
-                # submission into a timeout.
+                # submission into a timeout.  A short accounting grace lets late
+                # thread/tokenUsage notifications land after a fast Source tool
+                # call; the Host never waits indefinitely for turn/completed.
                 if report is not None:
+                    accounting_deadline = time.monotonic() + 3.0
+                    while time.monotonic() < accounting_deadline:
+                        blocked = getattr(resource, "blocked", None)
+                        if isinstance(blocked, ExaminerRuntimeBlocked):
+                            raise blocked
+                        if (
+                            getattr(metrics, "inference_steps", 0) > 0
+                            or getattr(resource, "terminal_event", False)
+                        ):
+                            break
+                        time.sleep(0.02)
                     return report
                 # Acceptance models often end their turn with the verdict written
                 # in reply text instead of calling the submit tool.  When the
