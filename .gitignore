@@ -25,3 +25,6 @@ workspaces/
 skills-lock.json
 frontend/.od-skills/
 frontend/critique.json
+
+# Local DSH tooling scratch space
+.dsh-tmp/
