@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from dataclasses import replace
+from typing import Any
 from unittest import mock
 
 from modeling_team.acceptance_runtime import (
@@ -170,6 +171,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         normalized = validate_examiner_proxy_arguments("query_semantic_context", valid, schema, scope=scope)
         self.assertEqual(normalized["query"], "release")
         self.assertEqual(normalized["resource_types"], ["fact", "instance", "relation", "rule"])
+        self.assertEqual(normalized["depth"], 1)
+        self.assertEqual(normalized["limit"], 10)
+        self.assertEqual(normalized["context_limit"], 0)
         for changed in (
             {**valid, "extra": True},
             {key: value for key, value in valid.items() if key != "query"},
@@ -185,6 +189,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         normalized_nullable = validate_examiner_proxy_arguments("query_semantic_context", nullable_valid, nullable, scope=scope)
         self.assertEqual(normalized_nullable["queries"], ["a", "b"])
         self.assertEqual(normalized_nullable["resource_types"], ["fact", "instance", "relation", "rule"])
+        self.assertEqual(normalized_nullable["depth"], 1)
+        self.assertEqual(normalized_nullable["limit"], 10)
+        self.assertEqual(normalized_nullable["context_limit"], 0)
         with self.assertRaises(ChildRuntimeError):
             validate_examiner_proxy_arguments(
                 "query_semantic_context",
@@ -290,10 +297,17 @@ class R23006LeanRuntimeTests(unittest.TestCase):
 
         self.assertIsNone(CodexRuntimeAdapter._extract_verdict_from_text(PartialAgent()))
 
-        class BadAgent:
+        class ExtraAgent:
             message_deltas = {"m1": ['{"status": "PASS", "answer": "x", "evidence_ref_ids": [], "current": true, "usable": true, "failure_layer": null, "blocked_reason": null, "extra": 1}']}
 
-        self.assertIsNone(CodexRuntimeAdapter._extract_verdict_from_text(BadAgent()))
+        self.assertEqual(
+            CodexRuntimeAdapter._extract_verdict_from_text(ExtraAgent()),
+            {
+                "status": "PASS", "answer": "x", "evidence_ref_ids": [],
+                "current": True, "usable": True,
+                "failure_layer": None, "blocked_reason": None,
+            },
+        )
 
     def test_metrics_use_cumulative_increments_and_step_budget(self) -> None:
         metrics = ExaminerRunMetrics("platform")
@@ -329,10 +343,43 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [],
             "evidence_refs": [{"location": "source.md"}],
         })
-        self.assertIsNone(metrics.as_dict()["terminal_wall_ms"])
+        self.assertIsNotNone(metrics.as_dict()["terminal_wall_ms"])
         self.assertTrue(metrics.observe_notification(usage(40)))
         self.assertIsNone(metrics.blocked)
         self.assertEqual(metrics.inference_steps, 3)
+        snapshot = metrics.as_dict()
+        increments = snapshot["token_usage_increments"]
+        self.assertEqual(len(increments), 4)
+        self.assertEqual(
+            snapshot["total_tokens"],
+            sum(row["totalTokens"] for row in increments),
+        )
+
+    def test_validated_report_is_metrics_terminal_without_provider_event(self) -> None:
+        metrics = ExaminerRunMetrics("platform")
+        metrics.bind_thread("thread-1")
+        metrics.observe_notification({
+            "method": "thread/tokenUsage/updated",
+            "params": {"threadId": "thread-1", "turnId": "turn-1", "tokenUsage": {"total": {
+                "inputTokens": 10, "cachedInputTokens": 0, "cacheWriteInputTokens": 0,
+                "outputTokens": 2, "reasoningOutputTokens": 0, "totalTokens": 12,
+                "modelContextWindow": 1000,
+            }}},
+        })
+        metrics.observe_notification({"method": "item/agentMessage/delta", "params": {"delta": "x"}})
+        snapshot = metrics.as_dict()
+        self.assertFalse(snapshot["metrics_complete"])
+        self.assertIsNone(snapshot["terminal_wall_ms"])
+        metrics.record_terminal_report({
+            "answerability": "answerable", "conclusion": "ok", "evidence": [],
+            "coverage": {"queries_or_sections": [], "complete": True}, "gaps": [],
+            "evidence_refs": [{"location": "source.md"}],
+        })
+        snapshot = metrics.as_dict()
+        self.assertTrue(snapshot["metrics_complete"])
+        self.assertIsNotNone(snapshot["terminal_wall_ms"])
+        self.assertTrue(snapshot["terminal_report"])
+
 
     def test_transport_rejects_lateral_collaboration_with_receipt(self) -> None:
         transport = ExaminerTransport(owner_id="acceptance")
@@ -711,6 +758,16 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "Follow returned cursors",
             "no single-wave limit",
             "Do not guess facts",
+            "Keep each query kind-focused",
+            'resource_types: ["fact"]',
+            "property name alone",
+            "context_limit",
+            "data.object",
+            "proxy applies small defaults",
+            "Exact navigation",
+            "exact-anchor mode",
+            "Prefer 2-3",
+            "no more than 10 successful proxy calls",
             "yields exactly one",
             "receipt-count-mismatch",
             "p<call_ordinal>",
@@ -739,6 +796,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         class Agent:
             io_lock = threading.RLock()
             runtime_failure = None
+            message_deltas = {}
 
         agent = Agent()
         events = [

@@ -756,8 +756,8 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?graph ?subject ?predicate ?object ?subjectLabel ?objectLabel
        ?predicateLabel ?subjectType WHERE {{
   VALUES ?graph {{ {values} }}
-  VALUES ?anchor {{ {anchors} }}
   GRAPH ?graph {{
+    VALUES ?anchor {{ {anchors} }}
     ?subject ?predicate ?object .
     FILTER(?subject = ?anchor || ?object = ?anchor)
     {operation_filters}

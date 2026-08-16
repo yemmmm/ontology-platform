@@ -69,7 +69,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-002 | 新作用域真实业务切片建模 | P0 | `已交付（独立验收 PASS）` | R2.3-001 |
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
-| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现（平台机制）；语义完成门未通过。方向调整（用户指示）：Platform 为迭代式语义查询消费角色；独立测试设施就绪；语义接口已精简；standalone 验证 Platform 可提交高质量报告。剩余卡点：Acceptance 0 成功、Platform 上下文偏大、ontology 字段 literal 缺失。下一步以独立 examiner 迭代 + 语义检索质量优化为主` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
+| R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已实现；完整 N=2 semantic completion gate PASS（live-123）：CQ-001/CQ-002 均 PASS,current=true,usable=true；六角色 metrics complete；key exactly-once/cleanup/invariance 通过。此前已修复语义检索接口、exact-IRI 导航、fact-primary 检索、provider 停止生成 fallback 与 metrics accounting。剩余为独立复核与交付收口` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -2068,13 +2068,14 @@ R2.3-003 非目标继续包括：
 
 ## R2.3-006 精简隔离 Examiner Runtime
 
- 当前状态：`已实现（平台机制）；语义完成门未通过。方向调整（用户指示）：Platform 改为迭代式语义查询
- 消费角色（只用 query_semantic_context，不接触建模上下文）；独立测试设施就绪（--stage platform 快速
-  迭代）；语义接口返回已精简（depth≤1/limit≤5/context_limit≤3/resource_types 过滤概念噪声）；
-  standalone 验证 Platform 可提交高质量报告（answerable、结论命中 CQ-001、22 evidence refs、诚实 gaps）。
-  剩余卡点：Acceptance 阶段 0 成功（模型推理不提交，文本 verdict 提取已就绪待验证）；Platform 上下文仍偏
-  大；ontology 结构建议（字段 literal 缺失）待评估。下一步：以独立 examiner 迭代 + 语义检索质量优化为
-  主要方向`
+ 当前状态：`已实现；完整 N=2 semantic completion gate PASS（live-123，证据
+ workspaces/modeling-acceptance/r23006-retained-n2-live-123/r23006-retained-acceptance.json）。
+ CQ-001/CQ-002 verdict 均 PASS,current=true,usable=true；六角色 metrics_complete=true；
+ read key exactly-once、post-revoke 401、cleanup 全 true、model/ledger 前后一致。期间完成：
+ 语义接口直接优化（origin/label/事实优先 context/envelope 精简）、query=绝对 IRI 时
+ exact-anchor 精确导航、Platform fact-primary 检索、proxy 小查询默认值、report sink 详细
+ 拒绝回传、Platform/Acceptance 文本 fallback、provider stop-generation 收敛修复、
+ token metrics accounting 修复。下一步：独立复核与交付收口`
 
 ### 背景与问题
 

@@ -7,8 +7,9 @@ import hashlib
 import json
 import re
 import unicodedata
+from urllib.parse import urlsplit
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
@@ -76,6 +77,28 @@ _METADATA_PREDICATES = {
     "http://www.w3.org/2000/01/rdf-schema#comment",
     "http://www.w3.org/2004/02/skos/core#altLabel",
     "http://purl.org/dc/terms/description",
+}
+_TBOX_PREDICATES = {
+    str(RDF.type),
+    "http://www.w3.org/2000/01/rdf-schema#domain",
+    "http://www.w3.org/2000/01/rdf-schema#range",
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf",
+    "http://www.w3.org/2002/07/owl#equivalentClass",
+    "http://www.w3.org/2002/07/owl#equivalentProperty",
+    "http://www.w3.org/2002/07/owl#inverseOf",
+}
+# Consumer-facing related-context priority.  Asserted business statements come
+# first, schema scaffolding and generated shape projections last.  This is the
+# one total order used by the public response; primary-match ordering is not
+# affected.
+_CONTEXT_ORIGIN_RANK = {
+    "asserted_literal": 0,
+    "asserted_relation": 1,
+    "resource": 2,
+    "derived_statement": 3,
+    "shape_constraint": 4,
+    "tbox_statement": 5,
 }
 
 
@@ -194,6 +217,25 @@ class SemanticContextQueryService:
         if (match_cursor is not None) and (context_cursor is not None):
             raise SemanticContextQueryError(
                 "Provide at most one of match_cursor or context_cursor"
+            )
+        if len(queries) == 1 and _is_iri_anchor(queries[0]):
+            if match_cursor is not None:
+                raise SemanticContextQueryError(
+                    "match_cursor cannot be used with an exact IRI anchor"
+                )
+            return self._query_anchor(
+                anchor_iri=queries[0].strip(),
+                project_id=project_id,
+                scope_mode=scope_mode,
+                ontology_ids=ontology_ids,
+                resource_types=resource_types,
+                assertion_types=assertion_types,
+                search_mode=search_mode,
+                depth=depth,
+                limit=limit,
+                context_limit=context_limit,
+                principal=principal,
+                context_cursor=context_cursor,
             )
         normalized_input = _normalize_input_queries(queries)
         original_queries = list(normalized_input.original)
@@ -427,6 +469,192 @@ class SemanticContextQueryService:
             context_cursor_out=next_context_cursor,
         )
 
+    def _query_anchor(
+        self,
+        *,
+        anchor_iri: str,
+        project_id: str,
+        scope_mode: str,
+        ontology_ids: list[str] | None,
+        resource_types: list[str] | None,
+        assertion_types: list[str] | None,
+        search_mode: str,
+        depth: int,
+        limit: int,
+        context_limit: int,
+        principal: AuthPrincipal | None,
+        context_cursor: str | None,
+    ) -> dict[str, Any]:
+        """Exact-IRI mode.
+
+        The original interface accepts an absolute IRI as ``query``.  It skips
+        lexical/semantic recall and returns that node as the sole primary match,
+        with its graph neighborhood in ``related_context``.  Context cursors
+        continue the same exact anchor page.
+        """
+        _validate_filters(resource_types, assertion_types, depth, limit)
+        _validate_context_limit(context_limit)
+        if search_mode not in {"hybrid", "lexical"}:
+            raise SemanticContextQueryError("search_mode must be hybrid or lexical")
+        selected_resource_types = set(resource_types or RESOURCE_TYPES)
+        selected_assertion_types = set(assertion_types or ASSERTION_TYPES)
+        scope = self.scope_resolver.resolve(
+            project_id=project_id,
+            scope_mode=scope_mode,
+            ontology_ids=ontology_ids,
+        )
+        cursor_codec = self.cursor_codec or ContextCursorCodec.from_settings(self.settings)
+        workspace_versions = tuple(
+            (entry.ontology_id, entry.workspace_version) for entry in scope.ontologies
+        )
+        source_signatures = tuple(
+            (entry.ontology_id, entry.source_signature) for entry in scope.ontologies
+        )
+        binding = make_binding(
+            principal=principal,
+            project_id=project_id,
+            scope_mode=scope_mode,
+            ontology_ids=ontology_ids or [],
+            original_queries=[anchor_iri],
+            normalized_queries=[anchor_iri],
+            resource_types=resource_types,
+            assertion_types=assertion_types,
+            search_mode=search_mode,
+            depth=depth,
+            limit=limit,
+            context_limit=context_limit,
+            workspace_versions=workspace_versions,
+            source_signatures=source_signatures,
+        )
+        warnings: list[dict[str, str]] = [*scope.warnings, *_ontology_warnings(scope)]
+        empty_recall = {
+            "mode": "anchor",
+            "match_status": "no_match",
+            "completeness": "complete",
+        }
+        if not scope.graph_iris:
+            return self._multi_response(
+                scope=scope,
+                original_queries=[anchor_iri],
+                normalized_queries=[anchor_iri],
+                primary=[],
+                related=[],
+                matched_queries_by_item={},
+                fusion_by_item={},
+                root_paths_by_item={},
+                recall=empty_recall,
+                warnings=warnings,
+                matches_truncated=False,
+                context_truncated=False,
+                match_cursor_out=None,
+                context_cursor_out=None,
+            )
+        candidate_fetch_limit = min(5000, max(500, context_limit * 50 + 100))
+        result = self.rdf_store.query_sparql(
+            semantic_context_neighborhood_query(
+                scope.graph_iris,
+                [anchor_iri],
+                candidate_fetch_limit,
+                self.operation_type,
+                self.operation_predicates,
+            ),
+            timeout_seconds=10,
+            limit=candidate_fetch_limit,
+        )
+        anchor_item = _anchor_candidate_from_rows(
+            _bindings(result.result), scope, anchor_iri
+        )
+        if anchor_item is None:
+            warnings.append(
+                {
+                    "code": "anchor_not_found",
+                    "message": "The exact IRI is not present in the current semantic scope.",
+                }
+            )
+            return self._multi_response(
+                scope=scope,
+                original_queries=[anchor_iri],
+                normalized_queries=[anchor_iri],
+                primary=[],
+                related=[],
+                matched_queries_by_item={},
+                fusion_by_item={},
+                root_paths_by_item={},
+                recall=empty_recall,
+                warnings=warnings,
+                matches_truncated=False,
+                context_truncated=False,
+                match_cursor_out=None,
+                context_cursor_out=None,
+            )
+
+        decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
+            primary=[anchor_item],
+            scope=scope,
+            depth=depth,
+            context_limit=context_limit,
+            selected_resource_types=selected_resource_types,
+            selected_assertion_types=selected_assertion_types,
+        )
+        context_payload = self._decode_cursor_opt(
+            cursor_codec,
+            context_cursor,
+            binding=binding,
+            expected_kind=CURSOR_KIND_CONTEXT,
+        )
+        if context_payload is not None:
+            related_raw = _resume_context_after_key(related_raw, context_payload.resume_key)
+        context_truncated = len(related_raw) > context_limit
+        related_page = related_raw[:context_limit]
+        next_context_cursor: str | None = None
+        if context_truncated:
+            next_context_cursor = self._encode_cursor(
+                cursor_codec,
+                CursorPayload(
+                    kind=CURSOR_KIND_CONTEXT,
+                    binding_digest=binding_digest(binding),
+                    workspace_versions=workspace_versions,
+                    source_signatures=source_signatures,
+                    resume_key=_context_resume_key(related_raw[context_limit]),
+                    root_match_ids=(anchor_item["id"],),
+                ),
+            )
+        if context_truncated:
+            warnings.append(
+                {"code": "context_truncated", "message": "Semantic context was truncated."}
+            )
+        decorated_related = self._decorate_related(
+            related_page, scope, root_paths_by_item
+        )
+        warnings.extend(
+            warning
+            for item in [*decorated_primary, *decorated_related]
+            for warning in item.get("warnings", [])
+        )
+        identity = self._identity_key(anchor_item)
+        matched_queries_by_item = {
+            identity: [{"indexes": [0], "evidence_tier": "exact"}]
+        }
+        fusion_by_item = {
+            identity: {"best_evidence_tier": "exact", "support_count": 1}
+        }
+        return self._multi_response(
+            scope=scope,
+            original_queries=[anchor_iri],
+            normalized_queries=[anchor_iri],
+            primary=decorated_primary,
+            related=decorated_related,
+            matched_queries_by_item=matched_queries_by_item,
+            fusion_by_item=fusion_by_item,
+            root_paths_by_item=root_paths_by_item,
+            recall={"mode": "anchor", "match_status": "exact", "completeness": "complete"},
+            warnings=warnings,
+            matches_truncated=False,
+            context_truncated=context_truncated,
+            match_cursor_out=None,
+            context_cursor_out=next_context_cursor,
+        )
+
     def _lexical_candidate_rows(
         self, scope: SemanticQueryScope, terms: list[str], candidate_limit: int
     ) -> list[dict[str, Any]]:
@@ -642,35 +870,37 @@ class SemanticContextQueryService:
         related: list[dict[str, Any]] = []
         if context_limit <= 0:
             return related
-        budget = context_limit
+        # Each producer may contribute up to one full page for this root.  The
+        # caller unions every root's producer output and applies the canonical
+        # context total order before ``context_limit`` is enforced, so no single
+        # producer (for example generated shape constraints) may consume the
+        # whole page and starve asserted literal facts/relations.  This keeps
+        # small pages (``context_limit <= 3`` in the lean Examiner proxy) useful
+        # for answering factual questions without changing the larger-page
+        # contract.
+        page_limit = context_limit
         if (
             "fact" in selected_resource_types
             and "asserted" in selected_assertion_types
         ):
-            shape_items = self._shape_constraint_items([root], scope, limit=budget + 1)
-            related.extend(shape_items[:budget])
-            budget -= len(related)
-        if budget <= 0:
-            return related
+            shape_items = self._shape_constraint_items([root], scope, limit=page_limit)
+            related.extend(shape_items)
         operation_context = self._operation_target_context(
             [root],
             scope,
-            limit=budget + 1,
+            limit=page_limit,
             enabled="concept" in selected_resource_types,
         )
-        related.extend(operation_context[:budget])
-        budget -= len(operation_context)
-        if budget <= 0:
-            return related
+        related.extend(operation_context)
         neighborhood = self._expand_neighborhood(
             [root],
             scope,
             depth=depth,
-            limit=budget + 1,
+            limit=page_limit,
             resource_types=selected_resource_types,
             assertion_types=selected_assertion_types,
         )
-        related.extend(neighborhood[:budget])
+        related.extend(neighborhood)
         return related
 
     def _decorate_related(
@@ -741,31 +971,36 @@ class SemanticContextQueryService:
         decorated_primary: list[dict[str, Any]] = []
         for item in primary:
             key = self._identity_key(item)
-            item_copy = dict(item)
-            item_copy["matched_queries"] = list(matched_queries_by_item.get(key, []))
-            item_copy["fusion"] = dict(fusion_by_item.get(key, {"best_evidence_tier": "semantic", "support_count": 0}))
+            item_copy = _public_item(item)
+            item_copy["matched_queries"] = [
+                {
+                    "indexes": list(entry.get("indexes") or []),
+                    "evidence_tier": entry.get("evidence_tier"),
+                }
+                for entry in matched_queries_by_item.get(key, [])
+                if isinstance(entry, Mapping)
+            ]
+            item_copy["fusion"] = dict(
+                fusion_by_item.get(key, {"best_evidence_tier": "semantic", "support_count": 0})
+            )
             decorated_primary.append(item_copy)
         decorated_related: list[dict[str, Any]] = []
         for item in related:
+            item_copy = _public_item(item)
             key = self._identity_key(item)
-            item_copy = dict(item)
             item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
             decorated_related.append(item_copy)
         truncated = bool(matches_truncated or context_truncated)
-        # Legacy callers may still inspect ``query.text``/``normalized_terms``
-        # when the request used the single-expression compatibility alias.
+        # The consumer already knows what it asked for.  Keep only the stable
+        # echo needed by multi-expression callers and cursor binding.
         query_echo: dict[str, Any] = {
             "queries": list(original_queries),
             "normalized_queries": list(normalized_queries),
         }
-        if len(original_queries) == 1:
-            text, terms = normalize_query_text(original_queries[0])
-            query_echo["text"] = text
-            query_echo["normalized_terms"] = terms
         return {
             "query": query_echo,
             "result_status": "matched" if decorated_primary else "no_match",
-            "scope": scope.public_dict(),
+            "scope": _public_scope(scope.public_dict()),
             "primary_matches": decorated_primary,
             "related_context": decorated_related,
             "matches_page": {
@@ -779,7 +1014,7 @@ class SemanticContextQueryService:
                 "next_context_cursor": context_cursor_out,
             },
             "truncated": truncated,
-            "recall": recall,
+            "recall": _public_recall(recall),
             "warnings": _dedupe_warnings(warnings),
         }
 
@@ -1313,11 +1548,14 @@ LIMIT 5000
             "description": None,
             "data": {
                 "subject": subject,
+                "subject_label": subject_label,
                 "predicate": predicate,
+                "predicate_label": predicate_label,
                 "object": object_value,
                 "object_type": _binding_type(row, "object"),
                 "object_datatype": _binding_attribute(row, "object", "datatype"),
                 "object_language": _binding_attribute(row, "object", "xml:lang"),
+                "object_label": _value(row, "objectLabel"),
             },
             "distance": distance,
             "assertion_kind": scope.graph_assertion_kinds.get(graph, "asserted"),
@@ -1541,6 +1779,194 @@ def normalize_query_text(query: str) -> tuple[str, list[str]]:
     unique = list(dict.fromkeys(term.strip() for term in terms if term.strip()))
     unique.sort(key=lambda term: (-len(term), normalized.find(term), term))
     return text, unique[:64]
+
+
+def _is_iri_anchor(value: Any) -> bool:
+    """Return True for a single-expression query that is an exact IRI lookup."""
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if text != value or any(character.isspace() for character in text):
+        return False
+    parsed = urlsplit(text)
+    return parsed.scheme.lower() in {"http", "https", "urn"} and bool(
+        parsed.netloc or parsed.path
+    )
+
+
+def _anchor_candidate_from_rows(
+    rows: list[dict[str, Any]],
+    scope: "SemanticQueryScope",
+    anchor_iri: str,
+) -> dict[str, Any] | None:
+    """Build one exact resource candidate from anchor neighborhood rows."""
+    ontology_id: str | None = None
+    labels: list[str] = []
+    aliases: list[str] = []
+    descriptions: list[str] = []
+    types: set[str] = set()
+    for row in rows:
+        subject = _value(row, "subject")
+        graph = _value(row, "graph")
+        predicate = _value(row, "predicate")
+        object_value = _value(row, "object")
+        if graph in scope.graph_to_ontology and ontology_id is None:
+            ontology_id = scope.graph_to_ontology[graph]
+        if subject != anchor_iri:
+            continue
+        if predicate == "http://www.w3.org/2000/01/rdf-schema#label" and object_value:
+            labels.append(object_value)
+        elif predicate == "http://www.w3.org/2004/02/skos/core#altLabel" and object_value:
+            aliases.append(object_value)
+        elif predicate in {
+            "http://www.w3.org/2000/01/rdf-schema#comment",
+            "http://purl.org/dc/terms/description",
+        } and object_value:
+            descriptions.append(object_value)
+        elif predicate == str(RDF.type) and object_value:
+            types.add(object_value)
+    if ontology_id is None:
+        return None
+    labels = sorted(set(labels))
+    types = set(types)
+    if types & _CLASS_TYPES:
+        kind = "concept"
+    elif types & _RELATION_TYPES:
+        kind = "relation"
+    elif any(str(value) for value in types if _local_name(str(value)) == "Operation"):
+        kind = "operation"
+    else:
+        kind = "instance"
+    return {
+        "id": anchor_iri,
+        "kind": kind,
+        "target_kind": "resource",
+        "ontology_id": ontology_id,
+        "iri": anchor_iri,
+        "label": labels[0] if labels else _local_name(anchor_iri),
+        "labels": labels,
+        "aliases": aliases,
+        "description": descriptions[0] if descriptions else None,
+        "types": types,
+        "data": {
+            "rdf_types": sorted(types),
+            "label_evidence": labels,
+        },
+        "distance": 0,
+        "assertion_kind": scope.graph_assertion_kinds.get(
+            next(
+                (
+                    graph_iri
+                    for graph_iri, candidate_ontology in scope.graph_to_ontology.items()
+                    if candidate_ontology == ontology_id
+                ),
+                "",
+            ),
+            "asserted",
+        ),
+        "match": {
+            "score": 1000,
+            "matched_terms": [anchor_iri],
+            "matched_fields": ["iri"],
+            "reasons": ["exact_iri"],
+        },
+    }
+
+
+def _origin_for(item: Mapping[str, Any], data: Mapping[str, Any]) -> str:
+    """Classify one public match without trusting presentation ``kind`` alone."""
+    if data.get("constraint") is not None or item.get("match", {}).get("reasons") == ["shape_constraint"]:
+        return "shape_constraint"
+    if {"subject", "predicate", "object"} <= set(data):
+        predicate = data.get("predicate")
+        if isinstance(predicate, str) and predicate in _TBOX_PREDICATES:
+            return "tbox_statement"
+        if item.get("assertion_kind") != "asserted":
+            return "derived_statement"
+        object_type = data.get("object_type")
+        return "asserted_relation" if object_type in {"uri", "bnode"} else "asserted_literal"
+    return "resource"
+
+
+def _public_match(item: Mapping[str, Any]) -> dict[str, Any]:
+    match = item.get("match") if isinstance(item.get("match"), Mapping) else {}
+    result: dict[str, Any] = {}
+    for key in ("score", "candidate_level", "lexical_score"):
+        value = match.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            result[key] = value
+        elif isinstance(value, str):
+            result[key] = value
+    for key in ("matched_fields", "reasons"):
+        value = match.get(key)
+        if isinstance(value, list):
+            result[key] = [str(item) for item in value]
+    return result
+
+
+def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Project one decorated internal item to the stable consumer response.
+
+    Redundant display fields and producer-only state are omitted; multi-expression
+    support metadata, mapping evidence, and Protocol gate fields remain available.
+    """
+    data = dict(item.get("data") or {})
+    public: dict[str, Any] = {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "origin": _origin_for(item, data),
+        "label": item.get("label"),
+        "iri": item.get("iri"),
+        "ontology_id": item.get("ontology_id"),
+        "assertion_kind": item.get("assertion_kind"),
+        "data": data,
+        "evidence_reference_ids": list(item.get("evidence_reference_ids") or []),
+        "evidence_status": item.get("evidence_status"),
+        "lineage": item.get("lineage") or {"status": "missing"},
+        "warnings": list(item.get("warnings") or []),
+        "match": _public_match(item),
+    }
+    if item.get("target_kind") is not None:
+        public["target_kind"] = item.get("target_kind")
+    if item.get("mapping_evidence") is not None:
+        public["mapping_evidence"] = item.get("mapping_evidence")
+    return {key: value for key, value in public.items() if value is not None}
+
+
+def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
+    ontologies = scope.get("ontologies")
+    compact_ontologies = []
+    if isinstance(ontologies, list):
+        for ontology in ontologies:
+            if not isinstance(ontology, Mapping):
+                continue
+            compact_ontologies.append(
+                {
+                    "ontology_id": ontology.get("ontology_id"),
+                    "workspace_version": ontology.get("workspace_version"),
+                }
+            )
+    return {
+        "project_id": scope.get("project_id"),
+        "mode": scope.get("mode"),
+        "status": scope.get("status"),
+        "ontologies": compact_ontologies,
+    }
+
+
+def _public_recall(recall: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: recall.get(key)
+        for key in ("mode", "match_status", "completeness")
+        if recall.get(key) is not None
+    }
+
+
+def _context_rank(item: Mapping[str, Any]) -> int:
+    return _CONTEXT_ORIGIN_RANK.get(
+        _origin_for(item, item.get("data") if isinstance(item.get("data"), Mapping) else {}),
+        2,
+    )
 
 
 def _validate_filters(
@@ -1977,6 +2403,7 @@ def _context_sort_key(
     min_distance = min((int(path["graph_distance"]) for path in paths), default=99)
     return (
         min_distance,
+        _context_rank(item),
         _KIND_ORDER.get(item["kind"], 99),
         ontology_order.get(item["ontology_id"], len(ontology_order)),
         _normalize_value(item.get("label")),

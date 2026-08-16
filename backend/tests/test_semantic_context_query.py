@@ -25,6 +25,7 @@ from app.services.semantic_context_query import (
     SemanticContextQueryService,
     normalize_query_text,
 )
+from app.services.semantic_sparql_templates import semantic_context_neighborhood_query
 from app.services.semantic_query_scope import (
     SemanticQueryScopeNotFound,
     SemanticQueryScopeNotReady,
@@ -314,6 +315,17 @@ def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_s
         "object_language"
     ] == "zh"
     assert result["primary_matches"][0]["evidence_reference_ids"] == ["evidence-1"]
+    # Direct consumer response: no producer-internal fields, compact scope/recall.
+    assert all("_expression_indexes" not in item for item in result["primary_matches"])
+    assert result["scope"]["project_id"] == "project-1"
+    assert result["scope"]["mode"] == "ontologies"
+    assert result["scope"]["status"] == "complete"
+    assert result["scope"]["ontologies"][0]["ontology_id"] == "ontology-1"
+    assert set(result["scope"]["ontologies"][0]) == {"ontology_id", "workspace_version"}
+    assert set(result["recall"]) <= {"mode", "match_status", "completeness"}
+    statement = next(item for item in facts if item["data"]["object"] == "datasetId")
+    assert statement["data"]["subject_label"] == "发布工作流"
+    assert statement["data"]["predicate_label"] == "需要参数"
     serialized = str(result)
     assert "must never leave" not in serialized
     assert "secret.txt" not in serialized
@@ -322,6 +334,209 @@ def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_s
     assert "https://graphs.test" not in serialized
     assert "https://secret.test/shapes" not in serialized
     assert all("semantic-context" in query for query in store.queries)
+
+
+def test_small_context_page_keeps_asserted_facts_when_shapes_are_present(
+    in_memory_session,
+):
+    """``context_limit`` pages must not be consumed by one context producer.
+
+    A root with several generated shape constraints still has direct asserted
+    literal facts.  With a small page the canonical context order (not producer
+    phase order) decides the page; otherwise the lean Examiner can only see
+    schema projections and must infer field literals instead of reading them.
+    """
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/ontology-1"
+    workflow = "https://example.test/Workflow"
+    candidate_rows = [
+        {
+            "graph": _binding(graph),
+            "subject": _binding(workflow),
+            "predicate": _binding("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+            "object": _binding("http://www.w3.org/2002/07/owl#Class"),
+            "subjectLabel": _binding("answer-target", "literal"),
+            "aliases": _binding("", "literal"),
+            "description": _binding("", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        }
+    ]
+    neighbor_rows = [
+        {
+            "graph": _binding(graph),
+            "subject": _binding(workflow),
+            "predicate": _binding("https://example.test/needs"),
+            "object": {
+                "type": "literal",
+                "value": "alpha-value",
+                "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            },
+            "subjectLabel": _binding("a-fact", "literal"),
+            "predicateLabel": _binding("needs", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        },
+        {
+            "graph": _binding(graph),
+            "subject": _binding(workflow),
+            "predicate": _binding("https://example.test/note"),
+            "object": {
+                "type": "literal",
+                "value": "beta-value",
+                "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            },
+            "subjectLabel": _binding("a-fact", "literal"),
+            "predicateLabel": _binding("note", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        },
+    ]
+
+    class CrowdedShapes(FakeShapes):
+        def read_merged_guidance(self, graph_set_id, class_iri):
+            return {
+                "graph_set_id": graph_set_id,
+                "generated_graph_iri": "https://secret.test/shapes",
+                "fields": [
+                    {
+                        "path": f"https://example.test/shape-field-{index}",
+                        "label": f"z-shape-{index}",
+                        "datatype": "http://www.w3.org/2001/XMLSchema#string",
+                        "provenance": "generated",
+                    }
+                    for index in ("a", "b", "c")
+                ],
+            }
+
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore(candidate_rows, neighbors=neighbor_rows),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=CrowdedShapes(),
+    )
+
+    result = service.query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="answer-target",
+        depth=1,
+        limit=20,
+        context_limit=3,
+        principal=_principal(),
+    )
+
+    related = result["related_context"]
+    assert len(related) == 3
+    asserted_facts = [item for item in related if item.get("data", {}).get("object") is not None]
+    shape_facts = [
+        item for item in related if item.get("match", {}).get("reasons") == ["shape_constraint"]
+    ]
+    assert asserted_facts, "asserted literal facts must remain visible on a small context page"
+    assert shape_facts, "shape constraints must still share the small context page"
+    assert related[0]["data"]["object"] == "alpha-value"
+    assert related[0]["origin"] == "asserted_literal"
+    assert any(item["origin"] == "shape_constraint" for item in related)
+
+
+def test_absolute_iri_query_uses_exact_anchor_mode(in_memory_session):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/ontology-1"
+    anchor = "https://example.test/Workflow"
+    rows = [
+        {
+            "graph": _binding(graph),
+            "subject": _binding(anchor),
+            "predicate": _binding("http://www.w3.org/2000/01/rdf-schema#label"),
+            "object": {"type": "literal", "value": "发布工作流"},
+            "subjectLabel": _binding("发布工作流", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        },
+        {
+            "graph": _binding(graph),
+            "subject": _binding(anchor),
+            "predicate": _binding("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+            "object": _binding("http://www.w3.org/2002/07/owl#Class"),
+            "subjectLabel": _binding("发布工作流", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        },
+        {
+            "graph": _binding(graph),
+            "subject": _binding(anchor),
+            "predicate": _binding("https://example.test/needs"),
+            "object": {
+                "type": "literal",
+                "value": "datasetId",
+                "datatype": "http://www.w3.org/2001/XMLSchema#string",
+            },
+            "subjectLabel": _binding("发布工作流", "literal"),
+            "predicateLabel": _binding("needs", "literal"),
+            "subjectTypes": _binding("http://www.w3.org/2002/07/owl#Class", "literal"),
+        },
+    ]
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([], neighbors=rows),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    )
+
+    result = service.query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query=anchor,
+        resource_types=["concept", "fact"],
+        depth=1,
+        limit=20,
+        context_limit=3,
+        principal=_principal(),
+    )
+
+    assert result["result_status"] == "matched"
+    assert result["query"]["queries"] == [anchor]
+    assert result["recall"]["mode"] == "anchor"
+    assert result["recall"]["match_status"] == "exact"
+    primary = result["primary_matches"][0]
+    assert primary["iri"] == anchor
+    assert primary["kind"] == "concept"
+    assert primary["origin"] == "resource"
+    assert primary["match"]["reasons"] == ["exact_iri"]
+    literal = next(
+        item for item in result["related_context"] if item["data"].get("object") == "datasetId"
+    )
+    assert literal["origin"] == "asserted_literal"
+    assert literal["root_paths"][0]["root_match_id"] == anchor
+
+
+def test_absolute_iri_anchor_not_found_is_no_match(in_memory_session):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    )
+
+    result = service.query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="https://example.test/Missing",
+        depth=1,
+        context_limit=3,
+        principal=_principal(),
+    )
+
+    assert result["result_status"] == "no_match"
+    assert result["primary_matches"] == []
+    assert result["recall"]["mode"] == "anchor"
+    assert result["recall"]["match_status"] == "no_match"
+    assert any(warning["code"] == "anchor_not_found" for warning in result["warnings"])
 
 
 def test_generated_shape_constraint_projects_property_lineage_target(
@@ -895,6 +1110,25 @@ def test_scope_does_not_leak_cross_project_ontology(in_memory_session):
             scope_mode="ontologies",
             ontology_ids=["ontology-2"],
         )
+
+
+def test_neighborhood_query_keeps_anchor_values_inside_named_graph():
+    """Oxigraph returns zero rows when ``VALUES ?anchor`` sits outside GRAPH.
+
+    The anchor join must stay inside the named-graph pattern so real RDF stores
+    actually expand related context; otherwise shape constraints are the only
+    context producer that can fill small pages.
+    """
+    query = semantic_context_neighborhood_query(
+        ["https://graphs.test/ontology/1"],
+        ["https://graphs.test/entity/1"],
+        5,
+    )
+    graph_block = query.index("GRAPH ?graph")
+    anchor_values = query.index("VALUES ?anchor")
+    assert graph_block < anchor_values
+    assert anchor_values < query.index("?subject ?predicate ?object .", anchor_values)
+    assert "FILTER(?subject = ?anchor || ?object = ?anchor)" in query
 
 
 def test_query_normalization_supports_chinese_and_identifiers():

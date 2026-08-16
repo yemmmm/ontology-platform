@@ -299,8 +299,13 @@ class ExaminerRolePacket:
             "task_tokens": _packet_tokens({key: normalized[key] for key in inventory if key in {"question", "ticket_binding", "ordinal", "count"}}),
             "evidence_tokens": 0,
         }
-        if breakdown["host_packet_tokens"] > 4096:
-            raise ExaminerRuntimeBlocked("acceptance-input", role=kind, evidence={"host_packet_tokens": breakdown["host_packet_tokens"]})
+        host_packet_limit = 8192 if kind == "acceptance" else 4096
+        if breakdown["host_packet_tokens"] > host_packet_limit:
+            raise ExaminerRuntimeBlocked(
+                "acceptance-input",
+                role=kind,
+                evidence={"host_packet_tokens": breakdown["host_packet_tokens"]},
+            )
         return cls(kind, frozen, canonical, inventory, MappingProxyType(breakdown))
 
     def to_dict(self) -> dict[str, Any]:
@@ -493,9 +498,13 @@ class ExaminerRunMetrics:
         for token_name in _TOKEN_FIELDS:
             raw = cumulative.get(token_name)
             if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
-                continue
-            current[token_name] = raw
-        if not current:
+                # Provider notifications occasionally omit one accounting field,
+                # e.g. ``modelContextWindow``.  Normalize it to zero so retained
+                # increments always have the complete fixed token-field set.
+                current[token_name] = 0
+            else:
+                current[token_name] = raw
+        if not any(current.values()):
             return False
         increments: dict[str, int] = {}
         for token_name, raw in current.items():
@@ -513,15 +522,18 @@ class ExaminerRunMetrics:
         if self.inference_steps >= self.max_inference_steps:
             # Once the terminal report is recorded, later usage notifications
             # (a model that keeps reasoning after submitting) must not turn a
-            # successful submission into a budget failure.
-            if not self.terminal_report:
-                if self._allow_continuation_turn and self.inference_steps < self.max_inference_steps + 1:
-                    self.inference_steps += 1
-                    self._increments.append(increments)
-                    return True
-                self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps + 1})
-                raise self.blocked
-            return True
+            # successful submission into a budget failure.  Keep appending those
+            # accounting increments without advancing the step counter so the
+            # retained totals still equal the sum of increments.
+            if self.terminal_report:
+                self._increments.append(increments)
+                return True
+            if self._allow_continuation_turn and self.inference_steps < self.max_inference_steps + 1:
+                self.inference_steps += 1
+                self._increments.append(increments)
+                return True
+            self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps + 1})
+            raise self.blocked
         self.inference_steps += 1
         self._increments.append(increments)
         # Bind the first positive inference usage only.  A zero/no-op cumulative
@@ -555,10 +567,10 @@ class ExaminerRunMetrics:
             )
             raise self.blocked
         self.terminal_report = True
-        # A report-sink callback can arrive before the provider's terminal turn
-        # notification.  Keep terminal timing tied to that notification rather
-        # than the callback race; ``observe_notification`` owns the timestamp.
-        if self.terminal_event and self.terminal_wall_ms is None:
+        # The validated typed report is itself the terminal payload.  A provider
+        # turn/completed notification may never arrive; record wall time at the
+        # report boundary when no terminal event has already supplied it.
+        if self.terminal_wall_ms is None:
             self.terminal_wall_ms = (time.monotonic() - self._started_monotonic) * 1000
 
     def record_terminal_verdict(self, verdict: Mapping[str, Any]) -> None:
@@ -607,7 +619,7 @@ class ExaminerRunMetrics:
             )
             raise self.blocked
         self.terminal_report = True
-        if self.terminal_event and self.terminal_wall_ms is None:
+        if self.terminal_wall_ms is None:
             self.terminal_wall_ms = (time.monotonic() - self._started_monotonic) * 1000
 
     def allow_inference(self) -> None:
@@ -630,9 +642,8 @@ class ExaminerRunMetrics:
             "fresh_thread": self.thread_id is not None and self.inherited_turns == 0,
             "metrics_complete": bool(
                 self.thread_id
-                and self.inference_steps > 0
                 and self.ttft_ms is not None
-                and self.terminal_event
+                and (self.terminal_event or self.terminal_report)
             ),
             "inherited_turns": self.inherited_turns,
             "first_turn_input": {
@@ -844,7 +855,7 @@ class LeanExaminerRuntime:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                 try:
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
-                except ExaminerRuntimeBlocked as exc:
+                except ExaminerRuntimeBlocked:
                     # A Platform child that stops generating after the retrieval
                     # wave (DeepSeek provider behavior) is retried once with a
                     # fresh child and fresh metrics; the read key and forwarder
@@ -890,7 +901,7 @@ class LeanExaminerRuntime:
                 acceptance_metrics.bind_first_turn_input([{"type": "packet", "digest": acceptance_packet.canonical_digest}], packet=acceptance_packet)
                 try:
                     verdict = dict(self.acceptance_executor(acceptance_packet, acceptance_metrics))
-                except ExaminerRuntimeBlocked as exc:
+                except ExaminerRuntimeBlocked:
                     # The Acceptance model frequently reasons without calling the
                     # submit tool (DeepSeek behavior).  Retry with a fresh child
                     # and fresh metrics; the packet is immutable and unchanged.
@@ -949,6 +960,14 @@ def _safe_digest(value: Any, field: str) -> str:
     if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
         raise ChildRuntimeError(f"{field} is invalid")
     return value
+
+
+def _looks_like_absolute_iri(value: Any) -> bool:
+    if not isinstance(value, str) or value != value.strip() or any(
+        character.isspace() for character in value
+    ):
+        return False
+    return value.startswith(("http://", "https://", "urn:"))
 
 
 def _safe_id(value: Any, field: str) -> str:
@@ -1535,7 +1554,7 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "resource_types": {"type": ["array", "null"], "items": {"type": "string"}},
         "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string"},
         "depth": {"type": "integer", "minimum": 1, "maximum": 1},
-        "limit": {"type": "integer", "minimum": 1, "maximum": 5},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 10},
         "context_limit": {"type": "integer", "minimum": 0, "maximum": 3},
         "match_cursor": {"type": "string"}, "context_cursor": {"type": "string"},
     },
@@ -1700,6 +1719,19 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
                 raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         else:
             arguments = {**arguments, "resource_types": sorted(allowed_types)}
+        # Mechanical small-retrieval defaults.  The prompt prefers small pages,
+        # but a missing optional field must not silently fall back to the broad
+        # backend defaults (limit 20 / context_limit 100).  The consumer can
+        # still opt in to related context explicitly with ``context_limit=3``.
+        arguments = {**arguments}
+        arguments.setdefault("depth", 1)
+        arguments.setdefault("limit", 10)
+        if _looks_like_absolute_iri(arguments.get("query")):
+            # Exact-anchor navigation needs the direct neighborhood; a zero
+            # context page would return only the node label/types.
+            arguments.setdefault("context_limit", 3)
+        else:
+            arguments.setdefault("context_limit", 0)
     return dict(arguments)
 
 

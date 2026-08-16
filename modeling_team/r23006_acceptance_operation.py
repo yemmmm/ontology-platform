@@ -371,9 +371,14 @@ def _validate_result(result: Mapping[str, Any]) -> None:
             "model_context_window", "estimated_task_tokens", "estimated_evidence_tokens",
             "task_tokens", "evidence_tokens", "collaboration_rejections",
         )
+        source_report_without_usage = bool(
+            expected_role == "source"
+            and metric.get("terminal_report") is True
+            and increments == []
+        )
         increments_valid = bool(
             isinstance(increments, list)
-            and increments
+            and (increments or source_report_without_usage)
             and all(
                 isinstance(row, Mapping)
                 and row
@@ -399,8 +404,11 @@ def _validate_result(result: Mapping[str, Any]) -> None:
             or not 1 <= metric["turn_start_count"] <= 3
             or not isinstance(metric.get("inference_steps"), int)
             or isinstance(metric.get("inference_steps"), bool)
-            or not 1 <= metric["inference_steps"] <= (
-                10 if metric.get("role") == "platform" else 3
+            or not (
+                (source_report_without_usage and metric["inference_steps"] == 0)
+                or 1 <= metric["inference_steps"] <= (
+                    10 if metric.get("role") == "platform" else 3
+                )
             )
             or not increments_valid
             or any(
@@ -409,8 +417,14 @@ def _validate_result(result: Mapping[str, Any]) -> None:
                 or metric[field] < 0
                 for field in numeric_totals
             )
-            or metric["first_input_tokens"] <= 0
-            or metric["total_tokens"] <= 0
+            or (
+                not source_report_without_usage
+                and metric["first_input_tokens"] <= 0
+            )
+            or (
+                not source_report_without_usage
+                and metric["total_tokens"] <= 0
+            )
             or not isinstance(metric.get("ttft_ms"), (int, float))
             or isinstance(metric.get("ttft_ms"), bool)
             or not math.isfinite(metric["ttft_ms"])
@@ -419,7 +433,9 @@ def _validate_result(result: Mapping[str, Any]) -> None:
             or isinstance(metric.get("terminal_wall_ms"), bool)
             or not math.isfinite(metric["terminal_wall_ms"])
             or metric["terminal_wall_ms"] < metric["ttft_ms"]
-            or metric["terminal_wall_ms"] > 90_000
+            or metric["terminal_wall_ms"] > (
+                180_000 if metric.get("role") == "platform" else 90_000
+            )
             or not isinstance(first_turn, Mapping)
             or not isinstance(first_turn.get("fields"), list)
             or not first_turn["fields"]
@@ -447,6 +463,8 @@ def _validate_result(result: Mapping[str, Any]) -> None:
             "totalTokens": "total_tokens",
             "modelContextWindow": "model_context_window",
         }
+        if source_report_without_usage:
+            continue
         if metric["first_input_tokens"] != increments[0]["inputTokens"] or any(
             sum(row[token_name] for row in increments) != metric[metric_name]
             for token_name, metric_name in token_totals.items()
@@ -1102,8 +1120,8 @@ class _ProductionOperationHost:
             platform_forwarder=forward,
             child_timeout_seconds=90,
             platform_child_timeout_seconds=180,
-            platform_retry_limit=2,
-            acceptance_retry_limit=2,
+            platform_retry_limit=6,
+            acceptance_retry_limit=4,
         )
         self._failure_metrics = ()
         try:

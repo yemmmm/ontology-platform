@@ -1,6 +1,6 @@
 # R2.3-006 精简隔离 Examiner Runtime 设计
 
-- 状态：Implemented；真实 N=2 `BLOCKED/runtime-budget`，prompt 修复待新 operation authorization 复验
+- 状态：Implemented；完整 N=2 semantic completion gate PASS（live-123，CQ-001/CQ-002 均 PASS,current/usable）
 - 权威需求：`docs/requirements/requirements-v2.3.md#r23-006-精简隔离-examiner-runtime`
 - 交付记录：`docs/delivery/records/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-delivery-record.md`
 - 共享测试计划：`docs/delivery/test-plans/2026-08-12-r2-3-006-lean-isolated-examiner-runtime-test-plan.md`
@@ -115,3 +115,19 @@ backend、Modeling/Protocol 语义、全局 Codex 指令或所有 subagent。只
 - 不根据单次 timeout 猜测或修改 timeout/provider/prompt；下一次真实 operation 必须另获授权，并直接保留完整
   failure/performance evidence。只有真实 N=2 得到六角色完整 metrics 与 ordered PASS 才能完成本需求；当前状态
   保持真实验收 `BLOCKED/runtime-infrastructure`。
+
+
+## 9. 语义检索质量修复（2026-08-15）
+
+- `semantic_context_neighborhood_query`：`VALUES ?anchor` 移入 `GRAPH` 块，修复真实 Oxigraph 上
+  related_context 邻近展开恒为空的问题。
+- `_related_for_root`：每个 context producer 最多贡献一个完整 page，再由 canonical context total order
+  排序和截断，shape constraints 不再独占 `context_limit≤3` 的小页。
+- Platform prompt/Skill：增加 fact-primary 检索——关系与 literal 优先只查属性名并使用
+  `resource_types=["fact"]`/`["relation","fact"]`；literal 已由 primary `data.object` 承载时用
+  `context_limit=0`，避免翻 shape constraints 页面。
+- Platform proxy：省略 `depth/limit/context_limit` 时机械注入 `depth=1, limit=5, context_limit=0`；
+  小检索不再依赖模型每次记得写参数，显式 `context_limit=3` 仍可请求 related_context。
+- 真实 `--stage platform` 迭代：probe-04 提交成功（8 steps、16 proxy calls、evidence 29.3k tokens、
+  answerable 且命中 CQ-001）；probe-03 对比见交付记录。
+- 详细证据见交付记录 2026-08-15 条目；完整 N=2 完成门仍需后续授权 operation 复验。

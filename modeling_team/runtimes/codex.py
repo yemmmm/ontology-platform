@@ -828,7 +828,28 @@ class _CodexChildResource:
                             )
                         )
                     )
-                    if not lean_message:
+                    if lean_message:
+                        # Lean output stays outside the generic message
+                        # accumulator, but Acceptance text-verdict recovery needs
+                        # raw agent-message and reasoning text.  Record streaming
+                        # deltas and full completed-message text under stable
+                        # item IDs; completed messages are still not promoted to
+                        # ``_messages``.
+                        if method in {
+                            "item/agentMessage/delta",
+                            "item/reasoning/textDelta",
+                            "item/reasoning/summaryTextDelta",
+                        }:
+                            item_id = params.get("itemId")
+                            delta = params.get("delta")
+                            if isinstance(item_id, str) and isinstance(delta, str):
+                                agent.message_deltas.setdefault(item_id, []).append(delta)
+                        elif method in {"item/completed", "item/updated"} and isinstance(item, Mapping):
+                            item_id = item.get("id")
+                            text = item.get("text")
+                            if isinstance(item_id, str) and isinstance(text, str) and text:
+                                agent.message_deltas.setdefault(item_id, []).append(text)
+                    else:
                         adapter._notification(agent, value)
                     if getattr(agent, "runtime_failure", None) is not None:
                         return
@@ -1447,12 +1468,58 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             source_text_json = " SOURCE_TEXT_JSON=" + json.dumps(
                 source_text, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             )
+        role_instruction = ""
+        if packet.kind == "platform":
+            role_instruction = (
+                " PLATFORM_TEXT_FALLBACK=After calling submit_examiner_report, also write "
+                "one JSON object in your reply text with exactly the top-level keys "
+                "answerability, conclusion, evidence, coverage, gaps, evidence_refs. "
+                "evidence_refs must contain every successful proxy call in order with "
+                "the exact request_digest, response_digest, artifact_path, ref_id, tool, "
+                "and page the tool returned."
+            )
+        if packet.kind == "acceptance":
+            source_ids = payload.get("source_evidence_ref_ids")
+            platform_ids = payload.get("platform_evidence_ref_ids")
+            if not isinstance(source_ids, (list, tuple)):
+                source_ids = []
+            if not isinstance(platform_ids, (list, tuple)):
+                platform_ids = []
+            normalized_source_ids = [str(value) for value in source_ids]
+            normalized_platform_ids = [str(value) for value in platform_ids]
+            pass_evidence_ids = list(dict.fromkeys(
+                [*normalized_source_ids, *normalized_platform_ids]
+            ))
+            acceptance_ids = json.dumps(
+                {
+                    "source_evidence_ref_ids": normalized_source_ids,
+                    "platform_evidence_ref_ids": normalized_platform_ids,
+                    "pass_evidence_ref_ids": pass_evidence_ids,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            role_instruction = (
+                " ACCEPTANCE_VERDICT_TASK=In your first inference call the "
+                "submit_examiner_report tool exactly once with status=PASS/FAIL/BLOCKED, "
+                "answer=one bounded sentence, current/usable=booleans, and "
+                "failure_layer/blocked_reason=null when PASS. For a PASS verdict set "
+                "evidence_ref_ids exactly to the flat list pass_evidence_ref_ids inside "
+                "EVIDENCE_IDS_JSON; never add p-numbers or source: IDs you generated "
+                "yourself. Do not reason again. "
+                "ACCEPTANCE_TEXT_FALLBACK=After the tool call, also write one JSON object "
+                "in your reply text with exactly the keys status, answer, "
+                "evidence_ref_ids, current, usable, failure_layer, blocked_reason. "
+                "EVIDENCE_IDS_JSON=" + acceptance_ids
+            )
         first_turn_text = (
             "R2.3-006 fresh immutable packet. Use only this serialized packet and submit "
             "one typed terminal report through the report-only examiner MCP server. "
             "Do not use any other context or contact other roles. PACKET_JSON="
             + packet_json
             + source_text_json
+            + role_instruction
             + f" PACKET_DIGEST={packet.canonical_digest}"
         )
         handle_digest = hashlib.sha256((packet.canonical_digest + metrics.role).encode()).hexdigest()
@@ -1623,13 +1690,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         getattr(resource, "terminal_event", False)
                         or getattr(metrics, "inference_steps", 0) >= 3
                     )
-                    and not getattr(resource, "_text_verdict_tried", False)
                 ):
                     resource._text_verdict_tried = True
                     agent = getattr(resource, "_child_agent", None)
-                    text_verdict = _extract_verdict_from_text(agent)
+                    text_verdict = self._extract_verdict_from_text(agent)
                     if text_verdict is not None:
                         resource.submitted_reports.append(text_verdict)
+                        continue
+                if (
+                    report is None
+                    and packet.kind == "platform"
+                    and (
+                        getattr(resource, "terminal_event", False)
+                        or getattr(metrics, "inference_steps", 0) >= 3
+                    )
+                ):
+                    platform_agent = getattr(resource, "_child_agent", None)
+                    text_report = self._extract_platform_report_from_text(platform_agent)
+                    if text_report is not None:
+                        resource.submitted_reports.append(text_report)
                         continue
                 # The model sometimes ends its turn after the retrieval wave
                 # without submitting the report (a DeepSeek reasoning behavior),
@@ -1641,12 +1720,32 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # report is still missing.  Platform (wave-then-stop) and
                 # Acceptance (reasoning-without-submit) both need the nudge;
                 # Source submits directly and would exceed the 3-step budget.
+                platform_receipt_count = 0
+                if packet.kind == "platform":
+                    try:
+                        proxy = getattr(resource, "proxy", None)
+                        snapshots = getattr(proxy, "receipt_snapshot", ()) if proxy is not None else ()
+                        if callable(snapshots):
+                            snapshots = snapshots()
+                        platform_receipt_count = (
+                            len(snapshots) if isinstance(snapshots, (list, tuple)) else 0
+                        )
+                    except Exception:
+                        platform_receipt_count = 0
+                platform_saturated = bool(
+                    packet.kind == "platform"
+                    and (
+                        getattr(metrics, "inference_steps", 0) >= 3
+                        or platform_receipt_count >= 8
+                    )
+                )
                 if (
                     packet.kind in {"platform", "acceptance"}
                     and report is None
-                    and getattr(resource, "_continuation_count", 0) < 2
+                    and getattr(resource, "_continuation_count", 0) < 3
                     and (
                         getattr(resource, "terminal_event", False)
+                        or platform_saturated
                         or (
                             getattr(metrics, "inference_steps", 0) >= 1
                             and time.monotonic() >= deadline - max(10.0, float(timeout_seconds) * 0.35)
@@ -1660,6 +1759,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         getattr(resource, "_continuation_count", 0) == 0
                         or (
                             getattr(resource, "_continuation_count", 0) == 1
+                            and time.monotonic() - getattr(resource, "_continuation_at", 0.0) >= 10.0
+                        )
+                        or (
+                            getattr(resource, "_continuation_count", 0) == 2
                             and time.monotonic() - getattr(resource, "_continuation_at", 0.0) >= 15.0
                         )
                     )
@@ -1687,14 +1790,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                                     "The tool call itself is the only valid final action."
                                 )
                             else:
-                                input_text = (
-                                    "STOP analyzing. You must NOW call the "
-                                    "submit_examiner_report tool exactly once with "
-                                    "your typed terminal report built from what you "
-                                    "already have. Do not reason further, do not "
-                                    "re-read anything, do not plan. The tool call "
-                                    "itself is the only valid final action."
-                                )
+                                if packet.kind == "platform" and platform_receipt_count:
+                                    input_text = (
+                                        f"STOP querying. You already have "
+                                        f"{platform_receipt_count} successful read calls; "
+                                        "do not make another read. Build the terminal report "
+                                        "from what you already received and call "
+                                        "submit_examiner_report exactly once now. "
+                                        "evidence_refs must contain every successful call "
+                                        "in order as p0..p"
+                                        f"{platform_receipt_count - 1} with the exact "
+                                        "request_digest/response_digest/artifact_path the tool "
+                                        "returned. Do not reason further, do not re-read, do "
+                                        "not plan. The tool call itself is the only valid "
+                                        "final action."
+                                    )
+                                else:
+                                    input_text = (
+                                        "STOP analyzing. You must NOW call the "
+                                        "submit_examiner_report tool exactly once with "
+                                        "your typed terminal report built from what you "
+                                        "already have. Do not reason further, do not "
+                                        "re-read anything, do not plan. The tool call "
+                                        "itself is the only valid final action."
+                                    )
                             active_turn_id = getattr(agent, "active_turn_id", None)
                             if isinstance(active_turn_id, str) and active_turn_id:
                                 try:
@@ -1957,12 +2076,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # R2.3-006 Examiner children are lean retrieval/verdict tasks.  A max
         # reasoning effort makes the model over-reason after tool results instead
         # of submitting; lower it one notch (high) for these children only.  The
-        # frozen formal manifest contract for modeling roles is unchanged.
+        # Platform role repeatedly stopped generating after its retrieval wave
+        # even at high, so lower Platform one additional notch (medium) while
+        # Source/Acceptance stay high.  The frozen formal manifest contract for
+        # modeling roles is unchanged.
         if formal and bool(spec.get("lean_examiner")) and child_model_override is not None:
             child_model_override = (
                 child_model_override[0],
                 child_model_override[1],
-                "high",
+                "low" if spec.get("kind") == "platform" else "high",
             )
         # DeepSeek is intentionally retained only for non-formal legacy adapters.
         # A formal run never resolves or injects the legacy provider key, even if
@@ -4419,6 +4541,51 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     @staticmethod
+    def _extract_platform_report_from_text(agent: Any) -> dict[str, Any] | None:
+        """Recover a Platform semantic report from reply text when the tool path fails."""
+        deltas = getattr(agent, "message_deltas", None)
+        if not isinstance(deltas, dict):
+            return None
+        text = "".join(
+            "".join(parts) if isinstance(parts, (list, tuple)) else str(parts)
+            for parts in deltas.values()
+        )
+        if not text:
+            return None
+        required = {
+            "answerability", "conclusion", "evidence", "coverage", "gaps", "evidence_refs"
+        }
+        decoder = json.JSONDecoder()
+        candidate: dict[str, Any] | None = None
+        for index, character in enumerate(text):
+            if character != "{":
+                continue
+            try:
+                value, _end = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict) and required.issubset(value):
+                candidate = value
+                break
+        if candidate is None:
+            return None
+        if (
+            candidate.get("answerability") not in {"answerable", "insufficient-evidence", "unavailable"}
+            or not isinstance(candidate.get("conclusion"), str)
+            or not candidate.get("conclusion")
+            or not isinstance(candidate.get("evidence"), list)
+            or not isinstance(candidate.get("gaps"), list)
+            or not isinstance(candidate.get("coverage"), dict)
+            or not isinstance(candidate.get("evidence_refs"), list)
+            or not candidate["evidence_refs"]
+        ):
+            return None
+        return {
+            key: candidate[key]
+            for key in ("answerability", "conclusion", "evidence", "coverage", "gaps", "evidence_refs")
+        }
+
+    @staticmethod
     def _extract_verdict_from_text(agent: Any) -> dict[str, Any] | None:
         """Recover a strict Acceptance verdict from the child's reply text.
 
@@ -4437,17 +4604,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
         if not text:
             return None
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            return None
-        try:
-            candidate = json.loads(match.group(0))
-        except (json.JSONDecodeError, TypeError):
-            return None
-        if not isinstance(candidate, dict):
-            return None
         required = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
-        if not required.issubset(candidate) or set(candidate) - required:
+        decoder = json.JSONDecoder()
+        candidate: dict[str, Any] | None = None
+        for index, character in enumerate(text):
+            if character != "{":
+                continue
+            try:
+                value, _end = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict) and required.issubset(value):
+                candidate = value
+                break
+        if candidate is None:
             return None
         if candidate["status"] not in {"PASS", "FAIL", "BLOCKED"}:
             return None

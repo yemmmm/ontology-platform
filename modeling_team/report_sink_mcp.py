@@ -265,16 +265,35 @@ def main() -> int:
             print(_json({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
         except Exception as exc:
             request_id = request.get("id") if isinstance(request, dict) else None
-            print(
-                _json(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "error": {"code": -32000, "message": str(exc)},
-                    }
-                ),
-                flush=True,
-            )
+            # Codex surfaces JSON-RPC tool errors as the generic "user rejected
+            # MCP tool call" and drops the detail.  Return an MCP tool result
+            # with ``isError`` so the child can read the exact rejection reason
+            # and repair the payload in its next inference.
+            if method == "tools/call":
+                print(
+                    _json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "content": [{"type": "text", "text": str(exc)}],
+                                "isError": True,
+                            },
+                        }
+                    ),
+                    flush=True,
+                )
+            else:
+                print(
+                    _json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {"code": -32000, "message": str(exc)},
+                        }
+                    ),
+                    flush=True,
+                )
     return 0
 
 

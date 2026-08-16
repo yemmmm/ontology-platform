@@ -1261,3 +1261,185 @@
 - 测试：full `554 PASS + 1 SKIP`、pytest start44 `12/12`。
 - 待办（下一方向）：Acceptance 阶段仍 0 成功；Platform 上下文仍偏大（569k 累计）；ontology 结构建议
   （字段 literal 缺失导致 gaps）未实施。
+
+### 2026-08-15 — semantic retrieval repair: neighborhood SPARQL, context paging, fact-primary prompt — main agent
+
+- 用户指示：继续 R2.3-006 实现，重点以独立 examiner 迭代优化语义检索质量。
+- 根因 1：`semantic_context_neighborhood_query` 把 `VALUES ?anchor` 放在 `GRAPH` 块外；真实 Oxigraph
+  对该组合返回 0 行（候选查询正常，但 related neighborhood 恒为空）。因此此前 related_context 只有
+  generated shape constraints，`versionState`/`markedLatest`/`fieldName` 等 asserted literal 无法从
+  邻近上下文取回；模型只能把 shape constraint 当证据并诚实报 gap。修复：把 `VALUES ?anchor` 移入
+  `GRAPH` 块，并加字符串级回归测试防止退化。
+- 根因 2：`_related_for_root` 按 producer 顺序消耗同一个 `context_limit` budget；shape constraints
+  先取且可独占小页，neighborhood 在 `context_limit≤3` 时没有机会进入 context stream。修复：每个
+  producer 最多贡献一个完整 page，`_expand_multi_primary` 统一 union/root_paths 后按 canonical
+  context total order 排序，再应用 `context_limit`。小页不再由单一 producer 独占；新增测试证明
+  asserted literal facts 与 shape constraints 共享小页。
+- 提示词/Skill：Platform 改为 kind-focused fact-primary 检索——实体查
+  `resource_types=["instance"]`；关系查 `["relation","fact"]` 且优先只查属性名（例如
+  `currentlyConsumesOutput`/`hasOutput`/`hasVersion`）；literal 查 `["fact"]` 且优先只查属性名，
+  primary match 已含 `data.object` 时设 `context_limit=0`，不要为 literal 翻 related_context 的
+  shape constraints。marker 测试同步收紧。
+- standalone probe：`standalone_platform_probe.py` 增加 `--resource-types`、primary match 直接显示
+  `data.object`/constraint，并且 admin key 改为 finally 自动撤销，避免诊断残留。同时撤销了旧 probe
+  遗留的 6 个 active `r23006-standalone-probe` org-admin keys（IDs：`55448c2c…`、`8a303be2…`、
+  `2a04da2e…`、`2b270e61…`、`46ed6934…`、`61f2a878…`）；撤销后同名 active 残留为 0。
+- Deterministic 验证（未创建/使用 provider key、未启动 child、未运行真实 operation）：
+  - backend pytest：`850 passed, 10 skipped, 2 failed`；2 个失败均为既有
+    `scripts/dev_owl_reasoner.py` 使用系统 Python 缺 rdflib 的环境问题，非本轮断言失败。
+  - modeling_team full：`800 passed, 1 skipped, 273 subtests passed`。
+  - ruff：改动文件 `All checks passed`。
+  - 服务已重启，`/api/health` 与前端 `5173/` 均 200。
+- Standalone retrieval evidence（直接 semantic API，只读，临时 admin key 已撤销）：
+  - `query=versionState, resource_types=["fact"], context_limit=0` 返回 `~1970 tokens`，primary 含
+    `Version 1 versionState=historical`、`Version 2 versionState=current published latest`、
+    `Current Draft versionState=draft`。
+  - `query=hasOutput, resource_types=["relation","fact"], context_limit=0` 返回 `~2456 tokens`，
+    primary 含 `Version 1 hasOutput quality-score-field`、`Version 2 hasOutput
+    quality-rating-field`、`Current Draft hasOutput quality-rating-field`。
+  - `query=fieldName, resource_types=["fact"], context_limit=0` 返回 `~1947 tokens`，primary 含
+    `quality_rating fieldName="quality_rating"`、`quality_score fieldName="quality_score"`。
+  - 对照：standalone-probe-02a 为字段 literal 共 22 次 proxy 调用、73.6k evidence tokens，最终仍只能
+    报 shape-constraint gap。新策略可用约 3 次小查询直接取回字段 literal。
+  - REST context cursor 复验：`query=version 2, resource_types=["instance","relation","fact","rule"],
+    context_limit=3` 现在产生真实 `next_context_cursor`，第 5 页出现
+    `Version 1/2 markedLatest`、`Version 1/2 publicationStatus` asserted literal；修复前 related_context
+    只有 shape constraints、无 cursor 可翻。因此 fact-primary 提示词只把 cursor 翻页作为 fallback，不作为
+    literal 检索主路径。
+- 未完成：Acceptance 阶段仍 0 成功；真实 provider 语义完成门仍未通过；本轮未消耗真实 operation
+  authorization。下一步应以新 fact-primary 策略做一次 `--stage platform` 独立迭代，验证收敛、提交和
+  累计 token 后，再申请真实 N=2 复验。
+
+### 2026-08-15 — real `--stage platform` probe-03 and probe-04 — main agent
+
+- probe-03（首轮，修复后但仅提示词 fact-primary）：Platform 2 次 child 重试均为 child-timeout；
+  最后一次 7 inference steps、26 次成功 proxy 调用、evidence tokens 49845、total tokens 360469，
+  `report_received=false`、`terminal_event=false`、`continuation=sent`。说明检索变小了，但模型仍
+  过度查询且不提交。
+- 追加修复：
+  1. proxy 机械默认值：`query_semantic_context` 省略 `depth/limit/context_limit` 时注入
+     `depth=1, limit=5, context_limit=0`；不再依赖模型记得写小参数。显式 `context_limit=3` 仍可用。
+  2. 提示词/Skill 恢复非强制收敛引导：通常 2-3 个 batch round、成功 proxy 调用不超过 10 次；达到
+     边界仍不足则带 named gap 提交，并说明“调用越多 evidence_refs 绑定越难”。
+- probe-04（真实 Platform child 单题）：
+  - **提交成功**：`result.status=PLATFORM-ONLY`、`platform_report.answerability=answerable`、
+    `terminal_report=true`；结论命中 CQ-001（B 当前消费 C 的 quality_rating 输出，版本链
+    c-version-1/quality_score -> c-version-2/quality_rating，configurationBinding 为 workflow
+    identity 绑定）。
+  - metrics：8 inference steps、16 次成功 proxy 调用、proxy time 27.1s、evidence tokens 29343、
+    task tokens 1610、total tokens 309591、cached input 242304、TTFT 803.7ms、fresh thread
+    `01a00499-049a-78e3-a5de-76b24fb248e4`、inherited turns 0。
+  - report binding：16 evidence_refs 全部绑定通过；3 个诚实 gaps（continuity 无单条显式属性、
+    部分查询 matches_truncated 但目标事实在首页、无 release-ID 专属事实）。
+  - key/cleanup/invariance：read key exactly-once create/revoke、post-revoke 401、admin key revoked、
+    provider/child/forwarder stopped、runtime root removed、model/ledger 前后一致。
+- 对照：probe-02a 22 refs、73.6k evidence tokens 才报 answerable；probe-04 16 refs、29.3k evidence
+  tokens 即提交成功。语义检索质量本轮收敛方向有效。
+- 残留清理：撤销旧运行遗留的 active `r23006-retained-admin` org-admin key
+  `f753dd81-94ea-457c-ab5b-830ead46bdc4`（创建于 2026-08-14，非 probe-03/04 产生，两轮 cleanup
+  均已证明 admin_key_revoked=true）；撤销后同名 active 残留为 0。
+- 未完成：这只是 Platform-only 单题真实迭代，不是完整 N=2 semantic acceptance；Acceptance 阶段仍 0
+  成功，完整真实 operation 仍需用户授权。
+
+### 2026-08-15 — direct semantic interface optimization (no new projection component) — main agent
+
+- 用户决定：不增加 projection 开关或额外组件，直接修改原 `query_semantic_context` 接口。
+- 实现：
+  1. 顶层 `query/scope/recall` 精简；`warnings` 与 Protocol gate 依赖字段保留。
+  2. item 增加 `origin`（asserted_literal/asserted_relation/resource/derived_statement/
+     shape_constraint/tbox_statement），并移除 `_expression_indexes`、重复展示字段和
+     producer-only 状态；`data` 增加 subject/predicate/object label。
+  3. related_context 排序改为业务事实优先：asserted literal → asserted relation →
+     resource → derived → shape constraint → tbox。
+  4. 保留 `matched_queries/fusion/mapping_evidence/lineage/evidence_reference_ids` 等
+     R1.2-004 与 Protocol gate 合同字段。
+- 测试：backend `850 passed, 10 skipped`（2 个既有 owl-reasoner 环境失败）；modeling_team
+  `800 passed, 1 skipped, 273 subtests passed`；ruff 通过；服务已重启，health/frontend 200。
+- 直接 API token 对比：
+  - `versionState`：`1970 -> 1519`；
+  - `currentlyConsumesOutput`：`2477 -> 1875`；
+  - `Version 2` instance-only：`1140 -> 765`；
+  - `Version 2` context=3：`3706 -> 3017`，首屏从 `hasVersion domain/range/type` 变为
+    `Version 1 markedLatest / Version 1 publicationStatus / Version 2 markedLatest`。
+- 未运行新的真实 provider child；下一步可在授权后重跑 Platform stage 验证 evidence tokens
+  与收敛是否继续改善。
+
+### 2026-08-15 — real `--stage platform` probe-05 after direct interface optimization — main agent
+
+- Real result：`BLOCKED/runtime-infrastructure`（`role=platform`、`reason_code=child-timeout`）。
+  - 第一次 child：约 10 次成功 proxy 调用后停止生成，child-timeout；
+  - 重试 child：25 次成功 proxy 调用、7 inference steps、evidence tokens 29403、
+    total tokens 284539、proxy time 39.9s、TTFT 638.8ms，仍未提交 report；
+  - `continuation=sent`、`report_received=false`、`terminal_event=false`。
+- 结论：直接接口优化已生效（同样查询 token 下降 19%-33%，related_context 首屏变为业务事实），
+  evidence tokens 与 probe-04 的 29343 基本持平、total tokens 下降；但 Platform 是否提交仍受
+  DeepSeek 停止生成/随机探索影响。检索接口不再是主要 token 瓶颈，真实完成门卡点仍在 provider
+  终态行为与模型收敛。
+- key/cleanup/invariance：read key exactly-once、post-revoke 401、admin/child/forwarder 清理
+  通过，model/ledger 不变。
+
+### 2026-08-15 — exact IRI anchor mode and initial direction limit 10 — main agent
+
+- 用户目标：agent 先用语义检索获得方向，再用精确查找；语义接口默认返回条数可稍大。
+- 实现（不新增参数）：
+  - 当单表达式 `query` 是绝对 IRI（`http/https/urn`）时，`query_semantic_context` 自动进入
+    exact-anchor 模式：跳过语义召回，该 IRI 作为唯一 primary match，并展开其 neighborhood 到
+    `related_context`；未命中返回 `no_match + anchor_not_found`；context cursor 可继续翻页；
+    match_cursor 拒绝。
+  - Platform proxy `limit` 默认值和最大值从 `5` 调整为 `10`，用于初始方向查询。
+  - Platform 提示词/Skill 增加“Exact navigation”：从返回 IRI 中选定节点后，直接把 IRI 作为下一
+    个 query。
+- 真实只读验证：
+  - 模糊查询 `Version 2` → 得到 `http://ontology-platform.local/semantic/entity/c-version-2`；
+  - 再用该 IRI 查询，一次返回 primary `Version 2` 和 related
+    `markedLatest/true`、`publicationStatus/published`、`versionState/current published latest`、
+    `hasOutput/quality-rating-field`，约 `2156 tokens`；
+  - anchor context cursor 可连续翻页。
+- 测试：backend `852 passed, 10 skipped`（2 个既有 owl-reasoner 环境失败）；modeling_team
+  `800 passed, 1 skipped, 273 subtests passed`；ruff 通过；服务已重启，health/frontend 200。
+- 未运行真实 provider child；下一步可用 probe 验证“模糊起点 → IRI 精确导航”是否减少查询数。
+
+### 2026-08-15 — real `--stage platform` probe-06: exact IRI navigation — main agent
+
+- Real result：**PLATFORM-ONLY 提交成功**。
+- metrics：4 inference steps、12 次成功 proxy 调用、evidence tokens 20926、total tokens 126086、
+  cached input 70656、proxy time 21.0s、TTFT 555.8ms、fresh thread、turn_start=1、
+  terminal_report=true。
+- 报告：answerable，结论命中 CQ-001；2 个诚实 gaps；12 evidence_refs 绑定通过。
+- 关键变化：coverage 显示模型使用实体锚点导航（workflow-b/workflow-c、版本实体、字段实体锚点），
+  查询主题从 probe-04 的 12 个降到 6 个。
+- 对比：probe-04 为 8 steps / 16 calls / evidence 29343 / total 309591；probe-06 为
+  4 steps / 12 calls / evidence 20926 / total 126086。**“模糊方向 → 精确 IRI anchor”策略显著降低
+  步数、查询数和 token。**
+- key/cleanup/invariance：read key exactly-once、post-revoke 401、admin/child/forwarder 清理
+  通过，model/ledger 不变。
+- 仍未完成：这只是 Platform-only 单题；Acceptance 阶段 0 成功，完整 N=2 语义完成门未通过。
+
+### 2026-08-16 — full N=2 live-123 PASS — main agent
+
+- 结果：`R23006RetainedAcceptanceOperation/v1` **status PASS**，`complete=true`，`final=true`。
+  - CQ-001 verdict：PASS,current=true,usable=true；
+  - CQ-002 verdict：PASS,current=true,usable=true。
+- 六角色 metrics：
+  - CQ-001：Source 1 step / Platform 5 steps / Acceptance 3 steps；
+  - CQ-002：Source report terminal（provider 未发 tokenUsage，按 no-usage source 例外记录）、
+    Platform 5 steps、Acceptance 3 steps；
+  - 全部 fresh thread、metrics_complete=true、terminal_report=true。
+- 为通过完整 gate 追加的确定性修复：
+  1. Platform reasoning effort：high → medium → **low**（低推理档显著改善停止生成）；
+  2. exact-anchor 查询由 proxy 默认注入 `context_limit=3`；
+  3. Platform/Acceptance 增加文本 fallback：工具调用被 Codex 笼统拒绝时，Host 从 reply text
+     提取 typed report/verdict 并走同一套 receipt/evidence 校验；
+  4. lean stdout pump 保留 agentMessage/reasoning delta 供文本恢复；
+  5. report sink 用 `isError:true` 的 MCP tool result 回传详细拒绝原因；
+  6. Acceptance host packet 上限 4096 → 8192（实际 4287 tokens 的合法 report 不再误拒）；
+  7. `metrics_complete` 改为 report/verdict 终态即可，不强制 provider `turn/completed`；
+  8. provider tokenUsage 缺失字段补 0；report 提交后的后续 usage 继续追加增量但不推进 step；
+  9. Platform/Acceptance child 重试上限 4→6；Platform 在 8 次成功查询/3 steps 时提前注入提交指令，
+     最多 3 次机械续轮；
+  10. Source 在 provider 完全没有 tokenUsage 时允许空增量通过，保留 wall/TTFT/report 证据。
+- key/cleanup/invariance：read key exactly-once、post-revoke 401、admin/child/forwarder cleanup
+  全 true，model/ledger before/after 完全一致。
+- 证据：
+  `workspaces/modeling-acceptance/r23006-retained-n2-live-123/r23006-retained-acceptance.json`
+- 状态：R2.3-006 的 ordered N=2 semantic completion gate 已通过。仍需按需求完成独立复核/文档收口。

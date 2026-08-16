@@ -20,22 +20,45 @@ You may query as many times as needed; there is no single-wave limit and no per-
 once" rule. A follow-up query driven by a returned cursor or referenced IRI is normal, not a
 mistake. Do not guess facts you did not receive.
 
-Keep each query small: use `limit` at most 5, `context_limit` at most 3, and `depth` of 1.
-Prefer several focused queries (one per fact you need) over one big pull; use
-`match_cursor`/`context_cursor` to page through a result instead of raising the limit. If a
-query returns irrelevant concept matches, rephrase with more specific terms (entity names,
-relation names, or property names) rather than accepting noise.
+Keep each query small: use `limit` at most 10, `context_limit` at most 3, and `depth` of 1.
+The proxy applies small defaults (`depth=1`, `limit=10`, `context_limit=0`) when you omit
+them; set `context_limit=3` only when you deliberately need `related_context`. Use the
+default `limit=10` for the initial direction query, then prefer several focused queries
+(one per fact you need); use `match_cursor`/`context_cursor` to page through a result
+instead of raising the limit. If a query returns irrelevant concept matches, rephrase with
+more specific terms (entity names, relation names, or property names) rather than accepting
+noise.
+
+Exact navigation: after any returned item gives you an absolute IRI, you may use that
+IRI itself as the next `query` value. The interface then enters exact-anchor mode and
+returns that node as the sole primary match with its direct neighborhood in
+`related_context`; no keyword guessing is involved. Use this when a returned
+`subject`, `predicate`, `object`, or `id` is an IRI and you need that node's facts.
+
+Keep each query kind-focused with `resource_types`. To resolve an entity, use
+`resource_types: ["instance"]` and query the entity name. To resolve relationships and
+their participants, use `resource_types: ["relation", "fact"]` and query the property name
+alone (for example `currentlyConsumesOutput`, `hasOutput`, or `hasVersion`); the primary
+page then contains the asserted statements, not just the property definition. To read a
+specific literal field or property value, use `resource_types: ["fact"]`, query the
+property name alone, and set `context_limit` to 0 when the primary facts already carry the
+needed `data.object`: a fact-primary result puts each asserted literal in a primary match
+with its `data.object` value. That is usually much smaller than paging through
+`related_context`, where schema shape constraints can appear alongside asserted facts.
 
 Batched rounds: in each round you may issue several independent queries together in one
 inference instead of one at a time. Group queries that target different parts of the question
-into the same round; only queries that depend on an earlier answer must wait.
+into the same round; only queries that depend on an earlier answer must wait. Prefer 2-3
+batched rounds over many single-query rounds.
 
 Converge and submit: iterate until the retrieved facts answer the question or an explicit
-unknown is warranted. You decide when the evidence is sufficient — there is no fixed round
-limit. Submit the terminal report as soon as the facts answer the question; do not keep
-querying for its own sake, and do not re-query the same fact with slightly different wording.
-If the retrieved facts cannot answer the question, submit an explicit incomplete result with a
-named gap or an unknown.
+unknown is warranted. You decide when the evidence is sufficient; a typical complete answer
+needs no more than 2-3 batched rounds and no more than 10 successful proxy calls. Submit the
+terminal report as soon as the facts answer the question; do not keep querying for its own
+sake, and do not re-query the same fact with slightly different wording. If after the third
+round or the tenth successful proxy call the evidence is still incomplete, stop querying and
+submit an explicit incomplete result with a named gap or an unknown: more calls also make the
+required `evidence_refs` locator list longer and harder to bind correctly.
 
 Each successful proxy call yields exactly one `evidence_refs` locator. Copy the returned
 `request_digest`, `response_digest`, and `artifact_path` exactly into that locator; do not

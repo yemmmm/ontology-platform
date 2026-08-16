@@ -7,6 +7,7 @@ model would see, and optionally drives a real child with the current prompt.
 from __future__ import annotations
 
 import argparse
+from typing import Any
 import json
 import sys
 import urllib.request
@@ -22,18 +23,41 @@ SCOPE = {
 }
 
 
-def _admin_key() -> str:
+def _admin_key() -> tuple[Any, str]:
     from app.core.config import Settings
     from app.repositories.postgres import create_session_factory
     from app.security.auth import create_api_key
 
     session_factory = create_session_factory(Settings(_env_file=Path("backend") / ".env"))
     with session_factory() as session:
-        _, key = create_api_key(session, name="r23006-standalone-probe", project_id=None, scopes=["admin"])
-        return key
+        record, key = create_api_key(
+            session, name="r23006-standalone-probe", project_id=None, scopes=["admin"]
+        )
+        return record, key
 
 
-def query(key: str, text: str, *, depth: int = 1, limit: int = 10, context_limit: int = 10) -> dict:
+def _revoke(record: Any) -> None:
+    from app.core.config import Settings
+    from app.repositories.postgres import create_session_factory
+    from app.repositories.models import ApiKeyModel
+    from app.security.auth import revoke_key
+
+    session_factory = create_session_factory(Settings(_env_file=Path("backend") / ".env"))
+    with session_factory() as session:
+        stored = session.get(ApiKeyModel, record.id)
+        if stored is not None:
+            revoke_key(session, stored)
+
+
+def query(
+    key: str,
+    text: str,
+    *,
+    depth: int = 1,
+    limit: int = 10,
+    context_limit: int = 10,
+    resource_types: list[str] | None = None,
+) -> dict:
     body = {
         "project_id": SCOPE["project_id"],
         "scope_mode": "ontologies",
@@ -43,6 +67,8 @@ def query(key: str, text: str, *, depth: int = 1, limit: int = 10, context_limit
         "limit": limit,
         "context_limit": context_limit,
     }
+    if resource_types is not None:
+        body["resource_types"] = resource_types
     req = urllib.request.Request(
         "http://127.0.0.1:8001/api/semantic/context:query",
         data=json.dumps(body).encode(),
@@ -58,10 +84,22 @@ def tokens_of(value: dict) -> int:
 
 def summarize(value: dict) -> str:
     out = [f"status={value.get('result_status')} truncated={value.get('truncated')}"]
-    out.append(f"primary={len(value.get('primary_matches', []))} related={len(value.get('related_context', []))}")
+    out.append(
+        f"primary={len(value.get('primary_matches', []))} "
+        f"related={len(value.get('related_context', []))}"
+    )
     out.append(f"~{tokens_of(value)} tokens")
-    for m in value.get("primary_matches", [])[:5]:
-        out.append(f"  match: {m.get('kind')} {m.get('label')} d={m.get('distance')} score={m.get('match', {}).get('score')}")
+    for m in value.get("primary_matches", [])[:10]:
+        data = m.get("data") or {}
+        suffix = ""
+        if "object" in data:
+            suffix = f" object={data['object']!r}"
+        elif data.get("constraint"):
+            suffix = f" constraint={data['constraint'].get('name')!r}"
+        out.append(
+            f"  match: {m.get('kind')} {m.get('label')} d={m.get('distance')} "
+            f"score={m.get('match', {}).get('score')}{suffix}"
+        )
     for w in value.get("warnings", [])[:3]:
         out.append(f"  warn: {w.get('code')}")
     return "\n".join(out)
@@ -73,12 +111,31 @@ def main() -> int:
     parser.add_argument("--depth", type=int, default=1)
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--context-limit", type=int, default=10)
+    parser.add_argument(
+        "--resource-types",
+        help="comma-separated subset of concept,instance,relation,fact,rule",
+    )
     args = parser.parse_args()
 
-    key = _admin_key()
-    result = query(key, args.query, depth=args.depth, limit=args.limit, context_limit=args.context_limit)
-    print(summarize(result))
-    return 0
+    record, key = _admin_key()
+    try:
+        resource_types = (
+            [item.strip() for item in args.resource_types.split(",") if item.strip()]
+            if args.resource_types
+            else None
+        )
+        result = query(
+            key,
+            args.query,
+            depth=args.depth,
+            limit=args.limit,
+            context_limit=args.context_limit,
+            resource_types=resource_types,
+        )
+        print(summarize(result))
+        return 0
+    finally:
+        _revoke(record)
 
 
 if __name__ == "__main__":
