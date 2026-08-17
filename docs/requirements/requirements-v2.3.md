@@ -2161,6 +2161,59 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 - 不因性能目标减少 source fidelity、model-state binding、fresh Examiner、typed report 或独立 Acceptance。
 - 不重新执行 R2.3-003 语义建模，不恢复已删除 unknown，不使用其未消费授权启动新需求。
 
+## R2.3-007 Modeling Team Responses Provider 路由与逐角色模型配置
+
+当前状态：`Design-reviewed；功能合同、设计与共享测试计划已评审通过，尚未实现`
+
+### 背景与问题
+
+当前 formal Modeling Team 的 Coordinator、Modeling、Protocol、Acceptance、Source Examiner 和 Platform
+Examiner 六个 package 虽然都在 model manifest 中声明模型，但 loader 与 Codex Runtime 仍要求六者使用同一
+精确 tuple `deepseek-v4-flash/deepseek/max`。Runner 还只持有一个 DeepSeek credential binding 和一个
+DeepSeek provider proxy。因此切换模型需要同步修改 manifest、硬编码校验、Provider 配置和测试，不能按角色
+快速选择不同模型或独立调整 reasoning effort。
+
+### 已确认目标
+
+1. 在现有 Team Runner 与 Codex Runtime 边界增加一层最小 Model Routing/Provider Session 组件，不修改
+   Coordinator、Modeling、Protocol、Acceptance 的角色语义、通信、平台权限或终态合同。
+2. 首期只支持 Responses API Provider：
+   - DeepSeek Direct 的 `deepseek-v4-flash`；
+   - OpenAI Direct 的 `gpt-5.6-luna`。
+3. 六个 formal package 分别配置 `model`、`model_provider` 和 `model_reasoning_effort`；同一 Team run 可以混用
+   已注册的 Responses Provider 和模型。
+4. 模型配置在 run 启动前选择、校验并冻结摘要；快速切换指下一次 fresh run 通过选择或修改 model profile
+   生效，不支持同一 run 中途热切换。
+5. Provider 能力校验必须按精确模型执行：OpenAI Luna 可使用其支持的 reasoning effort；DeepSeek 的请求档位
+   按官方实际映射记录 effective effort，不把请求档位伪装成不同的真实推理强度。
+6. 继续保持 Host-owned credential、Agent 进程零 plaintext secret、loopback-only provider session、typed
+   failure、最终 aggregate secret audit 和确定性 cleanup。每个实际使用的 Provider 独立 preflight、启动和清理。
+7. baseline、Runtime evidence 和最终报告必须记录每个角色实际生效的 provider/model/requested effort/effective
+   effort 及配置摘要，不记录 credential、credential path、secret digest 或 provider free text。
+8. 某个角色选定的 Provider 在 preflight、启动或运行中不可用时，本次 run 必须 fail closed，记录 typed
+   `runtime/infrastructure` failure；不得自动切换 Provider 或模型。
+9. 模型配置使用可复用的具名 Team Model Profile。每个 profile 必须完整定义六个 formal package 的
+   `model_provider`、`model` 和 `model_reasoning_effort`；fresh run 通过 profile ID 选择并冻结配置，不依赖
+   临时修改六份 package manifest 完成切换。
+10. `model_reasoning_effort` 使用统一档位 `none/low/medium/high/xhigh/max`。Provider capability 负责把 requested
+    effort 显式映射为模型真实支持的 effective effort；配置摘要和运行证据必须同时记录两者。无法形成已声明
+    映射的档位必须在 run 启动前拒绝，禁止静默降级。
+
+### 当前范围边界
+
+- 不兼容 Chat Completions、Anthropic Messages 或其他非 Responses 接口。
+- OpenCode Go 当前 `deepseek-v4-flash` 的非 Responses 接口不进入本需求实现；只有其提供并验证可用的 Responses
+  接口时，才可作为后续 Provider 注册项，或另立协议适配需求。
+- 不实现运行中自动换模、负载均衡、故障转移、成本路由、质量 A/B、动态远程 Provider 注册、管理 UI 或通用
+  插件框架。
+- 不修改 Semantic Platform Core、建模业务语义、Acceptance 标准或 R2.3-006 Examiner 隔离合同。
+
+### 已完成的功能决策
+
+- Provider 故障：fail closed，不自动 fallback。
+- 快速切换入口：具名 Team Model Profile，fresh run 按 profile ID 选择。
+- reasoning effort：统一档位、Provider 显式映射，同时记录 requested/effective effort。
+
 ## R2.3-004 Pi Team Adapter
 
 当前状态：`待细化`
