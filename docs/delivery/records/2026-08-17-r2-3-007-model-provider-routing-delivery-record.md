@@ -363,3 +363,18 @@
   --check` 后提交 closure。
 - Outcome/next step：R2.3-007 原合同 + 变更 A + A6 probe 全部关闭；剩余 followup 仅 G3 真实 mixed formal smoke
   （formal run attempt 单独授权门）。
+
+### 2026-08-17T21:20:00+08:00 — Luna 正式运行授权冻结（G3 路线实证）— user/main agent
+
+- Authorization source：用户明确同意授权一次 Luna 正式运行（2026-08-17"同意，授权一次"，针对前一轮提出的
+  `openai-luna-medium` 正式运行请求）。
+- Budget：R2.3-005 StartLedger 当前 cap 75 / semantic starts 74，剩余恰好 1 个 start——本次运行消耗该 1 个，
+  不追加新 budget 授权记录。失败即终态（按 ledger 分类），不自动重试，不 fallback 到 DeepSeek/API Key。
+- Run identity：`r23005-real-20260817-luna-start76`；task `modeling_team/tasks/r2-3-005-formal-acceptance.yaml`
+  （sha256 `07ee391b…` 与 overlay 钉定一致）；overlay `r23005-start41-deepseek-r3`（candidate publication
+  sha256 `9acce460…` 核对一致）；profile `r2-3-005-modeling-team`；model profile `openai-luna-medium`——相对
+  start75 唯一变量是 model profile，任务/overlay/流程保持不变。
+- 边界：fresh scope（mode=create，平台自建 Project/Ontology）；canonical gate 使用临时 admin key（运行结束后
+  revoke）；不读取/记录 auth.json 内容；全程零 API-key 路径。
+- Cleanup owner：main agent（Delivery 角色）——运行结束后 revoke 临时 admin key、核对 run root 终态与零残留。
+- Outcome/next step：核对通过后立即启动；结果无论 PASS/FAIL 如实记录，不改写 ledger。
