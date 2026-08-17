@@ -70,6 +70,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已交付。完整 N=2 live-124 PASS：CQ-001/CQ-002 均 PASS,current=true,usable=true；六角色 fresh/typed/metrics complete 且全部有真实 tokenUsage；key exactly-once、post-revoke 401、cleanup 全 true、model/ledger 不变。证据：workspaces/modeling-acceptance/r23006-retained-n2-live-124/r23006-retained-acceptance.json` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
+| R2.3-008 | Luna 全栈路由/终态验证（复用 R2.3-005 切片） | P0 | `Draft（功能合同已确认）` | R2.3-007 路由与订阅认证交付；R2.3-005 formal 建模/验收基线 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -3656,3 +3657,36 @@ zero match、zero error、zero child residue，proxy listener/thread/socket 已�
 DeepSeek key bytes 在 retained 非 SQLite 产物中 0 files/0 occurrences。严格账本只记录 Start75 的一次
 reservation 与一次 semantic_start，无 terminal failure 或后续 start。因此 R2.3-005 完成门为 PASS，
 Start76–77 不再执行。
+
+## R2.3-008 Luna 全栈路由/终态验证（复用 R2.3-005 切片）
+
+当前状态：`Draft（功能合同已确认，设计与实施未开始）`
+
+### 背景与问题
+
+R2.3-007 已交付 provider routing 与 Luna Codex ChatGPT 订阅认证，A6 真实 probe 实证了单 turn 订阅路由
+（tool-call/terminal/零 secret/零残留），六角色逐角色投影与真实 Host preflight 亦经独立测试 PASS。但完整
+formal 六角色 Luna 运行尚未发生：R2.3-005 账本随 start75 成功终态按"首个完整结果即终局"规则封闭；
+R2.3-003 账本绑定已验收的保留本体增量序列；R2.3-002 账本上一 start 无 terminal_failure；非正式任务按
+B3 合同不能选择 model profile。缺少一个可合法消耗建模 start 的 formal 载体来实证全栈 Luna 运行。
+
+### 已确认目标（用户 2026-08-17/18 确认）
+
+1. 新建 formal run contract `R2.3-008`（scope mode=create，fresh Project/Ontology），复用
+   `r2-3-005-modeling-team` 六角色 profile 与 R2.3-005 的 Dify C→B→A 业务切片源材料、建模与验收流程
+   语义（候选应用、validation/reasoning、governed retrieval 照常执行）。
+2. contract 默认 model profile 为 `openai-luna-medium`（六角色 `openai-codex/gpt-5.6-luna`，Codex
+   ChatGPT 订阅认证；订阅 preflight、auth staging/barrier、TOML 投影沿用 R2.3-007 已交付合同）。
+3. 验收门槛为路由/终态级：六个 package（含两个 fresh Examiner child）全部经 Luna 完成真实启动、
+   Team Transport 通信、平台/MCP 工具调用、typed 终态报告与完整 cleanup（零 listener/thread/socket/
+   secret 残留）；evidence 记录逐角色 route binding 与 `auth_mode=chatgpt-subscription`。不以 N-CQ
+   建模质量可用 PASS 为完成门——质量证据自然产生并保留，但不阻塞本需求完成判定。
+4. 新建 R2.3-008 专属 StartLedger（append-only，治理规则同现有 formal 账本），首批用户授权 3 个
+   semantic start；失败按既有分类记 terminal，不自动 fallback 到 DeepSeek/API Key。
+
+### 非目标
+
+- 不产出 Luna 与 DeepSeek 的建模质量 A/B 结论（后续需求另行设计）。
+- 不修改 R2.3-007 已交付的路由/认证/清理代码，除非本需求执行中发现缺陷并按缺陷流程修复。
+- 不改变六角色语义、权限、终态合同、Acceptance schema 或 StartLedger 治理规则。
+- 不新增 Provider、不引入运行中热切换或 fallback。
