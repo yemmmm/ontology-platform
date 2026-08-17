@@ -2376,6 +2376,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             else:
                 provider_lines = _formal_codex_builtin_config_lines(child_model_override)
+                # The fresh child home performs the same thread/start models
+                # lookup as a persistent role: seed its cache so the builtin
+                # route cannot hit the online-refresh race (R2.3-008 R5-D1).
+                self._seed_models_cache(home, child_model_override.model)
             config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
@@ -3550,7 +3554,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # on the ``skills/list`` config reload.
                 provider_lines = _formal_codex_builtin_config_lines(binding)
                 lines = provider_lines[:3] + lines + provider_lines[3:]
-                self._seed_models_cache(agent, binding.model)
+                self._seed_models_cache(agent.home, binding.model)
             else:
                 lines = [
                     f'model = "{binding.model}"',
@@ -3625,7 +3629,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
         os.chmod(agent.home / "config.toml", 0o600)
 
-    def _seed_models_cache(self, agent: _Agent, model: str) -> None:
+    def _seed_models_cache(self, home: Path, model: str) -> None:
         """Seed Codex's per-home models cache for the built-in provider route.
 
         Codex 0.147.0 resolves ``thread/start`` through the models manager: with
@@ -3635,10 +3639,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         tolerated fallback and a fatal JSON-RPC ``-32603`` (R2.3-008 start3,
         third started role).  A version-matched, fresh cache entry makes the
         ``online_if_uncached`` strategy hit the cache and skips the refresh
-        entirely, so startup is deterministic.  The snapshot is the official
-        endpoint's model metadata (secret-free); Codex itself rejects a client
-        version mismatch and falls back to its own refresh, and an unknown
-        model slug keeps the legacy unseeded behavior.
+        entirely, so startup is deterministic.  Applies to both persistent
+        roles and fresh Examiner children (which run the same ``thread/start``
+        after ``semantic_start``).  The snapshot is the official endpoint's
+        model metadata (secret-free); Codex itself rejects a client version
+        mismatch and falls back to its own refresh, and an unknown model slug
+        keeps the legacy unseeded behavior.
         """
 
         snapshot_path = (
@@ -3664,7 +3670,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         seeded["fetched_at"] = (
             datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
         )
-        cache_path = agent.home / "models_cache.json"
+        cache_path = home / "models_cache.json"
         cache_path.write_text(json.dumps(seeded), encoding="utf-8")
         os.chmod(cache_path, 0o600)
 
