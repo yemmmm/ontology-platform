@@ -1,13 +1,15 @@
 # R2.3-007 Modeling Team Responses Provider 路由交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
-- Status: design-complete（reviewed；implementation pending）
+- Status: delivered（独立测试 Round 1–3 PASS；G1/G3-真实 followup BLOCKED 待 OpenAI credential 与 attempt 授权）
 - Started: 2026-08-17T14:25:49+08:00
-- Last updated: 2026-08-17T15:03:12+08:00
+- Last updated: 2026-08-17T16:25:06+08:00
 - Design: `docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery baseline: `6a0331e Close R2.3-006 with full N=2 live-124 PASS`；初始工作树 clean
-- Delivery commit: subject `Design Modeling Team provider routing`；本记录随同一提交交付，使用
+- Delivery commits: `533f99e Design Modeling Team provider routing`（design）；`8ee7aa4 Implement Modeling Team
+  provider routing`（implementation，独立测试稳定状态）；closure commit subject
+  `Close R2.3-007 with provider routing delivered`，使用
   `git log -- docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md` 解析 immutable hash
 
 ## Confirmed contract
@@ -92,6 +94,84 @@
   不运行真实 Provider G1/G2/G3，也不宣称功能可用。
 - Outcome/next step: 完成文档检查并提交设计；后续实施必须复用本设计、测试计划和交付记录。
 
+### 2026-08-17T15:11:10+08:00 — development handoff frozen — main agent
+
+- Context: 设计与共享测试计划已 reviewed（Round 2 PASS），用户要求按设计实施 v2.3-007。
+- Evidence: baseline `533f99e Design Modeling Team provider routing`，工作树 clean；DeepSeek credential
+  `~/.config/ontology-platform/modeling-team-deepseek.env` 存在（0600/owner）；OpenAI credential
+  `modeling-team-openai.env` 尚不存在。
+- Action/decision: 冻结开发范围（设计 §9 全部表面 + A-F focused tests）；验证命令
+  `PYTHONPATH=backend:. backend/.venv/bin/python -m pytest modeling_team/tests/`、`python -m compileall modeling_team/`、
+  `git diff --check`。开发不改 backend/，不触发 service restart 门。真实 Provider probe（G1/G2/G3）留在独立测试
+  Round 2/3，预先向用户确认 credential 与 attempt budget。OpenAI credential 缺失已向用户 surfaced。
+- Outcome/next step: `requirement_developer` 按冻结 scope 实施；完成后按 stable state 进入独立测试。
+
+### 2026-08-17T15:14:00+08:00 — G1 probe deferral decision — user/main agent
+
+- Context: G1 需要真实 OpenAI credential，但 `~/.config/ontology-platform/modeling-team-openai.env` 尚不存在。
+- Evidence: 用户选择"先完成实现，G1 留待后续"。
+- Action/decision: 开发与 deterministic 测试（测试组 A-F、H 回归）照常完成；G2 DeepSeek probe（credential 已存在）
+  按 Round 2 计划执行；G1 记为 BLOCKED（missing OpenAI credential），待用户创建文件后补跑，不虚构通过。
+- Outcome/next step: 等待 `requirement_developer` 完成后进入独立测试。
+
+### 2026-08-17T16:08:56+08:00 — development complete — requirement developer
+
+- Context: 按 reviewed 设计实施全部 §9 表面。
+- Evidence: 新增 `model_routing.py`、`model-profiles/{deepseek-v4-flash-max,openai-luna-medium}.yaml`、
+  `tests/test_model_routing.py`（48 tests，覆盖 A-F）；改造 `deepseek_provider_proxy.py`（provider-neutral
+  `ResponsesProviderSession`、非 2xx body drop、2xx partial stream 透明 + 固定失败）、`formal_runs.py`
+  （`default_model_profile_id` 单向迁移）、`runner.py`（profile gate、双读冻结、逐 provider credential、
+  baseline projection）、`runtimes/codex.py`（session map、逐角色投影、canonical examiner key、aggregate
+  failure/cleanup）、`__main__.py`（统一 `--model-profile`）、`r23006_acceptance_operation.py`；7 个既有测试
+  文件切到 profile seam；`standalone_platform_examiner.py` 仅移除 HEAD 既有 unused imports。
+- Action/decision: 验证结果：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → 849 passed, 1 skipped, 273 subtests passed；`compileall` OK；`git diff --check` clean；
+  `ruff check modeling_team/` All checks passed。verbatim 命令在 ambient `DEEPSEEK_API_KEY` 下有 7 个
+  pre-existing fallback-file 测试失败（已核实与 HEAD 行为一致，非本次引入）。无真实 Provider 调用、无 commit。
+- Outcome/next step: development-ready；主代理提交稳定状态后进入独立测试 Round 1。
+
+### 2026-08-17T16:17:46+08:00 — independent test Round 1 PASS + Round 2 authorization — tester/main agent
+
+- Context: 稳定状态 `8ee7aa4`；Round 1 范围为实现审查、A-F deterministic、H1 回归。
+- Evidence: tester 结论 PASS——48 focused tests、全量 849 passed/1 skipped/273 subtests、compileall/ruff/
+  diff-check clean；CLI B1-B4 与第二 provider C3 探针通过；manifest→profile 单向迁移经全仓 grep 证实；
+  ambient `DEEPSEEK_API_KEY` 下 7 个 fallback 测试失败经父提交 `533f99e` worktree 实测确认 pre-existing Low，
+  处置为记录不阻塞。测试计划 §5 已追加 Round 1。
+- Action/decision: Round 2 真实 probe 授权冻结——授权来源：用户 2026-08-17 指示按设计完成 v2.3-007 并确认
+  "先完成实现，G1 留待后续"（G2 不在延期范围）。Attempt budget：仅 G2，一次无凭据 `/responses` route probe +
+  一次最小 `high` 与一次最小 `max` Responses tool-call turn；目标 profile `deepseek-v4-flash-max`；真实模型调用
+  上限 3 次 Responses 请求；cleanup owner 为 requirement_tester（host 侧 session stop/wipe 与零残留核查）；
+  失败不自动追加重试，失败即 BLOCKED。G1 本轮记 BLOCKED（OpenAI credential 缺失）。
+- Outcome/next step: 复用同一 tester 上下文执行 Round 2；G3 与 H2/H3 留待 Round 3。
+
+### 2026-08-17T16:21:46+08:00 — independent test Round 2：G2 PASS / G1 BLOCKED — tester/main agent
+
+- Context: 稳定状态 `8ee7aa4`；授权预算 3 次真实调用上限。
+- Evidence: G2 route probe 无凭据 `/responses` HTTP 401（route 存在）；经生产等价 loopback session 各一次最小
+  `high`/`max` tool-call turn——upstream 200、完整 SSE 生命周期、exact model 回显 `deepseek-v4-flash`、
+  `function_call name=get_probe_value` round trip、`response.completed` terminal、effort 回显 high/max 与 catalog
+  一致、attacker Authorization 被替换、usage/counter 安全、两次运行 cleanup 零残留（key buffer 覆写、无线程/
+  socket 残留）。实际消耗 2/3，零重试，无 endpoint 切换。G1 stat 证实 OpenAI credential 不存在，未发起调用，
+  记 BLOCKED。无 ledger start、平台写入或 run root；探针临时脚本已清理。测试计划 §5 已追加 Round 2。
+- Action/decision: G2 释放；G1 保持 BLOCKED 待用户创建 credential 后单独授权补跑。
+- Outcome/next step: 进入 Round 3（G3 deterministic 投影 + H2/H3 回归 + 最终 secret/cleanup 审计）；G3 真实
+  mixed run 因 OpenAI credential 缺失同样 BLOCKED，且 full formal run 消耗建模 attempt，须用户单独授权。
+
+### 2026-08-17T16:25:06+08:00 — independent test Round 3 PASS + closure — tester/main agent
+
+- Context: 最终轮覆盖 G3 拆分、H2/H3 回归、H4 被动健康与最终 secret/cleanup 审计。
+- Evidence: G3 deterministic 投影以 Round 1 D1/D2 证据覆盖（六角色 TOML/thread/start 逐一等于 frozen binding，
+  双 examiner canonical package ID 无碰撞）；真实 mixed formal smoke BLOCKED（OpenAI credential 缺失 + formal
+  run attempt 未授权，未替代执行）。H2：default=tuple 三个套件 84 passed/23 subtests；StartLedger 不变量
+  30 passed/22 subtests；188 个历史 run root 与三个 ledger `.jsonl` 零 r23007 写入、零历史文件修改。H3：
+  R2.3-006 七个套件 96 passed/55 subtests。H4：`8ee7aa4` 零 `backend/` 文件，重启门未触发；被动 health
+  8001/5173 均 HTTP 200。最终审计：四 scope 文档与全 diff secret-shaped 零命中（ambient key 字符串零出现）；
+  `/tmp` 与 loopback listener 零残留。测试计划 §5 追加 Round 3，Round 0–2 未改动。
+- Action/decision: 测试器建议 close-with-followups；主代理接受。Followup：(1) G1 待 credential 就绪授权补跑；
+  (2) G3 真实 mixed smoke 待双条件；(3) pre-existing Low——ambient `DEEPSEEK_API_KEY` 下 7 个 fallback 用例
+  失败，建议单独 hermetic 化（monkeypatch.delenv），不属本需求。
+- Outcome/next step: 同步四个 scope 文档状态；`git diff --check`；closure commit。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -106,26 +186,43 @@
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
 | 0 | `6a0331e` + requirement/design/test-plan/record draft | Design only；未修改产品代码 | `git diff --check` PASS | plan review pending |
+| 1 | `8ee7aa4` | 按 reviewed 设计实现全部 §9 表面 + 48 个 A-F focused tests；无缺陷修复轮 | 全量 849 passed/1 skipped/273 subtests（`env -u DEEPSEEK_API_KEY`）；compileall/ruff/diff-check PASS | development-ready；三轮独立测试零缺陷 |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | 0 | requirement draft | UNEXECUTED | design/test plan/implementation 均未开始 | pending |
+| 1 | `8ee7aa4` | PASS | 无本需求缺陷；G1/G2/G3 未执行（按轮次）；pre-existing Low 记录 | 测试计划 §5 Round 1 详情 |
+| 2 | `8ee7aa4` | G2 PASS；G1 BLOCKED | G2 真实调用 2/3 上限、零重试；G1 缺 OpenAI credential | 测试计划 §5 Round 2 详情 |
+| 3 | `8ee7aa4` | PASS | G3 真实 mixed smoke BLOCKED（双条件）；H2/H3/H4 全绿；审计零发现 | 测试计划 §5 Round 3 详情 |
 
 ## Final verification
 
-- Required checks: `git diff --check` PASS；四个 scope 文档 secret-shaped scan 无真实 credential（仅设计占位符）
-- Runtime/restart health: 本阶段只改文档，未改 Runtime；不执行重启或 health probe
-- Documentation/status sync: requirement、reviewed design、reviewed shared test plan 与本记录已同步
-- Cleanup: 未启动模型、Provider、平台写入或 semantic start
-- Residual risks and follow-ups: OpenCode Go 非 Responses 路径明确排除；DeepSeek Responses route 未出现在当前
-  官方 endpoint 文档，必须以发布前 bounded live probe 为完成门
+- Required checks: 全量 modeling_team 套件 849 passed/1 skipped/273 subtests（`env -u DEEPSEEK_API_KEY`，
+  2026-08-17）；`compileall` OK；`ruff check modeling_team/` PASS；`git diff --check` PASS；四个 scope 文档与
+  implementation diff secret-shaped 零命中
+- Runtime/restart health: `8ee7aa4` 零 `backend/` 改动，H4 重启门未触发；被动 health `127.0.0.1:8001/api/health`
+  与 `5173/` 均 HTTP 200
+- Documentation/status sync: requirement 状态、design 状态、test plan 状态与本记录已同步至 delivered
+- Cleanup: G2 probe 临时脚本、`/tmp` 残留、loopback listener/process/key buffer 全零；无 ledger start、平台写入、
+  run root 或 semantic start；历史 run/ledger evidence 字节不变
+- Residual risks and follow-ups: (1) G1 OpenAI Luna live probe BLOCKED——待用户创建
+  `~/.config/ontology-platform/modeling-team-openai.env` 后单独授权补跑，补跑前不宣称 OpenAI 路由实证；
+  (2) G3 真实 mixed formal smoke BLOCKED——需上述 credential 加 formal run attempt 授权；(3) mixed profile 真实
+  运行期双 session 并发与 live upstream 故障 latch 未实证；(4) pre-existing Low：ambient `DEEPSEEK_API_KEY`
+  下 7 个 fallback 用例失败（父提交同样），建议单独 hermetic 化
 
 ## Retrospective
 
-- Scope or design deviations: 无；用户确认的 Responses-only、fail-closed、named profile、统一 effort 均保留
-- Rework and root causes: Round 1 暴露三个现有代码边界未写实；按最小可实施合同补齐后 Round 2 PASS
-- What shortened or delayed delivery: 复用现有六角色 manifest 和已验证 Provider proxy/cleanup 边界
-- Reusable lessons: Provider、model、role binding 与 wire protocol 必须分离命名；同名模型经不同 Provider 提供时
-  必须保留不同 route identity
+- Scope or design deviations: 无；用户确认的 Responses-only、fail-closed、named profile、统一 effort、G1 延后
+  均保留。实现中 `run` 的 profile load 延迟到 `TeamRunner.prepare` 零副作用 formal gate（in-code documented，
+  CLI 合同面不变）
+- Rework and root causes: plan review Round 1 暴露三个现有代码边界未写实；按最小可实施合同补齐后 Round 2 PASS。
+  实现与测试三轮零缺陷修复轮
+- What shortened or delayed delivery: 复用现有六角色 manifest 结构、已验证 Provider proxy/cleanup 边界与 R2.3-006
+  examiner 合同缩短交付；OpenAI credential 缺失使 G1/G3 真实 probe 延后
+- Reusable lessons: Provider、model、role binding 与 wire protocol 必须分离命名；同名模型经不同 Provider 提供
+  必须保留不同 route identity；binding lookup 必须用 canonical package ID 而非 AgentPackage.role（双 examiner
+  同 role 碰撞）；真实 probe 授权（来源、attempt budget、调用上限、cleanup owner、失败即 BLOCKED）先冻结后执行，
+  可让 live 证据零争议

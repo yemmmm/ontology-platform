@@ -1,6 +1,7 @@
 # R2.3-007 Modeling Team Responses Provider 路由设计
 
-- 状态：reviewed / 待实施（plan review Round 2 PASS）
+- 状态：implemented / 独立测试 PASS（implementation commit `8ee7aa4`；测试计划 Round 1–3 记录全部证据；
+  G1 OpenAI live probe 与 G3 真实 mixed formal smoke 因 OpenAI credential 缺失记 BLOCKED，为已记录 followup）
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Test plan：`docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery record：`docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md`

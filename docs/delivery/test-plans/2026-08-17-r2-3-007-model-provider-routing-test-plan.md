@@ -1,6 +1,7 @@
 # R2.3-007 Modeling Team Responses Provider 路由共享测试计划
 
-- 状态：reviewed / 待实施（plan review Round 2 PASS）
+- 状态：executed / Round 1–3 独立测试完成（A–F、H1–H4、G2 PASS；G1 与 G3 真实 mixed smoke BLOCKED，
+  见 §5 与 followup 记录）
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Design：`docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Delivery record：`docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md`
@@ -119,3 +120,81 @@
 | Round | Stable state | Result | Defects / unexecuted | Evidence |
 | --- | --- | --- | --- | --- |
 | 0 | design-only draft | UNEXECUTED | implementation、A-H 均未开始 | 本文第 4 节 |
+| 1 | `8ee7aa4` (worktree: only delivery-record edit pending) | PASS (Round-1 scope: gates 1-6; A-F + H1) | 无本需求 Critical/High/Medium 缺陷。G1 BLOCKED（OpenAI credential 文件不存在，且属 Round 2 授权范围）；G2/G3、H2 历史字节核对、H3/H4 留待后续轮次；完整 `run` CLI 执行留待 G3（参数传递已由单测覆盖）。发现 1 个 pre-existing Low：ambient `DEEPSEEK_API_KEY` 下 7 个 `test_fallback_file_rejects_*` 失败（父提交 `533f99e` 同样失败，非本需求引入） | 本节 Round 1 详情 |
+| 2 | `8ee7aa4`（同 Round 1 稳定状态） | G2 PASS；G1 BLOCKED（credential 缺失，未发起任何 OpenAI 调用） | G2 三项探针全部通过：route 401、`high` 与 `max` 各一次最小 tool-call turn 均 2xx/stream/terminal/exact model/effort 回显，cleanup 零残留。真实模型调用消耗 2/3 上限；零重试；未触碰 ledger/平台/产品代码。剩余：G3 mixed formal smoke 与 H2/H3/H4 属 Round 3 | 本节 Round 2 详情 |
+| 3 | `8ee7aa4`（同前稳定状态） | PASS（G3 按"确定性投影已覆盖 + 真实 mixed smoke BLOCKED"记录；H2/H3 全绿；H4 未触发且被动健康通过；最终 secret/cleanup 审计零发现） | G3 真实执行 BLOCKED：待 (a) 用户创建 OpenAI credential 文件、(b) formal run 的 attempt/start 预算单独授权；未以 DeepSeek-only 替代。H2 发现一处非缺陷观察：`workspaces/modeling-runs` 目录 mtime 2026-08-17T16:22（Round 1 确定性套件瞬时 create+delete），零保留文件被修改 | 本节 Round 3 详情 |
+
+### Round 1 详情（2026-08-17，independent tester，stable state `8ee7aa4`）
+
+实现审查（对 `git show 8ee7aa4`，18 files，全部在 `modeling_team/` 下，无 `backend/` 改动 → H4 未触发）：
+
+- 封闭 catalog：`model_routing.py` `PROVIDER_CATALOG` 仅 `deepseek-direct`/`openai-direct`，固定 endpoint/TLS/allowlist/effort mapping/credential validator；profile schema 强制字段集 `{model_provider, model, model_reasoning_effort}`，无法声明 URL/header/credential location。
+- DeepSeek effort map：`none` 不在 `effort_effective` → loader 拒绝（A4 参数化含 DeepSeek `none` case）；`low/medium/high→high`、`xhigh/max→max`，requested+effective 同时记录。OpenAI 六档 identity。
+- 逐角色 examiner 键：`runtimes/codex.py` `_validated_formal_role_binding(package_id)` 按 canonical package ID 查询；实测两个 `agent-packages/{source,platform}-examiner/package.yaml` 的 `role` 均为 `source-specialist`，mixed fixture 下二者分别解析到 openai/deepseek binding（D2）。
+- 单向迁移：全仓 grep 确认 `load_formal_model_manifest`/`model_manifest_path` 在 `model_manifest.py` 之外零引用；`FormalRunContract.default_model_profile_id`、`TeamRun.team_model_profile`、baseline `team_model_profile` 均已切换；旧 `model-manifests/` 仅剩历史资产。
+- 非 2xx：`_SessionHandler` drain+drop upstream body，本地固定 502 空 body + `provider-upstream-failed`；2xx partial stream：已发送 chunk 保持透明，transport 异常只记固定 reason，异常字符串不外传；`_signal_failure`/`_on_provider_session_failure` 均为稳定 reason code 白名单，零 provider free text。
+- Credential：OpenAI binding 复刻 DeepSeek 合同（0600/owner/非 symlink/max 4096B/精确赋值/可选单换行；prepare 只留 dev/ino/size/mtime；读取用 `O_NOFOLLOW` + fstat 复验）；无 ambient env fallback（测试在 setenv `OPENAI_API_KEY` 下仍按文件合同失败）。
+- Agent env：formal TOML `shell_environment_policy.exclude = ["DEEPSEEK_API_KEY","OPENAI_API_KEY","LLM_API_KEY"]`；`thread/start.model` 精确等于 binding.model。
+- Aggregate cleanup：`ProviderSessionManager.stop()` 逐 session 独立 stop/stop_snapshot/clear_secret，单失败不影响其他；runtime latch 首个 provider failure，后续 cleanup failure 不覆盖。
+
+执行结果（全部在 `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python` 下）：
+
+- `pytest modeling_team/tests/test_model_routing.py -q` → **48 passed**（27 函数 + 参数化）。
+- H1 全量 `pytest modeling_team/tests/ -q` → **849 passed, 1 skipped（既有 opt-in real Codex smoke）, 273 subtests passed, 0 failed**。
+- `python -m compileall -q modeling_team/` → exit 0；`ruff check modeling_team/ --config backend/pyproject.toml` → All checks passed；`git diff --check 533f99e 8ee7aa4` → clean。
+- B1–B4 CLI 直接探针：`validate --model-profile openai-luna-medium` exit 0，输出六角色 `gpt-5.6-luna medium/medium` + digest `d93f9305…`；省略参数 → `deepseek-v4-flash-max` 六角色 `max/max`；`--model-profile ../secrets|/tmp/profile.yaml|missing-profile` → exit 2 + 固定错误；`baseline --model-profile openai-luna-medium` → manifest `team_model_profile` digest 与 validate 完全一致，`formal_model_manifest` 键不存在，endpoint/credential 名/路径扫描零匹配；`run --help` 显示 `--model-profile`（run 的参数传递由单测 `test_run_subcommand_accepts_model_profile_and_passes_selection_to_prepare` 覆盖，完整执行留待 G3）。
+- C3 第二 provider 探针（openai-direct session + fake loopback upstream 418 + unique sentinel）：client 得到 502 空 body、`failures == ["provider-upstream-failed"]`、sentinel 在 snapshot/stop_snapshot 中零匹配、`upstream_errors == 1`。URL/TLS 门：非 loopback `http://` 拒绝（TLS required）、`/chat/completions` 拒绝、带 userinfo URL 拒绝、loopback `http://` 接受（fake-upstream seam）、占用端口 bind 失败为 typed `ProviderSessionError`。
+- A–F 覆盖核对：A1（`test_luna_max_model_manifest.py::test_default_profile_binds_all_six_roles_to_deepseek_max`）至 F3（`test_low_effort_evidence_records_requested_and_effective`）全部有确定性用例；E2 的 latch/无 fallback/映射不变由 `test_runtime_latches_first_provider_failure_and_cannot_be_overwritten` + 代码面无任何 fallback 路径共同证明（live mixed-run 断流行为留待 G2/G3）。F2 的 run-root 全量 sentinel 扫描由既有 start74 cleanup audit 回归覆盖，真实 run 的最终 audit 属 Round 3。
+
+Pre-existing 失败处置（developer 声明独立复核）：ambient `DEEPSEEK_API_KEY` 导出时 `test_deepseek_codex_runtime.py::test_fallback_file_rejects_*` 7 个用例在 `8ee7aa4` 与父提交 `533f99e`（临时 worktree 实测）失败完全一致，均为 "DID NOT RAISE CodexRuntimeError"——process key 优先于 fallback file 属既有 legacy 非 formal 行为，非本需求引入；unset 后全绿。处置：记录为 pre-existing 测试环境敏感问题，建议后续单独让开发 hermetic 化（monkeypatch.delenv），不构成本需求缺陷、不阻塞 Round 1。
+
+Round-1 范围外（后续轮次执行）：G1（BLOCKED：`~/.config/ontology-platform/modeling-team-openai.env` 不存在，且真实调用需 Round 2 单独授权）、G2/G3、H2 历史 run/ledger 字节核对与 profile 切换不增 start/retry 的账面复核、H3、H4（未触发）。
+
+### Round 2 详情（2026-08-17，independent tester，stable state `8ee7aa4`，授权：delivery record 冻结的 G2 预算 = 1 次 route probe + 1 次 `high` + 1 次 `max`，硬上限 3 次真实 Responses 请求，失败即 BLOCKED 不重试）
+
+G1（OpenAI Luna）— **BLOCKED（credential 缺失，非产品缺陷）**：
+
+- `stat ~/.config/ontology-platform/modeling-team-openai.env` → ENOENT（仅 stat，未读取、未创建）。
+- 未发起任何 OpenAI 网络调用。解除条件：用户按设计 §6.2 创建该文件后补跑 G1（需再次授权）。
+
+G2（DeepSeek V4 Flash）— **PASS**，三项全部首次通过、零重试：
+
+- G2a route probe（无凭据、不经 session、无 Authorization）：`POST https://api.deepseek.com/responses` → **HTTP 401**（body "Authentication Fails"，content-type 未返回）。证明 route 当前存在（非 404/405），与设计 §4.2 预期一致；不消耗模型调用。
+- G2b `high` / G2c `max`：使用**生产等价路径**——`preflight_deepseek_credential()`（默认 Host 文件，0600/owner 53B）+ `ProviderSessionManager({"deepseek-direct": binding})` + `ResponsesProviderSession` loopback（与 `CodexRuntimeAdapter` 同一代码路径，非定制 client）。客户端故意注入 `Authorization: attacker-injected-header`，session 照常替换为 Host key 并成功（200 证明 inbound auth replacement 生效）。每次运行恰好一个请求（single-shot 脚本，无重试逻辑）。
+- 两次探针共同证据（`high` / `max`）：
+  - upstream 经 loopback session 返回 **200**，`text/event-stream`，SSE 全生命周期事件序列 `response.created → in_progress → reasoning_text.delta* → (output_text.delta*) → function_call_arguments.delta → response.completed`（34/49 个增量 chunk，流式透明转发）；
+  - **exact model 回显 `deepseek-v4-flash`**；terminal `status="completed"`；
+  - **tool-call round trip**：output items 含 `function_call name="get_probe_value"`、`call_id` 存在、`arguments="{}"`（单次请求内完成 tool-call + terminal，未追加第二轮调用）；
+  - **requested/effective effort**：请求 `reasoning.effort` 分别为 `high`/`max`，catalog 映射 `high→high`、`max→max`，响应 `reasoning` 回显 `{'effort': 'high'}` / `{'effort': 'max'}`；
+  - **safe usage**：`high` input 352（cached 256）/output 43（reasoning 13）/total 395；`max` input 365/output 68（reasoning 24）/total 433；
+  - **safe status counters**：`requests=1, upstream_errors=0, rejected=0, client_disconnects=0`；`on_failure` 回调为空（零 provider failure latch）；
+  - **cleanup 零残留**：`stop()` 报告 `shutdown_ok/server_close_ok/thread_joined=True, thread_alive=False, socket_open=False, lifecycle_failure=False`；session key buffer stop 后 0 字节（全零）；manager sessions 清空、`listening=False`、无 `formal-provider-session-*` 残留线程；stop 后 `base_url_for` 为 typed refusal。
+- 模型调用消耗：**2 / 3**（route probe 401 不计）。探针脚本用后即删；未创建 run root（`workspaces/modeling-runs` 零 r23007 条目）、无 ledger start、无平台写入、未修改任何产品/设计/需求/交付记录文件。
+
+Round-2 范围外：G3 mixed formal smoke、H2（历史 run/ledger 字节与 start/retry 账面复核）、H3、最终 secret/cleanup audit——属 Round 3；G1 待 credential 就绪后另行授权补跑。
+
+### Round 3 详情（2026-08-17，independent tester，stable state `8ee7aa4`，零真实 Provider 调用）
+
+G3 — 拆分记录：
+
+- **确定性逐角色投影（已覆盖）**：Round 1 D1/D2 证据——mixed fixture 下四个 persistent role 的真实生成 TOML（model/provider/effective effort/base_url/wire_api/env exclude）与 `thread/start.model` 逐一等于 frozen binding，无默认 provider/model 覆盖；Source/Platform Examiner 两个 fresh child kind 按 canonical package ID（`source-examiner`/`platform-examiner`）解析到各自 provider 的独立 session base URL 与 effective effort，尽管二者 `AgentPackage.role` 均为 `source-specialist`。
+- **真实 mixed formal smoke：BLOCKED**，解除条件：(a) 用户按设计 §6.2 创建 `~/.config/ontology-platform/modeling-team-openai.env`（本轮再次 stat 确认仍不存在）；(b) 用户单独授权一次 formal run 的建模 attempt/start 预算（StartLedger 记账）。明确未以 DeepSeek-only run 替代（不满足 "mixed" 且会消耗预算），未创建任何 ledger start 或 run root。
+
+H2 — formal/回归（全绿，`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest … -q`）：
+
+- 默认 profile = 原 DeepSeek tuple：`test_luna_max_model_manifest.py + test_r23003_incremental_contract.py + test_r23005_contracts.py` → **84 passed, 23 subtests**（含 `test_default_profile_binds_all_six_roles_to_deepseek_max` 与 formal contract gate）。
+- StartLedger 授权不变量：`test_start_ledger_r63.py + test_r23005_ledger_isolation.py + test_r23005_budget_extension.py` → **30 passed, 22 subtests**。
+- fresh run 不读旧 manifest：Round 1 全仓 grep（`load_formal_model_manifest`/`model_manifest_path` 定义模块外零引用）+ 上述套件内 gate 测试共同证明。
+- 历史证据完整性：`workspaces/modeling-runs`（188 个 run root）无任何 r2-3-007/r23007 条目（4 个 "007" 命中均为 2026-07-22 的 `r11007-live-*`，属 R1.1 历史）；三个 StartLedger `.jsonl`（94/66/332 条）`grep -c r23007` 均为 0，最后条目时间 2026-08-06/08-10/08-12；`find . -newermt 2026-08-16` 仅命中目录自身 mtime `2026-08-17T16:22`（Round 1 确定性套件的瞬时 create+delete 所致），**零保留文件**在 2026-08-16 后被修改。
+
+H3 — R2.3-006 回归：`test_r23006_acceptance_operation.py + test_r23006_lean_runtime.py + test_start44_examiner_contract.py + test_start74_cleanup_audit.py + test_examiner_stdout_pump.py + test_candidate_platform_gate.py + test_deepseek_provider_proxy.py` → **96 passed, 55 subtests**（fresh examiner、typed report、exactly-once revoke、invariance、secret audit、zero-residue 全保持）。
+
+H4 — 条件重启门：`git show 8ee7aa4 --stat` 18 文件全部在 `modeling_team/` 下，`backend/` 命中数为 0 → 门未触发，未重启。被动健康检查：`curl --fail http://127.0.0.1:8001/api/health` → HTTP 200；`curl --fail http://127.0.0.1:5173/` → HTTP 200。
+
+最终 secret/cleanup 审计（零发现）：
+
+- 四份 scope 文档（requirement §R2.3-007、design、本计划、delivery record）与 `git show 8ee7aa4` diff：`sk-[a-z0-9]{16,}` 等 secret-shaped 模式零命中；全部 `*_API_KEY=` 出现均为设计占位符（`<non-whitespace-value>`、`OPENAI_API_KEY=...` 合同记法）或测试 sentinel；本轮已知的 ambient DeepSeek key 字符串在仓库文件中零出现。DeepSeek credential 文件值从未被读取进任何文档/脚本输出。
+- 残留：`/tmp` 无 `mt-ex-*`、无 `r23007*` 探针文件（两轮探针脚本均已即用即删）；`ss -ltnp` 仅见既有服务（uvicorn 8001、knowledge-base 8083），Round 2 probe 端口（45007/56579）零残留 listener；无 probe 残留进程。
+- 测试数据归属：Rounds 1–3 在仓库内唯一写入为本测试计划 §5 的三轮追加；无其他测试产物保留。
+
+**总体建议**：close-with-followups——R2.3-007 实现按本计划可判定范围（A-F、H1-H4、G2）全部通过，无产品缺陷；followups：(1) G1 待 OpenAI credential 就绪后授权补跑；(2) G3 真实 mixed formal smoke 待 (a)(b) 双条件；(3) pre-existing Low：`test_deepseek_codex_runtime.py` 7 个 fallback 用例建议 hermetic 化（`monkeypatch.delenv`）。

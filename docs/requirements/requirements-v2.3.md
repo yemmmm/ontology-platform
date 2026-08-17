@@ -2163,7 +2163,7 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 
 ## R2.3-007 Modeling Team Responses Provider 路由与逐角色模型配置
 
-当前状态：`Design-reviewed；功能合同、设计与共享测试计划已评审通过，尚未实现`
+当前状态：`已实现并独立测试 PASS（implementation commit 8ee7aa4；A–F deterministic、H1–H4 回归、G2 DeepSeek live probe 全通过）。遗留 followup：G1 OpenAI Luna live probe 与 G3 真实 mixed formal smoke BLOCKED——待用户按设计 §6.2 创建 OpenAI credential 并单独授权 formal run attempt 后补跑；补跑前不得宣称 OpenAI 路由已实证`
 
 ### 背景与问题
 
