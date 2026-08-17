@@ -4181,6 +4181,7 @@ class RunnerAcceptanceCarrier:
         formal_deferred_pump = self.task_id in {
             "r2-3-005-formal-acceptance",
             "r2-3-003-existing-scope-incremental",
+            "r2-3-008-formal-acceptance",
         }
         if formal_deferred_pump:
             resource_spec["defer_output_pump"] = True

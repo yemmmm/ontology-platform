@@ -62,7 +62,7 @@ SAFE_PROTOCOL_TOOLS = frozenset(
 SAFE_PROTOCOL_TOOLS_R23003 = SAFE_PROTOCOL_TOOLS | {"get_entity_statement_context"}
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
 _FORMAL_PROFILE_IDS = frozenset(
-    {"r2-3-005-modeling-team", "r2-3-003-modeling-team"}
+    {"r2-3-005-modeling-team", "r2-3-003-modeling-team", "r2-3-008-modeling-team"}
 )
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0

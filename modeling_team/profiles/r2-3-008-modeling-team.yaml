@@ -1,0 +1,27 @@
+schema_version: 1
+profile_id: r2-3-008-modeling-team
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+  - agent_id: acceptance
+    package: acceptance
+communication:
+  - from: coordinator
+    to: [modeling, protocol, acceptance]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+  - from: acceptance
+    to: [coordinator]
+parameters:
+  formal_contract: r2-3-008-luna-route-create
+  acceptance_standard: modeling_team/references/r2-3-008-acceptance-standard.json
+  child_kinds: [source_examiner, platform_examiner]
+  generic_multi_agent: false
+  candidate_progress_timeout_seconds: 300

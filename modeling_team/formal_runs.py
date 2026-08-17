@@ -65,9 +65,21 @@ R2_3_003_CONTRACT = FormalRunContract(
     deletion_policy=deletion_policy(),
 )
 
+R2_3_008_CONTRACT = FormalRunContract(
+    requirement_id="R2.3-008",
+    contract_id="r2-3-008-luna-route-create",
+    profile_id="r2-3-008-modeling-team",
+    task_id="r2-3-008-formal-acceptance",
+    scope_mode="create",
+    default_model_profile_id="openai-luna-medium",
+    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard.json",
+    ledger_requirement_id="R2.3-008",
+)
+
 FORMAL_RUN_CONTRACTS: tuple[FormalRunContract, ...] = (
     R2_3_005_CONTRACT,
     R2_3_003_CONTRACT,
+    R2_3_008_CONTRACT,
 )
 
 
@@ -199,6 +211,7 @@ __all__ = [
     "FORMAL_RUN_CONTRACTS",
     "R2_3_003_CONTRACT",
     "R2_3_005_CONTRACT",
+    "R2_3_008_CONTRACT",
     "FormalRunContract",
     "formal_run_contract_for",
     "load_formal_run_configuration",

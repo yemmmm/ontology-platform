@@ -438,10 +438,17 @@ def test_cli_validate_accepts_model_profile_and_defaults_to_contract(
 
     from modeling_team.formal_runs import FORMAL_RUN_CONTRACTS
 
-    assert all(
-        contract.default_model_profile_id == DEFAULT_MODEL_PROFILE_ID
+    # The closed registry keeps the exact requirement-owned defaults: R2.3-008
+    # is the Luna subscription carrier; every other formal contract still
+    # defaults to the DeepSeek profile.
+    assert {
+        contract.requirement_id: contract.default_model_profile_id
         for contract in FORMAL_RUN_CONTRACTS
-    )
+    } == {
+        "R2.3-005": DEFAULT_MODEL_PROFILE_ID,
+        "R2.3-003": DEFAULT_MODEL_PROFILE_ID,
+        "R2.3-008": "openai-luna-medium",
+    }
 
 
 @pytest.mark.parametrize(
