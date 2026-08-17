@@ -11,7 +11,13 @@ from pathlib import Path
 import yaml
 
 from .contracts import TeamConfigurationError, load_formal_team_configuration, repository_root
-from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
+from .formal_runs import (
+    FORMAL_PROFILE_IDS,
+    FORMAL_TASK_IDS,
+    FormalRunContract,
+    formal_run_contract_for,
+    load_formal_run_configuration,
+)
 from .model_routing import load_team_model_profile
 from .handoff import publish_offline_scope_handoff
 from .monitor_handoff import (
@@ -501,12 +507,10 @@ def main() -> int:
                 args.profile, args.task, root=root
             )
         elif formal_contract is None and (
-            getattr(getattr(configuration, "profile", None), "profile_id", None) in {
-                "r2-3-003-modeling-team", "r2-3-005-modeling-team"
-            }
-            or getattr(getattr(configuration, "task", None), "task_id", None) in {
-                "r2-3-003-existing-scope-incremental", "r2-3-005-formal-acceptance"
-            }
+            getattr(getattr(configuration, "profile", None), "profile_id", None)
+            in FORMAL_PROFILE_IDS
+            or getattr(getattr(configuration, "task", None), "task_id", None)
+            in FORMAL_TASK_IDS
         ):
             raise TeamConfigurationError("unknown or cross-wired formal run contract")
         task_overlay = (

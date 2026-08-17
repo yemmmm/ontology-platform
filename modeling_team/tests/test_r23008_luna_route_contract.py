@@ -293,6 +293,60 @@ class R23008ContractTests(unittest.TestCase):
         self.assertNotIn("defer_output_pump", nonformal_specs[0])
 
 
+NON_FORMAL_PROFILE_PATH = ROOT / "modeling_team/profiles/base-three-agent.yaml"
+NON_FORMAL_TASK_PATH = ROOT / "modeling_team/tasks/new-scope-business-slice.yaml"
+
+
+class R23008CrossWireGuardTests(unittest.TestCase):
+    """R1-D1 repair: every cross-wire fail-closed guard registers the 008 identity.
+
+    The three guards (``__main__`` shared loader, ``TeamRunner.prepare``, and
+    ``TeamRunner.preview_baseline``) previously enumerated only 005/003, so a
+    cross-wired 008 pair silently degraded to a non-formal run.  The guard sets
+    are now derived from ``FORMAL_PROFILE_IDS``/``FORMAL_TASK_IDS`` in the
+    closed registry; these tests pin both cross-wire directions at each site.
+    """
+
+    def test_cli_guard_rejects_r23008_identity_in_both_directions(self) -> None:
+        pairs = (
+            (PROFILE_PATH, NON_FORMAL_TASK_PATH),
+            (NON_FORMAL_PROFILE_PATH, TASK_PATH),
+            # 005 regression: the pre-existing guard behavior stays intact.
+            (
+                ROOT / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+                NON_FORMAL_TASK_PATH,
+            ),
+        )
+        for profile_path, task_path in pairs:
+            with self.subTest(profile=profile_path.name, task=task_path.name):
+                argv = [
+                    "modeling_team",
+                    "validate",
+                    "--profile",
+                    str(profile_path),
+                    "--task",
+                    str(task_path),
+                ]
+                with patch.object(team_main.sys, "argv", argv):
+                    self.assertEqual(team_main.main(), 2)
+
+    def test_preview_baseline_guard_rejects_r23008_identity_in_both_directions(self) -> None:
+        for profile_path, task_path in (
+            (PROFILE_PATH, NON_FORMAL_TASK_PATH),
+            (NON_FORMAL_PROFILE_PATH, TASK_PATH),
+        ):
+            with self.subTest(profile=profile_path.name, task=task_path.name):
+                with self.assertRaisesRegex(
+                    TeamConfigurationError, "unknown or cross-wired formal run contract"
+                ):
+                    TeamRunner.preview_baseline(
+                        repository_root=ROOT,
+                        run_id="r23008-crosswire-guard-probe",
+                        profile_path=profile_path,
+                        task_path=task_path,
+                    )
+
+
 class R23008LedgerTests(unittest.TestCase):
     def test_b1_resolver_returns_the_exact_formal_mirror_policy(self) -> None:
         config = resolve_ledger_config("R2.3-008")
@@ -681,6 +735,35 @@ class R23008ModelProfileTests(unittest.TestCase):
         )
         with self.assertRaises(TeamConfigurationError):
             team_main._resolve_model_profile_selection("openai-luna-medium", None)
+
+    def test_r1d1_prepare_guard_rejects_r23008_identity_in_both_directions(self) -> None:
+        # The prepare guard fires before any model, preflight, run-root, or
+        # ledger side effect, so cross-wired pairs raise with no state created.
+        ledger_root = Path(tempfile.mkdtemp(prefix="r23008-ledger-")) / "ledger"
+        runner = self._runner(ledger_root)
+        runner._canonical_ledger_root = lambda: ledger_root
+        try:
+            for profile_path, task_path in (
+                (PROFILE_PATH, NON_FORMAL_TASK_PATH),
+                (NON_FORMAL_PROFILE_PATH, TASK_PATH),
+            ):
+                with self.subTest(profile=profile_path.name, task=task_path.name):
+                    with self.assertRaisesRegex(
+                        TeamConfigurationError, "unknown or cross-wired formal run contract"
+                    ):
+                        runner.prepare(
+                            run_id="r23008-crosswire-guard-probe",
+                            profile_path=profile_path,
+                            task_path=task_path,
+                            scope={"mode": "create"},
+                        )
+            self.assertFalse(ledger_root.exists())
+            self.assertFalse(
+                (ROOT / "workspaces" / "modeling-runs" / "r23008-crosswire-guard-probe").exists()
+            )
+        finally:
+            runner.cleanup()
+            rmtree(ledger_root.parent)
 
 
 if __name__ == "__main__":

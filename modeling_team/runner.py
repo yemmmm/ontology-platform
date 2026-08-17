@@ -30,7 +30,13 @@ from .model_routing import (
     preflight_profile_credentials,
     profile_requires_codex_subscription_auth,
 )
-from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
+from .formal_runs import (
+    FORMAL_PROFILE_IDS,
+    FORMAL_TASK_IDS,
+    FormalRunContract,
+    formal_run_contract_for,
+    load_formal_run_configuration,
+)
 from .r23003_contract import (
     R2_3_003_TARGET_IDS,
     validate_r23003_candidate_declarations,
@@ -352,16 +358,9 @@ class TeamRunner:
             profile_path, task_path, root=self.repository_root
         )
         formal_contract = formal_run_contract_for(config)
-        formal_identity = {
-            "r2-3-005-modeling-team",
-            "r2-3-003-modeling-team",
-        }
-        formal_tasks = {
-            "r2-3-005-formal-acceptance",
-            "r2-3-003-existing-scope-incremental",
-        }
         if formal_contract is None and (
-            config.profile.profile_id in formal_identity or config.task.task_id in formal_tasks
+            config.profile.profile_id in FORMAL_PROFILE_IDS
+            or config.task.task_id in FORMAL_TASK_IDS
         ):
             raise TeamConfigurationError("unknown or cross-wired formal run contract")
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
@@ -1181,11 +1180,10 @@ class TeamRunner:
             configuration, _ = load_formal_run_configuration(
                 profile_path, task_path, root=repository_root
             )
-        elif configuration.profile.profile_id in {
-            "r2-3-003-modeling-team", "r2-3-005-modeling-team"
-        } or configuration.task.task_id in {
-            "r2-3-003-existing-scope-incremental", "r2-3-005-formal-acceptance"
-        }:
+        elif (
+            configuration.profile.profile_id in FORMAL_PROFILE_IDS
+            or configuration.task.task_id in FORMAL_TASK_IDS
+        ):
             raise TeamConfigurationError("unknown or cross-wired formal run contract")
         probe = object.__new__(cls)
         probe.repository_root = repository_root

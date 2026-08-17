@@ -82,6 +82,17 @@ FORMAL_RUN_CONTRACTS: tuple[FormalRunContract, ...] = (
     R2_3_008_CONTRACT,
 )
 
+# Fail-closed cross-wire guard identities, derived from the closed registry so
+# every registered formal contract participates without a second literal list
+# that can drift (R2.3-008 repair: the previous 005/003-only literals let a
+# cross-wired 008 pair silently degrade to a non-formal run).
+FORMAL_PROFILE_IDS: frozenset[str] = frozenset(
+    contract.profile_id for contract in FORMAL_RUN_CONTRACTS
+)
+FORMAL_TASK_IDS: frozenset[str] = frozenset(
+    contract.task_id for contract in FORMAL_RUN_CONTRACTS
+)
+
 
 def formal_run_contract_for(
     configuration: TeamConfiguration | None = None,
@@ -208,7 +219,9 @@ def load_formal_run_configuration(
 
 
 __all__ = [
+    "FORMAL_PROFILE_IDS",
     "FORMAL_RUN_CONTRACTS",
+    "FORMAL_TASK_IDS",
     "R2_3_003_CONTRACT",
     "R2_3_005_CONTRACT",
     "R2_3_008_CONTRACT",
