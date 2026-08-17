@@ -277,3 +277,60 @@
 - 结论：按 start1 条目预承诺的判定——**0.147.0 app-server 与当前 `_initialize` 握手机械确定性不兼容**
   （runtime/infrastructure），回 requirement_developer 窄修复 handshake 层；修复经 deterministic 复测后再
   决定 start3（预算仍 3/3）。
+
+### Round 4（2026-08-18，start1/start2 同形失败缺陷修复复测）
+
+- Stable state：commit `303d701`（main HEAD）"Fix builtin-provider config splice dropping [features] header"；
+  工作树仅含主代理未提交的 delivery record 追加（docs only）。测试者为独立 requirement_tester，未参与
+  修复与 developer 离线复现。零真实模型调用、零 run root 创建、零真实账本写入、零真实 run；未读取/记录
+  任何真实 `auth.json`/token 内容（探针 host auth 全部为自造 `{}` 字节）。
+- 范围：start1/start2 缺陷修复 `303d701` 的独立复测——实现审查 + 独立 config-shape 验证（真实
+  `load_profile`/`load_task`/`load_team_model_profile` + 真实 `_write_config`/child impl）+ 真实 codex
+  0.147.0 二进制 config 解析对照 + 全量回归 + 账本/证据 hygiene。
+- 实现审查（PASS）：
+  - `git show 303d701 --stat`：仅 `modeling_team/runtimes/codex.py`（+8/−2，其中代码变更仅
+    codex.py:3530 一行拼接 `provider_lines[:3] + lines + provider_lines[3:]` + 注释扩展）与新测试
+    `modeling_team/tests/test_r23008_codex_builtin_config.py`（3 tests）；零 `backend/`/`frontend/` 改动
+    （`git diff 303d701 --stat -- backend/ frontend/` 为空）；零 semantics/ledger/acceptance 表面改动。
+  - 外部会话路径（codex.py:3549，`lines` 已预置 model trio）的 `lines[3:]` 截断语义正确保留未动；
+    Examiner child 路径（codex.py:2364）本就使用正确的非截断拼接 `provider_lines[:3] + config_lines +
+    provider_lines[3:]`，从未受此缺陷影响（start1/start2 亦未到达 child 启动）。
+- 独立 config-shape 验证（PASS，一次性探针，已删除）：真实加载 008 profile（strict）/task/model profile
+  `openai-luna-medium`（sha256 `b6dee50e…`），驱动真实 `_write_config`（四个 persistent role）与真实
+  `_launch_acceptance_child_impl`（source/platform 两类 fresh Examiner child，fake process/RPC surface，
+  均完成完整 impl startup 含 thread/start），对全部六角色 config.toml 以 tomllib 断言——
+  `sandbox_mode=="read-only"`、`web_search=="disabled"`、11 个 feature flag 恰好构成 `[features]` 表且
+  全部为 false、零 flag 裸露顶层、model trio（`gpt-5.6-luna`/`openai`/`medium`）恰出现一次、
+  `[shell_environment_policy]`（inherit="core"）在位、顶层键恰为封闭集
+  {model, model_provider, model_reasoning_effort, sandbox_mode, web_search, features, mcp_servers,
+  shell_environment_policy}、无自定义 `[model_providers]`；child 另含 examiner_report（platform 再含
+  platform_read_proxy）且不含 team_transport。128 项断言全过、0 失败。
+- pre-fix 失败签名交叉验证（PASS）：从 post-fix 真实 config 按旧拼接语义（去第 4–6 行：
+  `sandbox_mode`/`web_search`/`[features]`）推导 pre-fix 形状——六角色推导形状均使 11 个 flag 裸露顶层、
+  第 4 行为 `apps = false`；以真实 codex 0.147.0 二进制对照（`CODEX_HOME=<各自 home> codex login status`，
+  零模型调用）：pre-fix home 报
+  `Error loading configuration: …/config.toml:4:8: invalid type: boolean \`false\`, expected struct
+  AppsConfigToml`——与 start1/start2 保留的 `skills/list` -32603 失败逐字同形；post-fix home 正常解析并
+  走完命令（无任何 config 错误/警告）。修复与根因之间的因果链由独立证据闭合。
+- 回归（PASS）：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **890 passed, 1 skipped, 293 subtests passed（44.71s）**（较 Round 2 增 3
+  tests 即新回归测试）；`compileall modeling_team/` OK；`ruff check modeling_team/ --config
+  backend/pyproject.toml` All checks passed；`git diff --check`/`git diff --cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-002/003/005-start-ledger.jsonl` sha256 逐字节与 Round 1/2 记录一致
+  （`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；`.r2-3-008-start-ledger.jsonl` 恰 4 事件——start1 与
+  start2 各一条 `reservation` + 一条 `presemantic_release`（与本计划 Round 3 及 delivery record 记录的
+  post-start2 状态一致；本任务简报中"恰 2 事件"为 start2 前的旧快照），零 `semantic_start`，
+  **semantic start 预算仍 0/3 消耗**；`git status --short workspaces/ backend/ frontend/` 为空，
+  `workspaces/modeling-runs/` 零修改。
+- 未执行项：真实 app-server `skills/list` 完整握手（bwrap namespace + `_initialize`）未由本轮独立重跑——
+  该链接由 developer 真实路径离线复现（post-fix 完整 coordinator 启动、零 configWarning）覆盖，且本轮以
+  真实 0.147.0 二进制对 pre/post-fix config 的解析对照独立闭合了因果链；完整握手证明按 §4 归 start3。
+  运行时 `/tmp/r23008-formal-credential-*` 18 个目录为 developer 早前会话产物（02:26 时间戳，早于本轮），
+  非本轮创建，未处置。
+- 缺陷：无新增。start1/start2 同形 `skills/list` -32603 缺陷判 **FIXED**（独立 config-shape + 真实二进制
+  解析双重证实）。
+- 结论：**Round 4 PASS——修复清除 start3 障碍**。窄修复面（一行拼接 + 回归测试）与根因完全对应，
+  deterministic/回归/账本 hygiene 全绿；建议主代理在提交当前 delivery record 追加（start2 clean baseline
+  gate 教训：非 clean tree 会被 preflight 拒绝）并完成 §4 冻结要素后，即可消耗首个 semantic start 启动
+  start3（授权预算 3/3 未动）。测试后删除全部临时探针与 `__pycache__`；工作树仅余本测试计划与主代理
+  delivery record 的 docs 追加。

@@ -178,6 +178,24 @@
   修复经独立复测后再决定 start3（预算 3/3 未动）。
 - Outcome/next step: developer 缺陷修复循环。
 
+### 2026-08-18 — start1/start2 缺陷根因定位与窄修复 — requirement developer/main agent
+
+- Evidence: developer 以真实代码路径离线复现（真实 profile/task/model-profile 加载 + 真实 `_write_config`
+  + bwrap namespace + 真实 `_initialize`，零模型调用）：捕获 `skills/list` 错误
+  `failed to reload config: /agent/home/config.toml:4:8: invalid type: boolean false, expected struct
+  AppsConfigToml` 与 start1/start2 保留的 `configWarning`（"Invalid configuration; using defaults."，
+  range 4:8-4:12 即顶层 `apps = false`）完全对应。根因：`_write_config` formal `openai-codex`
+  builtin-provider 分支（R2.3-007 引入）从外部会话路径复制了 `lines[3:]` 截断，但该分支 `lines` 未预置
+  model trio，截断丢弃 `sandbox_mode`/`web_search`/`[features]` 表头，11 个 feature flag 裸露为顶层键；
+  旧版 CLI 容忍未知顶层键故存活至 0.147.0 升级。这也解释了 4 档本地探针全部通过（探针手写 config 含正确
+  `[features]` 表头）。
+- Action/decision: 接受修复 `303d701`——一行拼接修正（codex.py:3530）+ 注释 + 回归测试
+  `test_r23008_codex_builtin_config.py`（3 tests，对 pre-fix 验证失败、post-fix 通过；钉死
+  `sandbox_mode`/`web_search` 保留、11 flags 全部在 `[features]` 内、顶层键封闭面）。主代理逐行复核 diff
+  并确认外部会话路径的 `lines[3:]`（trio 已预置）不受影响。全量 890 passed/1 skipped/293 subtests、
+  compileall/ruff/diff-check 全绿；零 `backend/`/`frontend/` 改动。
+- Outcome/next step: requirement_tester Round 4 独立复测；通过后再决定 start3（预算 3/3）。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -194,6 +212,7 @@
 | 0 | `8a33c07` + design `8a53e27` + revision `a0f1a06` | 设计/测试计划/需求 only；未修改产品代码 | `git diff --check` PASS；plan review Round 2 PASS | development handoff frozen |
 | 1 | `5d34286` | 按冻结范围实现 §9 全部表面 + 新测试文件（A–E 矩阵）；一处既有断言按设计更新（合同默认逐需求映射） | 全量 884 passed/1 skipped/286 subtests；compileall/ruff/diff-check PASS；validate CLI 六角色 luna 投影 | development-ready；Round 1 发现 R1-D1 |
 | 2 | `a785d1d` | R1-D1 窄修复：`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，三处 cross-wire 守卫改用派生集合 + 3 测试/7 subtests | 全量 887 passed/1 skipped/293 subtests；复现命令双向 exit 2；compileall/ruff/diff-check PASS | Round 2 复测 PASS |
+| 3 | `303d701` | start1/start2 同形 `skills/list` -32603 根因修复：`_write_config` builtin-provider 分支错误 `lines[3:]` 截断（该分支未预置 model trio），丢弃 `sandbox_mode`/`web_search`/`[features]` 表头致 11 个 feature flag 裸露为顶层键，codex 0.147.0 在 `skills/list` config reload 时按 typed table 拒绝。修复为 `provider_lines[:3] + lines + provider_lines[3:]`（一行）+ 新回归测试 `test_r23008_codex_builtin_config.py`（3 tests，验证对 pre-fix 失败） | developer 真实路径离线复现（真实 `_write_config` + bwrap + `_initialize`，零模型调用）：pre-fix 复现精确 `-32603`/`configWarning`，post-fix 完整 coordinator 启动通过、零 configWarning；全量 890 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 4 独立复测进行中 |
 
 ## Independent test rounds
 
