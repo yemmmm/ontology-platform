@@ -90,6 +90,52 @@
   用户确认执行时机）；全程不读取/记录 `auth.json`/token 内容。
 - Outcome/next step: `requirement_developer` 按冻结范围实施；完成后按稳定状态进入独立测试。
 
+### 2026-08-18 — 实施完成与独立测试 Round 1（R1-D1）— requirement developer/tester
+
+- Evidence: implementation `5d34286`（9 文件：formal_runs/start_ledger/contracts/acceptance 四处身份面 + 三个镜像资产 + 新测试文件）；主代理逐文件 diff 复核镜像最小重绑定、全量 884 passed、validate CLI 六角色
+  `openai-codex/gpt-5.6-luna/medium` + `auth_mode=chatgpt-subscription`。独立测试 Round 1：A–E 矩阵全 PASS +
+  对抗抽查，但发现 R1-D1（High，矩阵外）——`__main__.py:503-513`、`runner.py:358-367`、`runner.py:1185-1192`
+  三处 cross-wire 守卫字面集合未注册 008 身份，008 profile + 非正式 task 静默降级 exit 0（主代理复现确认），
+  降级路径会在 R2.3-002 默认账本 reserve。
+- Action/decision: R1-D1 accepted-high 回 developer 窄修复。
+- Outcome/next step: 修复后 Round 2 复测。
+
+### 2026-08-18 — R1-D1 修复与独立测试 Round 2 PASS — requirement developer/tester
+
+- Evidence: 修复 `a785d1d`——`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，
+  三处守卫改用派生集合（未来注册合同自动参与，漂移类缺陷不可复发）+ 3 测试/7 subtests。主代理复核：复现
+  命令 exit 2、全量 887 passed/1 skipped/293 subtests、compile/ruff/diff-check 全绿。Round 2 复测：三条守卫
+  路径双向 fail closed、005/003 回归同形、E2 真实账本字节不变、被动健康 200/200。
+- Action/decision: deterministic 侧关闭；进入 Round 3 真实 Luna formal run 授权冻结。
+- Outcome/next step: 冻结授权后启动真实运行。
+
+### 2026-08-18 — Round 3 真实 Luna formal run 授权冻结 — user/main agent
+
+- **Authorization source**：用户 2026-08-17 "同意，授权一次"（Luna 正式运行）+ 2026-08-17/18 载体决策
+  （新开正式需求 R2.3-008、复用 R2.3-005 切片、仅路由/终态验收、首批 3 semantic start）。
+- **Budget**：R2.3-008 账本 3 个 semantic start（`_R2_3_008_INITIAL_START_CAP = 3` 编码，无开账事件）；每次
+  失败按既有四层分类记 terminal 后才决定是否消耗下一 start；不追加新 budget 授权；不自动 fallback 到
+  DeepSeek/API Key/另一 effort；run 中途不换 model profile。
+- **Run identity**：`r23008-luna-20260818-start1`；profile
+  `modeling_team/profiles/r2-3-008-modeling-team.yaml`（sha256 `24c3a6b6…`）；task
+  `modeling_team/tasks/r2-3-008-formal-acceptance.yaml`（sha256 `7d3e6094…`）；standard
+  `modeling_team/references/r2-3-008-acceptance-standard.json`（sha256 `c90e3cee…`）；model profile
+  `openai-luna-medium`（sha256 `b6dee50e…`，省略 `--model-profile`，合同默认即真实操作路径）。
+- **资产与环境冻结**：baseline `a785d1d`，工作树 clean（仅本文档追加）；Host `codex login status` =
+  Logged in using ChatGPT；`auth.json` 元数据 0600/owner/3983B（内容未读取，全程仅元数据）。
+- **调用面**：`env -u DEEPSEEK_API_KEY -u OPENAI_API_KEY ONTOLOGY_PLATFORM_ADMIN_API_KEY=<临时 admin key>
+  PYTHONPATH=backend:. backend/.venv/bin/python -m modeling_team run --profile … --task … --run-id
+  r23008-luna-20260818-start1 --scope <mode: create YAML> --base-url http://127.0.0.1:8001
+  --freeze-started-at <UTC 时间戳>`；无 task overlay（fresh create run 不需要）；canonical gate 临时 admin
+  key 运行结束即 revoke。
+- **Freeze 纪律**：本条目冻结到 ledger reservation ≤ 20 分钟；同一时刻最多一个 active reservation；run root
+  与证据完整保留。
+- **Cleanup owner**：Delivery Agent（主代理）——revoke 临时 admin key、核对 run root 终态、零残留扫描、
+  不读取/记录 `auth.json`/token 内容。
+- **完成判定**：按测试计划 §4 R1–R8 由独立评审做出，本冻结不预判结果；run 结局（settled 或 retryable
+  terminal failure）不影响路由/终态门判定。
+- Outcome/next step: 立即启动 start1。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -104,12 +150,16 @@
 | Cycle | Stable state | Change or defect | Verification | Outcome |
 | --- | --- | --- | --- | --- |
 | 0 | `8a33c07` + design `8a53e27` + revision `a0f1a06` | 设计/测试计划/需求 only；未修改产品代码 | `git diff --check` PASS；plan review Round 2 PASS | development handoff frozen |
+| 1 | `5d34286` | 按冻结范围实现 §9 全部表面 + 新测试文件（A–E 矩阵）；一处既有断言按设计更新（合同默认逐需求映射） | 全量 884 passed/1 skipped/286 subtests；compileall/ruff/diff-check PASS；validate CLI 六角色 luna 投影 | development-ready；Round 1 发现 R1-D1 |
+| 2 | `a785d1d` | R1-D1 窄修复：`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，三处 cross-wire 守卫改用派生集合 + 3 测试/7 subtests | 全量 887 passed/1 skipped/293 subtests；复现命令双向 exit 2；compileall/ruff/diff-check PASS | Round 2 复测 PASS |
 
 ## Independent test rounds
 
 | Round | Stable state | Result | Defects/unexecuted cases | Evidence |
 | --- | --- | --- | --- | --- |
 | 0 | design-reviewed | UNEXECUTED | implementation 未开始 | 测试计划 §5 |
+| 1 | `5d34286` | PASS（A–E 矩阵）+ High R1-D1（矩阵外） | cross-wire 守卫字面集合未注册 008 身份，非正式配对静默降级；Round 3 真实 run 未执行（授权门） | 测试计划 §5 Round 1 |
+| 2 | `a785d1d` | PASS | R1-D1 FIXED（三守卫路径双向 fail closed）；无回归；真实 run 留待 Round 3 授权冻结后 | 测试计划 §5 Round 2 |
 
 ## Final verification
 

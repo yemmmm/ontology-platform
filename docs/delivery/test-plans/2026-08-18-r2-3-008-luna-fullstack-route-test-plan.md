@@ -140,3 +140,109 @@
 
 - 状态：设计与实施未开始；无 Agent 启动、无 ledger start、无平台写入、无真实模型调用。
 - 本节及后续轮次 append-only；每轮记录 stable state、范围、结果、缺陷/未执行项与证据指针。
+
+### Round 1（2026-08-18，deterministic 独立测试）
+
+- Stable state：commit `5d34286`（main HEAD），工作树 clean；测试者为独立 requirement_tester，未参与
+  实现与 spot-check。零真实模型调用、零 run root 创建、零真实账本写入（账本用例全部在
+  `tempfile.TemporaryDirectory`）；未读取/记录任何 `auth.json`/token 内容。
+- 范围：计划 §3 Round 1——实现审查 + A–E 全矩阵（含 A6/A7 回归）+ 全量回归。Round 2（真实 Luna
+  run）未启动。
+- 实现审查结论：`5d34286` 仅触及设计 §9 冻结表面（formal_runs/start_ledger/contracts/acceptance 单行
+  泵扩展/三个新资产/新测试/test_model_routing.py 断言更新）；零 `backend/`/`frontend/` 改动
+  （`git diff 5d34286 --stat -- backend/ frontend/` 为空）。三个资产对
+  `git show 5d34286~1:modeling_team/...` 的 r2-3-005 对应文件 diff 仅含设计允许的重绑定
+  （profile：profile_id/formal_contract/acceptance_standard 三行；task：task_id/objective 自引用句
+  "For formal R2.3-008 (reusing the R2.3-005 slice contract),"/standard role_source 路径；standard：
+  schema_version/requirement_ref 两行）。task objective 6411 字符逐句 diff 仅该自引用句差异，无任何
+  route/terminal/quality-gate 措辞（"fallback"/"terminal" 命中均来自 005 基线原文）。`acceptance.py`
+  泵集合为 `defer_output_pump` 唯一写点（acceptance.py:4179-4187），下游 codex.py:725/2558 仅消费
+  spec 字段；`contracts.py` 封闭集单点消费（contracts.py:429）。
+- 矩阵结果（方法：开发者套件 884 passed/1 skipped/286 subtests 全绿之外，另做独立探针）：
+  - A1/A3/A4/A5：开发者套件 `test_r23008_luna_route_contract.py` 覆盖并通过；实现审查确认
+    `formal_run_contract_for` 精确对匹配 + authoritative path/参数绑定沿用通用逻辑。
+  - A2：008↔005 双向、008 profile+003 task 经 CLI 实测 exit 2 "unknown or cross-wired formal run
+    contract"。**但见缺陷 R1-D1（High）：008 身份与非 formal 对端（如 `base-capability-smoke` /
+    `new-scope-business-slice` / `base-three-agent.yaml`）的错配未被既有 cross-wire 守卫字面集合拒绝，
+    validate exit 0 静默降级为非 formal 配置——同形 005/003 错配均 exit 2。**
+  - A6：独立探针（`load_profile(strict=True)`）——008 profile 携 300s 通过；未注册 ID 携同参数被拒
+    （"candidate progress timeout is restricted to the formal Profile"）；同未注册 ID 删参数后可加载
+    （证明门是参数而非 ID 本身）。
+  - A7：开发者测试经真实 `RunnerAcceptanceCarrier.start_child` + child factory 断言 spec
+    `defer_output_pump=True`（008/005/003）与非 formal 不含该键；实现审查确认唯一写点。
+  - B1/B2/B4/B5/B6：独立探针（fresh temp dir、真实 `StartLedger`）——resolver 精确配置（filename/cap
+    3/increment 3/flags）；3 个 reserve→semantic_start 后第 4 个 start 以 "semantic-start budget is
+    exhausted" 拒绝；terminal failure 后 `authorize_budget(3)` 扩容后第 4 个 start 成功；
+    `initial_authorization` 对 R2.3-008 抛 `TeamConfigurationError`；篡改账本记录重放被拒。
+  - C1/C2/C3/C5：开发者套件覆盖并通过；C4 由本测试独立 diff 证实（见实现审查）。
+  - D1/D2/D3/D4：CLI 实测省略 `--model-profile` 时合同默认 `openai-luna-medium`，六角色
+    `openai-codex/gpt-5.6-luna` requested/effective `medium/medium` `auth_mode=chatgpt-subscription`；
+    显式 `--model-profile deepseek-v4-flash-max` exit 0 投影 `deepseek-direct`；preflight 顺序由
+    runner.py:446-455 代码审查确认在 reservation/run root 之前。
+  - E1/E4：`formal_runs.py` diff 仅新增（005/003 合同字段字节不变）；`openai-luna-medium.yaml` 与 closed
+    catalog 不在 `5d34286` 触及文件中；R2.3-006/007 既有套件在 884 绿内。
+  - E2：`.r2-3-002/003/005-start-ledger.jsonl` 测试前后 sha256 逐字节一致（002:
+    `bef7e8be…f632`、003: `af64172…0dcc`、005: `328d10d…9ae2`）；`workspaces/modeling-runs/` 无任何
+    `.r2-3-008-start-ledger.*`。
+  - E3：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+    modeling_team/tests/ -q` → **884 passed, 1 skipped, 286 subtests passed（44.97s）**；
+    `compileall modeling_team/` OK；`ruff check modeling_team/ --config backend/pyproject.toml` → All
+    checks passed；`git diff --check`/`git diff --cached --check` 干净。
+  - E5：`git diff 5d34286 --stat -- backend/ frontend/` 为空（重启门未触发）；被动 health
+    `127.0.0.1:8001/api/health`=200、`127.0.0.1:5173/`=200。
+- 缺陷：
+  - **R1-D1（High，相邻 fail-closed 覆盖缺口；不在 A–E 字面矩阵内，未违反任一成文验收条）**：
+    cross-wire 守卫的字面集合未注册 R2.3-008 身份——`modeling_team/__main__.py:503-513`、
+    `modeling_team/runner.py:358-367`、`modeling_team/runner.py:1185-1192` 仅枚举 005/003 的
+    profile/task ID。复现：`env -u DEEPSEEK_API_KEY -u OPENAI_API_KEY PYTHONPATH=backend:.
+    backend/.venv/bin/python -m modeling_team validate --profile
+    modeling_team/profiles/r2-3-008-modeling-team.yaml --task
+    modeling_team/tasks/new-scope-business-slice.yaml` → exit 0（期望 exit 2 "unknown or cross-wired
+    formal run contract"；对照：同命令换 r2-3-005 profile 为 exit 2；反向 008 task + `base-three-agent`
+    profile 同样 exit 0）。后果有界：该降级路径不能选 model profile（runner.py:326-329 B3 门仍在）、
+    不能触达 R2.3-008 账本；但按 runner.py:517-527，v2 非 formal run 会在 **R2.3-002 默认账本** reserve——
+    Round 2 若 task 路径配错将静默启动非 formal DeepSeek 运行并消耗 R2.3-002 预算，而非如 005/003
+    一样 fail closed。建议 Round 2 前由 developer 在三处集合加入 008 身份（窄修复）。
+- 未执行项：计划 §4/R1–R8（Round 2 有界真实 Luna run）——按 §3 属下一轮且需用户确认执行时机，
+  本轮未创建 run root、未写任何真实账本、未发起真实模型调用。D3 的 seam 注入两类失败 reason 由开发者
+  测试覆盖（test_d3_subscription_preflight…），本轮以代码审查 + 真实默认路径 CLI 实测替代注入复跑。
+- 结论：**Round 1 deterministic 矩阵 PASS**（A–E 全部通过、全量回归绿、账本/历史证据零改动）；1 个
+  High 缺陷 R1-D1 在矩阵外的相邻守卫层，建议修复后再进 Round 2。测试后清理了全部临时探针文件与
+  `__pycache__` 产物，工作树保持 clean。
+
+### Round 2（2026-08-18，R1-D1 修复复测）
+
+- Stable state：commit `a785d1d`（main HEAD）"Register R2.3-008 identities in cross-wire guards"；工作树仅含
+  本测试计划 Round 1 追加（主代理保留未提交）。修复面审查：`formal_runs.py` 从 closed
+  `FORMAL_RUN_CONTRACTS` 派生导出 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`（frozenset，自动覆盖未来注册
+  合同）；三处守卫（`__main__.py:510-513`、`runner.py:361-363`（prepare）、`runner.py:1183-1186`
+  （preview_baseline））全部改用派生集合，无 005/003 字面残留；零 `backend/`/`frontend/` 改动。
+  零真实模型调用、零 run root、零真实账本写入（prepare 探针用 temp ledger root）。
+- R1-D1 复测（FIXED）：
+  - CLI validate（守卫 1）：Round 1 两个复现方向均由 exit 0 → **exit 2 "unknown or cross-wired formal
+    run contract"**——008 profile + `new-scope-business-slice.yaml`（v2 非 formal task）、008 profile +
+    `base-capability-smoke.yaml`、`base-three-agent.yaml` + 008 task；008↔005 双向、008 profile + 003
+    task 保持 exit 2。
+  - `TeamRunner.preview_baseline`（守卫 3，独立探针）：008 profile + 非 formal task 与 base profile +
+    008 task 双向抛 `TeamConfigurationError`，不创建任何 run/ledger 状态。
+  - `TeamRunner.prepare`（守卫 2，独立探针，temp ledger root）：008 profile + 非 formal task 在任何
+    reservation/run root 副作用前抛 `TeamConfigurationError`；temp ledger root 剩余文件为空 `[]`。
+  - 派生集合实测内容：profiles `{003, 005, 008}`、tasks `{003, 005, 008}`。
+- 修复影响回归：
+  - 注册表语义未变：005/003 有效对 validate exit 0；005 profile + 非 formal task 仍 exit 2（与修复前同形）。
+  - 有效 008 对 validate exit 0，省略 `--model-profile` 合同默认 `openai-luna-medium`，六角色唯一投影
+    `(openai-codex, gpt-5.6-luna, medium, medium, chatgpt-subscription)`。
+  - E3：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+    modeling_team/tests/ -q` → **887 passed, 1 skipped, 293 subtests passed（44.62s）**（较 Round 1 增 3
+    tests/7 subtests 即修复新增守卫测试）；`compileall modeling_team/` OK；`ruff check …` All checks
+    passed；`git diff --check`/`git diff --cached --check` 干净。
+  - E2：`.r2-3-002/003/005-start-ledger.jsonl` 本轮前后 sha256 与 Round 1 记录逐字节一致（
+    `bef7e8be…/af64172…/328d10d…`）；`workspaces/modeling-runs/` 仍无任何 `.r2-3-008-start-ledger.*`。
+  - E5：`git diff a785d1d --stat -- backend/ frontend/` 为空（重启门未触发）；被动 health
+    `8001/api/health`=200、`5173/`=200。
+- 缺陷：无新增；R1-D1 关闭。
+- 未执行项：计划 §4/R1–R8（有界真实 Luna run）仍属下一轮且需用户对执行时机的明确确认（授权冻结 +
+  3-start 预算纪律照 §4/§6）；本轮未创建 run root、未写真实账本、未发起真实模型调用。
+- 结论：**Round 2 PASS——R1-D1 FIXED**（三守卫路径双向复测通过、修复影响回归绿、全量 deterministic
+  套件与 compile/lint/diff 检查通过、真实账本与历史证据零改动）。测试后清理全部临时探针与
+  `__pycache__`；工作树仅余本测试计划的 append 修改。
