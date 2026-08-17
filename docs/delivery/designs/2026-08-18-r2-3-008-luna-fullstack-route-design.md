@@ -50,7 +50,8 @@ R2.3-007 的 A6 probe 实证了单 turn 订阅路由，但完整 formal 六角�
 
 ## 5. 新增表面
 
-本需求是对已验证机械的薄增量：不新增运行时层次，只新增 requirement-owned 身份、资产与账本条目。
+本需求是对已验证机械的薄增量：不新增运行时层次，只新增 requirement-owned 身份、资产与账本条目，以及两处
+同性质的身份注册（§5.2 profile ID 封闭集、§5.3 Examiner 延迟泵 task_id 集合）。
 
 ### 5.1 FormalRunContract
 
@@ -87,6 +88,14 @@ R2_3_008_CONTRACT = FormalRunContract(
   仅改两个绑定——`formal_contract: r2-3-008-luna-route-create`、
   `acceptance_standard: modeling_team/references/r2-3-008-acceptance-standard.json`；`child_kinds`、
   `generic_multi_agent`、`candidate_progress_timeout_seconds` 原样保留。
+- **Profile ID 封闭集注册（plan review Round 1 Critical-1）**：`modeling_team/contracts.py` 的
+  `_FORMAL_PROFILE_IDS` 是封闭集，`candidate_progress_timeout_seconds` 参数只允许出现在其中的 profile；
+  未注册时新 profile 在 `load_profile(strict=True)` 即被拒绝（reviewer 已实测
+  `candidate progress timeout is restricted to the formal Profile`）。因此必须把
+  `r2-3-008-modeling-team` 加入该集合。被否决的替代方案：从 profile 删除该参数——会使 formal
+  candidate-progress timeout 从 300s 静默降为默认 120s（`runner.py` `FormalCandidateProgress` 默认值），
+  偏离本需求声明复用的 R2.3-005 基线行为，且新路由（Luna）下的候选进度节奏未经实证，不应悄悄收紧。
+  该注册与 §5.4 的账本配置条目同性质：requirement-owned 身份注册，不改变任何校验语义。
 - `modeling_team/tasks/r2-3-008-formal-acceptance.yaml`：schema_version 2；`role_sources`、`protocol_tools`、
   `expected_terminal_evidence`、`retain_nonempty`、`semantic_start_evidence` 与 r2-3-005 任务一致，唯一内容
   差异是 acceptance 角色的 role_source 指向新的 standard JSON 路径；objective 见 §5.3。
@@ -176,6 +185,16 @@ CQ 内容与 R2.3-005 相同是有意决策：本需求的变量只有 model rou
 （`runner.py` `formal_requirement_label`），且 verdict `schema_version` 硬编码为
 `r2-3-005-acceptance-verdict/v1`。R2.3-008 run 中这些标签指被复用的 R2.3-005 门语义，属外观性痕迹；为避免
 改动 delivered runner 文本机械而保留。
+
+**Examiner child 延迟输出泵注册（plan review Round 1 High-2）**：`acceptance.py` 的
+`formal_deferred_pump` 按 task_id 字面集合 `{"r2-3-005-formal-acceptance",
+"r2-3-003-existing-scope-incremental"}` 判定（这是全部代码中唯一按 task_id 字面集合、而非 formal
+contract 判定的 formal 专属运行时行为）。`r2-3-008-formal-acceptance` 必须加入该集合，否则两个 fresh
+Examiner child 失去 start73 修复的 report/watchdog 竞态保护——首报告可能在 `acceptance_child_factory`
+返回、资源注册完成前到达，直接威胁本需求完成门的核心证据（Examiner typed 终态报告），并可能以虚假
+infrastructure failure 消耗一个 start。该变更是对 delivered 机械的最小 task-id 注册，不改变任何终态/报告
+语义；相应地 §9 的"不修改 acceptance.py"收窄为"仅允许此单行集合扩展"。被否决的替代方案：书面接受竞态
+风险——核心验收证据恰好押在该路径上，且该保护已由 start73 交付并回归测试，无理由放弃。
 
 ### 5.4 StartLedger 配置
 
@@ -268,14 +287,18 @@ reservation，不包含独立授权事件——与 R2.3-005 账本（initial cap
 
 - `modeling_team/formal_runs.py`：新增 `R2_3_008_CONTRACT`、注册表条目、`__all__` 导出。
 - `modeling_team/start_ledger.py`：新增 R2.3-008 常量、`_LEDGER_CONFIGS` 条目、导出 requirement ID。
+- `modeling_team/contracts.py`：`_FORMAL_PROFILE_IDS` 加入 `r2-3-008-modeling-team`（§5.2 Critical-1；封闭集
+  身份注册，无校验语义变化）。
+- `modeling_team/acceptance.py`：`formal_deferred_pump` 的 task_id 集合加入
+  `r2-3-008-formal-acceptance`（§5.3 High-2；单行集合扩展，无终态语义变化）。
 - 新增 `modeling_team/profiles/r2-3-008-modeling-team.yaml`、
   `modeling_team/tasks/r2-3-008-formal-acceptance.yaml`、
   `modeling_team/references/r2-3-008-acceptance-standard.json`。
-- 新增 focused deterministic tests（合同解析、账本门、任务/standard 校验、默认 profile 投影、005/003 回归），
-  放在 `modeling_team/tests/` 现有套件风格下。
-- 不修改：`runner.py`、`acceptance.py`、`acceptance_runtime.py`、`runtimes/codex.py`、`model_routing.py`、
+- 新增 focused deterministic tests（合同解析、账本门、任务/standard 校验、默认 profile 投影、profile ID 封闭集
+  注册、Examiner `defer_output_pump`、005/003 回归），放在 `modeling_team/tests/` 现有套件风格下。
+- 不修改：`runner.py`、`acceptance_runtime.py`、`runtimes/codex.py`、`model_routing.py`、
   transport/capability MCP、Team package instructions、`openai-luna-medium.yaml`、closed catalog、R2.3-007 任何
-  delivered 行为、`backend/`、`frontend/`。
+  delivered 行为、`backend/`、`frontend/`；`acceptance.py` 仅允许 High-2 所述的单行 task-id 集合扩展。
 
 ## 10. 验收条件
 
@@ -284,7 +307,8 @@ reservation，不包含独立授权事件——与 R2.3-005 账本（initial cap
 2. R2.3-008 账本以 formal 政策镜像解析；3-start 初始预算、freeze 门、状态机与授权不可变性按现有规则行为；
    `initial_authorization` 对 R2.3-008 拒绝。
 3. 真实 run 中六个 package（4 persistent + 2 fresh Examiner child）全部经 Luna 启动：证据含逐角色 exact
-   binding 与 `auth_mode=chatgpt-subscription`，Examiner 按 canonical package ID 区分。
+   binding 与 `auth_mode=chatgpt-subscription`，Examiner 按 canonical package ID 区分；确定性检查证明新
+   task 触发的 Examiner child resource spec 含 `defer_output_pump: True`（start73 竞态保护生效）。
 4. Team Transport 通信、平台/MCP 工具调用、typed 终态报告均有保留证据。
 5. 完整 cleanup：零 listener/thread/socket/secret/child 残留，auth staging barrier 在首个 turn 后、任何
    ServerRequest/tool/MCP dispatch 前移除，run root/日志零 token/账户信息。
@@ -313,7 +337,10 @@ reservation，不包含独立授权事件——与 R2.3-005 账本（initial cap
   独立测试轮可做被动 health 抽查（8001/5173）。
 - 操作命令面：新载体通过 `--profile modeling_team/profiles/r2-3-008-modeling-team.yaml --task
   modeling_team/tasks/r2-3-008-formal-acceptance.yaml` 使用；`--model-profile` 可省略（contract 默认
-  `openai-luna-medium`）。既有 R2.3-005/R2.3-003 操作命令与行为不变。
+  `openai-luna-medium`）。真实 `run` 调用的完整必填参数（plan review Round 1 补全）：`--run-id <identity>`、
+  `--scope <YAML 文件，内容为 mode: create>`（run 子命令必填的 scope 文件路径）、`--freeze-started-at <UTC
+  时间戳>`（v2 task 必填）、`--base-url http://127.0.0.1:8001`，环境侧 `ONTOLOGY_PLATFORM_ADMIN_API_KEY`
+  仅在 canonical gate 窗口存在、prepare 后即被清除。既有 R2.3-005/R2.3-003 操作命令与行为不变。
 - 历史 run root、ledger record 与证据保持原字节；新账本文件由首次 reservation 创建于
   `workspaces/modeling-runs/`。
 - Requirement 状态按 Draft → Design-reviewed → implemented → delivered 流转，与设计/测试计划/交付记录同步。

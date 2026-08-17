@@ -30,6 +30,12 @@
 - A4 `deletion_policy` 为 `None`；携带 deletion policy 的 R2.3-008 合同被 `validate_formal_run_contract_assets`
   拒绝（restriction 仍限 R2.3-003）。
 - A5 `FORMAL_RUN_CONTRACTS` 仍包含字段字节不变的 `R2_3_005_CONTRACT`/`R2_3_003_CONTRACT`。
+- A6（plan review Round 1 Critical-1 回归）`contracts.py` `_FORMAL_PROFILE_IDS` 含
+  `r2-3-008-modeling-team`：新 profile 连同 `candidate_progress_timeout_seconds: 300` 通过
+  `load_profile(strict=True)`/`load_formal_team_configuration`；未注册 ID（负例 fixture）携带该参数仍被拒绝。
+- A7（plan review Round 1 High-2 回归）新 task 触发的 Examiner child resource spec 含
+  `defer_output_pump: True`（`acceptance.py` formal_deferred_pump 集合含
+  `r2-3-008-formal-acceptance`）；既有 005/003 task 行为与非 formal 即时泵形态不变。
 
 ### B. Ledger 配置与预算门（临时目录账本）
 
@@ -81,7 +87,8 @@
 
 ## 3. 计划轮次
 
-- Round 1（deterministic）：实现审查 + A–E 全矩阵 + 全量回归；发现问题回 developer 窄修复。
+- Round 1（deterministic）：实现审查 + A–E 全矩阵（含 A6/A7 身份注册回归）+ 全量回归；发现问题回 developer
+  窄修复。
 - Round 2（bounded real run）：§4 授权的真实 Luna formal run 本身；真实运行前必须完成 Round 1 并获得用户
   对执行的明确确认（3-start 首批授权已随需求确认，执行时机仍须冻结）。
 - 后续轮次只修复已确认 requirement defect；继续追加本文，不创建第二份测试计划。
@@ -96,7 +103,9 @@
   start；不追加新 budget 授权；不自动 fallback 到 DeepSeek/API Key/另一 effort。
 - **Run identity**：`r23008-luna-<date>-start<N>`；task `modeling_team/tasks/r2-3-008-formal-acceptance.yaml`；
   profile `modeling_team/profiles/r2-3-008-modeling-team.yaml`；model profile `openai-luna-medium`（省略
-  `--model-profile`，验证合同默认路径即真实操作路径）。
+  `--model-profile`，验证合同默认路径即真实操作路径）。`run` 完整调用还需 `--run-id <identity>`、
+  `--scope <内容为 mode: create 的 YAML 文件>`、`--freeze-started-at <UTC 时间戳>`（v2 task 必填）、
+  `--base-url http://127.0.0.1:8001`，环境侧 `ONTOLOGY_PLATFORM_ADMIN_API_KEY` 仅覆盖 canonical gate 窗口。
 - **边界**：fresh scope（mode=create，平台自建 Project/Ontology）；canonical gate 临时 admin key 运行结束即
   revoke；不读取/记录 `auth.json`/token 内容（仅元数据）；全程零 API-key 路径；run 中途不换 profile。
 - **Freeze 纪律**：资产 digest 冻结后 20 分钟内完成 reservation；同一时刻最多一个 active reservation；每个
