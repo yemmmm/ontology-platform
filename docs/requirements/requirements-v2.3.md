@@ -2163,7 +2163,7 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 
 ## R2.3-007 Modeling Team Responses Provider 路由与逐角色模型配置
 
-当前状态：`原合同（8ee7aa4）与 2026-08-17 追加的 Luna Codex ChatGPT subscription 认证变更（52dde1f + 修复 5791492）均已实现并独立测试 PASS（测试计划 §6 Round 4 发现 D1 High，修复后 Round 5 复测 PASS；真实 Host 预检返回 chatgpt-subscription）。遗留 followup：真实 Luna probe（§6 A6）待用户单独授权，补跑前不宣称订阅路由已实证；G1/G3 原始 BLOCKED 记录保留为历史`
+当前状态：`原合同（8ee7aa4）与 2026-08-17 追加的 Luna Codex ChatGPT subscription 认证变更（52dde1f + 修复 5791492）均已实现并独立测试 PASS（Round 4 发现 D1 High 修复后 Round 5 复测 PASS；Round 6 用户授权的 A6 真实 Luna probe PASS——订阅认证、tool-call/terminal、零 secret/residue，1/1 预算零重试）。订阅路由已实证。剩余 followup 仅 G3 真实 mixed formal smoke（需 formal run attempt 单独授权）；G1/G3 原始 BLOCKED 记录保留为历史`
 
 ### 背景与问题
 

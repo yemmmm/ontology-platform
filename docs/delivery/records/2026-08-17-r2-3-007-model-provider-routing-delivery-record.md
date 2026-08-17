@@ -2,9 +2,9 @@
 
 - Requirement source: `docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Status: delivered（原合同与 Luna ChatGPT subscription 变更 A 均实现并独立测试 PASS；A6 真实 Luna probe
-  待用户单独授权）
+  已授权执行并 PASS；剩余 followup 仅 G3 真实 mixed formal smoke）
 - Started: 2026-08-17T14:25:49+08:00
-- Last updated: 2026-08-17T20:30:00+08:00
+- Last updated: 2026-08-17T20:55:00+08:00
 - Design: `docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery baseline: `6a0331e Close R2.3-006 with full N=2 live-124 PASS`；初始工作树 clean
@@ -13,7 +13,8 @@
   closure）；`022c8f5 Revise Luna subscription authentication design`（变更 A 设计）；`52dde1f Route Luna through
   Codex subscription auth`（变更 A implementation）；`5791492 Fix subscription preflight stderr capture`（D1 修复）；
   变更 A closure commit subject `Close R2.3-007 subscription auth amendment`，使用
-  `git log -- docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md` 解析 immutable hash
+  `git log -- docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md` 解析 immutable hash；
+  A6 probe closure commit subject `Record A6 Luna subscription probe PASS`（同法解析）
 
 ## Confirmed contract
 
@@ -204,6 +205,7 @@
 | 3 | `8ee7aa4` | PASS | G3 真实 mixed smoke BLOCKED（双条件）；H2/H3/H4 全绿；审计零发现 | 测试计划 §5 Round 3 详情 |
 | 4 | `52dde1f` | FAIL（D1 High） | A1/A3/A4/A5/A7 PASS；A2 行为面被 D1 阻塞（真实 Host 误判 unavailable）；A6 范围外 | 测试计划 §6 Round 4 详情 |
 | 5 | `5791492` | PASS（变更 A 范围） | D1/D2 已修复（真实 Host → chatgpt-subscription）；A1/A3/A4/A5 抽查 36 passed 无回归；A6 待用户授权 | 测试计划 §6 Round 5 详情 |
+| 6 | `53f46bb` | A6 真实 Luna probe PASS | 1/1 probe 预算、会话内 ≤2 请求、零重试零 fallback；订阅认证（无 OPENAI_* env/credential 文件、auth.json 只 stat 未读）；tool-call round trip + terminal + exit 0；secret/残留零命中；exact model 以 CLI 投影+catalog+成功 turn 证据链核对（`--json` 不回显 model/effort 属工具层限制） | 测试计划 §6 Round 6 详情 |
 
 ## Final verification
 
@@ -217,12 +219,12 @@
 - Documentation/status sync: requirement 状态、design 状态、test plan 状态与本记录已同步至 delivered
 - Cleanup: G2 probe 临时脚本、`/tmp` 残留、loopback listener/process/key buffer 全零；无 ledger start、平台写入、
   run root 或 semantic start；历史 run/ledger evidence 字节不变
-- Residual risks and follow-ups（变更 A 终态）: (1) A6 真实 Luna Responses probe——待用户单独授权（一次无业务
-  probe、预冻结 attempt/call cap/cleanup owner）；D1 修复后 prepare 层不再阻塞，补跑前不宣称订阅路由已实证；
-  (2) G3 真实 mixed formal smoke——仍需 formal run attempt 单独授权（不再需要 OpenAI credential 文件）；
-  (3) `_run_codex_login_status` 的两个 monkeypatch 测试无法覆盖 subprocess 参数组合合法性——已由 Round 5 R5-2
-  真实调用路径一次性验证，建议后续补一条不 mock 的参数冒烟；(4) pre-existing Low：ambient `DEEPSEEK_API_KEY`
-  下 7 个 fallback 用例失败（父提交同样），建议单独 hermetic 化
+- Residual risks and follow-ups（A6 后终态）: (1) G3 真实 mixed formal smoke——仍需 formal run attempt 单独授权
+  （不再需要 OpenAI credential 文件）；(2) `_run_codex_login_status` 的两个 monkeypatch 测试无法覆盖 subprocess
+  参数组合合法性——已由 Round 5 R5-2 真实调用路径一次性验证，建议后续补一条不 mock 的参数冒烟；(3)
+  `codex exec --json` 事件流不回显 model/effort——未来 probe 建议去 `--ephemeral`（rollout 含 `turn_context`）或
+  设 `RUST_LOG` 获取字面回显；(4) pre-existing Low：ambient `DEEPSEEK_API_KEY` 下 7 个 fallback 用例失败（父提交
+  同样），建议单独 hermetic 化
 - Cleanup（变更 A）: 测试/探针临时文件零残留；Round 4 观察到的开发验证遗留 `/tmp/mt-ex-*` 已在收尾时连同历史
   累积的 2182 个 `/tmp/mt-*` 测试临时目录一并清除；零真实模型调用、零 run root、零 ledger start、零平台写入
 
@@ -334,3 +336,30 @@
 - Action/decision：主代理接受 close-with-followups；同步四个 scope 文档状态；收尾清理（含历史累积 2182 个
   `/tmp/mt-*` 测试临时目录）；closure commit。
 - Outcome/next step：R2.3-007 原合同 + 变更 A 均关闭；A6/G3-real 为用户授权门 followup。
+
+### 2026-08-17T20:45:00+08:00 — A6 真实 Luna probe 授权冻结 — user/main agent
+
+- Authorization source：用户明确指示"跑一次a6"（2026-08-17），只授权测试计划 §6 A6 的一次真实 Luna probe。
+- Attempt budget：1 次 probe（一次 Codex 订阅认证的最小 Responses 会话，含一个 tool-call turn 与 terminal）；
+  真实模型请求上限 2；失败即 BLOCKED，不自动重试，不 fallback 到 API Key/DeepSeek/另一 effort。
+- 目标：exact model `gpt-5.6-luna`、selected effort 回显、function/tool-call round trip、terminal、safe
+  usage/status、订阅认证（无 API Key/credential 文件读取）、cleanup 零残留（无 token/账户信息进入输出）。
+- 边界：不启动 formal run、不创建 run root/ledger start、不写平台、不读取或记录 auth.json 内容。
+- Cleanup owner：requirement_tester（探针临时目录/输出用后删除，残留扫描）。
+- Outcome/next step：移交 tester 执行并在共享测试计划 §6 追加 Round 6 记录。
+
+### 2026-08-17T20:55:00+08:00 — A6 真实 Luna probe Round 6 PASS 与收尾 — requirement tester/main agent
+
+- Evidence：tester 在 Host 默认 CODEX_HOME 下经 `codex exec --ephemeral --skip-git-repo-check --sandbox
+  read-only --json -m gpt-5.6-luna -c model_reasoning_effort="medium"` 完成一次订阅认证 Responses 会话：
+  `codex login status` 为 ChatGPT、shell 无 `OPENAI_*`/`CODEX_*` 变量、全程仅 lstat `auth.json` 元数据（前后
+  mtime 不变）；shell tool-call round trip（`cat probe-value.txt` exit 0）、`turn.completed` + `--output-last-message`
+  精确等于探针值、进程 exit 0；safe usage input 43174/cached 27136/output 112/reasoning 31；secret 扫描零命中
+  （`sk-sizing` 为 task-sizing 子串误报）；`--ephemeral` 零 sessions 写入，探针临时目录用后即删。exact model 以
+  CLI 投影（`-m`/`-c`）+ Host config 默认 model 为 `gpt-5.6-sol`（覆盖具实质性）+ `codex debug models` catalog
+  含 `gpt-5.6-luna`/medium + 成功 turn reasoning tokens 非零的证据链核对。预算消耗 1/1 probe，会话内请求 ≤2，
+  零重试零 fallback。
+- Action/decision：主代理接受 PASS；同步四个 scope 文档状态（requirement/design/test plan/本记录）；`git diff
+  --check` 后提交 closure。
+- Outcome/next step：R2.3-007 原合同 + 变更 A + A6 probe 全部关闭；剩余 followup 仅 G3 真实 mixed formal smoke
+  （formal run attempt 单独授权门）。

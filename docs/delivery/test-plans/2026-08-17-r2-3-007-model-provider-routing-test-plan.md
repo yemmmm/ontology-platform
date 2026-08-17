@@ -1,8 +1,8 @@
 # R2.3-007 Modeling Team Responses Provider 路由共享测试计划
 
-- 状态：executed / Round 1–3（原合同）与 Round 4–5（变更 A：Luna Codex 订阅认证）独立测试完成——A1–A5、A7
-  PASS，Round 4 发现 D1 High 修复后 Round 5 复测 PASS；A6 真实 Luna probe 待用户单独授权。G1/G3 原始论与
-  followup 见 §5
+- 状态：executed / Round 1–3（原合同）与 Round 4–6（变更 A：Luna Codex 订阅认证）独立测试完成——A1–A5、A7
+  PASS，Round 4 发现 D1 High 修复后 Round 5 复测 PASS；Round 6 A6 真实 Luna probe PASS（1/1 预算、零重试、
+  订阅认证、tool-call/terminal、零 secret/residue）。G1/G3 原结论与 followup 见 §5
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Design：`docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Delivery record：`docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md`
@@ -200,7 +200,7 @@ H4 — 条件重启门：`git show 8ee7aa4 --stat` 18 文件全部在 `modeling_
 
 **总体建议**：close-with-followups——R2.3-007 实现按本计划可判定范围（A-F、H1-H4、G2）全部通过，无产品缺陷；followups：(1) G1 待 OpenAI credential 就绪后授权补跑；(2) G3 真实 mixed formal smoke 待 (a)(b) 双条件；(3) pre-existing Low：`test_deepseek_codex_runtime.py` 7 个 fallback 用例建议 hermetic 化（`monkeypatch.delenv`）。
 
-## 6. 实施中变更 A 测试增量（2026-08-17，executed：Round 4 FAIL→D1 修复→Round 5 PASS；A6 待授权）
+## 6. 实施中变更 A 测试增量（2026-08-17，executed：Round 4 FAIL→D1 修复→Round 5 PASS；Round 6 A6 真实 probe PASS）
 
 本节对应设计 §12，只追加新合同，不改写 Rounds 0–3 的历史结论。原 G1/G3 关于 OpenAI API credential 文件
 缺失的 BLOCKED 证据仍有效，但不再是修订后测试的前置条件。
@@ -382,3 +382,57 @@ mode-mismatch）；修复引入的 `capture_output` 组合缺陷已由 PIPE 形�
 在开发侧为 `_run_codex_login_status` 补一条不 mock 的参数冒烟（或接受由本轮 R5-2 一次性人工验证覆盖）。
 
 范围外：A6（真实 Luna probe）仍待用户单独授权；D1 已修复，授权后 A6 不再被 prepare 层阻塞。
+
+### Round 6 详情（A6 真实 Luna probe，2026-08-17T20:36+08:00，independent tester，stable state `53f46bb`，产品代码零变更）
+
+**总体结论：PASS（A6 范围：一次 Codex 订阅认证的真实 Luna Responses tool-call/terminal smoke）**
+
+授权引用：delivery record `2026-08-17T20:45:00+08:00 — A6 真实 Luna probe 授权冻结`——1 次 probe（一次最小
+Responses 会话，含一个 tool-call turn 与 terminal）、真实模型请求上限 2、失败即 BLOCKED 不重试、不 fallback、
+cleanup owner 为 tester。本轮在授权冻结之前的时间戳记录其内容（20:45 条目为冻结成文时刻，probe 于 20:36 执行，
+同属本次"跑一次a6"单次授权，如实记录）。
+
+执行路径（生产等价最小路径，选 suggestion 1）：Host 默认 `CODEX_HOME`（现有 ChatGPT 登录）下一次性
+`codex exec`，`--ephemeral --skip-git-repo-check --sandbox read-only --json -m gpt-5.6-luna
+-c model_reasoning_effort="medium" --output-last-message ...`，工作目录为 `/tmp` 探针临时目录；指令要求模型用
+shell 工具读取 `probe-value.txt` 后原样回答。整个会话运行于 `env -u OPENAI_API_KEY -u OPENAI_BASE_URL` 下。
+
+逐项核对结果：
+
+- **订阅认证**：运行前 `codex login status` → `Logged in using ChatGPT`；shell 环境本无任何
+  `OPENAI_*`/`CODEX_*` 变量，且显式 `env -u OPENAI_API_KEY`；OpenAI credential 文件
+  `~/.config/ontology-platform/modeling-team-openai.env` 不存在。全程仅 lstat `auth.json` 元数据
+  （3983 字节、mode 600、mtime 2026-08-13 00:10），未读取内容，且 probe 后 mtime 未变（无重认证写入）。
+- **tool-call 真实 round trip**：`--json` 事件流含 `item.started`/`item.completed`
+  `type=command_execution, command="/bin/bash -lc 'cat probe-value.txt'", exit_code=0,
+  aggregated_output="A6-LUNA-PROBE-7f3d9c\n"`——shell 工具真实执行并取回探针值。
+- **terminal 与退出码**：`item.completed type=agent_message` 文本精确等于探针值
+  （`--output-last-message` 同值），`turn.completed` 携带 usage，进程退出码 0。无 typed failure（成功路径），
+  无任何 fallback 路径被触发（单一 Codex 内建 OpenAI Responses route，一次会话直接成功，零重试）。
+- **exact model / effort**：`codex exec --json` 事件流不回显 model/effort 字段（工具层限制，如实记录），本轮以
+  证据链核对：(a) 命令行 `-m gpt-5.6-luna` 与 `-c model_reasoning_effort="medium"` 即生产投影同款机制；(b) Host
+  `config.toml` 默认 model 为 `gpt-5.6-sol`，覆盖具实质性；(c) `codex debug models`（零模型调用）catalog 含
+  slug `gpt-5.6-luna`，`supported_reasoning_levels` 含 `medium` 且为其 `default_reasoning_level`；(d) turn 成功
+  且 `reasoning_output_tokens=31` 非零（reasoning 模型、effort 生效的旁证）。另在 codex 自身 tracing 日志
+  （`logs_2.sqlite`，无关既有 thread）观察到 `model=gpt-5.6-luna codex.turn.reasoning_effort=...` 回显形态，
+  证明该证据面存在，未来 probe 去掉 `--ephemeral` 即可拿到字面回显。
+- **safe usage（仅计数）**：`input_tokens=43174, cached_input_tokens=27136, output_tokens=112,
+  reasoning_output_tokens=31`。输出中无 token/账户/`auth.json` 内容。
+- **secret 扫描**：events/stderr/last-message 零命中；`codex debug prompt-input` 渲染文件唯一命中为
+  `sk-sizing`（"task-sizing" 子串误报，良性）。无 `sk-`、`Bearer`、JWT、`access_token`、`OPENAI_API_KEY`、
+  `auth.json` 内容形态进入任何输出。
+
+预算消耗：**1 个 probe 会话（1/1）**；会话内一个 turn 含 tool-call + terminal，内部 Responses 请求 ≤2，未超
+"真实模型请求上限 2"；零重试、零额外会话（为核对回显仅使用零模型调用的 `codex debug models`/`prompt-input`，
+均未发起模型请求）。
+
+cleanup 与零残留：探针临时目录、`probe-value.txt`、事件/调试输出与指针文件用后即删，`/tmp` 无 `r23007*`/
+`a6-probe*` 残留；`--ephemeral` 使 `~/.codex/sessions` 零写入（时间窗扫描为空）；codex 在 probe 时刻重写了
+`config.toml` 但未新增探针目录 trust 条目（read-only sandbox + `--skip-git-repo-check`）；仅存的两个 codex 进程
+为 Host 8 月 9 日启动的常驻 app-server daemon，非本次 probe 产生；`workspaces/modeling-runs` 时间窗内零新增
+（无 run root、无 ledger start、无平台写入）；仓库内本轮唯一写入为本测试计划 §6 的本节追加。
+
+遗留观察（非缺陷）：(1) `codex exec --json` 事件流不回显 model/effort，exact-model 证据为推断链而非字面回显，
+未来授权的 probe 建议去 `--ephemeral`（rollout 含 `turn_context` model/effort）或设 `RUST_LOG` tracing；
+(2) `codex debug prompt-input` 层不校验 effort 取值（`"bogus"` 亦通过），effort 校验在服务端/会话层。二者均属
+Codex 工具证据面限制，不影响本轮 PASS 判定。
