@@ -378,3 +378,15 @@
   revoke）；不读取/记录 auth.json 内容；全程零 API-key 路径。
 - Cleanup owner：main agent（Delivery 角色）——运行结束后 revoke 临时 admin key、核对 run root 终态与零残留。
 - Outcome/next step：核对通过后立即启动；结果无论 PASS/FAIL 如实记录，不改写 ledger。
+
+### 2026-08-17T22:05:00+08:00 — start76 预约被账本拒绝，载体切换为非正式 Luna smoke — main agent
+
+- Evidence：start76 调用在 ledger reservation 点被拒绝（`previous semantic start lacks a terminal failure`）——
+  R2.3-005 账本中 start75 为成功终态且无 terminal_failure 记录，该账本随需求完成封闭。失败调用零账本写入
+  （332 条不变）、零 run root、零 attempt 消耗。R2.3-003（已 Accepted，且为已保留本体增量写入）与
+  R2.3-002（上一 start 同样无 terminal_failure）均不适合作为路由验证载体。
+- Action/decision：改用非正式 bounded smoke：task `base-capability-smoke`（schema v1，不触碰任何 StartLedger、
+  不消耗建模 attempt）+ profile `base-three-agent`（coordinator/modeling/protocol/acceptance 四角色）+
+  model profile `openai-luna-medium`（全角色 Luna 订阅路由）。覆盖 G3 smoke 的核心面：真实 Luna turn、
+  Team Transport、Skill 加载、Protocol 平台健康读（非变更）、terminal report、cleanup；不做业务建模写入。
+- Outcome/next step：run id `r23007-luna-route-smoke-20260817a`，fresh create scope；结果如实记录。
