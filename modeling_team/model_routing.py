@@ -377,11 +377,13 @@ def _validate_codex_auth_cache_metadata(path: Path) -> None:
 
 
 def _run_codex_login_status(codex_home: Path) -> tuple[int, str]:
-    """Ask the Codex CLI for its login mode; return only (exit code, stdout).
+    """Ask the Codex CLI for its login mode; return only (exit code, output).
 
-    The output stays inside this module's fixed-mode parsing.  Callers must not
-    persist or forward it: only the resulting auth-mode conclusion is safe to
-    project as evidence.
+    codex-cli (e.g. 0.147.0) may print ``Logged in using ChatGPT`` on stderr
+    with an empty stdout, so stderr is merged into the captured stream here.
+    The merged output stays inside this module's fixed-mode parsing.  Callers
+    must not persist or forward it: only the resulting auth-mode conclusion is
+    safe to project as evidence.
     """
 
     environment = dict(os.environ)
@@ -390,7 +392,8 @@ def _run_codex_login_status(codex_home: Path) -> tuple[int, str]:
         completed = subprocess.run(
             ["codex", "login", "status"],
             env=environment,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             timeout=30,
             check=False,
@@ -407,13 +410,15 @@ def _codex_login_mode_conclusion(returncode: int, output: str) -> str:
             "Codex subscription login status is unavailable",
         )
     lowered = output.lower()
-    if "chatgpt" in lowered:
-        return CODEX_AUTH_MODE
+    # An API-key hint wins even when a ChatGPT string is also present: the
+    # mode-mismatch failure is the safer conclusion for an ambiguous login.
     if "api key" in lowered or "apikey" in lowered:
         raise CodexSubscriptionAuthError(
             CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH,
             "Codex subscription login mode mismatch",
         )
+    if "chatgpt" in lowered:
+        return CODEX_AUTH_MODE
     raise CodexSubscriptionAuthError(
         CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
         "Codex subscription login status is unavailable",

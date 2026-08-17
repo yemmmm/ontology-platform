@@ -11,6 +11,7 @@ import hashlib
 import http.client
 import io
 import json
+import subprocess
 import threading
 import time
 import uuid
@@ -821,6 +822,43 @@ def test_subscription_preflight_respects_codex_home_env(
         "chatgpt-subscription"
     )
     assert seen == [home]
+
+
+def test_subscription_preflight_reads_login_mode_written_to_stderr(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # codex-cli (e.g. 0.147.0) writes ``Logged in using ChatGPT`` to stderr
+    # with rc=0 and an empty stdout; the runner must merge the streams before
+    # the fixed-mode conclusion.
+    home = _codex_home_fixture(tmp_path)
+
+    class _Completed:
+        # With stderr=subprocess.STDOUT the subprocess layer merges the
+        # stderr text into stdout before the call returns.
+        returncode = 0
+        stdout = "Logged in using ChatGPT\n"
+        stderr = None
+
+    def fake_run(*_args, **_kwargs) -> _Completed:
+        assert _kwargs.get("stderr") == subprocess.STDOUT
+        return _Completed()
+
+    monkeypatch.setattr(model_routing_module.subprocess, "run", fake_run)
+    assert preflight_codex_subscription_auth(codex_home=home) == (
+        "chatgpt-subscription"
+    )
+
+
+def test_subscription_preflight_api_key_hint_wins_over_chatgpt_text(
+    tmp_path: Path,
+) -> None:
+    home = _codex_home_fixture(tmp_path)
+    with pytest.raises(CodexSubscriptionAuthError) as excinfo:
+        preflight_codex_subscription_auth(
+            codex_home=home,
+            login_status=lambda _home: (0, "auth via API key (not ChatGPT)"),
+        )
+    assert excinfo.value.reason_code == CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH
 
 
 @pytest.mark.parametrize(
