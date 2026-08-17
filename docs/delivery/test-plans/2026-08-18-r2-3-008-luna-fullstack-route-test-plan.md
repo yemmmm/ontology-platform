@@ -1,6 +1,7 @@
 # R2.3-008 Luna 全栈路由/终态验证共享测试计划
 
-- 状态：draft / UNEXECUTED——设计与实施未开始；本计划覆盖 deterministic 矩阵与一次有界真实运行轮
+- 状态：reviewed / UNEXECUTED——plan review Round 2 PASS（2026-08-18），实施未开始；本计划覆盖
+  deterministic 矩阵与一次有界真实运行轮
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-008-luna-全栈路由终态验证复用-r235-切片`
 - Design：`docs/delivery/designs/2026-08-18-r2-3-008-luna-fullstack-route-design.md`
 - Delivery record：待实施开始后创建

@@ -70,7 +70,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-005 | Modeling Team Runner 正式化收口与可重复调用 | P0 | `已交付（Start75 独立验收 PASS）` | R2.3-001；R2.3-002 真实建模与验收证据 |
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已交付。完整 N=2 live-124 PASS：CQ-001/CQ-002 均 PASS,current=true,usable=true；六角色 fresh/typed/metrics complete 且全部有真实 tokenUsage；key exactly-once、post-revoke 401、cleanup 全 true、model/ledger 不变。证据：workspaces/modeling-acceptance/r23006-retained-n2-live-124/r23006-retained-acceptance.json` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
-| R2.3-008 | Luna 全栈路由/终态验证（复用 R2.3-005 切片） | P0 | `Draft（功能合同已确认）` | R2.3-007 路由与订阅认证交付；R2.3-005 formal 建模/验收基线 |
+| R2.3-008 | Luna 全栈路由/终态验证（复用 R2.3-005 切片） | P0 | `Design-reviewed` | R2.3-007 路由与订阅认证交付；R2.3-005 formal 建模/验收基线 |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -3660,7 +3660,7 @@ Start76–77 不再执行。
 
 ## R2.3-008 Luna 全栈路由/终态验证（复用 R2.3-005 切片）
 
-当前状态：`Draft（功能合同已确认，设计与实施未开始）`
+当前状态：`Design-reviewed（plan review Round 2 PASS，实施未开始）`
 
 ### 背景与问题
 

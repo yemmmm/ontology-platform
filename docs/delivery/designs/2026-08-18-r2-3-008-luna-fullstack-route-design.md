@@ -1,6 +1,6 @@
 # R2.3-008 Luna 全栈路由/终态验证设计（复用 R2.3-005 切片）
 
-- 状态：design-draft / plan review pending——功能合同已经用户确认（2026-08-17/18），设计与实施未开始
+- 状态：design-reviewed / plan review Round 2 PASS（2026-08-18）——实施未开始
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-008-luna-全栈路由终态验证复用-r235-切片`
 - Test plan：`docs/delivery/test-plans/2026-08-18-r2-3-008-luna-fullstack-route-test-plan.md`
 - Delivery record：待实施开始后创建
