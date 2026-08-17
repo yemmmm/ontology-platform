@@ -578,3 +578,57 @@
   run root 零残留完整保留。
 - 结论：runtime/infrastructure（namespace 出站代理环境缺失），按 §4 R8 回 developer 窄修复
   （`_minimal_codex_process_env` 透传 host 代理变量），复测后决定 start6（预算 2/3 剩余）。
+
+### Round 7（2026-08-18，start5 proxy egress 缺陷修复复测）
+
+- Stable state：`93640b6` 之上未提交工作树——`modeling_team/runtimes/codex.py`（+21）、
+  `modeling_team/tests/test_r23005_b_runtime.py`（+20/−1）、新 `modeling_team/tests/
+  test_r23008_codex_proxy_env.py`（5 tests）；主代理已独立复跑 905 绿并 review diff。测试者为独立
+  requirement_tester，未参与修复；工作树保持未提交交主代理 review。零真实 run、零真实账本写入、零模型
+  调用、零 chatgpt.com/任何外网接触（探针纯 env 构造 + sentinel process_factory）；未读取/记录任何真实
+  `auth.json`/token。
+- 范围：start5 缺陷（`_minimal_codex_process_env` 剥离宿主 proxy 变量 → 本机仅能经
+  `http://127.0.0.1:1080` 出网，四角色 sampling/analytics/models 请求全部网络层超时；消耗首个 semantic
+  start 1/3）修复的独立复测——实现审查 + 独立 env 行为探针 + loopback 安全推理 + 全量回归 + 账本
+  hygiene。
+- 实现审查（PASS）：工作树 diff 恰 3 文件（helper 改动 + 两个测试），零 `backend/`/`frontend/`；产品面
+  变更仅 `_PROXY_ENV_KEYS` 元组（http(s)_proxy/no_proxy 双大小写 6 键）+ `_minimal_codex_process_env`
+  内一个条件转发循环（`if value:` 空值不转发、仅这 6 键、其余任何宿主变量不穿越）；DEEPSEEK
+  api_key 分支与非 formal 路径逻辑逐字不变；两个真实调用点（`_start_process` codex.py:3973 与
+  `_launch_acceptance_child_impl` codex.py:2449）本就流经同一 helper，无第二 env 构造面。
+- 独立 env 行为探针（PASS，一次性脚本已删除；15/15 断言）：
+  - (a) 真实宿主 env（本机实际设置 `http_proxy`/`https_proxy=http://127.0.0.1:1080`、
+    `no_proxy=localhost,127.0.0.1,::1`）：post-fix 精确转发该三键、keyset 恰为 base 6 ∪ 已设 proxy 键；
+    pre-fix 形状（去掉 proxy 键）下宿主已设的 proxy 被剥离——env 层复现 start5 缺陷根因面。
+  - (b) 模拟无 proxy 宿主：keyset 精确等于 base 6（不发明任何默认值）。
+  - (c) 空值宿主（`http_proxy=""`/`NO_PROXY=""`）：不转发、keyset 仍 base 6。
+  - 泄漏面：宿主设置 `DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/自造随机变量均不进入 env；formal 模式无
+    DEEPSEEK 键；非 formal（api_key 参数）恰增 DEEPSEEK 一键。
+  - 双大小写混合：恰转发"实际已设"的键（本探针实测 5 键形态），不增不漏。
+  - 调用点级（sentinel process_factory）：persistent `_start_process`（formal coordinator，真实
+    `_write_config` 后）与 Examiner-child `_launch_acceptance_child_impl` 两条路径捕获的 spawn env 均
+    携带真实宿主 proxy 三键且无 DEEPSEEK 键。
+- Loopback 安全推理（PASS，代码/逻辑级零网络）：转发的 `no_proxy=localhost,127.0.0.1,::1` 与 proxy
+  变量同入 minimal env——`127.0.0.1:8001`（in-namespace `ontology_platform` MCP 的 httpx 目标，按
+  host 匹配不受端口影响）、`localhost:5434`（DB）、`::1` 均命中排除表保持直连；reqwest（codex 出站）
+  与 httpx（平台 MCP）均读双大小写 env。宿主实际 env 已含该排除表，与转发行为闭合。观察项（非缺陷）：
+  若未来宿主只设 proxy 不设 `no_proxy`，reqwest 默认不豁免 loopback——本宿主不构成该形态，且宿主 env
+  是唯一权威源。
+- 回归（PASS）：全量 `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **905 passed, 1 skipped, 293 subtests passed（44.97s）**（较 Round 6 增 5
+  tests 即新回归 + `test_r23005_b_runtime` 精确等值断言改为 host-independent 固定注入双大小写 proxy
+  键）；`python -m compileall modeling_team/` OK；`ruff check …` All checks passed；
+  `git diff --check`/`--cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-008-start-ledger.jsonl` 恰 11 事件——5× `reservation` + 4×
+  `presemantic_release` + 1× `semantic_start` + 1× `terminal_failure`（start1–4 各
+  reservation+presemantic_release；start5 reservation+semantic_start+terminal_failure），零额外事件，
+  **semantic start 预算 1/3 已消耗、2/3 剩余**；`.r2-3-002/003/005-start-ledger.jsonl` sha256 与 Round
+  1–6 记录逐字节一致（`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；`git status --short
+  workspaces/ backend/ frontend/` 为空。
+- 缺陷：无新增；start5 proxy 剥离缺陷判 **FIXED**（env 层 pre/post 对照 + 双调用点 spawn env 捕获
+  闭合；出网连通性本身不在本轮可测面——本机直连被墙、经 proxy 可达的宿主事实由主代理 start5 证据与
+  修复前 5/5 重试超时记录反向印证）。Round 6 记录的"tolerated models-refresh timeout"残余观察项随之
+  归因于同一 proxy 根因（该 refresh 走直连超时后被容忍），修复后预期消失——start6 证据阅读时验证。
+- 结论：**Round 7 PASS——start6 障碍清除**。窄修复面（单 helper 6 键条件转发 + 测试）与根因对应，
+  全量 905 绿、compile/lint/diff 全过、账本与历史证据零改动。测试角度建议主代理 review 后提交工作树、
+  按 §4 冻结要素启动 start6（预算 2/3 剩余）。测试后删除全部临时探针与 `/tmp/r7probe`。

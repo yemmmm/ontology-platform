@@ -743,7 +743,22 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "read_key_revoke": lambda _key_id: None,
                 "timeout_seconds": 30,
             }
-            with patch.dict(os.environ, {"CODEX_HOME": str(auth_home)}, clear=False):
+            # R2.3-008: the child env also carries the Host's proxy variables
+            # (this host only reaches the model endpoint through a local
+            # proxy); pin them deterministically for the exact-equality check.
+            with patch.dict(
+                os.environ,
+                {
+                    "CODEX_HOME": str(auth_home),
+                    "http_proxy": "http://127.0.0.1:1080",
+                    "https_proxy": "http://127.0.0.1:1080",
+                    "no_proxy": "localhost,127.0.0.1,::1",
+                    "HTTP_PROXY": "",
+                    "HTTPS_PROXY": "",
+                    "NO_PROXY": "",
+                },
+                clear=False,
+            ):
                 resource = adapter.acceptance_child_factory(spec)
             self.assertEqual(resource.thread_id, "child-thread")
             self.assertEqual(resource.first_turn_input[0]["type"], "text")
@@ -755,6 +770,9 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "TERM": "xterm-256color",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
+                "http_proxy": "http://127.0.0.1:1080",
+                "https_proxy": "http://127.0.0.1:1080",
+                "no_proxy": "localhost,127.0.0.1,::1",
             })
             self.assertNotIn("team_transport", (private_root / "home" / "config.toml").read_text(encoding="utf-8"))
             self.assertIn("platform_read_proxy", (private_root / "home" / "config.toml").read_text(encoding="utf-8"))

@@ -286,7 +286,7 @@
 | 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续 PASS；start4 实证 models refresh 不再运行 |
 
 | 6 | 工作树（本轮提交） | start4 protocol `ontology_platform` MCP ENOENT 根因修复：`backend/.venv/bin/python` 为 uv 绝对符号链（未版本化目标目录再符号链到版本化目录），protocol namespace 仅绑 fully-resolved 前缀，字面绝对目标在 bwrap 内悬空 → 0.147.0 required MCP spawn `execve` ENOENT 升级 `thread/start` 致命。修复 = `_protocol_interpreter_mounts()` 沿符号链绑定每个绝对目标解释器前缀于其自身路径（祖先 `--dir` 先行、基础树不重建、fully-resolved 绑定保留）+ 3 回归测试 | developer 真实 protocol config × 真实 bwrap 复现：pre-fix 逐字复现 start4 签名（`execvp … No such file or directory` + `-32603` 消息），post-fix `THREAD_START_OK` 四 MCP 全初始化；全量 900 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 6 复测 PASS（pre-fix 复现 + post-fix 恢复 + 宿主符号链事实三方闭合） |
-| 7 | 待修复 | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | 主代理三层证据：direct curl 挂起 vs via-proxy 0.58s 通；四角色 logs_2.sqlite 同签名 `request timed out`；env 构造代码唯一来源 | 待 developer 窄修复 + Round 7 复测 |
+| 7 | 待修复 | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | developer 离线复现（真实宿主 env pre/post-fix env 形状 + in-bwrap 可见性探针，零模型调用零 chatgpt.com 接触）；主代理独立复跑全量 905 绿 | Round 7 复测 PASS（15/15 探针 + 泄漏面 + loopback 安全） |
 
 ## Independent test rounds
 
@@ -371,3 +371,21 @@
   temp key `4ef586d3…` revoke 复验 401（误建重复 key 先行 revoke）。账本 11 事件，1/3 消耗 2 剩余。
 - Action/decision: 定层 runtime/infrastructure，回 developer 窄修复 env 透传。
 - Outcome/next step: developer 缺陷修复循环（第四轮）。
+
+### 2026-08-18 — start5 缺陷窄修复与 Round 7 复测 PASS — requirement developer/tester/main agent
+
+- Evidence: developer 修复——`_PROXY_ENV_KEYS`（http_proxy/https_proxy/no_proxy 双大小写共 6 键）在
+  `_minimal_codex_process_env` 内条件转发（仅宿主实际设置且非空时；其余宿主变量不穿越；`no_proxy`
+  随行保 loopback 直连）+ 5 个新测试；`test_r23005_b_runtime.py` 既有 exact-equality 断言以
+  `patch.dict` 钉死 proxy 键使断言宿主无关。离线复现：真实宿主 env 下 pre-fix 代理被剥离（env 层
+  复现缺陷面）/post-fix 精确转发；in-bwrap 探针证实变量 namespace 内可见、proxy 端口 TCP 可达
+  （HTTP 400 应答），零 chatgpt.com 接触。全量 905 passed/1 skipped/293 subtests、compileall/ruff/
+  diff-check 全绿；主代理逐行复核 diff 并独立复跑通过。
+- Round 7 独立复测 PASS——实现审查（产品面恰一个条件转发循环，DEEPSEEK 分支与非 formal 路径逐字
+  不变）+ 独立 env 探针 15/15（真实/无代理/空值三宿主形态 keyset 精确、泄漏面零穿越、两条调用点
+  sentinel 验证）+ loopback 安全（reqwest/httpx 双大小写、no_proxy 覆盖 127.0.0.1/localhost/::1）+
+  回归 905 绿 + 账本 hygiene（恰 11 事件）。附带结论：Round 6 残余 refresh timeout 观察项同因归因
+  闭合，start6 证据阅读验证其消失。
+- Action/decision: start6 障碍清除。提交修复与文档后按 §4 冻结要素启动 start6（预算 1/3 已消耗、
+  2/3 剩余）。
+- Outcome/next step: start6 执行与判定。

@@ -368,6 +368,16 @@ def _formal_codex_builtin_config_lines(binding: RoleModelBinding) -> list[str]:
     ]
 
 
+_PROXY_ENV_KEYS = (
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+)
+
+
 def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[str, str]:
     """Build the explicit environment allowed for a Codex app-server process."""
 
@@ -379,6 +389,17 @@ def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[s
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
+    # Forward the Host's outbound proxy configuration only.  This host reaches
+    # chatgpt.com exclusively through a local proxy, while Codex 0.147.0's
+    # ``outbound_proxy_policy: ReqwestDefault`` otherwise connects directly and
+    # every sampling/analytics/models request times out at the network layer
+    # (R2.3-008 start5).  ``no_proxy`` must travel with the proxy variables so
+    # in-namespace loopback targets (platform backend 127.0.0.1:8001, database
+    # localhost:5434) stay direct.  Only forward what the Host actually sets.
+    for key in _PROXY_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            values[key] = value
     if api_key is not None:
         values[_DEEPSEEK_API_KEY_ENV] = api_key
     return values
