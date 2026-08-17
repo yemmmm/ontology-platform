@@ -3674,6 +3674,73 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         cache_path.write_text(json.dumps(seeded), encoding="utf-8")
         os.chmod(cache_path, 0o600)
 
+    def _protocol_interpreter_mounts(self) -> list[str]:
+        """Bind the venv interpreter plus every absolute symlink target's prefix.
+
+        ``backend/.venv/bin/python`` is a uv-managed *absolute* symlink into the
+        uv Python store (R2.3-008 start4).  ``--ro-bind`` of ``/backend/.venv``
+        preserves that symlink verbatim, so unless the target's interpreter
+        runtime prefix also exists at its own path inside the namespace the
+        Protocol ``ontology_platform`` MCP spawn dies with ``No such file or
+        directory (os error 2)``.  Walk the interpreter's symlink chain and
+        bind each absolute target's runtime prefix (the target lives in
+        ``<prefix>/bin``, and CPython resolves its standard library relative to
+        that prefix); relative targets resolve inside the already-bound venv
+        and need no extra mount.  The fully resolved interpreter runtime stays
+        bound for ``pyvenv.cfg``/sysconfig lookups.
+        """
+
+        venv = self.root / "backend" / ".venv"
+        resolved_venv = venv.resolve()
+        resolved_python = (venv / "bin" / "python").resolve()
+        runtime_root = resolved_python.parent.parent
+        directories = [runtime_root]
+        bound: set[Path] = {runtime_root}
+        link: Path | None = venv / "bin" / "python"
+        visited: set[Path] = set()
+        while link is not None and link not in visited and len(visited) < 8:
+            visited.add(link)
+            if not link.is_symlink():
+                break
+            target = Path(os.readlink(link))
+            if target.is_absolute():
+                candidate = target
+            else:
+                candidate = link.parent / target
+            directory = candidate.parent.parent
+            inside_venv = directory == resolved_venv or resolved_venv in directory.parents
+            if not inside_venv and directory not in bound:
+                bound.add(directory)
+                directories.append(directory)
+            link = candidate
+        mounts = [
+            "--dir",
+            "/backend",
+            "--ro-bind",
+            str(self.root / "backend" / "app"),
+            "/backend/app",
+            "--ro-bind",
+            str(venv),
+            "/backend/.venv",
+        ]
+        # Every ancestor must exist as a mount point before any subtree bind is
+        # applied, and base ro-binds (/usr, /lib, ...) already provide theirs.
+        preexisting = ("/usr", "/bin", "/lib", "/lib64", "/etc")
+        created: set[str] = set()
+        for directory in directories:
+            ancestor = Path("/")
+            for part in directory.parts[1:-1]:
+                ancestor = ancestor / part
+                if str(ancestor) in created or any(
+                    ancestor.is_relative_to(base) for base in preexisting
+                ):
+                    continue
+                created.add(str(ancestor))
+                mounts.extend(["--dir", str(ancestor)])
+        for directory in directories:
+            mounts.extend(["--ro-bind", str(directory), str(directory)])
+        return mounts
+
     def namespace_command(self, agent: _Agent) -> list[str]:
         binary = shutil.which(self.codex_binary) or self.codex_binary
         if not self.use_bwrap:
@@ -3776,27 +3843,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "app-server",
         ]
         if agent.package.role == "protocol":
-            resolved_python = (self.root / "backend" / ".venv" / "bin" / "python").resolve()
-            runtime_root = resolved_python.parent.parent
-            runtime_dirs: list[str] = []
-            current = Path("/")
-            for part in runtime_root.parent.parts[1:]:
-                current /= part
-                runtime_dirs.extend(["--dir", str(current)])
-            command[command.index("--chdir") : command.index("--chdir")] = [
-                "--dir",
-                "/backend",
-                "--ro-bind",
-                str(self.root / "backend" / "app"),
-                "/backend/app",
-                "--ro-bind",
-                str(self.root / "backend" / ".venv"),
-                "/backend/.venv",
-                *runtime_dirs,
-                "--ro-bind",
-                str(runtime_root),
-                str(runtime_root),
-            ]
+            command[command.index("--chdir") : command.index("--chdir")] = (
+                self._protocol_interpreter_mounts()
+            )
             if agent.mechanics_contract_path is not None:
                 self._read_protocol_mechanics_contract(agent)
                 command[command.index("--chdir") : command.index("--chdir")] = [

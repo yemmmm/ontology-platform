@@ -488,3 +488,67 @@
 - 结论：runtime/infrastructure（0.147.0 将 required MCP 初始化失败升级为 thread/start 致命 + protocol
   MCP 在 namespace 内 ENOENT 待定位），按 §4 R8 回 developer：以**真实 protocol 角色 config**（含
   ontology_platform MCP 块）离线复现定位 ENOENT 并窄修复；复测通过后再决定下一 start（预算 3/3 未动）。
+
+### Round 6（2026-08-18，start4 protocol MCP ENOENT 缺陷修复复测）
+
+- Stable state：`de21109` 之上未提交工作树——`modeling_team/runtimes/codex.py` 修改（+70/−21）与新测试
+  `modeling_team/tests/test_r23008_protocol_interpreter_namespace.py`（3 tests）；主代理已独立复跑全量
+  900 绿。测试者为独立 requirement_tester，未参与修复；工作树保持未提交交主代理 review。零真实 run、
+  零真实账本写入、零模型调用、零 codex/app-server 驱动（探针在 bwrap 内只 exec 探针 payload）；未读取/
+  记录任何真实 `auth.json`/token（探针 host auth 为自造 `{}`，`protocol_key` 为自造 probe 值）；
+  start4 run root 仅只读引用，零修改。
+- 范围：start4 缺陷（protocol `ontology_platform` MCP 在 bwrap 内 `execve` ENOENT → 0.147.0 升级为
+  `thread/start` 致命 -32603）修复的独立复测——实现审查 + 真实 protocol config × 真实 bwrap 行为探针
+  （pre-fix 复现 / post-fix 恢复）+ 全量回归 + 账本 hygiene + 残余观察项评估。
+- 实现审查（PASS）：
+  - 工作树 diff 恰 2 文件（`codex.py` + 新测试），`git status --short` 无其他；零 `backend/`/`frontend/`
+    改动（重启门未触发）；`protocol_mcp_launch.py` 及建模语义/账本/acceptance 表面零改动；MCP 块
+    `required=true` 语义未动。
+  - 变更面：`namespace_command` protocol 分支的 inline interpreter 绑定（旧 21 行）替换为
+    `_protocol_interpreter_mounts()`（codex.py:3677-3743）；`namespace_command` 其余部分（base mounts、
+    其他角色、mechanics contract/retrieval/candidate gate/reasoner binds）逐字不变；唯一调用点在
+    `agent.package.role == "protocol"` 分支。
+  - 语义审查：helper 以 fully-resolved runtime root 起步，沿 `backend/.venv/bin/python` 符号链逐跳
+    （visited 防环、≤8 跳），对每个**绝对** target 的 `<target>/..`.. 即解释器 prefix 绑定于其自身路径；
+    相对 target 落在已绑 venv 内不额外绑；`--dir` 祖先点先于任何 subtree bind 发出（`preexisting`
+    基础 bind 覆盖的祖先不重复建）；与旧代码相比新增的唯一有效 bind 是字面绝对 target prefix。
+- 独立行为探针（PASS，一次性脚本已删除；13/13 断言）：真实 `_write_config`（formal R2.3-008 + 真实
+  `openai-luna-medium` 投影）产出 protocol config，真实 `namespace_command`（protocol 分支、真实 bwrap
+  二进制、真实 `/backend/.venv` 与 uv 解释器布局，零模型调用）：
+  - config 面：`mcp_servers.ontology_platform` 精确为 `command="/backend/.venv/bin/python"`、
+    `cwd="/backend"`、`args=["-m","app.mcp.server"]`、`required=true`；model trio `gpt-5.6-luna`/`openai`；
+    protocol home 同步落种子 `models_cache.json`（mode 0600，Round 5 修复回归通过）。
+  - 宿主事实：`backend/.venv/bin/python` 为绝对符号链（目标
+    `…/uv/python/cpython-3.14-linux-x86_64-gnu/bin/python3.14`，未版本化目录本身又是符号链），
+    与 fully-resolved 路径（cpython-3.14.3-…）不同——与 developer 根因诊断一致。
+  - (a) pre-fix 形状（post-fix mounts 精确去掉未版本化 prefix 的 ro-bind 三元组）：namespace 内
+    `/backend/.venv/bin/python` exec 失败 `rc=127 / not found`（ENOENT），字面 target 在 ns 内不存在
+    （`test -e` 失败）——独立复现 start4 缺陷签名。
+  - (b) post-fix：字面 target 在 ns 内存在；MCP spawn 命令原样 exec 成功（`PY_OK`）；于 MCP cwd
+    `/backend` + config PYTHONPATH 下 `import app.mcp.server` 成功（`MCP_OK`）——`thread/start` 前
+    required MCP spawn 的 ENOENT 面消除（spawn 等价链路闭合；完整 app-server 握手按 §4 归 start5）。
+- 回归（PASS）：全量 `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **900 passed, 1 skipped, 293 subtests passed（44.84s）**（较 Round 5 续增 3
+  tests 即修复新增）；`python -m compileall modeling_team/` OK；`ruff check modeling_team/ --config
+  backend/pyproject.toml` All checks passed；`git diff --check`/`git diff --cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-008-start-ledger.jsonl` 恰 8 事件（4× `reservation` + 4×
+  `presemantic_release`，零 `semantic_start`，预算 0/3 消耗、3/3 未动）；`.r2-3-002/003/005-start-
+  ledger.jsonl` sha256 与 Round 1–5 记录逐字节一致（`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；
+  `git status --short workspaces/ backend/ frontend/` 为空；start4 run root 零修改（只读）。
+- 复现覆盖教训核验（held）：本轮独立探针从**真实 protocol 角色 config**（含 ontology_platform MCP 块
+  与真实符号链布局）驱动，修复前签名（ENOENT）与修复后恢复均在真实面闭合——Round 4/5 用通用 config
+  逃过该面的缺口未再发生；developer 新测试亦以真实 repo root + 真实 venv 断言 bind 面（3 tests），非
+  仅 mock。
+- 残余观察项评估（developer 记录：protocol 握手期间仍有一条 tolerated
+  `failed to refresh available models: timeout waiting for child process to exit`，非致命）：判定为
+  **可接受残余，非覆盖缺口**——(1) 结果为 tolerated 回退且 `thread/start` 成功，说明种子 cache 命中
+  生效于致命路径；(2) 该条说明 0.147.0 另有一条仍走 refresh 的 models 查询面（种子未覆盖全部查找
+  路径），但其失败结局已被实证为容忍路径，不触及 §4 R1–R5 路由/终态完成门；(3) start5 证据阅读时
+  应把该 ERROR 行与真致命失败区分（记录为观察项，不阻断）。若未来某 start 中该面致命化，按新缺陷
+  单独定层处理。
+- 缺陷：无新增；start4 protocol MCP ENOENT 缺陷判 **FIXED**（pre-fix 复现 + post-fix 恢复 + 根因
+  符号链事实三方闭合）。
+- 结论：**Round 6 PASS——start5 障碍清除**。窄修复面（protocol 分支 mount 构造唯一改动 + 3 回归
+  测试）与根因完全对应；全量 900 绿、compile/lint/diff 全过、账本与历史证据零改动。测试角度建议
+  主代理 review 后提交工作树、按 §4 冻结要素启动 start5（授权预算 3/3 未动、0/3 已消耗）。测试后
+  删除全部临时探针与 `/tmp/r6probe`。

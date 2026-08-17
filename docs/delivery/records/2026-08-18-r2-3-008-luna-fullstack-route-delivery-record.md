@@ -283,7 +283,9 @@
 | 2 | `a785d1d` | R1-D1 窄修复：`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，三处 cross-wire 守卫改用派生集合 + 3 测试/7 subtests | 全量 887 passed/1 skipped/293 subtests；复现命令双向 exit 2；compileall/ruff/diff-check PASS | Round 2 复测 PASS |
 | 3 | `303d701` | start1/start2 同形 `skills/list` -32603 根因修复：`_write_config` builtin-provider 分支错误 `lines[3:]` 截断（该分支未预置 model trio），丢弃 `sandbox_mode`/`web_search`/`[features]` 表头致 11 个 feature flag 裸露为顶层键，codex 0.147.0 在 `skills/list` config reload 时按 typed table 拒绝。修复为 `provider_lines[:3] + lines + provider_lines[3:]`（一行）+ 新回归测试 `test_r23008_codex_builtin_config.py`（3 tests，验证对 pre-fix 失败） | developer 真实路径离线复现（真实 `_write_config` + bwrap + `_initialize`，零模型调用）：pre-fix 复现精确 `-32603`/`configWarning`，post-fix 完整 coordinator 启动通过、零 configWarning；全量 890 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 4 复测 PASS；start3 实证握手修复生效 |
 | 4 | `c85628a` | start3 protocol `thread/start` -32603 根因修复：0.147.0 online models refresh 慢路径在 bwrap 下 server 侧竞态（同错误容忍/致命两种结局）。修复 = `_seed_models_cache` 预置 vendored 版本匹配 models snapshot（`references/codex-models-cache-0.147.0.json`）使 `online_if_uncached` 缓存命中零 refresh + `CodexRuntimeRPCError` 保留 sanitize 后 JSON-RPC message（data 仍丢弃）+ 新回归测试 | developer 离线三角色 bwrap 复现：seeded homes 三角色 `thread/start` 全过、seeded cache 逐字未动（缓存命中直接证明）；全量 894 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 5 复测 PASS（附 R5-D1） |
-| 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续轮 delta 复测进行中 |
+| 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续 PASS；start4 实证 models refresh 不再运行 |
+
+| 6 | 工作树（本轮提交） | start4 protocol `ontology_platform` MCP ENOENT 根因修复：`backend/.venv/bin/python` 为 uv 绝对符号链（未版本化目标目录再符号链到版本化目录），protocol namespace 仅绑 fully-resolved 前缀，字面绝对目标在 bwrap 内悬空 → 0.147.0 required MCP spawn `execve` ENOENT 升级 `thread/start` 致命。修复 = `_protocol_interpreter_mounts()` 沿符号链绑定每个绝对目标解释器前缀于其自身路径（祖先 `--dir` 先行、基础树不重建、fully-resolved 绑定保留）+ 3 回归测试 | developer 真实 protocol config × 真实 bwrap 复现：pre-fix 逐字复现 start4 签名（`execvp … No such file or directory` + `-32603` 消息），post-fix `THREAD_START_OK` 四 MCP 全初始化；全量 900 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 6 复测 PASS（pre-fix 复现 + post-fix 恢复 + 宿主符号链事实三方闭合） |
 
 ## Independent test rounds
 
@@ -316,3 +318,38 @@
 - Action/decision: 定层 runtime/infrastructure，回 requirement_developer：以**真实 protocol 角色
   config**（含 ontology_platform MCP 块与 protocol namespace binds）离线复现 ENOENT 并窄修复。
 - Outcome/next step: developer 缺陷修复循环（第三轮）。
+
+### 2026-08-18 — start4 缺陷根因定位与窄修复（第三轮）— requirement developer/main agent
+
+- Evidence: developer 以**真实 protocol 角色 config**（schema v2：`ontology_platform` + protocol_mechanics
+  + runner_capability + team_transport 块，luna builtin 绑定 + 种子 cache）驱动真实 `_write_config` 与
+  真实 `namespace_command` protocol 分支（真实 bwrap、零模型调用）离线复现。根因：`backend/.venv/bin/
+  python` 是 uv 管理的**绝对符号链**（目标 `~/.local/share/uv/python/cpython-3.14-…/bin/python3.14`，
+  未版本化目录本身又符号链到 `cpython-3.14.3-…`）；旧代码只绑 fully-resolved 解释器前缀，`--ro-bind`
+  保留 venv 内符号链原样，字面绝对目标路径在 namespace 内悬空；codex 0.147.0 以 `execve` 启动 required
+  `ontology_platform` MCP → ENOENT → `thread/start` 致命。pre-fix 复现捕获 `bwrap: execvp
+  /backend/.venv/bin/python: No such file or directory` 与 start4 保留消息逐字一致的 -32603；post-fix
+  同一复现达 `THREAD_START_OK`，四 MCP 全初始化（probe API-key row 用后删除，核验 0 残留）。
+- Action/decision: 接受修复——protocol 分支 inline 绑定替换为 `_protocol_interpreter_mounts()`：沿解释器
+  符号链（防环、≤8 跳）对每个**绝对**目标的 runtime 前缀按自身路径 ro-bind，祖先 `--dir` 挂载点先于任何
+  子树 bind，基础树（/usr 等）不重建，fully-resolved 前缀绑定保留（pyvenv.cfg/sysconfig），venv 内相对
+  目标不加绑。`required=true`、MCP config 形状、建模语义零改动；仅 protocol 分支变化。否决改
+  `protocol_mcp_launch.py` command 指向 resolved 路径（改冻结 launch 合同）与向 /backend 拷贝/符号链
+  launcher（面更宽）。+3 回归测试（真实 repo 符号链布局）。主代理逐行复核 diff 并独立复跑全量
+  900 passed/1 skipped/293 subtests、compileall/ruff/diff-check 全绿；零 `backend/`/`frontend/` 改动。
+- 残余观察项（记录不阻断）：post-fix 复现 stderr 仍有一条 tolerated `failed to refresh available
+  models: timeout waiting for child process to exit`（0.147.0 另一条种子未覆盖的 refresh 查询面），
+  实证容忍回退、`thread/start` 成功，不触及路由/终态完成门；start5 证据阅读时与真致命失败区分。
+- Outcome/next step: requirement_tester Round 6 独立复测。
+
+### 2026-08-18 — Round 6 独立复测 PASS — requirement tester/main agent
+
+- Evidence: Round 6 PASS——实现审查（diff 恰 2 文件、零 backend/frontend、protocol 分支唯一改动、其余
+  mounts 逐字不变）+ 独立行为探针 13/13（真实 protocol config × 真实 bwrap：(a) 精确移除未版本化
+  prefix bind 后 exec rc=127 ENOENT、字面 target 不存在——独立复现 start4 签名；(b) post-fix 字面
+  target 在 ns 内存在、MCP spawn 命令 exec 成功、MCP cwd `/backend` 下 `import app.mcp.server` 成功）
+  + 宿主符号链事实与根因三方闭合 + 全量 900 绿 + 账本 hygiene（008 恰 8 事件零 `semantic_start`、
+  002/003/005 逐字节不变）。复现覆盖教训核验 held：本轮探针自始用真实 protocol 角色 config。
+  残余观察项判定为可接受残余非覆盖缺口（容忍结局已实证，不触及 §4 R1–R5）。
+- Action/decision: start5 障碍清除。提交修复与文档后按 §4 冻结要素启动 start5（预算 3/3、0/3 消耗）。
+- Outcome/next step: start5 执行与判定。
