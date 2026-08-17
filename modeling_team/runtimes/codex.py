@@ -19,6 +19,7 @@ import time
 import tempfile
 from copy import deepcopy
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -91,9 +92,12 @@ _RPC_ERROR_CATEGORIES = frozenset(
 class CodexRuntimeRPCError(CodexRuntimeError):
     """Sanitized JSON-RPC failure returned by the local App Server.
 
-    The App Server's ``message`` and ``data`` fields are provider-controlled and
-    are deliberately discarded.  Consumers may branch on this closed category
-    set and, for the one steer-retry case, use the validated in-memory turn ID.
+    The App Server's ``data`` field is provider-controlled and deliberately
+    discarded.  The ``message`` field is server-generated diagnostics and is
+    retained in sanitized form (R2.3-008 start3: a fatal ``-32603`` carried its
+    cause only in the dropped message).  Consumers may branch on this closed
+    category set and, for the one steer-retry case, use the validated in-memory
+    turn ID.
     """
 
     def __init__(
@@ -103,6 +107,7 @@ class CodexRuntimeRPCError(CodexRuntimeError):
         category: str,
         *,
         active_turn_id: str | None = None,
+        server_message: str | None = None,
     ) -> None:
         if category not in _RPC_ERROR_CATEGORIES:
             category = "rpc_error"
@@ -110,13 +115,30 @@ class CodexRuntimeRPCError(CodexRuntimeError):
         self.code = code if isinstance(code, int) and not isinstance(code, bool) else None
         self.category = category
         self.active_turn_id = active_turn_id
+        self.server_message = server_message
         code_fragment = str(self.code) if self.code is not None else "unknown"
-        super().__init__(f"app-server {method} failed ({category}, code={code_fragment})")
+        text = f"app-server {method} failed ({category}, code={code_fragment})"
+        if server_message:
+            text = f"{text}: {server_message}"
+        super().__init__(text)
 
 
 # Keep a short compatibility spelling for focused integrations that imported the
 # adapter's typed error by the conventional ``RPC`` acronym.
 CodexRPCError = CodexRuntimeRPCError
+
+
+def _sanitize_rpc_message(message: str) -> str | None:
+    """Reduce a server-generated JSON-RPC ``message`` to bounded diagnostics text.
+
+    Only whitespace is collapsed and the length capped: the text is the App
+    Server's own error explanation (R2.3-008 start3 lost the fatal ``-32603``
+    cause entirely because the code path kept only the numeric code).  The
+    provider-controlled ``data`` field stays discarded and is never merged in.
+    """
+
+    sanitized = " ".join(message.split())
+    return sanitized[:240] or None
 
 
 _RETRIEVAL_BLOCKING_WARNINGS = frozenset(
@@ -3528,6 +3550,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # on the ``skills/list`` config reload.
                 provider_lines = _formal_codex_builtin_config_lines(binding)
                 lines = provider_lines[:3] + lines + provider_lines[3:]
+                self._seed_models_cache(agent, binding.model)
             else:
                 lines = [
                     f'model = "{binding.model}"',
@@ -3601,6 +3624,49 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "\n".join(lines) + "\n", encoding="utf-8"
         )
         os.chmod(agent.home / "config.toml", 0o600)
+
+    def _seed_models_cache(self, agent: _Agent, model: str) -> None:
+        """Seed Codex's per-home models cache for the built-in provider route.
+
+        Codex 0.147.0 resolves ``thread/start`` through the models manager: with
+        no usable ``models_cache.json`` entry it runs an online refresh
+        (``GET chatgpt.com/backend-api/codex/models``) whose slow-path abort
+        (``timeout waiting for child process to exit``) races between a
+        tolerated fallback and a fatal JSON-RPC ``-32603`` (R2.3-008 start3,
+        third started role).  A version-matched, fresh cache entry makes the
+        ``online_if_uncached`` strategy hit the cache and skips the refresh
+        entirely, so startup is deterministic.  The snapshot is the official
+        endpoint's model metadata (secret-free); Codex itself rejects a client
+        version mismatch and falls back to its own refresh, and an unknown
+        model slug keeps the legacy unseeded behavior.
+        """
+
+        snapshot_path = (
+            self.root / "modeling_team" / "references" / "codex-models-cache-0.147.0.json"
+        )
+        try:
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        models = snapshot.get("models") if isinstance(snapshot, dict) else None
+        slugs = (
+            {
+                entry.get("slug")
+                for entry in models
+                if isinstance(entry, dict) and isinstance(entry.get("slug"), str)
+            }
+            if isinstance(models, list)
+            else set()
+        )
+        if model not in slugs:
+            return
+        seeded = dict(snapshot)
+        seeded["fetched_at"] = (
+            datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+        )
+        cache_path = agent.home / "models_cache.json"
+        cache_path.write_text(json.dumps(seeded), encoding="utf-8")
+        os.chmod(cache_path, 0o600)
 
     def namespace_command(self, agent: _Agent) -> list[str]:
         binary = shutil.which(self.codex_binary) or self.codex_binary
@@ -4101,7 +4167,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return CodexRuntimeRPCError(method, None, "malformed_rpc_error")
         message = value.get("message")
         category, active = cls._classify_steer_message(message) if method == "turn/steer" else ("rpc_error", None)
-        return CodexRuntimeRPCError(method, code, category, active_turn_id=active)
+        return CodexRuntimeRPCError(
+            method, code, category, active_turn_id=active, server_message=_sanitize_rpc_message(message)
+        )
 
     @staticmethod
     def _is_progress_notification(value: Mapping[str, Any]) -> bool:

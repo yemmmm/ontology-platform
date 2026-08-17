@@ -129,7 +129,7 @@ def test_progress_clock_uses_explicit_allowlist(tmp_path: Path) -> None:
     assert agent.last_output_monotonic > 321.0
 
 
-def test_jsonrpc_error_is_typed_and_does_not_expose_message_or_data(tmp_path: Path) -> None:
+def test_jsonrpc_error_is_typed_and_keeps_sanitized_message_without_data(tmp_path: Path) -> None:
     adapter = CodexRuntimeAdapter(repository_root=tmp_path)
     read_fd, write_fd = os.pipe()
     output = os.fdopen(read_fd, "rb", buffering=0)
@@ -157,11 +157,33 @@ def test_jsonrpc_error_is_typed_and_does_not_expose_message_or_data(tmp_path: Pa
             adapter._rpc(agent, "turn/steer", {})
         error = raised.value
         assert (error.method, error.code, error.category) == ("turn/steer", -32001, "rpc_error")
-        assert "provider secret" not in str(error)
+        # R2.3-008 start3 diagnosability: the server-generated ``message`` text is
+        # retained (sanitized) so a fatal -32603 carries its cause; only the
+        # provider-controlled ``data`` payload stays discarded.
+        assert error.server_message == "provider secret message"
+        assert "provider secret message" in str(error)
         assert "secret-token" not in repr(error)
     finally:
         os.close(write_fd)
         output.close()
+
+
+def test_jsonrpc_error_message_is_sanitized_and_bounded() -> None:
+    error = CodexRuntimeAdapter._rpc_error_from_value(
+        "thread/start",
+        {"code": -32603, "message": "internal error:\n  cause\twith  control   chars\n"},
+    )
+    assert error.server_message == "internal error: cause with control chars"
+    long_error = CodexRuntimeAdapter._rpc_error_from_value(
+        "thread/start", {"code": -32603, "message": "x" * 500}
+    )
+    assert long_error.server_message == "x" * 240
+    malformed = CodexRuntimeAdapter._rpc_error_from_value(
+        "thread/start", {"code": -32603, "message": 7}
+    )
+    assert malformed.category == "malformed_rpc_error"
+    assert malformed.server_message is None
+    assert "message" not in str(malformed)
 
 
 def test_runner_runtime_failure_finalizer_is_exactly_once(tmp_path: Path) -> None:
