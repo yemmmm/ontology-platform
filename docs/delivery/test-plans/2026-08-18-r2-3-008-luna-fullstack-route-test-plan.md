@@ -247,7 +247,7 @@
   套件与 compile/lint/diff 检查通过、真实账本与历史证据零改动）。测试后清理全部临时探针与
   `__pycache__`；工作树仅余本测试计划的 append 修改。
 
-### Round 3（2026-08-18，授权的真实 Luna formal run start1/start2/start3）
+### Round 3（2026-08-18，授权的真实 Luna formal run start1–start4）
 
 - Stable state：commit `a785d1d`；资产 digest 按 delivery record Round 3 冻结条目；run identity
   `r23008-luna-20260818-start1`；freeze `2026-08-17T18:32:06Z` → reservation 18:32:16Z（10s，≤20min 门）。
@@ -468,3 +468,23 @@
   child 两类 agent home 均获种子覆盖，start3 缺陷的残余暴露面清除；全量回归与账本 hygiene 全绿。
   **测试角度 start4 障碍已全部清除**（剩余不确定性仅为 codex 0.147.0 server 侧未观测面，非本轮可测）。
   测试后删除全部临时探针与 `/tmp/r5d1probe`。
+
+**start4（同日，Round 5 续 PASS 后）**：
+
+- Stable state：commit `fd5e23d`（`aee472b` 修复 + Round 5 续文档）。freeze → reservation 20:04:31Z。
+- 结果：**models-refresh 竞态修复实证生效 + RPC message 保留修复立即兑现诊断价值**——coordinator 与
+  modeling 完整 `thread/start`（thread_id 在位）；protocol `thread/start` 失败但这次保留了完整 message：
+  `app-server thread/start failed (rpc_error, code=-32603): error creating thread: Fatal error: Failed to
+  initialize session: required MCP servers failed to initialize: ontology_platform: No such file or
+  directory (os error 2)`。零模型 turn、账本 `reservation → presemantic_release`，**仍 0/3 消耗**。
+- 诊断：protocol 角色专属 `ontology_platform` MCP（`protocol_mcp_launch.py`：command
+  `/backend/.venv/bin/python`、cwd `/backend`、`required = true`）在 bwrap namespace 内 spawn 失败
+  ENOENT。`namespace_command` 对 protocol 已 ro-bind `/backend/app`、`/backend/.venv` 与 resolved
+  interpreter root；0.147.0 对 required MCP 的初始化失败由旧版的容忍/延迟变为 `thread/start` 即致命。
+  Round 4/5 的离线复现使用通用 config（未含 protocol 专属 MCP 块），故该缺陷逃过复测——developer
+  复现面缺口的教训记入本轮。start3 protocol 失败很可能同因（当时 message 被丢弃）。
+- Cleanup：state `CLEANED`、owned Project/Ontology 删除（residual 全零）、admin key `ceb074e5…`
+  revoke（复验 401）。账本 8 事件（4× reservation + 4× presemantic_release），零 `semantic_start`。
+- 结论：runtime/infrastructure（0.147.0 将 required MCP 初始化失败升级为 thread/start 致命 + protocol
+  MCP 在 namespace 内 ENOENT 待定位），按 §4 R8 回 developer：以**真实 protocol 角色 config**（含
+  ontology_platform MCP 块）离线复现定位 ENOENT 并窄修复；复测通过后再决定下一 start（预算 3/3 未动）。

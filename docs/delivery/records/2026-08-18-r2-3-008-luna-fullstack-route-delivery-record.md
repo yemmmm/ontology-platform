@@ -296,3 +296,23 @@
 ## Final verification
 
 - 待实施与独立测试完成后填写。
+
+### 2026-08-18 — Round 3 start4：MCP 初始化致命化，protocol ontology_platform ENOENT — main agent
+
+- Evidence: run `r23008-luna-20260818-start4`（stable state `fd5e23d`）——models-cache 种子修复实证生效
+  （coordinator/modeling 完整 `thread/start`，无 refresh 竞态面）；RPC message 保留修复立即兑现：
+  protocol `thread/start` 失败本次保留完整 message——`error creating thread: Fatal error: Failed to
+  initialize session: required MCP servers failed to initialize: ontology_platform: No such file or
+  directory (os error 2)`。账本 `reservation`（20:04:31Z）→ `presemantic_release`，**仍 0/3 消耗**。
+- 诊断：protocol 专属 `ontology_platform` MCP（`protocol_mcp_launch.py`：`/backend/.venv/bin/python`
+  -m app.mcp.server、cwd `/backend`、`required=true`）在 bwrap namespace 内 spawn ENOENT。
+  `namespace_command` 已对 protocol ro-bind `/backend/app`、`/backend/.venv` 与 resolved interpreter
+  root；0.147.0 将 required MCP 初始化失败升级为 `thread/start` 即致命（旧版容忍/延迟）。Round 4/5
+  离线复现用通用 config 未含 protocol 专属 MCP 块，故逃过复测——复现面缺口教训记录。start3 protocol
+  失败大概率同因（当时 message 被丢弃，被 models refresh 错误归因为竞态——cache 种子修复仍是正确
+  独立缺陷，其在线面已被 start4 coordinator/modeling 通过所实证）。
+- Cleanup：state `CLEANED`、owned Project/Ontology 删除（residual 全零）、temp key `ceb074e5…` revoke
+  （复验 401）。账本 8 事件，零 `semantic_start`。
+- Action/decision: 定层 runtime/infrastructure，回 requirement_developer：以**真实 protocol 角色
+  config**（含 ontology_platform MCP 块与 protocol namespace binds）离线复现 ENOENT 并窄修复。
+- Outcome/next step: developer 缺陷修复循环（第三轮）。
