@@ -1,15 +1,18 @@
 # R2.3-007 Modeling Team Responses Provider 路由交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
-- Status: amendment-design-reviewed（原合同 delivered；Luna ChatGPT subscription 变更实现/独立测试 pending）
+- Status: delivered（原合同与 Luna ChatGPT subscription 变更 A 均实现并独立测试 PASS；A6 真实 Luna probe
+  待用户单独授权）
 - Started: 2026-08-17T14:25:49+08:00
-- Last updated: 2026-08-17T16:59:44+08:00
+- Last updated: 2026-08-17T20:30:00+08:00
 - Design: `docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery baseline: `6a0331e Close R2.3-006 with full N=2 live-124 PASS`；初始工作树 clean
 - Delivery commits: `533f99e Design Modeling Team provider routing`（design）；`8ee7aa4 Implement Modeling Team
-  provider routing`（implementation，独立测试稳定状态）；closure commit subject
-  `Close R2.3-007 with provider routing delivered`，使用
+  provider routing`（原合同 implementation）；`4c1b8c9 Close R2.3-007 with provider routing delivered`（原合同
+  closure）；`022c8f5 Revise Luna subscription authentication design`（变更 A 设计）；`52dde1f Route Luna through
+  Codex subscription auth`（变更 A implementation）；`5791492 Fix subscription preflight stderr capture`（D1 修复）；
+  变更 A closure commit subject `Close R2.3-007 subscription auth amendment`，使用
   `git log -- docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md` 解析 immutable hash
 
 ## Confirmed contract
@@ -187,6 +190,9 @@
 | --- | --- | --- | --- | --- |
 | 0 | `6a0331e` + requirement/design/test-plan/record draft | Design only；未修改产品代码 | `git diff --check` PASS | plan review pending |
 | 1 | `8ee7aa4` | 按 reviewed 设计实现全部 §9 表面 + 48 个 A-F focused tests；无缺陷修复轮 | 全量 849 passed/1 skipped/273 subtests（`env -u DEEPSEEK_API_KEY`）；compileall/ruff/diff-check PASS | development-ready；三轮独立测试零缺陷 |
+| A-1 | `022c8f5` + 变更 A 设计 | 变更 A 设计修订 only；未修改产品代码 | 认证变更 plan review Round 2 PASS | development handoff frozen |
+| A-2 | `52dde1f` | 变更 A implementation：catalog `openai-codex`、conditional pre-reservation preflight、optional session manager、内建 `openai` TOML 投影、auth.json staging/barrier、profiles/tests 迁移（开发中因 API 限流中断一次，恢复后完成） | 全量 859 passed/1 skipped/273 subtests；compileall/ruff/diff-check PASS | development-ready |
+| A-3 | `5791492` | Round 4 缺陷 D1（`codex login status` 消息在 stderr，实现只捕获 stdout → 真实 Host 误判 unavailable）+ D2（歧义输出判定优先级）修复；开发修复曾引入 `capture_output=True`+`stderr=` 非法组合（monkeypatch 测试未暴露，主代理真实 Host 复核发现并做单行 PIPE 修复）；+2 测试 | 真实 Host preflight → `chatgpt-subscription`；全量 861 passed/1 skipped/273 subtests；compileall/ruff/diff-check PASS | development-ready；Round 5 复测 PASS |
 
 ## Independent test rounds
 
@@ -196,22 +202,29 @@
 | 1 | `8ee7aa4` | PASS | 无本需求缺陷；G1/G2/G3 未执行（按轮次）；pre-existing Low 记录 | 测试计划 §5 Round 1 详情 |
 | 2 | `8ee7aa4` | G2 PASS；G1 BLOCKED | G2 真实调用 2/3 上限、零重试；G1 缺 OpenAI credential | 测试计划 §5 Round 2 详情 |
 | 3 | `8ee7aa4` | PASS | G3 真实 mixed smoke BLOCKED（双条件）；H2/H3/H4 全绿；审计零发现 | 测试计划 §5 Round 3 详情 |
+| 4 | `52dde1f` | FAIL（D1 High） | A1/A3/A4/A5/A7 PASS；A2 行为面被 D1 阻塞（真实 Host 误判 unavailable）；A6 范围外 | 测试计划 §6 Round 4 详情 |
+| 5 | `5791492` | PASS（变更 A 范围） | D1/D2 已修复（真实 Host → chatgpt-subscription）；A1/A3/A4/A5 抽查 36 passed 无回归；A6 待用户授权 | 测试计划 §6 Round 5 详情 |
 
 ## Final verification
 
-- Required checks: 全量 modeling_team 套件 849 passed/1 skipped/273 subtests（`env -u DEEPSEEK_API_KEY`，
-  2026-08-17）；`compileall` OK；`ruff check modeling_team/` PASS；`git diff --check` PASS；四个 scope 文档与
-  implementation diff secret-shaped 零命中
+- Required checks（变更 A 终态 `5791492`，2026-08-17）: 全量 modeling_team 套件 861 passed/1 skipped/273
+  subtests（`env -u DEEPSEEK_API_KEY`）；真实 Host 无注入 preflight → `chatgpt-subscription`；`compileall` OK；
+  `ruff check modeling_team/` PASS；`git diff --check` PASS；两轮 diff secret-shaped 零命中
+- Required checks（原合同 `8ee7aa4`）: 全量 849 passed/1 skipped/273 subtests；compileall/ruff/diff-check PASS；
+  四个 scope 文档与 implementation diff secret-shaped 零命中
 - Runtime/restart health: `8ee7aa4` 零 `backend/` 改动，H4 重启门未触发；被动 health `127.0.0.1:8001/api/health`
   与 `5173/` 均 HTTP 200
 - Documentation/status sync: requirement 状态、design 状态、test plan 状态与本记录已同步至 delivered
 - Cleanup: G2 probe 临时脚本、`/tmp` 残留、loopback listener/process/key buffer 全零；无 ledger start、平台写入、
   run root 或 semantic start；历史 run/ledger evidence 字节不变
-- Residual risks and follow-ups: (1) G1 OpenAI Luna live probe BLOCKED——待用户创建
-  `~/.config/ontology-platform/modeling-team-openai.env` 后单独授权补跑，补跑前不宣称 OpenAI 路由实证；
-  (2) G3 真实 mixed formal smoke BLOCKED——需上述 credential 加 formal run attempt 授权；(3) mixed profile 真实
-  运行期双 session 并发与 live upstream 故障 latch 未实证；(4) pre-existing Low：ambient `DEEPSEEK_API_KEY`
+- Residual risks and follow-ups（变更 A 终态）: (1) A6 真实 Luna Responses probe——待用户单独授权（一次无业务
+  probe、预冻结 attempt/call cap/cleanup owner）；D1 修复后 prepare 层不再阻塞，补跑前不宣称订阅路由已实证；
+  (2) G3 真实 mixed formal smoke——仍需 formal run attempt 单独授权（不再需要 OpenAI credential 文件）；
+  (3) `_run_codex_login_status` 的两个 monkeypatch 测试无法覆盖 subprocess 参数组合合法性——已由 Round 5 R5-2
+  真实调用路径一次性验证，建议后续补一条不 mock 的参数冒烟；(4) pre-existing Low：ambient `DEEPSEEK_API_KEY`
   下 7 个 fallback 用例失败（父提交同样），建议单独 hermetic 化
+- Cleanup（变更 A）: 测试/探针临时文件零残留；Round 4 观察到的开发验证遗留 `/tmp/mt-ex-*` 已在收尾时连同历史
+  累积的 2182 个 `/tmp/mt-*` 测试临时目录一并清除；零真实模型调用、零 run root、零 ledger start、零平台写入
 
 ## Retrospective
 
@@ -264,3 +277,60 @@
 - Action/decision: 接受 PASS；冻结本次追加设计。原 `8ee7aa4` 实现不自动视为满足新合同，测试计划 §6 保持
   UNEXECUTED。
 - Outcome/next step: 本轮完成设计变更记录并提交；产品实现、独立测试和任何真实 Luna 调用留待后续明确实施。
+
+### 2026-08-17T17:20:00+08:00 — 修订实施开发移交冻结 — user/main agent
+
+- Context：用户指示按设计 §12 变更实施代码修改并完成测试。认证变更 plan review Round 2 已 PASS，修订设计已
+  提交为 `022c8f5 Revise Luna subscription authentication design`。
+- Evidence：baseline `022c8f5`，工作树 clean；Host `codex login status` 为 `Logged in using ChatGPT`；
+  `CODEX_HOME/auth.json` 为 0600 regular file。
+- Action/decision：冻结开发范围为设计 §12.5 全部表面——`model_routing.py` catalog 改 `openai-codex` 并移除
+  OpenAI API Key parser/binding/preflight；`runner.py` conditional pre-reservation preflight（仅
+  `openai-codex` 引用时做 Host ChatGPT/file-cache preflight）并删除 CLI 无条件 post-prepare Host auth check；
+  `runtimes/codex.py` optional/empty external session manager + `openai-codex -> 内建 openai` TOML 投影 +
+  private auth.json staging/barrier 复用；profiles/tests 切换 binding、删除 OpenAI credential fixtures、新增
+  订阅认证与 mixed 隔离测试。验收面为测试计划 §6 A1–A7。验证命令：
+  `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest modeling_team/tests/ -q`、
+  `python -m compileall modeling_team/`、`ruff check modeling_team/ --config backend/pyproject.toml`、
+  `git diff --check`。开发不改 `backend/`；A6 真实 Luna probe 不在开发/独立测试默认范围，须用户单独授权；
+  全程禁止读取或记录 `auth.json`/token 内容（只做 stat/`codex login status` 元数据检查）。
+- Outcome/next step：移交 `requirement_developer` 实施；完成后按稳定状态进入独立测试（共享测试计划 §6 追加轮次）。
+
+### 2026-08-17T19:05:00+08:00 — 变更 A 实施完成 — requirement developer
+
+- Context：按冻结范围实施设计 §12.5 全部表面（开发中因 API 使用上限 429 中断一次，恢复后继续）。
+- Evidence：`52dde1f Route Luna through Codex subscription auth`（8 文件，+963/−356）——`model_routing.py` catalog
+  改 `openai-codex` 并移除全部 OpenAI API Key 凭据代码、新增 `preflight_codex_subscription_auth()`（lstat 元数据
+  + `codex login status` 模块内固定模式解析，不读 auth.json 内容）；`runner.py` conditional pre-reservation
+  preflight；`__main__.py` 删除无条件 post-prepare Host auth check；`runtimes/codex.py` optional session manager
+  + `openai-codex -> 内建 openai` TOML + auth.json staging/first-turn barrier；profile/tests 迁移，全仓 `openai-direct`
+  零残留。验证：859 passed/1 skipped/273 subtests；compileall/ruff/diff-check PASS。
+- Outcome/next step：主代理复核全绿后提交稳定状态，进入独立测试 Round 4。
+
+### 2026-08-17T19:45:00+08:00 — 独立测试 Round 4 FAIL（D1 High）— requirement tester
+
+- Evidence：A1/A3/A4/A5/A7 全 PASS；A2 行为面失败——`_run_codex_login_status` 只捕获 stdout，而真实 codex-cli
+  0.147.0 把 `Logged in using ChatGPT` 写到 stderr（rc=0、stdout 0 字节），真实 Host 上 preflight 误判
+  `codex-subscription-auth-unavailable`。单测未拦截原因：新测试经注入 seam 伪造 stdout。主代理独立复核确认。
+  另记录 D2 Low（歧义输出 chatgpt 优先）。
+- Action/decision：D1/D2 返回 developer 窄修复。
+- Outcome/next step：修复后 Round 5 复测。测试计划 §6 追加 Round 4 详情。
+
+### 2026-08-17T20:00:00+08:00 — D1 修复 + 主代理窄修复修复引入缺陷 — requirement developer/main agent
+
+- Evidence：developer 修复 D1（合并捕获 stderr）+ D2（api-key 提示优先）并新增 2 测试（861 passed）。主代理真实
+  Host 复核发现修复引入新缺陷：`capture_output=True` 与 `stderr=subprocess.STDOUT` 组合在 `subprocess.run` 非法
+  （ValueError），monkeypatch 测试拦截 `subprocess.run` 故未暴露。主代理做单行 PIPE 修复
+  （`stdout=subprocess.PIPE, stderr=subprocess.STDOUT`），真实 Host 无注入 preflight → `chatgpt-subscription`，
+  全量 861 passed/1 skipped/273 subtests、compileall/ruff/diff-check PASS，提交 `5791492`。
+- Outcome/next step：Round 5 复测。
+
+### 2026-08-17T20:20:00+08:00 — 独立测试 Round 5 PASS 与变更 A 收尾 — requirement tester/main agent
+
+- Evidence：D1/D2 确认修复——R5-2 无 monkeypatch 真实调用路径（rc=0、合并输出含 chatgpt）+ 真实 Host preflight
+  返回 `chatgpt-subscription`；全量 861 passed/1 skipped/273 subtests；A3/A4/A5 抽查 36 passed 无回归；compile/
+  ruff/diff-check PASS；diff secret 审计零命中。遗留观察：两个新测试依赖 monkeypatch，参数组合合法性由 R5-2
+  一次性验证覆盖。A6 真实 Luna probe 范围外待授权。
+- Action/decision：主代理接受 close-with-followups；同步四个 scope 文档状态；收尾清理（含历史累积 2182 个
+  `/tmp/mt-*` 测试临时目录）；closure commit。
+- Outcome/next step：R2.3-007 原合同 + 变更 A 均关闭；A6/G3-real 为用户授权门 followup。

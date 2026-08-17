@@ -1,7 +1,8 @@
 # R2.3-007 Modeling Team Responses Provider 路由设计
 
-- 状态：implemented / 独立测试 PASS（implementation commit `8ee7aa4`；测试计划 Round 1–3 记录全部证据；
-  G1 OpenAI live probe 与 G3 真实 mixed formal smoke 因 OpenAI credential 缺失记 BLOCKED，为已记录 followup）
+- 状态：implemented / 独立测试 PASS——原合同（implementation commit `8ee7aa4`，测试计划 Round 1–3）与
+  变更 A "Luna Codex ChatGPT 订阅认证"（implementation `52dde1f` + 缺陷修复 `5791492`，测试计划 §6 Round 4–5，
+  D1 修复后复测 PASS）均已交付。followup：§6 A6 真实 Luna probe 待用户单独授权，补跑前不宣称订阅路由已实证
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Test plan：`docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery record：`docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md`
@@ -291,9 +292,10 @@ Provider declaration、credential binding 和 live probe；同名模型仍以不
 独立 API 计费。凡本节与 §1、§5.2、§6、§8、§9、§10 中 `openai-direct`、`OPENAI_API_KEY` 或 OpenAI loopback
 session 的描述冲突，以本节为准。
 
-`8ee7aa4` 仍是原设计的已验证实现基线，但在本修订完成开发和独立测试前，不得把现有
-`openai-direct/gpt-5.6-luna` 路径表述为“可使用 Codex Plus 套餐额度”。原 G1/G3 的“缺 OpenAI credential
-文件”BLOCKED 结论保留为历史事实；该 credential 文件不再是修订后 G1/G3 的解除条件。
+`8ee7aa4` 仍是原设计的已验证实现基线；本修订已由 `52dde1f` 实施、`5791492` 修复 Round 4 发现的 D1，并经
+测试计划 §6 Round 5 独立复测 PASS。真实 Luna 调用（§6 A6 / §12.6 条件 4）待用户单独授权，此前不宣称订阅
+路由已实证。原 G1/G3 的“缺 OpenAI credential 文件”BLOCKED 结论保留为历史事实；该 credential 文件不再是
+修订后 G1/G3 的解除条件。
 
 OpenAI 官方认证合同区分两种本地 Codex 登录：ChatGPT 登录用于 subscription access，API Key 用于
 usage-based access；API Key 使用标准 API 定价而不是 ChatGPT 套餐额度。Codex 会缓存并复用登录，file storage

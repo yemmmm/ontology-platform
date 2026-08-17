@@ -1,7 +1,8 @@
 # R2.3-007 Modeling Team Responses Provider 路由共享测试计划
 
-- 状态：executed / Round 1–3 独立测试完成（A–F、H1–H4、G2 PASS；G1 与 G3 真实 mixed smoke BLOCKED，
-  见 §5 与 followup 记录）
+- 状态：executed / Round 1–3（原合同）与 Round 4–5（变更 A：Luna Codex 订阅认证）独立测试完成——A1–A5、A7
+  PASS，Round 4 发现 D1 High 修复后 Round 5 复测 PASS；A6 真实 Luna probe 待用户单独授权。G1/G3 原始论与
+  followup 见 §5
 - Requirement：`docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
 - Design：`docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Delivery record：`docs/delivery/records/2026-08-17-r2-3-007-model-provider-routing-delivery-record.md`
@@ -199,7 +200,7 @@ H4 — 条件重启门：`git show 8ee7aa4 --stat` 18 文件全部在 `modeling_
 
 **总体建议**：close-with-followups——R2.3-007 实现按本计划可判定范围（A-F、H1-H4、G2）全部通过，无产品缺陷；followups：(1) G1 待 OpenAI credential 就绪后授权补跑；(2) G3 真实 mixed formal smoke 待 (a)(b) 双条件；(3) pre-existing Low：`test_deepseek_codex_runtime.py` 7 个 fallback 用例建议 hermetic 化（`monkeypatch.delenv`）。
 
-## 6. 实施中变更 A 测试增量（2026-08-17，UNEXECUTED）
+## 6. 实施中变更 A 测试增量（2026-08-17，executed：Round 4 FAIL→D1 修复→Round 5 PASS；A6 待授权）
 
 本节对应设计 §12，只追加新合同，不改写 Rounds 0–3 的历史结论。原 G1/G3 关于 OpenAI API credential 文件
 缺失的 BLOCKED 证据仍有效，但不再是修订后测试的前置条件。
@@ -220,6 +221,164 @@ H4 — 条件重启门：`git show 8ee7aa4 --stat` 18 文件全部在 `modeling_
   account/workspace、auth cache path/digest 或 `codex login status` 原始输出。
 - A6：在用户单独授权一次无业务 Provider probe 后，通过 Codex 订阅认证运行 Luna Responses
   tool-call/terminal smoke，核对 exact model、effort、typed failure、零 fallback 和零 secret/residue。
-- A7：重跑原 A-F/H1-H4 受影响回归；保留 Rounds 0–3，不以本节 UNEXECUTED 改写原 implementation PASS。
+- A7：重跑原 A-F/H1-H4 受影响回归；保留 Rounds 0–3，不以本节结果改写原 implementation PASS。
 
-实施与独立测试尚未开始；本节当前只冻结修订后的验收面。
+实施与独立测试已完成（implementation `52dde1f` + 缺陷修复 `5791492`；Round 4/5 详情见本节末尾）。A6 待用户
+单独授权后执行。
+
+### Round 4 详情（2026-08-17，independent tester，stable state `52dde1f`，零真实模型调用）
+
+稳定状态：implementation commit `52dde1f`（父提交 `022c8f5`），工作树仅剩 delivery record 的 pending 编辑（主代理
+所有，本轮未触碰）。本轮为实施中变更 A（设计 §12）的独立测试轮，执行 A1–A5、A7 与真实 Host preflight 行为
+检查；A6 需用户单独授权，记为范围外，未发起任何真实模型调用。
+
+**总体结论：FAIL（High，单缺陷 D1）**——确定性合同面全部通过，但真实 Host（已 `Logged in using ChatGPT`）上
+subscription preflight 误判为 `codex-subscription-auth-unavailable`，阻塞设计 §12.6 验收条件 1 的主路径。
+
+实现审查（对 `git show 52dde1f`，8 文件全部在 `modeling_team/` 下，`backend/`/`frontend/` 命中 0 → H4 未触发）：
+
+- catalog：`PROVIDER_CATALOG` 仅 `deepseek-direct`/`openai-codex`；`openai-codex` 的 `upstream_url`/`credential_env`
+  为 `None`，`uses_external_credential=False`。全仓产品代码 grep `openai-direct`/`preflight_openai_credential`/
+  `read_openai_credential`/`modeling-team-openai` 零命中；OpenAI API Key parser/binding/preflight 已整体删除。
+- conditional pre-reservation preflight：`runner.py` 两个分支（fresh 与 R2.3-003 deferred）中
+  `preflight_codex_subscription_auth()` 均先于 `preflight_profile_credentials()`（即 DeepSeek credential read）、
+  ledger reservation、run-root 创建与 Agent start 执行；`profile_requires_codex_subscription_auth()` 为假时
+  DeepSeek-only profile 零触发。
+- CLI：`__main__.py` 无条件 post-prepare `preflight_host_auth` 调用已删除；`test_cli_does_not_probe_host_auth_after_prepare`
+  事件序为 `runner-init, prepare, start, cleanup`。
+- manager 边界：`_start_runtime` 仅对 `uses_external_credential_session` 过滤后的 provider 创建
+  `ProviderSessionManager`；OpenAI-only 零 manager、`provider_sessions=None` 被接受；mixed manager 只含
+  `deepseek-direct`，`ProviderSessionManager` 构造函数拒绝内建 route。
+- TOML 投影：`_formal_codex_builtin_config_lines` 产出 `model_provider = "openai"`（`CODEX_TOML_PROVIDER_ID`），
+  无 `[model_providers.*]` table、无 `base_url`、无 `env_key`、无 session lookup；持久角色与两个 fresh Examiner
+  走同一分支（`uses_external_credential_session(provider_id)` 判定）。
+- auth staging/barrier：formal `openai-codex` 角色/child 设 `credential_mode="file_auth"`、
+  `auth_barrier_pending=True`、`auth_path=<home>/auth.json`，复用既有 staging/barrier；formal external-route 角色
+  `auth_path=None` + `provider_proxy`——auth.json 不投影给 deepseek-direct 角色。
+- evidence：`RoleModelBinding.as_dict` 仅追加固定 `auth_mode="chatgpt-subscription"`；runner 私有
+  `codex_subscription_auth_mode` 只存固定 label；`runner.py:1033` 的 `"auth_mode": "0600"` 为既有 private_runtime
+  文件权限合同键，与本修订无关。auth cache 内容零读取（`model_routing.py` 仅 lstat + `codex login status`
+  模块内解析）。
+
+执行结果（`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python`）：
+
+- H1 全量 `pytest modeling_team/tests/ -q` → **859 passed, 1 skipped（既有 opt-in real Codex smoke）, 273 subtests
+  passed, 0 failed**（43.66s），与开发自报一致。
+- A7 回归：`test_r23003_incremental_contract.py + test_r23005_contracts.py + test_luna_max_model_manifest.py +
+  test_r23006_acceptance_operation.py + test_r23006_lean_runtime.py + test_start44_examiner_contract.py +
+  test_start74_cleanup_audit.py + test_deepseek_provider_proxy.py` → **166 passed, 78 subtests passed**。
+- `compileall -q modeling_team/` → exit 0；`ruff check modeling_team/ --config backend/pyproject.toml` → All
+  checks passed；`git diff --check 022c8f5 52dde1f` → clean。
+- A1：`test_openai_profile_binds_all_six_roles_to_luna_medium`、`test_mixed_profile_routes_each_role_with_capability_effort`
+  PASS（全量内）。
+- A2（确定性部分）：`test_subscription_preflight_*` 5 项、`test_runner_subscription_preflight_precedes_credentials_and_reservation`、
+  `test_runner_subscription_preflight_failure_fails_closed_before_reservation`、
+  `test_runner_deepseek_only_profile_never_triggers_subscription_preflight` PASS。
+- A3：`test_codex_route_reads_no_openai_credential_or_ambient_key`、`test_deepseek_default_credential_path_is_unchanged`、
+  `test_openai_only_runtime_needs_no_provider_sessions_or_bindings` PASS。
+- A4：`test_persistent_role_projection_equals_frozen_mixed_bindings`、`test_examiner_children_route_by_canonical_package_id`、
+  `test_openai_role_staged_auth_exists_only_through_first_turn_barrier`、`test_openai_role_staged_auth_is_removed_by_cleanup`
+  PASS。
+- A5：`test_baseline_projects_safe_profile_binding_without_provider_text`、
+  `test_codex_role_evidence_records_provider_model_effort_and_safe_auth_mode` PASS。
+
+**真实 Host preflight 行为检查（A2 行为面）— FAIL（缺陷 D1）**：
+
+- 只读验证 `codex_auth_cache_path()` lstat：存在、非 symlink、mode 0600、uid 1000——metadata 合同满足。
+- `preflight_codex_subscription_auth()`（真实 Host）→ raise `CodexSubscriptionAuthError
+  reason=codex-subscription-auth-unavailable`。该调用只运行 `codex login status`，未读 token、未发模型调用。
+- 诊断：Host `codex-cli 0.147.0` 的 `codex login status` 返回 **rc=0、stdout 0 字节、stderr 24 字节
+  `Logged in using ChatGPT`**（关键词经 grep 确认，账户信息未记录）。而 `model_routing.py
+  _run_codex_login_status` 只返回 `completed.stdout`，丢弃 stderr，导致 `_codex_login_mode_conclusion(0, "")`
+  落入"无法判定登录方式"分支。
+- 影响：设计 §12.6 验收条件 1（Host 已 ChatGPT 登录时选择 `openai-luna-medium` 应可启动）被阻塞；当前真实
+  Host 上 Luna profile 的 prepare 阶段即 fail closed，未来授权的 A6 probe 也会被同一层阻塞。
+- 单测未拦截的原因：全部新测试通过 `login_status` 注入 seam 伪造 stdout 输出，从未对真实 CLI 的流走向执行。
+- 严重程度：High（fail-closed 方向安全：不泄密、不误入 API 计费路径；但完全阻断本修订的主路径并误报健康
+  Host 登录为 unavailable）。
+- 建议修复（供开发参考）：`_run_codex_login_status` 合并捕获 stderr（如 `stderr=subprocess.STDOUT` 或拼接
+  `completed.stderr`），保持输出仍只留在模块内固定模式解析；并补一条模拟"消息在 stderr"形态的用例。
+
+对抗探针（临时脚本即用即删）：
+
+- P1 伪造 API-key 登录 stdout → `codex-subscription-auth-mode-mismatch`；P4 非零 rc → unavailable；P5 symlink
+  cache / P6 0644 cache / P9 缺失 cache / P10 缺失 home → `codex-subscription-auth-unavailable`（P9/P10 同时证明
+  cache 预检失败时 `codex login status` 不会被调用）；P7 合法 0600 cache + ChatGPT 登录 → `chatgpt-subscription`；
+  P8 ambient `OPENAI_API_KEY=sk-probe-ambient-injected` 注入下 preflight 照常通过且从不读取该 env。
+- P3 观察（Low，非缺陷）：stdout 同时含 "api key" 与 "ChatGPT" 时 chatgpt 分支优先；真实 CLI 输出为固定短句，
+  当前不构成误判面，但 D1 修复若拼接 stdout+stderr 应保持关键词判定顺序并考虑 API-key 优先。
+- secret/cleanup 审计：`git show 52dde1f` 中 `sk-` 形态命中均为测试 sentinel 且带不泄漏断言；产品代码
+  `OPENAI_API_KEY` 仅出现在 `shell_environment_policy.exclude`；`model_routing.py` 对 auth cache 零内容读取；
+  本轮零 run root、零 ledger start、零平台写入；本轮探针临时文件全部删除。观察项：`/tmp/mt-ex-cc049fe4e8a712af6beff79b`
+  （含 report.sock，mtime 2026-08-17 19:53:36）为本轮开始前开发验证运行遗留的 examiner 残留，非本轮产物，
+  未代为删除；`/tmp/r23003-pre-send-probe`、`/tmp/r23006_app_server_probe.py` 为 Rounds 0–3 时期既有文件。
+
+缺陷清单：
+
+- **D1（High）**：`modeling_team/model_routing.py::_run_codex_login_status` 只捕获 `codex login status` 的 stdout，
+  而当前 Host codex-cli 0.147.0 将 `Logged in using ChatGPT` 写到 stderr；真实 Host 已 ChatGPT 登录仍被判定
+  `codex-subscription-auth-unavailable`。复现：Host 上 `PYTHONPATH=backend:. backend/.venv/bin/python -c
+  "from modeling_team.model_routing import preflight_codex_subscription_auth; preflight_codex_subscription_auth()"` →
+  抛 `CodexSubscriptionAuthError`（对照：`codex login status 2>&1 >/dev/null` 输出 `Logged in using ChatGPT`，rc=0）。
+  期望：返回 `chatgpt-subscription`。证据见上文本节。
+- D2（Low，观察）：`_codex_login_mode_conclusion` 关键词判定顺序在双关键词输出下偏 chatgpt；建议随 D1 修复一并
+  处理，非独立阻塞项。
+
+范围外：A6（真实 Luna probe）待用户单独授权；D1 修复并复测通过前，A6 即使授权也会在 prepare 层被阻塞。
+建议主代理让需求开发 agent 修复 D1（`_run_codex_login_status` 捕获 stderr）后发起下一轮复测（复测重点：真实
+Host preflight 返回 `chatgpt-subscription`、既有 859 套件保持全绿、新增 stderr 形态用例）。
+
+### Round 5 详情（2026-08-17，independent tester，stable state `5791492`，零真实模型调用）
+
+稳定状态：`5791492 Fix subscription preflight stderr capture`（在 `52dde1f` 之上），工作树仅剩 delivery record 与
+本测试计划的 pending 编辑（非产品代码）。本轮复测 Round 4 缺陷 D1/D2 的修复及修复引入缺陷（开发曾误将
+`capture_output=True` 与 `stderr=` 组合导致真实 Host `ValueError`，主代理已改 PIPE 形式并验证）后的最终形态。
+
+**总体结论：PASS（Round-5 范围：D1/D2 修复验证 + A1/A3/A4/A5 抽查回归；A6 仍范围外）**
+
+实现审查（对 `git show 5791492`，2 文件均不在 `backend/`/`frontend/` → H4 未触发）：
+
+- `_run_codex_login_status` 改为 `stdout=subprocess.PIPE, stderr=subprocess.STDOUT`（合法组合，stderr 合并进返回
+  流），`text=True/timeout=30/check=False` 与 env 注入保持不变；docstring 明确 codex-cli 0.147.0 的 stderr 形态。
+- `_codex_login_mode_conclusion`（D2）：API-key 提示判定移到 ChatGPT 判定之前，歧义输出 fail 向
+  mode-mismatch；三个分支 reason/message 均为固定常量。
+- 新增测试 `test_subscription_preflight_reads_login_mode_written_to_stderr`（monkeypatch `subprocess.run`，断言
+  `stderr == subprocess.STDOUT` 且 stderr-only 形态解析成功）与
+  `test_subscription_preflight_api_key_hint_wins_over_chatgpt_text`。二者均 monkeypatch `subprocess.run`，无法捕获
+  参数组合层面的 `ValueError`——该覆盖缺口由本轮 R5-2 真实调用路径探针补验（见下）。
+
+真实 Host 行为验证（只运行 `codex login status`，不读 token、零模型调用；临时探针脚本即用即删）：
+
+- R5-1 无注入全生产路径：`preflight_codex_subscription_auth()` → **`chatgpt-subscription`**（Round 4 D1 复现命令
+  同路径，现返回期望值）。
+- R5-2 无 monkeypatch 真实调用路径：`_run_codex_login_status(~/.codex)` 直接执行 → `rc=0`、合并输出 24 字节、
+  含 `chatgpt`、不含 `api key`——证明真实 `subprocess.run` 调用的参数组合合法（若 `capture_output` 与 `stderr=`
+  误组合会在此抛 `ValueError`），且 stderr 文本已并入解析流。
+- R5-3 判定面：`_codex_login_mode_conclusion(0, "Logged in using an API key\n")` → mode-mismatch；歧义
+  `"auth via API key (not ChatGPT)"` → mode-mismatch（D2 修复后 API-key 优先）；非零 rc → unavailable。
+
+回归结果（`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python`）：
+
+- H1 全量 `pytest modeling_team/tests/ -q` → **861 passed, 1 skipped（既有 opt-in）, 273 subtests passed, 0 failed**
+  （43.52s），与预期一致（859 + 2 新测试）。
+- `test_model_routing.py` 单文件 → **60 passed**；`compileall -q modeling_team/` exit 0；
+  `ruff check modeling_team/ --config backend/pyproject.toml` All checks passed；
+  `git diff --check 52dde1f 5791492` clean。
+- A3/A4/A5 抽查（含 cross-role auth 隔离与 cleanup 零残留）：
+  `test_openai_only_runtime_needs_no_provider_sessions_or_bindings`、
+  `test_codex_route_reads_no_openai_credential_or_ambient_key`、
+  `test_persistent_role_projection_equals_frozen_mixed_bindings`、
+  `test_openai_role_staged_auth_exists_only_through_first_turn_barrier`、
+  `test_openai_role_staged_auth_is_removed_by_cleanup`、
+  `test_codex_role_evidence_records_provider_model_effort_and_safe_auth_mode`、
+  `test_start74_cleanup_audit.py`、`test_luna_max_model_manifest.py` → **36 passed**，无回归。
+- secret 审计：`git show 5791492` 无 secret 形态命中；本轮零 run root、零 ledger start、零平台写入、零临时文件
+  残留。
+
+缺陷状态：D1 **FIXED**（真实 Host 返回 `chatgpt-subscription`）；D2 **FIXED**（API-key 提示优先，歧义 fail 向
+mode-mismatch）；修复引入的 `capture_output` 组合缺陷已由 PIPE 形式消除并经 R5-2 真实路径验证。本轮无新缺陷。
+
+遗留观察（非缺陷）：两个新测试依赖 monkeypatch `subprocess.run`，参数组合合法性只有真实调用路径可证；建议后续
+在开发侧为 `_run_codex_login_status` 补一条不 mock 的参数冒烟（或接受由本轮 R5-2 一次性人工验证覆盖）。
+
+范围外：A6（真实 Luna probe）仍待用户单独授权；D1 已修复，授权后 A6 不再被 prepare 层阻塞。
