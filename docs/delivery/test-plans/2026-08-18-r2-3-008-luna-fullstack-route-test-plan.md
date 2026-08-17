@@ -352,3 +352,83 @@
   gate 教训：非 clean tree 会被 preflight 拒绝）并完成 §4 冻结要素后，即可消耗首个 semantic start 启动
   start3（授权预算 3/3 未动）。测试后删除全部临时探针与 `__pycache__`；工作树仅余本测试计划与主代理
   delivery record 的 docs 追加。
+
+### Round 5（2026-08-18，start3 thread/start 缺陷修复复测）
+
+- Stable state：commit `c85628a`（main HEAD）"Seed models cache for builtin route and retain RPC error
+  messages"；工作树仅含主代理未提交的 delivery record 追加（docs only，非本测试处置）。测试者为独立
+  requirement_tester，未参与修复与 developer 离线复现。零真实模型调用、零 run root 创建、零真实账本
+  写入、零真实 run；未读取/记录任何真实 `auth.json`/token 内容（探针 host auth 为自造 `{}` 字节）。
+- 范围：start3 第三角色 `thread/start` -32603 缺陷修复 `c85628a` 的独立复测——实现审查 + vendored
+  snapshot 安全审查 + 独立行为探针（真实 `_write_config` 种子链 + RPC message 保留）+ 全量回归 +
+  账本/证据 hygiene。
+- 实现审查（PASS）：
+  - `git show c85628a --stat`：恰 4 文件——`modeling_team/references/codex-models-cache-0.147.0.json`
+    （新增 593 行）、`modeling_team/runtimes/codex.py`（+78/−7）、新测试
+    `test_r23008_codex_models_cache_seed.py`（3 tests）、`test_runtime_failure_boundary.py`（改 1 增 1）；
+    `git diff c85628a --stat -- backend/ frontend/` 为空（重启门未触发）；零 modeling 语义/账本/
+    acceptance 表面改动（种子调用点在 `_write_config` builtin 分支内，错误对象仅新增 sanitized
+    `server_message` 字段与 str 追加）。
+  - 种子调用点唯一（codex.py:3553），位于 `formal and not uses_external_credential_session(binding.
+    provider_id)` 的 builtin 分支（`_formal_codex_builtin_config_lines` 拼接之后）；外测 provider 分支与
+    非 formal 路径不触发。`_seed_models_cache` 逐项防御：非 dict snapshot/非 list models/无 slug 集/
+    slug 不命中 → 静默 return（保持 legacy 行为）；`OSError`/`JSONDecodeError` → 静默 return；
+    `fetched_at` 以 `datetime.now(timezone.utc)` 置启动时刻；`models_cache.json` 写入后 `chmod 0600`。
+  - RPC message 保留：`_sanitize_rpc_message` 仅空白折叠 + 240 字符截断（空串归 `None`）；
+    `_rpc_error_from_value`（`_rpc` 真实异常路径，codex.py:4216/4264）在既有 `message` 必须为 `str` 的
+    门后传入 sanitized message；malformed 分支（message 非 str）`server_message=None` 且 str 不含
+    message；`data` 字段仍完全不进入错误对象。
+- Vendored snapshot 安全审查（PASS）：`codex-models-cache-0.147.0.json`（173,963 字节）可解析 JSON；
+  顶层键恰 `{client_version, etag, fetched_at, models}`，`client_version` 精确 `"0.147.0"`；7 个 model
+  条目，`gpt-5.6-luna` 在列且 `supported_reasoning_levels` 含 `medium`（default_reasoning_level 亦为
+  `medium`）。secret 扫描：键名路径命中 key-like 模式者仅 `model_messages.token_budget.*` 指令模板
+  （纯提示词文本）；≥32 字符长字符串全部为 instructions_template/policy 模板（熵 4.3–4.6，自然语言）；
+  唯一 etag `W/"fc34272d86d82eed47b4011efcecf30f"` 属正常 HTTP etag 形态；`auth.json`/`Bearer `/`access_
+  token`/`refresh_token`/`api_key` 零命中；`sk-` 命中经上下文核对全部为 "task-specific" 子串。判定为
+  官方 endpoint 模型目录元数据，无凭据/令牌。
+- 独立行为探针（PASS，一次性脚本已删除；23/23 断言）：真实 `load_profile` 链 + `CodexRuntimeAdapter`
+  + `openai-luna-medium` 投影驱动真实 `_write_config`：
+  - (a) builtin binding（coordinator）：`models_cache.json` 落于 agent home，`models` 与 snapshot 逐字
+    相等（etag 逐字保留），`client_version` `0.147.0`，`fetched_at` 距 now <0.1s，slug 集含
+    `gpt-5.6-luna`，mode `0600`；config.toml 仍为 `openai`/`gpt-5.6-luna`（Round 4 拼接修复未被扰动）。
+  - (b) 稍后启动的第二个 home（modeling）`fetched_at` 严格晚于前者（启动时刻戳逐次刷新）、models 仍
+    逐字、mode `0600`。
+  - (c) slug 不在 snapshot（`gpt-not-in-snapshot`）：不落任何 cache 文件。
+  - (d) 隔离 repo root 下 snapshot 损坏（`{not json`）与不可读（mode 000）两种形态：`_write_config` 均
+    不抛异常、不落 cache、config.toml 正常写出（安全降级为 legacy 行为）。
+  - (4) RPC message 保留：`_rpc_error_from_value("thread/start", {code:-32603, message 含 \n/\t/多空格,
+    data 含伪 secret})` → `server_message` 精确为折叠后文本、str 含 `code=-32603` 与 message、伪 secret
+    不在 str/repr；500 字符 message 截断为恰 240；message 非 str → `malformed_rpc_error` 且
+    `server_message=None`；`turn/steer` 分类（`no_active_turn_to_steer`）不受影响且 message 同步保留；
+    直接构造格式 `app-server thread/start failed (rpc_error, code=-32603): boom` 与 runtime 自身调用点
+    一致。
+- 回归（PASS）：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **894 passed, 1 skipped, 293 subtests passed（44.03s）**（较 Round 4 增 4
+  tests 即修复新增）；`python -m compileall modeling_team/` OK；`ruff check modeling_team/ --config
+  backend/pyproject.toml` All checks passed；`git diff --check`/`git diff --cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-002/003/005-start-ledger.jsonl` sha256 与 Round 1/2/4 记录逐字节一致
+  （`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；`.r2-3-008-start-ledger.jsonl` 恰 6 事件——start1/2/3
+  各一条 `reservation` + 一条 `presemantic_release`，零 `semantic_start`，**semantic start 预算 0/3
+  消耗（3/3 未动）**；`git status --short workspaces/ backend/ frontend/` 为空，`workspaces/
+  modeling-runs/` 零修改。
+- 缺陷：
+  - **R5-D1（High，修复覆盖缺口——Examiner child home 未种子）**：`_seed_models_cache` 仅在
+    `_write_config`（persistent role 路径，codex.py:3553）被调用；fresh Examiner child 的 builtin 分支
+    （`_launch_acceptance_child_impl`，codex.py:2370-2374 使用同一
+    `_formal_codex_builtin_config_lines(child_model_override)`）**不种子** child 的独立 fresh home，而
+    child 同样执行 `thread/start`（codex.py:2524，fresh home 无 `models_cache.json` → 同一 online
+    refresh 路径）。复现依据（代码级）：grep 确认 `_seed_models_cache` 调用点唯一。期望：所有 formal
+    builtin-provider agent home（含两类 fresh Examiner child）种子；实际：仅 persistent role 种子。
+    后果：start3 的致命竞态在 child 启动面仍存在——若在 acceptance 阶段（`semantic_start` 已消耗后）
+    child `thread/start` 命中致命分支，将烧掉 1/3 semantic start（start3 三 persistent 角色即 1/3 命中
+    致命分支）。缓解因素：child 的 refresh 行为为代码级推断（start3 未达 child 启动，无 live 证据），
+    且 developer 离线复现只覆盖三个 persistent 角色。建议：start4 前由 developer 在 child builtin 分支
+    补一行 `self._seed_models_cache(...)`（等价窄修复），或主代理明确接受该残余风险后再启动。
+- 未执行项：真实 bwrap 多角色 `thread/start` 复现（developer 离线已做；本轮以真实 `_write_config`
+  种子链 + 代码级唯一调用点审查独立闭合"cache 必然落盘"链路，但 cache 命中→refresh 跳过一段沿用的
+  是 codex 0.147.0 `online_if_uncached` 行为结论，非本轮 live 复测）；真实 run 属 start4（主代理决策）。
+- 结论：**Round 5 PASS（修复本体 FIXED）**——种子行为、安全降级、snapshot 安全、RPC diagnosability、
+  全量回归与账本 hygiene 全绿，persistent-role 路径的 start3 缺陷判定修复。但 **R5-D1（High）指出
+  Examiner child 路径未获同等种子覆盖**；是否以一行窄修复补齐 child 分支后再启动 start4，由主代理
+  决策（授权预算 3/3 未动、0/3 已消耗）。测试后删除全部临时探针与 `/tmp/r5probe`；工作树仅余本测试
+  计划与主代理 delivery record 的 docs 追加。

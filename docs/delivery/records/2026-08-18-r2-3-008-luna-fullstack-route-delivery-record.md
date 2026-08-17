@@ -229,6 +229,27 @@
   复测后再决定下一 start（预算 3/3 未动）。
 - Outcome/next step: developer 缺陷修复循环（第二轮）。
 
+### 2026-08-18 — start3 缺陷根因定位与窄修复（第二轮）— requirement developer/main agent
+
+- Evidence: developer 逐角色日志取证确认——三角色 `thread/start` 均因 agent home 无 `models_cache.json`
+  触发 0.147.0 online models refresh；refresh 慢路径（`timeout waiting for child process to exit`，
+  models manager 内部子进程在 bwrap PID namespace 下 reap 超时）在**同一次运行内**于 coordinator/modeling
+  被容忍（回退 bundled catalog、继续 session_init）、在 protocol 成为致命 `-32603`——同一错误两种结局，
+  判 server 侧传播竞态，"第三角色"非确定性属性。原始 -32603 message 在保留证据中不可恢复（runtime 丢弃
+  message）。离线快网下慢路径不可复现（refresh ~1s 成功），故修复选择绕过而非复现。
+- Action/decision: 接受修复 `c85628a`——(1) `_seed_models_cache` 在 formal builtin 分支为每个 agent home
+  预置版本匹配、secret-free 的 vendored models snapshot
+  （`modeling_team/references/codex-models-cache-0.147.0.json`，官方 endpoint 元数据，含 `gpt-5.6-luna`），
+  `fetched_at` 置为启动时刻使 `online_if_uncached` 缓存命中、online refresh 完全不运行；slug 不在 snapshot
+  或文件损坏时静默保持 legacy 行为，codex 自身在版本不匹配时回退自身 refresh（安全降级）。否决
+  `features.remote_models=false`（改变 `gpt-5.6-luna` 元数据解析面）与 thread/start 重试（重入同一竞态）。
+  (2) diagnosability 修复：`CodexRuntimeRPCError` 保留 sanitize 后（空白折叠、240 字符上限）的 JSON-RPC
+  `message`；`data` 仍丢弃。离线三角色 bwrap 复现：seeded homes 三角色 `thread/start` 全过且 seeded
+  cache 逐字未动（缓存命中直接证明，零 refresh）；全量 894 passed/1 skipped/293 subtests、
+  compileall/ruff/diff-check 全绿；零 `backend/`/`frontend/` 改动。主代理复核 diff 与 vendored snapshot
+  结构（纯模型目录元数据）并独立复跑全量套件通过。
+- Outcome/next step: requirement_tester Round 5 独立复测；通过后启动 start4（预算 3/3 未动；0/3 已消耗）。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -245,7 +266,8 @@
 | 0 | `8a33c07` + design `8a53e27` + revision `a0f1a06` | 设计/测试计划/需求 only；未修改产品代码 | `git diff --check` PASS；plan review Round 2 PASS | development handoff frozen |
 | 1 | `5d34286` | 按冻结范围实现 §9 全部表面 + 新测试文件（A–E 矩阵）；一处既有断言按设计更新（合同默认逐需求映射） | 全量 884 passed/1 skipped/286 subtests；compileall/ruff/diff-check PASS；validate CLI 六角色 luna 投影 | development-ready；Round 1 发现 R1-D1 |
 | 2 | `a785d1d` | R1-D1 窄修复：`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，三处 cross-wire 守卫改用派生集合 + 3 测试/7 subtests | 全量 887 passed/1 skipped/293 subtests；复现命令双向 exit 2；compileall/ruff/diff-check PASS | Round 2 复测 PASS |
-| 3 | `303d701` | start1/start2 同形 `skills/list` -32603 根因修复：`_write_config` builtin-provider 分支错误 `lines[3:]` 截断（该分支未预置 model trio），丢弃 `sandbox_mode`/`web_search`/`[features]` 表头致 11 个 feature flag 裸露为顶层键，codex 0.147.0 在 `skills/list` config reload 时按 typed table 拒绝。修复为 `provider_lines[:3] + lines + provider_lines[3:]`（一行）+ 新回归测试 `test_r23008_codex_builtin_config.py`（3 tests，验证对 pre-fix 失败） | developer 真实路径离线复现（真实 `_write_config` + bwrap + `_initialize`，零模型调用）：pre-fix 复现精确 `-32603`/`configWarning`，post-fix 完整 coordinator 启动通过、零 configWarning；全量 890 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 4 独立复测进行中 |
+| 3 | `303d701` | start1/start2 同形 `skills/list` -32603 根因修复：`_write_config` builtin-provider 分支错误 `lines[3:]` 截断（该分支未预置 model trio），丢弃 `sandbox_mode`/`web_search`/`[features]` 表头致 11 个 feature flag 裸露为顶层键，codex 0.147.0 在 `skills/list` config reload 时按 typed table 拒绝。修复为 `provider_lines[:3] + lines + provider_lines[3:]`（一行）+ 新回归测试 `test_r23008_codex_builtin_config.py`（3 tests，验证对 pre-fix 失败） | developer 真实路径离线复现（真实 `_write_config` + bwrap + `_initialize`，零模型调用）：pre-fix 复现精确 `-32603`/`configWarning`，post-fix 完整 coordinator 启动通过、零 configWarning；全量 890 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 4 复测 PASS；start3 实证握手修复生效 |
+| 4 | `c85628a` | start3 protocol `thread/start` -32603 根因修复：0.147.0 online models refresh 慢路径在 bwrap 下 server 侧竞态（同错误容忍/致命两种结局）。修复 = `_seed_models_cache` 预置 vendored 版本匹配 models snapshot（`references/codex-models-cache-0.147.0.json`）使 `online_if_uncached` 缓存命中零 refresh + `CodexRuntimeRPCError` 保留 sanitize 后 JSON-RPC message（data 仍丢弃）+ 新回归测试 | developer 离线三角色 bwrap 复现：seeded homes 三角色 `thread/start` 全过、seeded cache 逐字未动（缓存命中直接证明）；全量 894 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 5 独立复测进行中 |
 
 ## Independent test rounds
 
