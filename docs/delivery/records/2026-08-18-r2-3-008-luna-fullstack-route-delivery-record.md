@@ -250,6 +250,21 @@
   结构（纯模型目录元数据）并独立复跑全量套件通过。
 - Outcome/next step: requirement_tester Round 5 独立复测；通过后启动 start4（预算 3/3 未动；0/3 已消耗）。
 
+### 2026-08-18 — Round 5 复测 PASS + R5-D1 窄修复 — requirement tester/developer/main agent
+
+- Evidence: Round 5 独立复测 PASS（`c85628a`）——实现审查 4 文件精确、vendored snapshot secret-scan 干净
+  （`client_version` 精确 0.147.0、`gpt-5.6-luna`/`medium` 在位）、独立行为探针 23/23（种子/freshness/
+  未知 slug/损坏文件/0600/config 不扰动）、RPC message 保留契约（240 截断、data 丢弃）、全量 894 绿、
+  账本 hygiene 通过。附 **R5-D1（High，覆盖缺口）**：`_seed_models_cache` 仅覆盖 persistent role 路径，
+  fresh Examiner child 的 builtin 分支不种子 child 独立 home，而 child 同样 `thread/start` 且发生在
+  `semantic_start` 之后——命中致命竞态将实际消耗 1/3 预算。
+- Action/decision: 按测试建议先修复再 start。developer 窄修复 `aee472b`：`_seed_models_cache(home, model)`
+  参数化为 home 路径，child builtin 分支补种子调用（external-credential/non-formal/deepseek 路径不动）
+  + 3 个 child 路径回归测试（真实 `_launch_acceptance_child_impl`，sentinel 于 process_factory，零二进制
+  零模型调用）。全量 897 passed/1 skipped/293 subtests、compileall/ruff/diff-check 全绿；主代理复核 diff
+  并独立复跑通过。
+- Outcome/next step: Round 5 续轮（delta 复测）；通过后启动 start4。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
@@ -267,7 +282,8 @@
 | 1 | `5d34286` | 按冻结范围实现 §9 全部表面 + 新测试文件（A–E 矩阵）；一处既有断言按设计更新（合同默认逐需求映射） | 全量 884 passed/1 skipped/286 subtests；compileall/ruff/diff-check PASS；validate CLI 六角色 luna 投影 | development-ready；Round 1 发现 R1-D1 |
 | 2 | `a785d1d` | R1-D1 窄修复：`formal_runs.py` 从闭合注册表派生 `FORMAL_PROFILE_IDS`/`FORMAL_TASK_IDS`，三处 cross-wire 守卫改用派生集合 + 3 测试/7 subtests | 全量 887 passed/1 skipped/293 subtests；复现命令双向 exit 2；compileall/ruff/diff-check PASS | Round 2 复测 PASS |
 | 3 | `303d701` | start1/start2 同形 `skills/list` -32603 根因修复：`_write_config` builtin-provider 分支错误 `lines[3:]` 截断（该分支未预置 model trio），丢弃 `sandbox_mode`/`web_search`/`[features]` 表头致 11 个 feature flag 裸露为顶层键，codex 0.147.0 在 `skills/list` config reload 时按 typed table 拒绝。修复为 `provider_lines[:3] + lines + provider_lines[3:]`（一行）+ 新回归测试 `test_r23008_codex_builtin_config.py`（3 tests，验证对 pre-fix 失败） | developer 真实路径离线复现（真实 `_write_config` + bwrap + `_initialize`，零模型调用）：pre-fix 复现精确 `-32603`/`configWarning`，post-fix 完整 coordinator 启动通过、零 configWarning；全量 890 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 4 复测 PASS；start3 实证握手修复生效 |
-| 4 | `c85628a` | start3 protocol `thread/start` -32603 根因修复：0.147.0 online models refresh 慢路径在 bwrap 下 server 侧竞态（同错误容忍/致命两种结局）。修复 = `_seed_models_cache` 预置 vendored 版本匹配 models snapshot（`references/codex-models-cache-0.147.0.json`）使 `online_if_uncached` 缓存命中零 refresh + `CodexRuntimeRPCError` 保留 sanitize 后 JSON-RPC message（data 仍丢弃）+ 新回归测试 | developer 离线三角色 bwrap 复现：seeded homes 三角色 `thread/start` 全过、seeded cache 逐字未动（缓存命中直接证明）；全量 894 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 5 独立复测进行中 |
+| 4 | `c85628a` | start3 protocol `thread/start` -32603 根因修复：0.147.0 online models refresh 慢路径在 bwrap 下 server 侧竞态（同错误容忍/致命两种结局）。修复 = `_seed_models_cache` 预置 vendored 版本匹配 models snapshot（`references/codex-models-cache-0.147.0.json`）使 `online_if_uncached` 缓存命中零 refresh + `CodexRuntimeRPCError` 保留 sanitize 后 JSON-RPC message（data 仍丢弃）+ 新回归测试 | developer 离线三角色 bwrap 复现：seeded homes 三角色 `thread/start` 全过、seeded cache 逐字未动（缓存命中直接证明）；全量 894 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS | Round 5 复测 PASS（附 R5-D1） |
+| 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续轮 delta 复测进行中 |
 
 ## Independent test rounds
 

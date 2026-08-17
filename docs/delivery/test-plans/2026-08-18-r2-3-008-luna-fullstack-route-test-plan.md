@@ -432,3 +432,39 @@
   Examiner child 路径未获同等种子覆盖**；是否以一行窄修复补齐 child 分支后再启动 start4，由主代理
   决策（授权预算 3/3 未动、0/3 已消耗）。测试后删除全部临时探针与 `/tmp/r5probe`；工作树仅余本测试
   计划与主代理 delivery record 的 docs 追加。
+
+### Round 5（续，2026-08-18，R5-D1 修复复测）
+
+- Stable state：commit `aee472b`（main HEAD）"Seed models cache for Examiner child builtin route (R5-D1)"
+  （前置 `136cc4a` 为 Round 5 文档提交）。测试者为独立 requirement_tester，未参与修复。零真实 run、
+  零真实账本写入、零模型调用；未读取/记录任何真实 `auth.json`/token 内容（探针 host auth 为自造
+  `{}` 字节；`process_factory` sentinel 保证零二进制 spawn）。
+- 实现审查（PASS）：`git show aee472b --stat` 恰 2 文件——`modeling_team/runtimes/codex.py`（+20/−9）
+  与 `modeling_team/tests/test_r23008_codex_models_cache_seed.py`（+105/−1，新增 3 tests）；零
+  `backend/`/`frontend/` 改动。变更面：(1) `_seed_models_cache(self, agent, model)` 重构为
+  `(self, home: Path, model)`，函数体除 `agent.home`→`home` 外逐字不变（语义零变化）；persistent
+  调用点（codex.py:3557）适配为 `agent.home`；(2) child builtin 子分支（`_formal_codex_builtin_config_
+  lines(child_model_override)` 之后）新增唯一一行种子调用。外测 credential child 分支、非 formal、
+  deepseek 路径均未触碰；无建模语义/账本/acceptance 表面变化。`process_factory` 为既有构造器 seam
+  （codex.py:1109-1115，本 commit 未新增）。
+- 独立 child 路径探针（PASS，一次性脚本已删除；12/12 断言）：真实
+  `_launch_acceptance_child_impl`（formal builtin luna 绑定走**真实** `openai-luna-medium` 投影，
+  未 monkeypatch binding），`process_factory` sentinel 阻断于二进制 spawn：
+  - builtin child：child home 落 `models_cache.json`——models 与 snapshot 逐字相等（etag 逐字）、
+    `client_version` `0.147.0`、`fetched_at` 距 now <0.1s、slug 集含 `gpt-5.6-luna`、mode `0600`；
+    child config.toml 投影 `openai`/`gpt-5.6-luna`。
+  - external-credential 绑定（`deepseek-direct`）：child home 不落任何 cache，config 非 builtin
+    `openai`。
+- 回归（PASS）：全量 `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **897 passed, 1 skipped, 293 subtests passed（45.53s）**（较 Round 5 增 3
+  tests 即修复新增）；`python -m compileall modeling_team/` OK；`ruff check modeling_team/ --config
+  backend/pyproject.toml` All checks passed；`git diff --check`/`git diff --cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-008-start-ledger.jsonl` 仍恰 6 事件（3× `reservation` + 3×
+  `presemantic_release`，零 `semantic_start`，预算 0/3 消耗、3/3 未动）；`.r2-3-002/003/005-start-
+  ledger.jsonl` sha256 与 Round 1–5 记录逐字节一致（`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；
+  `git status --short workspaces/ backend/ frontend/` 为空。
+- 缺陷：无新增；**R5-D1 FIXED**。
+- 结论：**Round 5（续）PASS——R5-D1 关闭**。formal builtin 投影下 persistent role 与 fresh Examiner
+  child 两类 agent home 均获种子覆盖，start3 缺陷的残余暴露面清除；全量回归与账本 hygiene 全绿。
+  **测试角度 start4 障碍已全部清除**（剩余不确定性仅为 codex 0.147.0 server 侧未观测面，非本轮可测）。
+  测试后删除全部临时探针与 `/tmp/r5d1probe`。
