@@ -196,6 +196,39 @@
   compileall/ruff/diff-check 全绿；零 `backend/`/`frontend/` 改动。
 - Outcome/next step: requirement_tester Round 4 独立复测；通过后再决定 start3（预算 3/3）。
 
+### 2026-08-18 — Round 4 独立复测 PASS 与 start3 — requirement tester/main agent
+
+- Evidence: Round 4 独立复测 PASS——实现审查确认 `303d701` 仅一行拼接修正 + 注释 + 新测试；独立
+  config-shape 探针（真实加载链、六角色、128 断言）全过；pre-fix 签名用真实 codex 0.147.0 二进制
+  `codex login status` 对照闭合因果链（pre-fix home 逐字复现 `config.toml:4:8 … expected struct
+  AppsConfigToml`，post-fix 正常）；全量 890 passed；账本 hygiene 通过（tester 更正：008 账本为 4 事件，
+  start1+start2 各 reservation/presemantic_release，零 `semantic_start`）。
+- Action/decision: 修复双重证实，清除 start3 障碍。提交 `ff39aa2` 后按冻结授权启动 start3（同
+  §4 要素，temp key `8bc051a2…`）。附带清理：主代理删除 `/tmp/r23008-formal-credential-*`（18 个，含
+  `deepseek.env` 凭据残留）与 156 个空 `mt-*` broker 目录（developer/tester 观察项移交处置）。
+- Outcome/next step: start3 执行与判定（见下一条）。
+
+### 2026-08-18 — Round 3 start3：握手修复生效，第三角色 thread/start 失败 — main agent
+
+- Evidence: run `r23008-luna-20260818-start3`（stable state `ff39aa2`）——**握手修复实证生效**：零
+  configWarning，coordinator 与 modeling 完整启动（thread_id、shell snapshot、MCP 初始化、连接
+  `wss://chatgpt.com/backend-api/codex/responses` websocket）；protocol 角色 `thread/start` 返回
+  -32603，CLI exit 2。账本 `reservation`（19:26:35Z）→ `presemantic_release`，**仍 0/3 semantic
+  start 消耗**。run root `logs_2.sqlite` 逐角色比对：三角色 `thread/start` 均触发 0.147.0 online
+  models refresh（`GET chatgpt.com/backend-api/codex/models`）；coordinator/modeling 各记两条 ERROR
+  `failed to refresh available models: timeout waiting for child process to exit` 后容忍继续；
+  protocol 的 log 终止于同一 GET，其 -32603 无 message 保留（runtime 只保留 code，丢 message—— diagnosability 缺口）。
+- 失败定层：**runtime/infrastructure**——0.147.0 models-refresh 子进程超时（`timeout waiting for
+  child process to exit`，疑似 bwrap PID namespace 下子进程退出等待问题）在并发启动的第三角色上升级为
+  致命 RPC 错误；非 modeling-quality、非平台合同、非路由解析（两角色已实证订阅路由连通）。
+- Cleanup：state `CLEANED`、acceptance aborted/zero_child_residue；R2.3-008 窗口六个 API key（主代理
+  三个 temp + runner 三个自建）全部 revoked（temp key 复验 401）。
+- Action/decision: 回 requirement_developer 窄修复：(1) 诊断 models-refresh 子进程超时与第三角色致命化
+  条件；(2) 修复候选——预置 models cache/禁用 online refresh 的 config 面、或 thread/start 对该失败的
+  容忍/重试；(3) 附带修 runtime RPC 错误 message surfacing（保留 code 同时保留 message）。修复经独立
+  复测后再决定下一 start（预算 3/3 未动）。
+- Outcome/next step: developer 缺陷修复循环（第二轮）。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |

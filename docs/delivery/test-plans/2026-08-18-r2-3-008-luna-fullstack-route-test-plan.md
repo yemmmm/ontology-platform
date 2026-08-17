@@ -247,7 +247,7 @@
   套件与 compile/lint/diff 检查通过、真实账本与历史证据零改动）。测试后清理全部临时探针与
   `__pycache__`；工作树仅余本测试计划的 append 修改。
 
-### Round 3（2026-08-18，授权的真实 Luna formal run start1/start2）
+### Round 3（2026-08-18，授权的真实 Luna formal run start1/start2/start3）
 
 - Stable state：commit `a785d1d`；资产 digest 按 delivery record Round 3 冻结条目；run identity
   `r23008-luna-20260818-start1`；freeze `2026-08-17T18:32:06Z` → reservation 18:32:16Z（10s，≤20min 门）。
@@ -277,6 +277,24 @@
 - 结论：按 start1 条目预承诺的判定——**0.147.0 app-server 与当前 `_initialize` 握手机械确定性不兼容**
   （runtime/infrastructure），回 requirement_developer 窄修复 handshake 层；修复经 deterministic 复测后再
   决定 start3（预算仍 3/3）。
+
+**start3（同日，Round 4 修复复测 PASS 后）**：
+
+- Stable state：commit `ff39aa2`（`303d701` 修复 + Round 4 复测文档）。freeze → reservation 19:26:35Z。
+- 结果：**握手修复实证生效，推进到第三角色后失败**——coordinator 与 modeling 均完成 `_initialize` →
+  `thread/start`（获得 thread_id、shell snapshot、MCP service 初始化、并连接
+  `wss://chatgpt.com/backend-api/codex/responses` websocket），零 configWarning；protocol 角色
+  `thread/start` 返回 -32603（`app-server thread/start failed (rpc_error, code=-32603)`）。零模型
+  turn、零 semantic start——账本 `reservation → presemantic_release`，**仍 0/3 消耗**。
+- 诊断（run root `logs_2.sqlite` 逐角色比对）：三个角色的 `thread/start` 均触发 0.147.0 新增 online
+  models refresh（`GET https://chatgpt.com/backend-api/codex/models`），coordinator/modeling 记录两条
+  ERROR `failed to refresh available models: timeout waiting for child process to exit` 后**容忍**并继续
+  session_init；protocol 在同一 GET 后直接以 -32603 失败（其 log 终止于该 GET，无容忍路径）。
+- Cleanup：state `CLEANED`、acceptance aborted/zero_child_residue、三个角色 admin key 与主代理 temp key
+  `8bc051a2…` 全部 revoke（复验 401）；R2.3-008 窗口六个 key 全部 non-active。
+- 结论：runtime/infrastructure（0.147.0 models-refresh 子进程超时在并发第三角色上升级为致命 RPC 错误），
+  按 §4 R8 回 developer 窄修复（含 runtime 错误信息 surfacing 缺口——CLI 只保留 code 丢失 message）；
+  修复复测后决定是否继续（预算 3/3 未动）。
 
 ### Round 4（2026-08-18，start1/start2 同形失败缺陷修复复测）
 
