@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 sys.path.insert(0, "backend")
 
@@ -17,7 +16,6 @@ from modeling_team.acceptance_runtime import (
     build_platform_examiner_packet,
     examiner_proxy_schemas,
 )
-from modeling_team.report_sink_mcp import report_schema
 from modeling_team.r23006_acceptance_operation import (
     prepare_r23006_operation,
     EXPECTED_SCOPE,

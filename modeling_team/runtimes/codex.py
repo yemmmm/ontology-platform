@@ -23,20 +23,16 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..contracts import AgentPackage, digest_file
-from ..model_manifest import (
-    FORMAL_MODEL_PACKAGE_IDS,
-    FORMAL_MODEL_TASK_ID,
-    FORMAL_MODEL_TUPLE,
-    FormalModelManifest,
+from ..model_manifest import FORMAL_MODEL_TASK_ID
+from ..model_routing import (
+    MODEL_PROFILE_PACKAGE_IDS,
+    PROVIDER_CATALOG,
+    REQUESTED_EFFORT_TIERS,
+    ProviderSessionManager,
+    RoleModelBinding,
+    TeamModelProfile,
 )
-from ..deepseek_provider_proxy import (
-    DEEPSEEK_API_KEY_ENV,
-    DeepSeekCredentialBinding,
-    DeepSeekCredentialError,
-    DeepSeekProviderProxy,
-    DeepSeekProviderProxyError,
-    read_deepseek_credential,
-)
+from ..deepseek_provider_proxy import DEEPSEEK_API_KEY_ENV
 from ..acceptance_runtime import (
     ExaminerRolePacket,
     ExaminerRunMetrics,
@@ -302,20 +298,26 @@ def _deepseek_provider_config_lines() -> list[str]:
     ]
 
 
-def _formal_deepseek_provider_config_lines(base_url: str) -> list[str]:
-    """Secret-free TOML projection for the Runner-owned loopback proxy."""
+def _formal_provider_config_lines(binding: RoleModelBinding, base_url: str) -> list[str]:
+    """Secret-free per-role TOML projection onto one loopback provider session.
+
+    ``model_provider`` uses the stable runtime-local catalog provider ID, the
+    provider table receives only that binding's loopback base URL plus
+    ``wire_api = "responses"``, and the effort is the capability-resolved
+    effective effort.  No endpoint, credential, or provider free text.
+    """
 
     return [
-        f'model = "{_DEEPSEEK_MODEL}"',
-        f'model_provider = "{_DEEPSEEK_PROVIDER}"',
-        'model_reasoning_effort = "max"',
-        "[model_providers.deepseek]",
-        'name = "DeepSeek"',
+        f'model = "{binding.model}"',
+        f'model_provider = "{binding.provider_id}"',
+        f'model_reasoning_effort = "{binding.effective_effort}"',
+        f"[model_providers.{binding.provider_id}]",
+        f'name = "{binding.provider_id}"',
         f'base_url = "{base_url}/"',
         'wire_api = "responses"',
         "[shell_environment_policy]",
         'inherit = "core"',
-        f'exclude = ["{_DEEPSEEK_API_KEY_ENV}", "LLM_API_KEY"]',
+        'exclude = ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"]',
     ]
 
 
@@ -1088,7 +1090,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._coordination_enabled = False
         self._candidate_platform_gate_enabled = False
         self._formal_turn_binding_required = False
-        self._formal_model_manifest: FormalModelManifest | None = None
+        self._team_model_profile: TeamModelProfile | None = None
         self._private_credentials_destroyed: dict[str, bool] = {}
         self._secret_audit_values: list[bytes] = []
         self._secret_audit_failures: dict[str, dict[str, Any]] = {}
@@ -1098,11 +1100,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._inactivity_lock = threading.Lock()
         self._runtime_failures: list[tuple[str, dict[str, Any]]] = []
         self._runtime_failure_lock = threading.Lock()
-        self._formal_provider_proxy: DeepSeekProviderProxy | None = None
-        self._formal_credential_binding: DeepSeekCredentialBinding | None = None
+        self._provider_sessions: ProviderSessionManager | None = None
         self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
         self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
-        self._provider_proxy_failure_latched = False
+        self._provider_session_failure_latched = False
         # Cleanup is a lifecycle boundary, not a best-effort recomputation.  The
         # lock serializes stop/cleanup callers and the snapshot makes repeated
         # evidence reads immutable even if a caller mutates a returned dict or a
@@ -1111,42 +1112,52 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._cleanup_snapshot: dict[str, Any] | None = None
         self._cleanup_errors: dict[str, dict[str, str]] = {}
         self._formal_cleanup_aggregate: dict[str, Any] | None = None
-        self._proxy_stop_status: dict[str, bool | int] = {}
+        self._provider_stop_status: dict[str, dict[str, bool | int]] = {}
 
     def _validated_model_override(
         self,
         package: AgentPackage,
         *,
         formal: bool,
-    ) -> tuple[str, str, str] | None:
-        """Resolve a package model from the frozen formal manifest when required."""
+    ) -> tuple[str, str, str] | RoleModelBinding | None:
+        """Resolve a package model from the frozen formal profile when required."""
 
         if formal:
-            return self._validated_formal_model_override(package.package_id)
+            return self._validated_formal_role_binding(package.package_id)
         return _codex_package_model_override(package)
 
-    def _validated_formal_model_override(self, package_id: str) -> tuple[str, str, str]:
-        """Resolve one exact formal package tuple from the frozen manifest.
+    def _validated_formal_role_binding(self, package_id: str) -> RoleModelBinding:
+        """Resolve one exact formal role binding from the frozen profile.
 
-        ``TeamRunner.prepare`` validates the on-disk manifest and binds its digest before
-        any Runtime starts.  Keep this second, Runtime-local guard because thread/start is
-        the last boundary before a model process can execute: a missing package binding or
-        an in-memory tuple drift must fail closed rather than silently falling back to a
-        package default or a host model.
+        ``TeamRunner.prepare`` validates the on-disk profile and freezes its digest
+        before any Runtime starts.  Keep this second, Runtime-local guard because
+        thread/start is the last boundary before a model process can execute: a
+        missing package binding or an in-memory binding drift must fail closed
+        rather than silently falling back to a package default or a host model.
+        The lookup key is always the canonical package ID; Source and Platform
+        Examiner packages both declare role ``source-specialist`` and would
+        collide if ``AgentPackage.role`` were used here.
         """
 
-        if package_id not in FORMAL_MODEL_PACKAGE_IDS:
-            raise CodexRuntimeError("formal model manifest package binding is invalid")
-        manifest = self._formal_model_manifest
-        if manifest is None:
-            raise CodexRuntimeError("formal runtime is missing its validated model manifest")
+        if package_id not in MODEL_PROFILE_PACKAGE_IDS:
+            raise CodexRuntimeError("formal model profile package binding is invalid")
+        profile = self._team_model_profile
+        if profile is None:
+            raise CodexRuntimeError("formal runtime is missing its validated model profile")
         try:
-            override = manifest.override_for(package_id)
+            binding = profile.binding_for(package_id)
         except Exception as exc:
-            raise CodexRuntimeError("formal model manifest package binding is invalid") from exc
-        if override != FORMAL_MODEL_TUPLE:
-            raise CodexRuntimeError("formal model manifest tuple drifted")
-        return override
+            raise CodexRuntimeError("formal model profile package binding is invalid") from exc
+        route = PROVIDER_CATALOG.get(binding.provider_id)
+        if (
+            route is None
+            or binding.model not in route.models
+            or binding.requested_effort not in REQUESTED_EFFORT_TIERS
+            or binding.effective_effort not in REQUESTED_EFFORT_TIERS
+            or route.effective_effort(binding.requested_effort) != binding.effective_effort
+        ):
+            raise CodexRuntimeError("formal model profile binding drifted")
+        return binding
 
     def _remember_secret(self, value: object) -> None:
         """Retain only transient credential bytes needed by the cleanup audit.
@@ -1167,11 +1178,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _secret_values_for_audit(self) -> tuple[bytes, ...]:
         values = list(self._secret_audit_values)
-        proxy = self._formal_provider_proxy
-        if proxy is not None:
-            key = proxy.secret_snapshot()
-            if key:
-                values.append(key)
+        sessions = self._provider_sessions
+        if sessions is not None:
+            values.extend(sessions.secret_values())
         return tuple(values)
 
     def _on_stderr_secret_match(self, agent: _Agent) -> None:
@@ -1180,26 +1189,28 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "reason_code": "provider-secret-on-stderr",
         }
 
-    def _on_provider_proxy_failure(self, reason_code: str) -> None:
-        # The proxy callback carries only a fixed local reason code; provider
-        # status/text never enters the Runtime failure queue.
-        if self._provider_proxy_failure_latched:
+    def _on_provider_session_failure(self, reason_code: str) -> None:
+        # The session callback carries only a fixed local reason code; provider
+        # status/text never enters the Runtime failure queue.  The latch keeps
+        # the first provider failure authoritative: a later cleanup failure
+        # cannot overwrite it.
+        if self._provider_session_failure_latched:
             return
-        self._provider_proxy_failure_latched = True
+        self._provider_session_failure_latched = True
         with self._runtime_failure_lock:
             self._runtime_failures.append(
                 (
-                    "provider-proxy",
+                    "provider-sessions",
                     {
                         "category": "runtime/infrastructure",
                         "reason_code": reason_code
                         if isinstance(reason_code, str)
                         and reason_code
                         in {
-                            "provider-proxy-upstream-failed",
-                            "provider-proxy-upstream-status",
+                            "provider-upstream-failed",
+                            "provider-session-cleanup-failed",
                         }
-                        else "provider-proxy-failed",
+                        else "provider-upstream-failed",
                     },
                 )
             )
@@ -2083,22 +2094,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
         child_package_id = f"{kind}-examiner" if kind != "acceptance" else "acceptance"
         if formal:
-            child_model_override = self._validated_formal_model_override(child_package_id)
+            # Every fresh Examiner child uses its own package-ID binding from the
+            # frozen profile: its provider session base URL, model, and effective
+            # effort.  R2.3-006 lean behavior no longer overrides effort here;
+            # the profile owns per-role effort selection.
+            child_model_override = self._validated_formal_role_binding(child_package_id)
         else:
             child_model_override = None
-        # R2.3-006 Examiner children are lean retrieval/verdict tasks.  A max
-        # reasoning effort makes the model over-reason after tool results instead
-        # of submitting; lower it one notch (high) for these children only.  The
-        # Platform role repeatedly stopped generating after its retrieval wave
-        # even at high, so lower Platform one additional notch (medium) while
-        # Source/Acceptance stay high.  The frozen formal manifest contract for
-        # modeling roles is unchanged.
-        if formal and bool(spec.get("lean_examiner")) and child_model_override is not None:
-            child_model_override = (
-                child_model_override[0],
-                child_model_override[1],
-                "low" if spec.get("kind") == "platform" else "high",
-            )
         # DeepSeek is intentionally retained only for non-formal legacy adapters.
         # A formal run never resolves or injects the legacy provider key, even if
         # the Host environment still carries the historical sentinel.
@@ -2307,22 +2309,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ]
         )
         if formal:
-            provider_proxy = self._formal_provider_proxy
-            if provider_proxy is None:
-                raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
-            proxy_url = provider_proxy.base_url
-            provider_lines = [
-                f'model = "{child_model_override[0]}"',
-                f'model_provider = "{child_model_override[1]}"',
-                f'model_reasoning_effort = "{child_model_override[2]}"',
-                "[model_providers.deepseek]",
-                'name = "DeepSeek"',
-                f'base_url = "{proxy_url}/"',
-                'wire_api = "responses"',
-                "[shell_environment_policy]",
-                'inherit = "core"',
-                'exclude = ["DEEPSEEK_API_KEY", "LLM_API_KEY"]',
-            ]
+            if not isinstance(child_model_override, RoleModelBinding):
+                raise CodexRuntimeError("formal Examiner model binding is unavailable")
+            sessions = self._provider_sessions
+            if sessions is None:
+                raise CodexRuntimeError("formal provider sessions are unavailable")
+            provider_lines = _formal_provider_config_lines(
+                child_model_override,
+                sessions.base_url_for(child_model_override.provider_id),
+            )
             config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
@@ -2409,11 +2404,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "sandbox": "read-only",
                     **(
                         {
-                            "model": child_model_override[0],
-                            "model_provider": child_model_override[1],
-                            "model_reasoning_effort": child_model_override[2],
+                            "model": child_model_override.model,
+                            "model_provider": child_model_override.provider_id,
+                            "model_reasoning_effort": child_model_override.effective_effort,
                         }
-                        if child_model_override is not None
+                        if isinstance(child_model_override, RoleModelBinding)
                         else {}
                     ),
                 }
@@ -2450,9 +2445,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if formal:
                 # The child Thread must use the exact model selected for its
                 # predeclared Examiner package.  Provider/reasoning stay in the
-                # manifest-backed TOML written above; non-formal child fixtures keep
+                # profile-backed TOML written above; non-formal child fixtures keep
                 # their historical request shape.
-                thread_start_params["model"] = child_model_override[0]
+                thread_start_params["model"] = child_model_override.model
             thread_result = self._rpc(child_agent, "thread/start", thread_start_params)
             thread = thread_result.get("thread", thread_result) if isinstance(thread_result, dict) else {}
             thread_id = thread.get("id") if isinstance(thread, dict) else None
@@ -2710,10 +2705,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     return True
             except Exception:
                 return True
-        proxy = self._formal_provider_proxy
-        if proxy is not None:
+        sessions = self._provider_sessions
+        if sessions is not None:
             try:
-                if bool(proxy.snapshot().get("listening")):
+                if sessions.listening():
                     return True
             except Exception:
                 return True
@@ -2731,7 +2726,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._cleanup_snapshot = None
             self._formal_cleanup_aggregate = None
             self._cleanup_errors.clear()
-            self._proxy_stop_status.clear()
+            self._provider_stop_status.clear()
             self.agents.clear()
             self._acceptance_children.clear()
             self._run_root = run.root
@@ -2742,7 +2737,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._private_credentials_destroyed.clear()
             self._stderr_drain_failures.clear()
             self._stderr_drain_reports.clear()
-            self._provider_proxy_failure_latched = False
+            self._provider_session_failure_latched = False
             self._child_auth_barriers.clear()
             with self._runtime_failure_lock:
                 self._runtime_failures.clear()
@@ -2750,37 +2745,42 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 self._inactivity_failures.clear()
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
-        self._formal_model_manifest = (
-            getattr(run, "model_manifest", None)
+        self._team_model_profile = (
+            getattr(run, "team_model_profile", None)
             if self._coordination_enabled
             else None
         )
         if self._coordination_enabled and not isinstance(
-            self._formal_model_manifest, FormalModelManifest
+            self._team_model_profile, TeamModelProfile
         ):
-            raise CodexRuntimeError("formal runtime model manifest is unavailable")
+            raise CodexRuntimeError("formal runtime model profile is unavailable")
         if self._coordination_enabled:
-            binding = getattr(run, "deepseek_credential_binding", None)
-            if not isinstance(binding, DeepSeekCredentialBinding):
-                raise CodexRuntimeError("formal DeepSeek credential binding is unavailable")
-            key_buffer: bytearray | None = None
+            credential_bindings = getattr(run, "provider_credential_bindings", None)
+            if not isinstance(credential_bindings, Mapping) or not credential_bindings:
+                raise CodexRuntimeError("formal provider credential bindings are unavailable")
             try:
-                key_buffer = bytearray(read_deepseek_credential(binding))
-                proxy = DeepSeekProviderProxy(
-                    key_buffer,
-                    on_failure=self._on_provider_proxy_failure,
+                # One loopback session per provider the profile actually
+                # references, shared by all roles on that provider.  Startup
+                # re-opens each credential with the no-follow/revalidation
+                # contract; failures are typed and leave no session behind.
+                sessions = ProviderSessionManager(
+                    credential_bindings,
+                    on_failure=self._on_provider_session_failure,
                 )
-                proxy.start()
-            except (DeepSeekCredentialError, DeepSeekProviderProxyError) as exc:
-                raise CodexRuntimeError("formal DeepSeek provider proxy startup failed") from exc
-            finally:
-                # Proxy owns its own mutable copy; wipe the read buffer before
-                # returning from the startup gate.
-                if key_buffer is not None:
-                    for index in range(len(key_buffer)):
-                        key_buffer[index] = 0
-            self._formal_credential_binding = binding
-            self._formal_provider_proxy = proxy
+                sessions.start()
+            except Exception as exc:
+                with self._runtime_failure_lock:
+                    self._runtime_failures.append(
+                        (
+                            "provider-sessions",
+                            {
+                                "category": "runtime/infrastructure",
+                                "reason_code": "provider-session-start-failed",
+                            },
+                        )
+                    )
+                raise CodexRuntimeError("formal provider session startup failed") from exc
+            self._provider_sessions = sessions
         self._candidate_platform_gate_enabled = (
             self._coordination_enabled
             and getattr(
@@ -3277,11 +3277,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
         # Only the Protocol receives its platform key/config.  Formal roles use
-        # the shared loopback provider proxy and therefore never receive auth.json;
-        # historical/non-formal roles retain private auth staging unchanged.
+        # the shared loopback provider sessions and therefore never receive
+        # auth.json; historical/non-formal roles retain private auth staging.
         if formal:
-            if self._formal_provider_proxy is None:
-                raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
+            if self._provider_sessions is None:
+                raise CodexRuntimeError("formal provider sessions are unavailable")
             agent.auth_path = None
             agent.credential_mode = "provider_proxy"
             agent.auth_barrier_pending = True
@@ -3432,7 +3432,27 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "required = true",
                 ]
             )
-        if model_override is not None:
+        if isinstance(model_override, RoleModelBinding):
+            binding = model_override
+            lines = [
+                f'model = "{binding.model}"',
+                f'model_provider = "{binding.provider_id}"',
+                f'model_reasoning_effort = "{binding.effective_effort}"',
+                *lines,
+            ]
+            if formal:
+                sessions = self._provider_sessions
+                if sessions is None:
+                    raise CodexRuntimeError("formal provider sessions are unavailable")
+                provider_lines = _formal_provider_config_lines(
+                    binding, sessions.base_url_for(binding.provider_id)
+                )
+                # ``lines`` already carries the package model trio above.  Keep one
+                # authoritative trio and append only the provider/shell tables;
+                # repeating the scalar keys makes the real app-server reject the
+                # config before initialize with a TOML duplicate-key error.
+                lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
+        elif model_override is not None:
             model, provider, reasoning = model_override
             lines = [
                 f'model = "{model}"',
@@ -3440,16 +3460,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 f'model_reasoning_effort = "{reasoning}"',
                 *lines,
             ]
-            if formal:
-                proxy = self._formal_provider_proxy
-                if proxy is None:
-                    raise CodexRuntimeError("formal DeepSeek provider proxy is unavailable")
-                provider_lines = _formal_deepseek_provider_config_lines(proxy.base_url)
-                # ``lines`` already carries the package model trio above.  Keep one
-                # authoritative trio and append only the provider/shell tables;
-                # repeating the scalar keys makes the real app-server reject the
-                # config before initialize with a TOML duplicate-key error.
-                lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
             # Keep scalar settings before the first TOML table; append provider and
@@ -4407,11 +4417,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         }
         if self._coordination_enabled:
             # Formal R2.3-005 binds the App Server's Thread to the same validated
-            # package manifest that generated config.toml.  Non-formal and archived
+            # role binding that generated config.toml.  Non-formal and archived
             # R2.3-002 starts intentionally keep the legacy request shape (no model).
             thread_start_params["model"] = self._validated_model_override(
                 agent.package, formal=True
-            )[0]
+            ).model
         result = self._rpc(agent, "thread/start", thread_start_params)
         thread_id = (
             result.get("thread", result).get("id") if isinstance(result, dict) else None
@@ -5581,10 +5591,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         }
 
     def receive_messages(self) -> list[RuntimeMessage]:
-        proxy = self._formal_provider_proxy
-        if self._coordination_enabled and proxy is not None:
-            if not bool(proxy.snapshot().get("listening")):
-                self._on_provider_proxy_failure("provider-proxy-stopped")
+        sessions = self._provider_sessions
+        if self._coordination_enabled and sessions is not None:
+            if not sessions.listening():
+                self._on_provider_session_failure("provider-upstream-failed")
         for agent in self.agents.values():
             try:
                 with agent.io_lock:
@@ -5876,56 +5886,43 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     and agent.agent_id not in self._stderr_drain_failures
                 )
         if formal:
-            # Snapshot provider credentials while the proxy still owns them;
+            # Snapshot provider credentials while the sessions still own them;
             # the formal audit itself is intentionally deferred until after
-            # proxy shutdown and secret clearing below.
+            # session shutdown and secret clearing below.
             try:
                 audit_secret_values = self._secret_values_for_audit()
             except Exception:
                 audit_secret_values = ()
                 self._record_cleanup_error("aggregate", "aggregate-audit-failed")
-            proxy_failed = False
-            proxy = self._formal_provider_proxy
+            sessions_failed = False
+            sessions = self._provider_sessions
+            counters: dict[str, dict[str, Any]] = {}
             try:
-                if proxy is not None:
-                    result = proxy.stop()
-                    proxy_snapshot = getattr(proxy, "stop_snapshot", None)
-                    if callable(proxy_snapshot):
-                        details = proxy_snapshot()
-                        if isinstance(details, dict):
-                            self._proxy_stop_status = {
-                                key: value
-                                for key, value in details.items()
-                                if key
-                                in {
-                                    "shutdown_ok",
-                                    "server_close_ok",
-                                    "thread_joined",
-                                    "thread_alive",
-                                    "socket_open",
-                                    "lifecycle_failure",
-                                }
-                                and isinstance(value, (bool, int))
-                            }
-                        proxy_failed = bool(details.get("lifecycle_failure"))
-                    if result is False:
-                        proxy_failed = True
+                if sessions is not None:
+                    counters = {
+                        provider_id: dict(snapshot)
+                        for provider_id, snapshot in sorted(sessions.snapshot().items())
+                    }
+                    # Every referenced session is independently stopped and
+                    # wiped; one failure cannot skip the others.
+                    reports = sessions.stop()
+                    self._provider_stop_status = {
+                        provider_id: dict(report)
+                        for provider_id, report in reports.items()
+                        if isinstance(report, Mapping)
+                    }
+                    sessions_failed = any(
+                        bool(report.get("lifecycle_failure"))
+                        for report in self._provider_stop_status.values()
+                    )
             except Exception:
-                proxy_failed = True
+                sessions_failed = True
             finally:
-                if proxy_failed:
-                    self._record_cleanup_error("proxy", "proxy-stop-failed")
-                    self._on_provider_proxy_failure("provider-proxy-stop-failed")
-                if proxy is not None:
-                    try:
-                        clear_secret = getattr(proxy, "clear_secret", None)
-                        if callable(clear_secret):
-                            clear_secret()
-                    except Exception:
-                        self._record_cleanup_error("proxy", "proxy-stop-failed")
-                self._formal_provider_proxy = None
-                self._formal_credential_binding = None
-                # The proxy owns its mutable key; this list owns only audit
+                if sessions_failed:
+                    self._record_cleanup_error("provider-sessions", "provider-session-cleanup-failed")
+                    self._on_provider_session_failure("provider-session-cleanup-failed")
+                self._provider_sessions = None
+                # Each session owns its mutable key; this list owns only audit
                 # sentinels.  Both are released at the outer lifecycle edge.
                 self._secret_audit_values.clear()
             aggregate = self._build_formal_cleanup_aggregate(
@@ -5933,7 +5930,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 process_surfaces,
                 secret_values=audit_secret_values,
             )
-            aggregate["proxy"] = dict(self._proxy_stop_status)
+            aggregate["providers"] = {
+                provider_id: {
+                    "counters": counters.get(provider_id, {}),
+                    "stop": dict(self._provider_stop_status.get(provider_id, {})),
+                }
+                for provider_id in sorted(
+                    set(counters) | set(self._provider_stop_status)
+                )
+            }
             aggregate["scanned_files"] = int(aggregate["secret_audit"]["scanned_files"])
             aggregate["match_count"] = int(aggregate["secret_audit"]["match_count"])
             aggregate["matched_secret_count"] = int(
@@ -5948,7 +5953,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 and int(aggregate["secret_audit"]["matched_secret_count"]) == 0
                 and bool(aggregate["zero_child_residue"])
                 and not self._cleanup_errors
-                and not proxy_failed
+                and not sessions_failed
             )
             self._formal_cleanup_aggregate = deepcopy(aggregate)
             for agent in self.agents.values():
@@ -5956,8 +5961,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     aggregate["private_credentials_destroyed"]
                 )
         else:
-            self._formal_provider_proxy = None
-            self._formal_credential_binding = None
+            self._provider_sessions = None
             self._secret_audit_values.clear()
 
     def stop(self) -> None:
@@ -5969,47 +5973,35 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             except Exception:
                 self._record_cleanup_error("runtime", "cleanup-failed")
             finally:
-                # The proxy/key boundary is outermost: even an unexpected
-                # child/role cleanup exception cannot leave the provider key in
+                # The session/key boundary is outermost: even an unexpected
+                # child/role cleanup exception cannot leave a provider key in
                 # memory.  The normal formal path already stopped and detached
-                # the proxy; this is the fail-closed fallback for partial stop.
-                proxy = self._formal_provider_proxy
-                if self._coordination_enabled and proxy is not None:
+                # the sessions; this is the fail-closed fallback for partial stop.
+                sessions = self._provider_sessions
+                if self._coordination_enabled and sessions is not None:
                     try:
-                        result = proxy.stop()
-                        if result is False:
-                            self._record_cleanup_error("proxy", "proxy-stop-failed")
-                        snapshot = getattr(proxy, "stop_snapshot", None)
-                        if callable(snapshot):
-                            details = snapshot()
-                            if isinstance(details, dict):
-                                self._proxy_stop_status = {
-                                    key: value
-                                    for key, value in details.items()
-                                    if key
-                                    in {
-                                        "shutdown_ok",
-                                        "server_close_ok",
-                                        "thread_joined",
-                                        "thread_alive",
-                                        "socket_open",
-                                        "lifecycle_failure",
-                                    }
-                                    and isinstance(value, (bool, int))
+                        reports = sessions.stop()
+                        if isinstance(reports, Mapping):
+                            self._provider_stop_status.update(
+                                {
+                                    provider_id: dict(report)
+                                    for provider_id, report in reports.items()
+                                    if isinstance(report, Mapping)
                                 }
-                                if bool(details.get("lifecycle_failure")):
-                                    self._record_cleanup_error("proxy", "proxy-stop-failed")
+                            )
+                            if any(
+                                bool(report.get("lifecycle_failure"))
+                                for report in reports.values()
+                                if isinstance(report, Mapping)
+                            ):
+                                self._record_cleanup_error(
+                                    "provider-sessions", "provider-session-cleanup-failed"
+                                )
                     except Exception:
-                        self._record_cleanup_error("proxy", "proxy-stop-failed")
-                    finally:
-                        try:
-                            clear_secret = getattr(proxy, "clear_secret", None)
-                            if callable(clear_secret):
-                                clear_secret()
-                        except Exception:
-                            self._record_cleanup_error("proxy", "proxy-stop-failed")
-                    self._formal_provider_proxy = None
-                    self._formal_credential_binding = None
+                        self._record_cleanup_error(
+                            "provider-sessions", "provider-session-cleanup-failed"
+                        )
+                    self._provider_sessions = None
                 if self._coordination_enabled:
                     self._secret_audit_values.clear()
                     if self._formal_cleanup_aggregate is not None and self._cleanup_errors:
@@ -6141,7 +6133,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "active_resources": bool(self._lifecycle_has_active_resources()),
                     "zero_child_residue": not bool(self._acceptance_children),
                     "cleanup_error_count": len(self._cleanup_errors),
-                    "proxy": dict(self._proxy_stop_status),
+                    "providers": deepcopy(self._provider_stop_status),
                 }
             )
             if self._lifecycle_has_active_resources():

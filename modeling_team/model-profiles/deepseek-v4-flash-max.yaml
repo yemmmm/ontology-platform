@@ -1,0 +1,27 @@
+schema_version: 1
+model_profile_id: deepseek-v4-flash-max
+roles:
+  coordinator:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max
+  modeling:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max
+  protocol:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max
+  acceptance:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max
+  source-examiner:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max
+  platform-examiner:
+    model_provider: deepseek-direct
+    model: deepseek-v4-flash
+    model_reasoning_effort: max

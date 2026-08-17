@@ -33,11 +33,14 @@ from .acceptance_runtime import (
     McpReadForwarder,
     examiner_proxy_schemas,
 )
-from .deepseek_provider_proxy import preflight_deepseek_credential
 from .model_manifest import (
     FORMAL_MODEL_PROFILE_ID,
     FORMAL_MODEL_TASK_ID,
-    load_formal_model_manifest,
+)
+from .model_routing import (
+    DEFAULT_MODEL_PROFILE_ID,
+    load_team_model_profile,
+    preflight_profile_credentials,
 )
 from .report_sink_mcp import report_schema
 from .runtimes.codex import CodexRuntimeAdapter
@@ -978,8 +981,12 @@ class _ProductionOperationHost:
                 profile=SimpleNamespace(profile_id=FORMAL_MODEL_PROFILE_ID, parameters={}),
             ),
             acceptance=None,
-            model_manifest=load_formal_model_manifest(self.root),
-            deepseek_credential_binding=preflight_deepseek_credential(),
+            team_model_profile=load_team_model_profile(
+                self.root, DEFAULT_MODEL_PROFILE_ID
+            ),
+            provider_credential_bindings=preflight_profile_credentials(
+                load_team_model_profile(self.root, DEFAULT_MODEL_PROFILE_ID)
+            ),
             formal_contract=None,
             scope={"mode": "read", **EXPECTED_SCOPE},
         )

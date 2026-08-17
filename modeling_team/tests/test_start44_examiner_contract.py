@@ -17,11 +17,32 @@ from modeling_team.acceptance import (
 from modeling_team.acceptance_runtime import ReportSinkServer
 from modeling_team.report_sink_mcp import report_schema
 from modeling_team.acceptance_runtime import PLATFORM_PROXY_READ_TOOLS
-from modeling_team.model_manifest import load_formal_model_manifest
-from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
+from modeling_team.model_routing import (
+    DEFAULT_MODEL_PROFILE_ID,
+    load_team_model_profile,
+)
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.contracts import repository_root
 from modeling_team.tests.test_r23005_contracts import _ticket
+
+
+class _SessionsDouble:
+    """Minimal ProviderSessionManager double for config/child-factory tests."""
+
+    def base_url_for(self, provider_id: str) -> str:
+        return "http://127.0.0.1:49152"
+
+    def listening(self) -> bool:
+        return True
+
+    def snapshot(self) -> dict[str, dict[str, object]]:
+        return {"deepseek-direct": {"listening": True}}
+
+    def secret_values(self) -> tuple[bytes, ...]:
+        return ()
+
+    def stop(self) -> dict[str, dict[str, bool | int]]:
+        return {}
 
 
 def _sha(value: object) -> str:
@@ -503,10 +524,10 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
         process_factory=lambda *_args, **_kwargs: Process(),
     )
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
-    proxy = DeepSeekProviderProxy(b"formal-test-sentinel")
-    proxy.start()
-    adapter._formal_provider_proxy = proxy
+    adapter._team_model_profile = load_team_model_profile(
+        repository_root(), DEFAULT_MODEL_PROFILE_ID
+    )
+    adapter._provider_sessions = _SessionsDouble()  # type: ignore[assignment]
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     def rpc(_agent, method: str, _params):
@@ -564,5 +585,5 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
     if kind == "platform":
         assert (socket_root / "platform-proxy.sock").exists()
     resource.destroy()
-    proxy.stop()
+    adapter.stop()
     assert not socket_root.exists()

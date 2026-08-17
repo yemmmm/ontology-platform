@@ -1,8 +1,10 @@
-"""Runner-owned DeepSeek credential binding and loopback Responses proxy.
+"""Runner-owned provider credential binding and loopback Responses sessions.
 
 The formal Team never gives a provider credential to a Codex process.  This module
 keeps the only copy in a mutable byte buffer owned by one short-lived loopback
-proxy, and validates the external file again immediately before reading it.
+Responses session, and validates the external file again immediately before
+reading it.  The generic session is provider-neutral (R2.3-007); DeepSeek keeps a
+thin compatibility wrapper plus its fixed credential contract.
 """
 
 from __future__ import annotations
@@ -27,6 +29,11 @@ DEEPSEEK_CREDENTIAL_PATH = Path(
 ).expanduser()
 DEEPSEEK_UPSTREAM_URL = "https://api.deepseek.com/responses"
 DEEPSEEK_PROXY_MAX_BODY_BYTES = 32 * 1024 * 1024
+RESPONSES_SESSION_MAX_BODY_BYTES = DEEPSEEK_PROXY_MAX_BODY_BYTES
+RESPONSES_UPSTREAM_FAILURE = "provider-upstream-failed"
+RESPONSES_CLEANUP_FAILURE = "provider-session-cleanup-failed"
+_LOCAL_FAILURE_STATUS = 502
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _CREDENTIAL_MAX_BYTES = 4096
 _CREDENTIAL_RE = re.compile(r"DEEPSEEK_API_KEY=([^\s\"'\r\n=]+)\n?\Z")
 
@@ -35,8 +42,12 @@ class DeepSeekCredentialError(RuntimeError):
     """Typed, provider-text-free credential validation failure."""
 
 
-class DeepSeekProviderProxyError(RuntimeError):
-    """Typed loopback proxy startup/transport failure."""
+class ProviderSessionError(RuntimeError):
+    """Typed loopback Responses session startup/transport failure."""
+
+
+# Compatibility alias: the DeepSeek proxy error type is the session error type.
+DeepSeekProviderProxyError = ProviderSessionError
 
 
 @dataclass(frozen=True)
@@ -156,7 +167,26 @@ def read_deepseek_credential(binding: DeepSeekCredentialBinding) -> bytes:
     return _validate_credential_bytes(payload)
 
 
-class _ProxyHandler(BaseHTTPRequestHandler):
+def _validate_upstream_url(upstream_url: str) -> None:
+    parsed = urlsplit(upstream_url)
+    if (
+        parsed.scheme not in {"https", "http"}
+        or not parsed.hostname
+        or not parsed.path
+        or not parsed.path.endswith("/responses")
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ProviderSessionError("provider upstream URL is invalid")
+    if parsed.scheme != "https" and parsed.hostname not in _LOOPBACK_HOSTS:
+        # Fixed TLS upstream: plain HTTP is accepted only for loopback test
+        # upstreams, never for a real provider route.
+        raise ProviderSessionError("provider upstream TLS is required")
+
+
+class _SessionHandler(BaseHTTPRequestHandler):
     server_version = "ontology-platform-proxy"
     sys_version = ""
 
@@ -165,8 +195,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return
 
     @property
-    def proxy(self) -> "DeepSeekProviderProxy":
-        return self.server.proxy  # type: ignore[attr-defined,no-any-return]
+    def session(self) -> "ResponsesProviderSession":
+        return self.server.session  # type: ignore[attr-defined,no-any-return]
 
     def _reject(self, status: int) -> None:
         self.send_response(status)
@@ -175,10 +205,26 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
+    def _discard_upstream_body(self, response: Any) -> None:
+        # Consume and discard a non-2xx provider body: provider-controlled text
+        # must never reach the local client, artifacts, or logs.
+        try:
+            while True:
+                chunk = response.read(65536)
+                if not chunk:
+                    break
+        except Exception:
+            pass
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
+
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler hook
-        proxy = self.proxy
+        session = self.session
         if self.path != "/responses":
-            proxy._count("rejected")
+            session._count("rejected")
             self._reject(404)
             return
         raw_length = self.headers.get("Content-Length")
@@ -186,39 +232,43 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             body_length = int(raw_length) if raw_length is not None else -1
         except (TypeError, ValueError):
             body_length = -1
-        if body_length < 0 or body_length > proxy.max_body_bytes:
-            proxy._count("rejected")
-            self._reject(413 if body_length > proxy.max_body_bytes else 400)
+        if body_length < 0 or body_length > session.max_body_bytes:
+            session._count("rejected")
+            self._reject(413 if body_length > session.max_body_bytes else 400)
             return
         body = self.rfile.read(body_length)
         if len(body) != body_length:
-            proxy._count("rejected")
+            session._count("rejected")
             self._reject(400)
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().casefold() != "application/json":
-            proxy._count("rejected")
+            session._count("rejected")
             self._reject(415)
             return
         try:
             _parsed_body = json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            proxy._count("rejected")
+            session._count("rejected")
             self._reject(400)
             return
         if not isinstance(_parsed_body, dict):
-            proxy._count("rejected")
+            session._count("rejected")
             self._reject(400)
             return
         try:
-            status, headers, response = proxy.forward(body)
-        except DeepSeekProviderProxyError:
-            proxy._count("upstream_errors")
-            proxy._signal_failure("provider-proxy-upstream-failed")
-            self._reject(502)
+            status, headers, response = session.forward(body)
+        except ProviderSessionError:
+            session._count("upstream_errors")
+            session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+            self._reject(_LOCAL_FAILURE_STATUS)
             return
-        proxy._record_status(status)
-        if status >= 400:
-            proxy._signal_failure("provider-proxy-upstream-status")
+        session._record_status(status)
+        if not 200 <= status < 300:
+            self._discard_upstream_body(response)
+            session._count("upstream_errors")
+            session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+            self._reject(_LOCAL_FAILURE_STATUS)
+            return
         self.send_response(status)
         self.send_header("Content-Type", headers.get("content-type", "application/json"))
         if "content-length" in headers:
@@ -226,53 +276,75 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         try:
-            for chunk in response:
-                if chunk:
+            upstream = iter(response)
+            while True:
+                try:
+                    chunk = next(upstream)
+                except StopIteration:
+                    break
+                except (OSError, http.client.HTTPException):
+                    # A 2xx stream broke before a successful terminal state.
+                    # Already-transmitted model output stays transparent; the
+                    # subsequent transport failure is recorded as the fixed
+                    # provider failure reason, never the exception string.
+                    session._count("upstream_errors")
+                    session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+                    break
+                if not chunk:
+                    continue
+                try:
                     self.wfile.write(chunk)
                     self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, OSError):
-            # Client disconnects are a bounded transport counter, not an error
-            # containing provider-controlled text.
-            proxy._count("client_disconnects")
+                except (BrokenPipeError, ConnectionResetError):
+                    # Client disconnects are a bounded transport counter, not an
+                    # error containing provider-controlled text.
+                    session._count("client_disconnects")
+                    break
         finally:
             try:
                 response.close()
             except Exception:
                 pass
-            proxy._count("requests")
+            session._count("requests")
 
 
-class _ProxyHTTPServer(ThreadingHTTPServer):
+class _SessionHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, address: tuple[str, int], proxy: "DeepSeekProviderProxy") -> None:
-        self.proxy = proxy
-        super().__init__(address, _ProxyHandler)
+    def __init__(self, address: tuple[str, int], session: "ResponsesProviderSession") -> None:
+        self.session = session
+        super().__init__(address, _SessionHandler)
 
 
-class DeepSeekProviderProxy:
-    """One loopback proxy with a mutable, non-exported upstream key."""
+class ResponsesProviderSession:
+    """One loopback Responses session with a mutable, non-exported upstream key.
+
+    Only ``127.0.0.1:0`` listening, only bounded JSON ``POST /responses``,
+    inbound Authorization replaced by the Host-owned key, fixed TLS upstream,
+    safe response headers only, provider bodies never logged, and the key buffer
+    overwritten on teardown.
+    """
 
     def __init__(
         self,
         credential: bytes | bytearray,
         *,
+        provider_id: str = "deepseek-direct",
         upstream_url: str = DEEPSEEK_UPSTREAM_URL,
         host: str = "127.0.0.1",
         port: int = 0,
-        max_body_bytes: int = DEEPSEEK_PROXY_MAX_BODY_BYTES,
+        max_body_bytes: int = RESPONSES_SESSION_MAX_BODY_BYTES,
         connect_timeout: float = 15.0,
         read_timeout: float = 330.0,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
-            raise DeepSeekProviderProxyError("DeepSeek proxy credential is unavailable")
-        parsed = urlsplit(upstream_url)
-        if parsed.scheme not in {"https", "http"} or not parsed.hostname or parsed.path != "/responses":
-            raise DeepSeekProviderProxyError("DeepSeek upstream URL is invalid")
-        if parsed.scheme != "https" and upstream_url == DEEPSEEK_UPSTREAM_URL:
-            raise DeepSeekProviderProxyError("DeepSeek upstream TLS is required")
+            raise ProviderSessionError("provider session credential is unavailable")
+        if not provider_id or not isinstance(provider_id, str):
+            raise ProviderSessionError("provider session identity is invalid")
+        _validate_upstream_url(upstream_url)
+        self.provider_id = provider_id
         self._credential = bytearray(credential)
         self.upstream_url = upstream_url
         self.host = host
@@ -281,7 +353,7 @@ class DeepSeekProviderProxy:
         self.connect_timeout = max(0.1, float(connect_timeout))
         self.read_timeout = max(0.1, float(read_timeout))
         self.on_failure = on_failure
-        self._server: _ProxyHTTPServer | None = None
+        self._server: _SessionHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
         self._counts: dict[str, int] = {
@@ -303,7 +375,7 @@ class DeepSeekProviderProxy:
     def base_url(self) -> str:
         server = self._server
         if server is None:
-            raise DeepSeekProviderProxyError("DeepSeek proxy is not started")
+            raise ProviderSessionError("provider session is not started")
         host, port = server.server_address
         return f"http://{host}:{port}"
 
@@ -312,6 +384,10 @@ class DeepSeekProviderProxy:
             self._counts[key] = self._counts.get(key, 0) + 1
 
     def _signal_failure(self, reason_code: str) -> None:
+        # Only stable reason codes may leave the session; provider free text is
+        # never forwarded to callbacks, clients, artifacts, or logs.
+        if reason_code not in {RESPONSES_UPSTREAM_FAILURE, RESPONSES_CLEANUP_FAILURE}:
+            return
         callback = self.on_failure
         if callable(callback):
             try:
@@ -356,13 +432,13 @@ class DeepSeekProviderProxy:
             if self._server is not None:
                 return self.base_url
             try:
-                server = _ProxyHTTPServer((self.host, self.port), self)
+                server = _SessionHTTPServer((self.host, self.port), self)
             except OSError as exc:
-                raise DeepSeekProviderProxyError("DeepSeek proxy bind failed") from exc
+                raise ProviderSessionError("provider session bind failed") from exc
             self._server = server
             thread = threading.Thread(
                 target=server.serve_forever,
-                name="formal-deepseek-provider-proxy",
+                name=f"formal-provider-session-{self.provider_id}",
                 daemon=True,
             )
             self._thread = thread
@@ -373,11 +449,11 @@ class DeepSeekProviderProxy:
         parsed = urlsplit(self.upstream_url)
         host = parsed.hostname
         if not host:
-            raise DeepSeekProviderProxyError("DeepSeek upstream URL is invalid")
+            raise ProviderSessionError("provider upstream URL is invalid")
         with self._lock:
             key = bytes(self._credential)
         if not key:
-            raise DeepSeekProviderProxyError("DeepSeek proxy credential is unavailable")
+            raise ProviderSessionError("provider session credential is unavailable")
         connection: http.client.HTTPConnection | http.client.HTTPSConnection
         try:
             if parsed.scheme == "https":
@@ -420,7 +496,7 @@ class DeepSeekProviderProxy:
                 connection.close()
             except Exception:
                 pass
-            raise DeepSeekProviderProxyError("DeepSeek upstream request failed") from exc
+            raise ProviderSessionError("provider upstream request failed") from exc
 
     def stop(self) -> bool:
         """Best-effort listener teardown with a safe lifecycle result.
@@ -483,15 +559,48 @@ class DeepSeekProviderProxy:
         return not bool(report["lifecycle_failure"])
 
 
+class DeepSeekProviderProxy(ResponsesProviderSession):
+    """Thin DeepSeek compatibility wrapper over the provider-neutral session."""
+
+    def __init__(
+        self,
+        credential: bytes | bytearray,
+        *,
+        upstream_url: str = DEEPSEEK_UPSTREAM_URL,
+        host: str = "127.0.0.1",
+        port: int = 0,
+        max_body_bytes: int = DEEPSEEK_PROXY_MAX_BODY_BYTES,
+        connect_timeout: float = 15.0,
+        read_timeout: float = 330.0,
+        on_failure: Callable[[str], None] | None = None,
+    ) -> None:
+        super().__init__(
+            credential,
+            provider_id="deepseek-direct",
+            upstream_url=upstream_url,
+            host=host,
+            port=port,
+            max_body_bytes=max_body_bytes,
+            connect_timeout=connect_timeout,
+            read_timeout=read_timeout,
+            on_failure=on_failure,
+        )
+
+
 __all__ = [
     "DEEPSEEK_API_KEY_ENV",
     "DEEPSEEK_CREDENTIAL_PATH",
     "DEEPSEEK_PROXY_MAX_BODY_BYTES",
     "DEEPSEEK_UPSTREAM_URL",
+    "RESPONSES_SESSION_MAX_BODY_BYTES",
     "DeepSeekCredentialBinding",
     "DeepSeekCredentialError",
     "DeepSeekProviderProxy",
     "DeepSeekProviderProxyError",
+    "ProviderSessionError",
+    "RESPONSES_UPSTREAM_FAILURE",
+    "RESPONSES_CLEANUP_FAILURE",
+    "ResponsesProviderSession",
     "preflight_deepseek_credential",
     "read_deepseek_credential",
 ]

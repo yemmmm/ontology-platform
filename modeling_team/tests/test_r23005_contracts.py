@@ -40,8 +40,10 @@ from modeling_team.acceptance import (
     validate_verdict,
 )
 from modeling_team.contracts import TeamConfigurationError, _load_package, repository_root
-from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
-from modeling_team.model_manifest import load_formal_model_manifest
+from modeling_team.model_routing import (
+    DEFAULT_MODEL_PROFILE_ID,
+    load_team_model_profile,
+)
 from modeling_team import preflight as preflight_module
 from modeling_team.runner import TeamRunner
 from modeling_team.preflight import normalize_formal_scope
@@ -309,6 +311,25 @@ def _blocked_verdict(
     }
     verdict["verdict_digest"] = verdict_digest(verdict)
     return verdict
+
+
+class _SessionsDouble:
+    """Minimal ProviderSessionManager double for config unit tests."""
+
+    def base_url_for(self, provider_id: str) -> str:
+        return "http://127.0.0.1:49152"
+
+    def listening(self) -> bool:
+        return True
+
+    def snapshot(self) -> dict[str, dict[str, object]]:
+        return {"deepseek-direct": {"listening": True}}
+
+    def secret_values(self) -> tuple[bytes, ...]:
+        return ()
+
+    def stop(self) -> dict[str, dict[str, bool | int]]:
+        return {}
 
 
 class R23005ContractTests(unittest.TestCase):
@@ -1769,10 +1790,10 @@ class R23005ContractTests(unittest.TestCase):
                 acceptance=None,
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
-            adapter._formal_model_manifest = load_formal_model_manifest(root)
-            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
-            proxy.start()
-            adapter._formal_provider_proxy = proxy
+            adapter._team_model_profile = load_team_model_profile(
+                root, DEFAULT_MODEL_PROFILE_ID
+            )
+            adapter._provider_sessions = _SessionsDouble()  # type: ignore[assignment]
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 adapter._write_config(run, agent)
             auth = home / "auth.json"
@@ -1782,7 +1803,6 @@ class R23005ContractTests(unittest.TestCase):
             self.assertEqual(list((home / "sources").iterdir()), [])
             adapter.agents[agent.agent_id] = agent
             adapter.stop()
-            proxy.stop()
             self.assertFalse(auth.exists())
 
     def test_formal_acceptance_config_ignores_host_provider_auth_symlink(self) -> None:
@@ -1808,13 +1828,12 @@ class R23005ContractTests(unittest.TestCase):
                 acceptance=None,
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
-            adapter._formal_model_manifest = load_formal_model_manifest(root)
-            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
-            proxy.start()
-            adapter._formal_provider_proxy = proxy
+            adapter._team_model_profile = load_team_model_profile(
+                root, DEFAULT_MODEL_PROFILE_ID
+            )
+            adapter._provider_sessions = _SessionsDouble()  # type: ignore[assignment]
             with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
                 adapter._write_config(run, agent)
-            proxy.stop()
             self.assertFalse((home / "auth.json").exists())
 
     def test_formal_protocol_config_stages_role_bound_runner_capability(self) -> None:
@@ -1845,10 +1864,10 @@ class R23005ContractTests(unittest.TestCase):
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
             adapter._acceptance = carrier
-            adapter._formal_model_manifest = load_formal_model_manifest(root)
-            proxy = DeepSeekProviderProxy(b"formal-provider-auth")
-            proxy.start()
-            adapter._formal_provider_proxy = proxy
+            adapter._team_model_profile = load_team_model_profile(
+                root, DEFAULT_MODEL_PROFILE_ID
+            )
+            adapter._provider_sessions = _SessionsDouble()  # type: ignore[assignment]
             with patch.object(adapter, "preflight_host_auth", return_value=host_auth):
                 adapter._write_config(run, agent)
             config = (home / "config.toml").read_text(encoding="utf-8")
@@ -1870,7 +1889,6 @@ class R23005ContractTests(unittest.TestCase):
             adapter.agents[agent.agent_id] = agent
             adapter._coordination_enabled = True
             adapter.stop()
-            proxy.stop()
             carrier.cleanup()
             self.assertFalse((home / "runner-capability.token").exists())
 

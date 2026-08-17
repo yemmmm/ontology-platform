@@ -10,12 +10,13 @@ import pytest
 
 from modeling_team.acceptance_runtime import PLATFORM_PROXY_READ_TOOLS
 from modeling_team.contracts import _load_package, repository_root
-from modeling_team.deepseek_provider_proxy import DeepSeekProviderProxy
 from modeling_team.deepseek_provider_proxy import preflight_deepseek_credential
-from modeling_team.model_manifest import (
-    FORMAL_MODEL_PACKAGE_IDS,
-    FORMAL_MODEL_TUPLE,
-    load_formal_model_manifest,
+from modeling_team.model_routing import (
+    DEFAULT_MODEL_PROFILE_ID,
+    MODEL_PROFILE_PACKAGE_IDS,
+    ProviderSessionManager,
+    RoleModelBinding,
+    load_team_model_profile,
 )
 from modeling_team.runtimes.codex import (
     CodexRuntimeAdapter,
@@ -59,6 +60,28 @@ def _agent(root: Path, role: str) -> _Agent:
     return _Agent(role, _load_package(repository_root(), role), home, work, skills)
 
 
+class _SessionsDouble:
+    """Minimal ProviderSessionManager double for config/env unit tests."""
+
+    def __init__(self, base_urls: dict[str, str] | None = None) -> None:
+        self._base_urls = base_urls or {"deepseek-direct": "http://127.0.0.1:49152"}
+
+    def base_url_for(self, provider_id: str) -> str:
+        return self._base_urls[provider_id]
+
+    def listening(self) -> bool:
+        return True
+
+    def snapshot(self) -> dict[str, dict[str, object]]:
+        return {provider_id: {"listening": True} for provider_id in self._base_urls}
+
+    def secret_values(self) -> tuple[bytes, ...]:
+        return ()
+
+    def stop(self) -> dict[str, dict[str, bool | int]]:
+        return {}
+
+
 def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -79,10 +102,8 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repo)
-    proxy = DeepSeekProviderProxy(b"formal-secret")
-    proxy.start()
-    adapter._formal_provider_proxy = proxy
+    adapter._team_model_profile = load_team_model_profile(repo, DEFAULT_MODEL_PROFILE_ID)
+    adapter._provider_sessions = _SessionsDouble()
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
 
     for role in ("coordinator", "modeling", "protocol", "acceptance"):
@@ -90,7 +111,7 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
         adapter._write_config(run, agent)
         config = (agent.home / "config.toml").read_text(encoding="utf-8")
         assert 'model = "deepseek-v4-flash"' in config
-        assert 'model_provider = "deepseek"' in config
+        assert 'model_provider = "deepseek-direct"' in config
         assert 'model_reasoning_effort = "max"' in config
         assert "base_url = \"http://127.0.0.1:" in config
         assert 'env_key = "DEEPSEEK_API_KEY"' not in config
@@ -110,7 +131,6 @@ def test_formal_persistent_configs_and_process_env_cover_all_four_roles(
         assert kwargs["env"]["LANG"] == "C.UTF-8"
         assert kwargs["env"]["LC_ALL"] == "C.UTF-8"
     adapter.stop()
-    proxy.stop()
 
 
 def test_formal_config_is_parseable_with_one_model_binding(tmp_path: Path) -> None:
@@ -118,42 +138,49 @@ def test_formal_config_is_parseable_with_one_model_binding(tmp_path: Path) -> No
     run = _formal_run(tmp_path / "run")
     adapter = CodexRuntimeAdapter(repository_root=repo, use_bwrap=False)
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repo)
-    proxy = DeepSeekProviderProxy(b"formal-secret")
-    proxy.start()
-    adapter._formal_provider_proxy = proxy
+    adapter._team_model_profile = load_team_model_profile(repo, DEFAULT_MODEL_PROFILE_ID)
+    adapter._provider_sessions = _SessionsDouble()
     agent = _agent(tmp_path, "coordinator")
     try:
         adapter._write_config(run, agent)
         parsed = tomllib.loads((agent.home / "config.toml").read_text(encoding="utf-8"))
     finally:
         adapter.stop()
-        proxy.stop()
 
     assert parsed["model"] == "deepseek-v4-flash"
-    assert parsed["model_provider"] == "deepseek"
+    assert parsed["model_provider"] == "deepseek-direct"
     assert parsed["model_reasoning_effort"] == "max"
-    assert parsed["model_providers"]["deepseek"]["wire_api"] == "responses"
+    assert parsed["model_providers"]["deepseek-direct"]["wire_api"] == "responses"
+    assert "env_key" not in parsed["model_providers"]["deepseek-direct"]
+    assert set(parsed["model_providers"]["deepseek-direct"]) == {
+        "name",
+        "base_url",
+        "wire_api",
+    }
 
 
-def test_formal_startup_exception_unwinds_and_wipes_provider_proxy(
+def test_formal_startup_exception_unwinds_and_wipes_provider_sessions(
     monkeypatch, tmp_path: Path
 ) -> None:
     credential = tmp_path / "deepseek.env"
     credential.write_text("DEEPSEEK_API_KEY=startup-sentinel\n", encoding="utf-8")
     credential.chmod(0o600)
     run = _formal_run(tmp_path / "run")
-    run.model_manifest = load_formal_model_manifest(repository_root())
-    run.deepseek_credential_binding = preflight_deepseek_credential(credential)
-    created: list[DeepSeekProviderProxy] = []
+    run.team_model_profile = load_team_model_profile(
+        repository_root(), DEFAULT_MODEL_PROFILE_ID
+    )
+    run.provider_credential_bindings = {
+        "deepseek-direct": preflight_deepseek_credential(credential)
+    }
+    created: list[ProviderSessionManager] = []
 
-    class _SpyProxy(DeepSeekProviderProxy):
+    class _SpyManager(ProviderSessionManager):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             created.append(self)
 
     monkeypatch.setattr(
-        "modeling_team.runtimes.codex.DeepSeekProviderProxy", _SpyProxy
+        "modeling_team.runtimes.codex.ProviderSessionManager", _SpyManager
     )
     adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
     monkeypatch.setattr(
@@ -166,9 +193,9 @@ def test_formal_startup_exception_unwinds_and_wipes_provider_proxy(
         adapter.start_roster(run, [_agent(run.root, "coordinator")])
 
     assert len(created) == 1
-    assert created[0].secret_snapshot() == b""
-    assert created[0].snapshot()["listening"] is False
-    assert adapter._formal_provider_proxy is None
+    assert created[0].secret_values() == ()
+    assert created[0].listening() is False
+    assert adapter._provider_sessions is None
     assert adapter._secret_audit_values == []
 
 
@@ -179,7 +206,9 @@ def test_thread_start_model_binding_is_formal_only(
     adapter = CodexRuntimeAdapter(repository_root=repository_root())
     adapter._coordination_enabled = formal
     if formal:
-        adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+        adapter._team_model_profile = load_team_model_profile(
+            repository_root(), DEFAULT_MODEL_PROFILE_ID
+        )
     starts: dict[str, dict[str, object]] = {}
 
     for role in ("coordinator", "modeling", "protocol", "acceptance"):
@@ -220,21 +249,42 @@ def test_thread_start_model_binding_is_formal_only(
 def test_formal_model_binding_covers_all_six_packages() -> None:
     adapter = CodexRuntimeAdapter(repository_root=repository_root())
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+    adapter._team_model_profile = load_team_model_profile(
+        repository_root(), DEFAULT_MODEL_PROFILE_ID
+    )
 
+    expected = {
+        package_id: {
+            "model_provider": "deepseek-direct",
+            "model": "deepseek-v4-flash",
+            "requested_effort": "max",
+            "effective_effort": "max",
+        }
+        for package_id in MODEL_PROFILE_PACKAGE_IDS
+    }
     assert {
-        package_id: adapter._validated_formal_model_override(package_id)
-        for package_id in FORMAL_MODEL_PACKAGE_IDS
-    } == {package_id: FORMAL_MODEL_TUPLE for package_id in FORMAL_MODEL_PACKAGE_IDS}
+        package_id: adapter._validated_formal_role_binding(package_id).as_dict()
+        for package_id in MODEL_PROFILE_PACKAGE_IDS
+    } == expected
 
 
-def test_formal_model_binding_fails_closed_before_process_on_tuple_or_package_drift(
+def test_formal_model_binding_fails_closed_before_process_on_binding_or_package_drift(
     tmp_path: Path,
 ) -> None:
-    class DriftedManifest:
-        def override_for(self, package_id: str) -> tuple[str, str, str]:
+    def _binding(
+        package_id: str,
+        *,
+        provider_id: str = "deepseek-direct",
+        model: str = "deepseek-v4-flash",
+    ) -> RoleModelBinding:
+        return RoleModelBinding(package_id, provider_id, model, "max", "max")
+
+    class DriftedProfile:
+        profile_id = DEFAULT_MODEL_PROFILE_ID
+
+        def binding_for(self, package_id: str) -> RoleModelBinding:
             if package_id == "coordinator":
-                return ("gpt-5.5", "openai", "max")
+                return _binding(package_id, model="gpt-5.5")
             raise KeyError(package_id)
 
     calls: list[object] = []
@@ -244,17 +294,17 @@ def test_formal_model_binding_fails_closed_before_process_on_tuple_or_package_dr
         process_factory=lambda *args, **kwargs: calls.append((args, kwargs)),
     )
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = DriftedManifest()  # type: ignore[assignment]
+    adapter._team_model_profile = DriftedProfile()  # type: ignore[assignment]
     agent = _agent(tmp_path, "coordinator")
 
-    with pytest.raises(CodexRuntimeError, match="tuple drifted"):
+    with pytest.raises(CodexRuntimeError, match="binding drifted"):
         adapter._start_process(agent)
     assert calls == []
 
     with pytest.raises(CodexRuntimeError, match="package binding"):
-        adapter._validated_formal_model_override("platform-examiner")
+        adapter._validated_formal_role_binding("platform-examiner")
     with pytest.raises(CodexRuntimeError, match="package binding"):
-        adapter._validated_formal_model_override("unknown-package")
+        adapter._validated_formal_role_binding("unknown-package")
 
 
 def test_formal_start_roster_ignores_ambient_deepseek_and_llm_sentinels(
@@ -265,8 +315,10 @@ def test_formal_start_roster_ignores_ambient_deepseek_and_llm_sentinels(
     credential.chmod(0o600)
     binding = preflight_deepseek_credential(credential)
     run = _formal_run(tmp_path / "run")
-    run.model_manifest = load_formal_model_manifest(repository_root())
-    run.deepseek_credential_binding = binding
+    run.team_model_profile = load_team_model_profile(
+        repository_root(), DEFAULT_MODEL_PROFILE_ID
+    )
+    run.provider_credential_bindings = {"deepseek-direct": binding}
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ambient-deepseek-sentinel")
     monkeypatch.setenv("LLM_API_KEY", "ambient-llm-sentinel")
     adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
@@ -280,8 +332,10 @@ def test_formal_start_roster_ignores_ambient_deepseek_and_llm_sentinels(
         sentinel.encode() not in adapter._secret_audit_values
         for sentinel in ("ambient-deepseek-sentinel", "ambient-llm-sentinel")
     )
-    assert adapter._formal_provider_proxy is not None
-    assert adapter._formal_provider_proxy.base_url.startswith("http://127.0.0.1:")
+    assert adapter._provider_sessions is not None
+    assert adapter._provider_sessions.base_url_for("deepseek-direct").startswith(
+        "http://127.0.0.1:"
+    )
     adapter.stop()
 
 
@@ -305,10 +359,8 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repo)
-    proxy = DeepSeekProviderProxy(b"formal-secret")
-    proxy.start()
-    adapter._formal_provider_proxy = proxy
+    adapter._team_model_profile = load_team_model_profile(repo, DEFAULT_MODEL_PROFILE_ID)
+    adapter._provider_sessions = _SessionsDouble()
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
     thread_starts: list[dict[str, object]] = []
 
@@ -369,7 +421,7 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
     resource = adapter.acceptance_child_factory(spec)
     config = (private_root / "home" / "config.toml").read_text(encoding="utf-8")
     assert 'model = "deepseek-v4-flash"' in config
-    assert 'model_provider = "deepseek"' in config
+    assert 'model_provider = "deepseek-direct"' in config
     assert 'model_reasoning_effort = "max"' in config
     assert "base_url = \"http://127.0.0.1:" in config
     assert 'env_key = "DEEPSEEK_API_KEY"' not in config
@@ -389,7 +441,6 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
     adapter._unlink_auth_barrier(resource._child_agent)
     assert resource._child_agent.provider_proxy_ready_monotonic is not None
     resource.destroy()
-    proxy.stop()
 
 
 def test_examiner_bwrap_inherits_minimal_parent_env_without_clearenv(monkeypatch, tmp_path: Path) -> None:
@@ -515,7 +566,9 @@ def test_formal_process_factory_does_not_resolve_deepseek_key(tmp_path: Path, mo
         process_factory=process_factory,
     )
     adapter._coordination_enabled = True
-    adapter._formal_model_manifest = load_formal_model_manifest(repository_root())
+    adapter._team_model_profile = load_team_model_profile(
+        repository_root(), DEFAULT_MODEL_PROFILE_ID
+    )
     monkeypatch.setattr(
         adapter,
         "_resolve_deepseek_api_key",

@@ -22,22 +22,17 @@ from .contracts import (
     digest_file,
     load_formal_team_configuration,
 )
-from .model_manifest import (
-    FORMAL_MODEL_MANIFEST_RELATIVE,
-    FormalModelManifest,
-    load_formal_model_manifest,
+from .model_routing import (
+    MODEL_PROFILE_DIRECTORY,
+    TeamModelProfile,
+    load_team_model_profile,
+    preflight_profile_credentials,
 )
 from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
 from .r23003_contract import (
     R2_3_003_TARGET_IDS,
     validate_r23003_candidate_declarations,
     validate_deletion_policy,
-)
-from .deepseek_provider_proxy import (
-    DeepSeekCredentialBinding,
-    DeepSeekCredentialError,
-    DEEPSEEK_CREDENTIAL_PATH,
-    preflight_deepseek_credential,
 )
 from .acceptance import (
     AcceptanceContractError,
@@ -131,9 +126,9 @@ class TeamRun:
     protocol_context: dict[str, str] | None = None
     gate_binding: dict[str, str] | None = None
     acceptance: RunnerAcceptanceCarrier | None = None
-    model_manifest: FormalModelManifest | None = None
+    team_model_profile: TeamModelProfile | None = None
     formal_contract: FormalRunContract | None = None
-    deepseek_credential_binding: DeepSeekCredentialBinding | None = None
+    provider_credential_bindings: Mapping[str, Any] | None = None
     modeling_read_key_id: str | None = None
     modeling_read_proxy: ModelingReadProxy | None = None
 
@@ -154,6 +149,7 @@ class TeamRunner:
         canonical_admin_key: str | None = None,
         monotonic_clock: Callable[[], float] | None = None,
         deepseek_credential_path: Path | None = None,
+        openai_credential_path: Path | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -171,6 +167,7 @@ class TeamRunner:
         # This path is a constructor-only test seam.  Production callers leave it
         # unset and therefore bind the fixed external credential location.
         self.deepseek_credential_path = deepseek_credential_path
+        self.openai_credential_path = openai_credential_path
         self.run: TeamRun | None = None
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
@@ -340,6 +337,7 @@ class TeamRunner:
         task_path: Path,
         scope: dict[str, str],
         task_overlay_path: Path | None = None,
+        model_profile_id: str | None = None,
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
@@ -368,35 +366,34 @@ class TeamRunner:
         formal_acceptance = formal_contract is not None
         # The model contract is the first formal gate after configuration
         # loading.  It performs only immutable package reads, so malformed,
-        # partial, unsupported, inconsistent, or missing Examiner declarations
+        # partial, unsupported, inconsistent, or missing role declarations
         # cannot create a run root, reserve a ledger start, probe the platform,
         # start transport/capabilities, or invoke a process/child factory.
-        model_manifest = None
+        selected_model_profile_id: str | None = None
+        team_model_profile: TeamModelProfile | None = None
         if formal_contract is not None:
-            model_manifest = load_formal_model_manifest(
-                self.repository_root,
-                manifest_path=Path(formal_contract.model_manifest_path),
-                manifest_id=(
-                    "r2-3-003-deepseek-v4-flash"
-                    if formal_contract.requirement_id == "R2.3-003"
-                    else "r2-3-005-deepseek-v4-flash"
-                ),
-                profile_id=formal_contract.profile_id,
-                task_id=formal_contract.task_id,
+            selected_model_profile_id = (
+                model_profile_id or formal_contract.default_model_profile_id
             )
-        credential_binding: DeepSeekCredentialBinding | None = None
+            team_model_profile = load_team_model_profile(
+                self.repository_root, selected_model_profile_id
+            )
+        elif model_profile_id is not None:
+            raise TeamConfigurationError(
+                "model profile selection requires a formal run contract"
+            )
+        provider_credential_bindings: dict[str, Any] | None = None
         defer_existing_credential_until_preflight = (
             formal_contract is not None
             and formal_contract.requirement_id == "R2.3-003"
             and formal_contract.is_existing
         )
         if formal_acceptance and not defer_existing_credential_until_preflight:
-            try:
-                credential_binding = preflight_deepseek_credential(
-                    self.deepseek_credential_path or DEEPSEEK_CREDENTIAL_PATH
-                )
-            except DeepSeekCredentialError as exc:
-                raise TeamConfigurationError("formal DeepSeek credential preflight failed") from exc
+            provider_credential_bindings = preflight_profile_credentials(
+                team_model_profile,
+                deepseek_credential_path=self.deepseek_credential_path,
+                openai_credential_path=self.openai_credential_path,
+            )
         if config.task.schema_version == 2 and not self.freeze_started_at:
             raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
         task_overlay: TaskInputOverlay | None = None
@@ -425,9 +422,10 @@ class TeamRunner:
             profile_path=profile_path,
             task_path=task_path,
             frozen_task_overlay=task_overlay,
+            model_profile_id=selected_model_profile_id,
         )
         if formal_acceptance:
-            self._assert_formal_model_manifest_digest(baseline, model_manifest)
+            self._assert_team_model_profile(baseline, team_model_profile)
         baseline_hash = StartLedger.baseline_hash(baseline)
         preflight_evidence: dict[str, Any] | None = None
         if formal_acceptance:
@@ -462,29 +460,38 @@ class TeamRunner:
                     task=config.task,
                 )
                 validated_publication = validate_candidate_publication(task_overlay)
+        if defer_existing_credential_until_preflight:
+            # R2.3-003 binds an existing live scope.  Read the external model
+            # credentials only after that live preflight has proved the retained
+            # Project/Ontology state is still safe, while remaining before the
+            # profile/baseline re-read, ledger reservation, run-root creation,
+            # and any Agent start.
+            provider_credential_bindings = preflight_profile_credentials(
+                team_model_profile,
+                deepseek_credential_path=self.deepseek_credential_path,
+                openai_credential_path=self.openai_credential_path,
+            )
+        if formal_acceptance:
+            if team_model_profile is not None:
+                # Two-read freeze: digest or parse drift between the initial
+                # baseline read and this post-preflight re-read fails closed
+                # before reservation and any Agent start.
+                reloaded_profile = load_team_model_profile(
+                    self.repository_root, team_model_profile.profile_id
+                )
+                if reloaded_profile != team_model_profile:
+                    raise TeamConfigurationError("team model profile drifted during preflight")
             baseline_after_preflight = self._baseline_manifest(
                 run_id=run_id,
                 configuration=config,
                 profile_path=profile_path,
                 task_path=task_path,
                 frozen_task_overlay=task_overlay,
+                model_profile_id=selected_model_profile_id,
             )
-            self._assert_formal_model_manifest_digest(
-                baseline_after_preflight, model_manifest
-            )
+            self._assert_team_model_profile(baseline_after_preflight, team_model_profile)
             if StartLedger.baseline_hash(baseline_after_preflight) != baseline_hash:
                 raise TeamConfigurationError("baseline manifest drifted during preflight")
-        if defer_existing_credential_until_preflight:
-            # R2.3-003 binds an existing live scope.  Read the external model
-            # credential only after that live preflight has proved the retained
-            # Project/Ontology state is still safe, while remaining before the
-            # ledger reservation, run-root creation, and any Agent start.
-            try:
-                credential_binding = preflight_deepseek_credential(
-                    self.deepseek_credential_path or DEEPSEEK_CREDENTIAL_PATH
-                )
-            except DeepSeekCredentialError as exc:
-                raise TeamConfigurationError("formal DeepSeek credential preflight failed") from exc
         # The proof gate belongs to the loaded Task/Profile contract, not to the
         # formal R2.3-005 workflow flag.  Archived R2.3-002 runs still carry the
         # expected matrix binding and must project that same gate into TeamRun;
@@ -520,9 +527,9 @@ class TeamRunner:
             config,
             normalized_scope,
             gate_binding=gate_binding,
-            model_manifest=model_manifest,
+            team_model_profile=team_model_profile,
             formal_contract=formal_contract,
-            deepseek_credential_binding=credential_binding,
+            provider_credential_bindings=provider_credential_bindings,
         )
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
             try:
@@ -655,18 +662,20 @@ class TeamRunner:
         return self.run
 
     @staticmethod
-    def _assert_formal_model_manifest_digest(
-        baseline: dict[str, Any], model_manifest: FormalModelManifest | None
+    def _assert_team_model_profile(
+        baseline: dict[str, Any], team_model_profile: TeamModelProfile | None
     ) -> None:
-        if model_manifest is None:
-            raise TeamConfigurationError("formal model manifest is unavailable")
-        binding = baseline.get("formal_model_manifest")
+        if team_model_profile is None:
+            raise TeamConfigurationError("formal team model profile is unavailable")
+        binding = baseline.get("team_model_profile")
         if (
             not isinstance(binding, dict)
-            or binding.get("path") != model_manifest.relative_path
-            or binding.get("sha256") != model_manifest.digest
+            or binding.get("profile_id") != team_model_profile.profile_id
+            or binding.get("path") != team_model_profile.relative_path
+            or binding.get("sha256") != team_model_profile.digest
+            or binding.get("roles") != team_model_profile.as_dict()["roles"]
         ):
-            raise TeamConfigurationError("formal model manifest digest drifted")
+            raise TeamConfigurationError("formal team model profile digest drifted")
 
     def _acceptance_ticket_policy(self, configuration: TeamConfiguration) -> dict[str, Any]:
         """Load the requirement-owned CQ/source standard without any answers."""
@@ -766,6 +775,7 @@ class TeamRunner:
         task_path: Path,
         task_overlay_path: Path | None = None,
         frozen_task_overlay: TaskInputOverlay | None = None,
+        model_profile_id: str | None = None,
     ) -> dict[str, Any]:
         if task_overlay_path is not None and frozen_task_overlay is not None:
             raise TeamConfigurationError("Task overlay cannot be both live and frozen")
@@ -864,7 +874,14 @@ class TeamRunner:
         formal_acceptance_contract = formal_contract is not None
         if formal_acceptance_contract:
             assert formal_contract is not None
-            files["formal_model_manifest"] = self.repository_root / formal_contract.model_manifest_path
+            selected_profile_id = (
+                model_profile_id or formal_contract.default_model_profile_id
+            )
+            files["team_model_profile"] = (
+                self.repository_root
+                / MODEL_PROFILE_DIRECTORY
+                / f"{selected_profile_id}.yaml"
+            )
             if formal_contract.requirement_id == "R2.3-003":
                 files["modeling_readonly"] = self.repository_root / "modeling_team/modeling_readonly.py"
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
@@ -1101,10 +1118,13 @@ class TeamRunner:
             "expected_matrix_binding": configuration.task.expected_matrix_binding or configuration.profile.expected_matrix_binding,
         }
         if formal_acceptance_contract:
-            baseline["formal_model_manifest"] = {
-                "path": formal_contract.model_manifest_path,
-                "sha256": digests["formal_model_manifest"],
-            }
+            profile = load_team_model_profile(self.repository_root, selected_profile_id)
+            if profile.digest != digests["team_model_profile"]:
+                raise TeamConfigurationError("formal team model profile digest is inconsistent")
+            # Safe projection only: identity, repo-relative path, source digest,
+            # and per-role provider/model/effort.  No endpoint, credential
+            # path/value/digest, or provider free text.
+            baseline["team_model_profile"] = profile.as_dict()
             if formal_contract.requirement_id == "R2.3-003":
                 baseline["runtime_contract"]["modeling_read_proxy"] = {
                     "server": "modeling_read_proxy",
@@ -1128,6 +1148,7 @@ class TeamRunner:
         profile_path: Path,
         task_path: Path,
         task_overlay_path: Path | None = None,
+        model_profile_id: str | None = None,
     ) -> tuple[dict[str, Any], str]:
         """Compute the prepare-time binding without creating any run or ledger state."""
         if not cls._safe_run_id(run_id):
@@ -1136,6 +1157,10 @@ class TeamRunner:
             profile_path, task_path, root=repository_root
         )
         formal_contract = formal_run_contract_for(configuration)
+        if model_profile_id is not None and formal_contract is None:
+            raise TeamConfigurationError(
+                "model profile selection requires a formal run contract"
+            )
         if formal_contract is not None:
             configuration, _ = load_formal_run_configuration(
                 profile_path, task_path, root=repository_root
@@ -1154,6 +1179,7 @@ class TeamRunner:
             profile_path=profile_path,
             task_path=task_path,
             task_overlay_path=task_overlay_path,
+            model_profile_id=model_profile_id,
         )
         return manifest, StartLedger.baseline_hash(manifest)
 

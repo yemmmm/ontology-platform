@@ -14,10 +14,10 @@ import pytest
 import yaml
 
 from modeling_team.contracts import TeamConfigurationError, _load_package
-from modeling_team.model_manifest import (
-    FORMAL_MODEL_PACKAGE_IDS,
-    FORMAL_MODEL_TUPLE,
-    load_formal_model_manifest,
+from modeling_team.model_routing import (
+    DEFAULT_MODEL_PROFILE_ID,
+    MODEL_PROFILE_PACKAGE_IDS,
+    load_team_model_profile,
 )
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import (
@@ -31,29 +31,33 @@ from modeling_team.runtimes.codex import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _copy_packages(root: Path) -> None:
-    target = root / "modeling_team" / "model-manifests" / "r2-3-005-luna-max.yaml"
+def _copy_profile(root: Path) -> None:
+    target = root / "modeling_team" / "model-profiles" / f"{DEFAULT_MODEL_PROFILE_ID}.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(
-        ROOT / "modeling_team" / "model-manifests" / "r2-3-005-luna-max.yaml",
+        ROOT / "modeling_team" / "model-profiles" / f"{DEFAULT_MODEL_PROFILE_ID}.yaml",
         target,
     )
 
 
-def _edit_package(root: Path, package_id: str, edit) -> None:
-    path = root / "modeling_team" / "model-manifests" / "r2-3-005-luna-max.yaml"
+def _edit_profile(root: Path, package_id: str, edit) -> None:
+    path = root / "modeling_team" / "model-profiles" / f"{DEFAULT_MODEL_PROFILE_ID}.yaml"
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    edit(value["packages"], package_id)
+    edit(value["roles"], package_id)
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
 
 
-def test_formal_manifest_requires_the_exact_same_tuple_for_all_six_packages(tmp_path: Path) -> None:
-    _copy_packages(tmp_path)
-    manifest = load_formal_model_manifest(tmp_path)
-    assert tuple(manifest.overrides) == FORMAL_MODEL_PACKAGE_IDS
-    assert set(manifest.overrides.values()) == {FORMAL_MODEL_TUPLE}
-    assert manifest.digest
-    for package_id in FORMAL_MODEL_PACKAGE_IDS:
+def test_default_profile_binds_all_six_roles_to_deepseek_max() -> None:
+    profile = load_team_model_profile(ROOT, DEFAULT_MODEL_PROFILE_ID)
+    assert tuple(profile.bindings) == MODEL_PROFILE_PACKAGE_IDS
+    assert set(profile.provider_ids()) == {"deepseek-direct"}
+    assert profile.digest
+    for package_id in MODEL_PROFILE_PACKAGE_IDS:
+        binding = profile.binding_for(package_id)
+        assert binding.provider_id == "deepseek-direct"
+        assert binding.model == "deepseek-v4-flash"
+        assert binding.requested_effort == "max"
+        assert binding.effective_effort == "max"
         package = yaml.safe_load(
             (ROOT / "modeling_team" / "agent-packages" / package_id / "package.yaml").read_text(
                 encoding="utf-8"
@@ -68,37 +72,37 @@ def test_formal_manifest_requires_the_exact_same_tuple_for_all_six_packages(tmp_
 @pytest.mark.parametrize(
     "edit",
     [
-        lambda packages, package_id: packages[package_id].update(model_temperature=0.2),
-        lambda packages, package_id: packages[package_id].pop("model_provider"),
-        lambda packages, package_id: packages[package_id].update(model="gpt-5.5"),
-        lambda packages, package_id: packages[package_id].update(model_provider="openai"),
-        lambda packages, package_id: packages[package_id].update(model_reasoning_effort="high"),
+        lambda roles, package_id: roles[package_id].update(model_temperature=0.2),
+        lambda roles, package_id: roles[package_id].pop("model_provider"),
+        lambda roles, package_id: roles[package_id].update(model="gpt-5.5"),
+        lambda roles, package_id: roles[package_id].update(model_provider="openai-direct"),
+        lambda roles, package_id: roles[package_id].update(model_reasoning_effort="none"),
     ],
 )
-def test_formal_manifest_rejects_unknown_partial_or_unsupported_model_values(tmp_path: Path, edit) -> None:
-    _copy_packages(tmp_path)
-    _edit_package(tmp_path, "source-examiner", edit)
+def test_profile_rejects_unknown_partial_or_unsupported_model_values(tmp_path: Path, edit) -> None:
+    _copy_profile(tmp_path)
+    _edit_profile(tmp_path, "source-examiner", edit)
     with pytest.raises(TeamConfigurationError):
-        load_formal_model_manifest(tmp_path)
+        load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
 
 
-def test_formal_manifest_rejects_missing_examiner_and_cross_package_mismatch(tmp_path: Path) -> None:
-    _copy_packages(tmp_path)
-    path = tmp_path / "modeling_team" / "model-manifests" / "r2-3-005-luna-max.yaml"
+def test_profile_rejects_missing_examiner_and_cross_package_mismatch(tmp_path: Path) -> None:
+    _copy_profile(tmp_path)
+    path = tmp_path / "modeling_team" / "model-profiles" / f"{DEFAULT_MODEL_PROFILE_ID}.yaml"
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    value["packages"].pop("platform-examiner")
+    value["roles"].pop("platform-examiner")
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     with pytest.raises(TeamConfigurationError):
-        load_formal_model_manifest(tmp_path)
+        load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
 
-    _copy_packages(tmp_path)
-    _edit_package(
+    _copy_profile(tmp_path)
+    _edit_profile(
         tmp_path,
         "platform-examiner",
-        lambda packages, package_id: packages[package_id].update(model="gpt-5.5"),
+        lambda roles, package_id: roles[package_id].update(model="gpt-5.5"),
     )
     with pytest.raises(TeamConfigurationError):
-        load_formal_model_manifest(tmp_path)
+        load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
 
 
 def test_runner_formal_model_gate_has_zero_side_effects_before_platform_preflight(tmp_path: Path) -> None:
@@ -111,15 +115,15 @@ def test_runner_formal_model_gate_has_zero_side_effects_before_platform_prefligh
     with (
         patch("modeling_team.runner.load_formal_team_configuration", return_value=config),
         patch(
-            "modeling_team.runner.load_formal_model_manifest",
-            side_effect=TeamConfigurationError("manifest rejected"),
+            "modeling_team.runner.load_team_model_profile",
+            side_effect=TeamConfigurationError("profile rejected"),
         ),
         patch(
             "modeling_team.runner.run_prestart_preflight",
             side_effect=lambda **_kwargs: preflight_calls.append(True),
         ),
     ):
-        with pytest.raises(TeamConfigurationError, match="manifest rejected"):
+        with pytest.raises(TeamConfigurationError, match="profile rejected"):
             runner.prepare(
                 run_id="luna-preflight-gate",
                 profile_path=tmp_path / "profile.yaml",

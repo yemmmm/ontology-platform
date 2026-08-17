@@ -14,7 +14,7 @@ from modeling_team import preflight as preflight_module
 from modeling_team.candidate_progress import FormalCandidateProgress, formal_candidate_digests
 from modeling_team.contracts import TeamConfigurationError
 from modeling_team.formal_runs import load_formal_run_configuration
-from modeling_team.model_manifest import load_formal_model_manifest
+from modeling_team.model_routing import load_team_model_profile
 from modeling_team.platform_scope import PlatformScope
 from modeling_team.proof_v2 import canonical_digest
 from modeling_team.preflight import (
@@ -347,7 +347,7 @@ def test_runner_validator_allows_only_bound_post_receipt_revision_via_broker(
         )
 
 
-def test_formal_r23003_pair_and_manifest_are_closed() -> None:
+def test_formal_r23003_pair_and_model_profile_are_closed() -> None:
     configuration, contract = load_formal_run_configuration(
         ROOT / "modeling_team/profiles/r2-3-003-existing-scope-modeling-team.yaml",
         ROOT / "modeling_team/tasks/r2-3-003-existing-scope-incremental.yaml",
@@ -355,14 +355,12 @@ def test_formal_r23003_pair_and_manifest_are_closed() -> None:
     )
     assert contract.requirement_id == "R2.3-003"
     assert configuration.task.task_id == contract.task_id
-    manifest = load_formal_model_manifest(
-        ROOT,
-        manifest_path=Path(contract.model_manifest_path),
-        manifest_id="r2-3-003-deepseek-v4-flash",
-        profile_id=contract.profile_id,
-        task_id=contract.task_id,
+    profile = load_team_model_profile(ROOT, contract.default_model_profile_id)
+    assert profile.profile_id == contract.default_model_profile_id
+    assert (
+        profile.relative_path
+        == f"modeling_team/model-profiles/{contract.default_model_profile_id}.yaml"
     )
-    assert manifest.relative_path == contract.model_manifest_path
 
 
 def test_r23003_scope_handoff_is_exact() -> None:
@@ -532,9 +530,9 @@ def test_r23003_runner_reads_credential_only_after_existing_live_preflight(
         events.append("live-preflight")
         return {"status": "ready", "live": {"workspace_version": "v1"}}
 
-    def credential_preflight(_path: object) -> object:
+    def credential_preflight(_profile: object, **_kwargs: object) -> object:
         events.append("credential")
-        return object()
+        return {}
 
     runner = runner_module.TeamRunner(
         repository_root=ROOT,
@@ -547,7 +545,7 @@ def test_r23003_runner_reads_credential_only_after_existing_live_preflight(
     StartLedger(ledger_root, requirement_id="R2.3-003").initial_authorization()
     try:
         with patch.object(runner_module, "run_existing_scope_preflight", live_preflight), patch.object(
-            runner_module, "preflight_deepseek_credential", credential_preflight
+            runner_module, "preflight_profile_credentials", credential_preflight
         ):
             runner.prepare(
                 run_id=run_id,
@@ -590,7 +588,11 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
             runner_module,
             "run_existing_scope_preflight",
             lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
-        ), patch.object(runner_module, "preflight_deepseek_credential", lambda _path: object()):
+        ), patch.object(
+            runner_module,
+            "preflight_profile_credentials",
+            lambda _profile, **_kwargs: {},
+        ):
             runner.prepare(
                 run_id=run_id,
                 profile_path=ROOT
@@ -669,7 +671,11 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
             runner_module,
             "run_existing_scope_preflight",
             lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
-        ), patch.object(runner_module, "preflight_deepseek_credential", lambda _path: object()):
+        ), patch.object(
+            runner_module,
+            "preflight_profile_credentials",
+            lambda _profile, **_kwargs: {},
+        ):
             runner.prepare(
                 run_id=run_id,
                 profile_path=ROOT

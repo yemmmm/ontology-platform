@@ -11,7 +11,8 @@ from pathlib import Path
 import yaml
 
 from .contracts import TeamConfigurationError, load_formal_team_configuration, repository_root
-from .formal_runs import formal_run_contract_for, load_formal_run_configuration
+from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
+from .model_routing import load_team_model_profile
 from .handoff import publish_offline_scope_handoff
 from .monitor_handoff import (
     HANDOFF_CONTRACT_RELATIVE_PATH,
@@ -309,6 +310,26 @@ def _await_monitor_extraction(handoff_root: Path, run_root: Path) -> None:
         raise RuntimeError("foreground monitor extraction acknowledgement digest drifted")
 
 
+def _resolve_model_profile_selection(
+    model_profile_id: str | None, formal_contract: FormalRunContract | None
+) -> str | None:
+    """Resolve the shared ``--model-profile`` selection for all three commands.
+
+    ``validate``/``baseline``/``run`` accept only a restricted profile ID, never a
+    path, URL, or environment override.  Omitting the flag keeps the formal run
+    contract default; a non-formal fixture can never be promoted to a formal
+    provider route.
+    """
+
+    if model_profile_id is None:
+        return None if formal_contract is None else formal_contract.default_model_profile_id
+    if formal_contract is None:
+        raise TeamConfigurationError(
+            "model profile selection requires a formal run contract"
+        )
+    return model_profile_id
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -316,10 +337,12 @@ def main() -> int:
     validate.add_argument("--profile", required=True, type=Path)
     validate.add_argument("--task", required=True, type=Path)
     validate.add_argument("--task-overlay", type=Path)
+    validate.add_argument("--model-profile")
     run = subparsers.add_parser("run")
     run.add_argument("--profile", required=True, type=Path)
     run.add_argument("--task", required=True, type=Path)
     run.add_argument("--task-overlay", type=Path)
+    run.add_argument("--model-profile")
     run.add_argument("--run-id", required=True)
     run.add_argument("--scope", required=True, type=Path)
     run.add_argument("--base-url", default="http://127.0.0.1:8001")
@@ -370,6 +393,7 @@ def main() -> int:
     baseline.add_argument("--profile", required=True, type=Path)
     baseline.add_argument("--task", required=True, type=Path)
     baseline.add_argument("--task-overlay", type=Path)
+    baseline.add_argument("--model-profile")
     handoff = subparsers.add_parser("publish-handoff")
     handoff.add_argument("--run-id", required=True)
     handoff.add_argument("--phase-a-verdict", required=True, type=Path)
@@ -434,12 +458,19 @@ def main() -> int:
         return 0
     if args.command == "baseline":
         try:
+            baseline_formal_contract = formal_run_contract_for(
+                load_formal_team_configuration(args.profile, args.task, root=root)
+            )
+            _resolve_model_profile_selection(
+                args.model_profile, baseline_formal_contract
+            )
             manifest, baseline_hash = TeamRunner.preview_baseline(
                 repository_root=root,
                 run_id=args.run_id,
                 profile_path=args.profile,
                 task_path=args.task,
                 task_overlay_path=args.task_overlay,
+                model_profile_id=args.model_profile,
             )
         except TeamConfigurationError as exc:
             print(f"baseline failed: {exc}", file=sys.stderr)
@@ -490,6 +521,17 @@ def main() -> int:
         )
         if task_overlay is not None:
             validate_candidate_publication(task_overlay)
+        # All three commands share this one loader; validate additionally prints
+        # the safe per-role requested/effective projection.
+        selected_model_profile_id = _resolve_model_profile_selection(
+            args.model_profile, formal_contract
+        )
+        # ``run`` deliberately defers the profile load to TeamRunner.prepare,
+        # whose formal model gate has zero side effects before platform
+        # preflight; only ``validate`` prints the projection eagerly here.
+        team_model_profile = None
+        if args.command == "validate" and selected_model_profile_id is not None:
+            team_model_profile = load_team_model_profile(root, selected_model_profile_id)
     except TeamConfigurationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 2
@@ -500,6 +542,9 @@ def main() -> int:
                     "profile_id": configuration.profile.profile_id,
                     "task_id": configuration.task.task_id,
                     "task_overlay_id": task_overlay.overlay_id if task_overlay else None,
+                    "model_profile": (
+                        team_model_profile.as_dict() if team_model_profile else None
+                    ),
                     "roster": [
                         agent.agent_id for agent in configuration.profile.agents
                     ],
@@ -521,7 +566,6 @@ def main() -> int:
         scope = yaml.safe_load(args.scope.read_text(encoding="utf-8"))
         if not isinstance(scope, dict):
             raise TeamConfigurationError("scope must be a YAML object")
-        schema_version = getattr(getattr(configuration, "task", None), "schema_version", 1)
         formal_acceptance = formal_contract is not None
         if formal_contract is not None:
             # Reject existing identifiers before constructing the scope owner or
@@ -548,6 +592,7 @@ def main() -> int:
             task_path=args.task,
             scope=scope,
             task_overlay_path=args.task_overlay,
+            model_profile_id=args.model_profile,
         )
         if formal_acceptance:
             # The Delivery-only key is needed by the no-start canonical gate,

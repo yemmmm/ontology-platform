@@ -28,7 +28,7 @@ class FormalRunContract:
     profile_id: str
     task_id: str
     scope_mode: str
-    model_manifest_path: str
+    default_model_profile_id: str
     acceptance_standard_path: str
     scope_config_path: str | None = None
     source_manifest_path: str | None = None
@@ -46,7 +46,7 @@ R2_3_005_CONTRACT = FormalRunContract(
     profile_id="r2-3-005-modeling-team",
     task_id="r2-3-005-formal-acceptance",
     scope_mode="create",
-    model_manifest_path="modeling_team/model-manifests/r2-3-005-luna-max.yaml",
+    default_model_profile_id="deepseek-v4-flash-max",
     acceptance_standard_path="modeling_team/references/r2-3-005-acceptance-standard.json",
     ledger_requirement_id="R2.3-005",
 )
@@ -57,7 +57,7 @@ R2_3_003_CONTRACT = FormalRunContract(
     profile_id="r2-3-003-modeling-team",
     task_id="r2-3-003-existing-scope-incremental",
     scope_mode="existing",
-    model_manifest_path="modeling_team/model-manifests/r2-3-003-deepseek.yaml",
+    default_model_profile_id="deepseek-v4-flash-max",
     acceptance_standard_path="modeling_team/references/r2-3-003-acceptance-standard.json",
     scope_config_path="modeling_team/scopes/r2-3-003-existing.yaml",
     source_manifest_path="docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json",
@@ -165,7 +165,7 @@ def load_formal_run_configuration(
             raise TeamConfigurationError("formal Profile source manifest binding drifts")
 
     for field, relative in (
-        ("model manifest", contract.model_manifest_path),
+        ("model profile", f"modeling_team/model-profiles/{contract.default_model_profile_id}.yaml"),
         ("acceptance standard", contract.acceptance_standard_path),
         ("scope config", contract.scope_config_path),
         ("source manifest", contract.source_manifest_path),
