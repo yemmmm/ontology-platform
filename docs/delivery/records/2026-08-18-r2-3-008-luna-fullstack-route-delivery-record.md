@@ -161,6 +161,23 @@
   确定性不兼容，回 developer 窄修复 handshake 层。
 - Outcome/next step: 冻结 start2 授权要素并启动。
 
+### 2026-08-18 — Round 3 start2 同形失败，判定确定性不兼容 — main agent
+
+- Evidence: run `r23008-luna-20260818-start2`（stable state `533d896`）于 reservation（18:53:55Z）后 ~3.8s
+  同形失败：`app-server skills/list failed (rpc_error, code=-32603)`，零模型调用。首次启动尝试曾被 clean
+  baseline gate 拒绝（主代理 start1 文档未提交，setup 疏失，零 reservation 零账本写入）；提交 `533d896`
+  后复跑即达本结果。账本仍仅 `reservation → presemantic_release`——**0/3 semantic start 消耗**。
+  cleanup 完整：state `CLEANED`、owned Project/Ontology 删除（residual 全零）、acceptance
+  aborted/zero_child_residue、runner 自建 admin key 自 revoke、主代理 temp key `ab6fbce9…` revoke 后复验
+  401。
+- 定层：**runtime/infrastructure（确定性）**——两次真实运行在同一 RPC（`_initialize` 第三步 `skills/list`）
+  同形失败，而 4 档本地探针（含 bwrap + 真实 skill 树 + 真实 auth staging + coordinator config/MCP 表）均
+  通过，说明不兼容点在真实 `_write_config`/`_initialize` 代码路径与 0.147.0 的组合，而非环境要素单独项。
+- Action/decision: 按预承诺判定 0.147.0 app-server 与当前握手机械确定性不兼容；回 requirement_developer
+  窄修复 handshake 层（定位真实路径下 `skills/list` -32603 根因，最小修复 + deterministic 回归测试）。
+  修复经独立复测后再决定 start3（预算 3/3 未动）。
+- Outcome/next step: developer 缺陷修复循环。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |

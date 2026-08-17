@@ -247,7 +247,7 @@
   套件与 compile/lint/diff 检查通过、真实账本与历史证据零改动）。测试后清理全部临时探针与
   `__pycache__`；工作树仅余本测试计划的 append 修改。
 
-### Round 3（2026-08-18，授权的真实 Luna formal run start1）
+### Round 3（2026-08-18，授权的真实 Luna formal run start1/start2）
 
 - Stable state：commit `a785d1d`；资产 digest 按 delivery record Round 3 冻结条目；run identity
   `r23008-luna-20260818-start1`；freeze `2026-08-17T18:32:06Z` → reservation 18:32:16Z（10s，≤20min 门）。
@@ -261,3 +261,19 @@
   digest-only 复现审计证实不在 run root）。
 - 结论：R1–R8 判定不成立也不失败（run 未达业务交付，按 §4 R8 以 presemantic release 处置）；继续
   start2（同冻结授权，预算 3/3）。
+
+**start2（同日）**：
+
+- Stable state：commit `533d896`（start1 文档提交后工作树 clean）。首次启动尝试被 clean baseline gate 拒绝
+  （"clean baseline gate rejected non-empty git status"）——主代理未提交的 start1 文档追加所致，preflight
+  阶段拒绝、零 reservation、零账本写入（账本复核仍仅 start1 两条事件）；属 setup 疏失，非缺陷。
+- 复跑：freeze `2026-08-17T18:53:5x Z` → reservation 18:53:55Z。**同形失败**——`app-server skills/list
+  failed (rpc_error, code=-32603)`，reservation 后 ~3.8s，零模型调用、零 thread/start。账本
+  `reservation → presemantic_release`，**仍 0/3 消耗**。evidence `app-server-events.jsonl` 与 start1 同形
+  （configWarning / remoteControl/status/changed / skills/changed 三个通知）。
+- Cleanup：state `CLEANED`、owned Project/Ontology 删除（residual 全零）、acceptance aborted/
+  zero_child_residue、runner 自建 admin key 已自 revoke（revoked_at 18:53:58Z）、主代理 temp admin key
+  `ab6fbce9…` 已 revoke（复验 401）。
+- 结论：按 start1 条目预承诺的判定——**0.147.0 app-server 与当前 `_initialize` 握手机械确定性不兼容**
+  （runtime/infrastructure），回 requirement_developer 窄修复 handshake 层；修复经 deterministic 复测后再
+  决定 start3（预算仍 3/3）。
