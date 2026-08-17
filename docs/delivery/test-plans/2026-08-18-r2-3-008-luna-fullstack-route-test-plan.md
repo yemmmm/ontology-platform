@@ -552,3 +552,29 @@
   测试）与根因完全对应；全量 900 绿、compile/lint/diff 全过、账本与历史证据零改动。测试角度建议
   主代理 review 后提交工作树、按 §4 冻结要素启动 start5（授权预算 3/3 未动、0/3 已消耗）。测试后
   删除全部临时探针与 `/tmp/r6probe`。
+
+**start5（同日，Round 6 PASS 后）**：
+
+- Stable state：commit `3a2289f`（缺陷 3 修复 + Round 6 文档）。freeze `2026-08-17T20:33:22Z` → reservation
+  `20:33:26Z`（4s）→ **`semantic_start` `20:33:30Z`——本需求首次消耗 semantic start（1/3）**。四缺陷修复
+  全部实证生效：六角色无 configWarning、models cache 命中（`using cached models for OnlineIfUncached`，
+  cache 命中日志在位）、四 persistent 角色完整 `thread/started`（含 protocol——缺陷 3 修复在线生效）、
+  各角色 `turn/started` 且 span 显示 `model=gpt-5.6-luna reasoning_effort=medium`——**Luna 路由投影在
+  真实 turn 上生效**。
+- 结果：**首个模型 turn 层失败（semantic 阶段）**——四角色 sampling 请求全部
+  `stream disconnected … sampling_error=request timed out`（5/5 重试 + `falling back to HTTP` 后再超时），
+  analytics POST 与 forced-online models GET 同样超时；coordinator `llm-inactivity-timeout`，
+  `terminal_failure`（`runtime/infrastructure`，`complete_modeling_quality_result=false`）20:38:47Z。
+  账本 11 事件（4 组 presemantic + reservation + semantic_start + terminal_failure），**1/3 消耗，2 剩余**。
+- 根因（主代理定位，三层证据闭合）：Host egress 必须经本地代理（`http_proxy/https_proxy =
+  http://127.0.0.1:1080`；主代理实测 direct curl chatgpt.com 挂起 124s+、via proxy 0.58s 返回）。
+  `_minimal_codex_process_env`（codex.py:371）构造显式最小 env（CODEX_HOME/HOME/PATH/TERM/LANG/LC_ALL，
+  deepseek key 仅非 formal）**不含代理变量**；bwrap 共享网络命名空间、代理可达，但 codex `ReqwestDefault`
+  出站策略在无代理 env 时直连 → chatgpt.com 全部出站请求网络层超时。同因解释 Round 6 记录的"残余
+  refresh timeout 观察项"（forced-online GET 同样超时）与 analytics 失败——非独立缺陷。
+- Cleanup：runner 完整 cleanup（scope `deleted-empty`、owned Project/Ontology 删除 residual 全零、
+  project-scoped key 与 protocol key revoked、runner 自建 admin key 自 revoke）；主代理 temp key
+  `4ef586d3…` revoke（复验 401；误建的重复 key `admin-2` 已先行 revoke）。state `TERMINAL_REPORT_COMPLETE`，
+  run root 零残留完整保留。
+- 结论：runtime/infrastructure（namespace 出站代理环境缺失），按 §4 R8 回 developer 窄修复
+  （`_minimal_codex_process_env` 透传 host 代理变量），复测后决定 start6（预算 2/3 剩余）。

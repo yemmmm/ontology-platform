@@ -286,6 +286,7 @@
 | 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续 PASS；start4 实证 models refresh 不再运行 |
 
 | 6 | 工作树（本轮提交） | start4 protocol `ontology_platform` MCP ENOENT 根因修复：`backend/.venv/bin/python` 为 uv 绝对符号链（未版本化目标目录再符号链到版本化目录），protocol namespace 仅绑 fully-resolved 前缀，字面绝对目标在 bwrap 内悬空 → 0.147.0 required MCP spawn `execve` ENOENT 升级 `thread/start` 致命。修复 = `_protocol_interpreter_mounts()` 沿符号链绑定每个绝对目标解释器前缀于其自身路径（祖先 `--dir` 先行、基础树不重建、fully-resolved 绑定保留）+ 3 回归测试 | developer 真实 protocol config × 真实 bwrap 复现：pre-fix 逐字复现 start4 签名（`execvp … No such file or directory` + `-32603` 消息），post-fix `THREAD_START_OK` 四 MCP 全初始化；全量 900 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 6 复测 PASS（pre-fix 复现 + post-fix 恢复 + 宿主符号链事实三方闭合） |
+| 7 | 待修复 | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | 主代理三层证据：direct curl 挂起 vs via-proxy 0.58s 通；四角色 logs_2.sqlite 同签名 `request timed out`；env 构造代码唯一来源 | 待 developer 窄修复 + Round 7 复测 |
 
 ## Independent test rounds
 
@@ -353,3 +354,20 @@
   残余观察项判定为可接受残余非覆盖缺口（容忍结局已实证，不触及 §4 R1–R5）。
 - Action/decision: start5 障碍清除。提交修复与文档后按 §4 冻结要素启动 start5（预算 3/3、0/3 消耗）。
 - Outcome/next step: start5 执行与判定。
+
+### 2026-08-18 — Round 3 start5：首次消耗 semantic start，turn 层出站超时 — main agent
+
+- Evidence: run `r23008-luna-20260818-start5`（stable state `3a2289f`）——freeze→reservation 4s，
+  **`semantic_start` 20:33:30Z（1/3 首耗）**。前四项修复全部在线生效：无 configWarning、models cache
+  命中、六角色 thread/started（含 protocol，缺陷 3 修复实证）、`turn/started` span
+  `model=gpt-5.6-luna`/`medium`（Luna 路由在真实 turn 生效）。随后四角色 sampling 请求全部
+  `request timed out`（5/5 重试 + HTTP 回退再超时）、analytics/models GET 同超时 → coordinator
+  `llm-inactivity-timeout` → `terminal_failure`（runtime/infrastructure）20:38:47Z。
+- 根因（三层证据）：Host egress 强制走 `http://127.0.0.1:1080`（direct curl chatgpt.com 挂起、via
+  proxy 0.58s 通）；`_minimal_codex_process_env`（codex.py:371）显式最小 env 不含 `http_proxy`/
+  `https_proxy`/`no_proxy`；codex `ReqwestDefault` 无代理 env 即直连 → 全部 chatgpt.com 出站超时。
+  Round 6 "残余 refresh timeout" 观察项同因归并。
+- Cleanup：runner 完整（scope deleted-empty、Project/Ontology 删除 residual 全零、三 key revoked）；
+  temp key `4ef586d3…` revoke 复验 401（误建重复 key 先行 revoke）。账本 11 事件，1/3 消耗 2 剩余。
+- Action/decision: 定层 runtime/infrastructure，回 developer 窄修复 env 透传。
+- Outcome/next step: developer 缺陷修复循环（第四轮）。
