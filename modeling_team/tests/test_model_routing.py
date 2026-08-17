@@ -36,20 +36,27 @@ from modeling_team.deepseek_provider_proxy import (
     ResponsesProviderSession,
 )
 from modeling_team.model_routing import (
+    CODEX_AUTH_MODE,
+    CODEX_HOME_ENV,
+    CODEX_PROVIDER_ID,
+    CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH,
+    CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
     DEFAULT_MODEL_PROFILE_ID,
     DEEPSEEK_DIRECT_ROUTE,
     MODEL_PROFILE_PACKAGE_IDS,
-    OPENAI_CREDENTIAL_PATH,
-    OPENAI_DIRECT_ROUTE,
+    OPENAI_CODEX_ROUTE,
     PROVIDER_CATALOG,
     REQUESTED_EFFORT_TIERS,
+    CodexSubscriptionAuthError,
     ProviderCredentialUnavailableError,
     ProviderSessionManager,
+    ProviderSessionManagerError,
     TeamModelProfile,
     load_team_model_profile,
-    preflight_openai_credential,
+    preflight_codex_subscription_auth,
     preflight_profile_credentials,
-    read_openai_credential,
+    profile_requires_codex_subscription_auth,
+    uses_external_credential_session,
 )
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError, _Agent
@@ -64,7 +71,7 @@ _MIXED_ROLES: dict[str, dict[str, str]] = {
         "model_reasoning_effort": "low",
     },
     "modeling": {
-        "model_provider": "openai-direct",
+        "model_provider": "openai-codex",
         "model": "gpt-5.6-luna",
         "model_reasoning_effort": "medium",
     },
@@ -79,7 +86,7 @@ _MIXED_ROLES: dict[str, dict[str, str]] = {
         "model_reasoning_effort": "xhigh",
     },
     "source-examiner": {
-        "model_provider": "openai-direct",
+        "model_provider": "openai-codex",
         "model": "gpt-5.6-luna",
         "model_reasoning_effort": "none",
     },
@@ -136,7 +143,6 @@ class _SessionsDouble:
     def __init__(self, base_urls: dict[str, str] | None = None) -> None:
         self._base_urls = base_urls or {
             "deepseek-direct": "http://127.0.0.1:49001",
-            "openai-direct": "http://127.0.0.1:49002",
         }
 
     def base_url_for(self, provider_id: str) -> str:
@@ -196,10 +202,15 @@ def test_openai_profile_binds_all_six_roles_to_luna_medium() -> None:
     assert first.relative_path == "modeling_team/model-profiles/openai-luna-medium.yaml"
     for package_id in MODEL_PROFILE_PACKAGE_IDS:
         binding = first.binding_for(package_id)
-        assert binding.provider_id == "openai-direct"
+        assert binding.provider_id == "openai-codex"
         assert binding.model == "gpt-5.6-luna"
         assert binding.requested_effort == "medium"
         assert binding.effective_effort == "medium"
+    assert profile_requires_codex_subscription_auth(first) is True
+    assert not any(
+        uses_external_credential_session(provider_id)
+        for provider_id in first.provider_ids()
+    )
 
 
 def test_catalog_effort_capability_mapping_is_closed() -> None:
@@ -210,16 +221,29 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("max") == "max"
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("none") is None
     for tier in REQUESTED_EFFORT_TIERS:
-        assert OPENAI_DIRECT_ROUTE.effective_effort(tier) == tier
-    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "openai-direct"}
+        assert OPENAI_CODEX_ROUTE.effective_effort(tier) == tier
+    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "openai-codex"}
+    assert PROVIDER_CATALOG["deepseek-direct"].upstream_url == (
+        "https://api.deepseek.com/responses"
+    )
+    assert PROVIDER_CATALOG["deepseek-direct"].credential_env == "DEEPSEEK_API_KEY"
+    # The Codex route is the built-in OpenAI Responses route: no upstream URL,
+    # no API-key credential assignment, no ambient environment variable.
+    assert OPENAI_CODEX_ROUTE.upstream_url is None
+    assert OPENAI_CODEX_ROUTE.credential_env is None
+    assert uses_external_credential_session("deepseek-direct") is True
+    assert uses_external_credential_session("openai-codex") is False
     for route in PROVIDER_CATALOG.values():
         assert route.wire_api == "responses"
-        assert route.upstream_url.startswith("https://")
 
 
 def test_mixed_profile_routes_each_role_with_capability_effort(tmp_path: Path) -> None:
     profile = _mixed_profile(tmp_path)
-    assert profile.provider_ids() == ("deepseek-direct", "openai-direct")
+    assert profile.provider_ids() == ("deepseek-direct", "openai-codex")
+    assert profile_requires_codex_subscription_auth(profile) is True
+    assert profile_requires_codex_subscription_auth(
+        load_team_model_profile(ROOT, DEFAULT_MODEL_PROFILE_ID)
+    ) is False
     for package_id in MODEL_PROFILE_PACKAGE_IDS:
         binding = profile.binding_for(package_id)
         declaration = _MIXED_ROLES[package_id]
@@ -256,7 +280,7 @@ def test_profile_rejects_symlink_duplicate_keys_and_identity_drift(tmp_path: Pat
         '    model: "deepseek-v4-flash"\n'
         '    model_reasoning_effort: "low"\n'
         "  coordinator:\n"
-        '    model_provider: "openai-direct"\n'
+        '    model_provider: "openai-codex"\n'
         '    model: "gpt-5.6-luna"\n'
         '    model_reasoning_effort: "low"\n',
         encoding="utf-8",
@@ -478,8 +502,7 @@ def test_run_subcommand_accepts_model_profile_and_passes_selection_to_prepare(
     captured: dict[str, object] = {}
 
     class Adapter:
-        def preflight_host_auth(self) -> None:
-            return None
+        pass
 
     class Runner:
         def __init__(self, **kwargs):
@@ -535,12 +558,27 @@ def test_baseline_projects_safe_profile_binding_without_provider_text() -> None:
     projection = manifest["team_model_profile"]
     assert projection == load_team_model_profile(ROOT, "openai-luna-medium").as_dict()
     assert set(projection) == {"profile_id", "path", "sha256", "roles"}
+    for package_id in MODEL_PROFILE_PACKAGE_IDS:
+        role = projection["roles"][package_id]
+        assert role["model_provider"] == "openai-codex"
+        assert role["auth_mode"] == "chatgpt-subscription"
+        assert set(role) == {
+            "model_provider",
+            "model",
+            "requested_effort",
+            "effective_effort",
+            "auth_mode",
+        }
     serialized = json.dumps(manifest)
     assert "api.openai.com" not in serialized
     assert "api.deepseek.com" not in serialized
     assert "OPENAI_API_KEY" not in serialized
     assert "DEEPSEEK_API_KEY" not in serialized
-    assert str(OPENAI_CREDENTIAL_PATH) not in serialized
+    # The profile projection carries no auth cache path or digest hints.
+    projection_serialized = json.dumps(projection)
+    assert ".codex" not in projection_serialized
+    assert "auth.json" not in projection_serialized
+    assert "codex login" not in projection_serialized
 
 
 # --------------------------------------------------------------------------
@@ -740,85 +778,332 @@ def test_partial_2xx_stream_keeps_sent_output_transparent_and_signals_failure() 
         thread.join(timeout=1)
 
 
-def test_openai_credential_file_contract_mirrors_deepseek_rules(
+# --------------------------------------------------------------------------
+# Group A2: Host ChatGPT subscription preflight (amendment: Codex routing)
+# --------------------------------------------------------------------------
+
+
+def _codex_home_fixture(tmp_path: Path, *, mode: int = 0o600) -> Path:
+    home = tmp_path / "codex-home"
+    home.mkdir(mode=0o700, parents=True)
+    auth = home / "auth.json"
+    # Fixture bytes only; the real cache content is never read by production.
+    auth.write_text("{}", encoding="utf-8")
+    auth.chmod(mode)
+    return home
+
+
+def test_subscription_preflight_accepts_owner_private_chatgpt_login(
+    tmp_path: Path,
+) -> None:
+    home = _codex_home_fixture(tmp_path)
+    assert (
+        preflight_codex_subscription_auth(
+            codex_home=home,
+            login_status=lambda _home: (0, "Logged in using ChatGPT\n"),
+        )
+        == "chatgpt-subscription"
+    )
+
+
+def test_subscription_preflight_respects_codex_home_env(
     monkeypatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "ambient-openai-sentinel")
-    with pytest.raises(Exception, match="unavailable"):
-        preflight_openai_credential(tmp_path / "missing.env")
+    home = _codex_home_fixture(tmp_path / "env-home")
+    monkeypatch.setenv(CODEX_HOME_ENV, str(home))
+    seen: list[Path] = []
 
-    path = _credential_file(tmp_path, "openai.env", "OPENAI_API_KEY=sk-openai-sentinel")
-    binding = preflight_openai_credential(path)
-    assert "sk-openai-sentinel" not in repr(binding)
-    assert read_openai_credential(binding) == b"sk-openai-sentinel"
+    def login_status(resolved_home: Path) -> tuple[int, str]:
+        seen.append(resolved_home)
+        return 0, "Logged in using ChatGPT"
 
-    no_newline = _credential_file(
-        tmp_path, "openai-no-newline.env", "OPENAI_API_KEY=sk-openai-sentinel"
+    assert preflight_codex_subscription_auth(login_status=login_status) == (
+        "chatgpt-subscription"
     )
-    assert read_openai_credential(preflight_openai_credential(no_newline)) == (
-        b"sk-openai-sentinel"
-    )
-
-    path.write_text("OPENAI_API_KEY=rotated\n", encoding="utf-8")
-    path.chmod(0o600)
-    with pytest.raises(Exception, match="binding changed"):
-        read_openai_credential(binding)
-
-    insecure = _credential_file(
-        tmp_path, "openai-insecure.env", "OPENAI_API_KEY=sk-openai-sentinel\n"
-    )
-    insecure.chmod(0o640)
-    with pytest.raises(Exception, match="insecure"):
-        preflight_openai_credential(insecure)
-
-    target = _credential_file(
-        tmp_path, "openai-target.env", "OPENAI_API_KEY=sk-openai-sentinel\n"
-    )
-    link = tmp_path / "openai-link.env"
-    link.symlink_to(target)
-    with pytest.raises(Exception, match="insecure"):
-        preflight_openai_credential(link)
+    assert seen == [home]
 
 
 @pytest.mark.parametrize(
-    "payload",
+    "prepare",
     [
-        b"OPENAI_API_KEY=\n",
-        b"OPENAI_API_KEY='quoted'\n",
-        b"OPENAI_API_KEY=\"quoted\"\n",
-        b"OPENAI_API_KEY = spaced\n",
-        b"export OPENAI_API_KEY=exported\n",
-        b"OPENAI_API_KEY=one\nOPENAI_API_KEY=two\n",
-        b"OTHER=value\n",
-        b"OPENAI_API_KEY=trailing space\n",
-        b"\n",
-        b"",
+        # cache missing entirely
+        lambda home: (home / "auth.json").unlink(),
+        # group/other readable
+        lambda home: (home / "auth.json").chmod(0o644),
+        # symlinked cache
+        lambda home: (
+            (home / "auth.json").rename(home / "real.json"),
+            (home / "auth.json").symlink_to(home / "real.json"),
+        ),
+        # cache replaced by a directory
+        lambda home: (
+            (home / "auth.json").unlink(),
+            (home / "auth.json").mkdir(),
+        ),
     ],
 )
-def test_openai_credential_rejects_non_exact_assignments(
-    tmp_path: Path, payload: bytes
+def test_subscription_preflight_missing_or_insecure_cache_fails_unavailable(
+    tmp_path: Path, prepare
 ) -> None:
-    path = tmp_path / "openai.env"
-    path.write_bytes(payload)
-    path.chmod(0o600)
-    with pytest.raises(Exception):
-        preflight_openai_credential(path)
+    home = _codex_home_fixture(tmp_path)
+    prepare(home)
+    with pytest.raises(CodexSubscriptionAuthError) as excinfo:
+        preflight_codex_subscription_auth(
+            codex_home=home,
+            login_status=lambda _home: (0, "Logged in using ChatGPT"),
+        )
+    assert excinfo.value.reason_code == CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE
+    assert excinfo.value.category == "runtime/infrastructure"
 
 
-def test_missing_referenced_credential_fails_typed_before_any_read_of_others(
+@pytest.mark.parametrize(
+    ("returncode", "output"),
+    [
+        (1, "Not logged in"),
+        (1, ""),
+        (0, "Logged in using an OpenAI API key"),
+        (0, "auth mode: ApiKey"),
+        (0, ""),
+    ],
+)
+def test_subscription_preflight_rejects_api_key_or_unresolved_login_mode(
+    tmp_path: Path, returncode: int, output: str
+) -> None:
+    home = _codex_home_fixture(tmp_path)
+    with pytest.raises(CodexSubscriptionAuthError) as excinfo:
+        preflight_codex_subscription_auth(
+            codex_home=home, login_status=lambda _home: (returncode, output)
+        )
+    assert excinfo.value.reason_code in {
+        CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+        CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH,
+    }
+    if "api key" in output.lower() or "apikey" in output.lower():
+        assert excinfo.value.reason_code == CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH
+    # No raw login-status output is ever carried into the failure message.
+    if output:
+        assert output not in str(excinfo.value)
+
+
+def test_subscription_preflight_failure_carries_no_login_status_output(
+    tmp_path: Path,
+) -> None:
+    home = _codex_home_fixture(tmp_path)
+    secret_output = "Logged in with API key sk-login-status-sentinel"
+    with pytest.raises(CodexSubscriptionAuthError) as excinfo:
+        preflight_codex_subscription_auth(
+            codex_home=home, login_status=lambda _home: (0, secret_output)
+        )
+    assert excinfo.value.reason_code == CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH
+    assert "sk-login-status-sentinel" not in str(excinfo.value)
+    assert secret_output not in repr(excinfo.value)
+
+
+def test_runner_subscription_preflight_precedes_credentials_and_reservation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = _credential_file(
+        tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=subscription-order-sentinel\n"
+    )
+    calls: list[str] = []
+    real_loader = runner_module.load_team_model_profile
+    flip = {"drift": False}
+
+    def flipping_loader(root: Path, profile_id: str) -> TeamModelProfile:
+        profile = real_loader(root, profile_id)
+        if flip["drift"]:
+            return replace(
+                profile,
+                bindings={
+                    **profile.bindings,
+                    "modeling": replace(
+                        profile.bindings["modeling"],
+                        requested_effort="low",
+                        effective_effort="low",
+                    ),
+                },
+            )
+        return profile
+
+    def fake_subscription_preflight(**_kwargs: object) -> str:
+        calls.append("codex-subscription")
+        return "chatgpt-subscription"
+
+    def fake_credential_preflight(profile, **_kwargs: object) -> dict[str, object]:
+        calls.append("profile-credentials")
+        return {}
+
+    def preflight(**_kwargs: object) -> dict[str, object]:
+        flip["drift"] = True
+        return {}
+
+    monkeypatch.setattr(
+        runner_module, "preflight_codex_subscription_auth", fake_subscription_preflight
+    )
+    monkeypatch.setattr(
+        runner_module, "preflight_profile_credentials", fake_credential_preflight
+    )
+    monkeypatch.setattr(runner_module, "run_prestart_preflight", preflight)
+
+    run_id = "r23007-subscription-order"
+    runner = TeamRunner(
+        repository_root=ROOT,
+        adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+        deepseek_credential_path=credential,
+        freeze_started_at="2026-08-17T00:00:00+00:00",
+    )
+    with (
+        patch("modeling_team.runner.load_team_model_profile", flipping_loader),
+        pytest.raises(TeamConfigurationError, match="drifted during preflight"),
+    ):
+        runner.prepare(
+            run_id=run_id,
+            profile_path=ROOT / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            task_path=ROOT / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            scope={"mode": "create"},
+            model_profile_id="openai-luna-medium",
+        )
+    assert calls == ["codex-subscription", "profile-credentials"]
+    assert runner.run is None
+    assert not (ROOT / "workspaces" / "modeling-runs" / run_id).exists()
+
+
+def test_runner_subscription_preflight_failure_fails_closed_before_reservation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = _credential_file(
+        tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=subscription-fail-sentinel\n"
+    )
+    monkeypatch.setattr(runner_module, "run_prestart_preflight", lambda **_k: {})
+    monkeypatch.setattr(
+        runner_module,
+        "preflight_codex_subscription_auth",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            CodexSubscriptionAuthError(
+                CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+                "Codex subscription auth cache is unavailable",
+            )
+        ),
+    )
+    run_id = "r23007-subscription-unavailable"
+    runner = TeamRunner(
+        repository_root=ROOT,
+        adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+        deepseek_credential_path=credential,
+        freeze_started_at="2026-08-17T00:00:00+00:00",
+    )
+    with pytest.raises(CodexSubscriptionAuthError) as excinfo:
+        runner.prepare(
+            run_id=run_id,
+            profile_path=ROOT / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            task_path=ROOT / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            scope={"mode": "create"},
+            model_profile_id="openai-luna-medium",
+        )
+    assert excinfo.value.reason_code == CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE
+    assert runner.run is None
+    assert not (ROOT / "workspaces" / "modeling-runs" / run_id).exists()
+
+
+def test_runner_deepseek_only_profile_never_triggers_subscription_preflight(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = _credential_file(
+        tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=deepseek-only-sentinel\n"
+    )
+    real_loader = runner_module.load_team_model_profile
+    flip = {"drift": False}
+
+    def flipping_loader(root: Path, profile_id: str) -> TeamModelProfile:
+        profile = real_loader(root, profile_id)
+        if flip["drift"]:
+            return replace(
+                profile,
+                bindings={
+                    **profile.bindings,
+                    "coordinator": replace(
+                        profile.bindings["coordinator"],
+                        requested_effort="low",
+                        effective_effort="high",
+                    ),
+                },
+            )
+        return profile
+
+    def forbidden_subscription_preflight(**_kwargs: object) -> str:
+        raise AssertionError("DeepSeek-only profile must not trigger ChatGPT preflight")
+
+    def preflight(**_kwargs: object) -> dict[str, object]:
+        flip["drift"] = True
+        return {}
+
+    monkeypatch.setattr(
+        runner_module,
+        "preflight_codex_subscription_auth",
+        forbidden_subscription_preflight,
+    )
+    monkeypatch.setattr(runner_module, "run_prestart_preflight", preflight)
+    with patch("modeling_team.runner.load_team_model_profile", flipping_loader):
+        run_id = "r23007-deepseek-only-no-chatgpt"
+        runner = TeamRunner(
+            repository_root=ROOT,
+            adapter=SimpleNamespace(stop=lambda: None, cleanup_identifiers=lambda: {}),
+            deepseek_credential_path=credential,
+            freeze_started_at="2026-08-17T00:00:00+00:00",
+        )
+        # Reaching the post-preflight drift check proves the credential
+        # preflight phase completed without consulting the Host login.
+        with pytest.raises(TeamConfigurationError, match="drifted during preflight"):
+            runner.prepare(
+                run_id=run_id,
+                profile_path=ROOT
+                / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+                task_path=ROOT
+                / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+                scope={"mode": "create"},
+            )
+        assert runner.run is None
+        assert not (ROOT / "workspaces" / "modeling-runs" / run_id).exists()
+
+
+# --------------------------------------------------------------------------
+# Group A3: no OpenAI API-key credential surface for the Codex route
+# --------------------------------------------------------------------------
+
+
+def test_codex_route_reads_no_openai_credential_or_ambient_key(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # An ambient API key and a legacy credential file must have no effect: the
+    # Codex built-in route never reads either surface.
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-openai-sentinel")
+    legacy = tmp_path / "modeling-team-openai.env"
+    legacy.write_text("OPENAI_API_KEY=sk-legacy-sentinel\n", encoding="utf-8")
+    legacy.chmod(0o600)
+    luna = load_team_model_profile(ROOT, "openai-luna-medium")
+    assert profile_requires_codex_subscription_auth(luna) is True
+    assert preflight_profile_credentials(luna) == {}
+    monkeypatch.chdir(tmp_path)
+    assert preflight_profile_credentials(luna) == {}
+
+
+def test_deepseek_default_credential_path_is_unchanged(
     monkeypatch, tmp_path: Path
 ) -> None:
     deepseek = _credential_file(
         tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=mixed-deepseek-sentinel\n"
-    )
-    openai = _credential_file(
-        tmp_path, "openai.env", "OPENAI_API_KEY=sk-mixed-openai-sentinel\n"
     )
     deepseek_only = load_team_model_profile(ROOT, DEFAULT_MODEL_PROFILE_ID)
     bindings = preflight_profile_credentials(
         deepseek_only, deepseek_credential_path=deepseek
     )
     assert set(bindings) == {"deepseek-direct"}
+
+    mixed = _mixed_profile(tmp_path)
+    mixed_bindings = preflight_profile_credentials(
+        mixed, deepseek_credential_path=deepseek
+    )
+    assert set(mixed_bindings) == {"deepseek-direct"}
 
     calls: list[str] = []
     real_preflights = dict(model_routing_module._PROVIDER_CREDENTIAL_PREFLIGHTS)
@@ -837,22 +1122,17 @@ def test_missing_referenced_credential_fails_typed_before_any_read_of_others(
             {key: spy(key) for key in real_preflights},
         ),
     )
-    preflight_profile_credentials(
-        deepseek_only, deepseek_credential_path=deepseek, openai_credential_path=openai
-    )
+    preflight_profile_credentials(mixed, deepseek_credential_path=deepseek)
     assert calls == ["deepseek-direct"]
 
-    mixed = _mixed_profile(tmp_path)
     with pytest.raises(ProviderCredentialUnavailableError) as excinfo:
         preflight_profile_credentials(
-            mixed,
-            deepseek_credential_path=deepseek,
-            openai_credential_path=tmp_path / "absent.env",
+            mixed, deepseek_credential_path=tmp_path / "absent.env"
         )
     assert excinfo.value.reason_code == "provider-credential-unavailable"
     assert excinfo.value.category == "runtime/infrastructure"
     assert excinfo.value.args[0] == (
-        "provider credential preflight failed for openai-direct"
+        "provider credential preflight failed for deepseek-direct"
     )
 
 
@@ -900,19 +1180,16 @@ def _real_bindings(tmp_path: Path) -> dict[str, object]:
     deepseek = _credential_file(
         tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=manager-deepseek-sentinel\n"
     )
-    openai = _credential_file(
-        tmp_path, "openai.env", "OPENAI_API_KEY=sk-manager-openai-sentinel\n"
-    )
     mixed = _mixed_profile(tmp_path)
-    return preflight_profile_credentials(
-        mixed, deepseek_credential_path=deepseek, openai_credential_path=openai
-    )
+    return preflight_profile_credentials(mixed, deepseek_credential_path=deepseek)
 
 
-def test_manager_creates_one_session_per_referenced_provider_and_shares_it(
+def test_manager_creates_one_session_per_external_provider_and_shares_it(
     tmp_path: Path,
 ) -> None:
     bindings = _real_bindings(tmp_path)
+    # A mixed profile binds only its external credential route into a session.
+    assert set(bindings) == {"deepseek-direct"}
     created: list[_FakeSession] = []
 
     def factory(key: bytes, *, provider_id: str, **_kwargs: object) -> _FakeSession:
@@ -921,40 +1198,34 @@ def test_manager_creates_one_session_per_referenced_provider_and_shares_it(
         created.append(session)
         return session
 
-    manager = ProviderSessionManager(
-        {key: value for key, value in bindings.items() if key == "deepseek-direct"},
-        session_factory=factory,
-    )
+    manager = ProviderSessionManager(bindings, session_factory=factory)
     manager.start()
     assert [session.provider_id for session in created] == ["deepseek-direct"]
     assert manager.provider_ids() == ("deepseek-direct",)
-    assert manager.base_url_for("deepseek-direct") == created[0].base_url
-    manager.stop()
-
-    created.clear()
-    mixed_manager = ProviderSessionManager(bindings, session_factory=factory)
-    mixed_manager.start()
-    assert [session.provider_id for session in created] == [
-        "deepseek-direct",
-        "openai-direct",
-    ]
-    deepseek_url = mixed_manager.base_url_for("deepseek-direct")
-    openai_url = mixed_manager.base_url_for("openai-direct")
-    assert deepseek_url != openai_url
+    deepseek_url = manager.base_url_for("deepseek-direct")
     for _role in MODEL_PROFILE_PACKAGE_IDS:
-        # Every role on one provider resolves to that provider's shared session.
-        assert mixed_manager.base_url_for("deepseek-direct") == deepseek_url
-    assert set(mixed_manager.secret_values()) == {
-        b"manager-deepseek-sentinel",
-        b"sk-manager-openai-sentinel",
-    }
-    reports = mixed_manager.stop()
-    assert set(reports) == {"deepseek-direct", "openai-direct"}
+        # Every role on the provider resolves to that provider's shared session.
+        assert manager.base_url_for("deepseek-direct") == deepseek_url
+    assert set(manager.secret_values()) == {b"manager-deepseek-sentinel"}
+    reports = manager.stop()
+    assert set(reports) == {"deepseek-direct"}
     assert all(session.stopped and session.cleared for session in created)
     assert all(not any(bytes(session.key)) for session in created)
 
 
-def test_manager_stop_attempts_every_session_independently(tmp_path: Path) -> None:
+def test_manager_rejects_codex_builtin_route_and_empty_bindings(tmp_path: Path) -> None:
+    bindings = _real_bindings(tmp_path)
+    with pytest.raises(ProviderSessionManagerError) as excinfo:
+        ProviderSessionManager(
+            {**bindings, CODEX_PROVIDER_ID: object()},
+            session_factory=lambda *_a, **_k: None,
+        )
+    assert "external credential session" in str(excinfo.value)
+    with pytest.raises(ProviderSessionManagerError):
+        ProviderSessionManager({}, session_factory=lambda *_a, **_k: None)
+
+
+def test_manager_stop_reports_independent_session_outcome(tmp_path: Path) -> None:
     bindings = _real_bindings(tmp_path)
     sessions: dict[str, _FakeSession] = {}
 
@@ -968,9 +1239,7 @@ def test_manager_stop_attempts_every_session_independently(tmp_path: Path) -> No
     manager.start()
     reports = manager.stop()
     assert sessions["deepseek-direct"].stopped is True
-    assert sessions["openai-direct"].stopped is True
     assert reports["deepseek-direct"]["lifecycle_failure"] is True
-    assert reports["openai-direct"]["lifecycle_failure"] is False
     assert all(session.cleared for session in sessions.values())
     assert manager.cleanup_failed(reports) is True
 
@@ -1107,14 +1376,32 @@ def test_persistent_role_projection_equals_frozen_mixed_bindings(
         parsed = tomllib.loads((agent.home / "config.toml").read_text(encoding="utf-8"))
         binding = profile.binding_for(role)
         assert parsed["model"] == binding.model
-        assert parsed["model_provider"] == binding.provider_id
         assert parsed["model_reasoning_effort"] == binding.effective_effort
-        provider_table = parsed["model_providers"][binding.provider_id]
-        assert set(provider_table) == {"name", "base_url", "wire_api"}
-        assert provider_table["wire_api"] == "responses"
-        assert provider_table["base_url"] == (
-            _SessionsDouble().base_url_for(binding.provider_id) + "/"
-        )
+        if uses_external_credential_session(binding.provider_id):
+            # External credential routes keep the loopback provider table.
+            assert parsed["model_provider"] == binding.provider_id
+            provider_table = parsed["model_providers"][binding.provider_id]
+            assert set(provider_table) == {"name", "base_url", "wire_api"}
+            assert provider_table["wire_api"] == "responses"
+            assert provider_table["base_url"] == (
+                _SessionsDouble().base_url_for(binding.provider_id) + "/"
+            )
+            # No private auth is ever staged for a deepseek-direct role.
+            assert not (agent.home / "auth.json").exists()
+            assert agent.auth_path is None
+            assert agent.credential_mode == "provider_proxy"
+        else:
+            # ``openai-codex`` projects onto Codex's built-in provider with no
+            # custom provider table and no base URL, and receives the staged
+            # Host ChatGPT login cache behind the first-turn auth barrier.
+            assert binding.provider_id == CODEX_PROVIDER_ID
+            assert parsed["model_provider"] == "openai"
+            assert "model_providers" not in parsed
+            assert "base_url" not in (agent.home / "config.toml").read_text()
+            assert (agent.home / "auth.json").exists()
+            assert agent.auth_path == agent.home / "auth.json"
+            assert agent.credential_mode == "file_auth"
+            assert agent.auth_barrier_pending is True
         assert parsed["shell_environment_policy"]["exclude"] == [
             "DEEPSEEK_API_KEY",
             "OPENAI_API_KEY",
@@ -1125,6 +1412,111 @@ def test_persistent_role_projection_equals_frozen_mixed_bindings(
         assert "model_provider" not in starts[role]
         assert "model_reasoning_effort" not in starts[role]
     adapter.stop()
+
+
+def test_openai_only_runtime_needs_no_provider_sessions_or_bindings(
+    monkeypatch, tmp_path: Path
+) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=ROOT, use_bwrap=False)
+    adapter._coordination_enabled = True
+    adapter._team_model_profile = load_team_model_profile(ROOT, "openai-luna-medium")
+    run = _formal_run(tmp_path)
+    run.team_model_profile = adapter._team_model_profile
+    run.provider_credential_bindings = None
+    # An OpenAI-only formal run creates no loopback session manager and needs
+    # no external credential bindings; roster startup proceeds normally.
+    with patch("modeling_team.runtimes.codex.ProviderSessionManager") as manager:
+        assert adapter.start_roster(run, []) == []
+        manager.assert_not_called()
+    assert adapter._provider_sessions is None
+
+    deepseek_adapter = CodexRuntimeAdapter(repository_root=ROOT, use_bwrap=False)
+    deepseek_adapter._coordination_enabled = True
+    deepseek_adapter._team_model_profile = load_team_model_profile(
+        ROOT, DEFAULT_MODEL_PROFILE_ID
+    )
+    deepseek_run = _formal_run(tmp_path / "deepseek")
+    deepseek_run.team_model_profile = deepseek_adapter._team_model_profile
+    deepseek_run.provider_credential_bindings = None
+    with pytest.raises(CodexRuntimeError, match="credential bindings are unavailable"):
+        deepseek_adapter.start_roster(deepseek_run, [])
+    adapter.stop()
+    deepseek_adapter.stop()
+
+
+def test_openai_role_staged_auth_exists_only_through_first_turn_barrier(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import os as os_module
+
+    profile = _mixed_profile(tmp_path)
+    adapter = _formal_adapter(profile)
+    host_auth = tmp_path / "host-auth.json"
+    host_auth.write_text('{"tokens": "barrier-secret-sentinel"}', encoding="utf-8")
+    monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
+    run = _formal_run(tmp_path / "run")
+    agent = _agent(tmp_path, "modeling")
+    adapter._write_config(run, agent)
+    staged = agent.home / "auth.json"
+    assert staged.exists()
+    assert agent.credential_mode == "file_auth"
+
+    read_fd, write_fd = os_module.pipe()
+    stream = os_module.fdopen(read_fd, "r", encoding="utf-8")
+    agent.process = SimpleNamespace(stdin=io.StringIO(), stdout=stream)
+    request_id = 77
+
+    def server() -> None:
+        ordinary = {"method": "turn/started", "params": {"turn": {"id": "turn-1"}}}
+        server_request = {
+            "id": request_id,
+            "method": "item/tool/call",
+            "params": {"tool": "mcp__unknown__tool", "arguments": {}},
+        }
+        os_module.write(write_fd, (json.dumps(ordinary) + "\n").encode())
+        os_module.write(write_fd, (json.dumps(server_request) + "\n").encode())
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if f'"id": {request_id}' in agent.process.stdin.getvalue():
+                break
+            time.sleep(0.01)
+        os_module.write(
+            write_fd,
+            (json.dumps({"id": 1, "result": {"turn": {"id": "turn-1"}}}) + "\n").encode(),
+        )
+
+    thread = threading.Thread(target=server)
+    thread.start()
+    try:
+        result = adapter._rpc(agent, "turn/start", {})
+        assert result == {"turn": {"id": "turn-1"}}
+    finally:
+        thread.join(timeout=2)
+        os_module.close(write_fd)
+        stream.close()
+    # The private ChatGPT login cache was removed strictly before any
+    # model-selected server-request/tool dispatch.
+    assert not staged.exists()
+    assert agent.auth_unlinked_monotonic is not None
+    assert agent.first_dispatch_monotonic is not None
+    assert agent.auth_unlinked_monotonic <= agent.first_dispatch_monotonic
+    adapter.stop()
+
+
+def test_openai_role_staged_auth_is_removed_by_cleanup(tmp_path: Path) -> None:
+    profile = _mixed_profile(tmp_path)
+    adapter = _formal_adapter(profile)
+    host_auth = tmp_path / "host-auth.json"
+    host_auth.write_text("{}", encoding="utf-8")
+    with patch.object(adapter, "preflight_host_auth", return_value=host_auth):
+        run = _formal_run(tmp_path / "run")
+        agent = _agent(tmp_path, "modeling")
+        adapter.agents[agent.agent_id] = agent
+        adapter._write_config(run, agent)
+        staged = agent.home / "auth.json"
+        assert staged.exists()
+        adapter.stop()
+        assert not staged.exists()
 
 
 def test_examiner_children_route_by_canonical_package_id(tmp_path: Path) -> None:
@@ -1139,7 +1531,7 @@ def test_examiner_children_route_by_canonical_package_id(tmp_path: Path) -> None
         assert package["role"] == "source-specialist"
     assert (
         adapter._validated_formal_role_binding("source-examiner").provider_id
-        == "openai-direct"
+        == "openai-codex"
     )
     assert (
         adapter._validated_formal_role_binding("platform-examiner").provider_id
@@ -1218,19 +1610,36 @@ def test_fresh_examiner_child_uses_own_binding_session_and_effort(
     resource = adapter.acceptance_child_factory(spec)
     config = (private_root / "home" / "config.toml").read_text(encoding="utf-8")
     binding = profile.binding_for(f"{kind}-examiner")
-    expected_url = _SessionsDouble().base_url_for(binding.provider_id)
     assert f'model = "{binding.model}"' in config
-    assert f'model_provider = "{binding.provider_id}"' in config
     assert f'model_reasoning_effort = "{binding.effective_effort}"' in config
-    assert f'base_url = "{expected_url}/"' in config
     assert len(thread_starts) == 1
     assert thread_starts[0]["model"] == binding.model
     if kind == "source":
-        assert binding.provider_id == "openai-direct"
+        # ``openai-codex`` child: built-in TOML provider, no loopback table or
+        # base URL, and the Host ChatGPT login cache staged into its own home
+        # behind the first-turn barrier.  Route identity stays ``openai-codex``
+        # in the child package runtime record with only the safe auth mode.
+        assert binding.provider_id == CODEX_PROVIDER_ID
         assert binding.effective_effort == "none"
+        assert 'model_provider = "openai"' in config
+        assert "model_providers" not in config
+        assert "base_url" not in config
+        assert (private_root / "home" / "auth.json").exists()
+        runtime_codex = resource._child_agent.package.runtime["codex"]
+        assert runtime_codex["model_provider"] == CODEX_PROVIDER_ID
+        assert runtime_codex["auth_mode"] == CODEX_AUTH_MODE
+        assert resource._child_agent.credential_mode == "file_auth"
     else:
         assert binding.provider_id == "deepseek-direct"
         assert binding.effective_effort == "max"
+        expected_url = _SessionsDouble().base_url_for(binding.provider_id)
+        assert f'model_provider = "{binding.provider_id}"' in config
+        assert f'base_url = "{expected_url}/"' in config
+        # auth.json is never projected to a deepseek-direct-bound role.
+        assert not (private_root / "home" / "auth.json").exists()
+        runtime_codex = resource._child_agent.package.runtime["codex"]
+        assert "auth_mode" not in runtime_codex
+        assert resource._child_agent.credential_mode == "provider_proxy"
     resource.destroy()
     adapter.stop()
 
@@ -1264,7 +1673,11 @@ def test_route_change_does_not_alter_role_permissions(tmp_path: Path) -> None:
     for server, config in default["mcp_servers"].items():
         assert mixed["mcp_servers"][server] == config
     assert default["model_provider"] == "deepseek-direct"
-    assert mixed["model_provider"] == "openai-direct"
+    assert "model_providers" in default
+    # The mixed modeling role rides the Codex built-in route: the TOML provider
+    # is the built-in ``openai`` ID with no custom provider table.
+    assert mixed["model_provider"] == "openai"
+    assert "model_providers" not in mixed
 
 
 # --------------------------------------------------------------------------
@@ -1283,6 +1696,39 @@ def test_low_effort_evidence_records_requested_and_effective(tmp_path: Path) -> 
     # exact evidence shape fresh runs must project for a DeepSeek low request.
     assert set(evidence) == {"profile_id", "path", "sha256", "roles"}
     assert set(binding) == {
+        "model_provider",
+        "model",
+        "requested_effort",
+        "effective_effort",
+    }
+
+
+def test_codex_role_evidence_records_provider_model_effort_and_safe_auth_mode(
+    tmp_path: Path,
+) -> None:
+    profile = _mixed_profile(tmp_path)
+    evidence = profile.as_dict()
+    binding = evidence["roles"]["modeling"]
+    assert binding["model_provider"] == "openai-codex"
+    assert binding["model"] == "gpt-5.6-luna"
+    assert binding["requested_effort"] == "medium"
+    assert binding["effective_effort"] == "medium"
+    assert binding["auth_mode"] == "chatgpt-subscription"
+    serialized = json.dumps(evidence)
+    # No token/account material, no auth cache path or digest, no raw
+    # login-status output, and no OpenAI API-key surface anywhere.
+    for forbidden in (
+        "token",
+        "account",
+        "auth.json",
+        ".codex",
+        "codex login",
+        "OPENAI_API_KEY",
+        "api.openai.com",
+    ):
+        assert forbidden not in serialized
+    # DeepSeek roles keep their exact four-field projection.
+    assert set(evidence["roles"]["coordinator"]) == {
         "model_provider",
         "model",
         "requested_effort",

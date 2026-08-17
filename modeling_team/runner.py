@@ -26,7 +26,9 @@ from .model_routing import (
     MODEL_PROFILE_DIRECTORY,
     TeamModelProfile,
     load_team_model_profile,
+    preflight_codex_subscription_auth,
     preflight_profile_credentials,
+    profile_requires_codex_subscription_auth,
 )
 from .formal_runs import FormalRunContract, formal_run_contract_for, load_formal_run_configuration
 from .r23003_contract import (
@@ -129,6 +131,9 @@ class TeamRun:
     team_model_profile: TeamModelProfile | None = None
     formal_contract: FormalRunContract | None = None
     provider_credential_bindings: Mapping[str, Any] | None = None
+    # Fixed safe label only (``chatgpt-subscription``); never a token, account,
+    # auth cache path/digest, or login-status output.
+    codex_subscription_auth_mode: str | None = None
     modeling_read_key_id: str | None = None
     modeling_read_proxy: ModelingReadProxy | None = None
 
@@ -149,7 +154,6 @@ class TeamRunner:
         canonical_admin_key: str | None = None,
         monotonic_clock: Callable[[], float] | None = None,
         deepseek_credential_path: Path | None = None,
-        openai_credential_path: Path | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -167,7 +171,10 @@ class TeamRunner:
         # This path is a constructor-only test seam.  Production callers leave it
         # unset and therefore bind the fixed external credential location.
         self.deepseek_credential_path = deepseek_credential_path
-        self.openai_credential_path = openai_credential_path
+        # Safe conclusion of the Host ChatGPT subscription preflight; only the
+        # fixed label from model_routing is ever stored here (no token, account,
+        # cache path/digest, or login-status output).
+        self.codex_subscription_auth_mode: str | None = None
         self.run: TeamRun | None = None
         self.transport: TeamTransportBroker | None = None
         self.scope: Any | None = None
@@ -389,10 +396,16 @@ class TeamRunner:
             and formal_contract.is_existing
         )
         if formal_acceptance and not defer_existing_credential_until_preflight:
+            # The Host ChatGPT subscription preflight runs only when the frozen
+            # profile references the Codex built-in route, and strictly before
+            # any external credential read, ledger reservation, run-root
+            # creation, or Agent start.  A DeepSeek-only profile never triggers
+            # it.  Only the fixed safe auth-mode label is retained.
+            if profile_requires_codex_subscription_auth(team_model_profile):
+                self.codex_subscription_auth_mode = preflight_codex_subscription_auth()
             provider_credential_bindings = preflight_profile_credentials(
                 team_model_profile,
                 deepseek_credential_path=self.deepseek_credential_path,
-                openai_credential_path=self.openai_credential_path,
             )
         if config.task.schema_version == 2 and not self.freeze_started_at:
             raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
@@ -461,15 +474,17 @@ class TeamRunner:
                 )
                 validated_publication = validate_candidate_publication(task_overlay)
         if defer_existing_credential_until_preflight:
-            # R2.3-003 binds an existing live scope.  Read the external model
-            # credentials only after that live preflight has proved the retained
-            # Project/Ontology state is still safe, while remaining before the
-            # profile/baseline re-read, ledger reservation, run-root creation,
-            # and any Agent start.
+            # R2.3-003 binds an existing live scope.  Read the Host ChatGPT
+            # login conclusion and the external model credentials only after
+            # that live preflight has proved the retained Project/Ontology
+            # state is still safe, while remaining before the profile/baseline
+            # re-read, ledger reservation, run-root creation, and any Agent
+            # start.
+            if profile_requires_codex_subscription_auth(team_model_profile):
+                self.codex_subscription_auth_mode = preflight_codex_subscription_auth()
             provider_credential_bindings = preflight_profile_credentials(
                 team_model_profile,
                 deepseek_credential_path=self.deepseek_credential_path,
-                openai_credential_path=self.openai_credential_path,
             )
         if formal_acceptance:
             if team_model_profile is not None:
@@ -530,6 +545,7 @@ class TeamRunner:
             team_model_profile=team_model_profile,
             formal_contract=formal_contract,
             provider_credential_bindings=provider_credential_bindings,
+            codex_subscription_auth_mode=self.codex_subscription_auth_mode,
         )
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
             try:

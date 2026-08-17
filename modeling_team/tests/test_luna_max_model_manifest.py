@@ -75,7 +75,7 @@ def test_default_profile_binds_all_six_roles_to_deepseek_max() -> None:
         lambda roles, package_id: roles[package_id].update(model_temperature=0.2),
         lambda roles, package_id: roles[package_id].pop("model_provider"),
         lambda roles, package_id: roles[package_id].update(model="gpt-5.5"),
-        lambda roles, package_id: roles[package_id].update(model_provider="openai-direct"),
+        lambda roles, package_id: roles[package_id].update(model_provider="openai-codex"),
         lambda roles, package_id: roles[package_id].update(model_reasoning_effort="none"),
     ],
 )

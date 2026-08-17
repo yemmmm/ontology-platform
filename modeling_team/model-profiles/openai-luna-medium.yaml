@@ -2,26 +2,26 @@ schema_version: 1
 model_profile_id: openai-luna-medium
 roles:
   coordinator:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium
   modeling:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium
   protocol:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium
   acceptance:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium
   source-examiner:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium
   platform-examiner:
-    model_provider: openai-direct
+    model_provider: openai-codex
     model: gpt-5.6-luna
     model_reasoning_effort: medium

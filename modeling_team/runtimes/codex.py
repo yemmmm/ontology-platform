@@ -25,12 +25,15 @@ from typing import Any, Callable, Mapping
 from ..contracts import AgentPackage, digest_file
 from ..model_manifest import FORMAL_MODEL_TASK_ID
 from ..model_routing import (
+    CODEX_AUTH_MODE,
+    CODEX_TOML_PROVIDER_ID,
     MODEL_PROFILE_PACKAGE_IDS,
     PROVIDER_CATALOG,
     REQUESTED_EFFORT_TIERS,
     ProviderSessionManager,
     RoleModelBinding,
     TeamModelProfile,
+    uses_external_credential_session,
 )
 from ..deepseek_provider_proxy import DEEPSEEK_API_KEY_ENV
 from ..acceptance_runtime import (
@@ -304,7 +307,9 @@ def _formal_provider_config_lines(binding: RoleModelBinding, base_url: str) -> l
     ``model_provider`` uses the stable runtime-local catalog provider ID, the
     provider table receives only that binding's loopback base URL plus
     ``wire_api = "responses"``, and the effort is the capability-resolved
-    effective effort.  No endpoint, credential, or provider free text.
+    effective effort.  No endpoint, credential, or provider free text.  Only
+    external credential-backed routes (currently ``deepseek-direct``) use this
+    projection.
     """
 
     return [
@@ -315,6 +320,26 @@ def _formal_provider_config_lines(binding: RoleModelBinding, base_url: str) -> l
         f'name = "{binding.provider_id}"',
         f'base_url = "{base_url}/"',
         'wire_api = "responses"',
+        "[shell_environment_policy]",
+        'inherit = "core"',
+        'exclude = ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"]',
+    ]
+
+
+def _formal_codex_builtin_config_lines(binding: RoleModelBinding) -> list[str]:
+    """Secret-free per-role TOML projection onto Codex's built-in OpenAI route.
+
+    ``openai-codex`` keeps its catalog route identity in profiles, baselines,
+    and evidence, but its per-role TOML projection must select the built-in
+    provider ID ``openai``: no custom ``[model_providers.*]`` table, no base
+    URL, and no environment credential key.  Authentication rides the private
+    staged ChatGPT login cache, never an API key.
+    """
+
+    return [
+        f'model = "{binding.model}"',
+        f'model_provider = "{CODEX_TOML_PROVIDER_ID}"',
+        f'model_reasoning_effort = "{binding.effective_effort}"',
         "[shell_environment_policy]",
         'inherit = "core"',
         'exclude = ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"]',
@@ -2127,12 +2152,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         _package_file, instructions, skill = self._child_package_assets(kind, self.root)
         instruction_bytes = instructions.read_bytes()
         skill_bytes = skill.read_bytes()
+        # Formal Examiner children on external credential routes use the shared
+        # loopback provider proxy and never receive a copied host auth.json.
+        # Formal ``openai-codex`` children instead receive the Host ChatGPT
+        # login cache staged into their own isolated CODEX_HOME, unlinked by the
+        # first-turn auth barrier before any model-selected dispatch.  Legacy/
+        # non-formal child fixtures retain the historical private auth staging.
+        formal_codex_builtin = bool(
+            formal
+            and isinstance(child_model_override, RoleModelBinding)
+            and not uses_external_credential_session(child_model_override.provider_id)
+        )
         paths = prepare_child_tree(
             private_root=private_root,
-            # Formal Examiner children use the shared loopback provider proxy;
-            # they never receive a copied host auth.json.  Legacy/non-formal
-            # child fixtures retain the historical private auth staging.
-            host_auth=None if formal else self.preflight_host_auth(),
+            host_auth=None if (formal and not formal_codex_builtin) else self.preflight_host_auth(),
             instructions=instruction_bytes,
             skill_name=skill.parent.name,
             skill_bytes=skill_bytes,
@@ -2311,13 +2344,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if formal:
             if not isinstance(child_model_override, RoleModelBinding):
                 raise CodexRuntimeError("formal Examiner model binding is unavailable")
-            sessions = self._provider_sessions
-            if sessions is None:
-                raise CodexRuntimeError("formal provider sessions are unavailable")
-            provider_lines = _formal_provider_config_lines(
-                child_model_override,
-                sessions.base_url_for(child_model_override.provider_id),
-            )
+            if uses_external_credential_session(child_model_override.provider_id):
+                sessions = self._provider_sessions
+                if sessions is None:
+                    raise CodexRuntimeError("formal provider sessions are unavailable")
+                provider_lines = _formal_provider_config_lines(
+                    child_model_override,
+                    sessions.base_url_for(child_model_override.provider_id),
+                )
+            else:
+                provider_lines = _formal_codex_builtin_config_lines(child_model_override)
             config_lines = provider_lines[:3] + config_lines + provider_lines[3:]
         elif deepseek_enabled:
             provider_lines = _deepseek_provider_config_lines()
@@ -2407,6 +2443,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                             "model": child_model_override.model,
                             "model_provider": child_model_override.provider_id,
                             "model_reasoning_effort": child_model_override.effective_effort,
+                            # Route identity stays ``openai-codex``; only the
+                            # fixed safe auth-mode label is projected here.
+                            **(
+                                {"auth_mode": CODEX_AUTH_MODE}
+                                if formal_codex_builtin
+                                else {}
+                            ),
                         }
                         if isinstance(child_model_override, RoleModelBinding)
                         else {}
@@ -2424,9 +2467,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             process=process,
             platform_tools=frozenset(spec.get("allowed_read_tools", ())) if kind == "platform" else frozenset(),
         )
-        child_agent.auth_path = None if formal else home / "auth.json"
+        # Formal external-route children ride the loopback provider proxy
+        # (barrier is a marker only); formal ``openai-codex`` children carry the
+        # staged ChatGPT login cache, which the barrier unlinks before any
+        # model-selected dispatch.  Non-formal children keep file auth.
+        child_agent.auth_path = (
+            home / "auth.json" if (not formal or formal_codex_builtin) else None
+        )
         child_agent.auth_barrier_pending = formal
-        child_agent.credential_mode = "provider_proxy" if formal else "file_auth"
+        child_agent.credential_mode = (
+            "provider_proxy" if (formal and not formal_codex_builtin) else "file_auth"
+        )
         if formal:
             self._start_stderr_drain(child_agent)
         # Bind the resource to the child even before stdout-pump startup so an
@@ -2755,32 +2806,45 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ):
             raise CodexRuntimeError("formal runtime model profile is unavailable")
         if self._coordination_enabled:
-            credential_bindings = getattr(run, "provider_credential_bindings", None)
-            if not isinstance(credential_bindings, Mapping) or not credential_bindings:
-                raise CodexRuntimeError("formal provider credential bindings are unavailable")
-            try:
-                # One loopback session per provider the profile actually
-                # references, shared by all roles on that provider.  Startup
-                # re-opens each credential with the no-follow/revalidation
-                # contract; failures are typed and leave no session behind.
-                sessions = ProviderSessionManager(
-                    credential_bindings,
-                    on_failure=self._on_provider_session_failure,
-                )
-                sessions.start()
-            except Exception as exc:
-                with self._runtime_failure_lock:
-                    self._runtime_failures.append(
-                        (
-                            "provider-sessions",
-                            {
-                                "category": "runtime/infrastructure",
-                                "reason_code": "provider-session-start-failed",
-                            },
-                        )
+            external_provider_ids = tuple(
+                provider_id
+                for provider_id in self._team_model_profile.provider_ids()
+                if uses_external_credential_session(provider_id)
+            )
+            if external_provider_ids:
+                # One loopback session per external credential-backed provider
+                # the profile actually references, shared by all roles on that
+                # provider.  Startup re-opens each credential with the
+                # no-follow/revalidation contract; failures are typed and leave
+                # no session behind.  An OpenAI-only profile creates no
+                # manager: ``openai-codex`` rides Codex's built-in route with
+                # the staged Host ChatGPT login instead.
+                credential_bindings = getattr(run, "provider_credential_bindings", None)
+                if not isinstance(credential_bindings, Mapping) or not credential_bindings:
+                    raise CodexRuntimeError(
+                        "formal provider credential bindings are unavailable"
                     )
-                raise CodexRuntimeError("formal provider session startup failed") from exc
-            self._provider_sessions = sessions
+                try:
+                    sessions = ProviderSessionManager(
+                        credential_bindings,
+                        on_failure=self._on_provider_session_failure,
+                    )
+                    sessions.start()
+                except Exception as exc:
+                    with self._runtime_failure_lock:
+                        self._runtime_failures.append(
+                            (
+                                "provider-sessions",
+                                {
+                                    "category": "runtime/infrastructure",
+                                    "reason_code": "provider-session-start-failed",
+                                },
+                            )
+                        )
+                    raise CodexRuntimeError(
+                        "formal provider session startup failed"
+                    ) from exc
+                self._provider_sessions = sessions
         self._candidate_platform_gate_enabled = (
             self._coordination_enabled
             and getattr(
@@ -2799,10 +2863,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             except (TypeError, ValueError):
                 self._inactivity_timeout_seconds = _LLM_INACTIVITY_TIMEOUT_SECONDS
-        # Formal R2.3-005 model authentication is provided by each private
-        # Codex ``auth.json`` only during app-server initialization.  In
-        # particular, do not resolve the historical DeepSeek environment key
-        # here: a sentinel in the Host environment must have no formal effect.
+        # Formal model authentication never resolves the historical DeepSeek
+        # environment key here: a sentinel in the Host environment must have no
+        # formal effect.  External-route roles ride the loopback provider
+        # sessions; ``openai-codex`` roles get their private staged auth.json
+        # during app-server initialization only (see ``_write_config``).
         identities: list[AgentRuntimeIdentity] = []
         scope = getattr(run, "scope", {})
         scope_mode = scope.get("mode") if isinstance(scope, dict) else getattr(scope, "mode", None)
@@ -3276,15 +3341,33 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
-        # Only the Protocol receives its platform key/config.  Formal roles use
-        # the shared loopback provider sessions and therefore never receive
-        # auth.json; historical/non-formal roles retain private auth staging.
+        # Only the Protocol receives its platform key/config.  Formal roles on
+        # external credential routes use the shared loopback provider sessions
+        # and therefore never receive auth.json; formal ``openai-codex`` roles
+        # receive the Host ChatGPT login cache staged into their own isolated
+        # CODEX_HOME, unlinked by the first-turn auth barrier before any
+        # model-selected dispatch; historical/non-formal roles retain private
+        # auth staging.  auth.json is never projected to a deepseek-direct role.
         if formal:
-            if self._provider_sessions is None:
-                raise CodexRuntimeError("formal provider sessions are unavailable")
-            agent.auth_path = None
-            agent.credential_mode = "provider_proxy"
-            agent.auth_barrier_pending = True
+            binding_provider_id = (
+                model_override.provider_id
+                if isinstance(model_override, RoleModelBinding)
+                else None
+            )
+            if uses_external_credential_session(binding_provider_id or ""):
+                if self._provider_sessions is None:
+                    raise CodexRuntimeError("formal provider sessions are unavailable")
+                agent.auth_path = None
+                agent.credential_mode = "provider_proxy"
+                agent.auth_barrier_pending = True
+            else:
+                host_auth = self.preflight_host_auth()
+                self._remember_secret(self._read_secret_bytes(host_auth))
+                auth_path = agent.home / "auth.json"
+                self._stage_private_auth(host_auth, auth_path)
+                agent.auth_path = auth_path
+                agent.credential_mode = "file_auth"
+                agent.auth_barrier_pending = True
         elif agent.package.role != "acceptance":
             host_auth = self.preflight_host_auth()
             self._remember_secret(self._read_secret_bytes(host_auth))
@@ -3434,24 +3517,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
         if isinstance(model_override, RoleModelBinding):
             binding = model_override
-            lines = [
-                f'model = "{binding.model}"',
-                f'model_provider = "{binding.provider_id}"',
-                f'model_reasoning_effort = "{binding.effective_effort}"',
-                *lines,
-            ]
-            if formal:
-                sessions = self._provider_sessions
-                if sessions is None:
-                    raise CodexRuntimeError("formal provider sessions are unavailable")
-                provider_lines = _formal_provider_config_lines(
-                    binding, sessions.base_url_for(binding.provider_id)
-                )
-                # ``lines`` already carries the package model trio above.  Keep one
-                # authoritative trio and append only the provider/shell tables;
-                # repeating the scalar keys makes the real app-server reject the
-                # config before initialize with a TOML duplicate-key error.
+            if formal and not uses_external_credential_session(binding.provider_id):
+                # ``openai-codex`` projects onto Codex's built-in provider with
+                # no custom provider table and no base URL.
+                provider_lines = _formal_codex_builtin_config_lines(binding)
                 lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
+            else:
+                lines = [
+                    f'model = "{binding.model}"',
+                    f'model_provider = "{binding.provider_id}"',
+                    f'model_reasoning_effort = "{binding.effective_effort}"',
+                    *lines,
+                ]
+                if formal:
+                    sessions = self._provider_sessions
+                    if sessions is None:
+                        raise CodexRuntimeError("formal provider sessions are unavailable")
+                    provider_lines = _formal_provider_config_lines(
+                        binding, sessions.base_url_for(binding.provider_id)
+                    )
+                    # ``lines`` already carries the package model trio above.  Keep one
+                    # authoritative trio and append only the provider/shell tables;
+                    # repeating the scalar keys makes the real app-server reject the
+                    # config before initialize with a TOML duplicate-key error.
+                    lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
         elif model_override is not None:
             model, provider, reasoning = model_override
             lines = [

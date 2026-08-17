@@ -2,18 +2,21 @@
 
 Loads repository-owned Team Model Profiles, resolves per-role provider/model/
 effort bindings through a closed provider catalog, binds Host-owned provider
-credentials, and owns one loopback Responses session per provider actually
-referenced by the profile.  Profiles declare business routing only; the catalog
-fixes endpoints, TLS, model allowlists, effort capability, and credential
-validators.  No plugin discovery, no ambient environment fallback.
+credentials, and owns one loopback Responses session per external
+credential-backed provider actually referenced by the profile.  ``openai-codex``
+uses the Codex built-in OpenAI Responses route with the Host's cached ChatGPT
+subscription login instead of an API key or loopback session.  Profiles declare
+business routing only; the catalog fixes endpoints, TLS, model allowlists,
+effort capability, and credential validators.  No plugin discovery, no ambient
+environment fallback.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
-import re
 import stat
+import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,10 +37,6 @@ from .deepseek_provider_proxy import (
 MODEL_PROFILE_SCHEMA_VERSION = 1
 MODEL_PROFILE_DIRECTORY = Path("modeling_team/model-profiles")
 DEFAULT_MODEL_PROFILE_ID = "deepseek-v4-flash-max"
-OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
-OPENAI_CREDENTIAL_PATH = Path(
-    "~/.config/ontology-platform/modeling-team-openai.env"
-).expanduser()
 MODEL_PROFILE_PACKAGE_IDS = (
     "coordinator",
     "modeling",
@@ -47,9 +46,16 @@ MODEL_PROFILE_PACKAGE_IDS = (
     "platform-examiner",
 )
 REQUESTED_EFFORT_TIERS = ("none", "low", "medium", "high", "xhigh", "max")
-
-_OPENAI_CREDENTIAL_MAX_BYTES = 4096
-_OPENAI_CREDENTIAL_RE = re.compile(r"OPENAI_API_KEY=([^\s\"'\r\n=]+)\n?\Z")
+# ``openai-codex`` is the route identity used by profiles, baselines, and run
+# evidence.  Only the per-role Codex TOML projection maps it onto Codex's
+# built-in provider ID ``openai``; no custom provider table is declared there.
+CODEX_PROVIDER_ID = "openai-codex"
+CODEX_TOML_PROVIDER_ID = "openai"
+CODEX_AUTH_MODE = "chatgpt-subscription"
+CODEX_HOME_ENV = "CODEX_HOME"
+CODEX_AUTH_CACHE_NAME = "auth.json"
+CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE = "codex-subscription-auth-unavailable"
+CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH = "codex-subscription-auth-mode-mismatch"
 
 
 class TeamModelProfileError(TeamConfigurationError):
@@ -66,23 +72,48 @@ class ProviderCredentialUnavailableError(TeamConfigurationError):
     reason_code = "provider-credential-unavailable"
 
 
-class OpenAICredentialError(RuntimeError):
-    """Typed, provider-text-free OpenAI credential validation failure."""
+class CodexSubscriptionAuthError(TeamConfigurationError):
+    """Typed pre-run failure for the Host ChatGPT subscription login.
+
+    Only fixed local reason codes and messages leave this class; the auth cache
+    content, token values, account identifiers, cache path, and the raw
+    ``codex login status`` output are never carried or exposed.
+    """
+
+    category = "runtime/infrastructure"
+
+    def __init__(self, reason_code: str, message: str) -> None:
+        if reason_code not in {
+            CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+            CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH,
+        }:
+            raise ValueError("invalid Codex subscription auth reason code")
+        self.reason_code = reason_code
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
 class ProviderRoute:
-    """Closed catalog entry; profiles cannot override any field."""
+    """Closed catalog entry; profiles cannot override any field.
+
+    ``upstream_url``/``credential_env`` are ``None`` for the Codex built-in
+    OpenAI route: it has no loopback session and no API-key credential, and is
+    authenticated by the Host's cached ChatGPT subscription login instead.
+    """
 
     provider_id: str
     wire_api: str
-    upstream_url: str
-    credential_env: str
+    upstream_url: str | None
+    credential_env: str | None
     models: frozenset[str]
     effort_effective: Mapping[str, str]
 
     def effective_effort(self, requested: str) -> str | None:
         return self.effort_effective.get(requested)
+
+    @property
+    def uses_external_credential(self) -> bool:
+        return self.upstream_url is not None and self.credential_env is not None
 
 
 DEEPSEEK_DIRECT_ROUTE = ProviderRoute(
@@ -95,19 +126,35 @@ DEEPSEEK_DIRECT_ROUTE = ProviderRoute(
         {"low": "high", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
     ),
 )
-OPENAI_DIRECT_ROUTE = ProviderRoute(
-    provider_id="openai-direct",
+OPENAI_CODEX_ROUTE = ProviderRoute(
+    provider_id=CODEX_PROVIDER_ID,
     wire_api="responses",
-    upstream_url="https://api.openai.com/v1/responses",
-    credential_env="OPENAI_API_KEY",
+    upstream_url=None,
+    credential_env=None,
     models=frozenset({"gpt-5.6-luna"}),
     effort_effective=MappingProxyType(
         {tier: tier for tier in REQUESTED_EFFORT_TIERS}
     ),
 )
 PROVIDER_CATALOG: Mapping[str, ProviderRoute] = MappingProxyType(
-    {"deepseek-direct": DEEPSEEK_DIRECT_ROUTE, "openai-direct": OPENAI_DIRECT_ROUTE}
+    {route.provider_id: route for route in (DEEPSEEK_DIRECT_ROUTE, OPENAI_CODEX_ROUTE)}
 )
+
+
+def uses_external_credential_session(provider_id: str) -> bool:
+    """Whether a provider needs a Host-owned loopback credential session."""
+
+    route = PROVIDER_CATALOG.get(provider_id)
+    return route is not None and route.uses_external_credential
+
+
+def profile_requires_codex_subscription_auth(profile: TeamModelProfile) -> bool:
+    """Whether any frozen role binding rides the Host ChatGPT login cache."""
+
+    return any(
+        binding.provider_id == CODEX_PROVIDER_ID
+        for binding in profile.bindings.values()
+    )
 
 
 @dataclass(frozen=True)
@@ -121,12 +168,18 @@ class RoleModelBinding:
     effective_effort: str
 
     def as_dict(self) -> dict[str, str]:
-        return {
+        # The auth mode is a catalog-owned property of the ``openai-codex``
+        # route, not a per-role editable field: it is projected only as the
+        # fixed safe label, never as a token, account, cache path, or digest.
+        projection: dict[str, str] = {
             "model_provider": self.provider_id,
             "model": self.model,
             "requested_effort": self.requested_effort,
             "effective_effort": self.effective_effort,
         }
+        if self.provider_id == CODEX_PROVIDER_ID:
+            projection["auth_mode"] = CODEX_AUTH_MODE
+        return projection
 
 
 @dataclass(frozen=True)
@@ -284,118 +337,106 @@ def load_team_model_profile(root: Path, profile_id: str) -> TeamModelProfile:
     )
 
 
-@dataclass(frozen=True)
-class OpenAICredentialBinding:
-    """Non-secret file identity frozen during Runner.prepare."""
-
-    path: Path
-    st_dev: int
-    st_ino: int
-    st_size: int
-    st_mtime_ns: int
-
-    @property
-    def canonical_path(self) -> str:
-        return str(self.path)
-
-    def metadata_matches(self, metadata: os.stat_result) -> bool:
-        return (
-            stat.S_ISREG(metadata.st_mode)
-            and metadata.st_uid == os.getuid()
-            and stat.S_IMODE(metadata.st_mode) == 0o600
-            and metadata.st_dev == self.st_dev
-            and metadata.st_ino == self.st_ino
-            and metadata.st_size == self.st_size
-            and metadata.st_mtime_ns == self.st_mtime_ns
-        )
+def _default_codex_home() -> Path:
+    value = os.environ.get(CODEX_HOME_ENV)
+    return Path(value).expanduser() if value else Path("~/.codex").expanduser()
 
 
-def _canonical_openai_credential_path(path: Path | str | None) -> Path:
-    value = Path(path) if path is not None else OPENAI_CREDENTIAL_PATH
+def codex_auth_cache_path(codex_home: Path | str | None = None) -> Path:
+    """Resolve the file-backed Codex login cache path (metadata use only)."""
+
+    home = Path(codex_home).expanduser() if codex_home is not None else _default_codex_home()
+    return home / CODEX_AUTH_CACHE_NAME
+
+
+def _validate_codex_auth_cache_metadata(path: Path) -> None:
+    """Metadata-only owner-private/regular-file/non-symlink check.
+
+    The cache content is never opened, parsed, printed, or logged here; only
+    ``lstat`` metadata is inspected, mirroring the established DeepSeek/host
+    auth file contract.
+    """
+
     try:
-        expanded = value.expanduser().absolute()
-        try:
-            metadata = os.lstat(expanded)
-        except FileNotFoundError:
-            metadata = None
-        if metadata is not None and stat.S_ISLNK(metadata.st_mode):
-            raise OpenAICredentialError("OpenAI credential file is insecure")
-        return expanded.resolve(strict=False)
-    except OpenAICredentialError:
-        raise
-    except (OSError, RuntimeError) as exc:
-        raise OpenAICredentialError("OpenAI credential path is invalid") from exc
-
-
-def _validate_openai_credential_bytes(payload: bytes) -> bytes:
-    if not payload or len(payload) > _OPENAI_CREDENTIAL_MAX_BYTES:
-        raise OpenAICredentialError("OpenAI credential file is malformed")
-    try:
-        text = payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise OpenAICredentialError("OpenAI credential file is malformed") from exc
-    match = _OPENAI_CREDENTIAL_RE.fullmatch(text)
-    if match is None:
-        raise OpenAICredentialError("OpenAI credential assignment is malformed")
-    value = match.group(1)
-    if not value or value.strip() != value:
-        raise OpenAICredentialError("OpenAI credential assignment is malformed")
-    return value.encode("utf-8")
-
-
-def preflight_openai_credential(path: Path | str | None = None) -> OpenAICredentialBinding:
-    """Validate the fixed external file and return only non-secret metadata."""
-
-    canonical = _canonical_openai_credential_path(path)
-    try:
-        metadata = os.lstat(canonical)
+        metadata = os.lstat(path)
     except OSError as exc:
-        raise OpenAICredentialError("OpenAI credential file is unavailable") from exc
+        raise CodexSubscriptionAuthError(
+            CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+            "Codex subscription auth cache is unavailable",
+        ) from exc
     if (
         stat.S_ISLNK(metadata.st_mode)
         or not stat.S_ISREG(metadata.st_mode)
         or metadata.st_uid != os.getuid()
-        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or stat.S_IMODE(metadata.st_mode) & 0o077
     ):
-        raise OpenAICredentialError("OpenAI credential file is insecure")
+        raise CodexSubscriptionAuthError(
+            CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+            "Codex subscription auth cache is insecure",
+        )
+
+
+def _run_codex_login_status(codex_home: Path) -> tuple[int, str]:
+    """Ask the Codex CLI for its login mode; return only (exit code, stdout).
+
+    The output stays inside this module's fixed-mode parsing.  Callers must not
+    persist or forward it: only the resulting auth-mode conclusion is safe to
+    project as evidence.
+    """
+
+    environment = dict(os.environ)
+    environment[CODEX_HOME_ENV] = str(codex_home)
     try:
-        payload = canonical.read_bytes()
-    except OSError as exc:
-        raise OpenAICredentialError("OpenAI credential file is unreadable") from exc
-    # Validate now but deliberately discard the value; only file identity leaves
-    # this function.
-    _validate_openai_credential_bytes(payload)
-    return OpenAICredentialBinding(
-        canonical,
-        metadata.st_dev,
-        metadata.st_ino,
-        metadata.st_size,
-        metadata.st_mtime_ns,
+        completed = subprocess.run(
+            ["codex", "login", "status"],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+    return completed.returncode, completed.stdout or ""
+
+
+def _codex_login_mode_conclusion(returncode: int, output: str) -> str:
+    if returncode != 0:
+        raise CodexSubscriptionAuthError(
+            CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+            "Codex subscription login status is unavailable",
+        )
+    lowered = output.lower()
+    if "chatgpt" in lowered:
+        return CODEX_AUTH_MODE
+    if "api key" in lowered or "apikey" in lowered:
+        raise CodexSubscriptionAuthError(
+            CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH,
+            "Codex subscription login mode mismatch",
+        )
+    raise CodexSubscriptionAuthError(
+        CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
+        "Codex subscription login status is unavailable",
     )
 
 
-def read_openai_credential(binding: OpenAICredentialBinding) -> bytes:
-    """Open with O_NOFOLLOW and revalidate the prepare-time identity."""
+def preflight_codex_subscription_auth(
+    *,
+    codex_home: Path | str | None = None,
+    login_status: Callable[[Path], tuple[int, str]] | None = None,
+) -> str:
+    """Fail closed unless the Host is logged into Codex with ChatGPT.
 
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(binding.path, flags)
-    except OSError as exc:
-        raise OpenAICredentialError("OpenAI credential open failed") from exc
-    try:
-        metadata = os.fstat(descriptor)
-        if not binding.metadata_matches(metadata):
-            raise OpenAICredentialError("OpenAI credential binding changed")
-        payload = os.read(descriptor, _OPENAI_CREDENTIAL_MAX_BYTES + 1)
-        if len(payload) > _OPENAI_CREDENTIAL_MAX_BYTES:
-            raise OpenAICredentialError("OpenAI credential file is malformed")
-    except OSError as exc:
-        raise OpenAICredentialError("OpenAI credential read failed") from exc
-    finally:
-        os.close(descriptor)
-    return _validate_openai_credential_bytes(payload)
+    Checks, in order: the file-backed login cache exists and satisfies the
+    owner-private/regular-file/non-symlink metadata contract (content is never
+    read), and ``codex login status`` confirms the ChatGPT login mode.  Returns
+    only the fixed safe auth-mode label ``chatgpt-subscription``.
+    """
+
+    home = Path(codex_home).expanduser() if codex_home is not None else _default_codex_home()
+    _validate_codex_auth_cache_metadata(home / CODEX_AUTH_CACHE_NAME)
+    returncode, output = (login_status or _run_codex_login_status)(home)
+    return _codex_login_mode_conclusion(returncode, output)
 
 
 _PROVIDER_CREDENTIAL_PREFLIGHTS: Mapping[
@@ -403,13 +444,11 @@ _PROVIDER_CREDENTIAL_PREFLIGHTS: Mapping[
 ] = MappingProxyType(
     {
         "deepseek-direct": preflight_deepseek_credential,
-        "openai-direct": preflight_openai_credential,
     }
 )
 _PROVIDER_CREDENTIAL_READERS: Mapping[str, Callable[[Any], bytes]] = MappingProxyType(
     {
         "deepseek-direct": read_deepseek_credential,
-        "openai-direct": read_openai_credential,
     }
 )
 
@@ -418,21 +457,24 @@ def preflight_profile_credentials(
     profile: TeamModelProfile,
     *,
     deepseek_credential_path: Path | str | None = None,
-    openai_credential_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Preflight every provider the profile references, and no others.
+    """Preflight every external credential route the profile references.
 
-    Returns a mapping of provider ID to non-secret credential binding.  Any
-    failure raises the typed ``runtime/infrastructure`` credential failure; no
-    run root or fake evidence is created by this function.
+    Returns a mapping of provider ID to non-secret credential binding for the
+    external credential-backed routes only; the Codex built-in ``openai-codex``
+    route is authenticated by the Host ChatGPT subscription preflight instead
+    and never reads an OpenAI API key or credential file.  Any failure raises
+    the typed ``runtime/infrastructure`` credential failure; no run root or
+    fake evidence is created by this function.
     """
 
     paths: dict[str, Path | str | None] = {
         "deepseek-direct": deepseek_credential_path,
-        "openai-direct": openai_credential_path,
     }
     bindings: dict[str, Any] = {}
     for provider_id in profile.provider_ids():
+        if not uses_external_credential_session(provider_id):
+            continue
         preflight = _PROVIDER_CREDENTIAL_PREFLIGHTS.get(provider_id)
         if preflight is None:
             raise TeamModelProfileError(
@@ -440,7 +482,7 @@ def preflight_profile_credentials(
             )
         try:
             bindings[provider_id] = preflight(paths.get(provider_id))
-        except (DeepSeekCredentialError, OpenAICredentialError) as exc:
+        except DeepSeekCredentialError as exc:
             raise ProviderCredentialUnavailableError(
                 f"provider credential preflight failed for {provider_id}"
             ) from exc
@@ -452,10 +494,12 @@ class ProviderSessionManagerError(RuntimeError):
 
 
 class ProviderSessionManager:
-    """Host-owned map of one loopback Responses session per referenced provider.
+    """Host-owned map of one loopback Responses session per external provider.
 
     Roles sharing a provider share its session; no secret or listener is
-    duplicated per role.  ``start`` re-opens each referenced provider's
+    duplicated per role.  Only external credential-backed routes (currently
+    ``deepseek-direct``) belong here; the Codex built-in ``openai-codex`` route
+    has no loopback session.  ``start`` re-opens each referenced provider's
     credential with the no-follow/revalidation contract, keeps the key only in
     that session's mutable buffer, and wipes the intermediate copy.  ``stop``
     independently stops and wipes every session; one cleanup failure cannot
@@ -476,7 +520,9 @@ class ProviderSessionManager:
         for provider_id in sorted(credential_bindings):
             route = PROVIDER_CATALOG.get(provider_id)
             if route is None or provider_id not in _PROVIDER_CREDENTIAL_READERS:
-                raise ProviderSessionManagerError("provider route is unknown")
+                raise ProviderSessionManagerError(
+                    "provider route does not use an external credential session"
+                )
             self._bindings[provider_id] = credential_bindings[provider_id]
             self._routes[provider_id] = route
         self._on_failure = on_failure
@@ -599,26 +645,32 @@ class ProviderSessionManager:
 
 
 __all__ = [
+    "CODEX_AUTH_CACHE_NAME",
+    "CODEX_AUTH_MODE",
+    "CODEX_HOME_ENV",
+    "CODEX_PROVIDER_ID",
+    "CODEX_SUBSCRIPTION_AUTH_MODE_MISMATCH",
+    "CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE",
+    "CODEX_TOML_PROVIDER_ID",
     "DEFAULT_MODEL_PROFILE_ID",
     "DEEPSEEK_DIRECT_ROUTE",
     "MODEL_PROFILE_DIRECTORY",
     "MODEL_PROFILE_PACKAGE_IDS",
     "MODEL_PROFILE_SCHEMA_VERSION",
-    "OPENAI_API_KEY_ENV",
-    "OPENAI_CREDENTIAL_PATH",
-    "OPENAI_DIRECT_ROUTE",
+    "OPENAI_CODEX_ROUTE",
     "PROVIDER_CATALOG",
     "REQUESTED_EFFORT_TIERS",
-    "OpenAICredentialBinding",
-    "OpenAICredentialError",
+    "CodexSubscriptionAuthError",
     "ProviderCredentialUnavailableError",
     "ProviderSessionManager",
     "ProviderSessionManagerError",
     "RoleModelBinding",
     "TeamModelProfile",
     "TeamModelProfileError",
+    "codex_auth_cache_path",
     "load_team_model_profile",
-    "preflight_openai_credential",
+    "preflight_codex_subscription_auth",
     "preflight_profile_credentials",
-    "read_openai_credential",
+    "profile_requires_codex_subscription_auth",
+    "uses_external_credential_session",
 ]

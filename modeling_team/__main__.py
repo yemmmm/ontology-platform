@@ -603,10 +603,12 @@ def main() -> int:
             os.environ.pop("ONTOLOGY_PLATFORM_ADMIN_API_KEY", None)
             if getattr(runner, "canonical_admin_key", None) is not None:
                 runner.canonical_admin_key = None
-        # Host Codex auth is inspected only after TeamRunner has completed its
-        # clean-checkout/canonical/health gate.  No Agent is started until this
-        # defensive source check succeeds.
-        getattr(adapter, "preflight_host_auth", lambda: None)()
+        # Host auth is no longer probed unconditionally here.  TeamRunner's
+        # prepare already ran the profile-scoped credential preflights
+        # (including the conditional Codex ChatGPT subscription check for
+        # ``openai-codex`` routes) before any reservation or Agent start, and
+        # the runtime re-validates its Host auth source while staging each
+        # private role.
         if formal_acceptance:
             # Bootstrap is intentionally reachable only after the no-start
             # checkout/canonical-mode gate has passed and the run root exists.

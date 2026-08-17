@@ -793,13 +793,17 @@ class R23005ContractTests(unittest.TestCase):
         finally:
             runner.cleanup()
 
-    def test_cli_auth_preflight_runs_after_runner_prepare(self) -> None:
+    def test_cli_does_not_probe_host_auth_after_prepare(self) -> None:
         from modeling_team import __main__ as team_main
 
         events: list[str] = []
 
         class Adapter:
             def preflight_host_auth(self):
+                # R2.3-007 amendment: the CLI's unconditional post-prepare Host
+                # auth probe is gone.  Profile-scoped preflights live inside
+                # TeamRunner.prepare; the runtime re-checks its Host auth
+                # source while staging each private role.
                 events.append("auth")
 
         class Runner:
@@ -845,7 +849,7 @@ class R23005ContractTests(unittest.TestCase):
                 team_main.sys, "argv", argv
             ):
                 self.assertEqual(team_main.main(), 130)
-        self.assertEqual(events, ["runner-init", "prepare", "auth", "start", "cleanup"])
+        self.assertEqual(events, ["runner-init", "prepare", "start", "cleanup"])
 
     def test_formal_cli_scrubs_admin_env_before_auth_bootstrap_and_process(self) -> None:
         from modeling_team import __main__ as team_main
@@ -958,7 +962,6 @@ class R23005ContractTests(unittest.TestCase):
                     "runner-init",
                     "prepare",
                     "preflight-seam",
-                    "adapter-auth",
                     "bootstrap",
                     "runner-start",
                     "process-factory",
@@ -1124,7 +1127,6 @@ class R23005ContractTests(unittest.TestCase):
                     "bootstrap",
                     "runner-init",
                     "prepare",
-                    "adapter-auth",
                     "runner-start",
                     "process-factory",
                     "cleanup",
