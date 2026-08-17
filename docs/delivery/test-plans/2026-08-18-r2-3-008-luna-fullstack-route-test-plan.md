@@ -246,3 +246,18 @@
 - 结论：**Round 2 PASS——R1-D1 FIXED**（三守卫路径双向复测通过、修复影响回归绿、全量 deterministic
   套件与 compile/lint/diff 检查通过、真实账本与历史证据零改动）。测试后清理全部临时探针与
   `__pycache__`；工作树仅余本测试计划的 append 修改。
+
+### Round 3（2026-08-18，授权的真实 Luna formal run start1）
+
+- Stable state：commit `a785d1d`；资产 digest 按 delivery record Round 3 冻结条目；run identity
+  `r23008-luna-20260818-start1`；freeze `2026-08-17T18:32:06Z` → reservation 18:32:16Z（10s，≤20min 门）。
+- 结果：**启动层失败（presemantic）**——coordinator App Server `_initialize` 的 `skills/list` RPC 返回
+  `-32603`，CLI exit 2，零模型调用、零 thread/start。账本 `reservation → presemantic_release`，无
+  `semantic_start`，**0/3 semantic start 消耗**。scope cleanup `deleted-empty`、acceptance
+  aborted/zero_child_residue、零 child 残留；temp admin key revoked（复验 401）。
+- 定层与调查：`runtime/infrastructure`（详见 delivery record start1 条目）；Host codex 0.147.0 于运行前
+  34 分钟被更换，4 档本地探针（bwrap/真实 skill 树/真实 auth staging/config+MCP 表）未能复现。
+- 观察项：`aggregate_secret_audit match_count=1`（runtime 内部 token 瞬态命中；Host ChatGPT 凭据经
+  digest-only 复现审计证实不在 run root）。
+- 结论：R1–R8 判定不成立也不失败（run 未达业务交付，按 §4 R8 以 presemantic release 处置）；继续
+  start2（同冻结授权，预算 3/3）。

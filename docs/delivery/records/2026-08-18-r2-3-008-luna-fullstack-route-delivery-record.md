@@ -136,6 +136,31 @@
   terminal failure）不影响路由/终态门判定。
 - Outcome/next step: 立即启动 start1。
 
+### 2026-08-18 — Round 3 start1 启动层失败（presemantic）— main agent
+
+- Evidence: run `r23008-luna-20260818-start1` 于 reservation 后 ~45s 失败——CLI `run failed: app-server
+  skills/list failed (rpc_error, code=-32603)` exit 2（coordinator `_initialize` 第三步 skills discovery，
+  thread/start 之前，零模型调用）。账本仅两条事件：`reservation`（18:32:16Z）→ `presemantic_release`
+  （reason "startup failure before business delivery"，18:32:16Z），**无 `semantic_start`——0/3 start 被消耗**
+  （`start_ledger.py` 预算只计 semantic_start；presemantic release 后新 reservation 合法）。cleanup：scope
+  `deleted-empty`（owned Project/Ontology 删除、residual 全零、protocol key revoked）、acceptance
+  aborted/zero_child_residue、temp admin key `3040969b…` 已由主代理 revoke（复验 401）。
+- 失败定层：**runtime/infrastructure**（App Server 启动协议层，发生在任何模型路由/业务交付之前；非
+  modeling-quality、非 platform-contract、非路由解析——preflight/TOML 投影均已完成）。
+- 根因调查（有界，4 个本地探针）：Host codex 二进制于 2026-08-18 01:58 (+0800) 被更换（0.147.0），
+  start1 是升级后首次 formal app-server run；对照 2026-08-10/12 最后成功 formal run 的 home 布局
+  （无 `.system` skills、有 `sessions/`），app-server 行为已变化。但以 bwrap + 真实 skill 树 + 真实
+  auth staging + coordinator config/MCP 表的 4 档本地探针均无法复现 `skills/list` 失败——失败依赖真实
+  运行上下文或为瞬态。
+- 次级发现：`aggregate_secret_audit match_count=1`/`private_credentials_destroyed=false`。主代理以
+  digest-only 复现审计证实 **Host ChatGPT 凭据不在 run root**（全部 auth 值 0 命中）；唯一命中为
+  runtime 内部 token 在审计时点的瞬态 surface（当前保留产物 0 残留）。记账为 cleanup 观察项，不改变
+  失败定层。
+- Action/decision: 记录失败与定层；按冻结授权消耗下一 reservation（start2，预算仍 3/3 semantic start，
+  presemantic 失败不消耗）。若 start2 在同一 RPC 同形失败，则判 0.147.0 app-server 与当前握手机械的
+  确定性不兼容，回 developer 窄修复 handshake 层。
+- Outcome/next step: 冻结 start2 授权要素并启动。
+
 ## Review disposition
 
 | Round | Finding | Main-agent disposition | Evidence | Plan impact |
