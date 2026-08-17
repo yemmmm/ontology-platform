@@ -281,3 +281,122 @@ cleanup。所有 referenced session 都独立尝试 stop/wipe；一个失败不�
 若 OpenCode Go 后续为 `deepseek-v4-flash` 提供并验证 Responses endpoint，可在另一个小需求中增加一个 closed
 Provider declaration、credential binding 和 live probe；同名模型仍以不同 provider ID 保持 route identity。若它
 继续只有 Chat Completions，则必须另立协议适配需求，本设计不预留转换器。
+
+## 12. 实施中变更 A：Luna 改用 Codex ChatGPT 订阅认证（2026-08-17）
+
+### 12.1 变更状态与效力
+
+本节是原设计进入实施并以 `8ee7aa4` 落地后的追加修订，不改写前述历史设计。经用户确认，Modeling Team 切换
+到 Luna 时应复用宿主机现有的 Codex ChatGPT 登录和订阅访问能力，不应要求 OpenAI Platform API Key 或产生
+独立 API 计费。凡本节与 §1、§5.2、§6、§8、§9、§10 中 `openai-direct`、`OPENAI_API_KEY` 或 OpenAI loopback
+session 的描述冲突，以本节为准。
+
+`8ee7aa4` 仍是原设计的已验证实现基线，但在本修订完成开发和独立测试前，不得把现有
+`openai-direct/gpt-5.6-luna` 路径表述为“可使用 Codex Plus 套餐额度”。原 G1/G3 的“缺 OpenAI credential
+文件”BLOCKED 结论保留为历史事实；该 credential 文件不再是修订后 G1/G3 的解除条件。
+
+OpenAI 官方认证合同区分两种本地 Codex 登录：ChatGPT 登录用于 subscription access，API Key 用于
+usage-based access；API Key 使用标准 API 定价而不是 ChatGPT 套餐额度。Codex 会缓存并复用登录，file storage
+时缓存位于 `CODEX_HOME/auth.json`。来源：[Codex Authentication](https://learn.chatgpt.com/docs/auth)。
+
+### 12.2 修订后的最小 Provider 合同
+
+closed catalog 调整为：
+
+| Provider ID | Model allowlist | Wire/runtime route | Host authentication |
+| --- | --- | --- | --- |
+| `deepseek-direct` | `deepseek-v4-flash` | 现有 loopback Responses session | 固定 DeepSeek credential 文件 |
+| `openai-codex` | `gpt-5.6-luna` | Codex 内建 OpenAI Responses route | 已缓存的 ChatGPT subscription login |
+
+`openai-codex` 取代 fresh-run catalog、`openai-luna-medium` profile 和 mixed profile 中的
+`openai-direct`；不保留 alias 或双栈。Provider/model/effort 仍由六个 canonical package ID 独立配置，OpenAI
+effort identity mapping 不变。认证方式是 catalog-owned route 属性，不增加到每个 role 的可编辑字段，避免同一
+OpenAI route 被误配成 API Key 计费。
+
+本次只支持当前已验证环境所使用的 file-backed Codex 登录缓存，不增加 keyring adapter、OAuth broker、token
+service 或远程登录流程。若套餐或 workspace 不允许使用 Luna，按 Provider 不可用失败，不自动切换 API Key、
+模型或 Provider。
+
+### 12.3 Host 认证与隔离 Runtime
+
+`TeamRunner.prepare` 先解析 profile 并完成 R2.3-003 retained-scope gate；仅当 frozen profile 引用
+`openai-codex` 时，才在任何 DeepSeek credential read、ledger reservation、run-root 创建和 Agent start 前对
+`CODEX_HOME/auth.json` 复用现有 owner-private、regular-file、non-symlink 元数据预检，并确认 `codex login
+status` 的认证方式是 ChatGPT。完成全部 referenced-provider preflight 后重读 profile/baseline，再进入 reservation。
+CLI/Adapter 不得在 `prepare` 返回后无条件追加 Host auth preflight；DeepSeek-only profile 在 Host 未登录 ChatGPT
+时仍可准备和运行。只记录安全的 `auth_mode=chatgpt-subscription`；不得记录 token、账户标识、缓存正文、路径或
+digest。以下情况 fail closed：
+
+- 登录缓存缺失或不满足现有 private staging 合同：`codex-subscription-auth-unavailable`；
+- 当前 Codex 使用 API Key 登录而不是 ChatGPT 登录：`codex-subscription-auth-mode-mismatch`。
+
+只有绑定 `openai-codex` 的持久角色或 fresh Examiner 才把同一份 Host 登录缓存按现有 private
+`auth.json` staging/auth-barrier 生命周期投影到各自隔离 `CODEX_HOME`，供 Codex App Server 初始化；操作者只需
+在 Host 执行一次 `codex login`，不为每个 Team Agent 单独登录。这里明确修订原“Agent 进程零 plaintext
+secret”合同：订阅认证要求 OpenAI-bound Codex App Server 在启动 barrier 内短暂读取 owner-private
+`auth.json`，但 token/缓存不得进入模型消息、Agent 指令、工具/MCP、日志、evidence 或非绑定角色；文件必须在
+首个 turn 接受后、任何模型选择的 ServerRequest/tool/MCP dispatch 前删除。测试必须直接观察该 active-run
+barrier，不只检查最终 cleanup。该必要且有界的例外不扩展为通用 secret 注入。
+
+绑定 `deepseek-direct` 的角色继续只使用 loopback Provider session，不接收 `auth.json`。mixed profile 因此
+允许两种 Host-owned 认证边界并存，但任一角色只获得自己的 route 所需认证。
+
+OpenAI 不再进入 `ProviderSessionManager`，也不读取、解析或注入
+`~/.config/ontology-platform/modeling-team-openai.env`/`OPENAI_API_KEY`。`ProviderSessionManager` 只管理 profile
+实际引用的外部 credential-backed route（当前仅 `deepseek-direct`）。若 external binding map 为空，OpenAI-only
+run 不创建 manager，Runtime 接受 `provider_sessions=None`；mixed run 的 manager 只含 `deepseek-direct`。
+持久角色和 fresh Examiner 使用同一分支：`deepseek-direct` 才调用 `base_url_for` 并生成自定义 Provider table；
+`openai-codex` 直接生成 `model_provider = "openai"`，不调用 session lookup，不声明自定义 `base_url`、
+`env_key`、Provider table 或 OpenAI loopback listener。profile/evidence 中仍保留 route identity
+`openai-codex`，只有 Codex TOML 投影使用内建 ID `openai`。
+
+### 12.4 Profile、证据与失败语义
+
+profile 的用户界面不变：仍通过 `--model-profile` 快速切换，六角色仍分别配置 model/provider/requested
+effort。`openai-luna-medium` 的 provider binding 改为 `openai-codex`；profile digest 随内容变化，既有 run、
+ledger 和历史证据不回写。
+
+baseline 与运行 evidence 对 OpenAI role 记录 `provider=openai-codex`、exact model、requested/effective effort
+和安全的 `auth_mode=chatgpt-subscription`。DeepSeek evidence 继续记录 loopback session 的安全计数。任何
+ChatGPT token、`auth.json` 内容、账户/workspace 标识或认证命令原始输出都不进入 run root、Agent 消息或日志。
+
+OpenAI 登录预检失败沿用 `runtime/infrastructure` 分类；运行期 entitlement、限额、网络或 terminal 失败统一
+落入既有 `provider-upstream-failed`，只保留稳定 reason code，不持久化 Provider free text。不 fallback 到
+API Key、DeepSeek 或另一 effort。
+
+### 12.5 最小实现调整
+
+- `model_routing.py`：用 `openai-codex` 替换 `openai-direct` catalog entry；移除 OpenAI API Key
+  parser/binding/preflight，保留 DeepSeek credential/session 代码。
+- `runner.py`：在 retained-scope 之后、reservation/run-root 之前，只对 referenced route 执行 preflight；仅
+  external credential route 创建 binding，`openai-codex` 执行 Host ChatGPT/file-cache preflight。删除 CLI 的
+  unconditional post-prepare Host auth check。
+- `runtimes/codex.py`：允许 empty/optional external session manager；OpenAI-only 不启动 manager，mixed manager
+  只含 DeepSeek。持久角色和 fresh Examiner 都把 `openai-codex` 映射为内建 `openai` TOML，把
+  `deepseek-direct` 映射为 loopback table；复用已有 staging、auth barrier、secret audit 与 cleanup，不新增认证
+  框架。
+- profiles/tests：把 OpenAI binding 改成 `openai-codex`，删除 OpenAI credential-file fixtures，增加订阅认证
+  和 mixed role 隔离测试。
+- CLI 参数、Team package、transport、MCP capability、StartLedger、Acceptance、Responses-only 合同均不变。
+
+### 12.6 修订验收条件
+
+1. Host 已 `Logged in using ChatGPT` 且 file-backed cache 合法时，选择 `openai-luna-medium` 不读取
+   `OPENAI_API_KEY` 或 OpenAI credential 文件，六角色无需分别登录即可启动 Luna。
+2. Host 未登录、缓存不合法或登录方式为 API Key 时，在 reservation/Agent start 前以对应稳定 reason fail
+   closed，且不尝试 API 计费路径；同一条件不得影响 DeepSeek-only profile。
+3. mixed profile 中 `openai-codex` role 只获得 private Codex auth，`deepseek-direct` role 只获得 loopback
+   provider config；OpenAI-only 不创建 session manager；持久角色和两个 Examiner 的实际 TOML/session lookup 均
+   按 canonical package ID 精确绑定。
+4. Luna 最小 Responses tool-call/terminal smoke 返回 exact `gpt-5.6-luna`，evidence 记录 subscription auth mode
+   且零 token/账户信息；该 smoke 证明本地 Codex 订阅路径可用，不宣称套餐无限额度。
+5. DeepSeek 默认行为、逐角色 effort、无 fallback、历史证据不变、secret audit、cleanup 及 R2.3-003/005/006
+   回归继续通过。
+6. active-run barrier 证明 `auth.json` 只在 OpenAI-bound Codex 初始化窗口存在，并在任何模型选择的
+   ServerRequest/tool/MCP dispatch 前删除；模型消息、其他角色、日志/evidence 与最终产物零 ChatGPT token。
+
+### 12.7 非目标
+
+- 不同时支持 `openai-codex` 和 OpenAI API Key 两种首期 route；未来确有 API 计费需求时另增明确 Provider ID。
+- 不实现套餐余量查询、自动账号切换、额度预测或 API/订阅自动 fallback。
+- 不改变 OpenCode Go 的后续接入边界，也不增加非 Responses adapter。

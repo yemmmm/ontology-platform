@@ -2163,7 +2163,7 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 
 ## R2.3-007 Modeling Team Responses Provider 路由与逐角色模型配置
 
-当前状态：`已实现并独立测试 PASS（implementation commit 8ee7aa4；A–F deterministic、H1–H4 回归、G2 DeepSeek live probe 全通过）。遗留 followup：G1 OpenAI Luna live probe 与 G3 真实 mixed formal smoke BLOCKED——待用户按设计 §6.2 创建 OpenAI credential 并单独授权 formal run attempt 后补跑；补跑前不得宣称 OpenAI 路由已实证`
+当前状态：`原合同已由 implementation commit 8ee7aa4 实现并独立测试 PASS；2026-08-17 追加 Luna Codex ChatGPT subscription 认证变更，设计复核 PASS、实现与独立测试待完成。G1/G3 仍未实证，但 OpenAI API credential 文件不再是解除条件`
 
 ### 背景与问题
 
@@ -2213,6 +2213,21 @@ DeepSeek provider proxy。因此切换模型需要同步修改 manifest、硬编
 - Provider 故障：fail closed，不自动 fallback。
 - 快速切换入口：具名 Team Model Profile，fresh run 按 profile ID 选择。
 - reasoning effort：统一档位、Provider 显式映射，同时记录 requested/effective effort。
+
+### 2026-08-17 实施中认证变更
+
+原实现中的 `openai-direct/gpt-5.6-luna` + OpenAI Platform API Key 路径改为
+`openai-codex/gpt-5.6-luna` + Host 已缓存的 Codex ChatGPT subscription login；不再要求或读取 OpenAI API
+credential 文件，也不自动 fallback 到 API 计费。DeepSeek Direct 的 Host-owned credential/loopback session
+保持不变。详细后继合同见
+`docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md` §12。
+
+“Agent 进程零 plaintext secret”在本变更后精确限定为：Provider API Key、ChatGPT token 和认证缓存不得进入模型
+消息、Agent 指令、工具/MCP 输入输出、日志、evidence 或非绑定角色；`openai-codex` 绑定的 Codex App Server 为
+完成订阅认证，可在启动 barrier 内从其 owner-private 隔离 `CODEX_HOME/auth.json` 读取 Host 投影的登录缓存，
+随后必须在首个 turn 接受后、任何模型选择的 ServerRequest/tool/MCP dispatch 前删除。该必要窗口不授权 Team
+业务角色读取或传播 token；`deepseek-direct` 角色不得获得该文件。当前范围不增加 auth broker、token service
+或套餐/API 自动切换。
 
 ## R2.3-004 Pi Team Adapter
 

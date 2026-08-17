@@ -198,3 +198,28 @@ H4 — 条件重启门：`git show 8ee7aa4 --stat` 18 文件全部在 `modeling_
 - 测试数据归属：Rounds 1–3 在仓库内唯一写入为本测试计划 §5 的三轮追加；无其他测试产物保留。
 
 **总体建议**：close-with-followups——R2.3-007 实现按本计划可判定范围（A-F、H1-H4、G2）全部通过，无产品缺陷；followups：(1) G1 待 OpenAI credential 就绪后授权补跑；(2) G3 真实 mixed formal smoke 待 (a)(b) 双条件；(3) pre-existing Low：`test_deepseek_codex_runtime.py` 7 个 fallback 用例建议 hermetic 化（`monkeypatch.delenv`）。
+
+## 6. 实施中变更 A 测试增量（2026-08-17，UNEXECUTED）
+
+本节对应设计 §12，只追加新合同，不改写 Rounds 0–3 的历史结论。原 G1/G3 关于 OpenAI API credential 文件
+缺失的 BLOCKED 证据仍有效，但不再是修订后测试的前置条件。
+
+- A1：`openai-luna-medium` 和 mixed profile 解析为 `openai-codex`，六个 canonical package binding 与
+  requested/effective effort 精确；catalog 不再包含 `openai-direct`。
+- A2：Host ChatGPT file-backed login preflight 成功；缓存缺失/不安全和 API-key login 分别返回
+  `codex-subscription-auth-unavailable`/`codex-subscription-auth-mode-mismatch`，且发生在 reservation/Agent
+  start 前；相同缺失条件下 DeepSeek-only prepare/run 不触发 ChatGPT preflight。
+- A3：OpenAI-only run 不读取 OpenAI credential 文件或 ambient `OPENAI_API_KEY`，不创建 OpenAI loopback
+  session；DeepSeek 默认 path 不发生行为变化。
+- A4：OpenAI-only runtime 接受 empty external-session map、不创建 manager；mixed manager 只含 DeepSeek。
+  OpenAI 持久 role/两个 fresh Examiner 的实际 TOML 为内建 `model_provider="openai"` 且无 provider table/base
+  URL/session lookup；DeepSeek role/Examiner 只获得 loopback route。active-run fixture 证明 private auth 仅在
+  OpenAI Codex 初始化窗口存在并在任何模型选择的 ServerRequest/tool/MCP dispatch 前删除；无 cross-role
+  credential projection，cleanup 后无 `auth.json`、listener、thread 或 secret residue。
+- A5：safe baseline/evidence 记录 `provider=openai-codex` 和 `auth_mode=chatgpt-subscription`，不记录 token、
+  account/workspace、auth cache path/digest 或 `codex login status` 原始输出。
+- A6：在用户单独授权一次无业务 Provider probe 后，通过 Codex 订阅认证运行 Luna Responses
+  tool-call/terminal smoke，核对 exact model、effort、typed failure、零 fallback 和零 secret/residue。
+- A7：重跑原 A-F/H1-H4 受影响回归；保留 Rounds 0–3，不以本节 UNEXECUTED 改写原 implementation PASS。
+
+实施与独立测试尚未开始；本节当前只冻结修订后的验收面。

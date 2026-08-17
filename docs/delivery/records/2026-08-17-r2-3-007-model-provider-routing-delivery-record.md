@@ -1,9 +1,9 @@
 # R2.3-007 Modeling Team Responses Provider 路由交付记录
 
 - Requirement source: `docs/requirements/requirements-v2.3.md#r23-007-modeling-team-responses-provider-路由与逐角色模型配置`
-- Status: delivered（独立测试 Round 1–3 PASS；G1/G3-真实 followup BLOCKED 待 OpenAI credential 与 attempt 授权）
+- Status: amendment-design-reviewed（原合同 delivered；Luna ChatGPT subscription 变更实现/独立测试 pending）
 - Started: 2026-08-17T14:25:49+08:00
-- Last updated: 2026-08-17T16:25:06+08:00
+- Last updated: 2026-08-17T16:59:44+08:00
 - Design: `docs/delivery/designs/2026-08-17-r2-3-007-model-provider-routing-design.md`
 - Shared test plan: `docs/delivery/test-plans/2026-08-17-r2-3-007-model-provider-routing-test-plan.md`
 - Delivery baseline: `6a0331e Close R2.3-006 with full N=2 live-124 PASS`；初始工作树 clean
@@ -226,3 +226,41 @@
   必须保留不同 route identity；binding lookup 必须用 canonical package ID 而非 AgentPackage.role（双 examiner
   同 role 碰撞）；真实 probe 授权（来源、attempt budget、调用上限、cleanup owner、失败即 BLOCKED）先冻结后执行，
   可让 live 证据零争议
+
+### 2026-08-17T16:40:44+08:00 — 交付后认证路线变更 — user/main agent
+
+- Context: R2.3-007 已由 `8ee7aa4` 实施、`4c1b8c9` 关闭；用户确认 Luna 应使用现有 Codex ChatGPT/Plus
+  subscription access，而不是新增 OpenAI Platform API Key 和独立 API 计费。
+- Evidence: Host 当前 `codex login status` 返回 `Logged in using ChatGPT`，`CODEX_HOME/auth.json` 是当前用户的
+  mode `0600` regular file；官方 Codex Authentication 文档明确区分 ChatGPT subscription access 与 API-key
+  usage-based access。现实现 `model_routing.py`/formal Runtime 仍使用 `openai-direct` credential-backed loopback，
+  因而不满足新目标。
+- Action/decision: 保留原设计与 Rounds 0–3 历史，在设计末尾追加 §12 作为冲突条款的后继权威合同；OpenAI route
+  改为 `openai-codex/gpt-5.6-luna` + Host ChatGPT file-backed auth，移除本需求内 OpenAI API Key 路径；DeepSeek、
+  profiles/effort 用户界面、Responses-only、fail-closed 与无 fallback 合同不变。测试计划追加 §6，当前
+  UNEXECUTED。
+- Outcome/next step: 本次只修订设计和测试增量；implementation commit `8ee7aa4` 仍是原合同基线，新合同状态为
+  design review pending / implementation pending，不再把 OpenAI credential 文件缺失作为 G1/G3 的未来解除条件。
+
+### 2026-08-17T16:40:44+08:00 — 认证变更 plan review Round 1 REVISE — reviewer/main agent
+
+- Context: reviewer 只审查设计 §12、测试增量 §6 与实际实现边界，避免扩展到本轮无关实现。
+- Evidence: 三项 High 均有当前代码依据：(1) CLI 在 `prepare` 后无条件 preflight Host auth，而 reservation/run
+  root 已创建；(2) formal Runtime/Examiner 强制 session manager + `base_url_for`，无法表达 OpenAI-only 或 mixed
+  内建 provider；(3) private `auth.json` 含 token，原 requirement 的绝对“Agent 进程零 plaintext secret”与订阅
+  auth staging 冲突。
+- Action/decision: 三项均 `accepted-high`。设计修订为 conditional pre-reservation preflight、optional external
+  manager 与 `openai-codex -> built-in openai` 精确投影；需求同步允许 OpenAI-bound Codex App Server 在启动
+  barrier 内短暂读取 private auth cache，同时继续禁止 token 进入模型/工具/日志/evidence/其他角色。测试增量
+  增加 DeepSeek-only 无 ChatGPT 依赖、OpenAI-only/mixed persistent+Examiner TOML/session 和 active-run barrier。
+- Outcome/next step: 返回 reviewer 复核；实现与真实模型调用仍未开始。
+
+### 2026-08-17T16:40:44+08:00 — 认证变更 plan review Round 2 PASS — reviewer/main agent
+
+- Context: Round 1 三项 accepted-high 已同步到 requirement、设计 §12 和测试增量 §6。
+- Evidence: reviewer 核对 conditional pre-reservation auth gate、DeepSeek-only independence、OpenAI-only empty
+  session、mixed DeepSeek-only manager、persistent/fresh Examiner 的内建 `openai` 投影，以及 active-run private
+  auth barrier；无剩余 Critical/High。
+- Action/decision: 接受 PASS；冻结本次追加设计。原 `8ee7aa4` 实现不自动视为满足新合同，测试计划 §6 保持
+  UNEXECUTED。
+- Outcome/next step: 本轮完成设计变更记录并提交；产品实现、独立测试和任何真实 Luna 调用留待后续明确实施。
