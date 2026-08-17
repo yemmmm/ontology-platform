@@ -3519,9 +3519,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             binding = model_override
             if formal and not uses_external_credential_session(binding.provider_id):
                 # ``openai-codex`` projects onto Codex's built-in provider with
-                # no custom provider table and no base URL.
+                # no custom provider table and no base URL.  ``lines`` starts
+                # with the scalar sandbox/web_search settings and the
+                # ``[features]`` table header here (no model trio has been
+                # prepended yet), so splice around the full list: dropping the
+                # first entries would leave the feature flags as bare top-level
+                # keys, which Codex 0.147.0 parses as typed tables and rejects
+                # on the ``skills/list`` config reload.
                 provider_lines = _formal_codex_builtin_config_lines(binding)
-                lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
+                lines = provider_lines[:3] + lines + provider_lines[3:]
             else:
                 lines = [
                     f'model = "{binding.model}"',
