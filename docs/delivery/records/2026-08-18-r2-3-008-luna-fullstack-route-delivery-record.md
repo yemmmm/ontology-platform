@@ -534,3 +534,41 @@
   revision 非安全字符串应获类型化 in-run 纠正而非 run 终止；正常路径为完整 formal candidate
   注册成功并进入 Examiner 验收与终态。
 - Outcome/next step: 立即启动 start8。
+
+### 2026-08-18 — Round 3 start8：全栈健康，未回答 outer question 环形等待死锁 — main agent
+
+- Evidence: run `r23008-luna-20260818-start8`（stable state `a383e03`）——freeze/reservation 07:25:39Z →
+  **`semantic_start` 07:25:43Z（4/6 消耗）**。前六轮修复全部在线实证生效：四 persistent 角色完整
+  `thread/started`（thread_id 在位）、零出站超时（models GET 200、websocket 流事件持续）、
+  companion 挂载在位、各角色完成一个真实 Luna turn（`turn/started` span `gpt-5.6-luna`/`medium`）。
+  **semantic_start 后 15 秒**，modeling 经 Team Transport 向 coordinator 发出 grounded clarification
+  question（delivery-4，07:25:58Z，`evidence/outer-question.jsonl`）："When C completes without a numeric
+  score and returns a diagnostic code, what does B do—block publication, continue, retry, or mark for
+  review?"——即业务切片源材料中留白的 B/C 行为点（R2.3-003 冻结 ExplicitUnknown
+  `unknown-b-no-score-behavior` 的同一切片在 008 standard `preserve-explicit-unknown` 政策下的再现）。
+  coordinator 将问题转述给 outer 用户后进入 "Awaiting the user's clarification"；protocol 等待
+  Modeling 的 candidate 交付；acceptance 等待 Runner acceptance_start；modeling 等待 coordinator
+  回答——**四角色环形等待**，deliveries 停在 5，零 candidate，挂起 ~3h 后主代理 SIGINT 终止。
+- 根因（非确定性层缺陷，设计机制存在但未启用）：runner 有完整的 outer-question 机制（记录
+  `outer-question.jsonl`、前台 display 绑定、`receive_outer` 消费）与配套 **outer-input FIFO**
+  （`__main__.py:357` `--enable-outer-input-fifo`，为 background Host 设计的 NDJSON 应答通道），
+  但 FIFO 为 opt-in 且本次 run 命令沿袭 start1–start7 模板未启用；runner 对 pending 未回答的
+  outer question 无 timeout/watchdog（与 start6 死锁同族缺口）。headless run 中该问题永远无法被
+  回答 → 永久等待。
+- 定层：**runtime/infrastructure**——deterministic 层与六角色路由全部健康；问题本身是
+  contract-permitted 行为（outer-question 机制即为它设计），失败在于 headless 运行缺少应答通道
+  且无超时，属运行面/操作面缺口（start6 先例：无 watchdog 挂起同判）。
+- Cleanup：SIGINT graceful cleanup 完整（state `CLEANED`、scope `deleted-empty`、owned
+  Project/Ontology 删除 residual 全零、acceptance aborted/zero_child_residue、全部 runner key
+  non-active）；temp admin key `r23008-admin-key-8`（id `1e033f10…`）revoke 复验 401。run audit
+  `secret_audit match_count=3`/`private_credentials_destroyed=false`：主代理 digest-only 扫描
+  （5 个 host auth 值 in-memory 比对、不打印）证实 run root 761 个保留文件 **0 plaintext 命中**，
+  与 start1/start7 观察项同形（runtime 内部瞬态 key 面）。
+- 账本修复（Delivery-Agent recovery，同 start6/start7 先例）：SIGINT 路径不写 terminal_failure，
+  以窄脚本（真实 `StartLedger` API、写前断言）追加恰一条 `terminal_failure`
+  （`runtime/infrastructure`、`complete_modeling_quality_result=false`），strict replay 复验通过。
+  账本 21 事件：**4/6 消耗（start5–8），2 剩余**（`r2-3-008-budget-20260818-2` 授权内）。
+- Action/decision: start9 启动命令追加 `--enable-outer-input-fifo`——该 flag 即为此场景设计
+  （background Host 经 FIFO 发送 grounded owner answer）；outer question 出现时由 Delivery Agent
+  呈报用户（owner）决策，不由 Delivery Agent 代答业务语义。无代码缺陷需要修复循环。
+- Outcome/next step: start9（授权余量内，无需新授权）。

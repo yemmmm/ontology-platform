@@ -766,3 +766,23 @@
   零修改；本轮探针临时文件（/tmp/r9probe）已删除。
 - 结论：defect 6 修复 **PASS**，无新缺陷。R2.3-008 到达"合同统一后可重新进入真实建模"状态；
   **start8 需新用户 budget 授权**（首批 3 start 已耗尽）。建议 coordinator 提交本修复后向用户请求授权。
+
+**start8（同日，用户追加授权 3 start 后）**：
+
+- Stable state：commit `a383e03`（budget_authorization `r2-3-008-budget-20260818-2`）。freeze/reservation
+  07:25:39Z → **`semantic_start` 07:25:43Z（4/6 消耗）**。
+- 结果：**全栈路由健康 + 未回答 outer question 环形等待死锁**——六轮修复全部在线实证（四角色
+  thread/started、零出站超时、companion 在位、真实 Luna turn）；semantic_start 后 15s modeling 经
+  Team Transport 发出 grounded clarification question（切片源材料留白的 B/C 无分数行为点），
+  coordinator 转述 outer 后四角色环形等待，deliveries 停在 5、零 candidate，挂起 ~3h，主代理
+  SIGINT 终止。runner 的 outer-input FIFO（`--enable-outer-input-fifo`，为 background Host 设计）
+  为 opt-in 且未启用；runner 对 pending outer question 无 timeout——headless run 中问题永远无法
+  被回答。
+- 定层：**runtime/infrastructure**（问题为 contract-permitted，失败在 headless 运行缺少应答通道 +
+  无超时，start6 无-watchdog 同族）。
+- Cleanup：state `CLEANED`、scope `deleted-empty`、residual 全零、全部 key non-active；temp key
+  revoke 复验 401；digest-only 扫描 761 保留文件对 host auth 值 0 plaintext 命中。账本经
+  Delivery-Agent recovery 闭合 terminal_failure（runtime/infrastructure），strict replay 复验通过；
+  21 事件，4/6 消耗。
+- 结论：无代码缺陷；start9 追加 `--enable-outer-input-fifo`，outer question 出现时呈报用户
+  （owner）决策，不代答业务语义。授权余量 2 start 内继续。
