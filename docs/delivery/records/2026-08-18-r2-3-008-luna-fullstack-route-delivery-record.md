@@ -517,3 +517,20 @@
 - Outcome/next step: 迭代暂停。恢复条件：用户明确追加 budget 授权（账本
   `authorize_budget`，增量 3）后，在修复后基线上启动 start8 并按测试计划 §4 R1–R8 完成路由/
   终态判定。
+
+### 2026-08-18 — 用户追加授权 3 个 start 与 start8 冻结 — user/main agent
+
+- **Authorization source**：用户 2026-08-18 消息"继续授权三次"（在暂停决定之后追加）。账本事件
+  `budget_authorization`（additional_starts=3，authorization_id
+  `r2-3-008-budget-20260818-2`，reference 记录用户原话），strict replay 复验通过。预算现为
+  3/3 剩余（累计 6 授权）。
+- **Run identity**：`r23008-luna-20260818-start8`；profile/task/standard/model profile 资产与
+  sha256 与 start1 冻结条目一致（未变）；稳定基线 `622bf48`（defect 6 修复 + Round 9 文档），
+  工作树 clean。
+- **边界与纪律**：与 §4/首轮冻结相同——fresh create scope、temp admin key 运行结束即 revoke、
+  不读取/记录 `auth.json` 内容、零 API-key 路径、run 中途不换 profile、freeze→reservation
+  ≤20min、run root 与证据完整保留、Cleanup owner 为主代理。
+- **本 start 特有观察项**：defect 6 修复（revision 字符串合同）的在线验证——首次 delivery 若
+  revision 非安全字符串应获类型化 in-run 纠正而非 run 终止；正常路径为完整 formal candidate
+  注册成功并进入 Examiner 验收与终态。
+- Outcome/next step: 立即启动 start8。
