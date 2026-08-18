@@ -1985,6 +1985,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError("Examiner package asset is invalid")
         return package / "package.yaml", instructions, skill
 
+    def _codex_companion_binary(self) -> Path | None:
+        """Resolve Codex 0.147.0's tool-execution companion next to the binary.
+
+        Codex spawns ``codex-code-mode-host`` for every tool/shell execution and
+        resolves it relative to its own executable directory, so inside a
+        Runtime namespace that mounts only ``codex`` every tool call dies with
+        ``failed to spawn code-mode host ... No such file or directory`` (R2.3-008
+        start6).  The companion ships in the same release ``bin`` directory.
+        Returns ``None`` when the installed Codex has no companion (older or
+        newer layouts), keeping the namespace additive and startup unchanged.
+        """
+
+        binary = shutil.which(self.codex_binary) or self.codex_binary
+        companion = Path(binary).resolve().parent / "codex-code-mode-host"
+        try:
+            metadata = os.lstat(companion)
+        except OSError:
+            return None
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            return None
+        if not os.access(companion, os.X_OK):
+            return None
+        return companion
+
     def _acceptance_namespace_command(
         self,
         *,
@@ -2068,6 +2092,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "--ro-bind",
             binary,
             "/agent/bin/codex",
+        ]
+        # R2.3-008 start6: Examiner children execute tools too, so the Codex
+        # 0.147.0 companion must sit beside the mounted binary (argv[0]-relative
+        # resolution).  Absent companion degrades exactly like the old surface.
+        companion = self._codex_companion_binary()
+        if companion is not None:
+            command += ["--ro-bind", str(companion), "/agent/bin/codex-code-mode-host"]
+        command += [
             "--",
             "/agent/bin/codex",
             "--config",
@@ -3922,12 +3954,24 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     str(reasoner),
                     "/backend/scripts/dev_owl_reasoner.py",
                 ]
+        companion_mounts: list[str] = []
+        # R2.3-008 start6: Codex 0.147.0 resolves its tool-execution companion
+        # relative to the mounted binary's directory; without the bind every
+        # tool call inside the namespace fails with ENOENT.  Additive only.
+        companion = self._codex_companion_binary()
+        if companion is not None:
+            companion_mounts = [
+                "--ro-bind",
+                str(companion),
+                "/agent/bin/codex-code-mode-host",
+            ]
         command[command.index("--chdir") : command.index("--chdir")] = [
             "--dir",
             "/agent/bin",
             "--ro-bind",
             binary,
             "/agent/bin/codex",
+            *companion_mounts,
         ]
         return command + ["--", "/agent/bin/codex", *app_server_command]
 

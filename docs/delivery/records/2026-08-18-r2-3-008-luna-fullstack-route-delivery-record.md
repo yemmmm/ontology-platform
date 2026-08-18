@@ -287,7 +287,7 @@
 
 | 6 | 工作树（本轮提交） | start4 protocol `ontology_platform` MCP ENOENT 根因修复：`backend/.venv/bin/python` 为 uv 绝对符号链（未版本化目标目录再符号链到版本化目录），protocol namespace 仅绑 fully-resolved 前缀，字面绝对目标在 bwrap 内悬空 → 0.147.0 required MCP spawn `execve` ENOENT 升级 `thread/start` 致命。修复 = `_protocol_interpreter_mounts()` 沿符号链绑定每个绝对目标解释器前缀于其自身路径（祖先 `--dir` 先行、基础树不重建、fully-resolved 绑定保留）+ 3 回归测试 | developer 真实 protocol config × 真实 bwrap 复现：pre-fix 逐字复现 start4 签名（`execvp … No such file or directory` + `-32603` 消息），post-fix `THREAD_START_OK` 四 MCP 全初始化；全量 900 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 6 复测 PASS（pre-fix 复现 + post-fix 恢复 + 宿主符号链事实三方闭合） |
 | 7 | `e2ad607` | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | developer 离线复现（真实宿主 env pre/post-fix env 形状 + in-bwrap 可见性探针，零模型调用零 chatgpt.com 接触）；主代理独立复跑全量 905 绿 | Round 7 复测 PASS（15/15 探针 + 泄漏面 + loopback 安全）；start6 实证零超时 |
-| 8 | 待修复 | start6 tool 执行层全阻断（defect 5）：codex 0.147.0 tool/shell 执行 spawn 伴生二进制 `codex-code-mode-host`，namespace 只挂 `codex` → 每 tool call ENOENT，四角色 Blocked，runner 协调死锁挂起 4h（SIGINT 终止）。第二次消耗 semantic start（2/3）。另发现 SIGINT cleanup 不记 terminal_failure 的账本闭合缺口（已以 Delivery-Agent recovery 窄脚本闭合） | start6 rollouts 逐角色 ENOENT 签名（6/7/5/1）；宿主 release bin 目录仅 codex + codex-code-mode-host 两文件；start6 零出站超时（defect 4 修复在线生效） | 待 developer 窄修复 + Round 8 复测 |
+| 8 | 工作树（本轮提交） | start6 tool 执行层全阻断（defect 5）：codex 0.147.0 tool/shell 执行 spawn 伴生二进制 `codex-code-mode-host`，namespace 只挂 `codex` → 每 tool call ENOENT，四角色 Blocked，runner 协调死锁挂起 4h（SIGINT 终止）。第二次消耗 semantic start（2/3）。另发现 SIGINT cleanup 不记 terminal_failure 的账本闭合缺口（已以 Delivery-Agent recovery 窄脚本闭合）。修复 = `_codex_companion_binary()`（resolved codex bin 目录解析伴生二进制，symlink/非 regular/不可执行一律 None 降级）+ 两个挂载点（`namespace_command` persistent 分支、`_acceptance_namespace_command` child `--` 前）additive ro-bind `/agent/bin/codex-code-mode-host` + 5 回归测试 | start6 rollouts 逐角色 ENOENT 签名（6/7/5/1）；宿主 release bin 目录仅 codex + codex-code-mode-host 两文件；developer 真实 namespace × 真实 bwrap 离线复现（pre-fix rc=127 ENOENT / post-fix 在位可执行）；全量 910 passed/1 skipped/293 subtests、compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 8 复测 PASS（20/20 探针 + 降级形状 + 账本 recovery strict replay 只读复验） |
 
 ## Independent test rounds
 
@@ -421,3 +421,25 @@
   0.147.0 release bin 目录是否还有其他伴生二进制——已核实仅两个文件）；离线以真实 bwrap 复现
   ENOENT → post-fix tool spawn 成功。
 - Outcome/next step: developer 缺陷修复循环（第五轮）→ Round 8 复测 → start7（最后 1 个 start）。
+
+### 2026-08-18 — start6 缺陷窄修复（第五轮）与 Round 8 复测 PASS — requirement developer/tester/main agent
+
+- Evidence: developer 修复——`_codex_companion_binary()` 从 resolved codex binary 所在 release
+  `bin/` 目录解析 `codex-code-mode-host`（lstat 拒符号链/非 regular 文件、`X_OK` 拒不可执行、
+  失败一律 `None` 降级为 pre-fix 形状），在两个 codex 挂载点 additive 追加 ro-bind
+  `/agent/bin/codex-code-mode-host`：persistent `namespace_command`（`--chdir` 插入块内）与
+  `_acceptance_namespace_command`（child 同样执行 tools，bind 置于 bwrap `--` 前）+ 5 回归测试
+  （四 persistent 角色与 child 的 bind 在位、缺伴生降级逐字同形、symlink/不可执行拒绑）。
+  真实 namespace × 真实 bwrap 离线复现：pre-fix `exec /agent/bin/codex-code-mode-host` rc=127
+  ENOENT（逐字对齐 start6 签名），post-fix 伴生二进制在 ns 内在位可执行。零模型调用、零
+  app-server、零 run/账本写入。全量 910 passed/1 skipped/293 subtests、compileall/ruff/
+  diff-check 全绿；主代理逐行复核 diff 并独立复跑通过。
+- Round 8 独立复测 PASS——实现审查（diff 恰 2 文件、纯新增、`use_bwrap=False` 早退路径未触碰、
+  companion 缺失时 surface 逐字节同形）+ 独立行为探针 20/20（真实构造 × 真实 bwrap：persistent
+  pre-fix ENOENT 复现/post-fix 在位可执行且 ELF magic 正确；child 同构；降级形状零 companion
+  token）+ 全量 910 绿 + 账本 hygiene（008 恰 14 事件，**recovery 追加的 start6
+  terminal_failure 经真实 `StartLedger` 只读 strict replay 复验有效**，start7 预算门解锁；
+  002/003/005 逐字节不变）。
+- Action/decision: start7 障碍清除。提交修复与文档后按 §4 冻结要素启动 start7（预算 2/3 已
+  消耗、1/3 剩余——最后 1 个 start）。
+- Outcome/next step: start7 执行与判定（真实 tool spawn 成功按 §4 归 start7 在线验证）。

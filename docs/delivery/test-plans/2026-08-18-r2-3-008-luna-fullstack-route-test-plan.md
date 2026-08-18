@@ -653,3 +653,55 @@
 - 结论：runtime/infrastructure，按 §4 R8 回 developer 窄修复（`namespace_command` 挂载
   codex-code-mode-host；宿主 release bin 目录已核实仅 codex + codex-code-mode-host 两文件）；
   复测后 start7（最后 1 start）。
+
+### Round 8（2026-08-18，start6 codex companion ENOENT 缺陷修复复测）
+
+- Stable state：`874304a` 之上未提交工作树——`modeling_team/runtimes/codex.py`（+44，纯新增）与新测试
+  `modeling_team/tests/test_r23008_codex_companion_mount.py`（5 tests）；主代理已独立复跑 910 绿并 review
+  diff。测试者为独立 requirement_tester，未参与修复；工作树保持未提交交主代理 review。零真实 run、零
+  真实账本写入、零模型调用、零 app-server/伴生二进制执行（探针在 bwrap 内仅 test -x/-e/head ELF
+  magic）；未读取/记录任何 `auth.json`/token。
+- 范围：start6 缺陷 5（codex 0.147.0 tool/shell 执行 spawn 伴生二进制 `codex-code-mode-host`
+  （argv[0]-相对解析），namespace 只挂 `codex` → 每个 tool call
+  `failed to spawn code-mode host … (os error 2)`，四角色 Blocked、runner 死锁 4h；2/3 消耗）修复的
+  独立复测——实现审查 + 真实 namespace 构造 × 真实 bwrap 行为探针 + 降级形状 + 全量回归 + 账本
+  hygiene（含 recovery 闭合复验）。
+- 实现审查（PASS）：diff 恰 2 文件，零 `backend/`/`frontend/`；产品面纯新增——`_codex_companion_binary()`
+  （解析 codex resolved 二进制同目录伴生文件；lstat 拒 symlink/非 regular，`os.access X_OK` 拒不可执行，
+  失败一律 `None` 降级）+ 两个挂载点的纯附加 bind：`namespace_command` persistent 分支（splice 进
+  `--chdir` 插入序列、codex bind 紧后）与 `_acceptance_namespace_command`（bwrap `--` 分隔符前）。
+  companion 缺失时两个 namespace surface 与 pre-fix 逐字节同形（分支加空列表）；`use_bwrap=False`
+  两条早退路径未触碰；MCP/语义/账本表面零改动。
+- 独立行为探针（PASS，一次性脚本已删除；20/20 断言，真实 `namespace_command`（coordinator，真实
+  codex/companion 宿主布局）+ 真实 `_acceptance_namespace_command`（child）× 真实 bwrap）：
+  - 宿主事实：companion 于真实 codex resolved bin 目录（`~/.codex/packages/standalone/releases/
+    0.147.0-x86_64-unknown-linux-musl/bin/`），regular+exec、非符号链——与 delivery record start6 条目
+    一致。
+  - persistent pre-fix 形状（post-fix mounts 精确移除 companion ro-bind 三元组）：ns 内 `test -e` 失败、
+    exec rc=127 "not found"（ENOENT）——独立复现 start6 签名；post-fix：companion 在 ns 内存在且
+    可执行（`test -x/-f`）、ELF magic `7f454c46`（execve 可装载）。
+  - child 同构：pre-fix ns 内不存在、post-fix 存在可执行；两挂载点 bind 均在 `--` 分隔符前。
+  - 降级形状：scratch bin 无 companion → helper `None`，persistent/child 两条 command 零 companion
+    token、codex bind 与 exec payload（`--` 后首参 `/agent/bin/codex`）不变——与 pre-fix surface 逐字节
+    同形；symlinked companion 与非可执行 companion 均被拒（`None`）。
+- 回归（PASS）：全量 `env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests/ -q` → **910 passed, 1 skipped, 293 subtests passed（45.55s）**（较 Round 7 增 5
+  tests 即修复新增）；`python -m compileall modeling_team/` OK；`ruff check …` All checks passed；
+  `git diff --check`/`--cached --check` 干净。
+- 账本/证据 hygiene（PASS）：`.r2-3-008-start-ledger.jsonl` **恰 14 事件**——6× `reservation` + 4×
+  `presemantic_release` + 2× `semantic_start` + 2× `terminal_failure`（start1–4 各
+  reservation+presemantic_release；start5/6 各 reservation+semantic_start+terminal_failure），与
+  delivery record 全历史逐条对应；**以真实 `StartLedger`（`resolve_ledger_config("R2.3-008")`）对
+  `_records()` 只读复验 `_validate_strict_replay` 接受**——Delivery-Agent recovery 追加的 start6
+  `terminal_failure`（`classification=runtime/infrastructure`、
+  `complete_modeling_quality_result=false`、`repair_baseline_hash=None`）闭合有效，start7 预算门解锁；
+  **2/3 已消耗、1 剩余**；`.r2-3-002/003/005-start-ledger.jsonl` sha256 与 Round 1–7 记录逐字节一致
+  （`bef7e8be…f632`/`af64172…0dcc`/`328d10d…9ae2`）；`git status --short workspaces/ backend/
+  frontend/` 为空。
+- 缺陷：无新增；start6 companion ENOENT 缺陷判 **FIXED**（pre-fix ns 内 ENOENT 复现 + post-fix
+  companion 在 ns 内存在/可执行/ELF 装载 + 降级同形三方闭合；真实 tool spawn 行为按 §4 归 start7 在线
+  验证）。
+- 结论：**Round 8 PASS——start7 障碍清除**。纯附加窄修复面与根因完全对应，全量 910 绿、compile/lint/
+  diff 全过、账本 recovery 闭合只读复验通过、历史证据零改动。测试角度建议主代理提交工作树后按 §4
+  冻结要素启动 start7（**最后 1 个 semantic start，预算 1/3 剩余**）。测试后删除全部临时探针与
+  `/tmp/r8probe`。
