@@ -480,3 +480,27 @@
   envelope/注册两校验点一致 + 通用指令钉死类型，R2.3-003 整数小节不动）；Round 9 复测。
   **start8 需要新的用户 budget 授权（首批 3 start 已耗尽），修复后向用户请求。**
 - Outcome/next step: developer 缺陷修复循环（第六轮）→ Round 9 复测 → 用户授权决策。
+
+### 2026-08-18 — start7 缺陷窄修复（第六轮）与 Round 9 复测 PASS — requirement developer/tester/main agent
+
+- Evidence: developer 修复——(1) `candidate_progress.py` 新增 `_validate_task_revision`（安全串
+  `[a-z][a-z0-9-]{1,127}`，与 `acceptance._safe_id` 逐字符同步）在 `_new_pending` latch pending
+  之前应用：非 003 task 的整数/非安全 revision 于**首次 delivery** 即获类型化
+  `FormalCandidateError`（含 pattern 与 R2.3-003 例外说明，in-run 可纠正），中性
+  `validate_formal_candidate`/`_validate_revision` 不变（Protocol 侧无 task 上下文的使用不受
+  影响）；(2) `runner.py` 以与相邻 `allow_post_receipt_revision` 相同的
+  `requirement_id=="R2.3-003"` 信号接线 `integer_revisions`；(3) `_revision_is_newer` 补非数字
+  字符串对严格字典序递增（数字串数值、int-int 不变）——安全串合同下 conflict→revision 流可
+  行的必要扩展；(4) 指令面：modeling instructions 通用小节一句话钉死字符串格式（003 小节
+  不动）+ `platform-neutral-candidate-authoring.json` 字段规格与 checklist 行。7 文件 +87/−15
+  + 新测试（6 tests/9 subtests）；全量 916 passed/1 skipped/302 subtests、compileall/ruff/
+  diff-check 全绿；主代理逐行复核 diff 并独立复跑通过。
+- Round 9 独立复测 PASS——实现审查（regex 与 `_safe_id` 逐字符一致、latch 前拒绝零状态残留、
+  `register_accepted_candidate` 本体未动未放宽、003 整数路径保留）+ 独立行为探针 36/36（整数
+  typed 首拒零 pending、`rev-1` 端到端通过 registration、003 开关接受整数、`_revision_is_newer`
+  全序规则含 `rev-2`→`rev-10` False 定义行为、16 类不安全值 typed 拒绝与 2/128 边界接受）+
+  错误路径（drain 捕获点与既有 envelope-invalid 同路径、latch 幂竭）+ 全量 916 绿 + 账本
+  hygiene（008 恰 17 事件、002/003/005 逐字节不变）。
+- Action/decision: defect 6 闭合。修复与文档提交后，**start8 需新的用户 budget 授权（首批
+  3 start 已耗尽），向用户请求**。
+- Outcome/next step: 用户授权决策 → （授权则）start8 真实 Luna formal run 与 §4 R1–R8 判定。

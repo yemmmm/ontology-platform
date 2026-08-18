@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -76,6 +77,37 @@ def _validate_revision(value: Any) -> None:
         (isinstance(value, int) and value > 0) or _nonempty_string(value)
     ):
         raise FormalCandidateError("formal candidate revision is invalid")
+
+
+# Task-neutral envelope shape.  The task-aware gate below must stay in sync
+# with ``acceptance.register_accepted_candidate``/``_safe_id``
+# (``[a-z][a-z0-9-]{1,127}``), which is where an integer revision killed a
+# complete formal run after gate acceptance (R2.3-008 start7).
+_SAFE_REVISION_RE = re.compile(r"[a-z][a-z0-9-]{1,127}")
+
+
+def _validate_task_revision(value: Any, *, integer_revisions: bool) -> None:
+    """Task-aware revision gate that keeps the envelope and registration aligned.
+
+    The neutral envelope validator stays task-agnostic (positive integer or
+    nonempty string) because Protocol-side asset validation has no task
+    context.  The formal progress gate, which the Runner constructs with the
+    run's task context, applies the decisive rule here: a non-R2.3-003 run
+    requires the exact safe stable string identifier that
+    ``register_accepted_candidate`` demands, so an Agent choosing an integer
+    gets a typed ``FormalCandidateError`` at the first delivery (before gate
+    acceptance) instead of a run-killing registration error afterwards.
+    R2.3-003 existing-scope runs keep the historical positive-integer envelope.
+    """
+
+    if integer_revisions:
+        return
+    if not isinstance(value, str) or not _SAFE_REVISION_RE.fullmatch(value):
+        raise FormalCandidateError(
+            "formal candidate revision must be a lowercase safe identifier "
+            "string matching [a-z][a-z0-9-]{1,127}; integer revisions are only "
+            "valid for R2.3-003 existing-scope tasks"
+        )
 
 
 def validate_formal_candidate(candidate: Any) -> dict[str, Any]:
@@ -288,9 +320,14 @@ class FormalCandidateProgress:
         clock: Any,
         timeout_seconds: float = 120.0,
         allow_post_receipt_revision: bool = False,
+        integer_revisions: bool = False,
     ):
         self.clock = clock
         self.timeout_seconds = float(timeout_seconds)
+        # R2.3-003 existing-scope runs use the strictly positive integer
+        # revision sequence; every other formal task must deliver the safe
+        # stable string identifier that candidate registration requires.
+        self._integer_revisions = bool(integer_revisions)
         # R2.3-003 existing-scope runs have one additional, explicitly
         # bounded transition: a receipt accepted before a live binding read
         # may be invalidated by a typed zero-mutation conflict.  R2.3-005 and
@@ -402,6 +439,9 @@ class FormalCandidateProgress:
         state: str,
     ) -> None:
         detached = validate_formal_candidate(candidate)
+        _validate_task_revision(
+            detached["candidate_revision"], integer_revisions=self._integer_revisions
+        )
         candidate_digest, semantic_digest = formal_candidate_digests(detached)
         text = getattr(delivery, "text", None)
         sender_id = getattr(delivery, "sender_id", None)
@@ -442,7 +482,13 @@ class FormalCandidateProgress:
 
     @staticmethod
     def _revision_is_newer(previous: Any, current: Any) -> bool:
-        """Require a strictly increasing revision without guessing ordering."""
+        """Require a strictly increasing revision without guessing ordering.
+
+        Positive integers (R2.3-003) and digit strings keep the numeric
+        comparison.  Safe identifier strings (every other formal task) order
+        deterministically by strict lexicographic increase; without this the
+        safe-string contract could never satisfy a conflict revision.
+        """
 
         if isinstance(previous, bool) or isinstance(current, bool):
             return False
@@ -451,6 +497,7 @@ class FormalCandidateProgress:
         if isinstance(previous, str) and isinstance(current, str):
             if previous.isdigit() and current.isdigit():
                 return int(current) > int(previous)
+            return current > previous
         return False
 
     def _post_receipt_conflict_envelope(self, delivery: Any, value: Any) -> bool:

@@ -723,3 +723,46 @@
   terminal_failure（platform-contract），strict replay 复验通过；17 事件，3/3 消耗。
 - 结论：按 §4 R8 回 developer 窄修复（统一 revision 类型合同）；**start8 需新用户 budget 授权**
   （首批 3 start 已耗尽），修复复测后向用户请求。
+
+### Round 9（2026-08-18，start7 candidate_revision 类型合同缺陷修复复测）
+
+- 测试对象：defect 6（platform-contract）修复 — 三方 candidate_revision 类型合同统一
+  （delivery gate / runner / acceptance registration）。工作区 `4e546e6` 未提交树
+  （7 个修改文件 + 新增 `modeling_team/tests/test_r23008_revision_type_contract.py`），
+  全部位于 `modeling_team/`；`acceptance.py` 未被修改。
+- 实现审查：`candidate_progress.py` 新增 `_SAFE_REVISION_RE = re.compile(r"[a-z][a-z0-9-]{1,127}")`
+  与 `_validate_task_revision`；`_new_pending` 在 latch `self.pending` 之前调用（拒绝时零状态残留）；
+  `integer_revisions: bool = False` 构造参数由 `runner.py` 以
+  `requirement_id == "R2.3-003"` 门控传入（与相邻 `allow_post_receipt_revision` 同信号）；
+  `_revision_is_newer` 扩展为字符串字典序严格递增（纯数字字符串数值比较）；003 整数语义保留。
+  经 grep+直接导入验证 `_SAFE_REVISION_RE.pattern` 与 `acceptance._safe_id`
+  （`re.fullmatch(r"[a-z][a-z0-9-]{1,127}", value)`, acceptance.py:359）逐字符一致。
+- 行为探针（独立脚本，非开发者测试复用；零真实运行/账本/模型调用）：
+  - (a) 非 003 门整数 revision（`1`）首次交付即抛 typed `FormalCandidateError`，
+    消息含 `[a-z][a-z0-9-]{1,127}` 与 `R2.3-003`；`progress.pending is None`、identity 未设。
+  - (b) 安全字符串 `rev-1` 通过 gate（`identity.candidate_revision == "rev-1"`）并端到端通过真实
+    `RunnerAcceptanceCarrier.register_accepted_candidate`（临时目录，已清理）；registration 仍拒绝
+    整数（`safe stable identifier`，AcceptanceContractError）— 上游未被放宽。
+  - (c) `integer_revisions=True` 接受整数 `1`（003 路径）；同一开关下安全字符串仍被 envelope 容忍（超集不回归）。
+  - (d) `_revision_is_newer`：字符串字典序严格递增（`rev-1`→`rev-2` True、`rev-2`→`rev-10`
+    False 即定义的字典序规则）；纯数字字符串数值比较（`9`→`10` True、`10`→`9` False）；
+    int-int 不变（1→2 True、2→2 False）；相等/不增拒绝；bool 与 str/int 混型一律 False。
+  - (e) 不安全值全部 typed 拒绝：`Rev-1`、`rev 1`、`""`、`"1"`、`rev_1`、单字符、129 字符、
+    128 字符（上界排他）、非 ASCII、`None`、`[]`、`{}`、`0`、`-1`、`1.5`、`True`；
+    边界 2 与 128 字符接受。36/36 断言通过（其中 regex 同步断言经直接 pattern 比较二次确认）。
+- 错误路径验证：`runner.py:3978-3982` drain 的 `except FormalCandidateError` 捕获点为 `4e546e6`
+  既有代码（与其他 malformed envelope 完全同路径）；行为探针经 minimal stub 调用真实
+  `TeamRunner._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")`，
+  确认状态 `TERMINAL_FAILURE_PENDING_CLEANUP` + evidence `formal-candidate-terminal-failure`
+  （classification/reason_code/cleanup_required）+ `record_terminal_failure` 幂竭（首 latch 生效）。
+  失败由 start7 的注册期无类型 run-kill 前移到首次交付的 typed 分类路径。
+- 回归：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. ... -m pytest modeling_team/tests/ -q`
+  → **916 passed / 1 skipped / 302 subtests passed**（45.63s，与 R8 基线一致）；
+  `compileall -q modeling_team/` OK；`ruff check modeling_team/ --config backend/pyproject.toml`
+  OK；`git diff --check` / `--cached --check` 干净。
+- 账本/证据卫生：`.r2-3-008-start-ledger.jsonl` 恰 17 事件
+  （7 reservation + 4 presemantic_release + 3 semantic_start + 3 terminal_failure，3/3 消耗）；
+  `.r2-3-002/003/005-start-ledger.jsonl` sha256 与冻结值逐一相等；`workspaces/ backend/ frontend/`
+  零修改；本轮探针临时文件（/tmp/r9probe）已删除。
+- 结论：defect 6 修复 **PASS**，无新缺陷。R2.3-008 到达"合同统一后可重新进入真实建模"状态；
+  **start8 需新用户 budget 授权**（首批 3 start 已耗尽）。建议 coordinator 提交本修复后向用户请求授权。

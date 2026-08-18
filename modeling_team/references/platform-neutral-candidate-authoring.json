@@ -26,6 +26,11 @@
       "constraints",
       "items"
     ],
+    "candidate_revision": {
+      "type": "string",
+      "pattern": "[a-z][a-z0-9-]{1,127}",
+      "rule": "Always a lowercase safe identifier string sent as a JSON string; a full revision uses the next strictly greater such string. Integer revisions are valid only for the R2.3-003 existing-scope task, whose own instruction pins the positive-integer sequence."
+    },
     "constraints": {
       "type": "list",
       "items": "non-empty string"
@@ -45,6 +50,7 @@
     }
   },
   "closure_checklist": [
+    "Keep candidate_revision a lowercase safe identifier string matching [a-z][a-z0-9-]{1,127}; never send it as a JSON number.",
     "Keep semantic integrity whole-candidate and immutable; Protocol owns dependency-ordered platform translation, per-stage atomicity, and receipt-bound generated IDs/IRIs.",
     "Keep candidate constraints semantic-only; do not put platform execution strategy, fresh Project/Ontology scope, Batch/Item envelopes, dry_run/apply_atomic commands, or a whole-candidate atomic-apply instruction into the candidate.",
     "Keep every item_id unique and every item_kind non-empty; semantic must be an object.",

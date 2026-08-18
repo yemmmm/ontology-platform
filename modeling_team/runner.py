@@ -572,6 +572,14 @@ class TeamRunner:
                     formal_contract is not None
                     and formal_contract.requirement_id == "R2.3-003"
                 ),
+                # R2.3-008 start7: keep the envelope gate aligned with
+                # candidate registration so an integer revision for any other
+                # task is a typed first-delivery rejection, not a post-gate
+                # run-killing registration error.
+                integer_revisions=(
+                    formal_contract is not None
+                    and formal_contract.requirement_id == "R2.3-003"
+                ),
             )
             if formal_acceptance
             else None

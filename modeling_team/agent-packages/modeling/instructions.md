@@ -87,7 +87,11 @@ For the ordinary unbound R2.3-005 path, first read the staged
 before the first candidate and again before every full revision. Apply its checklist to the exact
 current candidate; it is a scenario-neutral authoring contract, not a business model or an answer
 source. The neutral envelope has only `candidate_kind`, `candidate_revision`, `scope`,
-`constraints`, and `items`. `constraints` is a list of non-empty strings. Every item has a unique
+`constraints`, and `items`. `candidate_revision` is always a lowercase safe identifier string
+matching `[a-z][a-z0-9-]{1,127}`, sent as a JSON string (for example `r23008-candidate-1`), and a
+full revision uses the next strictly greater such string. An integer `candidate_revision` is
+rejected at the first candidate delivery for every task except R2.3-003, whose section below pins
+its positive-integer sequence. `constraints` is a list of non-empty strings. Every item has a unique
 non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
 `evidence_citations` field is a list of objects.
 

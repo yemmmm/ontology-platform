@@ -248,7 +248,9 @@ def test_runner_validator_allows_only_bound_post_receipt_revision_via_broker(
         }},
         call_receipt={"ordinal": 0},
     )
-    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
+    progress = FormalCandidateProgress(
+        clock=lambda: 0.0, allow_post_receipt_revision=True, integer_revisions=True
+    )
     runner._candidate_progress = progress
     broker = TeamTransportBroker(
         tmp_path / "broker",

@@ -32,7 +32,7 @@ from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 from modeling_team.runtimes.base import AgentState, RuntimeDelivery, RuntimeDispatchReceipt
 
 
-def _candidate(revision: int = 1) -> dict[str, object]:
+def _candidate(revision: object = "rev-1") -> dict[str, object]:
     return {
         "candidate_kind": FORMAL_CANDIDATE_KIND,
         "candidate_revision": revision,
@@ -131,7 +131,7 @@ def test_conflict_builder_binds_complete_formal_candidate() -> None:
         "conflict_detail",
     }
     assert value["status"] == "conflict"
-    assert value["candidate_revision"] == 1
+    assert value["candidate_revision"] == "rev-1"
 
     malformed = dict(_candidate())
     malformed["unexpected"] = True
@@ -201,7 +201,7 @@ def test_conflict_requires_full_revision_and_rebinds_pending_identity() -> None:
         modeling_agent_id="modeling", protocol_agent_id="protocol", run_id="run-1", protocol_thread_id="thread-1"
     ) == "conflict"
     assert progress.state == "awaiting_revision"
-    revised = _candidate(2)
+    revised = _candidate("rev-2")
     assert progress.observe_delivery(
         _delivery("modeling", "protocol", json.dumps(revised), "d2", reply_to="c1"),
         modeling_agent_id="modeling", protocol_agent_id="protocol", run_id="run-1", protocol_thread_id="thread-1"
@@ -229,8 +229,9 @@ def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revi
     progress = FormalCandidateProgress(
         clock=lambda: now[0],
         allow_post_receipt_revision=True,
+        integer_revisions=True,
     )
-    candidate = _candidate()
+    candidate = _candidate(1)
     candidate["items"][0]["item_id"] = "workflow-b"
     candidate["items"][0]["item_kind"] = "existing_entity_ref"
     candidate["items"][0]["semantic"] = {
@@ -358,8 +359,10 @@ def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_repl
         {("modeling", "protocol"), ("protocol", "modeling")},
         modeling_agent_id="modeling",
     )
-    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
-    candidate = _candidate()
+    progress = FormalCandidateProgress(
+        clock=lambda: 0.0, allow_post_receipt_revision=True, integer_revisions=True
+    )
+    candidate = _candidate(1)
     original = broker.send(
         "modeling", "protocol", json.dumps(candidate), expects_reply=True
     )
@@ -442,7 +445,9 @@ def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_repl
 def test_r23003_post_receipt_revision_rejects_same_revision_and_accepts_next() -> None:
     """A standalone conflict invalidates receipt-v1 and requires a strictly newer full candidate."""
 
-    progress = FormalCandidateProgress(clock=lambda: 0.0, allow_post_receipt_revision=True)
+    progress = FormalCandidateProgress(
+        clock=lambda: 0.0, allow_post_receipt_revision=True, integer_revisions=True
+    )
     candidate = _candidate(1)
     assert progress.observe_delivery(
         _delivery("modeling", "protocol", json.dumps(candidate), "delivery-6"),
@@ -624,7 +629,7 @@ def test_revision_timeout_ignores_late_complete_revision_and_conflict() -> None:
     now[0] = 120.0
     with pytest.raises(FormalCandidateProgressTimeout):
         progress.check_deadline()
-    revised = _candidate(2)
+    revised = _candidate("rev-2")
     revision = _delivery(
         "modeling",
         "protocol",
@@ -651,7 +656,7 @@ def test_terminal_failure_latch_ignores_all_late_progress() -> None:
     identity = progress.identity
     progress.mark_terminal_failure()
     conflict = build_candidate_conflict(candidate, "late", "late response")
-    revised = _candidate(2)
+    revised = _candidate("rev-2")
     assert _observe_late(progress, _receipt_for(progress), "late-receipt") is None
     assert _observe_late(progress, conflict, "late-conflict") is None
     assert progress.observe_delivery(
@@ -679,7 +684,7 @@ def test_formal_candidate_rejects_non_string_constraints() -> None:
 def test_redrive_retains_exact_candidate_bytes_and_runtime_attribution() -> None:
     original_text = (
         '{"candidate_kind":"platform-neutral-candidate-v2",'
-        '"candidate_revision":1,"scope":"工作流-é",'
+        '"candidate_revision":"rev-1","scope":"工作流-é",'
         '"constraints":["preserve explicit unknowns"],'
         '"items":[{"item_id":"workflow-1","item_kind":"entity",'
         '"semantic":{"label":"工作流"},'
@@ -856,7 +861,7 @@ def test_runner_quarantines_invalid_guidance_then_binds_revision_to_formal_confl
         for recipient, delivery in adapter.sent
     )
 
-    revised = _candidate(2)
+    revised = _candidate("rev-2")
     # After the formal conflict, the original request is no longer an active
     # revision slot; only the conflict delivery may be reversed by Modeling.
     with pytest.raises(RoutingError, match="active reversed"):
