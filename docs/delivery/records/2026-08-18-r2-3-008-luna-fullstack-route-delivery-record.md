@@ -504,3 +504,16 @@
 - Action/decision: defect 6 闭合。修复与文档提交后，**start8 需新的用户 budget 授权（首批
   3 start 已耗尽），向用户请求**。
 - Outcome/next step: 用户授权决策 → （授权则）start8 真实 Luna formal run 与 §4 R1–R8 判定。
+
+### 2026-08-18 — 用户决定：暂停，不追加 budget — user/main agent
+
+- Context: defect 6 修复提交 `622bf48`（Round 9 PASS）后，主代理就 start8 budget 授权询问
+  用户（首批 3 start 已耗尽：start5 proxy 超时 / start6 companion 缺失 / start7 revision 类型
+  合同，全部修复并复测 PASS）。
+- Action/decision: **用户选择"不再授权，暂停"**。R2.3-008 保持 in-progress：六个缺陷修复与
+  三轮真实运行证据完整保留；start7 已实证全栈 Luna 路由（六角色工具/transport 执行、完整
+  formal candidate 产出与 gate 接受），仅 candidate 注册层类型合同失败（已修复未在线验证）。
+  不启动 start8，不做任何进一步真实运行/账本写入。
+- Outcome/next step: 迭代暂停。恢复条件：用户明确追加 budget 授权（账本
+  `authorize_budget`，增量 3）后，在修复后基线上启动 start8 并按测试计划 §4 R1–R8 完成路由/
+  终态判定。
