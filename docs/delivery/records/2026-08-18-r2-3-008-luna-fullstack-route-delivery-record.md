@@ -443,3 +443,40 @@
 - Action/decision: start7 障碍清除。提交修复与文档后按 §4 冻结要素启动 start7（预算 2/3 已
   消耗、1/3 剩余——最后 1 个 start）。
 - Outcome/next step: start7 执行与判定（真实 tool spawn 成功按 §4 归 start7 在线验证）。
+
+### 2026-08-18 — Round 3 start7：全链修复实证生效，candidate 注册层类型合同失败（defect 6）— main agent
+
+- Evidence: run `r23008-luna-20260818-start7`（stable state `e848999`）——freeze/reservation
+  01:09:25Z → **`semantic_start` 01:09:29Z（3/3 消耗，首批预算耗尽）**。**前五轮修复全部在线实证
+  生效**：零出站超时、六角色工具/transport 真实执行（deliveries 6、mcp-elicitations 9、
+  capability-calls、coordinator 协调回合），完整 formal candidate 于 01:10:40Z 通过 candidate
+  gate（`formal-candidate-progress.jsonl`：`candidate_revision: 1`、semantic/candidate digest
+  齐备，含 C→B→A 切片 entities/relations/explicit unknowns/consumer query 与 evidence
+  citations）。随后 runner.py:3161 `register_accepted_candidate` 以未类型化
+  TeamConfigurationError `accepted candidate_revision must be a safe stable identifier` 终止
+  整个运行（CLI exit 2）。
+- 根因（defect 6，三层合同不一致）：(a) envelope 校验
+  `candidate_progress._validate_revision`（candidate_progress.py:74）接受正整数**或**非空字符串；
+  (b) modeling 角色指令的 R2.3-003 专属小节（instructions.md:209 起，line 227）明确要求整数
+  JSON number（`initial 1 (not "1")`），而通用小节从未钉死类型、唯一示例
+  `platform-neutral-candidate-authoring.json:62` 是字符串 `"neutral-example-1"`；(c) 对非 003
+  task，`acceptance.py:1743` `_safe_id` 只接受小写字符串。Luna modeling 角色产出整数 `1`——
+  envelope 放行、candidate gate 通过，直到 acceptance 注册层才拒绝并以未类型化错误杀死整个
+  run（Agent 无 in-run 类型化纠正路径）。
+- 定层：**platform-contract**——确定性机械层自身的稳定标识符类型合同在两个校验点不一致，且
+  失败在 candidate 接受之后才 surfaced（正确行为应是 envelope 处类型化拒绝、Agent 可当轮
+  纠正，或两个校验点合同一致）。非 modeling-quality（通用指令未约束类型、008 逐字镜像 005
+  资产无类型规定）、非路由/运行时。
+- Cleanup：state `CLEANED`、acceptance aborted/`zero_child_residue`、`admin_key_revoked` +
+  `aggregate_keys_non_active`（全部 key non-active）、temp admin key revoke 复验 401。
+  `secret_audit match_count=3`（`private_credentials_destroyed=false`）：与 start1 观察项同形；
+  主代理 digest-only 扫描证实 run root 保留产物对 Host `auth.json` 全部值 **0 plaintext 命中**，
+  命中面为已 revoke 的 runtime 内部瞬态 key 面（bounded），记账为 cleanup 观察项。
+- 账本修复（Delivery-Agent recovery，同 start6 先例）：CLI 异常路径不写 terminal_failure，
+  以窄脚本（真实 `StartLedger` API、写前断言）追加恰一条 `terminal_failure`
+  （`platform-contract`、`complete_modeling_quality_result=false`），strict replay 复验通过。
+  账本 17 事件：**3/3 消耗，首批预算耗尽**。
+- Action/decision: 回 requirement_developer 窄修复 defect 6（统一 revision 类型合同：
+  envelope/注册两校验点一致 + 通用指令钉死类型，R2.3-003 整数小节不动）；Round 9 复测。
+  **start8 需要新的用户 budget 授权（首批 3 start 已耗尽），修复后向用户请求。**
+- Outcome/next step: developer 缺陷修复循环（第六轮）→ Round 9 复测 → 用户授权决策。

@@ -705,3 +705,21 @@
   diff 全过、账本 recovery 闭合只读复验通过、历史证据零改动。测试角度建议主代理提交工作树后按 §4
   冻结要素启动 start7（**最后 1 个 semantic start，预算 1/3 剩余**）。测试后删除全部临时探针与
   `/tmp/r8probe`。
+
+**start7（同日，Round 8 PASS 后）**：
+
+- Stable state：commit `e848999`（defect 5 修复 + Round 8 文档）。freeze/reservation 01:09:25Z →
+  **`semantic_start` 01:09:29Z——第三次消耗 semantic start（3/3，首批预算耗尽）**。
+- 结果：**全链修复实证生效 + candidate 注册层类型合同失败（defect 6）**——零出站超时，六角色
+  工具/transport 真实执行（defect 5 companion 修复在线实证：deliveries 6、elicitations 9、
+  capability calls），完整 formal candidate（整数 `candidate_revision: 1`）通过 candidate gate
+  后在 `register_accepted_candidate`（acceptance.py:1743 `_safe_id`，非 003 task 仅接受小写字符串）
+  以未类型化错误终止整个 run。根因为三层 revision 类型合同不一致（envelope 校验接受正整数或
+  字符串 / modeling 指令 R2.3-003 小节要求整数而通用小节无类型约束、示例为字符串 / 注册层仅
+  字符串）。定层 platform-contract。
+- Cleanup：state `CLEANED`、acceptance aborted/zero_child_residue、全部 key non-active、temp
+  key revoke 复验 401；`secret_audit match_count=3` 经 digest-only 扫描证实保留产物 0 个 Host
+  凭据 plaintext 命中（同 start1 观察项形态）。账本经 Delivery-Agent recovery 闭合
+  terminal_failure（platform-contract），strict replay 复验通过；17 事件，3/3 消耗。
+- 结论：按 §4 R8 回 developer 窄修复（统一 revision 类型合同）；**start8 需新用户 budget 授权**
+  （首批 3 start 已耗尽），修复复测后向用户请求。
