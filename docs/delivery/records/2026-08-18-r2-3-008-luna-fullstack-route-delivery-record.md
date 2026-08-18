@@ -286,7 +286,8 @@
 | 5 | `aee472b` | R5-D1 窄修复：`_seed_models_cache(home, model)` 参数化，child builtin 分支补种子调用（child 的 `thread/start` 发生在 `semantic_start` 后，命中竞态会实际消耗预算）+ 3 个 child 路径回归测试 | 全量 897 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 5 续 PASS；start4 实证 models refresh 不再运行 |
 
 | 6 | 工作树（本轮提交） | start4 protocol `ontology_platform` MCP ENOENT 根因修复：`backend/.venv/bin/python` 为 uv 绝对符号链（未版本化目标目录再符号链到版本化目录），protocol namespace 仅绑 fully-resolved 前缀，字面绝对目标在 bwrap 内悬空 → 0.147.0 required MCP spawn `execve` ENOENT 升级 `thread/start` 致命。修复 = `_protocol_interpreter_mounts()` 沿符号链绑定每个绝对目标解释器前缀于其自身路径（祖先 `--dir` 先行、基础树不重建、fully-resolved 绑定保留）+ 3 回归测试 | developer 真实 protocol config × 真实 bwrap 复现：pre-fix 逐字复现 start4 签名（`execvp … No such file or directory` + `-32603` 消息），post-fix `THREAD_START_OK` 四 MCP 全初始化；全量 900 passed/1 skipped/293 subtests；compileall/ruff/diff-check PASS；主代理独立复跑通过 | Round 6 复测 PASS（pre-fix 复现 + post-fix 恢复 + 宿主符号链事实三方闭合） |
-| 7 | 待修复 | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | developer 离线复现（真实宿主 env pre/post-fix env 形状 + in-bwrap 可见性探针，零模型调用零 chatgpt.com 接触）；主代理独立复跑全量 905 绿 | Round 7 复测 PASS（15/15 探针 + 泄漏面 + loopback 安全） |
+| 7 | `e2ad607` | start5 turn 层出站超时：`_minimal_codex_process_env` 显式最小 env 不含 host 代理变量（`http(s)_proxy=127.0.0.1:1080`），Host 网络禁止直连 chatgpt.com，codex `ReqwestDefault` 直连 → sampling/analytics/models 全部超时 → `llm-inactivity-timeout`。首次消耗 1/3 semantic start | developer 离线复现（真实宿主 env pre/post-fix env 形状 + in-bwrap 可见性探针，零模型调用零 chatgpt.com 接触）；主代理独立复跑全量 905 绿 | Round 7 复测 PASS（15/15 探针 + 泄漏面 + loopback 安全）；start6 实证零超时 |
+| 8 | 待修复 | start6 tool 执行层全阻断（defect 5）：codex 0.147.0 tool/shell 执行 spawn 伴生二进制 `codex-code-mode-host`，namespace 只挂 `codex` → 每 tool call ENOENT，四角色 Blocked，runner 协调死锁挂起 4h（SIGINT 终止）。第二次消耗 semantic start（2/3）。另发现 SIGINT cleanup 不记 terminal_failure 的账本闭合缺口（已以 Delivery-Agent recovery 窄脚本闭合） | start6 rollouts 逐角色 ENOENT 签名（6/7/5/1）；宿主 release bin 目录仅 codex + codex-code-mode-host 两文件；start6 零出站超时（defect 4 修复在线生效） | 待 developer 窄修复 + Round 8 复测 |
 
 ## Independent test rounds
 
@@ -389,3 +390,34 @@
 - Action/decision: start6 障碍清除。提交修复与文档后按 §4 冻结要素启动 start6（预算 1/3 已消耗、
   2/3 剩余）。
 - Outcome/next step: start6 执行与判定。
+
+### 2026-08-18 — Round 3 start6：proxy 修复实证生效，tool 执行层全阻断（defect 5）— main agent
+
+- Evidence: run `r23008-luna-20260818-start6`（stable state `e2ad607`）——freeze→reservation
+  20:50:03Z，**`semantic_start` 20:50:07Z（2/3 消耗）**。proxy 修复在线实证生效：四角色零
+  `request timed out`/`stream disconnected`（logs_2.sqlite 全角色 0 命中）、models GET 200 OK、
+  `codex_api::sse::responses` websocket 流事件持续到达、`turn/started` span `model=gpt-5.6-luna`
+  ——Round 7 记录的"残余 refresh timeout 观察项"按预判消失。
+- **新缺陷（defect 5）**：codex 0.147.0 tool/shell 执行需 spawn 伴生二进制 `codex-code-mode-host`，
+  runtime namespace 只挂载 `codex` 于 `/agent/bin/codex`，伴生二进制缺失 → namespace 内每个 tool
+  call 返回 `failed to spawn code-mode host /agent/bin/codex-code-mode-host: No such file or
+  directory (os error 2)`（session rollouts 逐角色命中：coordinator 6 / modeling 7 / protocol 5 /
+  acceptance 1）。四 persistent 角色均以 Blocked 终答，coordinator 协调死锁，runner 无 watchdog/
+  profile run-timeout，挂起 ~4 小时。
+- 处置：主代理 SIGINT 终止（00:51:10Z aborted.jsonl）→ graceful cleanup 完整（state `CLEANED`、
+  scope 删除零残留、runner 自建 key 自 revoke）；temp admin key revoked 复验 401。宿主侧事实：
+  伴生二进制存在于 `~/.codex/packages/standalone/releases/0.147.0-x86_64-unknown-linux-musl/bin/`
+  （codex 258MB + codex-code-mode-host 49MB，仅此两个文件）。
+- **账本修复（Delivery-Agent recovery）**：SIGINT 路径（CLI KeyboardInterrupt → `runner.cleanup`）
+  只清理资源不记 terminal_failure，而 `_reserve`（start_ledger.py:732-735）要求最新
+  `semantic_start` 闭合后才能 reserve 下一 start——start6 处于 unclosed 状态会阻塞 start7。主代理
+  以窄脚本（job tmp `close-start6-terminal-failure.py`，真实 `StartLedger` API，写前断言末事件
+  为 start6 `semantic_start`）追加恰一条 `terminal_failure`（`runtime/infrastructure`、
+  `complete_modeling_quality_result=false`、`repair_baseline_hash=null`、无 terminal_evidence——
+  逐字段镜像 start5 由 runner 写出的形状），strict replay 在写入时复验通过。账本现 14 事件：
+  2/3 消耗、1 剩余。
+- Action/decision: 定层 runtime/infrastructure，回 requirement_developer 窄修复
+  `namespace_command`：将 `codex-code-mode-host` 与 codex 同目录挂载到 `/agent/bin/`（并审计
+  0.147.0 release bin 目录是否还有其他伴生二进制——已核实仅两个文件）；离线以真实 bwrap 复现
+  ENOENT → post-fix tool spawn 成功。
+- Outcome/next step: developer 缺陷修复循环（第五轮）→ Round 8 复测 → start7（最后 1 个 start）。

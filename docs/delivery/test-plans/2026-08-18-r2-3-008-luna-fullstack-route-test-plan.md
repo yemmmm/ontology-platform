@@ -632,3 +632,24 @@
 - 结论：**Round 7 PASS——start6 障碍清除**。窄修复面（单 helper 6 键条件转发 + 测试）与根因对应，
   全量 905 绿、compile/lint/diff 全过、账本与历史证据零改动。测试角度建议主代理 review 后提交工作树、
   按 §4 冻结要素启动 start6（预算 2/3 剩余）。测试后删除全部临时探针与 `/tmp/r7probe`。
+
+**start6（同日，Round 7 PASS 后）**：
+
+- Stable state：commit `e2ad607`（proxy 修复 + Round 7 文档）。freeze → reservation 20:50:03Z →
+  **`semantic_start` 20:50:07Z——第二次消耗 semantic start（2/3）**。
+- 结果：**proxy 修复实证生效 + tool 执行层新缺陷（defect 5）**——四角色零
+  `request timed out`/`stream disconnected`（Round 6/7 记录的"残余 refresh timeout 观察项"按
+  Round 7 预判消失）、models GET 200 OK、`sse::responses` websocket 流事件持续、
+  `turn/started` span `model=gpt-5.6-luna`；但 codex 0.147.0 每个 tool/shell call 需 spawn 伴生
+  二进制 `codex-code-mode-host`，namespace 仅挂 `codex` → 全部 tool call 返回
+  `failed to spawn code-mode host /agent/bin/codex-code-mode-host: No such file or directory
+  (os error 2)`（rollouts 逐角色 6/7/5/1 命中），四角色 Blocked 终答，runner 无 watchdog 挂起
+  ~4h，主代理 SIGINT 终止。
+- Cleanup：SIGINT graceful cleanup 完整（state `CLEANED`、scope 删除零残留、runner key 自
+  revoke、temp key revoke 复验 401）。**账本闭合缺口**：SIGINT 路径不写 terminal_failure，而
+  `_reserve` 要求最新 semantic_start 闭合——主代理以窄恢复脚本（真实 `StartLedger` API、写前
+  断言、镜像 start5 事件形状）追加恰一条 `terminal_failure`（runtime/infrastructure），strict
+  replay 复验通过。账本 14 事件，2/3 消耗、1 剩余。
+- 结论：runtime/infrastructure，按 §4 R8 回 developer 窄修复（`namespace_command` 挂载
+  codex-code-mode-host；宿主 release bin 目录已核实仅 codex + codex-code-mode-host 两文件）；
+  复测后 start7（最后 1 start）。
