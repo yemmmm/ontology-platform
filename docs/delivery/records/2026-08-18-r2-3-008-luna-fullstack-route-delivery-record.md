@@ -572,3 +572,37 @@
   （background Host 经 FIFO 发送 grounded owner answer）；outer question 出现时由 Delivery Agent
   呈报用户（owner）决策，不由 Delivery Agent 代答业务语义。无代码缺陷需要修复循环。
 - Outcome/next step: start9（授权余量内，无需新授权）。
+
+### 2026-08-18/19 — Round 3 start9：FIFO outer 应答闭环实证 + protocol receipt 二次构建死锁（defect 7）— main agent/user
+
+- Evidence: run `r23008-luna-20260818-start9`（stable state `92ecf79`）——freeze 10:31:13Z → reservation →
+  **`semantic_start`（5/6 消耗，最后 1 剩余）**。启动命令追加 `--enable-outer-input-fifo`，
+  `control/outer-input.fifo` 应答通道在位。
+- **FIFO outer 应答机制闭环实证**：modeling 提出 2 个 grounded outer question——(1) B 消费 C 的哪个
+  版本（delivery-3/6）：用户经 AskUserQuestion 确认 **Version 2 / quality_rating**（与 R2.3-005 已接受
+  候选 `b-current-output → quality-rating-field` 一致）→ `owner-answer-delivery-1` 送达；(2) B 无分数
+  行为（delivery-8）：按 R2.3-005 已接受基线 owner answer 2 原文回传（不推断，preserve explicit
+  unknown）→ `owner-answer-delivery-2` 送达。modeling 随即交付**完整 formal candidate**
+  （`r23008-candidate-1`，defect 6 字符串 revision 合同在线生效），两项 owner answer 被引用为证据、
+  `unknown-b-no-score-behavior` 按 preserve-explicit-unknown 建模。start8 的死锁面（未回答 outer
+  question）被设计机制正确解除。
+- **新缺陷（defect 7）**：protocol 先以手写回复（delivery-11）应答 candidate，被 formal 验证拒绝
+  （invalid-response，quarantined、reply slot reopened、redrive 发出）；protocol 经 capability 构建
+  typed receipt **成功**（23:43:32Z，capability-calls.jsonl ok=true），5 秒后**再次调用**
+  `protocol_build_candidate_receipt` 被 runner 幂等拒绝（"typed candidate response was already
+  built"）——该可行动诊断被 capability 层故意 opaque 的 `-32001` 遮蔽（capability_mcp.py:580 注释
+  自认"Agent 须据以行动的诊断应走结构化 success path"）；protocol 将其解读为 platform barrier 未授权，
+  升级 cooperative issue-1（runtime_recovery、zero-mutation）并结束 turn，**未交付已持有的 receipt**。
+  主代理以 `issue_resolution` guidance 恢复运行（23:50:27Z），但 redrive turn 已随升级结束——runner
+  判 `candidate-redrive-exhausted`，**typed terminal failure（collaboration/routing）**，本条为 runner
+  自写（无需 recovery 脚本）。
+- Cleanup：state `CLEANED`、scope `deleted-empty`、residual 全零、acceptance aborted/
+  zero_child_residue、全部 key non-active；temp admin key `r23008-admin-key-9`（id `d4d2eb06…`）
+  revoke 复验 401；digest-only 扫描 782 保留文件对 host auth 值 **0 plaintext 命中**。账本 24 事件：
+  **5/6 消耗，1 剩余**。
+- 定层：**collaboration/routing**（runner 自分类）；根因面含一个可修的 platform-contract 窄缺口——
+  同一 candidate 的重复 receipt 构建请求（可由 runner 保留状态确定性重建、字节相同）被 opaque 拒绝
+  且无结构化诊断/幂等再取路径，导致 Agent 弃置已构建 receipt 并烧掉整个 run。
+- Action/decision: 回 requirement_developer 窄修复 defect 7（receipt 构建 capability 对重复请求的
+  幂等/结构化诊断面；不改变 transport 单次接受语义）；Round 10 复测后决定是否消耗最后 1 个 start。
+- Outcome/next step: developer 缺陷修复循环（第七轮）。

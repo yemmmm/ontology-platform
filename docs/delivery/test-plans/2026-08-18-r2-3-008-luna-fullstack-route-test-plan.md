@@ -786,3 +786,20 @@
   21 事件，4/6 消耗。
 - 结论：无代码缺陷；start9 追加 `--enable-outer-input-fifo`，outer question 出现时呈报用户
   （owner）决策，不代答业务语义。授权余量 2 start 内继续。
+
+**start9（2026-08-18/19，FIFO outer-input 首次启用）**：
+
+- Stable state：commit `92ecf79`。freeze 10:31:13Z → **`semantic_start`（5/6 消耗，1 剩余）**；
+  启动命令追加 `--enable-outer-input-fifo`。
+- 结果：**FIFO outer 应答闭环实证 + protocol receipt 二次构建死锁（defect 7）**——两个 outer
+  question（B 消费 C 版本→用户确认 Version 2/quality_rating；B 无分数行为→按 005 基线 owner answer
+  原文回传 preserve-explicit-unknown）均经 FIFO 送达并成为 candidate 证据；完整 formal candidate
+  `r23008-candidate-1` 过 gate。protocol 手写回复 delivery-11 被 formal 验证拒绝 → redrive；protocol
+  capability 构建 typed receipt 成功后 5s 二次调用被幂等拒绝（"typed candidate response was already
+  built"），可行动诊断被 opaque -32001 遮蔽 → protocol 升级 issue-1 并弃置已持有 receipt；
+  guidance 恢复后 redrive turn 已结束 → `candidate-redrive-exhausted` typed terminal failure
+  （collaboration/routing，runner 自写账本）。
+- Cleanup：state `CLEANED`、scope `deleted-empty`、residual 全零、key 全 non-active；temp key
+  revoke 复验 401；digest-only 扫描 782 文件 0 plaintext 命中。账本 24 事件，5/6 消耗。
+- 结论：FIFO 机制闭环（start8 死锁面解除）；defect 7 回 developer 窄修复（重复 receipt 构建的
+  幂等/结构化诊断面），Round 10 复测后决定最后 1 个 start。
