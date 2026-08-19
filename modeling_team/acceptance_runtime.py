@@ -378,6 +378,14 @@ _TOKEN_FIELDS = (
     "reasoningOutputTokens", "totalTokens", "modelContextWindow",
 )
 
+# Live calibration (r23009-luna-20260820-start2, cq-001 acceptance round): the
+# full live platform examiner drives the 19-tool read allowlist plus the typed
+# report submission and exhausted the previous 10-step cap on both the first
+# attempt and the single permitted identical-input retry (reason_code
+# ``runtime-budget``), while the source examiner passed unchanged.  The cap
+# bounds runaway children only; it is not an acceptance-quality gate.
+_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS = 20
+
 
 @dataclass
 class ExaminerRunMetrics:
@@ -849,7 +857,9 @@ class LeanExaminerRuntime:
                 except BaseException as exc:
                     self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
                     raise
-            platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=10)
+            platform_metrics = ExaminerRunMetrics(
+                "platform", max_inference_steps=_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS
+            )
             platform_retry_used = False
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
@@ -863,7 +873,9 @@ class LeanExaminerRuntime:
                     if not getattr(self, "_platform_retry_limit", 1) or platform_retry_used:
                         raise
                     platform_retry_used = True
-                    platform_metrics = ExaminerRunMetrics("platform", max_inference_steps=10)
+                    platform_metrics = ExaminerRunMetrics(
+                        "platform", max_inference_steps=_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS
+                    )
                     platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)
