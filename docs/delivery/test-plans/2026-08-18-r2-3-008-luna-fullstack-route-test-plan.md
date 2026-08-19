@@ -1008,3 +1008,18 @@
   subtests**（`env -u DEEPSEEK_API_KEY` 下 `test_deepseek_codex_runtime.py` 21/21 全过，
   证实 7 失败纯环境性）。
 - 结论：**PASS**。修复随本轮提交，start13 携带。
+
+### Round 16（start13 终局后，主代理直接验证——Round 16 预防 + defect 11 修复）
+
+- 触发一（预防）：start13 issue-1 证实 one-connected-binding 约束（start11 issue-1 已记录的 defect candidate）在建模表面上仍未 pin 而
+  复发——`hasKnownGap` 双实例 + required_path 引用 → `consumer-query-plan-invalid` 三连拒。
+- 触发二（修复）：start13 issue-3 证实 defect 11——typed conflict 的一次性回复槽被 modeling prose 提问（delivery-12）消耗后，
+  `transport_mcp.py` 拒绝一切对 delivery-11 的再次回复，`reopen_formal_reply_slot` 不覆盖 conflict 方向，bound revision 进程内不可达。
+- 修复面一：instructions.md + reference JSON pin "exactly one connected binding / one subject-object pair /
+  dedicated single-instance predicate"（`consumer_query_one_connected_binding` 规格 + checklist 行）；guidance 测试扩为 5。
+- 修复面二：`candidate_progress.py` observe_delivery 接受 standalone complete revision（awaiting_revision + candidate-shaped + 无 reply_to），
+  严格更新/digest 不同门不变；`test_r23008_nonjson_candidate_interim_messages.py` 扩为 5。
+- 验证：full suite **931 passed / 1 skipped / 302 subtests**（7 个 `DEEPSEEK_API_KEY` 环境性失败与代码无关，`env -u` 下该文件 21/21）。
+- live 佐证：start13 账本自闭合 typed collaboration/routing（`formal candidate progress exceeded 300s`），CLEANED，
+  capability audit 复原 -32001 真因 "typed candidate delivery_id is foreign or stale"。
+- 结论：**PASS**。修复与预防随本轮提交，供下一次授权批次携带。

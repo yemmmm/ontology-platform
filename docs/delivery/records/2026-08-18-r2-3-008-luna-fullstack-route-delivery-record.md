@@ -828,3 +828,37 @@
   children）；R2–R5 按 retryable-terminal-failure 条款评估——typed failure + 账本
   自闭合 + CLEANED = PASS；R6–R8 PASS。R1 留待 start13（第三批最后一个预授权 start），
   携带 defect-7/8/9/10 全部修复与 Round 12/13 预防指引。
+
+## 2026-08-19 — start13 终局：typed collaboration/routing terminal failure（defect 11：conflict 回复槽被中途消息消耗后 revision 不可达）+ Round 16 预防
+
+- **start13 过程**：初始候选 `r23008-candidate-1` 于 delivery-6 正常注册（defect-10 修复后无 prose 误杀）；三份完整候选（candidate-1/2/3）均被
+  `consumer-query-plan-invalid`（"required paths do not resolve to one connected candidate binding"）typed conflict 拒绝——`hasKnownGap` 谓词被两个
+  explicit unknown 各实例化一次，required_path 解析出两个 connected assignment 即歧义。此为 start11 issue-1 已记录但未在表面上 pin 的
+  约束复发（违反"已发现错误不得复发"指令的直接后果），issue-1 guidance 按 start11 已接受基线模式解决（专用单实例谓词 + 拆分查询）。
+- **issue-2（protocol）**：`protocol_build_candidate_receipt` 两次 `-32001`；capability audit（`evidence/capability-calls.jsonl`）复原真实原因为
+  "typed candidate delivery_id is foreign or stale"——candidate-4（delivery-15）reply_to 指向 delivery-13（protocol 手写 blocker 说明）而非
+  绑定的 typed conflict delivery-11，未注册为 revision。issue-2 guidance 指示 rebind 至 delivery-11。
+- **issue-3（modeling）与 defect 11（collaboration/routing）**：rebound revision 两次被 Team Transport 拒绝——delivery-11 的一次性回复槽已被
+  modeling 更早的 prose 提问（delivery-12）消耗（`transport_mcp.py:430-438` 要求 active slot；`reopen_formal_reply_slot` 仅覆盖
+  modeling→protocol 候选方向，无 conflict 槽 reopen 路径）。bound revision 在进程内不可达：无任何 active 槽可满足 revision matcher，
+  standalone 投递在当前代码下不注册且 capability 拒绝。issue-3 以 truthful terminal guidance 收尾（modeling/protocol 报 blocked、保留证据）；
+  issue 解冻后 300s candidate-progress 超时触发 → **typed terminal_failure（collaboration/routing）+ CLEANED + 账本自闭合**（37 事件），
+  无需 guarded recovery。
+- **defect 11 修复（developer 第十三轮）**：`candidate_progress.observe_delivery` 新增 standalone-revision 接受——state=awaiting_revision 时，
+  modeling→protocol、expects-reply、无 reply_to 且 candidate-shaped 的投递按 revision 处理（formal run 仅一条候选谱系，无歧义）；
+  严格更新 revision + digest 不同的 revision 门不变，非候选 standalone 文本维持 interim 忽略语义。这正是 start13 死锁的可交付逃生通道
+  （transport 无需改动：standalone 发送不占用槽位）。
+- **Round 16 预防（start13 issue-1 复发）**：instructions.md 增补"exactly one connected binding / one subject-object pair /
+  consumer-query-plan-invalid / dedicated single-instance predicate"段；reference `candidate_envelope.consumer_query_one_connected_binding`
+  规格 + checklist 行；`test_r23008_consumer_query_plan_guidance.py` 扩为 5 tests。
+- **测试**：`test_r23008_nonjson_candidate_interim_messages.py` 扩为 5 tests（+standalone revision 接受/门不变）；full suite
+  **931 passed / 1 skipped / 302 subtests**（仍 7 个 `DEEPSEEK_API_KEY` 环境性预存，`env -u` 下 21/21 全过）。
+- **密钥卫生**：gate temp key `r23008-start13-temp` 已 revoke（revoked_at 02:34:05Z）+ 401 验证；value 文件已删除；run root 789 文件扫描
+  0 真实命中（唯一 `sk-` 命中位于 provider 加密的 `reasoning.encrypted_content` blob 内，非明文密钥；无 Bearer/admin-env 命中）。
+- **start13 §4 R1–R8 判定**：R1 未达成（run 死于候选受理层，无 Examiner children）；R2（建模路由：候选注册/owner 答复/issue 协作正常
+  直到 defect 11）PASS、R3（协作/issue 路由：三个 issue 全部 typed 上报 + FIFO resolution + resume）PASS、R4（失败 typed 且可归因
+  ——capability audit 精确复原 -32001 真因）PASS、R5（确定性清理 + 账本自闭合）PASS；R6–R8（证据保留、无明文密钥、预算纪律）PASS。
+- **批次终局**：`r23008-budget-20260819-3` 三次授权 start（11/12/13）全部消耗：start11 typed platform-contract（defect 9）、
+  start12 typed modeling-quality（defect 10）、start13 typed collaboration/routing（defect 11）。R1（Luna 下两个 fresh Examiner children）
+  在本批次未 live 验证；R2–R8 在三次 run 中均 PASS。**无预授权 start 剩余**——后续任何 run 需用户显式授权，建议携带 defect-11 修复 +
+  Round 16 预防（均已随本轮提交）。

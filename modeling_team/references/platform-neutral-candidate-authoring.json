@@ -56,11 +56,16 @@
     "evidence_citations": {
       "type": "list",
       "items": "object"
+    },
+    "consumer_query_one_connected_binding": {
+      "type": "constraint",
+      "rule": "Every predicate named in consumer_query.semantic.required_paths is instantiated by exactly one relation (or fact) item in the whole candidate - one subject-object pair - so the query resolves to exactly one connected binding. A predicate instantiated on two different pairs (for example one generic hasKnownGap relation per explicit unknown) is ambiguous and is rejected with consumer-query-plan-invalid on every revision that keeps it in required_paths. Keep multi-instance predicates out of required_paths; give each explicit unknown a dedicated single-instance predicate referenced by its own consumer_query item, and when one query lists several paths their unique bindings must share a connected subject."
     }
   },
   "closure_checklist": [
     "Keep candidate_revision a lowercase safe identifier string matching [a-z][a-z0-9-]{1,127}; never send it as a JSON number.",
     "Keep every consumer_query required_paths element a bare predicate local name declared by a predicate item in the same candidate; never a full path expression or an IRI.",
+    "Keep every predicate named in consumer_query required_paths instantiated by exactly one relation (or fact) item - one subject-object pair - in the whole candidate; a predicate with two instances (for example a generic per-unknown predicate) never resolves and must be replaced by dedicated single-instance predicates.",
     "Give every shape path that a negative_probe relies on for rejection an explicit min_count (for example 1); a path without min_count never rejects a missing value.",
     "Keep semantic integrity whole-candidate and immutable; Protocol owns dependency-ordered platform translation, per-stage atomicity, and receipt-bound generated IDs/IRIs.",
     "Keep candidate constraints semantic-only; do not put platform execution strategy, fresh Project/Ontology scope, Batch/Item envelopes, dry_run/apply_atomic commands, or a whole-candidate atomic-apply instruction into the candidate.",

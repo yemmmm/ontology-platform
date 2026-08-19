@@ -42,6 +42,19 @@ class ConsumerQueryPlanGuidanceTests(unittest.TestCase):
         self.assertIn("internally inconsistent", text)
         self.assertIn('"min_count": 1', text)
 
+    def test_modeling_instructions_pin_one_connected_binding_for_queries(self) -> None:
+        """start13 issue-1: the uniqueness rule recurred undocumented on surfaces."""
+        text = " ".join(
+            (
+                self.root
+                / "modeling_team/agent-packages/modeling/instructions.md"
+            ).read_text(encoding="utf-8").split()
+        )
+        self.assertIn("exactly one connected binding", text)
+        self.assertIn("one subject-object pair", text)
+        self.assertIn("consumer-query-plan-invalid", text)
+        self.assertIn("dedicated single-instance predicate", text)
+
     def test_neutral_authoring_reference_pins_the_same_contract(self) -> None:
         reference = json.loads(
             (
@@ -56,10 +69,15 @@ class ConsumerQueryPlanGuidanceTests(unittest.TestCase):
         min_count_rule = reference["candidate_envelope"]["shape_path_min_count"]
         self.assertIn("no presence constraint", min_count_rule["rule"])
         self.assertIn("internally inconsistent", min_count_rule["rule"])
+        binding_rule = reference["candidate_envelope"]["consumer_query_one_connected_binding"]
+        self.assertIn("one subject-object pair", binding_rule["rule"])
+        self.assertIn("consumer-query-plan-invalid", binding_rule["rule"])
+        self.assertIn("dedicated single-instance predicate", binding_rule["rule"])
         checklist_text = "\n".join(reference["closure_checklist"])
         self.assertIn("bare predicate local name", checklist_text)
         self.assertIn("never a full path expression or an IRI", checklist_text)
         self.assertIn("explicit min_count", checklist_text)
+        self.assertIn("exactly one relation (or fact) item", checklist_text)
         # The example itself must not repeat the start11 inconsistency: the
         # shape path its own negative_probe relies on carries min_count.
         items = reference["example_candidate"]["items"]

@@ -102,6 +102,16 @@ equal to the declared predicate local name of a `predicate` item in the same can
 illegal retrieval plan is rejected before the candidate receipt is built and requires exactly one
 complete revised candidate with corrected `required_paths`.
 
+A predicate listed in `consumer_query.semantic.required_paths` must resolve to exactly one
+connected binding across the whole candidate: it is instantiated by exactly one relation (or
+fact) item — one subject-object pair. A generic predicate attached to two different pairs (for
+example one `hasKnownGap` relation per explicit unknown) is ambiguous, and every complete
+revision that keeps it in `required_paths` is rejected again with
+`consumer-query-plan-invalid`. Keep multi-instance predicates out of `required_paths` and give
+each explicit unknown its own dedicated single-instance predicate, referenced by its own
+consumer_query item; when one query lists several paths, their unique bindings must share a
+connected subject.
+
 A `shape` path that must be present on every instance of its target class declares
 `"min_count": 1`; a path without `min_count` imposes no presence constraint, so an entity that
 lacks that predicate still validates against the shape. A `negative_probe` whose `expected_result`

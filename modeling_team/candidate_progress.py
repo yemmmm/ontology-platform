@@ -557,6 +557,28 @@ class FormalCandidateProgress:
             and expects_reply is True
             and reply_to == self.pending.conflict_delivery_id
         )
+        # start13 defect: the conflict's one-shot reply slot may already be
+        # consumed by an earlier Modeling prose reply to that same conflict,
+        # after which Team Transport rejects every further reversed send and
+        # the bound revision can never be delivered.  A standalone complete
+        # revision (no reply binding) then remains the only deliverable form;
+        # in a formal run there is exactly one candidate lineage, so a
+        # candidate-shaped strictly-newer standalone delivery while a revision
+        # is awaited is unambiguous and is accepted as that revision.  The
+        # revision gates below (strictly newer revision, distinct digest)
+        # still apply unchanged, and non-candidate standalone text keeps the
+        # interim-message ignore semantics.
+        standalone_revision = (
+            self.pending is not None
+            and self.pending.state == "awaiting_revision"
+            and sender_id == modeling_agent_id
+            and recipient_id == protocol_agent_id
+            and expects_reply is True
+            and reply_to is None
+            and value is not None
+            and self._is_candidate_like(value)
+        )
+        revision = revision or standalone_revision
         if (initial and self.pending is None) or revision:
             if value is None or not self._is_candidate_like(value):
                 # A Modeling->Protocol interim message (start12: prose status

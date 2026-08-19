@@ -93,3 +93,47 @@ def test_non_object_json_on_initial_slot_is_also_interim() -> None:
     assert _observe(
         progress, _delivery("modeling", "protocol", json.dumps(_candidate()), "d1")
     ) == "candidate"
+
+
+def test_standalone_revision_accepted_when_conflict_slot_is_consumed() -> None:
+    """start13 defect 11: the bound conflict reply slot can be undeliverable.
+
+    Modeling's prose question replying to the typed conflict consumes the
+    conflict's one-shot reply slot, after which Team Transport rejects every
+    further reversed send.  The complete strictly-newer standalone revision
+    must still register (and rebind pending identity) so the receipt gate can
+    proceed; prose standalone text keeps interim ignore semantics.
+    """
+    progress = FormalCandidateProgress(clock=lambda: 0.0)
+    candidate = _candidate()
+    assert _observe(
+        progress, _delivery("modeling", "protocol", json.dumps(candidate), "d1")
+    ) == "candidate"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    conflict = build_candidate_conflict(candidate, "unsupported", "relation is not declared")
+    assert _observe(
+        progress, _delivery("protocol", "modeling", json.dumps(conflict), "c1", reply_to="d1")
+    ) == "conflict"
+    assert progress.state == "awaiting_revision"
+    # The prose question consumed the conflict slot (transport-level fact);
+    # the rebound standalone complete revision still registers.
+    revised = _candidate("rev-2")
+    assert _observe(
+        progress, _delivery("modeling", "protocol", json.dumps(revised), "d2")
+    ) == "revision"
+    assert progress.identity is not None
+    assert progress.identity.original_delivery_id == "d2"
+    assert progress.state == "awaiting_receipt"
+
+
+def test_standalone_revision_still_enforces_newer_revision_and_distinct_digest() -> None:
+    progress = FormalCandidateProgress(clock=lambda: 0.0)
+    candidate = _candidate()
+    _observe(progress, _delivery("modeling", "protocol", json.dumps(candidate), "d1"))
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    conflict = build_candidate_conflict(candidate, "unsupported", "relation is not declared")
+    _observe(progress, _delivery("protocol", "modeling", json.dumps(conflict), "c1", reply_to="d1"))
+    import pytest
+    from modeling_team.candidate_progress import FormalCandidateError
+    with pytest.raises(FormalCandidateError, match="strictly newer"):
+        _observe(progress, _delivery("modeling", "protocol", json.dumps(_candidate()), "d2"))
