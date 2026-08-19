@@ -711,3 +711,33 @@
   禁词扫描通过；003 段未触碰。
 - **Decision**：随本轮提交后立即执行 start11（第三批第 1 个 start），携带生效后的 agent 包，
   冻结纪律 + `--enable-outer-input-fifo` + watchdog。
+
+## 2026-08-19 — start11 live：issue-3/issue-4（shape min_count 内部不一致）+ Round 13 预防指引
+
+- **start11 进展（live）**：首个在 Luna 下被接受的 formal candidate（`r23008-candidate-3`，
+  digest `2919370e…`，经两轮 host guidance 的 conflict/revision 循环，issue-1/issue-2 已解决）。
+  class/property/entity/relation/shape 各 stage dry_run+apply 原子完成。
+- **issue-3（protocol, protocol_guidance）**：负探针 `probe-workflow-role`（Workflow 空值实例）
+  dry_run 返回 `validated` 而非 rejected。Owner 对照平台证据核实：applied `WorkflowShape`
+  （batch `a3164b98…`）仅含 `{"path_id":"workflowRole"}`、无 `min_count` —— 平台行为正确
+  （无 min_count 即无 presence 约束），缺约束源自候选本身。`retrieval_index_failed` 为已知
+  预警（R2.3-005 全部已接受 run 均出现，`write_applied=true`、无 stale manifest），非阻塞。
+  以 FIFO guidance 解决。
+- **issue-4（protocol, protocol_guidance）**：接受后候选不可变（post-receipt revision 仅
+  R2.3-003 启用，runner.py:575），protocol 正确拒绝 hand-author 修复。Owner 核实候选
+  `r23008-candidate-3` 自身即内部不一致：其 shape 路径无 `min_count`，而其 `negative_probe`
+  期望 `rejected` —— 接受后在运行内不可修复。Guidance：如实记录探针真实结果（validated，
+  不得伪造 rejection、不得改动 expected_result），继续其余 required gates（readback/validation/
+  reasoning/governed retrieval），由 native verifier 与 Acceptance 阶段裁决；若 verifier/acceptance
+  给出 typed failure 则按正常终态路径收尾，同一不一致不再重复升级。
+- **预防面真空（第二次同类）**：modeling 可读面同样从未写明 shape `min_count` 契约，且中性
+  reference 的示例本身复刻了同一不一致（shape 路径无 min_count + probe 期望 rejected）。
+- **修复（Round 13，developer 第十轮）**：`instructions.md` +8 行（min_count 语义、探针约束、
+  内部不一致后果）；reference JSON `shape_path_min_count` 规格 + checklist 行 + 示例
+  `path-neutral-label` 补 `"min_count": 1`（+7/-1）；`test_r23008_consumer_query_plan_guidance.py`
+  扩为 4 tests（含"示例不得复刻 start11 不一致"断言）。
+- **验证**：目标模块 13/13 通过；full suite 930 passed / 1 skipped / 302 subtests（7 个
+  `test_deepseek_codex_runtime` 失败为环境性预存——本 shell 设有 `DEEPSEEK_API_KEY`，resolver
+  优先 env 导致 fallback-file 拒绝路径不触发；git stash 后在 HEAD 上复现同样 7 failed，与本轮
+  改动无关）；scenario-neutral 禁词扫描通过。
+- **待 start11 终局后补**：终局判定、R1–R8 评估、key 回收、账本核对与提交。

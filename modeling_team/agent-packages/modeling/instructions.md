@@ -102,6 +102,14 @@ equal to the declared predicate local name of a `predicate` item in the same can
 illegal retrieval plan is rejected before the candidate receipt is built and requires exactly one
 complete revised candidate with corrected `required_paths`.
 
+A `shape` path that must be present on every instance of its target class declares
+`"min_count": 1`; a path without `min_count` imposes no presence constraint, so an entity that
+lacks that predicate still validates against the shape. A `negative_probe` whose `expected_result`
+is `rejected` for a missing value must reference a shape path that declares `min_count` (the
+accepted baseline pattern gives every required shape path `"min_count": 1`). A candidate whose
+probe expects rejection while its shape path omits `min_count` is internally inconsistent: after
+acceptance the candidate is immutable, so its own validation gates can never be satisfied.
+
 Any item that Protocol will materialize as `create_entity` must carry its label as semantic
 content. For an ordinary `entity` or an `explicit_unknown`, provide a non-empty,
 source-grounded `semantic.values.label`; when a `negative_probe` includes a materialized

@@ -944,3 +944,28 @@
   002/003/005 sha256 与冻结值一致；`workspaces/ backend/ frontend/` 零修改；本轮无探针临时文件。
 - 结论：预防指引 **PASS**，无缺陷。指引 + R11 门禁 + 结构化诊断构成 defect 8 的完整防线；
   修复与指引可一并提交。新授权 3 start 可用于 start11（建议携带本轮指引生效后的 agent 包）。
+
+### Round 13（start11 live 期间，主代理直接验证——预防指引扩展：shape min_count）
+
+- 触发：start11 issue-3/issue-4 实证——已接受候选 `r23008-candidate-3` 的 shape 路径
+  `path-workflow-role` 无 `min_count`，其 `negative_probe`（期望 `rejected`）被平台正确
+  `validated`；接受后不可变，运行内不可修复（post-receipt revision 仅 R2.3-003，runner.py:575）。
+  与 start10 同构的预防面真空：modeling 可读面从未写明该契约，且中性 reference 示例本身
+  复刻了同一不一致。
+- 变更面：`modeling_team/agent-packages/modeling/instructions.md`（+8 行 envelope 约束区、
+  003 段外）；`modeling_team/references/platform-neutral-candidate-authoring.json`
+  （`shape_path_min_count` 规格 + closure_checklist 一行 + 示例路径补 `"min_count": 1`，
+  +7/-1）；`test_r23008_consumer_query_plan_guidance.py` 扩为 4 tests（新增 instructions 断言、
+  reference 规格断言、"示例 shape 探针路径必须带 min_count"结构断言）。
+- 契约一致性核对：`min_count` 语义与 `modeling-batch-item-contract.json:247`（integer、
+  optional、compiler 强制 integer）一致；"无 min_count 即无 presence 约束"与平台实测
+  （batch `a3164b98…` applied shape + 探针 dry_run validated）一致；探针期望 rejected 需
+  min_count 与 005 已接受基线（全部路径 min_count:1）一致。
+- 中性未破坏：reference 增量仅中性词；禁词扫描（grep dify|workflow-|quality_rating|
+  quality_score|luna）仅命中 instructions.md 既有的 "business" 单词与
+  `currentlyConsumesOutput`（R12 已有先例）。
+- 回归：目标模块 13/13；full suite **930 passed / 1 skipped / 302 subtests**。7 个
+  `test_deepseek_codex_runtime.py` 失败为环境性预存（本 shell `DEEPSEEK_API_KEY=1` 命中，
+  resolver 优先 env，fallback 拒绝路径不触发；`git stash` 后 HEAD 同样 7 failed，证实与本轮
+  无关；live run 命令一贯 `env -u DEEPSEEK_API_KEY`，不受影响）。
+- 结论：**PASS**。预防指引随本轮提交，供 start12+（如启动）携带。
