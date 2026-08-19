@@ -270,8 +270,22 @@
      last_responsible_agent, feedback_counts})`。
   3. **S/I 类**：与现状相同（presemantic release / `runtime/infrastructure`），reason_code
      前缀 `startup-config:` / `internal-invariant:` 供事后归因。
-- `terminal_failure classification is immutable`（start_ledger.py:442-443）与 budget 消耗
-  逻辑不变；预期效果是 terminal_failure 事件总数显著下降（多数 run 走 Agent 终态报告）。
+- `terminal_failure classification is immutable`（start_ledger.py:442-443）保持；预期效果是
+  terminal_failure 事件总数显著下降（多数 run 走 Agent 终态报告）。
+- **预算退款（用户 2026-08-19 确认"自修复 run 不计预算"）**：预算在
+  `mark_semantic_start` 记 `semantic_start` 事件时消耗（`start_ledger.py:353-385`），事件
+  不可变。实现为**新事件 `budget_refund`**（不删除/改写历史）：
+  - 追加条件：目标 run 是最近的 `semantic_start`，且其终局记录为以下之一——
+    (a) `terminal_failure(classification="collaboration/routing",
+    terminal_evidence.reason="run-fallback-timeout")`（T3）；(b) 新增终局标记事件
+    `terminal_settlement(outcome="agent_blocked")`（Agent 终态报告 blocked 目前不写任何
+    账本事件，需在 run cleanup 时补记；`outcome="agent_completed"` 同事件类型记录但
+    **不**退款）。
+  - 不可变、每 run 至多一次、必须在终局记录之后追加；`_start_cap` replay 对每个有效
+    `budget_refund` 使可用 start 数 +1。
+  - 不退款：Agent completed、I/S 类致命、其余失败分类的 run（沿用现行语义）。
+  - 这是用户显式选择的范围扩展（超出"仅改失败处置"的最小面），涉及 `_start_cap`
+    replay 与 strict-sequence 校验的对应扩展；classification 集合本身仍不变。
 - `_latch_formal_candidate_failure` 保留但调用点白名单化（见验收标准 2）。
 
 ## 7. 测试迁移（约 60 处 raise 断言；18 个文件共约 110 处 pytest.raises）
@@ -305,7 +319,9 @@
    注册侧联动成套实施）；A 类同步站点升级 error 载荷结构。turn-binding/platform-gate FS
    守卫/mutation 已归 I 类保持致命，不在本步改动。
 4. 兜底分层 T1/T2/T3 + profile 参数。
-5. 白名单守恒测试 + 既有测试改写。
+5. 预算退款：`terminal_settlement` 终局标记 + `budget_refund` 事件 + `_start_cap` replay
+   扩展（用户 2026-08-19 确认的范围扩展）。
+6. 白名单守恒测试 + 既有测试改写。
 每步独立可交付、全绿后进入下一步（遵守 L0：进入真实建模早、修复最窄失败层）。
 
 ## 9. 验收标准

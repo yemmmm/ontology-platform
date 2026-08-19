@@ -103,10 +103,14 @@
 
 1. Agent 自愈后终态报告（completed）走既有 settlement 路径，分类正确。
 2. Agent 报告 blocked 的合法出口：settlement 记录 blocked、run 正常清理、无
-   terminal_failure。
+   terminal_failure；cleanup 时补记 `terminal_settlement(outcome="agent_blocked")`。
 3. T3 终局账本事件与 terminal_evidence 完整；classification 集合与
    `start_ledger.py:18/420` 一致（`_RETRYABLE` 不变）。
-4. 全量回归：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m
+4. **预算退款（用户确认"自修复 run 不计预算"）**：agent_blocked 与 T3
+   run-fallback-timeout 终局后可追加一次 `budget_refund`，`_start_cap` 回放 +1；退款
+   不可变、每 run 至多一次、必须紧跟终局记录；agent_completed / I 类致命 / 其他失败
+   分类不产生退款；strict-sequence replay 对含退款序列的重放校验通过。
+5. 全量回归：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m
    pytest modeling_team/tests -q` 通过数 ≥ 现状基线（938 passed / 1 skipped / 302 subtests，
    2026-08-19 plan review 实测）。
 
