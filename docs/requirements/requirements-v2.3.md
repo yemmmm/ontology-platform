@@ -71,7 +71,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已交付。完整 N=2 live-124 PASS：CQ-001/CQ-002 均 PASS,current=true,usable=true；六角色 fresh/typed/metrics complete 且全部有真实 tokenUsage；key exactly-once、post-revoke 401、cleanup 全 true、model/ledger 不变。证据：workspaces/modeling-acceptance/r23006-retained-n2-live-124/r23006-retained-acceptance.json` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-008 | Luna 全栈路由/终态验证（复用 R2.3-005 切片） | P0 | `Design-reviewed` | R2.3-007 路由与订阅认证交付；R2.3-005 formal 建模/验收基线 |
-| R2.3-009 | Modeling Team 校验降级与 Agent 自修复 | P0 | `实施中` | R2.3-008 三次 typed 失败证据（defect 9/10/11） |
+| R2.3-009 | Modeling Team 校验降级与 Agent 自修复 | P0 | `已交付（R8 演练待授权）` | R2.3-008 三次 typed 失败证据（defect 9/10/11） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -3694,7 +3694,7 @@ B3 合同不能选择 model profile。缺少一个可合法消耗建模 start �
 
 ## R2.3-009 Modeling Team 校验降级与 Agent 自修复
 
-当前状态：`已确认（用户 2026-08-19 确认全部核心决策，设计/测试计划已过 plan review，进入实施）`
+当前状态：`已交付（R1–R7 独立 PASS 2026-08-20，commits 8c78308..9dfaec7；R8 真实运行演练待用户授权 start 预算）`
 
 ### 背景与问题
 

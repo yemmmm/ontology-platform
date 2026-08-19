@@ -1,7 +1,7 @@
 # R2.3-009 Modeling Team 校验降级与 Agent 自修复 — 设计文档
 
 - 日期：2026-08-19
-- 状态：Design（planner 产出，待 review；未实现任何产品代码）
+- 状态：Implemented（commits `8c78308..9dfaec7`；R1–R7 独立 PASS 2026-08-20，R8 真实运行演练待授权。交付记录见 `docs/delivery/records/2026-08-19-r2-3-009-gate-relaxation-delivery-record.md`）
 - 需求来源：`docs/requirements/requirements-v2.3.md` R2.3-009（用户 2026-08-19 确认的 6 条核心决策为权威合同）
 - 失败证据：`docs/delivery/records/2026-08-18-r2-3-008-luna-fullstack-route-delivery-record.md` start11/12/13（defect 9/10/11，commits 4711240 / c0fdc14 / a9fac61 已做窄修复，本设计将其哲学一般化）
 

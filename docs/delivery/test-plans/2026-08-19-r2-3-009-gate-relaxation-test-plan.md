@@ -135,3 +135,117 @@
 - 守恒测试固化（防回潮）；
 - 既有 defect 9/10/11 回归测试全部保持通过；
 - 无测试文件/临时脚本遗留（清理规则）。
+
+---
+
+## 独立测试轮次记录（requirement_tester）
+
+### 第 1 轮 — 2026-08-20（R1–R7 独立复核）
+
+- 被测版本：`main` @ `9dfaec7`（实现区间 `8c78308..9dfaec7`，6 commits），worktree 干净（除本测试计划与需求文档的既有未提交修改）。
+- 方法：先逐轮审读实现（runner.py / acceptance.py / candidate_progress.py / start_ledger.py / transport_mcp.py / protocol_retrieval_gate.py / contracts.py 的 diff 与现行代码），再以独立编写的临时测试文件
+  `modeling_team/tests/test_r23009_independent_round1_tmp.py`（25 个用例，fake adapter / 单元级）执行验证；该文件按清理规则在轮次结束后删除，断言要点记录于此。
+- 命令：`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest modeling_team/tests -q`（仓库根）。
+
+#### R1 静态守恒 — PASS
+
+- 独立 AST 扫描 `runner.py`：`_latch_formal_candidate_failure(` 共 8 个调用点，全部字面量参数；
+  `classification:reason` 对与 `_FORMAL_FAILURE_LATCH_WHITELIST`（7 项，4756/4899 共用 `platform-contract:internal-invariant:turn-binding-missing`）双向精确相等，无未登记站点、无白名单残留项。
+- 非 T3、非 runtime/infrastructure 的 5 个条目均带 `internal-invariant:` 前缀（runner.py:3417-3428、各调用点 3168/3192/3233/3291/4756/4899）。
+- `protocol_retrieval_gate._validate_response_quality`（449-516）AST 与文本级均无 `raise`；返回 `warnings_observed` 列表。
+- S 类站点不经 latch：启动失败走 `release_presemantic(..., "startup-config: startup failure before business delivery")`（runner.py:1633-1636），前缀存在；`contracts.py` 新参数校验仍抛 `TeamConfigurationError`（独立用例验证 `run_fallback_timeout_seconds: 0` 被拒）。
+
+#### R2 C 类 record-only — PASS
+
+- 独立用例：`result_status != matched` + `recall.completeness != complete` + `vector_index_missing` 警告同页出现时，
+  `validate_ordinary_retrieval` 正常返回 receipt（链不阻断），`receipt["warnings_observed"]` 含三类警告字符串；
+  且 `evidence/retrieval-quality-warnings.jsonl` 追加 `{event: warnings_observed, ...}`（acceptance.py:1957-1992）。
+- 对照组：游标链结构违约（非 terminal cursor 链）仍以 `AcceptanceContractError(data={reason: "ordinary_retrieval_incomplete", code: "ordinary-retrieval-incomplete", detail})` typed 返还 protocol Agent，run 不终止。
+- defect 9 既有回归（test_r23008_context_truncated_pagination.py 3 例）在全量中通过。
+
+#### R3 B 类 observed-issue + typed conflict — PASS
+
+- 非严格更新 revision（冲突后重发同 revision/digest 候选）：revision 门仍拒绝（progress 留在 `awaiting_revision`），
+  但处置为 evidence + 反馈：`observed-issue`（code=revision-not-strictly-newer、responsible_agent=modeling、`original_text` 为原始投递字节）；
+  `deliveries` evidence 中原始文本的序号先于判定事件（先持久化后判定，`_record_observed_issue` runner.py:3458-3476）；
+  `candidate-conflict` 投递到达 modeling（notice 含 conflict_code/conflict_detail/remediation）；run 未 latch。
+- 修复路径实证（defect 11 形态）：违约投递消耗了 conflict 的一次性回复槽后，合规 rev-2 只能 standalone 投递并被接受
+  （identity 前进到 rev-2，无终态、无 latch）——standalone-revision 语义在独立用例中复现。
+- reopen 拒绝（monkeypatch `reopen_formal_reply_slot` 抛 `RoutingError`）：`formal-reply-slot-reopen-rejected` observed-issue +
+  `candidate-conflict` 投递给 **protocol**（责任方为回执行为方），run 继续。
+- 注：字面同候选重发先触发 `revision-not-strictly-newer`（严格更新检查在前）；`revision-digest-reused` 经消息映射表单测覆盖（runner.py:3402-3408）。
+
+#### R4 A 类 typed 反馈 + run 继续 — PASS
+
+- 同步站点：`validate_modeling_receipt` 阶段非法 → `AcceptanceContractError.data = {code: modeling-receipt-stage-invalid, detail, remediation}`；
+  通道 1 端到端：`RunnerCapabilityEndpoint.handle` 的 structuredContent 与 text content 双路径均含 code，`capability-calls.jsonl` 审计行 diagnostic 含真实 code（capability_mcp.py:676-701）。
+- 异步路由表（`_classify_registration_rejection` runner.py:3600-3629）：`ordinary_retrieval_plan_invalid` → A/modeling；
+  `replacement_revision_not_newer`/`replacement_digest_reused`/`replacement_payload_missing` → A/protocol；无 code 的 opaque（mutation/snapshot 类）→ None（I 类致命）。
+- post-complete 重开 + 注册侧联动（非 R2.3-003 requirement，task=r2-3-005）：`_handle_registration_rejected` 后
+  progress 迁回 `awaiting_revision`、`acceptance._accepted_candidate_identity` 作废（evidence `registration-rejected-reopened.acceptance_registration_invalidated=True`）、
+  modeling 收到 typed conflict；随后 rev-2（严格更新、digest 不同）经**首次注册路径**注册成功，不触发 mutation 守卫。
+- I 类守恒：未重开路径同 identity 换 payload → `accepted candidate semantic payload was mutated`（opaque、无 data → I 类处置）；turn-binding missing → latch `internal-invariant:turn-binding-missing` + `TERMINAL_FAILURE_PENDING_CLEANUP`。
+- S 类反例：profile 参数校验启动期仍致命。
+- 无代码重试上限：同一 A 类反馈连投 4 次，每次均产生第 4 次 typed 反馈（见 R5 用例），无 kill。
+
+#### R5 反馈可读性与路由 — PASS
+
+- 通道 2 路由两方向独立断言：候选工件缺陷 → modeling（R3/R4 用例）；回执行为缺陷（reopen 拒绝）→ protocol（R3 用例）。
+- 通道 3：同一 (A, consumer-query-plan-invalid, modeling) 反馈第 3 次（默认 repeat=3）自动开 1 个 issue
+  （evidence `issue-escalation.reason_code=repeated-validation-feedback`），第 4 次不再开；run 继续。
+- pause/resume 接线（聚焦项 c，见下）：T2 issue 开启 → drain 处理 issue_report → `progress.paused=True`，
+  pending 期间 `check_deadline()` 恒 False；经 `issue_control(pause)`（CAS `mark_issue_dispatch` 后 pause）与
+  `issue_control(resume)`（resume dispatch 校验 mode=start、线程绑定稳定后 resume）后 `paused=False`，
+  `pending.accepted_at == resume 时刻`（新区间），pending 时段（100→500s）对 `active_elapsed` 贡献为 0（独立用例数值断言）。
+
+#### R6 兜底分层 — PASS
+
+- T1：deadline miss 只 nudge（`_nudges_sent` 有界 ≤ `candidate_redrive_limit`，默认 3），多次超窗 drain 后无 latch。
+- T2：redrive 用尽 → 自动开 1 个 cooperative issue（`_escalate_candidate_stall` 一次性守卫）。
+- T3 run 级 active clock：无 formal candidate 的 run（`_candidate_progress=None`）同样被 T3 覆盖并 latch
+  `collaboration/routing:run-fallback-timeout`；issue-pending 时段被扣除（独立用例：active=101s 断言）；
+  反馈投递不重置 `_run_fallback_started`；`acceptance.is_settled=True` 后不再 latch；
+  terminal_evidence/run-fallback-timeout evidence 含 {nudges_sent, issues_opened, last_responsible_agent, feedback_counts}。
+- 参数缺省：3 / 3 / 5400s（runner 属性缺省 + `FormalCandidateProgress.redrive_limit` 缺省 + contracts 仅 formal profile 可配置并做范围校验）。
+
+#### R7 账本与终态合同兼容 — PASS（含聚焦项 b，见下）
+
+- `terminal_settlement(agent_blocked)` → `budget_refund` 一次、二次 False、不可变（settlement 后 `terminal_failure` 被拒 "immutable"）；
+  新实例（strict replay）无需新授权即可 reserve+start 下一个 run（`_start_cap` 回放 +1）。
+- T3 形状 terminal_failure（`{run_id, classification, mutation_state, reason}` 且 reason=run-fallback-timeout）→ 退款；
+  `platform-contract` 分类、无 evidence 的 `collaboration/routing`、`agent_completed` settlement → 均不退款。
+- 带 baseline_hash 的 legacy evidence strict replay 通过且不退款；非 strict 账本拒绝任何 terminal evidence（"terminal evidence requires strict sequence"）→ 永不退款，历史记账不变。
+- classification 集合不变（`_RETRYABLE` start_ledger.py:18，terminal 校验 :427）。
+- 全量回归（本人独立执行）：**970 passed / 1 skipped / 302 subtests passed**（46s），不低于计划基线 938/1/302，与开发方申报一致。
+
+### 聚焦复核（主 agent 指定三项）
+
+- **(a) acceptance 替换分支遮蔽 "identity was mutated" 守卫** — **非缺陷（设计符合），附一项清洁建议**。
+  `register_accepted_candidate`（acceptance.py:1782-1785）泛化后，所有 differing-record 先入替换分支，
+  原 1843-1844 的 `accepted candidate identity was mutated` 判定在 `== record` 路径内不可达（死代码）。
+  可达性分析 + 独立用例证明无"未重开静默换 identity"路径：runner 仅在 observe_delivery 返回 "accepted" 时注册（runner.py:3281），
+  differing record 必然来自 `awaiting_revision` 迁移（经 receipt_digest 绑定的 typed conflict 或 registration-rejection 重开），
+  complete 态下的新候选投递被 observe_delivery 直接忽略（独立用例断言返回 None、identity 不变）；
+  同 identity 换 payload 的 `semantic payload was mutated` 守卫仍存活且 opaque（I 类）。
+  建议：后续迭代删除或注释 1843-1844 死分支，避免误导。
+- **(b) `_validate_terminal_evidence` 的 T3 替代形状** — **通过，未发现缺陷**。
+  替代形状精确匹配 `{run_id, classification=collaboration/routing, mutation_state=zero-mutation, reason=run-fallback-timeout}`；
+  replay 中任何 terminal_evidence（非 None）仍过 `_validate_terminal_evidence`（start_ledger.py:714），
+  非 fallback 又缺 baseline_hash 的形状因字段集不匹配被拒；含/不含 baseline_hash 的 strict replay 分别由
+  `test_r7_legacy_baseline_evidence...` 与退款回放用例验证；非 strict 账本拒绝 evidence 且 `refund_budget` 恒 False（runner 侧 `_run_fallback_terminal_evidence` 对非 strict 返回 None，runner.py:3967-3978）。
+- **(c) pause()/resume() 接线** — **通过，"已存在"的说法不成立但现状正确**。
+  开发方称 `_handle_issue_events` 的 pause/resume "此前已存在"——实际本变更区间新增了三处调用：
+  runner.py:4076（issue_report 且 Coordinator 投递成功后 pause）、:4200（`mark_issue_dispatch` CAS 成功后 pause）、
+  :4220（resume dispatch 校验 mode=start、线程/候选绑定稳定后 resume）。顺序正确；pause 幂等（candidate_progress.py:387-394），
+  多 issue 串行处理不会重复计时；issue-abort 路径不 resume（终态，无需恢复）。独立用例数值验证了 pending 时段排除。
+
+### 缺陷清单
+
+- 阻断级/严重级/中级：无。
+- 低（清洁建议，不阻断验收）：acceptance.py:1843-1844 `identity was mutated` 死分支（见聚焦项 a）。
+
+### 结论
+
+- **R1–R7 全部 PASS**；独立全量 970/1/302 与开发方申报一致。
+- R8（真实运行演练）未执行——未获用户 start 授权，按计划保留；R9 收尾归主 agent。
+- 临时测试文件 `modeling_team/tests/test_r23009_independent_round1_tmp.py` 已在轮次结束后删除（清理规则）。
